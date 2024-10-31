@@ -62,12 +62,12 @@ function monte_carlo_initial_condition(state, args)
 
     """
 
-    state["Apoapsis"] += unifrom_distribution(args.ra_dispersion, 3)
-    state["Periapsis"] += unifrom_distribution(args.rp_dispersion, 4)
-    state["Inclination"] += unifrom_distribution(args.i_dispersion, 5)
-    state["Ω"] += unifrom_distribution(args.Ω_dispersion, 6)
-    state["ω"] += unifrom_distribution(args.ω_dispersion, 7)
-    state["vi"] += unifrom_distribution(args.vi_dispersion, 8)
+    state[:Apoapsis] += unifrom_distribution(args[:ra_dispersion], 3)
+    state[:Periapsis] += unifrom_distribution(args[:rp_dispersion], 4)
+    state[:Inclination] += unifrom_distribution(args[:i_dispersion], 5)
+    state[:Ω] += unifrom_distribution(args[:Ω_dispersion], 6)
+    state[:ω] += unifrom_distribution(args[:ω_dispersion], 7)
+    state[:vi] += unifrom_distribution(args[:vi_dispersion], 8)
 
     return state
 end
@@ -77,7 +77,7 @@ function monte_carlo_true_anomaly(state, args)
 
     """
     
-    state["vi"] += unifrom_distribution(args.vi_dispersion, 9)
+    state[:vi] += unifrom_distribution(args[:vi_dispersion], 9)
 
     return state
 end
@@ -87,12 +87,12 @@ function monte_carlo_guidance_closedform(state, args)
 
     """
 
-    state["ra"] += unifrom_distribution(args.ra_dispersion_gnc, 10)
-    state["rp"] += unifrom_distribution(args.rp_dispersion_gnc, 11)
-    state["i"] += unifrom_distribution(args.i_dispersion_gnc, 12)
-    state["Ω"] += unifrom_distribution(args.Ω_dispersion_gnc, 13)
-    state["ω"] += unifrom_distribution(args.ω_dispersion_gnc, 14)
-    state["vi"] += unifrom_distribution(args.vi_dispersion_gnc, 15)
+    state[:ra] += unifrom_distribution(args[:ra_dispersion_gnc], 10)
+    state[:rp] += unifrom_distribution(args[:rp_dispersion_gnc], 11)
+    state[:i] += unifrom_distribution(args[:i_dispersion_gnc], 12)
+    state[:Ω] += unifrom_distribution(args[:Ω_dispersion_gnc], 13)
+    state[:ω] += unifrom_distribution(args[:ω_dispersion_gnc], 14)
+    state[:vi] += unifrom_distribution(args[:vi_dispersion_gnc], 15)
 
     return state
 end
@@ -102,8 +102,8 @@ function monte_carlo_guidance_environment(ρ, T, S, args)
 
     """
 
-    mean_ρ, mean_T, mean_S = args.ρ_mudispersion_gnc/100, args.T_mudispersion_gnc/100, args.S_mudispersion_gnc/100
-    std_ρ, std_T, std_S = args.ρ_sigmadispersion_gnc/100, args.T_sigmadispersion_gnc/100, args.S_sigmadispersion_gnc/100
+    mean_ρ, mean_T, mean_S = args[:ρ_mudispersion_gnc]/100, args[:T_mudispersion_gnc]/100, args[:S_mudispersion_gnc]/100
+    std_ρ, std_T, std_S = args[:ρ_sigmadispersion_gnc]/100, args[:T_sigmadispersion_gnc]/100, args[:S_sigmadispersion_gnc]/100
 
     ρ += gaussian_distribution(ρ*mean_ρ, ρ*std_ρ, 16)
     T += gaussian_distribution(T*mean_T, T*std_T, 17)

@@ -3,8 +3,8 @@ include("../utils/MonteCarlo_set.jl")
 
 
 function run_orbitalelements(args)
-    apoapsis, periapsis_alt, inclination, Ω, ω = [range(Int64(args[:ra_initial_a]), Int64(args[:ra_initial_b]), step=Int64(args[:ra_step))], 
-                                                 [range(Int64(args[:hp_initial_a]), Int64(args[:hp_initial_b]), step=Int64(args[:hp_step))],
+    apoapsis, periapsis_alt, inclination, Ω, ω = [range(Int64(args[:ra_initial_a]), Int64(args[:ra_initial_b]), step=Int64(args[:ra_step]))], 
+                                                 [range(Int64(args[:hp_initial_a]), Int64(args[:hp_initial_b]), step=Int64(args[:hp_step]))], 
                                                  args[:inclination], args[:Ω], args[:ω]
     
     final_apoapsis = args[:final_apoapsis]

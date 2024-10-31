@@ -137,7 +137,7 @@ mutable struct Config
     initial_time_saved::Float64
 end
 
-config = Config(false, [], [], [], {}, {}, false, false, false, false, 0.0, 0.0, 0.0, 0.0, [], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 4.0, 0.0, 1, pi/2, pi/2, [], [], [], 0.0, 0.0, [], [], [], true, 0.0, 0, 0.0, false, 0, 0.0, 0.0)
+config = Config(false, [], [], [], Dict(), Dict(), false, false, false, false, 0.0, 0.0, 0.0, 0.0, [], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 4.0, 0.0, 1, pi/2, pi/2, [], [], [], 0.0, 0.0, [], [], [], true, 0.0, 0, 0.0, false, 0, 0.0, 0.0)
 
 mutable struct Orientation
     time::Vector{Float64}

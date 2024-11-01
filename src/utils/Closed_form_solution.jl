@@ -2,7 +2,7 @@ incldue("../config.jl")
 include("../physical_models/Density_models.jl")
 include("../physical_models/Aerodynamic_models.jl")
 include("../physical_models/MonteCarlo_pertrubations.jl")
-include("../Reference_system.jl")
+include("../utils/Reference_system.jl")
 include("Misc.jl")
 
 using LinearAlgebra
@@ -165,9 +165,13 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
             t, h, γ, v = [0]*length_solution, [0]*length_solution, [0]*length_solution, [0]*length_solution
 
             for i in range(1,Int64(number_orbits) + 1)
-                idx_orbit = [idx for idx, val in enumerate(solution.orientation.numberofpassage) if val == i]
+
+                idx_orbit = findall(val -> val == i, solution.orientation.numberofpassage)
+                # idx_orbit = [idx for idx, val in enumerate(solution.orientation.numberofpassage) if val == i]
+                
                 alt = [(solution.orientation.pos_ii_mag[item] - mission.planet.Rp_e) for item in idx_orbit]
-                alt_index = [idx for idx, val in enumerate(alt) if val <= 160*1e3]
+                # alt_index = [idx for idx, val in enumerate(alt) if val <= 160*1e3]
+                alt_index = findall(val -> val <= 160*1e3, solution.orientation.numberofpassage)
 
                 if length(alt_index) == 0
                     len_sol = length(solution.orientation.time)

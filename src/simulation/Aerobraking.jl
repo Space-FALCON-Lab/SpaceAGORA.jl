@@ -6,7 +6,7 @@ include("../utils/Save_results.jl")
 include("../config.jl")
 
 function aerobraking(ip, m, args)
-    inital_state = m.initialcondition
+    initial_state = m.initialcondition
     FinalState = true
     continue_campaign = true
     numberofpassage = 0
@@ -88,7 +88,7 @@ function aerobraking(ip, m, args)
         if r_a <= args[:final_apoapsis]
             FinalState = false
             println("Reached FinalState! R_a = " * string(r_a*1e-3) * " km")
-            println("Thermal Limit overcomed totally " * string(config.count_oversome_hr) * " times")
+            println("Thermal Limit overcomed totally " * string(config.count_overcome_hr) * " times")
         end
 
         if r_p - m.planet.Rp_e >= 180*1e3

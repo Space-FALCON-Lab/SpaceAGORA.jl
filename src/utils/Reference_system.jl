@@ -27,7 +27,7 @@ function r_pintor_i(r_p. v_p, planet, t, t_prev)
     return r_i, v_i
 end
 
-function orbtitalelemtorv(oe, planet)
+function orbitalelemtorv(oe, planet)
     # From orbital element to ECI (Planet Centered Inertial)
 
     a, e, i, Ω, ω, vi = oe[1], oe[2], oe[3], oe[4], oe[5], oe[6]

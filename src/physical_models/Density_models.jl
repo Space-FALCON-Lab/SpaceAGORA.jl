@@ -94,7 +94,7 @@ function density_no(h, p, OE=0, lat=0, lon=0, timereal=0, t0=0, tf_prev=0, monte
     return ρ, T, wind
 end
 
-function density_exp(h, ρ, OE=0, lat=0, lon=0, timereal=0, t0=0, tf_prev=0, montecarlo=0, Wind=0, args=0, version=[])
+function density_exp(h, p, OE=0, lat=0, lon=0, timereal=0, t0=0, tf_prev=0, montecarlo=0, Wind=0, args=0, version=[])
     """
 
     """

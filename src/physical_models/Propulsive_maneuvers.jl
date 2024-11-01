@@ -7,9 +7,9 @@ function propulsion_ic_calcs(m, args, initial_state)
 
     """
 
-    Δv = args.Δv * (-cos(args.phi))
+    Δv = args[:Δv] * (-cos(args[:ϕ]))
 
-    if args.print_res
+    if args[:print_res]
         println("LOWER MANEUVER!")
     else
         println("UPPER MANEUVER!")
@@ -50,7 +50,7 @@ function propulsion_ic_calcs(m, args, initial_state)
         Δm = Δt * T / v_exausted
         m_f = m_i - Δm
         Δv = v_exausted * log(m_f / m_i)
-        args.Δv = Δv / (-cos(args.ϕ))
+        args.Δv = Δv / (-cos(args[:ϕ]))
         println("-- Thrust Maximum Time Exceeded - Thrust Time and Δv adjusted - NEW Δv = ", args.Δv)
     end
 

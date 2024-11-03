@@ -3,13 +3,13 @@ include("../physical_models/MonteCarlo_pertrubations.jl")
 
 using SpecialFunctions
 
-function aerodynamic_coefficient_constant(args, T=0, S=0, body=0, montecarlo=false)
+function aerodynamic_coefficient_constant(α, body, T, S, args, montecarlo=false)
     """
 
     """
 
     CL_body = 0.0
-    CD_body = 2 * (2.2 - 0.8)/pi * args.α + 0.8
+    CD_body = 2 * (2.2 - 0.8)/pi * args[:α] + 0.8
 
     if montecarlo == true
         CL_body, CD_body = monte_carlo_aerodynamics(CL_body, CD_body, args)

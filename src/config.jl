@@ -139,6 +139,15 @@ end
 
 config = Config(false, [], [], [], Dict(), Dict(), false, false, false, false, 0.0, 0.0, 0.0, 0.0, [], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 4.0, 0.0, 1, pi/2, pi/2, [], [], [], 0.0, 0.0, [], [], [], true, 0.0, 0, 0.0, false, 0, 0.0, 0.0)
 
+mutable struct controller
+    guidance_t_eval::Vector{Float64}
+    count_controller::Int64
+    count_prev_controller::Int64
+    stored_state::Int64
+    prev_time::Float64
+    t::Float64
+end
+
 mutable struct Orientation
     time::Vector{Float64}
     year::Vector{Int64}

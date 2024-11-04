@@ -43,7 +43,43 @@ function run_orbitalelements(args)
 end
 
 function run_vgamma(args)
-    
+    γ_0, v_0, inclination, Ω, ω = [range(Int64(args[:γ_initial_a]*100), Int64(args[:γ_initial_a]*100), Int64(args[:γ_step]*100))], 
+                                [range(Int64(args[:v_initial_a]), Int64(args[:v_initial_b]), Int64(args[:v_step]))],
+                                args[:inclination], args[:Ω], args[:ω]
+    final_apoapsis = args[:final_apoapsis]
+
+    for γ in γ_0
+        γ = -γ / 100
+
+        for v in v_0
+            state = Dict()
+            planet = planet_data(args[:planet])
+            apoapsis, periapsis_alt = ic_calculation_rptoae(planet, γ, v, args)
+
+            if args[:print_res]
+                println("Velocity: " * string(v) * " m/s, Flight-Path Angle: " * string(γ) * " deg")
+            end
+
+            MC, count, args = MonteCarlo_setting(args)
+
+            for mc_index in range(args[:initial_montecarlo_number], args[:montecarlo_size])
+                state[:Apoapsis], state[:Periapsis], state[:Inclination], state[:Ω], state[:ω], state[:Final_sma] = apoapsis, periapsis_alt * 1e-3, inclination, Ω, ω, final_apoapsis
+
+                args[:simulation_filename] = "Results_ctrl=" * string(args[:control_mode]) * "_v=" * string(Int64(v)) * "_gamma=" * string(abs(γ)) * "_" * string(args[:α]) * "deg"
+
+                if args[:montecarlo] == true
+                    args = MonteCarlo_setting_passage(mc_index, args)
+                end
+
+                aerobraking_campaign(args, state)
+                MonteCarlo_append(MC, args, count)
+            end
+
+            if args[:montecarlo] == true
+                MonteCarlo_save(args, state, MC)
+            end
+        end
+    end
 end
 
 function run_analysis(args)

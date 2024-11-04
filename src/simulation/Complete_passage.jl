@@ -852,6 +852,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
                 initial_time, final_time = time_0, time_0 + length_sim
 
                 # Run simulation
+                eomfunction = 
 
 
                 config.counter_integrator += 1
@@ -883,7 +884,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
                     in_cond = [y[1], y[2], y[3], y[4], y[5], y[6], y[7], y[8]]
                     config.counter_integrator += 1
                     config.results_save = 1
-                    f(t, in_cond, m, index_phase_aerobraking)
+                    f(t, in_cond, m, index_phase_aerobraking, ip)
 
                     # New initial Condition
                     time_0 = t_prev
@@ -944,5 +945,65 @@ function asim(ip, m, initial_state, numberofpassage, args)
     # Re-set count index to 0
     config.count_dori = 0
 
+    if args[:drag_passage] == false && pi - solution.orientation.oe[end][end] > 1e-4 && continue_campaign == true && args[:body_shape] != "Blunted Cone"
+        final_conditions_notmet = true
+        events = [apoapsispoint]
+    else
+        final_conditions_notmet = false
+    end
 
+    count_temp = 0
+
+    while final_conditions_notmet
+        in_cond = [solution.orientation.pos_ii[1][end], solution.orientation.pos_ii[2][end], solution.orientation.pos_ii[3][end], 
+                   solution.orientation.vel_ii[1][end], solution.orientation.vel_ii[2][end], solution.orientation.vel_ii[3][end],
+                   solution.performance.mass[end], solution.performance.heat_load[end]]
+                    
+        initial_time, final_time = time_0, time_0  + 100
+        step = 0.005
+        r_tol = 1e-12
+        a_tol = 1e-13
+
+        try
+            eomfunction = 
+
+            config.counter_integrator += 1
+            time_0 = save_results()
+            count_temp += 1
+        catch
+            break
+        end
+
+        if count_temp > 5
+            break
+        end
+
+        if args[:drag_passage] == false && pi - solution.orientation.oe[end][end] > 1e-4 && continue_campaign == true
+            final_conditions_notmet = true
+            events = [apoapsispoint]
+        else
+            final_conditions_notmet = false
+        end
+    end
+
+    config.save_index_heat = length(solution.orientation.time)
+    config.time_OP = length(solution.orientation.time)
+
+    append!(config.altitudeperiapsis, minimum(solution.orientation.alt[save_pre_index:save_post_index])*1e-3)
+    append!(config.max_heatrate, maximum(solution.performance.heat_rate[save_pre_index:save_post_index]))
+    config.delta_v_man = (m.engine.g_e * m.engine.Isp) * log(m.body.Mass / solution.performance.mass[end])
+
+    if args[:print_res]
+        try
+            println()
+        catch
+            println("Problem in the indexes")
+        end
+    end
+
+    append!(config.periapsis_list, minimum(solution.orientation.alt[save_pre_index:save_post_index])*1e-3)
+    append!(config.orbit_number_list, config.count_number_of_passage + 1)
+    append!(config.delta_v_list, config.delta_v_man)
+
+    return continue_campaign
 end

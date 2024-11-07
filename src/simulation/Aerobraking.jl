@@ -3,19 +3,20 @@ include("../utils/Ref_system_conf.jl")
 include("../utils/Closed_form_solution.jl")
 include("../utils/Odyssey_maneuver_plan.jl")
 include("../utils/Save_results.jl")
-include("../config.jl")
+
+import .config
 
 function aerobraking(ip, m, args)
-    initial_state = m.initialcondition
+    initial_state = m.initial_condition
     FinalState = true
     continue_campaign = true
     numberofpassage = 0
-    config.numberofpassage = 0
+    config.cnf.count_numberofpassage = 0
 
     clean_results()
 
-    time_OP = 0
-    time_IP = 0
+    config.cnf.time_OP = 0
+    config.cnf.time_IP = 0
 
     # Aerobraking Campaign
     while continue_campaign && FinalState
@@ -39,7 +40,7 @@ function aerobraking(ip, m, args)
                     initial_state = propulsion_ic_calcs(m, args, initial_state)
                 end
             end
-        elseif ip.tc == 1
+        elseif ip.tc == 2
             if round(rad2deg(args[:ϕ])) == 180
                 println("DECELERATE DRAG FIRING!!")
             elseif round(rad2deg(args[:ϕ])) == 0
@@ -49,20 +50,20 @@ function aerobraking(ip, m, args)
 
         if numberofpassage != 1
             # Orbtial Elements Results
-            initial_state.a = solution.orientation.oe[1][end]
-            initial_state.e = solution.orientation.oe[2][end]
-            initial_state.i = solution.orientation.oe[3][end]
-            initial_state.Ω = solution.orientation.oe[4][end]
-            initial_state.ω = solution.orientation.oe[5][end]
-            initial_state.m = solution.performance.mass[end]
-            initial_state.vi = solution.orientation.oe[6][end]
+            initial_state.a = config.solution.orientation.oe[1][end]
+            initial_state.e = config.solution.orientation.oe[2][end]
+            initial_state.i = config.solution.orientation.oe[3][end]
+            initial_state.Ω = config.solution.orientation.oe[4][end]
+            initial_state.ω = config.solution.orientation.oe[5][end]
+            initial_state.m = config.solution.performance.mass[end]
+            initial_state.vi = config.solution.orientation.oe[6][end]
 
-            m.initialcondition.year = Int64(solution.orientation.year[end])
-            m.initialcondition.month = Int64(solution.orientation.month[end])
-            m.initialcondition.day = Int64(solution.orientation.day[end])
-            m.initialcondition.hour = Int64(solution.orientation.hour[end])
-            m.initialcondition.minute = Int64(solution.orientation.minute[end])
-            m.initialcondition.second = solution.orientation.second[end]
+            m.initial_condition.year = Int64(config.solution.orientation.year[end])
+            m.initial_condition.month = Int64(config.solution.orientation.month[end])
+            m.initial_condition.day = Int64(config.solution.orientation.day[end])
+            m.initial_condition.hour = Int64(config.solution.orientation.hour[end])
+            m.initial_condition.minute = Int64(config.solution.orientation.minute[end])
+            m.initial_condition.second = config.solution.orientation.second[end]
 
             if (args[:drag_passage] || args[:body_shape] == "Blunted Cone") && continue_campaign
                 r = m.planet.Rp_e + args[:EI]*1e3
@@ -72,8 +73,8 @@ function aerobraking(ip, m, args)
 
         continue_campaign = asim(ip, m, initial_state, numberofpassage, args)
 
-        r_a = solution.orientation.oe[1][end] * (1 + solution.orientation.oe[2][end])
-        r_p = solution.orientation.oe[1][end] * (1 - solution.orientation.oe[2][end])
+        r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
+        r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
         elapsed = tok() - t
 
         if args[:print_res]
@@ -88,7 +89,7 @@ function aerobraking(ip, m, args)
         if r_a <= args[:final_apoapsis]
             FinalState = false
             println("Reached FinalState! R_a = " * string(r_a*1e-3) * " km")
-            println("Thermal Limit overcomed totally " * string(config.count_overcome_hr) * " times")
+            println("Thermal Limit overcomed totally " * string(config.cnf.count_overcome_hr) * " times")
         end
 
         if r_p - m.planet.Rp_e >= 180*1e3

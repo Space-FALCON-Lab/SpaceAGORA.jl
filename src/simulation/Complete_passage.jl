@@ -4,7 +4,6 @@ include("../integrator/Integrators.jl")
 include("../integrator/Events.jl")
 include("../utils/Save_results.jl")
 include("../utils/Odyssey_maneuver_plan.jl")
-include("../config.jl")
 
 include("../physical_models/Gravity_models.jl")
 include("../physical_models/Density_models.jl")
@@ -16,12 +15,16 @@ include("../physical_models/Thermal_models.jl")
 using LinearAlgebra
 using DifferentialEquations
 
+import .config
+import .ref_sys
+
 function asim(ip, m, initial_state, numberofpassage, args)
 
     if ip.wm == 1
         wind_m = true
     end
 
+    MonteCarlo = false
     if ip.mc == 1
         MonteCarlo = true
     end
@@ -48,29 +51,29 @@ function asim(ip, m, initial_state, numberofpassage, args)
     mass = OE[end]
 
     # Clock
-    date_initial = DateTime(m.initialcondition.year, m.initialcondition.month, m.initialcondition.day, m.initialcondition.hour, m.initialcondition.minute, m.initialcondition.second)
+    date_initial = DateTime(m.initial_condition.year, m.initial_condition.month, m.initial_condition.day, m.initial_condition.hour, m.initial_condition.minute, m.initial_condition.second)
 
-    config.count_number_of_passage = config.count_aerobraking + 1
+    config.cnf.count_numberofpassage = config.cnf.count_aerobraking + 1
 
-    if config.count_number_of_passage ! = 1
+    if config.count_numberofpassage ! = 1
         t_prev = config.solution.orientation.time[end]
     else
-        t_prev = m.initialcondition.time_rot
+        t_prev = m.initial_condition.time_rot
     end
 
     function f(t0, in_cond, m, index_phase_aerobraking, ip)
         ## Counters
         # Counter for all along the simulation of all passages
-        config.count_aerobraking = config.count_aerobraking + 1
-        passage_number = config.count_aerobraking
+        config.cnf.count_aerobraking = config.cnf.count_aerobraking + 1
+        passage_number = config.cnf.count_aerobraking
         # Counter for one entire passage
-        config.count_dori = config.count_dori + 1
+        config.cnf.count_dori = config.cnf.count_dori + 1
         # Counter for one phase
-        config.count_phase = congif.count_phase + 1
+        config.cnf.count_phase = config.cnf.count_phase + 1
 
         # Clock
         time_real = date_initial + Second(t0)
-        timereal = clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
+        timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
 
         # Assign state
         pos_ii = in_cond[1:3]       # Inertial position 
@@ -103,14 +106,14 @@ function asim(ip, m, initial_state, numberofpassage, args)
 
         Mars_Gram_recalled_at_periapsis = false
 
-        if vi > 0 && vi < pi/2 && config.ascending_phase == false
-            config.ascending_phase = true
-        elseif vi >= pi/2 && vi < pi && config.ascending_phase == true && args[:body_shape] == "Blunted Cone"
-            config.ascending_phase = false
+        if vi > 0 && vi < pi/2 && config.cnf.ascending_phase == false
+            config.cnf.ascending_phase = true
+        elseif vi >= pi/2 && vi < pi && config.cnf.ascending_phase == true && args[:body_shape] == "Blunted Cone"
+            config.cnf.ascending_phase = false
         end
 
-        if config.ascending_phase == true && config.MarsGram_recall == false
-            config.atmospheric_data = Dict()
+        if config.cnf.ascending_phase == true && config.cnf.MarsGram_recall == false
+            config.cnf.atmospheric_data = Dict()
         end
 
         # Angular Momentum Calculations 
@@ -139,7 +142,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
         h_pp_hat = h_pp / h_pp_mag
 
         # Inertial flight path angle 
-        arg = median([-1, 1, h_pp_mag / (pos_pp_mag * vel_pp_mag)])     # limit to[-1, 1]
+        arg = median([-1, 1, h_pp_mag / (pos_ii_mag * vel_ii_mag)])     # limit to[-1, 1]
         γ_ii = acos(arg)    
         if dot(pos_ii, vel_ii) < 0
             γ_ii = -γ_ii
@@ -1002,7 +1005,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
     end
 
     append!(config.periapsis_list, minimum(solution.orientation.alt[save_pre_index:save_post_index])*1e-3)
-    append!(config.orbit_number_list, config.count_number_of_passage + 1)
+    append!(config.orbit_number_list, config.cnf.count_numberofpassage + 1)
     append!(config.delta_v_list, config.delta_v_man)
 
     return continue_campaign

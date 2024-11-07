@@ -3,7 +3,7 @@
 ## the generates output is always the last number of the list. When config.counter_random number reaches 100, it is re-initialized to 1 to avoid storage problem and slowing down the function.
 ## Changing the config.counter_random number results in changing the random number generates, otherwise this would be the same everytime, biasing the results.
 
-include("../config.jl")
+import .config
 
 using Distributions
 
@@ -12,7 +12,7 @@ function unifrom_distribution(dispersion, number=0)
 
     """
 
-    Random.seed!(config.index_MonteCarlo)
+    Random.seed!(config.cnf.index_MonteCarlo)
 
     return rand(Uniform(-dispersion, dispersion), number)[end]
 end
@@ -22,13 +22,13 @@ function gaussian_distribution(μ, σ, number = 0)
 
     """
 
-    config.counter += 1
+    config.cnf.counter += 1
 
-    Random.seed!(config.counter_random)
+    Random.seed!(config.cnf.counter_random)
 
     number = rand(1:500)
 
-    Random.seed!(config.counter_random)
+    Random.seed!(config.cnf.counter_random)
 
     return rand(Normal(μ, σ), number)[end]
 end
@@ -38,7 +38,7 @@ function monte_carlo_aerodynamics(CL_body, CD_body, args)
 
     """
 
-    uncertainty_CD, uncertainty_CL = args.CD_dispersion/100, args.CL_ispersion/100
+    uncertainty_CD, uncertainty_CL = args[:CD_dispersion]/100, args[:CL_ispersion]/100
     CD_body += unifrom_distribution(CD_body*uncertainty_CD, 1)
     CL_body += unifrom_distribution(CL_body*uncertainty_CL, 1)
 
@@ -50,7 +50,7 @@ function monte_carlo_density(density, args)
 
     """
 
-    Random.seed!(config.index_MonteCarlo)
+    Random.seed!(config.cnf.index_MonteCarlo)
 
     density = rand(Uniform(density*0.5, density*2), 3)
 

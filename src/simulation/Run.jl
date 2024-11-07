@@ -4,6 +4,8 @@ include("../utils/Initial_cond_calc.jl")
 include("Set_and_run.jl")
 include("../config.jl")
 
+import .config
+
 
 function run_orbitalelements(args)
     apoapsis, periapsis_alt, inclination, Ω, ω = [range(Int64(args[:ra_initial_a]), Int64(args[:ra_initial_b]), step=Int64(args[:ra_step]))], 

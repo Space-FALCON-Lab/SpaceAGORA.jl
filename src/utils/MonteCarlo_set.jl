@@ -1,4 +1,4 @@
-include("../config.jl")
+import .config
 
 function MonteCarlo_setting(args)
     MC = Dict()
@@ -13,7 +13,7 @@ function MonteCarlo_setting(args)
 end
 
 function MonteCarlo_setting_passage(mc_index, args)
-    config.counter_random = 0
+    config.cnf.counter_random = 0
 
     heat_passage = []
 
@@ -24,25 +24,25 @@ function MonteCarlo_setting_passage(mc_index, args)
     args[:simulation_filename] = args[:simulation_filename] * "_nMC=" * string(mc_index)
 
     # Initialization
-    config.altitude_periapsis, config.max_heatrate = [], []
-    config.counter_random = mc_index
-    config.index_MonteCarlo = mc_index
+    config.cnf.altitude_periapsis, config.cnf.max_heatrate = [], []
+    config.cnf.counter_random = mc_index
+    config.cnf.index_MonteCarlo = mc_index
 
     return args
 end
 
 function MonteCarlo_append(MC, args, count)
     # append results to MC
-    config.index_MonteCarlo += 1
+    config.cnf.index_MonteCarlo += 1
 
     # save results
-    append!(MC[:N_passages], solution.orientation.number_of_passage[end])
-    append!(MC[:Duration], solution.orientation.time[end])
-    append!(MC[:Median_heat], median(config.max_heatrate))
-    append!(MC[:Periapsis_min], minimum(config.altitude_periapsis))
-    append!(MC[:Periapsis_max], maximum(config.altitude_periapsis))
+    append!(MC[:N_passages], config.solution.orientation.number_of_passage[end])
+    append!(MC[:Duration], config.solution.orientation.time[end])
+    append!(MC[:Median_heat], median(config.cnf.max_heatrate))
+    append!(MC[:Periapsis_min], minimum(config.cnf.altitude_periapsis))
+    append!(MC[:Periapsis_max], maximum(config.cnf.altitude_periapsis))
 
-    heat_rate_max = maximum(solution.performance.heat_rate) 
+    heat_rate_max = maximum(config.solution.performance.heat_rate) 
     if heat_rate_max > args[:max_heat_rate]
         count += 1
     end

@@ -1,14 +1,14 @@
-# include("../config.jl")
+import .config
 
 function planet_data(ip)
 
-    # try
-    #     if haskey(ip, :Planet)
-    #         ip = ip.Planet
-    #     end
-    # catch
-    #     println("Error: The input must be an integer.")
-    # end
+    try
+        if haskey(ip, :planet)
+            ip = ip[:planet]
+        end
+    catch
+        nothing
+    end
 
     if (ip == 1) # Earth
         Rp_e = 6.3781e6            # equatorial radius, m
@@ -75,13 +75,7 @@ function planet_data(ip)
     end
 
     # println(model.planet)
-    model.planet = Planet(Rp_e, Rp_p, Rp_m, mass, p, k, ω, g_ref, ρ_ref, h_ref, H, R, γ, T, J2, μ, μ_fluid, Lz)
+    config.model.planet = config.Planet(Rp_e, Rp_p, Rp_m, mass, p, k, ω, g_ref, ρ_ref, h_ref, H, R, γ, T, J2, μ, μ_fluid, Lz)
     
-    return model.planet
+    return config.model.planet
 end
-
-# ip = 1
-
-# bla = model.planet_data(ip)
-
-# println(bla)

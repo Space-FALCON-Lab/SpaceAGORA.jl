@@ -3,7 +3,8 @@ include("../physical_models/Planet_data.jl")
 include("../physical_models/Mission.jl")
 include("../utils/Plots.jl")
 include("Aerobraking.jl")
-include("../config.jl")
+
+import .config
 
 using TickTock
 
@@ -78,12 +79,13 @@ function aerobraking_campaign(args, state)
         h_0 = 160 * 1e3
     elseif args[:body_shape] == "Blunted Cone"
         h_0 = 120 * 1e3
-        args[:AE] = args[:EI] = h_0/1e3
+        args[:AE] = h_0/1e3
+        args[:EI] = h_0/1e3
     end
 
     if args[:drag_passage] || args[:body_shape] == "Blunted Cone"
         r = p_class.Rp_e + h_0
-        state[:vi] = - cos(1 / eccentricity_in * (semimajoraxis_in * (1 - eccentricity_in^2) / r - 1))
+        state[:vi] = - acos(1 / eccentricity_in * (semimajoraxis_in * (1 - eccentricity_in^2) / r - 1))
         
         if args[:montecarlo] == true
             state = monte_carlo_true_anomaly(state, args)
@@ -105,7 +107,7 @@ function aerobraking_campaign(args, state)
             Area_SC = length_ody * height_ody
             Area_tot = Area_SA + Area_SC
 
-            b = Body(Mass, length_SA, height_SA, Area_SA, length_SC, height_SC, Area_SC, Area_tot, 0.0, 0.0, 0.0)
+            b = config.Body(Mass, length_SA, height_SA, Area_SA, length_SC, height_SC, Area_SC, Area_tot, 0.0, 0.0, 0.0)
 
             return b
         end
@@ -117,7 +119,7 @@ function aerobraking_campaign(args, state)
             BaseRadius = base_radius
             Area_tot = pi * BaseRadius^2
 
-            b = Body(Mass, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Area_tot, Delta, NoseRadius, BaseRadius)
+            b = config.Body(Mass, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Area_tot, Delta, NoseRadius, BaseRadius)
 
             return b
         end
@@ -141,7 +143,7 @@ function aerobraking_campaign(args, state)
         second = args[:secs]
         time_rot = args[:planettime]
 
-        ic = Initial_condition(a, e, i, Ω, ω, vi, m0, year, month, day, hour, min, second, time_rot)
+        ic = config.Initial_condition(a, e, i, Ω, ω, vi, m0, year, month, day, hour, min, second, time_rot)
 
         return ic
     end
@@ -157,7 +159,7 @@ function aerobraking_campaign(args, state)
         heat_rate_limit = args[:max_heat_rate]
         heat_load_limit = args[:max_heat_load]
 
-        a = Aerodynamics(δ, α, thermal_accomodation_factor, reflection_coefficient, thermal_contact, heat_rate_limit, heat_load_limit)
+        a = cconfig.Aerodynamics(δ, α, thermal_accomodation_factor, reflection_coefficient, thermal_contact, heat_rate_limit, heat_load_limit)
 
         return a        
     end
@@ -165,14 +167,14 @@ function aerobraking_campaign(args, state)
     a_class = aerodynamics()
 
     # Engine
-    args[:ϕ] = deg2rad(args[:ϕ])
+    args[:phi] = deg2rad(args[:phi])
     function engine()
-        ϕ = args[:ϕ]
+        ϕ = args[:phi]
         g_e = 9.81
         T = args[:thrust]
         Isp = 200
 
-        e = Engines(ϕ, g_e, T, Isp)
+        e = config.Engines(ϕ, g_e, T, Isp)
 
         return e
     end
@@ -186,7 +188,7 @@ function aerobraking_campaign(args, state)
         aerodynamics = a_class
         engine = e_class
 
-        m = Model(body, planet, aerodynamics, engine, initialcondition)
+        m = config.Model(body, planet, aerodynamics, engine, initialcondition)
 
         return m
     end
@@ -194,23 +196,23 @@ function aerobraking_campaign(args, state)
     m = model()
 
     # Initialization - Reset all the config index for new simulation
-    config.count_aerobraking = 0
-    config.count_overcome_hr = 0
-    config.save_index_heat = 0
-    config.index_propellant_mass = 1
-    config.counter_random = 0
+    config.cnf.count_aerobraking = 0
+    config.cnf.count_overcome_hr = 0
+    config.cnf.save_index_heat = 0
+    config.cnf.index_propellant_mass = 1
+    config.cnf.counter_random = 0
 
     ##########################################################
     # RUN SIMULATION
-    # config. = args[:max_heat_rate]
+    config.cnf.heat_rate_limit = args[:max_heat_rate]
     tick()
     aerobraking(ip, m, args)
     elapsed = tok()
     ##########################################################
 
     if args[:print_res]
-        println("ρ: " * string(maximum(solution.physical_properties.ρ)) * " kg/m^3")
-        println("heat rate: " * string(maximum(solution.performance.heat_rate)) * " W/cm^2")
+        println("ρ: " * string(maximum(config.solution.physical_properties.ρ)) * " kg/m^3")
+        println("heat rate: " * string(maximum(config.solution.performance.heat_rate)) * " W/cm^2")
     end
 
     # Save results

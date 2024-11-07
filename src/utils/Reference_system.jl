@@ -188,7 +188,7 @@ function rtolatlong(r_p, planet)
 
     # Recalculate reduced latitude based on planet-detic latitude
     latr2 = atan((1 - f)*sin(latd) / cos(latd))
-    diff = latr - LinearAlgebra._sylvester_quasitriu_split2!
+    diff = latr - latr2
 
     # Iterate until reduced latitude converges
     while diff > 1e-10

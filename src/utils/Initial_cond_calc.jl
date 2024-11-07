@@ -1,4 +1,3 @@
-f
 
 
 function ic_calculation_rptoae(planet, γ, v, args)

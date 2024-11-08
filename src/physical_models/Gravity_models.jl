@@ -1,4 +1,4 @@
-include("../config.jl")
+import .config
 
 function gravity_const(pos_ii_mag, pos_ii, p, mass=0, vel_ii=0)
     """
@@ -8,7 +8,7 @@ function gravity_const(pos_ii_mag, pos_ii, p, mass=0, vel_ii=0)
     μ = p.μ
     pos_ii_hat = pos_ii / pos_ii_mag
 
-    if config.drag_state == false
+    if config.cnf.drag_state == false
         gravity_ii_mag = -μ / pos_ii_mag^2
     else
         gravity_ii_mag = -p.g_ref

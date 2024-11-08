@@ -1,5 +1,7 @@
-include("../config.jl")
+include("../utils/Ref_system_conf.jl")
+include("../utils/Reference_system.jl")
 
+import .config
 
 function interp(a, b, x)
     """
@@ -26,7 +28,7 @@ function temperature_linear(h, p)
     """
 
     # into atmosphere
-    if config.drag_state == true
+    if config.cnf.drag_state == true
         T = p.T
     else
         T = p.T
@@ -39,6 +41,8 @@ function wind_def(model, indexes, x, table)
     """
 
     """
+
+    # NEED TO FINISH
 
     # boundary 1
     index_b1 = indexes[0]
@@ -69,7 +73,7 @@ function density_constant(h, p, OE=0, lat=0, lon=0, timereal=0, t0=0, tf_prev=0,
 
     """
 
-    if config.drag_state == false
+    if config.cnf.drag_state == false
         ρ = 0.0
     else
         ρ = p.ρ_ref

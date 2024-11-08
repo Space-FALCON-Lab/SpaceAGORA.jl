@@ -1,7 +1,8 @@
-include("../config.jl")
 include("../physical_models/MonteCarlo_pertrubations.jl")
 
 using SpecialFunctions
+
+import .config
 
 function aerodynamic_coefficient_constant(α, body, T, S, args, montecarlo=false)
     """
@@ -23,7 +24,7 @@ function aerodynamic_coefficent_fM(α, body, T, S, args, montecarlo=false)
 
     """
 
-    σ = args.reflection_coefficient
+    σ = args[:reflection_coefficient]
     Tw = T
 
     function pressure(S, α, ρ_inf, vel, σ)

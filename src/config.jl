@@ -130,7 +130,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         α_list::Vector{Float64}
         inital_position_closed_form::Vector{Float64}
         continute_simulation::Bool
-        timer_reavluation::Float64
+        timer_revaluation::Float64
         MarsGram_recall::Int64
         heat_rate_prev::Float64
         sensible_loads::Bool
@@ -144,9 +144,10 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         time_OP::Float64
         time_IP::Float64
         count_aerobraking::Int64
+        MarsGram_justrecalled::Int64
     end
 
-    cnf = Cnf(false, [], [], [], Dict(), Dict(), false, false, false, false, 0.0, 0.0, 0.0, 0.0, [], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 4.0, 0.0, 1, pi/2, pi/2, [], [], [], 0.0, 0.0, [], [], [], true, 0.0, 0, 0.0, false, 0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, 0)
+    cnf = Cnf(false, [], [], [], Dict(), Dict(), false, false, false, false, 0.0, 0.0, 0.0, 0.0, [], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 4.0, 0.0, 1, pi/2, pi/2, [], [], [], 0.0, 0.0, [], [], [], true, 0.0, 0, 0.0, false, 0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, 0, 0)
 
     mutable struct controller
         guidance_t_eval::Vector{Float64}

@@ -1,10 +1,10 @@
-include("../config.jl")
 include("../utils/Odyssey_maneuver_plan.jl")
 include("../utils/Reference_system.jl")
 include("../utils/Ref_system_conf.jl")
 
+import .config
 
-function imnpact(t, y, m, solution, args)
+function impact(t, y, m, solution, args)
     if sqrt(y[1]^2 + y[2]^2 + y[3]^2) <= m.planet.Rp_e + 35
         breaker = true
         print("ATTENTION: AMPACT!")
@@ -22,15 +22,15 @@ function apoapsispoint(t, y_0, y_h, m, args)
     vel_ii = [y_0[4], y_0[5], y_0[6]]   # Inertial velocity
     r_i = cartesian(pos_ii[1], pos_ii[2], pos_ii[3])
     v_i = cartesian(vel_ii[1], vel_ii[2], vel_ii[3])
-    [OE_n] = rvtoorbitalelement(r_i, v_i, y[7], m.planet)
+    OE_n = rvtoorbitalelement(r_i, v_i, y[7], m.planet)
 
     pos_ii = [y_0[1], y_0[2], y_0[3]]   # Inertial position
     vel_ii = [y_0[4], y_0[5], y_0[6]]   # Inertial velocity
     r_i = cartesian(pos_ii[1], pos_ii[2], pos_ii[3])
     v_i = cartesian(vel_ii[1], vel_ii[2], vel_ii[3])
-    [OE_0] = rvtoorbitalelement(r_i, v_i, y[7], m.planet)
+    OE_0 = rvtoorbitalelement(r_i, v_i, y[7], m.planet)
 
-    if OE_n.vi - pi > 0 && OE_0.vi - pi < 0
+    if OE_n[6] - pi > 0 && OE_0[6] - pi < 0
         breaker = true
     else
         breaker = false
@@ -105,11 +105,11 @@ function stop_firing(t_n, y_n, m, args)
     Δv = (m.engine.g_e * m.engine.Isp) * log(m.body.Mass/mass)
     Δv_max = Odyssey_firing_plan(Δv, args)
 
-    if Δv >= (Δv_max + config.delta_v_man)
-        config.firing_on = 0
+    if Δv >= (Δv_max + config.cnf.delta_v_man)
+        config.cnf.firing_on = 0
     end
 
-    return Δv - (Δv_max + config.delta_v_man)
+    return Δv - (Δv_max + config.cnf.delta_v_man)
 end
 
 function events(t_n, y_n, t_0, y_0, m, T_ijk, index_phase_aerobraking, args, solution)

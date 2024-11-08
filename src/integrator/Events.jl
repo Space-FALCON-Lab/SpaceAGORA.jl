@@ -1,5 +1,4 @@
 
-
 function event(solution)
     # Impact definition
     breaker = true

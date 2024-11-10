@@ -1,11 +1,11 @@
 
-function event(solution)
+function event(count_impact, count_apoapsisgreaterpreiapsis)
     # Impact definition
     breaker = true
-    if length(solution.t_events[end]) != 0
+    if count_impact != 0
         println("IMPACT!")
         breaker = false
-    elseif length(solution.t_events[end-1]) != 0
+    elseif count_apoapsisgreaterpreiapsis != 0
         breaker = false
         println("PERIAPSIS GREATER THAN APOAPSIS!")
     end

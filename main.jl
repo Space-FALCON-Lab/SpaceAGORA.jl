@@ -1,19 +1,29 @@
-include("bla.jl")
+# include("bla.jl")
 
-println(p)
-println(p.Node2.value)
+# println(p)
+# println(p.Node2.value)
 
-function do_something(nod)
-    nod.Node2.value = 5
-    nod.Node2.next = 6
-end
+# function do_something(nod)
+#     nod.Node2.value = 5
+#     nod.Node2.next = 6
+# end
 
-do_something(p)
+# do_something(p)
 
-println(p)
-println(p.Node2.value)
+# println(p)
+# println(p.Node2.value)
 
-include("bla1.jl")
+# include("bla1.jl")
+
+# using Dates
+
+# d = DateTime(2020,11,2,10, 10, 40)
+
+# v = d + Second(0.5)
+
+# println(v)
+
+
 
 # include("./src/config.jl")
 

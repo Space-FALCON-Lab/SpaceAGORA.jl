@@ -86,7 +86,7 @@ function mission_def(mission)
     end
 
     # Thermal Model
-    if mission[:Thermal_Model] == "convective and radiative" || mission[:Thermal_model] == "Convective and Radiative"
+    if mission[:Thermal_Model] == "convective and radiative" || mission[:Thermal_Model] == "Convective and Radiative"
         tm = 1
     elseif mission[:Thermal_Model] == "Maxwellian Heat Transfer" || mission[:Thermal_Model] == "Shaaf and Chambre"
         tm = 2

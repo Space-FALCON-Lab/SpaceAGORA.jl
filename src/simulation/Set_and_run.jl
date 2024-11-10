@@ -26,7 +26,7 @@ function aerobraking_campaign(args, state)
                    :Monte_Carlo => args[:montecarlo])
 
     if args[:print_res] == true
-        println("Mission is: " * mission)
+        println("Mission is: ", mission)
     end
 
     ip = mission_def(mission)
@@ -83,7 +83,7 @@ function aerobraking_campaign(args, state)
         args[:EI] = h_0/1e3
     end
 
-    if args[:drag_passage] || args[:body_shape] == "Blunted Cone"
+    if Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone"
         r = p_class.Rp_e + h_0
         state[:vi] = - acos(1 / eccentricity_in * (semimajoraxis_in * (1 - eccentricity_in^2) / r - 1))
         
@@ -97,35 +97,29 @@ function aerobraking_campaign(args, state)
     # Initial Model Definition
     # Body
     if args[:body_shape] == "Spacecraft"
-        function body()
-            Mass = Mass
-            length_SA = length_sp
-            height_SA = height_sp
-            Area_SA = length_SA * height_SA
-            length_SC = length_edy
-            height_SC = height_ody
-            Area_SC = length_ody * height_ody
-            Area_tot = Area_SA + Area_SC
 
-            b = config.Body(Mass, length_SA, height_SA, Area_SA, length_SC, height_SC, Area_SC, Area_tot, 0.0, 0.0, 0.0)
+        Mass = mass
+        length_SA = length_sp
+        height_SA = height_sp
+        Area_SA = length_SA * height_SA
+        length_SC = length_ody
+        height_SC = height_ody
+        Area_SC = length_ody * height_ody
+        Area_tot = Area_SA + Area_SC
 
-            return b
-        end
+        b_class = config.Body(Mass, length_SA, height_SA, Area_SA, length_SC, height_SC, Area_SC, Area_tot, 0.0, 0.0, 0.0)
+
     elseif args[:body_shape] == "Blunted Cone"
-        function body()
-            Mass = Mass
-            Delta = δ
-            NoseRadius = nose_radius
-            BaseRadius = base_radius
-            Area_tot = pi * BaseRadius^2
 
-            b = config.Body(Mass, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Area_tot, Delta, NoseRadius, BaseRadius)
+        Mass = mass
+        Delta = δ
+        NoseRadius = nose_radius
+        BaseRadius = base_radius
+        Area_tot = pi * BaseRadius^2
 
-            return b
-        end
+        b_class = config.Body(Mass, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Area_tot, Delta, NoseRadius, BaseRadius)
+
     end
-
-    b_class = body()
 
     function initialconditions()
         a = semimajoraxis_in
@@ -138,7 +132,7 @@ function aerobraking_campaign(args, state)
         year = args[:year]
         month = args[:month]
         day = args[:day]
-        hour = args[:hour]
+        hour = args[:hours]
         min = args[:minutes]
         second = args[:secs]
         time_rot = args[:planettime]
@@ -159,7 +153,7 @@ function aerobraking_campaign(args, state)
         heat_rate_limit = args[:max_heat_rate]
         heat_load_limit = args[:max_heat_load]
 
-        a = cconfig.Aerodynamics(δ, α, thermal_accomodation_factor, reflection_coefficient, thermal_contact, heat_rate_limit, heat_load_limit)
+        a = config.Aerodynamics(δ, α, thermal_accomodation_factor, reflection_coefficient, thermal_contact, heat_rate_limit, heat_load_limit)
 
         return a        
     end

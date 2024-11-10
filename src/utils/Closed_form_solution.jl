@@ -24,7 +24,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, ste
         t_prev = mission.initial_condition.time_rot
     end
 
-    [pos_ii_org, vel_ii_org] = orbitalelemtorv(initialcondition, mission.planet)
+    pos_ii_org, vel_ii_org = orbitalelemtorv(initialcondition, mission.planet)
     pos_ii = pos_ii_org
     vel_ii = vel_ii_org
 
@@ -32,7 +32,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, ste
     v0 = norm(vel_ii) # Inertial velocity magnitude
     h0 = r0 - mission.planet.Rp_e
 
-    [pos_pp, vel_pp] = r_intor_p(pos_ii, vel_ii, mission.planet, t0, t_prev)
+    pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, mission.planet, t0, t_prev)
 
     LatLong = rtolatlong(pos_pp, mission.planet)
     lat = LatLong[2]
@@ -160,19 +160,19 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
             results(t_cf, h_cf, γ_cf, v_cf)
         elseif args[:type_of_mission] != "Drag Passage"
             # Calculate the number of orbit
-            number_orbits = config.solution.orientation.numberofpassage[end]
-            length_solution = length(config.solution.orientation.numberofpassage)
+            number_orbits = config.solution.orientation.number_of_passage[end]
+            length_solution = length(config.solution.orientation.number_of_passage)
 
             t, h, γ, v = [0]*length_solution, [0]*length_solution, [0]*length_solution, [0]*length_solution
 
             for i in range(1,Int64(number_orbits) + 1)
 
-                idx_orbit = findall(val -> val == i, config.solution.orientation.numberofpassage)
+                idx_orbit = findall(val -> val == i, config.solution.orientation.number_of_passage)
                 # idx_orbit = [idx for idx, val in enumerate(solution.orientation.numberofpassage) if val == i]
                 
                 alt = [(config.solution.orientation.pos_ii_mag[item] - mission.planet.Rp_e) for item in idx_orbit]
                 # alt_index = [idx for idx, val in enumerate(alt) if val <= 160*1e3]
-                alt_index = findfirst(val -> val <= 160*1e3, config.solution.orientation.numberofpassage)
+                alt_index = findfirst(val -> val <= 160*1e3, config.solution.orientation.number_of_passage)
 
                 if length(alt_index) == 0
                     len_sol = length(config.solution.orientation.time)

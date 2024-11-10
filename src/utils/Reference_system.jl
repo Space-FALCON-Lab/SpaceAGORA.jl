@@ -8,21 +8,21 @@ function r_intor_p(r_i, v_i, planet, t, t_prev)
 
     L_pi = [cos(rot_angle) sin(rot_angle) 0; -sin(rot_angle) cos(rot_angle) 0; 0 0 1]
 
-    r_p = vecdot(L_pi, r_i)
+    r_p = L_pi * r_i
 
-    v_p = vecdot(L_pi, v_i - cross(planet.ω, r_i))
+    v_p = L_pi * (v_i - cross(planet.ω, r_i))
 
     return r_p, v_p
 end
 
-function r_pintor_i(r_p. v_p, planet, t, t_prev)
+function r_pintor_i(r_p, v_p, planet, t, t_prev)
     # From PCPF (planet centered/planet fixed) to PCI (planet centered inertial)
     rot_angle = -norm(planet.ω) * (t + t_prev)
 
     L_pi = [cos(rot_angle) sin(rot_angle) 0; -sin(rot_angle) cos(rot_angle) 0; 0 0 1]
 
-    r_i = vecdot(L_pi, r_p)
-    v_i = vecdot(L_pi, v_p + cross(planet.ω, r_p))
+    r_i = L_pi * r_p
+    v_i = L_pi * (v_p + cross(planet.ω, r_p))
 
     return r_i, v_i
 end
@@ -38,9 +38,9 @@ function orbitalelemtorv(oe, planet)
     r_x = (h^2) / planet.μ * (1 / (1 + e * cos(vi))) * [cos(vi); sin(vi); 0]
     v_x = planet.μ / h * [-sin(vi); e + cos(vi); 0]
     
-    Q = [-sin(Ω)*cos(i)*sin(ω) + cos(Ω)*cos(ω), cos(Ω)*cos(i)*sin(ω) + sin(Ω)*cos(ω), sin(i)*sin(ω); 
-         -sin(Ω)*cos(i)*cos(ω) - cos(Ω)*sin(ω), cos(Ω)*cos(i)*cos(ω) - sin(Ω)*sin(ω), sin(i)*cos(ω);
-          sin(Ω)*sin(i), -cos(Ω)*sin(i), cos(i)]
+    Q = [-sin(Ω)*cos(i)*sin(ω) + cos(Ω)*cos(ω) cos(Ω)*cos(i)*sin(ω) + sin(Ω)*cos(ω) sin(i)*sin(ω); 
+         -sin(Ω)*cos(i)*cos(ω) - cos(Ω)*sin(ω) cos(Ω)*cos(i)*cos(ω) - sin(Ω)*sin(ω) sin(i)*cos(ω);
+          sin(Ω)*sin(i) -cos(Ω)*sin(i) cos(i)]
 
     R = Q' * r_x
     V = Q' * v_x
@@ -54,7 +54,7 @@ function rvtoorbitalelement(r, v, m, planet)
     i_y = [0, 1, 0]
     i_z = [0, 0, 1]
 
-    Energy = sqrt(dot(v, v)/2 - planet.μ/dot(v, v))
+    Energy = sqrt(dot(v, v)/2 - planet.μ/dot(r, r))
     a = - planet.μ / (2 * Energy)
     h = cross(r, v)
 
@@ -128,13 +128,13 @@ function rtoalfadeltar(r)
     y = r[2]
     z = r[3]
     r = sqrt(x^2 + y^2 + z^2)
-    1, m, n = x/r, y/r, z/r
+    l, m, n = x/r, y/r, z/r
 
     dec = asin(n)
     if m > 0
-        RA = acos(1/cos(dec))
+        RA = acos(l/cos(dec))
     else
-        RA = 2*pi - acos(1/cos(dec))
+        RA = 2*pi - acos(l/cos(dec))
     end
 
     return [r, RA, dec]
@@ -222,9 +222,9 @@ function latlongtoNED(H_LAN_LON)
           sin(lon) cos(lon) 0;
           0 0 1]
 
-    uN = vecdot(L3, uNxyz)
-    uE = vecdot(L3, uExyz)
-    uD = vecdot(L3, uDxyz)
+    uN = L3 * uNxyz
+    uE = L3 * uExyz
+    uD = L3 * uDxyz
 
     return [uD, uN, uE]
 end

@@ -27,7 +27,7 @@ function gravity_invsquared(pos_ii_mag, pos_ii, p, mass, vel_ii=0)
     μ = p.μ
     pos_ii_hat = pos_ii / pos_ii_mag
 
-    gravity_ii_mag_sphere = -μ / pos_ii_mag^2
+    gravity_ii_mag_spherical = -μ / pos_ii_mag^2
 
     g = gravity_ii_mag_spherical * pos_ii_hat
 

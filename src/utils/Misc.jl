@@ -18,11 +18,10 @@ function new_periapsis(m, r, v, args)
     Energy = norm(v)^2 * 0.5 * m.planet.μ / norm(r)
     a = - m.planet.μ / (2 * Energy)
     h = cross(r, v)
-    h += 0
     e = (1 + (2 * Energy * dot(h,h) / m.planet.μ^2))^0.5
     r_p = a * (1 - e)
 
-    if args[:print_res]
-        println("NEW PERIAPSIS VACUUM ALTITUDE: " + string((r_p - m.planet.Rp_e)*1e-3) + " km")
+    if Bool(args[:print_res])
+        println("NEW PERIAPSIS VACUUM ALTITUDE: " * string((r_p - m.planet.Rp_e)*1e-3) * " km")
     end
 end

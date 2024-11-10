@@ -20,21 +20,21 @@ function aerobraking(ip, m, args)
 
     # Aerobraking Campaign
     while continue_campaign && FinalState
-        config.index_Mars_Gram_call = 0
+        config.cnf.index_Mars_Gram_call = 0
         firing_orbit = 0
         numberofpassage = 1 + numberofpassage
 
-        if args[:print_res]
+        if args[:print_res] == true
             println("--> Start Passage #" * string(numberofpassage))
         end
 
-        t = tok()
+        # t = tok()
 
-        if args[:Odyssey_sim]
+        if args[:Odyssey_sim] == true
             args = Odyssey_firing_plan(numberofpassage, args)
         end
 
-        if args[:ip.tc] == 1
+        if ip.tc == 1
             if args[:delta_v] != 0.0
                 if ip.tc == 1
                     initial_state = propulsion_ic_calcs(m, args, initial_state)
@@ -75,10 +75,10 @@ function aerobraking(ip, m, args)
 
         r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
         r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
-        elapsed = tok() - t
+        # elapsed = tok() - t
 
-        if args[:print_res]
-            println("Computational time: " * string(elapsed) * " seconds")
+        if Bool(args[:print_res])
+            # println("Computational time: " * string(elapsed) * " seconds")
             println("--> PASSAGE #" * string(numberofpassage) * " COMPLETE")
         end
 

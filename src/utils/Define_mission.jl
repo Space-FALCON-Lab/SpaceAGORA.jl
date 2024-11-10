@@ -4,10 +4,10 @@ function def_miss(args)
 
     """
 
-    if args[:type_of_mission] == "Drage Passage"
+    if args[:type_of_mission] == "Drag Passage"
         args[:drag_passage] = 1
         args[:number_of_orbits] = 1
-    elseif args[:type_of_mission] == "Orbit"
+    elseif args[:type_of_mission] == "Orbits"
         args[:drag_passage] = 0
         args[:number_of_orbits] = args[:number_of_orbits]
     elseif args[:type_of_mission] == "Aerobraking Campaign"
@@ -90,7 +90,7 @@ function def_miss(args)
         println("--DENSITY MODEL CHANGED TO: Exponential - GRAM is only available for Mars--")
     end
 
-    if args[:Odyssey_sim]
+    if Bool(args[:Odyssey_sim])
         args[:control_mode] = 0
         args[:type_of_mission] = "Aerobraking Campaign"
         args[:number_of_orbits] = 1000

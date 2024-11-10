@@ -1,28 +1,28 @@
 include("simulation/Run.jl")
 
 args = Dict(# Misc Simulation
-            :results => 1,                                          # Generate csv file for results True=1, False=0
+            :results => 0,                                          # Generate csv file for results True=1, False=0
             :passresults => 1,                                      # Pass results as output True=1, False=0
             :print_res => 1,                                        # Print some lines True=1, False=0
-            :directory_results => "",                               # Directory where to save the results
-            :directory_MarsGram => "",                              # Directory where MarsGram is
+            :directory_results => false,                               # Directory where to save the results
+            :directory_MarsGram => false,                              # Directory where MarsGram is
             :MarsGram_version => 0,                                 # MarsGram x file to use
-            :montecarlo_analysis => 1,                              # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 1,                                             # Generate png plots of results True=1, False=0
-            :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
-            :machine => "Cluster",                                  # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
+            :montecarlo_analysis => 0,                              # Generate csv file for Montecarlo results True=1, False=0
+            :plot => 0,                                             # Generate png plots of results True=1, False=0
+            :filename => 0,                                         # Filename with specifics of simulation, True =1, False=0
+            :machine => "Desktop_Home",                             # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
 
             # Type of Mission
-            :type_of_mission => "Aerobraking Campaign",             # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :number_of_orbits => 1000,                              # Number of aerobraking passage
+            :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
+            :number_of_orbits => 1,                                 # Number of aerobraking passage
 
             # Physical Model
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
-            :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
-            :density_model => "Mars Gram",                          # choices=['Constant' , 'Exponential' , 'MarsGram']
-            :wind => 1,                                             # Wind calculation only if density model is MarsGram True=1, False=0
+            :gravity_model => "Inverse Squared",                    # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
+            :density_model => "Exponential",                        # choices=['Constant' , 'Exponential' , 'MarsGram']
+            :wind => 0,                                             # Wind calculation only if density model is MarsGram True=1, False=0
             :aerodynamic_model => "Mach-dependent",                 # choices=['Cd and Cl Constant' , 'Mach-dependent' , 'No-Ballistic flight with axial coefficient']: "Mach-dependent" specific for spacecraft shape, "No-Ballistic flight" specific for blunted-cone shape
             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
             
@@ -35,20 +35,20 @@ args = Dict(# Misc Simulation
             
             # Body
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
-            :max_heat_rate => 0.1,                                  # Max heat rate the heat rate control will start to react to
+            :max_heat_rate => 0.15,                                 # Max heat rate the heat rate control will start to react to
             :max_heat_load => 30.0,                                 # Max heat load the heat load control will not be overcomed
             :dry_mass => 411.0,                                     # Initial dry mass of body in kg
             :prop_mass => 50.0,                                     # Initial propellant mass of body in kg
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
-            :angle_of_attack => 90.0,                               # Max angle of attack of solar panels
+            :α => 90.0,                                             # Max angle of attack of solar panels
             
             # Engine
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
             :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
-            :security_mode => 1,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
+            :security_mode => 0,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             
             # Do not change
@@ -61,12 +61,12 @@ args = Dict(# Misc Simulation
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 28523.95e3,                            # Initial Apoapsis Radius for for-loop in m
-            :ra_initial_b => 50000.0e3,                             # Final Apoapsis Radius for for-loop in m
-            :ra_step => 5000.0e3,                                   # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 94500.0,                               # Initial Periapsis Altitude for for-loop in m
+            :ra_initial_a => 28038000, # 28523.95e3,                 # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_b => 50000e3,                             # Final Apoapsis Radius for for-loop in m
+            :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
+            :hp_initial_a => 88000,                                 # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 159000.0,                              # Final Periapsis Altitude for for-loop in m
-            :hp_step => 1000000.0,                                  # Step Periapsis Radius for for-loop in m
+            :hp_step => 10000000.0,                                  # Step Periapsis Radius for for-loop in m
             :v_initial_a => 3700.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_step => 100.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
@@ -79,18 +79,18 @@ args = Dict(# Misc Simulation
             :EI => 160.0,                                           # Entry Interface, km
             :AE => 160.0,                                           # Atmospheric Exit, km
             :year => 2001,                                          # Mission year
-            :month => 11,                                           # Mission month
-            :day => 6,                                              # Mission day
-            :hours => 8,                                            # Mission hour
-            :minutes => 30,                                         # Mission minute
-            :secs => 0.0,                                           # Mission second
+            :month => 12,                                           # Mission month
+            :day => 14,                                             # Mission day
+            :hours => 14,                                           # Mission hour
+            :minutes => 21,                                         # Mission minute
+            :secs => 28.0,                                          # Mission second
             
             # Final Conditions
-            :final_apoapsis => 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
+            :final_apoapsis => 5088116.837416616, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
             
             # Monte Carlo Simulations
             :montecarlo => 0,                                       # Run Monte Carlo simulation True=1, False=0
-            :intial_montecarlo_number => 1,                         # Initial Monte Carlo sample number
+            :initial_montecarlo_number => 1,                         # Initial Monte Carlo sample number
             :montecarlo_size => 1000,                               # number of Monte Carlo samples
             
             # Monte Carlo Perturbations
@@ -108,8 +108,8 @@ args = Dict(# Misc Simulation
             :rp_dispersion_gnc => 0.25,                             # Max dispersion for initial periapsis radius used by gnc following uniform distribution, km
             :i_dispersion_gnc => 0.025,                             # Max dispersion for initial inclination used by gnc following uniform distribution, deg
             :Ω_dispersion_gnc => 0.025,                             # Max dispersion for initial right ascension of the ascending node used by gnc following uniform distribution, deg
-            :ω_dispersion_gnc => 0.025,                             # Max dispersion for initial argument of periapsis used by gnc following uniform distribution, deg
-            :vi_dispersion_gnc => 0.0025,                           # Max dispersion for initial true anomaly used by gnc following uniform distribution, deg
+            :ω_dispersion_gnc => 0.0,                             # Max dispersion for initial argument of periapsis used by gnc following uniform distribution, deg
+            :vi_dispersion_gnc => 0.0,                           # Max dispersion for initial true anomaly used by gnc following uniform distribution, deg
             
             # Online trajectory control (heat rate)
             :ρ_mudispersion_gnc => 0.0,                             # Mean dispersion of rho for Gaussian Distribution, %

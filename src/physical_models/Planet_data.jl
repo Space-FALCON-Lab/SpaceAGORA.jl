@@ -10,7 +10,7 @@ function planet_data(ip)
         nothing
     end
 
-    if (ip == 1) # Earth
+    if (ip == 0) # Earth
         Rp_e = 6.3781e6            # equatorial radius, m
         Rp_p = 6.3568e6            # polar radius, m
         Rp_m = 6.3710e6            # volumetric mean radius, m
@@ -31,7 +31,7 @@ function planet_data(ip)
         μ_fluid = 1.5*10e-5        # kinematic viscosity, m²/s
         Lz = -9.8/1e3              # vertical temperature gradient, K/m
 
-    elseif (ip == 2) # Mars
+    elseif (ip == 1) # Mars
         Rp_e = 3.3962e6            # equatorial radius, m
         Rp_p = 3.3762e6            # polar radius, m
         Rp_m = 3.3895e6            # volumetric mean radius, m
@@ -52,7 +52,7 @@ function planet_data(ip)
         μ_fluid = 13.06*10e-6      # kinematic viscosity, m²/s
         Lz = -4.5/1e3              # vertical temperature gradient, K/m
 
-    elseif (ip == 3) # Venus
+    elseif (ip == 2) # Venus
         Rp_e = 6.0518e6            # equatorial radius, m
         Rp_p = 6.0518e6            # polar radius, m
         Rp_m = 6.0518e6            # volumetric mean radius, m

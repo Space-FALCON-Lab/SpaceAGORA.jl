@@ -57,7 +57,7 @@ args = Dict(# Misc Simulation
             :phi => 180.0,                                          # Thrust Angle, deg
             :delta_v => 0.1,                                        # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
-            :ra_fin_orbit => 25000.0e3,                             # Target final apoapsis for the orbit, m
+            :ra_fin_orbit => 25000e3,                             # Target final apoapsis for the orbit, m
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1

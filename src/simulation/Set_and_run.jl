@@ -69,6 +69,8 @@ function aerobraking_campaign(args, state)
         state = monte_carlo_initial_condition(state, args)
     end
 
+    println(state)
+
     semimajoraxis_in = (state[:Apoapsis] + state[:Periapsis])/2
     eccentricity_in = (state[:Apoapsis] - state[:Periapsis]) / (state[:Apoapsis] + state[:Periapsis])
     apoapsis = state[:Apoapsis]

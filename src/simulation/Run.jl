@@ -98,6 +98,6 @@ function run_analysis(args)
     if args[:passresults]
         return config.solution
     else
-        return Bool(1)
+        return true
     end
 end

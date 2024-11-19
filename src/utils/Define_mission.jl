@@ -85,7 +85,7 @@ function def_miss(args)
         args[:directory_MarsGram] = "/Users/nikus/MarsGram/"
     end
 
-    if args[:density_model] == "MarsGram" && args[:planet] != 1
+    if args[:density_model] == "MarsGram" && args[:planet] != 1 # Change for venus gram use
         args[:density_model] = "Exponential"
         println("--DENSITY MODEL CHANGED TO: Exponential - GRAM is only available for Mars--")
     end

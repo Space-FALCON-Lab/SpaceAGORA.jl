@@ -55,7 +55,7 @@ function mission_def(mission)
     # Aerodynamic Model Selection
     if mission[:Aerodynamic_Model] == "Cd and Cl Constant" || mission[:Aerodynamic_Model] == "Cd and Cl constant"
         am = 0
-    elseif mission[:Aerodynamic_Model] == "Diffusive" || mission[:Aerodynamic_Model] == "Mach-dependent" && mission[:Aerodynamic_Model] == "Diffusive" || mission[:Aerodynamic_Model] == "Spacecraft"
+    elseif mission[:Aerodynamic_Model] == "Diffusive" || mission[:Aerodynamic_Model] == "Mach-dependent" &&  mission[:Shape] == "Spacecraft"
         am = 1
     elseif mission[:Aerodynamic_Model] == "No-Balistic flight with axial coefficent" || mission[:Aerodynamic_Model] == "No-ballistic flight with axial coefficient" && mission[:Shape] == "Blunted Cone"
         am = 2

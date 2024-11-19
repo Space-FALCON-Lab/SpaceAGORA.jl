@@ -65,7 +65,7 @@ function aerobraking(ip, m, args)
             m.initial_condition.minute = Int64(config.solution.orientation.minute[end])
             m.initial_condition.second = config.solution.orientation.second[end]
 
-            if (args[:drag_passage] || args[:body_shape] == "Blunted Cone") && continue_campaign
+            if (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone") && continue_campaign
                 r = m.planet.Rp_e + args[:EI]*1e3
                 initial_state.vi = acos(1 / initial_state.e * (initial_state.a * (1 - initial_state.e^2) / r - 1))
             end

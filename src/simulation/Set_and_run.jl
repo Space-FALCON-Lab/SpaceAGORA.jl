@@ -69,8 +69,6 @@ function aerobraking_campaign(args, state)
         state = monte_carlo_initial_condition(state, args)
     end
 
-    println(state)
-
     semimajoraxis_in = (state[:Apoapsis] + state[:Periapsis])/2
     eccentricity_in = (state[:Apoapsis] - state[:Periapsis]) / (state[:Apoapsis] + state[:Periapsis])
     apoapsis = state[:Apoapsis]
@@ -194,8 +192,8 @@ function aerobraking_campaign(args, state)
     # Initialization - Reset all the config index for new simulation
     config.cnf.count_aerobraking = 0
     config.cnf.count_overcome_hr = 0
-    config.cnf.save_index_heat = 0
-    config.cnf.index_propellant_mass = 1
+    config.cnf.save_index_heat = 1
+    config.cnf.index_propellant_mass = 2
     config.cnf.counter_random = 0
 
     ##########################################################

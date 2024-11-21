@@ -6,7 +6,9 @@ function r_intor_p(r_i, v_i, planet, t, t_prev)
     # From PCI (planet centered inertial) to PCPF (planet centered/planet fixed)
     rot_angle = norm(planet.ω) * (t + t_prev)
 
-    L_pi = [cos(rot_angle) sin(rot_angle) 0; -sin(rot_angle) cos(rot_angle) 0; 0 0 1]
+    L_pi = [cos(rot_angle) sin(rot_angle) 0; 
+            -sin(rot_angle) cos(rot_angle) 0; 
+            0 0 1]
 
     r_p = L_pi * r_i
 
@@ -19,7 +21,9 @@ function r_pintor_i(r_p, v_p, planet, t, t_prev)
     # From PCPF (planet centered/planet fixed) to PCI (planet centered inertial)
     rot_angle = -norm(planet.ω) * (t + t_prev)
 
-    L_pi = [cos(rot_angle) sin(rot_angle) 0; -sin(rot_angle) cos(rot_angle) 0; 0 0 1]
+    L_pi = [cos(rot_angle) sin(rot_angle) 0; 
+            -sin(rot_angle) cos(rot_angle) 0; 
+            0 0 1]
 
     r_i = L_pi * r_p
     v_i = L_pi * (v_p + cross(planet.ω, r_p))
@@ -33,19 +37,19 @@ function orbitalelemtorv(oe, planet)
     a, e, i, Ω, ω, vi = oe[1], oe[2], oe[3], oe[4], oe[5], oe[6]
 
     p = a*(1 - e^2)
-    h = (planet.μ * p)^0.5
+    h = sqrt(planet.μ * p)
 
     r_x = (h^2) / planet.μ * (1 / (1 + e * cos(vi))) * [cos(vi); sin(vi); 0]
     v_x = planet.μ / h * [-sin(vi); e + cos(vi); 0]
     
-    Q = [-sin(Ω)*cos(i)*sin(ω) + cos(Ω)*cos(ω) cos(Ω)*cos(i)*sin(ω) + sin(Ω)*cos(ω) sin(i)*sin(ω); 
-         -sin(Ω)*cos(i)*cos(ω) - cos(Ω)*sin(ω) cos(Ω)*cos(i)*cos(ω) - sin(Ω)*sin(ω) sin(i)*cos(ω);
+    Q = [-sin(Ω)*cos(i)*sin(ω)+cos(Ω)*cos(ω) cos(Ω)*cos(i)*sin(ω)+sin(Ω)*cos(ω) sin(i)*sin(ω); 
+         -sin(Ω)*cos(i)*cos(ω)-cos(Ω)*sin(ω) cos(Ω)*cos(i)*cos(ω)-sin(Ω)*sin(ω) sin(i)*cos(ω);
           sin(Ω)*sin(i) -cos(Ω)*sin(i) cos(i)]
 
     R = Q' * r_x
     V = Q' * v_x
 
-    return R, V
+    return collect(R), collect(V)
 end
 
 function rvtoorbitalelement(r, v, m, planet)
@@ -57,11 +61,12 @@ function rvtoorbitalelement(r, v, m, planet)
     Energy = sqrt(dot(v, v)/2 - planet.μ/dot(r, r))
     a = - planet.μ / (2 * Energy)
     h = cross(r, v)
+    index = 0
 
     r_ver = r/norm(r)
     e = cross(v, h)/planet.μ - r_ver
 
-    i = acos(dot(h, i_z)/norm(h))
+    i = acos(dot(i_z, h)/norm(h))
 
     e_vers = e / norm(e)
 
@@ -161,7 +166,7 @@ function latlongtor(LATLONGH, planet, α_g0, t, t0)
 
     a = planet.Rp_e
     b = planet.Rp_p
-    e = (1 - b^2/a^2)^0.5
+    e = sqrt(1 - b^2/a^2)
     α = λ + α_g0 + planet.ω[3]*(t - t0)
     cnst = a / (1 - e^2 * sin(ϕ)^2) + h
 

@@ -37,9 +37,9 @@ function asim(ip, m, initial_state, numberofpassage, args)
 
     # Why is it 50 + 200 here
     if (OE[1] > (m.planet.Rp_e*1e-3 + 50 + 200)*1e3) && (args[:drag_passage] == false) && (args[:body_shape] == "Spacecraft")
-        index_steps_EOM = 4
+        index_steps_EOM = 3
     else
-        index_steps_EOM = 2
+        index_steps_EOM = 1
     end
 
     # println(" ")
@@ -485,7 +485,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
         return y_dot
     end
 
-    ## EVENTS: for 1 -> pos to neg ->
+    ## EVENTS: 
     function eventfirststep_condition(y, t, integrator)
         m = integrator.p[1]
         norm(y[1:3]) - m.planet.Rp_e - 250*1e3 == 0  #  downcrossing         # change to args[:EI]
@@ -503,18 +503,18 @@ function asim(ip, m, initial_state, numberofpassage, args)
     function reached_EI_condition(y, t, integrator)
         m = integrator.p[1]
         args = integrator.p[8]
-        norm(y[1:3]) - m.planet.Rp_e - args[:EI]*1e3 == 0
+        norm(y[1:3]) - m.planet.Rp_e - args[:EI]*1e3 == 0 # downcrossing
     end
     reached_EI_affect!(integrator) = nothing
-    reached_EI = ContinuousCallback(reached_EI_condition, reached_EI_affect!)
+    reached_EI = ContinuousCallback(reached_EI_condition, nothing, reached_EI_affect!)
 
     function reached_AE_condition(y, t, integrator)
         m = integrator.p[1]
         args = integrator.p[8]
-        norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3 == 0
+        norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3 == 0 # upcrossing
     end
     reached_AE_affect!(integrator) = nothing
-    reached_AE = ContinuousCallback(reached_AE_condition, reached_AE_affect!)
+    reached_AE = ContinuousCallback(reached_AE_condition, reached_AE_affect!, nothing)
 
     function out_drag_passage_condition(y, t, integrator)
         m = integrator.p[1]
@@ -528,10 +528,10 @@ function asim(ip, m, initial_state, numberofpassage, args)
             end
         end
 
-        norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3
+        norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3 == 0 # upcrossing
     end
     out_drag_passage_affect!(integrator) = terminate!(integrator)
-    out_drag_passage = ContinuousCallback(out_drag_passage_condition, out_drag_passage_affect!)
+    out_drag_passage = ContinuousCallback(out_drag_passage_condition, out_drag_passage_affect!, nothing)
 
     function in_drag_passage_condition(y, t, integrator)
         m = integrator.p[1]
@@ -565,10 +565,10 @@ function asim(ip, m, initial_state, numberofpassage, args)
             config.cnf.inital_position_closed_form = OE_closedform
         end
 
-        cond
+        cond == 0 # downcrossing
     end
     in_drag_passage_affect!(integrator) = terminate!(integrator)
-    in_drag_passage = ContinuousCallback(in_drag_passage_condition, in_drag_passage_affect!)
+    in_drag_passage = ContinuousCallback(in_drag_passage_condition, nothing, in_drag_passage_affect!)
 
     function in_drag_passage_nt_condition(y, t, integrator)
         m = integrator.p[1]
@@ -600,10 +600,10 @@ function asim(ip, m, initial_state, numberofpassage, args)
             config.cnf.inital_position_closed_form = OE_closedform
         end
 
-        norm(y[1:3]) - m.planet.Rp_e - args[:EI]*1e3
+        norm(y[1:3]) - m.planet.Rp_e - args[:EI]*1e3 == 0 # downcrossing
     end
     in_drag_passage_nt_affect!(integrator) = nothing
-    in_drag_passage_nt = ContinuousCallback(in_drag_passage_nt_condition, in_drag_passage_nt_affect!)
+    in_drag_passage_nt = ContinuousCallback(in_drag_passage_nt_condition, nothing, in_drag_passage_nt_affect!)
 
     function apoapsispoint_condition(y, t, integrator)
         m = integrator.p[1]
@@ -612,10 +612,10 @@ function asim(ip, m, initial_state, numberofpassage, args)
 
         vi = rvtoorbitalelement(pos_ii, vel_ii, y[7], m.planet)[6]
 
-        rad2deg(vi) - 180
+        rad2deg(vi) - 180 == 0 # upcrossing
     end
     apoapsispoint_affect!(integrator) = terminate!(integrator)
-    apoapsispoint = ContinuousCallback(apoapsispoint_condition, apoapsispoint_affect!)
+    apoapsispoint = ContinuousCallback(apoapsispoint_condition, apoapsispoint_affect!, nothing)
 
     function periapsispoint_condition(y, t, integrator)
         m = integrator.p[1]
@@ -624,10 +624,10 @@ function asim(ip, m, initial_state, numberofpassage, args)
 
         vi = rvtoorbitalelement(pos_ii, vel_ii, y[7], m.planet)[6]
 
-        vi
+        vi == 0 # upcrossing
     end
     periapsispoint_affect!(integrator) = nothing
-    periapsispoint = ContinuousCallback(periapsispoint_condition, periapsispoint_affect!)
+    periapsispoint = ContinuousCallback(periapsispoint_condition, periapsispoint_affect!, nothing)
 
     function impact_condition(y, t, integrator)
         m = integrator.p[1]
@@ -639,7 +639,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
             min_alt = 35 * 1e3
         end
 
-        norm(y[1:3]) - (m.planet.Rp_e + min_alt)
+        norm(y[1:3]) - (m.planet.Rp_e + min_alt) == 0 # upcrossing and downcrossing
     end
     function impact_affect!(integrator)
         config.cnf.count_impact += 1
@@ -665,7 +665,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
             println("Periapsis greater than apoapsis!")
         end
 
-        r_a - r_p 
+        r_a - r_p == 0 # upcrossing and downcrossing
     end
     function apoapsisgreaterperiapsis_affect!(integrator)
         config.cnf.count_apoapsisgreaterperiapsis += 1
@@ -681,7 +681,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
         mass = y[7]
         Δv = (m.engines.g_e * m.engines.Isp) * log(initial_state.m/mass)
         
-        Δv - args[:delta_v]
+        Δv - args[:delta_v] == 0 # upcrossing and downcrossing
     end
     stop_firing_affect!(integrator) = terminate!(integrator)
     stop_firing = ContinuousCallback(stop_firing_condition, stop_firing_affect!)
@@ -701,10 +701,10 @@ function asim(ip, m, initial_state, numberofpassage, args)
             config.controller.t = config.controller.guidance_t_eval[config.controller.count_controller]
         end
 
-        t - config.controller.T
+        t - config.controller.T == 0 # upcrossing
     end
     guidance_affect!(integrator) = nothing
-    guidance = ContinuousCallback(guidance_condition, guidance_affect!)
+    guidance = ContinuousCallback(guidance_condition, guidance_affect!, nothing)
 
     function heat_rate_check_condition(y, t, integrator)
         m = integrator.p[1]
@@ -720,7 +720,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
             config.controller.guidance_t_eval = range(t, t+2500, 1/args[:flash1_rate])
         end
 
-        norm(y[1:3]) - m.planet.Rp_e - x*1e3
+        norm(y[1:3]) - m.planet.Rp_e - x*1e3 == 0 # upcrossing and downcrossing
     end
     heat_rate_check_affect!(integrator) = terminate!(integrator)
     heat_rate_check = ContinuousCallback(heat_rate_check_condition, heat_rate_check_affect!)
@@ -735,10 +735,10 @@ function asim(ip, m, initial_state, numberofpassage, args)
             x = 160
         end
 
-        norm(y[1:3]) - m.planet.Rp_e - x*1e3
+        norm(y[1:3]) - m.planet.Rp_e - x*1e3 == 0 # upcrossing
     end
     heat_load_check_exit_affect!(integrator) = terminate!(integrator)
-    heat_load_check_exit = ContinuousCallback(heat_load_check_exit_condition, heat_load_check_exit_affect!)
+    heat_load_check_exit = ContinuousCallback(heat_load_check_exit_condition, heat_load_check_exit_affect!, nothing)
 
     time_0 = 0
     if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 2
@@ -813,48 +813,48 @@ function asim(ip, m, initial_state, numberofpassage, args)
     for aerobraking_phase in range(range_phase_i, 4)
         index_phase_aerobraking = aerobraking_phase
 
-        if (index_steps_EOM == 2 || Bool(args[:drag_passage])) && (aerobraking_phase == 2 || aerobraking_phase == 4 || aerobraking_phase == 1)
+        if (index_steps_EOM == 1 || Bool(args[:drag_passage])) && (aerobraking_phase == 1 || aerobraking_phase == 3 || aerobraking_phase == 0)
             continue
         end
 
         # Definition of eventsecondstep
-        if aerobraking_phase == 1
+        if aerobraking_phase == 0
             events = CallbackSet(stop_firing, apoapsisgreaterperiapsis, impact)
-        elseif aerobraking_phase == 2
-            events = CallbackSet(eventfirststep, apoapsisgreaterperiapsis. impact)
-        elseif aerobraking_phase == 3 && Bool(args[:drag_passage])
+        elseif aerobraking_phase == 1
+            events = CallbackSet(eventfirststep, apoapsisgreaterperiapsis, impact)
+        elseif aerobraking_phase == 2 && Bool(args[:drag_passage])
             events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact)
-        elseif aerobraking_phase == 3 && index_steps_EOM == 1 && args[:body_shape] == "Blunted Cone"
+        elseif aerobraking_phase == 2 && index_steps_EOM == 1 && args[:body_shape] == "Blunted Cone"
             events = CallbackSet(out_drag_passage, apoapsispoint, periapsispoint, impact)
-        elseif aerobraking_phase == 3 && index_steps_EOM == 1 && args[:drag_passage] == false
+        elseif aerobraking_phase == 2 && index_steps_EOM == 1 && args[:drag_passage] == false
             events = CallbackSet(apoapsispoint, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact)
-        elseif aerobraking_phase == 3
+        elseif aerobraking_phase == 2
             events = CallbackSet(eventsecondstep, periapsispoint, reached_EI, reached_AE, in_drag_passage, apoapsisgreaterperiapsis, impact)
-        elseif aerobraking_phase == 4
+        elseif aerobraking_phase == 3
             events = CallbackSet(apoapsispoint, periapsispoint, apoapsisgreaterperiapsis, impact)
         end
 
-        if index_phase_aerobraking == 3
+        if index_phase_aerobraking == 2
             save_pre_index = length(config.solution.orientation.time)
             simulator = args[:integrator]
         end
 
         # Definition dtep montecarlo_size
-        if aerobraking_phase == 2 || aerobraking_phase == 4
+        if aerobraking_phase == 1 || aerobraking_phase == 3
             step = 5
             r_tol = 1e-10
             a_tol = 1e-12
             simulator = "Julia"
             method = Tsit5() # TRBDF2()
             save_ratio = 5
-        elseif aerobraking_phase == 1
+        elseif aerobraking_phase == 0
             step = 0.1
             r_tol = 1e-9
             a_tol = 1e-11
             simulator = "Julia"
             method = Tsit5() # TRBDF2()
             save_ratio = 5
-        elseif aerobraking_phase == 3
+        elseif aerobraking_phase == 2
             if args[:integrator] == "Julia"
                 step = 0.1
                 r_tol = 1e-9
@@ -883,7 +883,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
         while config.cnf.continue_simulation
             index_phase_aerobraking = aerobraking_phase
             # if control mode =! 0, redefine sim setting and creates two more phases until reaching EI and out of the AE phase 2: between 120 km alt
-            if aerobraking_phase == 3 && (args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == true && config.cnf.sensible_loads == true && config.cnf.ascending_phase == false)
+            if aerobraking_phase == 2 && (args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == true && config.cnf.sensible_loads == true && config.cnf.ascending_phase == false)
                 simulator = args[:integrator]
                 events = CallbackSet(out_drag_passage, heat_load_check_exit, periapsispoint, apoapsisgreaterperiapsis, impact)
 
@@ -907,33 +907,37 @@ function asim(ip, m, initial_state, numberofpassage, args)
                 end
 
                 config.controller.t = config.controller.guidance_t_eval[config.controller.count_controller]
-
-            elseif aerobraking_phase == 3 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == false && config.cnf.ascending_phase == false
-                events = [periaoapsispoint, out_drag_passage, heat_rate_check, apoapsisgreaterperiapsis, impact]
+            
+            #phase 1.75: between EI km alt and 120 km
+            elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == true && config.cnf.ascending_phase == false
+                events = CallbackSet(periaoapsispoint, out_drag_passage, heat_rate_check, apoapsisgreaterperiapsis, impact)
                 simulator = "Julia"
                 index_phase_aerobraking = 1.75
                 step = 0.05
                 r_tol = 1e-6
                 a_tol = 1e-7
                 method = Tsit5()
-            elseif aerobraking_phase == 3 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == true && config.cnf.ascending_phase == false
-                events = [periapsispoint, in_drag_passage, apoapsisgreaterperiapsis, impact]
+            # phase 1.5: between 250 km alt and EI km
+            elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == false && config.cnf.ascending_phase == false
+                events = CallbackSet(periapsispoint, in_drag_passage, apoapsisgreaterperiapsis, impact)
                 simulator = "Julia"
                 step = 0.1
                 r_tol = 1e-9
                 a_tol = 1e-10
                 index_phase_aerobraking = 1.5
                 method = Tsit5()
-            elseif aerobraking_phase == 3 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == true && config.cnf.ascending_phase == true
-                events = [periapsispoint, out_drag_passage, apoapsisgreaterperiapsis, impact]
+            # phase 2.25: between 120 km alt and AE km
+            elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == true && config.cnf.ascending_phase == true
+                events = CallbackSet(periapsispoint, out_drag_passage, apoapsisgreaterperiapsis, impact)
                 simulator = "Julia"
                 step = 0.1
                 r_tol = 1e-9
                 a_tol = 1e-10
                 index_phase_aerobraking = 2.25
                 method = Tsit5()
-            elseif aerobraking_phase == 3 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.ascending_phase == true
-                events = [eventsecondstep, periapsispoint, eventsecondstep, apoapsisgreaterperiapsis, impact]
+            # phase 2.5: between AE km alt and 250 km
+            elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.ascending_phase == true
+                events = CallbackSet(eventsecondstep, periapsispoint, eventsecondstep, apoapsisgreaterperiapsis, impact)
                 simulator = "Julia"
                 index_phase_aerobraking = 2.5
                 step = 0.5
@@ -966,10 +970,10 @@ function asim(ip, m, initial_state, numberofpassage, args)
                 in_cond = [sol[1,end], sol[2,end], sol[3, end], sol[4, end], sol[5, end], sol[6, end], sol[7, end], sol[8, end]]
 
                 # Save results 
-                append!(time_solution, sol.t)
+                push!(time_solution, sol.t...)
                 time_0 = time_solution[end]
 
-                if aerobraking_phase == 1
+                if aerobraking_phase == 0
                     new_periapsis(m, in_cond[1:3], in_cond[4:6], args)
                 end
             elseif simulator == "Costumed"
@@ -1008,7 +1012,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
                 i_sim += 1
             end
 
-            # Define breaker campaign impact-6360.787384799457 km or apoapsis greater than periapsis
+            # Define breaker campaign impact km or apoapsis greater than periapsis
             continue_campaign = event(config.cnf.count_impact, config.cnf.count_apoapsisgreaterperiapsis)
 
             if continue_campaign == false
@@ -1018,7 +1022,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
 
             # Breaker conditions
             if simulator == "Julia"
-                if config.cnf.count_impact != 0 || config.cnf.count_apoapsisgreaterperiapsis != 0 || (Bool(args[:drag_passage]) && index_phase_aerobraking == 2.25 && length(sol.t_events[2]) != 0)
+                if config.cnf.count_impact != 0 || (Bool(args[:drag_passage]) && index_phase_aerobraking == 2.25 && config.cnf.count_apoapsisgreaterperiapsis != 0)
                     config.cnf.continue_simulation = false
                     break
                 end
@@ -1034,7 +1038,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
         # println(time_solution)
         time_0 = save_results(time_solution, save_ratio)
 
-        if index_phase_aerobraking == 3 || index_phase_aerobraking == 2.5 || (index_phase_aerobraking == 2.25 && Bool(args[:drag_passage]))
+        if index_phase_aerobraking == 2 || index_phase_aerobraking == 2.5 || (index_phase_aerobraking == 2.25 && Bool(args[:drag_passage]))
             save_post_index = length(config.solution.orientation.time)
         end
 
@@ -1042,7 +1046,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
 
         # Define breaker campaign
         if continue_campaign == false
-            if save_post_index == 0
+            if save_post_index == 1
                 save_post_index = length(config.solution.orientation.time)
             end
 
@@ -1055,7 +1059,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
 
     if args[:drag_passage] == false && pi - config.solution.orientation.oe[end][end] > 1e-4 && continue_campaign == true && args[:body_shape] != "Blunted Cone"
         final_conditions_notmet = true
-        events = [apoapsispoint]
+        events = CallbackSet(apoapsispoint)
     else
         final_conditions_notmet = false
     end
@@ -1072,20 +1076,17 @@ function asim(ip, m, initial_state, numberofpassage, args)
         r_tol = 1e-12
         a_tol = 1e-13
 
-        try
-            # Parameter Definition
-            param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state)
 
-            # Run simulation
-            prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
-            sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+        # Parameter Definition
+        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state)
 
-            config.cnf.counter_integrator += 1
-            time_0 = save_results(sol.t, 0.1)
-            count_temp += 1
-        catch
-            break
-        end
+        # Run simulation
+        prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
+        sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+
+        config.cnf.counter_integrator += 1
+        time_0 = save_results(sol.t, 0.1)
+        count_temp += 1
 
         if count_temp > 5
             break
@@ -1093,7 +1094,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
 
         if args[:drag_passage] == false && pi - config.solution.orientation.oe[end][end] > 1e-4 && continue_campaign == true
             final_conditions_notmet = true
-            events = [apoapsispoint]
+            events = CallbackSet(apoapsispoint)
         else
             final_conditions_notmet = false
         end
@@ -1102,10 +1103,10 @@ function asim(ip, m, initial_state, numberofpassage, args)
     config.cnf.save_index_heat = length(config.solution.orientation.time)
     config.cnf.time_OP = length(config.solution.orientation.time)
 
-    println(size(config.solution.orientation.alt[1]))
+    # println(size(config.solution.orientation.alt[1]))
 
-    append!(config.cnf.altitude_periapsis, minimum(config.solution.orientation.alt[save_pre_index:save_post_index,:])*1e-3)
-    append!(config.cnf.max_heatrate, maximum(config.solution.performance.heat_rate[save_pre_index:save_post_index,:]))
+    append!(config.cnf.altitude_periapsis, minimum(config.solution.orientation.alt[save_pre_index:save_post_index])*1e-3)
+    append!(config.cnf.max_heatrate, maximum(config.solution.performance.heat_rate[save_pre_index:save_post_index]))
     config.cnf.Δv_man = (m.engines.g_e * m.engines.Isp) * log(m.body.mass / config.solution.performance.mass[end])
 
     # println(size(config.solution.performance.heat_rate[1]))

@@ -59,7 +59,7 @@ function rvtoorbitalelement(r, v, m, planet)
     i_z = [0, 0, 1]
 
     Energy = sqrt(dot(v, v)/2 - planet.μ/dot(r, r))
-    a = - planet.μ / (2 * Energy)
+    a = -planet.μ / (2 * Energy)
     h = cross(r, v)
     index = 0
 

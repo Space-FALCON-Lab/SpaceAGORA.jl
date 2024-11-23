@@ -72,10 +72,11 @@ function rvtoorbitalelement(r, v, m, planet)
 
     if i == 0 || i == pi
         if dot(e, i_y) >= 0
-            Ω = acos(dot(i_x, e_vers))
+            periapsis_longitude = acos(dot(i_x, e_vers))
         elseif dot(e, i_y) < 0
-            Ω = 2*pi - acos(dot(i_x, e_vers))
+            periapsis_longitude = 2*pi - acos(dot(i_x, e_vers))
         end
+        Ω = periapsis_longitude
         ω = 0
     else
         n = cross(i_z, h)/norm(cross(i_z, h))

@@ -38,9 +38,9 @@ function monte_carlo_aerodynamics(CL_body, CD_body, args)
 
     """
 
-    uncertainty_CD, uncertainty_CL = args[:CD_dispersion]/100, args[:CL_ispersion]/100
+    uncertainty_CD, uncertainty_CL = args[:CD_dispersion]/100, args[:CL_dispersion]/100
     CD_body += unifrom_distribution(CD_body*uncertainty_CD, 1)
-    CL_body += unifrom_distribution(CL_body*uncertainty_CL, 1)
+    CL_body += unifrom_distribution(CL_body*uncertainty_CL, 2)
 
     return CL_body, CD_body
 end
@@ -52,7 +52,7 @@ function monte_carlo_density(density, args)
 
     Random.seed!(config.cnf.index_MonteCarlo)
 
-    density = rand(Uniform(density*0.5, density*2), 3)
+    density = rand(Uniform(density*0.5, density*2), 3)[end]
 
     return density
 end

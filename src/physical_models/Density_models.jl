@@ -103,7 +103,7 @@ function density_exp(h, p, OE=0, lat=0, lon=0, timereal=0, t0=0, tf_prev=0, mont
 
     """
 
-    ρ = p.ρ_ref * exp((p.h_ref - h)./p.H)
+    ρ = p.ρ_ref * exp((p.h_ref - h)/p.H)
 
     T = temperature_linear(h, p)
 

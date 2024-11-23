@@ -21,7 +21,7 @@ args = Dict(# Misc Simulation
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared",                    # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
-            :density_model => "Exponential",                        # choices=['Constant' , 'Exponential' , 'MarsGram']
+            :density_model => "Exponential",                           # choices=['Constant' , 'Exponential' , 'MarsGram']
             :wind => 0,                                             # Wind calculation only if density model is MarsGram True=1, False=0
             :aerodynamic_model => "Mach-dependent",                 # choices=['Cd and Cl Constant' , 'Mach-dependent' , 'No-Ballistic flight with axial coefficient']: "Mach-dependent" specific for spacecraft shape, "No-Ballistic flight" specific for blunted-cone shape
             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape

@@ -40,7 +40,7 @@ function planet_data(ip)
         ρ_ref = 8.7489231e-07      # density, kg/m³
         μ = 4.2829e13              # gravitational parameter, m³/s²
         h_ref = 90 * 1e3           # reference altitude, m
-        H = 6.308278108            # scale height, m
+        H = 6.308278108 * 1e3      # scale height, m
         R = 188.92                 # specific gas constant, J/(kg·K)
         γ = 1.33                   # specific heat ratio
         T = 150.0                  # temperature, K

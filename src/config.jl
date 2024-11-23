@@ -142,8 +142,21 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         heat_rate_list::Vector{Float64} = []
         stop_simulation::Bool = false
         results_save::Int64 = 0
+        count_eventfirststep::Int64 = 0
+        count_eventsecondstep::Int64 = 0
+        count_reached_EI::Int64 = 0
+        count_reached_AE::Int64 = 0
+        count_out_drag_passage::Int64 = 0
+        count_in_drag_passage::Int64 = 0
+        count_in_drag_passage_nt::Int64 = 0
+        count_apoapsispoint::Int64 = 0
+        count_periapsispoint::Int64 = 0
         count_impact::Int64 = 0
         count_apoapsisgreaterperiapsis::Int64 = 0
+        count_stop_firing::Int64 = 0
+        count_guidance::Int64 = 0
+        count_heat_rate_check::Int64 = 0
+        count_heat_load_check_exit::Int64 = 0
     end
 
     cnf = Cnf()

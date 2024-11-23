@@ -181,12 +181,16 @@ function asim(ip, m, initial_state, numberofpassage, args)
         lon = LatLong[3]
         alt = LatLong[1]
 
+        # println(" ")
+        # println(" Altitude: ", alt)
+        # println(" ")
+
         if aerobraking_phase == 2 || aerobraking_phase == 0
             if (pos_ii_mag - m.planet.Rp_e - args[:EI] * 1e3) <= 0 && config.cnf.drag_state == false && config.cnf.ascending_phase == false
-                config.cnf.drag_state
+                config.cnf.drag_state = true
                 config.cnf.time_IEI = t0
             elseif (pos_ii_mag - m.planet.Rp_e >= args[:EI] * 1e3) && config.cnf.drag_state == true && config.cnf.ascending_phase
-                config.drag_state = false
+                config.cnf.drag_state = false
                 config.cnf.time_OEI = t0
             end
         end
@@ -198,9 +202,9 @@ function asim(ip, m, initial_state, numberofpassage, args)
                 x = 140
             end
 
-            if (config.cnf.hear_rate_prev > 0.005 || abs(pos_ii_mag - m.planet.Rp_e <= x*1e3)) && config.cnf.sensible_loads == false && config.cnf.ascending_phase == false
+            if (config.cnf.heat_rate_prev > 0.005 || abs(pos_ii_mag - m.planet.Rp_e <= x*1e3)) && config.cnf.sensible_loads == false && config.cnf.ascending_phase == false
                 config.cnf.sensible_loads = true
-            elseif config.cnf.hear_rate_prev > 0.005 && config.cnf.sensible_loads == true && config.cnf.ascending_phase
+            elseif config.cnf.heat_rate_prev > 0.005 && config.cnf.sensible_loads == true && config.cnf.ascending_phase
                 config.cnf.sensible_loads = false
             end
         end
@@ -228,6 +232,10 @@ function asim(ip, m, initial_state, numberofpassage, args)
             ρ, T_p, wind = marsgram(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         end
 
+        # println(" ")
+        # println("ρ: ", ρ, " kg/m^3")
+        # println(" ")
+
         # Define output.txt containing density data\
         p = 0.0
         if args[:body_shape] == "Spacecraft"
@@ -246,7 +254,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
 
         if config.cnf.drag_state == true
             ## Check type of fluid and check if this changes for different planets
-            Kn = 1.26 * sqrt(γ) * Mach / (Re*1e-5)
+            Kn = 1.26 * sqrt(γ) * Mach / (Re + 1e-5)
             if index_phase_aerobraking == 2
                 if (alt < 80000) && (config.cnf.index_warning_alt == 0)
                     println("WARNING: Altitude < 80 km!")
@@ -258,7 +266,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
             end
 
             if Kn < 0.1 && config.cnf.index_warning_flow == 0
-                if args[:print_res]
+                if Bool(args[:print_res])
                     println("WARNING: Transitional flow passage!")
                 end
                 
@@ -269,8 +277,12 @@ function asim(ip, m, initial_state, numberofpassage, args)
         end
 
         config.cnf.heat_load_past = heat_load
+
+        # println(" ")
+        # println("drage_state: ", config.cnf.drag_state)
+        # println(" ")
         # Heat rate and Control
-        if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && config.cnf.initial_position_closed_form
+        if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
             # evaluates the closed form solution the first time at EI km
             if abs(pos_ii_mag - m.planet.Rp_e - args.EI * 1e3) <= 1e-2 && (args[:control_mode] == 2 || args[:control_mode] == 3) && config.cnf.time_switch_1 == 0
                 if ip.cm == 3
@@ -404,6 +416,11 @@ function asim(ip, m, initial_state, numberofpassage, args)
             CL, CD = aerodynamic_coefficient_no_ballistic_flight(α, m.body, T_p, S, args, MonteCarlo)
         end
 
+        # println(" ")
+        # println("CL: ", CL)
+        # println("CD: ", CD)
+        # println(" ")
+
         β = mass / (CD*area_tot)    # ballistic coefficient, kg / m ^ 2
 
         # Force Calculation
@@ -488,32 +505,48 @@ function asim(ip, m, initial_state, numberofpassage, args)
     ## EVENTS: 
     function eventfirststep_condition(y, t, integrator)
         m = integrator.p[1]
-        norm(y[1:3]) - m.planet.Rp_e - 250*1e3 == 0  #  downcrossing         # change to args[:EI]
+        norm(y[1:3]) - m.planet.Rp_e - 250*1e3   #  downcrossing         # change to args[:EI]
     end
-    eventfirststep_affect!(integrator) = terminate!(integrator)
+    function eventfirststep_affect!(integrator)
+        println("entered eventfirststep_affect!")
+        config.cnf.count_eventfirststep += 1
+        terminate!(integrator)
+    end
     eventfirststep = ContinuousCallback(eventfirststep_condition, nothing, eventfirststep_affect!)
 
     function eventsecondstep_condition(y, t, integrator)
         m = integrator.p[1]
-        norm(y[1:3]) - m.planet.Rp_e - 260*1e3 == 0  # upcrossing
+        norm(y[1:3]) - m.planet.Rp_e - 260*1e3   # upcrossing
     end
-    eventsecondstep_affect!(integrator) = terminate!(integrator)
-    eventsecondstep = ContinuousCallback(eventsecondstep_condition, eventfirststep_affect!, nothing)
+    function eventsecondstep_affect!(integrator)
+        println("entered eventsecondstep_affect!")
+        config.cnf.count_eventsecondstep += 1
+        terminate!(integrator)
+    end
+    eventsecondstep = ContinuousCallback(eventsecondstep_condition, eventsecondstep_affect!, nothing)
 
     function reached_EI_condition(y, t, integrator)
         m = integrator.p[1]
         args = integrator.p[8]
-        norm(y[1:3]) - m.planet.Rp_e - args[:EI]*1e3 == 0 # downcrossing
+        norm(y[1:3]) - m.planet.Rp_e - args[:EI]*1e3  # downcrossing
     end
-    reached_EI_affect!(integrator) = nothing
+    function reached_EI_affect!(integrator)
+        println("entered reached_EI_affect!")
+        config.cnf.count_reached_EI += 1
+        nothing
+    end
     reached_EI = ContinuousCallback(reached_EI_condition, nothing, reached_EI_affect!)
 
     function reached_AE_condition(y, t, integrator)
         m = integrator.p[1]
         args = integrator.p[8]
-        norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3 == 0 # upcrossing
+        norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
     end
-    reached_AE_affect!(integrator) = nothing
+    function reached_AE_affect!(integrator)
+        println("entered reached_AE_affect!")
+        config.cnf.count_reached_AE += 1
+        nothing
+    end
     reached_AE = ContinuousCallback(reached_AE_condition, reached_AE_affect!, nothing)
 
     function out_drag_passage_condition(y, t, integrator)
@@ -528,9 +561,13 @@ function asim(ip, m, initial_state, numberofpassage, args)
             end
         end
 
-        norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3 == 0 # upcrossing
+        norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
     end
-    out_drag_passage_affect!(integrator) = terminate!(integrator)
+    function out_drag_passage_affect!(integrator)
+        println("entered out_drag_passage_affect!")
+        config.cnf.count_out_drag_passage += 1
+        terminate!(integrator)
+    end
     out_drag_passage = ContinuousCallback(out_drag_passage_condition, out_drag_passage_affect!, nothing)
 
     function in_drag_passage_condition(y, t, integrator)
@@ -556,18 +593,22 @@ function asim(ip, m, initial_state, numberofpassage, args)
         end
 
         if abs(cond) <= thr
-            config.controller.guidance_t_eval = range(t, t+1500, 1/args[:flash1_rate])
+            config.controller.guidance_t_eval = t:1/args[:flash1_rate]:t+1500
 
             # State definition for control 2, 3 State used by closed-form solution
             pos_ii = [y[1], y[2], y[3]]   # Inertial position
             vel_ii = [y[4], y[5], y[6]]   # Inertial velocity
             OE_closedform = rvtoorbitalelement(pos_ii, vel_ii, y[7], m.planet)
-            config.cnf.inital_position_closed_form = OE_closedform
+            config.cnf.initial_position_closed_form = OE_closedform
         end
 
-        cond == 0 # downcrossing
+        cond  # downcrossing
     end
-    in_drag_passage_affect!(integrator) = terminate!(integrator)
+    function in_drag_passage_affect!(integrator) 
+        println("entered in_drag_passage_affect!")
+        config.cnf.count_in_drag_passage += 1
+        terminate!(integrator)
+    end
     in_drag_passage = ContinuousCallback(in_drag_passage_condition, nothing, in_drag_passage_affect!)
 
     function in_drag_passage_nt_condition(y, t, integrator)
@@ -600,9 +641,13 @@ function asim(ip, m, initial_state, numberofpassage, args)
             config.cnf.inital_position_closed_form = OE_closedform
         end
 
-        norm(y[1:3]) - m.planet.Rp_e - args[:EI]*1e3 == 0 # downcrossing
+        norm(y[1:3]) - m.planet.Rp_e - args[:EI]*1e3  # downcrossing
     end
-    in_drag_passage_nt_affect!(integrator) = nothing
+    function in_drag_passage_nt_affect!(integrator)
+        println("entered in_drag_passage_nt_affect!")
+        config.cnf.count_in_drag_passage_nt += 1
+        nothing
+    end
     in_drag_passage_nt = ContinuousCallback(in_drag_passage_nt_condition, nothing, in_drag_passage_nt_affect!)
 
     function apoapsispoint_condition(y, t, integrator)
@@ -612,9 +657,13 @@ function asim(ip, m, initial_state, numberofpassage, args)
 
         vi = rvtoorbitalelement(pos_ii, vel_ii, y[7], m.planet)[6]
 
-        rad2deg(vi) - 180 == 0 # upcrossing
+        rad2deg(vi) - 180 # upcrossing
     end
-    apoapsispoint_affect!(integrator) = terminate!(integrator)
+    function apoapsispoint_affect!(integrator)
+        println("entered apoapsispoint_affect!")
+        config.cnf.count_apoapsispoint += 1
+        terminate!(integrator)
+    end
     apoapsispoint = ContinuousCallback(apoapsispoint_condition, apoapsispoint_affect!, nothing)
 
     function periapsispoint_condition(y, t, integrator)
@@ -624,9 +673,13 @@ function asim(ip, m, initial_state, numberofpassage, args)
 
         vi = rvtoorbitalelement(pos_ii, vel_ii, y[7], m.planet)[6]
 
-        vi == 0 # upcrossing
+        vi  # upcrossing
     end
-    periapsispoint_affect!(integrator) = nothing
+    function periapsispoint_affect!(integrator)
+        println("entered periapsispoint_affect!")
+        config.cnf.count_periapsispoint += 1
+        nothing
+    end
     periapsispoint = ContinuousCallback(periapsispoint_condition, periapsispoint_affect!, nothing)
 
     function impact_condition(y, t, integrator)
@@ -639,9 +692,10 @@ function asim(ip, m, initial_state, numberofpassage, args)
             min_alt = 35 * 1e3
         end
 
-        norm(y[1:3]) - (m.planet.Rp_e + min_alt) == 0 # upcrossing and downcrossing
+        norm(y[1:3]) - (m.planet.Rp_e + min_alt) # upcrossing and downcrossing
     end
     function impact_affect!(integrator)
+        println("entered impact_affect!")
         config.cnf.count_impact += 1
         terminate!(integrator)
     end
@@ -665,9 +719,10 @@ function asim(ip, m, initial_state, numberofpassage, args)
             println("Periapsis greater than apoapsis!")
         end
 
-        r_a - r_p == 0 # upcrossing and downcrossing
+        r_a - r_p  # upcrossing and downcrossing
     end
     function apoapsisgreaterperiapsis_affect!(integrator)
+        println("entered apoapsisgreaterperiapsis_affect!")
         config.cnf.count_apoapsisgreaterperiapsis += 1
         terminate!(integrator)
     end
@@ -681,9 +736,13 @@ function asim(ip, m, initial_state, numberofpassage, args)
         mass = y[7]
         Δv = (m.engines.g_e * m.engines.Isp) * log(initial_state.m/mass)
         
-        Δv - args[:delta_v] == 0 # upcrossing and downcrossing
+        Δv - args[:delta_v]  # upcrossing and downcrossing
     end
-    stop_firing_affect!(integrator) = terminate!(integrator)
+    function stop_firing_affect!(integrator)
+        println("entered stop_firing_affect!")
+        config.cnf.count_stop_firing += 1
+        terminate!(integrator)
+    end
     stop_firing = ContinuousCallback(stop_firing_condition, stop_firing_affect!)
 
     function guidance_condition(y, t, integrator)
@@ -701,9 +760,13 @@ function asim(ip, m, initial_state, numberofpassage, args)
             config.controller.t = config.controller.guidance_t_eval[config.controller.count_controller]
         end
 
-        t - config.controller.T == 0 # upcrossing
+        t - config.controller.T  # upcrossing
     end
-    guidance_affect!(integrator) = nothing
+    function guidance_affect!(integrator)
+        println("entered guidance_affect!")
+        config.cnf.count_guidance += 1
+        nothing
+    end
     guidance = ContinuousCallback(guidance_condition, guidance_affect!, nothing)
 
     function heat_rate_check_condition(y, t, integrator)
@@ -720,9 +783,13 @@ function asim(ip, m, initial_state, numberofpassage, args)
             config.controller.guidance_t_eval = range(t, t+2500, 1/args[:flash1_rate])
         end
 
-        norm(y[1:3]) - m.planet.Rp_e - x*1e3 == 0 # upcrossing and downcrossing
+        norm(y[1:3]) - m.planet.Rp_e - x*1e3  # upcrossing and downcrossing
     end
-    heat_rate_check_affect!(integrator) = terminate!(integrator)
+    function heat_rate_check_affect!(integrator)
+        println("entered heat_rate_check_affect!")
+        config.cnf.count_heat_rate_check += 1
+        terminate!(integrator)
+    end
     heat_rate_check = ContinuousCallback(heat_rate_check_condition, heat_rate_check_affect!)
 
     function heat_load_check_exit_condition(y, t, integrator)
@@ -735,9 +802,13 @@ function asim(ip, m, initial_state, numberofpassage, args)
             x = 160
         end
 
-        norm(y[1:3]) - m.planet.Rp_e - x*1e3 == 0 # upcrossing
+        norm(y[1:3]) - m.planet.Rp_e - x*1e3  # upcrossing
     end
-    heat_load_check_exit_affect!(integrator) = terminate!(integrator)
+    function heat_load_check_exit_affect!(integrator)
+        println("entered heat_load_check_exit_affect!")
+        config.cnf.count_heat_load_check_exit += 1
+        terminate!(integrator)
+    end
     heat_load_check_exit = ContinuousCallback(heat_load_check_exit_condition, heat_load_check_exit_affect!, nothing)
 
     time_0 = 0
@@ -809,8 +880,12 @@ function asim(ip, m, initial_state, numberofpassage, args)
         range_phase_i = 0
     end
 
+    index_phase_aerobraking = range_phase_i # for scope reasons
+    aerobraking_phase = range_phase_i       # for scope reasons
+    method = Tsit5()                        # for scope reasons
+
     # Solve Equations of Motion 
-    for aerobraking_phase in range(range_phase_i, 4)
+    for aerobraking_phase in range(range_phase_i, 3)
         index_phase_aerobraking = aerobraking_phase
 
         if (index_steps_EOM == 1 || Bool(args[:drag_passage])) && (aerobraking_phase == 1 || aerobraking_phase == 3 || aerobraking_phase == 0)
@@ -820,18 +895,33 @@ function asim(ip, m, initial_state, numberofpassage, args)
         # Definition of eventsecondstep
         if aerobraking_phase == 0
             events = CallbackSet(stop_firing, apoapsisgreaterperiapsis, impact)
+            t_event_0 = "stop_firing"
+            t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 1
             events = CallbackSet(eventfirststep, apoapsisgreaterperiapsis, impact)
+            t_event_0 = "eventfirststep"
+            t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 2 && Bool(args[:drag_passage])
             events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact)
+            t_event_0 = "out_drag_passage"
+            t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 2 && index_steps_EOM == 1 && args[:body_shape] == "Blunted Cone"
             events = CallbackSet(out_drag_passage, apoapsispoint, periapsispoint, impact)
+            t_event_0 = "out_drag_passage"
+            t_event_1 = "apoapsispoint"
         elseif aerobraking_phase == 2 && index_steps_EOM == 1 && args[:drag_passage] == false
             events = CallbackSet(apoapsispoint, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact)
+            t_event_0 = "apoapsispoint"
+            t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 2
-            events = CallbackSet(eventsecondstep, periapsispoint, reached_EI, reached_AE, in_drag_passage, apoapsisgreaterperiapsis, impact)
+            # events = CallbackSet(eventsecondstep, periapsispoint, reached_EI, reached_AE, in_drag_passage_nt, apoapsisgreaterperiapsis, impact)
+            events = CallbackSet(eventsecondstep, periapsispoint, apoapsisgreaterperiapsis, impact)
+            t_event_0 = "eventsecondstep"
+            t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 3
             events = CallbackSet(apoapsispoint, periapsispoint, apoapsisgreaterperiapsis, impact)
+            t_event_0 = "apoapsispoint"
+            t_event_1 = "periapsispoint"
         end
 
         if index_phase_aerobraking == 2
@@ -845,14 +935,14 @@ function asim(ip, m, initial_state, numberofpassage, args)
             r_tol = 1e-10
             a_tol = 1e-12
             simulator = "Julia"
-            method = Tsit5() # TRBDF2()
+            method = TRBDF2(autodiff = false)
             save_ratio = 5
         elseif aerobraking_phase == 0
             step = 0.1
             r_tol = 1e-9
             a_tol = 1e-11
             simulator = "Julia"
-            method = Tsit5() # TRBDF2()
+            method = TRBDF2(autodiff = false)
             save_ratio = 5
         elseif aerobraking_phase == 2
             if args[:integrator] == "Julia"
@@ -863,7 +953,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
                 if MonteCarlo
                     method = Tsit5()
                 else
-                    method = Tsit5() # TRBDF2()
+                    method = TRBDF2(autodiff = false)
                 end
 
                 save_ratio = args[:save_rate]
@@ -886,6 +976,8 @@ function asim(ip, m, initial_state, numberofpassage, args)
             if aerobraking_phase == 2 && (args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == true && config.cnf.sensible_loads == true && config.cnf.ascending_phase == false)
                 simulator = args[:integrator]
                 events = CallbackSet(out_drag_passage, heat_load_check_exit, periapsispoint, apoapsisgreaterperiapsis, impact)
+                t_event_0 = "out_drag_passage"
+                t_event_1 = "heat_load_check_exit"
 
                 if args[:integrator] == "Costumed"
                     step = 1/args[:trajectory_rate]
@@ -903,6 +995,8 @@ function asim(ip, m, initial_state, numberofpassage, args)
                         end
                         
                         events = CallbackSet(out_drag_passage, heat_load_check_exit, periapsispoint, guidance, apoapsisgreaterperiapsis, impact)
+                        t_event_0 = "out_drag_passage"
+                        t_event_1 = "heat_load_check_exit"
                     end
                 end
 
@@ -910,7 +1004,9 @@ function asim(ip, m, initial_state, numberofpassage, args)
             
             #phase 1.75: between EI km alt and 120 km
             elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == true && config.cnf.ascending_phase == false
-                events = CallbackSet(periaoapsispoint, out_drag_passage, heat_rate_check, apoapsisgreaterperiapsis, impact)
+                events = CallbackSet(periapsispoint, out_drag_passage, heat_rate_check, apoapsisgreaterperiapsis, impact)
+                t_event_0 = "periapsispoint"
+                t_event_1 = "out_drag_passage"
                 simulator = "Julia"
                 index_phase_aerobraking = 1.75
                 step = 0.05
@@ -920,6 +1016,8 @@ function asim(ip, m, initial_state, numberofpassage, args)
             # phase 1.5: between 250 km alt and EI km
             elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == false && config.cnf.ascending_phase == false
                 events = CallbackSet(periapsispoint, in_drag_passage, apoapsisgreaterperiapsis, impact)
+                t_event_0 = "periapsispoint"
+                t_event_1 = "in_drag_passage"
                 simulator = "Julia"
                 step = 0.1
                 r_tol = 1e-9
@@ -929,6 +1027,8 @@ function asim(ip, m, initial_state, numberofpassage, args)
             # phase 2.25: between 120 km alt and AE km
             elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == true && config.cnf.ascending_phase == true
                 events = CallbackSet(periapsispoint, out_drag_passage, apoapsisgreaterperiapsis, impact)
+                t_event_0 = "periapsispoint"
+                t_event_1 = "out_drag_passage"
                 simulator = "Julia"
                 step = 0.1
                 r_tol = 1e-9
@@ -938,6 +1038,8 @@ function asim(ip, m, initial_state, numberofpassage, args)
             # phase 2.5: between AE km alt and 250 km
             elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.ascending_phase == true
                 events = CallbackSet(eventsecondstep, periapsispoint, eventsecondstep, apoapsisgreaterperiapsis, impact)
+                t_event_0 = "eventsecondstep"
+                t_event_1 = "periapsispoint"
                 simulator = "Julia"
                 index_phase_aerobraking = 2.5
                 step = 0.5
@@ -952,8 +1054,27 @@ function asim(ip, m, initial_state, numberofpassage, args)
 
             if simulator == "Julia"
                 # counter for events
+                config.cnf.count_eventfirststep = 0
+                config.cnf.count_eventsecondstep = 0
+                config.cnf.count_reached_EI = 0
+                config.cnf.count_reached_AE = 0
+                config.cnf.count_out_drag_passage = 0
+                config.cnf.count_in_drag_passage = 0
+                config.cnf.count_in_drag_passage_nt = 0
+                config.cnf.count_apoapsispoint = 0
+                config.cnf.count_periapsispoint = 0
                 config.cnf.count_impact = 0
                 config.cnf.count_apoapsisgreaterperiapsis = 0
+                config.cnf.count_stop_firing = 0
+                config.cnf.count_guidance = 0
+                config.cnf.count_heat_rate_check = 0
+                config.cnf.count_heat_load_check_exit = 0
+
+                # println(" ")
+                # println(t_event_0)
+                # println(" ")
+                # println(t_event_1)
+                # println(" ")
 
                 ## Julia Integrator
                 # Time initialization
@@ -962,6 +1083,10 @@ function asim(ip, m, initial_state, numberofpassage, args)
                 # Parameter Definition
                 param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state)
 
+                println("")
+                println("pos: " * string(norm(in_cond[1:3])) * " vel: " * string(norm(in_cond[4:6]))) 
+                println("")
+
                 # Run simulation
                 prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
                 sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
@@ -969,9 +1094,19 @@ function asim(ip, m, initial_state, numberofpassage, args)
                 config.cnf.counter_integrator += 1
                 in_cond = [sol[1,end], sol[2,end], sol[3, end], sol[4, end], sol[5, end], sol[6, end], sol[7, end], sol[8, end]]
 
+                println("")
+                # println(in_cond)
+                println("pos: " * string(norm(in_cond[1:3])) * " vel: " * string(norm(in_cond[4:6]))) 
+                println("")
+
                 # Save results 
                 push!(time_solution, sol.t...)
                 time_0 = time_solution[end]
+
+                # println(" ")
+                # println(time_0)
+                # println(string(config.cnf.count_impact) * "     " * string(config.cnf.count_apoapsisgreaterperiapsis))
+                # println(" ")
 
                 if aerobraking_phase == 0
                     new_periapsis(m, in_cond[1:3], in_cond[4:6], args)
@@ -1020,9 +1155,55 @@ function asim(ip, m, initial_state, numberofpassage, args)
                 break
             end
 
+            time_ev_0, time_ev_1 = 0, 0
+
+            if t_event_0 == "stop_firing"
+                time_ev_0 = config.cnf.count_stop_firing
+            elseif t_event_0 == "eventfirststep"
+                time_ev_0 = config.cnf.count_eventfirststep
+            elseif t_event_0 == "eventsecondstep"
+                time_ev_0 = config.cnf.count_eventsecondstep
+            elseif t_event_0 == "out_drag_passage"
+                time_ev_0 = config.cnf.count_out_drag_passage
+            elseif t_event_0 == "in_drag_passage"
+                time_ev_0 = config.cnf.count_in_drag_passage
+            elseif t_event_0 == "in_drag_passage_nt"
+                time_ev_0 = config.cnf.count_in_drag_passage_nt
+            elseif t_event_0 == "apoapsispoint"
+                time_ev_0 = config.cnf.count_apoapsispoint
+            elseif t_event_0 == "periapsispoint"
+                time_ev_0 = config.cnf.count_periapsispoint
+            elseif t_event_0 == "apoapsisgreaterperiapsis"
+                time_ev_0 = config.cnf.count_apoapsisgreaterperiapsis
+            elseif t_event_0 == "heat_load_check_exit"
+                time_ev_0 = config.cnf.count_heat_load_check_exit
+            end
+
+            if t_event_1 == "stop_firing"
+                time_ev_1 = config.cnf.count_stop_firing
+            elseif t_event_1 == "eventfirststep"
+                time_ev_1 = config.cnf.count_eventfirststep
+            elseif t_event_1 == "eventsecondstep"
+                time_ev_1 = config.cnf.count_eventsecondstep
+            elseif t_event_1 == "out_drag_passage"
+                time_ev_1 = config.cnf.count_out_drag_passage
+            elseif t_event_1 == "in_drag_passage"
+                time_ev_1 = config.cnf.count_in_drag_passage
+            elseif t_event_1 == "in_drag_passage_nt"
+                time_ev_1 = config.cnf.count_in_drag_passage_nt
+            elseif t_event_1 == "apoapsispoint"
+                time_ev_1 = config.cnf.count_apoapsispoint
+            elseif t_event_1 == "periapsispoint"
+                time_ev_1 = config.cnf.count_periapsispoint
+            elseif t_event_1 == "apoapsisgreaterperiapsis"
+                time_ev_1 = config.cnf.count_apoapsisgreaterperiapsis
+            elseif t_event_1 == "heat_load_check_exit"
+                time_ev_1 = config.cnf.count_heat_load_check_exit
+            end
+
             # Breaker conditions
             if simulator == "Julia"
-                if config.cnf.count_impact != 0 || (Bool(args[:drag_passage]) && index_phase_aerobraking == 2.25 && config.cnf.count_apoapsisgreaterperiapsis != 0)
+                if time_ev_0 != 0 || (Bool(args[:drag_passage]) && index_phase_aerobraking == 2.25 && time_ev_1 != 0)
                     config.cnf.continue_simulation = false
                     break
                 end
@@ -1037,6 +1218,11 @@ function asim(ip, m, initial_state, numberofpassage, args)
         # Save Results
         # println(time_solution)
         time_0 = save_results(time_solution, save_ratio)
+
+        # println(" ")
+        # println(time_0)
+        # println(config.solution.orientation.pos_ii)
+        # println(" ")
 
         if index_phase_aerobraking == 2 || index_phase_aerobraking == 2.5 || (index_phase_aerobraking == 2.25 && Bool(args[:drag_passage]))
             save_post_index = length(config.solution.orientation.time)
@@ -1076,6 +1262,22 @@ function asim(ip, m, initial_state, numberofpassage, args)
         r_tol = 1e-12
         a_tol = 1e-13
 
+        # counter for events
+        config.cnf.count_eventfirststep = 0
+        config.cnf.count_eventsecondstep = 0
+        config.cnf.count_reached_EI = 0
+        config.cnf.count_reached_AE = 0
+        config.cnf.count_out_drag_passage = 0
+        config.cnf.count_in_drag_passage = 0
+        config.cnf.count_in_drag_passage_nt = 0
+        config.cnf.count_apoapsispoint = 0
+        config.cnf.count_periapsispoint = 0
+        config.cnf.count_impact = 0
+        config.cnf.count_apoapsisgreaterperiapsis = 0
+        config.cnf.count_stop_firing = 0
+        config.cnf.count_guidance = 0
+        config.cnf.count_heat_rate_check = 0
+        config.cnf.count_heat_load_check_exit = 0
 
         # Parameter Definition
         param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state)

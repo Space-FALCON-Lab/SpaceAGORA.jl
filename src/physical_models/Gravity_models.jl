@@ -19,7 +19,7 @@ function gravity_const(pos_ii_mag, pos_ii, p, mass=0, vel_ii=0)
     return g
 end
 
-function gravity_invsquared(pos_ii_mag, pos_ii, p, mass, vel_ii=0)
+function gravity_invsquared(pos_ii_mag, pos_ii, p, mass=0, vel_ii=0)
     """
 
     """

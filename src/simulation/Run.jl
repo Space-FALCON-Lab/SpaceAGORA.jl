@@ -2,10 +2,8 @@ include("../utils/Define_mission.jl")
 include("../utils/MonteCarlo_set.jl")
 include("../utils/Initial_cond_calc.jl")
 include("Set_and_run.jl")
-include("../config.jl")
 
 import .config
-
 
 function run_orbitalelements(args)
     apoapsis, periapsis_alt, inclination, Ω, ω = collect(range(Int64(args[:ra_initial_a]), Int64(args[:ra_initial_b]), step=Int64(args[:ra_step]))), 
@@ -25,7 +23,7 @@ function run_orbitalelements(args)
 
             MC, count, args = MonteCarlo_setting(args)
 
-            for mc_index in range(args[:initial_montecarlo_number], args[:montecarlo_size], step=1)
+            for mc_index in range(args[:initial_montecarlo_number], args[:montecarlo_size]-1, step=1)
                 state[:Apoapsis], state[:Periapsis], state[:Inclination], state[:Ω], state[:ω], state[:Final_sma] = apoapsis_item, Float64(periapsis_item*1e-3), inclination, Ω, ω, final_apoapsis
 
                 args[:simulation_filename] = "Results_ctrl=" * string(args[:control_mode]) * "_ra=" * string(Int64(apoapsis_item/1e3)) * "_rp=" * string(Float64(periapsis_item/1e3)) * "_hl=" * string(args[:max_heat_rate]) * "_" * string(args[:α])
@@ -95,7 +93,7 @@ function run_analysis(args)
         run_orbitalelements(args)
     end
 
-    if args[:passresults]
+    if Bool(args[:passresults])
         return config.solution
     else
         return true

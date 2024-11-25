@@ -6,8 +6,6 @@ include("Aerobraking.jl")
 
 import .config
 
-using TickTock
-
 function aerobraking_campaign(args, state)
     save_rs = args[:results]
 
@@ -199,27 +197,31 @@ function aerobraking_campaign(args, state)
     ##########################################################
     # RUN SIMULATION
     config.cnf.heat_rate_limit = args[:max_heat_rate]
-    tick()
-    aerobraking(ip, m, args)
-    elapsed = tok()
+    t_el = @elapsed begin
+        aerobraking(ip, m, args)
+    end
     ##########################################################
 
-    if args[:print_res]
+    # println(" ")
+    # println(config.solution)
+    # println(" ")
+
+    if Bool(args[:print_res])
         println("ρ: " * string(maximum(config.solution.physical_properties.ρ)) * " kg/m^3")
         println("heat rate: " * string(maximum(config.solution.performance.heat_rate)) * " W/cm^2")
     end
 
     # Save results
-    if save_res == 1
-        # Fill Later
+    # if save_res == 1
+    #     # Fill Later
         
-    end
+    # end
 
-    if args[:print_res]
-        println("Elapsed time: " * string(elapsed) * " s")
+    if Bool(args[:print_res])
+        println("Elapsed time: " * string(t_el) * " s")
     end
 
     if args[:plot] == true
-        plots(state, m, name, args)
+        # plots(state, m, name, args)
     end
 end

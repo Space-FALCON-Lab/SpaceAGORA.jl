@@ -284,7 +284,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
         # Heat rate and Control
         if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
             # evaluates the closed form solution the first time at EI km
-            if abs(pos_ii_mag - m.planet.Rp_e - args.EI * 1e3) <= 1e-2 && (args[:control_mode] == 2 || args[:control_mode] == 3) && config.cnf.time_switch_1 == 0
+            if abs(pos_ii_mag - m.planet.Rp_e - args[:EI] * 1e3) <= 1e-2 && (args[:control_mode] == 2 || args[:control_mode] == 3) && config.cnf.time_switch_1 == 0
                 if ip.cm == 3
 
                 elseif ip.cm == 2
@@ -317,7 +317,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
             end
 
             if index_phase_aerobraking == 2
-                if args[:control_in_loop]
+                if Bool(args[:control_in_loop])
                     config.cnf.state_flesh1 = [T_p, ρ, S]
                     if ip.cm == 3
                         # config.α =
@@ -409,11 +409,11 @@ function asim(ip, m, initial_state, numberofpassage, args)
         # Vehicle Aerodynamic Forces
         # CL and CD
         if ip.am == 0
-            CL, CD = aerodynamic_coefficient_constant(α, m.body, T_p, S, args, MonteCarlo)
+            CL, CD = aerodynamic_coefficient_constant(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
         elseif ip.am == 1
-            CL, CD = aerodynamic_coefficent_fM(α, m.body, T_p, S, args, MonteCarlo)
+            CL, CD = aerodynamic_coefficient_fM(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
         elseif ip.am == 2
-            CL, CD = aerodynamic_coefficient_no_ballistic_flight(α, m.body, T_p, S, args, MonteCarlo)
+            CL, CD = aerodynamic_coefficient_no_ballistic_flight(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
         end
 
         # println(" ")
@@ -532,7 +532,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
     end
     function reached_EI_affect!(integrator)
         println("entered reached_EI_affect!")
-        config.cnf.count_reached_EI += 1
+        # config.cnf.count_reached_EI += 1
         nothing
     end
     reached_EI = ContinuousCallback(reached_EI_condition, nothing, reached_EI_affect!)
@@ -544,7 +544,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
     end
     function reached_AE_affect!(integrator)
         println("entered reached_AE_affect!")
-        config.cnf.count_reached_AE += 1
+        # config.cnf.count_reached_AE += 1
         nothing
     end
     reached_AE = ContinuousCallback(reached_AE_condition, reached_AE_affect!, nothing)
@@ -633,19 +633,19 @@ function asim(ip, m, initial_state, numberofpassage, args)
             thr = 1e-3
         end
 
-        if abs(cond) <= thr && length(config.cnf.initial_position_closed_form) != 0
-            controller.guidance_t_eval = range(t, t+1500, 1/args[:flash1_rate])
+        if abs(cond) <= thr && length(config.cnf.initial_position_closed_form) == 0
+            config.controller.guidance_t_eval = collect(t:1/args[:flash1_rate]:t+1500)
 
             # State definition for control 2, 3 State used by closed-form solution
             OE_closedform = rvtoorbitalelement(pos_ii, vel_ii, y[7], m.planet)
-            config.cnf.inital_position_closed_form = OE_closedform
+            config.cnf.initial_position_closed_form = OE_closedform
         end
 
         norm(y[1:3]) - m.planet.Rp_e - args[:EI]*1e3  # downcrossing
     end
     function in_drag_passage_nt_affect!(integrator)
         println("entered in_drag_passage_nt_affect!")
-        config.cnf.count_in_drag_passage_nt += 1
+        # config.cnf.count_in_drag_passage_nt += 1
         nothing
     end
     in_drag_passage_nt = ContinuousCallback(in_drag_passage_nt_condition, nothing, in_drag_passage_nt_affect!)
@@ -676,7 +676,6 @@ function asim(ip, m, initial_state, numberofpassage, args)
         vi  # upcrossing
     end
     function periapsispoint_affect!(integrator)
-        println("entered periapsispoint_affect!")
         config.cnf.count_periapsispoint += 1
         nothing
     end
@@ -915,7 +914,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 2
             # events = CallbackSet(eventsecondstep, periapsispoint, reached_EI, reached_AE, in_drag_passage_nt, apoapsisgreaterperiapsis, impact)
-            events = CallbackSet(eventsecondstep, periapsispoint, apoapsisgreaterperiapsis, impact)
+            events = CallbackSet(eventsecondstep, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact)
             t_event_0 = "eventsecondstep"
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 3
@@ -925,7 +924,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
         end
 
         if index_phase_aerobraking == 2
-            save_pre_index = length(config.solution.orientation.time)
+            save_pre_index = length(config.solution.orientation.time) + 1
             simulator = args[:integrator]
         end
 
@@ -1225,15 +1224,16 @@ function asim(ip, m, initial_state, numberofpassage, args)
         # println(" ")
 
         if index_phase_aerobraking == 2 || index_phase_aerobraking == 2.5 || (index_phase_aerobraking == 2.25 && Bool(args[:drag_passage]))
-            save_post_index = length(config.solution.orientation.time)
+            save_post_index = length(config.solution.orientation.time) + 1
         end
 
+        # Re-Set count index to 0
         config.cnf.count_phase = 0
 
         # Define breaker campaign
         if continue_campaign == false
             if save_post_index == 1
-                save_post_index = length(config.solution.orientation.time)
+                save_post_index = length(config.solution.orientation.time) + 1
             end
 
             break
@@ -1243,7 +1243,10 @@ function asim(ip, m, initial_state, numberofpassage, args)
     # Re-set count index to 0
     config.cnf.count_dori = 0
 
-    if args[:drag_passage] == false && pi - config.solution.orientation.oe[end][end] > 1e-4 && continue_campaign == true && args[:body_shape] != "Blunted Cone"
+    println(pi - config.solution.orientation.oe[end][end])
+
+    # Check tolerance here on true anomaly
+    if args[:drag_passage] == false && (pi - config.solution.orientation.oe[end][end] > 5e-4) && continue_campaign == true && args[:body_shape] != "Blunted Cone"
         final_conditions_notmet = true
         events = CallbackSet(apoapsispoint)
     else
@@ -1253,6 +1256,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
     count_temp = 0
 
     while final_conditions_notmet
+        println("entered final_conditions_notmet!")
         in_cond = [config.solution.orientation.pos_ii[1][end], config.solution.orientation.pos_ii[2][end], config.solution.orientation.pos_ii[3][end], 
                    config.solution.orientation.vel_ii[1][end], config.solution.orientation.vel_ii[2][end], config.solution.orientation.vel_ii[3][end],
                    config.solution.performance.mass[end], config.solution.performance.heat_load[end]]
@@ -1314,56 +1318,51 @@ function asim(ip, m, initial_state, numberofpassage, args)
     # println(size(config.solution.performance.heat_rate[1]))
 
     if Bool(args[:print_res])
-        # try
-            # Print Actual periapsis altitude and Vacuum periapsis altitude
-            println("Actual periapsis altitude $(minimum(config.solution.orientation.alt[save_pre_index:save_post_index])*1e-3) km - Vacuum periapsis altitude = $(config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end]) - m.planet.Rp_e)*1e-3) km")
+        # Print Actual periapsis altitude and Vacuum periapsis altitude
+        println("Actual periapsis altitude " * string(minimum(config.solution.orientation.alt[save_pre_index:save_post_index])*1e-3) * " km - Vacuum periapsis altitude = " * string((config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end]) - m.planet.Rp_e)*1e-3) * " km")
 
-            # Print Ra new (Apoapsis)
-            println("Ra new = $(config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])*1e-3) km")
+        # Print Ra new (Apoapsis)
+        println("Ra new = " * string((config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end]))*1e-3) * " km")
 
-            # Print Heat Rate and Heat Load
-            # println("HEAT RATE IS $(maximum(config.solution.performance.heat_rate[save_pre_index:save_post_index-1])) W/cm^2")
-            # println("HEAT LOAD IS $(config.solution.performance.heat_load[save_post_index-1]) J/cm^2")
+        # Print Heat Rate and Heat Load
+        println("HEAT RATE IS " * string(maximum(config.solution.performance.heat_rate[save_pre_index:save_post_index-1])) * " W/cm^2")
+        println("HEAT LOAD IS " * string(config.solution.performance.heat_load[save_post_index-1]) * " J/cm^2")
 
-            # Print Fuel Mass
-            println("Fuel Mass is $(config.solution.performance.mass[end] - args[:dry_mass]) kg")
+        # Print Fuel Mass
+        println("Fuel Mass is " * string(config.solution.performance.mass[end] - args[:dry_mass]) * " kg")
 
-            # Print Total Time
-            # println("Total time is $(config.solution.orientation.time[save_post_index-1] - config.solution.orientation.time[save_pre_index]) s")
+        # Print Total Time
+        println("Total time is " * string(config.solution.orientation.time[save_post_index-1] - config.solution.orientation.time[save_pre_index]) * " s")
 
-            # Print Delta-v and Delta-E
-            println("Delta-v is $(config.cnf.Δv_man) m/s")
-            # println("Delta-E is $(config.solution.forces.energy[Int64(config.cnf.time_OP)-1] - config.solution.forces.energy[Int64(config.cnf.time_IP)]) * 1e-3 kJ")
+        # Print Delta-v and Delta-E
+        println("Delta-v is " * string(config.cnf.Δv_man) * " m/s")
+        println("Delta-E is " * string((config.solution.forces.energy[Int64(config.cnf.time_OP)-1] - config.solution.forces.energy[Int64(config.cnf.time_IP)]) * 1e-3) * " kJ")
 
-            # Find periapsis latitude and longitude
-            min_value = minimum(config.solution.orientation.alt[save_pre_index:save_post_index])
-            min_index = argmin(config.solution.orientation.alt[save_pre_index:save_post_index]) + save_pre_index
-            println("Latitude of periapsis $(rad2deg(config.solution.orientation.lat[min_index])) deg")
-            println("Longitude of periapsis $(rad2deg(config.solution.orientation.lon[min_index])) deg")
+        # Find periapsis latitude and longitude
+        min_index = argmin(config.solution.orientation.alt[save_pre_index:save_post_index]) + save_pre_index
+        println("Latitude of periapsis is " * string(rad2deg(config.solution.orientation.lat[min_index])) * " deg")
+        println("Longitude of periapsis is " * string(rad2deg(config.solution.orientation.lon[min_index])) * " deg")
 
-            # If the body shape is 'Blunted Cone', print additional information
-            if args[:body_shape] == "Blunted Cone"
-                # Max Dynamic Pressure
-                max_value = maximum(config.solution.performance.q)
-                max_index = argmax(config.solution.performance.q)
-                println("Max Dynamic Pressure $(max_value) N/m^2 at time $(config.solution.orientation.time[max_index]) s")
+        # If the body shape is 'Blunted Cone', print additional information
+        if args[:body_shape] == "Blunted Cone"
+            # Max Dynamic Pressure
+            max_value = maximum(config.solution.performance.q)
+            max_index = argmax(config.solution.performance.q)
+            println("Max Dynamic Pressure " * string(max_value) * " N/m^2 at time " * string(config.solution.orientation.time[max_index]) * " s")
 
-                # Max Heat Rate
-                max_value = maximum(config.solution.performance.heat_rate)
-                max_index = argmax(config.solution.performance.heat_rate)
-                println("Max Heat Rate $(max_value) W/cm^2 at time $(config.solution.orientation.time[max_index]) s")
+            # Max Heat Rate
+            max_value = maximum(config.solution.performance.heat_rate)
+            max_index = argmax(config.solution.performance.heat_rate)
+            println("Max Heat Rate " * string(max_value) * " W/cm^2 at time " * string(config.solution.orientation.time[max_index]) * " s")
 
-                # Max Heat Load
-                max_value = maximum(config.solution.performance.heat_load)
-                max_index = argmax(config.solution.performance.heat_load)
-                println("Max Heat Load $(max_value) J/cm^2 at time $(config.solution.orientation.time[max_index]) s")
-            end
-        # catch
-        #     println("Problem in the indexes")
-        # end
+            # Max Heat Load
+            max_value = maximum(config.solution.performance.heat_load)
+            max_index = argmax(config.solution.performance.heat_load)
+            println("Max Heat Load " * string(max_value) * " J/cm^2 at time " * string(config.solution.orientation.time[max_index]) * " s")
+        end
     end
 
-    append!(config.cnf.periapsis_list, minimum(config.solution.orientation.alt[save_pre_index:save_post_index,:])*1e-3)
+    append!(config.cnf.periapsis_list, minimum(config.solution.orientation.alt[save_pre_index:save_post_index])*1e-3)
     append!(config.cnf.orbit_number_list, config.cnf.count_numberofpassage + 1)
     append!(config.cnf.Δv_list, config.cnf.Δv_man)
 

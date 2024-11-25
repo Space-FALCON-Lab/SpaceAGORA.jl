@@ -35,10 +35,10 @@ function planet_data(ip)
         Rp_e = 3.3962e6            # equatorial radius, m
         Rp_p = 3.3762e6            # polar radius, m
         Rp_m = 3.3895e6            # volumetric mean radius, m
-        mass = 6.4171e23           # mass, kg
+        mass = 6.4185e23           # mass, kg
         g_ref = 3.71               # acceleration due to gravity, m/s²
         ρ_ref = 8.7489231e-07      # density, kg/m³
-        μ = 4.2829e13              # gravitational parameter, m³/s²
+        μ = 4.2828e13              # gravitational parameter, m³/s²
         h_ref = 90 * 1e3           # reference altitude, m
         H = 6.308278108 * 1e3      # scale height, m
         R = 188.92                 # specific gas constant, J/(kg·K)

@@ -19,79 +19,31 @@ function aerodynamic_coefficient_constant(α, body, T, S, args, montecarlo=false
     return CL_body, CD_body
 end
 
-# function aerodynamic_coefficent_fM(α, body, T, S, args, montecarlo=false)
-#     """
+function aerodynamic_coefficient_fM(α, body, T, S, args, montecarlo=false)
+    """
 
-#     """
+    """
 
-#     σ = args[:reflection_coefficient]
-#     Tw = T
-
-#     function pressure(S, α, ρ_inf, vel, σ)
-#         """
-
-#         """
-
-#         p = (ρ_inf*vel^2) / (2*S^2) * ((((2 - σ) / sqrt(pi))*S*sin(α) + sqrt(T/Tw)*σ/2) * exp(-(S*sin(α))^2) + ((2-σ)*((S*sin(α))^2 + 0.5) + (σ/2)*sqrt(pi)*(S*sin(α))) * (1 + erf(S*sin(α))))
-
-#         return p
-#     end
-
-#     function τ(S, α, ρ_inf, vel, σ)
-#         """
-
-#         """
-
-#         t = ((σ*cos(α)*ρ_inf*vel^2) / (sqrt(pi)*2*S)) * (exp(-(S*sin(α))^2) + sqrt(pi)*(S*sin(α)) * (1 + erf(S*sin(α))))
-
-#         return t
-#     end
-
-#     function normalcoefficient(S, aoa, sigma)
-#         CN = 1 / (S^2) * ((((2 - sigma) / sqrt(pi)) * S * sin(aoa) + sigma / 2) * exp(-(S * sin(aoa))^2) + ((2 - sigma) * ((S * sin(aoa))^2 + 0.5) + sigma / 2 * sqrt(pi) * (S * sin(aoa))) * (1 + erf(S * sin(aoa))))
-#         return CN
-#     end
-
-#     function axialcoefficient(S, aoa, sigma)
-#         CA = ((sigma * cos(aoa)) / (sqrt(pi) * S)) * (exp(-(S * sin(aoa))^2) + sqrt(pi) * (S * sin(aoa)) * (1 + erf(S * sin(aoa))))
-#         return CA
-#     end
-
-#     # Solar Panels
-#     CN_sa = normalcoefficient(S, α, σ)
-#     CA_sa = axialcoefficient(S, α, σ)
-#     CL_sa = CN_sa*cos(α) - CA_sa*sin(α)
-#     CD_sa = CA_sa*cos(α) + CN_sa*sin(α)
-
-#     # Spacecraft
-#     CN_sc = normalcoefficient(S, pi*0.5, σ)
-#     CA_sc = axialcoefficient(S, pi*0.5, σ)
-#     CL_sc = CN_sc*cos(pi*0.5) - CA_sc*sin(pi*0.5)
-#     CD_sc = CA_sc*cos(pi*0.5) + CN_sc*sin(pi*0.5)
-
-#     CD_body = (CD_sa*body.area_SA + CD_sc*body.area_SC) / (body.area_SA + body.area_SC)
-#     CL_body = (CL_sa*body.area_SA + CL_sc*body.area_SC) / (body.area_SA + body.area_SC)
-
-#     if montecarlo == true
-#         CL_body, CD_body = monte_carlo_aerodynamics(CL_body, CD_body, args)
-#     end
-
-#     return CL_body, CD_body
-# end
-
-function aerodynamicscoefficient_fM(aoa, body, T, S, args; montecarlo=false)
-    alpha = aoa
-    sigma = args["reflection_coefficient"]
+    σ = args.reflection_coefficient
     Tw = T
 
-    function pressure(S, aoa, rho_inf, velocity, sigma)
-        p = (rho_inf * velocity^2) / (2 * S^2) * ((((2 - sigma) / sqrt(pi)) * S * sin(aoa) + ((T / Tw)^0.5) * sigma / 2) * exp(-(S * sin(aoa))^2) + ((2 - sigma) * ((S * sin(aoa))^2 + 1/2) + sigma / 2 * sqrt(pi) * (S * sin(aoa))) * (1 + erf(S * sin(aoa))))
+    function pressure(S, α, ρ_inf, vel, σ)
+        """
+
+        """
+
+        p = (ρ_inf*vel^2) / (2*S^2) * ((((2 - σ) / sqrt(pi))*S*sin(α) + sqrt(T/Tw)*σ/2) * exp(-(S*sin(α))^2) + ((2-σ)*((S*sin(α))^2 + 0.5) + (σ/2)*sqrt(pi)*(S*sin(α))) * (1 + erf(S*sin(α))))
+
         return p
     end
 
-    function tau(S, aoa, rho_inf, belocity, sigma)
-        t = ((sigma * cos(aoa) * rho_inf * velcity^2) / (sqrt(pi) * 2 * S)) * (
-            exp(-(S * sin(aoa))^2) + sqrt(pi) * (S * sin(aoa)) * (1 + erf(S * sin(aoa))))
+    function τ(S, α, ρ_inf, vel, σ)
+        """
+
+        """
+
+        t = ((σ*cos(α)*ρ_inf*vel^2) / (sqrt(pi)*2*S)) * (exp(-(S*sin(α))^2) + sqrt(pi)*(S*sin(α)) * (1 + erf(S*sin(α))))
+
         return t
     end
 
@@ -105,23 +57,23 @@ function aerodynamicscoefficient_fM(aoa, body, T, S, args; montecarlo=false)
         return CA
     end
 
-    ## Solar Panels:
-    CN_sa = normalcoefficient(S, alpha, sigma)
-    CA_sa = axialcoefficient(S, alpha, sigma)
-    CL_sa = CN_sa * cos(alpha) - CA_sa * sin(alpha)
-    CD_sa = CA_sa * cos(alpha) + CN_sa * sin(alpha)
+    # Solar Panels
+    CN_sa = normalcoefficient(S, α, σ)
+    CA_sa = axialcoefficient(S, α, σ)
+    CL_sa = CN_sa*cos(α) - CA_sa*sin(α)
+    CD_sa = CA_sa*cos(α) + CN_sa*sin(α)
 
-    ## Spacecraft
-    CN_sc = normalcoefficient(S, pi * 0.5, sigma)
-    CA_sc = axialcoefficient(S, pi * 0.5, sigma)
-    CL_sc = CN_sc * cos(pi * 0.5) - CA_sc * sin(pi * 0.5)
-    CD_sc = CA_sc * cos(pi * 0.5) + CN_sc * sin(pi * 0.5)  #TODO typo
+    # Spacecraft
+    CN_sc = normalcoefficient(S, pi*0.5, σ)
+    CA_sc = axialcoefficient(S, pi*0.5, σ)
+    CL_sc = CN_sc*cos(pi*0.5) - CA_sc*sin(pi*0.5)
+    CD_sc = CA_sc*cos(pi*0.5) + CN_sc*sin(pi*0.5)
 
-    CD_body = (CD_sa * body.Area_SA + CD_sc * body.Area_SC) / (body.Area_SA + body.Area_SC)
-    CL_body = (CL_sa * body.Area_SA + CL_sc * body.Area_SC) / (body.Area_SA + body.Area_SC)
+    CD_body = (CD_sa*body.area_SA + CD_sc*body.area_SC) / (body.area_SA + body.area_SC)
+    CL_body = (CL_sa*body.area_SA + CL_sc*body.area_SC) / (body.area_SA + body.area_SC)
 
-    if montecarlo
-        CL_body, CD_body = MonteCarloPerturbations.monte_carlo_aerodynamics(CL_body, CD_body, args)
+    if montecarlo == true
+        CL_body, CD_body = monte_carlo_aerodynamics(CL_body, CD_body, args)
     end
 
     return CL_body, CD_body

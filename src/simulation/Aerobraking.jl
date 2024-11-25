@@ -15,8 +15,8 @@ function aerobraking(ip, m, args)
 
     clean_results()
 
-    config.cnf.time_OP = 0
-    config.cnf.time_IP = 0
+    config.cnf.time_OP = 1
+    config.cnf.time_IP = 1
 
     # Aerobraking Campaign
     while continue_campaign && FinalState
@@ -28,57 +28,57 @@ function aerobraking(ip, m, args)
             println("--> Start Passage #" * string(numberofpassage))
         end
 
-        # t = tok()
+        t_el_ab = @elapsed begin
 
-        if args[:Odyssey_sim] == true
-            args = Odyssey_firing_plan(numberofpassage, args)
-        end
+            if args[:Odyssey_sim] == true
+                args = Odyssey_firing_plan(numberofpassage, args)
+            end
 
-        if ip.tc == 1
-            if args[:delta_v] != 0.0
-                if ip.tc == 1
-                    initial_state = propulsion_ic_calcs(m, args, initial_state)
+            if ip.tc == 1
+                if args[:delta_v] != 0.0
+                    if ip.tc == 1
+                        initial_state = propulsion_ic_calcs(m, args, initial_state)
+                    end
+                end
+            elseif ip.tc == 2
+                if round(rad2deg(args[:ϕ])) == 180
+                    println("DECELERATE DRAG FIRING!!")
+                elseif round(rad2deg(args[:ϕ])) == 0
+                    println("ACCELERATE DRAG FIRING!!")
                 end
             end
-        elseif ip.tc == 2
-            if round(rad2deg(args[:ϕ])) == 180
-                println("DECELERATE DRAG FIRING!!")
-            elseif round(rad2deg(args[:ϕ])) == 0
-                println("ACCELERATE DRAG FIRING!!")
+
+            if numberofpassage != 1
+                # Orbtial Elements Results
+                initial_state.a = config.solution.orientation.oe[1][end]
+                initial_state.e = config.solution.orientation.oe[2][end]
+                initial_state.i = config.solution.orientation.oe[3][end]
+                initial_state.Ω = config.solution.orientation.oe[4][end]
+                initial_state.ω = config.solution.orientation.oe[5][end]
+                initial_state.m = config.solution.performance.mass[end]
+                initial_state.vi = config.solution.orientation.oe[6][end]
+
+                m.initial_condition.year = Int64(config.solution.orientation.year[end])
+                m.initial_condition.month = Int64(config.solution.orientation.month[end])
+                m.initial_condition.day = Int64(config.solution.orientation.day[end])
+                m.initial_condition.hour = Int64(config.solution.orientation.hour[end])
+                m.initial_condition.minute = Int64(config.solution.orientation.minute[end])
+                m.initial_condition.second = config.solution.orientation.second[end]
+
+                if (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone") && continue_campaign
+                    r = m.planet.Rp_e + args[:EI]*1e3
+                    initial_state.vi = acos(1 / initial_state.e * (initial_state.a * (1 - initial_state.e^2) / r - 1))
+                end
             end
+
+            continue_campaign = asim(ip, m, initial_state, numberofpassage, args)
+
+            r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
+            r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
         end
-
-        if numberofpassage != 1
-            # Orbtial Elements Results
-            initial_state.a = config.solution.orientation.oe[1][end]
-            initial_state.e = config.solution.orientation.oe[2][end]
-            initial_state.i = config.solution.orientation.oe[3][end]
-            initial_state.Ω = config.solution.orientation.oe[4][end]
-            initial_state.ω = config.solution.orientation.oe[5][end]
-            initial_state.m = config.solution.performance.mass[end]
-            initial_state.vi = config.solution.orientation.oe[6][end]
-
-            m.initial_condition.year = Int64(config.solution.orientation.year[end])
-            m.initial_condition.month = Int64(config.solution.orientation.month[end])
-            m.initial_condition.day = Int64(config.solution.orientation.day[end])
-            m.initial_condition.hour = Int64(config.solution.orientation.hour[end])
-            m.initial_condition.minute = Int64(config.solution.orientation.minute[end])
-            m.initial_condition.second = config.solution.orientation.second[end]
-
-            if (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone") && continue_campaign
-                r = m.planet.Rp_e + args[:EI]*1e3
-                initial_state.vi = acos(1 / initial_state.e * (initial_state.a * (1 - initial_state.e^2) / r - 1))
-            end
-        end
-
-        continue_campaign = asim(ip, m, initial_state, numberofpassage, args)
-
-        r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
-        r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
-        # elapsed = tok() - t
 
         if Bool(args[:print_res])
-            # println("Computational time: " * string(elapsed) * " seconds")
+            println("Computational time: " * string(t_el_ab) * " seconds")
             println("--> PASSAGE #" * string(numberofpassage) * " COMPLETE")
         end
 
@@ -100,5 +100,5 @@ function aerobraking(ip, m, args)
         println(" ")
     end
 
-    closed_form(args, m)
+    # closed_form(args, m)
 end

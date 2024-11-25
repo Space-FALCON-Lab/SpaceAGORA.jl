@@ -276,10 +276,10 @@ function save_results(time, ratio)
     append!(config.solution.simulation.MC_seed, results[89,:])
     append!(config.solution.simulation.drag_passage, results[90,:])
 
-    println(" ")
-    println(results[25,:])
+    # println(" ")
+    # println(results[31,:])
     # println(config.solution.orientation.alt)
-    println(" ")
+    # println(" ")
 
     return time_0
 end

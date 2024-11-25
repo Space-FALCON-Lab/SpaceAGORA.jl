@@ -97,10 +97,10 @@ function heatrate_convective_maxwellian(S, T, m, ρ, v, α)
 
     if t_m != 1
         r_prime  = (1 / S^2) * (2*S^2 + 1 - 1 / (1 + sqrt(pi) * S * sin(α) * erf(S * sin(α) * exp((S * sin(α))^2))))
-        St_prime = (1 / (4 * sqrt(pi) * S)) * (exp(-(S * sin(α))^2)) + (sqrt(pi) * (S * sin(α)) * erf(S * sin(α)))
+        St_prime = (1 / (4 * sqrt(pi) * S)) * (exp(-(S * sin(α))^2) + (sqrt(pi)) * (S * sin(α)) * erf(S * sin(α)))
     elseif t_m == 1
-        r_prime  = (1 / S^2) * (2*S^2 + 1 - 1 / (1 + sqrt(pi) * S * sin(α) * (1 + erf(S *sin(α))) * exp((S * sin(α))^2)))
-        St_prime = (1 / (4 * sqrt(pi) * S)) * (exp(-(S * sin(α))^2)) + (sqrt(pi) * (S * sin(α)) * (1 + erf(S * sin(α))))
+        r_prime  = (1 / S^2) * (2*S^2 + 1 - 1 / (1 + sqrt(pi) * S * sin(α) * (1 + erf(S * sin(α))) * exp((S * sin(α))^2)))
+        St_prime = (1 / (4 * sqrt(pi) * S)) * (exp(-(S * sin(α))^2) + (sqrt(pi)) * (S * sin(α)) * (1 + erf(S * sin(α))))
     end
 
     T_0 = T * (1 + ((p.γ - 1) / p.γ) * S^2)
@@ -109,9 +109,11 @@ function heatrate_convective_maxwellian(S, T, m, ρ, v, α)
     γ = p.γ
     T_w = T_p
 
-    heat_rate = (m.aerodynamics.thermal_accomodation_factor * ρ * m.planet.R * T_p) *
-                ((S^2 + γ/(γ-1) - (γ+1)/(2*(γ-1)) * (T_w / T_p) * (exp(-(S*sin(α))^2) + sqrt(pi) * (S*sin(α)) * (1 + erf(S * sin(α)))) - 0.5*exp(-(S * sin(α))^2))) * 1e-4
-                
+    heat_rate = (m.aerodynamics.thermal_accomodation_factor * ρ * m.planet.R * T_p) * 
+                (sqrt(m.planet.R * T_p / (2 * pi))) * 
+                ((S^2 + (γ) / (γ - 1) - (γ + 1) / (2 * (γ - 1)) * (T_w / T_p)) * 
+                (exp(-(S * sin(α))^2) + sqrt(pi) * (S * sin(α)) * 
+                (1 + erf(S * sin(α)))) - 0.5 * exp(-(S * sin(α))^2)) * 1e-4  # W/cm^2
+
     return heat_rate
 end
-

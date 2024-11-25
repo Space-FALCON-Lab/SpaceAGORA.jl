@@ -1,4 +1,5 @@
 include("simulation/Run.jl")
+include("config.jl")
 
 args = Dict(# Misc Simulation
             :results => 0,                                          # Generate csv file for results True=1, False=0
@@ -128,8 +129,8 @@ t = @elapsed begin
     # Run the simulation
     sol = run_analysis(args)
 
-    if args[:passresults]
-        println("Ra initial = " * string((sol.orientation.oe[0][0] * (1 + sol.orientation.oe[1][0]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[0][end] * (1 + sol.orientation.oe[1][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(min(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+    if Bool(args[:passresults])
+        println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
     end
 end
 

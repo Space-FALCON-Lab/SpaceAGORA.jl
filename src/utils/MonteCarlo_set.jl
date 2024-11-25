@@ -47,8 +47,8 @@ function MonteCarlo_append(MC, args, count)
         count += 1
     end
 
-    if args[:print_res]
-        println("--> Count = " * count)
+    if Bool(args[:print_res])
+        println("--> Count = " * string(count))
     end
 end
 

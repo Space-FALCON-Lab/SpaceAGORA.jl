@@ -35,6 +35,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         μ::Float64 = 0.0
         μ_fluid::Float64 = 0.0
         Lz::Float64 = 0.0
+        name::String = ""
     end
 
     @kwdef mutable struct Aerodynamics

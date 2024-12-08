@@ -21,7 +21,7 @@ using AstroTime
 import .config
 import .ref_sys
 
-function asim(ip, m, initial_state, numberofpassage, args)
+function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere = nothing)
 
     wind_m = false
     if ip.wm == 1
@@ -80,6 +80,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
         time_0 = param[7]
         args = param[8]
         initial_state = param[9]
+        gram_atmosphere = param[10]
 
         ## Counters
         # Counter for all along the simulation of all passages
@@ -136,25 +137,8 @@ function asim(ip, m, initial_state, numberofpassage, args)
         # Angular Momentum Calculations 
         h_ii = cross(pos_ii, vel_ii)    # Inertial angular momentum vector [m ^ 2 / s]
 
-        # what is happenening here?
-        # index = 1
-        # for item in h_ii
-        #     if item == -0
-        #         h_ii[index] = 0
-        #         index = index + 1
-        #     end
-        # end
-
         h_ii_mag = norm(h_ii)           # Magnitude of the inertial angular momentum [m ^ 2 / s]
         h_pp = cross(pos_pp, vel_pp)
-
-        # index = 1
-        # for item in h_pp
-        #     if item == -0
-        #         h_pp[index] = 0.0
-        #         index = index + 1
-        #     end
-        # end
         
         h_pp_mag = norm(h_pp)
         h_pp_hat = h_pp / h_pp_mag
@@ -229,7 +213,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
         elseif ip.dm == 2
             ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         elseif ip.dm == 3
-            ρ, T_p, wind = marsgram(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+            ρ, T_p, wind = marsgram(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args, gram_atmosphere)
         end
 
         # println(" ")
@@ -1080,7 +1064,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
                 initial_time, final_time = time_0, time_0 + length_sim
 
                 # Parameter Definition
-                param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state)
+                param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere)
 
                 println("")
                 println("pos: " * string(norm(in_cond[1:3])) * " vel: " * string(norm(in_cond[4:6]))) 
@@ -1284,7 +1268,7 @@ function asim(ip, m, initial_state, numberofpassage, args)
         config.cnf.count_heat_load_check_exit = 0
 
         # Parameter Definition
-        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state)
+        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere)
 
         # Run simulation
         prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)

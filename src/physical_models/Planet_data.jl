@@ -30,7 +30,7 @@ function planet_data(ip)
         ω = [0.0, 0.0, 7.2921066e-5]   # Earth's rotation rate, rad/s
         μ_fluid = 1.5*10e-5        # kinematic viscosity, m²/s
         Lz = -9.8/1e3              # vertical temperature gradient, K/m
-
+        name = "Earth"
     elseif (ip == 1) # Mars
         Rp_e = 3.3962e6            # equatorial radius, m
         Rp_p = 3.3762e6            # polar radius, m
@@ -51,7 +51,7 @@ function planet_data(ip)
         ω = [0.0, 0.0, 7.088236e-5]    # Mars' rotation rate, rad/s
         μ_fluid = 13.06*10e-6      # kinematic viscosity, m²/s
         Lz = -4.5/1e3              # vertical temperature gradient, K/m
-
+        name = "Mars"
     elseif (ip == 2) # Venus
         Rp_e = 6.0518e6            # equatorial radius, m
         Rp_p = 6.0518e6            # polar radius, m
@@ -72,10 +72,11 @@ function planet_data(ip)
         ω = [0.0, 0.0, -2.9924205e-7]  # Venus' rotation rate, rad/s
         μ_fluid = 13.06*10e-6      # kinematic viscosity, m²/s
         Lz = -10.7/1e3             # vertical temperature gradient, K/m
+        name = "Venus"
     end
 
     # println(model.planet)
-    config.model.planet = config.Planet(Rp_e, Rp_p, Rp_m, mass, p, k, ω, g_ref, ρ_ref, h_ref, H, R, γ, T, J2, μ, μ_fluid, Lz)
+    config.model.planet = config.Planet(Rp_e, Rp_p, Rp_m, mass, p, k, ω, g_ref, ρ_ref, h_ref, H, R, γ, T, J2, μ, μ_fluid, Lz, name)
     
     return config.model.planet
 end

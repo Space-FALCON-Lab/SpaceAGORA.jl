@@ -1,7 +1,8 @@
 include("../physical_models/MonteCarlo_pertrubations.jl")
 include("../physical_models/Planet_data.jl")
 include("../physical_models/Mission.jl")
-include("../utils/Plots.jl")
+include("../utils/Save_csv.jl")
+include("../utils/Plot_data.jl")
 include("Aerobraking.jl")
 
 import .config
@@ -213,8 +214,21 @@ function aerobraking_campaign(args, state)
 
     # Save results
     # if save_res == 1
-    #     # Fill Later
-        
+    #     if args[:filename] == 1
+    #         if args[:montecarlo] == true
+    #             folder_name = args[:simulation_filename][1:findfirst!(args[:simulation_filename], "_nMC)")]
+    #         else
+    #             folder_name = args[:simulation_filename]
+    #         end
+
+    #         name = args[:directory_results] * folder_name * "/" * args[:simulation_filename]
+    #         filename = name * ".csv"
+    #     else
+    #         name = args[:directory_results] * "/Sim" * string(args[:MarsGram_version])
+
+    #         filename = name * ".csv"
+    #     end
+    #     save_csv(filename, args)
     # end
 
     if Bool(args[:print_res])

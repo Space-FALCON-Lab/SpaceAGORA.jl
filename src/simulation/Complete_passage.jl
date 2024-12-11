@@ -225,7 +225,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere = not
         if args[:body_shape] == "Spacecraft"
             length_car = m.body.length_SA + m.body.length_SC
         elseif args[:body_shape] == "Blunted Cone"
-            length_car = m.body.BaseRadius * 2
+            length_car = m.body.base_radius * 2    # TODO changed the name 
         end
 
         Re = vel_pp_mag * ρ * length_car / μ_fluid  # Reynolds number

@@ -35,7 +35,7 @@ args = Dict(# Misc Simulation
             :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             
             # Body
-            :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
+            :body_shape => "Blunted Cone",                            # choices=['Spacecraft' , 'Blunted Cone']
             :max_heat_rate => 0.15,                                 # Max heat rate the heat rate control will start to react to
             :max_heat_load => 30.0,                                 # Max heat load the heat load control will not be overcomed
             :dry_mass => 411.0,                                     # Initial dry mass of body in kg

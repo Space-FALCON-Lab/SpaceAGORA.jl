@@ -1,0 +1,199 @@
+ $INPUT
+  SpicePath      = '../../SPICE'
+  DataPath       = '../data'
+  ListFileName   = 'myncep_LIST'            
+  ColumnFileName = 'myncep_OUTPUT'          
+    
+  Month     = 3
+  Day       = 25
+  Year      = 2020
+  Hour      = 12
+  Minute    = 30
+  Seconds   = 0.0
+
+  InitialRandomSeed               = 1001    
+  RandomPerturbationScale         = 1.6   
+  HorizontalWindPerturbationScale = 1.75   
+  VerticalWindPerturbationScale   = 2.0   
+  NumberOfMonteCarloRuns          = 1
+ 
+  AP         = 16.0
+  DailyF10   = 148.0
+  MeanF10    = 67.0
+  DailyS10   = 0.0
+  MeanS10    = 0.0
+  DailyXM10  = 0.0
+  MeanXM10   = 0.0
+  DailyY10   = 0.0
+  MeanY10    = 0.0
+  DSTTemperatureChange = 0.0
+  
+  ThermosphereModel = 1
+  
+  M2Hour = 1
+  M2MinimumLatitude = 0
+  M2MaximumLatitude = 90
+  M2MinimumLongitude = 0
+  M2MaximumLongitude = 180
+
+  UseNCEP = 1
+  NCEPYear = 9715
+  NCEPHour = 1
+
+  UseRRA  = 0
+  RRAYear = 2019
+  RRAOuterRadius = 2.0
+  RRAInnerRadius = 1.0
+  
+  Patchy = 0
+  SurfaceRoughness = -1
+
+  InitializePerturbations         = 0
+  InitialDensityPerturbation      = 0.0
+  InitialTemperaturePerturbation  = 0.0
+  InitialEWWindPerturbation       = 0.0
+  InitialNSWindPerturbation       = 0.0
+  InitialVerticalWindPerturbation = 0.0
+
+  UseTrajectoryFile     = 0
+  TrajectoryFileName    = 'null' 
+  NumberOfPositions     = 101     
+  EastLongitudePositive = 1   
+  InitialHeight         = 0.0     
+  InitialLatitude       = 22.0   
+  InitialLongitude      = 48.0    
+  DeltaHeight           = 4.0    
+  DeltaLatitude         = 0.3     
+  DeltaLongitude        = 0.5     
+  DeltaTime             = 50.0
+
+  UseAuxiliaryAtmosphere      = 0
+  AuxiliaryAtmosphereFileName = 'RRAanfAnn.txt'
+  OuterRadius = 0.0
+  InnerRadius = 0.0
+
+  FastModeOn        = 0
+  ExtraPrecision    = 0
+  UseLegacyOutputs  = 0 
+
+ $END                
+
+ Explanation of variables:
+  SpicePath      = Path to NAIF Spice data
+  SpiceLsk       = Optional override of the relative (to SpicePath) path to the Spice leapseconds LSK file.
+  SpicePck       = Optional override of the relative (to SpicePath) path to the Spice planetary constants PCK file.
+  SpiceEarth     = Optional override of the relative (to SpicePath) path to the Spice Earth kernel.
+  DataPath       = Path name for EarthGRAM data folder
+  AtmPath        = Optional override of the default atmosphere data location (DataPath/modeldata)
+  RRAPath        = Optional override of the default RRA data location (DataPath/RRAdata)
+  NCEPPath       = Optional override of the default NCEP data location (DataPath/NCEPdata/FixedBin)
+  ListFileName   = List file name
+  ColumnFileName = Output file name 
+
+  Month     = month of year                      
+  Day       = day of month                 
+  Year      = year (4-digit, or 1970-2069 can be 2-digit)
+  Hour      = hour of day (UTC, 0 - 23) 
+  Minute    = minute of hour (UTC, 0 - 59)                                       
+  Seconds   = seconds of minute (UTC, 0.0 - 60.0) 
+
+  InitialRandomSeed               = Random number seed for perturbations (1 through 9 * 10^8) 
+  RandomPerturbationScale         = Random perturbation scale for density, temperature and pressure; 
+                                    nominal=1.0, max=2.0, min=0.1
+  HorizontalWindPerturbationScale = Random perturbation scale for horizontal winds; 
+                                    nominal=1.0, max=2.0, min=0.1
+  VerticalWindPerturbationScale   = Random perturbation scale for vertical winds; 
+                                    nominal=1.0, max=2.0, min=0.1
+  NumberOfMonteCarloRuns = the number of Monte Carlo runs             
+
+  AP        = geomagnetic index (Note: Valid ap must be used if JB2008 selected,
+              for use in HWM wind model)
+  DailyF10  = daily 10.7-cm flux
+  MeanF10   = mean 10.7-cm flux
+  DailyS10  = EUV index (26-34 nm) scaled to F10 units (0.0 -> s10=f10)
+  MeanS10   = EUV 81-day center-averaged index (0.0 -> s10b = f10b)
+  DailyXM10 = MG2 index scaled to F10 units (0.0 -> xm10 = f10)
+  MeanXM10  = MG2 81-day center-averaged index (0.0 -> xm10b = f10b)
+  DailyY10  = Solar X-Ray & Lya index scaled to F10 (0.0 -> y10=f10)
+  MeanY10   = Solar X-Ray & Lya 81-day avg. centered index (0.0 -> y10b=f10b)
+  DSTTemperatureChange = Temperature change computed from Dst index (for JB2008)
+
+  ThermosphereModel  = 1 for MET (Jacchia), 2 for MSIS, or 3 for JB2008 thermosphere   
+
+  M2Hour     = Code for UT hour of day if MERRA2 climatology is used: 1=00UT, 
+               2=03UT, 3=06UT, 4=09UT, 5=12UT, 6=15UT, 7=18UT, 8=21UT, 
+               9=all times of day combined, or 0 to use MERRA2 time-of-day 
+               based on input UTC hour
+  M2MinimumLatitude = Resrict MERRA2 data to latitudes greater than or equal to this value. 
+  M2MaximumLatitude = Resrict MERRA2 data to latitudes less than or equal to this value. 
+  M2MinimumLongitude = Resrict MERRA2 data to longitudes greater than or equal to this value.
+  M2MaximumLongitude = Resrict MERRA2 data to longitudes less than or equal to this value.
+               Min/max longitudes can be specified between -180 and 360 degrees with
+               0 < M2MaximumLongitude - M2MinimumLongitude <= 360.
+
+  UseNCEP    = 0 for MERRA2 model (default), 1 for NCEP model
+  NCEPYear   = y1y2 to use NCEP climatology for period-of-record (POR) from year 
+               y1 through year y2 (e.g. NCEPyr=9008 for POR = 1990 through 
+               2008). NCEP monthly climatology is determined by input value 
+               of Month in initial time input
+  NCEPHour   = Code for UT hour of day if NCEP climatology is used: 1=00 UT, 
+               2=06UT, 3=12UT, 4=18UT, 5=all times of day combined, or 0 to 
+               use NCEP time-of-day based on input UTC hour
+  
+  UseRRA  = Range Reference Atmosphere flag (0 = do not use RRA data, 1 = use RRA data)
+  RRAYear = 1983, 2006, 2013, or 2019 RRAs
+  RRAOuterRadius = lat-lon radius (deg) from RRA site, outside which RRA data are NOT used.
+  RRAInnerRadius = lat-lon radius (deg) from RRA site, inside which RRA data is
+                   used with full weight of 1 (smooth transition of weight factor
+                   from 1 to 0 between sitenear and sitelim). 
+  rraSiteList = Optional override of the default RRA sites file name (rrasites.txt)
+  
+  Patchy   = Patchiness in perturbation model (0 = no patchiness, 1 = patchiness) 
+  SurfaceRoughness = surface roughness (z0) for sigma-w model 
+                     < 0 to use 1-by-1 deg lat-lon surface data,   
+                     = 0 for speed-dependent z0 over water, or 
+                     > 0 for user-specified z0 value (between 1.0e-5 and 3)
+
+  InitializePerturbations = User-defined initial perturbations 
+                            0 = random initial perturbation values
+                            1 = user-defined initial perturbations using values below
+  InitialDensityPerturbation      = initial density perturbation value (% of mean)
+  InitialTemperaturePerturbation  = initial temperature perturbation value (% of mean). 
+                   Note: Initial pressure perturbation is computed from 
+                   InitialDensityPerturbation and InitialTemperaturePerturbation
+  InitialEWWindPerturbation       = initial eastward velocity perturbation (m/s)
+  InitialNSWindPerturbation       = initial northward velocity perturbation (m/s)
+  InitialVerticalWindPerturbation = initial upward velocity perturbation (m/s)
+
+  UseTrajectoryFile  = Trajectory File option (0 = no trajectory file, 1 = use trajectory file)
+  TrajectoryFileName = (Optional) Trajectory input file name 
+                       If present, then the values below are ignored 
+		       
+  NumberOfPositions     = number of positions to evaluate (0 for trajectory file input)
+  EastLongitudePositive =  0 for input and output West longitudes positive
+                           1 for East longitudes positive
+  InitialHeight         = initial height (km, upward positive)  
+  InitialLatitude       = initial latitude (deg, Northward positive)  
+  InitialLongitude      = initial longitude (deg, depends on EastLongitudePositive)
+  DeltaHeight           = height increment (km) between steps
+  DeltaLatitude         = latitude increment (deg) between steps        
+  DeltaLongitude        = longitude increment (deg) between steps
+                          (depends on EastLongitudePositive)      
+  DeltaTime             = time increment (seconds) between steps.
+                      
+  UseAuxiliaryAtmosphere = Auxiliary profile option 
+                          (0 = no auxiliary profile, 1= use auxiliary profile data)
+  AuxiliaryAtmosphereFileName = (Optional) auxiliary profile input file name  
+  InnerRadius = Lat-lon radius within which weight for auxiliary profile is 1.0
+  OuterRadius = Lat-lon radius beyond which weight for auxiliary profile is 0.0
+           
+  FastModeOn        = Flags use of faster ephemeris computations (less accurate)
+                      0 Most accurate ephemeris computations are used
+                      1 Faster computations with slight loss in accuracy
+  ExtraPrecision    = For the new column output format, this parameter 
+                      adds precision to all outputs.
+  UseLegacyOutputs  = Flags which outputs to generate.
+                      0 Use the new output formats.
+                      1 Use output formats closely matching those of the legacy EarthGram.
+ 
+  

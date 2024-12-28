@@ -1,0 +1,47 @@
+ $INPUT
+  SpicePath = '../../SPICE'
+  FindDates = 1                                          
+    
+  TimeFrame = 0
+  TimeScale = 1
+  Month     = 1
+  Day       = 1
+  Year      = 2019
+  Hour      = 0
+  Minute    = 0
+  Seconds   = 0.0
+
+  TargetLongitudeSun    = 300.0    
+  TargetSolarTime       = 12.0   
+
+  InitialLongitude      = 0.0    
+  EastLongitudePositive = 1
+ $END                
+
+ Explanation of variables:
+  SpicePath    = Path to NAIF Spice data
+  SpiceLsk     = Optional override of the relative (to SpicePath) path to the Spice leapseconds LSK file.
+  SpicePck     = Optional override of the relative (to SpicePath) path to the Spice planetary constants PCK file.
+  SpiceNeptune = Optional override of the relative (to SpicePath) path to the Spice Neptune kernel.
+  FindDates    = 0 Run the standard GRAMs routine.
+                 1 Run the Find Dates routine.
+  EastLongitudePositive =  0 for input and output West longitudes positive
+                           1 for East longitudes positive
+
+  TimeFrame = 0 Planet event time (PET)
+              1 for time input as Earth-receive time (ERT)
+  TimeScale = 0 for Terrestrial (Dynamical) Time (TDT)
+              1 for time input as Coordinated Universal Time (UTC)
+              2 for Barycentric Dynamical Time (TDB)
+  Month     = month of year                         
+  Day       = day of month                    
+  Year      = year (4-digit, or 1970-2069 can be 2-digit)
+  Hour      = hour of day (meaning controlled by TimeFrame and TimeScale) 
+  Minute    = minute of hour (meaning controlled by TimeFrame and TimeScale)                                       
+  Seconds   = seconds of minute (meaning controlled by TimeFrame and TimeScale) 
+
+  TargetLongitudeSun = The desired longitude of the sun. 
+  TargetSolarTime    = The desires local solar time.    
+
+  InitialLongitude   = initial position longitude, degrees 
+                       (depends on EastLongitudePositive)

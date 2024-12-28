@@ -8,7 +8,7 @@ include("Aerobraking.jl")
 import .config
 
 function aerobraking_campaign(args, state)
-    save_rs = args[:results]
+    save_res = args[:results]
 
     # Descent towards Mars
     purpose = "Aerobraking around Mars"
@@ -84,6 +84,7 @@ function aerobraking_campaign(args, state)
 
     if Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone"
         r = p_class.Rp_e + h_0
+        
         state[:vi] = - acos(1 / eccentricity_in * (semimajoraxis_in * (1 - eccentricity_in^2) / r - 1))
         
         if args[:montecarlo] == true
@@ -213,29 +214,29 @@ function aerobraking_campaign(args, state)
     end
 
     # Save results
-    # if save_res == 1
-    #     if args[:filename] == 1
-    #         if args[:montecarlo] == true
-    #             folder_name = args[:simulation_filename][1:findfirst!(args[:simulation_filename], "_nMC)")]
-    #         else
-    #             folder_name = args[:simulation_filename]
-    #         end
+    if save_res == 1
+        if args[:filename] == 1
+            if args[:montecarlo] == true
+                folder_name = args[:simulation_filename][1:findfirst!(args[:simulation_filename], "_nMC)")]
+            else
+                folder_name = args[:simulation_filename]
+            end
 
-    #         name = args[:directory_results] * folder_name * "/" * args[:simulation_filename]
-    #         filename = name * ".csv"
-    #     else
-    #         name = args[:directory_results] * "/Sim" * string(args[:MarsGram_version])
+            name = args[:directory_results] * folder_name * "/" * args[:simulation_filename]
+            filename = name * ".csv"
+        else
+            name = args[:directory_results] * "/Sim" * string(args[:MarsGram_version])
 
-    #         filename = name * ".csv"
-    #     end
+            filename = name * ".csv"
+        end
     #     save_csv(filename, args)
-    # end
+    end
 
     if Bool(args[:print_res])
         println("Elapsed time: " * string(t_el) * " s")
     end
 
     if args[:plot] == true
-        # plots(state, m, name, args)
+        plots(state, m, name, args)
     end
 end

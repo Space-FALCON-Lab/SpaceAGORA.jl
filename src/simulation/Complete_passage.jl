@@ -21,7 +21,7 @@ using AstroTime
 import .config
 import .ref_sys
 
-function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere = nothing)
+function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothing)
 
     wind_m = false
     if ip.wm == 1
@@ -213,7 +213,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere = not
         elseif ip.dm == 2
             ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         elseif ip.dm == 3
-            ρ, T_p, wind = marsgram(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args, gram_atmosphere)
+            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args, gram_atmosphere)
         end
 
         # println(" ")
@@ -225,7 +225,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere = not
         if args[:body_shape] == "Spacecraft"
             length_car = m.body.length_SA + m.body.length_SC
         elseif args[:body_shape] == "Blunted Cone"
-            length_car = m.body.BaseRadius * 2
+            length_car = m.body.base_radius * 2
         end
 
         Re = vel_pp_mag * ρ * length_car / μ_fluid  # Reynolds number
@@ -397,7 +397,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere = not
         elseif ip.am == 1
             CL, CD = aerodynamic_coefficient_fM(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
         elseif ip.am == 2
-            CL, CD = aerodynamic_coefficient_no_ballistic_flight(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
+            CL, CD = aerodynamic_coefficient_no_ballistic_flight(α, m.body, args, T_p, S, m.aerodynamics, MonteCarlo)
         end
 
         # println(" ")
@@ -1208,7 +1208,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere = not
         # println(" ")
 
         if index_phase_aerobraking == 2 || index_phase_aerobraking == 2.5 || (index_phase_aerobraking == 2.25 && Bool(args[:drag_passage]))
-            save_post_index = length(config.solution.orientation.time) + 1
+            save_post_index = length(config.solution.orientation.time)
         end
 
         # Re-Set count index to 0
@@ -1217,7 +1217,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere = not
         # Define breaker campaign
         if continue_campaign == false
             if save_post_index == 1
-                save_post_index = length(config.solution.orientation.time) + 1
+                save_post_index = length(config.solution.orientation.time)
             end
 
             break
@@ -1323,7 +1323,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere = not
         println("Delta-E is " * string((config.solution.forces.energy[Int64(config.cnf.time_OP)-1] - config.solution.forces.energy[Int64(config.cnf.time_IP)]) * 1e-3) * " kJ")
 
         # Find periapsis latitude and longitude
-        min_index = argmin(config.solution.orientation.alt[save_pre_index:save_post_index]) + save_pre_index
+        min_index = argmin(config.solution.orientation.alt[save_pre_index:save_post_index]) + save_pre_index - 1
         println("Latitude of periapsis is " * string(rad2deg(config.solution.orientation.lat[min_index])) * " deg")
         println("Longitude of periapsis is " * string(rad2deg(config.solution.orientation.lon[min_index])) * " deg")
 

@@ -1,7 +1,6 @@
 
-
 function ic_calculation_rptoae(planet, γ, v, args)
-    if args[:drag_passsage]
+    if Bool(args[:drag_passage])
         h_0 = args[:EI] * 1e3
     elseif args[:body_shape] == "Blunted Cone"
         h_0 = args[:EI] * 1e3
@@ -12,7 +11,7 @@ function ic_calculation_rptoae(planet, γ, v, args)
     h = r*v*cos(deg2rad(γ))
     p = (h^2)/planet.μ
     e = sqrt(1 - p/a)
-    ra = a*(1-e)
+    ra = a*(1+e)
     hp = (a*(1-e) - planet.Rp_e)
 
     if hp < 0

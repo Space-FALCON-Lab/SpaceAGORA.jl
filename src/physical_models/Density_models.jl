@@ -1,14 +1,14 @@
 include("../utils/Ref_system_conf.jl")
 include("../utils/Reference_system.jl")
 
-# using PythonCall
+using PythonCall
 
-# sys = pyimport("sys")
-# os = pyimport("os")
+sys = pyimport("sys")
+os = pyimport("os")
 
-# sys.path.append(os.path.join(os.path.dirname(os.path.abspath(@__FILE__)), "GRAMpy"))
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(@__FILE__)), "GRAMpy"))
 
-# gram = pyimport("gram")
+gram = pyimport("gram")
 
 import .config
 
@@ -121,7 +121,7 @@ function density_exp(h, p, OE=0, lat=0, lon=0, timereal=0, t0=0, tf_prev=0, mont
     return ρ, T, wind
 end
 
-function mars_gram(h, p, OE, lat, lon, timereal, t0, tf_prev, montecarlo, Wind, args, version=[], atmosphere=nothing)
+function density_gram(h, p, OE, lat, lon, timereal, t0, tf_prev, montecarlo, Wind, args, version=[], atmosphere=nothing)
     """
 
     """

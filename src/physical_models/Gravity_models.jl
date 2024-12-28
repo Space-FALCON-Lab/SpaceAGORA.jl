@@ -45,16 +45,16 @@ function gravity_invsquared_J2(pos_ii_mag, pos_ii, p, mass, vel_ii=0)
     pos_ii_hat = pos_ii ./ pos_ii_mag
     gravity_ii_mag_spherical = -μ / pos_ii_mag^2
 
-    x = pos_ii[0]
-    y = pos_ii[1]
-    z = pos_ii[2]
+    x = pos_ii[1]
+    y = pos_ii[2]
+    z = pos_ii[3]
     r = pos_ii_mag
 
-    J2_ii = -1.5 * J2 * μ * (p.Rp_e^2 / r^4) * [(x/r)*(S*(z/r)^2 - 1), (y/r)*(S*(z/r)^2 - 1), (z/r)*(2*S^2 - 3)]
+    gx = (-μ * x / pos_ii_mag^3) * (1 + 3/2 * J2 * (p.Rp_e/r)^2 * (1 - 5*(z/r)^2))
+    gy = (-μ * y / pos_ii_mag^3) * (1 + 3/2 * J2 * (p.Rp_e/r)^2 * (1 - 5*(z/r)^2))
+    gz = (-μ * z / pos_ii_mag^3) * (1 + 3/2 * J2 * (p.Rp_e/r)^2 * (3 - 5*(z/r)^2))
 
-    gx = (-mu * x / pos_ii_mag^3) * (1 + 3/2 * J2 * (p.Rp_e/r)^2 * (1 - 5*(z/r)^2))
-    gy = (-mu * y / pos_ii_mag^3) * (1 + 3/2 * J2 * (p.Rp_e/r)^2 * (1 - 5*(z/r)^2))
-    gz = (-mu * z / pos_ii_mag^3) * (1 + 3/2 * J2 * (p.Rp_e/r)^2 * (3 - 5*(z/r)^2))
+    g = [gx, gy, gz]
 
     return g
 end

@@ -7,7 +7,7 @@ import .config
 
 function plots(state, m, name, args)
     traj_3D(state, m, name)
-    traj_2D(state, m , name)
+    traj_2D(state, m, name)
 
     performance_plots(state, m, name, args)
 
@@ -41,33 +41,37 @@ function angle_of_attack_plot(name, args)
         time = [config.solution.orientation.time[i] for i in alt_idx]
         aoa = [rad2deg(config.solution.physical_properties.α[i]) for i in alt_idx]
         trace1 = scatter(x=time, y=aoa, mode="lines", line=attr(color="black"))
-        layout = Layout(xaxis_title="Time [s]", yaxis_title=L"$\alpha$ [$^\circ$]")
-        plot(trace1, layout)
+        layout = Layout(xaxis_title="Time [s]", yaxis_title=L"\alpha [^\circ]")
+        p = plot(trace1, layout)
     else
         time_end = 0
         x_labels = []
+        aoa_end = []
         plots_aoa_line = []
         plots_aoa_mark = []
-        
 
         for i in range(start=1, step=1, stop=length(index_orbit)-1)
             time = [config.solution.orientation.time[j] - time_0[i] + time_end for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
             aoa = [rad2deg(config.solution.physical_properties.α[j]) for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
-            append!(plots_aoa_line, scatter(x=time, y=aoa, mode="lines", line=attr(color="black")))
-            append!(plots_aoa_mark, scatter(x=time, y=aoa, mode="markers", marker=attr(color="red")))
+
+            push!(plots_aoa_mark, scatter(x=[i], y=[aoa[end]], mode="markers", marker=attr(color="red")))
             time_end = time[end]
-            append!(x_labels, (time_end + time[1])/2)
+            # append!(x_labels, (time_end + time[1])/2)
+            append!(x_labels, i)
+            append!(aoa_end, aoa[end])
         end
 
-        layout = Layout(xaxis_title="Time [s]", yaxis_title=L"$\alpha$ [$^\circ$]", xaxis_tickvals=x_labels)
-        plot([plots_aoa_line..., plots_aoa_mark...], layout)
-
-        savefig(plot([plots_aoa_line..., plots_aoa_mark...], layout), name * "_angle_of_attack_profile.png")
+        push!(plots_aoa_line, scatter(x=x_labels, y=aoa_end, mode="lines", line=attr(color="black")))
+        layout = Layout(xaxis_title="Orbits", yaxis_title="α [deg]", template="simple_white", showlegend=false)
+        p = plot([plots_aoa_line..., plots_aoa_mark...], layout)
     end
+
+    display(p)
+    savefig(p, name * "_angle_of_attack_profile.pdf", format="pdf")
 end
 
 function closed_form_solution_plot(name, mission)
-    alt = [item - mission.planet.Rp_e foe item in config.solution.orientation.pos_ii_mag]
+    alt = [item - mission.planet.Rp_e for item in config.solution.orientation.pos_ii_mag]
     alt_idx = findall(x -> x <= 160*1e3, alt)
 
     index_orbit = [1]
@@ -75,8 +79,8 @@ function closed_form_solution_plot(name, mission)
 
     for i in range(start=2, step=1, stop=length(alt_idx))
         if alt_idx[i] - alt_idx[i - 1] > 50
-            append!(index_orbit, i-1)
-            append!(time_0, config.solution.orientation.time[alt_idx[i-1]])
+            append!(index_orbit, i)
+            append!(time_0, config.solution.orientation.time[alt_idx[i]])
         end
     end
     append!(index_orbit, length(alt_idx))
@@ -114,13 +118,13 @@ function closed_form_solution_plot(name, mission)
         gamma_cf = [rad2deg(config.solution.closed_form.γ_cf[j]) for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
         v_cf = [config.solution.closed_form.v_cf[j] for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
 
-        append!(plot_traces_alt, scatter(x=time, y=alt, mode="lines", line=attr(color="black")))
-        append!(plot_traces_gamma, scatter(x=time, y=gamma, mode="lines", line=attr(color="black")))
-        append!(plot_traces_v, scatter(x=time, y=v, mode="lines", line=attr(color="black")))
+        push!(plot_traces_alt, scatter(x=time, y=alt, mode="lines", line=attr(color="black")))
+        push!(plot_traces_gamma, scatter(x=time, y=gamma, mode="lines", line=attr(color="black")))
+        push!(plot_traces_v, scatter(x=time, y=v, mode="lines", line=attr(color="black")))
 
-        append!(plot_traces_alt_cf, scatter(x=time_cf, y=alt_cf, mode="lines", line=attr(color="gray")))
-        append!(plot_traces_gamma_cf, scatter(x=time_cf, y=gamma_cf, mode="lines", line=attr(color="gray")))
-        append!(plot_traces_v_cf, scatter(x=time_cf, y=v_cf, mode="lines", line=attr(color="gray")))
+        push!(plot_traces_alt_cf, scatter(x=time_cf, y=alt_cf, mode="lines", line=attr(color="gray")))
+        push!(plot_traces_gamma_cf, scatter(x=time_cf, y=gamma_cf, mode="lines", line=attr(color="gray")))
+        push!(plot_traces_v_cf, scatter(x=time_cf, y=v_cf, mode="lines", line=attr(color="gray")))
     end
 
     layout_alt = Layout(xaxis_title="Time [s]", yaxis_title="Altitude [km]")
@@ -132,9 +136,10 @@ function closed_form_solution_plot(name, mission)
     p_v = plot([plot_traces_v..., plot_traces_v_cf...], layout_v)
 
     p = [p_alt p_gamma p_v]
-    relayout!(p, width=2200, height=1000)
+    relayout!(p, width=2200, height=1000, template="simple_white", showlegend=false)
 
-    savefig(p, name * "_closed_form_solution.png")
+    display(p)
+    savefig(p, name * "_closed_form_solution.pdf", format="pdf")
 end
 
 function performance_plots(state, m, name, args)
@@ -150,8 +155,8 @@ function performance_plots(state, m, name, args)
 
         for i in range(start=2, step=1, stop=length(index))
             if index[i] - index[i - 1] > 50
-                append!(index_orbit, i-1)
-                append!(time_0, config.solution.orientation.time[index[i-1]])
+                append!(index_orbit, i)
+                append!(time_0, config.solution.orientation.time[index[i]])
             end
         end
         append!(index_orbit, length(index))
@@ -166,13 +171,14 @@ function performance_plots(state, m, name, args)
     plot_1 = plot([plot_traces_1], layout_1)
 
     index = findall(x -> x > 0, config.solution.performance.heat_rate)
+    heat_rate = config.solution.performance.heat_rate[index]
     index_orbit = [1]
     time_0 = [config.solution.orientation.time[index[1]]]
 
     for i in range(start=2, step=1, stop=length(index))
         if index[i] - index[i - 1] > 50
-            append!(index_orbit, i-1)
-            append!(time_0, config.solution.orientation.time[index[i-1]])
+            append!(index_orbit, i)
+            append!(time_0, config.solution.orientation.time[index[i]])
         end
     end
 
@@ -181,7 +187,7 @@ function performance_plots(state, m, name, args)
 
     if length(index_orbit) == 2
         time = [config.solution.orientation.time[i] for i in index]
-        append!(plot_traces_heat_rate, scatter(x=time, y=heat_rate, mode="lines", line=attr(color="black")))
+        push!(plot_traces_heat_rate, scatter(x=time, y=heat_rate, mode="lines", line=attr(color="black")))
     else
         time_end = 0
         for i in range(start=1, step=1, stop=length(index_orbit)-1)
@@ -190,20 +196,20 @@ function performance_plots(state, m, name, args)
             max_value = maximum(heat_rate)
             max_index = findfirst(x -> x == max_value, heat_rate)
 
-            append!(plot_traces_heat_rate, scatter(x=time[max_index] , y=heat_rate[max_index], mode="markers", marker=attr(color="black")))
+            push!(plot_traces_heat_rate, scatter(x=[time[max_index]] , y=[heat_rate[max_index]], mode="markers", marker=attr(color="black")))
             time_end = time[end]
         end
     end
 
     layout_heat_rate = Layout(xaxis_title="Time [s]", yaxis_title=L"$\text{Heat rate [W/cm}^2 \text{}}]$")
-    plot_heat_rate = plot(plot_traces_heat_rate, layout_heat_rate)
+    plot_heat_rate = plot([plot_traces_heat_rate...], layout_heat_rate)
 
     plot_traces_heat_load = []
 
     if length(index_orbit) == 2
         time = [config.solution.orientation.time[i] for i in index]
         heat_load = [config.solution.performance.heat_load[i] for i in index]
-        append!(plot_traces_heat_load, scatter(x=time, y=heat_load, mode="markers", marker=attr(color="black")))
+        push!(plot_traces_heat_load, scatter(x=time, y=heat_load, mode="markers", marker=attr(color="black")))
     else
         time_end = 0
 
@@ -211,13 +217,13 @@ function performance_plots(state, m, name, args)
             time = [config.solution.orientation.time[j] - time_0[i] + time_end for j in index[index_orbit[i]:index_orbit[i+1]-1]]
             heat_load = [config.solution.performance.heat_load[j] for j in index[index_orbit[i]:index_orbit[i+1]-1]]
 
-            append!(plot_traces_heat_load, scatter(x=time[end] , y=heat_load[end], mode="markers", marker=attr(color="black")))
+            push!(plot_traces_heat_load, scatter(x=[time[end]] , y=[heat_load[end]], mode="markers", marker=attr(color="black")))
             time_end = time[end]
         end
     end
 
-    layout_heat_load = Layout(xaxis_title="Time [s]", yaxis_title=L"$\text{Heat load [J/cm}^2 \text{}}]$")
-    plot_heat_load = plot(plot_traces_heat_load, layout_heat_load)
+    layout_heat_load = Layout(xaxis_title="Time [s]", yaxis_title=L"Heat load [J/cm^2]")
+    plot_heat_load = plot([plot_traces_heat_load...], layout_heat_load)
 
     if args[:body_shape] == "Spacecraft"
         plot_traces_4 = scatter(x=[item/(60*60*24) for item in config.solution.orientation.time], y=[item - args[:dry_mass] for item in config.solution.performance.mass], mode="lines", line=attr(color="black"))
@@ -247,9 +253,10 @@ function performance_plots(state, m, name, args)
     plot_4 = plot([plot_traces_4], layout_4)
 
     p = [plot_1 plot_heat_rate; plot_heat_load plot_4]
-    relayout!(p, width=2100, height=1200)
+    relayout!(p, width=2100, height=1200, template="simple_white", showlegend=false)
 
-    savefig(p, name * "_performance.png")
+    display(p)
+    savefig(p, name * "_performance.pdf", format="pdf")
 end
 
 function traj_2D(state, m, name)
@@ -264,42 +271,68 @@ function traj_2D(state, m, name)
              -cos(Ω)*sin(ω)-sin(Ω)*cos(ω)*cos(i) -sin(Ω)*sin(ω)+cos(Ω)*cos(ω)*cos(i) cos(ω)*sin(i);
              sin(Ω)*sin(i) -cos(Ω)*sin(i) cos(i)]
     
-    vector = T_ijk .* [x; y; z]
+    vector = T_ijk * hcat(x, y, z)'
+
+    x_min = minimum(vector[1,:])
+    x_max = maximum(vector[1,:])
+    y_min = minimum(vector[2,:])
+    y_max = maximum(vector[2,:])
+
+    min = minimum([x_min, y_min])
+    max = maximum([x_max, y_max])
+
+    x_labels = range(start=min, step=5000, stop=max)
+    y_labels = range(start=min, step=5000, stop=max)
     
     plot_traces = scatter(x=vector[1,:], y=vector[2,:], mode="lines", line=attr(color="black"))
-    layout = Layout(xaxis_title="x [km]", yaxis_title="y [km]", shapes=[circle(xref="x", yref="y", fillcolor="OrangeRed", x0=0, y0=0, x1=0, y1=0, line_color="Red")])
-    plot(plot_traces, layout)
-    savefig(plot(plot_traces, layout), name * "_traj2D.png")
+    layout = Layout(width=800, height=800, xaxis_title="x [km]", yaxis_title="y [km]", xaxis_range=[min, max], yaxis_range=[min, max], shapes=[circle(xref="x", yref="y", fillcolor="OrangeRed", x0=-m.planet.Rp_e*1e-3, y0=-m.planet.Rp_p*1e-3, x1=m.planet.Rp_e*1e-3, y1=m.planet.Rp_p*1e-3, line_color="OrangeRed"), circle(xref="x", yref="y", fillcolor="Yellow", opacity=0.2, x0=-m.planet.Rp_e*1e-3-160, y0=-m.planet.Rp_e*1e-3-160, x1=m.planet.Rp_e*1e-3+160, y1=m.planet.Rp_e*1e-3+160, line_color="Yellow")], template="simple_white", showlegend=false) # , xaxis_tickvals=x_labels, yaxis_tickvals=y_labels)
+    p = plot(plot_traces, layout)
+    display(p)
+    savefig(p, name * "_traj2D.pdf", width=800, height=800, format="pdf")
 end
 
 function traj_3D(state, m, name)
 
-    p = make_subplots(rows=3, cols=3, 
-                      specs=[Spec(kind="scene", rowspan=3, colspan=2) missing Spec(kind="scene")
-                             missing missing Spec(kind="scene") 
-                             missing missing Spec(kind="scene")])
+    # p = make_subplots(rows=3, cols=3, 
+    #                   specs=[Spec(kind="scene", rowspan=3, colspan=2) missing Spec(kind="scene");
+    #                          missing missing Spec(kind="scene"); 
+    #                          missing missing Spec(kind="scene")])
 
     x = [item*1e-3 for item in config.solution.orientation.pos_ii[1]]
     y = [item*1e-3 for item in config.solution.orientation.pos_ii[2]]
     z = [item*1e-3 for item in config.solution.orientation.pos_ii[3]]
 
+    x_min = minimum(x)
+    x_max = maximum(x)
+    y_min = minimum(y)
+    y_max = maximum(y)
+    z_min = minimum(z)
+    z_max = maximum(z)
+
+    min = minimum([x_min, y_min, z_min])
+    max = maximum([x_max, y_max, z_max])
+
     r = m.planet.Rp_e*1e-3
 
     n = 100
-    u = range(start=0, stop=2*pi, length=n)
+    u = range(start=-pi, stop=pi, length=n)
     v = range(start=0, stop=pi, length=n)
     xs = r * cos.(u) * sin.(v)'
     ys = r * sin.(u) * sin.(v)'
     zs = r * ones(n) * cos.(v)'
 
-    sphere1 = mesh3d(x=xs, y=ys, z=zs, color="rgba(168, 64, 50, 1.0)")
+    # println("")
+    # println(size(xs))
+    # println("")
+
+    sphere1 = surface(x=xs, y=ys, z=zs, opacity=0.9, showscale=false, surfacecolor=@. x^2 + y^2 + z^2 + 100)
 
     r += 160                        # AE alt 160 km    
     xs = r * cos.(u) * sin.(v)'
     ys = r * sin.(u) * sin.(v)'
     zs = r * ones(n) * cos.(v)'
 
-    sphere2 = mesh3d(x=xs, y=ys, z=zs, color="rgba(255, 255, 0, 0.25)")
+    sphere2 = surface(x=xs, y=ys, z=zs, opacity=0.2, showscale=false, surfacecolor=@. x^2 + y^2 + z^2 - 100) # "rgba(255, 255, 0, 0.25)")
 
     index = [1]
     for i in range(start=1, step=1, stop=length(config.solution.orientation.number_of_passage)-1)
@@ -307,59 +340,27 @@ function traj_3D(state, m, name)
             append!(index, i)
         end
     end
-    append!(length(config.solution.orientation.number_of_passage))
+    append!(index, length(config.solution.orientation.number_of_passage))
 
+    x_lables = range(start=min, step=5000, stop=max)
+    y_labels = range(start=min, step=5000, stop=max)
+    z_labels = range(start=min, step=5000, stop=max)
+
+    traj_3D_traces = []
     for i in range(start=1, step=1, stop=length(index)-1)
         x_s = x[index[i]:index[i+1]]
         y_s = y[index[i]:index[i+1]]
         z_s = z[index[i]:index[i+1]]
         
-        add_trace!(p, scatter3d(x=x_s, y=y_s, z=z_s, mode="lines", line=attr(color="black"), row=1, col=1))
-        add_trace!(p, scatter3d(x=x_s, y=y_s, z=z_s, mode="lines", line=attr(color="black"), row=1, col=3))
-        add_trace!(p, scatter3d(x=x_s, y=y_s, z=z_s, mode="lines", line=attr(color="black"), row=2, col=3))
-        add_trace!(p, scatter3d(x=x_s, y=y_s, z=z_s, mode="lines", line=attr(color="black"), row=3, col=3))
+        push!(traj_3D_traces, scatter3d(x=x_s, y=y_s, z=z_s, mode="lines", line=attr(color="black"), row=1, col=1))
     end
 
-    relayout!(p, xaxis_title="x [km]", yaxis_title="y [km]", zaxis_title="z [km]")
-    savefig(p, name * "_traj3D.png")
+    layout = Layout(scene_aspectmode="cube", scene_xaxis_range=[min, max], scene_yaxis_range=[min, max], scene_zaxis_range=[min, max], xaxis_title="x [km]", yaxis_title="y [km]", zaxis_title="z [km]", template="simple_white", showlegend=false)
+    p = plot([sphere1, sphere2, traj_3D_traces...], layout)
+    display(p)
+    savefig(p, name * "_traj3D.pdf", format="pdf")
 
 end
-
-# function plot_visible(elev, azimuth, x, y, z)
-#     a = azimuth*pi/180 - pi
-#     e = elev*pi/180 - pi/2
-
-#     X = [sin(e)*cos(a) sin(e)*sin(a) cos(e)]
-
-#     Z = [x y z]
-
-#     cond = (dot.(Z,X) >= 0)
-
-#     x_ca = x[cond]
-#     y_ca = y[cond]
-#     z_ca = z[cond]
-
-#     return x_ca, y_ca, z_ca
-# end
-
-# function plots_continuous(x, y, z, ax)
-#     index_disc = [1]
-
-#     for i in range(start=1, step=1, stop=length(x)-1)
-#         if norm([x[i] - x[i-1], y[i] - y[i-1], z[i] - z[i-1]]) > 500
-#             append!(index_disc, i-1)
-#             append!(index_disc, i)
-#         end
-#     end
-#     append!(index_disc, length(x))
-
-#     for i in range(start=1, step=2, stop=length(index_disc)-1)
-#         x_s = x[index_disc[i]:index_disc[i+1]]
-#         y_s = y[index_disc[i]:index_disc[i+1]]
-#         z_s = z[index_disc[i]:index_disc[i+1]]
-#         plot_traces = 
-#     end
-# end
 
 function ABM_periapsis(name)
     orbit_number = config.cnf.orbit_number_list

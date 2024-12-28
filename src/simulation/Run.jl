@@ -44,9 +44,9 @@ function run_orbitalelements(args)
 end
 
 function run_vgamma(args)
-    γ_0, v_0, inclination, Ω, ω = [range(Int64(args[:γ_initial_a]*100), Int64(args[:γ_initial_a]*100), Int64(args[:γ_step]*100))], 
-                                [range(Int64(args[:v_initial_a]), Int64(args[:v_initial_b]), Int64(args[:v_step]))],
-                                args[:inclination], args[:Ω], args[:ω]
+    γ_0, v_0, inclination, Ω, ω = collect(range(Int64(args[:γ_initial_a]*100), Int64(args[:γ_initial_a]*100), step=Int64(args[:γ_step]*100))), 
+                                  collect(range(Int64(args[:v_initial_a]), Int64(args[:v_initial_b]), step=Int64(args[:v_step]))),
+                                  args[:inclination], args[:Ω], args[:ω]
     final_apoapsis = args[:final_apoapsis]
 
     for γ in γ_0
@@ -57,7 +57,7 @@ function run_vgamma(args)
             planet = planet_data(args[:planet])
             apoapsis, periapsis_alt = ic_calculation_rptoae(planet, γ, v, args)
 
-            if args[:print_res]
+            if Bool(args[:print_res])
                 println("Velocity: " * string(v) * " m/s, Flight-Path Angle: " * string(γ) * " deg")
             end
 
@@ -87,7 +87,7 @@ function run_analysis(args)
 
     args = def_miss(args)
 
-    if args[:initial_condition_type] == 1 && (args[:drag_passage] || args[:body_shape] == "Blunted Cone")
+    if args[:initial_condition_type] == 1 && (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone")
         run_vgamma(args)
     else
         run_orbitalelements(args)

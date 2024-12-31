@@ -9,6 +9,7 @@ import .config
 
 function aerobraking_campaign(args, state)
     save_res = args[:results]
+    config.cnf.Gram_directory = args[:directory_Gram]
 
     # Descent towards Mars
     purpose = "Aerobraking around Mars"
@@ -222,14 +223,15 @@ function aerobraking_campaign(args, state)
                 folder_name = args[:simulation_filename]
             end
 
-            name = args[:directory_results] * folder_name * "/" * args[:simulation_filename]
+            name = args[:directory_results] * "/" * folder_name
+
             filename = name * ".csv"
         else
-            name = args[:directory_results] * "/Sim" * string(args[:MarsGram_version])
+            name = args[:directory_results] * "/" * "GRAMver_" * string(args[:Gram_version])
 
             filename = name * ".csv"
         end
-    #     save_csv(filename, args)
+        save_csv(filename, args)
     end
 
     if Bool(args[:print_res])

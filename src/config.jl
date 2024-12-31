@@ -139,7 +139,8 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         heat_rate_limit::Float64 = 0.0
         time_OP::Float64 = 0.0
         time_IP::Float64 = 0.0
-        MarsGram_justrecalled::Int64 = 0
+        Gram_justrecalled::Int64 = 0
+        Gram_directory::String = ""
         heat_rate_list::Vector{Float64} = []
         stop_simulation::Bool = false
         results_save::Int64 = 0

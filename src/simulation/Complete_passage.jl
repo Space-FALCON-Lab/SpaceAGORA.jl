@@ -388,6 +388,15 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
         end
 
+        if length(args[:n_bodies]) != 0
+
+            et = utc2et(time_real)
+
+            for k = 1:length(args[:n_bodies])
+                gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
+            end
+        end
+
         bank_angle = 0.0
 
         lift_pp_hat = cross(h_pp_hat, vel_pp_rw_hat)

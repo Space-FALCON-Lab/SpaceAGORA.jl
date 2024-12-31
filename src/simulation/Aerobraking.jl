@@ -32,23 +32,23 @@ function aerobraking(ip, m, args)
     config.cnf.time_IP = 1
 
     if args[:density_model] == "Gram"
-        inputParameters = Dict("Earth" => gram.EarthInputParameters(),
-                               "Mars" => gram.MarsInputParameters(),
-                               "Venus" => gram.VenusInputParameters())
+        inputParameters = Dict("earth" => gram.EarthInputParameters(),
+                               "mars" => gram.MarsInputParameters(),
+                               "venus" => gram.VenusInputParameters())
         
-        namelistReaders = Dict("Earth" => gram.EarthNamelistReader(),
-                               "Mars" => gram.MarsNamelistReader(),
-                               "Venus" => gram.VenusNamelistReader())
+        namelistReaders = Dict("earth" => gram.EarthNamelistReader(),
+                               "mars" => gram.MarsNamelistReader(),
+                               "venus" => gram.VenusNamelistReader())
             
-        atmospheres = Dict("Earth" => gram.EarthAtmosphere(),
-                           "Mars" => gram.MarsAtmosphere(),
-                           "Venus" => gram.VenusAtmosphere())
+        atmospheres = Dict("earth" => gram.EarthAtmosphere(),
+                           "mars" => gram.MarsAtmosphere(),
+                           "venus" => gram.VenusAtmosphere())
 
         planet_name = m.planet.name
         input_parameters = inputParameters[planet_name]
 
         # Mars has some weird specific parameters, so this line is just to check to make sure the it doesn't do it for the other planets
-        if planet_name == "Mars"
+        if planet_name == "mars"
             # input_parameters.dataPath = os.path.join(os.path.dirname(os.path.abspath(@__FILE__)),"..", "GRAM_Data", "Mars", "data", "")
             input_parameters.dataPath = args[:directory_Gram_data] * "/Mars/data/"
             if !Bool(os.path.exists(input_parameters.dataPath))

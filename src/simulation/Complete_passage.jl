@@ -205,7 +205,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         azi_pp = atan(vE, vN)
 
         # Get density, pressure , temperature and winds
-        config.cnf.MarsGram_justrecalled = 0
+        config.cnf.Gram_justrecalled = 0
         if ip.dm == 0
             ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         elseif ip.dm == 1
@@ -213,7 +213,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         elseif ip.dm == 2
             ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         elseif ip.dm == 3
-            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args, gram_atmosphere)
+            el_time = value(seconds(date_initial - (date_initial + t0*seconds)))
+            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere)
+            ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
         end
 
         # println(" ")
@@ -280,7 +282,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 end
             end
 
-            if config.cnf.MarsGram_justrecalled == true && config.cnf.index_Mars_Gram_call != 1
+            if config.cnf.Gram_justrecalled == true && config.cnf.index_Mars_Gram_call != 1
                 if ip.cm == 3
                     # config.α =
                 elseif ip.cm == 2

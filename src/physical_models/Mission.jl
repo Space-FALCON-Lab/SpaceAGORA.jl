@@ -43,7 +43,7 @@ function mission_def(mission)
         dm = 1
     elseif mission[:Density_Model] == "No-Density" || mission[:Density_Model] == "No-density"
         dm = 2
-    elseif mission[:Density_Model] == "MARSGram" || mission[:Density_Model] == "MarsGram"
+    elseif mission[:Density_Model] == "Gram" || mission[:Density_Model] == "GRAM"
         dm = 3
     else
         dm = 1

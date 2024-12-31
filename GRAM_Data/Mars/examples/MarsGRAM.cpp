@@ -1,0 +1,176 @@
+//////////////////////////////////////////////////////////////////////////
+// The Global Reference Atmospheric Model (GRAM) Framework
+//
+// No recipient of this code should forward copies outside of the United 
+// States without explicit approval by NASA Marshall Space Flight Center.
+// 
+// Module: Mars-GRAM
+//////////////////////////////////////////////////////////////////////////
+
+#include <iostream>
+#include <chrono>
+#include "gtest/gtest.h"
+#include "MarsAtmosphere.h"
+#include "MarsNamelistReader.h"
+#include "MonteCarlo.h"
+#include "Trajectory.h"
+//#include "TestingProfile.h"
+#include "ProfilePrinter.h"
+#include "MarsProfilePrinter.h"
+#include "SpiceLoader.h"
+
+using namespace std;
+using namespace GRAM;
+
+int main(int argc, char** argv)
+{
+  cout << "======================" << endl;
+  string version = MarsAtmosphere::getVersionString();
+  cout << version << endl;
+  cout << "======================\n" << endl;
+
+  // Parse the command line.
+  string namelistFileName;
+  if (argc > 1) {
+    string arg1(argv[1]);
+    // The namelist filename is supplied on the command line.
+    if (arg1 == "-file") {
+      if (argc > 2) {
+        namelistFileName = argv[2];
+      }
+    }
+    // Command line arg to run the unit tests.
+    else if (arg1 == "-test") {
+      // Set the SPICE data path
+      InputParameters inputParameters;
+      NamelistReader reader;
+      reader.tryGetSpicePath(inputParameters);
+      SpiceLoader spiceLoader;
+      spiceLoader.setInputParameters(inputParameters);
+
+      // Run the unit tests.
+      testing::InitGoogleTest(&argc, argv);
+      return RUN_ALL_TESTS();
+    }
+    else {
+      cout << "Unknown option." << endl;
+      return 0;
+    }
+  }
+  else {
+    // No command line options. So prompt the user.
+    cout << "Enter the namelist file name: ";
+    cin >> namelistFileName;
+  }
+
+  // Process timer.
+  typedef std::chrono::high_resolution_clock Clock;
+  auto t1 = Clock::now();
+
+  // Feedback.
+  cout << "Reading " << namelistFileName << endl;
+  std::string outFiles;
+
+  try {
+    // Load parameters from the namelist file.
+    MarsInputParameters inputParameters;
+    MarsNamelistReader reader;
+    // See if there is a SPICE path override first.
+    reader.tryGetSpicePath(inputParameters);
+    reader.getParameters(namelistFileName, inputParameters);
+
+    // Set the input parameters.
+
+    if (!inputParameters.findDates) {
+      cout << "Starting simulation." << endl;
+
+      // Start with a Monte Carlo object
+      MonteCarlo monte;
+
+      // The Monte Carlo requires a profile generator
+      // Here we use a trajectory profile
+      Trajectory trajProfile;
+//      TestingProfile trajProfile;
+
+      // The trajectory requires an atmosphere
+      MarsAtmosphere mars;
+      mars.setInputParameters(inputParameters);
+      trajProfile.setAtmosphere(mars);
+
+      // The profile is ready, give it to the Monte Carlo object
+      monte.setProfile(trajProfile);
+
+      // The Monte Carlo also needs a profile printer
+      MarsProfilePrinter printer;
+      if (inputParameters.useLegacyOutputs) {
+        // User wants legacy outputs.
+        printer.setStyle(printer.GRAM_MONTE_CARLO_STYLE | printer.MARS_DAY_STYLE | printer.MARS_RAD_STYLE | printer.MARS_THRM_STYLE);
+      }
+      else if (inputParameters.listFileName.empty() || inputParameters.listFileName == "null") {
+        // List output suppressed.
+        printer.setStyle(printer.GRAM_CSV_STYLE);
+      }
+      else {
+        // Default is LIST and CSV output.
+        printer.setStyle(printer.GRAM_CSV_STYLE | printer.GRAM_MD_STYLE);
+      }
+      monte.setProfilePrinter(printer);
+
+      // Now we pass the input parameters to the Monte Carlo object.
+      // They will get passed on to the profile, atmosphere, and printer
+      monte.setInputParameters(inputParameters);
+
+      // Now run the Monte Carlo
+      monte.generate();
+
+      // Save the output file names.
+      outFiles = printer.getOutputFileNames();
+    }
+    else {
+      // Set the SPICE data path.
+      MarsAtmosphere mars;
+      mars.setInputParameters(inputParameters);
+
+      // The start date has been set via the input paramters.
+      // Now set the longitude (via position).
+      Position position;
+      position.setLongitudeDegrees(inputParameters.initialLongitude, inputParameters.isEastLongitudePositiveOnInput);
+      mars.setPosition(position);
+
+      // Declare arrays for return data.
+      GramTime gramTime[3];
+      greal lonSun[3], tlst[3];
+
+      // Search for the target dates.
+      mars.findDates(inputParameters.targetLongitudeSun, inputParameters.targetSolarTime, gramTime, lonSun, tlst);
+
+      // Print the longitude
+      cout << endl;
+      cout << "Longitude: " << inputParameters.initialLongitude << " degrees " << (inputParameters.isEastLongitudePositiveOnInput ? "E" : "W") << endl;
+
+      // Print the target data.
+      ProfilePrinter printer;
+      printer.printDates(gramTime, lonSun, tlst);
+    }
+  }
+  catch (const string& msg) {
+    cerr << msg << endl;
+  }
+  catch (const std::runtime_error& err) {
+    cerr << "An unanticipated error occurred." << endl;
+    cerr << err.what() << endl;
+  }
+
+  // Report the processor time.
+  auto t2 = Clock::now();
+  cout << "Elapsed time: " << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count() / 1000.0 << " seconds." << endl;
+
+  // Report the output files
+  if (!outFiles.empty()) {
+    cout << "Files output: " << outFiles << endl;
+  }
+  cout << endl;
+
+  return 0;
+}
+

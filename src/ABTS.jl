@@ -2,21 +2,23 @@ include("simulation/Run.jl")
 include("config.jl")
 
 args = Dict(# Misc Simulation
-            :results => 0,                                                                                      # Generate csv file for results True=1, False=0
+            :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "C:/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/src/output",                # Directory where to save the results
-            :directory_MarsGram => nothing,                                                                     # Directory where MarsGram is
-            :MarsGram_version => 0,                                                                             # MarsGram x file to use
+            :directory_results => "/mnt/c/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/src/output",            # Directory where to save the results
+            :directory_Gram => "/mnt/c/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/GRAMpy",                   # Directory where Gram is
+            :directory_Gram_data => "/mnt/c/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/GRAM_Data",    # Directory where Gram data is
+            :directory_Spice => "/mnt/c/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/GRAM_Data/SPICE",        # Directory where SPICE files are located
+            :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
             :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
-            :filename => 0,                                         # Filename with specifics of simulation, True =1, False=0
+            :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
 
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :number_of_orbits => 5,                                 # Number of aerobraking passage
+            :number_of_orbits => 1,                                 # Number of aerobraking passage
 
             # Physical Model
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2

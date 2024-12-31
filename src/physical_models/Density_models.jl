@@ -3,14 +3,9 @@ include("../utils/Reference_system.jl")
 
 using PythonCall
 
-sys = pyimport("sys")
-os = pyimport("os")
-
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(@__FILE__)), "GRAMpy"))
-
-gram = pyimport("gram")
-
 import .config
+
+sys = pyimport("sys")
 
 function interp(a, b, x)
     """
@@ -121,16 +116,43 @@ function density_exp(h, p, OE=0, lat=0, lon=0, timereal=0, t0=0, tf_prev=0, mont
     return ρ, T, wind
 end
 
-function density_gram(h, p, OE, lat, lon, timereal, t0, tf_prev, montecarlo, Wind, args, version=[], atmosphere=nothing)
+# @pyexec """
+# def density_gram(h, p, OE, lat, lon, timereal, t0, tf_prev, montecarlo, Wind, args, elapsed time, version=[], atmosphere=None):
+
+#     if not version:
+#         version = args[:MarsGram_version]
+
+#     if config.drag_state == False:
+#         rho , T , wind = density_exp(h, p)
+#     else:
+#         position = gram.Position()
+#         position.height = h*1e-3
+#         lat = rad2deg(lat)
+#         lon = rad2deg(lon)
+#         position.latitude = lat
+#         position.longitude = lon
+#         position.elapsedTime = 0 
+#         atmosphere.setPosition(position)
+#         atmosphere.update()
+#         atmos = atmosphere.getAtmosphereState()
+#         rho = atmos.density
+#         T = atmos.temperature
+#         wind = [atmos.perturbedEWWind if montecarlo else atmos.ewWind,
+#                 atmos.perturbedNSWind if montecarlo else atmos.nsWind,
+#                 atmos.verticalWind if montecarlo else 0]
+
+#     return rho, T, wind """ => density_gram
+
+function density_gram(h, p, lat, lon, montecarlo, Wind, args, el_time, atmosphere=nothing)
     """
 
     """
 
-    if not version
-        version = args.MarsGram_version
-    end
+    sys.path.append(args[:directory_Gram])
 
-    if config.drag_state == False
+    gram = pyimport("gram")
+
+    if config.cnf.drag_state == false
         rho , T , wind = density_exp(h, p)
     else
         position = gram.Position()
@@ -139,7 +161,7 @@ function density_gram(h, p, OE, lat, lon, timereal, t0, tf_prev, montecarlo, Win
         lon = rad2deg(lon)
         position.latitude = lat
         position.longitude = lon
-        position.elapsedTime = 0
+        position.elapsedTime = el_time # Time since start in s
         atmosphere.setPosition(position)
         # print('set planet position', position.latitude, position.longitude, position.height)
         atmosphere.update()

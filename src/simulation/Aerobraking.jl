@@ -4,18 +4,22 @@ include("../utils/Closed_form_solution.jl")
 include("../utils/Odyssey_maneuver_plan.jl")
 include("../utils/Save_results.jl")
 
-# using PythonCall
-
-# sys = pyimport("sys")
-# os = pyimport("os")
-
-# sys.path.append(os.path.join(os.path.dirname(os.path.abspath(@__FILE__)), "GRAMpy"))
-
-# gram = pyimport("gram")
+using PythonCall
 
 import .config
 
+sys = pyimport("sys")
+
+os = pyimport("os")
+
+# sys.path.append(os.path.join(os.path.dirname(os.path.abspath(@__FILE__)), "GRAMpy"))
+
 function aerobraking(ip, m, args)
+
+    sys.path.append(args[:directory_Gram])
+
+    gram = pyimport("gram")
+
     initial_state = m.initial_condition
     FinalState = true
     continue_campaign = true
@@ -27,41 +31,45 @@ function aerobraking(ip, m, args)
     config.cnf.time_OP = 1
     config.cnf.time_IP = 1
 
-    # if args[:density_model] == "Gram"
-    #     inputParameters = Dict("Earth" => gram.EarthInputParameters(),
-    #                     "Mars" => gram.MarsInputParameters(),
-    #                     "Venus" => gram.VenusInputParameters())
+    if args[:density_model] == "Gram"
+        inputParameters = Dict("Earth" => gram.EarthInputParameters(),
+                               "Mars" => gram.MarsInputParameters(),
+                               "Venus" => gram.VenusInputParameters())
         
-    #     namelistReaders = Dict("Earth" => gram.EarthNamelistReader(),
-    #                         "Mars" => gram.MarsNamelistReader(),
-    #                         "Venus" => gram.VenusNamelistReader())
+        namelistReaders = Dict("Earth" => gram.EarthNamelistReader(),
+                               "Mars" => gram.MarsNamelistReader(),
+                               "Venus" => gram.VenusNamelistReader())
             
-    #     atmospheres = Dict("Earth" => gram.EarthAtmosphere(),
-    #                     "Mars" => gram.MarsAtmosphere(),
-    #                     "Venus" => gram.VenusAtmosphere())
+        atmospheres = Dict("Earth" => gram.EarthAtmosphere(),
+                           "Mars" => gram.MarsAtmosphere(),
+                           "Venus" => gram.VenusAtmosphere())
 
-    #     planet_name = m.planet.name
-    #     input_parameters = inputParameters[planet_name]
+        planet_name = m.planet.name
+        input_parameters = inputParameters[planet_name]
 
-    #     # Mars has some weird specific parameters, so this line is just to check to make sure the it doesn't do it for the other planets
-    #     if planet_name == "Mars"
-    #         input_parameters.dataPath = os.path.join(os.path.dirname(os.path.abspath(@__FILE__)),"..", "GRAM_Data", "Mars", "data","")
-    #         if !os.path.exists(input_parameters.dataPath)
-    #             throw(ArgumentError("GRAM data path not found: " * input_parameters.dataPath))
-    #         end
-    #     end
+        # Mars has some weird specific parameters, so this line is just to check to make sure the it doesn't do it for the other planets
+        if planet_name == "Mars"
+            # input_parameters.dataPath = os.path.join(os.path.dirname(os.path.abspath(@__FILE__)),"..", "GRAM_Data", "Mars", "data", "")
+            input_parameters.dataPath = args[:directory_Gram_data] * "/Mars/data/"
+            if !Bool(os.path.exists(input_parameters.dataPath))
+                throw(ArgumentError("GRAM data path not found: " * input_parameters.dataPath))
+            end
+        end
 
-    #     reader = namelistReaders[planet_name]
-    #     reader.tryGetSpicePath(input_parameters)
-    #     gram_atmosphere = atmospheres[planet_name]
-    #     gram_atmosphere.setInputParameters(input_parameters)
-    #     gram_atmosphere.setPerturbationScales(1.5)
-    #     gram_atmosphere.setMinRelativeStepSize(0.5)
-    #     gram_atmosphere.setSeed(1001)
-    #     ttime = gram.GramTime()
-    #     ttime.setStartTime(args.year, args.month, args.day, args.hours, args.minutes, args.secs, gram.UTC, gram.PET)
-    #     gram_atmosphere.setStartTime(ttime)
-    # end
+        reader = namelistReaders[planet_name]
+        reader.tryGetSpicePath(input_parameters)
+
+        gram_atmosphere = atmospheres[planet_name]
+        gram_atmosphere.setInputParameters(input_parameters)
+
+        gram_atmosphere.setPerturbationScales(1.5)
+        gram_atmosphere.setMinRelativeStepSize(0.5)
+        gram_atmosphere.setSeed(1001)
+
+        ttime = gram.GramTime()
+        ttime.setStartTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs], gram.UTC, gram.PET)
+        gram_atmosphere.setStartTime(ttime)
+    end
     
     # Aerobraking Campaign
     while continue_campaign && FinalState

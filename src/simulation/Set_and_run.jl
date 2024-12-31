@@ -5,6 +5,8 @@ include("../utils/Save_csv.jl")
 include("../utils/Plot_data.jl")
 include("Aerobraking.jl")
 
+using SPICE
+
 import .config
 
 function aerobraking_campaign(args, state)
@@ -14,7 +16,8 @@ function aerobraking_campaign(args, state)
     # Descent towards Mars
     purpose = "Aerobraking around Mars"
 
-    mission = Dict(:Purpose => purpose, 
+    mission = Dict(:Purpose => purpose,
+                   :Planet => args[:planet],
                    :Gravity_Model => args[:gravity_model], 
                    :Density_Model => args[:density_model], 
                    :Wind => args[:wind],
@@ -31,6 +34,17 @@ function aerobraking_campaign(args, state)
 
     ip = mission_def(mission)
     p_class = planet_data(ip.M.planet)
+
+    # n-body gravity
+    if length(args[:n_bodies]) != 0
+
+        furnsh(args[:directory_Gram_data] * "/SPICE/lsk/naif0012.tls")
+        furnsh(args[:directory_Gram_data] * "/SPICE/spk/planets/de440.bsp")
+
+        for i=1:length(args[:n_bodies])
+            push!(config.cnf.n_bodies_list, planet_data(args[:n_bodies][i]))
+        end
+    end
 
     if args[:gravity_model] == "Inverse Squared"
         p_class.Rp_p = p_class.Rp_e

@@ -21,7 +21,16 @@ end
 function mission_def(mission)
 
     e, d, l, a = 0, 0, 0, 1     # e = Entry, d = Descent, l = Landing, a = Aerobraking : 0 - No, 1 - Yes
-    p = 1                       # 0 - Earth, 1 - Mars, 2 - Venus
+
+    if (mission[:Planet] == 0 || (typeof(mission[:Planet]) == String && cmp(lowercase(mission[:Planet]), "earth") == 0)) # Earth
+        p = 0
+    elseif (mission[:Planet] == 1 || (typeof(mission[:Planet]) == String && cmp(lowercase(mission[:Planet]), "mars") == 0)) # Mars
+        p = 1
+    elseif (mission[:Planet] == 2 || (typeof(mission[:Planet]) == String && cmp(lowercase(mission[:Planet]), "venus") == 0)) # Venus
+        p = 2
+    elseif (mission[:Planet] == 3 || (typeof(mission[:Planet]) == String && cmp(lowercase(mission[:Planet]), "sun") == 0)) # Sun
+        p = 3
+    end
 
     M = Mission(e, d, l, a, p)
 

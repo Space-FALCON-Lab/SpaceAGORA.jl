@@ -159,6 +159,8 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         count_guidance::Int64 = 0
         count_heat_rate_check::Int64 = 0
         count_heat_load_check_exit::Int64 = 0
+
+        n_bodies_list::Vector{Planet} = []
     end
 
     cnf = Cnf()

@@ -2,15 +2,15 @@ import .config
 
 function planet_data(ip)
 
-    try
-        if haskey(ip, :planet)
-            ip = ip[:planet]
-        end
-    catch
-        nothing
-    end
+    # try
+    #     if haskey(ip, :planet)
+    #         ip = ip[:planet]
+    #     end
+    # catch
+    #     nothing
+    # end
 
-    if (ip == 0) # Earth
+    if (ip == 0 || (typeof(ip) == String && cmp(lowercase(ip), "earth") == 0)) # Earth
         Rp_e = 6.3781e6            # equatorial radius, m
         Rp_p = 6.3568e6            # polar radius, m
         Rp_m = 6.3710e6            # volumetric mean radius, m
@@ -30,8 +30,8 @@ function planet_data(ip)
         ω = [0.0, 0.0, 7.2921066e-5]   # Earth's rotation rate, rad/s
         μ_fluid = 1.5*10e-5        # kinematic viscosity, m²/s
         Lz = -9.8/1e3              # vertical temperature gradient, K/m
-        name = "Earth"
-    elseif (ip == 1) # Mars
+        name = "earth"
+    elseif (ip == 1 || (typeof(ip) == String && cmp(lowercase(ip), "mars") == 0)) # Mars
         Rp_e = 3.3962e6            # equatorial radius, m
         Rp_p = 3.3762e6            # polar radius, m
         Rp_m = 3.3895e6            # volumetric mean radius, m
@@ -51,8 +51,8 @@ function planet_data(ip)
         ω = [0.0, 0.0, 7.088236e-5]    # Mars' rotation rate, rad/s
         μ_fluid = 13.06*10e-6      # kinematic viscosity, m²/s
         Lz = -4.5/1e3              # vertical temperature gradient, K/m
-        name = "Mars"
-    elseif (ip == 2) # Venus
+        name = "mars"
+    elseif (ip == 2 || (typeof(ip) == String && cmp(lowercase(ip), "venus") == 0)) # Venus
         Rp_e = 6.0518e6            # equatorial radius, m
         Rp_p = 6.0518e6            # polar radius, m
         Rp_m = 6.0518e6            # volumetric mean radius, m
@@ -72,7 +72,27 @@ function planet_data(ip)
         ω = [0.0, 0.0, -2.9924205e-7]  # Venus' rotation rate, rad/s
         μ_fluid = 13.06*10e-6      # kinematic viscosity, m²/s
         Lz = -10.7/1e3             # vertical temperature gradient, K/m
-        name = "Venus"
+        name = "venus"
+    elseif (ip == 3 || (typeof(ip) == String && cmp(lowercase(ip), "sun") == 0)) # Sun
+        Rp_e = 6.9634e8            # equatorial radius, m
+        Rp_p = 6.9634e8            # polar radius, m
+        Rp_m = 6.9634e8            # volumetric mean radius, m
+        mass = 1.9891e30           # mass, kg
+        g_ref = 274                # m/s^2
+        ρ_ref = 0
+        μ = 1.32712440018e20       # gravitational parameter, m^3/s^2
+        h_ref = 0
+        H = 0
+        R = 0
+        γ = 0
+        T = 0
+        p = 0
+        J2 = 0
+        k = 0
+        ω = [0, 0, 0]
+        μ_fluid = 0                # kinematic viscosity, m²/s
+        Lz = 0
+        name = "sun"
     end
 
     # println(model.planet)

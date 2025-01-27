@@ -212,6 +212,7 @@ function aerobraking_campaign(args, state)
     config.cnf.counter_random = 0
     config.cnf.DU = semimajoraxis_in
     config.cnf.TU = sqrt(config.cnf.DU^3 / m.planet.μ)
+    config.cnf.MU = mass
 
     ##########################################################
     # RUN SIMULATION

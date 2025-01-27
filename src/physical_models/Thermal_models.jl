@@ -109,10 +109,16 @@ function heatrate_convective_maxwellian(S, T, m, ρ, v, α)
     γ = p.γ
     T_w = T_p
 
+    # heat_rate = (m.aerodynamics.thermal_accomodation_factor * ρ * m.planet.R * T_p) * 
+    #             (sqrt(m.planet.R * T_p / (2 * pi))) * 
+    #             ((S^2 + (γ) / (γ - 1) - (γ + 1) / (2 * (γ - 1)) * (T_w / T_p)) * 
+    #             (exp(-(S * sin(α))^2) + sqrt(pi) * (S * sin(α)) * 
+    #             (1 + erf(S * sin(α)))) - 0.5 * exp(-(S * sin(α))^2)) * 1e-4  # W/cm^2
+    
     heat_rate = (m.aerodynamics.thermal_accomodation_factor * ρ * m.planet.R * T_p) * 
-                (sqrt(m.planet.R * T_p / (2 * pi))) * 
-                ((S^2 + (γ) / (γ - 1) - (γ + 1) / (2 * (γ - 1)) * (T_w / T_p)) * 
-                (exp(-(S * sin(α))^2) + sqrt(pi) * (S * sin(α)) * 
+                (sqrt(m.planet.R * T_p / (2 * pi))) * (
+                (S^2 + (γ) / (γ - 1) - (γ + 1) / (2 * (γ - 1)) * (T_w / T_p)) * 
+                (exp(-(S * sin(α))^2) + sqrt(pi) * (S * sin(α)) *
                 (1 + erf(S * sin(α)))) - 0.5 * exp(-(S * sin(α))^2)) * 1e-4  # W/cm^2
 
     return heat_rate

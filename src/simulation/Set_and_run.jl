@@ -58,20 +58,20 @@ function aerobraking_campaign(args, state)
 
     # Spacecraft Shape
     if args[:body_shape] == "Spacecraft"
-        area_body = 7.26 # 33.38#7.26# This is recalculated for the new sc config. 11 (look notes)# m^2 2001 Mars Odyssey Aerobraking, Smith & Bell paper
-        length_sp = 3.7617 # 11.4#3.7617#5.7 # m solar array length https://www.jpl.nasa.gov/news/press_kits/odysseyarrival.pdf
+        area_body = args[:length_sp] * args[:height_sp]   # 33.38 # 7.26# This is recalculated for the new sc config. 11 (look notes)# m^2 2001 Mars Odyssey Aerobraking, Smith & Bell paper
+        length_sp = args[:length_sp]                      # 11.4 # 3.7617#5.7 # m solar array length https://www.jpl.nasa.gov/news/press_kits/odysseyarrival.pdf
         height_sp = area_body / length_sp
 
         # Main Body
-        length_ody = 2.2 # m 
-        height_ody = 1.7 # m
-        width_ody = 2.6 # m
+        length_ody = args[:length_sat]   # m 
+        height_ody = args[:height_sat]   # m
+        width_ody = args[:width_sat]     # m
 
     # Blunted Body Shape
     elseif args[:body_shape] == "Blunted Cone"
-        δ = 70 # deg
-        nose_radius = 0.6638 # m
-        base_radius = 2.65/2 # m
+        δ = args[:cone_angle] # deg
+        nose_radius = args[:nose_radius] # 0.6638 # m
+        base_radius = args[:base_radius] # 2.65/2 # m
     end
 
     apoapsis = state[:Apoapsis]
@@ -210,6 +210,8 @@ function aerobraking_campaign(args, state)
     config.cnf.save_index_heat = 0
     config.cnf.index_propellant_mass = 1
     config.cnf.counter_random = 0
+    config.cnf.DU = semimajoraxis_in
+    config.cnf.TU = sqrt(config.cnf.DU^3 / m.planet.μ)
 
     ##########################################################
     # RUN SIMULATION

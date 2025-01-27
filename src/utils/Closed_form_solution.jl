@@ -231,7 +231,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, ste
     Rp = mission.planet.Rp_e
 
     if length(α_profile) == 0
-        α_profile = [α] * length(t_cf)
+        α_profile = α * ones(length(t_cf))
     else
         if length(α_profile) > length(t_cf)
             α_profile = α_profile[1:length(t_cf)]

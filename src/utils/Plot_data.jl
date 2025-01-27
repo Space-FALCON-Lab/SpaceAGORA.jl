@@ -366,7 +366,7 @@ function traj_3D(state, m, name)
 end
 
 function ABM_periapsis(name)
-    orbit_number = config.cnf.orbit_number_list
+    orbit_number = config.cnf.orbit_number_list .- 1
     periapsis_altitude = config.cnf.periapsis_list
 
     delta_v = [0.0]

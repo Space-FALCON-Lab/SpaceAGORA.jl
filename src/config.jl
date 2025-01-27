@@ -164,6 +164,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         n_bodies_list::Vector{Planet} = []
         DU::Float64 = 0.0
         TU::Float64 = 0.0
+        MU::Float64 = 0.0   
     end
 
     cnf = Cnf()

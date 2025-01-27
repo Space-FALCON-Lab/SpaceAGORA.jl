@@ -91,8 +91,8 @@ function closed_form_solution_plot(name, mission)
     
     for i in range(start=2, step=1, stop=length(alt_idx_cf))
         if alt_idx_cf[i] - alt_idx_cf[i - 1] > 50
-            append!(index_orbit_cf, i-1)
-            append!(time_0_cf, config.solution.closed_form.t_cf[alt_idx_cf[i-1]])
+            append!(index_orbit_cf, i)
+            append!(time_0_cf, config.solution.closed_form.t_cf[alt_idx_cf[i]])
         end
     end
     append!(index_orbit_cf, length(alt_idx_cf))
@@ -128,7 +128,7 @@ function closed_form_solution_plot(name, mission)
     end
 
     layout_alt = Layout(xaxis_title="Time [s]", yaxis_title="Altitude [km]")
-    layout_gamma = Layout(xaxis_title="Time [s]", yaxis_title=L"$\gamma$ [$^\circ$]")
+    layout_gamma = Layout(xaxis_title="Time [s]", yaxis_title="γ [deg]")
     layout_v = Layout(xaxis_title="Time [s]", yaxis_title="Velocity [km/s]")
 
     p_alt = plot([plot_traces_alt..., plot_traces_alt_cf...], layout_alt)
@@ -145,7 +145,7 @@ end
 function performance_plots(state, m, name, args)
     if args[:body_shape] == "Spacecraft"
         plot_traces_1 = scatter(x=[item/(60*60*24) for item in config.solution.orientation.time], y=[item * 1e-6 for item in config.solution.forces.energy], mode="lines", line=attr(color="black"))
-        layout_1 = Layout(xaxis_title="Time [s]", yaxis_title="Energy [MJ/kg]")
+        layout_1 = Layout(xaxis_title="Time [days]", yaxis_title="Energy [MJ/kg]")
     else
         index = findall(x -> x < 200*1e3, config.solution.orientation.alt)
         alt = config.solution.orientation.alt[index]
@@ -163,8 +163,8 @@ function performance_plots(state, m, name, args)
 
         if length(index_orbit) == 2
             time = [config.solution.orientation.time[i] for i in index]
-            plot_traces_1 = scatter(x=time, y=alt, mode="markers", marker=attr(color="black"))
-            layout_1 = Layout(xaxis_title="Time [s]", yaxis_title="Altitude [km]")
+            plot_traces_1 = scatter(x=time/(60*60*24), y=alt, mode="markers", marker=attr(color="black"))
+            layout_1 = Layout(xaxis_title="Time [days]", yaxis_title="Altitude [km]")
         end
     end
 
@@ -182,7 +182,7 @@ function performance_plots(state, m, name, args)
         end
     end
 
-    append!(index_orbit, length(index))
+    # append!(index_orbit, length(index))
     plot_traces_heat_rate = []
 
     if length(index_orbit) == 2
@@ -196,12 +196,14 @@ function performance_plots(state, m, name, args)
             max_value = maximum(heat_rate)
             max_index = findfirst(x -> x == max_value, heat_rate)
 
-            push!(plot_traces_heat_rate, scatter(x=[time[max_index]] , y=[heat_rate[max_index]], mode="markers", marker=attr(color="black")))
+            # push!(plot_traces_heat_rate, scatter(x=[time[max_index]] , y=[heat_rate[max_index]], mode="markers", marker=attr(color="black"))) # uncomment for time instead
+            push!(plot_traces_heat_rate, scatter(x=[i] , y=[heat_rate[max_index]], mode="markers", marker=attr(color="black")))
+
             time_end = time[end]
         end
     end
 
-    layout_heat_rate = Layout(xaxis_title="Time [s]", yaxis_title=L"$\text{Heat rate [W/cm}^2 \text{}}]$")
+    layout_heat_rate = Layout(xaxis_title="Time [s]", yaxis_title="Heat rate [W/cm^2]")
     plot_heat_rate = plot([plot_traces_heat_rate...], layout_heat_rate)
 
     plot_traces_heat_load = []
@@ -217,17 +219,19 @@ function performance_plots(state, m, name, args)
             time = [config.solution.orientation.time[j] - time_0[i] + time_end for j in index[index_orbit[i]:index_orbit[i+1]-1]]
             heat_load = [config.solution.performance.heat_load[j] for j in index[index_orbit[i]:index_orbit[i+1]-1]]
 
-            push!(plot_traces_heat_load, scatter(x=[time[end]] , y=[heat_load[end]], mode="markers", marker=attr(color="black")))
+            # push!(plot_traces_heat_load, scatter(x=[time[end]] , y=[heat_load[end]], mode="markers", marker=attr(color="black")))
+            push!(plot_traces_heat_load, scatter(x=[i] , y=[heat_load[end]], mode="markers", marker=attr(color="black")))
+
             time_end = time[end]
         end
     end
 
-    layout_heat_load = Layout(xaxis_title="Time [s]", yaxis_title=L"Heat load [J/cm^2]")
+    layout_heat_load = Layout(xaxis_title="Time [s]", yaxis_title="Heat load [J/cm^2]")
     plot_heat_load = plot([plot_traces_heat_load...], layout_heat_load)
 
     if args[:body_shape] == "Spacecraft"
         plot_traces_4 = scatter(x=[item/(60*60*24) for item in config.solution.orientation.time], y=[item - args[:dry_mass] for item in config.solution.performance.mass], mode="lines", line=attr(color="black"))
-        layout_4 = Layout(xaxis_title="Time [s]", yaxis_title="Mass [kg]")
+        layout_4 = Layout(xaxis_title="Time [days]", yaxis_title="Mass [kg]")
     else
         index = findall(x -> x > 0, config.solution.performance.q)
         q = config.solution.performance.q[index]
@@ -245,8 +249,8 @@ function performance_plots(state, m, name, args)
 
         if length(index_orbit) == 2
             time = [config.solution.orientation.time[i] for i in index]
-            plot_traces_4 = scatter(x=time, y=q, mode="markers", marker=attr(color="black"))
-            layout_4 = Layout(xaxis_title="Time [s]", yaxis_title="Dynamic pressure [Pa]")
+            plot_traces_4 = scatter(x=time/(60*60*24), y=q, mode="markers", marker=attr(color="black"))
+            layout_4 = Layout(xaxis_title="Time [days]", yaxis_title="Dynamic pressure [Pa]")
         end
     end
 
@@ -292,7 +296,6 @@ function traj_2D(state, m, name)
 end
 
 function traj_3D(state, m, name)
-
     # p = make_subplots(rows=3, cols=3, 
     #                   specs=[Spec(kind="scene", rowspan=3, colspan=2) missing Spec(kind="scene");
     #                          missing missing Spec(kind="scene"); 
@@ -365,30 +368,34 @@ end
 function ABM_periapsis(name)
     orbit_number = config.cnf.orbit_number_list
     periapsis_altitude = config.cnf.periapsis_list
-    delta_v = [0]
-    raise_man_orbit = [7,55,87,110,127,160,178,193,210,222]
+
+    delta_v = [0.0]
+    raise_man_orbit = [7,55,87,110,127,160,178,194,210,222]
     delta_v_raise = []
-    lower_man_orbit = [13,25,30,36,48,68,72,80]
+    lower_man_orbit = [14,26,30,35,47,69,72,80]
     delta_v_lower = []
 
     for j in range(start=1, step=1, stop=length(config.cnf.Δv_list)-1)
         append!(delta_v, config.cnf.Δv_list[j+1] - config.cnf.Δv_list[j])
     end
 
-    for i in range(start=1, step=1, stop=length(delta_v))
+    for j in range(start=1, step=1, stop=length(delta_v))
         if j in raise_man_orbit
-            append!(delta_v_raise, delta_v[i])
+            append!(delta_v_raise, delta_v[j])
         elseif j in lower_man_orbit
-            append!(delta_v_lower, delta_v[i])
+            append!(delta_v_lower, delta_v[j])
         end
     end
 
-    plot_traces_palt = scatter(x=orbit_number, y=periapsis_altitude, mode="lines", line=attr(color="black"))
-    layout_palt = Layout(xaxis_title="Orbit number", yaxis_title="Periapsis altitude [km]")
+    plot_traces_palt = scatter(x=orbit_number, y=periapsis_altitude, mode="markers", marker=attr(color="black"))
+    # layout_palt = Layout(xaxis_title="Orbit number", yaxis_title="Periapsis altitude [km]")
 
-    plot_traces_abm1 = scatter(x=[item + 19 for item in raise_man_orbit], delta_v_raise, mode="markers", marker=attr(color="black"), label="ABM to raise periapsis")
-    plot_traces_abm2 = scatter(x=[item + 19 for item in lower_man_orbit], delta_v_lower, mode="markers", marker=attr(color="red"), label="ABM to lower periapsis")
-    layout_abm = Layout(xaxis_title="Orbit number", yaxis_title="ABM Magnitude [m/s]")
+    plot_traces_abm1 = scatter(x=[item for item in raise_man_orbit], y=delta_v_raise, mode="markers", marker=attr(color="blue"), yaxis="y2") # , label="ABM to raise periapsis")
+    plot_traces_abm2 = scatter(x=[item for item in lower_man_orbit], y=delta_v_lower, mode="markers", marker=attr(color="red"), yaxis="y2") # , label="ABM to lower periapsis")
+    # layout_abm = Layout(xaxis_title="Orbit", yaxis_title="ABM Magnitude [m/s]", template="simple_white", showlegend=false)
 
+    p = plot([plot_traces_palt, plot_traces_abm1, plot_traces_abm2], Layout(xaxis_title_text="Orbit", yaxis_title_text="Periapsis altitude [km]", yaxis2 = attr(title="ABM Magnitude [m/s]", overlaying="y", side="right"), template="simple_white", showlegend=false))
+    display(p)
+    savefig(p, name * "_Periapsis_alt_and_maneuvers.pdf", format="pdf")
 
 end

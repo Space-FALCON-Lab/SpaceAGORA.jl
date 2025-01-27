@@ -156,7 +156,7 @@ function density_gram(h, p, lat, lon, montecarlo, Wind, args, el_time, atmospher
         rho , T , wind = density_exp(h, p)
     else
         position = gram.Position()
-        position.height = h*1e-3
+        position.height = h * 1e-3
         lat = rad2deg(lat)
         lon = rad2deg(lon)
         position.latitude = lat

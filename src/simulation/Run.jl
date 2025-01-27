@@ -6,11 +6,13 @@ include("Set_and_run.jl")
 import .config
 
 function run_orbitalelements(args)
-    apoapsis, periapsis_alt, inclination, Ω, ω = collect(range(Int64(args[:ra_initial_a]), Int64(args[:ra_initial_b]), step=Int64(args[:ra_step]))), 
-                                                 collect(range(Int64(args[:hp_initial_a]), Int64(args[:hp_initial_b]), step=Int64(args[:hp_step]))), 
+    apoapsis, periapsis_alt, inclination, Ω, ω = collect(range(start=round(args[:ra_initial_a]), stop=round(args[:ra_initial_b]), step=round(args[:ra_step]))), 
+                                                 collect(range(start=round(args[:hp_initial_a]), stop=round(args[:hp_initial_b]), step=round(args[:hp_step]))), 
                                                  args[:inclination], args[:Ω], args[:ω]
     
     final_apoapsis = args[:final_apoapsis]
+
+    # println(periapsis_alt)
 
     for periapsis_item in periapsis_alt
         for apoapsis_item in apoapsis
@@ -26,7 +28,7 @@ function run_orbitalelements(args)
             for mc_index in range(args[:initial_montecarlo_number], args[:montecarlo_size]-1, step=1)
                 state[:Apoapsis], state[:Periapsis], state[:Inclination], state[:Ω], state[:ω], state[:Final_sma] = apoapsis_item, Float64(periapsis_item*1e-3), inclination, Ω, ω, final_apoapsis
 
-                args[:simulation_filename] = "Results_ctrl=" * string(args[:control_mode]) * "_ra=" * string(Int64(apoapsis_item/1e3)) * "_rp=" * string(Float64(periapsis_item/1e3)) * "_hl=" * string(args[:max_heat_rate]) * "_" * string(args[:α])
+                args[:simulation_filename] = "Results_ctrl=" * string(args[:control_mode]) * "_ra=" * string(Int64(round(apoapsis_item/1e3))) * "_rp=" * string(Float64(periapsis_item/1e3)) * "_hl=" * string(args[:max_heat_rate]) * "_" * string(args[:α])
 
                 if args[:montecarlo] == true
                     args = MonteCarlo_setting_passage(mc_index, args)

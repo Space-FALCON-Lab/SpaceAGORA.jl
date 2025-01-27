@@ -3,6 +3,7 @@ include("../utils/Ref_system_conf.jl")
 include("../utils/Closed_form_solution.jl")
 include("../utils/Odyssey_maneuver_plan.jl")
 include("../utils/Save_results.jl")
+include("../physical_models/Propulsive_maneuvers.jl")
 
 using PythonCall
 
@@ -31,7 +32,7 @@ function aerobraking(ip, m, args)
     config.cnf.time_OP = 1
     config.cnf.time_IP = 1
 
-    if args[:density_model] == "Gram"
+    if args[:density_model] == "Gram" || args[:density_model] == "GRAM"
         inputParameters = Dict("earth" => gram.EarthInputParameters(),
                                "mars" => gram.MarsInputParameters(),
                                "venus" => gram.VenusInputParameters())
@@ -111,12 +112,12 @@ function aerobraking(ip, m, args)
                 initial_state.m = config.solution.performance.mass[end]
                 initial_state.vi = config.solution.orientation.oe[6][end]
 
-                m.initial_condition.year = Int64(config.solution.orientation.year[end])
-                m.initial_condition.month = Int64(config.solution.orientation.month[end])
-                m.initial_condition.day = Int64(config.solution.orientation.day[end])
-                m.initial_condition.hour = Int64(config.solution.orientation.hour[end])
-                m.initial_condition.minute = Int64(config.solution.orientation.minute[end])
-                m.initial_condition.second = config.solution.orientation.second[end]
+                m.initial_condition.year = round(config.solution.orientation.year[end])
+                m.initial_condition.month = round(config.solution.orientation.month[end])
+                m.initial_condition.day = round(config.solution.orientation.day[end])
+                m.initial_condition.hour = round(config.solution.orientation.hour[end])
+                m.initial_condition.minute = round(config.solution.orientation.minute[end])
+                m.initial_condition.second = round(config.solution.orientation.second[end])
 
                 if (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone") && continue_campaign
                     r = m.planet.Rp_e + args[:EI]*1e3

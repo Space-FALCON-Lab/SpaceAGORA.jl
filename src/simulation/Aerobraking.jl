@@ -2,6 +2,7 @@ include("Complete_passage.jl")
 include("../utils/Ref_system_conf.jl")
 include("../utils/Closed_form_solution.jl")
 include("../utils/Odyssey_maneuver_plan.jl")
+include("../utils/VEx_maneuver_plan.jl")
 include("../utils/Save_results.jl")
 include("../physical_models/Propulsive_maneuvers.jl")
 
@@ -88,6 +89,10 @@ function aerobraking(ip, m, args)
                 args = Odyssey_firing_plan(numberofpassage, args)
             end
 
+            if args[:vex_sim] == true
+                args = Venus_Express_firing_plan(numberofpassage, args)
+            end
+
             if ip.tc == 1
                 if args[:delta_v] != 0.0
                     if ip.tc == 1
@@ -95,9 +100,9 @@ function aerobraking(ip, m, args)
                     end
                 end
             elseif ip.tc == 2
-                if round(rad2deg(args[:ϕ])) == 180
+                if round(rad2deg(args[:phi])) == 180
                     println("DECELERATE DRAG FIRING!!")
-                elseif round(rad2deg(args[:ϕ])) == 0
+                elseif round(rad2deg(args[:phi])) == 0
                     println("ACCELERATE DRAG FIRING!!")
                 end
             end
@@ -150,7 +155,7 @@ function aerobraking(ip, m, args)
             println("Thermal Limit overcomed totally " * string(config.cnf.count_overcome_hr) * " times")
         end
 
-        if r_p - m.planet.Rp_e >= 180*1e3
+        if r_p - m.planet.Rp_e >= args[:EI]*1e3
             FinalState = false
             println("Periapsis too high, final state unreachable! R_a = " * string(r_p*1e-3) * " km")
         end

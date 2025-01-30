@@ -37,7 +37,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     OE = [initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m]
 
     # Why is it 50 + 200 here
-    if (OE[1] > (m.planet.Rp_e*1e-3 + 50 + 200)*1e3) && (args[:drag_passage] == false) && (args[:body_shape] == "Spacecraft")
+    if (OE[1] > (m.planet.Rp_e*1e-3 + 50 + args[:EI])*1e3) && (args[:drag_passage] == false) && (args[:body_shape] == "Spacecraft")
         index_steps_EOM = 3
     else
         index_steps_EOM = 1
@@ -133,7 +133,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         if vi > 0 && vi < pi/2 && config.cnf.ascending_phase == false
             config.cnf.ascending_phase = true
-        elseif vi >= pi/2 && vi < pi && config.cnf.ascending_phase == true && args[:body_shape] == "Blunted Cone"
+        elseif vi >= pi/2 && vi <= pi && config.cnf.ascending_phase == true && args[:body_shape] == "Blunted Cone"
             config.cnf.ascending_phase = false
         end
 
@@ -514,7 +514,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     ## EVENTS: 
     function eventfirststep_condition(y, t, integrator)
         m = integrator.p[1]
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - 250*1e3   #  downcrossing         # change to args[:EI]
+        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - (args[:EI])*1e3   #  downcrossing         # change to args[:EI]
         # norm(y[1:3]) - m.planet.Rp_e - 250*1e3   #  downcrossing 
     end
     function eventfirststep_affect!(integrator)
@@ -526,7 +526,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     function eventsecondstep_condition(y, t, integrator)
         m = integrator.p[1]
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - 260*1e3   # upcrossing
+        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - (args[:AE])*1e3   # upcrossing
         # norm(y[1:3]) - m.planet.Rp_e - 260*1e3   # upcrossing
     end
     function eventsecondstep_affect!(integrator)
@@ -976,14 +976,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             r_tol = 1e-10
             a_tol = 1e-12
             simulator = "Julia"
-            method = Tsit5() # TRBDF2(autodiff = false)
+            method = TRBDF2(autodiff = false) # Tsit5()
             save_ratio = 5
         elseif aerobraking_phase == 0
             step = 0.1
             r_tol = 1e-9
             a_tol = 1e-11
             simulator = "Julia"
-            method = Tsit5() # TRBDF2(autodiff = false)
+            method = TRBDF2(autodiff = false) # Tsit5()
             save_ratio = 5
         elseif aerobraking_phase == 2
             if args[:integrator] == "Julia"
@@ -994,7 +994,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 if MonteCarlo
                     method = Tsit5()
                 else
-                    method = Tsit5() # TRBDF2(autodiff = false)
+                    method =  TRBDF2(autodiff = false) # Tsit5()
                 end
 
                 save_ratio = args[:save_rate]
@@ -1005,7 +1005,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
 
         # Definition length simulation
-        length_sim = 1e10
+        length_sim = 1e15
         i_sim = 0
         time_solution = []
 

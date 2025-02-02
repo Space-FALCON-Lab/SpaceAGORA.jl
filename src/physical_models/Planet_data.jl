@@ -59,7 +59,7 @@ function planet_data(ip)
         mass = 4.8685e24           # mass, kg
         g_ref = 8.87               # acceleration due to gravity, m/s²
         ρ_ref = 65.0               # density, kg/m³
-        μ = 3.249e14               # gravitational parameter, m³/s²
+        μ = 3.24858592e14          # gravitational parameter, m³/s²
         h_ref = 0 * 1e3           # reference altitude, m
         H = 15.9 * 1e3            # scale height, m
         R = 188.92                 # specific gas constant, J/(kg·K)
@@ -69,8 +69,8 @@ function planet_data(ip)
         J2 = 4.458e-6              # Venus' dynamic form factor
         k = 1.896e-4               # Chapman heating coefficient, kg^0.5/m
         # k = 1.7623e-4            # Sutton - Graves heating coefficient, kg^0.5/m
-        ω = [0.0, 0.0, -2.9924205e-7]  # Venus' rotation rate, rad/s
-        μ_fluid = 13.06*10e-6      # kinematic viscosity, m²/s
+        ω = [0.0, 0.0, -6.228869565e-7]  # Venus' rotation rate, rad/s
+        μ_fluid = 2.0*10e-6      # kinematic viscosity, m²/s
         Lz = -10.7/1e3             # vertical temperature gradient, K/m
         name = "venus"
     elseif (ip == 3 || (typeof(ip) == String && cmp(lowercase(ip), "sun") == 0)) # Sun

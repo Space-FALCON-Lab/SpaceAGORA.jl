@@ -37,7 +37,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     OE = [initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m]
 
     # Why is it 50 + 200 here
-    if (OE[1] > (m.planet.Rp_e*1e-3 + 50 + 200)*1e3) && (args[:drag_passage] == false) && (args[:body_shape] == "Spacecraft")
+    if (OE[1] > (m.planet.Rp_e*1e-3 + 50 + args[:EI])*1e3) && (args[:drag_passage] == false) && (args[:body_shape] == "Spacecraft")
         index_steps_EOM = 3
     else
         index_steps_EOM = 1
@@ -133,7 +133,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         if vi > 0 && vi < pi/2 && config.cnf.ascending_phase == false
             config.cnf.ascending_phase = true
-        elseif vi >= pi/2 && vi < pi && config.cnf.ascending_phase == true && args[:body_shape] == "Blunted Cone"
+        elseif vi >= pi/2 && vi <= pi && config.cnf.ascending_phase == true && args[:body_shape] == "Blunted Cone"
             config.cnf.ascending_phase = false
         end
 
@@ -514,7 +514,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     ## EVENTS: 
     function eventfirststep_condition(y, t, integrator)
         m = integrator.p[1]
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - 250*1e3   #  downcrossing         # change to args[:EI]
+        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - (args[:EI])*1e3   #  downcrossing         # change to args[:EI]
         # norm(y[1:3]) - m.planet.Rp_e - 250*1e3   #  downcrossing 
     end
     function eventfirststep_affect!(integrator)
@@ -526,7 +526,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     function eventsecondstep_condition(y, t, integrator)
         m = integrator.p[1]
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - 260*1e3   # upcrossing
+        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - (args[:AE])*1e3   # upcrossing
         # norm(y[1:3]) - m.planet.Rp_e - 260*1e3   # upcrossing
     end
     function eventsecondstep_affect!(integrator)
@@ -923,7 +923,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     index_phase_aerobraking = range_phase_i # for scope reasons
     aerobraking_phase = range_phase_i       # for scope reasons
-    method = Tsit5()                        # for scope reasons
+    method = Tsit5() # KenCarp58(autodiff = false) # Tsit5()                        # for scope reasons
 
     # Solve Equations of Motion 
     for aerobraking_phase in range(range_phase_i, 3)
@@ -976,25 +976,25 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             r_tol = 1e-10
             a_tol = 1e-12
             simulator = "Julia"
-            method = Tsit5() # TRBDF2(autodiff = false)
+            method = Tsit5() # KenCarp58(autodiff = false) # TRBDF2(autodiff = false) # Tsit5()
             save_ratio = 5
         elseif aerobraking_phase == 0
             step = 0.1
             r_tol = 1e-9
             a_tol = 1e-11
             simulator = "Julia"
-            method = Tsit5() # TRBDF2(autodiff = false)
+            method = Tsit5() # KenCarp58(autodiff = false) # TRBDF2(autodiff = false) # Tsit5()
             save_ratio = 5
         elseif aerobraking_phase == 2
             if args[:integrator] == "Julia"
-                step = 0.1
+                step = 0.01
                 r_tol = 1e-9
                 a_tol = 1e-11
 
                 if MonteCarlo
-                    method = Tsit5()
+                    method = KenCarp58(autodiff = false) # Tsit5()
                 else
-                    method = Tsit5() # TRBDF2(autodiff = false)
+                    method = Tsit5() # KenCarp58(autodiff = false) # TRBDF2(autodiff = false) # Tsit5()
                 end
 
                 save_ratio = args[:save_rate]
@@ -1005,7 +1005,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
 
         # Definition length simulation
-        length_sim = 1e10
+        length_sim = 1e15
         i_sim = 0
         time_solution = []
 
@@ -1023,7 +1023,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 if args[:integrator] == "Costumed"
                     step = 1/args[:trajectory_rate]
                 else
-                    method = Tsit5()
+                    method = KenCarp58(autodiff = false) # Tsit5()
                     if Bool(args[:control_in_loop])
                         step = 10/args[:trajectory_rate]
                     else
@@ -1053,7 +1053,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 step = 0.05
                 r_tol = 1e-6
                 a_tol = 1e-7
-                method = Tsit5()
+                method = KenCarp58(autodiff = false) # Tsit5()
             # phase 1.5: between 250 km alt and EI km
             elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == false && config.cnf.ascending_phase == false
                 events = CallbackSet(periapsispoint, in_drag_passage, apoapsisgreaterperiapsis, impact)
@@ -1064,7 +1064,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 r_tol = 1e-9
                 a_tol = 1e-10
                 index_phase_aerobraking = 1.5
-                method = Tsit5()
+                method = KenCarp58(autodiff = false) # Tsit5()
             # phase 2.25: between 120 km alt and AE km
             elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == true && config.cnf.ascending_phase == true
                 events = CallbackSet(periapsispoint, out_drag_passage, apoapsisgreaterperiapsis, impact)
@@ -1075,7 +1075,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 r_tol = 1e-9
                 a_tol = 1e-10
                 index_phase_aerobraking = 2.25
-                method = Tsit5()
+                method = KenCarp58(autodiff = false) # Tsit5()
             # phase 2.5: between AE km alt and 250 km
             elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.ascending_phase == true
                 events = CallbackSet(eventsecondstep, periapsispoint, eventsecondstep, apoapsisgreaterperiapsis, impact)
@@ -1086,7 +1086,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 step = 0.5
                 r_tol = 1e-8
                 a_tol = 1e-9
-                method = Tsit5()
+                method = KenCarp58(autodiff = false) # Tsit5()
             end
 
             if Bool(args[:print_res])

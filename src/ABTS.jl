@@ -86,9 +86,9 @@ args = Dict(# Misc Simulation
             :Ω => 0.0,                                              # RAAN, deg
             :EI => 160.0,                                           # Entry Interface, km
             :AE => 160.0,                                           # Atmospheric Exit, km
-            :year => 2001,                                          # Mission year
-            :month => 12,                                           # Mission month
-            :day => 14,                                             # Mission day
+            :year => 1993,                                          # Mission year
+            :month => 5,                                           # Mission month
+            :day => 25,                                             # Mission day
             :hours => 14,                                           # Mission hour
             :minutes => 21,                                         # Mission minute
             :secs => 28.0,                                          # Mission second
@@ -135,7 +135,9 @@ args = Dict(# Misc Simulation
             :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
-            :Odyssey_sim => 1                                       # Simulate Odyssey Mission
+            :Odyssey_sim => 1,                                      # Simulate Odyssey Mission
+            :vex_sim => 0,                                          # Simulate Venus Express Mission   
+            :magellan_sim => 0,                                     # Simulate Magellan Mission
             )
 
 # Calculating time of simulation

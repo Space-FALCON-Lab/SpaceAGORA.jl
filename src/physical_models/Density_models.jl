@@ -172,7 +172,7 @@ function density_gram(h, p, lat, lon, montecarlo, Wind, args, el_time, atmospher
         T = atmos.temperature
         wind = [montecarlo ? atmos.perturbedEWWind : atmos.ewWind,
                 montecarlo ? atmos.perturbedNSWind : atmos.nsWind,
-                montecarlo ? atmos.verticalWind : 0]
+                atmos.verticalWind]
     end
 
     return rho, T, wind

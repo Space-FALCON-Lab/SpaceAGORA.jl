@@ -203,7 +203,7 @@ function performance_plots(state, m, name, args)
         end
     end
 
-    layout_heat_rate = Layout(xaxis_title="Time [s]", yaxis_title="Heat rate [W/cm^2]")
+    layout_heat_rate = Layout(xaxis_title="Orbits", yaxis_title="Heat rate [W/cm^2]")
     plot_heat_rate = plot([plot_traces_heat_rate...], layout_heat_rate)
 
     plot_traces_heat_load = []
@@ -226,7 +226,7 @@ function performance_plots(state, m, name, args)
         end
     end
 
-    layout_heat_load = Layout(xaxis_title="Time [s]", yaxis_title="Heat load [J/cm^2]")
+    layout_heat_load = Layout(xaxis_title="Orbits", yaxis_title="Heat load [J/cm^2]")
     plot_heat_load = plot([plot_traces_heat_load...], layout_heat_load)
 
     if args[:body_shape] == "Spacecraft"
@@ -394,7 +394,7 @@ function ABM_periapsis(name)
     plot_traces_abm2 = scatter(x=[item for item in lower_man_orbit], y=delta_v_lower, mode="markers", marker=attr(color="red"), yaxis="y2") # , label="ABM to lower periapsis")
     # layout_abm = Layout(xaxis_title="Orbit", yaxis_title="ABM Magnitude [m/s]", template="simple_white", showlegend=false)
 
-    p = plot([plot_traces_palt, plot_traces_abm1, plot_traces_abm2], Layout(xaxis_title_text="Orbit", yaxis_title_text="Periapsis altitude [km]", yaxis2 = attr(title="ABM Magnitude [m/s]", overlaying="y", side="right"), template="simple_white", showlegend=false))
+    p = plot([plot_traces_palt, plot_traces_abm1, plot_traces_abm2], Layout(xaxis_title_text="Orbit Number", yaxis_title_text="Periapsis altitude [km]", yaxis2 = attr(title="ABM Magnitude [m/s]", overlaying="y", side="right"), template="simple_white", showlegend=false))
     display(p)
     savefig(p, name * "_Periapsis_alt_and_maneuvers.pdf", format="pdf")
 

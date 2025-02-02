@@ -39,7 +39,7 @@ function aerobraking_campaign(args, state)
     if length(args[:n_bodies]) != 0
 
         furnsh(args[:directory_Gram_data] * "/SPICE/lsk/naif0012.tls")
-        furnsh(args[:directory_Gram_data] * "/SPICE/spk/planets/de440.bsp")
+        furnsh(args[:directory_Gram_data] * "/SPICE/spk/planets/de440_GRAM.bsp")
 
         for i=1:length(args[:n_bodies])
             push!(config.cnf.n_bodies_list, planet_data(args[:n_bodies][i]))
@@ -90,9 +90,9 @@ function aerobraking_campaign(args, state)
 
     # Initial Condition
     if args[:drag_passage] == true
-        h_0 = 160 * 1e3
+        h_0 = args[:EI] * 1e3
     elseif args[:body_shape] == "Blunted Cone"
-        h_0 = 120 * 1e3
+        h_0 = args[:EI] * 1e3
         args[:AE] = h_0/1e3
         args[:EI] = h_0/1e3
     end

@@ -6,18 +6,22 @@ using LaTeXStrings
 import .config
 
 function plots(state, m, name, args)
-    traj_3D(state, m, name)
-    traj_2D(state, m, name)
+    if args[:keplerian] == true
+        traj_2D(state, m, name)
+    else
+        traj_3D(state, m, name)
+        traj_2D(state, m, name)
 
-    performance_plots(state, m, name, args)
+        performance_plots(state, m, name, args)
 
-    if args[:body_shape] == "Spacecraft" && !config.cnf.impact
-        closed_form_solution_plot(name, m)
-        angle_of_attack_plot(name, args)
-    end
+        if args[:body_shape] == "Spacecraft" && !config.cnf.impact
+            # closed_form_solution_plot(name, m)
+            angle_of_attack_plot(name, args)
+        end
 
-    if args[:Odyssey_sim] == 1
-        ABM_periapsis(name)
+        if args[:Odyssey_sim] == 1 || args[:vex_sim] == 1 || args[:magellan_sim] == 1
+            ABM_periapsis(name)
+        end
     end
 
 end

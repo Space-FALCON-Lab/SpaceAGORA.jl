@@ -19,7 +19,7 @@ args = Dict(# Misc Simulation
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 2,                                 # Number of aerobraking passage
+            :number_of_orbits => 5,                                 # Number of aerobraking passage
 
             # Physical Model
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -70,12 +70,12 @@ args = Dict(# Misc Simulation
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 28038000, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_a => 28038e3, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 88000,                                 # Initial Periapsis Altitude for for-loop in m
-            :hp_initial_b => 159000.0,                              # Final Periapsis Altitude for for-loop in m
-            :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
+            :hp_initial_a => 24600e3,                                 # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_b => 50000e3,                              # Final Periapsis Altitude for for-loop in m
+            :hp_step => 5e10,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 3700.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_step => 100.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
@@ -85,8 +85,8 @@ args = Dict(# Misc Simulation
             :inclination => 93.6,                                   # Inclination Orbit, deg
             :ω => 0.0,                                              # AOP, deg
             :Ω => 0.0,                                              # RAAN, deg
-            :EI => 160.0,                                           # Entry Interface, km
-            :AE => 160.0,                                           # Atmospheric Exit, km
+            :EI => 300.0,                                           # Entry Interface, km
+            :AE => 300.0,                                           # Atmospheric Exit, km
             :year => 1993,                                          # Mission year
             :month => 5,                                           # Mission month
             :day => 25,                                             # Mission day
@@ -136,7 +136,7 @@ args = Dict(# Misc Simulation
             :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
-            :Odyssey_sim => 1,                                      # Simulate Odyssey Mission
+            :Odyssey_sim => 0,                                      # Simulate Odyssey Mission
             :vex_sim => 0,                                          # Simulate Venus Express Mission   
             :magellan_sim => 0,                                     # Simulate Magellan Mission
             )

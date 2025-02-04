@@ -524,6 +524,24 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
     eventfirststep = ContinuousCallback(eventfirststep_condition, nothing, eventfirststep_affect!)
 
+    function eventfirststep_periapsis_condition(y, t, integrator)
+        m = integrator.p[1]
+        pos_ii = [y[1], y[2], y[3]] * config.cnf.DU  # Inertial position
+        vel_ii = [y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU  # Inertial Velocity
+
+        vi = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf.MU, m.planet)[6]
+        # vi = rvtoorbitalelement(pos_ii, vel_ii, y[7], m.planet)[6]
+
+        rad2deg(vi) - 180  # downcrossing
+    end
+
+    function eventfirststep_periapsis_affect!(integrator)
+        println("entered eventfirststep_periapsis_affect!")
+        config.cnf.eventfirststep_periapsis += 1
+        terminate!(integrator)
+    end
+    eventfirststep_periapsis = ContinuousCallback(eventfirststep_periapsis_condition, eventfirststep_periapsis_affect!)
+
     function eventsecondstep_condition(y, t, integrator)
         m = integrator.p[1]
         norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - (args[:AE])*1e3   # upcrossing
@@ -698,13 +716,13 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         vi = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf.MU, m.planet)[6]
         # vi = rvtoorbitalelement(pos_ii, vel_ii, y[7], m.planet)[6]
 
-        vi  # upcrossing
+        rad2deg(vi) - 180  # downcrossing
     end
     function periapsispoint_affect!(integrator)
         config.cnf.count_periapsispoint += 1
         nothing
     end
-    periapsispoint = ContinuousCallback(periapsispoint_condition, periapsispoint_affect!, nothing)
+    periapsispoint = ContinuousCallback(periapsispoint_condition, nothing, periapsispoint_affect!)
 
     function impact_condition(y, t, integrator)
         m = integrator.p[1]
@@ -923,7 +941,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     index_phase_aerobraking = range_phase_i # for scope reasons
     aerobraking_phase = range_phase_i       # for scope reasons
-    method = Tsit5() # KenCarp58(autodiff = false) # Tsit5()                        # for scope reasons
+    method = Tsit5() # KenCarp58(autodiff = false)                     # for scope reasons
 
     # Solve Equations of Motion 
     for aerobraking_phase in range(range_phase_i, 3)
@@ -931,12 +949,18 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         if (index_steps_EOM == 1 || Bool(args[:drag_passage])) && (aerobraking_phase == 1 || aerobraking_phase == 3 || aerobraking_phase == 0)
             continue
+        elseif cmp(lowercase(args[:type_of_mission]), "orbits") == 0 && args[:keplerian] == true && aerobraking_phase == 2  
+            continue
         end
 
         # Definition of eventsecondstep
         if aerobraking_phase == 0
             events = CallbackSet(stop_firing, apoapsisgreaterperiapsis, impact)
             t_event_0 = "stop_firing"
+            t_event_1 = "apoapsisgreaterperiapsis"
+        elseif aerobraking_phase == 1 && args[:keplerian] == true
+            events = CallbackSet(eventfirststep_periapsis, apoapsisgreaterperiapsis, impact)
+            t_event_0 = "eventfirststep_periapsis"
             t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 1
             events = CallbackSet(eventfirststep, apoapsisgreaterperiapsis, impact)
@@ -976,14 +1000,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             r_tol = 1e-10
             a_tol = 1e-12
             simulator = "Julia"
-            method = Tsit5() # KenCarp58(autodiff = false) # TRBDF2(autodiff = false) # Tsit5()
+            method = Tsit5()
             save_ratio = 5
         elseif aerobraking_phase == 0
             step = 0.1
             r_tol = 1e-9
             a_tol = 1e-11
             simulator = "Julia"
-            method = Tsit5() # KenCarp58(autodiff = false) # TRBDF2(autodiff = false) # Tsit5()
+            method = Tsit5()
             save_ratio = 5
         elseif aerobraking_phase == 2
             if args[:integrator] == "Julia"
@@ -992,7 +1016,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 a_tol = 1e-11
 
                 if MonteCarlo
-                    method = KenCarp58(autodiff = false) # Tsit5()
+                    method = Tsit5() # KenCarp58(autodiff = false) # Tsit5()
                 else
                     method = Tsit5() # KenCarp58(autodiff = false) # TRBDF2(autodiff = false) # Tsit5()
                 end
@@ -1096,6 +1120,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             if simulator == "Julia"
                 # counter for events
                 config.cnf.count_eventfirststep = 0
+                config.cnf.eventfirststep_periapsis = 0
                 config.cnf.count_eventsecondstep = 0
                 config.cnf.count_reached_EI = 0
                 config.cnf.count_reached_AE = 0
@@ -1125,9 +1150,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 # Parameter Definition
                 param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere)
 
-                # println("")
-                # println("pos: " * string(norm(in_cond[1:3]) * config.cnf.DU) * " vel: " * string(norm(in_cond[4:6]) * config.cnf.DU / config.cnf.TU)) 
-                # println("")
+                println("")
+                println("pos: " * string(norm(in_cond[1:3]) * config.cnf.DU) * " vel: " * string(norm(in_cond[4:6]) * config.cnf.DU / config.cnf.TU)) 
+                println("")
 
                 # println(in_cond[7])
                 # Run simulation
@@ -1136,6 +1161,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
                 config.cnf.counter_integrator += 1
                 in_cond = [sol[1,end], sol[2,end], sol[3, end], sol[4, end], sol[5, end], sol[6, end], sol[7, end], sol[8, end]]
+
+                println("")
+                println("pos: " * string(norm(in_cond[1:3]) * config.cnf.DU) * " vel: " * string(norm(in_cond[4:6]) * config.cnf.DU / config.cnf.TU)) 
+                println("")
 
                 # println(" ")
                 # println(norm(in_cond[1:3]) * config.cnf.DU)
@@ -1220,6 +1249,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 time_ev_0 = config.cnf.count_stop_firing
             elseif t_event_0 == "eventfirststep"
                 time_ev_0 = config.cnf.count_eventfirststep
+            elseif t_event_0 == "eventfirststep_periapsis"
+                time_ev_0 = config.cnf.eventfirststep_periapsis
             elseif t_event_0 == "eventsecondstep"
                 time_ev_0 = config.cnf.count_eventsecondstep
             elseif t_event_0 == "out_drag_passage"
@@ -1242,6 +1273,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 time_ev_1 = config.cnf.count_stop_firing
             elseif t_event_1 == "eventfirststep"
                 time_ev_1 = config.cnf.count_eventfirststep
+            elseif t_event_1 == "eventfirststep_periapsis"
+                time_ev_1 = config.cnf.eventfirststep_periapsis
             elseif t_event_1 == "eventsecondstep"
                 time_ev_1 = config.cnf.count_eventsecondstep
             elseif t_event_1 == "out_drag_passage"
@@ -1337,6 +1370,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # counter for events
         config.cnf.count_eventfirststep = 0
+        config.cnf.eventfirststep_periapsis = 0
         config.cnf.count_eventsecondstep = 0
         config.cnf.count_reached_EI = 0
         config.cnf.count_reached_AE = 0
@@ -1398,14 +1432,20 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         println("Ra new = " * string((config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end]))*1e-3) * " km")
 
         # Print Heat Rate and Heat Load
-        println("HEAT RATE IS " * string(maximum(config.solution.performance.heat_rate[save_pre_index:save_post_index-1])) * " W/cm^2")
-        println("HEAT LOAD IS " * string(config.solution.performance.heat_load[save_post_index-1]) * " J/cm^2")
+        if args[:keplerian] == false
+            println("HEAT RATE IS " * string(maximum(config.solution.performance.heat_rate[save_pre_index:save_post_index-1])) * " W/cm^2")
+            println("HEAT LOAD IS " * string(config.solution.performance.heat_load[save_post_index-1]) * " J/cm^2")
+        end
 
         # Print Fuel Mass
         println("Fuel Mass is " * string(config.solution.performance.mass[end] - args[:dry_mass]) * " kg")
 
         # Print Total Time
-        println("Total time is " * string(config.solution.orientation.time[save_post_index-1] - config.solution.orientation.time[save_pre_index]) * " s")
+        if args[:keplerian] == false
+            println("Total time is " * string(config.solution.orientation.time[save_post_index-1] - config.solution.orientation.time[save_pre_index]) * " s")
+        else
+            println("Total time is " * string(config.solution.orientation.time[end] - config.solution.orientation.time[save_pre_index]) * " s")
+        end
 
         # Print Delta-v and Delta-E
         println("Delta-v is " * string(config.cnf.Δv_man) * " m/s")

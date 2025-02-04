@@ -18,14 +18,14 @@ args = Dict(# Misc Simulation
 
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 2,                                 # Number of aerobraking passage
+            :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
+            :number_of_orbits => 100,                               # Number of aerobraking passage
 
             # Physical Model
-            :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
-            :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
+            :planet => 2,                                           # Earth = 0, Mars = 1, Venus = 2
+            :planettime => 452200000.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
-            :n_bodies => [],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
+            :n_bodies => ["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
             :aerodynamic_model => "Mach-dependent",                 # choices=['Cd and Cl Constant' , 'Mach-dependent' , 'No-Ballistic flight with axial coefficient']: "Mach-dependent" specific for spacecraft shape, "No-Ballistic flight" specific for blunted-cone shape
@@ -42,18 +42,18 @@ args = Dict(# Misc Simulation
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
             :max_heat_rate => 0.15,                                 # Max heat rate the heat rate control will start to react to
             :max_heat_load => 30.0,                                 # Max heat load the heat load control will not be overcomed
-            :dry_mass => 411.0,                                     # Initial dry mass of body in kg
-            :prop_mass => 50.0,                                     # Initial propellant mass of body in kg
+            :dry_mass => 640.0,                                     # Initial dry mass of body in kg
+            :prop_mass => 10.0,                                     # Initial propellant mass of body in kg
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
             :α => 90.0,                                             # Max angle of attack of solar panels
 
             # Fill for Spacecraft body shape only
-            :length_sat => 2.2,                                     # Length of the satellite in m
-            :height_sat => 1.7,                                     # Height of the satellite in m
-            :width_sat => 2.6,                                      # Width of the satellite in m
-            :length_sp => 3.76,                                     # Length of the solar panels in m
-            :height_sp => 1.93,                                     # Height of the solar panels in m
+            :length_sat => 2.05,                                     # Length of the satellite in m
+            :height_sat => 2.8,                                     # Height of the satellite in m
+            :width_sat => 3.7,                                      # Width of the satellite in m
+            :length_sp => 5.7,                                     # Length of the solar panels in m
+            :height_sp => 1.0,                                     # Height of the solar panels in m
 
             # Fill for Blunted Cone body shape only
             :cone_angle => 70.0,                                    # Cone angle of the blunted cone in deg
@@ -61,7 +61,7 @@ args = Dict(# Misc Simulation
             :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
             
             # Engine
-            :thrust => 4.0,                                         # Maximum magnitude thrust in N
+            :thrust => 40.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
             :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
@@ -70,11 +70,11 @@ args = Dict(# Misc Simulation
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 28038000, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
-            :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
+            :ra_initial_a => 66597e3 + 6.0518e6, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_b => 200000000,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 88000,                                 # Initial Periapsis Altitude for for-loop in m
-            :hp_initial_b => 159000.0,                              # Final Periapsis Altitude for for-loop in m
+            :hp_initial_a => 188140.0,                                 # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_b => 1590000.0,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 3700.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
@@ -82,24 +82,24 @@ args = Dict(# Misc Simulation
             :γ_initial_a => 2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_step => 0.5,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :inclination => 93.6,                                   # Inclination Orbit, deg
-            :ω => 0.0,                                              # AOP, deg
-            :Ω => 0.0,                                              # RAAN, deg
-            :EI => 160.0,                                           # Entry Interface, km
-            :AE => 160.0,                                           # Atmospheric Exit, km
-            :year => 1993,                                          # Mission year
+            :inclination => 89.876,                                   # Inclination Orbit, deg
+            :ω => 75.505,                                              # AOP, deg
+            :Ω => 104.115,                                              # RAAN, deg
+            :EI => 800.0,                                           # Entry Interface, km
+            :AE => 800.0,                                           # Atmospheric Exit, km
+            :year => 2014,                                          # Mission year
             :month => 5,                                           # Mission month
-            :day => 25,                                             # Mission day
+            :day => 22,                                             # Mission day
             :hours => 14,                                           # Mission hour
             :minutes => 21,                                         # Mission minute
             :secs => 28.0,                                          # Mission second
             
             # Final Conditions
-            :final_apoapsis => 5088116.837416616, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
+            :final_apoapsis => 62822e3 + 6.0518e6, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
 
             # Do not change
             :heat_load_sol => 0,                                    # Heat load solution #leave it to 0 and change it only for control mode = 2:  Max energy depletaion=0, Min energy depletion=1, One switch max-min=2, One switch min-max = 3
-            :thrust_control => "None",                              # choices=['None' , 'Aerobraking Maneuver' , 'Drag Passage Firing']
+            :thrust_control => "Aerobraking Maneuver",                              # choices=['None' , 'Aerobraking Maneuver' , 'Drag Passage Firing']
             :phi => 180.0,                                          # Thrust Angle, deg
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
@@ -136,9 +136,9 @@ args = Dict(# Misc Simulation
             :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
-            :Odyssey_sim => 1,                                      # Simulate Odyssey Mission
-            :vex_sim => 0,                                          # Simulate Venus Express Mission   
-            :magellan_sim => 0,                                     # Simulate Magellan Mission
+            :Odyssey_sim => 0,                                       # Simulate Odyssey Mission
+            :vex_sim => 1,                                           # Simulate Venus Express Mission   
+            :magellan_sim => 0                                      # Simulate Magellan Mission
             )
 
 # Calculating time of simulation
@@ -152,4 +152,4 @@ t = @elapsed begin
     end
 end
 
-println("COPMUTATIONAL TIME = " * string(t) * " s")
+println("COMPUTATIONAL TIME = " * string(t) * " s")

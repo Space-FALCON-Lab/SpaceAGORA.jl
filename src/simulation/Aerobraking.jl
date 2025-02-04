@@ -160,7 +160,7 @@ function aerobraking(ip, m, args)
             println("Thermal Limit overcomed totally " * string(config.cnf.count_overcome_hr) * " times")
         end
 
-        if r_p - m.planet.Rp_e >= args[:EI]*1e3
+        if r_p - m.planet.Rp_e >= args[:EI]*1e3 && args[:keplerian] == false
             FinalState = false
             println("Periapsis too high, final state unreachable! R_a = " * string(r_p*1e-3) * " km")
         end

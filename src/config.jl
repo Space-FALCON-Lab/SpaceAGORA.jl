@@ -145,6 +145,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         stop_simulation::Bool = false
         results_save::Int64 = 0
         count_eventfirststep::Int64 = 0
+        eventfirststep_periapsis::Int64 = 0
         count_eventsecondstep::Int64 = 0
         count_reached_EI::Int64 = 0
         count_reached_AE::Int64 = 0

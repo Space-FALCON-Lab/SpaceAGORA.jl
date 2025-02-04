@@ -2,13 +2,14 @@ include("Ref_system_conf.jl")
 
 using LinearAlgebra
 
-function r_intor_p(r_i, v_i, planet, t, t_prev)
+function r_intor_p(r_i, v_i, planet, t, t_prev, date_initial, t0)
     # From PCI (planet centered inertial) to PCPF (planet centered/planet fixed)
-    rot_angle = norm(planet.ω) * (t + t_prev)
-
-    L_pi = [cos(rot_angle) sin(rot_angle) 0; 
-            -sin(rot_angle) cos(rot_angle) 0; 
-            0 0 1]
+    # rot_angle = norm(planet.ω) * (t + t_prev)
+    current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
+    L_pi = pxfrm2("IAU_"*uppercase(planet.name), "IAU_"*uppercase(planet.name), 0.0, current_time) # Construct a rotation matrix from J2000 to planet-fixed frame
+    # L_pi = [cos(rot_angle) sin(rot_angle) 0; 
+    #         -sin(rot_angle) cos(rot_angle) 0; 
+    #         0 0 1]
 
     r_p = L_pi * r_i
 

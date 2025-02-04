@@ -69,7 +69,7 @@ function planet_data(ip)
         J2 = 4.458e-6              # Venus' dynamic form factor
         k = 1.896e-4               # Chapman heating coefficient, kg^0.5/m
         # k = 1.7623e-4            # Sutton - Graves heating coefficient, kg^0.5/m
-        ω = [0.0, 0.0, -6.228869565e-7]  # Venus' rotation rate, rad/s
+        ω = [0.0, 0.0, -2.99e-7]  # Venus' rotation rate, rad/s
         μ_fluid = 2.0*10e-6      # kinematic viscosity, m²/s
         Lz = -10.7/1e3             # vertical temperature gradient, K/m
         name = "venus"

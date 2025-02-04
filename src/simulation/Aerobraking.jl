@@ -3,6 +3,7 @@ include("../utils/Ref_system_conf.jl")
 include("../utils/Closed_form_solution.jl")
 include("../utils/Odyssey_maneuver_plan.jl")
 include("../utils/VEx_maneuver_plan.jl")
+include("../utils/Magellan_maneuver_plan.jl")
 include("../utils/Save_results.jl")
 include("../physical_models/Propulsive_maneuvers.jl")
 
@@ -93,6 +94,10 @@ function aerobraking(ip, m, args)
                 args = Venus_Express_firing_plan(numberofpassage, args)
             end
 
+            if args[:magellan_sim] == true
+                args = Magellan_firing_plan(numberofpassage, args)
+            end
+
             if ip.tc == 1
                 if args[:delta_v] != 0.0
                     if ip.tc == 1
@@ -163,5 +168,5 @@ function aerobraking(ip, m, args)
         println(" ")
     end
 
-    closed_form(args, m)
+    # closed_form(args, m)
 end

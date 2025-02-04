@@ -154,13 +154,14 @@ function density_gram(h, p, lat, lon, montecarlo, Wind, args, el_time, atmospher
 
     if config.cnf.drag_state == false
         rho , T , wind = density_exp(h, p)
+        rho = 0.0
     else
         position = gram.Position()
         position.height = h * 1e-3
         lat = rad2deg(lat)
         lon = rad2deg(lon)
         position.latitude = lat
-        position.longitude = lon
+        position.longitude = 165 + 2/(24*60*60)*el_time
         position.elapsedTime = el_time # Time since start in s
         atmosphere.setPosition(position)
         # print('set planet position', position.latitude, position.longitude, position.height)

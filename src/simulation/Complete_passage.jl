@@ -38,8 +38,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     # Why is it 50 + 200 here
     if (OE[1] > (m.planet.Rp_e*1e-3 + 50 + args[:EI])*1e3) && (args[:drag_passage] == false) && (args[:body_shape] == "Spacecraft")
+        # println("index_steps_EOM = 3")
         index_steps_EOM = 3
     else
+        # println("index_steps_EOM = 1")
         index_steps_EOM = 1
     end
 
@@ -66,7 +68,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     # Clock
     date_initial = from_utc(DateTime(m.initial_condition.year, m.initial_condition.month, m.initial_condition.day, m.initial_condition.hour, m.initial_condition.minute, m.initial_condition.second))
-
     config.cnf.count_numberofpassage = config.cnf.count_numberofpassage + 1
 
     if config.cnf.count_numberofpassage != 1
@@ -117,7 +118,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # TRANSFORM THE STATE
         # Inertial to planet relative transformation
-        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t0, t_prev) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
+        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t0, t_prev, date_initial, t0) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
         pos_pp_mag = norm(pos_pp) # Magnitude of the planet relative position
         pos_pp_hat = pos_pp / pos_pp_mag # Unit vector of the planet relative position
         pos_ii_hat = pos_ii / pos_ii_mag # Unit vector of the inertial position
@@ -382,11 +383,15 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         q = 0.5 * ρ * norm(vel_pp_rw)^2               # dynamic pressure based on wind, Pa
         
         ## Rotation Calculation
-        rot_angle = norm(ω_planet) * (t0 + t_prev)    # angle of rotation, rad
+        current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
+        L_PI = pxfrm2("IAU_"*uppercase(m.planet.name), "IAU_"*uppercase(m.planet.name), 0.0, current_time) # Construct a rotation matrix from J2000 to planet-fixed frame
+        # println("pxform: $L_PI")
+        # rot_angle = norm(ω_planet) * (t0 + t_prev)    # angle of rotation, rad
         # L_PI = [[cos(rot_angle), sin(rot_angle), 0.0], [-sin(rot_angle), cos(rot_angle), 0.0], [0.0, 0.0, 1.0]] # rotation matrix
-        L_PI = [cos(rot_angle)  sin(rot_angle)  0.0;
-                -sin(rot_angle) cos(rot_angle)  0.0; 
-                0.0             0.0             1.0] # rotation matrix
+        # L_PI = [cos(rot_angle)  sin(rot_angle)  0.0;
+        #         -sin(rot_angle) cos(rot_angle)  0.0; 
+        #         0.0             0.0             1.0] # rotation matrix
+        # println("rot_angle: $L_PI")
 
         # L_PI = [[x for x in row] for row in L_PI]
 
@@ -399,15 +404,16 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
 
         if length(args[:n_bodies]) != 0
-
-            et = utc2et(time_real)
+            
+            time_real_utc = to_utc(time_real)
+            et = utc2et(time_real_utc)
 
             for k = 1:length(args[:n_bodies])
                 gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
             end
         end
 
-        bank_angle = 0.0
+        bank_angle = deg2rad(20.0)
 
         lift_pp_hat = cross(h_pp_hat, vel_pp_rw_hat)
 
@@ -589,10 +595,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         args = integrator.p[8]
         t_prev = integrator.p[5]
         ip = integrator.p[3]
-
+        date_initial = integrator.p[6]
         pos_ii = [y[1], y[2], y[3]] * config.cnf.DU  # Inertial position
         vel_ii = [y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU  # Inertial velocity
-        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev)
+        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev, date_initial, t)
         # pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t, t_prev)
 
         LatLong = rtolatlong(pos_pp, m.planet)
@@ -634,10 +640,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         args = integrator.p[8]
         t_prev = integrator.p[5]
         ip = integrator.p[3]
+        date_initial = integrator.p[6]
 
         pos_ii = [y[1], y[2], y[3]] * config.cnf.DU                     # Inertial position
         vel_ii = [y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU     # Inertial velocity
-        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev)
+        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev, date_initial, t)
         # pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t, t_prev)
 
         LatLong = rtolatlong(pos_pp, m.planet)
@@ -923,7 +930,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     index_phase_aerobraking = range_phase_i # for scope reasons
     aerobraking_phase = range_phase_i       # for scope reasons
-    method = Tsit5()                        # for scope reasons
+    method = ESDIRK54I8L2SA()                       # for scope reasons
 
     # Solve Equations of Motion 
     for aerobraking_phase in range(range_phase_i, 3)
@@ -976,25 +983,25 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             r_tol = 1e-10
             a_tol = 1e-12
             simulator = "Julia"
-            method = TRBDF2(autodiff = false) # Tsit5()
+            method = Tsit5()
             save_ratio = 5
         elseif aerobraking_phase == 0
             step = 0.1
             r_tol = 1e-9
             a_tol = 1e-11
             simulator = "Julia"
-            method = TRBDF2(autodiff = false) # Tsit5()
+            method = Tsit5() # Tsit5()
             save_ratio = 5
         elseif aerobraking_phase == 2
             if args[:integrator] == "Julia"
-                step = 0.1
-                r_tol = 1e-9
-                a_tol = 1e-11
+                step = 0.01
+                r_tol = 1e-10
+                a_tol = 1e-12
 
                 if MonteCarlo
                     method = Tsit5()
                 else
-                    method =  TRBDF2(autodiff = false) # Tsit5()
+                    method =   Tsit5() #KenCarp58(autodiff = false) # Tsit5()
                 end
 
                 save_ratio = args[:save_rate]

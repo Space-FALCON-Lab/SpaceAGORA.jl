@@ -5,10 +5,10 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/mnt/c/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/src/output",            # Directory where to save the results
-            :directory_Gram => "/mnt/c/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/GRAMpy",                   # Directory where Gram is
-            :directory_Gram_data => "/mnt/c/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/GRAM_Data",           # Directory where Gram data is
-            :directory_Spice => "/mnt/c/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
+            :directory_results => "/home/space-falcon-2/Documents/GitHub/ABTS/src/output",            # Directory where to save the results
+            :directory_Gram => "/home/space-falcon-2/Documents/GitHub/ABTS/GRAMpy",                   # Directory where Gram is
+            :directory_Gram_data => "/home/space-falcon-2/Documents/GitHub/ABTS/GRAM_Data",           # Directory where Gram data is
+            :directory_Spice => "/home/space-falcon-2/Documents/GitHub/ABTS/GRAM_Data/SPICE",                   # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
             :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
@@ -18,7 +18,7 @@ args = Dict(# Misc Simulation
 
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
+            :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 2,                                 # Number of aerobraking passage
 
             # Physical Model

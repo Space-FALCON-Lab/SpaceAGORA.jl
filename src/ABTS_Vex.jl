@@ -4,11 +4,11 @@ include("config.jl")
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/mnt/c/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/src/output",            # Directory where to save the results
-            :directory_Gram => "/mnt/c/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/GRAMpy",                   # Directory where Gram is
-            :directory_Gram_data => "/mnt/c/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/GRAM_Data",           # Directory where Gram data is
-            :directory_Spice => "/mnt/c/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
+            :print_res => 0,                                                                                    # Print some lines True=1, False=0
+            :directory_results => "/home/space-falcon-2/Documents/GitHub/ABTS/src/output",            # Directory where to save the results
+            :directory_Gram => "/home/space-falcon-2/Documents/GitHub/ABTS/GRAMpy",                   # Directory where Gram is
+            :directory_Gram_data => "/home/space-falcon-2/Documents/GitHub/ABTS/GRAM_Data",           # Directory where Gram data is
+            :directory_Spice => "/home/space-falcon-2/Documents/GitHub/ABTS/GRAM_Data/SPICE",         # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
             :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
@@ -18,8 +18,8 @@ args = Dict(# Misc Simulation
 
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 100,                               # Number of aerobraking passage
+            :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
+            :number_of_orbits => 50,                               # Number of aerobraking passage
 
             # Physical Model
             :planet => 2,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -70,12 +70,12 @@ args = Dict(# Misc Simulation
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 66597e3 + 6.0518e6, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_a => 66562e3 + 6.0518e6, # 20000e3*(1 + 0.5), # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 200000000,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 188140.0,                                 # Initial Periapsis Altitude for for-loop in m
-            :hp_initial_b => 1590000.0,                              # Final Periapsis Altitude for for-loop in m
-            :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
+            :hp_initial_a => 176.59e3, # 20000e3*(1 - 0.5) - 6.0518e6,                                  # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_b => 200000000,                              # Final Periapsis Altitude for for-loop in m
+            :hp_step => 5e10,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 3700.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_step => 100.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
@@ -89,10 +89,10 @@ args = Dict(# Misc Simulation
             :AE => 800.0,                                           # Atmospheric Exit, km
             :year => 2014,                                          # Mission year
             :month => 5,                                           # Mission month
-            :day => 22,                                             # Mission day
-            :hours => 14,                                           # Mission hour
-            :minutes => 21,                                         # Mission minute
-            :secs => 28.0,                                          # Mission second
+            :day => 25,                                             # Mission day
+            :hours => 12,                                           # Mission hour
+            :minutes => 0,                                         # Mission minute
+            :secs => 0.0,                                          # Mission second
             
             # Final Conditions
             :final_apoapsis => 62822e3 + 6.0518e6, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
@@ -137,7 +137,7 @@ args = Dict(# Misc Simulation
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
             :Odyssey_sim => 0,                                       # Simulate Odyssey Mission
-            :vex_sim => 1,                                           # Simulate Venus Express Mission   
+            :vex_sim => 0,                                           # Simulate Venus Express Mission   
             :magellan_sim => 0                                      # Simulate Magellan Mission
             )
 

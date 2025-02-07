@@ -69,10 +69,10 @@ args = Dict(# Misc Simulation
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 66597e3 + 6.0518e6, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
-            :ra_initial_b => 200000000,                               # Final Apoapsis Radius for for-loop in m
-            :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 188140.0,                                 # Initial Periapsis Altitude for for-loop in m
+            :ra_initial_a => -10000e3, #66597e3 + 6.0518e6, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_b => 1e21,                               # Final Apoapsis Radius for for-loop in m
+            :ra_step => 5e21,                                       # Step Apoapsis Radius for for-loop in m
+            :hp_initial_a => 176590.0,#188140.0,                                 # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 1590000.0,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 3700.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
@@ -88,10 +88,10 @@ args = Dict(# Misc Simulation
             :AE => 2500.0,                                           # Atmospheric Exit, km
             :year => 2014,                                          # Mission year
             :month => 5,                                           # Mission month
-            :day => 19,                                             # Mission day
-            :hours => 8,                                           # Mission hour
-            :minutes => 21,                                         # Mission minute
-            :secs => 28.0,                                          # Mission second
+            :day => 25,                                             # Mission day
+            :hours => 12,                                           # Mission hour
+            :minutes => 0,                                         # Mission minute
+            :secs => 0.0,                                          # Mission second
             
             # Final Conditions
             :final_apoapsis => 62822e3 + 6.0518e6, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
@@ -136,7 +136,7 @@ args = Dict(# Misc Simulation
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
             :Odyssey_sim => 0,                                       # Simulate Odyssey Mission
-            :vex_sim => 1,                                           # Simulate Venus Express Mission   
+            :vex_sim => 0,                                           # Simulate Venus Express Mission   
             :magellan_sim => 0                                      # Simulate Magellan Mission
             )
 

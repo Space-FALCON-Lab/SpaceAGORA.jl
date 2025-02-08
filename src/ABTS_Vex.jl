@@ -69,7 +69,7 @@ args = Dict(# Misc Simulation
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => -10000e3, #66597e3 + 6.0518e6, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_a => 66597e3 + 6.0518e6, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 1e21,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e21,                                       # Step Apoapsis Radius for for-loop in m
             :hp_initial_a => 176590.0,#188140.0,                                 # Initial Periapsis Altitude for for-loop in m
@@ -141,14 +141,22 @@ args = Dict(# Misc Simulation
             )
 
 # Calculating time of simulation
-t = @elapsed begin
-            
-    # Run the simulation
-    sol = run_analysis(args)
-
-    if Bool(args[:passresults])
-        println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+for hour = 0:23
+    args[:hours] = hour
+    args[:directory_results] = "/home/space-falcon-1/Documents/ABTS.jl/output/venus_express_" * string(hour)
+    t = @elapsed begin
+        sol = run_analysis(args)
     end
+    println("COMPUTATIONAL TIME = " * string(t) * " s")
 end
+# t = @elapsed begin
+            
+#     # Run the simulation
+#     sol = run_analysis(args)
 
-println("COMPUTATIONAL TIME = " * string(t) * " s")
+#     if Bool(args[:passresults])
+#         println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+#     end
+# end
+
+# println("COMPUTATIONAL TIME = " * string(t) * " s")

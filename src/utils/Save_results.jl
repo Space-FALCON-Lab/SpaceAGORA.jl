@@ -33,7 +33,7 @@ function save_results(time, ratio)
     # println(time)   
 
     for true_time in time
-        if i % ratio == 0
+        if isapprox(i % ratio, 0, atol = 0.1)
             index = findfirst(x -> x == true_time, range_time[index_prev:end])
             # println(index)
             append!(t, range_time[index+index_prev] + initial_time)

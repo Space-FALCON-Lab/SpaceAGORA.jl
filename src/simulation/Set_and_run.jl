@@ -5,15 +5,19 @@ include("../physical_models/Mission.jl")
 include("../utils/Plot_data.jl")
 include("Aerobraking.jl")
 
+using SPICE
+
 import .config
 
 function aerobraking_campaign(args, state)
-    save_rs = args[:results]
+    save_res = args[:results]
+    config.cnf.Gram_directory = args[:directory_Gram]
 
     # Descent towards Mars
     purpose = "Aerobraking around Mars"
 
-    mission = Dict(:Purpose => purpose, 
+    mission = Dict(:Purpose => purpose,
+                   :Planet => args[:planet],
                    :Gravity_Model => args[:gravity_model], 
                    :Density_Model => args[:density_model], 
                    :Wind => args[:wind],
@@ -31,6 +35,17 @@ function aerobraking_campaign(args, state)
     ip = mission_def(mission)
     p_class = planet_data(ip.M.planet)
 
+    # n-body gravity
+    if length(args[:n_bodies]) != 0
+
+        furnsh(args[:directory_Gram_data] * "/SPICE/lsk/naif0012.tls")
+        furnsh(args[:directory_Gram_data] * "/SPICE/spk/planets/de440_GRAM.bsp")
+
+        for i=1:length(args[:n_bodies])
+            push!(config.cnf.n_bodies_list, planet_data(args[:n_bodies][i]))
+        end
+    end
+
     if args[:gravity_model] == "Inverse Squared"
         p_class.Rp_p = p_class.Rp_e
     end
@@ -43,20 +58,20 @@ function aerobraking_campaign(args, state)
 
     # Spacecraft Shape
     if args[:body_shape] == "Spacecraft"
-        area_body = 7.26 # 33.38#7.26# This is recalculated for the new sc config. 11 (look notes)# m^2 2001 Mars Odyssey Aerobraking, Smith & Bell paper
-        length_sp = 3.7617 # 11.4#3.7617#5.7 # m solar array length https://www.jpl.nasa.gov/news/press_kits/odysseyarrival.pdf
+        area_body = args[:length_sp] * args[:height_sp]   # 33.38 # 7.26# This is recalculated for the new sc config. 11 (look notes)# m^2 2001 Mars Odyssey Aerobraking, Smith & Bell paper
+        length_sp = args[:length_sp]                      # 11.4 # 3.7617#5.7 # m solar array length https://www.jpl.nasa.gov/news/press_kits/odysseyarrival.pdf
         height_sp = area_body / length_sp
 
         # Main Body
-        length_ody = 2.2 # m 
-        height_ody = 1.7 # m
-        width_ody = 2.6 # m
+        length_ody = args[:length_sat]   # m 
+        height_ody = args[:height_sat]   # m
+        width_ody = args[:width_sat]     # m
 
     # Blunted Body Shape
     elseif args[:body_shape] == "Blunted Cone"
-        δ = 70 # deg
-        nose_radius = 0.6638 # m
-        base_radius = 2.65/2 # m
+        δ = args[:cone_angle] # deg
+        nose_radius = args[:nose_radius] # 0.6638 # m
+        base_radius = args[:base_radius] # 2.65/2 # m
     end
 
     apoapsis = state[:Apoapsis]
@@ -75,15 +90,16 @@ function aerobraking_campaign(args, state)
 
     # Initial Condition
     if args[:drag_passage] == true
-        h_0 = 160 * 1e3
+        h_0 = args[:EI] * 1e3
     elseif args[:body_shape] == "Blunted Cone"
-        h_0 = 120 * 1e3
+        h_0 = args[:EI] * 1e3
         args[:AE] = h_0/1e3
         args[:EI] = h_0/1e3
     end
 
     if Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone"
         r = p_class.Rp_e + h_0
+        
         state[:vi] = - acos(1 / eccentricity_in * (semimajoraxis_in * (1 - eccentricity_in^2) / r - 1))
         
         if args[:montecarlo] == true
@@ -194,6 +210,9 @@ function aerobraking_campaign(args, state)
     config.cnf.save_index_heat = 0
     config.cnf.index_propellant_mass = 1
     config.cnf.counter_random = 0
+    config.cnf.DU = semimajoraxis_in
+    config.cnf.TU = sqrt(config.cnf.DU^3 / m.planet.μ)
+    config.cnf.MU = mass
 
     ##########################################################
     # RUN SIMULATION
@@ -213,29 +232,30 @@ function aerobraking_campaign(args, state)
     end
 
     # Save results
-    # if save_res == 1
-    #     if args[:filename] == 1
-    #         if args[:montecarlo] == true
-    #             folder_name = args[:simulation_filename][1:findfirst!(args[:simulation_filename], "_nMC)")]
-    #         else
-    #             folder_name = args[:simulation_filename]
-    #         end
+    if save_res == 1
+        if args[:filename] == 1
+            if args[:montecarlo] == true
+                folder_name = args[:simulation_filename][1:findfirst!(args[:simulation_filename], "_nMC)")]
+            else
+                folder_name = args[:simulation_filename]
+            end
 
-    #         name = args[:directory_results] * folder_name * "/" * args[:simulation_filename]
-    #         filename = name * ".csv"
-    #     else
-    #         name = args[:directory_results] * "/Sim" * string(args[:MarsGram_version])
+            name = args[:directory_results] * "/" * folder_name
 
-    #         filename = name * ".csv"
-    #     end
-    #     save_csv(filename, args)
-    # end
+            filename = name * ".csv"
+        else
+            name = args[:directory_results] * "/" * "GRAMver_" * string(args[:Gram_version])
+
+            filename = name * ".csv"
+        end
+        save_csv(filename, args)
+    end
 
     if Bool(args[:print_res])
         println("Elapsed time: " * string(t_el) * " s")
     end
 
     if args[:plot] == true
-        # plots(state, m, name, args)
+        plots(state, m, name, args)
     end
 end

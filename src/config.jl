@@ -122,7 +122,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         orbit_number_list::Vector{Int64} = []
         heat_load_past::Float64 = 0.0
         heat_load_ppast::Float64 = 0.0
-        state_flesh1::Vector{Float64} = []
+        state_flesh1::Vector{Vector{Float64}} = [[]]
         α_list::Vector{Float64} = []
         initial_position_closed_form::Vector{Float64} = []
         continue_simulation::Bool = true
@@ -139,11 +139,13 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         heat_rate_limit::Float64 = 0.0
         time_OP::Float64 = 0.0
         time_IP::Float64 = 0.0
-        MarsGram_justrecalled::Int64 = 0
+        Gram_justrecalled::Int64 = 0
+        Gram_directory::String = ""
         heat_rate_list::Vector{Float64} = []
         stop_simulation::Bool = false
         results_save::Int64 = 0
         count_eventfirststep::Int64 = 0
+        eventfirststep_periapsis::Int64 = 0
         count_eventsecondstep::Int64 = 0
         count_reached_EI::Int64 = 0
         count_reached_AE::Int64 = 0
@@ -158,6 +160,12 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         count_guidance::Int64 = 0
         count_heat_rate_check::Int64 = 0
         count_heat_load_check_exit::Int64 = 0
+        t_out_drag_passage::Float64 = 0.0
+
+        n_bodies_list::Vector{Planet} = []
+        DU::Float64 = 0.0
+        TU::Float64 = 0.0
+        MU::Float64 = 0.0   
     end
 
     cnf = Cnf()
@@ -175,11 +183,11 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
 
     @kwdef mutable struct Orientation
         time::Vector{Float64} = []
-        year::Vector{Int64} = []
-        month::Vector{Int64} = []
-        day::Vector{Int64} = []
-        hour::Vector{Int64} = []
-        minute::Vector{Int64} = []
+        year::Vector{Float64} = []
+        month::Vector{Float64} = []
+        day::Vector{Float64} = []
+        hour::Vector{Float64} = []
+        minute::Vector{Float64} = []
         second::Vector{Float64} = []
         number_of_passage::Vector{Int64} = []
         pos_ii::Vector{Vector{Float64}} = [[], [], []]

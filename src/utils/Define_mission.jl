@@ -52,7 +52,7 @@ function def_miss(args)
         if args[:type_of_mission] == "Drag Passage"
             args[:thrust_control] = "None"
         end
-    elseif args[:thrust_control] == "Drag Paddage Firing"
+    elseif args[:thrust_control] == "Drag Passage Firing"
         args[:thrust] = args[:thrust]
         args[:delta_v] = args[:delta_v]
 
@@ -63,38 +63,38 @@ function def_miss(args)
         println("--THRUST MODIFIED TO 0.1 N--")
     end
 
-    if args[:machine] == "Aero"
-        if !args[:directory_results]
-            args[:directory_results] = "/Users/nikus/Aerobraking_SA_project_results/"
-        end
-        args[:directory_MarsGram] = "/Users/nikus/MarsGram/"
-    elseif args[:machine] == "Cluster"
-        if !args[:directory_results]
-            args[:directory_results] = "/home/nihalsim/Aerobraking_SA_project_results/"
-        end
-        args[:directory_MarsGram] = "/home/nihalsim/"
-    elseif args[:machine] == "Desktop_Home"
-        if !args[:directory_results]
-            args[:directory_results] = "/Users/nikus/Aerobraking_SA_project_results/"
-        end
-        args[:directory_MarsGram] = "/Users/nikus/MarsGram/"
-    elseif args[:machine] == "Laptop"
-        if !args[:directory_results]
-            args[:directory_results] = "/Users/nikus/Aerobraking_SA_project_results/"
-        end
-        args[:directory_MarsGram] = "/Users/nikus/MarsGram/"
-    end
+    # if args[:machine] == "Aero"
+    #     if !args[:directory_results]
+    #         args[:directory_results] = "/Users/nikus/Aerobraking_SA_project_results/"
+    #     end
+    #     args[:directory_Gram] = "/Users/nikus/MarsGram/"
+    # elseif args[:machine] == "Cluster"
+    #     if !args[:directory_results]
+    #         args[:directory_results] = "/home/nihalsim/Aerobraking_SA_project_results/"
+    #     end
+    #     args[:directory_Gram] = "/home/nihalsim/"
+    # elseif args[:machine] == "Desktop_Home"
+    #     if !args[:directory_results]
+    #         args[:directory_results] = "/Users/nikus/Aerobraking_SA_project_results/"
+    #     end
+    #     args[:directory_Gram] = "/Users/nikus/MarsGram/"
+    # elseif args[:machine] == "Laptop"
+    #     if !args[:directory_results]
+    #         args[:directory_results] = "/Users/nikus/Aerobraking_SA_project_results/"
+    #     end
+    #     args[:directory_Gram] = "/Users/nikus/MarsGram/"
+    # end
 
-    if args[:density_model] == "MarsGram" && args[:planet] != 1 # Change for venus gram use
-        args[:density_model] = "Exponential"
-        println("--DENSITY MODEL CHANGED TO: Exponential - GRAM is only available for Mars--")
-    end
+    # if args[:density_model] == "Gram" && args[:planet] != 1 # Change for venus gram use
+    #     args[:density_model] = "Exponential"
+    #     println("--DENSITY MODEL CHANGED TO: Exponential - GRAM is only available for Mars--")
+    # end
 
     if Bool(args[:Odyssey_sim])
         args[:control_mode] = 0
         args[:type_of_mission] = "Aerobraking Campaign"
-        args[:number_of_orbits] = 1000
-        args[:planet] = "Mars"
+        args[:number_of_orbits] = 250
+        args[:planet] = 1 # "Mars"
         args[:body_shape] = "Spacecraft"
         args[:dry_mass] = 411.0
         args[:prop_mass] = 50.0
@@ -108,7 +108,7 @@ function def_miss(args)
         if args[:gravity_model] == "Inverse Squared"
             args[:hp_initial_a] = 108600
         else
-            args[:hp_initial_a] = 86000
+            args[:hp_initial_a] = 86000 # 84200 # 106000
         end
 
         args[:hp_initial_b] = 120000
@@ -119,7 +119,7 @@ function def_miss(args)
         args[:year] = 2001
         args[:month] = 11
         args[:day] = 6
-        args[:final_apoapsis] = 3900e3
+        args[:final_apoapsis] = 3900e3  # 4905.97e3
         args[:montecarlo] = 0
         args[:drag_passage] = 0
     end

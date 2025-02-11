@@ -6,11 +6,13 @@ include("Set_and_run.jl")
 import .config
 
 function run_orbitalelements(args)
-    apoapsis, periapsis_alt, inclination, Ω, ω = collect(range(Int64(args[:ra_initial_a]), Int64(args[:ra_initial_b]), step=Int64(args[:ra_step]))), 
-                                                 collect(range(Int64(args[:hp_initial_a]), Int64(args[:hp_initial_b]), step=Int64(args[:hp_step]))), 
+    apoapsis, periapsis_alt, inclination, Ω, ω = collect(range(start=round(args[:ra_initial_a]), stop=round(args[:ra_initial_b]), step=round(args[:ra_step]))), 
+                                                 collect(range(start=round(args[:hp_initial_a]), stop=round(args[:hp_initial_b]), step=round(args[:hp_step]))), 
                                                  args[:inclination], args[:Ω], args[:ω]
     
     final_apoapsis = args[:final_apoapsis]
+
+    # println(periapsis_alt)
 
     for periapsis_item in periapsis_alt
         for apoapsis_item in apoapsis
@@ -26,7 +28,7 @@ function run_orbitalelements(args)
             for mc_index in range(args[:initial_montecarlo_number], args[:montecarlo_size]-1, step=1)
                 state[:Apoapsis], state[:Periapsis], state[:Inclination], state[:Ω], state[:ω], state[:Final_sma] = apoapsis_item, Float64(periapsis_item*1e-3), inclination, Ω, ω, final_apoapsis
 
-                args[:simulation_filename] = "Results_ctrl=" * string(args[:control_mode]) * "_ra=" * string(Int64(apoapsis_item/1e3)) * "_rp=" * string(Float64(periapsis_item/1e3)) * "_hl=" * string(args[:max_heat_rate]) * "_" * string(args[:α])
+                args[:simulation_filename] = "Results_ctrl=" * string(args[:control_mode]) * "_ra=" * string(Int64(round(apoapsis_item/1e3))) * "_rp=" * string(Float64(periapsis_item/1e3)) * "_hl=" * string(args[:max_heat_rate]) * "_" * string(args[:α])
 
                 if args[:montecarlo] == true
                     args = MonteCarlo_setting_passage(mc_index, args)
@@ -44,9 +46,9 @@ function run_orbitalelements(args)
 end
 
 function run_vgamma(args)
-    γ_0, v_0, inclination, Ω, ω = [range(Int64(args[:γ_initial_a]*100), Int64(args[:γ_initial_a]*100), Int64(args[:γ_step]*100))], 
-                                [range(Int64(args[:v_initial_a]), Int64(args[:v_initial_b]), Int64(args[:v_step]))],
-                                args[:inclination], args[:Ω], args[:ω]
+    γ_0, v_0, inclination, Ω, ω = collect(range(Int64(args[:γ_initial_a]*100), Int64(args[:γ_initial_a]*100), step=Int64(args[:γ_step]*100))), 
+                                  collect(range(Int64(args[:v_initial_a]), Int64(args[:v_initial_b]), step=Int64(args[:v_step]))),
+                                  args[:inclination], args[:Ω], args[:ω]
     final_apoapsis = args[:final_apoapsis]
 
     for γ in γ_0
@@ -57,7 +59,7 @@ function run_vgamma(args)
             planet = planet_data(args[:planet])
             apoapsis, periapsis_alt = ic_calculation_rptoae(planet, γ, v, args)
 
-            if args[:print_res]
+            if Bool(args[:print_res])
                 println("Velocity: " * string(v) * " m/s, Flight-Path Angle: " * string(γ) * " deg")
             end
 
@@ -87,7 +89,7 @@ function run_analysis(args)
 
     args = def_miss(args)
 
-    if args[:initial_condition_type] == 1 && (args[:drag_passage] || args[:body_shape] == "Blunted Cone")
+    if args[:initial_condition_type] == 1 && (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone")
         run_vgamma(args)
     else
         run_orbitalelements(args)

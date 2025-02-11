@@ -33,8 +33,8 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
             length_solution = length(config.solution.orientation.number_of_passage)
 
             t, h, γ, v = zeros(length_solution), zeros(length_solution), zeros(length_solution), zeros(length_solution)
-
-            for i in range(1,Int64(number_orbits) + 1)
+            cnt = 0
+            for i in range(1,Int64(number_orbits))
 
                 # idx_orbit = findall(val -> val == i, config.solution.orientation.number_of_passage)
                 # # idx_orbit = [idx for idx, val in enumerate(solution.orientation.numberofpassage) if val == i]
@@ -45,10 +45,10 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
                 # # TODO: CHANGE TO ARGS[:EI]
                 # alt_index = findall(val -> val <= 160*1e3, alt)
 
-                idx_orbit = findall(x -> x ==i, config.solution.orientation.number_of_passage) # [idx for (idx, val) in enumerate(config.solution.orientation.number_of_passage) if val == i]
+                idx_orbit = findall(x -> x == i, config.solution.orientation.number_of_passage) # [idx for (idx, val) in enumerate(config.solution.orientation.number_of_passage) if val == i]
 
                 alt = [config.solution.orientation.pos_ii_mag[item] - mission.planet.Rp_e for item in idx_orbit]
-                alt_index = findall(x -> x <= 160e3, alt) # [idx for (idx, val) in enumerate(alt) if val <= 160e3]
+                alt_index = findall(x -> x <= 160*1e3, alt) # [idx for (idx, val) in enumerate(alt) if val <= 160e3]
 
                 if length(alt_index) == 0
                     len_sol = length(config.solution.orientation.time)
@@ -64,7 +64,7 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
 
                 initialcondition = [config.solution.orientation.oe[1][index], config.solution.orientation.oe[2][index], config.solution.orientation.oe[3][index], config.solution.orientation.oe[4][index], config.solution.orientation.oe[5][index], config.solution.orientation.oe[6][index], config.solution.performance.mass[index]]
 
-                println(initialcondition)
+                # println(initialcondition)
 
                 T = config.solution.physical_properties.T[index]
                 α = config.solution.physical_properties.α[index]
@@ -80,12 +80,19 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
                 # println(idx_orbit)
                 # println("")
 
+                # println(" ")
+                # println(t_cf)
+                # println(" ")
+                # println(h_cf)
+                # println(" ")
+
                 t[(alt_index[1]+idx_orbit[1]):(alt_index[1]+length(alt_index)+idx_orbit[1])] = t_cf
                 h[(alt_index[1]+idx_orbit[1]):(alt_index[1]+length(alt_index)+idx_orbit[1])] = h_cf
                 γ[(alt_index[1]+idx_orbit[1]):(alt_index[1]+length(alt_index)+idx_orbit[1])] = γ_cf
                 v[(alt_index[1]+idx_orbit[1]):(alt_index[1]+length(alt_index)+idx_orbit[1])] = v_cf
             end
             # For loop for the number of orbits
+
             results(t, h, γ, v)
         end
     else # online for control
@@ -224,7 +231,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, ste
     Rp = mission.planet.Rp_e
 
     if length(α_profile) == 0
-        α_profile = [α] * length(t_cf)
+        α_profile = α * ones(length(t_cf))
     else
         if length(α_profile) > length(t_cf)
             α_profile = α_profile[1:length(t_cf)]
@@ -278,4 +285,10 @@ function results(t_cf, h_cf, γ_cf, v_cf)
     append!(config.solution.closed_form.h_cf, h_cf)
     append!(config.solution.closed_form.γ_cf, γ_cf)
     append!(config.solution.closed_form.v_cf, v_cf)
+
+    # println(" ")
+    # println(config.solution.closed_form.t_cf)
+    # println(" ")
+    # println(config.solution.closed_form.h_cf)
+    # println(" ")
 end

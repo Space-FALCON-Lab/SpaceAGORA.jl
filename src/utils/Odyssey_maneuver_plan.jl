@@ -33,49 +33,49 @@ function Odyssey_firing_plan(numberofpassage, args)
         args[:delta_v] = 0.15
         args[:phi] = 0
     elseif numberofpassage == 87
-        args[:delta_v] = 0.14/2
-        args[:phi] = deg2rad(180)'
+        args[:delta_v] = 0.14 #/2
+        args[:phi] = deg2rad(180)
     elseif numberofpassage == 110
-        args[:delta_v] = 0.14/2
+        args[:delta_v] = 0.14 #/2
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 127
-        args[:delta_v] = 1.0/3
+        args[:delta_v] = 1.0 #/3
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 160
-        args[:delta_v] = 0.84/3
+        args[:delta_v] = 0.84 #/3
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 178
-        args[:delta_v] = 0.6/3
+        args[:delta_v] = 0.6 #/3
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 194
-        args[:delta_v] = 0.84/3
+        args[:delta_v] = 0.84 #/3
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 210
-        args[:delta_v] = 0.6/3
+        args[:delta_v] = 0.6 #/3
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 222
-        args[:delta_v] = 0.6/3
+        args[:delta_v] = 0.6 #/3
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 238
-        args[:delta_v] = 1.2/3
+        args[:delta_v] = 1.2 #/3
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 251
-        args[:delta_v] = 1.0/3
+        args[:delta_v] = 1.0 #/3
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 263
-        args[:delta_v] = 1.0/3
+        args[:delta_v] = 1.0 #/3
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 274
-        args[:delta_v] = 1.2/3
+        args[:delta_v] = 1.2 #/3
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 287
-        args[:delta_v] = 1.0/3
+        args[:delta_v] = 1.0 #/3
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 299
-        args[:delta_v] = 1.0/3
+        args[:delta_v] = 1.0 #/3
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 311
-        args[:delta_v] = 1.2/3
+        args[:delta_v] = 1.2 #/3
         args[:phi] = deg2rad(180)
     else
         args[:delta_v] = 0.0

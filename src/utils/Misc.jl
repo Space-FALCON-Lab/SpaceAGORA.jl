@@ -15,10 +15,10 @@ function find_neighbours(point, list)
 end
 
 function new_periapsis(m, r, v, args)
-    Energy = norm(v)^2 * 0.5 * m.planet.μ / norm(r)
+    Energy = norm(v)^2 * 0.5 - m.planet.μ / norm(r)
     a = - m.planet.μ / (2 * Energy)
     h = cross(r, v)
-    e = (1 + (2 * Energy * dot(h,h) / m.planet.μ^2))^0.5
+    e = sqrt(1 + (2 * Energy * dot(h,h) / m.planet.μ^2))
     r_p = a * (1 - e)
 
     if Bool(args[:print_res])

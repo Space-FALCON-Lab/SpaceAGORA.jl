@@ -5,10 +5,10 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/home/space-falcon-2/Documents/GitHub/ABTS/src/output",            # Directory where to save the results
-            :directory_Gram => "/home/space-falcon-2/Documents/GitHub/ABTS/GRAMpy",                   # Directory where Gram is
-            :directory_Gram_data => "/home/space-falcon-2/Documents/GitHub/ABTS/GRAM_Data",           # Directory where Gram data is
-            :directory_Spice => "/home/space-falcon-2/Documents/GitHub/ABTS/GRAM_Data/SPICE",                   # Directory where SPICE files are located
+            :directory_results => "C:/User/Samuel Mo/Documents/GitHub/ABTS/src/output",            # Directory where to save the results
+            :directory_Gram => "C:/User/Samuel Mo/Documents/GitHub/ABTS/GRAMpy",                   # Directory where Gram is
+            :directory_Gram_data => "C:/User/Samuel Mo/Documents/GitHub/ABTS/GRAM_Data",           # Directory where Gram data is
+            :directory_Spice => "C:/User/Samuel Mo/Documents/GitHub/ABTS/GRAM_Data/SPICE",                   # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
             :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
@@ -26,8 +26,8 @@ args = Dict(# Misc Simulation
             :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
             :n_bodies => [],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
-            :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
-            :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
+            :density_model => "Exponential",                               # choices=['Constant' , 'Exponential' , 'Gram']
+            :wind => 0,                                             # Wind calculation only if density model is Gram True=1, False=0
             :aerodynamic_model => "Mach-dependent",                 # choices=['Cd and Cl Constant' , 'Mach-dependent' , 'No-Ballistic flight with axial coefficient']: "Mach-dependent" specific for spacecraft shape, "No-Ballistic flight" specific for blunted-cone shape
             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
             

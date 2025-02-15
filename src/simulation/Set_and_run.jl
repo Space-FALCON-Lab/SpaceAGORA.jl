@@ -39,7 +39,7 @@ function aerobraking_campaign(args, state)
     if length(args[:n_bodies]) != 0
 
         furnsh(args[:directory_Gram_data] * "/SPICE/lsk/naif0012.tls")
-        furnsh(args[:directory_Gram_data] * "/SPICE/spk/planets/de440_GRAM.bsp")
+        furnsh(args[:directory_Gram_data] * "/SPICE/spk/planets/de405.bsp")
         furnsh(args[:directory_Gram_data] * "/SPICE/pck/pck00011.tpc")
 
         for i=1:length(args[:n_bodies])

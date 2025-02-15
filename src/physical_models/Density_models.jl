@@ -163,6 +163,7 @@ function density_gram(h, p, lat, lon, montecarlo, Wind, args, el_time, atmospher
         position.latitude = lat
         # position.longitude = 165 + 2/(24*60*60)*el_time
         position.longitude = lon
+        # println("Lat: $lat, Lon: $lon")
         position.elapsedTime = el_time # Time since start in s
         atmosphere.setPosition(position)
         # print('set planet position', position.latitude, position.longitude, position.height)

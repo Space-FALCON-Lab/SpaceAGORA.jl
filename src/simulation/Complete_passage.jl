@@ -18,6 +18,11 @@ using LinearAlgebra
 using DifferentialEquations
 using Dates
 using AstroTime
+using SPICE
+
+furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140501000000_00546.BSP")
+furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140601000000_00546.BSP")
+furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140701000000_00551.BSP")
 
 import .config
 import .ref_sys
@@ -35,6 +40,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
 
     OE = [initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m]
+
+    println(OE)
 
     # Why is it 50 + 200 here
     if (OE[1] > (m.planet.Rp_e*1e-3 + 50 + args[:EI])*1e3) && (args[:drag_passage] == false) && (args[:body_shape] == "Spacecraft")
@@ -62,6 +69,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     # T_ijk = [[x == -0 ? 0.0 : x for x in row] for row in T_ijk]
 
     r0, v0 = orbitalelemtorv(OE, m.planet)
+    # println("r0: $r0")
+    # println("v0: $v0")
+    # println("$(norm(r0))")
+    # println("Orbital elements: $(rvtoorbitalelement(r0, v0, m, m.planet))")
     Mass = OE[end]
 
     # println(mass)
@@ -384,7 +395,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         
         ## Rotation Calculation
         current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
-        L_PI = pxfrm2("IAU_"*uppercase(m.planet.name), "IAU_"*uppercase(m.planet.name), 0.0, current_time) # Construct a rotation matrix from J2000 to planet-fixed frame
+        L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time) # Construct a rotation matrix from J2000 to planet-fixed frame
         # println("pxform: $L_PI")
         # rot_angle = norm(ω_planet) * (t0 + t_prev)    # angle of rotation, rad
         # L_PI = [[cos(rot_angle), sin(rot_angle), 0.0], [-sin(rot_angle), cos(rot_angle), 0.0], [0.0, 0.0, 1.0]] # rotation matrix
@@ -413,7 +424,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             end
         end
 
-        bank_angle = deg2rad(20.0)
+        if args[:srp] == true
+            p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
+            time_real_utc = to_utc(time_real)
+            et = utc2et(time_real_utc)
+            srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, et)
+        end
+
+        bank_angle = deg2rad(0.0)
 
         lift_pp_hat = cross(h_pp_hat, vel_pp_rw_hat)
 
@@ -915,7 +933,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     # Def initial conditions
     # println(mass)
     in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], Mass+1e-10, 0.0]
-
+    println("r0: $r0")
+    println("v0: $v0")
     # non dimensionalization
     in_cond[1:3] = in_cond[1:3] / config.cnf.DU
     in_cond[4:6] = in_cond[4:6] * config.cnf.TU / config.cnf.DU

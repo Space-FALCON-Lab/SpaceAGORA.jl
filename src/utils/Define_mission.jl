@@ -93,7 +93,7 @@ function def_miss(args)
     if Bool(args[:Odyssey_sim])
         args[:control_mode] = 0
         args[:type_of_mission] = "Aerobraking Campaign"
-        args[:number_of_orbits] = 237
+        args[:number_of_orbits] = 250
         args[:planet] = 1 # "Mars"
         args[:body_shape] = "Spacecraft"
         args[:dry_mass] = 411.0
@@ -101,21 +101,21 @@ function def_miss(args)
         args[:angle_of_attack] = 90.0
         args[:inital_condition_type] = 0
         args[:thrust_control] = "Aerobraking Maneuver"
-        args[:ra_initial_a] = 28523.95e3
+        args[:ra_initial_a] = 28814.747e3
         args[:ra_initial_b] = 30000.0e3
         args[:ra_step] = 1e12
 
         if args[:gravity_model] == "Inverse Squared"
             args[:hp_initial_a] = 108600
         else
-            args[:hp_initial_a] = 84200 # 86000 # 106000
+            args[:hp_initial_a] = 101659 #84200 # 86000 # 
         end
 
         args[:hp_initial_b] = 120000
         args[:hp_step] = 1e12
-        args[:inclination] = 93.6
-        args[:ω] = 109.0
-        args[:Ω] = 114.0
+        args[:inclination] = 125.447
+        args[:ω] = 130.360868
+        args[:Ω] = 82.958
         args[:year] = 2001
         args[:month] = 11
         args[:day] = 6

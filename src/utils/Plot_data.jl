@@ -203,7 +203,7 @@ function performance_plots(state, m, name, args)
         end
     end
 
-    layout_heat_rate = Layout(xaxis_title="Time [s]", yaxis_title="Heat rate [W/cm^2]")
+    layout_heat_rate = Layout(xaxis_title="Orbits", yaxis_title="Heat rate [W/cm^2]")
     plot_heat_rate = plot([plot_traces_heat_rate...], layout_heat_rate)
 
     plot_traces_heat_load = []
@@ -226,7 +226,7 @@ function performance_plots(state, m, name, args)
         end
     end
 
-    layout_heat_load = Layout(xaxis_title="Time [s]", yaxis_title="Heat load [J/cm^2]")
+    layout_heat_load = Layout(xaxis_title="Orbits", yaxis_title="Heat load [J/cm^2]")
     plot_heat_load = plot([plot_traces_heat_load...], layout_heat_load)
 
     if args[:body_shape] == "Spacecraft"

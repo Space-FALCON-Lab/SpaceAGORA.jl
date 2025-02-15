@@ -1,7 +1,7 @@
 import .config
 
 function Venus_Express_firing_plan(numberofpassage, args)
-    if numberofpassage == 5
+    if numberofpassage == 6
         args[:delta_v] = 0.428
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 36

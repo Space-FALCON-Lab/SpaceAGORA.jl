@@ -93,6 +93,26 @@ function planet_data(ip)
         μ_fluid = 0                # kinematic viscosity, m²/s
         Lz = 0
         name = "sun"
+    elseif (ip == 4 || (typeof(ip) == String && cmp(lowercase(ip), "moon") == 0)) # Moon
+        Rp_e = 1.7381e6            # equatorial radius, m
+        Rp_p = 1.7360e6            # polar radius, m
+        Rp_m = 1.7374e6            # volumetric mean radius, m
+        mass = 0.07346e24           # mass, kg
+        g_ref = 1.62                # acceleration due to gravity, m/s²
+        ρ_ref = 0
+        μ = 0.00490e15              # gravitational parameter, m³/s²
+        h_ref = 0
+        H = 0
+        R = 0
+        γ = 0
+        T = 0
+        p = 0
+        J2 = 202.7e-6
+        k = 0
+        ω = [0, 0, 0]
+        μ_fluid = 0                # kinematic viscosity, m²/s
+        Lz = 0
+        name = "moon"
     end
 
     # println(model.planet)

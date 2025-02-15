@@ -29,6 +29,7 @@ args = Dict(# Misc Simulation
             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
             :aerodynamic_model => "Mach-dependent",                 # choices=['Cd and Cl Constant' , 'Mach-dependent' , 'No-Ballistic flight with axial coefficient']: "Mach-dependent" specific for spacecraft shape, "No-Ballistic flight" specific for blunted-cone shape
             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
+            :srp => 0,                                             # Solar Radiation Pressure True=1, False=0
             
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
@@ -81,9 +82,9 @@ args = Dict(# Misc Simulation
             :γ_initial_a => 2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_step => 0.5,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :inclination => 85.45,                                   # Inclination Orbit, deg
-            :ω => 168.6,                                              # AOP, deg
-            :Ω => -61.7,                                              # RAAN, deg
+            :inclination => 96.27,                                   # Inclination Orbit, deg
+            :ω => 148.44,                                              # AOP, deg
+            :Ω => -61.7+360,                                              # RAAN, deg
             :EI => 800.0,                                           # Entry Interface, km
             :AE => 800.0,                                           # Atmospheric Exit, km
             :year => 1993,                                          # Mission year

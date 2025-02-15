@@ -22,10 +22,10 @@ args = Dict(# Misc Simulation
             :number_of_orbits => 100,                                 # Number of aerobraking passage
 
             # Physical Model
-            :planet => 2,                                           # Earth = 0, Mars = 1, Venus = 2
-            :planettime => 0.0,#453769200.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
+            :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
+            :planettime => 453769200.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
-            :n_bodies => ["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
+            :n_bodies => ["Sun", "Moon"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
             :aerodynamic_model => "Mach-dependent",                 # choices=['Cd and Cl Constant' , 'Mach-dependent' , 'No-Ballistic flight with axial coefficient']: "Mach-dependent" specific for spacecraft shape, "No-Ballistic flight" specific for blunted-cone shape
@@ -74,7 +74,7 @@ args = Dict(# Misc Simulation
             :ra_initial_a => 66597e3 + 6.0518e6, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 1e21,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e21,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 186600.0,#176590.0,#188140.0                                 # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_a => 176590.0,#188140.0,#                                 # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 1590000.0,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 3700.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
@@ -83,15 +83,15 @@ args = Dict(# Misc Simulation
             :γ_initial_a => 2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_step => 0.5,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :inclination => 84.454,                                   # Inclination Orbit, deg
-            :ω => 97.728,                                              # AOP, deg
-            :Ω => 105.760,                                              # RAAN, deg
+            :inclination => 89.876,                                   # Inclination Orbit, deg
+            :ω => 75.505,                                              # AOP, deg
+            :Ω => 104.115,                                              # RAAN, deg
             :EI => 2500.0,                                           # Entry Interface, km
             :AE => 2500.0,                                           # Atmospheric Exit, km
             :year => 2014,                                          # Mission year
             :month => 5,                                           # Mission month
-            :day => 19,                                             # Mission day
-            :hours => 14,                                           # Mission hour
+            :day => 27,                                             # Mission day
+            :hours => 5,                                           # Mission hour
             :minutes => 0,                                         # Mission minute
             :secs => 0.0,                                          # Mission second
             

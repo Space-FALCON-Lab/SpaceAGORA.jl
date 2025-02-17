@@ -1,0 +1,5 @@
+#!/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/bin/python3.11
+
+from idlelib.pyshell import main
+if __name__ == '__main__':
+    main()

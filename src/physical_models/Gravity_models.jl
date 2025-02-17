@@ -1,3 +1,6 @@
+using PythonCall
+sys = pyimport("sys")
+
 import .config
 
 function gravity_const(pos_ii_mag, pos_ii, p, mass=0, vel_ii=0)
@@ -57,4 +60,46 @@ function gravity_invsquared_J2(pos_ii_mag, pos_ii, p, mass, vel_ii=0)
     g = [gx, gy, gz]
 
     return g
+end
+
+function gravity_GRAM(pos_ii, lat, lon, alt, p, mass, vel_ii, el_time, atmosphere, args)
+    """
+    Function to calculate the gravity of the planet using the GRAM model
+    :param pos_ii: position of the spacecraft in the inertial frame
+    :param lat: latitude of the spacecraft
+    :param lon: longitude of the spacecraft
+    :param alt: altitude of the spacecraft
+    :param timereal: current time of the simulation, used to calculate the elapsed time since the GRAM atmosphere start time
+    :param atmosphere: atmosphere of the planet
+    :return: gravity of the planet
+    """
+    # print(np.linalg.norm(pos_ii), args.EI * 1e3)
+    sys.path.append(args[:directory_Gram])
+    gram = pyimport("gram")
+    if norm(pos_ii) - p.Rp_e > args[:EI] * 1e3
+        return gravity_invsquared_J2(norm(pos_ii), pos_ii, p, mass, vel_ii)
+    end
+    position = gram.Position()
+    position.lat = rad2deg(lat)
+    position.lon = rad2deg(lon)
+    position.height = alt*1e-3
+    # position.elapsedTime = (dt.datetime(Int64(timereal.year),
+    #                                         Int64(timereal.month),
+    #                                         Int64(timereal.day), 
+    #                                         Int64(timereal.hour),
+    #                                         Int64(timereal.minute),
+    #                                         timereal.second) -
+    #                             dt.datetime(Int64(args.year),
+    #                                         Int64(args.month),
+    #                                         Int64(args.day),
+    #                                         Int64(args.hours),
+    #                                         Int64(args.minutes),
+    #                                         args.secs)
+    #                                         ).total_seconds()
+    position.elapsedTime = el_time
+    atmosphere.setPosition(position)
+    atmosphere.update()
+    pos = atmosphere.getPosition()
+    gravity = pos.gravity
+    return -pyconvert(Any, gravity) * pos_ii / norm(pos_ii)
 end

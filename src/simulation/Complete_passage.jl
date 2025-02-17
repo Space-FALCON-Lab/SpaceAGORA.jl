@@ -20,9 +20,9 @@ using Dates
 using AstroTime
 using SPICE
 
-furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140501000000_00546.BSP")
-furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140601000000_00546.BSP")
-furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140701000000_00551.BSP")
+# furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140501000000_00546.BSP")
+# furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140601000000_00546.BSP")
+# furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140701000000_00551.BSP")
 
 import .config
 import .ref_sys
@@ -412,6 +412,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
         elseif ip.gm == 2
             gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+        elseif ip.gm == 3
+            el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs]))))
+            gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args)
         end
 
         if length(args[:n_bodies]) != 0

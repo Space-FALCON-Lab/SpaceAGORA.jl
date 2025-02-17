@@ -68,6 +68,9 @@ function aerobraking(ip, m, args)
         gram_atmosphere.setPerturbationScales(1.5)
         gram_atmosphere.setMinRelativeStepSize(0.5)
         gram_atmosphere.setSeed(1001)
+        if planet_name == "mars"
+            gram_atmosphere.setMOLAHeights(true)
+        end
 
         ttime = gram.GramTime()
         ttime.setStartTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs], gram.UTC, gram.PET)

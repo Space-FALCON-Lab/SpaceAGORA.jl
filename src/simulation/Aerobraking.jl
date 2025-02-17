@@ -165,7 +165,7 @@ function aerobraking(ip, m, args)
             println("Periapsis too high, final state unreachable! R_a = " * string(r_p*1e-3) * " km")
         end
 
-        # println(" ")
+        println(" ")
     end
 
     closed_form(args, m)

@@ -34,7 +34,7 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
 
             t, h, γ, v = zeros(length_solution), zeros(length_solution), zeros(length_solution), zeros(length_solution)
             cnt = 0
-            for i in range(1,Int64(number_orbits))
+            for i in range(1,ceil(number_orbits))
 
                 # idx_orbit = findall(val -> val == i, config.solution.orientation.number_of_passage)
                 # # idx_orbit = [idx for idx, val in enumerate(solution.orientation.numberofpassage) if val == i]

@@ -23,7 +23,7 @@ args = Dict(# Misc Simulation
 
             # Physical Model
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
-            :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
+            :planettime => 58500000,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
             :n_bodies => [],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
@@ -87,12 +87,12 @@ args = Dict(# Misc Simulation
             :Ω => 0.0,                                              # RAAN, deg
             :EI => 160.0,                                           # Entry Interface, km
             :AE => 160.0,                                           # Atmospheric Exit, km
-            :year => 1993,                                          # Mission year
-            :month => 5,                                           # Mission month
-            :day => 25,                                             # Mission day
-            :hours => 14,                                           # Mission hour
-            :minutes => 21,                                         # Mission minute
-            :secs => 28.0,                                          # Mission second
+            :year => 2001,                                          # Mission year
+            :month => 11,                                           # Mission month
+            :day => 6,                                              # Mission day
+            :hours => 8,                                            # Mission hour
+            :minutes => 30,                                         # Mission minute
+            :secs => 0.0,                                           # Mission second
             
             # Final Conditions
             :final_apoapsis => 5088116.837416616, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign

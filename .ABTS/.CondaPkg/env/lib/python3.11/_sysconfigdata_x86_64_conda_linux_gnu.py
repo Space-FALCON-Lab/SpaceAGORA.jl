@@ -12,22 +12,22 @@ build_time_vars = {'ABIFLAGS': '',
  'BASECFLAGS': '',
  'BASECPPFLAGS': '-IObjects -IInclude -IPython',
  'BASEMODLIBS': '',
- 'BINDIR': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/bin',
- 'BINLIBDEST': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11',
+ 'BINDIR': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/bin',
+ 'BINLIBDEST': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11',
  'BLDLIBRARY': 'libpython3.11.a',
  'BLDSHARED': 'x86_64-conda-linux-gnu-gcc -pthread -shared -Wl,-O2 '
               '-Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now '
               '-Wl,--disable-new-dtags -Wl,--gc-sections '
               '-Wl,--allow-shlib-undefined '
-              '-Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-              '-Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-              '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+              '-Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+              '-Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+              '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
               '-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro '
               '-Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections '
               '-Wl,--allow-shlib-undefined '
-              '-Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-              '-Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-              '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib',
+              '-Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+              '-Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+              '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib',
  'BOOTSTRAP_HEADERS': '\\',
  'BUILDEXE': '',
  'BUILDPYTHON': 'python',
@@ -38,14 +38,14 @@ build_time_vars = {'ABIFLAGS': '',
  'CFLAGS': '-DNDEBUG -fwrapv -O2 -Wall -march=nocona -mtune=haswell '
            '-ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 '
            '-ffunction-sections -pipe -isystem '
-           '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+           '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
            ' '
            ' '
            '    '
            '-march=nocona -mtune=haswell -ftree-vectorize -fPIC '
            '-fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe '
            '-isystem '
-           '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+           '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
            ' '
            ' '
            '   ',
@@ -56,7 +56,7 @@ build_time_vars = {'ABIFLAGS': '',
  'CONFIGURE_CFLAGS': '-march=nocona -mtune=haswell -ftree-vectorize -fPIC '
                      '-fstack-protector-strong -fno-plt -O2 '
                      '-ffunction-sections -pipe -isystem '
-                     '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                     '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                      ' '
                      ' '
                      '  '
@@ -67,54 +67,54 @@ build_time_vars = {'ABIFLAGS': '',
                             '-Werror=implicit-function-declaration '
                             '-fvisibility=hidden',
  'CONFIGURE_CPPFLAGS': '-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem '
-                       '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-                       '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include',
+                       '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                       '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include',
  'CONFIGURE_LDFLAGS': '-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro '
                       '-Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections '
                       '-Wl,--allow-shlib-undefined '
-                      '-Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-                      '-Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-                      '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib',
+                      '-Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                      '-Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                      '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib',
  'CONFIGURE_LDFLAGS_NODIST': '-fno-semantic-interposition  '
                              '  '
                              ' -g',
  'CONFIGURE_LDFLAGS_NOLTO': '-fno-lto',
- 'CONFIG_ARGS': "'--prefix=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env' "
+ 'CONFIG_ARGS': "'--prefix=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env' "
                 "'--build=x86_64-conda-linux-gnu' "
                 "'--host=x86_64-conda-linux-gnu' '--enable-ipv6' "
                 "'--with-ensurepip=no' "
-                "'--with-tzpath=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/share/zoneinfo:/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/share/tzinfo' "
+                "'--with-tzpath=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/share/zoneinfo:/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/share/tzinfo' "
                 "'--with-computed-gotos' '--with-system-ffi' "
                 "'--enable-loadable-sqlite-extensions' "
-                "'--with-tcltk-includes=-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include' "
-                "'--with-tcltk-libs=-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib "
+                "'--with-tcltk-includes=-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include' "
+                "'--with-tcltk-libs=-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib "
                 "-ltcl8.6 -ltk8.6' '--with-platlibdir=lib' '--with-lto' "
                 "'--enable-optimizations' "
                 "'-oldincludedir=/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/_build_env/x86_64-conda-linux-gnu/sysroot/usr/include' "
                 "'--disable-shared' 'PROFILE_TASK=-m test --pgo' "
                 "'build_alias=x86_64-conda-linux-gnu' "
                 "'host_alias=x86_64-conda-linux-gnu' "
-                "'PKG_CONFIG_PATH=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/pkgconfig' "
+                "'PKG_CONFIG_PATH=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/pkgconfig' "
                 "'MACHDEP=linux' 'CC=x86_64-conda-linux-gnu-gcc' "
                 "'CFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC "
                 '-fstack-protector-strong -fno-plt -O2 -ffunction-sections '
                 '-pipe -isystem '
-                '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                 ' '
                 ' '
                 '   '
                 "' 'LDFLAGS=-Wl,-O2 -Wl,--sort-common -Wl,--as-needed "
                 '-Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags '
                 '-Wl,--gc-sections -Wl,--allow-shlib-undefined '
-                '-Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-                '-Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-                "-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib' "
+                '-Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                '-Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                "-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib' "
                 "'CPPFLAGS=-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem "
-                '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-                "-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include' "
+                '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                "-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include' "
                 "'CPP=/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/_build_env/bin/x86_64-conda-linux-gnu-cpp'",
- 'CONFINCLUDEDIR': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include',
- 'CONFINCLUDEPY': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include/python3.11',
+ 'CONFINCLUDEDIR': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include',
+ 'CONFINCLUDEPY': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include/python3.11',
  'COREPYTHONPATH': '',
  'COVERAGE_INFO': '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/build-static/coverage.info',
  'COVERAGE_LCOV_OPTIONS': '--rc lcov_branch_coverage=1',
@@ -125,11 +125,11 @@ build_time_vars = {'ABIFLAGS': '',
  'CPPFLAGS': '-IObjects -IInclude -IPython -I. '
              '-I/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Include '
              '-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem '
-             '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-             '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+             '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+             '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
              '-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem '
-             '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-             '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include',
+             '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+             '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include',
  'CXX': 'x86_64-conda-linux-gnu-c++ -pthread',
  'DECIMAL_CFLAGS': '-I/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/_decimal/libmpdec '
                    '-DCONFIG_64=1 -DANSI=1 -DHAVE_UINT128_T=1',
@@ -139,13 +139,13 @@ build_time_vars = {'ABIFLAGS': '',
                     '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Programs/_freeze_module.py '
                     '\\',
  'DEEPFREEZE_OBJS': 'Python/deepfreeze/deepfreeze.o',
- 'DESTDIRS': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env '
-             '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-             '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11 '
-             '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11/lib-dynload',
- 'DESTLIB': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11',
+ 'DESTDIRS': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env '
+             '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+             '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11 '
+             '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11/lib-dynload',
+ 'DESTLIB': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11',
  'DESTPATH': '',
- 'DESTSHARED': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11/lib-dynload',
+ 'DESTSHARED': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11/lib-dynload',
  'DFLAGS': '',
  'DIRMODE': 755,
  'DIST': 'README.rst ChangeLog configure configure.ac acconfig.h pyconfig.h.in '
@@ -668,12 +668,12 @@ build_time_vars = {'ABIFLAGS': '',
  'HAVE__GETPTY': 0,
  'HOSTRUNNER': '',
  'HOST_GNU_TYPE': 'x86_64-conda-linux-gnu',
- 'INCLDIRSTOMAKE': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-                   '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-                   '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include/python3.11 '
-                   '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include/python3.11',
- 'INCLUDEDIR': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include',
- 'INCLUDEPY': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include/python3.11',
+ 'INCLDIRSTOMAKE': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                   '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                   '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include/python3.11 '
+                   '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include/python3.11',
+ 'INCLUDEDIR': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include',
+ 'INCLUDEPY': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include/python3.11',
  'INSTALL': '/usr/bin/install -c',
  'INSTALL_DATA': '/usr/bin/install -c -m 644',
  'INSTALL_PROGRAM': '/usr/bin/install -c',
@@ -686,47 +686,47 @@ build_time_vars = {'ABIFLAGS': '',
  'LDFLAGS': '-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now '
             '-Wl,--disable-new-dtags -Wl,--gc-sections '
             '-Wl,--allow-shlib-undefined '
-            '-Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-            '-Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-            '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+            '-Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+            '-Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+            '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
             '-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now '
             '-Wl,--disable-new-dtags -Wl,--gc-sections '
             '-Wl,--allow-shlib-undefined '
-            '-Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-            '-Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-            '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib',
+            '-Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+            '-Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+            '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib',
  'LDLIBRARY': 'libpython3.11.a',
  'LDLIBRARYDIR': '',
  'LDSHARED': 'x86_64-conda-linux-gnu-gcc -pthread -shared -Wl,-O2 '
              '-Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now '
              '-Wl,--disable-new-dtags -Wl,--gc-sections '
              '-Wl,--allow-shlib-undefined '
-             '-Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-             '-Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-             '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+             '-Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+             '-Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+             '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
              '-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro '
              '-Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections '
              '-Wl,--allow-shlib-undefined '
-             '-Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-             '-Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-             '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib',
+             '-Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+             '-Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+             '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib',
  'LDVERSION': '3.11',
  'LIBC': '',
- 'LIBDEST': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11',
- 'LIBDIR': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib',
+ 'LIBDEST': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11',
+ 'LIBDIR': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib',
  'LIBEXPAT_A': 'Modules/expat/libexpat.a',
  'LIBEXPAT_CFLAGS': '-I/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/expat '
                     '-DNDEBUG -fwrapv -O2 -Wall -march=nocona -mtune=haswell '
                     '-ftree-vectorize -fPIC -fstack-protector-strong -fno-plt '
                     '-O2 -ffunction-sections -pipe -isystem '
-                    '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                    '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                     ' '
                     ' '
                     '  '
                     '  -march=nocona -mtune=haswell '
                     '-ftree-vectorize -fPIC -fstack-protector-strong -fno-plt '
                     '-O2 -ffunction-sections -pipe -isystem '
-                    '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                    '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                     ' '
                     ' '
                     '  '
@@ -739,15 +739,15 @@ build_time_vars = {'ABIFLAGS': '',
                     '-IObjects -IInclude -IPython -I. '
                     '-I/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Include '
                     '-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem '
-                    '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-                    '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                    '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                    '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                     '-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem '
-                    '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-                    '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                    '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                    '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                     '-fPIC',
  'LIBEXPAT_HEADERS': '\\',
  'LIBEXPAT_OBJS': '\\',
- 'LIBFFI_INCLUDEDIR': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include',
+ 'LIBFFI_INCLUDEDIR': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include',
  'LIBM': '-lm',
  'LIBMPDEC_A': 'Modules/_decimal/libmpdec/libmpdec.a',
  'LIBMPDEC_CFLAGS': '-I/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/_decimal/libmpdec '
@@ -755,14 +755,14 @@ build_time_vars = {'ABIFLAGS': '',
                     '-fwrapv -O2 -Wall -march=nocona -mtune=haswell '
                     '-ftree-vectorize -fPIC -fstack-protector-strong -fno-plt '
                     '-O2 -ffunction-sections -pipe -isystem '
-                    '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                    '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                     ' '
                     ' '
                     '  '
                     '  -march=nocona -mtune=haswell '
                     '-ftree-vectorize -fPIC -fstack-protector-strong -fno-plt '
                     '-O2 -ffunction-sections -pipe -isystem '
-                    '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                    '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                     ' '
                     ' '
                     '  '
@@ -775,18 +775,18 @@ build_time_vars = {'ABIFLAGS': '',
                     '-IObjects -IInclude -IPython -I. '
                     '-I/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Include '
                     '-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem '
-                    '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-                    '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                    '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                    '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                     '-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem '
-                    '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-                    '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                    '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                    '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                     '-fPIC',
  'LIBMPDEC_HEADERS': '\\',
  'LIBMPDEC_OBJS': '\\',
  'LIBOBJDIR': 'Python/',
  'LIBOBJS': '',
- 'LIBPC': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/pkgconfig',
- 'LIBPL': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11/config-3.11-x86_64-linux-gnu',
+ 'LIBPC': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/pkgconfig',
+ 'LIBPL': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11/config-3.11-x86_64-linux-gnu',
  'LIBPYTHON': '',
  'LIBRARY': 'libpython3.11.a',
  'LIBRARY_DEPS': 'libpython3.11.a',
@@ -807,13 +807,13 @@ build_time_vars = {'ABIFLAGS': '',
  'LOCALMODLIBS': '',
  'MACHDEP': 'linux',
  'MACHDEP_OBJS': '',
- 'MACHDESTLIB': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11',
+ 'MACHDESTLIB': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11',
  'MACOSX_DEPLOYMENT_TARGET': '',
  'MAINCC': 'x86_64-conda-linux-gnu-gcc -pthread',
  'MAJOR_IN_MKDEV': 0,
  'MAJOR_IN_SYSMACROS': 0,
  'MAKESETUP': '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/makesetup',
- 'MANDIR': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/share/man',
+ 'MANDIR': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/share/man',
  'MKDIR_P': '/usr/bin/mkdir -p',
  'MODBUILT_NAMES': 'atexit  faulthandler  posix  _signal  _tracemalloc  '
                    '_codecs  _collections  errno  _io  itertools  _sre  '
@@ -840,8 +840,8 @@ build_time_vars = {'ABIFLAGS': '',
  'MODULE_AUDIOOP_LDFLAGS': '-lm',
  'MODULE_AUDIOOP_STATE': 'yes',
  'MODULE_BINASCII_CFLAGS': '-DUSE_ZLIB_CRC32 '
-                           '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include',
- 'MODULE_BINASCII_LDFLAGS': '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                           '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include',
+ 'MODULE_BINASCII_LDFLAGS': '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
                             '-lz',
  'MODULE_BINASCII_STATE': 'yes',
  'MODULE_CMATH_DEPS': '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/_math.h',
@@ -883,8 +883,8 @@ build_time_vars = {'ABIFLAGS': '',
  'MODULE_XXLIMITED_35_STATE': 'yes',
  'MODULE_XXLIMITED_STATE': 'yes',
  'MODULE_XXSUBTYPE_LDFLAGS': '',
- 'MODULE_ZLIB_CFLAGS': '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include',
- 'MODULE_ZLIB_LDFLAGS': '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+ 'MODULE_ZLIB_CFLAGS': '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include',
+ 'MODULE_ZLIB_LDFLAGS': '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
                         '-lz',
  'MODULE_ZLIB_STATE': 'yes',
  'MODULE__ABC_LDFLAGS': '',
@@ -942,9 +942,9 @@ build_time_vars = {'ABIFLAGS': '',
  'MODULE__ELEMENTTREE_STATE': 'yes',
  'MODULE__FUNCTOOLS_LDFLAGS': '',
  'MODULE__GDBM_STATE': 'missing',
- 'MODULE__HASHLIB_CFLAGS': '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include',
+ 'MODULE__HASHLIB_CFLAGS': '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include',
  'MODULE__HASHLIB_DEPS': '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/hashlib.h',
- 'MODULE__HASHLIB_LDFLAGS': '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib   '
+ 'MODULE__HASHLIB_LDFLAGS': '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib   '
                             '-lcrypto',
  'MODULE__HASHLIB_STATE': 'yes',
  'MODULE__HEAPQ_STATE': 'yes',
@@ -955,8 +955,8 @@ build_time_vars = {'ABIFLAGS': '',
  'MODULE__JSON_STATE': 'yes',
  'MODULE__LOCALE_LDFLAGS': '',
  'MODULE__LSPROF_STATE': 'yes',
- 'MODULE__LZMA_CFLAGS': '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include',
- 'MODULE__LZMA_LDFLAGS': '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+ 'MODULE__LZMA_CFLAGS': '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include',
+ 'MODULE__LZMA_LDFLAGS': '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
                          '-llzma',
  'MODULE__LZMA_STATE': 'yes',
  'MODULE__MD5_DEPS': '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/hashlib.h',
@@ -990,7 +990,7 @@ build_time_vars = {'ABIFLAGS': '',
                         '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/getaddrinfo.c '
                         '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/getnameinfo.c',
  'MODULE__SOCKET_STATE': 'yes',
- 'MODULE__SQLITE3_CFLAGS': '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+ 'MODULE__SQLITE3_CFLAGS': '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                            '-I/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/_sqlite',
  'MODULE__SQLITE3_DEPS': '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/_sqlite/connection.h '
                          '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/_sqlite/cursor.h '
@@ -999,11 +999,11 @@ build_time_vars = {'ABIFLAGS': '',
                          '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/_sqlite/prepare_protocol.h '
                          '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/_sqlite/row.h '
                          '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/_sqlite/util.h',
- 'MODULE__SQLITE3_LDFLAGS': '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+ 'MODULE__SQLITE3_LDFLAGS': '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
                             '-lsqlite3',
  'MODULE__SQLITE3_STATE': 'yes',
  'MODULE__SRE_LDFLAGS': '',
- 'MODULE__SSL_CFLAGS': '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include',
+ 'MODULE__SSL_CFLAGS': '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include',
  'MODULE__SSL_DEPS': '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/_ssl.h '
                      '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/_ssl/cert.c '
                      '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/_ssl/debughelpers.c '
@@ -1012,7 +1012,7 @@ build_time_vars = {'ABIFLAGS': '',
                      '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/_ssl_data_111.h '
                      '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/_ssl_data_300.h '
                      '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Modules/socketmodule.h',
- 'MODULE__SSL_LDFLAGS': '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib  '
+ 'MODULE__SSL_LDFLAGS': '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib  '
                         '-lssl -lcrypto',
  'MODULE__SSL_STATE': 'yes',
  'MODULE__STATISTICS_LDFLAGS': '-lm',
@@ -1027,15 +1027,15 @@ build_time_vars = {'ABIFLAGS': '',
  'MODULE__TESTINTERNALCAPI_STATE': 'yes',
  'MODULE__TESTMULTIPHASE_STATE': 'yes',
  'MODULE__THREAD_LDFLAGS': '',
- 'MODULE__TKINTER_CFLAGS': '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+ 'MODULE__TKINTER_CFLAGS': '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                            '-Wno-strict-prototypes -DWITH_APPINIT=1',
- 'MODULE__TKINTER_LDFLAGS': '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+ 'MODULE__TKINTER_LDFLAGS': '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
                             '-ltk8.6 -ltkstub8.6 -ltcl8.6 -ltclstub8.6',
  'MODULE__TKINTER_STATE': 'yes',
  'MODULE__TRACEMALLOC_LDFLAGS': '',
  'MODULE__TYPING_STATE': 'yes',
- 'MODULE__UUID_CFLAGS': '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include/uuid',
- 'MODULE__UUID_LDFLAGS': '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+ 'MODULE__UUID_CFLAGS': '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include/uuid',
+ 'MODULE__UUID_LDFLAGS': '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
                          '-luuid',
  'MODULE__UUID_STATE': 'yes',
  'MODULE__WEAKREF_LDFLAGS': '',
@@ -1047,8 +1047,8 @@ build_time_vars = {'ABIFLAGS': '',
  'MVWDELCH_IS_EXPRESSION': 1,
  'NO_AS_NEEDED': '-Wl,--no-as-needed',
  'OBJECT_OBJS': '\\',
- 'OPENSSL_INCLUDES': '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include',
- 'OPENSSL_LDFLAGS': '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib',
+ 'OPENSSL_INCLUDES': '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include',
+ 'OPENSSL_LDFLAGS': '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib',
  'OPENSSL_LIBS': '-lssl -lcrypto',
  'OPENSSL_RPATH': '',
  'OPT': '-DNDEBUG -fwrapv -O2 -Wall',
@@ -1091,7 +1091,7 @@ build_time_vars = {'ABIFLAGS': '',
                              '-mtune=haswell -ftree-vectorize -fPIC '
                              '-fstack-protector-strong -fno-plt -O2 '
                              '-ffunction-sections -pipe -isystem '
-                             '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                             '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                              ' '
                              ' '
                              '  '
@@ -1099,7 +1099,7 @@ build_time_vars = {'ABIFLAGS': '',
                              '-mtune=haswell -ftree-vectorize -fPIC '
                              '-fstack-protector-strong -fno-plt -O2 '
                              '-ffunction-sections -pipe -isystem '
-                             '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                             '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                              ' '
                              ' '
                              '  '
@@ -1114,23 +1114,23 @@ build_time_vars = {'ABIFLAGS': '',
                              '-IObjects -IInclude -IPython -I. '
                              '-I/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Include '
                              '-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem '
-                             '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-                             '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                             '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                             '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                              '-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem '
-                             '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-                             '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                             '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                             '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                              '-DPy_BUILD_CORE_BUILTIN',
  'PY_CFLAGS': '-DNDEBUG -fwrapv -O2 -Wall -march=nocona -mtune=haswell '
               '-ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 '
               '-ffunction-sections -pipe -isystem '
-              '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+              '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
               ' '
               ' '
               '   '
               ' -march=nocona -mtune=haswell -ftree-vectorize -fPIC '
               '-fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe '
               '-isystem '
-              '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+              '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
               ' '
               ' '
               '   '
@@ -1144,14 +1144,14 @@ build_time_vars = {'ABIFLAGS': '',
  'PY_CORE_CFLAGS': '-DNDEBUG -fwrapv -O2 -Wall -march=nocona -mtune=haswell '
                    '-ftree-vectorize -fPIC -fstack-protector-strong -fno-plt '
                    '-O2 -ffunction-sections -pipe -isystem '
-                   '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                   '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                    ' '
                    ' '
                    '   '
                    ' -march=nocona -mtune=haswell -ftree-vectorize -fPIC '
                    '-fstack-protector-strong -fno-plt -O2 -ffunction-sections '
                    '-pipe -isystem '
-                   '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                   '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                    ' '
                    ' '
                    '   '
@@ -1163,62 +1163,62 @@ build_time_vars = {'ABIFLAGS': '',
                    '-IObjects -IInclude -IPython -I. '
                    '-I/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Include '
                    '-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem '
-                   '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-                   '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                   '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                   '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                    '-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem '
-                   '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-                   '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                   '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                   '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                    '-DPy_BUILD_CORE',
  'PY_CORE_LDFLAGS': '-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro '
                     '-Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections '
                     '-Wl,--allow-shlib-undefined '
-                    '-Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-                    '-Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-                    '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                    '-Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                    '-Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                    '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
                     '-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro '
                     '-Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections '
                     '-Wl,--allow-shlib-undefined '
-                    '-Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-                    '-Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-                    '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                    '-Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                    '-Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                    '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
                     '-fno-semantic-interposition   '
                     '  -g',
  'PY_CPPFLAGS': '-IObjects -IInclude -IPython -I. '
                 '-I/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Include '
                 '-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem '
-                '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-                '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                 '-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem '
-                '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-                '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include',
+                '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include',
  'PY_ENABLE_SHARED': 0,
  'PY_FORMAT_SIZE_T': '"z"',
  'PY_LDFLAGS': '-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro '
                '-Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections '
                '-Wl,--allow-shlib-undefined '
-               '-Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-               '-Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-               '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+               '-Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+               '-Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+               '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
                '-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro '
                '-Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections '
                '-Wl,--allow-shlib-undefined '
-               '-Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-               '-Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-               '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib',
+               '-Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+               '-Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+               '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib',
  'PY_LDFLAGS_NODIST': '-fno-semantic-interposition   '
                       '  -g',
  'PY_LDFLAGS_NOLTO': '-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro '
                      '-Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections '
                      '-Wl,--allow-shlib-undefined '
-                     '-Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-                     '-Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-                     '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                     '-Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                     '-Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                     '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
                      '-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro '
                      '-Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections '
                      '-Wl,--allow-shlib-undefined '
-                     '-Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-                     '-Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
-                     '-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                     '-Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                     '-Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
+                     '-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib '
                      '-fno-lto',
  'PY_SQLITE_ENABLE_LOAD_EXTENSION': 1,
  'PY_SQLITE_HAVE_SERIALIZE': 1,
@@ -1228,7 +1228,7 @@ build_time_vars = {'ABIFLAGS': '',
                         '-mtune=haswell -ftree-vectorize -fPIC '
                         '-fstack-protector-strong -fno-plt -O2 '
                         '-ffunction-sections -pipe -isystem '
-                        '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                        '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                         ' '
                         ' '
                         '  '
@@ -1236,7 +1236,7 @@ build_time_vars = {'ABIFLAGS': '',
                         '-mtune=haswell -ftree-vectorize -fPIC '
                         '-fstack-protector-strong -fno-plt -O2 '
                         '-ffunction-sections -pipe -isystem '
-                        '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                        '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                         ' '
                         ' '
                         '  '
@@ -1250,11 +1250,11 @@ build_time_vars = {'ABIFLAGS': '',
                         '-IObjects -IInclude -IPython -I. '
                         '-I/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Include '
                         '-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem '
-                        '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-                        '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                        '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                        '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
                         '-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem '
-                        '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include '
-                        '-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include',
+                        '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include '
+                        '-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include',
  'PY_SUPPORT_TIER': 1,
  'Py_DEBUG': 0,
  'Py_ENABLE_SHARED': 0,
@@ -1266,7 +1266,7 @@ build_time_vars = {'ABIFLAGS': '',
  'RESSRCDIR': 'Mac/Resources/framework',
  'RETSIGTYPE': 'void',
  'RUNSHARED': '',
- 'SCRIPTDIR': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib',
+ 'SCRIPTDIR': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib',
  'SETPGRP_HAVE_ARG': 0,
  'SHELL': '/bin/sh',
  'SHLIBS': '-lpthread -ldl  -lutil -lrt',
@@ -1320,15 +1320,15 @@ build_time_vars = {'ABIFLAGS': '',
  'TIMEMODULE_LIB': 'rt',
  'TIME_WITH_SYS_TIME': 1,
  'TM_IN_SYS_TIME': 0,
- 'TZPATH': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/share/zoneinfo:/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/share/tzinfo',
+ 'TZPATH': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/share/zoneinfo:/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/share/tzinfo',
  'UNICODE_DEPS': '\\',
  'UNIVERSALSDK': '',
  'UPDATE_FILE': '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/Tools/scripts/update_file.py',
  'USE_COMPUTED_GOTOS': 1,
  'VERSION': '3.11',
  'VPATH': '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work',
- 'WASM_ASSETS_DIR': './home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env',
- 'WASM_STDLIB': './home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11/os.py',
+ 'WASM_ASSETS_DIR': './workspaces/ABTS.jl/.ABTS/.CondaPkg/env',
+ 'WASM_STDLIB': './workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/python3.11/os.py',
  'WHEEL_PKG_DIR': '',
  'WINDOW_HAS_FLAGS': 1,
  'WITH_DECIMAL_CONTEXTVAR': 1,
@@ -1345,7 +1345,7 @@ build_time_vars = {'ABIFLAGS': '',
  'XMLLIBSUBDIRS': 'xml xml/dom xml/etree xml/parsers xml/sax',
  'abs_builddir': '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work/build-static',
  'abs_srcdir': '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work',
- 'datarootdir': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/share',
- 'exec_prefix': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env',
- 'prefix': '/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env',
+ 'datarootdir': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/share',
+ 'exec_prefix': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env',
+ 'prefix': '/workspaces/ABTS.jl/.ABTS/.CondaPkg/env',
  'srcdir': '/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work'}

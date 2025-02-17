@@ -1,8 +1,8 @@
 # tk pkg-config source file
 
-prefix=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env
-exec_prefix=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env
-libdir=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib
+prefix=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env
+exec_prefix=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env
+libdir=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib
 includedir=${prefix}/include
 
 Name: The Tk Toolkit

@@ -1,4 +1,4 @@
-#!/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/bin/python3.11
+#!/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/bin/python3.11
 # -*- python -*-
 
 # Keep this script in sync with python-config.sh.in

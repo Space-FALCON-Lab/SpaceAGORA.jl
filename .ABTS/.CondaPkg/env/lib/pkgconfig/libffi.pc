@@ -1,8 +1,8 @@
-prefix=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env
+prefix=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env
 exec_prefix=${prefix}
 libdir=${exec_prefix}/lib
 toolexeclibdir=${libdir}
-includedir=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include
+includedir=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include
 
 Name: libffi
 Description: Library supporting Foreign Function Interfaces

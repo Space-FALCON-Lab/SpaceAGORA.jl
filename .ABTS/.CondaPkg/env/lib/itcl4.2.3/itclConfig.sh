@@ -26,8 +26,8 @@ ITCL_BUILD_LIB_SPEC='-L/home/conda/feedstock_root/build_artifacts/tk_16992018095
 
 # String to pass to linker to pick up the Itcl library from its
 # installed directory.
-itcl_LIB_SPEC='-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/itcl4.2.3 -litcl4.2.3'
-ITCL_LIB_SPEC='-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/itcl4.2.3 -litcl4.2.3'
+itcl_LIB_SPEC='-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/itcl4.2.3 -litcl4.2.3'
+ITCL_LIB_SPEC='-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/itcl4.2.3 -litcl4.2.3'
 
 # The name of the Itcl stub library (a .a file):
 itcl_STUB_LIB_FILE=libitclstub4.2.3.a
@@ -40,8 +40,8 @@ ITCL_BUILD_STUB_LIB_SPEC='-L/home/conda/feedstock_root/build_artifacts/tk_169920
 
 # String to pass to linker to pick up the Itcl stub library from its
 # installed directory.
-itcl_STUB_LIB_SPEC='-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/itcl4.2.3 -litclstub4.2.3'
-ITCL_STUB_LIB_SPEC='-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/itcl4.2.3 -litclstub4.2.3'
+itcl_STUB_LIB_SPEC='-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/itcl4.2.3 -litclstub4.2.3'
+ITCL_STUB_LIB_SPEC='-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/itcl4.2.3 -litclstub4.2.3'
 
 # String to pass to linker to pick up the Itcl stub library from its
 # build directory.
@@ -50,8 +50,8 @@ ITCL_BUILD_STUB_LIB_PATH='/home/conda/feedstock_root/build_artifacts/tk_16992018
 
 # String to pass to linker to pick up the Itcl stub library from its
 # installed directory.
-itcl_STUB_LIB_PATH='/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/itcl4.2.3/libitclstub4.2.3.a'
-ITCL_STUB_LIB_PATH='/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/itcl4.2.3/libitclstub4.2.3.a'
+itcl_STUB_LIB_PATH='/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/itcl4.2.3/libitclstub4.2.3.a'
+ITCL_STUB_LIB_PATH='/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/itcl4.2.3/libitclstub4.2.3.a'
 
 # Location of the top-level source directories from which [incr Tcl]
 # was built.  This is the directory that contains generic, unix, etc.

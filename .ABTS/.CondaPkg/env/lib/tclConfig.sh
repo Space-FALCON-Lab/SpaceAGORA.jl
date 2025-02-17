@@ -44,11 +44,11 @@ TCL_LIBS='-ldl -lz  -lpthread -lm'
 
 # Top-level directory in which Tcl's platform-independent files are
 # installed.
-TCL_PREFIX='/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env'
+TCL_PREFIX='/workspaces/ABTS.jl/.ABTS/.CondaPkg/env'
 
 # Top-level directory in which Tcl's platform-specific files (e.g.
 # executables) are installed.
-TCL_EXEC_PREFIX='/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env'
+TCL_EXEC_PREFIX='/workspaces/ABTS.jl/.ABTS/.CondaPkg/env'
 
 # Flags to pass to cc when compiling the components of a shared library:
 TCL_SHLIB_CFLAGS='-fPIC'
@@ -57,7 +57,7 @@ TCL_SHLIB_CFLAGS='-fPIC'
 TCL_CFLAGS_WARNING='-Wall -Wpointer-arith'
 
 # Extra flags to pass to cc:
-TCL_EXTRA_CFLAGS='-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include -fdebug-prefix-map=/home/conda/feedstock_root/build_artifacts/tk_1699201809505/work=/usr/local/src/conda/tk-8.6.13 -fdebug-prefix-map=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env=/usr/local/src/conda-prefix -pipe -DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include'
+TCL_EXTRA_CFLAGS='-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include -fdebug-prefix-map=/home/conda/feedstock_root/build_artifacts/tk_1699201809505/work=/usr/local/src/conda/tk-8.6.13 -fdebug-prefix-map=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env=/usr/local/src/conda-prefix -pipe -DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include'
 
 # Base command to use for combining object files into a shared library:
 TCL_SHLIB_LD='${CC} ${CFLAGS} ${LDFLAGS} -shared'
@@ -79,7 +79,7 @@ TCL_DL_LIBS='-ldl'
 
 # Flags to pass to the compiler when linking object files into
 # an executable tclsh or tcltest binary.
-TCL_LD_FLAGS='-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -Wl,--export-dynamic '
+TCL_LD_FLAGS='-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -Wl,--export-dynamic '
 
 # Flags to pass to cc/ld, such as "-R /usr/local/tcl/lib", that tell the
 # run-time dynamic linker where to look for shared libraries such as
@@ -100,15 +100,15 @@ TCL_LIB_FLAG='-ltcl8.6'
 
 # String to pass to linker to pick up the Tcl library from its
 # build directory.
-TCL_BUILD_LIB_SPEC='-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -ltcl8.6'
+TCL_BUILD_LIB_SPEC='-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -ltcl8.6'
 
 # String to pass to linker to pick up the Tcl library from its
 # installed directory.
-TCL_LIB_SPEC='-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -ltcl8.6'
+TCL_LIB_SPEC='-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -ltcl8.6'
 
 # String to pass to the compiler so that an extension can
 # find installed Tcl headers.
-TCL_INCLUDE_SPEC='-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include'
+TCL_INCLUDE_SPEC='-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include'
 
 # Indicates whether a version numbers should be used in -l switches
 # ("ok" means it's safe to use switches like -ltcl7.5;  "nodots" means
@@ -135,12 +135,12 @@ TCL_UNSHARED_LIB_SUFFIX='${VERSION}.a'
 # different place than the directory containing the source files, this
 # points to the location of the sources, not the location where Tcl was
 # compiled.
-TCL_SRC_DIR='/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include'
+TCL_SRC_DIR='/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include'
 
 # List of standard directories in which to look for packages during
 # "package require" commands.  Contains the "prefix" directory plus also
 # the "exec_prefix" directory, if it is different.
-TCL_PACKAGE_PATH='{/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib} '
+TCL_PACKAGE_PATH='{/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib} '
 
 # Tcl supports stub.
 TCL_SUPPORTS_STUBS=1
@@ -153,17 +153,17 @@ TCL_STUB_LIB_FLAG='-ltclstub8.6'
 
 # String to pass to linker to pick up the Tcl stub library from its
 # build directory.
-TCL_BUILD_STUB_LIB_SPEC='-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -ltclstub8.6'
+TCL_BUILD_STUB_LIB_SPEC='-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -ltclstub8.6'
 
 # String to pass to linker to pick up the Tcl stub library from its
 # installed directory.
-TCL_STUB_LIB_SPEC='-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -ltclstub8.6'
+TCL_STUB_LIB_SPEC='-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -ltclstub8.6'
 
 # Path to the Tcl stub library in the build directory.
-TCL_BUILD_STUB_LIB_PATH='/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/libtclstub8.6.a'
+TCL_BUILD_STUB_LIB_PATH='/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/libtclstub8.6.a'
 
 # Path to the Tcl stub library in the install directory.
-TCL_STUB_LIB_PATH='/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/libtclstub8.6.a'
+TCL_STUB_LIB_PATH='/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/libtclstub8.6.a'
 
 # Flag, 1: we built Tcl with threads enabled, 0 we didn't
 TCL_THREADS=1

@@ -1,5 +1,5 @@
-==> 2025-02-17 10:58:38 <==
-# cmd: /home/space-falcon-1/.julia/artifacts/7973f2c7725e2d0eef7a95159454c4145f0945a2/bin/micromamba -r /home/space-falcon-1/.julia/scratchspaces/0b3b1443-0f03-428d-bdfb-f27f9c1191ea/root create -y -p /home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env --override-channels --no-channel-priority libstdcxx-ng[version='>=3.4,<13.0'] openssl[version='>=3, <3.1'] python[version='>=3.8,<4',channel='conda-forge',build='*cpython*'] -c conda-forge
+==> 2025-02-17 16:17:30 <==
+# cmd: /home/vscode/.julia/artifacts/7973f2c7725e2d0eef7a95159454c4145f0945a2/bin/micromamba -r /home/vscode/.julia/scratchspaces/0b3b1443-0f03-428d-bdfb-f27f9c1191ea/root create -y -p /workspaces/ABTS.jl/.ABTS/.CondaPkg/env --override-channels --no-channel-priority libstdcxx-ng[version='>=3.4,<13.0'] openssl[version='>=3, <3.1'] python[version='>=3.8,<4',channel='conda-forge',build='*cpython*'] -c conda-forge
 # conda version: 3.8.0
 +https://conda.anaconda.org/conda-forge/linux-64::_libgcc_mutex-0.1-conda_forge
 +https://conda.anaconda.org/conda-forge/linux-64::ld_impl_linux-64-2.43-h712a8e2_2

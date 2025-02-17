@@ -1,5 +1,5 @@
 # See: man pkg-config
-prefix=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env
+prefix=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env
 exec_prefix=${prefix}
 libdir=${exec_prefix}/lib
 includedir=${prefix}/include

@@ -82,7 +82,7 @@ MAKESETUP=      $(srcdir)/Modules/makesetup
 OPT=		-DNDEBUG -fwrapv -O2 -Wall
 BASECFLAGS=	
 BASECPPFLAGS=	-IObjects -IInclude -IPython
-CONFIGURE_CFLAGS=	-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include -fdebug-prefix-map=/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work=/usr/local/src/conda/python-3.11.0 -fdebug-prefix-map=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env=/usr/local/src/conda-prefix    
+CONFIGURE_CFLAGS=	-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include -fdebug-prefix-map=/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work=/usr/local/src/conda/python-3.11.0 -fdebug-prefix-map=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env=/usr/local/src/conda-prefix    
 # CFLAGS_NODIST is used for building the interpreter and stdlib C extensions.
 # Use it when a compiler flag should _not_ be part of the distutils CFLAGS
 # once Python is installed (Issue #21121).
@@ -94,8 +94,8 @@ CONFIGURE_LDFLAGS_NODIST= -fno-semantic-interposition     -g
 # LDFLAGS_NOLTO is an extra flag to disable lto. It is used to speed up building
 # of _bootstrap_python and _freeze_module tools, which don't need LTO.
 CONFIGURE_LDFLAGS_NOLTO=-fno-lto
-CONFIGURE_CPPFLAGS=	-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include -I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include
-CONFIGURE_LDFLAGS=	-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib
+CONFIGURE_CPPFLAGS=	-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include -I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include
+CONFIGURE_LDFLAGS=	-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib
 # Avoid assigning CFLAGS, LDFLAGS, etc. so users can use them on the
 # command line to append to these values without stomping the pre-set
 # values.
@@ -134,7 +134,7 @@ MULTIARCH=	x86_64-linux-gnu
 MULTIARCH_CPPFLAGS = -DMULTIARCH=\"x86_64-linux-gnu\"
 
 # Install prefix for architecture-independent files
-prefix=		/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env
+prefix=		/workspaces/ABTS.jl/.ABTS/.CondaPkg/env
 
 # Install prefix for architecture-dependent files
 exec_prefix=	${prefix}
@@ -211,9 +211,9 @@ LIBMPDEC_A= Modules/_decimal/libmpdec/libmpdec.a
 LIBEXPAT_A= Modules/expat/libexpat.a
 
 # OpenSSL options for setup.py so sysconfig can pick up AC_SUBST() vars.
-OPENSSL_INCLUDES=-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include
+OPENSSL_INCLUDES=-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include
 OPENSSL_LIBS=-lssl -lcrypto
-OPENSSL_LDFLAGS=-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib
+OPENSSL_LDFLAGS=-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib
 OPENSSL_RPATH=
 
 # Module state, compiler flags and linker flags
@@ -308,32 +308,32 @@ MODULE_NIS_STATE=yes
 MODULE_NIS_CFLAGS=
 MODULE_NIS_LDFLAGS=-lnsl
 MODULE__SQLITE3_STATE=yes
-MODULE__SQLITE3_CFLAGS=-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include -I$(srcdir)/Modules/_sqlite
-MODULE__SQLITE3_LDFLAGS=-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -lsqlite3
+MODULE__SQLITE3_CFLAGS=-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include -I$(srcdir)/Modules/_sqlite
+MODULE__SQLITE3_LDFLAGS=-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -lsqlite3
 MODULE__TKINTER_STATE=yes
-MODULE__TKINTER_CFLAGS=-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include -Wno-strict-prototypes -DWITH_APPINIT=1
-MODULE__TKINTER_LDFLAGS=-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -ltk8.6 -ltkstub8.6 -ltcl8.6 -ltclstub8.6
+MODULE__TKINTER_CFLAGS=-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include -Wno-strict-prototypes -DWITH_APPINIT=1
+MODULE__TKINTER_LDFLAGS=-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -ltk8.6 -ltkstub8.6 -ltcl8.6 -ltclstub8.6
 MODULE__UUID_STATE=yes
-MODULE__UUID_CFLAGS=-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include/uuid
-MODULE__UUID_LDFLAGS=-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -luuid
+MODULE__UUID_CFLAGS=-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include/uuid
+MODULE__UUID_LDFLAGS=-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -luuid
 MODULE_ZLIB_STATE=yes
-MODULE_ZLIB_CFLAGS=-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include
-MODULE_ZLIB_LDFLAGS=-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -lz
+MODULE_ZLIB_CFLAGS=-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include
+MODULE_ZLIB_LDFLAGS=-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -lz
 MODULE_BINASCII_STATE=yes
-MODULE_BINASCII_CFLAGS=-DUSE_ZLIB_CRC32 -I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include
-MODULE_BINASCII_LDFLAGS=-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -lz
+MODULE_BINASCII_CFLAGS=-DUSE_ZLIB_CRC32 -I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include
+MODULE_BINASCII_LDFLAGS=-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -lz
 MODULE__BZ2_STATE=yes
 MODULE__BZ2_CFLAGS=
 MODULE__BZ2_LDFLAGS=-lbz2
 MODULE__LZMA_STATE=yes
-MODULE__LZMA_CFLAGS=-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include
-MODULE__LZMA_LDFLAGS=-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -llzma
+MODULE__LZMA_CFLAGS=-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include
+MODULE__LZMA_LDFLAGS=-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -llzma
 MODULE__SSL_STATE=yes
-MODULE__SSL_CFLAGS=-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include
-MODULE__SSL_LDFLAGS=-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib  -lssl -lcrypto
+MODULE__SSL_CFLAGS=-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include
+MODULE__SSL_LDFLAGS=-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib  -lssl -lcrypto
 MODULE__HASHLIB_STATE=yes
-MODULE__HASHLIB_CFLAGS=-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include
-MODULE__HASHLIB_LDFLAGS=-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib   -lcrypto
+MODULE__HASHLIB_CFLAGS=-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include
+MODULE__HASHLIB_LDFLAGS=-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib   -lcrypto
 MODULE__TESTCAPI_STATE=yes
 MODULE__TESTINTERNALCAPI_STATE=yes
 MODULE__TESTBUFFER_STATE=yes
@@ -347,7 +347,7 @@ MODULE_XXLIMITED_35_STATE=yes
 
 
 # Default zoneinfo.TZPATH. Added here to expose it in sysconfig.get_config_var
-TZPATH=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/share/zoneinfo
+TZPATH=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/share/zoneinfo
 
 # Modes for directories, executables and data files created by the
 # install process.  Default to user-only-writable for all file types.
@@ -356,7 +356,7 @@ EXEMODE=	755
 FILEMODE=	644
 
 # configure script arguments
-CONFIG_ARGS=	 '--prefix=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env' '--build=x86_64-conda-linux-gnu' '--host=x86_64-conda-linux-gnu' '--enable-ipv6' '--with-ensurepip=no' '--with-tzpath=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/share/zoneinfo' '--with-computed-gotos' '--with-system-ffi' '--enable-loadable-sqlite-extensions' '--with-tcltk-includes=-I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include' '--with-tcltk-libs=-L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -ltcl8.6 -ltk8.6' '--with-platlibdir=lib' '--with-lto' '--enable-optimizations' '-oldincludedir=/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/_build_env/x86_64-conda-linux-gnu/sysroot/usr/include' '--disable-shared' 'PROFILE_TASK=-m test --pgo' 'build_alias=x86_64-conda-linux-gnu' 'host_alias=x86_64-conda-linux-gnu' 'PKG_CONFIG_PATH=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib/pkgconfig' 'MACHDEP=linux' 'CC=x86_64-conda-linux-gnu-gcc' 'CFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include -fdebug-prefix-map=/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work=/usr/local/src/conda/python-3.11.0 -fdebug-prefix-map=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env=/usr/local/src/conda-prefix    ' 'LDFLAGS=-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -Wl,-rpath-link,/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib -L/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib' 'CPPFLAGS=-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include -I/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include' 'CPP=/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/_build_env/bin/x86_64-conda-linux-gnu-cpp'
+CONFIG_ARGS=	 '--prefix=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env' '--build=x86_64-conda-linux-gnu' '--host=x86_64-conda-linux-gnu' '--enable-ipv6' '--with-ensurepip=no' '--with-tzpath=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/share/zoneinfo' '--with-computed-gotos' '--with-system-ffi' '--enable-loadable-sqlite-extensions' '--with-tcltk-includes=-I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include' '--with-tcltk-libs=-L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -ltcl8.6 -ltk8.6' '--with-platlibdir=lib' '--with-lto' '--enable-optimizations' '-oldincludedir=/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/_build_env/x86_64-conda-linux-gnu/sysroot/usr/include' '--disable-shared' 'PROFILE_TASK=-m test --pgo' 'build_alias=x86_64-conda-linux-gnu' 'host_alias=x86_64-conda-linux-gnu' 'PKG_CONFIG_PATH=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib/pkgconfig' 'MACHDEP=linux' 'CC=x86_64-conda-linux-gnu-gcc' 'CFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include -fdebug-prefix-map=/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/work=/usr/local/src/conda/python-3.11.0 -fdebug-prefix-map=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env=/usr/local/src/conda-prefix    ' 'LDFLAGS=-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -Wl,-rpath-link,/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib -L/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib' 'CPPFLAGS=-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include -I/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include' 'CPP=/home/conda/feedstock_root/build_artifacts/python-split_1673698225136/_build_env/bin/x86_64-conda-linux-gnu-cpp'
 
 
 # Subdirectories with code
@@ -474,7 +474,7 @@ IO_OBJS=	\
 
 ##########################################################################
 
-LIBFFI_INCLUDEDIR=	/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include
+LIBFFI_INCLUDEDIR=	/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include
 
 ##########################################################################
 # Parser

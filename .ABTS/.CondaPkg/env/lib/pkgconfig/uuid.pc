@@ -1,7 +1,7 @@
-prefix=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env
-exec_prefix=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env
-libdir=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/lib
-includedir=/home/space-falcon-1/Documents/ABTS.jl/.ABTS/.CondaPkg/env/include
+prefix=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env
+exec_prefix=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env
+libdir=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/lib
+includedir=/workspaces/ABTS.jl/.ABTS/.CondaPkg/env/include
 
 Name: uuid
 Description: Universally unique id library

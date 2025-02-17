@@ -1,4 +1,4 @@
-*.json
+.vscode
 *.bsp
 *.BSP
 *.tpc

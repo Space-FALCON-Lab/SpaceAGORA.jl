@@ -61,7 +61,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     r0, v0 = orbitalelemtorv(OE, m.planet)
     Mass = OE[end]
-
+    # println(" ")
+    # println(rvtoorbitalelement(r0, v0, m, m.planet))
+    # println(" ")
+    # println(rvtoorbitalelement([-4295336.47271116, 21280050.13968795, -9652569.06525767],[510.35435111, -323.63083049, 767.23503398], m, m.planet))
+    # println(" ")
     # println(mass)
 
     # Clock
@@ -229,7 +233,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # println("ρ: ", ρ, " kg/m^3")
         # println(" ")
 
-        # Define output.txt containing density data\
+        # Define output.txt containing density data
         p = 0.0
         if args[:body_shape] == "Spacecraft"
             length_car = m.body.length_SA + m.body.length_SC
@@ -1158,6 +1162,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 # Run simulation
                 prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
                 sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+                # sol = solve(prob, method, dt=step, abstol=a_tol, reltol=r_tol, callback=events)
 
                 config.cnf.counter_integrator += 1
                 in_cond = [sol[1,end], sol[2,end], sol[3, end], sol[4, end], sol[5, end], sol[6, end], sol[7, end], sol[8, end]]
@@ -1392,6 +1397,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # Run simulation
         prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
         sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+        # sol = solve(prob, method, dt=step, abstol=a_tol, reltol=r_tol, callback=events)
 
         config.cnf.counter_integrator += 1
         time_0 = save_results(sol.t * config.cnf.TU, 0.1)
@@ -1427,6 +1433,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     if Bool(args[:print_res])
         # Print Actual periapsis altitude and Vacuum periapsis altitude
         println("Actual periapsis altitude " * string(minimum(config.solution.orientation.alt[save_pre_index:save_post_index])*1e-3) * " km - Vacuum periapsis altitude = " * string((config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end]) - m.planet.Rp_e)*1e-3) * " km")
+        # append!(config.cnf.periapsis_list, (config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end]) - m.planet.Rp_e)*1e-3)
 
         # Print Ra new (Apoapsis)
         println("Ra new = " * string((config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end]))*1e-3) * " km")
@@ -1476,6 +1483,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
 
     append!(config.cnf.periapsis_list, minimum(config.solution.orientation.alt[save_pre_index:save_post_index])*1e-3)
+    # append!(config.cnf.periapsis_list, (config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end]) - m.planet.Rp_e)*1e-3)
     append!(config.cnf.orbit_number_list, config.cnf.count_numberofpassage + 1)
     append!(config.cnf.Δv_list, config.cnf.Δv_man)
 

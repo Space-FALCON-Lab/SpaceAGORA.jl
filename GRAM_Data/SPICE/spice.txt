@@ -2,7 +2,7 @@
   SpicePath    = '../../SPICE'
   SpiceLsk     = '/lsk/naif0012.tls'
   SpicePck     = '/pck/pck00011.tpc'
-  SpiceVenus   = '/spk/planets/de440_GRAM.bsp'
+  SpiceVenus   = '/spk/planets/de405.bsp'
   SpiceEarth   = '/spk/planets/de440_GRAM.bsp'
   SpiceMars    = '/spk/satellites/mar097_GRAM.bsp'
   SpiceJupiter = '/spk/satellites/jup365_GRAM.bsp'

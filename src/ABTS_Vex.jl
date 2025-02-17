@@ -6,7 +6,7 @@ args = Dict(# Misc Simulation
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
             :directory_results => "/home/space-falcon-1/Documents/ABTS.jl/output/venus_express",            # Directory where to save the results
-            :directory_Gram => "/home/space-falcon-1/Documents/ABTS.jl/GRAMpy",                   # Directory where Gram is
+            :directory_Gram => "/home/space-falcon-1/Documents/ABTS.jl//GRAMpy",                   # Directory where Gram is
             :directory_Gram_data => "/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data",           # Directory where Gram data is
             :directory_Spice => "/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use

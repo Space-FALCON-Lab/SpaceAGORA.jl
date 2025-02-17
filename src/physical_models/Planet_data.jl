@@ -35,10 +35,10 @@ function planet_data(ip)
         Rp_e = 3.3962e6            # equatorial radius, m
         Rp_p = 3.3762e6            # polar radius, m
         Rp_m = 3.3895e6            # volumetric mean radius, m
-        mass = 6.4185e23           # mass, kg
-        g_ref = 3.71               # acceleration due to gravity, m/s²
+        mass = 6.4169e23           # mass, kg
+        g_ref = 3.73               # acceleration due to gravity, m/s²
         ρ_ref = 8.7489231e-07      # density, kg/m³
-        μ = 4.2828e13              # gravitational parameter, m³/s²
+        μ = 4.282837362069909e13              # gravitational parameter, m³/s²
         h_ref = 90 * 1e3           # reference altitude, m
         H = 6.308278108 * 1e3      # scale height, m
         R = 188.92                 # specific gas constant, J/(kg·K)
@@ -48,7 +48,7 @@ function planet_data(ip)
         J2 = 1.96045e-3            # Mars' dynamic form factor
         k = 1.898e-4               # Chapman heating coefficient, kg^0.5/m
         # k = 1.7623e-4            # Sutton - Graves heating coefficient, kg^0.5/m
-        ω = [0.0, 0.0, 7.088236e-5]    # Mars' rotation rate, rad/s
+        ω = [0.0, 0.0, 7.08823596e-5]    # Mars' rotation rate, rad/s
         μ_fluid = 13.06*10e-6      # kinematic viscosity, m²/s
         Lz = -4.5/1e3              # vertical temperature gradient, K/m
         name = "mars"
@@ -113,6 +113,26 @@ function planet_data(ip)
         μ_fluid = 0                # kinematic viscosity, m²/s
         Lz = 0
         name = "moon"
+    elseif (ip == 5 || (typeof(ip) == String && cmp(lowercase(ip), "jupiter") == 0))
+        Rp_e = 7.1492e7
+        Rp_p = 6.6854e7
+        Rp_m = 6.9911e7
+        mass = 1.89813e27
+        g_ref = 25.92 # m/s^2
+        ρ_ref = 0
+        μ = 1.26686534e17 # gravitational parameter, m^3/s^2
+        h_ref = 0 * 10e3
+        H = 0
+        R = 0
+        γ = 0
+        T = 0
+        p = 0
+        J2 = 14736e-6
+        k = 0
+        ω = [0, 0, 1.758e-4]
+        μ_fluid = 0                # kinematic viscosity, m²/s
+        Lz = 0
+        name = "jupiter"
     end
 
     # println(model.planet)

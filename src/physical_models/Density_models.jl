@@ -158,6 +158,7 @@ function density_gram(h, p, lat, lon, montecarlo, Wind, args, el_time, atmospher
     else
         position = gram.Position()
         position.height = h * 1e-3
+        
         lat = rad2deg(lat)
         lon = rad2deg(lon)
         position.latitude = lat
@@ -166,6 +167,10 @@ function density_gram(h, p, lat, lon, montecarlo, Wind, args, el_time, atmospher
         # println("Lat: $lat, Lon: $lon")
         position.elapsedTime = el_time # Time since start in s
         atmosphere.setPosition(position)
+        if p.name == "mars"
+            position.height -= atmosphere.getPosition().surfaceHeight
+            atmosphere.setPosition(position)
+        end
         # print('set planet position', position.latitude, position.longitude, position.height)
         atmosphere.update()
         # print('update')

@@ -121,7 +121,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # TRANSFORM THE STATE
         # Inertial to planet relative transformation
-        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t0, t_prev) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
+        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t0, t_prev, date_initial, t0) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
         pos_pp_mag = norm(pos_pp) # Magnitude of the planet relative position
         pos_pp_hat = pos_pp / pos_pp_mag # Unit vector of the planet relative position
         pos_ii_hat = pos_ii / pos_ii_mag # Unit vector of the inertial position
@@ -388,11 +388,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         ## Rotation Calculation
         rot_angle = norm(ω_planet) * (t0 + t_prev)    # angle of rotation, rad
         # L_PI = [[cos(rot_angle), sin(rot_angle), 0.0], [-sin(rot_angle), cos(rot_angle), 0.0], [0.0, 0.0, 1.0]] # rotation matrix
-        L_PI = [cos(rot_angle)  sin(rot_angle)  0.0;
-                -sin(rot_angle) cos(rot_angle)  0.0; 
-                0.0             0.0             1.0] # rotation matrix
+        # L_PI = [cos(rot_angle)  sin(rot_angle)  0.0;
+        #         -sin(rot_angle) cos(rot_angle)  0.0; 
+        #         0.0             0.0             1.0] # rotation matrix
 
         # L_PI = [[x for x in row] for row in L_PI]
+
+        current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
+        L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time) # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
 
         if ip.gm == 0
             gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
@@ -400,6 +403,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
         elseif ip.gm == 2
             gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+        elseif ip.gm == 3
+            el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs]))))
+            gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args)
         end
 
         if length(args[:n_bodies]) != 0
@@ -611,10 +617,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         args = integrator.p[8]
         t_prev = integrator.p[5]
         ip = integrator.p[3]
+        date_initial = integrator.p[6]
 
         pos_ii = [y[1], y[2], y[3]] * config.cnf.DU  # Inertial position
         vel_ii = [y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU  # Inertial velocity
-        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev)
+        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev, date_initial, t)
         # pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t, t_prev)
 
         LatLong = rtolatlong(pos_pp, m.planet)
@@ -656,10 +663,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         args = integrator.p[8]
         t_prev = integrator.p[5]
         ip = integrator.p[3]
+        date_initial = integrator.p[6]
 
         pos_ii = [y[1], y[2], y[3]] * config.cnf.DU                     # Inertial position
         vel_ii = [y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU     # Inertial velocity
-        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev)
+        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev, date_initial, t)
         # pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t, t_prev)
 
         LatLong = rtolatlong(pos_pp, m.planet)

@@ -41,6 +41,8 @@ function mission_def(mission)
         gm = 1
     elseif mission[:Gravity_Model] == "Inverse Squared and J2 effect" || mission[:Gravity_Model] == "inverse squared and J2 effect" || mission[:Gravity_Model] == "Inverse quared and J2 effect"
         gm = 2
+    elseif mission[:Gravity_Model] == "GRAM" || mission[:Gravity_Model] == "Gram" || mission[:Gravity_Model] == "gram"
+        gm = 3
     else
         gm = 1
     end

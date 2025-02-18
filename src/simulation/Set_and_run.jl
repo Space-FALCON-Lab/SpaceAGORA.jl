@@ -35,12 +35,12 @@ function aerobraking_campaign(args, state)
     ip = mission_def(mission)
     p_class = planet_data(ip.M.planet)
 
+    furnsh(args[:directory_Gram_data] * "/SPICE/lsk/naif0012.tls")
+    furnsh(args[:directory_Gram_data] * "/SPICE/spk/planets/de440_GRAM.bsp")
+    furnsh(args[:directory_Gram_data] * "/SPICE/pck/pck00011.tpc")
+
     # n-body gravity
     if length(args[:n_bodies]) != 0
-
-        furnsh(args[:directory_Gram_data] * "/SPICE/lsk/naif0012.tls")
-        furnsh(args[:directory_Gram_data] * "/SPICE/spk/planets/de440_GRAM.bsp")
-
         for i=1:length(args[:n_bodies])
             push!(config.cnf.n_bodies_list, planet_data(args[:n_bodies][i]))
         end

@@ -19,6 +19,8 @@ using DifferentialEquations
 using Dates
 using AstroTime
 using SPICE
+using PythonCall
+sys = pyimport("sys")
 
 # furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140501000000_00546.BSP")
 # furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140601000000_00546.BSP")
@@ -28,6 +30,8 @@ import .config
 import .ref_sys
 
 function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothing)
+    sys.path.append(args[:directory_Gram])
+    gram = pyimport("gram")
 
     wind_m = false
     if ip.wm == 1
@@ -98,6 +102,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         args = param[8]
         initial_state = param[9]
         gram_atmosphere = param[10]
+        gram = param[11]
 
         ## Counters
         # Counter for all along the simulation of all passages
@@ -183,7 +188,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         lat = LatLong[2]
         lon = LatLong[3]
         alt = LatLong[1]
-
+        
         # println(" ")
         # println(" Altitude: ", alt)
         # println(" ")
@@ -233,7 +238,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         elseif ip.dm == 3
             el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs]))))
-            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere)
+            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
             ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
         end
 
@@ -414,7 +419,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
         elseif ip.gm == 3
             el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs]))))
-            gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args)
+            gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
         end
 
         if length(args[:n_bodies]) != 0
@@ -1152,7 +1157,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 # initial_time, final_time = time_0, (time_0 + length_sim)
 
                 # Parameter Definition
-                param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere)
+                param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
 
                 # println("")
                 # println("pos: " * string(norm(in_cond[1:3]) * config.cnf.DU) * " vel: " * string(norm(in_cond[4:6]) * config.cnf.DU / config.cnf.TU)) 
@@ -1382,7 +1387,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         config.cnf.count_heat_load_check_exit = 0
 
         # Parameter Definition
-        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere)
+        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
 
         # Run simulation
         prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)

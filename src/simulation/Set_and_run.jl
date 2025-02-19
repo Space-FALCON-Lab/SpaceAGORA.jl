@@ -38,7 +38,7 @@ function aerobraking_campaign(args, state)
     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-    furnsh(args[:directory_Spice] * "/spk/planets/de405.bsp")
+    # furnsh(args[:directory_Spice] * "/spk/planets/de405.bsp")
 
     # n-body gravity
     if length(args[:n_bodies]) != 0

@@ -2,7 +2,7 @@ using SPICE
 
 import .config
 
-function gravity_n_bodies(et, pos_ii, p, n_body)
+function gravity_n_bodies(et, pos_ii, p, n_body, el_time)
 
     primary_body_name = p.name
     n_body_name = n_body.name
@@ -15,8 +15,8 @@ function gravity_n_bodies(et, pos_ii, p, n_body)
         n_body_name *= "_barycenter"
     end
 
-    pos_primary_k = spkpos(n_body_name, et, "J2000", "none", primary_body_name)[1] * 1e3
-
+    pos_primary_k = spkpos(n_body_name, et, "ECLIPJ2000", "none", primary_body_name)[1] * 1e3 # pxform("ECLIPJ2000", "IAU_"*uppercase(p.name), -3.265e7)*
+    # println("pos_primary_k: ", pos_primary_k)
     pos_spacecraft_k = pos_primary_k - pos_ii
     pos_spacecraft_k_mag = norm(pos_spacecraft_k)
 
@@ -110,7 +110,7 @@ function srp(p, p_srp_unscaled::Float64, cR::Float64, A_sat::Float64, m::Float64
         Acceleration due to solar radiation pressure.
     """
     rp = p.Rp_e # Equatorial radius of the planet
-    r_sun, ltime = spkpos("SUN", time_et, "J2000", "NONE", uppercase(p.name))
+    r_sun, ltime = spkpos("SUN", time_et, "ECLIPJ2000", "NONE", uppercase(p.name))
     r_sun = r_sun .* 1e3 # Convert from km to m
 
     A_exp = eclipse_area_calc(r_sat, r_sun, A_sat, rp)

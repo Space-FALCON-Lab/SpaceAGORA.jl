@@ -400,7 +400,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         
         ## Rotation Calculation
         current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
-        L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time) # Construct a rotation matrix from J2000 to planet-fixed frame
+        L_PI = pxfrm2("IAU_"*uppercase(m.planet.name), "IAU_"*uppercase(m.planet.name), 0.0, current_time) # Construct a rotation matrix from J2000 to planet-fixed frame
         # println("pxform: $L_PI")
         # rot_angle = norm(ω_planet) * (t0 + t_prev)    # angle of rotation, rad
         # L_PI = [[cos(rot_angle), sin(rot_angle), 0.0], [-sin(rot_angle), cos(rot_angle), 0.0], [0.0, 0.0, 1.0]] # rotation matrix
@@ -428,9 +428,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             et = utc2et(time_real_utc)
 
             for k = 1:length(args[:n_bodies])
-                gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
+                gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, config.cnf.n_bodies_list[k], el_time)
             end
         end
+
 
         if args[:srp] == true
             p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU

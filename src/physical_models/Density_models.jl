@@ -152,7 +152,7 @@ function density_gram(h, p, lat, lon, montecarlo, Wind, args, el_time, atmospher
 
     # gram = pyimport("gram")
 
-    if config.cnf.drag_state == false
+    if config.cnf.drag_state == false || args[:keplerian] == true
         rho , T , wind = density_exp(h, p)
         rho = 0.0
     else

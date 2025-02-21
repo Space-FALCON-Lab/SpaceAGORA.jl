@@ -108,14 +108,14 @@ function def_miss(args)
         if args[:gravity_model] == "Inverse Squared"
             args[:hp_initial_a] = 108600
         else
-            args[:hp_initial_a] = 100399 #84200 # 86000 # 
+            args[:hp_initial_a] = 84200 #84200 # 86000 # 100399
         end
 
         args[:hp_initial_b] = 102000
         args[:hp_step] = 1e12
-        args[:inclination] = 125.450
-        args[:ω] = 130.201
-        args[:Ω] = 82.997
+        args[:inclination] = 93.522
+        args[:ω] = 109.7454
+        args[:Ω] = 28.1517
         args[:year] = 2001
         args[:month] = 11
         args[:day] = 6

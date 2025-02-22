@@ -30,6 +30,8 @@ function planet_data(ip)
         ω = [0.0, 0.0, 7.2921066e-5]   # Earth's rotation rate, rad/s
         μ_fluid = 1.5*10e-5        # kinematic viscosity, m²/s
         Lz = -9.8/1e3              # vertical temperature gradient, K/m
+        α = 0.0                    # Right ascension of the north pole of rotation, radians
+        δ = pi/2                    # Declination of the north pole of rotation, radians
         name = "earth"
     elseif (ip == 1 || (typeof(ip) == String && cmp(lowercase(ip), "mars") == 0)) # Mars
         Rp_e = 3.3962e6            # equatorial radius, m
@@ -51,6 +53,8 @@ function planet_data(ip)
         ω = [0.0, 0.0, 7.08823596e-5]    # Mars' rotation rate, rad/s
         μ_fluid = 13.06*10e-6      # kinematic viscosity, m²/s
         Lz = -4.5/1e3              # vertical temperature gradient, K/m
+        α = deg2rad(317.68143)     # Right ascension of the north pole of rotation, radians
+        δ = deg2rad(52.88650)      # Declination of the north pole of rotation, radians
         name = "mars"
     elseif (ip == 2 || (typeof(ip) == String && cmp(lowercase(ip), "venus") == 0)) # Venus
         Rp_e = 6.0518e6            # equatorial radius, m
@@ -72,6 +76,8 @@ function planet_data(ip)
         ω = [0.0, 0.0, -2.99e-7]  # Venus' rotation rate, rad/s
         μ_fluid = 2.0*10e-6      # kinematic viscosity, m²/s
         Lz = -10.7/1e3             # vertical temperature gradient, K/m
+        α = deg2rad(272.76)        # Right ascension of the north pole of rotation, radians
+        δ = deg2rad(67.16)         # Declination of the north pole of rotation, radians
         name = "venus"
     elseif (ip == 3 || (typeof(ip) == String && cmp(lowercase(ip), "sun") == 0)) # Sun
         Rp_e = 6.9634e8            # equatorial radius, m
@@ -92,6 +98,8 @@ function planet_data(ip)
         ω = [0, 0, 0]
         μ_fluid = 0                # kinematic viscosity, m²/s
         Lz = 0
+        α = 0.0
+        δ = 0.0
         name = "sun"
     elseif (ip == 4 || (typeof(ip) == String && cmp(lowercase(ip), "moon") == 0)) # Moon
         Rp_e = 1.7381e6            # equatorial radius, m
@@ -112,6 +120,8 @@ function planet_data(ip)
         ω = [0, 0, 0]
         μ_fluid = 0                # kinematic viscosity, m²/s
         Lz = 0
+        α = 0.0
+        δ = 0.0
         name = "moon"
     elseif (ip == 5 || (typeof(ip) == String && cmp(lowercase(ip), "jupiter") == 0))
         Rp_e = 7.1492e7
@@ -132,11 +142,18 @@ function planet_data(ip)
         ω = [0, 0, 1.758e-4]
         μ_fluid = 0                # kinematic viscosity, m²/s
         Lz = 0
+        α = 0.0
+        δ = 0.0
         name = "jupiter"
     end
 
     # println(model.planet)
-    config.model.planet = config.Planet(Rp_e, Rp_p, Rp_m, mass, p, k, ω, g_ref, ρ_ref, h_ref, H, R, γ, T, J2, μ, μ_fluid, Lz, name)
+    σ1 = sqrt(cos(δ)^4 + cos(δ)^2*sin(δ)^2)
+    σ2 = abs(cos(δ))
+    J2000_to_pci = [-sin(α) cos(α) 0;
+                    -cos(δ)*cos(α)*sin(δ)/σ1 -cos(δ)*sin(α)*sin(δ)/σ1 cos(δ)^2/σ1;
+                    cos(δ)*cos(α) cos(δ)*sin(α) sin(δ)] 
+    config.model.planet = config.Planet(Rp_e, Rp_p, Rp_m, mass, p, k, ω, g_ref, ρ_ref, h_ref, H, R, γ, T, J2, μ, μ_fluid, Lz, α, δ, J2000_to_pci, name)
     
     return config.model.planet
 end

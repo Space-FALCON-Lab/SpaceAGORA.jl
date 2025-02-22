@@ -137,7 +137,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, ste
     # println(h0)
     # println("")
 
-    pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, mission.planet, t0, t_prev, )
+    pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, mission.planet, )
 
     LatLong = rtolatlong(pos_pp, mission.planet)
     lat = LatLong[2]

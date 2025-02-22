@@ -2,7 +2,7 @@ using SPICE
 
 import .config
 
-function gravity_n_bodies(et, pos_ii, p, n_body, el_time)
+function gravity_n_bodies(et, pos_ii, p, n_body)
 
     primary_body_name = p.name
     n_body_name = n_body.name
@@ -15,13 +15,11 @@ function gravity_n_bodies(et, pos_ii, p, n_body, el_time)
         n_body_name *= "_barycenter"
     end
 
-    pos_primary_k = spkpos(n_body_name, et, "ECLIPJ2000", "none", primary_body_name)[1] * 1e3 # pxform("ECLIPJ2000", "IAU_"*uppercase(p.name), -3.265e7)*
-    # println("pos_primary_k: ", pos_primary_k)
+    pos_primary_k = p.J2000_to_pci*spkpos(n_body_name, et, "J2000", "none", primary_body_name)[1] * 1e3
     pos_spacecraft_k = pos_primary_k - pos_ii
     pos_spacecraft_k_mag = norm(pos_spacecraft_k)
 
     g = n_body.μ * ((pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3))
-
     return g
 end
 

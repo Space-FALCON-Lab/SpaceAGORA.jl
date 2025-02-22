@@ -62,7 +62,7 @@ args = Dict(# Misc Simulation
             :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
             
             # Engine
-            :thrust => 40.0,                                         # Maximum magnitude thrust in N
+            :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
             :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
@@ -86,8 +86,8 @@ args = Dict(# Misc Simulation
             :inclination => 125.446,                                   # Inclination Orbit, deg
             :ω => 0.0,                                              # AOP, deg
             :Ω => 0.0,                                              # RAAN, deg
-            :EI => 600.0,                                           # Entry Interface, km
-            :AE => 600.0,                                           # Atmospheric Exit, km
+            :EI => 160.0,                                           # Entry Interface, km
+            :AE => 160.0,                                           # Atmospheric Exit, km
             :year => 1993,                                          # Mission year
             :month => 5,                                           # Mission month
             :day => 25,                                             # Mission day

@@ -91,7 +91,7 @@ args = Dict(# Misc Simulation
             :year => 2014,                                          # Mission year
             :month => 5,                                           # Mission month
             :day => 19,                                             # Mission day
-            :hours => 2,                                           # Mission hour
+            :hours => 4,                                           # Mission hour
             :minutes => 0,                                         # Mission minute
             :secs => 0.0,                                          # Mission second
             

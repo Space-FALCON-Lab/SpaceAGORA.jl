@@ -73,10 +73,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     # T_ijk = [[x == -0 ? 0.0 : x for x in row] for row in T_ijk]
 
     r0, v0 = orbitalelemtorv(OE, m.planet)
-    # println("r0: $r0")
-    # println("v0: $v0")
-    # println("$(norm(r0))")
-    # println("Orbital elements: $(rvtoorbitalelement(r0, v0, m, m.planet))")
+
     Mass = OE[end]
 
     # println(mass)
@@ -145,6 +142,12 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # Orbital Elements
         OE = rvtoorbitalelement(pos_ii, vel_ii, mass, m.planet)
         vi = OE[6]
+
+        # Timing variables
+        el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))) # Elapsed time since the beginning of the simulation
+        current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
+        time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
+        et = utc2et(time_real_utc) # Current time in Ephemeris Time
 
         Mars_Gram_recalled_at_periapsis = false
 
@@ -237,7 +240,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         elseif ip.dm == 2
             ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         elseif ip.dm == 3
-            el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs]))))
             ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
             ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
         end
@@ -399,8 +401,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         q = 0.5 * ρ * norm(vel_pp_rw)^2               # dynamic pressure based on wind, Pa
         
         ## Rotation Calculation
-        current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
-        L_PI = pxfrm2("IAU_"*uppercase(m.planet.name), "IAU_"*uppercase(m.planet.name), 0.0, current_time) # Construct a rotation matrix from J2000 to planet-fixed frame
+        L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 to planet-fixed frame
         # println("pxform: $L_PI")
         # rot_angle = norm(ω_planet) * (t0 + t_prev)    # angle of rotation, rad
         # L_PI = [[cos(rot_angle), sin(rot_angle), 0.0], [-sin(rot_angle), cos(rot_angle), 0.0], [0.0, 0.0, 1.0]] # rotation matrix
@@ -418,25 +419,19 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         elseif ip.gm == 2
             gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
         elseif ip.gm == 3
-            el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs]))))
             gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
         end
 
         if length(args[:n_bodies]) != 0
-            
-            time_real_utc = to_utc(time_real)
-            et = utc2et(time_real_utc)
 
-            for k = 1:length(args[:n_bodies])
-                gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, config.cnf.n_bodies_list[k], el_time)
+            for k = 1:length(args[:n_bodies])  
+                gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
             end
         end
 
 
         if args[:srp] == true
             p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
-            time_real_utc = to_utc(time_real)
-            et = utc2et(time_real_utc)
             srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, et)
         end
 
@@ -958,7 +953,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     index_phase_aerobraking = range_phase_i # for scope reasons
     aerobraking_phase = range_phase_i       # for scope reasons
-    method = ESDIRK54I8L2SA()                       # for scope reasons
+    method = Tsit5()                       # for scope reasons
 
     # Solve Equations of Motion 
     for aerobraking_phase in range(range_phase_i, 3)

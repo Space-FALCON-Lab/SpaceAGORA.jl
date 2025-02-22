@@ -35,6 +35,9 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         μ::Float64 = 0.0
         μ_fluid::Float64 = 0.0
         Lz::Float64 = 0.0
+        α::Float64 = 0.0
+        δ::Float64 = 0.0
+        J2000_to_pci::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
         name::String = ""
     end
 

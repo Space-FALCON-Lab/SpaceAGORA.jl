@@ -148,8 +148,8 @@ function planet_data(ip)
     end
 
     # println(model.planet)
+    # Derived in References/J2000_to_pci.mlx(.m)
     σ1 = sqrt(cos(δ)^4 + cos(δ)^2*sin(δ)^2)
-    σ2 = abs(cos(δ))
     J2000_to_pci = [-sin(α) cos(α) 0;
                     -cos(δ)*cos(α)*sin(δ)/σ1 -cos(δ)*sin(α)*sin(δ)/σ1 cos(δ)^2/σ1;
                     cos(δ)*cos(α) cos(δ)*sin(α) sin(δ)] 

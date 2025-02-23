@@ -957,10 +957,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     continue_campaign = false
 
     # Def initial conditions
-    # println(mass)
     in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], Mass+1e-10, 0.0]
-    println("r0: $r0")
-    println("v0: $v0")
+
     # non dimensionalization
     in_cond[1:3] = in_cond[1:3] / config.cnf.DU
     in_cond[4:6] = in_cond[4:6] * config.cnf.TU / config.cnf.DU

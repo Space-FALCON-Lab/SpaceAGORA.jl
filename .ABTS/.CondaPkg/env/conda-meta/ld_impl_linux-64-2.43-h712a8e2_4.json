@@ -1,8 +1,8 @@
 {
     "arch": "x86_64",
-    "build": "h712a8e2_2",
-    "build_number": 2,
-    "build_string": "h712a8e2_2",
+    "build": "h712a8e2_4",
+    "build_number": 4,
+    "build_string": "h712a8e2_4",
     "channel": "https://conda.anaconda.org/conda-forge/linux-64",
     "constrains": [
         "binutils_impl_linux-64 2.43"
@@ -10,47 +10,47 @@
     "depends": [
         "__glibc >=2.17,<3.0.a0"
     ],
-    "extracted_package_dir": "/home/vscode/.julia/scratchspaces/0b3b1443-0f03-428d-bdfb-f27f9c1191ea/root/pkgs/ld_impl_linux-64-2.43-h712a8e2_2",
+    "extracted_package_dir": "/home/vscode/.julia/scratchspaces/0b3b1443-0f03-428d-bdfb-f27f9c1191ea/root/pkgs/ld_impl_linux-64-2.43-h712a8e2_4",
     "files": [
         "bin/x86_64-conda-linux-gnu-ld",
         "bin/x86_64-conda_cos6-linux-gnu-ld",
         "x86_64-conda-linux-gnu/bin/ld",
         "x86_64-conda_cos6-linux-gnu/bin/ld"
     ],
-    "fn": "ld_impl_linux-64-2.43-h712a8e2_2.conda",
+    "fn": "ld_impl_linux-64-2.43-h712a8e2_4.conda",
     "license": "GPL-3.0-only",
     "link": {
-        "source": "/home/vscode/.julia/scratchspaces/0b3b1443-0f03-428d-bdfb-f27f9c1191ea/root/pkgs/ld_impl_linux-64-2.43-h712a8e2_2",
+        "source": "/home/vscode/.julia/scratchspaces/0b3b1443-0f03-428d-bdfb-f27f9c1191ea/root/pkgs/ld_impl_linux-64-2.43-h712a8e2_4",
         "type": 1
     },
-    "md5": "048b02e3962f066da18efe3a21b77672",
+    "md5": "01f8d123c96816249efd255a31ad7712",
     "name": "ld_impl_linux-64",
-    "package_tarball_full_path": "/home/vscode/.julia/scratchspaces/0b3b1443-0f03-428d-bdfb-f27f9c1191ea/root/pkgs/ld_impl_linux-64-2.43-h712a8e2_2.tar.bz2",
+    "package_tarball_full_path": "/home/vscode/.julia/scratchspaces/0b3b1443-0f03-428d-bdfb-f27f9c1191ea/root/pkgs/ld_impl_linux-64-2.43-h712a8e2_4.tar.bz2",
     "paths_data": {
         "paths": [
             {
                 "_path": "bin/x86_64-conda-linux-gnu-ld",
                 "path_type": "hardlink",
-                "sha256": "2772a2759bf97e627a68f3615b64183b5f24393124a41a0e4b36bc740ee93be3",
-                "sha256_in_prefix": "2772a2759bf97e627a68f3615b64183b5f24393124a41a0e4b36bc740ee93be3",
+                "sha256": "85bf92fd4fdf81156489ed29d80e0f0472afb5676969abfa394f45b07970c42a",
+                "sha256_in_prefix": "145e8951ffd876d09f5fdad5bdba789e253feca8d30b30693d5ab195fa1e7d63",
                 "size_in_bytes": 3318336
             },
             {
                 "_path": "bin/x86_64-conda_cos6-linux-gnu-ld",
                 "path_type": "softlink",
-                "sha256_in_prefix": "2772a2759bf97e627a68f3615b64183b5f24393124a41a0e4b36bc740ee93be3",
+                "sha256_in_prefix": "145e8951ffd876d09f5fdad5bdba789e253feca8d30b30693d5ab195fa1e7d63",
                 "size_in_bytes": 3318336
             },
             {
                 "_path": "x86_64-conda-linux-gnu/bin/ld",
                 "path_type": "softlink",
-                "sha256_in_prefix": "2772a2759bf97e627a68f3615b64183b5f24393124a41a0e4b36bc740ee93be3",
+                "sha256_in_prefix": "145e8951ffd876d09f5fdad5bdba789e253feca8d30b30693d5ab195fa1e7d63",
                 "size_in_bytes": 3318336
             },
             {
                 "_path": "x86_64-conda_cos6-linux-gnu/bin/ld",
                 "path_type": "softlink",
-                "sha256_in_prefix": "2772a2759bf97e627a68f3615b64183b5f24393124a41a0e4b36bc740ee93be3",
+                "sha256_in_prefix": "145e8951ffd876d09f5fdad5bdba789e253feca8d30b30693d5ab195fa1e7d63",
                 "size_in_bytes": 3318336
             }
         ],
@@ -58,11 +58,11 @@
     },
     "platform": "linux",
     "requested_spec": "",
-    "sha256": "7c91cea91b13f4314d125d1bedb9d03a29ebbd5080ccdea70260363424646dbe",
-    "size": 669211,
+    "sha256": "db73f38155d901a610b2320525b9dd3b31e4949215c870685fd92ea61b5ce472",
+    "size": 671240,
     "subdir": "linux-64",
-    "timestamp": 1729655358674,
+    "timestamp": 1740155456116,
     "track_features": "",
-    "url": "https://conda.anaconda.org/conda-forge/linux-64/ld_impl_linux-64-2.43-h712a8e2_2.conda",
+    "url": "https://conda.anaconda.org/conda-forge/linux-64/ld_impl_linux-64-2.43-h712a8e2_4.conda",
     "version": "2.43"
 }

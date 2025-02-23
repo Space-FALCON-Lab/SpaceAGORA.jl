@@ -103,6 +103,13 @@ function aerobraking(ip, m, args)
 
             if ip.tc == 1
                 if args[:delta_v] != 0.0
+
+                    if round(rad2deg(args[:phi])) == 180
+                        append!(config.cnf.raise_man_orbit, numberofpassage)
+                    else
+                        append!(config.cnf.lower_man_orbit, numberofpassage)
+                    end
+
                     if ip.tc == 1
                         initial_state = propulsion_ic_calcs(m, args, initial_state)
                     end
@@ -171,5 +178,5 @@ function aerobraking(ip, m, args)
         # println(" ")
     end
 
-    # closed_form(args, m)
+    closed_form(args, m)
 end

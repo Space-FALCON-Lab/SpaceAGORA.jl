@@ -118,6 +118,8 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         closed_form_solution_off::Int64 = 1
         α::Float64 = pi/2
         α_past::Float64 = pi/2
+        raise_man_orbit::Vector{Float64} = []
+        lower_man_orbit::Vector{Float64} = []
 
         # Results to delete
         periapsis_list::Vector{Float64} = []

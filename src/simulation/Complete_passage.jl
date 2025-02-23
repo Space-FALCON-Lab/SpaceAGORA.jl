@@ -413,8 +413,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # L_PI = [[x for x in row] for row in L_PI]
 
-        current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
-        L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time) # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+        # current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
+        # L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time) # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
 
         if ip.gm == 0
             gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)

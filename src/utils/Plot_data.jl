@@ -13,15 +13,15 @@ function plots(state, m, name, args)
         traj_2D(state, m, name)
 
         performance_plots(state, m, name, args)
+    end
 
-        if args[:body_shape] == "Spacecraft" && !config.cnf.impact
-            # closed_form_solution_plot(name, m)
-            angle_of_attack_plot(name, args)
-        end
+    if args[:body_shape] == "Spacecraft" && !config.cnf.impact
+        # closed_form_solution_plot(name, m)
+        angle_of_attack_plot(name, args)
+    end
 
-        if args[:Odyssey_sim] == 1 || args[:vex_sim] == 1 || args[:magellan_sim] == 1
-            ABM_periapsis(name)
-        end
+    if args[:Odyssey_sim] == 1 || args[:vex_sim] == 1 || args[:magellan_sim] == 1
+        ABM_periapsis(name)
     end
 
 end
@@ -394,11 +394,12 @@ function ABM_periapsis(name)
     plot_traces_palt = scatter(x=orbit_number, y=periapsis_altitude, mode="markers", marker=attr(color="black"))
     # layout_palt = Layout(xaxis_title="Orbit number", yaxis_title="Periapsis altitude [km]")
 
-    plot_traces_abm1 = scatter(x=[item for item in raise_man_orbit], y=delta_v_raise, mode="markers", marker=attr(color="blue"), yaxis="y2") # , label="ABM to raise periapsis")
-    plot_traces_abm2 = scatter(x=[item for item in lower_man_orbit], y=delta_v_lower, mode="markers", marker=attr(color="red"), yaxis="y2") # , label="ABM to lower periapsis")
+    # plot_traces_abm1 = scatter(x=[item for item in raise_man_orbit], y=delta_v_raise, mode="markers", marker=attr(color="blue"), yaxis="y2") # , label="ABM to raise periapsis")
+    # plot_traces_abm2 = scatter(x=[item for item in lower_man_orbit], y=delta_v_lower, mode="markers", marker=attr(color="red"), yaxis="y2") # , label="ABM to lower periapsis")
     # layout_abm = Layout(xaxis_title="Orbit", yaxis_title="ABM Magnitude [m/s]", template="simple_white", showlegend=false)
+    p = plot(plot_traces_palt, Layout(xaxis_title_text="Orbit", yaxis_title_text="Periapsis altitude [km]", template="simple_white", showlegend=false))
 
-    p = plot([plot_traces_palt, plot_traces_abm1, plot_traces_abm2], Layout(xaxis_title_text="Orbit Number", yaxis_title_text="Periapsis altitude [km]", yaxis_range=[90, 160], yaxis2 = attr(title="ABM Magnitude [m/s]", overlaying="y", side="right"), template="simple_white", showlegend=false))
+    # p = plot([plot_traces_palt, plot_traces_abm1, plot_traces_abm2], Layout(xaxis_title_text="Orbit", yaxis_title_text="Periapsis altitude [km]", yaxis2 = attr(title="ABM Magnitude [m/s]", overlaying="y", side="right"), template="simple_white", showlegend=false))
     display(p)
     savefig(p, name * "_Periapsis_alt_and_maneuvers.pdf", format="pdf")
 

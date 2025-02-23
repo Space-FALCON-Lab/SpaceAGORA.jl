@@ -1,5 +1,5 @@
  $INPUT
-  SpicePath = '/home/space-falcon-2/Documents/GitHub/ABTS.jl/GRAM_Data/SPICE'
+  SpicePath = '/workspaces/ABTS.jl/GRAM_Data/SPICE'
   SpiceLsk = '/lsk/naif0012.tls'
  $END                
 

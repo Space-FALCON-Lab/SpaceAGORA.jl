@@ -18,11 +18,20 @@ using LinearAlgebra
 using DifferentialEquations
 using Dates
 using AstroTime
+using SPICE
+using PythonCall
+sys = pyimport("sys")
+
+# furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140501000000_00546.BSP")
+# furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140601000000_00546.BSP")
+# furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140701000000_00551.BSP")
 
 import .config
 import .ref_sys
 
 function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothing)
+    sys.path.append(args[:directory_Gram])
+    gram = pyimport("gram")
 
     wind_m = false
     if ip.wm == 1
@@ -35,6 +44,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
 
     OE = [initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m]
+
+    println(OE)
 
     # Why is it 50 + 200 here
     if (OE[1] > (m.planet.Rp_e*1e-3 + 50 + args[:EI])*1e3) && (args[:drag_passage] == false) && (args[:body_shape] == "Spacecraft")
@@ -60,6 +71,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     # T_ijk = [[x == -0 ? 0.0 : x for x in row] for row in T_ijk]
 
     r0, v0 = orbitalelemtorv(OE, m.planet)
+
     Mass = OE[end]
     # println(" ")
     # println(rvtoorbitalelement(r0, v0, m, m.planet))
@@ -70,7 +82,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     # Clock
     date_initial = from_utc(DateTime(m.initial_condition.year, m.initial_condition.month, m.initial_condition.day, m.initial_condition.hour, m.initial_condition.minute, m.initial_condition.second))
-
     config.cnf.count_numberofpassage = config.cnf.count_numberofpassage + 1
 
     if config.cnf.count_numberofpassage != 1
@@ -90,6 +101,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         args = param[8]
         initial_state = param[9]
         gram_atmosphere = param[10]
+        gram = param[11]
 
         ## Counters
         # Counter for all along the simulation of all passages
@@ -133,6 +145,12 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         OE = rvtoorbitalelement(pos_ii, vel_ii, mass, m.planet)
         vi = OE[6]
 
+        # Timing variables
+        el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))) # Elapsed time since the beginning of the simulation
+        current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
+        time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
+        et = utc2et(time_real_utc) # Current time in Ephemeris Time
+
         Mars_Gram_recalled_at_periapsis = false
 
         if vi > 0 && vi < pi/2 && config.cnf.ascending_phase == false
@@ -175,7 +193,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         lat = LatLong[2]
         lon = LatLong[3]
         alt = LatLong[1]
-
+        
         # println(" ")
         # println(" Altitude: ", alt)
         # println(" ")
@@ -224,8 +242,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         elseif ip.dm == 2
             ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         elseif ip.dm == 3
-            el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs]))))
-            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere)
+            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
             ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
         end
 
@@ -386,7 +403,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         q = 0.5 * ρ * norm(vel_pp_rw)^2               # dynamic pressure based on wind, Pa
         
         ## Rotation Calculation
-        rot_angle = norm(ω_planet) * (t0 + t_prev)    # angle of rotation, rad
+        L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 to planet-fixed frame
+        # println("pxform: $L_PI")
+        # rot_angle = norm(ω_planet) * (t0 + t_prev)    # angle of rotation, rad
         # L_PI = [[cos(rot_angle), sin(rot_angle), 0.0], [-sin(rot_angle), cos(rot_angle), 0.0], [0.0, 0.0, 1.0]] # rotation matrix
         # L_PI = [cos(rot_angle)  sin(rot_angle)  0.0;
         #         -sin(rot_angle) cos(rot_angle)  0.0; 
@@ -404,20 +423,23 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         elseif ip.gm == 2
             gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
         elseif ip.gm == 3
-            el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs]))))
-            gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args)
+            gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
         end
 
         if length(args[:n_bodies]) != 0
 
-            et = utc2et(time_real)
-
-            for k = 1:length(args[:n_bodies])
+            for k = 1:length(args[:n_bodies])  
                 gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
             end
         end
 
-        bank_angle = 0.0
+
+        if args[:srp] == true
+            p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
+            srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, et)
+        end
+
+        bank_angle = deg2rad(0.0)
 
         lift_pp_hat = cross(h_pp_hat, vel_pp_rw_hat)
 
@@ -618,7 +640,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         t_prev = integrator.p[5]
         ip = integrator.p[3]
         date_initial = integrator.p[6]
-
         pos_ii = [y[1], y[2], y[3]] * config.cnf.DU  # Inertial position
         vel_ii = [y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU  # Inertial velocity
         pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev, date_initial, t)
@@ -938,7 +959,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     # Def initial conditions
     # println(mass)
     in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], Mass+1e-10, 0.0]
-
+    println("r0: $r0")
+    println("v0: $v0")
     # non dimensionalization
     in_cond[1:3] = in_cond[1:3] / config.cnf.DU
     in_cond[4:6] = in_cond[4:6] * config.cnf.TU / config.cnf.DU
@@ -1019,18 +1041,18 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             r_tol = 1e-9
             a_tol = 1e-11
             simulator = "Julia"
-            method = Tsit5()
+            method = Tsit5() 
             save_ratio = 5
         elseif aerobraking_phase == 2
             if args[:integrator] == "Julia"
                 step = 0.01
-                r_tol = 1e-9
-                a_tol = 1e-11
+                r_tol = 1e-10
+                a_tol = 1e-12
 
                 if MonteCarlo
                     method = Tsit5() # KenCarp58(autodiff = false) # Tsit5()
                 else
-                    method = Tsit5() # KenCarp58(autodiff = false) # TRBDF2(autodiff = false) # Tsit5()
+                    method = Tsit5() #KenCarp58(autodiff = false) # Tsit5()
                 end
 
                 save_ratio = args[:save_rate]
@@ -1160,7 +1182,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 # initial_time, final_time = time_0, (time_0 + length_sim)
 
                 # Parameter Definition
-                param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere)
+                param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
 
                 # println("")
                 # println("pos: " * string(norm(in_cond[1:3]) * config.cnf.DU) * " vel: " * string(norm(in_cond[4:6]) * config.cnf.DU / config.cnf.TU)) 
@@ -1400,7 +1422,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         config.cnf.count_heat_load_check_exit = 0
 
         # Parameter Definition
-        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere)
+        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
 
         # Run simulation
         prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)

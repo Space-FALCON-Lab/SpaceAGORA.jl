@@ -143,14 +143,14 @@ end
 
 #     return rho, T, wind """ => density_gram
 
-function density_gram(h, p, lat, lon, montecarlo, Wind, args, el_time, atmosphere=nothing)
+function density_gram(h, p, lat, lon, montecarlo, Wind, args, el_time, atmosphere=nothing, gram=nothing)
     """
 
     """
 
-    sys.path.append(args[:directory_Gram])
+    # sys.path.append(args[:directory_Gram])
 
-    gram = pyimport("gram")
+    # gram = pyimport("gram")
 
     if config.cnf.drag_state == false || args[:keplerian] == false
         rho , T , wind = density_exp(h, p)
@@ -158,12 +158,19 @@ function density_gram(h, p, lat, lon, montecarlo, Wind, args, el_time, atmospher
     elseif config.cnf.drag_state == true || args[:keplerian] == true
         position = gram.Position()
         position.height = h * 1e-3
+        
         lat = rad2deg(lat)
         lon = rad2deg(lon)
         position.latitude = lat
+        # position.longitude = 165 + 2/(24*60*60)*el_time
         position.longitude = lon
+        # println("Lat: $lat, Lon: $lon")
         position.elapsedTime = el_time # Time since start in s
         atmosphere.setPosition(position)
+        # if p.name == "mars"
+        #     position.height -= atmosphere.getPosition().surfaceHeight*1e3
+        #     atmosphere.setPosition(position)
+        # end
         # print('set planet position', position.latitude, position.longitude, position.height)
         atmosphere.update()
         # print('update')

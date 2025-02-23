@@ -68,6 +68,9 @@ function aerobraking(ip, m, args)
         gram_atmosphere.setPerturbationScales(1.5)
         gram_atmosphere.setMinRelativeStepSize(0.5)
         gram_atmosphere.setSeed(1001)
+        if planet_name == "mars"
+            gram_atmosphere.setMOLAHeights(false)
+        end
 
         ttime = gram.GramTime()
         ttime.setStartTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs], gram.UTC, gram.PET)
@@ -165,8 +168,8 @@ function aerobraking(ip, m, args)
             println("Periapsis too high, final state unreachable! R_a = " * string(r_p*1e-3) * " km")
         end
 
-        println(" ")
+        # println(" ")
     end
 
-    closed_form(args, m)
+    # closed_form(args, m)
 end

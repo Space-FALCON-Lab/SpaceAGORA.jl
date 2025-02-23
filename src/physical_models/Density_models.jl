@@ -155,25 +155,25 @@ function density_gram(h, p, lat, lon, montecarlo, Wind, args, el_time, atmospher
     if config.cnf.drag_state == false || args[:keplerian] == false
         rho , T , wind = density_exp(h, p)
         rho = 0.0
-    # elseif config.cnf.drag_state == true || args[:keplerian] == true
-    #     position = gram.Position()
-    #     position.height = h * 1e-3
-    #     lat = rad2deg(lat)
-    #     lon = rad2deg(lon)
-    #     position.latitude = lat
-    #     position.longitude = lon
-    #     position.elapsedTime = el_time # Time since start in s
-    #     atmosphere.setPosition(position)
-    #     # print('set planet position', position.latitude, position.longitude, position.height)
-    #     atmosphere.update()
-    #     # print('update')
-    #     atmos = atmosphere.getAtmosphereState()
-    #     # print('get atmo state')
-    #     rho = atmos.density
-    #     T = atmos.temperature
-    #     wind = [montecarlo ? atmos.perturbedEWWind : atmos.ewWind,
-    #             montecarlo ? atmos.perturbedNSWind : atmos.nsWind,
-    #             atmos.verticalWind]
+    elseif config.cnf.drag_state == true || args[:keplerian] == true
+        position = gram.Position()
+        position.height = h * 1e-3
+        lat = rad2deg(lat)
+        lon = rad2deg(lon)
+        position.latitude = lat
+        position.longitude = lon
+        position.elapsedTime = el_time # Time since start in s
+        atmosphere.setPosition(position)
+        # print('set planet position', position.latitude, position.longitude, position.height)
+        atmosphere.update()
+        # print('update')
+        atmos = atmosphere.getAtmosphereState()
+        # print('get atmo state')
+        rho = atmos.density
+        T = atmos.temperature
+        wind = [montecarlo ? atmos.perturbedEWWind : atmos.ewWind,
+                montecarlo ? atmos.perturbedNSWind : atmos.nsWind,
+                atmos.verticalWind]
     end
 
     return rho, T, wind

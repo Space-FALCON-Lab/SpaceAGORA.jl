@@ -29,9 +29,9 @@ sys = pyimport("sys")
 import .config
 import .ref_sys
 
-function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothing)
-    sys.path.append(args[:directory_Gram])
-    gram = pyimport("gram")
+function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothing, gram=nothing)
+    # sys.path.append(args[:directory_Gram])
+    # gram = pyimport("gram")
 
     wind_m = false
     if ip.wm == 1
@@ -45,7 +45,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     OE = [initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m]
 
-    println(OE)
+    # println(OE)
 
     # Why is it 50 + 200 here
     if (OE[1] > (m.planet.Rp_e*1e-3 + 50 + args[:EI])*1e3) && (args[:drag_passage] == false) && (args[:body_shape] == "Spacecraft")

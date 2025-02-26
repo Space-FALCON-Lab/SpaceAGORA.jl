@@ -22,9 +22,9 @@ function plots(state, m, name, args)
         angle_of_attack_plot(name, args)
     end
 
-    if args[:Odyssey_sim] == 1 || args[:vex_sim] == 1 || args[:magellan_sim] == 1
+    # if args[:Odyssey_sim] == 1 || args[:vex_sim] == 1 || args[:magellan_sim] == 1
         ABM_periapsis(name)
-    end
+    # end
 
 end
 
@@ -395,8 +395,8 @@ function ABM_periapsis(name)
     plot_traces_palt = scatter(x=orbit_number, y=periapsis_altitude, mode="markers", marker=attr(color="black"))
     # layout_palt = Layout(xaxis_title="Orbit number", yaxis_title="Periapsis altitude [km]")
 
-    plot_traces_abm1 = scatter(x=[item for item in config.cnf.raise_man_orbit], y=delta_v_raise, mode="markers", marker=attr(color="blue"), yaxis="y2") # , label="ABM to raise periapsis")
-    plot_traces_abm2 = scatter(x=[item for item in config.cnf.lower_man_orbit], y=delta_v_lower, mode="markers", marker=attr(color="red"), yaxis="y2") # , label="ABM to lower periapsis")
+    plot_traces_abm1 = scatter(x=[item for item in config.cnf.raise_man_orbit], y=delta_v_raise, mode="markers", marker=attr(color="blue", symbol="triangle"), yaxis="y2") # , label="ABM to raise periapsis")
+    plot_traces_abm2 = scatter(x=[item for item in config.cnf.lower_man_orbit], y=delta_v_lower, mode="markers", marker=attr(color="red", symbol="circle"), yaxis="y2") # , label="ABM to lower periapsis")
     
     # p = plot(plot_traces_palt, Layout(xaxis_title_text="Orbit", yaxis_title_text="Periapsis altitude [km]", template="simple_white", showlegend=false))
     p = plot([plot_traces_palt, plot_traces_abm1, plot_traces_abm2], Layout(xaxis_title_text="Orbit", yaxis_title_text="Periapsis altitude [km]", yaxis2 = attr(title="ABM Magnitude [m/s]", overlaying="y", side="right"), template="simple_white", showlegend=false))

@@ -30,6 +30,10 @@ function mission_def(mission)
         p = 2
     elseif (mission[:Planet] == 3 || (typeof(mission[:Planet]) == String && cmp(lowercase(mission[:Planet]), "sun") == 0)) # Sun
         p = 3
+    elseif ((mission[:Planet] == 7 || (typeof(mission[:Planet]) == String && cmp(lowercase(mission[:Planet]), "titan") == 0))) # Titan
+        p = 7
+    else
+        p = 1
     end
 
     M = Mission(e, d, l, a, p)

@@ -4,8 +4,11 @@ include("../utils/Closed_form_solution.jl")
 include("../utils/Odyssey_maneuver_plan.jl")
 include("../utils/VEx_maneuver_plan.jl")
 include("../utils/Magellan_maneuver_plan.jl")
+include("../utils/Earth_maneuver_plan.jl")
+include("../utils/TSSM_maneuver_plan.jl")
 include("../utils/Save_results.jl")
 include("../physical_models/Propulsive_maneuvers.jl")
+
 
 using PythonCall
 
@@ -37,15 +40,18 @@ function aerobraking(ip, m, args)
     if args[:density_model] == "Gram" || args[:density_model] == "GRAM"
         inputParameters = Dict("earth" => gram.EarthInputParameters(),
                                "mars" => gram.MarsInputParameters(),
-                               "venus" => gram.VenusInputParameters())
+                               "venus" => gram.VenusInputParameters(),
+                               "titan" => gram.TitanInputParameters())
         
         namelistReaders = Dict("earth" => gram.EarthNamelistReader(),
                                "mars" => gram.MarsNamelistReader(),
-                               "venus" => gram.VenusNamelistReader())
+                               "venus" => gram.VenusNamelistReader(),
+                               "titan" => gram.TitanNamelistReader())
             
         atmospheres = Dict("earth" => gram.EarthAtmosphere(),
                            "mars" => gram.MarsAtmosphere(),
-                           "venus" => gram.VenusAtmosphere())
+                           "venus" => gram.VenusAtmosphere(),
+                           "titan" => gram.TitanAtmosphere())
 
         planet_name = m.planet.name
         input_parameters = inputParameters[planet_name]
@@ -59,12 +65,23 @@ function aerobraking(ip, m, args)
             end
         end
 
+        # if planet_name == "earth"
+        #     # input_parameters.dataPath = os.path.join(os.path.dirname(os.path.abspath(@__FILE__)),"..", "GRAM_Data", "Mars", "data", "")
+        #     input_parameters.dataPath = args[:directory_Gram_data] * "/Earth/data/"
+        #     if !Bool(os.path.exists(input_parameters.dataPath))
+        #         throw(ArgumentError("GRAM data path not found: " * input_parameters.dataPath))
+        #     end
+        # end
+
         reader = namelistReaders[planet_name]
         reader.tryGetSpicePath(input_parameters)
 
         gram_atmosphere = atmospheres[planet_name]
         gram_atmosphere.setInputParameters(input_parameters)
-
+        
+        if planet_name == "earth"
+            gram_atmosphere.setMERRA2Parameters(0, -90.0, 90.0, 0.0, 359.99999)
+        end
         gram_atmosphere.setPerturbationScales(1.5)
         gram_atmosphere.setMinRelativeStepSize(0.5)
         gram_atmosphere.setSeed(1001)
@@ -101,6 +118,17 @@ function aerobraking(ip, m, args)
                 args = Magellan_firing_plan(numberofpassage, args)
             end
 
+            if args[:earth_sim] == true && numberofpassage != 1
+                r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
+                r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
+                args = Earth_firing_plan(m.planet, r_a, r_p)
+            end
+            
+            if args[:titan_sim] == true && numberofpassage != 1
+                r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
+                r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
+                args = titan_firing_plan(m.planet, r_a, r_p)
+            end
             if ip.tc == 1
                 if args[:delta_v] != 0.0
 
@@ -145,8 +173,8 @@ function aerobraking(ip, m, args)
                 end
             end
 
-            if args[:density_model] == "Gram"
-                continue_campaign = asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere)
+            if args[:density_model] == "Gram" || args[:density_model] == "GRAM"
+                continue_campaign = asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere, gram)
             else
                 continue_campaign = asim(ip, m, initial_state, numberofpassage, args)
             end
@@ -178,5 +206,5 @@ function aerobraking(ip, m, args)
         # println(" ")
     end
 
-    closed_form(args, m)
+    # closed_form(args, m)
 end

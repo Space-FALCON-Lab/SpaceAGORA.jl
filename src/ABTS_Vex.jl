@@ -23,7 +23,7 @@ args = Dict(# Misc Simulation
 
             # Physical Model
             :planet => 2,                                           # Earth = 0, Mars = 1, Venus = 2
-            :planettime => 0.0,#453769200.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
+            :planettime => 0.0,                                  # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
             :n_bodies => ["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']

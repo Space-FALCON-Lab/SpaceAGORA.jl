@@ -145,6 +145,50 @@ function planet_data(ip)
         α = 0.0
         δ = 0.0
         name = "jupiter"
+    elseif (ip == 6 || (typeof(ip) == String && cmp(lowercase(ip), "saturn") == 0))
+        Rp_e = 6.0268e7
+        Rp_p = 5.4364e7
+        Rp_m = 5.8232e7
+        mass = 5.68319e26
+        g_ref = 11.19 # m/s^2
+        ρ_ref = 0
+        μ = 3.7931187e16 # gravitational parameter, m^3/s^2
+        h_ref = 0 * 10e3
+        H = 0
+        R = 0
+        γ = 0
+        T = 0
+        p = 0
+        J2 = 16290e-6
+        k = 0
+        ω = [0, 0, 1.65e-4]
+        μ_fluid = 0                # kinematic viscosity, m²/s
+        Lz = 0
+        α = deg2rad(40.589)
+        δ = deg2rad(83.537)
+        name = "saturn"
+    elseif (ip == 7 || (typeof(ip) == String && cmp(lowercase(ip), "titan") == 0))
+        Rp_e = 2.575e6
+        Rp_p = 2.575e6
+        Rp_m = 2.575e6
+        mass = 1.3452e23
+        g_ref = 1.352 # m/s^2
+        ρ_ref = 5.3
+        μ = 8.981e12 # gravitational parameter, m^3/s^2
+        h_ref = 0 * 10e3
+        H = 21.0e3
+        R = 290.0
+        γ = 1.3846
+        T = 94
+        p = 146.7
+        J2 = 3.15e-5
+        k = 1.74e-4
+        ω = [0, 0, 7.37e-6]
+        μ_fluid = 0                # kinematic viscosity, m²/s
+        Lz = -1.352/1e3
+        α = deg2rad(39.4827)
+        δ = deg2rad(83.4279)
+        name = "titan"
     end
 
     # println(model.planet)

@@ -1,5 +1,6 @@
 include("simulation/Run.jl")
 include("config.jl")
+include("utils/maneuver_plans.jl")
 
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
@@ -18,8 +19,8 @@ args = Dict(# Misc Simulation
 
             # Type of Mission
             :type_of_mission => "Aerobraking Campaign",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 100,                                 # Number of aerobraking passage
+            :keplerian => 0,                                        # Do not include drag passage: True=1, False=0, NOTE: Can't be used with aerobraking campaign, must be 'Orbits' in type_of_mission
+            :number_of_orbits => 500,                                 # Number of aerobraking passage
 
             # Physical Model
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -71,12 +72,12 @@ args = Dict(# Misc Simulation
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 56378e3, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_a => 56378e3, # 56378e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 1e21,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e21,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 200590.0,#188140.0,#                                 # Initial Periapsis Altitude for for-loop in m
-            :hp_initial_b => 1590000.0,                              # Final Periapsis Altitude for for-loop in m
-            :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
+            :hp_initial_a => 150590.0,#200590.0,#                                 # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_b => 9990000.0,                              # Final Periapsis Altitude for for-loop in m
+            :hp_step => 1e20,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 3700.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_step => 100.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
@@ -96,7 +97,7 @@ args = Dict(# Misc Simulation
             :secs => 0.0,                                          # Mission second
             
             # Final Conditions
-            :final_apoapsis => 6878.0e3, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
+            :final_apoapsis => 54378.0e3, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
 
             # Do not change
             :heat_load_sol => 0,                                    # Heat load solution #leave it to 0 and change it only for control mode = 2:  Max energy depletaion=0, Min energy depletion=1, One switch max-min=2, One switch min-max = 3
@@ -105,6 +106,7 @@ args = Dict(# Misc Simulation
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
             :ra_fin_orbit => 25000e3,                               # Target final apoapsis for the orbit, m
+            :maneuver_plan => Earth_firing_plan,                    # Firing plan function
             
             # Monte Carlo Simulations
             :montecarlo => 0,                                       # Run Monte Carlo simulation True=1, False=0
@@ -138,9 +140,6 @@ args = Dict(# Misc Simulation
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
             :Odyssey_sim => 0,                                       # Simulate Odyssey Mission
-            :vex_sim => 0,                                           # Simulate Venus Express Mission   
-            :magellan_sim => 0,                                      # Simulate Magellan Mission
-            :earth_sim => 1
             )
 
 # Calculating time of simulation

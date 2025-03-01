@@ -3,7 +3,7 @@ include("../utils/Ref_system_conf.jl")
 include("../integrator/Integrators.jl")
 include("../integrator/Events.jl")
 include("../utils/Save_results.jl")
-include("../utils/Odyssey_maneuver_plan.jl")
+# include("../utils/Odyssey_maneuver_plan.jl")
 
 include("../physical_models/Gravity_models.jl")
 include("../physical_models/Density_models.jl")
@@ -1021,7 +1021,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             t_event_1 = "periapsispoint"
         end
 
-        if index_phase_aerobraking == 2
+        if index_phase_aerobraking == 2 || (index_phase_aerobraking == 1 && args[:keplerian] == 1)
             save_pre_index = length(config.solution.orientation.time) + 1
             simulator = args[:integrator]
         end
@@ -1349,7 +1349,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # println(config.solution.orientation.pos_ii)
         # println(" ")
 
-        if index_phase_aerobraking == 2 || index_phase_aerobraking == 2.5 || (index_phase_aerobraking == 2.25 && Bool(args[:drag_passage]))
+        if index_phase_aerobraking == 2 || index_phase_aerobraking == 2.5 || (index_phase_aerobraking == 2.25 && Bool(args[:drag_passage])) || (index_phase_aerobraking == 3 && Bool(args[:keplerian]))
             save_post_index = length(config.solution.orientation.time)
         end
 

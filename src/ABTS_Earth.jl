@@ -139,7 +139,7 @@ args = Dict(# Misc Simulation
             :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
-            :Odyssey_sim => 0,                                       # Simulate Odyssey Mission
+            :Odyssey_sim => 0                                       # Simulate Odyssey Mission
             )
 
 # Calculating time of simulation

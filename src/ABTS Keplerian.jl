@@ -104,6 +104,7 @@ args = Dict(# Misc Simulation
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
             :ra_fin_orbit => 25000e3,                               # Target final apoapsis for the orbit, m
+            :maneuver_plan => nothing,                                    # Function to calculate the maneuver plan
             
             # Monte Carlo Simulations
             :montecarlo => 0,                                       # Run Monte Carlo simulation True=1, False=0
@@ -137,8 +138,6 @@ args = Dict(# Misc Simulation
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
             :Odyssey_sim => 0,                                      # Simulate Odyssey Mission
-            :vex_sim => 0,                                          # Simulate Venus Express Mission   
-            :magellan_sim => 0,                                     # Simulate Magellan Mission
             )
 
 # Calculating time of simulation

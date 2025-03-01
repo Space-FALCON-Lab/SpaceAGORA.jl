@@ -5,3 +5,4 @@
 *.tls
 GRAM_Data/*
 output/*
+GRAMpy/*

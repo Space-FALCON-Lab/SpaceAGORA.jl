@@ -15,9 +15,9 @@ function plots(state, m, name, args)
         performance_plots(state, m, name, args)
     end
 
-    if args[:body_shape] == "Spacecraft" && !config.cnf.impact
+    if args[:body_shape] == "Spacecraft" && !config.cnf.impact && args[:keplerian] == false
         if lowercase(m.planet.name) == "mars"
-            closed_form_solution_plot(name, m)
+            # closed_form_solution_plot(name, m)
         end
         angle_of_attack_plot(name, args)
     end
@@ -25,7 +25,7 @@ function plots(state, m, name, args)
     # if args[:Odyssey_sim] == 1 || args[:vex_sim] == 1 || args[:magellan_sim] == 1
         ABM_periapsis(name)
     # end
-
+    ground_track(state, m, name)
 end
 
 function angle_of_attack_plot(name, args)
@@ -403,5 +403,38 @@ function ABM_periapsis(name)
 
     display(p)
     savefig(p, name * "_Periapsis_alt_and_maneuvers.pdf", format="pdf")
+
+end
+
+function ground_track(state, m, name)
+    """
+        Plot the ground track of the spacecraft during the drag passages
+    """
+    
+    planet = m.planet
+    lats = zeros(length(config.solution.orientation.pos_pp[1, 1]))
+    lons = zeros(length(config.solution.orientation.pos_pp[1, 1]))
+    counter = 1 # Track index of lats/lons
+    for i in range(start=1, step=1, stop=length(lats))
+        if config.solution.simulation.drag_passage[i] == 1 && config.solution.orientation.alt[i] < config.solution.orientation.alt[i+1] && config.solution.orientation.alt[i] < config.solution.orientation.alt[i-1]
+            r_p = [config.solution.orientation.pos_pp[1][i], config.solution.orientation.pos_pp[2][i], config.solution.orientation.pos_pp[3][i]]
+            _, lats[counter], lons[counter] = rtolatlong(r_p, planet)
+            counter += 1
+        end
+    end
+
+    lats = rad2deg.(lats)
+    lons = rad2deg.(lons)
+    lats_traces = scatter(x=1:counter-1, y=lats[1:counter-1], mode="lines", line=attr(color="black"))
+    lons_traces = scatter(x=1:counter-1, y=lons[1:counter-1], mode="lines", line=attr(color="black"))
+    lats_plot = plot(lats_traces, Layout(xaxis_title="Orbit number", yaxis_title="Latitude [deg]", template="simple_white", showlegend=false))
+    lons_plot = plot(lons_traces, Layout(xaxis_title="Orbit number", yaxis_title="Longitude [deg]", template="simple_white", showlegend=false))
+    p = [lats_plot lons_plot]
+    relayout!(p, width=1200, height=600, template="simple_white", showlegend=false)
+    # p = plot([scatter(x=1:counter-1, y=lats[1:counter-1], mode="markers", line=attr(color="black")) scatter(x=1:counter-1, y=lons[1:counter-1], mode="markers", line=attr(color="black"))], Layout(xaxis_title="Orbit number", yaxis_title=["Latitude [deg]", "Longitude [deg]"], template="simple_white", showlegend=true))
+    
+    # p = plot([scatter3d(x=lons[1:counter-1], y=lats[1:counter-1], z=1:counter-1, mode="markers", line=attr(color="black"))], Layout(xaxis_title="Longitude [deg]", yaxis_title="Latitude [deg]", zaxis_title="Orbit number", template="simple_white", showlegend=false))
+    display(p)
+    savefig(p, name * "_ground_track.pdf", format="pdf")
 
 end

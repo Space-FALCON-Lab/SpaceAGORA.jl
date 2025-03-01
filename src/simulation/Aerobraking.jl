@@ -1,11 +1,11 @@
 include("Complete_passage.jl")
 include("../utils/Ref_system_conf.jl")
 include("../utils/Closed_form_solution.jl")
-include("../utils/Odyssey_maneuver_plan.jl")
-include("../utils/VEx_maneuver_plan.jl")
-include("../utils/Magellan_maneuver_plan.jl")
-include("../utils/Earth_maneuver_plan.jl")
-include("../utils/TSSM_maneuver_plan.jl")
+# include("../utils/Odyssey_maneuver_plan.jl")
+# include("../utils/VEx_maneuver_plan.jl")
+# include("../utils/Magellan_maneuver_plan.jl")
+# include("../utils/Earth_maneuver_plan.jl")
+# include("../utils/TSSM_maneuver_plan.jl")
 include("../utils/Save_results.jl")
 include("../physical_models/Propulsive_maneuvers.jl")
 
@@ -65,13 +65,13 @@ function aerobraking(ip, m, args)
             end
         end
 
-        # if planet_name == "earth"
-        #     # input_parameters.dataPath = os.path.join(os.path.dirname(os.path.abspath(@__FILE__)),"..", "GRAM_Data", "Mars", "data", "")
-        #     input_parameters.dataPath = args[:directory_Gram_data] * "/Earth/data/"
-        #     if !Bool(os.path.exists(input_parameters.dataPath))
-        #         throw(ArgumentError("GRAM data path not found: " * input_parameters.dataPath))
-        #     end
-        # end
+        if planet_name == "earth"
+            # input_parameters.dataPath = os.path.join(os.path.dirname(os.path.abspath(@__FILE__)),"..", "GRAM_Data", "Mars", "data", "")
+            input_parameters.dataPath = args[:directory_Gram_data] * "/Earth/data/"
+            if !Bool(os.path.exists(input_parameters.dataPath))
+                throw(ArgumentError("GRAM data path not found: " * input_parameters.dataPath))
+            end
+        end
 
         reader = namelistReaders[planet_name]
         reader.tryGetSpicePath(input_parameters)
@@ -105,30 +105,35 @@ function aerobraking(ip, m, args)
         end
 
         t_el_ab = @elapsed begin
-
-            if args[:Odyssey_sim] == true
-                args = Odyssey_firing_plan(numberofpassage, args)
-            end
-
-            if args[:vex_sim] == true
-                args = Venus_Express_firing_plan(numberofpassage, args)
-            end
-
-            if args[:magellan_sim] == true
-                args = Magellan_firing_plan(numberofpassage, args)
-            end
-
-            if args[:earth_sim] == true && numberofpassage != 1
+        
+            if uppercase(args[:thrust_control]) == "AEROBRAKING MANEUVER" && numberofpassage != 1
                 r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
                 r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
-                args = Earth_firing_plan(m.planet, r_a, r_p)
+                args = args[:maneuver_plan](m.planet, r_a, r_p, numberofpassage, args)
             end
+            # if args[:Odyssey_sim] == true
+            #     args = Odyssey_firing_plan(numberofpassage, args)
+            # end
+
+            # if args[:vex_sim] == true
+            #     args = Venus_Express_firing_plan(numberofpassage, args)
+            # end
+
+            # if args[:magellan_sim] == true
+            #     args = Magellan_firing_plan(numberofpassage, args)
+            # end
+
+            # if args[:earth_sim] == true && numberofpassage != 1
+            #     r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
+            #     r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
+            #     args = Earth_firing_plan(m.planet, r_a, r_p)
+            # end
             
-            if args[:titan_sim] == true && numberofpassage != 1
-                r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
-                r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
-                args = titan_firing_plan(m.planet, r_a, r_p)
-            end
+            # if args[:titan_sim] == true && numberofpassage != 1
+            #     r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
+            #     r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
+            #     args = titan_firing_plan(m.planet, r_a, r_p)
+            # end
             if ip.tc == 1
                 if args[:delta_v] != 0.0
 

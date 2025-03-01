@@ -139,7 +139,9 @@ args = Dict(# Misc Simulation
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
             :Odyssey_sim => 1,                                      # Simulate Odyssey Mission
             :vex_sim => 0,                                          # Simulate Venus Express Mission   
-            :magellan_sim => 0                                     # Simulate Magellan Mission
+            :magellan_sim => 0,                                     # Simulate Magellan Mission
+            :earth_sim => 0,                                        # Simulate Earth Mission
+            :titan_sim => 0                                        # Simulate Titan Mission
             )
 
 # Calculating time of simulation

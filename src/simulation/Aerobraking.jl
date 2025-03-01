@@ -111,29 +111,7 @@ function aerobraking(ip, m, args)
                 r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
                 args = args[:maneuver_plan](m.planet, r_a, r_p, numberofpassage, args)
             end
-            # if args[:Odyssey_sim] == true
-            #     args = Odyssey_firing_plan(numberofpassage, args)
-            # end
-
-            # if args[:vex_sim] == true
-            #     args = Venus_Express_firing_plan(numberofpassage, args)
-            # end
-
-            # if args[:magellan_sim] == true
-            #     args = Magellan_firing_plan(numberofpassage, args)
-            # end
-
-            # if args[:earth_sim] == true && numberofpassage != 1
-            #     r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
-            #     r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
-            #     args = Earth_firing_plan(m.planet, r_a, r_p)
-            # end
             
-            # if args[:titan_sim] == true && numberofpassage != 1
-            #     r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
-            #     r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
-            #     args = titan_firing_plan(m.planet, r_a, r_p)
-            # end
             if ip.tc == 1
                 if args[:delta_v] != 0.0
 

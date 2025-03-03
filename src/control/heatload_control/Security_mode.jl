@@ -3,7 +3,7 @@ include("../../physical_models/Density_models.jl")
 include("../../utils/Closed_form_solution.jl")
 include("../Control.jl")
 
-import .config
+# import .config
 
 function security_mode(ip, m, position, args, t, heat_rate_control=false)
     T = m.planet.T

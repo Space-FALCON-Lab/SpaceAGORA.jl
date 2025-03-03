@@ -5,7 +5,7 @@ include("../Eoms.jl")
 
 using Roots
 
-import .config
+# import .config
 
 function second_time_switch_recalc_with_integration(ip, m, position, args, t, heat_rate_control, reevaluation_mode, current_position=0)
     time_switch = config.cnf.time_switch_2

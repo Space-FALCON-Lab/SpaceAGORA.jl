@@ -1,4 +1,4 @@
-import .config
+# import .config
 
 function save_results(time, ratio)
     initial_time = 0

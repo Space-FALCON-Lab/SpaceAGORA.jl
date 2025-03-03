@@ -3,7 +3,7 @@ include("Misc.jl")
 using PlotlyJS
 using LaTeXStrings
 
-import .config
+# import .config
 
 function plots(state, m, name, args)
     if args[:keplerian] == true

@@ -5,7 +5,7 @@ include("heatload_control/Time_switch_calcs.jl")
 # include("heatload_control/Second_tsw_calcs.jl")
 # include("heatload_control/Security_mode.jl")
 
-import .config
+# import .config
 
 using SpecialFunctions
 using Roots

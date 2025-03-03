@@ -2,7 +2,7 @@ include("../physical_models/MonteCarlo_pertrubations.jl")
 
 using SpecialFunctions
 
-import .config
+# import .config
 
 function aerodynamic_coefficient_constant(α, body, T, S, args, montecarlo=false)
     """

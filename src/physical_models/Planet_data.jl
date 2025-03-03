@@ -1,4 +1,4 @@
-import .config
+# import .config
 
 function planet_data(ip)
 
@@ -197,7 +197,30 @@ function planet_data(ip)
     J2000_to_pci = [-sin(α) cos(α) 0;
                     -cos(δ)*cos(α)*sin(δ)/σ1 -cos(δ)*sin(α)*sin(δ)/σ1 cos(δ)^2/σ1;
                     cos(δ)*cos(α) cos(δ)*sin(α) sin(δ)] 
-    config.model.planet = config.Planet(Rp_e, Rp_p, Rp_m, mass, p, k, ω, g_ref, ρ_ref, h_ref, H, R, γ, T, J2, μ, μ_fluid, Lz, α, δ, J2000_to_pci, name)
+    config.model.planet = config.Planet(Rp_e, 
+                                        Rp_p, 
+                                        Rp_m, 
+                                        mass, 
+                                        p, 
+                                        k, 
+                                        ω, 
+                                        g_ref, 
+                                        ρ_ref, 
+                                        h_ref, 
+                                        H, 
+                                        R, 
+                                        γ, 
+                                        T, 
+                                        J2, 
+                                        μ, 
+                                        μ_fluid, 
+                                        Lz, 
+                                        α, 
+                                        δ, 
+                                        J2000_to_pci, 
+                                        zeros(3, 3), 
+                                        zeros(3, 3), 
+                                        name)
     
     return config.model.planet
 end

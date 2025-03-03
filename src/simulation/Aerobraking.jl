@@ -12,7 +12,7 @@ include("../physical_models/Propulsive_maneuvers.jl")
 
 using PythonCall
 
-import .config
+# import .config
 
 sys = pyimport("sys")
 

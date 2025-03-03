@@ -1,4 +1,4 @@
-import .config
+# import .config
 
 function Odyssey_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, args=nothing)
     if numberofpassage == 7

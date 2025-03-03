@@ -98,7 +98,7 @@ function def_miss(args)
         args[:body_shape] = "Spacecraft"
         args[:dry_mass] = 411.0
         args[:prop_mass] = 50.0
-        args[:angle_of_attack] = 90.0
+        args[:α] = 90.0
         args[:inital_condition_type] = 0
         args[:thrust_control] = "Aerobraking Maneuver"
         args[:ra_initial_a] = 28559.615e3

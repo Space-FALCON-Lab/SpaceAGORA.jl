@@ -1,4 +1,5 @@
 [deps]
+AssociatedLegendrePolynomials = "2119f1ac-fb78-50f5-8cc0-dda848ebdb19"
 AstroTime = "c61b5328-d09d-5e37-a9a8-0eb41c39009c"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
@@ -7,6 +8,7 @@ DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
+LegendrePolynomials = "3db4a2ba-fc88-11e8-3e01-49c72059a882"
 PlotlyJS = "f0f68f2c-4968-5e81-91da-67840de0976a"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 Roots = "f2b01f46-fcfa-551c-844a-d8ac1e96c665"

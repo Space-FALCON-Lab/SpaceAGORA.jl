@@ -1,8 +1,8 @@
 # include("../utils/Odyssey_maneuver_plan.jl")
 include("../utils/Reference_system.jl")
-include("../utils/Ref_system_conf.jl")
+# include("../utils/Ref_system_conf.jl")
 
-import .config
+# import .config
 
 function impact(t, y, m, solution, args)
     if sqrt(y[1]^2 + y[2]^2 + y[3]^2) <= m.planet.Rp_e + 35

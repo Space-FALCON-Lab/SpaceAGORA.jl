@@ -14,8 +14,8 @@ using DifferentialEquations
 using Dates
 using AstroTime
 
-import .config
-import .ref_sys
+# import .config
+# import .ref_sys
 
 function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval=false, time_switch_2=0, reevaluation_mode=1)
     if ip.gm == 0

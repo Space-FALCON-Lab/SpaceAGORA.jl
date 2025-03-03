@@ -2,7 +2,7 @@
 
 julia_version = "1.11.3"
 manifest_format = "2.0"
-project_hash = "1babd4843899a60b3177a42fd110e2d2d755a44b"
+project_hash = "ddc47b6ce23036132a4b5b87d5fadcfc671ab241"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "fb97701c117c8162e84dfcf80215caa904aef44f"
@@ -123,6 +123,11 @@ deps = ["Distributed", "JSON", "Pidfile", "SHA", "Test"]
 git-tree-sha1 = "b25e88db7944f98789130d7b503276bc34bc098e"
 uuid = "bf4720bc-e11a-5d0c-854e-bdca1663c893"
 version = "0.1.0"
+
+[[deps.AssociatedLegendrePolynomials]]
+git-tree-sha1 = "3204d769e06c5678b23cf928d850f2f4ad5ec8a5"
+uuid = "2119f1ac-fb78-50f5-8cc0-dda848ebdb19"
+version = "1.0.1"
 
 [[deps.AstroTime]]
 deps = ["Dates", "EarthOrientation", "ItemGraphs", "LeapSeconds", "MacroTools", "MuladdMacro", "Reexport"]
@@ -984,6 +989,12 @@ deps = ["Dates"]
 git-tree-sha1 = "0e5be6875ee72468bc12221d32ba1021c5d224fe"
 uuid = "2f5f767c-a11e-5269-a972-637d4b97c32d"
 version = "1.1.0"
+
+[[deps.LegendrePolynomials]]
+deps = ["OffsetArrays", "SpecialFunctions"]
+git-tree-sha1 = "6b2dfd32d463aad78f68c36be95c6eddf4cd53fd"
+uuid = "3db4a2ba-fc88-11e8-3e01-49c72059a882"
+version = "0.4.5"
 
 [[deps.LevyArea]]
 deps = ["LinearAlgebra", "Random", "SpecialFunctions"]

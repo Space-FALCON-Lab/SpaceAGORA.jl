@@ -1,6 +1,6 @@
 using PythonCall
 sys = pyimport("sys")
-import .config
+# import .config
 
 function gravity_const(pos_ii_mag, pos_ii, p, mass=0, vel_ii=0)
     """
@@ -32,7 +32,8 @@ function gravity_invsquared(pos_ii_mag, pos_ii, p, mass=0, vel_ii=0)
     gravity_ii_mag_spherical = -μ / pos_ii_mag^2
 
     g = gravity_ii_mag_spherical * pos_ii_hat
-
+    # println("Gravity: ", g)
+    # println("norm(gravity): ", norm(g))
     return g
 end
 
@@ -59,7 +60,8 @@ function gravity_invsquared_J2(pos_ii_mag, pos_ii, p, mass, vel_ii=0)
     g = gravity_ii_mag_spherical * pos_ii_hat + 3/2 * J2 * μ * p.Rp_e^2 / r^4 * [x/r*(5*z^2/r^2 - 1), y/r*(5*z^2/r^2 - 1), z/r*(5*z^2/r^2 - 3)] 
 
     # g = [gx, gy, gz]
-
+    # println("Gravity: ", g)
+    # println("norm(gravity): ", norm(g))
     return g
 end
 

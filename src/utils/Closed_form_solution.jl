@@ -4,7 +4,7 @@ include("../physical_models/MonteCarlo_pertrubations.jl")
 include("../utils/Reference_system.jl")
 include("Misc.jl")
 
-import .config
+# import .config
 
 using LinearAlgebra
 using Statistics

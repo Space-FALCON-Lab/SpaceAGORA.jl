@@ -1,5 +1,5 @@
 include("../utils/Reference_system.jl")
-include("../utils/Ref_system_conf.jl")
+# include("../utils/Ref_system_conf.jl")
 include("../integrator/Integrators.jl")
 include("../integrator/Events.jl")
 include("../utils/Save_results.jl")
@@ -26,8 +26,8 @@ sys = pyimport("sys")
 # furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140601000000_00546.BSP")
 # furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140701000000_00551.BSP")
 
-import .config
-import .ref_sys
+# import .config
+# import .ref_sys
 
 function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothing, gram=nothing)
     # sys.path.append(args[:directory_Gram])
@@ -421,7 +421,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         elseif ip.gm == 1
             gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
         elseif ip.gm == 2
-            gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+            gravity_ii = mass * (args[:gravity_harmonics] == 1 ? gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii) : gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii))
         elseif ip.gm == 3
             gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
         end
@@ -437,6 +437,18 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         if args[:srp] == true
             p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
             srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, et)
+        end
+
+        if args[:gravity_harmonics] == 1
+            # println("pos_pp: ", pos_pp)
+            pos_pp_sph = rtolatlongrad(pos_pp, m.planet)
+            # println("r: ", pos_pp_sph[1], " lat: ", rad2deg(pos_pp_sph[2]), " lon: ", rad2deg(pos_pp_sph[3]))
+            ∇U = gradU_sph(pos_pp_sph, m.planet.μ, m.planet.Rp_m, m.planet.Clm, m.planet.Slm, args[:L], args[:M])
+            # println("∇U: ", ∇U)
+            # println("norm(gravity) before: ", norm(gravity_ii/mass))
+            gravity_ii += mass * L_PI' * acc_NSG(pos_pp, ∇U) #+ cross(2*m.planet.ω, vel_pp) + cross(m.planet.ω, cross(m.planet.ω, pos_pp))) # Inertial gravity force vector, since acc_NSG is in planet-fixed frame have to use double transport thm
+            # println("norm(gravity_ii): ", norm(gravity_ii/mass))
+            # println("norm(r): ", norm(pos_ii))
         end
 
         bank_angle = deg2rad(0.0)

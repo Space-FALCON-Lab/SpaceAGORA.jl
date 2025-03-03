@@ -3,7 +3,7 @@ include("../utils/MonteCarlo_set.jl")
 include("../utils/Initial_cond_calc.jl")
 include("Set_and_run.jl")
 
-import .config
+# import .config
 
 function run_orbitalelements(args)
     apoapsis, periapsis_alt, inclination, Ω, ω = collect(range(start=round(args[:ra_initial_a]), stop=round(args[:ra_initial_b]), step=round(args[:ra_step]))), 

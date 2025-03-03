@@ -1,4 +1,4 @@
-include("Ref_system_conf.jl")
+# include("Ref_system_conf.jl")
 
 using LinearAlgebra
 using AstroTime
@@ -219,6 +219,23 @@ function rtolatlong(r_p, planet)
     alt = r*cos(lat) + (z_p + e*N*sin(lat))*sin(lat) - N
     
     return [alt, lat, lon]
+end
+function rtolatlongrad(r_p, planet)
+    # Same as previous function, but returns radius instead of altitude and planetocentric latitude and longitude
+    # From PCPF to LLA through Bowring's method https://www.mathworks.com/help/aeroblks/ecefpositiontolla.html;jsessionid=2ae36964c7d5f2115d2c21286db0?nocookie=true
+    x_p = r_p[1]
+    y_p = r_p[2]
+    z_p = r_p[3]
+
+    r = sqrt(x_p^2 + y_p^2)
+    lat = asin(z_p / norm(r_p))
+
+    #Calculate longitude
+    lon = atan(y_p, x_p)
+    
+    r = norm(r_p)
+    
+    return [r, lat, lon]
 end
 
 function latlongtoNED(H_LAN_LON)

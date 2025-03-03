@@ -1,6 +1,10 @@
 using SPICE
+# using LegendrePolynomials
+using AssociatedLegendrePolynomials
+# import .config
 
-import .config
+# Define delta function
+δ(x,y) = ==(x,y)
 
 function gravity_n_bodies(et, pos_ii, p, n_body)
 
@@ -118,4 +122,188 @@ function srp(p, p_srp_unscaled::Float64, cR::Float64, A_sat::Float64, m::Float64
 
     srp_accel = -p_srp * cR * A_exp / m * (r_sat_to_sun / r_sat_to_sun_mag)
     return srp_accel
+end
+
+"""
+    alf_IDR(x::Real, N::Integer, M::Integer)
+
+Fully normalized Associate Legendre Functions (fnALFs) from degree 0 to N and order 0 to M,
+evaluate at x ∈ [0, 1]. The ALFs are computed through Increasing Degree Recursion (IDR)
+formulas that keep either the degree or the order fixed. All ALFs for M > N are zero by
+definition.
+"""
+function fnALF_IDR(x, N, M)
+    # Allocate the output array.
+    # TODO: this should be done in-place to avoid allocating a new array at each run.
+    A = zeros(N+1,M+1)
+
+    # Precompute sqrt
+    ξ = √(1 - x^2)
+    # Initialize top left element
+    A[1,1] = 1;
+
+    # Sectorials
+    if M > 0
+        for i=2:min(N+1,M+1)
+            # For ease of notation
+            n = i - 1
+
+            # TODO: preallocate fn's for speed.
+            fn = √( ((1 + δ(1,n))*(2n + 1)) / 2n )
+            A[i,i] = fn * ξ * A[i-1,i-1]
+
+        end
+    end
+
+    # Zonals and tesserals
+    for j = 1:M+1
+        for i = j+1:N+1
+            # For ease of notation
+            m = j - 1
+            n = i - 1
+            #TODO: preallocate gnm, hnm for speed
+            gnm = √(((2n + 1)*(2n-1)) / ((n+m)*(n-m)))
+
+            if i == j + 1
+                A[i,j] = gnm * x * A[i-1,j]
+            else
+                hnm = √(((2n + 1)*(n-m-1)*(n+m-1))/((2n-3)*(n+m)*(n-m)))
+                A[i,j] = gnm * x * A[i-1,j] - hnm * A[i-2,j]
+            end
+            
+        end      
+    end
+
+    return A
+end
+
+"""
+    gradU_sph(rVec_sph, μ, RE, Clm, Slm, L, M)
+
+Gradient of the geopotential in spherical coordinates. The inputs are the state vector in an
+Earth-centred, Earth-fixed frame (ECEF), `rVec_sph`, the gravitational parameter `μ`, the
+arrays of normalized spherical harmonic coefficients `Clm, Slm`, and the desired truncation
+degree `L` and truncation order `M`.
+
+Use stable, increasing-degree recursions to compute fully normalized associated Legendre
+functions, and recursions for the trigonometric functions of the longitude.
+
+The realization of the ECEF frame depends on the geopotential model.
+"""
+function gradU_sph(rVec_sph, μ, RE, Clm, Slm, L, M)
+    # Unpack spherical coordinates
+    r, φ, λ = rVec_sph[1:3]
+
+    # fnALFs until degree L and order M+1 (one more order is needed for ∂U/∂φ) 
+    sinφ = sin(φ)
+    P_LM = fnALF_IDR(sinφ, L, M+1)
+    # println("ϕ", φ)
+    # println("P_LM: ", P_LM)
+    # Recursions for trig functions of λ, φ
+    if M == 0
+        sinmλ = [0.0]
+        cosmλ = [1.0]
+    elseif M == 1
+        sinmλ = [0.0; sin(λ)]
+        cosmλ = [1.0; cos(λ)]
+    elseif M > 1
+        sinmλ = [0.0; sin(λ); zeros(M-1)]
+        cosmλ = [1.0; cos(λ); zeros(M-1)]
+    end
+    for j = 3:M+1
+        sinmλ[j] = 2cosmλ[2] * sinmλ[j-1] - sinmλ[j-2]
+        cosmλ[j] = 2cosmλ[2] * cosmλ[j-1] - cosmλ[j-2]
+    end
+    tanφ = tan(φ)
+
+    # ∇U
+    # TODO: reformulate with lumped coefficients
+    ∂U∂r, ∂U∂φ, ∂U∂λ = (0.0, 0.0, 0.0)
+    REoverR = RE/r; REoverRl = REoverR^(L+1)
+    for l = L:-1:2
+        i = l + 1
+        ∂U∂r_l, ∂U∂φ_l, ∂U∂λ_l = (0.0, 0.0, 0.0)
+        M_max = min(M, l)
+        for m = M_max:-1:0
+            j = m + 1
+            # println("l: ", l, " m: ", m)
+            # println("Clm: ", Clm[i,j], " Slm: ", Slm[i,j])
+            # P_LM = Plm(l, m, sinφ)
+            # P_LM_plus_1 = Plm(l, m+1, sinφ)
+            # P_LM_plus_1_ref = Plm(sinφ, l, m+1, norm=Val(:normalized))
+            # println("P_LM: ", P_LM_ref)
+            # println("P_LM_plus_1: ", P_LM_plus_1_ref)
+            # println("Plm: ", P_LM[i,j])
+            # println("Plm_plus_1: ", P_LM[i,j+1])
+            # cosmλ = cos(m*λ)
+            # sinmλ = sin(m*λ)
+            # ∂U∂r_l += P_LM * (Clm[i,j] * cosmλ + Slm[i,j] * sinmλ)
+            # ∂U∂λ_l += m * P_LM * ( -Clm[i,j] * sinmλ + Slm[i,j] * cosmλ)
+            # Π_ratio = √( ((l+m+1)*(l-m))/(1 + δ(m,0)) )
+            # ∂U∂φ_l += 
+            # ( Π_ratio * P_LM_plus_1 - m*tanφ*P_LM) * 
+            # (Clm[i,j] * cosmλ + Slm[i,j] * sinmλ)
+            # println("cosmλ: ", cosmλ[j])
+            # println("sinmλ: ", sinmλ[j])
+            # println("cos(mλ): ", cos(m*λ))
+            # println("sin(mλ): ", sin(m*λ))
+            ∂U∂r_l += P_LM[i,j] * (Clm[i,j] * cosmλ[j] + Slm[i,j] * sinmλ[j])
+            ∂U∂λ_l += m * P_LM[i,j] * ( -Clm[i,j] * sinmλ[j] + Slm[i,j] * cosmλ[j] )
+            
+            # k = m == 0 ? 2 : 1
+            Π_ratio = √( ((l+m+1)*(l-m))/(1 + δ(m,0)) )#√(((l-m-1)*k/(l+m+1)))# 
+            # println("Π_ratio: ", Π_ratio)
+            ∂U∂φ_l += 
+            ( Π_ratio * P_LM[i,j+1] - m*tanφ*P_LM[i,j] ) * 
+            (Clm[i,j] * cosmλ[j] + Slm[i,j] * sinmλ[j])
+        end
+        REoverRl /= REoverR
+        ∂U∂r += REoverRl * (l+1) * ∂U∂r_l
+        ∂U∂φ += REoverRl * ∂U∂φ_l
+        ∂U∂λ += REoverRl * ∂U∂λ_l
+        # println("l: ", l, " ∂U∂r: ", ∂U∂r, " ∂U∂φ: ", ∂U∂φ, " ∂U∂λ: ", ∂U∂λ)
+    end
+
+    # Multiply by outer powers of 1/r
+    ∂U∂r *= -μ/r^2
+    ∂U∂φ *= μ/r
+    ∂U∂λ *= μ/r
+    # println("∂U∂r: ", ∂U∂r)
+    # println("∂U∂φ: ", ∂U∂φ)
+    # println("∂U∂λ: ", ∂U∂λ)
+    return [∂U∂r; ∂U∂φ; ∂U∂λ]
+end
+
+"""
+    acc_NSG(rVec_cart::Vector, ∇U_sph::Vector)
+
+Acceleration in Cartesian coordinates in the ECEF frame from the geopotential gradient in
+spherical coordinates, `∇U_sph`, and the state vector in Cartesian coordinates in the ECEF
+frame, `rVec_cart`.
+"""
+function acc_NSG(rVec_cart, ∇U_sph)
+    # Unpack arguments
+    x, y, z = rVec_cart
+    ∂U∂r, ∂U∂φ, ∂U∂λ = ∇U_sph
+
+    # Preliminary quantities
+    r = √(x^2 + y^2 + z^2)
+    r_eq = √(x^2 + y^2)
+    # println("r_eq: ", r_eq)
+    # println("r: ", r)
+    # Acceleration - equatorial components
+    a = zeros(3)
+    α = 1.0/r * ∂U∂r - z/(r^2 * r_eq) * ∂U∂φ
+    β = 1.0/r_eq^2 * ∂U∂λ
+    # println("α: ", α)
+    # println("β: ", β)
+    a[1] = α*x - β*y
+    a[2] = β*x + α*y
+
+    # Acceleration - vertical component
+    a[3] = z/r * ∂U∂r + r_eq/r^2 * ∂U∂φ
+    # println("a: ", a)
+    # println("r: ", r)
+    # println("norm(a): ", norm(a))
+    return a
 end

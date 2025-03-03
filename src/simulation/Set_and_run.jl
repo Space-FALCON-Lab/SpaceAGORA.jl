@@ -7,7 +7,7 @@ include("Aerobraking.jl")
 
 using SPICE
 
-import .config
+# import .config
 
 function aerobraking_campaign(args, state)
     save_res = args[:results]
@@ -40,10 +40,30 @@ function aerobraking_campaign(args, state)
     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
     furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-    # n-body gravity
+    
+    # Set up n-body gravity
     if length(args[:n_bodies]) != 0
         for i=1:length(args[:n_bodies])
             push!(config.cnf.n_bodies_list, planet_data(args[:n_bodies][i]))
+        end
+    end
+
+    # Set up spherical harmonics coefficients
+    if args[:gravity_harmonics] == true
+        # Read in the gravity harmonics data
+        harmonics_data = CSV.read(args[:gravity_harmonics_file], DataFrame)
+        
+        # Pre-initialize the Clm and Slm arrays
+        degree = size(harmonics_data, 1)
+        config.model.planet.Clm = zeros(degree, degree)
+        config.model.planet.Slm = zeros(degree, degree)
+
+        # Read in all the data from the DataFrame
+        for i=1:degree
+            l = harmonics_data[i, 1] + 1 # Get the degree, l, from the data and convert to an index (subtract 1 because the data starts at 2nd degree coefficient)
+            m = harmonics_data[i, 2] + 1 # Get the order, m, from the data and convert to an index (add 1 because the data starts at 0th order coefficient)
+            config.model.planet.Clm[l, m] = harmonics_data[i, 3]
+            config.model.planet.Slm[l, m] = harmonics_data[i, 4]
         end
     end
 

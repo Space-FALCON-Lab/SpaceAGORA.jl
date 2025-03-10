@@ -1,4 +1,4 @@
-import .config
+ # import .config
 
 function Magellan_firing_plan(numberofpassage, args)
     one_n = 0.34 # Δv of a 1-n maneuver

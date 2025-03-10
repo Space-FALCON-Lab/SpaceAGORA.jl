@@ -1,6 +1,6 @@
 using SPICE
 
-import .config
+ # import .config
 
 function gravity_n_bodies(et, pos_ii, p, n_body)
 

@@ -1,19 +1,19 @@
 include("../../utils/Closed_form_solution.jl")
 include("../../physical_models/Density_models.jl")
-include("../Control.jl")
 include("../Eoms.jl")
 
 using Roots
 
-import .config
+ # import .config
 
-function second_time_switch_recalc_with_integration(ip, m, position, args, t, heat_rate_control, reevaluation_mode, current_position=0)
+function second_time_switch_recalc_with_integration(ip, m, position, args, t, heat_rate_control, reevaluation_mode, gram_atmosphere=nothing, current_position=0)
     time_switch = config.cnf.time_switch_2
 
     function func(t_s)
-        y = asim(ip, m, t, current_position, args, 0, heat_rate_control, false, t_s, reevaluation_mode)
+        # y = asim(ip, m, t, current_position, args, 0, heat_rate_control, false, t_s, reevaluation_mode)
+        y, time_switch = asim_ctrl(ip, m, t, current_position, args, 0, heat_rate_control, false, gram_atmosphere, t_s, reevaluation_mode)
 
-        Q = y[end][end]
+        Q = y[end,end]
 
         return Q - m.aerodynamics.heat_load_limit
     end
@@ -25,7 +25,7 @@ function second_time_switch_recalc_with_integration(ip, m, position, args, t, he
     delta_Q_with_current_time = abs(delta_Q_current_time - delta_Q_switch) # if the difference between the heat load at the current time and the switch is small but the time is too large, recheck
 
     if abs(delta_Q_switch) <= 0.01
-        if (args[:heat_load_sol] == 0 || args[:heat_load_sol] == 3) && !(delta_Q_with_current_time < 0.5 && abs(t - time_switch) > 20 && delta_Q_switch < delta_Q_current_time)
+        if (args[:heat_load_sol] == 0 || args[:heat_load_sol] == 3) && !(delta_Q_with_current_time < 0.5 && abs(t - time_switch) > 20) && (delta_Q_switch < delta_Q_current_time)
             return config.cnf.time_switch_1, config.cnf.time_switch_2
         elseif (args[:heat_load_sol] == 1 || args[:heat_load_sol] == 2)
             return config.cnf.time_switch_1, config.cnf.time_switch_2
@@ -48,28 +48,32 @@ function second_time_switch_recalc_with_integration(ip, m, position, args, t, he
         b = t + 1500
     end
 
-    time_switch = fzero(k -> func(k), [t, b], Roots.Brent())
+    try
+        time_switch_2 = fzero(k -> func(k), [t, b], Roots.Brent())
+    catch
+        nothing
+    end
 
     return config.cnf.time_switch_1, time_switch
 end
 
 function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, reevaluation_mode=0, current_position=0)
     # Evaluates past heat load
-    aoa_past = config.cnf.α_past
+    aoa_past = config.cnf.α_list
     time_switch_1 = config.cnf.time_switch_1
     time_switch_2 = config.cnf.time_switch_2
 
-    Q_past = config,cnf.heat_load_past
+    Q_past = config.cnf.heat_load_past
 
     function func(time_switch)
         # predict the rest part of the passage heat load
         T = m.planet.T #fixed temperature
-        t_cf =closed_form(args, m, position, T, true, 0, m.aerodynamics.aoa)[0] # closed-form solution only for length of t
+        t_cf =closed_form(args, m, position, T, true, m.aerodynamics.α)[1] # closed-form solution only for length of t
 
         mask = (t_cf .< time_switch_1) .|| (t_cf .> time_switch)
-        aoa_list = m.aerodynamics.aoa .* mask
+        aoa_list = m.aerodynamics.α .* mask
         
-        t_cf, h_cf, γ_cf, v_cf = closed_form(args, m, position, T, true, m.aerodynamics.aoa, aoa_list)
+        t_cf, h_cf, γ_cf, v_cf = closed_form(args, m, position, T, true, m.aerodynamics.α, aoa_list)
 
         RT = T*m.planet.R
         S = v_cf / sqrt(2*RT)
@@ -103,7 +107,7 @@ function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, 
         end
 
         S_remaining = S[index_remaining]
-        aoa_cf = ones(length(t_remaining)) * m.aerodynamics.aoa
+        aoa_cf = ones(length(t_remaining)) * m.aerodynamics.α
         heat_rate_remaining = heat_rate_calc(args[:multiplicative_factor_heatload] * m.aerodynamics.thermal_accomodation_factor, ρ_remaining, T, T, m.planet.R, m.planet.γ, S_remaining, aoa_cf)
 
         if args[:control_mode] == 3 # Account for max heat rate possible
@@ -153,7 +157,11 @@ function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, 
 
     b = t + 200
 
-    time_switch_2 = fzero(k -> func(k), [t, b], Roots.Brent())
+    try
+        time_switch_2 = fzero(k -> func(k), [t, b], Roots.Brent())
+    catch
+        nothing
+    end
 
     time_switch_2 -= time_switch_2*0.1
 

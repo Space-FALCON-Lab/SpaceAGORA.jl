@@ -7,7 +7,7 @@ include("Aerobraking.jl")
 
 using SPICE
 
-import .config
+ # import .config
 
 function aerobraking_campaign(args, state)
     save_res = args[:results]
@@ -100,7 +100,7 @@ function aerobraking_campaign(args, state)
     if Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone"
         r = p_class.Rp_e + h_0
         
-        state[:vi] = - acos(1 / eccentricity_in * (semimajoraxis_in * (1 - eccentricity_in^2) / r - 1))
+        state[:vi] = -acos(1 / eccentricity_in * (semimajoraxis_in * (1 - eccentricity_in^2) / r - 1))
         
         if args[:montecarlo] == true
             state = monte_carlo_true_anomaly(state, args)
@@ -242,7 +242,7 @@ function aerobraking_campaign(args, state)
 
             name = args[:directory_results] * "/" * folder_name
             if !isdir(args[:directory_results])
-                mkdir(args[:directory_results])
+                mkpath(args[:directory_results])
             end
             filename = name * ".csv"
         else

@@ -1,9 +1,8 @@
-include("../utils/Ref_system_conf.jl")
 include("../utils/Reference_system.jl")
 
 using PythonCall
 
-import .config
+ # import .config
 
 sys = pyimport("sys")
 

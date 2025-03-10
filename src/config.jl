@@ -1,6 +1,6 @@
 module config
 
-export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model
+    export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model
 
     @kwdef mutable struct Body
         mass::Float64 = 0.0
@@ -177,9 +177,9 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
 
     @kwdef mutable struct Controller
         guidance_t_eval::Vector{Float64} = []
-        count_controller::Int64 = 0
+        count_controller::Int64 = 1
         count_prev_controller::Int64 = 0
-        stored_state::Int64 = 0
+        stored_state::Int64 = 1
         prev_time::Float64 = 0.0
         t::Float64 = 0.0
     end

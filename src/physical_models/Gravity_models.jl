@@ -1,6 +1,6 @@
 using PythonCall
 sys = pyimport("sys")
-import .config
+ # import .config
 
 function gravity_const(pos_ii_mag, pos_ii, p, mass=0, vel_ii=0)
     """

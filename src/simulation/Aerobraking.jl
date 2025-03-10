@@ -9,7 +9,7 @@ include("../physical_models/Propulsive_maneuvers.jl")
 
 using PythonCall
 
-import .config
+ # import .config
 
 sys = pyimport("sys")
 
@@ -141,7 +141,7 @@ function aerobraking(ip, m, args)
 
                 if (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone") && continue_campaign
                     r = m.planet.Rp_e + args[:EI]*1e3
-                    initial_state.vi = acos(1 / initial_state.e * (initial_state.a * (1 - initial_state.e^2) / r - 1))
+                    initial_state.vi = -acos(1 / initial_state.e * (initial_state.a * (1 - initial_state.e^2) / r - 1))
                 end
             end
 
@@ -175,7 +175,7 @@ function aerobraking(ip, m, args)
             println("Periapsis too high, final state unreachable! R_a = " * string(r_p*1e-3) * " km")
         end
 
-        # println(" ")
+        println(" ")
     end
 
     closed_form(args, m)

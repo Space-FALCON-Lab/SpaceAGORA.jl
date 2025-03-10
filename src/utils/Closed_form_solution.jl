@@ -4,12 +4,15 @@ include("../physical_models/MonteCarlo_pertrubations.jl")
 include("../utils/Reference_system.jl")
 include("Misc.jl")
 
-import .config
+ # import .config
 
 using LinearAlgebra
 using Statistics
+using AstroTime
 
 function closed_form(args, mission, initialcondition = 0, T = 0, online = false, α=0, α_profile = [])
+    date_initial = from_utc(DateTime(mission.initial_condition.year, mission.initial_condition.month, mission.initial_condition.day, mission.initial_condition.hour, mission.initial_condition.minute, mission.initial_condition.second))
+
     if args[:body_shape] == "Blunted Cone"
         len_sol = length(config.solution.orientation.time)
         results(zeros(len_sol), zeros(len_sol), zeros(len_sol), zeros(len_sol))
@@ -19,13 +22,13 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
 
     if online == false
         if args[:type_of_mission] == "Drag Passage"
-            step_time = len(config.solution.orientation.time)
+            step_time = length(config.solution.orientation.time)
             initialcondition = [config.solution.orientation.oe[1][1], config.solution.orientation.oe[2][1], config.solution.orientation.oe[3][1], config.solution.orientation.oe[4][1], config.solution.orientation.oe[5][1], config.solution.orientation.oe[6][1], config.solution.performance.mass[1]]
             T = config.solution.physical_properties.T[1]
             α = config.solution.physical_properties.α[1]
             t0 = config.solution.orientation.time[1]
 
-            t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, step_time)
+            t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time)
             results(t_cf, h_cf, γ_cf, v_cf)
         elseif args[:type_of_mission] != "Drag Passage"
             # Calculate the number of orbit
@@ -70,7 +73,7 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
                 α = config.solution.physical_properties.α[index]
                 t0 = config.solution.orientation.time[index]
 
-                t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, step_time)
+                t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time)
 
                 # println("")
                 # println(t_cf)
@@ -104,7 +107,7 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
             initialcondition[1], initialcondition[2], initialcondition[3], initialcondition[4], initialcondition[5], initialcondition[6] = (state[:ra]+state[:rp])/2, (state[:ra]-state[:rp])/(state[:ra]+state[:rp]), state[:i], state[:Ω], state[:ω], state[:vi]
         end
 
-        t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, 0, α_profile)
+        t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, 0, mission, initialcondition, α, T, date_initial, 0, α_profile)
     end
 
     return t_cf, h_cf, γ_cf, v_cf
@@ -114,11 +117,11 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
     #online -> not save results and initial conditions given
 end
 
-function closed_form_calculation(args, t0, mission, initialcondition, α, T, step_time = 0, α_profile = [], online = 0)
+function closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time = 0, α_profile = [], online = 0)
     if config.cnf.count_numberofpassage != 1
         t_prev = config.solution.orientation.time[end]
     else
-        t_prev = mission.initial_condition.time_rot
+        t_prev = mission.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # mission.initial_condition.time_rot
     end
 
     pos_ii_org, vel_ii_org = orbitalelemtorv(initialcondition, mission.planet)
@@ -137,7 +140,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, ste
     # println(h0)
     # println("")
 
-    pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, mission.planet, )
+    pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, mission.planet, 0, 0, date_initial, t0)
 
     LatLong = rtolatlong(pos_pp, mission.planet)
     lat = LatLong[2]
@@ -200,7 +203,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, ste
     end
 
     # t_cf = collect(0:Int64(step_time):Δt)
-    t_cf = collect(range(start=0, stop=Δt, length=step_time+1))
+    t_cf = collect(range(start=0, stop=Δt, length=floor(Int, step_time)+1))
 
     # println(step_time)
     # println("")

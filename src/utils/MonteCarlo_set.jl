@@ -1,4 +1,4 @@
-import .config
+ # import .config
 
 function MonteCarlo_setting(args)
     MC = Dict()

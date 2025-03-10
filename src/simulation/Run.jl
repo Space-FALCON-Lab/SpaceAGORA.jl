@@ -3,7 +3,7 @@ include("../utils/MonteCarlo_set.jl")
 include("../utils/Initial_cond_calc.jl")
 include("Set_and_run.jl")
 
-import .config
+#  # import .config
 
 function run_orbitalelements(args)
     apoapsis, periapsis_alt, inclination, Ω, ω = collect(range(start=round(args[:ra_initial_a]), stop=round(args[:ra_initial_b]), step=round(args[:ra_step]))), 
@@ -46,8 +46,8 @@ function run_orbitalelements(args)
 end
 
 function run_vgamma(args)
-    γ_0, v_0, inclination, Ω, ω = collect(range(Int64(args[:γ_initial_a]*100), Int64(args[:γ_initial_a]*100), step=Int64(args[:γ_step]*100))), 
-                                  collect(range(Int64(args[:v_initial_a]), Int64(args[:v_initial_b]), step=Int64(args[:v_step]))),
+    γ_0, v_0, inclination, Ω, ω = collect(range(start=round(args[:γ_initial_a]*100), stop=round(args[:γ_initial_a]*100), step=round(args[:γ_step]*100))), 
+                                  collect(range(start=round(args[:v_initial_a]), stop=round(args[:v_initial_b]), step=round(args[:v_step]))),
                                   args[:inclination], args[:Ω], args[:ω]
     final_apoapsis = args[:final_apoapsis]
 

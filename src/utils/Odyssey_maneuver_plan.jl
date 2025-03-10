@@ -1,4 +1,4 @@
-import .config
+ # import .config
 
 
 function Odyssey_firing_plan(numberofpassage, args)

@@ -1,14 +1,13 @@
 include("../../physical_models/MonteCarlo_pertrubations.jl")
 include("../../physical_models/Density_models.jl")
 include("../../utils/Closed_form_solution.jl")
-include("../Control.jl")
 
-import .config
+ # import .config
 
 function security_mode(ip, m, position, args, t, heat_rate_control=false)
     T = m.planet.T
 
-    t_cf, h_cf, γ_cf, v_cf = closed_form(args, m. position, T, m.aerodynamics.α, true)
+    t_cf, h_cf, γ_cf, v_cf = closed_form(args, m, position, T, true, m.aerodynamics.α)
 
     RT = T * m.planet.R
 

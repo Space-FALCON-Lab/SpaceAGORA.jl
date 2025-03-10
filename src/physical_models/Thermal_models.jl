@@ -92,7 +92,6 @@ function heatrate_convective_maxwellian(S, T, m, ρ, v, α)
 
     a = m.aerodynamics
     p = m.planet
-    α = a.α
     t_m = a.thermal_contact
 
     if t_m != 1

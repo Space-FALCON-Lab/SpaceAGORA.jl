@@ -6,38 +6,49 @@ include("../physical_models/Thermal_models.jl")
 include("../utils/Reference_system.jl")
 include("../utils/Closed_form_solution.jl")
 
-include("Control.jl")
-include("heatload_control/Utils_timeswitch.jl")
+# include("Control.jl")
+# include("heatload_control/Utils_timeswitch.jl")
 
 using LinearAlgebra
 using DifferentialEquations
 using Dates
 using AstroTime
+using SPICE
+using PythonCall
+sys = pyimport("sys")
 
-import .config
-import .ref_sys
+ # import .config
+ # import .ref_sys
 
-function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval=false, time_switch_2=0, reevaluation_mode=1)
-    if ip.gm == 0
+function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval=false, gram_atmosphere=nothing, time_switch_2=0, reevaluation_mode=1)
+    sys.path.append(args[:directory_Gram])
+    gram = pyimport("gram")
 
-    elseif ip.gm == 1
+    wind_m = false
+    if ip.wm == 1
+        wind_m = true
+    end
 
-    elseif ip.gm == 2
-
+    MonteCarlo = false
+    if ip.mc == 1
+        MonteCarlo = true
     end
 
     version = args[:Gram_version]
 
     r0, v0 = orbitalelemtorv(OE, m.planet)
 
+    # Clock
+    date_initial = from_utc(DateTime(m.initial_condition.year, m.initial_condition.month, m.initial_condition.day, m.initial_condition.hour, m.initial_condition.minute, m.initial_condition.second))
+
     if config.cnf.count_numberofpassage != 1
         t_prev = config.solution.orientation.time[end]
     else
-        t_prev = m.initialcondition.time_rot
+        t_prev = value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # m.initialcondition.time_rot
     end
 
-    v0_pp = r_intor_p(r0, v0, m.planet, time_0, t_prev)[2]
-    date_initial = from_utc(DateTime(m.initial_condition.year, m.initial_condition.month, m.initial_condition.day, m.initial_condition.hour, m.initial_condition.minute, m.initial_condition.second))
+    # v0_pp = r_intor_p(r0, v0, m.planet, time_0, t_prev)[2]
+    r0_pp, v0_pp = r_intor_p(r0, v0, m.planet, time_0, t_prev, date_initial, 0)
 
     T = m.planet.T    # fixed temperature
     RT = T * m.planet.R
@@ -59,11 +70,12 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
         args = param[8]
         initial_state = param[9]
         gram_atmosphere = param[10]
+        gram = param[11]
 
         # Clock
         time_real = DateTime(date_initial + t0*seconds) # date_initial + Second(t0)
         timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
-
+        
         pos_ii = in_cond[1:3]       # Inertial position 
         vel_ii = in_cond[4:6]       # Inertial velocity
         mass = m.body.mass          # Mass kg
@@ -80,23 +92,21 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
 
         # TRANSFORM THE STATE
         # Inertial to planet relative transformation
-        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t0, t_prev) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
+        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t0, t_prev, date_initial, t0) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
         pos_pp_mag = norm(pos_pp) # Magnitude of the planet relative position
         vel_pp_mag = norm(vel_pp)
 
         # Orbital Elements
         OE = rvtoorbitalelement(pos_ii, vel_ii, mass, m.planet)
 
+        # Timing variables
+        el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))) # Elapsed time since the beginning of the simulation
+        current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
+        time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
+        et = utc2et(time_real_utc) # Current time in Ephemeris Time
+
         # Angular Momentum Calculations
         h_ii = cross(pos_ii, vel_ii)        # Inertial angular momentum vector[m ^ 2 / s]
-        index = 0
-
-        # for item in h_ii
-        #     if item < 0
-        #         h_ii[index] = 0
-        #         index += 1
-        #     end
-        # end
 
         h_ii_mag = norm(h_ii)               # Magnitude of the inertial angular momentum
         h_pp = cross(pos_pp, vel_pp)        # Planet relative angular momentum vector
@@ -120,6 +130,8 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
             γ_pp = -γ_pp
         end
 
+        # Derived Quantity Calculations
+
         # Compute Latitude and Longitude
         LatLong = rtolatlong(pos_pp, m.planet)
         lat = LatLong[2]
@@ -140,8 +152,7 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
         elseif ip.dm == 2
             ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         elseif ip.dm == 3
-            el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs]))))
-            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere)
+            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
             ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
         end
 
@@ -152,7 +163,7 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
 
         if time_switch_eval == true
 
-            lambda_switch = 
+            lambda_switch = (k_cf * 2.0 * m.body.mass * vel_ii_mag) ./ (area_tot * CD_slope * pi)
 
             if args[:heat_load_sol] == 0
                 if lambdav_ii < lambda_switch
@@ -190,27 +201,28 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
         if heat_rate_control == true && heat_rate > args[:max_heat_rate]
             state = [T_p, ρ, S]
             index_ratio = [1]
-            aoa = control_solarpanels_heatrate(ip, m, index_ratio, state)
+            aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state)
             heat_rate = args[:max_heat_rate]
         end
 
         # Convert wind to pp(PCPF) frame
         wE = wind[1] # positive to the east , m / s
         wN = wind[2] # positive to the north , m / s
-        wD = wind[3] # positive up , m / s
+        wU = wind[3] # positive up , m / s
 
         wind_pp = wN * uN + wE * uE - wU * uD        # wind velocity in pp frame , m / s
         vel_pp_rw = vel_pp + wind_pp                 # relative wind vector , m / s
         vel_pp_rw_hat = vel_pp_rw / norm(vel_pp_rw)  # relative wind unit vector , nd
 
         # Dynamic pressure, CHANGE THE VELOCITY WITH THE WIND VELOCITY
-        q = 0.5 * rho * norm(vel_pp_rw)^2            # base on wind - relative velocity
+        q = 0.5 * ρ * norm(vel_pp_rw)^2            # base on wind - relative velocity
 
         # Rotation Calculation
-        rot_angle = norm(ω_planet) * t0     # rad
-        L_PI = [cos(rot_angle)  sin(rot_angle)  0.0;
-                -sin(rot_angle) cos(rot_angle)  0.0; 
-                0.0             0.0             1.0]    # rotation matrix
+        L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci'
+        # rot_angle = norm(ω_planet) * t0     # rad
+        # L_PI = [cos(rot_angle)  sin(rot_angle)  0.0;
+        #         -sin(rot_angle) cos(rot_angle)  0.0; 
+        #         0.0             0.0             1.0]    # rotation matrix
         
         if ip.gm == 0
             gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
@@ -218,6 +230,8 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
             gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
         elseif ip.gm == 2
             gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+        elseif ip.gm == 3
+            gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
         end
 
         bank_angle = 0.0
@@ -240,7 +254,7 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
         # Total inertial external force vector on body [N]
         force_ii = drag_ii + lift_ii + gravity_ii
 
-        g_ii = norm(g_ii)
+        g_ii = norm(gravity_ii)
 
         # EOM
         lambdav_dot = -3 * k_cf * ρ * vel_ii_mag^2 * aoa / pi + lambdav_ii * (ρ* area_tot * CD * vel_ii_mag) / mass - lambdagamma_ii * ((ρ * area_tot * CL) / (2 * mass) + g_ii /  vel_ii_mag^2 + 1 / (pos_ii_mag)) - lambdah_ii * γ_ii
@@ -265,7 +279,7 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
         norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
     end
     function out_drag_passage_affect!(integrator)
-        println("entered out_drag_passage_affect! in Eoms.jl")
+        # println("entered out_drag_passage_affect! in Eoms.jl")
         config.cnf.t_out_drag_passage = integrator.t
         terminate!(integrator)
     end
@@ -282,27 +296,28 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
     end
     function time_switch_func_affect!(integrator)
         println("entered time_switch_func_affect! in Eoms.jl")
+        nothing
     end
     time_switch_func = ContinuousCallback(out_drag_passage_condition, out_drag_passage_affect!)
 
     if time_switch_eval == true
-        # Density
-        if ip.dm == 0
-            ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 1
-            ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 2
-            ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 3
-            el_time = value(seconds(date_initial - (date_initial + t0*seconds)))
-            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere)
-            ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
-        end
+        # # Density
+        # el_time = value(seconds((date_initial) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))) # Elapsed time since the beginning of the simulation
+        # if ip.dm == 0
+        #     ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 1
+        #     ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 2
+        #     ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 3
+        #     ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
+        #     ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
+        # end
 
         # SOLVE EQUATIONS OF MOTIONS - 1 steps
         # USE CLOSED FORM SOLUTION TO DEFINE lambda_zero:
         T = m.planet.T  # fixed temperature
-        t_cf, h_cf, γ_cf, v_cf =closed_form(args, m, OE,T, m.aerodynamics.α, true)  # define closed-form solution
+        t_cf, h_cf, γ_cf, v_cf =closed_form(args, m, OE,T, true, m.aerodynamics.α)  # define closed-form solution
 
         lambdav = v_cf[end]
         lambdag = 0.0
@@ -318,6 +333,10 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
 
         count = 0
 
+        index_phase_aerobraking = nothing
+        aerobraking_phase = nothing
+        initial_state = nothing
+
         while abs(lambda_v_fin_actual - lambda_v_fin) > 0.1 || abs(lambda_γ_fin_actual - lambda_γ_fin) > 0.1 || abs(lambda_h_fin_actual - lambda_h_fin) > 0.01
             count += 1
 
@@ -327,7 +346,7 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
             initial_time, final_time = time_0, time_0 + 1500
 
             # Parameter Definition
-            param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere)
+            param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
 
             method = Tsit5()
             a_tol = 1e-9
@@ -367,24 +386,24 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
         # Initial condition initialization
         in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], lambdav, lambdag, lambdah, 0.0]
 
-        # Density
-        if ip.dm == 0
-            ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 1
-            ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 2
-            ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 3
-            el_time = value(seconds(date_initial - (date_initial + t0*seconds)))
-            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere)
-            ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
-        end
+        # # Density
+        # if ip.dm == 0
+        #     ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 1
+        #     ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 2
+        #     ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 3
+        #     el_time = value(seconds(date_initial - (date_initial + t0*seconds)))
+        #     ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere)
+        #     ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
+        # end
 
         # Time initialization
         initial_time, final_time = time_0, time_0 + 1500
 
         # Parameter Definition
-        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere)
+        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
 
         method = Tsit5()
         a_tol = 1e-9
@@ -396,31 +415,31 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
         prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
         sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
 
-        temp = t_out_drag_passage
+        temp = config.cnf.t_out_drag_passage
 
         ## Time switch definition
         time_switch = [0, 0]
 
         if length(temp) == 2
-            time_switch = temp
+            time_switch = floor(Int64, temp)
         elseif length(temp) == 1
-            time_switch[1] = temp
-            time_switch[2] = sol.t[end]
+            time_switch[1] = floor(Int64, temp)
+            time_switch[2] = floor(Int64, sol.t[end])
         end
 
     else  # second time evaluation
         # Density
-        if ip.dm == 0
-            ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 1
-            ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 2
-            ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 3
-            el_time = value(seconds(date_initial - (date_initial + t0*seconds)))
-            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere)
-            ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
-        end
+        # el_time = value(seconds((date_initial) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))) # Elapsed time since the beginning of the simulation
+        # if ip.dm == 0
+        #     ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 1
+        #     ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 2
+        #     ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 3
+        #     ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
+        #     ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
+        # end
 
         temp_0 = 0
         tp = 1000
@@ -433,7 +452,7 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
             initial_time, final_time = time_0, time_0 + 1000
 
             # Parameter Definition
-            param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere)
+            param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
 
             method = Tsit5()
             a_tol = 1e-9
@@ -449,7 +468,7 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
             initial_time, final_time = time_0, time_0 + 1000
 
             # Parameter Definition
-            param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere)
+            param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
 
             method = Tsit5()
             a_tol = 1e-9
@@ -462,8 +481,8 @@ function asim(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval
             sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
         end
 
-        return sol[:,:]
+        return sol
     end
 
-    return sol[:,:], time_switch
+    return sol, time_switch
 end

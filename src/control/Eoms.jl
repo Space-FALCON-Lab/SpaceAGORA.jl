@@ -44,7 +44,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
     if config.cnf.count_numberofpassage != 1
         t_prev = config.solution.orientation.time[end]
     else
-        t_prev = value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # m.initialcondition.time_rot
+        t_prev = m.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # m.initialcondition.time_rot
     end
 
     # v0_pp = r_intor_p(r0, v0, m.planet, time_0, t_prev)[2]
@@ -107,10 +107,8 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
 
         # Angular Momentum Calculations
         h_ii = cross(pos_ii, vel_ii)        # Inertial angular momentum vector[m ^ 2 / s]
-
         h_ii_mag = norm(h_ii)               # Magnitude of the inertial angular momentum
         h_pp = cross(pos_pp, vel_pp)        # Planet relative angular momentum vector
-
         h_pp_mag = norm(h_pp)               # Magnitude of the planet relative angular momentum
         h_pp_hat = h_pp / h_pp_mag          # Unit vector of the planet relative angular momentum
 
@@ -257,9 +255,16 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         g_ii = norm(gravity_ii)
 
         # EOM
-        lambdav_dot = -3 * k_cf * ρ * vel_ii_mag^2 * aoa / pi + lambdav_ii * (ρ* area_tot * CD * vel_ii_mag) / mass - lambdagamma_ii * ((ρ * area_tot * CL) / (2 * mass) + g_ii /  vel_ii_mag^2 + 1 / (pos_ii_mag)) - lambdah_ii * γ_ii
+        lambdav_dot = -3 * k_cf * ρ * vel_ii_mag^2 * aoa / pi + 
+                      lambdav_ii * (ρ* area_tot * CD * vel_ii_mag) / mass - 
+                      lambdagamma_ii * ((ρ * area_tot * CL) / (2 * mass) + g_ii /  vel_ii_mag^2 + 1 / (pos_ii_mag)) - 
+                      lambdah_ii * γ_ii
+        
         lambdag_dot = lambdav_ii * g_ii - lambdah_ii * vel_ii_mag
-        lambdah_dot = k_cf * ρ * vel_ii_mag^3 * aoa/ (pi * m.planet.H) - lambdav_ii * ((ρ * area_tot *CD * vel_ii_mag^2) / (2 * mass * m.planet.H) + 2 * g_ii * γ_ii/ (pos_ii_mag)) + lambdagamma_ii * (ρ * area_tot * CL * vel_ii_mag / (2 * mass * m.planet.H) - 2 * g_ii / ((pos_ii_mag) * vel_ii_mag) + vel_ii_mag / (pos_ii_mag)^2)
+        
+        lambdah_dot = k_cf * ρ * vel_ii_mag^3 * aoa/ (pi * m.planet.H) - 
+                      lambdav_ii * ((ρ * area_tot *CD * vel_ii_mag^2) / (2 * mass * m.planet.H) + 2 * g_ii * γ_ii/ (pos_ii_mag)) + 
+                      lambdagamma_ii * (ρ * area_tot * CL * vel_ii_mag / (2 * mass * m.planet.H) - 2 * g_ii / ((pos_ii_mag) * vel_ii_mag) + vel_ii_mag / (pos_ii_mag)^2)
 
         y_dot[1:3] = vel_ii
         y_dot[4:6] = force_ii / mass
@@ -280,7 +285,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
     end
     function out_drag_passage_affect!(integrator)
         # println("entered out_drag_passage_affect! in Eoms.jl")
-        config.cnf.t_out_drag_passage = integrator.t
+        append!(config.cnf.t_out_drag_passage, integrator.t)
         terminate!(integrator)
     end
     out_drag_passage = ContinuousCallback(out_drag_passage_condition, out_drag_passage_affect!, nothing)
@@ -374,7 +379,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
                 break
             end
 
-            prob = ODEProblem(f!, in_cond, (config.cnf.t_out_drag_passage, -10), param)
+            prob = ODEProblem(f!, in_cond, (config.cnf.t_out_drag_passage[1], -10), param)
             sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
 
             lambdav = sol[7,end]
@@ -415,16 +420,16 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
         sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
 
-        temp = config.cnf.t_out_drag_passage
+        temp = config.cnf.t_out_drag_passage[2]
 
         ## Time switch definition
-        time_switch = [0, 0]
+        time_switch = [0.0, 0.0]
 
         if length(temp) == 2
-            time_switch = floor(Int64, temp)
+            time_switch .= temp
         elseif length(temp) == 1
-            time_switch[1] = floor(Int64, temp)
-            time_switch[2] = floor(Int64, sol.t[end])
+            time_switch[1] = temp
+            time_switch[2] = sol.t[end]
         end
 
     else  # second time evaluation
@@ -443,6 +448,10 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
 
         temp_0 = 0
         tp = 1000
+
+        index_phase_aerobraking = nothing
+        aerobraking_phase = nothing
+        initial_state = nothing
 
         # Initial Condition Initialization
         in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], 0.0, 0.0, 0.0, config.cnf.heat_load_past]

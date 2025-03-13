@@ -121,6 +121,7 @@ function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, po
         start_reevaluation = true
     end
 
+    # Calculate time switches
     if (config.cnf.evaluate_switch_heat_load == false)
         if args[:flash2_through_integration] == 1
             if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 1
@@ -147,10 +148,10 @@ function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, po
             if args[:flash2_through_integration] == 1
                 config.cnf.time_switch_1, config.cnf.time_switch_2 = second_time_switch_recalc_with_integration(ip, m, position, args, t, heat_rate_control, reevaluation_mode, gram_atmosphere, current_position)
             else
-                config.cnf.time_switch_1, config.cnf.time_switch_2 = second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, reevaluation_mode, current_position)
+                config.cnf.time_switch_1, config.cnf.time_switch_2 = second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, current_position, reevaluation_mode)
             end
         end
-    elseif config.cnf.heat_load_past > 0.98*m.aerodynamics.heat_load_limit && (config.cnf.heat_load_past - config.cnf.heat_load_ppast) < 2 && args[:security_mode] == 1 && config.snf.security_mode == false && index_ratio[2] == 1
+    elseif config.cnf.heat_load_past > 0.98*m.aerodynamics.heat_load_limit && (config.cnf.heat_load_past - config.cnf.heat_load_ppast) < 2 && args[:security_mode] == 1 && config.cnf.security_mode == false && index_ratio[2] == 1
         config.cnf.time_switch_1, config.cnf.time_switch_2 = security_mode(ip, m, position, args, t, false)
     end
 
@@ -174,7 +175,7 @@ function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, po
 end
 
 function control_solarpanels_openloop(ip, m, args, index_ratio, state, t=0, position=0, current_position=0, heat_rate_control=true, gram_atmosphere=nothing)
-    control_solarpanels_heatload(ip, m, args, index_ratio, t, position, current_position, gram_atmosphere, heat_rate_control, state)
+    control_solarpanels_heatload(ip, m, args, index_ratio, 0, t, position, current_position, gram_atmosphere, heat_rate_control)
 
     if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 3
         if t >= config.cnf.time_switch_1 && t <= config.cnf.time_switch_2

@@ -241,12 +241,18 @@ function aerobraking_campaign(args, state)
             end
 
             name = args[:directory_results] * "/" * folder_name
+
             if !isdir(args[:directory_results])
                 mkpath(args[:directory_results])
             end
+            
             filename = name * ".csv"
         else
             name = args[:directory_results] * "/" * "GRAMver_" * string(args[:Gram_version])
+
+            if !isdir(args[:directory_results])
+                mkpath(args[:directory_results])
+            end
 
             filename = name * ".csv"
         end

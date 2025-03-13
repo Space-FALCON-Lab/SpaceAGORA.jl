@@ -48,16 +48,16 @@ function second_time_switch_recalc_with_integration(ip, m, position, args, t, he
         b = t + 1500
     end
 
-    try
-        time_switch_2 = fzero(k -> func(k), [t, b], Roots.Brent())
-    catch
-        nothing
-    end
+    # try
+        time_switch = fzero(k -> func(k), [t, b], Roots.Brent())
+    # catch
+    #     nothing
+    # end
 
     return config.cnf.time_switch_1, time_switch
 end
 
-function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, reevaluation_mode=0, current_position=0)
+function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, current_position=0, reevaluation_mode=0)
     # Evaluates past heat load
     aoa_past = config.cnf.α_list
     time_switch_1 = config.cnf.time_switch_1
@@ -92,6 +92,7 @@ function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, 
         end
 
         ρ = density_exp(h_cf, m.planet)[1]
+
         ρ_tilltsw = ρ[index_tilltsw]
         ρ_remaining = ρ[index_remaining]
 
@@ -157,11 +158,7 @@ function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, 
 
     b = t + 200
 
-    try
-        time_switch_2 = fzero(k -> func(k), [t, b], Roots.Brent())
-    catch
-        nothing
-    end
+    time_switch_2 = fzero(k -> func(k), [t, b], Roots.Brent())
 
     time_switch_2 -= time_switch_2*0.1
 

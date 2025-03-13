@@ -26,9 +26,18 @@ function lambdas(m, aoa, k, t, h, γ, v, coeff)
     g = g0 * Rp^2 ./ (Rp .+ h).^2
 
     for ii in collect(range(start=length(t), step=-1, stop=2))
-        lambdav_dot = -3 * k * ρ[ii - 1] * v[ii - 1]^2 * aoa[ii - 1] / pi + lambdav[ii] * (ρ[ii - 1] * S_ref * (CD_0 + aoa[ii - 1] * CD_slope) * v[ii - 1]) / mass - lambdag[ii] * ((ρ[ii - 1] * S_ref * CL_0) / (2 * mass) + g[ii - 1] / v[ii - 1]^2 + 1 / (Rp + h[ii - 1])) - lambdah[ii] * γ[ii - 1]
+        lambdav_dot = -3 * k * ρ[ii - 1] * v[ii - 1]^2 * aoa[ii - 1] / pi + 
+                      lambdav[ii] * (ρ[ii - 1] * S_ref * (CD_0 + aoa[ii - 1] * CD_slope) * v[ii - 1]) / mass - 
+                      lambdag[ii] * ((ρ[ii - 1] * S_ref * CL_0) / (2 * mass) + g[ii - 1] / v[ii - 1]^2 + 
+                      1 / (Rp + h[ii - 1])) - lambdah[ii] * γ[ii - 1]
+
         lambdag_dot = lambdav[ii] * g[ii - 1] - lambdah[ii] * v[ii - 1]
-        lambdah_dot = k * ρ[ii - 1] * v[ii - 1]^3 * aoa[ii - 1] / (pi * H) - lambdav[ii] * ((ρ[ii - 1] * S_ref * (CD_0 + aoa[ii - 1] * CD_slope) * v[ii - 1]^2) / (2 * mass * H) + 2 * g[ii - 1] * γ[ii - 1] / (Rp + h[ii - 1])) + lambdag[ii] * (ρ[ii - 1] * S_ref * CL_0 * v[ii - 1] / (2 * mass * H) - 2 * g[ii - 1] / ((Rp + h[ii - 1]) * v[ii - 1]) + v[ii - 1] / (Rp + h[ii - 1])^2)
+        
+        lambdah_dot = k * ρ[ii - 1] * v[ii - 1]^3 * aoa[ii - 1] / (pi * H) - 
+                      lambdav[ii] * ((ρ[ii - 1] * S_ref * (CD_0 + aoa[ii - 1] * CD_slope) * v[ii - 1]^2) / (2 * mass * H) + 
+                      2 * g[ii - 1] * γ[ii - 1] / (Rp + h[ii - 1])) + 
+                      lambdag[ii] * (ρ[ii - 1] * S_ref * CL_0 * v[ii - 1] / (2 * mass * H) - 
+                      2 * g[ii - 1] / ((Rp + h[ii - 1]) * v[ii - 1]) + v[ii - 1] / (Rp + h[ii - 1])^2)
 
         lambdav[ii - 1] = lambdav[ii] - lambdav_dot * (t[ii] - t[ii - 1])
         lambdag[ii - 1] = lambdag[ii] - lambdag_dot * (t[ii] - t[ii - 1])
@@ -71,14 +80,14 @@ function func(k_cf, m, args, coeff, position, heat_rate_control, approx_sol, aoa
 
         a = sqrt(m.planet.γ * m.planet.R * T)
         M = v_cf / a
-        S = sqrt(m.planet.γ) * M
+        S = sqrt(m.planet.γ/2) * M
         ρ = density_exp(h_cf, m.planet)[1]  # density calculated through exponential density
 
         heat_rate = heat_rate_calc(args[:multiplicative_factor_heatload] * m.aerodynamics.thermal_accomodation_factor, ρ, T, T, m.planet.R, m.planet.γ, S, aoa_cf)
 
         if heat_rate_control == true # Account for max heat rate possible
             index_hr = heat_rate .> args[:max_heat_rate]
-            heat_rate[index_hr] = args[:max_heat_rate]
+            heat_rate[index_hr] .= args[:max_heat_rate]
         end
 
         Q = sum(heat_rate) * t_cf[end] / length(t_cf)

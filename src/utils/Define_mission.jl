@@ -63,37 +63,10 @@ function def_miss(args)
         println("--THRUST MODIFIED TO 0.1 N--")
     end
 
-    # if args[:machine] == "Aero"
-    #     if !args[:directory_results]
-    #         args[:directory_results] = "/Users/nikus/Aerobraking_SA_project_results/"
-    #     end
-    #     args[:directory_Gram] = "/Users/nikus/MarsGram/"
-    # elseif args[:machine] == "Cluster"
-    #     if !args[:directory_results]
-    #         args[:directory_results] = "/home/nihalsim/Aerobraking_SA_project_results/"
-    #     end
-    #     args[:directory_Gram] = "/home/nihalsim/"
-    # elseif args[:machine] == "Desktop_Home"
-    #     if !args[:directory_results]
-    #         args[:directory_results] = "/Users/nikus/Aerobraking_SA_project_results/"
-    #     end
-    #     args[:directory_Gram] = "/Users/nikus/MarsGram/"
-    # elseif args[:machine] == "Laptop"
-    #     if !args[:directory_results]
-    #         args[:directory_results] = "/Users/nikus/Aerobraking_SA_project_results/"
-    #     end
-    #     args[:directory_Gram] = "/Users/nikus/MarsGram/"
-    # end
-
-    # if args[:density_model] == "Gram" && args[:planet] != 1 # Change for venus gram use
-    #     args[:density_model] = "Exponential"
-    #     println("--DENSITY MODEL CHANGED TO: Exponential - GRAM is only available for Mars--")
-    # end
-
     if Bool(args[:Odyssey_sim])
-        args[:control_mode] = 2
+        args[:control_mode] = 0
         args[:type_of_mission] = "Aerobraking Campaign"
-        args[:number_of_orbits] = 3
+        args[:number_of_orbits] = 250
         args[:planet] = 1 # "Mars"
         args[:body_shape] = "Spacecraft"
         args[:dry_mass] = 411.0

@@ -8,10 +8,10 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/odyssey_gamma_v_ic_test",            # Directory where to save the results
-            :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                   # Directory where Gram is
-            :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",           # Directory where Gram data is
-            :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
+            :directory_results => "/workspaces/ABTS.jl/output/odyssey_heatload_control_in_loop",                # Directory where to save the results
+            :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
+            :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
+            :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
             :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
@@ -39,7 +39,6 @@ args = Dict(# Misc Simulation
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
             :save_rate => 3.0,                                      # Rate at which the data trajectory are saved
-            :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             
             # Body
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
@@ -67,17 +66,18 @@ args = Dict(# Misc Simulation
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
-            :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
+            :control_mode => 2,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
             :security_mode => 0,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
-            :second_switch_reevaluation => 0,                       # Reevaluation of the second switch time when the time is closer to it
+            :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
+            :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             
             # Initial Conditions
-            :initial_condition_type => 1,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 28038000, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
+            :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
+            :ra_initial_a => 28523.95e3, # 15000e3, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 88000,                                 # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_a => 91e3,                                 # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 159000.0,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
@@ -86,23 +86,23 @@ args = Dict(# Misc Simulation
             :γ_initial_a => 2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_step => 10.5,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :inclination => 93.522,                                # Inclination Orbit, deg
-            :ω => 109.7454,                                              # AOP, deg
-            :Ω => 28.1517,                                              # RAAN, deg
+            :inclination => 93.6,                                # Inclination Orbit, deg
+            :ω => 0,                                              # AOP, deg
+            :Ω => 0,                                              # RAAN, deg
             :EI => 160.0,                                           # Entry Interface, km
             :AE => 160.0,                                           # Atmospheric Exit, km
             :year => 2001,                                          # Mission year
             :month => 11,                                            # Mission month
             :day => 6,                                             # Mission day
-            :hours => 0,                                           # Mission hour
-            :minutes => 0,                                         # Mission minute
+            :hours => 8,                                           # Mission hour
+            :minutes => 30,                                         # Mission minute
             :secs => 0,                                          # Mission second
             
             # Final Conditions
             :final_apoapsis => 4905.974818462152e3, # 5088116.837416616, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
 
             # Do not change
-            :heat_load_sol => 0,                                    # Heat load solution #leave it to 0 and change it only for control mode = 2:  Max energy depletaion=0, Min energy depletion=1, One switch max-min=2, One switch min-max = 3
+            :heat_load_sol => 0,                                    # Heat load solution leave it to 0 and change it only for control mode = 2:  Max energy depletaion=0, Min energy depletion=1, One switch max-min=2, One switch min-max = 3
             :thrust_control => "None",                              # choices=['None' , 'Aerobraking Maneuver' , 'Drag Passage Firing']
             :phi => 180.0,                                          # Thrust Angle, deg
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
@@ -140,6 +140,8 @@ args = Dict(# Misc Simulation
             :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
+
+            # Mission Selection
             :Odyssey_sim => 0,                                      # Simulate Odyssey Mission
             :vex_sim => 0,                                          # Simulate Venus Express Mission   
             :magellan_sim => 0                                     # Simulate Magellan Mission

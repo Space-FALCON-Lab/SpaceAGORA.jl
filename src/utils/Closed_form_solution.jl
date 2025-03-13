@@ -175,9 +175,9 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     # println("")
 
     # TODO: NEEDS TO CHANGE THIS TO ARGS[:EI]
-    if h0 < 160*1e3 #if initial condition are lower than drag passage initial condition #this happens only running MC cases
+    if h0 < args[:EI]*1e3 #if initial condition are lower than drag passage initial condition #this happens only running MC cases
         # let's calculate pos_ii,v_ii for the point of trajectory corresponding to h = 160 km
-        h0 = 160*1e3
+        h0 = args[:EI]*1e3
         r = mission.planet.Rp_e + h0
         OE = rvtoorbitalelement(pos_ii_org, vel_ii_org, mission, mission.planet)
         a, e, i, Ω, ω, vi = OE[1], OE[2], OE[3], OE[4], OE[5], OE[6]
@@ -218,7 +218,6 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
 
     # println(size(h_cf))
 
-    # ρ, ~, ~ = density_exp.(h_cf, fill(mission.planet, size(h_cf)))
     ρ = density_exp(h_cf, mission.planet)[1]
 
     # println(" ")
@@ -240,7 +239,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
             α_profile = α_profile[1:length(t_cf)]
         elseif length(α_profile) < length(t_cf)
             last_α = α_profile[end]
-            α_profile = α_profile + [last_α] * (length(t_cf) - length(α_profile))
+            α_profile = α_profile .+ last_α * ones(length(t_cf) - length(α_profile))
         end
     end
 
@@ -258,7 +257,8 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     mean_d = -0.001
 
     f1 = -0.005 * v0 + 27.87
-    f2 = (a0 * (mean_a^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_b * (v0/1000 - 3.7))) + c0 * (mean_c^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_d * (v0/1000 - 3.7)))) * (t_cf) / (2 * t_p)
+    f2 = (a0 * (mean_a^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_b * (v0/1000 - 3.7))) + 
+          c0 * (mean_c^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_d * (v0/1000 - 3.7)))) * (t_cf) / (2 * t_p)
 
     f2_solar_panels = f2 * α * mission.body.area_SA / Area_tot
     f2_spacecraft = f2 * pi / 2 * mission.body.area_SC / Area_tot
@@ -266,7 +266,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     ϵ = f1 .+ f2_solar_panels .+ f2_spacecraft
 
     k1 = (cost_2 .+ (1 ./ (Rp .+ h_cf)))
-    k2 = (cost_1 .* cost_3) .* (1 .- t_cf/t_p)
+    k2 = (cost_1 * cost_3) .* (1 .- t_cf/t_p)
     k3 = -mission.planet.g_ref .- ϵ
 
     cost = v0 - (k2[1]/k1[1] - sqrt((k2[1]/k1[1])^2 - 4 * (k3[1]/k1[1]))) / 2
@@ -275,7 +275,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     # println(size(k1))
     # println(" ")
 
-    v_cf = ((k2 ./ k1) - sqrt.((k2 ./ k1).^2 - 4*(k3 ./ k1))) / 2 .+ cost
+    v_cf = ((k2 ./ k1) .- sqrt.((k2 ./ k1).^2 - 4*(k3 ./ k1))) / 2 .+ cost
     γ_cf = cost_3 * (1 .- t_cf./t_p) ./ v_cf
     t_cf = [item + t0 for item in t_cf]
 

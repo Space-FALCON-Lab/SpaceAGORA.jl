@@ -23,7 +23,7 @@ function switch_calculation_with_integration(ip, m, position, args, t, heat_rate
     delta_Q_min = func(0)
 
     if delta_Q_max * delta_Q_min < 0
-        find_zero(k -> func(k), (3.3, 4.5), Bisection())
+        find_zero(k -> func(k), [3.3, 4.5], Bisection())
     elseif delta_Q_max < 0
         if args[:heat_load_sol] == 0 && args[:heat_load_sol] == 3
             return [0, 0]
@@ -43,7 +43,7 @@ end
 
 function switch_calculation(ip, m, position, args, t, heat_rate_control, reevaluation_mode, current_position=0)
 
-    global t_cf, h_cf, γ_cf, v_cf
+    # global t_cf, h_cf, γ_cf, v_cf
 
     T = m.planet.T
 
@@ -57,7 +57,7 @@ function switch_calculation(ip, m, position, args, t, heat_rate_control, reevalu
 
     CD_slope = (CD_90 - CD_0) / (pi/2)
 
-    coeff = [CD_slope, CL_0, CD_0]
+    coeff = (CD_slope, CL_0, CD_0)
 
     # Evaluates max Q
     aoa_cf = aoa(m, 0.1, t_cf, h_cf, γ_cf, v_cf, coeff)[1]
@@ -79,7 +79,7 @@ function switch_calculation(ip, m, position, args, t, heat_rate_control, reevalu
 
     lambda_switch, lambdav = lambdas(m, aoa_cf, k_cf, t_cf, h_cf, γ_cf, v_cf, coeff)[1:2]
 
-    index_array = (lambdav .< lambda_switch)
+    index_array = lambdav .< lambda_switch
 
     temp = t_cf .* index_array
 

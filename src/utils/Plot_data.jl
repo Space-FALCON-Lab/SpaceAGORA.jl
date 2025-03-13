@@ -23,10 +23,43 @@ function plots(state, m, name, args)
         angle_of_attack_plot(name, args)
     end
 
+    if args[:type_of_mission] == "Drag Passage"
+        drag_passage_plot(name, args)
+    end
+
     if args[:Odyssey_sim] == 1 || args[:vex_sim] == 1 || args[:magellan_sim] == 1
         ABM_periapsis(name)
     end
+end
 
+function drag_passage_plot(name, args)
+    alt_idx = findall(x -> x < args[:AE]*1e3, config.solution.orientation.alt)
+
+    time = [config.solution.orientation.time[i] for i in alt_idx]
+    aoa = [rad2deg(config.solution.physical_properties.α[i]) for i in alt_idx]
+    trace1 = scatter(x=time, y=aoa, mode="lines", line=attr(color="black"))
+    layout = Layout(xaxis_title="Time [s]", yaxis_title="α [deg]")
+    p_aoa = plot(trace1, layout)
+
+    index = findall(x -> x > 0, config.solution.performance.heat_rate)
+    
+    time = [config.solution.orientation.time[i] for i in index]
+    heat_rate = config.solution.performance.heat_rate[index]
+    trace2 = scatter(x=time, y=heat_rate, mode="lines", line=attr(color="black"))
+    layout = Layout(xaxis_title="Time [s]", yaxis_title="Heat Rate [W/cm^2]")
+    p_heatrate = plot(trace2, layout)
+
+    time = [config.solution.orientation.time[i] for i in index]
+    heat_load = [config.solution.performance.heat_load[i] for i in index]
+    trace3 = scatter(x=time, y=heat_load, mode="lines", marker=attr(color="black"))
+    layout = Layout(xaxis_title="Time [s]", yaxis_title="Heat Load [J/cm^2]")
+    p_heatload = plot(trace3, layout)
+
+    p = [p_aoa; p_heatrate; p_heatload]
+    relayout!(p, width=2200, height=1000, template="simple_white", showlegend=false)
+
+    display(p)
+    savefig(p, name * "_drag_passage.pdf", format="pdf")
 end
 
 function angle_of_attack_plot(name, args)
@@ -84,10 +117,8 @@ function angle_of_attack_plot(name, args)
 end
 
 function closed_form_solution_plot(name, mission)
-    println("alt: $(config.solution.orientation.alt)")
-
     alt = [item - mission.planet.Rp_e for item in config.solution.orientation.pos_ii_mag]
-    alt_idx = findall(x -> x <= args[:EI]*1e3, alt)
+    alt_idx = findall(x -> x <= (args[:EI] + 100)*1e3, alt)
 
     index_orbit = [1]
     time_0 = [config.solution.orientation.time[alt_idx[1]]]
@@ -162,7 +193,7 @@ function performance_plots(state, m, name, args)
         plot_traces_1 = scatter(x=[item/(60*60*24) for item in config.solution.orientation.time], y=[item * 1e-6 for item in config.solution.forces.energy], mode="lines", line=attr(color="black"))
         layout_1 = Layout(xaxis_title="Time [days]", yaxis_title="Energy [MJ/kg]")
     else
-        index = findall(x -> x < 200*1e3, config.solution.orientation.alt)
+        index = findall(x -> x < (args[:EI] + 100)*1e3, config.solution.orientation.alt)
         alt = config.solution.orientation.alt[index]
 
         index_orbit = [1]

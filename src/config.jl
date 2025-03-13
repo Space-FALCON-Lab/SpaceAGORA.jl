@@ -165,7 +165,7 @@ module config
         count_guidance::Int64 = 0
         count_heat_rate_check::Int64 = 0
         count_heat_load_check_exit::Int64 = 0
-        t_out_drag_passage::Float64 = 0.0
+        t_out_drag_passage::Vector{Float64} = []
 
         n_bodies_list::Vector{Planet} = []
         DU::Float64 = 0.0

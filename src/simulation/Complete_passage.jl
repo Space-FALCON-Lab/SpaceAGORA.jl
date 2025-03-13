@@ -259,7 +259,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         sound_velocity = sqrt(γ * m.planet.R * T_p)
         Mach = vel_pp_mag / sound_velocity
         S = sqrt(γ/2) * Mach    # Molecular speed ratio
-        heat_load = in_cond[8] * config.cnf.MU / config.cnf.TU^2
+        heat_load = in_cond[8] * config.cnf.MU / config.cnf.TU^3 * 1e4
 
         if config.cnf.drag_state == true
             ## Check type of fluid and check if this changes for different planets
@@ -290,14 +290,15 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # println(" ")
         # println("drag_state: ", config.cnf.drag_state)
         # println(" ")
+
         # Heat rate and Control
         if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
             # evaluates the closed form solution the first time at EI km
             if abs(pos_ii_mag - m.planet.Rp_e - args[:EI] * 1e3) <= 1e-2 && (args[:control_mode] == 2 || args[:control_mode] == 3) && config.cnf.time_switch_1 == 0
                 if ip.cm == 3
-                    control_solarpanels_openloop(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, gram_atmosphere)
+                    control_solarpanels_openloop(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, 0, true, gram_atmosphere)
                 elseif ip.cm == 2
-                    control_solarpanels_heatload(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, gram_atmosphere)
+                    control_solarpanels_heatload(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, 0, gram_atmosphere)
                 elseif ip.cm == 1
                     control_solarpanels_heatrate(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
                 elseif ip.cm == 0
@@ -329,7 +330,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 if Bool(args[:control_in_loop])
                     config.cnf.state_flesh1 = [[T_p, ρ, S]]
                     if ip.cm == 3
-                        config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
+                        config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
                     elseif ip.cm == 2
                         config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
                     elseif ip.cm == 1
@@ -354,7 +355,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         config.controller.prev_time = time_0
 
                         if ip.cm == 3
-                            config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
+                            config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
                         elseif ip.cm == 2
                             config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
                         elseif ip.cm == 1
@@ -1181,9 +1182,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 # Parameter Definition
                 param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
 
-                println("")
-                println("pos: " * string(norm(in_cond[1:3]) * config.cnf.DU) * " vel: " * string(norm(in_cond[4:6]) * config.cnf.DU / config.cnf.TU)) 
-                println("")
+                # println("")
+                # println("pos: " * string(norm(in_cond[1:3]) * config.cnf.DU) * " vel: " * string(norm(in_cond[4:6]) * config.cnf.DU / config.cnf.TU)) 
+                # println("")
 
                 # println(in_cond[7])
                 # Run simulation

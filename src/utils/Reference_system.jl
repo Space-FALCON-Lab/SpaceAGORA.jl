@@ -8,7 +8,7 @@ function r_intor_p(r_i, v_i, planet, t, t_prev, date_initial, t0)
 
     # rot_angle = norm(planet.ω) * (t + t_prev)
 
-    current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
+    current_time =  value(seconds(date_initial + t0*seconds - from_utc(DateTime(2000, 1, 1, 12, 0, 0.0)))) # current time in seconds since J2000
     primary_body_name = planet.name
     
     L_pi = pxform("J2000", "IAU_"*uppercase(primary_body_name), current_time)*planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
@@ -76,7 +76,6 @@ function rvtoorbitalelement(r, v, m, planet)
     i = acos(dot(i_z, h)/norm(h))
 
     e_vers = e / norm(e)
-
     if i == 0 || i == pi
         if dot(e, i_y) >= 0
             periapsis_longitude = acos(dot(i_x, e_vers))
@@ -185,13 +184,13 @@ function latlongtor(LATLONGH, planet, α_g0, t, t0)
     return [x, y, z]
 end
 
-function rtolatlong(r_p, planet)
+function rtolatlong(r_p, planet, spherical_harmonic_topography=false)
     # From PCPF to LLA through Bowring's method https://www.mathworks.com/help/aeroblks/ecefpositiontolla.html;jsessionid=2ae36964c7d5f2115d2c21286db0?nocookie=true
     x_p = r_p[1]
     y_p = r_p[2]
     z_p = r_p[3]
 
-    f = (planet.Rp_e - planet.Rp_p) / planet.Rp_e
+    f = 0.0064763 # (planet.Rp_e - planet.Rp_p) / planet.Rp_e
     e = 1 - (1 - f)^2 # ellipticity (NOTE =  considered as square)
     r = sqrt(x_p^2 + y_p^2)
 
@@ -215,8 +214,17 @@ function rtolatlong(r_p, planet)
     #Calculate longitude
     lon = atan(y_p, x_p)
     # Calculate Altitude
-    N = planet.Rp_e / sqrt(1 - e*sin(lat)^2)
-    alt = r*cos(lat) + (z_p + e*N*sin(lat))*sin(lat) - N
+    if !spherical_harmonic_topography
+        N = planet.Rp_e / sqrt(1 - e*sin(lat)^2)
+        alt = r*cos(lat) + (z_p + e*N*sin(lat)^2)*sin(lat) - N
+    else
+        alt = norm(r_p) - planet.topography_function(args, 
+                                                    planet.Clm_topo, 
+                                                    planet.Slm_topo, 
+                                                    lat, 
+                                                    lon,
+                                                    planet.A_topo)
+    end
     
     return [alt, lat, lon]
 end

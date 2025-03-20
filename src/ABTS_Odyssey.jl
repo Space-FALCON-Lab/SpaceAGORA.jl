@@ -22,14 +22,18 @@ args = Dict(# Misc Simulation
 
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 2,                                 # Number of aerobraking passage
+            :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
+            :number_of_orbits => 150,                                 # Number of aerobraking passage
 
             # Physical Model
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
+            :topography_model => "Spherical Harmonics",                             # choices=['None' , 'Spherical Harmonics']
+            :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/MOLA.csv", # File with the topography harmonics coefficients
+            :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
+            :topo_order => 90,                                      # Maximum order of the topography harmonics (Defined in the file)
             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
             :aerodynamic_model => "Mach-dependent",                 # choices=['Cd and Cl Constant' , 'Mach-dependent' , 'No-Ballistic flight with axial coefficient']: "Mach-dependent" specific for spacecraft shape, "No-Ballistic flight" specific for blunted-cone shape
             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
@@ -37,15 +41,15 @@ args = Dict(# Misc Simulation
             # Perturbations
             :n_bodies => [],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :srp => 0,                                             # Solar Radiation Pressure True=1, False=0
-            :gravity_harmonics => 1,                                            # Spherical harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/Mars50c.csv", # File with the gravity harmonics data
+            :gravity_harmonics => 1,                                            # Gravity Spherical harmonics True=1, False=0
+            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/Mars50c.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
 
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
-            :save_rate => 3.0,                                      # Rate at which the data trajectory are saved
+            :save_rate => 1.0,                                      # Rate at which the data trajectory are saved
             :control_in_loop => 0,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             
@@ -81,29 +85,29 @@ args = Dict(# Misc Simulation
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 28038000, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_a => 4620.0e3, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 88000,                                 # Initial Periapsis Altitude for for-loop in m
-            :hp_initial_b => 159000.0,                              # Final Periapsis Altitude for for-loop in m
-            :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
-            :v_initial_a => 3700.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :hp_initial_a => (3780.0-3397)*1e3,                                 # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_b => 1590000.0,                              # Final Periapsis Altitude for for-loop in m
+            :hp_step => 1e12,                                 # Step Periapsis Radius for for-loop in m
+            :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :v_step => 100.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :γ_initial_a => 2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :v_step => 1000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :γ_initial_a => -2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :γ_step => 0.5,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :inclination => 125.446,                                   # Inclination Orbit, deg
-            :ω => 0.0,                                              # AOP, deg
-            :Ω => 0.0,                                              # RAAN, deg
+            :γ_step => 100,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :inclination => 45.0,                                   # Inclination Orbit, deg
+            :ω => 69.0,                                              # AOP, deg
+            :Ω => 69.0,                                              # RAAN, deg
             :EI => 160.0,                                           # Entry Interface, km
             :AE => 160.0,                                           # Atmospheric Exit, km
-            :year => 1993,                                          # Mission year
-            :month => 5,                                           # Mission month
-            :day => 25,                                             # Mission day
-            :hours => 10,                                           # Mission hour
-            :minutes => 21,                                         # Mission minute
-            :secs => 28.0,                                          # Mission second
+            :year => 2001,                                          # Mission year
+            :month => 11,                                           # Mission month
+            :day => 6,                                             # Mission day
+            :hours => 12,                                           # Mission hour
+            :minutes => 0,                                         # Mission minute
+            :secs => 0.0,                                          # Mission second
             
             # Final Conditions
             :final_apoapsis => 5088116.837416616, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
@@ -148,15 +152,15 @@ args = Dict(# Misc Simulation
             :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
-            :Odyssey_sim => 1                                      # Simulate Odyssey Mission
+            :Odyssey_sim => 0                                      # Simulate Odyssey Mission
             )
 
 # Calculating time of simulation
 t = @elapsed begin
             
     # Run the simulation
+    println("Threads: ", Threads.nthreads())
     sol = run_analysis(args)
-
     if Bool(args[:passresults])
         println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
     end

@@ -1,11 +1,11 @@
 using SPICE
-# using LegendrePolynomials
+using LoopVectorization
 using AssociatedLegendrePolynomials
 # import .config
 
 # Define delta function
 δ(x,y) = ==(x,y)
-
+δ(x) = δ(x,0)
 function gravity_n_bodies(et, pos_ii, p, n_body)
 
     primary_body_name = p.name
@@ -132,10 +132,10 @@ evaluate at x ∈ [0, 1]. The ALFs are computed through Increasing Degree Recurs
 formulas that keep either the degree or the order fixed. All ALFs for M > N are zero by
 definition.
 """
-function fnALF_IDR(x, N, M)
+function fnALF_IDR!(A, x, N, M)
     # Allocate the output array.
     # TODO: this should be done in-place to avoid allocating a new array at each run.
-    A = zeros(N+1,M+1)
+    # A = zeros(N+1,M+1)
 
     # Precompute sqrt
     ξ = √(1 - x^2)
@@ -144,7 +144,7 @@ function fnALF_IDR(x, N, M)
 
     # Sectorials
     if M > 0
-        for i=2:min(N+1,M+1)
+        @inbounds for i=2:min(N+1,M+1)
             # For ease of notation
             n = i - 1
 
@@ -157,7 +157,7 @@ function fnALF_IDR(x, N, M)
 
     # Zonals and tesserals
     for j = 1:M+1
-        for i = j+1:N+1
+        @inbounds for i = j+1:N+1
             # For ease of notation
             m = j - 1
             n = i - 1
@@ -190,15 +190,14 @@ functions, and recursions for the trigonometric functions of the longitude.
 
 The realization of the ECEF frame depends on the geopotential model.
 """
-function gradU_sph(rVec_sph, μ, RE, Clm, Slm, L, M)
+function gradU_sph!(rVec_sph, μ, RE, Clm, Slm, L, M, A)
     # Unpack spherical coordinates
     r, φ, λ = rVec_sph[1:3]
 
     # fnALFs until degree L and order M+1 (one more order is needed for ∂U/∂φ) 
     sinφ = sin(φ)
-    P_LM = fnALF_IDR(sinφ, L, M+1)
-    # println("ϕ", φ)
-    # println("P_LM: ", P_LM)
+    P_LM = fnALF_IDR!(A, sinφ, L, M+1)
+
     # Recursions for trig functions of λ, φ
     if M == 0
         sinmλ = [0.0]
@@ -210,7 +209,7 @@ function gradU_sph(rVec_sph, μ, RE, Clm, Slm, L, M)
         sinmλ = [0.0; sin(λ); zeros(M-1)]
         cosmλ = [1.0; cos(λ); zeros(M-1)]
     end
-    for j = 3:M+1
+    @inbounds for j = 3:M+1
         sinmλ[j] = 2cosmλ[2] * sinmλ[j-1] - sinmλ[j-2]
         cosmλ[j] = 2cosmλ[2] * cosmλ[j-1] - cosmλ[j-2]
     end
@@ -220,57 +219,55 @@ function gradU_sph(rVec_sph, μ, RE, Clm, Slm, L, M)
     # TODO: reformulate with lumped coefficients
     ∂U∂r, ∂U∂φ, ∂U∂λ = (0.0, 0.0, 0.0)
     REoverR = RE/r; REoverRl = REoverR^(L+1)
-    for l = L:-1:2
+    # ∂U∂r_list = zeros(L)
+    # ∂U∂φ_list = zeros(L)
+    # ∂U∂λ_list = zeros(L)
+    @inbounds for l = L:-1:2
         i = l + 1
         ∂U∂r_l, ∂U∂φ_l, ∂U∂λ_l = (0.0, 0.0, 0.0)
         M_max = min(M, l)
-        for m = M_max:-1:0
+        # ∂U∂r_l_list = zeros(M_max+1)
+        # ∂U∂φ_l_list = zeros(M_max+1)
+        # ∂U∂λ_l_list = zeros(M_max+1)
+        @inbounds @simd for m = M_max:-1:0
             j = m + 1
-            # println("l: ", l, " m: ", m)
-            # println("Clm: ", Clm[i,j], " Slm: ", Slm[i,j])
-            # P_LM = Plm(l, m, sinφ)
-            # P_LM_plus_1 = Plm(l, m+1, sinφ)
-            # P_LM_plus_1_ref = Plm(sinφ, l, m+1, norm=Val(:normalized))
-            # println("P_LM: ", P_LM_ref)
-            # println("P_LM_plus_1: ", P_LM_plus_1_ref)
-            # println("Plm: ", P_LM[i,j])
-            # println("Plm_plus_1: ", P_LM[i,j+1])
-            # cosmλ = cos(m*λ)
-            # sinmλ = sin(m*λ)
-            # ∂U∂r_l += P_LM * (Clm[i,j] * cosmλ + Slm[i,j] * sinmλ)
-            # ∂U∂λ_l += m * P_LM * ( -Clm[i,j] * sinmλ + Slm[i,j] * cosmλ)
-            # Π_ratio = √( ((l+m+1)*(l-m))/(1 + δ(m,0)) )
-            # ∂U∂φ_l += 
-            # ( Π_ratio * P_LM_plus_1 - m*tanφ*P_LM) * 
-            # (Clm[i,j] * cosmλ + Slm[i,j] * sinmλ)
-            # println("cosmλ: ", cosmλ[j])
-            # println("sinmλ: ", sinmλ[j])
-            # println("cos(mλ): ", cos(m*λ))
-            # println("sin(mλ): ", sin(m*λ))
             ∂U∂r_l += P_LM[i,j] * (Clm[i,j] * cosmλ[j] + Slm[i,j] * sinmλ[j])
+            
             ∂U∂λ_l += m * P_LM[i,j] * ( -Clm[i,j] * sinmλ[j] + Slm[i,j] * cosmλ[j] )
             
-            # k = m == 0 ? 2 : 1
-            Π_ratio = √( ((l+m+1)*(l-m))/(1 + δ(m,0)) )#√(((l-m-1)*k/(l+m+1)))# 
-            # println("Π_ratio: ", Π_ratio)
+            Π_ratio = √( ((l+m+1)*(l-m))/(1 + δ(m,0)) )
             ∂U∂φ_l += 
             ( Π_ratio * P_LM[i,j+1] - m*tanφ*P_LM[i,j] ) * 
             (Clm[i,j] * cosmλ[j] + Slm[i,j] * sinmλ[j])
+
+            # ∂U∂r_l_list[m+1] = P_LM[i,j] * (Clm[i,j] * cosmλ[j] + Slm[i,j] * sinmλ[j])
+            
+            # ∂U∂λ_l_list[m+1] = m * P_LM[i,j] * ( -Clm[i,j] * sinmλ[j] + Slm[i,j] * cosmλ[j] )
+            
+            # Π_ratio = √( ((l+m+1)*(l-m))/(1 + δ(m,0)) )
+            # ∂U∂φ_l_list[m+1] = 
+            # ( Π_ratio * P_LM[i,j+1] - m*tanφ*P_LM[i,j] ) * 
+            # (Clm[i,j] * cosmλ[j] + Slm[i,j] * sinmλ[j])
         end
+        # ∂U∂r_l = sum(∂U∂r_l_list)
+        # ∂U∂φ_l = sum(∂U∂φ_l_list)
+        # ∂U∂λ_l = sum(∂U∂λ_l_list)
         REoverRl /= REoverR
         ∂U∂r += REoverRl * (l+1) * ∂U∂r_l
         ∂U∂φ += REoverRl * ∂U∂φ_l
         ∂U∂λ += REoverRl * ∂U∂λ_l
-        # println("l: ", l, " ∂U∂r: ", ∂U∂r, " ∂U∂φ: ", ∂U∂φ, " ∂U∂λ: ", ∂U∂λ)
+        # ∂U∂r_list[l-1] = REoverRl * (l+1) * ∂U∂r_l
+        # ∂U∂φ_list[l-1] = REoverRl * ∂U∂φ_l
+        # ∂U∂λ_list[l-1] = REoverRl * ∂U∂λ_l
     end
-
+    # ∂U∂r = sum(∂U∂r_list)
+    # ∂U∂φ = sum(∂U∂φ_list)
+    # ∂U∂λ = sum(∂U∂λ_list)
     # Multiply by outer powers of 1/r
     ∂U∂r *= -μ/r^2
     ∂U∂φ *= μ/r
     ∂U∂λ *= μ/r
-    # println("∂U∂r: ", ∂U∂r)
-    # println("∂U∂φ: ", ∂U∂φ)
-    # println("∂U∂λ: ", ∂U∂λ)
+
     return [∂U∂r; ∂U∂φ; ∂U∂λ]
 end
 
@@ -307,3 +304,83 @@ function acc_NSG(rVec_cart, ∇U_sph)
     # println("norm(a): ", norm(a))
     return a
 end
+
+function acc_gravity_pines(rVec_cart, Clm, Slm, L, M, μ, RE)
+    """
+        Calculate the acceleration due to gravity using the Pines method.
+        (S. Pines, “Uniform Representation of the Gravitational Potential and its Derivatives,” AIAA Journal,
+        vol. 11, no. 11, pp. 1508–1511, 1973.))
+
+        Parameters
+        ----------
+        rVec_cart : Vector{Float64}
+            Position vector of the satellite in the ECEF frame.
+        latitude : Float64
+            Latitude of the satellite in radians.
+    """
+    # Define the dimensionless coordinates
+    x, y, z = rVec_cart
+    r = norm(rVec_cart)
+    s = x/r
+    t = y/r
+    u = z/r
+
+    # Precompute R, I, and A using recurrence relations
+    R = zeros(M)
+    I = zeros(M)
+    A = zeros(M, M)
+    ρ = zeros(L)
+
+    # Compute ρ TODO: precompute this
+    ρ[1] = μ/r
+    for l = 2:L
+        ρ[l] = ρ[l-1]*(RE/r)
+    end
+
+    # Compute R and I
+    R[1] = 1
+    I[1] = 0
+
+    for m = 1:M-1
+        R[m+1] = s * R[m] - t * I[m]
+        I[m+1] = s * I[m] + t * R[m]
+    end
+
+
+    # Compute A
+    for l = 2:L
+        for m = l:-1:2
+            # TODO: precompute these
+            N1 = √((2*l+1)*(2*l-1)/(l+m)/(l-m))
+            N2 = √((l+m-1)*(2*l+1)*(l-m-1)/(2*l-3)/(l+m)/(l-m))
+            if m == l
+                A[l, m] = √((2*l+1)*(2-δ(l))/(2*l)/(2-δ(l-1)))*A[l-1, l-1]
+            elseif m == l-1
+                A[l, m] = u*√((2*l)*(2-δ(l-1))/(2-δ(l)))*A[l,l]
+            else
+                A[l, m] = N1*u*A[l-1, m] - N2*A[l-2, m]
+            end
+        end
+    end
+
+    # Compute a1-a4
+    a1, a2, a3, a4 = (0.0, 0.0, 0.0, 0.0)
+    for l = 2:L
+        i = l + 1
+        for m = 1:min(l-1, M)
+            j = m + 1
+            Nlm_lm1 = √((l-m)*(2-δ(m))*(l+m+1)/(2-δ(m+1)))
+            Nlm_l1m1 = √((l+m+1)*(l+m+1)*(2*l+1)*(2-δ(m))/(2*l+3)/(2-δ(m+1)))
+            D = Clm[i,j]*R[j] + Slm[i,j]*I[j]
+            a1 += ρ[i+1]/RE*m*A[i,j]*(Clm[i,j]*R[j-1] + Slm[i,j]*I[j-1])
+            a2 += ρ[i+1]/RE*m*A[i,j]*(Slm[i,j]*R[j-1] - Clm[i,j]*I[j-1])
+            a3 += ρ[i+1]/RE*Nlm_lm1*A[i,j+1]*D
+            a4 += ρ[i+1]/RE*Nlm_lm1*A[i+1,j+1]*D
+        end
+    end
+
+    # Compute the acceleration
+    g = [a1 + s*a4; a2 + t*a4; a3 + u*a4]
+    return g
+end
+

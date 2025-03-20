@@ -17,21 +17,31 @@ args = Dict(# Misc Simulation
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
 
             # Type of Mission
-            :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
+            :type_of_mission => "Drag Passage",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 100,                                 # Number of aerobraking passage
+            :number_of_orbits => 1,                                 # Number of aerobraking passage
 
             # Physical Model
             :planet => 2,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                  # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
-            :n_bodies => ["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
+            :topography_model => "Spherical Harmonics",                             # choices=['None' , 'Spherical Harmonics']
+            :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/MGN-V-RDRS-5-TOPO-L2.csv", # File with the topography harmonics coefficients
+            :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
+            :topo_order => 90, 
             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
             :aerodynamic_model => "Mach-dependent",                 # choices=['Cd and Cl Constant' , 'Mach-dependent' , 'No-Ballistic flight with axial coefficient']: "Mach-dependent" specific for spacecraft shape, "No-Ballistic flight" specific for blunted-cone shape
             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
-            :srp => 1,                                             # Solar Radiation Pressure True=1, False=0
             
+
+            # Perturbations
+            :n_bodies => ["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
+            :srp => 0,                                             # Solar Radiation Pressure True=1, False=0
+            :gravity_harmonics => 1,                                # Gravity Harmonics True=1, False=0
+            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/MGNP180U.csv", # File with the gravity harmonics coefficients
+            :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
+            :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
@@ -70,19 +80,19 @@ args = Dict(# Misc Simulation
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             
             # Initial Conditions
-            :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
+            :initial_condition_type => 1,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
             :ra_initial_a => 66597e3 + 6.0518e6, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 1e21,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e21,                                       # Step Apoapsis Radius for for-loop in m
             :hp_initial_a => 186600.0,#176590.0,#188140.0                                 # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 1590000.0,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
-            :v_initial_a => 3700.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :v_step => 100.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :γ_initial_a => 2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :γ_step => 0.5,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :v_initial_a => 9300.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :v_initial_b => 10000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :v_step => 100000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :γ_initial_a => -16.6,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :γ_initial_b => -17.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :γ_step => -5.0,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
             :inclination => 89.876,                                   # Inclination Orbit, deg
             :ω => 75.505,                                              # AOP, deg
             :Ω => 104.115,                                              # RAAN, deg

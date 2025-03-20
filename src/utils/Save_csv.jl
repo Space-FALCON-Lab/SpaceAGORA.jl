@@ -8,6 +8,7 @@ function save_csv(filename, args)
     touch(filename)
 
     writer = open(filename, "w")
+    periapsis_alt = vcat(config.cnf.altitude_periapsis, zeros(length(config.solution.orientation.time) - length(config.cnf.altitude_periapsis)))
 
     data_push = DataFrame(time = config.solution.orientation.time,
                           year = config.solution.orientation.year,
@@ -97,7 +98,8 @@ function save_csv(filename, args)
                           force_ii_1 = config.solution.forces.force_ii[1],
                           force_ii_2 = config.solution.forces.force_ii[2],
                           force_ii_3 = config.solution.forces.force_ii[3],
-                          energy = config.solution.forces.energy)
+                          energy = config.solution.forces.energy,
+                          periapsis_alt = periapsis_alt)
                         #   t_cf = config.solution.closed_form.t_cf,
                         #   h_cf = config.solution.closed_form.h_cf,
                         #   gamma_cf = config.solution.closed_form.γ_cf,

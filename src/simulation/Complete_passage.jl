@@ -45,20 +45,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     OE = [initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m]
 
-    # println(OE)
-
-    # Why is it 50 + 200 here
     if (OE[1] > (m.planet.Rp_e*1e-3 + 50 + args[:EI])*1e3) && (args[:drag_passage] == false) && (args[:body_shape] == "Spacecraft")
         index_steps_EOM = 3
     else
         index_steps_EOM = 1
     end
-
-    # println(index_steps_EOM)
-
-    # println(" ")
-    # println(OE)
-    # println(" ")
 
     i = OE[3]
     Ω = OE[4]
@@ -68,20 +59,19 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
              -cos(Ω)*sin(ω)-sin(Ω)*cos(ω)*cos(i)  -sin(Ω)*sin(ω)+cos(Ω)*cos(ω)*cos(i)   cos(ω)*sin(i);
              sin(Ω)*sin(i)                        -cos(Ω)*sin(i)                        cos(i)]
 
-    # T_ijk = [[x == -0 ? 0.0 : x for x in row] for row in T_ijk]
 
     r0, v0 = orbitalelemtorv(OE, m.planet)
 
     Mass = OE[end]
-    # println(" ")
-    # println(rvtoorbitalelement(r0, v0, m, m.planet))
-    # println(" ")
-    # println(rvtoorbitalelement([-4295336.47271116, 21280050.13968795, -9652569.06525767],[510.35435111, -323.63083049, 767.23503398], m, m.planet))
-    # println(" ")
-    # println(mass)
 
     # Clock
-    date_initial = from_utc(DateTime(m.initial_condition.year, m.initial_condition.month, m.initial_condition.day, m.initial_condition.hour, m.initial_condition.minute, m.initial_condition.second))
+    date_initial = from_utc(DateTime(m.initial_condition.year, 
+                                    m.initial_condition.month,
+                                    m.initial_condition.day, 
+                                    m.initial_condition.hour, 
+                                    m.initial_condition.minute, 
+                                    m.initial_condition.second))
+
     config.cnf.count_numberofpassage = config.cnf.count_numberofpassage + 1
 
     if config.cnf.count_numberofpassage != 1
@@ -115,7 +105,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         t0 = t0 * config.cnf.TU
 
         # Clock
-        time_real = DateTime(date_initial + t0*seconds) # date_initial + Second(t0)
+        current_epoch = date_initial + t0*seconds # Precompute the current epoch
+        time_real = DateTime(current_epoch) # date_initial + Second(t0)
         timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
 
         # Assign state
@@ -146,8 +137,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         vi = OE[6]
 
         # Timing variables
-        el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))) # Elapsed time since the beginning of the simulation
-        current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
+        el_time = value(seconds(current_epoch - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))) # Elapsed time since the beginning of the simulation
+        current_time =  value(seconds(current_epoch - from_utc(DateTime(2000, 1, 1, 12, 0, 0.0)))) # current time in seconds since J2000
         time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
         et = utc2et(time_real_utc) # Current time in Ephemeris Time
 
@@ -189,7 +180,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         ## Derived Quantity Calculations
 
         # Compute latitude and longitude
-        LatLong = rtolatlong(pos_pp, m.planet)
+        LatLong = rtolatlong(pos_pp, m.planet, args[:topography_model] == "Spherical Harmonics" && pos_ii_mag < m.planet.Rp_e + args[:EI] * 1e3)
+        
         lat = LatLong[2]
         lon = LatLong[3]
         alt = LatLong[1]
@@ -404,18 +396,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         
         ## Rotation Calculation
         L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 to planet-fixed frame
-        # println("pxform: $L_PI")
-        # rot_angle = norm(ω_planet) * (t0 + t_prev)    # angle of rotation, rad
-        # L_PI = [[cos(rot_angle), sin(rot_angle), 0.0], [-sin(rot_angle), cos(rot_angle), 0.0], [0.0, 0.0, 1.0]] # rotation matrix
-        # L_PI = [cos(rot_angle)  sin(rot_angle)  0.0;
-        #         -sin(rot_angle) cos(rot_angle)  0.0; 
-        #         0.0             0.0             1.0] # rotation matrix
-
-        # L_PI = [[x for x in row] for row in L_PI]
-
-        # current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
-        # L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time) # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
-
+       
+        # Nominal gravity calculation
         if ip.gm == 0
             gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
         elseif ip.gm == 1
@@ -433,7 +415,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             end
         end
 
-
+        srp_ii = zeros(3) # solar radiation pressure vector
         if args[:srp] == true
             p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
             srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, et)
@@ -443,11 +425,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             # println("pos_pp: ", pos_pp)
             pos_pp_sph = rtolatlongrad(pos_pp, m.planet)
             # println("r: ", pos_pp_sph[1], " lat: ", rad2deg(pos_pp_sph[2]), " lon: ", rad2deg(pos_pp_sph[3]))
-            ∇U = gradU_sph(pos_pp_sph, m.planet.μ, m.planet.Rp_m, m.planet.Clm, m.planet.Slm, args[:L], args[:M])
+            ∇U = gradU_sph!(pos_pp_sph, m.planet.μ, m.planet.Rp_e, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.A_grav)
             # println("∇U: ", ∇U)
             # println("norm(gravity) before: ", norm(gravity_ii/mass))
+            # sleep(10)
             gravity_ii += mass * L_PI' * acc_NSG(pos_pp, ∇U) #+ cross(2*m.planet.ω, vel_pp) + cross(m.planet.ω, cross(m.planet.ω, pos_pp))) # Inertial gravity force vector, since acc_NSG is in planet-fixed frame have to use double transport thm
+            # gravity_ii += mass * L_PI' * acc_gravity_pines(pos_pp_sph, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_m)
             # println("norm(gravity_ii): ", norm(gravity_ii/mass))
+            # sleep(10)
             # println("norm(r): ", norm(pos_ii))
         end
 
@@ -513,7 +498,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Total Force
         # Total inetrial external force vector on body [N]
-        force_ii = drag_ii + lift_ii + gravity_ii + thrust_ii
+        force_ii = drag_ii + lift_ii + gravity_ii + thrust_ii + srp_ii
 
         # index_steps_EOM
         # y_dot = zeros(8)
@@ -576,7 +561,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         vi = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf.MU, m.planet)[6]
         # vi = rvtoorbitalelement(pos_ii, vel_ii, y[7], m.planet)[6]
 
-        rad2deg(vi) - 1  # downcrossing
+        rad2deg(vi) - 180  # downcrossing
     end
 
     function eventfirststep_periapsis_affect!(integrator)
@@ -654,10 +639,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         date_initial = integrator.p[6]
         pos_ii = [y[1], y[2], y[3]] * config.cnf.DU  # Inertial position
         vel_ii = [y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU  # Inertial velocity
-        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev, date_initial, t)
+        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev, date_initial, t*config.cnf.TU)
         # pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t, t_prev)
 
-        LatLong = rtolatlong(pos_pp, m.planet)
+        LatLong = rtolatlong(pos_pp, m.planet)#, args[:topography_model] == "Spherical Harmonics" && norm(pos_ii) < m.planet.Rp_e + args[:EI]*1e3)
 
         h0 = LatLong[1]
 
@@ -700,10 +685,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         pos_ii = [y[1], y[2], y[3]] * config.cnf.DU                     # Inertial position
         vel_ii = [y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU     # Inertial velocity
-        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev, date_initial, t)
+        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev, date_initial, t * config.cnf.TU)
         # pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t, t_prev)
 
-        LatLong = rtolatlong(pos_pp, m.planet)
+        LatLong = rtolatlong(pos_pp, m.planet)#, args[:topography_model] == "Spherical Harmonics" && norm(pos_ii) < m.planet.Rp_e + args[:EI]*1e3)
 
         h0 = LatLong[1]
 
@@ -743,7 +728,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         vi = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf.MU, m.planet)[6]
         # vi = rvtoorbitalelement(pos_ii, vel_ii, y[7], m.planet)[6]
-
+        
         rad2deg(vi) - 180 # upcrossing
     end
     function apoapsispoint_affect!(integrator)
@@ -765,6 +750,17 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
     function periapsispoint_affect!(integrator)
         config.cnf.count_periapsispoint += 1
+        r_p, _ = r_intor_p(integrator.u[1:3] * config.cnf.DU, 
+                        integrator.u[4:6] * config.cnf.DU / config.cnf.TU, 
+                        integrator.p[1].planet, 
+                        integrator.t * config.cnf.TU, 
+                        integrator.p[5], 
+                        integrator.p[6], 
+                        integrator.t * config.cnf.TU)
+        r, lat, lon = rtolatlong(r_p, integrator.p[1].planet, args[:topography_model] == "Spherical Harmonics")
+        append!(config.cnf.altitude_periapsis, r*1e-3)
+        append!(config.cnf.latitude_periapsis, rad2deg(lat))
+        append!(config.cnf.longitude_periapsis, rad2deg(lon))
         nothing
     end
     periapsispoint = ContinuousCallback(periapsispoint_condition, nothing, periapsispoint_affect!)
@@ -1003,7 +999,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             t_event_0 = "stop_firing"
             t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 1 && args[:keplerian] == true
-            events = CallbackSet(eventfirststep_periapsis, apoapsisgreaterperiapsis, impact)
+            events = CallbackSet(eventfirststep_periapsis, apoapsisgreaterperiapsis, impact, periapsispoint)
             t_event_0 = "eventfirststep_periapsis"
             t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 1
@@ -1040,12 +1036,12 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Definition dtep montecarlo_size
         if aerobraking_phase == 1 || aerobraking_phase == 3
-            step = 5
+            step = 0.1
             r_tol = 1e-10
             a_tol = 1e-12
             simulator = "Julia"
             method = Tsit5()
-            save_ratio = 5
+            save_ratio = 2
         elseif aerobraking_phase == 0
             step = 0.1
             r_tol = 1e-9
@@ -1201,7 +1197,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 # println(in_cond[7])
                 # Run simulation
                 prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
-                sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+                sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events, dt=step/config.cnf.TU)
                 # sol = solve(prob, method, dt=step, abstol=a_tol, reltol=r_tol, callback=events)
 
                 config.cnf.counter_integrator += 1
@@ -1382,7 +1378,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     config.cnf.count_dori = 0
 
     # Check tolerance here on true anomaly
-    if args[:drag_passage] == false && (pi - config.solution.orientation.oe[end][end] > 1e-4) && continue_campaign == true && args[:body_shape] != "Blunted Cone"
+    if args[:drag_passage] == false && (pi - config.solution.orientation.oe[end][end] > 1e-5) && continue_campaign == true && args[:body_shape] != "Blunted Cone"
         # println("first if")
         # println(pi - config.solution.orientation.oe[end][end])
         # println("")
@@ -1409,7 +1405,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     
         initial_time, final_time = time_0 / config.cnf.TU, (time_0 + 1000) / config.cnf.TU 
         # initial_time, final_time = time_0, (time_0 + 1000)
-        step = 0.005
+        step = 0.05
         r_tol = 1e-12
         a_tol = 1e-13
 
@@ -1436,7 +1432,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Run simulation
         prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
-        sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+        sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events, dt=step/config.cnf.TU)
         # sol = solve(prob, method, dt=step, abstol=a_tol, reltol=r_tol, callback=events)
 
         config.cnf.counter_integrator += 1
@@ -1444,11 +1440,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # time_0 = save_results(sol.t, 1)
         count_temp += 1
 
-        if count_temp > 5
+        if count_temp > 15
             break
         end
 
-        if args[:drag_passage] == false && pi - config.solution.orientation.oe[end][end] > 1e-4 && continue_campaign == true
+        if args[:drag_passage] == false && pi - config.solution.orientation.oe[end][end] > 1e-5 && continue_campaign == true
             # println("second if")
             # println(pi - config.solution.orientation.oe[end][end])
             # println("")
@@ -1464,7 +1460,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     # println(size(config.solution.orientation.alt[1]))
 
-    append!(config.cnf.altitude_periapsis, minimum(config.solution.orientation.alt[save_pre_index:save_post_index])*1e-3)
+    # append!(config.cnf.altitude_periapsis, minimum(config.solution.orientation.alt[save_pre_index:save_post_index])*1e-3)
     append!(config.cnf.max_heatrate, maximum(config.solution.performance.heat_rate[save_pre_index:save_post_index]))
     config.cnf.Δv_man = (m.engines.g_e * m.engines.Isp) * log(m.body.mass / config.solution.performance.mass[end])
 
@@ -1472,7 +1468,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     if Bool(args[:print_res])
         # Print Actual periapsis altitude and Vacuum periapsis altitude
-        println("Actual periapsis altitude " * string(minimum(config.solution.orientation.alt[save_pre_index:save_post_index])*1e-3) * " km - Vacuum periapsis altitude = " * string((config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end]) - m.planet.Rp_e)*1e-3) * " km")
+        println("Actual periapsis altitude " * string(config.cnf.altitude_periapsis[end]) * " km - Vacuum periapsis altitude = " * string((config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end]) - m.planet.Rp_e)*1e-3) * " km")
         # append!(config.cnf.periapsis_list, (config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end]) - m.planet.Rp_e)*1e-3)
 
         # Print Ra new (Apoapsis)

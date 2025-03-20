@@ -7,6 +7,7 @@ using LaTeXStrings
 
 function plots(state, m, name, args)
     if args[:keplerian] == true
+        traj_3D(state, m, name)
         traj_2D(state, m, name)
     else
         traj_3D(state, m, name)
@@ -16,7 +17,7 @@ function plots(state, m, name, args)
     end
 
     if args[:body_shape] == "Spacecraft" && !config.cnf.impact && args[:keplerian] == false
-        if lowercase(m.planet.name) == "mars"
+        if lowercase(m.planet.name) == "mars" || lowercase(m.planet.name) == "venus"
             # closed_form_solution_plot(name, m)
         end
         angle_of_attack_plot(name, args)
@@ -30,7 +31,7 @@ end
 
 function angle_of_attack_plot(name, args)
     alt_idx = findall(x -> x < args[:AE]*1e3, config.solution.orientation.alt)
-
+    # println(config.solution.orientation.alt)
     index_orbit = [1]
     time_0 = [config.solution.orientation.time[alt_idx[1]]]
 
@@ -43,7 +44,7 @@ function angle_of_attack_plot(name, args)
 
     append!(index_orbit, length(alt_idx))
 
-    if length(index_orbit) == 2 # If onlly 1 orbit
+    if length(index_orbit) <= 2 # If onlly 1 orbit
         time = [config.solution.orientation.time[i] for i in alt_idx]
         aoa = [rad2deg(config.solution.physical_properties.α[i]) for i in alt_idx]
         trace1 = scatter(x=time, y=aoa, mode="lines", line=attr(color="black"))
@@ -78,7 +79,7 @@ end
 
 function closed_form_solution_plot(name, mission)
     alt = [item - mission.planet.Rp_e for item in config.solution.orientation.pos_ii_mag]
-    alt_idx = findall(x -> x <= 160*1e3, alt)
+    alt_idx = findall(x -> x <= args[:EI]*1e3, alt)
 
     index_orbit = [1]
     time_0 = [config.solution.orientation.time[alt_idx[1]]]
@@ -91,17 +92,17 @@ function closed_form_solution_plot(name, mission)
     end
     append!(index_orbit, length(alt_idx))
 
-    alt_idx_cf = findall(x -> (x > 0) && (x <= 160*1e3), config.solution.closed_form.h_cf)
-    index_orbit_cf = [1]
-    time_0_cf = [config.solution.closed_form.t_cf[alt_idx_cf[1]]]
+    # alt_idx_cf = findall(x -> (x > 0) && (x <= 160*1e3), config.solution.closed_form.h_cf)
+    # index_orbit_cf = [1]
+    # time_0_cf = [config.solution.closed_form.t_cf[alt_idx_cf[1]]]
     
-    for i in range(start=2, step=1, stop=length(alt_idx_cf))
-        if alt_idx_cf[i] - alt_idx_cf[i - 1] > 50
-            append!(index_orbit_cf, i)
-            append!(time_0_cf, config.solution.closed_form.t_cf[alt_idx_cf[i]])
-        end
-    end
-    append!(index_orbit_cf, length(alt_idx_cf))
+    # for i in range(start=2, step=1, stop=length(alt_idx_cf))
+    #     if alt_idx_cf[i] - alt_idx_cf[i - 1] > 50
+    #         append!(index_orbit_cf, i)
+    #         append!(time_0_cf, config.solution.closed_form.t_cf[alt_idx_cf[i]])
+    #     end
+    # end
+    # append!(index_orbit_cf, length(alt_idx_cf))
 
     plot_traces_alt = []
     plot_traces_gamma = []
@@ -119,27 +120,31 @@ function closed_form_solution_plot(name, mission)
         gamma = [rad2deg(config.solution.orientation.γ_ii[j]) for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
         v = [config.solution.orientation.vel_ii_mag[j] for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
 
-        time_cf = [config.solution.closed_form.t_cf[j] - time_0_cf[i] + time_end for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
-        alt_cf = [config.solution.closed_form.h_cf[j]/1e3 for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
-        gamma_cf = [rad2deg(config.solution.closed_form.γ_cf[j]) for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
-        v_cf = [config.solution.closed_form.v_cf[j] for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
+        # time_cf = [config.solution.closed_form.t_cf[j] - time_0_cf[i] + time_end for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
+        # alt_cf = [config.solution.closed_form.h_cf[j]/1e3 for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
+        # gamma_cf = [rad2deg(config.solution.closed_form.γ_cf[j]) for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
+        # v_cf = [config.solution.closed_form.v_cf[j] for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
 
         push!(plot_traces_alt, scatter(x=time, y=alt, mode="lines", line=attr(color="black")))
         push!(plot_traces_gamma, scatter(x=time, y=gamma, mode="lines", line=attr(color="black")))
         push!(plot_traces_v, scatter(x=time, y=v, mode="lines", line=attr(color="black")))
 
-        push!(plot_traces_alt_cf, scatter(x=time_cf, y=alt_cf, mode="lines", line=attr(color="gray")))
-        push!(plot_traces_gamma_cf, scatter(x=time_cf, y=gamma_cf, mode="lines", line=attr(color="gray")))
-        push!(plot_traces_v_cf, scatter(x=time_cf, y=v_cf, mode="lines", line=attr(color="gray")))
+        # push!(plot_traces_alt_cf, scatter(x=time_cf, y=alt_cf, mode="lines", line=attr(color="gray")))
+        # push!(plot_traces_gamma_cf, scatter(x=time_cf, y=gamma_cf, mode="lines", line=attr(color="gray")))
+        # push!(plot_traces_v_cf, scatter(x=time_cf, y=v_cf, mode="lines", line=attr(color="gray")))
     end
 
     layout_alt = Layout(xaxis_title="Time [s]", yaxis_title="Altitude [km]")
     layout_gamma = Layout(xaxis_title="Time [s]", yaxis_title="γ [deg]")
     layout_v = Layout(xaxis_title="Time [s]", yaxis_title="Velocity [km/s]")
 
-    p_alt = plot([plot_traces_alt..., plot_traces_alt_cf...], layout_alt)
-    p_gamma = plot([plot_traces_gamma..., plot_traces_gamma_cf...], layout_gamma)
-    p_v = plot([plot_traces_v..., plot_traces_v_cf...], layout_v)
+    # p_alt = plot([plot_traces_alt..., plot_traces_alt_cf...], layout_alt)
+    # p_gamma = plot([plot_traces_gamma..., plot_traces_gamma_cf...], layout_gamma)
+    # p_v = plot([plot_traces_v..., plot_traces_v_cf...], layout_v)
+
+    p_alt = plot([plot_traces_alt...], layout_alt)
+    p_gamma = plot([plot_traces_gamma...], layout_gamma)
+    p_v = plot([plot_traces_v...], layout_v)
 
     p = [p_alt p_gamma p_v]
     relayout!(p, width=2200, height=1000, template="simple_white", showlegend=false)
@@ -191,7 +196,7 @@ function performance_plots(state, m, name, args)
     # append!(index_orbit, length(index))
     plot_traces_heat_rate = []
 
-    if length(index_orbit) == 2
+    if length(index_orbit) <= 2
         time = [config.solution.orientation.time[i] for i in index]
         push!(plot_traces_heat_rate, scatter(x=time, y=heat_rate, mode="lines", line=attr(color="black")))
     else
@@ -214,7 +219,7 @@ function performance_plots(state, m, name, args)
 
     plot_traces_heat_load = []
 
-    if length(index_orbit) == 2
+    if length(index_orbit) <= 2
         time = [config.solution.orientation.time[i] for i in index]
         heat_load = [config.solution.performance.heat_load[i] for i in index]
         push!(plot_traces_heat_load, scatter(x=time, y=heat_load, mode="markers", marker=attr(color="black")))
@@ -253,7 +258,7 @@ function performance_plots(state, m, name, args)
 
         append!(index_orbit, length(index))
 
-        if length(index_orbit) == 2
+        if length(index_orbit) <= 2
             time = [config.solution.orientation.time[i] for i in index]
             plot_traces_4 = scatter(x=time/(60*60*24), y=q, mode="markers", marker=attr(color="black"))
             layout_4 = Layout(xaxis_title="Time [days]", yaxis_title="Dynamic pressure [Pa]")
@@ -334,21 +339,22 @@ function traj_3D(state, m, name)
     # println(size(xs))
     # println("")
 
-    sphere1 = surface(x=xs, y=ys, z=zs, opacity=0.9, showscale=false, surfacecolor=@. x^2 + y^2 + z^2 + 100)
-
+    sphere1 = surface(x=xs, y=ys, z=zs, opacity=0.9, showscale=false, surfacecolor=@. xs^2 + ys^2 + zs^2 + 100)
+    # println("Sphere1: $(sphere1)")
     r += 160                        # AE alt 160 km    
     xs = r * cos.(u) * sin.(v)'
     ys = r * sin.(u) * sin.(v)'
     zs = r * ones(n) * cos.(v)'
 
-    sphere2 = surface(x=xs, y=ys, z=zs, opacity=0.2, showscale=false, surfacecolor=@. x^2 + y^2 + z^2 - 100) # "rgba(255, 255, 0, 0.25)")
-
+    sphere2 = surface(x=xs, y=ys, z=zs, opacity=0.2, showscale=false, surfacecolor=@. xs^2 + ys^2 + zs^2 - 100) # "rgba(255, 255, 0, 0.25)")
+    # println("Sphere2: $(sphere2)")
     index = [1]
     for i in range(start=1, step=1, stop=length(config.solution.orientation.number_of_passage)-1)
         if config.solution.orientation.number_of_passage[i+1] - config.solution.orientation.number_of_passage[i] > 0
             append!(index, i)
         end
     end
+
     append!(index, length(config.solution.orientation.number_of_passage))
 
     x_lables = range(start=min, step=5000, stop=max)
@@ -357,10 +363,16 @@ function traj_3D(state, m, name)
 
     traj_3D_traces = []
     for i in range(start=1, step=1, stop=length(index)-1)
-        x_s = x[index[i]:index[i+1]]
-        y_s = y[index[i]:index[i+1]]
-        z_s = z[index[i]:index[i+1]]
-        
+        if config.solution.orientation.number_of_passage[end] == 1 
+            x_s = x
+            y_s = y
+            z_s = z
+        else
+            x_s = x[index[i]:index[i+1]]
+            y_s = y[index[i]:index[i+1]]
+            z_s = z[index[i]:index[i+1]]
+        end
+
         push!(traj_3D_traces, scatter3d(x=x_s, y=y_s, z=z_s, mode="lines", line=attr(color="black"), row=1, col=1))
     end
 
@@ -411,22 +423,18 @@ function ground_track(state, m, name)
         Plot the ground track of the spacecraft during the drag passages
     """
     
-    planet = m.planet
-    lats = zeros(length(config.solution.orientation.pos_pp[1, 1]))
-    lons = zeros(length(config.solution.orientation.pos_pp[1, 1]))
-    counter = 1 # Track index of lats/lons
-    for i in range(start=1, step=1, stop=length(lats))
-        if config.solution.simulation.drag_passage[i] == 1 && config.solution.orientation.alt[i] < config.solution.orientation.alt[i+1] && config.solution.orientation.alt[i] < config.solution.orientation.alt[i-1]
-            r_p = [config.solution.orientation.pos_pp[1][i], config.solution.orientation.pos_pp[2][i], config.solution.orientation.pos_pp[3][i]]
-            _, lats[counter], lons[counter] = rtolatlong(r_p, planet)
-            counter += 1
-        end
-    end
+    # planet = m.planet
+    # lats = zeros(length(config.solution.orientation.pos_pp[1, 1]))
+    # lons = zeros(length(config.solution.orientation.pos_pp[1, 1]))
+    # counter = 1 # Track index of lats/lons
+    # for i in range(start=1, step=1, stop=length(lats))
+        
+    # end
 
-    lats = rad2deg.(lats)
-    lons = rad2deg.(lons)
-    lats_traces = scatter(x=1:counter-1, y=lats[1:counter-1], mode="lines", line=attr(color="black"))
-    lons_traces = scatter(x=1:counter-1, y=lons[1:counter-1], mode="lines", line=attr(color="black"))
+    # lats = rad2deg.(lats)
+    # lons = rad2deg.(lons)
+    lats_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.latitude_periapsis, mode="lines", line=attr(color="black"))
+    lons_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.longitude_periapsis, mode="lines", line=attr(color="black"))
     lats_plot = plot(lats_traces, Layout(xaxis_title="Orbit number", yaxis_title="Latitude [deg]", template="simple_white", showlegend=false))
     lons_plot = plot(lons_traces, Layout(xaxis_title="Orbit number", yaxis_title="Longitude [deg]", template="simple_white", showlegend=false))
     p = [lats_plot lons_plot]

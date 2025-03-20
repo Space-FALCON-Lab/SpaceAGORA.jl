@@ -46,7 +46,7 @@ function run_orbitalelements(args)
 end
 
 function run_vgamma(args)
-    γ_0, v_0, inclination, Ω, ω = collect(range(Int64(args[:γ_initial_a]*100), Int64(args[:γ_initial_a]*100), step=Int64(args[:γ_step]*100))), 
+    γ_0, v_0, inclination, Ω, ω = collect(range(Int64(round(args[:γ_initial_a]*100)), Int64(round(args[:γ_initial_a]*100)), step=Int64(args[:γ_step]*100))), 
                                   collect(range(Int64(args[:v_initial_a]), Int64(args[:v_initial_b]), step=Int64(args[:v_step]))),
                                   args[:inclination], args[:Ω], args[:ω]
     final_apoapsis = args[:final_apoapsis]

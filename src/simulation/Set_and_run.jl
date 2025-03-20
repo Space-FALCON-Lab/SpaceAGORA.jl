@@ -54,17 +54,42 @@ function aerobraking_campaign(args, state)
         harmonics_data = CSV.read(args[:gravity_harmonics_file], DataFrame)
         
         # Pre-initialize the Clm and Slm arrays
-        degree = size(harmonics_data, 1)
-        config.model.planet.Clm = zeros(degree, degree)
-        config.model.planet.Slm = zeros(degree, degree)
+        total_data_size = size(harmonics_data, 1)
+        degree = maximum(harmonics_data[:, 1]) + 1
+
+        p_class.A_grav = zeros(degree+1, degree+1) # Preallocate the matrix for the Associated Legendre Polynomial evaluations
+        p_class.Clm = zeros(degree, degree)
+        p_class.Slm = zeros(degree, degree)
 
         # Read in all the data from the DataFrame
-        for i=1:degree
+        for i=1:total_data_size
             l = harmonics_data[i, 1] + 1 # Get the degree, l, from the data and convert to an index (subtract 1 because the data starts at 2nd degree coefficient)
             m = harmonics_data[i, 2] + 1 # Get the order, m, from the data and convert to an index (add 1 because the data starts at 0th order coefficient)
-            config.model.planet.Clm[l, m] = harmonics_data[i, 3]
-            config.model.planet.Slm[l, m] = harmonics_data[i, 4]
+            p_class.Clm[l, m] = harmonics_data[i, 3]
+            p_class.Slm[l, m] = harmonics_data[i, 4]
         end
+    end
+
+    # Set up the planet shape
+    if args[:topography_model] == "Spherical Harmonics"
+        harmonics_data = CSV.read(args[:topography_harmonics_file], DataFrame)
+        
+        # Pre-initialize the Clm and Slm arrays
+        total_data_size = size(harmonics_data, 1)
+        degree = maximum(harmonics_data[:, 1]) + 1
+
+        p_class.A_topo = zeros(degree+1, degree+1) # Preallocate the matrix for the Associated Legendre Polynomial evaluations
+        p_class.Clm_topo = zeros(degree, degree)
+        p_class.Slm_topo = zeros(degree, degree)
+
+        # Read in all the data from the DataFrame
+        for i=1:total_data_size
+            l = harmonics_data[i, 1] + 1 # Get the degree, l, from the data and convert to an index (subtract 1 because the data starts at 2nd degree coefficient)
+            m = harmonics_data[i, 2] + 1 # Get the order, m, from the data and convert to an index (add 1 because the data starts at 0th order coefficient)
+            p_class.Clm_topo[l, m] = harmonics_data[i, 3]
+            p_class.Slm_topo[l, m] = harmonics_data[i, 4]
+        end
+
     end
 
     if args[:gravity_model] == "Inverse Squared"
@@ -231,9 +256,9 @@ function aerobraking_campaign(args, state)
     config.cnf.save_index_heat = 0
     config.cnf.index_propellant_mass = 1
     config.cnf.counter_random = 0
-    config.cnf.DU = semimajoraxis_in
-    config.cnf.TU = sqrt(config.cnf.DU^3 / m.planet.μ)
-    config.cnf.MU = mass
+    config.cnf.DU = 1 # semimajoraxis_in
+    config.cnf.TU = 1 # 2*pi*sqrt(config.cnf.DU^3 / m.planet.μ)
+    config.cnf.MU = 1 #mass
 
     ##########################################################
     # RUN SIMULATION
@@ -263,7 +288,7 @@ function aerobraking_campaign(args, state)
 
             name = args[:directory_results] * "/" * folder_name
             if !isdir(args[:directory_results])
-                mkdir(args[:directory_results])
+                mkpath(args[:directory_results])
             end
             filename = name * ".csv"
         else

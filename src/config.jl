@@ -40,7 +40,12 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         J2000_to_pci::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
         Clm::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
         Slm::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        Clm_topo::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        Slm_topo::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
         name::String = ""
+        A_grav::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        A_topo::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        topography_function::Function = (args, Clm, Slm, latitude, longitude) -> 0.0
     end
 
     @kwdef mutable struct Aerodynamics
@@ -90,6 +95,8 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
     @kwdef mutable struct Cnf
         impact::Bool = false
         altitude_periapsis::Vector{Float64} = []
+        latitude_periapsis::Vector{Float64} = []
+        longitude_periapsis::Vector{Float64} = []
         max_heatrate::Vector{Float64} = []
         solution_intermediate::Vector{Any} = []
         atmospheric_data::Dict{String,Float64} = Dict()

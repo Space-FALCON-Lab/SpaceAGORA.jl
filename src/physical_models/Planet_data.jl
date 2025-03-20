@@ -1,4 +1,5 @@
 # import .config
+include("../physical_models/Planet_shapes.jl")
 
 function planet_data(ip)
 
@@ -31,16 +32,18 @@ function planet_data(ip)
         μ_fluid = 1.5*10e-5        # kinematic viscosity, m²/s
         Lz = -9.8/1e3              # vertical temperature gradient, K/m
         α = 0.0                    # Right ascension of the north pole of rotation, radians
+        SF = 1361.0                # Solar irradiance, W/m²
         δ = pi/2                    # Declination of the north pole of rotation, radians
+        topography_function = Earth_elevation! # Earth topography function
         name = "earth"
     elseif (ip == 1 || (typeof(ip) == String && cmp(lowercase(ip), "mars") == 0)) # Mars
-        Rp_e = 3.3962e6            # equatorial radius, m
-        Rp_p = 3.3762e6            # polar radius, m
+        Rp_e = 3.397e6 #3.3962           # equatorial radius, m
+        Rp_p = 3.375e6 #3.3762           # polar radius, m
         Rp_m = 3.3895e6            # volumetric mean radius, m
         mass = 6.4169e23           # mass, kg
         g_ref = 3.73               # acceleration due to gravity, m/s²
         ρ_ref = 8.7489231e-07      # density, kg/m³
-        μ = 4.282837362069909e13              # gravitational parameter, m³/s²
+        μ = 4.2828314258067e13              # gravitational parameter, m³/s²
         h_ref = 90 * 1e3           # reference altitude, m
         H = 6.308278108 * 1e3      # scale height, m
         R = 188.92                 # specific gas constant, J/(kg·K)
@@ -55,6 +58,8 @@ function planet_data(ip)
         Lz = -4.5/1e3              # vertical temperature gradient, K/m
         α = deg2rad(317.68143)     # Right ascension of the north pole of rotation, radians
         δ = deg2rad(52.88650)      # Declination of the north pole of rotation, radians
+        SF = 586.2                # Solar irradiance, W/m²
+        topography_function = Mars_elevation! # Mars topography function
         name = "mars"
     elseif (ip == 2 || (typeof(ip) == String && cmp(lowercase(ip), "venus") == 0)) # Venus
         Rp_e = 6.0518e6            # equatorial radius, m
@@ -78,6 +83,8 @@ function planet_data(ip)
         Lz = -10.7/1e3             # vertical temperature gradient, K/m
         α = deg2rad(272.76)        # Right ascension of the north pole of rotation, radians
         δ = deg2rad(67.16)         # Declination of the north pole of rotation, radians
+        SF = 2601.3                # Solar irradiance, W/m²
+        topography_function = Venus_elevation! # Venus topography function
         name = "venus"
     elseif (ip == 3 || (typeof(ip) == String && cmp(lowercase(ip), "sun") == 0)) # Sun
         Rp_e = 6.9634e8            # equatorial radius, m
@@ -100,6 +107,8 @@ function planet_data(ip)
         Lz = 0
         α = 0.0
         δ = 0.0
+        SF = 0
+        topography_function = (args, Clm, Slm, latitude, longitude) -> 0.0
         name = "sun"
     elseif (ip == 4 || (typeof(ip) == String && cmp(lowercase(ip), "moon") == 0)) # Moon
         Rp_e = 1.7381e6            # equatorial radius, m
@@ -122,6 +131,8 @@ function planet_data(ip)
         Lz = 0
         α = 0.0
         δ = 0.0
+        SF = 1361.0                # Solar irradiance, W/m²
+        topography_function = (args, Clm, Slm, latitude, longitude) -> 0.0
         name = "moon"
     elseif (ip == 5 || (typeof(ip) == String && cmp(lowercase(ip), "jupiter") == 0))
         Rp_e = 7.1492e7
@@ -144,6 +155,7 @@ function planet_data(ip)
         Lz = 0
         α = 0.0
         δ = 0.0
+        SF = 50.26                # Solar irradiance, W/m²
         name = "jupiter"
     elseif (ip == 6 || (typeof(ip) == String && cmp(lowercase(ip), "saturn") == 0))
         Rp_e = 6.0268e7
@@ -166,6 +178,7 @@ function planet_data(ip)
         Lz = 0
         α = deg2rad(40.589)
         δ = deg2rad(83.537)
+        SF = 14.82                # Solar irradiance, W/m²
         name = "saturn"
     elseif (ip == 7 || (typeof(ip) == String && cmp(lowercase(ip), "titan") == 0))
         Rp_e = 2.575e6
@@ -188,11 +201,15 @@ function planet_data(ip)
         Lz = -1.352/1e3
         α = deg2rad(39.4827)
         δ = deg2rad(83.4279)
+        SF = 14.82                # Solar irradiance, W/m², probably same as Saturn but couldn't find real data
         name = "titan"
     end
 
-    # println(model.planet)
     # Derived in References/J2000_to_pci.mlx(.m)
+    # Converts from J2000 to Planet Centered Inertial (PCI) 
+    # frame based on the planet's North pole of rotation
+    # α = Right ascension of the north pole of rotation, radians
+    # δ = Declination of the north pole of rotation, radians
     σ1 = sqrt(cos(δ)^4 + cos(δ)^2*sin(δ)^2)
     J2000_to_pci = [-sin(α) cos(α) 0;
                     -cos(δ)*cos(α)*sin(δ)/σ1 -cos(δ)*sin(α)*sin(δ)/σ1 cos(δ)^2/σ1;
@@ -220,7 +237,12 @@ function planet_data(ip)
                                         J2000_to_pci, 
                                         zeros(3, 3), 
                                         zeros(3, 3), 
-                                        name)
+                                        zeros(3, 3),
+                                        zeros(3, 3),
+                                        name,
+                                        zeros(3, 3),
+                                        zeros(3, 3),
+                                        topography_function)
     
     return config.model.planet
 end

@@ -53,11 +53,11 @@ function gravity_invsquared_J2(pos_ii_mag, pos_ii, p, mass, vel_ii=0)
     z = pos_ii[3]
     r = pos_ii_mag
 
-    gx = (-μ * x / pos_ii_mag^3) * (1 + 3/2 * J2 * (p.Rp_m/r)^2 * (1 - 5*(z/r)^2))
-    gy = (-μ * y / pos_ii_mag^3) * (1 + 3/2 * J2 * (p.Rp_m/r)^2 * (1 - 5*(z/r)^2))
-    gz = (-μ * z / pos_ii_mag^3) * (1 + 3/2 * J2 * (p.Rp_m/r)^2 * (3 - 5*(z/r)^2))
+    gx = (-μ * x / pos_ii_mag^3) * (1 + 3/2 * J2 * (p.Rp_e/r)^2 * (1 - 5*(z/r)^2))
+    gy = (-μ * y / pos_ii_mag^3) * (1 + 3/2 * J2 * (p.Rp_e/r)^2 * (1 - 5*(z/r)^2))
+    gz = (-μ * z / pos_ii_mag^3) * (1 + 3/2 * J2 * (p.Rp_e/r)^2 * (3 - 5*(z/r)^2))
 
-    g = gravity_ii_mag_spherical * pos_ii_hat + 3/2 * J2 * μ * p.Rp_e^2 / r^4 * [x/r*(5*z^2/r^2 - 1), y/r*(5*z^2/r^2 - 1), z/r*(5*z^2/r^2 - 3)] 
+    g = gravity_ii_mag_spherical * pos_ii_hat + 3/2 * J2 * μ * p.Rp_m^2 / r^4 * [x/r*(5*z^2/r^2 - 1), y/r*(5*z^2/r^2 - 1), z/r*(5*z^2/r^2 - 3)] 
 
     # g = [gx, gy, gz]
     # println("Gravity: ", g)

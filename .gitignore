@@ -4,4 +4,5 @@
 *.tpc
 *.tls
 *.pdf
-*.csv
+*.csvGRAM_Data/
+GRAMpy/

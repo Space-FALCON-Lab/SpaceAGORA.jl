@@ -59,7 +59,10 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
     CL_0, CD_0 = aerodynamic_coefficient_fM(0, m.body, T, S, m.aerodynamics, 0)
     CD_slope = (CD_90 - CD_0) / (pi/2)
 
-    function f!(y_dot, in_cond, param, t0)
+    # println("CD_slope outside integrator: ", CD_slope)
+    # println("k_cf outside integrator: ", k_cf)
+
+    function f_ctrl!(y_dot, in_cond, param, t0)
         m = param[1]
         index_phase_aerobraking = param[2]
         ip = param[3]
@@ -71,6 +74,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         initial_state = param[9]
         gram_atmosphere = param[10]
         gram = param[11]
+        k_cf = param[12]
 
         # Clock
         time_real = DateTime(date_initial + t0*seconds) # date_initial + Second(t0)
@@ -232,6 +236,20 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
             gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
         end
 
+        if length(args[:n_bodies]) != 0
+
+            for k = 1:length(args[:n_bodies])  
+                gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
+            end
+        end
+
+
+        if args[:srp] == true
+            p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
+            srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, et)
+        end
+
+
         bank_angle = 0.0
         lift_pp_hat = cross(h_pp_hat,vel_pp_rw_hat)     # perpendicular vector to angular vector and velocity
 
@@ -252,7 +270,20 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         # Total inertial external force vector on body [N]
         force_ii = drag_ii + lift_ii + gravity_ii
 
-        g_ii = norm(gravity_ii)
+        g_ii = norm(gravity_ii) / mass
+
+        # println("g_ii: ", g_ii)
+        # println("vel_ii_mag: ", vel_ii_mag)
+        # println("pos_ii_mag: ", pos_ii_mag)
+        # println("k_cf: ", k_cf)
+        # println("ρ: ", ρ)
+        # println("area_tot: ", area_tot)
+        # println("CD: ", CD)
+        # println("mass: ", mass)
+        # println("γ_ii: ", γ_ii)
+        # println("aoa: ", aoa)
+
+        # println("lambda: ", [lambdav_ii, lambdagamma_ii, lambdah_ii])
 
         # EOM
         lambdav_dot = -3 * k_cf * ρ * vel_ii_mag^2 * aoa / pi + 
@@ -277,21 +308,29 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
     end
 
     ## EVENTS
-    function out_drag_passage_condition(y, t, integrator)
+    function out_drag_pass_condition(y, t, integrator)
         m = integrator.p[1]
         args = integrator.p[8]
 
         norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
     end
-    function out_drag_passage_affect!(integrator)
+    function out_drag_pass_affect!(integrator)
         # println("entered out_drag_passage_affect! in Eoms.jl")
-        append!(config.cnf.t_out_drag_passage, integrator.t)
+        config.cnf.t_out_drag_passage = integrator.t
         terminate!(integrator)
     end
-    out_drag_passage = ContinuousCallback(out_drag_passage_condition, out_drag_passage_affect!, nothing)
+    out_drag_pass = ContinuousCallback(out_drag_pass_condition, out_drag_pass_affect!, nothing)
 
     function time_switch_func_condition(y, t, integrator)
         m = integrator.p[1]
+        k_cf = integrator.p[12]
+
+        # CL_90, CD_90 = aerodynamic_coefficient_fM(pi/2, m.body, T, S, m.aerodynamics, 0)
+        # CL_0, CD_0 = aerodynamic_coefficient_fM(0, m.body, T, S, m.aerodynamics, 0)
+        # CD_slope = (CD_90 - CD_0) / (pi/2)
+
+        # println("CD_slope inside event: ", CD_slope)
+        # println("k_cf inside event: ", k_cf)
 
         vel_ii = y[4:6]
         vel_ii_mag = norm(vel_ii)
@@ -300,33 +339,29 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         lambda_switch - y[7]
     end
     function time_switch_func_affect!(integrator)
-        println("entered time_switch_func_affect! in Eoms.jl")
+        # println("entered time_switch_func_affect! in Eoms.jl")
+        append!(config.cnf.t_time_switch_func, integrator.t)
         nothing
+
+        # if length(config.cnf.t_time_switch_func) == 2
+        #     terminate!(integrator)
+        # else
+        #     nothing
+        # end
     end
-    time_switch_func = ContinuousCallback(out_drag_passage_condition, out_drag_passage_affect!)
+    time_switch_func = ContinuousCallback(time_switch_func_condition, time_switch_func_affect!)
 
     if time_switch_eval == true
-        # # Density
-        # el_time = value(seconds((date_initial) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))) # Elapsed time since the beginning of the simulation
-        # if ip.dm == 0
-        #     ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        # elseif ip.dm == 1
-        #     ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        # elseif ip.dm == 2
-        #     ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        # elseif ip.dm == 3
-        #     ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
-        #     ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
-        # end
-
         # SOLVE EQUATIONS OF MOTIONS - 1 steps
         # USE CLOSED FORM SOLUTION TO DEFINE lambda_zero:
         T = m.planet.T  # fixed temperature
-        t_cf, h_cf, γ_cf, v_cf =closed_form(args, m, OE,T, true, m.aerodynamics.α)  # define closed-form solution
+        t_cf, h_cf, γ_cf, v_cf =closed_form(args, m, OE, T, true, m.aerodynamics.α)  # define closed-form solution
 
         lambdav = v_cf[end]
         lambdag = 0.0
         lambdah = m.planet.μ / (m.planet.Rp_e + h_cf[end])^2
+
+        # println("lambda init: ", [lambdav, lambdag, lambdah])
 
         lambda_v_fin = 10000
         lambda_γ_fin = 10000
@@ -342,26 +377,32 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         aerobraking_phase = nothing
         initial_state = nothing
 
+        # println("k_cf: ", k_cf)
+
+        step = 5
+
         while abs(lambda_v_fin_actual - lambda_v_fin) > 0.1 || abs(lambda_γ_fin_actual - lambda_γ_fin) > 0.1 || abs(lambda_h_fin_actual - lambda_h_fin) > 0.01
             count += 1
 
             in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], lambdav, lambdag, lambdah, 0.0]
 
+            # println("in_cond 1: ", in_cond)
+
             # Time initialization
             initial_time, final_time = time_0, time_0 + 1500
 
             # Parameter Definition
-            param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
+            param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
 
             method = Tsit5()
-            a_tol = 1e-9
-            r_tol = 1e-9
+            a_tol = 1e-7
+            r_tol = 1e-7
 
-            events = out_drag_passage
+            events = out_drag_pass
 
             # Run simulation
-            prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
-            sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+            prob = ODEProblem(f_ctrl!, in_cond, (initial_time, final_time), param)
+            sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
 
             r_fin = norm(sol[1:3,end])
             v_fin = norm(sol[4:6,end])
@@ -373,79 +414,71 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
             lambda_γ_fin_actual = sol[8,end]
             lambda_h_fin_actual = sol[9,end]
 
+            # println("lambda 2: ", [lambda_v_fin_actual, lambda_γ_fin_actual, lambda_h_fin_actual])
+
             in_cond = [sol[1,end], sol[2,end], sol[3,end], sol[4,end], sol[5,end], sol[6,end], lambda_v_fin, lambda_γ_fin, lambda_h_fin, Q_fin]
+
+            # println("in_cond 2: ", in_cond)
             
             if (abs(lambda_v_fin_actual - lambda_v_fin) < 0.1 && abs(lambda_γ_fin_actual - lambda_γ_fin) < 0.1 && abs(lambda_h_fin_actual - lambda_h_fin) < 0.01) || count > 4
                 break
             end
 
-            prob = ODEProblem(f!, in_cond, (config.cnf.t_out_drag_passage[1], -10), param)
-            sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+            # println("time: ", config.cnf.t_out_drag_passage)
+
+            prob = ODEProblem(f_ctrl!, in_cond, (sol.t[end], -10), param)
+            sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
+
+            # println("time rev: ", sol.t[end])
 
             lambdav = sol[7,end]
             lambdag = sol[8,end]
             lambdah = sol[9,end]
+
+            # println("lambda 3: ", [lambdav, lambdag, lambdah])
         end
 
         # Rerun the simulation with smaller step-size and the right lambda zero
         # Initial condition initialization
         in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], lambdav, lambdag, lambdah, 0.0]
 
-        # # Density
-        # if ip.dm == 0
-        #     ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        # elseif ip.dm == 1
-        #     ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        # elseif ip.dm == 2
-        #     ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        # elseif ip.dm == 3
-        #     el_time = value(seconds(date_initial - (date_initial + t0*seconds)))
-        #     ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere)
-        #     ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
-        # end
+        # println("in_cond: ", in_cond)
 
         # Time initialization
         initial_time, final_time = time_0, time_0 + 1500
 
         # Parameter Definition
-        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
+        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
 
         method = Tsit5()
         a_tol = 1e-9
         r_tol = 1e-9
 
-        events = out_drag_passage
+        events = CallbackSet(out_drag_pass, time_switch_func)
 
         # Run simulation
-        prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
-        sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+        prob = ODEProblem(f_ctrl!, in_cond, (initial_time, final_time), param)
+        sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
 
-        temp = config.cnf.t_out_drag_passage[2]
+        temp = config.cnf.t_time_switch_func
 
         ## Time switch definition
         time_switch = [0.0, 0.0]
 
+        println("length of temp: ", temp)
+
         if length(temp) == 2
-            time_switch .= temp
+            # time_switch = temp
+            time_switch = temp
+            # time_switch[2] = temp[end]
         elseif length(temp) == 1
-            time_switch[1] = temp
+            time_switch[1] = temp[1]
             time_switch[2] = sol.t[end]
         end
 
-    else  # second time evaluation
-        # Density
-        # el_time = value(seconds((date_initial) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))) # Elapsed time since the beginning of the simulation
-        # if ip.dm == 0
-        #     ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        # elseif ip.dm == 1
-        #     ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        # elseif ip.dm == 2
-        #     ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        # elseif ip.dm == 3
-        #     ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
-        #     ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
-        # end
+        config.cnf.t_time_switch_func = []
 
+    else  # second time evaluation
         temp_0 = 0
         tp = 1000
 
@@ -456,42 +489,46 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         # Initial Condition Initialization
         in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], 0.0, 0.0, 0.0, config.cnf.heat_load_past]
 
+        step = 1
+
         if reevaluation_mode == 1  # bigger step for the first times revaluation is performed
             # Time initialization
             initial_time, final_time = time_0, time_0 + 1000
 
             # Parameter Definition
-            param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
+            param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
 
             method = Tsit5()
             a_tol = 1e-9
             r_tol = 1e-9
 
-            events = out_drag_passage
+            events = out_drag_pass
 
             # Run simulation
-            prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
-            sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+            prob = ODEProblem(f_ctrl!, in_cond, (initial_time, final_time), param)
+            sol = solve(prob, method, dtmax=step, callback=events)
         elseif reevaluation_mode == 2  # stricter conditions for the last times revaluation is performed
             # Time initialization
             initial_time, final_time = time_0, time_0 + 1000
 
             # Parameter Definition
-            param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
+            param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
 
             method = Tsit5()
             a_tol = 1e-9
             r_tol = 1e-9
 
-            events = out_drag_passage
+            events = out_drag_pass
 
             # Run simulation
-            prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
-            sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+            prob = ODEProblem(f_ctrl!, in_cond, (initial_time, final_time), param)
+            sol = solve(prob, method, dtmax=step, callback=events)
         end
 
         return sol
     end
+
+    println("time_switch: ", time_switch)
 
     return sol, time_switch
 end

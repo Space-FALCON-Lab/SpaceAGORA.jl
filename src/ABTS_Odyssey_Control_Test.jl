@@ -20,9 +20,9 @@ args = Dict(# Misc Simulation
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
 
             # Type of Mission
-            :type_of_mission => "Orbits",                     # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 150,                                 # Number of aerobraking passage
+            :type_of_mission => "Drag Passage",                     # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
+            :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
+            :number_of_orbits => 1,                                 # Number of aerobraking passage
 
             # Physical Model
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -66,37 +66,37 @@ args = Dict(# Misc Simulation
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
-            :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
+            :control_mode => 2,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
             :security_mode => 0,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
-            :second_switch_reevaluation => 0,                       # Reevaluation of the second switch time when the time is closer to it
-            :control_in_loop => 0,                                  # Control in loop, control called during integration of trajectory, full state knowledge
-            :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+            :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
+            :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
+            :flash2_through_integration => 1,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             
             # Initial Conditions
-            :initial_condition_type => 1,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 4620e3, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
+            :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
+            :ra_initial_a => 15000e3, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => (3780.0-3396.2)*1e3,                                 # Initial Periapsis Altitude for for-loop in m
-            :hp_initial_b => 1590000.0,                              # Final Periapsis Altitude for for-loop in m
-            :hp_step => 1e12,                                 # Step Periapsis Radius for for-loop in m
+            :hp_initial_a => 85e3,                                 # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_b => 159000.0,                              # Final Periapsis Altitude for for-loop in m
+            :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :v_step => 1000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :γ_initial_a => -2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :v_step => 10000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :γ_initial_a => 2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :γ_step => 100,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :inclination => 45,                                   # Inclination Orbit, deg
-            :ω => 1.2074e-6,                                              # AOP, deg
-            :Ω => 28.1517,                                              # RAAN, deg
+            :γ_step => 10.5,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :inclination => 93.6,                                # Inclination Orbit, deg
+            :ω => 0,                                              # AOP, deg
+            :Ω => 0,                                              # RAAN, deg
             :EI => 160.0,                                           # Entry Interface, km
             :AE => 160.0,                                           # Atmospheric Exit, km
             :year => 2001,                                          # Mission year
-            :month => 11,                                           # Mission month
+            :month => 11,                                            # Mission month
             :day => 6,                                             # Mission day
-            :hours => 12,                                           # Mission hour
-            :minutes => 0,                                         # Mission minute
-            :secs => 0.0,                                          # Mission second
+            :hours => 8,                                           # Mission hour
+            :minutes => 30,                                         # Mission minute
+            :secs => 0,                                          # Mission second
             
             # Final Conditions
             :final_apoapsis => 4905.974818462152e3, # 5088116.837416616, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign

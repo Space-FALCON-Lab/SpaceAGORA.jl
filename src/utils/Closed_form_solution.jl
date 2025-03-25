@@ -203,7 +203,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     end
 
     # t_cf = collect(0:Int64(step_time):Δt)
-    t_cf = collect(range(start=0, stop=Δt, length=floor(Int, step_time)+1))
+    t_cf = collect(range(start=0, stop=Δt, length=floor(Int, step_time)))
 
     # println(step_time)
     # println("")

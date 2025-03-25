@@ -8,11 +8,15 @@ using Roots
  # import .config
 
 function switch_calculation_with_integration(ip, m, position, args, t, heat_rate_control, reevaluation_mode, gram_atmosphere, current_position=0)
+    # println("time_switch 1: ", time_switch)
 
     function func(k_cf)
         global time_switch, k
+
         k = k_cf/100
         y, time_switch = asim_ctrl(ip, m, t, position, args, k, heat_rate_control, true, gram_atmosphere)
+
+        # println("time_switch 2: ", time_switch)
 
         Q = y[end,end]
 
@@ -22,8 +26,11 @@ function switch_calculation_with_integration(ip, m, position, args, t, heat_rate
     delta_Q_max = func(5)
     delta_Q_min = func(0)
 
+    # println("time_switch 3: ", time_switch)
+
     if delta_Q_max * delta_Q_min < 0
-        find_zero(k -> func(k), [3.3, 4.5], Bisection())
+        find_zero(k -> func(k), [3.3, 4.5], Bisection(), rtol=1e-5)
+        # println("time_switch 4: ", time_switch)
     elseif delta_Q_max < 0
         if args[:heat_load_sol] == 0 && args[:heat_load_sol] == 3
             return [0, 0]
@@ -37,6 +44,8 @@ function switch_calculation_with_integration(ip, m, position, args, t, heat_rate
             return [0, 0]
         end
     end
+
+    # println("time_switch 5: ", time_switch)
 
     return time_switch
 end

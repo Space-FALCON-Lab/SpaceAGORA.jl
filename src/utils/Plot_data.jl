@@ -38,7 +38,7 @@ function drag_passage_plot(name, args)
     time = [config.solution.orientation.time[i] for i in alt_idx]
     aoa = [rad2deg(config.solution.physical_properties.α[i]) for i in alt_idx]
     trace1 = scatter(x=time, y=aoa, mode="lines", line=attr(color="black"))
-    layout = Layout(xaxis_title="Time [s]", yaxis_title="α [deg]")
+    layout = Layout(yaxis_title="α [deg]")
     p_aoa = plot(trace1, layout)
 
     index = findall(x -> x > 0, config.solution.performance.heat_rate)
@@ -46,13 +46,13 @@ function drag_passage_plot(name, args)
     time = [config.solution.orientation.time[i] for i in index]
     heat_rate = config.solution.performance.heat_rate[index]
     trace2 = scatter(x=time, y=heat_rate, mode="lines", line=attr(color="black"))
-    layout = Layout(xaxis_title="Time [s]", yaxis_title="Heat Rate [W/cm^2]")
+    layout = Layout(yaxis_title="Heat Rate [W/cm²]")
     p_heatrate = plot(trace2, layout)
 
     time = [config.solution.orientation.time[i] for i in index]
     heat_load = [config.solution.performance.heat_load[i] for i in index]
     trace3 = scatter(x=time, y=heat_load, mode="lines", marker=attr(color="black"))
-    layout = Layout(xaxis_title="Time [s]", yaxis_title="Heat Load [J/cm^2]")
+    layout = Layout(xaxis_title="Time [s]", yaxis_title="Heat Load [J/cm²]")
     p_heatload = plot(trace3, layout)
 
     p = [p_aoa; p_heatrate; p_heatload]
@@ -60,6 +60,17 @@ function drag_passage_plot(name, args)
 
     display(p)
     savefig(p, name * "_drag_passage.pdf", format="pdf")
+
+    time = [config.solution.orientation.time[i] for i in alt_idx]
+    alt = [config.solution.orientation.alt[i] for i in alt_idx]
+    trace1 = scatter(x=time, y=alt, mode="lines", line=attr(color="black"))
+    layout = Layout(xaxis_title="Time [s]", yaxis_title="Altitude [m]")
+    p1 = plot(trace1, layout)
+
+    display(p1)
+    savefig(p1, name * "_altitude_profile.pdf", format="pdf")
+
+    
 end
 
 function angle_of_attack_plot(name, args)

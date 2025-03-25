@@ -259,7 +259,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         sound_velocity = sqrt(γ * m.planet.R * T_p)
         Mach = vel_pp_mag / sound_velocity
         S = sqrt(γ/2) * Mach    # Molecular speed ratio
-        heat_load = in_cond[8] * config.cnf.MU / config.cnf.TU^3 * 1e4
+        heat_load = in_cond[8] * config.cnf.MU / config.cnf.TU^2 # * 1e4
 
         if config.cnf.drag_state == true
             ## Check type of fluid and check if this changes for different planets
@@ -333,6 +333,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
                     elseif ip.cm == 2
                         config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
+                        # println("control_solarpanels_heatload: ", config.cnf.α)
                     elseif ip.cm == 1
                         config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
                     elseif ip.cm == 0
@@ -507,7 +508,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         y_dot[1:3] = vel_ii * (config.cnf.TU / config.cnf.DU)
         y_dot[4:6] = force_ii / mass * (config.cnf.TU^2 / config.cnf.DU) 
         y_dot[7] = -norm(thrust_ii) / (m.engines.g_e * m.engines.Isp) * config.cnf.TU / config.cnf.MU       # mass variation
-        y_dot[8] = heat_rate * config.cnf.TU^3 / config.cnf.MU
+        y_dot[8] = heat_rate * config.cnf.TU^3 / config.cnf.MU # * 1e-4
         energy = (vel_ii_mag^2)/2 - (m.planet.μ / pos_ii_mag)
 
         # println(y_dot[7])
@@ -965,7 +966,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     in_cond[1:3] = in_cond[1:3] / config.cnf.DU
     in_cond[4:6] = in_cond[4:6] * config.cnf.TU / config.cnf.DU
     in_cond[7] = in_cond[7] / config.cnf.MU
-    in_cond[8] = in_cond[8] * config.cnf.TU^2 / config.cnf.MU
+    in_cond[8] = in_cond[8] * config.cnf.TU^2 / config.cnf.MU # * 1e4
 
     # If aerobraking maneuver allowed, add a prephase 0
     range_phase_i = 1
@@ -1392,7 +1393,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         in_cond[1:3] = in_cond[1:3] / config.cnf.DU
         in_cond[4:6] = in_cond[4:6] * config.cnf.TU / config.cnf.DU
         in_cond[7] = in_cond[7] / config.cnf.MU
-        in_cond[8] = in_cond[8] * config.cnf.TU^2 / config.cnf.MU
+        in_cond[8] = in_cond[8] * config.cnf.TU^2 / config.cnf.MU # * 1e4
 
                     
         initial_time, final_time = time_0 / config.cnf.TU, (time_0 + 1000) / config.cnf.TU 

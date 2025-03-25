@@ -128,7 +128,7 @@ function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, po
                 config.cnf.time_switch_1, config.cnf.time_switch_2 = switch_calculation_with_integration(ip, m, position, args, t, heat_rate_control, 1, gram_atmosphere, position)
             end
             if args[:heat_load_sol] == 2 || args[:heat_load_sol] == 3
-                config.cnf.time_switch_1, config.cnf.time_switch_2 = second_time_switch_recalc_with_integration(ip, m, position, args, t, heat_rate_control, 1, position)
+                config.cnf.time_switch_1, config.cnf.time_switch_2 = second_time_switch_recalc_with_integration(ip, m, position, args, t, heat_rate_control, 1, gram_atmosphere, position)
             end
         else
             config.cnf.time_switch_1, config.cnf.time_switch_2 = switch_calculation(ip, m, position, args, t, heat_rate_control, 1, position)

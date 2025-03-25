@@ -11,7 +11,7 @@ function second_time_switch_recalc_with_integration(ip, m, position, args, t, he
 
     function func(t_s)
         # y = asim(ip, m, t, current_position, args, 0, heat_rate_control, false, t_s, reevaluation_mode)
-        y, time_switch = asim_ctrl(ip, m, t, current_position, args, 0, heat_rate_control, false, gram_atmosphere, t_s, reevaluation_mode)
+        y = asim_ctrl(ip, m, t, current_position, args, 0, heat_rate_control, false, gram_atmosphere, t_s, reevaluation_mode)
 
         Q = y[end,end]
 
@@ -48,11 +48,16 @@ function second_time_switch_recalc_with_integration(ip, m, position, args, t, he
         b = t + 1500
     end
 
-    # try
+    # println("time_switch: ", typeof(time_switch))
+
+    try
         time_switch = fzero(k -> func(k), [t, b], Roots.Brent())
-    # catch
-    #     nothing
-    # end
+    catch
+        nothing
+    end
+
+    # println("time_switch: ", typeof(time_switch))
+    # println("config.cnf.time_switch_1: ", typeof(config.cnf.time_switch_1))
 
     return config.cnf.time_switch_1, time_switch
 end
@@ -158,7 +163,11 @@ function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, 
 
     b = t + 200
 
-    time_switch_2 = fzero(k -> func(k), [t, b], Roots.Brent())
+    try
+        time_switch_2 = fzero(k -> func(k), [t, b], Roots.Brent())
+    catch
+        nothing
+    end
 
     time_switch_2 -= time_switch_2*0.1
 

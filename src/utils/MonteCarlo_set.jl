@@ -53,7 +53,7 @@ function MonteCarlo_append(MC, args, count)
 end
 
 function MonteCarlo_save(args, state, MC)
-    if args[:save_results]
+    if Bool(args[:save_results])
         folder_name = args[:simulation_filename][1:indexin("_nMC", args[:simulation_filename])]
 
         name = args[:directory_results] * folder_name * "/MC_results_control=" * string(args[:control_mode]) * "_ra=" * string(Int64(state[:Apoapsis]/1e3)) * "_rp=" * string(state[:Periapsis]) * "_hl=" * string(args[:max_heat_rate])

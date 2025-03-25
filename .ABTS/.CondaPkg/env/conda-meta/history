@@ -1,4 +1,4 @@
-==> 2025-02-23 21:47:44 <==
+==> 2025-03-12 16:42:09 <==
 # cmd: /home/vscode/.julia/artifacts/7973f2c7725e2d0eef7a95159454c4145f0945a2/bin/micromamba -r /home/vscode/.julia/scratchspaces/0b3b1443-0f03-428d-bdfb-f27f9c1191ea/root create -y -p /workspaces/ABTS.jl/.ABTS/.CondaPkg/env --override-channels --no-channel-priority libstdcxx-ng[version='>=3.4,<13.0'] openssl[version='>=3, <3.1'] python[version='>=3.8,<4',channel='conda-forge',build='*cpython*'] -c conda-forge
 # conda version: 3.8.0
 +https://conda.anaconda.org/conda-forge/linux-64::ld_impl_linux-64-2.43-h712a8e2_4
@@ -24,6 +24,6 @@
 +https://conda.anaconda.org/conda-forge/noarch::tzdata-2025a-h78e105d_0
 +https://conda.anaconda.org/conda-forge/linux-64::python-3.11.0-he550d4f_1_cpython
 +https://conda.anaconda.org/conda-forge/noarch::wheel-0.45.1-pyhd8ed1ab_1
-+https://conda.anaconda.org/conda-forge/noarch::setuptools-75.8.0-pyhff2d567_0
++https://conda.anaconda.org/conda-forge/noarch::setuptools-75.8.2-pyhff2d567_0
 +https://conda.anaconda.org/conda-forge/noarch::pip-25.0.1-pyh8b19718_0
 # update specs: ["libstdcxx-ng[version='>=3.4,<13.0']", "openssl[version='>=3, <3.1']", "conda-forge::python[version='>=3.8,<4',build=*cpython*]"]

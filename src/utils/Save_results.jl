@@ -396,5 +396,13 @@ function clean_results()
     config.solution.closed_form.γ_cf = []
     config.solution.closed_form.v_cf = []
 
+    # Closed form fitting data
+    # config.solution.closed_form_fitting.velocity = []
+    config.solution.closed_form_fitting.rho = []
+    config.solution.closed_form_fitting.h = []
+    config.solution.closed_form_fitting.time = []
+    config.solution.closed_form_fitting.CD_t = []
+    config.solution.closed_form_fitting.CL_t = []
+
     return
 end

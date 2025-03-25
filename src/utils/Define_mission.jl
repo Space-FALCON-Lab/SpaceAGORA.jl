@@ -11,7 +11,7 @@ function def_miss(args)
         args[:drag_passage] = 0
         args[:number_of_orbits] = args[:number_of_orbits]
     elseif args[:type_of_mission] == "Aerobraking Campaign"
-        args[:drag_passage] = 0
+        args[:drag_passage] = 0 
         args[:number_of_orbits] = 1000
     end
 

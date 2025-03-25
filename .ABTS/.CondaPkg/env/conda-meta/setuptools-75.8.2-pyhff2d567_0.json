@@ -8,7 +8,7 @@
     "depends": [
         "python >=3.9"
     ],
-    "extracted_package_dir": "/home/vscode/.julia/scratchspaces/0b3b1443-0f03-428d-bdfb-f27f9c1191ea/root/pkgs/setuptools-75.8.0-pyhff2d567_0",
+    "extracted_package_dir": "/home/vscode/.julia/scratchspaces/0b3b1443-0f03-428d-bdfb-f27f9c1191ea/root/pkgs/setuptools-75.8.2-pyhff2d567_0",
     "files": [
         "lib/python3.11/site-packages/_distutils_hack/__init__.py",
         "lib/python3.11/site-packages/_distutils_hack/override.py",
@@ -32,12 +32,12 @@
         "lib/python3.11/site-packages/pkg_resources/tests/test_pkg_resources.py",
         "lib/python3.11/site-packages/pkg_resources/tests/test_resources.py",
         "lib/python3.11/site-packages/pkg_resources/tests/test_working_set.py",
-        "lib/python3.11/site-packages/setuptools-75.8.0-py3.9.egg-info/PKG-INFO",
-        "lib/python3.11/site-packages/setuptools-75.8.0-py3.9.egg-info/SOURCES.txt",
-        "lib/python3.11/site-packages/setuptools-75.8.0-py3.9.egg-info/dependency_links.txt",
-        "lib/python3.11/site-packages/setuptools-75.8.0-py3.9.egg-info/entry_points.txt",
-        "lib/python3.11/site-packages/setuptools-75.8.0-py3.9.egg-info/requires.txt",
-        "lib/python3.11/site-packages/setuptools-75.8.0-py3.9.egg-info/top_level.txt",
+        "lib/python3.11/site-packages/setuptools-75.8.2-py3.9.egg-info/PKG-INFO",
+        "lib/python3.11/site-packages/setuptools-75.8.2-py3.9.egg-info/SOURCES.txt",
+        "lib/python3.11/site-packages/setuptools-75.8.2-py3.9.egg-info/dependency_links.txt",
+        "lib/python3.11/site-packages/setuptools-75.8.2-py3.9.egg-info/entry_points.txt",
+        "lib/python3.11/site-packages/setuptools-75.8.2-py3.9.egg-info/requires.txt",
+        "lib/python3.11/site-packages/setuptools-75.8.2-py3.9.egg-info/top_level.txt",
         "lib/python3.11/site-packages/setuptools/__init__.py",
         "lib/python3.11/site-packages/setuptools/_core_metadata.py",
         "lib/python3.11/site-packages/setuptools/_distutils/__init__.py",
@@ -863,17 +863,17 @@
         "lib/python3.11/site-packages/setuptools/__pycache__/wheel.cpython-311.pyc",
         "lib/python3.11/site-packages/setuptools/__pycache__/windows_support.cpython-311.pyc"
     ],
-    "fn": "setuptools-75.8.0-pyhff2d567_0.conda",
+    "fn": "setuptools-75.8.2-pyhff2d567_0.conda",
     "license": "MIT",
     "license_family": "MIT",
     "link": {
-        "source": "/home/vscode/.julia/scratchspaces/0b3b1443-0f03-428d-bdfb-f27f9c1191ea/root/pkgs/setuptools-75.8.0-pyhff2d567_0",
+        "source": "/home/vscode/.julia/scratchspaces/0b3b1443-0f03-428d-bdfb-f27f9c1191ea/root/pkgs/setuptools-75.8.2-pyhff2d567_0",
         "type": 1
     },
-    "md5": "8f28e299c11afdd79e0ec1e279dcdc52",
+    "md5": "9bddfdbf4e061821a1a443f93223be61",
     "name": "setuptools",
     "noarch": "python",
-    "package_tarball_full_path": "/home/vscode/.julia/scratchspaces/0b3b1443-0f03-428d-bdfb-f27f9c1191ea/root/pkgs/setuptools-75.8.0-pyhff2d567_0.tar.bz2",
+    "package_tarball_full_path": "/home/vscode/.julia/scratchspaces/0b3b1443-0f03-428d-bdfb-f27f9c1191ea/root/pkgs/setuptools-75.8.2-pyhff2d567_0.tar.bz2",
     "paths_data": {
         "paths": [
             {
@@ -900,9 +900,9 @@
             {
                 "_path": "lib/python3.11/site-packages/pkg_resources/__init__.py",
                 "path_type": "hardlink",
-                "sha256": "7eec9d77ef3ba27df5fb73f4c13353662167d2aba2635f2965d3facd15da950b",
-                "sha256_in_prefix": "7eec9d77ef3ba27df5fb73f4c13353662167d2aba2635f2965d3facd15da950b",
-                "size_in_bytes": 126098
+                "sha256": "fab87b5ce9d3c5d1ae0beffd140caee43eacf012f552c05e87152d8fb6be215a",
+                "sha256_in_prefix": "fab87b5ce9d3c5d1ae0beffd140caee43eacf012f552c05e87152d8fb6be215a",
+                "size_in_bytes": 126203
             },
             {
                 "_path": "lib/python3.11/site-packages/pkg_resources/api_tests.txt",
@@ -1009,9 +1009,9 @@
             {
                 "_path": "lib/python3.11/site-packages/pkg_resources/tests/test_pkg_resources.py",
                 "path_type": "hardlink",
-                "sha256": "50c8054c117c58dfb204e69672c98a96bd70a84cfb72ed81f4e9cf79732690c2",
-                "sha256_in_prefix": "50c8054c117c58dfb204e69672c98a96bd70a84cfb72ed81f4e9cf79732690c2",
-                "size_in_bytes": 15207
+                "sha256": "e4cb786c94212c22fc8fc702e3a52fdf6369d977354d3c4b19ac087c44f9e459",
+                "sha256_in_prefix": "e4cb786c94212c22fc8fc702e3a52fdf6369d977354d3c4b19ac087c44f9e459",
+                "size_in_bytes": 17111
             },
             {
                 "_path": "lib/python3.11/site-packages/pkg_resources/tests/test_resources.py",
@@ -1023,47 +1023,47 @@
             {
                 "_path": "lib/python3.11/site-packages/pkg_resources/tests/test_working_set.py",
                 "path_type": "hardlink",
-                "sha256": "65427c4aee3bbf561f44391ff01ea704f1dc742855773811731a691d3c09b3d9",
-                "sha256_in_prefix": "65427c4aee3bbf561f44391ff01ea704f1dc742855773811731a691d3c09b3d9",
-                "size_in_bytes": 8539
+                "sha256": "951b46256222c52c123126e31e047178911088b3115dccf7c7324bdaa2fb7976",
+                "sha256_in_prefix": "951b46256222c52c123126e31e047178911088b3115dccf7c7324bdaa2fb7976",
+                "size_in_bytes": 8602
             },
             {
-                "_path": "lib/python3.11/site-packages/setuptools-75.8.0-py3.9.egg-info/PKG-INFO",
+                "_path": "lib/python3.11/site-packages/setuptools-75.8.2-py3.9.egg-info/PKG-INFO",
                 "path_type": "hardlink",
-                "sha256": "8a38c979e7476630c10f727747d74b73a3735b054b00c83797f06a8521332e49",
-                "sha256_in_prefix": "8a38c979e7476630c10f727747d74b73a3735b054b00c83797f06a8521332e49",
+                "sha256": "428dad4cd3fd19bf348a93f43bffdc7bf60bc2442761bfcbdac636fd074840ab",
+                "sha256_in_prefix": "428dad4cd3fd19bf348a93f43bffdc7bf60bc2442761bfcbdac636fd074840ab",
                 "size_in_bytes": 6670
             },
             {
-                "_path": "lib/python3.11/site-packages/setuptools-75.8.0-py3.9.egg-info/SOURCES.txt",
+                "_path": "lib/python3.11/site-packages/setuptools-75.8.2-py3.9.egg-info/SOURCES.txt",
                 "path_type": "hardlink",
                 "sha256": "970b9f3b051f0faea3698b003c438cc13e98e16c4969da6f65653d2502763dc4",
                 "sha256_in_prefix": "970b9f3b051f0faea3698b003c438cc13e98e16c4969da6f65653d2502763dc4",
                 "size_in_bytes": 23773
             },
             {
-                "_path": "lib/python3.11/site-packages/setuptools-75.8.0-py3.9.egg-info/dependency_links.txt",
+                "_path": "lib/python3.11/site-packages/setuptools-75.8.2-py3.9.egg-info/dependency_links.txt",
                 "path_type": "hardlink",
                 "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
                 "sha256_in_prefix": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
                 "size_in_bytes": 1
             },
             {
-                "_path": "lib/python3.11/site-packages/setuptools-75.8.0-py3.9.egg-info/entry_points.txt",
+                "_path": "lib/python3.11/site-packages/setuptools-75.8.2-py3.9.egg-info/entry_points.txt",
                 "path_type": "hardlink",
                 "sha256": "ce482d8697ff15af4d544f69e85293dd793d0d1d5f680711538728820b15ee30",
                 "sha256_in_prefix": "ce482d8697ff15af4d544f69e85293dd793d0d1d5f680711538728820b15ee30",
                 "size_in_bytes": 2449
             },
             {
-                "_path": "lib/python3.11/site-packages/setuptools-75.8.0-py3.9.egg-info/requires.txt",
+                "_path": "lib/python3.11/site-packages/setuptools-75.8.2-py3.9.egg-info/requires.txt",
                 "path_type": "hardlink",
                 "sha256": "16b1af3f936778ac0ed4d4a41aad8eba95c4fcadaa7085e9542ea6b10d1d3e7c",
                 "sha256_in_prefix": "16b1af3f936778ac0ed4d4a41aad8eba95c4fcadaa7085e9542ea6b10d1d3e7c",
                 "size_in_bytes": 1260
             },
             {
-                "_path": "lib/python3.11/site-packages/setuptools-75.8.0-py3.9.egg-info/top_level.txt",
+                "_path": "lib/python3.11/site-packages/setuptools-75.8.2-py3.9.egg-info/top_level.txt",
                 "path_type": "hardlink",
                 "sha256": "77dc8bdfdbff5bbaa62830d21fab13e1b1348ff2ecd4cdcfd7ad4e1a076c9b88",
                 "sha256_in_prefix": "77dc8bdfdbff5bbaa62830d21fab13e1b1348ff2ecd4cdcfd7ad4e1a076c9b88",
@@ -1763,9 +1763,9 @@
             {
                 "_path": "lib/python3.11/site-packages/setuptools/_normalization.py",
                 "path_type": "hardlink",
-                "sha256": "b7e49e5dcd23536c1e418f41037a869514e1cc1343d6860ae47a73835ff9df78",
-                "sha256_in_prefix": "b7e49e5dcd23536c1e418f41037a869514e1cc1343d6860ae47a73835ff9df78",
-                "size_in_bytes": 4536
+                "sha256": "cdd4ac2038f38876fedff198718e1411e8d6419c5c94ecf7dfceea6d8359ebbb",
+                "sha256_in_prefix": "cdd4ac2038f38876fedff198718e1411e8d6419c5c94ecf7dfceea6d8359ebbb",
+                "size_in_bytes": 4824
             },
             {
                 "_path": "lib/python3.11/site-packages/setuptools/_path.py",
@@ -3461,9 +3461,9 @@
             {
                 "_path": "lib/python3.11/site-packages/setuptools/command/bdist_wheel.py",
                 "path_type": "hardlink",
-                "sha256": "402b649748922e133917ae6100285afad006c4e771bbd76d24d0612826b8c0b2",
-                "sha256_in_prefix": "402b649748922e133917ae6100285afad006c4e771bbd76d24d0612826b8c0b2",
-                "size_in_bytes": 22274
+                "sha256": "34a13ddfdd5282882012dccb0b509934a5870d9ea4e5b1ab21989a009b693735",
+                "sha256_in_prefix": "34a13ddfdd5282882012dccb0b509934a5870d9ea4e5b1ab21989a009b693735",
+                "size_in_bytes": 21976
             },
             {
                 "_path": "lib/python3.11/site-packages/setuptools/command/build.py",
@@ -4073,8 +4073,8 @@
             {
                 "_path": "lib/python3.11/site-packages/setuptools/tests/test_bdist_wheel.py",
                 "path_type": "hardlink",
-                "sha256": "0b73e9ee9d9f5021afb87d0876af25082d80061b2ee06da237925aa1cc8d1d0c",
-                "sha256_in_prefix": "0b73e9ee9d9f5021afb87d0876af25082d80061b2ee06da237925aa1cc8d1d0c",
+                "sha256": "f4963c73a8c7fd654f627931ff46849daa0704ccca016a64525449466ae6e863",
+                "sha256_in_prefix": "f4963c73a8c7fd654f627931ff46849daa0704ccca016a64525449466ae6e863",
                 "size_in_bytes": 19906
             },
             {
@@ -4143,16 +4143,16 @@
             {
                 "_path": "lib/python3.11/site-packages/setuptools/tests/test_dist.py",
                 "path_type": "hardlink",
-                "sha256": "1db4d9a7b0f93732c08776edad4f0b7ae66fe127c00036bd115b9b799caede21",
-                "sha256_in_prefix": "1db4d9a7b0f93732c08776edad4f0b7ae66fe127c00036bd115b9b799caede21",
-                "size_in_bytes": 8897
+                "sha256": "1858f22f67ad031bd5337abb36114419c5d2e60c8a8fc5736ea71b2b3a6a6ce9",
+                "sha256_in_prefix": "1858f22f67ad031bd5337abb36114419c5d2e60c8a8fc5736ea71b2b3a6a6ce9",
+                "size_in_bytes": 8901
             },
             {
                 "_path": "lib/python3.11/site-packages/setuptools/tests/test_dist_info.py",
                 "path_type": "hardlink",
-                "sha256": "020cb72f4337845e5dc57c12a4b27021b809237383cbf6ec1f6ddc1144763a53",
-                "sha256_in_prefix": "020cb72f4337845e5dc57c12a4b27021b809237383cbf6ec1f6ddc1144763a53",
-                "size_in_bytes": 7094
+                "sha256": "e640518fdb6e06c56b781b18db61f67de30efc9419b12a0e64c53f3097d47af6",
+                "sha256_in_prefix": "e640518fdb6e06c56b781b18db61f67de30efc9419b12a0e64c53f3097d47af6",
+                "size_in_bytes": 7077
             },
             {
                 "_path": "lib/python3.11/site-packages/setuptools/tests/test_distutils_adoption.py",
@@ -4164,9 +4164,9 @@
             {
                 "_path": "lib/python3.11/site-packages/setuptools/tests/test_easy_install.py",
                 "path_type": "hardlink",
-                "sha256": "0fc86c93e67485872b2a8c8a33c027291d087557e05c3951db20114a85c3cd37",
-                "sha256_in_prefix": "0fc86c93e67485872b2a8c8a33c027291d087557e05c3951db20114a85c3cd37",
-                "size_in_bytes": 53308
+                "sha256": "8f1e25a45c9e7b41b8df671d9f0068c370242f889bc3ed1020bc25770bf94822",
+                "sha256_in_prefix": "8f1e25a45c9e7b41b8df671d9f0068c370242f889bc3ed1020bc25770bf94822",
+                "size_in_bytes": 53534
             },
             {
                 "_path": "lib/python3.11/site-packages/setuptools/tests/test_editable_install.py",
@@ -4178,9 +4178,9 @@
             {
                 "_path": "lib/python3.11/site-packages/setuptools/tests/test_egg_info.py",
                 "path_type": "hardlink",
-                "sha256": "d018b6f489be3f3fd2bcab4a564abbb32dad60476bbdfbc23b27b17d3c778f2a",
-                "sha256_in_prefix": "d018b6f489be3f3fd2bcab4a564abbb32dad60476bbdfbc23b27b17d3c778f2a",
-                "size_in_bytes": 43963
+                "sha256": "c0b42633d82b8099d88dacf3c46579a5dfd40206a64ed28fb075c566619845df",
+                "sha256_in_prefix": "c0b42633d82b8099d88dacf3c46579a5dfd40206a64ed28fb075c566619845df",
+                "size_in_bytes": 44073
             },
             {
                 "_path": "lib/python3.11/site-packages/setuptools/tests/test_extern.py",
@@ -5765,11 +5765,11 @@
     },
     "platform": null,
     "requested_spec": "",
-    "sha256": "e0778e4f276e9a81b51c56f51ec22a27b4d8fc955abc0be77ad09ca9bea06bb9",
-    "size": 775598,
+    "sha256": "91d664ace7c22e787775069418daa9f232ee8bafdd0a6a080a5ed2395a6fa6b2",
+    "size": 777736,
     "subdir": "noarch",
-    "timestamp": 1736512753595,
+    "timestamp": 1740654030775,
     "track_features": "",
-    "url": "https://conda.anaconda.org/conda-forge/noarch/setuptools-75.8.0-pyhff2d567_0.conda",
-    "version": "75.8.0"
+    "url": "https://conda.anaconda.org/conda-forge/noarch/setuptools-75.8.2-pyhff2d567_0.conda",
+    "version": "75.8.2"
 }

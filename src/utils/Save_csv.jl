@@ -3,6 +3,60 @@ using DataFrames
 
  # import .config
 
+function save_closed_form_csv(filename, mission_data)  # save data of multiple missions for closed form data fitting
+  touch(filename)
+  
+  all_data = []
+
+  for mission in mission_data
+    df = DataFrame(
+      mission_id = fill(mission[:mission_id], length(mission[:time])),
+      time = mission[:time],
+      altitude = mission[:altitude],
+      velocity = mission[:velocity],
+      flight_path_angle = mission[:gamma],
+      S = mission[:S],
+      density = mission[:density],
+      initial_velocity = fill(mission[:initial_velocity], length(mission[:time])),
+      initial_periapsis = fill(mission[:initial_periapsis], length(mission[:time])),
+      initial_gamma = fill(mission[:initial_γ], length(mission[:time])),
+      inclination = fill(mission[:inclination], length(mission[:time])),
+      AOP = fill(mission[:ω], length(mission[:time])),
+      RAAN = fill(mission[:Ω], length(mission[:time])),
+      planet = fill(mission[:planet], length(mission[:time]))
+    )
+    push!(all_data, df)
+  end
+
+  # Concatenate all mission data
+  final_data = vcat(all_data...)
+
+  # Save  to CSV
+  CSV.write(filename, final_data)
+
+  println("Closed-form results saved to $filename")
+end
+
+function save_data_fitting_csv(filename, args)
+  touch(filename)
+  writer = open(filename, "w")
+
+  data_push = DataFrame(
+    time = config.solution.closed_form_fitting.time,
+    # vel_ii_mag = config.solution.orientation.vel_ii_mag,
+    rho = config.solution.closed_form_fitting.rho,
+    h = config.solution.closed_form_fitting.h,
+    CD_t = config.solution.closed_form_fitting.CD_t,
+    CL_t = config.solution.closed_form_fitting.CL_t,
+    mass = fill(config.solution.closed_form_fitting.m, length(config.solution.closed_form_fitting.time)),
+    Sref = fill(config.solution.closed_form_fitting.Sref, length(config.solution.closed_form_fitting.time)),
+    t_p = fill(config.solution.closed_form_fitting.t_p, length(config.solution.closed_form_fitting.time))
+  )
+  # Save to csv
+  CSV.write(filename, data_push)
+end
+
+
 function save_csv(filename, args)
 
     touch(filename)
@@ -77,7 +131,7 @@ function save_csv(filename, args)
                           mass = config.solution.performance.mass,
                           heat_rate = config.solution.performance.heat_rate,
                           heat_load = config.solution.performance.heat_load,
-                          T_r = config.solution.performance.T_r,
+                          T_r = config.solution.performance.T_r, 
                           q = config.solution.performance.q,
                           gravity_ii_1 = config.solution.forces.gravity_ii[1],
                           gravity_ii_2 = config.solution.forces.gravity_ii[2],

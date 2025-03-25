@@ -29,7 +29,7 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
             t0 = config.solution.orientation.time[1]
 
             t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time)
-            results(t_cf, h_cf, γ_cf, v_cf)
+             (t_cf, h_cf, γ_cf, v_cf)
         elseif args[:type_of_mission] != "Drag Passage"
             # Calculate the number of orbit
             number_orbits = config.solution.orientation.number_of_passage[end]
@@ -226,7 +226,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     # println(" ")
 
     RT = T * mission.planet.R
-    S = v0/sqrt(2*RT)
+    S = v0/sqrt(2*RT) 
     CL90, CD90 = aerodynamic_coefficient_fM(pi/2, mission.body, T, S, mission.aerodynamics)
     CL0, CD0 = aerodynamic_coefficient_fM(0, mission.body, T, S, mission.aerodynamics)
     Area_tot = mission.body.area_SC + mission.body.area_SA
@@ -294,4 +294,167 @@ function results(t_cf, h_cf, γ_cf, v_cf)
     # println(" ")
     # println(config.solution.closed_form.h_cf)
     # println(" ")
+end
+
+function save_fitting_data(args, mission, initialcondition = 0, T = 0, online = false, α=0, α_profile = [])
+    # collect the needed data for closed form solution epsilon fitting
+    # works only for spacecraft, drag passage
+    date_initial = from_utc(DateTime(mission.initial_condition.year, mission.initial_condition.month, mission.initial_condition.day, mission.initial_condition.hour, mission.initial_condition.minute, mission.initial_condition.second))
+    step_time = length(config.solution.orientation.time)
+    initialcondition = [config.solution.orientation.oe[1][1], config.solution.orientation.oe[2][1], config.solution.orientation.oe[3][1], config.solution.orientation.oe[4][1], config.solution.orientation.oe[5][1], config.solution.orientation.oe[6][1], config.solution.performance.mass[1]]
+    T = config.solution.physical_properties.T[1]
+    α = config.solution.physical_properties.α[1]
+    t0 = config.solution.orientation.time[1]
+
+    # closed_form calculation
+    α_profile = []
+    online = 0
+
+    if config.cnf.count_numberofpassage != 1
+        t_prev = config.solution.orientation.time[end]
+    else
+        t_prev = mission.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # mission.initial_condition.time_rot
+    end
+
+    pos_ii_org, vel_ii_org = orbitalelemtorv(initialcondition, mission.planet)
+    pos_ii = pos_ii_org
+    vel_ii = vel_ii_org
+
+    r0 = norm(pos_ii) # Inertial position magnitude
+    v0 = norm(vel_ii) # Inertial velocity magnitude
+    h0 = r0 - mission.planet.Rp_e
+
+    # println(" ")
+    # println(r0)
+    # println("")
+    # println(v0)
+    # println("")
+    # println(h0)
+    # println("")
+
+    pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, mission.planet, 0, 0, date_initial, t0)
+
+    LatLong = rtolatlong(pos_pp, mission.planet)
+    lat = LatLong[2]
+    lon = LatLong[3]
+    h0 = LatLong[1] 
+
+    # println("")
+    # println(h0)
+    # println("")
+
+    h_ii = cross(pos_ii, vel_ii)
+    arg = median([-1, 1, norm(h_ii)/(r0*v0)])   # limit to[-1, 1]
+    γ0 = acos(arg)
+
+    if dot(pos_ii, vel_ii) < 0
+        γ0 = -γ0
+    end
+
+    initial_state_angle = initialcondition[6]
+    e = initialcondition[2]
+    a = initialcondition[1]
+    final_state_angle = -initial_state_angle
+    E_initialstate = 2 * atan(sqrt((1-e)/(1+e)) * tan(initial_state_angle/2))
+    E_finalstate = 2 * atan(sqrt((1-e)/(1+e)) * tan(final_state_angle/2))
+
+    # Evaluate time to reach next state
+    Δt = sqrt(a^3 / mission.planet.μ) * ((E_finalstate - e*sin(E_finalstate)) - (E_initialstate - e*sin(E_initialstate)))
+    t_p = Δt/2
+
+    # println("")
+    # println(Δt)
+    # println("")
+
+    # TODO: NEEDS TO CHANGE THIS TO ARGS[:EI]
+    if h0 < 160*1e3 #if initial condition are lower than drag passage initial condition #this happens only running MC cases
+        # let's calculate pos_ii,v_ii for the point of trajectory corresponding to h = 160 km
+        h0 = 160*1e3
+        r = mission.planet.Rp_e + h0
+        OE = rvtoorbitalelement(pos_ii_org, vel_ii_org, mission, mission.planet)
+        a, e, i, Ω, ω, vi = OE[1], OE[2], OE[3], OE[4], OE[5], OE[6]
+        vi = 2*pi - acos(((a*(1 - e^2)/r)-1)/e)
+        E_real_finalstate = 2 * atan(sqrt((1-e)/(1+e)) * tan(-vi/2)) # eccentric anomaly
+        Δt = sqrt(a^3 / mission.planet.μ) * ((E_real_finalstate - e*sin(E_real_finalstate)) - (E_initialstate - e*sin(E_initialstate)))
+        t_p = Δt/2
+    end
+
+    if step_time == 0
+        temp = Δt * args[:trajectory_rate]/10
+
+        # println(length(config.cnf.heat_rate_list))
+        # println("")
+        # println(temp)
+        # println("")
+
+        if temp > length(config.cnf.heat_rate_list)
+            step_time = temp
+        else
+            step_time = length(config.cnf.heat_rate_list)
+        end
+    end
+
+    # t_cf = collect(0:Int64(step_time):Δt)
+    t_cf = collect(range(start=0, stop=Δt, length=floor(Int, step_time)+1))
+
+    # println(step_time)
+    # println("")
+    # println(Δt)
+    # println("")
+    # println(t_cf)
+    # println("")
+
+    cost_3 = v0 * γ0
+
+    h_cf = h0 .+ cost_3*(t_cf - (t_cf.^2/(2*t_p)))
+
+    # println(size(h_cf))
+
+    # ρ, ~, ~ = density_exp.(h_cf, fill(mission.planet, size(h_cf)))
+    ρ = density_exp(h_cf, mission.planet)[1]
+
+    # println(" ")
+    # println(ρ)
+    # println(" ")
+
+    RT = T * mission.planet.R
+    S = v0/sqrt(2*RT) 
+    CL90, CD90 = aerodynamic_coefficient_fM(pi/2, mission.body, T, S, mission.aerodynamics)
+    CL0, CD0 = aerodynamic_coefficient_fM(0, mission.body, T, S, mission.aerodynamics)
+    Area_tot = mission.body.area_SC + mission.body.area_SA
+    mass = initialcondition[end]
+    Rp = mission.planet.Rp_e
+
+    if length(α_profile) == 0
+        α_profile = α * ones(length(t_cf))
+    else
+        if length(α_profile) > length(t_cf)
+            α_profile = α_profile[1:length(t_cf)]
+        elseif length(α_profile) < length(t_cf)
+            last_α = α_profile[end]
+            α_profile = α_profile + [last_α] * (length(t_cf) - length(α_profile))
+        end
+    end
+
+    CD_t = CD0 .+ (α_profile * (CD90 - CD0)) / (pi/2)
+    CL_t = CL0 .+ (α_profile * (CL90 - CL0)) / (pi/2)
+
+    # cost_1 = ρ .* CD_t * Area_tot / (2*mass)
+    # cost_2 = ρ .* CL_t * Area_tot / (2*mass)
+
+    # Save results
+    # append!(config.solution.closed_form_fitting.velocity, t_cf)
+    println("it is running here")
+    append!(config.solution.closed_form_fitting.rho, ρ)
+    append!(config.solution.closed_form_fitting.h, h_cf)
+    append!(config.solution.closed_form_fitting.time, t_cf)
+    append!(config.solution.closed_form_fitting.CD_t, CD_t)
+    append!(config.solution.closed_form_fitting.CL_t, CL_t)
+    println("type of the t_p data", typeof(t_p))
+    config.solution.closed_form_fitting.t_p = t_p
+    config.solution.closed_form_fitting.m = mass
+    config.solution.closed_form_fitting.Sref = Area_tot
+
+
+
 end

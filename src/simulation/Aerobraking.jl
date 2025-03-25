@@ -1,6 +1,6 @@
 include("Complete_passage.jl")
 include("../utils/Ref_system_conf.jl")
-include("../utils/Closed_form_solution.jl")
+# include("../utils/Closed_form_solution.jl")
 include("../utils/Odyssey_maneuver_plan.jl")
 include("../utils/VEx_maneuver_plan.jl")
 include("../utils/Magellan_maneuver_plan.jl")
@@ -178,5 +178,6 @@ function aerobraking(ip, m, args)
         println(" ")
     end
 
-    closed_form(args, m)
+    # closed_form(args, m)
+    save_fitting_data(args, m)
 end

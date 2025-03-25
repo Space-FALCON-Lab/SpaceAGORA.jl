@@ -262,6 +262,21 @@ module config
         v_cf::Vector{Float64} = []
     end
 
+    @kwdef mutable struct Closed_form_fitting
+        # V_init::Float64 = 0.0
+        # gamma_init::Float64 = 0.0
+        R_p::Float64 = 0.0
+        t_p::Float64 = 0.0
+        m::Float64 = 0.0
+        Sref::Float64 = 0.0
+        # velocity::Vector{Float64} = []
+        rho::Vector{Float64} = []
+        h::Vector{Float64} = []
+        time::Vector{Float64} = []
+        CD_t::Vector{Float64} = []
+        CL_t::Vector{Float64} = []
+    end
+
     @kwdef mutable struct Solution
         orientation::Orientation = Orientation()
         physical_properties::Physical_properties = Physical_properties()
@@ -269,6 +284,7 @@ module config
         forces::Forces = Forces()
         simulation::Simulation = Simulation()
         closed_form::Closed_form = Closed_form()
+        closed_form_fitting::Closed_form_fitting = Closed_form_fitting()
     end
 
     solution = Solution()

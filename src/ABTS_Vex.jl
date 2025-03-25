@@ -15,19 +15,20 @@ args = Dict(# Misc Simulation
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
+            :closed_form_fitting_data => 6,                         # number of sets of data to get for data fitting
 
             # Type of Mission
-            :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
+            :type_of_mission => "Drag Passage",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 100,                                 # Number of aerobraking passage
+            :number_of_orbits => 1,                                 # Number of aerobraking passage
 
             # Physical Model
             :planet => 2,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,#453769200.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
-            :n_bodies => ["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
+            :n_bodies => [], #["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
-            :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
+            :wind => 0,                                             # Wind calculation only if density model is Gram True=1, False=0
             :aerodynamic_model => "Mach-dependent",                 # choices=['Cd and Cl Constant' , 'Mach-dependent' , 'No-Ballistic flight with axial coefficient']: "Mach-dependent" specific for spacecraft shape, "No-Ballistic flight" specific for blunted-cone shape
             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
             :srp => 1,                                             # Solar Radiation Pressure True=1, False=0
@@ -70,19 +71,19 @@ args = Dict(# Misc Simulation
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             
             # Initial Conditions
-            :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
+            :initial_condition_type => 1,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
             :ra_initial_a => 66597e3 + 6.0518e6, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 1e21,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e21,                                       # Step Apoapsis Radius for for-loop in m
             :hp_initial_a => 186600.0,#176590.0,#188140.0                                 # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 1590000.0,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
-            :v_initial_a => 3700.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :v_step => 100.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :γ_initial_a => 2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :γ_step => 0.5,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :v_initial_a => 9200, #9305,   #3700.0,    9 to 10                             # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :v_initial_b => 15000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :v_step => 1000000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :γ_initial_a => -16, #2.5,        -10~-20     in-0.5                       # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :γ_initial_b => -22.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :γ_step => -10000,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
             :inclination => 89.876,                                   # Inclination Orbit, deg
             :ω => 75.505,                                              # AOP, deg
             :Ω => 104.115,                                              # RAAN, deg
@@ -144,12 +145,67 @@ args = Dict(# Misc Simulation
 
 # Calculating time of simulation
 t = @elapsed begin
-            
-    # Run the simulation
-    sol = run_analysis(args)
+    multirun = true #true
+    if multirun == true    
+        # Define number of mission based on closed_form_fitting_data
+        num_missions = args[:closed_form_fitting_data]
+        missions_data = [] # List to store mission results
 
-    if Bool(args[:passresults])
-        println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+        # Define different initial conditions for each mission
+        initial_velocity_list = [9000.0, 9100.0, 9200.0, 9300.0, 9400.0, 9500.0]
+
+        initial_periapsis_list = [156600.0, 166600.0, 176600.0, 186600.0, 196600.0, 206600.0]
+
+        initial_γ_list = [-10.0, -11.5, -13.0, -14.5, -16.0, -17.5]
+
+        for i in 1:num_missions
+            initial_velocity_list[i]
+
+            # args[:v_initial_a] = initial_velocity_list[i]
+            args[:γ_initial_a] = initial_γ_list[i]
+            args[:hp_initial_a] = initial_periapsis_list[i]
+            println("Running mission $i with v0=$(args[:v_initial_a]) m/s or γ =$(args[:γ_initial_a]) m")
+            println("i = $i")
+
+            # Run the simulation
+            sol = run_analysis(args)
+            println(args)
+            # Extract needed results
+            push!(missions_data, Dict(
+                :mission_id => i,
+                :time => sol.orientation.time,
+                :altitude =>sol.orientation.alt,
+                :velocity => sol.orientation.vel_ii_mag,
+                :gamma => sol.orientation.γ_ii,
+                :S => sol.physical_properties.S,
+                :density => sol.physical_properties.ρ,
+                :initial_velocity => args[:v_initial_a],
+                :initial_periapsis => args[:hp_initial_a],
+                :initial_γ => args[:γ_initial_a],
+                :inclination => args[:inclination],
+                :ω => args[:ω],
+                :Ω => args[:Ω],
+                :planet => args[:planet]
+            ))
+            # filename = "fitting_data" * "V0=" * args[:v_initial_a] * ",gamma0=" args[:γ_initial_a] * ".csv"
+            filename = string("fitting_data_V0=", args[:v_initial_a], "_gamma0=", args[:γ_initial_a], ".csv")
+            save_data_fitting_csv(filename, args)
+            if Bool(args[:passresults])
+                println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+            end
+        end
+        
+        # Save all mission data to CSV
+        save_closed_form_csv("closed_form_results.csv", missions_data)
+
+        
+    else
+        # Run the simulation
+        sol = run_analysis(args)
+        # println(args)
+        if Bool(args[:passresults])
+            println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+        end
     end
 end
 

@@ -37,13 +37,13 @@ function planet_data(ip)
         topography_function = Earth_elevation! # Earth topography function
         name = "earth"
     elseif (ip == 1 || (typeof(ip) == String && cmp(lowercase(ip), "mars") == 0)) # Mars
-        Rp_e = 3.397e6 #3.3962           # equatorial radius, m
-        Rp_p = 3.375e6 #3.3762           # polar radius, m
+        Rp_e = 3.3962e6 #3.3962           # equatorial radius, m
+        Rp_p = 3.3762e6 #3.3762           # polar radius, m
         Rp_m = 3.3895e6            # volumetric mean radius, m
         mass = 6.4169e23           # mass, kg
         g_ref = 3.73               # acceleration due to gravity, m/s²
         ρ_ref = 8.7489231e-07      # density, kg/m³
-        μ = 4.2828314258067e13              # gravitational parameter, m³/s²
+        μ = 4.282837362069909e13 # 4.2828314258067e13              # gravitational parameter, m³/s²
         h_ref = 90 * 1e3           # reference altitude, m
         H = 6.308278108 * 1e3      # scale height, m
         R = 188.92                 # specific gas constant, J/(kg·K)
@@ -211,9 +211,9 @@ function planet_data(ip)
     # α = Right ascension of the north pole of rotation, radians
     # δ = Declination of the north pole of rotation, radians
     σ1 = sqrt(cos(δ)^4 + cos(δ)^2*sin(δ)^2)
-    J2000_to_pci = [-sin(α) cos(α) 0;
+    J2000_to_pci = SMatrix{3, 3, Float64}([-sin(α) cos(α) 0;
                     -cos(δ)*cos(α)*sin(δ)/σ1 -cos(δ)*sin(α)*sin(δ)/σ1 cos(δ)^2/σ1;
-                    cos(δ)*cos(α) cos(δ)*sin(α) sin(δ)] 
+                    cos(δ)*cos(α) cos(δ)*sin(α) sin(δ)])    
     config.model.planet = config.Planet(Rp_e, 
                                         Rp_p, 
                                         Rp_m, 
@@ -234,7 +234,8 @@ function planet_data(ip)
                                         Lz, 
                                         α, 
                                         δ, 
-                                        J2000_to_pci, 
+                                        J2000_to_pci,
+                                        MMatrix{3, 3, Float64}(zeros(3,3)), 
                                         zeros(3, 3), 
                                         zeros(3, 3), 
                                         zeros(3, 3),
@@ -242,6 +243,13 @@ function planet_data(ip)
                                         name,
                                         zeros(3, 3),
                                         zeros(3, 3),
+                                        zeros(3, 3),
+                                        zeros(3, 3),
+                                        zeros(3, 3),
+                                        zeros(3, 3),
+                                        zeros(3, 3),
+                                        zeros(3),
+                                        zeros(3),
                                         topography_function)
     
     return config.model.planet

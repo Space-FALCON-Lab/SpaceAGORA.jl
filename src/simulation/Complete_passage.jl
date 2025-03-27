@@ -20,6 +20,7 @@ using Dates
 using AstroTime
 using SPICE
 using PythonCall
+using StaticArrays
 sys = pyimport("sys")
 
 # furnsh("/home/space-falcon-1/Documents/ABTS.jl/GRAM_Data/SPICE/spk/planets/ORVV__140501000000_00546.BSP")
@@ -93,6 +94,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         gram_atmosphere = param[10]
         gram = param[11]
 
+        
         ## Counters
         # Counter for all along the simulation of all passages
         config.cnf.count_aerobraking = config.cnf.count_aerobraking + 1
@@ -109,9 +111,17 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         time_real = DateTime(current_epoch) # date_initial + Second(t0)
         timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
 
+        # Timing variables
+        el_time = value(seconds(current_epoch - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))) # Elapsed time since the beginning of the simulation
+        current_time =  value(seconds(current_epoch - from_utc(DateTime(2000, 1, 1, 12, 0, 0.0)))) # current time in seconds since J2000
+        time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
+        et = utc2et(time_real_utc) # Current time in Ephemeris Time
+        # m.planet.L_PI .= pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+        
+
         # Assign state
-        pos_ii = in_cond[1:3] * config.cnf.DU                      # Inertial position 
-        vel_ii = in_cond[4:6] * config.cnf.DU / config.cnf.TU      # Inertial velocity
+        pos_ii = SVector{3, Float64}(in_cond[1:3] * config.cnf.DU)                      # Inertial position 
+        vel_ii = SVector{3, Float64}(in_cond[4:6] * config.cnf.DU / config.cnf.TU)      # Inertial velocity
         mass = in_cond[7] * config.cnf.MU                                          # Mass kg
         pos_ii_mag = norm(pos_ii)                                  # Magnitude of the inertial position
         vel_ii_mag = norm(vel_ii)                                  # Magnitude of the inertial velocity
@@ -124,7 +134,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # TRANSFORM THE STATE
         # Inertial to planet relative transformation
-        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t0, t_prev, date_initial, t0) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
+        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, t0, t_prev, date_initial, t0) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
         pos_pp_mag = norm(pos_pp) # Magnitude of the planet relative position
         pos_pp_hat = pos_pp / pos_pp_mag # Unit vector of the planet relative position
         pos_ii_hat = pos_ii / pos_ii_mag # Unit vector of the inertial position
@@ -133,15 +143,15 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         vel_pp_hat = vel_pp / vel_pp_mag
 
         # Orbital Elements
+        # println("pos_ii: ", pos_ii, " vel_ii: ", vel_ii, " mass: ", mass)
+        # # sleep(5.0)
         OE = rvtoorbitalelement(pos_ii, vel_ii, mass, m.planet)
         vi = OE[6]
 
-        # Timing variables
-        el_time = value(seconds(current_epoch - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))) # Elapsed time since the beginning of the simulation
-        current_time =  value(seconds(current_epoch - from_utc(DateTime(2000, 1, 1, 12, 0, 0.0)))) # current time in seconds since J2000
-        time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
-        et = utc2et(time_real_utc) # Current time in Ephemeris Time
-
+        
+        # m.planet.L_PI .= pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+        # println("L_PI: ", m.planet.L_PI)
+        # # sleep(5.0)
         Mars_Gram_recalled_at_periapsis = false
 
         if vi > 0 && vi < pi/2 && config.cnf.ascending_phase == false
@@ -180,7 +190,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         ## Derived Quantity Calculations
 
         # Compute latitude and longitude
-        LatLong = rtolatlong(pos_pp, m.planet, args[:topography_model] == "Spherical Harmonics" && pos_ii_mag < m.planet.Rp_e + args[:EI] * 1e3)
+        LatLong = rtolatlong(pos_pp, m.planet, args[:topography_model] == "Spherical Harmonics" && norm(pos_ii) - m.planet.Rp_e < args[:EI] * 1e3)
         
         lat = LatLong[2]
         lon = LatLong[3]
@@ -215,10 +225,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
 
         # Compute NED basis unit vectors
-        uDuNuE = latlongtoNED(LatLong)
-        uD = uDuNuE[1]
-        uE = uDuNuE[3]
-        uN = uDuNuE[2]
+        uD, uN, uE = latlongtoNED(LatLong)
+        # uD = uDuNuE[1]
+        # uE = uDuNuE[3]
+        # uN = uDuNuE[2]
 
         # copmute azimuth
         vN = dot(vel_pp, uN)
@@ -235,7 +245,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         elseif ip.dm == 3
             ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
-            ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
+            ρ, T_p, wind = pyconvert(Float64, ρ), pyconvert(Float64, T_p), [pyconvert(Float64, wind[1]), pyconvert(Float64, wind[2]), pyconvert(Float64, wind[3])]
         end
 
         # println(" ")
@@ -395,7 +405,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         q = 0.5 * ρ * norm(vel_pp_rw)^2               # dynamic pressure based on wind, Pa
         
         ## Rotation Calculation
-        L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 to planet-fixed frame
+        m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 to planet-fixed frame
        
         # Nominal gravity calculation
         if ip.gm == 0
@@ -428,11 +438,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             ∇U = gradU_sph!(pos_pp_sph, m.planet.μ, m.planet.Rp_e, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.A_grav)
             # println("∇U: ", ∇U)
             # println("norm(gravity) before: ", norm(gravity_ii/mass))
-            # sleep(10)
-            gravity_ii += mass * L_PI' * acc_NSG(pos_pp, ∇U) #+ cross(2*m.planet.ω, vel_pp) + cross(m.planet.ω, cross(m.planet.ω, pos_pp))) # Inertial gravity force vector, since acc_NSG is in planet-fixed frame have to use double transport thm
-            # gravity_ii += mass * L_PI' * acc_gravity_pines(pos_pp_sph, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_m)
+            # # sleep(10)
+            # gravity_ii += mass * m.planet.L_PI' * acc_NSG(pos_pp, ∇U) #+ cross(2*m.planet.ω, vel_pp) + cross(m.planet.ω, cross(m.planet.ω, pos_pp))) # Inertial gravity force vector, since acc_NSG is in planet-fixed frame have to use double transport thm
+            gravity_ii += mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_m, m.planet)
+            # println("norm(gravity_ii_pines): ", norm(gravity_ii_pines/mass), " norm(gravity_ii_nsg): ", norm(gravity_ii_nsg/mass))
+            # println("gravity_ii_pines: ", gravity_ii_pines, " gravity_ii_nsg: ", gravity_ii_nsg)
+            # gravity_ii += gravity_ii_pines
             # println("norm(gravity_ii): ", norm(gravity_ii/mass))
-            # sleep(10)
+            # # sleep(10)
             # println("norm(r): ", norm(pos_ii))
         end
 
@@ -463,8 +476,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         drag_pp = q * CD * area_tot * drag_pp_hat                       # PLanet relative drag force vector
         lift_pp = q * CL * area_tot * lift_pp_hat * cos(bank_angle)     # PLanet relative lift force vector
 
-        drag_ii = L_PI' * drag_pp   # Inertial drag force vector
-        lift_ii = L_PI' * lift_pp   # Inertial lift force vector
+        drag_ii = m.planet.L_PI' * drag_pp   # Inertial drag force vector
+        lift_ii = m.planet.L_PI' * lift_pp   # Inertial lift force vector
 
         # Check if propellant mass is greater than 0 kg
         if config.cnf.index_propellant_mass == 1
@@ -494,12 +507,12 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         thrust_pp_hat =  drag_pp_hat * cos(args[:phi]) + cross(D_L_per_pp_hat, drag_pp_hat) * sin(args[:phi]) + D_L_per_pp_hat * dot(D_L_per_pp_hat, drag_pp_hat) * (1 - cos(args[:phi]))
         #these two ways give the same direction
         thrust_pp = thrust_pp_mag * thrust_pp_hat
-        thrust_ii = L_PI' * thrust_pp
+        thrust_ii = m.planet.L_PI' * thrust_pp
 
         # Total Force
         # Total inetrial external force vector on body [N]
         force_ii = drag_ii + lift_ii + gravity_ii + thrust_ii + srp_ii
-
+        # alt, lat, lon = rtolatlong(pos_pp, m.planet, args[:topography_model] == "Spherical Harmonics" && pos_ii_mag < m.planet.Rp_e + args[:EI] * 1e3)
         # index_steps_EOM
         # y_dot = zeros(8)
         
@@ -554,6 +567,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     eventfirststep = ContinuousCallback(eventfirststep_condition, nothing, eventfirststep_affect!)
 
     function eventfirststep_periapsis_condition(y, t, integrator)
+        # println("entered eventfirststep_periapsis_condition!")
+        # sleep(3.0)
         m = integrator.p[1]
         pos_ii = [y[1], y[2], y[3]] * config.cnf.DU  # Inertial position
         vel_ii = [y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU  # Inertial Velocity
@@ -565,6 +580,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
 
     function eventfirststep_periapsis_affect!(integrator)
+        # println("entered eventfirststep_periapsis_affect!")
+        # sleep(3.0)
         # println("entered eventfirststep_periapsis_affect!")
         config.cnf.eventfirststep_periapsis += 1
         terminate!(integrator)
@@ -603,7 +620,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
     end
     function reached_AE_affect!(integrator)
-        println("entered reached_AE_affect!")
+        # println("entered reached_AE_affect!")
         # config.cnf.count_reached_AE += 1
         nothing
     end
@@ -637,10 +654,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         t_prev = integrator.p[5]
         ip = integrator.p[3]
         date_initial = integrator.p[6]
-        pos_ii = [y[1], y[2], y[3]] * config.cnf.DU  # Inertial position
-        vel_ii = [y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU  # Inertial velocity
-        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev, date_initial, t*config.cnf.TU)
-        # pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t, t_prev)
+        pos_ii = SVector{3, Float64}([y[1], y[2], y[3]] * config.cnf.DU)  # Inertial position
+        vel_ii = SVector{3, Float64}([y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU)  # Inertial velocity
+        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev, date_initial, t*config.cnf.TU)
+        # pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, t, t_prev)
 
         LatLong = rtolatlong(pos_pp, m.planet)#, args[:topography_model] == "Spherical Harmonics" && norm(pos_ii) < m.planet.Rp_e + args[:EI]*1e3)
 
@@ -683,10 +700,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         ip = integrator.p[3]
         date_initial = integrator.p[6]
 
-        pos_ii = [y[1], y[2], y[3]] * config.cnf.DU                     # Inertial position
-        vel_ii = [y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU     # Inertial velocity
-        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev, date_initial, t * config.cnf.TU)
-        # pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t, t_prev)
+        pos_ii = SVector{3, Float64}([y[1], y[2], y[3]] * config.cnf.DU)                    # Inertial position
+        vel_ii = SVector{3, Float64}([y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU)    # Inertial velocity
+        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, t * config.cnf.TU, t_prev, date_initial, t * config.cnf.TU)
+        # pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, t, t_prev)
 
         LatLong = rtolatlong(pos_pp, m.planet)#, args[:topography_model] == "Spherical Harmonics" && norm(pos_ii) < m.planet.Rp_e + args[:EI]*1e3)
 
@@ -739,6 +756,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     apoapsispoint = ContinuousCallback(apoapsispoint_condition, apoapsispoint_affect!, nothing)
 
     function periapsispoint_condition(y, t, integrator)
+        # println("entered periapsispoint_condition!")
+        # sleep(3.0)
         m = integrator.p[1]
         pos_ii = [y[1], y[2], y[3]] * config.cnf.DU  # Inertial position
         vel_ii = [y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU  # Inertial Velocity
@@ -749,9 +768,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         rad2deg(vi) - 180  # downcrossing
     end
     function periapsispoint_affect!(integrator)
+        # println("entered periapsispoint_affect!")
+        # sleep(3.0)
         config.cnf.count_periapsispoint += 1
-        r_p, _ = r_intor_p(integrator.u[1:3] * config.cnf.DU, 
-                        integrator.u[4:6] * config.cnf.DU / config.cnf.TU, 
+        r_p, _ = r_intor_p!(SVector{3, Float64}(integrator.u[1:3] * config.cnf.DU), 
+                        SVector{3, Float64}(integrator.u[4:6] * config.cnf.DU / config.cnf.TU), 
                         integrator.p[1].planet, 
                         integrator.t * config.cnf.TU, 
                         integrator.p[5], 
@@ -766,6 +787,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     periapsispoint = ContinuousCallback(periapsispoint_condition, nothing, periapsispoint_affect!)
 
     function impact_condition(y, t, integrator)
+        # println("entered impact_condition!")
+        # sleep(3.0)
         m = integrator.p[1]
         args = integrator.p[8]
 
@@ -780,12 +803,15 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
     function impact_affect!(integrator)
         # println("entered impact_affect!")
+        # sleep(3.0)
         config.cnf.count_impact += 1
         terminate!(integrator)
     end
     impact = ContinuousCallback(impact_condition, impact_affect!)
 
     function apoapsisgreaterperiapsis_condition(y, t, integrator)
+        # println("entered apoapsisgreaterperiapsis_condition!")
+        # sleep(3.0)
         m = integrator.p[1]
         args = integrator.p[8]
 
@@ -807,6 +833,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
     function apoapsisgreaterperiapsis_affect!(integrator)
         # println("entered apoapsisgreaterperiapsis_affect!")
+        # sleep(3.0)
         config.cnf.count_apoapsisgreaterperiapsis += 1
         terminate!(integrator)
     end
@@ -1036,14 +1063,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Definition dtep montecarlo_size
         if aerobraking_phase == 1 || aerobraking_phase == 3
-            step = 0.1
+            step = 5.0
             r_tol = 1e-10
             a_tol = 1e-12
             simulator = "Julia"
             method = Tsit5()
             save_ratio = 2
         elseif aerobraking_phase == 0
-            step = 0.1
+            step = 1.0
             r_tol = 1e-9
             a_tol = 1e-11
             simulator = "Julia"
@@ -1051,7 +1078,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             save_ratio = 5
         elseif aerobraking_phase == 2
             if args[:integrator] == "Julia"
-                step = 0.01
+                step = 0.1
                 r_tol = 1e-10
                 a_tol = 1e-12
 
@@ -1197,7 +1224,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 # println(in_cond[7])
                 # Run simulation
                 prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
-                sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events, dt=step/config.cnf.TU)
+                sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)#, dt=step/config.cnf.TU)
                 # sol = solve(prob, method, dt=step, abstol=a_tol, reltol=r_tol, callback=events)
 
                 config.cnf.counter_integrator += 1

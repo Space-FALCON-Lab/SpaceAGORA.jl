@@ -6,7 +6,7 @@ include("../utils/Plot_data.jl")
 include("Aerobraking.jl")
 
 using SPICE
-
+using StaticArrays
 # import .config
 
 function aerobraking_campaign(args, state)
@@ -68,6 +68,57 @@ function aerobraking_campaign(args, state)
             p_class.Clm[l, m] = harmonics_data[i, 3]
             p_class.Slm[l, m] = harmonics_data[i, 4]
         end
+
+        # Precalculate N1, N2
+        L = args[:L]
+        M = args[:M]
+        N1 = zeros(L+4, L+4)
+        N2 = zeros(L+4, L+4)
+        VR01 = zeros(L+1, L+1)
+        VR11 = zeros(L+1, L+1)
+        # VR02 = zeros(L+1, L+1)
+        # VR12 = zeros(L+1, L+1)
+        # VR22 = zeros(L+1, L+1)
+        sqrt_2 = sqrt(2)
+        for m = 0:M+2
+            j = m + 1
+            for l = m+2:L+2
+                i = l + 1
+                N1[i, j] = √((2*l+1)*(2*l-1)/(l+m)/(l-m))
+                N2[i, j] = √((l+m-1)*(2*l+1)*(l-m-1)/(2*l-3)/(l+m)/(l-m))
+            end
+        end
+
+        for l = 0:L
+            i = l + 1
+            for m = 0:min(M, l)
+                j = m + 1
+                divisor = m == 0 ? sqrt_2 : 1
+                VR01[i, j] = sqrt((l-m)*(l+m+1)) / divisor
+                VR11[i, j] = sqrt((2*l+1)*(l+m+2)*(l+m+1)/(2*l+3)) / divisor
+                # VR02[i, j] = sqrt((l-m)*(l-m-1)*(l+m+1)*(l+m+2)) / divisor
+                # VR12[i, j] = sqrt((2*l+1)/(2*l+3)*(l-m)*(l+m+1)*(l+m+2)*(l+m+3)) / divisor
+                # VR22[i, j] = sqrt((2*l+1)/(2*l+5)*(l+m+1)*(l+m+2)*(l+m+3)*(l+m+4)) / divisor
+            end
+        end
+        p_class.N1 = N1
+        p_class.N2 = N2
+        p_class.VR01 = VR01
+        p_class.VR11 = VR11
+
+        A = zeros(L+4, L+4)
+        R = zeros(L+4)
+        I = zeros(L+4)
+        A[1, 1] = 1
+        # Fill the diagonal elements of A
+        for l = 1:L+2
+            i = l + 1
+            A[i, i] = sqrt((2*l+1)/(2*l))*A[i-1, i-1]
+        end
+        p_class.Re = R
+        p_class.Im = I
+        p_class.A = A
+
     end
 
     # Set up the planet shape

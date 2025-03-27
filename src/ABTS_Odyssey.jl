@@ -22,7 +22,7 @@ args = Dict(# Misc Simulation
 
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
+            :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 150,                                 # Number of aerobraking passage
 
             # Physical Model
@@ -152,7 +152,7 @@ args = Dict(# Misc Simulation
             :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
-            :Odyssey_sim => 0                                      # Simulate Odyssey Mission
+            :Odyssey_sim => 1                                      # Simulate Odyssey Mission
             )
 
 # Calculating time of simulation

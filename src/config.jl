@@ -1,5 +1,5 @@
 module config
-
+using StaticArrays
 export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model
 
     @kwdef mutable struct Body
@@ -37,7 +37,8 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         Lz::Float64 = 0.0
         α::Float64 = 0.0
         δ::Float64 = 0.0
-        J2000_to_pci::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
+        L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
         Clm::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
         Slm::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
         Clm_topo::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
@@ -45,6 +46,13 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         name::String = ""
         A_grav::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
         A_topo::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        VR01::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        VR11::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        N1::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        N2::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        A::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        Re::Vector{Float64} = [0.0, 0.0, 0.0]
+        Im::Vector{Float64} = [0.0, 0.0, 0.0]
         topography_function::Function = (args, Clm, Slm, latitude, longitude) -> 0.0
     end
 

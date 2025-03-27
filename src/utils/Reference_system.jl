@@ -2,38 +2,38 @@
 
 using LinearAlgebra
 using AstroTime
+using StaticArrays
 
-function r_intor_p(r_i, v_i, planet, t, t_prev, date_initial, t0)
+function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet, t, t_prev, date_initial, t0)
     # From PCI (planet centered inertial) to PCPF (planet centered/planet fixed)
 
     # rot_angle = norm(planet.ω) * (t + t_prev)
 
     current_time =  value(seconds(date_initial + t0*seconds - from_utc(DateTime(2000, 1, 1, 12, 0, 0.0)))) # current time in seconds since J2000
     primary_body_name = planet.name
-    
-    L_pi = pxform("J2000", "IAU_"*uppercase(primary_body_name), current_time)*planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+    planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(primary_body_name), current_time))*planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
     
     # L_pi = [cos(rot_angle) sin(rot_angle) 0; 
     #         -sin(rot_angle) cos(rot_angle) 0; 
     #         0 0 1]
 
-    r_p = L_pi * r_i
+    r_p = SVector{3, Float64}(planet.L_PI * r_i)
 
-    v_p = L_pi * (v_i - cross(planet.ω, r_i))
+    v_p = SVector{3, Float64}(planet.L_PI * (v_i - cross(planet.ω, r_i)))
 
     return r_p, v_p
 end
 
-function r_pintor_i(r_p, v_p, planet, t, t_prev)
+function r_pintor_i(r_p::SVector{3, Float64}, v_p::SVector{3, Float64}, planet, t::Float64, t_prev::Float64)
     # From PCPF (planet centered/planet fixed) to PCI (planet centered inertial)
     rot_angle = -norm(planet.ω) * (t + t_prev)
 
-    L_pi = [cos(rot_angle) sin(rot_angle) 0; 
+    L_PI = SMatrix{3, 3, Float64}([cos(rot_angle) sin(rot_angle) 0; 
             -sin(rot_angle) cos(rot_angle) 0; 
-            0 0 1]
+            0 0 1])
 
-    r_i = L_pi * r_p
-    v_i = L_pi * (v_p + cross(planet.ω, r_p))
+    r_i = L_PI' * r_p
+    v_i = L_PI' * SVector{3, Float64}(v_p + cross(planet.ω, r_p))
 
     return r_i, v_i
 end
@@ -184,13 +184,13 @@ function latlongtor(LATLONGH, planet, α_g0, t, t0)
     return [x, y, z]
 end
 
-function rtolatlong(r_p, planet, spherical_harmonic_topography=false)
+function rtolatlong(r_p::SVector{3, Float64}, planet, spherical_harmonic_topography::Bool=false)
     # From PCPF to LLA through Bowring's method https://www.mathworks.com/help/aeroblks/ecefpositiontolla.html;jsessionid=2ae36964c7d5f2115d2c21286db0?nocookie=true
     x_p = r_p[1]
     y_p = r_p[2]
     z_p = r_p[3]
 
-    f = 0.0064763 # (planet.Rp_e - planet.Rp_p) / planet.Rp_e
+    f = (planet.Rp_e - planet.Rp_p) / planet.Rp_e
     e = 1 - (1 - f)^2 # ellipticity (NOTE =  considered as square)
     r = sqrt(x_p^2 + y_p^2)
 

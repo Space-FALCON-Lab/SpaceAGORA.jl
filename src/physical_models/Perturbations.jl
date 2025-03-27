@@ -1,6 +1,7 @@
 using SPICE
 using LoopVectorization
 using AssociatedLegendrePolynomials
+using LinearAlgebra
 # import .config
 
 # Define delta function
@@ -305,7 +306,7 @@ function acc_NSG(rVec_cart, ∇U_sph)
     return a
 end
 
-function acc_gravity_pines(rVec_cart, Clm, Slm, L, M, μ, RE)
+function acc_gravity_pines!(rVec_cart::SVector{3, Float64}, Clm::Matrix{Float64}, Slm::Matrix{Float64}, L::Int64, M::Int64, μ::Float64, RE::Float64, planet)
     """
         Calculate the acceleration due to gravity using the Pines method.
         (S. Pines, “Uniform Representation of the Gravitational Potential and its Derivatives,” AIAA Journal,
@@ -315,72 +316,177 @@ function acc_gravity_pines(rVec_cart, Clm, Slm, L, M, μ, RE)
         ----------
         rVec_cart : Vector{Float64}
             Position vector of the satellite in the ECEF frame.
-        latitude : Float64
-            Latitude of the satellite in radians.
+        Clm : Matrix{Float64}
+            Array with the cosine harmonics.
+        Slm : Matrix{Float64}
+            Array with the sine harmonics.
+        L : Int64
+            Maximum degree of the spherical harmonics.
+        M : Int64
+            Maximum order of the spherical harmonics.
+        μ : Float64
+            Gravitational parameter of the planet.
+        RE : Float64    
+            Equatorial radius of the planet.
+        planet : config.Planet
+            Planet object with the spherical harmonics and other parameters.
     """
-    # Define the dimensionless coordinates
     x, y, z = rVec_cart
     r = norm(rVec_cart)
     s = x/r
     t = y/r
     u = z/r
+    
 
-    # Precompute R, I, and A using recurrence relations
-    R = zeros(M)
-    I = zeros(M)
-    A = zeros(M, M)
-    ρ = zeros(L)
+    VR01 = planet.VR01
+    VR11 = planet.VR11
+    N1 = planet.N1
+    N2 = planet.N2
+    A = planet.A
+    R = planet.Re
+    I = planet.Im
+    sqrt_2 = sqrt(2)
 
-    # Compute ρ TODO: precompute this
-    ρ[1] = μ/r
-    for l = 2:L
-        ρ[l] = ρ[l-1]*(RE/r)
+    A[2, 1] = u*sqrt(3)
+    # Fill the off diagonal elements of A
+    @simd for n = 1:L+1
+        i = n + 1
+        A[i+1, i] = u*sqrt(2*n+3)*A[i, i]
     end
-
-    # Compute R and I
-    R[1] = 1
-    I[1] = 0
-
-    for m = 1:M-1
-        R[m+1] = s * R[m] - t * I[m]
-        I[m+1] = s * I[m] + t * R[m]
-    end
-
-
-    # Compute A
-    for l = 2:L
-        for m = l:-1:2
-            # TODO: precompute these
-            N1 = √((2*l+1)*(2*l-1)/(l+m)/(l-m))
-            N2 = √((l+m-1)*(2*l+1)*(l-m-1)/(2*l-3)/(l+m)/(l-m))
-            if m == l
-                A[l, m] = √((2*l+1)*(2-δ(l))/(2*l)/(2-δ(l-1)))*A[l-1, l-1]
-            elseif m == l-1
-                A[l, m] = u*√((2*l)*(2-δ(l-1))/(2-δ(l)))*A[l,l]
-            else
-                A[l, m] = N1*u*A[l-1, m] - N2*A[l-2, m]
-            end
+    # Fill the rest of A
+    for m = 0:M+1
+        j = m + 1
+        for l = m+2:L+1
+            i = l + 1
+            A[i, j] = u*N1[i, j]*A[i-1, j] - N2[i, j]*A[i-2, j]
         end
+        R[j] = m == 0 ? 1 : s*R[j-1] - t*I[j-1]
+        I[j] = m == 0 ? 0 : s*I[j-1] + t*R[j-1]
     end
 
-    # Compute a1-a4
+    ρ = RE/r
+    ρ_np1 = -μ/r * ρ
     a1, a2, a3, a4 = (0.0, 0.0, 0.0, 0.0)
-    for l = 2:L
+    sum1, sum2, sum3, sum4 = (0.0, 0.0, 0.0, 0.0)
+    for l = 1:L
         i = l + 1
-        for m = 1:min(l-1, M)
+        ρ_np1 *= ρ
+        sum1 = 0
+        sum2 = 0
+        sum3 = 0
+        sum4 = 0
+        @simd for m = 0:min(l, M)
             j = m + 1
-            Nlm_lm1 = √((l-m)*(2-δ(m))*(l+m+1)/(2-δ(m+1)))
-            Nlm_l1m1 = √((l+m+1)*(l+m+1)*(2*l+1)*(2-δ(m))/(2*l+3)/(2-δ(m+1)))
-            D = Clm[i,j]*R[j] + Slm[i,j]*I[j]
-            a1 += ρ[i+1]/RE*m*A[i,j]*(Clm[i,j]*R[j-1] + Slm[i,j]*I[j-1])
-            a2 += ρ[i+1]/RE*m*A[i,j]*(Slm[i,j]*R[j-1] - Clm[i,j]*I[j-1])
-            a3 += ρ[i+1]/RE*Nlm_lm1*A[i,j+1]*D
-            a4 += ρ[i+1]/RE*Nlm_lm1*A[i+1,j+1]*D
-        end
-    end
+            C = Clm[i, j]
+            S = Slm[i, j]
+            D =              (C*R[j]   + S*I[j])   * sqrt_2
+            E = m == 0 ? 0 : (C*R[j-1] + S*I[j-1]) * sqrt_2
+            F = m == 0 ? 0 : (S*R[j-1] - C*I[j-1]) * sqrt_2
 
-    # Compute the acceleration
-    g = [a1 + s*a4; a2 + t*a4; a3 + u*a4]
+            Avv00 = A[i, j]
+            Avv01 = VR01[i, j]*A[i, j+1]
+            Avv11 = VR11[i, j]*A[i+1, j+1]
+
+            sum1 += m * Avv00 * E
+            sum2 += m * Avv00 * F
+            sum3 +=     Avv01 * D
+            sum4 +=     Avv11 * D
+        end
+        rr = ρ_np1/RE
+        a1 += rr * sum1
+        a2 += rr * sum2
+        a3 += rr * sum3
+        a4 -= rr * sum4
+    end
+    g = -[a1 + s*a4; a2 + t*a4; a3 + u*a4]
     return g
 end
+# function acc_gravity_pines(rVec_cart, Clm, Slm, L, M, μ, RE)
+#     """
+#         Calculate the acceleration due to gravity using the Pines method.
+#         (S. Pines, “Uniform Representation of the Gravitational Potential and its Derivatives,” AIAA Journal,
+#         vol. 11, no. 11, pp. 1508–1511, 1973.))
+
+#         Parameters
+#         ----------
+#         rVec_cart : Vector{Float64}
+#             Position vector of the satellite in the ECEF frame.
+#         latitude : Float64
+#             Latitude of the satellite in radians.
+#     """
+#     # Define the dimensionless coordinates
+#     x, y, z = rVec_cart
+#     r = norm(rVec_cart)
+#     s = x/r
+#     t = y/r
+#     u = z/r
+#     println("s: ", s)
+#     println("t: ", t)
+#     println("u: ", u)
+#     # Precompute R, I, and A using recurrence relations
+#     R = zeros(L+1)
+#     I = zeros(L+1)
+#     A = zeros(L+2, L+2)
+#     ρ = zeros(L+2)
+
+#     # Compute ρ TODO: precompute this
+#     ρ[1] = μ/r
+#     Re_over_r = RE/r
+#     for l = 2:L+2
+#         ρ[l] = ρ[l-1]*Re_over_r
+#     end
+
+#     # Compute R and I
+#     R[1] = 1
+#     A[1,1] = 1
+
+#     for m = 1:M-1
+#         R[m+1] = s * R[m] - t * I[m]
+#         I[m+1] = s * I[m] + t * R[m]
+#     end
+
+
+#     # Compute A
+#     for l = 1:L+1
+#         i = l + 1
+#         for m = l:-1:0
+#             j = m + 1
+#             # TODO: precompute these
+#             if m == l
+#                 A[i, j] = 2*l-1
+#                 # A[i, j] = √((2*l+1)*(2-δ(l))/(2*l)/(2-δ(l-1)))*A[i-1, i-1]
+#             elseif m == l-1
+#                 A[i, j] = u*A[i, i]
+#             #     A[i, j] = u*√((2*l)*(2-δ(l-1))/(2-δ(l)))*A[i,i]
+#             else
+#                 # N1 = √((2*l+1)*(2*l-1)/(l+m)/(l-m))
+#                 # N2 = √((l+m-1)*(2*l+1)*(l-m-1)/(2*l-3)/(l+m)/(l-m))
+#                 # A[i, j] = N1*u*A[i-1, j] - N2*A[i-2, j]
+#                 A[i, j] = 1/(l-m)*(u*A[i, j+1] - A[i-1, j+1])
+#             end
+#         end
+#     end
+#     A = LowerTriangular(A)
+#     println("A: ", A)
+
+#     # Compute a1-a4
+#     a1, a2, a3, a4 = (0.0, 0.0, 0.0, 0.0)
+#     for l = 0:L
+#         i = l + 1
+#         for m = 1:min(l-1, M)
+#             j = m + 1
+#             Nlm_lm1 = √((l-m)*(2-δ(m))*(l+m+1)/(2-δ(m+1)))
+#             Nlm_l1m1 = √((l+m+2)*(l+m+1)*(2*l+1)*(2-δ(m))/(2*l+3)/(2-δ(m+1)))
+#             D = Clm[i,j]*R[j] + Slm[i,j]*I[j]
+#             a1 += ρ[i+1]/RE*m*A[i,j]*(Clm[i,j]*R[j-1] + Slm[i,j]*I[j-1])
+#             a2 += ρ[i+1]/RE*m*A[i,j]*(Slm[i,j]*R[j-1] - Clm[i,j]*I[j-1])
+#             a3 += ρ[i+1]/RE*Nlm_lm1*A[i,j+1]*D
+#             a4 += ρ[i+1]/RE*Nlm_l1m1*A[i+1,j+1]*D
+#         end
+#     end
+
+#     # Compute the acceleration
+#     g = [a1 + s*a4; a2 + t*a4; a3 + u*a4]
+#     return g
+# end
 

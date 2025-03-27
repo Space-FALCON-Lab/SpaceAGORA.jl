@@ -143,7 +143,7 @@ end
 
 #     return rho, T, wind """ => density_gram
 
-function density_gram(h, p, lat, lon, montecarlo, Wind, args, el_time, atmosphere=nothing, gram=nothing)
+function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Bool, Wind::Bool, args::Dict, el_time::Float64, atmosphere=nothing, gram=nothing)
     """
 
     """
@@ -166,8 +166,8 @@ function density_gram(h, p, lat, lon, montecarlo, Wind, args, el_time, atmospher
         
         position.elapsedTime = el_time # Time since start in s
         atmosphere.setPosition(position)
-        # if p.name == "mars"
-        #     position.height -= atmosphere.getPosition().surfaceHeight*1e3
+        # if p.name == "mars"   
+        #     position.height += atmosphere.getPosition().surfaceHeight
         #     atmosphere.setPosition(position)
         # end
         # println("set planet position ", position.latitude, position.longitude, position.height)

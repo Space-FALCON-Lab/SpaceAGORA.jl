@@ -101,14 +101,14 @@ function def_miss(args)
         args[:α] = 90.0
         args[:inital_condition_type] = 0
         args[:thrust_control] = "Aerobraking Maneuver"
-        args[:ra_initial_a] = 28332.615e3 #28559.615e3 # 28332.615e3
+        args[:ra_initial_a] = 28559.615e3
         args[:ra_initial_b] = 30000.0e3
         args[:ra_step] = 1e12
 
         if args[:gravity_model] == "Inverse Squared"
             args[:hp_initial_a] = 108600
         else
-            args[:hp_initial_a] = 86000 #84200 # 86000 # 100399 # 86000 works for spherical harmonic topography (a little low, but close enough for now), 95000 for regular
+            args[:hp_initial_a] = 87000 #84200 # 86000 # 100399 # 86000 works for spherical harmonic topography (a little low, but close enough for now), 95000 for regular
         end
 
         args[:hp_initial_b] = 102000

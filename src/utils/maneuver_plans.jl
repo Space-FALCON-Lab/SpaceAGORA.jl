@@ -19,7 +19,7 @@ function Odyssey_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0
     elseif numberofpassage == 47
         args[:delta_v] = 0.2
         args[:phi] = 0
-    elseif numberofpassage == 55
+    elseif numberofpassage == 54
         args[:delta_v] = 0.3
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 69
@@ -32,10 +32,10 @@ function Odyssey_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0
         args[:delta_v] = 0.15
         args[:phi] = 0
     elseif numberofpassage == 87
-        args[:delta_v] = 0.14 # /2
+        args[:delta_v] = 0.15 # /2
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 110
-        args[:delta_v] = 0.14 # /2
+        args[:delta_v] = 0.15 # /2
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 128
         args[:delta_v] = 1.0 # /3

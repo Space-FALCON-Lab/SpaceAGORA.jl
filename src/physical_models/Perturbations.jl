@@ -349,43 +349,39 @@ function acc_gravity_pines!(rVec_cart::SVector{3, Float64}, Clm::Matrix{Float64}
 
     A[2, 1] = u*sqrt(3)
     # Fill the off diagonal elements of A
-    @simd for n = 1:L+1
+    @inbounds @simd for n = 1:L+1
         i = n + 1
         A[i+1, i] = u*sqrt(2*n+3)*A[i, i]
     end
     # Fill the rest of A
-    for m = 0:M+1
+    @inbounds for m = 0:M+1
         j = m + 1
-        for l = m+2:L+1
+        @inbounds for l = m+2:L+1
             i = l + 1
             A[i, j] = u*N1[i, j]*A[i-1, j] - N2[i, j]*A[i-2, j]
         end
-        R[j] = m == 0 ? 1 : s*R[j-1] - t*I[j-1]
-        I[j] = m == 0 ? 0 : s*I[j-1] + t*R[j-1]
+        R[j] = ifelse(m == 0, 1, s*R[j-1] - t*I[j-1])
+        I[j] = ifelse(m == 0, 0, s*I[j-1] + t*R[j-1])
     end
 
     ρ = RE/r
     ρ_np1 = -μ/r * ρ
-    a1, a2, a3, a4 = (0.0, 0.0, 0.0, 0.0)
-    sum1, sum2, sum3, sum4 = (0.0, 0.0, 0.0, 0.0)
-    for l = 1:L
+    a1 = a2 = a3 = a4 = 0.0
+    @inbounds for l = 1:L
         i = l + 1
         ρ_np1 *= ρ
         sum1 = 0
         sum2 = 0
         sum3 = 0
         sum4 = 0
-        @simd for m = 0:min(l, M)
+        @inbounds @turbo for m = 0:min(l, M)
             j = m + 1
-            C = Clm[i, j]
-            S = Slm[i, j]
-            D =              (C*R[j]   + S*I[j])   * sqrt_2
-            E = m == 0 ? 0 : (C*R[j-1] + S*I[j-1]) * sqrt_2
-            F = m == 0 ? 0 : (S*R[j-1] - C*I[j-1]) * sqrt_2
+            C, S = Clm[i, j], Slm[i, j]
+            D =              (C*R[j] + S*I[j])   * sqrt_2
+            E = ifelse(m == 0, 0, (C*R[j-1] + S*I[j-1]) * sqrt_2)
+            F = ifelse(m == 0, 0, (S*R[j-1] - C*I[j-1]) * sqrt_2)
 
-            Avv00 = A[i, j]
-            Avv01 = VR01[i, j]*A[i, j+1]
-            Avv11 = VR11[i, j]*A[i+1, j+1]
+            Avv00, Avv01, Avv11 = A[i, j], VR01[i, j]*A[i, j+1], VR11[i, j]*A[i+1, j+1]
 
             sum1 += m * Avv00 * E
             sum2 += m * Avv00 * F
@@ -398,95 +394,7 @@ function acc_gravity_pines!(rVec_cart::SVector{3, Float64}, Clm::Matrix{Float64}
         a3 += rr * sum3
         a4 -= rr * sum4
     end
-    g = -[a1 + s*a4; a2 + t*a4; a3 + u*a4]
-    return g
+    
+    return SVector(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4)
 end
-# function acc_gravity_pines(rVec_cart, Clm, Slm, L, M, μ, RE)
-#     """
-#         Calculate the acceleration due to gravity using the Pines method.
-#         (S. Pines, “Uniform Representation of the Gravitational Potential and its Derivatives,” AIAA Journal,
-#         vol. 11, no. 11, pp. 1508–1511, 1973.))
-
-#         Parameters
-#         ----------
-#         rVec_cart : Vector{Float64}
-#             Position vector of the satellite in the ECEF frame.
-#         latitude : Float64
-#             Latitude of the satellite in radians.
-#     """
-#     # Define the dimensionless coordinates
-#     x, y, z = rVec_cart
-#     r = norm(rVec_cart)
-#     s = x/r
-#     t = y/r
-#     u = z/r
-#     println("s: ", s)
-#     println("t: ", t)
-#     println("u: ", u)
-#     # Precompute R, I, and A using recurrence relations
-#     R = zeros(L+1)
-#     I = zeros(L+1)
-#     A = zeros(L+2, L+2)
-#     ρ = zeros(L+2)
-
-#     # Compute ρ TODO: precompute this
-#     ρ[1] = μ/r
-#     Re_over_r = RE/r
-#     for l = 2:L+2
-#         ρ[l] = ρ[l-1]*Re_over_r
-#     end
-
-#     # Compute R and I
-#     R[1] = 1
-#     A[1,1] = 1
-
-#     for m = 1:M-1
-#         R[m+1] = s * R[m] - t * I[m]
-#         I[m+1] = s * I[m] + t * R[m]
-#     end
-
-
-#     # Compute A
-#     for l = 1:L+1
-#         i = l + 1
-#         for m = l:-1:0
-#             j = m + 1
-#             # TODO: precompute these
-#             if m == l
-#                 A[i, j] = 2*l-1
-#                 # A[i, j] = √((2*l+1)*(2-δ(l))/(2*l)/(2-δ(l-1)))*A[i-1, i-1]
-#             elseif m == l-1
-#                 A[i, j] = u*A[i, i]
-#             #     A[i, j] = u*√((2*l)*(2-δ(l-1))/(2-δ(l)))*A[i,i]
-#             else
-#                 # N1 = √((2*l+1)*(2*l-1)/(l+m)/(l-m))
-#                 # N2 = √((l+m-1)*(2*l+1)*(l-m-1)/(2*l-3)/(l+m)/(l-m))
-#                 # A[i, j] = N1*u*A[i-1, j] - N2*A[i-2, j]
-#                 A[i, j] = 1/(l-m)*(u*A[i, j+1] - A[i-1, j+1])
-#             end
-#         end
-#     end
-#     A = LowerTriangular(A)
-#     println("A: ", A)
-
-#     # Compute a1-a4
-#     a1, a2, a3, a4 = (0.0, 0.0, 0.0, 0.0)
-#     for l = 0:L
-#         i = l + 1
-#         for m = 1:min(l-1, M)
-#             j = m + 1
-#             Nlm_lm1 = √((l-m)*(2-δ(m))*(l+m+1)/(2-δ(m+1)))
-#             Nlm_l1m1 = √((l+m+2)*(l+m+1)*(2*l+1)*(2-δ(m))/(2*l+3)/(2-δ(m+1)))
-#             D = Clm[i,j]*R[j] + Slm[i,j]*I[j]
-#             a1 += ρ[i+1]/RE*m*A[i,j]*(Clm[i,j]*R[j-1] + Slm[i,j]*I[j-1])
-#             a2 += ρ[i+1]/RE*m*A[i,j]*(Slm[i,j]*R[j-1] - Clm[i,j]*I[j-1])
-#             a3 += ρ[i+1]/RE*Nlm_lm1*A[i,j+1]*D
-#             a4 += ρ[i+1]/RE*Nlm_l1m1*A[i+1,j+1]*D
-#         end
-#     end
-
-#     # Compute the acceleration
-#     g = [a1 + s*a4; a2 + t*a4; a3 + u*a4]
-#     return g
-# end
 

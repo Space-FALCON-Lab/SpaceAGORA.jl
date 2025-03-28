@@ -307,9 +307,9 @@ function aerobraking_campaign(args, state)
     config.cnf.save_index_heat = 0
     config.cnf.index_propellant_mass = 1
     config.cnf.counter_random = 0
-    config.cnf.DU = 1 # semimajoraxis_in
-    config.cnf.TU = 1 # 2*pi*sqrt(config.cnf.DU^3 / m.planet.μ)
-    config.cnf.MU = 1 #mass
+    config.cnf.DU = Bool(args[:normalize]) ? semimajoraxis_in : 1
+    config.cnf.TU = Bool(args[:normalize]) ? sqrt(config.cnf.DU^3 / m.planet.μ) : 1
+    config.cnf.MU = Bool(args[:normalize]) ? mass : 1
 
     ##########################################################
     # RUN SIMULATION

@@ -226,9 +226,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Compute NED basis unit vectors
         uD, uN, uE = latlongtoNED(LatLong)
-        # uD = uDuNuE[1]
-        # uE = uDuNuE[3]
-        # uN = uDuNuE[2]
 
         # copmute azimuth
         vN = dot(vel_pp, uN)
@@ -245,7 +242,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         elseif ip.dm == 3
             ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
-            ρ, T_p, wind = pyconvert(Float64, ρ), pyconvert(Float64, T_p), [pyconvert(Float64, wind[1]), pyconvert(Float64, wind[2]), pyconvert(Float64, wind[3])]
+            ρ, T_p, wind = pyconvert(Float64, ρ), pyconvert(Float32, T_p), [pyconvert(Float32, wind[1]), pyconvert(Float32, wind[2]), pyconvert(Float32, wind[3])]
         end
 
         # println(" ")
@@ -294,9 +291,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         config.cnf.heat_load_past = heat_load
 
-        # println(" ")
-        # println("drag_state: ", config.cnf.drag_state)
-        # println(" ")
         # Heat rate and Control
         if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
             # evaluates the closed form solution the first time at EI km
@@ -346,9 +340,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     end
                 elseif args[:control_in_loop] == false && args[:integrator] == "Julia"
                     if config.controller.count_controller != config.controller.count_prev_controller && config.controller.stored_state == 0 && t0 != config.controller.prev_time
-                        # println(config.cnf.state_flesh1)
                         push!(config.cnf.state_flesh1, [T_p, ρ, S]) # might have to change to push!
-                        # println(config.cnf.state_flesh1)
 
                         if config.controller.count_controller == 2
                             state = config.cnf.state_flesh1[end]
@@ -377,7 +369,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             if ip.tm == 1
                 heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
             elseif ip.tm == 2
-                # println("entering maxwwellian heatrate")
                 heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
             end
             
@@ -432,21 +423,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
 
         if args[:gravity_harmonics] == 1
-            # println("pos_pp: ", pos_pp)
-            pos_pp_sph = rtolatlongrad(pos_pp, m.planet)
-            # println("r: ", pos_pp_sph[1], " lat: ", rad2deg(pos_pp_sph[2]), " lon: ", rad2deg(pos_pp_sph[3]))
-            ∇U = gradU_sph!(pos_pp_sph, m.planet.μ, m.planet.Rp_e, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.A_grav)
-            # println("∇U: ", ∇U)
-            # println("norm(gravity) before: ", norm(gravity_ii/mass))
-            # # sleep(10)
-            # gravity_ii += mass * m.planet.L_PI' * acc_NSG(pos_pp, ∇U) #+ cross(2*m.planet.ω, vel_pp) + cross(m.planet.ω, cross(m.planet.ω, pos_pp))) # Inertial gravity force vector, since acc_NSG is in planet-fixed frame have to use double transport thm
             gravity_ii += mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_m, m.planet)
-            # println("norm(gravity_ii_pines): ", norm(gravity_ii_pines/mass), " norm(gravity_ii_nsg): ", norm(gravity_ii_nsg/mass))
-            # println("gravity_ii_pines: ", gravity_ii_pines, " gravity_ii_nsg: ", gravity_ii_nsg)
-            # gravity_ii += gravity_ii_pines
-            # println("norm(gravity_ii): ", norm(gravity_ii/mass))
-            # # sleep(10)
-            # println("norm(r): ", norm(pos_ii))
         end
 
         bank_angle = deg2rad(0.0)
@@ -462,11 +439,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         elseif ip.am == 2
             CL, CD = aerodynamic_coefficient_no_ballistic_flight(α, m.body, args, T_p, S, m.aerodynamics, MonteCarlo)
         end
-
-        # println(" ")
-        # println("CL: ", CL)
-        # println("CD: ", CD)
-        # println(" ")
 
         β = mass / (CD*area_tot)    # ballistic coefficient, kg / m ^ 2
 
@@ -512,23 +484,12 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # Total Force
         # Total inetrial external force vector on body [N]
         force_ii = drag_ii + lift_ii + gravity_ii + thrust_ii + srp_ii
-        # alt, lat, lon = rtolatlong(pos_pp, m.planet, args[:topography_model] == "Spherical Harmonics" && pos_ii_mag < m.planet.Rp_e + args[:EI] * 1e3)
-        # index_steps_EOM
-        # y_dot = zeros(8)
         
         y_dot[1:3] = vel_ii * (config.cnf.TU / config.cnf.DU)
         y_dot[4:6] = force_ii / mass * (config.cnf.TU^2 / config.cnf.DU) 
         y_dot[7] = -norm(thrust_ii) / (m.engines.g_e * m.engines.Isp) * config.cnf.TU / config.cnf.MU       # mass variation
         y_dot[8] = heat_rate * config.cnf.TU^3 / config.cnf.MU
         energy = (vel_ii_mag^2)/2 - (m.planet.μ / pos_ii_mag)
-
-        # println(y_dot[7])
-        # println(mass)
-        # println("")
-
-        # println(" ")
-        # println(pos_ii_mag - m.planet.Rp_e)
-        # println(" ")
 
         ## SAVE RESULTS
         if Bool(config.cnf.results_save)
@@ -538,16 +499,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         lat, lon, alt, γ_ii, γ_pp, h_ii..., h_pp..., h_ii_mag, h_pp_mag, uD..., uE..., uN..., vN, vE,
                         azi_pp, ρ, T_p, p, wind..., CL, CD, α, S, mass, heat_rate, heat_load, T_r, 
                         q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., energy, config.cnf.index_MonteCarlo, Int64(config.cnf.drag_state)]
-            # println(sol)
-            # println(" ")
+
             sol = reshape(sol, (1, 91))
-            # println(sol)
-            # println(" ")
 
             push!(config.cnf.solution_intermediate, sol)
-            # println(" ")
-            # println(config.cnf.solution_intermediate)
-            # println(" ")
         end
 
         return y_dot
@@ -555,73 +510,88 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     ## EVENTS: 
     function eventfirststep_condition(y, t, integrator)
+        """
+        Event function to detect the entry interface downcrossing.
+        """
         m = integrator.p[1]
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - (args[:EI])*1e3   #  downcrossing         # change to args[:EI]
-        # norm(y[1:3]) - m.planet.Rp_e - 250*1e3   #  downcrossing 
+        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - (args[:EI])*1e3   #  downcrossing
     end
     function eventfirststep_affect!(integrator)
-        # println("entered eventfirststep_affect!")
+        """
+        Event function to terminate the integration at the entry interface downcrossing.
+        """
         config.cnf.count_eventfirststep += 1
         terminate!(integrator)
     end
     eventfirststep = ContinuousCallback(eventfirststep_condition, nothing, eventfirststep_affect!)
 
     function eventfirststep_periapsis_condition(y, t, integrator)
-        # println("entered eventfirststep_periapsis_condition!")
-        # sleep(3.0)
+        """
+        Event function to detect the periapsis crossing.
+        """
         m = integrator.p[1]
         pos_ii = [y[1], y[2], y[3]] * config.cnf.DU  # Inertial position
         vel_ii = [y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU  # Inertial Velocity
 
         vi = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf.MU, m.planet)[6]
-        # vi = rvtoorbitalelement(pos_ii, vel_ii, y[7], m.planet)[6]
 
         rad2deg(vi) - 180  # downcrossing
     end
 
     function eventfirststep_periapsis_affect!(integrator)
-        # println("entered eventfirststep_periapsis_affect!")
-        # sleep(3.0)
-        # println("entered eventfirststep_periapsis_affect!")
+        """
+        Event function to terminate the integration at the periapsis crossing.
+        """
         config.cnf.eventfirststep_periapsis += 1
         terminate!(integrator)
     end
     eventfirststep_periapsis = ContinuousCallback(eventfirststep_periapsis_condition, eventfirststep_periapsis_affect!)
 
     function eventsecondstep_condition(y, t, integrator)
+        """
+        Event function to detect the atmospheric exit upcrossing.
+        """
         m = integrator.p[1]
         norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - (args[:AE])*1e3   # upcrossing
-        # norm(y[1:3]) - m.planet.Rp_e - 260*1e3   # upcrossing
     end
     function eventsecondstep_affect!(integrator)
-        # println("entered eventsecondstep_affect!")
+        """
+        Event function to terminate the integration at the atmospheric exit upcrossing.
+        """
         config.cnf.count_eventsecondstep += 1
         terminate!(integrator)
     end
     eventsecondstep = ContinuousCallback(eventsecondstep_condition, eventsecondstep_affect!, nothing)
 
     function reached_EI_condition(y, t, integrator)
+        """
+        Event function to detect the entry interface downcrossing.
+        """
         m = integrator.p[1]
         args = integrator.p[8]
         norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:EI]*1e3  # downcrossing
         # norm(y[1:3]) - m.planet.Rp_e - args[:EI]*1e3  # downcrossing
     end
     function reached_EI_affect!(integrator)
-        # println("entered reached_EI_affect!")
-        # config.cnf.count_reached_EI += 1
+        """
+        Event function that doesn't terminate the integration at EI.
+        """
         nothing
     end
     reached_EI = ContinuousCallback(reached_EI_condition, nothing, reached_EI_affect!)
 
     function reached_AE_condition(y, t, integrator)
+        """
+        Event function to detect the atmospheric exit upcrossing.
+        """
         m = integrator.p[1]
         args = integrator.p[8]
         norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
-        # norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
     end
     function reached_AE_affect!(integrator)
-        # println("entered reached_AE_affect!")
-        # config.cnf.count_reached_AE += 1
+        """
+        Event function that doesn't terminate the integration at AE.
+        """
         nothing
     end
     reached_AE = ContinuousCallback(reached_AE_condition, reached_AE_affect!, nothing)

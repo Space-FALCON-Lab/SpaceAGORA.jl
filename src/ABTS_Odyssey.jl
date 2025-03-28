@@ -19,10 +19,11 @@ args = Dict(# Misc Simulation
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
+            :normalize => 0,                                       # Normalize the integration True=1, False=0
 
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
+            :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 150,                                 # Number of aerobraking passage
 
             # Physical Model
@@ -88,7 +89,7 @@ args = Dict(# Misc Simulation
             :ra_initial_a => 4620.0e3, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => (3780.0-3397)*1e3,                                 # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_a => (3780.0-3396.2)*1e3,                                 # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 1590000.0,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 1e12,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
@@ -97,9 +98,9 @@ args = Dict(# Misc Simulation
             :γ_initial_a => -2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_step => 100,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :inclination => 45.0,                                   # Inclination Orbit, deg
-            :ω => 69.0,                                              # AOP, deg
-            :Ω => 69.0,                                              # RAAN, deg
+            :inclination => 86.0,                                   # Inclination Orbit, deg
+            :ω => 0.1,                                              # AOP, deg
+            :Ω => 0.1,                                              # RAAN, deg
             :EI => 160.0,                                           # Entry Interface, km
             :AE => 160.0,                                           # Atmospheric Exit, km
             :year => 2001,                                          # Mission year
@@ -152,7 +153,7 @@ args = Dict(# Misc Simulation
             :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
-            :Odyssey_sim => 1                                      # Simulate Odyssey Mission
+            :Odyssey_sim => 0                                      # Simulate Odyssey Mission
             )
 
 # Calculating time of simulation

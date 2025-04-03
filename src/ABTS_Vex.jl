@@ -11,7 +11,7 @@ args = Dict(# Misc Simulation
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
+            :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
@@ -78,17 +78,17 @@ args = Dict(# Misc Simulation
             :hp_initial_a => 186600.0,#176590.0,#188140.0                                 # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 1590000.0,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
-            :v_initial_a => 9200, #9305,   #3700.0,    9 to 10                             # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :v_initial_a => 9800, #9305,   #3700.0,    9 to 10                             # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 15000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_step => 1000000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :γ_initial_a => -16, #2.5,        -10~-20     in-0.5                       # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :γ_initial_a => -0.2, #2.5,        -10~-20     in-0.5                       # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => -22.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_step => -10000,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
             :inclination => 89.876,                                   # Inclination Orbit, deg
             :ω => 75.505,                                              # AOP, deg
             :Ω => 104.115,                                              # RAAN, deg
-            :EI => 800.0,                                           # Entry Interface, km
-            :AE => 800.0,                                           # Atmospheric Exit, km
+            :EI => 186.0,                                           # Entry Interface, km
+            :AE => 186.0,                                           # Atmospheric Exit, km
             :year => 2014,                                          # Mission year
             :month => 5,                                           # Mission month
             :day => 19,                                             # Mission day
@@ -156,7 +156,8 @@ t = @elapsed begin
 
         initial_periapsis_list = [156600.0, 166600.0, 176600.0, 186600.0, 196600.0, 206600.0]
 
-        initial_γ_list = [-10.0, -11.5, -13.0, -14.5, -16.0, -17.5]
+        # for V=9700, the range goes between -4.15 and -6.15
+        initial_γ_list = [-4.0, -4.25, -4.55,-5.95, -6.15, 6.25]
 
         for i in 1:num_missions
             initial_velocity_list[i]
@@ -188,8 +189,8 @@ t = @elapsed begin
                 :planet => args[:planet]
             ))
             # filename = "fitting_data" * "V0=" * args[:v_initial_a] * ",gamma0=" args[:γ_initial_a] * ".csv"
-            filename = string("fitting_data_V0=", args[:v_initial_a], "_gamma0=", args[:γ_initial_a], ".csv")
-            save_data_fitting_csv(filename, args)
+            # filename = string("fitting_data_V0=", args[:v_initial_a], "_gamma0=", args[:γ_initial_a], ".csv")
+            # save_data_fitting_csv(filename, args)
             if Bool(args[:passresults])
                 println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
             end

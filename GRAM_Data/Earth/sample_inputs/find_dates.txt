@@ -1,0 +1,41 @@
+ $INPUT
+  SpicePath      = '../../SPICE'
+  DataPath       = '../data'
+  FindDates = 1                                          
+    
+  Month     = 1
+  Day       = 1
+  Year      = 2022
+  Hour      = 0
+  Minute    = 0
+  Seconds   = 0.0
+
+  TargetLongitudeSun    = 30.0    
+  TargetSolarTime       = 12.0   
+
+  InitialLongitude      = 0.0    
+  EastLongitudePositive = 1
+ $END                
+
+ Explanation of variables:
+  SpicePath  =  Path to NAIF Spice data
+  SpiceLsk   = Optional override of the relative (to SpicePath) path to the Spice leapseconds LSK file.
+  SpicePck   = Optional override of the relative (to SpicePath) path to the Spice planetary constants PCK file.
+  SpiceEarth = Optional override of the relative (to SpicePath) path to the Spice Earth kernel.
+  FindDates  =  0 Run the standard GRAMs routine.
+                1 Run the Find Dates routine.
+
+  Month     = month of year                         
+  Day       = day of month                    
+  Year      = year (4-digit, or 1970-2069 can be 2-digit)
+  Hour      = hour of day (in UTC time frame) 
+  Minute    = minute of hour (in UTC time frame)                                       
+  Seconds   = seconds of minute (in UTC time frame) 
+
+  TargetLongitudeSun = The desired longitude of the sun. 
+  TargetSolarTime    = The desires local solar time.    
+
+  InitialLongitude   = initial position longitude, degrees 
+                       (depends on EastLongitudePositive)
+  EastLongitudePositive =  0 for input and output West longitudes positive
+                           1 for East longitudes positive

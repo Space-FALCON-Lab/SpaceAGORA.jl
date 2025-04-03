@@ -189,15 +189,16 @@ t = @elapsed begin
                 :planet => args[:planet]
             ))
             # filename = "fitting_data" * "V0=" * args[:v_initial_a] * ",gamma0=" args[:γ_initial_a] * ".csv"
-            # filename = string("fitting_data_V0=", args[:v_initial_a], "_gamma0=", args[:γ_initial_a], ".csv")
-            # save_data_fitting_csv(filename, args)
+            filename = string("fitting_data_V0=", args[:v_initial_a], "_gamma0=", args[:γ_initial_a], ".csv")
+            save_data_fitting_csv(filename, args)
             if Bool(args[:passresults])
                 println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
             end
         end
         
         # Save all mission data to CSV
-        save_closed_form_csv("closed_form_results.csv", missions_data)
+        filename_num = string("num_result V0=", args[:v_initial_a], ".csv")
+        save_closed_form_csv(filename_num, missions_data)
 
         
     else

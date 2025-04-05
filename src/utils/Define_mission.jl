@@ -93,7 +93,7 @@ function def_miss(args)
     if Bool(args[:Odyssey_sim])
         args[:control_mode] = 0
         args[:type_of_mission] = "Aerobraking Campaign"
-        args[:number_of_orbits] = 250
+        args[:number_of_orbits] = 350
         args[:planet] = 1 # "Mars"
         args[:body_shape] = "Spacecraft"
         args[:dry_mass] = 411.0
@@ -101,6 +101,8 @@ function def_miss(args)
         args[:α] = 90.0
         args[:inital_condition_type] = 0
         args[:thrust_control] = "Aerobraking Maneuver"
+
+        ## For Mars Odyssey Starting at 2001-11-06
         args[:ra_initial_a] = 28559.615e3
         args[:ra_initial_b] = 30000.0e3
         args[:ra_step] = 1e12
@@ -119,6 +121,28 @@ function def_miss(args)
         args[:year] = 2001
         args[:month] = 11
         args[:day] = 6
+
+        ## For Mars Odyssey Starting at true beginning
+        # args[:ra_initial_a] = 30206.673e3
+        # args[:ra_initial_b] = 35000.0e3
+        # args[:ra_step] = 1e12
+
+        # if args[:gravity_model] == "Inverse Squared"
+        #     args[:hp_initial_a] = 108600
+        # else
+        #     args[:hp_initial_a] = 137e3 # From SPICE Data
+        # end
+
+        # args[:hp_initial_b] = 12000000
+        # args[:hp_step] = 1e12
+        # args[:inclination] = 93.521
+        # args[:ω] = 111.724
+        # args[:Ω] = 27.871
+        # args[:year] = 2001
+        # args[:month] = 10
+        # args[:day] = 27
+
+
         args[:final_apoapsis] = 3900e3 # 4905.97e3  
         args[:montecarlo] = 0
         args[:drag_passage] = 0

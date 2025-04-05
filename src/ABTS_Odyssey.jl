@@ -23,7 +23,7 @@ args = Dict(# Misc Simulation
 
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
+            :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 150,                                 # Number of aerobraking passage
 
             # Physical Model
@@ -50,7 +50,7 @@ args = Dict(# Misc Simulation
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
-            :save_rate => 1.0,                                      # Rate at which the data trajectory are saved
+            :save_rate => 5.0,                                      # Rate at which the data trajectory are saved
             :control_in_loop => 0,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             
@@ -106,7 +106,7 @@ args = Dict(# Misc Simulation
             :year => 2001,                                          # Mission year
             :month => 11,                                           # Mission month
             :day => 6,                                             # Mission day
-            :hours => 12,                                           # Mission hour
+            :hours => 19,                                           # Mission hour
             :minutes => 0,                                         # Mission minute
             :secs => 0.0,                                          # Mission second
             
@@ -153,14 +153,19 @@ args = Dict(# Misc Simulation
             :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
-            :Odyssey_sim => 0                                      # Simulate Odyssey Mission
+            :Odyssey_sim => 1                                      # Simulate Odyssey Mission
             )
 
 # Calculating time of simulation
+println("Threads: ", Threads.nthreads())
+# # for i in 1:15:115
+#     args[:hours] = 19 + Int64(floor(i/60))
+#     args[:minutes] = i % 60
+#     println("Hours: ", args[:hours], " Minutes: ", args[:minutes])
+    # args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey/" * string(args[:hours]) * "_" * string(args[:minutes]) * "/"
 t = @elapsed begin
             
     # Run the simulation
-    println("Threads: ", Threads.nthreads())
     sol = run_analysis(args)
     if Bool(args[:passresults])
         println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
@@ -168,3 +173,4 @@ t = @elapsed begin
 end
 
 println("COPMUTATIONAL TIME = " * string(t) * " s")
+# end

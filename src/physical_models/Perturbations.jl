@@ -377,7 +377,7 @@ function acc_gravity_pines!(rVec_cart::SVector{3, Float64}, Clm::Matrix{Float64}
         @inbounds @turbo for m = 0:min(l, M)
             j = m + 1
             C, S = Clm[i, j], Slm[i, j]
-            D =              (C*R[j] + S*I[j])   * sqrt_2
+            D =                   (C*R[j] + S*I[j])     * sqrt_2
             E = ifelse(m == 0, 0, (C*R[j-1] + S*I[j-1]) * sqrt_2)
             F = ifelse(m == 0, 0, (S*R[j-1] - C*I[j-1]) * sqrt_2)
 

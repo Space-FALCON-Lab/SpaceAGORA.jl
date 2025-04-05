@@ -62,7 +62,7 @@ function Odyssey_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0
         args[:delta_v] = 1.0 # /2
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 263
-        args[:delta_v] = 1.0 # /2
+        args[:delta_v] = 1.2 # /2
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 274
         args[:delta_v] = 1.2 # /2
@@ -84,6 +84,105 @@ function Odyssey_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0
     return args
 end
 
+# Use when starting from true beginning
+function Odyssey_firing_plan_true_beginning(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, args=nothing)
+    if numberofpassage == 7
+        args[:delta_v] = 0.549
+        args[:phi] = 0.0
+    elseif numberofpassage == 10
+        args[:delta_v] = 0.549
+        args[:phi] = 0.0
+    elseif numberofpassage == 12
+        args[:delta_v] = 0.301
+        args[:phi] = 0.0
+    elseif numberofpassage == 14
+        args[:delta_v] = 0.151
+        args[:phi] = 0.0
+    elseif numberofpassage == 16
+        args[:delta_v] = 0.303
+        args[:phi] = 0.0
+    elseif numberofpassage == 25
+        args[:delta_v] = 0.145
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 32
+        args[:delta_v] = 0.151
+        args[:phi] = 0.0
+    elseif numberofpassage == 45
+        args[:delta_v] = 0.099
+        args[:phi] = 0.0
+    elseif numberofpassage == 49
+        args[:delta_v] = 0.099
+        args[:phi] = 0.0
+    elseif numberofpassage == 53
+        args[:delta_v] = 0.2
+        args[:phi] = 0.0
+    elseif numberofpassage == 66
+        args[:delta_v] = 0.2
+        args[:phi] = 0.0
+    elseif numberofpassage == 74
+        args[:delta_v] = 0.297
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 88
+        args[:delta_v] = 0.149
+        args[:phi] = 0.0
+    elseif numberofpassage == 91
+        args[:delta_v] = 0.149
+        args[:phi] = 0.0
+    elseif numberofpassage == 99
+        args[:delta_v] = 0.147
+        args[:phi] = 0.0
+    elseif numberofpassage == 105
+        args[:delta_v] = 0.144
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 129
+        args[:delta_v] = 0.144
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 146
+        args[:delta_v] = 1.0
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 179
+        args[:delta_v] = 0.844
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 197
+        args[:delta_v] = 0.6
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 213
+        args[:delta_v] = 0.844
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 229
+        args[:delta_v] = 0.6
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 241
+        args[:delta_v] = 0.6
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 257
+        args[:delta_v] = 1.2
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 270
+        args[:delta_v] = 1.0
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 282
+        args[:delta_v] = 1.2
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 295
+        args[:delta_v] = 1.2
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 306
+        args[:delta_v] = 1.0
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 318
+        args[:delta_v] = 1.0
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 330
+        args[:delta_v] = 1.2
+        args[:phi] = deg2rad(180)
+    else
+        args[:delta_v] = 0.0
+        args[:phi] = 0.0
+    end
+
+    return args
+end
 function Earth_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, args=nothing)
     max_q = 0.6 # Max dynamic pressure
     min_q = 0.5 # Min dynamic pressure
@@ -128,16 +227,16 @@ function Magellan_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 444
         args[:delta_v] = half_n
-        args[:phi] = deg2rad(0)
+        args[:phi] = 0.0
     elseif numberofpassage == 508
         args[:delta_v] = one_n
-        args[:phi] = deg2rad(0)
+        args[:phi] = 0.0
     elseif numberofpassage == 599
         args[:delta_v] = one_n
-        args[:phi] = deg2rad(0)
+        args[:phi] = 0.0
     else
         args[:delta_v] = 0.0
-        args[:phi] = deg2rad(0)
+        args[:phi] = 0.0
     end
 
     return args
@@ -160,7 +259,7 @@ function titan_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, 
         args[:phi] = deg2rad(180)
     else
         args[:delta_v] = 0.0
-        args[:phi] = deg2rad(0)
+        args[:phi] = 0.0
     end
     # if args.phi == math.radians(0) and args.delta_v != 0.0:
     #     print("LOWER MANEUVER!")
@@ -176,16 +275,16 @@ function Venus_Express_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassa
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 36
         args[:delta_v] = 0.177
-        args[:phi] = deg2rad(0)
+        args[:phi] = 0.0
     elseif numberofpassage == 41
         args[:delta_v] = 0.07
-        args[:phi] = deg2rad(0)
+        args[:phi] = 0.0
     elseif numberofpassage == 45
         args[:delta_v] = 0.05
-        args[:phi] = deg2rad(0)
+        args[:phi] = 0.0
     else
         args[:delta_v] = 0.0
-        args[:phi] = deg2rad(0)
+        args[:phi] = 0.0
     end
     return args
 end

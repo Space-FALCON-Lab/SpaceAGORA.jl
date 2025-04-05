@@ -1,5 +1,6 @@
 module config
 using StaticArrays
+using AstroTime
 export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model
 
     @kwdef mutable struct Body
@@ -88,6 +89,8 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         minute::Int64 = 0
         second::Float64 = 0.0
         time_rot::Float64 = 0.0
+        DateTimeIC::Epoch = from_utc(2000, 1, 1, 12, 0, 0)
+        DateTimeJ2000::Epoch = from_utc(2000, 1, 1, 12, 0, 0)
     end
 
     @kwdef mutable struct Model 
@@ -137,6 +140,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         α_past::Float64 = pi/2
         raise_man_orbit::Vector{Float64} = []
         lower_man_orbit::Vector{Float64} = []
+        et::Float64 = 0.0
 
         # Results to delete
         periapsis_list::Vector{Float64} = []

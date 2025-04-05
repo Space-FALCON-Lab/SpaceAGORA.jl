@@ -31,9 +31,11 @@ function save_results(time, ratio)
     # println(range_time)
 
     # println(time)   
+    # println("TIme: ", size(time))
+    # println("range time: ", size(range_time))
 
     for true_time in time
-        if isapprox(i % ratio, 0, atol = 0.1)
+        if isapprox(i % ratio, 0, atol = 0.1) || true_time == time[end]
             index = findfirst(x -> x == true_time, range_time[index_prev:end])
             # println(index)
             append!(t, range_time[index+index_prev] + initial_time)
@@ -54,7 +56,12 @@ function save_results(time, ratio)
 
     # println(t)
 
-    time_0 = t[end]
+    time_0 = time[end]
+    if time[end] != range_time[end]
+        println("Time: ", time[end])
+        println("Range time: ", range_time[end])
+        sleep(5)
+    end
     config.cnf.prev_step_integrator = time_0
     config.cnf.solution_intermediate = []
 

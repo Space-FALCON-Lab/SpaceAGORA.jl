@@ -7,6 +7,7 @@ include("Aerobraking.jl")
 
 using SPICE
 using StaticArrays
+using AstroTime
 # import .config
 
 function aerobraking_campaign(args, state)
@@ -248,8 +249,9 @@ function aerobraking_campaign(args, state)
         min = args[:minutes]
         second = args[:secs]
         time_rot = args[:planettime]
-
-        ic = config.Initial_condition(a, e, i, Ω, ω, vi, m0, year, month, day, hour, min, second, time_rot)
+        DateTimeIC = from_utc(DateTime(year, month, day, hour, min, second))
+        DateTimeJ2000 = from_utc(DateTime(2000, 1, 1, 12, 0, 0))
+        ic = config.Initial_condition(a, e, i, Ω, ω, vi, m0, year, month, day, hour, min, second, time_rot, DateTimeIC, DateTimeJ2000)
 
         return ic
     end

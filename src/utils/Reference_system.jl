@@ -4,14 +4,15 @@ using LinearAlgebra
 using AstroTime
 using StaticArrays
 
-function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet, t, t_prev, date_initial, t0)
+function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet, et)
     # From PCI (planet centered inertial) to PCPF (planet centered/planet fixed)
 
     # rot_angle = norm(planet.ω) * (t + t_prev)
-
-    current_time =  value(seconds(date_initial + t0*seconds - from_utc(DateTime(2000, 1, 1, 12, 0, 0.0)))) # current time in seconds since J2000
+    # et = utc2et(to_utc(DateTime(date_initial + t0*seconds)))
+    # current_time = value(seconds(date_initial + t0*seconds - from_utc(DateTime(2000, 1, 1, 12, 0, 0.0)))) # current time in seconds since J2000
+    # et = utc2et(to_utc(current_time)) # convert to Julian Ephemeris Time (ET)
     primary_body_name = planet.name
-    planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(primary_body_name), current_time))*planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+    # planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(primary_body_name), et))*planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
     
     # L_pi = [cos(rot_angle) sin(rot_angle) 0; 
     #         -sin(rot_angle) cos(rot_angle) 0; 
@@ -59,11 +60,11 @@ function orbitalelemtorv(oe, planet)
     return collect(R), collect(V)
 end
 
-function rvtoorbitalelement(r, v, m, planet)
+function rvtoorbitalelement(r::SVector, v::SVector, m, planet)
     # From ECI (Planet Centered Inertial) to orbital element
-    i_x = [1, 0, 0]
-    i_y = [0, 1, 0]
-    i_z = [0, 0, 1]
+    i_x = SVector{3, Int64}([1, 0, 0])
+    i_y = SVector{3, Int64}([0, 1, 0])
+    i_z = SVector{3, Int64}([0, 0, 1])
 
     Energy = dot(v,v)/2 - planet.μ/norm(r)
     a = -planet.μ / (2 * Energy)
@@ -130,7 +131,7 @@ function rvtoorbitalelement(r, v, m, planet)
         Ω = 0
     end
 
-    return [a, e, i, Ω, ω, vi, m]
+    return SVector{7, Float64}([a, e, i, Ω, ω, vi, m])
 end
 
 function rtoalfadeltar(r)
@@ -226,7 +227,7 @@ function rtolatlong(r_p::SVector{3, Float64}, planet, spherical_harmonic_topogra
                                                     planet.A_topo)
     end
     
-    return [alt, lat, lon]
+    return SVector{3, Float64}([alt, lat, lon])
 end
 function rtolatlongrad(r_p, planet)
     # Same as previous function, but returns radius instead of altitude and planetocentric latitude and longitude
@@ -243,7 +244,7 @@ function rtolatlongrad(r_p, planet)
     
     r = norm(r_p)
     
-    return [r, lat, lon]
+    return SVector{3, Float64}([r, lat, lon])
 end
 
 function latlongtoNED(H_LAN_LON)
@@ -251,18 +252,18 @@ function latlongtoNED(H_LAN_LON)
     lat = H_LAN_LON[2]
 
     # Compute first in xyz coordinates(z: north pole, x - z plane: contains r, y: completes right - handed set)
-    uDxyz = [-cos(lat), 0, -sin(lat)]
-    uNxyz = [-sin(lat), 0, cos(lat)]
-    uExyz = [0, 1, 0]
+    uDxyz = SVector{3, Float64}([-cos(lat), 0, -sin(lat)])
+    uNxyz = SVector{3, Float64}([-sin(lat), 0, cos(lat)])
+    uExyz = SVector{3, Float64}([0, 1, 0])
 
     # Rotate by longitude to change to PCPF frame
-    L3 = [cos(lon) -sin(lon) 0;
+    L3 = SMatrix{3, 3, Float64}([cos(lon) -sin(lon) 0;
           sin(lon) cos(lon) 0;
-          0 0 1]
+          0 0 1])
 
     uN = L3 * uNxyz
     uE = L3 * uExyz
     uD = L3 * uDxyz
 
-    return [uD, uN, uE]
+    return SVector{3, SVector}([uD, uN, uE])
 end

@@ -156,7 +156,7 @@ function aerobraking(ip, m, args)
                 end
             end
 
-            if args[:density_model] == "Gram" || args[:density_model] == "GRAM"
+            if uppercase(args[:density_model]) == "GRAM"
                 continue_campaign = asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere, gram)
             else
                 continue_campaign = asim(ip, m, initial_state, numberofpassage, args)

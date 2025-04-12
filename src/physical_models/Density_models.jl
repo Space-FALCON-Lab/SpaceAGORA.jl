@@ -2,8 +2,6 @@ include("../utils/Reference_system.jl")
 
 using PythonCall
 
- # import .config
-
 sys = pyimport("sys")
 
 function interp(a, b, x)
@@ -98,7 +96,7 @@ function density_no(h, p, OE=0, lat=0, lon=0, timereal=0, t0=0, tf_prev=0, monte
 
     wind = [0, 0, 0]
 
-    return 0, T, wind
+    return 0.0, T, wind
 end
 
 function density_exp(h, p, OE=0, lat=0, lon=0, timereal=0, t0=0, tf_prev=0, montecarlo=0, Wind=0, args=0, version=[])
@@ -142,7 +140,7 @@ end
 
 #     return rho, T, wind """ => density_gram
 
-function density_gram(h, p, lat, lon, montecarlo, Wind, args, el_time, atmosphere=nothing, gram=nothing)
+function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Bool, Wind::Bool, args::Dict, el_time::Float64, atmosphere=nothing, gram=nothing)
     """
 
     """
@@ -150,31 +148,35 @@ function density_gram(h, p, lat, lon, montecarlo, Wind, args, el_time, atmospher
     # sys.path.append(args[:directory_Gram])
 
     # gram = pyimport("gram")
-
+    # println("Lat: $lat, Lon: $lon, Alt: $h")
     if config.cnf.drag_state == false && args[:keplerian] == false
         rho , T , wind = density_exp(h, p)
         rho = 0.0
     elseif config.cnf.drag_state == true || args[:keplerian] == true
         position = gram.Position()
         position.height = h * 1e-3
-        
+        # println("Height: ", position.height)
+        # println("Lat: $lat, Lon: $lon, Alt: $h")
         lat = rad2deg(lat)
         lon = rad2deg(lon)
         position.latitude = lat
         # position.longitude = 165 + 2/(24*60*60)*el_time
         position.longitude = lon
-        # println("Lat: $lat, Lon: $lon")
+        
         position.elapsedTime = el_time # Time since start in s
         atmosphere.setPosition(position)
-        # if p.name == "mars"
-        #     position.height -= atmosphere.getPosition().surfaceHeight*1e3
+        # if p.name == "mars"   
+        #     position.height += atmosphere.getPosition().surfaceHeight
         #     atmosphere.setPosition(position)
         # end
-        # print('set planet position', position.latitude, position.longitude, position.height)
+        # println("set planet position ", position.latitude, position.longitude, position.height)
+        # sleep(1.0)
         atmosphere.update()
-        # print('update')
+        # println("update")
+        # sleep(1.0)
         atmos = atmosphere.getAtmosphereState()
-        # print('get atmo state')
+        # println("get atmo state")
+        # sleep(1.0)
         rho = atmos.density
         T = atmos.temperature
         wind = [montecarlo ? atmos.perturbedEWWind : atmos.ewWind,

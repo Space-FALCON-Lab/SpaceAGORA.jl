@@ -3,16 +3,12 @@ include("../utils/MonteCarlo_set.jl")
 include("../utils/Initial_cond_calc.jl")
 include("Set_and_run.jl")
 
-#  # import .config
-
 function run_orbitalelements(args)
     apoapsis, periapsis_alt, inclination, Ω, ω = collect(range(start=round(args[:ra_initial_a]), stop=round(args[:ra_initial_b]), step=round(args[:ra_step]))), 
                                                  collect(range(start=round(args[:hp_initial_a]), stop=round(args[:hp_initial_b]), step=round(args[:hp_step]))), 
                                                  args[:inclination], args[:Ω], args[:ω]
     
     final_apoapsis = args[:final_apoapsis]
-
-    # println(periapsis_alt)
 
     for periapsis_item in periapsis_alt
         for apoapsis_item in apoapsis
@@ -52,7 +48,7 @@ function run_vgamma(args)
     final_apoapsis = args[:final_apoapsis]
 
     for γ in γ_0
-        γ = -γ / 100
+        γ = -γ
 
         for v in v_0
             state = Dict()
@@ -68,7 +64,7 @@ function run_vgamma(args)
             for mc_index in range(args[:initial_montecarlo_number], args[:montecarlo_size])
                 state[:Apoapsis], state[:Periapsis], state[:Inclination], state[:Ω], state[:ω], state[:Final_sma] = apoapsis, periapsis_alt * 1e-3, inclination, Ω, ω, final_apoapsis
 
-                args[:simulation_filename] = "Results_ctrl=" * string(args[:control_mode]) * "_v=" * string(Int64(v)) * "_gamma=" * string(abs(γ)) * "_" * string(args[:α]) * "deg"
+                args[:simulation_filename] = "Results_ctrl=" * string(args[:control_mode]) * "_v=" * string(v) * "_gamma=" * string(abs(γ)) * "_" * string(args[:α]) * "deg"
 
                 if args[:montecarlo] == true
                     args = MonteCarlo_setting_passage(mc_index, args)

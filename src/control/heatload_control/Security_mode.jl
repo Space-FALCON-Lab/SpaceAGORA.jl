@@ -2,8 +2,6 @@ include("../../physical_models/MonteCarlo_pertrubations.jl")
 include("../../physical_models/Density_models.jl")
 include("../../utils/Closed_form_solution.jl")
 
- # import .config
-
 function security_mode(ip, m, position, args, t, heat_rate_control=false)
     T = m.planet.T
 

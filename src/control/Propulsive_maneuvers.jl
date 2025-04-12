@@ -1,6 +1,3 @@
-include("../utils/Odyssey_maneuver_plan.jl")
-
- # import .config
 
 function no_maneuver(t0, thrust_mag, Δv, args, index_phase_aerobraking)
     thrust = 0

@@ -1,4 +1,3 @@
-# import .config
 
 function MonteCarlo_setting(args)
     MC = Dict()
@@ -17,7 +16,7 @@ function MonteCarlo_setting_passage(mc_index, args)
 
     heat_passage = []
 
-    if args[:print_res]
+    if Bool(args[:print_res])
         println("--> MC number: " * string(mc_index))
     end
 
@@ -54,13 +53,27 @@ function MonteCarlo_append(MC, args, count)
 end
 
 function MonteCarlo_save(args, state, MC)
-    if args[:save_results]
+    if Bool(args[:save_results])
         folder_name = args[:simulation_filename][1:indexin("_nMC", args[:simulation_filename])]
 
         name = args[:directory_results] * folder_name * "/MC_results_control=" * string(args[:control_mode]) * "_ra=" * string(Int64(state[:Apoapsis]/1e3)) * "_rp=" * string(state[:Periapsis]) * "_hl=" * string(args[:max_heat_rate])
         filename = name * ".csv"
 
-        # NEED TO FINISH
+        if !isdir(args[:directory_results])
+            mkpath(args[:directory_results])
+        end
 
+        touch(filename)
+
+        writer = open(filename, "w")
+
+        data_push = DataFrame(MC_size = range(args[:montecarlo_size]),
+                              N_passages = MC[:N_passages],
+                              Duration = MC[:Duration],
+                              Median_heat = MC[:Median_heat],
+                              Periapsis_min = MC[:Periapsis_min],
+                              Periapsis_max = MC[:Periapsis_max])
+        
+        CSV.write(filename, data_push)
     end
 end

@@ -4,12 +4,13 @@ include("../physical_models/MonteCarlo_pertrubations.jl")
 include("../utils/Reference_system.jl")
 include("Misc.jl")
 
-# import .config
-
 using LinearAlgebra
 using Statistics
+using AstroTime
 
 function closed_form(args, mission, initialcondition = 0, T = 0, online = false, α=0, α_profile = [])
+    date_initial = from_utc(DateTime(mission.initial_condition.year, mission.initial_condition.month, mission.initial_condition.day, mission.initial_condition.hour, mission.initial_condition.minute, mission.initial_condition.second))
+
     if args[:body_shape] == "Blunted Cone"
         len_sol = length(config.solution.orientation.time)
         results(zeros(len_sol), zeros(len_sol), zeros(len_sol), zeros(len_sol))
@@ -19,13 +20,13 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
 
     if online == false
         if args[:type_of_mission] == "Drag Passage"
-            step_time = len(config.solution.orientation.time)
+            step_time = length(config.solution.orientation.time)
             initialcondition = [config.solution.orientation.oe[1][1], config.solution.orientation.oe[2][1], config.solution.orientation.oe[3][1], config.solution.orientation.oe[4][1], config.solution.orientation.oe[5][1], config.solution.orientation.oe[6][1], config.solution.performance.mass[1]]
             T = config.solution.physical_properties.T[1]
             α = config.solution.physical_properties.α[1]
             t0 = config.solution.orientation.time[1]
 
-            t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, step_time)
+            t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time)
             results(t_cf, h_cf, γ_cf, v_cf)
         elseif args[:type_of_mission] != "Drag Passage"
             # Calculate the number of orbit
@@ -60,31 +61,13 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
                 index = alt_index[1] + idx_orbit[1]
                 step_time = length(alt_index)
 
-                # println(step_time)
-
                 initialcondition = [config.solution.orientation.oe[1][index], config.solution.orientation.oe[2][index], config.solution.orientation.oe[3][index], config.solution.orientation.oe[4][index], config.solution.orientation.oe[5][index], config.solution.orientation.oe[6][index], config.solution.performance.mass[index]]
-
-                # println(initialcondition)
 
                 T = config.solution.physical_properties.T[index]
                 α = config.solution.physical_properties.α[index]
                 t0 = config.solution.orientation.time[index]
 
-                t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, step_time)
-
-                # println("")
-                # println(t_cf)
-                # println("")
-                # println(alt_index)
-                # println("")
-                # println(idx_orbit)
-                # println("")
-
-                # println(" ")
-                # println(t_cf)
-                # println(" ")
-                # println(h_cf)
-                # println(" ")
+                t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time)
 
                 t[(alt_index[1]+idx_orbit[1]):(alt_index[1]+length(alt_index)+idx_orbit[1])] = t_cf
                 h[(alt_index[1]+idx_orbit[1]):(alt_index[1]+length(alt_index)+idx_orbit[1])] = h_cf
@@ -104,7 +87,7 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
             initialcondition[1], initialcondition[2], initialcondition[3], initialcondition[4], initialcondition[5], initialcondition[6] = (state[:ra]+state[:rp])/2, (state[:ra]-state[:rp])/(state[:ra]+state[:rp]), state[:i], state[:Ω], state[:ω], state[:vi]
         end
 
-        t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, 0, α_profile)
+        t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, 0, mission, initialcondition, α, T, date_initial, 0, α_profile)
     end
 
     return t_cf, h_cf, γ_cf, v_cf
@@ -114,11 +97,11 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
     #online -> not save results and initial conditions given
 end
 
-function closed_form_calculation(args, t0, mission, initialcondition, α, T, step_time = 0, α_profile = [], online = 0)
+function closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time = 0, α_profile = [], online = 0)
     if config.cnf.count_numberofpassage != 1
         t_prev = config.solution.orientation.time[end]
     else
-        t_prev = mission.initial_condition.time_rot
+        t_prev = mission.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # mission.initial_condition.time_rot
     end
 
     pos_ii_org, vel_ii_org = orbitalelemtorv(initialcondition, mission.planet)
@@ -129,24 +112,12 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, ste
     v0 = norm(vel_ii) # Inertial velocity magnitude
     h0 = r0 - mission.planet.Rp_e
 
-    # println(" ")
-    # println(r0)
-    # println("")
-    # println(v0)
-    # println("")
-    # println(h0)
-    # println("")
-
-    pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, mission.planet, )
+    pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, mission.planet, 0, 0, date_initial, t0)
 
     LatLong = rtolatlong(pos_pp, mission.planet)
     lat = LatLong[2]
     lon = LatLong[3]
     h0 = LatLong[1] 
-
-    # println("")
-    # println(h0)
-    # println("")
 
     h_ii = cross(pos_ii, vel_ii)
     arg = median([-1, 1, norm(h_ii)/(r0*v0)])   # limit to[-1, 1]
@@ -167,14 +138,9 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, ste
     Δt = sqrt(a^3 / mission.planet.μ) * ((E_finalstate - e*sin(E_finalstate)) - (E_initialstate - e*sin(E_initialstate)))
     t_p = Δt/2
 
-    # println("")
-    # println(Δt)
-    # println("")
-
-    # TODO: NEEDS TO CHANGE THIS TO ARGS[:EI]
-    if h0 < 160*1e3 #if initial condition are lower than drag passage initial condition #this happens only running MC cases
+    if h0 < args[:EI]*1e3 #if initial condition are lower than drag passage initial condition #this happens only running MC cases
         # let's calculate pos_ii,v_ii for the point of trajectory corresponding to h = 160 km
-        h0 = 160*1e3
+        h0 = args[:EI]*1e3
         r = mission.planet.Rp_e + h0
         OE = rvtoorbitalelement(pos_ii_org, vel_ii_org, mission, mission.planet)
         a, e, i, Ω, ω, vi = OE[1], OE[2], OE[3], OE[4], OE[5], OE[6]
@@ -187,11 +153,6 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, ste
     if step_time == 0
         temp = Δt * args[:trajectory_rate]/10
 
-        # println(length(config.cnf.heat_rate_list))
-        # println("")
-        # println(temp)
-        # println("")
-
         if temp > length(config.cnf.heat_rate_list)
             step_time = temp
         else
@@ -199,28 +160,13 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, ste
         end
     end
 
-    # t_cf = collect(0:Int64(step_time):Δt)
-    t_cf = collect(range(start=0, stop=Δt, length=step_time+1))
-
-    # println(step_time)
-    # println("")
-    # println(Δt)
-    # println("")
-    # println(t_cf)
-    # println("")
+    t_cf = collect(range(start=0, stop=Δt, length=floor(Int, step_time)))
 
     cost_3 = v0 * γ0
 
     h_cf = h0 .+ cost_3*(t_cf - (t_cf.^2/(2*t_p)))
 
-    # println(size(h_cf))
-
-    # ρ, ~, ~ = density_exp.(h_cf, fill(mission.planet, size(h_cf)))
     ρ = density_exp(h_cf, mission.planet)[1]
-
-    # println(" ")
-    # println(ρ)
-    # println(" ")
 
     RT = T * mission.planet.R
     S = v0/sqrt(2*RT)
@@ -237,7 +183,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, ste
             α_profile = α_profile[1:length(t_cf)]
         elseif length(α_profile) < length(t_cf)
             last_α = α_profile[end]
-            α_profile = α_profile + [last_α] * (length(t_cf) - length(α_profile))
+            α_profile = α_profile .+ last_α * ones(length(t_cf) - length(α_profile))
         end
     end
 
@@ -255,7 +201,8 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, ste
     mean_d = -0.001
 
     f1 = -0.005 * v0 + 27.87
-    f2 = (a0 * (mean_a^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_b * (v0/1000 - 3.7))) + c0 * (mean_c^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_d * (v0/1000 - 3.7)))) * (t_cf) / (2 * t_p)
+    f2 = (a0 * (mean_a^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_b * (v0/1000 - 3.7))) + 
+          c0 * (mean_c^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_d * (v0/1000 - 3.7)))) * (t_cf) / (2 * t_p)
 
     f2_solar_panels = f2 * α * mission.body.area_SA / Area_tot
     f2_spacecraft = f2 * pi / 2 * mission.body.area_SC / Area_tot
@@ -263,16 +210,12 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, ste
     ϵ = f1 .+ f2_solar_panels .+ f2_spacecraft
 
     k1 = (cost_2 .+ (1 ./ (Rp .+ h_cf)))
-    k2 = (cost_1 .* cost_3) .* (1 .- t_cf/t_p)
+    k2 = (cost_1 * cost_3) .* (1 .- t_cf/t_p)
     k3 = -mission.planet.g_ref .- ϵ
 
     cost = v0 - (k2[1]/k1[1] - sqrt((k2[1]/k1[1])^2 - 4 * (k3[1]/k1[1]))) / 2
 
-    # println(" ")
-    # println(size(k1))
-    # println(" ")
-
-    v_cf = ((k2 ./ k1) - sqrt.((k2 ./ k1).^2 - 4*(k3 ./ k1))) / 2 .+ cost
+    v_cf = ((k2 ./ k1) .- sqrt.((k2 ./ k1).^2 - 4*(k3 ./ k1))) / 2 .+ cost
     γ_cf = cost_3 * (1 .- t_cf./t_p) ./ v_cf
     t_cf = [item + t0 for item in t_cf]
 
@@ -285,10 +228,4 @@ function results(t_cf, h_cf, γ_cf, v_cf)
     append!(config.solution.closed_form.h_cf, h_cf)
     append!(config.solution.closed_form.γ_cf, γ_cf)
     append!(config.solution.closed_form.v_cf, v_cf)
-
-    # println(" ")
-    # println(config.solution.closed_form.t_cf)
-    # println(" ")
-    # println(config.solution.closed_form.h_cf)
-    # println(" ")
 end

@@ -3,8 +3,6 @@
 ## the generates output is always the last number of the list. When config.counter_random number reaches 100, it is re-initialized to 1 to avoid storage problem and slowing down the function.
 ## Changing the config.counter_random number results in changing the random number generates, otherwise this would be the same everytime, biasing the results.
 
-# import .config
-
 using Distributions
 
 function unifrom_distribution(dispersion, number=0)

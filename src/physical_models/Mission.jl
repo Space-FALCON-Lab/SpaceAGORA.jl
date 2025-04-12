@@ -80,7 +80,7 @@ function mission_def(mission)
     
     # Control Mode
     if mission[:Control] == 3
-        cm = 1
+        cm = 3
     elseif mission[:Control] == 2
         cm = 2
     elseif mission[:Control] == 1

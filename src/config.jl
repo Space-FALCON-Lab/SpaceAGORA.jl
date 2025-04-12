@@ -188,6 +188,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         count_heat_load_check_exit::Int64 = 0
         count_final_entry_altitude_reached::Int64 = 0
         t_out_drag_passage::Float64 = 0.0
+        t_time_switch_func::Vector{Float64} = []
 
         n_bodies_list::Vector{Planet} = []
         DU::Float64 = 0.0
@@ -199,9 +200,9 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
 
     @kwdef mutable struct Controller
         guidance_t_eval::Vector{Float64} = []
-        count_controller::Int64 = 0
+        count_controller::Int64 = 1
         count_prev_controller::Int64 = 0
-        stored_state::Int64 = 0
+        stored_state::Int64 = 1
         prev_time::Float64 = 0.0
         t::Float64 = 0.0
     end

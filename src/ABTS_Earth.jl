@@ -16,18 +16,19 @@ args = Dict(# Misc Simulation
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
+            :normalize => 0,                                       # Normalize the state during integration True=1, False=0
 
             # Type of Mission
-            :type_of_mission => "Aerobraking Campaign",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
+            :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0, NOTE: Can't be used with aerobraking campaign, must be 'Orbits' in type_of_mission
-            :number_of_orbits => 500,                                 # Number of aerobraking passage
+            :number_of_orbits => 200,                                 # Number of aerobraking passage
 
             # Physical Model
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
-            :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
-            :topography_model => "Spherical Harmonics",                             # choices=['None' , 'Spherical Harmonics']
+            :density_model => "Gram",                               # choices=['No-Density', 'Constant' , 'Exponential' , 'Gram']
+            :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
             :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
             :topo_degree => 50,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 50,                                      # Maximum order of the topography harmonics (Defined in the file)
@@ -38,11 +39,11 @@ args = Dict(# Misc Simulation
             
             # Perturbations
             :n_bodies => ["Sun", "Moon"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
-            :srp => 1,                                             # Solar Radiation Pressure True=1, False=0
+            :srp => 0,                                             # Solar Radiation Pressure True=1, False=0
             :gravity_harmonics => 1,                               # Gravity Harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/EarthGGM05C.csv",                  # Gravity Harmonics file to use
-            :L => 2,                                              # Maximum degree of gravity harmonics
-            :M => 0,                                              # Maximum order of gravity harmonics
+            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/egm96.csv",                  # Gravity Harmonics file to use
+            :L => 50,                                              # Maximum degree of gravity harmonics
+            :M => 50,                                              # Maximum order of gravity harmonics
 
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
@@ -95,11 +96,13 @@ args = Dict(# Misc Simulation
             :γ_initial_a => 2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_step => 0.5,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
+            
+            :orientation_type => 0,                                   # Initial Condition in Keplerian Elements = 0, Initial Condition in Cartesian Elements = 1
             :inclination => 89.876,                                   # Inclination Orbit, deg
             :ω => 75.505,                                              # AOP, deg
             :Ω => 104.115,                                              # RAAN, deg
-            :EI => 300.0,                                           # Entry Interface, km
-            :AE => 300.0,                                           # Atmospheric Exit, km
+            :EI => 1000.0,                                           # Entry Interface, km
+            :AE => 1000.0,                                           # Atmospheric Exit, km
             :year => 2014,                                          # Mission year
             :month => 5,                                           # Mission month
             :day => 27,                                             # Mission day
@@ -108,11 +111,11 @@ args = Dict(# Misc Simulation
             :secs => 0.0,                                          # Mission second
             
             # Final Conditions
-            :final_apoapsis => 54378.0e3, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
+            :final_apoapsis => 45378.0e3, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
 
             # Do not change
             :heat_load_sol => 0,                                    # Heat load solution #leave it to 0 and change it only for control mode = 2:  Max energy depletaion=0, Min energy depletion=1, One switch max-min=2, One switch min-max = 3
-            :thrust_control => "Aerobraking Maneuver",                              # choices=['None' , 'Aerobraking Maneuver' , 'Drag Passage Firing']
+            :thrust_control => "None",                              # choices=['None' , 'Aerobraking Maneuver' , 'Drag Passage Firing']
             :phi => 180.0,                                          # Thrust Angle, deg
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled

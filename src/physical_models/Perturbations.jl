@@ -7,7 +7,7 @@ using LinearAlgebra
 # Define delta function
 δ(x,y) = ==(x,y)
 δ(x) = δ(x,0)
-function gravity_n_bodies(et, pos_ii, p, n_body)
+function gravity_n_bodies(et::Float64, pos_ii::SVector{3, Float64}, p, n_body)
 
     primary_body_name = p.name
     n_body_name = n_body.name
@@ -20,7 +20,7 @@ function gravity_n_bodies(et, pos_ii, p, n_body)
         n_body_name *= "_barycenter"
     end
 
-    pos_primary_k = p.J2000_to_pci*spkpos(n_body_name, et, "J2000", "none", primary_body_name)[1] * 1e3
+    pos_primary_k = p.J2000_to_pci*SVector{3, Float64}(spkpos(n_body_name, et, "J2000", "none", primary_body_name)[1]) * 1e3
     pos_spacecraft_k = pos_primary_k - pos_ii
     pos_spacecraft_k_mag = norm(pos_spacecraft_k)
 
@@ -28,7 +28,7 @@ function gravity_n_bodies(et, pos_ii, p, n_body)
     return g
 end
 
-function eclipse_area_calc(r_sat::Vector{Float64}, r_sun::Vector{Float64}, A::Float64, rp::Float64)
+function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64}, A::Float64, rp::Float64)
     """
     Calculate the exposed area of the satellite. Translated from Python to Julia.
 
@@ -86,7 +86,7 @@ function eclipse_area_calc(r_sat::Vector{Float64}, r_sun::Vector{Float64}, A::Fl
     return A_exp
 end
 
-function srp(p, p_srp_unscaled::Float64, cR::Float64, A_sat::Float64, m::Float64, r_sat::Vector{Float64}, time_et::Float64)
+function srp(p, p_srp_unscaled::Float64, cR::Float64, A_sat::Float64, m::Float64, r_sat::SVector{3, Float64}, time_et::Float64)
     """
     Calculate acceleration due to solar radiation pressure. 
 
@@ -113,7 +113,7 @@ function srp(p, p_srp_unscaled::Float64, cR::Float64, A_sat::Float64, m::Float64
         Acceleration due to solar radiation pressure.
     """
     rp = p.Rp_e # Equatorial radius of the planet
-    r_sun, ltime = spkpos("SUN", time_et, "ECLIPJ2000", "NONE", uppercase(p.name))
+    r_sun = p.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", time_et, "J2000", "NONE", uppercase(p.name))[1])
     r_sun = r_sun .* 1e3 # Convert from km to m
 
     A_exp = eclipse_area_calc(r_sat, r_sun, A_sat, rp)

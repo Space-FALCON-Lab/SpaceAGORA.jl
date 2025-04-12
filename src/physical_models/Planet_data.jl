@@ -1,4 +1,3 @@
-# import .config
 include("../physical_models/Planet_shapes.jl")
 
 function planet_data(ip)

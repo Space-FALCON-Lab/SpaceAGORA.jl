@@ -2,8 +2,6 @@ include("../physical_models/MonteCarlo_pertrubations.jl")
 
 using SpecialFunctions
 
-# import .config
-
 function aerodynamic_coefficient_constant(α, body, T, S, args, montecarlo=false)
     """
 
@@ -56,6 +54,8 @@ function aerodynamic_coefficient_fM(α, body, T, S, args, montecarlo=false)
         CA = ((sigma * cos(aoa)) / (sqrt(pi) * S)) * (exp(-(S * sin(aoa))^2) + sqrt(pi) * (S * sin(aoa)) * (1 + erf(S * sin(aoa))))
         return CA
     end
+
+    # println("aero models: ", α)
 
     # Solar Panels
     CN_sa = normalcoefficient(S, α, σ)

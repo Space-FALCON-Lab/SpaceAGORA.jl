@@ -1,8 +1,6 @@
 using CSV
 using DataFrames
 
-# import .config
-
 function save_csv(filename, args)
 
     touch(filename)
@@ -98,8 +96,7 @@ function save_csv(filename, args)
                           force_ii_1 = config.solution.forces.force_ii[1],
                           force_ii_2 = config.solution.forces.force_ii[2],
                           force_ii_3 = config.solution.forces.force_ii[3],
-                          energy = config.solution.forces.energy,
-                          periapsis_alt = periapsis_alt)
+                          energy = config.solution.forces.energy)
                         #   t_cf = config.solution.closed_form.t_cf,
                         #   h_cf = config.solution.closed_form.h_cf,
                         #   gamma_cf = config.solution.closed_form.γ_cf,

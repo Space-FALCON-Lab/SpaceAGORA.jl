@@ -9,8 +9,6 @@ using SPICE
 using StaticArrays
 using AstroTime
 
-# import .config
-
 function aerobraking_campaign(args, state)
     save_res = args[:results]
     config.cnf.Gram_directory = args[:directory_Gram]
@@ -102,9 +100,6 @@ function aerobraking_campaign(args, state)
         N2 = zeros(L+4, L+4)
         VR01 = zeros(L+1, L+1)
         VR11 = zeros(L+1, L+1)
-        # VR02 = zeros(L+1, L+1)
-        # VR12 = zeros(L+1, L+1)
-        # VR22 = zeros(L+1, L+1)
         sqrt_2 = sqrt(2)
         for m = 0:M+2
             j = m + 1
@@ -122,9 +117,6 @@ function aerobraking_campaign(args, state)
                 divisor = m == 0 ? sqrt_2 : 1
                 VR01[i, j] = sqrt((l-m)*(l+m+1)) / divisor
                 VR11[i, j] = sqrt((2*l+1)*(l+m+2)*(l+m+1)/(2*l+3)) / divisor
-                # VR02[i, j] = sqrt((l-m)*(l-m-1)*(l+m+1)*(l+m+2)) / divisor
-                # VR12[i, j] = sqrt((2*l+1)/(2*l+3)*(l-m)*(l+m+1)*(l+m+2)*(l+m+3)) / divisor
-                # VR22[i, j] = sqrt((2*l+1)/(2*l+5)*(l+m+1)*(l+m+2)*(l+m+3)*(l+m+4)) / divisor
             end
         end
         p_class.N1 = N1
@@ -223,7 +215,7 @@ function aerobraking_campaign(args, state)
     if Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone"
         r = p_class.Rp_e + h_0
         
-        state[:vi] = - acos(1 / eccentricity_in * (semimajoraxis_in * (1 - eccentricity_in^2) / r - 1))
+        state[:vi] = -acos(1 / eccentricity_in * (semimajoraxis_in * (1 - eccentricity_in^2) / r - 1))
         
         if args[:montecarlo] == true
             state = monte_carlo_true_anomaly(state, args)
@@ -346,9 +338,6 @@ function aerobraking_campaign(args, state)
     end
     ##########################################################
 
-    # println(" ")
-    # println(config.solution)
-    # println(" ")
 
     if Bool(args[:print_res])
         println("ρ: " * string(maximum(config.solution.physical_properties.ρ)) * " kg/m^3")
@@ -365,12 +354,18 @@ function aerobraking_campaign(args, state)
             end
 
             name = args[:directory_results] * "/" * folder_name
+
             if !isdir(args[:directory_results])
                 mkpath(args[:directory_results])
             end
+            
             filename = name * ".csv"
         else
             name = args[:directory_results] * "/" * "GRAMver_" * string(args[:Gram_version])
+
+            if !isdir(args[:directory_results])
+                mkpath(args[:directory_results])
+            end
 
             filename = name * ".csv"
         end

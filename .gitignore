@@ -6,3 +6,5 @@
 GRAM_Data/*
 output/*
 GRAMpy/*
+*.pdf
+*.csv

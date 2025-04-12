@@ -2,7 +2,6 @@ using SPICE
 using LoopVectorization
 using AssociatedLegendrePolynomials
 using LinearAlgebra
-# import .config
 
 # Define delta function
 δ(x,y) = ==(x,y)
@@ -220,16 +219,12 @@ function gradU_sph!(rVec_sph, μ, RE, Clm, Slm, L, M, A)
     # TODO: reformulate with lumped coefficients
     ∂U∂r, ∂U∂φ, ∂U∂λ = (0.0, 0.0, 0.0)
     REoverR = RE/r; REoverRl = REoverR^(L+1)
-    # ∂U∂r_list = zeros(L)
-    # ∂U∂φ_list = zeros(L)
-    # ∂U∂λ_list = zeros(L)
+
     @inbounds for l = L:-1:2
         i = l + 1
         ∂U∂r_l, ∂U∂φ_l, ∂U∂λ_l = (0.0, 0.0, 0.0)
         M_max = min(M, l)
-        # ∂U∂r_l_list = zeros(M_max+1)
-        # ∂U∂φ_l_list = zeros(M_max+1)
-        # ∂U∂λ_l_list = zeros(M_max+1)
+
         @inbounds @simd for m = M_max:-1:0
             j = m + 1
             ∂U∂r_l += P_LM[i,j] * (Clm[i,j] * cosmλ[j] + Slm[i,j] * sinmλ[j])
@@ -241,29 +236,15 @@ function gradU_sph!(rVec_sph, μ, RE, Clm, Slm, L, M, A)
             ( Π_ratio * P_LM[i,j+1] - m*tanφ*P_LM[i,j] ) * 
             (Clm[i,j] * cosmλ[j] + Slm[i,j] * sinmλ[j])
 
-            # ∂U∂r_l_list[m+1] = P_LM[i,j] * (Clm[i,j] * cosmλ[j] + Slm[i,j] * sinmλ[j])
-            
-            # ∂U∂λ_l_list[m+1] = m * P_LM[i,j] * ( -Clm[i,j] * sinmλ[j] + Slm[i,j] * cosmλ[j] )
-            
-            # Π_ratio = √( ((l+m+1)*(l-m))/(1 + δ(m,0)) )
-            # ∂U∂φ_l_list[m+1] = 
-            # ( Π_ratio * P_LM[i,j+1] - m*tanφ*P_LM[i,j] ) * 
-            # (Clm[i,j] * cosmλ[j] + Slm[i,j] * sinmλ[j])
+
         end
-        # ∂U∂r_l = sum(∂U∂r_l_list)
-        # ∂U∂φ_l = sum(∂U∂φ_l_list)
-        # ∂U∂λ_l = sum(∂U∂λ_l_list)
+
         REoverRl /= REoverR
         ∂U∂r += REoverRl * (l+1) * ∂U∂r_l
         ∂U∂φ += REoverRl * ∂U∂φ_l
         ∂U∂λ += REoverRl * ∂U∂λ_l
-        # ∂U∂r_list[l-1] = REoverRl * (l+1) * ∂U∂r_l
-        # ∂U∂φ_list[l-1] = REoverRl * ∂U∂φ_l
-        # ∂U∂λ_list[l-1] = REoverRl * ∂U∂λ_l
     end
-    # ∂U∂r = sum(∂U∂r_list)
-    # ∂U∂φ = sum(∂U∂φ_list)
-    # ∂U∂λ = sum(∂U∂λ_list)
+
     # Multiply by outer powers of 1/r
     ∂U∂r *= -μ/r^2
     ∂U∂φ *= μ/r
@@ -287,22 +268,18 @@ function acc_NSG(rVec_cart, ∇U_sph)
     # Preliminary quantities
     r = √(x^2 + y^2 + z^2)
     r_eq = √(x^2 + y^2)
-    # println("r_eq: ", r_eq)
-    # println("r: ", r)
+
     # Acceleration - equatorial components
     a = zeros(3)
     α = 1.0/r * ∂U∂r - z/(r^2 * r_eq) * ∂U∂φ
     β = 1.0/r_eq^2 * ∂U∂λ
-    # println("α: ", α)
-    # println("β: ", β)
+
     a[1] = α*x - β*y
     a[2] = β*x + α*y
 
     # Acceleration - vertical component
     a[3] = z/r * ∂U∂r + r_eq/r^2 * ∂U∂φ
-    # println("a: ", a)
-    # println("r: ", r)
-    # println("norm(a): ", norm(a))
+
     return a
 end
 

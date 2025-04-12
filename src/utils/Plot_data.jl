@@ -7,10 +7,10 @@ using LaTeXStrings
 
 function plots(state, m, name, args)
     if args[:keplerian] == true
-        traj_3D(state, m, name)
+        traj_3D(state, m, name, args)
         traj_2D(state, m, name)
     else
-        traj_3D(state, m, name)
+        traj_3D(state, m, name, args)
         traj_2D(state, m, name)
 
         performance_plots(state, m, name, args)
@@ -26,7 +26,7 @@ function plots(state, m, name, args)
     # if args[:Odyssey_sim] == 1 || args[:vex_sim] == 1 || args[:magellan_sim] == 1
         ABM_periapsis(name)
     # end
-    ground_track(state, m, name)
+    ground_track(state, m, name, args)
 end
 
 function angle_of_attack_plot(name, args)
@@ -306,7 +306,7 @@ function traj_2D(state, m, name)
     savefig(p, name * "_traj2D.pdf", width=800, height=800, format="pdf")
 end
 
-function traj_3D(state, m, name)
+function traj_3D(state, m, name, args)
     # p = make_subplots(rows=3, cols=3, 
     #                   specs=[Spec(kind="scene", rowspan=3, colspan=2) missing Spec(kind="scene");
     #                          missing missing Spec(kind="scene"); 
@@ -316,15 +316,16 @@ function traj_3D(state, m, name)
     y = [item*1e-3 for item in config.solution.orientation.pos_ii[2]]
     z = [item*1e-3 for item in config.solution.orientation.pos_ii[3]]
 
-    x_min = minimum(x)
-    x_max = maximum(x)
-    y_min = minimum(y)
-    y_max = maximum(y)
-    z_min = minimum(z)
-    z_max = maximum(z)
+    planet_radius = m.planet.Rp_e*1e-3
+    x_min = min(minimum(x), -(planet_radius + 250))
+    x_max = max(maximum(x), (planet_radius + 250))
+    y_min = min(minimum(y), -(planet_radius + 250))
+    y_max = max(maximum(y), (planet_radius + 250))
+    z_min = min(minimum(z), -(planet_radius + 250))
+    z_max = max(maximum(z), (planet_radius + 250))
 
-    min = minimum([x_min, y_min, z_min])
-    max = maximum([x_max, y_max, z_max])
+    axis_min = minimum([x_min, y_min, z_min])
+    axis_max = maximum([x_max, y_max, z_max])
 
     r = m.planet.Rp_e*1e-3
 
@@ -357,9 +358,9 @@ function traj_3D(state, m, name)
 
     append!(index, length(config.solution.orientation.number_of_passage))
 
-    x_lables = range(start=min, step=5000, stop=max)
-    y_labels = range(start=min, step=5000, stop=max)
-    z_labels = range(start=min, step=5000, stop=max)
+    x_lables = range(start=axis_min, step=5000, stop=axis_max)
+    y_labels = range(start=axis_min, step=5000, stop=axis_max)
+    z_labels = range(start=axis_min, step=5000, stop=axis_max)
 
     traj_3D_traces = []
     for i in range(start=1, step=1, stop=length(index)-1)
@@ -375,8 +376,10 @@ function traj_3D(state, m, name)
 
         push!(traj_3D_traces, scatter3d(x=x_s, y=y_s, z=z_s, mode="lines", line=attr(color="black"), row=1, col=1))
     end
-
-    layout = Layout(scene_aspectmode="cube", scene_xaxis_range=[min, max], scene_yaxis_range=[min, max], scene_zaxis_range=[min, max], xaxis_title="x [km]", yaxis_title="y [km]", zaxis_title="z [km]", template="simple_white", showlegend=false)
+    if args[:type_of_mission] == "Entry"
+        push!(traj_3D_traces, scatter3d(x=[x[1]], y=[y[1]], z=[z[1]], mode="markers", marker=attr(color="black", marker="x"), row=1, col=1))
+    end
+    layout = Layout(scene_aspectmode="cube", scene_xaxis_range=[axis_min, axis_max], scene_yaxis_range=[axis_min, axis_max], scene_zaxis_range=[axis_min, axis_max], xaxis_title="x [km]", yaxis_title="y [km]", zaxis_title="z [km]", template="simple_white", showlegend=false)
     p = plot([sphere1, sphere2, traj_3D_traces...], layout)
     display(p)
     savefig(p, name * "_traj3D.pdf", format="pdf")
@@ -418,7 +421,7 @@ function ABM_periapsis(name)
 
 end
 
-function ground_track(state, m, name)
+function ground_track(state, m, name, args)
     """
         Plot the ground track of the spacecraft during the drag passages
     """
@@ -433,8 +436,14 @@ function ground_track(state, m, name)
 
     # lats = rad2deg.(lats)
     # lons = rad2deg.(lons)
-    lats_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.latitude_periapsis, mode="lines", line=attr(color="black"))
-    lons_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.longitude_periapsis, mode="lines", line=attr(color="black"))
+    if args[:type_of_mission] == "Entry"
+        lats_traces = scatter(x=config.solution.orientation.time, y=rad2deg.(config.solution.orientation.lat), mode="lines", line=attr(color="black"))
+        lons_traces = scatter(x=config.solution.orientation.time, y=rad2deg.(config.solution.orientation.lon), mode="lines", line=attr(color="black"))
+    else
+        lats_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.latitude_periapsis, mode="lines", line=attr(color="black"))
+        lons_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.longitude_periapsis, mode="lines", line=attr(color="black"))
+    end
+
     lats_plot = plot(lats_traces, Layout(xaxis_title="Orbit number", yaxis_title="Latitude [deg]", template="simple_white", showlegend=false))
     lons_plot = plot(lons_traces, Layout(xaxis_title="Orbit number", yaxis_title="Longitude [deg]", template="simple_white", showlegend=false))
     p = [lats_plot lons_plot]

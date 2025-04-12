@@ -158,6 +158,8 @@ function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Boo
     elseif config.cnf.drag_state == true || args[:keplerian] == true
         position = gram.Position()
         position.height = h * 1e-3
+        # println("Height: ", position.height)
+        # println("Lat: $lat, Lon: $lon, Alt: $h")
         lat = rad2deg(lat)
         lon = rad2deg(lon)
         position.latitude = lat

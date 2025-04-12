@@ -46,13 +46,13 @@ function run_orbitalelements(args)
 end
 
 function run_vgamma(args)
-    γ_0, v_0, inclination, Ω, ω = collect(range(Int64(round(args[:γ_initial_a]*100)), Int64(round(args[:γ_initial_a]*100)), step=Int64(args[:γ_step]*100))), 
-                                  collect(range(Int64(args[:v_initial_a]), Int64(args[:v_initial_b]), step=Int64(args[:v_step]))),
+    γ_0, v_0, inclination, Ω, ω = collect(range(args[:γ_initial_a], args[:γ_initial_a], step=args[:γ_step])),
+                                  collect(range(args[:v_initial_a], args[:v_initial_b], step=args[:v_step])), 
                                   args[:inclination], args[:Ω], args[:ω]
     final_apoapsis = args[:final_apoapsis]
 
     for γ in γ_0
-        γ = -γ / 100
+        γ = -γ
 
         for v in v_0
             state = Dict()
@@ -68,7 +68,7 @@ function run_vgamma(args)
             for mc_index in range(args[:initial_montecarlo_number], args[:montecarlo_size])
                 state[:Apoapsis], state[:Periapsis], state[:Inclination], state[:Ω], state[:ω], state[:Final_sma] = apoapsis, periapsis_alt * 1e-3, inclination, Ω, ω, final_apoapsis
 
-                args[:simulation_filename] = "Results_ctrl=" * string(args[:control_mode]) * "_v=" * string(Int64(v)) * "_gamma=" * string(abs(γ)) * "_" * string(args[:α]) * "deg"
+                args[:simulation_filename] = "Results_ctrl=" * string(args[:control_mode]) * "_v=" * string(v) * "_gamma=" * string(abs(γ)) * "_" * string(args[:α]) * "deg"
 
                 if args[:montecarlo] == true
                     args = MonteCarlo_setting_passage(mc_index, args)

@@ -11,7 +11,7 @@ function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet, 
     # et = utc2et(to_utc(DateTime(date_initial + t0*seconds)))
     # current_time = value(seconds(date_initial + t0*seconds - from_utc(DateTime(2000, 1, 1, 12, 0, 0.0)))) # current time in seconds since J2000
     # et = utc2et(to_utc(current_time)) # convert to Julian Ephemeris Time (ET)
-    primary_body_name = planet.name
+    # primary_body_name = planet.name
     # planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(primary_body_name), et))*planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
     
     # L_pi = [cos(rot_angle) sin(rot_angle) 0; 
@@ -25,16 +25,11 @@ function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet, 
     return r_p, v_p
 end
 
-function r_pintor_i(r_p::SVector{3, Float64}, v_p::SVector{3, Float64}, planet, t::Float64, t_prev::Float64)
+function r_pintor_i(r_p::SVector{3, Float64}, v_p::SVector{3, Float64}, planet)
     # From PCPF (planet centered/planet fixed) to PCI (planet centered inertial)
-    rot_angle = -norm(planet.ω) * (t + t_prev)
 
-    L_PI = SMatrix{3, 3, Float64}([cos(rot_angle) sin(rot_angle) 0; 
-            -sin(rot_angle) cos(rot_angle) 0; 
-            0 0 1])
-
-    r_i = L_PI' * r_p
-    v_i = L_PI' * SVector{3, Float64}(v_p + cross(planet.ω, r_p))
+    r_i = planet.L_PI' * r_p
+    v_i = planet.L_PI' * SVector{3, Float64}(v_p + cross(planet.ω, r_p))
 
     return r_i, v_i
 end
@@ -75,7 +70,6 @@ function rvtoorbitalelement(r::SVector, v::SVector, m, planet)
     e = cross(v, h)/planet.μ - r_ver
 
     i = acos(dot(i_z, h)/norm(h))
-
     e_vers = e / norm(e)
     if i == 0 || i == pi
         if dot(e, i_y) >= 0
@@ -183,6 +177,70 @@ function latlongtor(LATLONGH, planet, α_g0, t, t0)
     z = cnst * sin(ϕ)
 
     return [x, y, z]
+end
+
+function latlongtoOE(LATLONGH, planet, γ, α, v)
+    """
+    From Geodetic to Orbital Elements
+    
+    This function converts geodetic coordinates (latitude, longitude, and altitude) to orbital elements.
+    It uses the planet's parameters and the velocity vector to compute the orbital elements.
+    The function returns the orbital elements as a vector.
+    Parameters:
+    - LATLONGH: A vector containing latitude, longitude, and altitude.
+    - planet: A structure containing the planet's parameters.
+    - γ: The flight path angle.
+    - α: The azimuth of the velocity vector.
+    - v: The velocity magnitude.
+    Returns:
+    - A vector containing the orbital elements: semi-major axis, eccentricity, inclination, right ascension of the ascending node, argument of periapsis, and true anomaly.
+    """
+    # Geodetic to Orbital Elements
+    ϕ = LATLONGH[1]
+    λ = LATLONGH[2]
+    h = LATLONGH[3]
+    println("ϕ: ", ϕ)
+    println("λ: ", λ)
+    println("h: ", h)
+    println("γ: ", γ)
+    println("α: ", α)
+    println("v: ", v)
+    
+    f = (planet.Rp_e - planet.Rp_p) / planet.Rp_e
+    # e = 1 - (1 - f)^2 # ellipticity (NOTE =  considered as square)
+    e = sqrt(1 - (planet.Rp_p/planet.Rp_e)^2) # ellipticity (NOTE =  considered as square)
+    N = planet.Rp_e / sqrt(1 - e^2 * sin(ϕ)^2)
+    x = (N + h) * cos(ϕ) * cos(λ)
+    y = (N + h) * cos(ϕ) * sin(λ)
+    z = ((1 - e^2) * N + h) * sin(ϕ)
+    r = sqrt(x^2 + y^2 + z^2)
+    println("x: ", x)
+    println("y: ", y)
+    println("z: ", z)
+    r_i, _ = r_pintor_i(SVector{3, Float64}([x, y, z]), SVector{3, Float64}([0, 0, 0]), planet)
+    # println("r_i: ", r_i)
+    # Define local unit vectors in ECEF:
+    Z_ecef = SVector{3,Float64}([cos(ϕ)*cos(λ), cos(ϕ)*sin(λ), sin(ϕ)])
+    E_ecef = SVector{3,Float64}([-sin(λ), cos(λ), 0])
+    N_ecef = -SVector{3,Float64}([-sin(ϕ)*cos(λ), -sin(ϕ)*sin(λ), cos(ϕ)])  # since S = [-sinϕ*cosλ, -sinϕ*sinλ, cosϕ]
+
+    # Alternatively, you can define N_ecef directly as:
+    N_ecef = SVector{3,Float64}([-cos(λ)*sin(ϕ), -sin(λ)*sin(ϕ), cos(ϕ)])
+
+    # Decompose the local velocity (assumed provided as v magnitude, γ, and α):
+    v_N = v * cos(γ) * cos(α)  # North component
+    v_E = v * cos(γ) * sin(α)  # East component
+    v_Z = v * sin(γ)           # Up/Zenith component
+
+    # Form the velocity in ECEF:
+    v_ecef = v_N * N_ecef + v_E * E_ecef + v_Z * Z_ecef
+
+    # Convert to ECI using your transformation matrix:
+    v_eci = planet.L_PI' * v_ecef
+    # v_vec = SVector{3, Float64}([v*cos(γ)*cos(α), v*cos(γ)*sin(α), v*sin(γ)])
+
+    OE = rvtoorbitalelement(r_i, v_eci, 0, planet)[1:6]
+    return OE
 end
 
 function rtolatlong(r_p::SVector{3, Float64}, planet, spherical_harmonic_topography::Bool=false)

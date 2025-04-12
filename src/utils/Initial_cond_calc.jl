@@ -6,7 +6,7 @@ function ic_calculation_rptoae(planet, γ, v, args)
         h_0 = args[:EI] * 1e3
     end
 
-    r = planet.Rp_e + h_0 - 20e3 # Drag passage always start and end at EI km of altitude
+    r = planet.Rp_e + h_0 # Drag passage always start and end at EI km of altitude
     a = planet.μ / ((2*planet.μ/r) - v^2)
     h = r*v*cos(deg2rad(γ))
     p = (h^2)/planet.μ

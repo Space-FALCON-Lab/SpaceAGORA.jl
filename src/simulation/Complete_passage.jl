@@ -764,8 +764,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         m = integrator.p[1]
         args = integrator.p[8]
 
-        if args[:body_shape] == "Blunted Body"
-            min_alt = 1 * 1e3
+        if args[:body_shape] == "Blunted Body" || args[:type_of_mission] == "Entry"
+            min_alt = 0 * 1e3
         else
             min_alt = 35 * 1e3
         end
@@ -903,6 +903,27 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
     heat_load_check_exit = ContinuousCallback(heat_load_check_exit_condition, heat_load_check_exit_affect!, nothing)
 
+    function final_entry_altitude_reached_condition(y, t, integrator)
+        m = integrator.p[1]
+        args = integrator.p[8]
+        min_alt = args[:final_altitude]
+
+        r_p, _ = r_intor_p!(SVector{3, Float64}(y[1:3] * config.cnf.DU), 
+                        SVector{3, Float64}(y[4:6] * config.cnf.DU / config.cnf.TU), 
+                        integrator.p[1].planet, 
+                        config.cnf.et)
+        alt, lat, lon = rtolatlong(r_p, integrator.p[1].planet, args[:topography_model] == "Spherical Harmonics")
+        alt - min_alt # upcrossing and downcrossing
+        # norm(y[1:3]) - (m.planet.Rp_e + min_alt) # upcrossing and downcrossing
+    end
+
+    function final_entry_altitude_reached_affect!(integrator)
+        # println("entered final_entry_altitude_reached_affect!")
+        config.cnf.count_final_entry_altitude_reached += 1
+        terminate!(integrator)
+    end
+    final_entry_altitude_reached = ContinuousCallback(final_entry_altitude_reached_condition, final_entry_altitude_reached_affect!)
+
     time_0 = 0
     if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 2
         config.cnf.α = m.aerodynamics.α
@@ -1005,10 +1026,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             events = CallbackSet(eventfirststep, apoapsisgreaterperiapsis, impact)
             t_event_0 = "eventfirststep"
             t_event_1 = "apoapsisgreaterperiapsis"
-        elseif aerobraking_phase == 2 && Bool(args[:drag_passage])
+        elseif aerobraking_phase == 2 && Bool(args[:drag_passage]) && args[:type_of_mission] != "Entry"
             events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact)
             t_event_0 = "out_drag_passage"
             t_event_1 = "periapsispoint"
+        elseif aerobraking_phase == 2 && Bool(args[:drag_passage]) && args[:type_of_mission] == "Entry"
+            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, final_entry_altitude_reached)
+            t_event_0 = "final_altitude_reached"
+            t_event_1 = "out_drag_passage"
         elseif aerobraking_phase == 2 && index_steps_EOM == 1 && args[:body_shape] == "Blunted Cone"
             events = CallbackSet(out_drag_passage, apoapsispoint, periapsispoint, impact)
             t_event_0 = "out_drag_passage"
@@ -1174,46 +1199,22 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 config.cnf.count_guidance = 0
                 config.cnf.count_heat_rate_check = 0
                 config.cnf.count_heat_load_check_exit = 0
-
-                # println(" ")
-                # println(t_event_0)
-                # println(" ")
-                # println(t_event_1)
-                # println(" ")
+                config.cnf.count_final_entry_altitude_reached = 0
 
                 ## Julia Integrator
                 # Time initialization
                 initial_time, final_time = time_0 / config.cnf.TU, (time_0 + length_sim) / config.cnf.TU 
-                # initial_time, final_time = time_0, (time_0 + length_sim)
 
                 # Parameter Definition
                 param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
 
-                # println("")
-                # println("pos: " * string(norm(in_cond[1:3]) * config.cnf.DU) * " vel: " * string(norm(in_cond[4:6]) * config.cnf.DU / config.cnf.TU)) 
-                # println("")
-
-                # println(in_cond[7])
                 # Run simulation
                 prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
-                sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)#, saveat=5/config.cnf.TU)#, dt=step/config.cnf.TU)
-                # println("sol.t: ", size(sol.t))
-                # sol = solve(prob, method, dt=step, abstol=a_tol, reltol=r_tol, callback=events)
+                sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
 
                 config.cnf.counter_integrator += 1
                 in_cond = [sol[1,end], sol[2,end], sol[3, end], sol[4, end], sol[5, end], sol[6, end], sol[7, end], sol[8, end]]
-
-                # println("")
-                # println("pos: " * string(norm(in_cond[1:3]) * config.cnf.DU) * " vel: " * string(norm(in_cond[4:6]) * config.cnf.DU / config.cnf.TU)) 
-                # println("")
-
-                # println(" ")
-                # println(norm(in_cond[1:3]) * config.cnf.DU)
-                # println(" ")
-                # println(norm(in_cond[4:6]) * config.cnf.DU / config.cnf.TU)
-                # println(" ")
-                # println(in_cond[7:8] .* [config.cnf.MU, config.cnf.MU / config.cnf.TU^2])
-                # println(" ")
+              
 
                 # non dimensionalization
                 # in_cond[1:3] = in_cond[1:3] / config.cnf.DU
@@ -1221,20 +1222,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 # in_cond[7] = in_cond[7] / config.cnf.TU
                 # in_cond[8] = in_cond[8] * config.cnf.TU^3
 
-                # println("")
-                # # println(in_cond)
-                # println("pos: " * string(norm(in_cond[1:3]) * config.cnf.DU) * " vel: " * string(norm(in_cond[4:6]) * config.cnf.DU / config.cnf.TU)) 
-                # println("")
-
                 # Save results 
                 push!(time_solution, (sol.t * config.cnf.TU)...)
-                # push!(time_solution, sol.t...)
                 time_0 = time_solution[end]
-
-                # println(" ")
-                # println(time_0)
-                # println(string(config.cnf.count_impact) * "     " * string(config.cnf.count_apoapsisgreaterperiapsis))
-                # println(" ")
 
                 if aerobraking_phase == 0
                     new_periapsis(m, in_cond[1:3] * config.cnf.DU, in_cond[4:6] * config.cnf.DU / config.cnf.TU, args)
@@ -1308,6 +1298,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 time_ev_0 = config.cnf.count_apoapsisgreaterperiapsis
             elseif t_event_0 == "heat_load_check_exit"
                 time_ev_0 = config.cnf.count_heat_load_check_exit
+            elseif t_event_0 == "final_altitude_reached"
+                time_ev_0 = config.cnf.count_final_entry_altitude_reached
             end
 
             if t_event_1 == "stop_firing"
@@ -1332,6 +1324,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 time_ev_1 = config.cnf.count_apoapsisgreaterperiapsis
             elseif t_event_1 == "heat_load_check_exit"
                 time_ev_1 = config.cnf.count_heat_load_check_exit
+            elseif t_event_1 == "final_altitude_reached"
+                time_ev_1 = config.cnf.count_final_entry_altitude_reached
             end
 
             # Breaker conditions
@@ -1468,11 +1462,13 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     if Bool(args[:print_res])
         # Print Actual periapsis altitude and Vacuum periapsis altitude
-        println("Actual periapsis altitude " * string(config.cnf.altitude_periapsis[end]) * " km - Vacuum periapsis altitude = " * string((config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end]) - m.planet.Rp_e)*1e-3) * " km")
+        if args[:type_of_mission] != "Entry"
+            println("Actual periapsis altitude " * string(config.cnf.altitude_periapsis[end]) * " km - Vacuum periapsis altitude = " * string((config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end]) - m.planet.Rp_e)*1e-3) * " km")
         # append!(config.cnf.periapsis_list, (config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end]) - m.planet.Rp_e)*1e-3)
 
         # Print Ra new (Apoapsis)
-        println("Ra new = " * string((config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end]))*1e-3) * " km")
+            println("Ra new = " * string((config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end]))*1e-3) * " km")
+        end
 
         # Print Heat Rate and Heat Load
         if args[:keplerian] == false
@@ -1522,6 +1518,5 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     # append!(config.cnf.periapsis_list, (config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end]) - m.planet.Rp_e)*1e-3)
     append!(config.cnf.orbit_number_list, config.cnf.count_numberofpassage + 1)
     append!(config.cnf.Δv_list, config.cnf.Δv_man)
-
     return continue_campaign
 end

@@ -57,11 +57,6 @@ function save_results(time, ratio)
     # println(t)
 
     time_0 = time[end]
-    if time[end] != range_time[end]
-        println("Time: ", time[end])
-        println("Range time: ", range_time[end])
-        sleep(5)
-    end
     config.cnf.prev_step_integrator = time_0
     config.cnf.solution_intermediate = []
 

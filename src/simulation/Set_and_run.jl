@@ -4,10 +4,11 @@ include("../physical_models/Mission.jl")
 include("../utils/Save_csv.jl")
 include("../utils/Plot_data.jl")
 include("Aerobraking.jl")
-
+include("../utils/Reference_system.jl")
 using SPICE
 using StaticArrays
 using AstroTime
+
 # import .config
 
 function aerobraking_campaign(args, state)
@@ -42,6 +43,30 @@ function aerobraking_campaign(args, state)
     furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
     
+    # If using lat/lon initial conditions, correct the initial orbital elements
+    if args[:orientation_type] == 1
+        # Get the latitude and longitude of the initial conditions
+        lat = args[:latitude]
+        lon = args[:longitude]
+
+        # Convert latitude and longitude to radians
+        lat_rad = deg2rad(lat)
+        lon_rad = deg2rad(lon)
+        α_rad = deg2rad(args[:azimuth])
+        γ_rad = deg2rad(args[:γ_initial_a])
+        config.cnf.et = utc2et(to_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))
+        p_class.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_" * uppercase(p_class.name), config.cnf.et))*p_class.J2000_to_pci'
+        # will have to rethink this to use the gamma/v step initial conditions
+        OE = latlongtoOE([lat_rad, lon_rad, args[:EI]*1e3], p_class, γ_rad, α_rad, args[:v_initial_a])
+        println("OE:", OE)
+        OE[3:5] = rad2deg.(OE[3:5])
+        args[:inclination] = OE[3]
+        args[:Ω] = OE[4]
+        args[:ω] = OE[5]
+        state[:Inclination] = OE[3]
+        state[:Ω] = OE[4]
+        state[:ω] = OE[5]
+    end
     # Set up n-body gravity
     if length(args[:n_bodies]) != 0
         for i=1:length(args[:n_bodies])

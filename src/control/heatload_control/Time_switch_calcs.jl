@@ -5,8 +5,6 @@ include("../Eoms.jl")
 
 using Roots
 
- # import .config
-
 function switch_calculation_with_integration(ip, m, position, args, t, heat_rate_control, reevaluation_mode, gram_atmosphere, current_position=0)
     # println("time_switch 1: ", time_switch)
 
@@ -28,8 +26,22 @@ function switch_calculation_with_integration(ip, m, position, args, t, heat_rate
 
     # println("time_switch 3: ", time_switch)
 
+    if m.planet.name == "mars"
+        low_lim = 3.3
+        high_lim = 4.5
+    elseif m.planet.name == "venus"
+        low_lim = 1.0
+        high_lim = 10.0
+    elseif m.planet.name == "earth"
+        low_lim = 1.0
+        high_lim = 10.0
+    elseif m.planet.name == "titan"
+        low_lim = 0.00001
+        high_lim = 10.0 
+    end
+
     if delta_Q_max * delta_Q_min < 0
-        find_zero(k -> func(k), [3.3, 4.5], Bisection(), rtol=1e-5)
+        find_zero(k -> func(k), [low_lim, high_lim], Bisection(), rtol=1e-5)
         # println("time_switch 4: ", time_switch)
     elseif delta_Q_max < 0
         if args[:heat_load_sol] == 0 && args[:heat_load_sol] == 3

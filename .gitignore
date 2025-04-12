@@ -3,5 +3,8 @@
 *.BSP
 *.tpc
 *.tls
+GRAM_Data/*
+output/*
+GRAMpy/*
 *.pdf
 *.csv

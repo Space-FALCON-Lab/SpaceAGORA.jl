@@ -17,8 +17,6 @@ using SPICE
 using PythonCall
 sys = pyimport("sys")
 
- # import .config
- # import .ref_sys
 
 function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval=false, gram_atmosphere=nothing, time_switch_2=0, reevaluation_mode=1)
     sys.path.append(args[:directory_Gram])
@@ -38,8 +36,16 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
 
     r0, v0 = orbitalelemtorv(OE, m.planet)
 
+    r0 = SVector{3, Float64}(r0)
+    v0 = SVector{3, Float64}(v0)
+
     # Clock
-    date_initial = from_utc(DateTime(m.initial_condition.year, m.initial_condition.month, m.initial_condition.day, m.initial_condition.hour, m.initial_condition.minute, m.initial_condition.second))
+    date_initial = from_utc(DateTime(m.initial_condition.year, 
+                                    m.initial_condition.month,
+                                    m.initial_condition.day, 
+                                    m.initial_condition.hour, 
+                                    m.initial_condition.minute, 
+                                    m.initial_condition.second))
 
     if config.cnf.count_numberofpassage != 1
         t_prev = config.solution.orientation.time[end]
@@ -47,8 +53,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         t_prev = m.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # m.initialcondition.time_rot
     end
 
-    # v0_pp = r_intor_p(r0, v0, m.planet, time_0, t_prev)[2]
-    r0_pp, v0_pp = r_intor_p(r0, v0, m.planet, time_0, t_prev, date_initial, 0)
+    r0_pp, v0_pp = r_intor_p!(r0, v0, m.planet, config.cnf.et)
 
     T = m.planet.T    # fixed temperature
     RT = T * m.planet.R
@@ -58,9 +63,6 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
     CL_90, CD_90 = aerodynamic_coefficient_fM(pi/2, m.body, T, S, m.aerodynamics, 0)
     CL_0, CD_0 = aerodynamic_coefficient_fM(0, m.body, T, S, m.aerodynamics, 0)
     CD_slope = (CD_90 - CD_0) / (pi/2)
-
-    # println("CD_slope outside integrator: ", CD_slope)
-    # println("k_cf outside integrator: ", k_cf)
 
     function f_ctrl!(y_dot, in_cond, param, t0)
         m = param[1]
@@ -77,12 +79,20 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         k_cf = param[12]
 
         # Clock
-        time_real = DateTime(date_initial + t0*seconds) # date_initial + Second(t0)
+        current_epoch = date_initial + t0*seconds # Precompute the current epoch
+        time_real = DateTime(current_epoch) # date_initial + Second(t0)
         timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
+
+        # Timing variables
+        el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation
+        current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
+        time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
+        et = utc2et(time_real_utc) # Current time in Ephemeris Time
+        m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
         
-        pos_ii = in_cond[1:3]       # Inertial position 
-        vel_ii = in_cond[4:6]       # Inertial velocity
-        mass = m.body.mass          # Mass kg
+        pos_ii = SVector{3, Float64}(in_cond[1:3])       # Inertial position 
+        vel_ii = SVector{3, Float64}(in_cond[4:6])       # Inertial velocity
+        mass = m.body.mass                             # Mass kg
         pos_ii_mag = norm(pos_ii)   # Magnitude of the inertial position
         vel_ii_mag = norm(vel_ii)   # Magnitude of the inertial velocity
         lambdav_ii = in_cond[7]
@@ -96,7 +106,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
 
         # TRANSFORM THE STATE
         # Inertial to planet relative transformation
-        pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, m.planet, t0, t_prev, date_initial, t0) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
+        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, et) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
         pos_pp_mag = norm(pos_pp) # Magnitude of the planet relative position
         vel_pp_mag = norm(vel_pp)
 
@@ -272,19 +282,6 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
 
         g_ii = norm(gravity_ii) / mass
 
-        # println("g_ii: ", g_ii)
-        # println("vel_ii_mag: ", vel_ii_mag)
-        # println("pos_ii_mag: ", pos_ii_mag)
-        # println("k_cf: ", k_cf)
-        # println("ρ: ", ρ)
-        # println("area_tot: ", area_tot)
-        # println("CD: ", CD)
-        # println("mass: ", mass)
-        # println("γ_ii: ", γ_ii)
-        # println("aoa: ", aoa)
-
-        # println("lambda: ", [lambdav_ii, lambdagamma_ii, lambdah_ii])
-
         # EOM
         lambdav_dot = -3 * k_cf * ρ * vel_ii_mag^2 * aoa / pi + 
                       lambdav_ii * (ρ* area_tot * CD * vel_ii_mag) / mass - 
@@ -329,9 +326,6 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         # CL_0, CD_0 = aerodynamic_coefficient_fM(0, m.body, T, S, m.aerodynamics, 0)
         # CD_slope = (CD_90 - CD_0) / (pi/2)
 
-        # println("CD_slope inside event: ", CD_slope)
-        # println("k_cf inside event: ", k_cf)
-
         vel_ii = y[4:6]
         vel_ii_mag = norm(vel_ii)
 
@@ -342,12 +336,6 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         # println("entered time_switch_func_affect! in Eoms.jl")
         append!(config.cnf.t_time_switch_func, integrator.t)
         nothing
-
-        # if length(config.cnf.t_time_switch_func) == 2
-        #     terminate!(integrator)
-        # else
-        #     nothing
-        # end
     end
     time_switch_func = ContinuousCallback(time_switch_func_condition, time_switch_func_affect!)
 
@@ -360,8 +348,6 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         lambdav = v_cf[end]
         lambdag = 0.0
         lambdah = m.planet.μ / (m.planet.Rp_e + h_cf[end])^2
-
-        # println("lambda init: ", [lambdav, lambdag, lambdah])
 
         lambda_v_fin = 10000
         lambda_γ_fin = 10000
@@ -376,8 +362,6 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         index_phase_aerobraking = nothing
         aerobraking_phase = nothing
         initial_state = nothing
-
-        # println("k_cf: ", k_cf)
 
         step = 5
 
@@ -465,7 +449,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         ## Time switch definition
         time_switch = [0.0, 0.0]
 
-        println("length of temp: ", temp)
+        # println("length of temp: ", temp)
 
         if length(temp) == 2
             # time_switch = temp
@@ -528,7 +512,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         return sol
     end
 
-    println("time_switch: ", time_switch)
+    # println("time_switch: ", time_switch)
 
     return sol, time_switch
 end

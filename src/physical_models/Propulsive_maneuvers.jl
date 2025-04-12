@@ -1,7 +1,5 @@
 using Roots
 
- # import .config
-
 function propulsion_ic_calcs(m, args, initial_state)
     """
 

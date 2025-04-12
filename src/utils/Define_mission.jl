@@ -95,27 +95,6 @@ function def_miss(args)
         args[:month] = 11
         args[:day] = 6
 
-        ## For Mars Odyssey Starting at true beginning
-        # args[:ra_initial_a] = 30206.673e3
-        # args[:ra_initial_b] = 35000.0e3
-        # args[:ra_step] = 1e12
-
-        # if args[:gravity_model] == "Inverse Squared"
-        #     args[:hp_initial_a] = 108600
-        # else
-        #     args[:hp_initial_a] = 137e3 # From SPICE Data
-        # end
-
-        # args[:hp_initial_b] = 12000000
-        # args[:hp_step] = 1e12
-        # args[:inclination] = 93.521
-        # args[:ω] = 111.724
-        # args[:Ω] = 27.871
-        # args[:year] = 2001
-        # args[:month] = 10
-        # args[:day] = 27
-
-
         args[:final_apoapsis] = 3390.0e3 + 503e3 # 4905.97e3  
         args[:montecarlo] = 0
         args[:drag_passage] = 0

@@ -37,8 +37,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     OE = SVector{7, Float64}([initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m])
 
-    println(OE)
-
     if (OE[1] > (m.planet.Rp_e*1e-3 + 50 + args[:EI])*1e3) && (args[:drag_passage] == false) && (args[:body_shape] == "Spacecraft")
         index_steps_EOM = 3
     else

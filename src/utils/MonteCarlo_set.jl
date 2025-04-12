@@ -1,4 +1,3 @@
- # import .config
 
 function MonteCarlo_setting(args)
     MC = Dict()
@@ -39,9 +38,10 @@ function MonteCarlo_append(MC, args, count)
     append!(MC[:N_passages], config.solution.orientation.number_of_passage[end])
     append!(MC[:Duration], config.solution.orientation.time[end])
     append!(MC[:Median_heat], median(config.cnf.max_heatrate))
-    append!(MC[:Periapsis_min], minimum(config.cnf.altitude_periapsis))
-    append!(MC[:Periapsis_max], maximum(config.cnf.altitude_periapsis))
-
+    if args[:type_of_mission] != "Entry"
+        append!(MC[:Periapsis_min], minimum(config.cnf.altitude_periapsis))
+        append!(MC[:Periapsis_max], maximum(config.cnf.altitude_periapsis))
+    end
     heat_rate_max = maximum(config.solution.performance.heat_rate) 
     if heat_rate_max > args[:max_heat_rate]
         count += 1

@@ -5,8 +5,6 @@ include("../Eoms.jl")
 
 using Roots
 
- # import .config
-
 function switch_calculation_with_integration(ip, m, position, args, t, heat_rate_control, reevaluation_mode, gram_atmosphere, current_position=0)
     # println("time_switch 1: ", time_switch)
 

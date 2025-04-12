@@ -17,8 +17,6 @@ using SPICE
 using PythonCall
 sys = pyimport("sys")
 
- # import .config
- # import .ref_sys
 
 function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval=false, gram_atmosphere=nothing, time_switch_2=0, reevaluation_mode=1)
     sys.path.append(args[:directory_Gram])

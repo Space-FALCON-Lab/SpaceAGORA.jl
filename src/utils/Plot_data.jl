@@ -3,8 +3,6 @@ include("Misc.jl")
 using PlotlyJS
 using LaTeXStrings
 
- # import .config
-
 function plots(state, m, name, args)
     if args[:keplerian] == true
         traj_3D(state, m, name, args)
@@ -16,9 +14,9 @@ function plots(state, m, name, args)
         performance_plots(state, m, name, args)
     end
 
-    if args[:body_shape] == "Spacecraft" && !config.cnf.impact
-        if lowercase(m.planet.name) == "mars"
-            closed_form_solution_plot(name, m)
+    if args[:body_shape] == "Spacecraft" && !config.cnf.impact && args[:keplerian] == false
+        if lowercase(m.planet.name) == "mars" || lowercase(m.planet.name) == "venus"
+            # closed_form_solution_plot(name, m)
         end
         angle_of_attack_plot(name, args)
     end
@@ -27,9 +25,8 @@ function plots(state, m, name, args)
         drag_passage_plot(name, args)
     end
 
-    if args[:Odyssey_sim] == 1 || args[:vex_sim] == 1 || args[:magellan_sim] == 1
-        ABM_periapsis(name)
-    end
+    ABM_periapsis(name)
+    ground_track(state, m, name, args)
 end
 
 function drag_passage_plot(name, args)
@@ -75,7 +72,7 @@ end
 
 function angle_of_attack_plot(name, args)
     alt_idx = findall(x -> x < args[:AE]*1e3, config.solution.orientation.alt)
-
+    # println(config.solution.orientation.alt)
     index_orbit = [1]
     time_0 = [config.solution.orientation.time[alt_idx[1]]]
 
@@ -87,11 +84,6 @@ function angle_of_attack_plot(name, args)
     end
 
     append!(index_orbit, length(alt_idx))
-
-    # println(alt_idx)
-    # println(alt_idx[index_orbit])
-    # println(index_orbit)
-    # println(length(alt_idx))
 
     if length(index_orbit) <= 2 # If onlly 1 orbit
         time = [config.solution.orientation.time[i] for i in alt_idx]
@@ -113,12 +105,10 @@ function angle_of_attack_plot(name, args)
             push!(plots_aoa_mark, scatter(x=[i], y=[aoa[end]], mode="markers", marker=attr(color="red")))
             push!(plots_aoa_line, scatter(x=(time .- time[1])./(time[end] - time[1]) .+ (i-1), y=aoa, mode="lines", line=attr(color="black")))
             time_end = time[end]
-            # append!(x_labels, (time_end + time[1])/2)
             append!(x_labels, i)
             append!(aoa_end, aoa[end])
         end
 
-        # push!(plots_aoa_line, scatter(x=x_labels, y=aoa_end, mode="lines", line=attr(color="black")))
         layout = Layout(xaxis_title="Orbits", yaxis_title="α [deg]", template="simple_white", showlegend=false)
         p = plot([plots_aoa_line..., plots_aoa_mark...], layout)
     end
@@ -192,6 +182,10 @@ function closed_form_solution_plot(name, mission)
     p_gamma = plot([plot_traces_gamma..., plot_traces_gamma_cf...], layout_gamma)
     p_v = plot([plot_traces_v..., plot_traces_v_cf...], layout_v)
 
+    p_alt = plot([plot_traces_alt...], layout_alt)
+    p_gamma = plot([plot_traces_gamma...], layout_gamma)
+    p_v = plot([plot_traces_v...], layout_v)
+
     p = [p_alt p_gamma p_v]
     relayout!(p, width=2200, height=1000, template="simple_white", showlegend=false)
 
@@ -238,8 +232,6 @@ function performance_plots(state, m, name, args)
             append!(time_0, config.solution.orientation.time[index[i]])
         end
     end
-
-    # append!(index_orbit, length(index))
     plot_traces_heat_rate = []
 
     if length(index_orbit) <= 2
@@ -253,7 +245,6 @@ function performance_plots(state, m, name, args)
             max_value = maximum(heat_rate)
             max_index = findfirst(x -> x == max_value, heat_rate)
 
-            # push!(plot_traces_heat_rate, scatter(x=[time[max_index]] , y=[heat_rate[max_index]], mode="markers", marker=attr(color="black"))) # uncomment for time instead
             push!(plot_traces_heat_rate, scatter(x=[i] , y=[heat_rate[max_index]], mode="markers", marker=attr(color="black")))
 
             time_end = time[end]
@@ -276,7 +267,6 @@ function performance_plots(state, m, name, args)
             time = [config.solution.orientation.time[j] - time_0[i] + time_end for j in index[index_orbit[i]:index_orbit[i+1]-1]]
             heat_load = [config.solution.performance.heat_load[j] for j in index[index_orbit[i]:index_orbit[i+1]-1]]
 
-            # push!(plot_traces_heat_load, scatter(x=[time[end]] , y=[heat_load[end]], mode="markers", marker=attr(color="black")))
             push!(plot_traces_heat_load, scatter(x=[i] , y=[heat_load[end]], mode="markers", marker=attr(color="black")))
 
             time_end = time[end]
@@ -356,24 +346,21 @@ function traj_2D(state, m, name, args)
 end
 
 function traj_3D(state, m, name, args)
-    # p = make_subplots(rows=3, cols=3, 
-    #                   specs=[Spec(kind="scene", rowspan=3, colspan=2) missing Spec(kind="scene");
-    #                          missing missing Spec(kind="scene"); 
-    #                          missing missing Spec(kind="scene")])
 
     x = [item*1e-3 for item in config.solution.orientation.pos_ii[1]]
     y = [item*1e-3 for item in config.solution.orientation.pos_ii[2]]
     z = [item*1e-3 for item in config.solution.orientation.pos_ii[3]]
 
-    x_min = minimum(x)
-    x_max = maximum(x)
-    y_min = minimum(y)
-    y_max = maximum(y)
-    z_min = minimum(z)
-    z_max = maximum(z)
+    planet_radius = m.planet.Rp_e*1e-3
+    x_min = min(minimum(x), -(planet_radius + 250))
+    x_max = max(maximum(x), (planet_radius + 250))
+    y_min = min(minimum(y), -(planet_radius + 250))
+    y_max = max(maximum(y), (planet_radius + 250))
+    z_min = min(minimum(z), -(planet_radius + 250))
+    z_max = max(maximum(z), (planet_radius + 250))
 
-    min = minimum([x_min, y_min, z_min])
-    max = maximum([x_max, y_max, z_max])
+    axis_min = minimum([x_min, y_min, z_min])
+    axis_max = maximum([x_max, y_max, z_max])
 
     r = m.planet.Rp_e*1e-3
 
@@ -383,10 +370,6 @@ function traj_3D(state, m, name, args)
     xs = r * cos.(u) * sin.(v)'
     ys = r * sin.(u) * sin.(v)'
     zs = r * ones(n) * cos.(v)'
-
-    # println("")
-    # println(size(xs))
-    # println("")
 
     sphere1 = surface(x=xs, y=ys, z=zs, opacity=0.9, showscale=false, surfacecolor=@. xs^2 + ys^2 + zs^2 + 100)
 
@@ -403,22 +386,31 @@ function traj_3D(state, m, name, args)
             append!(index, i)
         end
     end
+
     append!(index, length(config.solution.orientation.number_of_passage))
 
-    x_lables = range(start=min, step=5000, stop=max)
-    y_labels = range(start=min, step=5000, stop=max)
-    z_labels = range(start=min, step=5000, stop=max)
+    x_lables = range(start=axis_min, step=5000, stop=axis_max)
+    y_labels = range(start=axis_min, step=5000, stop=axis_max)
+    z_labels = range(start=axis_min, step=5000, stop=axis_max)
 
     traj_3D_traces = []
     for i in range(start=1, step=1, stop=length(index)-1)
-        x_s = x[index[i]:index[i+1]]
-        y_s = y[index[i]:index[i+1]]
-        z_s = z[index[i]:index[i+1]]
-        
+        if config.solution.orientation.number_of_passage[end] == 1 
+            x_s = x
+            y_s = y
+            z_s = z
+        else
+            x_s = x[index[i]:index[i+1]]
+            y_s = y[index[i]:index[i+1]]
+            z_s = z[index[i]:index[i+1]]
+        end
+
         push!(traj_3D_traces, scatter3d(x=x_s, y=y_s, z=z_s, mode="lines", line=attr(color="black"), row=1, col=1))
     end
-
-    layout = Layout(scene_aspectmode="cube", scene_xaxis_range=[min, max], scene_yaxis_range=[min, max], scene_zaxis_range=[min, max], xaxis_title="x [km]", yaxis_title="y [km]", zaxis_title="z [km]", template="simple_white", showlegend=false)
+    if args[:type_of_mission] == "Entry"
+        push!(traj_3D_traces, scatter3d(x=[x[1]], y=[y[1]], z=[z[1]], mode="markers", marker=attr(color="black", marker="x"), row=1, col=1))
+    end
+    layout = Layout(scene_aspectmode="cube", scene_xaxis_range=[axis_min, axis_max], scene_yaxis_range=[axis_min, axis_max], scene_zaxis_range=[axis_min, axis_max], xaxis_title="x [km]", yaxis_title="y [km]", zaxis_title="z [km]", template="simple_white", showlegend=false)
     p = plot([sphere1, sphere2, traj_3D_traces...], layout)
     display(p)
     savefig(p, name * "_traj3D.pdf", format="pdf")
@@ -448,12 +440,35 @@ function ABM_periapsis(name)
 
     plot_traces_palt = scatter(x=orbit_number, y=periapsis_altitude, mode="markers", marker=attr(color="black"))
 
-    plot_traces_abm1 = scatter(x=[item for item in config.cnf.raise_man_orbit], y=delta_v_raise, mode="markers", marker=attr(color="blue"), yaxis="y2") # , label="ABM to raise periapsis")
-    plot_traces_abm2 = scatter(x=[item for item in config.cnf.lower_man_orbit], y=delta_v_lower, mode="markers", marker=attr(color="red"), yaxis="y2") # , label="ABM to lower periapsis")
+    plot_traces_abm1 = scatter(x=[item for item in config.cnf.raise_man_orbit], y=delta_v_raise, mode="markers", marker=attr(color="blue", symbol="triangle"), yaxis="y2") # , label="ABM to raise periapsis")
+    plot_traces_abm2 = scatter(x=[item for item in config.cnf.lower_man_orbit], y=delta_v_lower, mode="markers", marker=attr(color="red", symbol="circle"), yaxis="y2") # , label="ABM to lower periapsis")
     
     p = plot([plot_traces_palt, plot_traces_abm1, plot_traces_abm2], Layout(xaxis_title_text="Orbit", yaxis_title_text="Periapsis altitude [km]", yaxis2 = attr(title="ABM Magnitude [m/s]", overlaying="y", side="right"), template="simple_white", showlegend=false))
 
     display(p)
     savefig(p, name * "_Periapsis_alt_and_maneuvers.pdf", format="pdf")
+
+end
+
+function ground_track(state, m, name, args)
+    """
+        Plot the ground track of the spacecraft during the drag passages
+    """
+
+    if args[:type_of_mission] == "Entry"
+        lats_traces = scatter(x=config.solution.orientation.time, y=rad2deg.(config.solution.orientation.lat), mode="lines", line=attr(color="black"))
+        lons_traces = scatter(x=config.solution.orientation.time, y=rad2deg.(config.solution.orientation.lon), mode="lines", line=attr(color="black"))
+    else
+        lats_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.latitude_periapsis, mode="lines", line=attr(color="black"))
+        lons_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.longitude_periapsis, mode="lines", line=attr(color="black"))
+    end
+
+    lats_plot = plot(lats_traces, Layout(xaxis_title="Orbit number", yaxis_title="Latitude [deg]", template="simple_white", showlegend=false))
+    lons_plot = plot(lons_traces, Layout(xaxis_title="Orbit number", yaxis_title="Longitude [deg]", template="simple_white", showlegend=false))
+    p = [lats_plot lons_plot]
+    relayout!(p, width=1200, height=600, template="simple_white", showlegend=false)
+    
+    display(p)
+    savefig(p, name * "_ground_track.pdf", format="pdf")
 
 end

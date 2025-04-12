@@ -1,6 +1,7 @@
 module config
-
-    export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model
+using StaticArrays
+using AstroTime
+export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model
 
     @kwdef mutable struct Body
         mass::Float64 = 0.0
@@ -37,8 +38,23 @@ module config
         Lz::Float64 = 0.0
         α::Float64 = 0.0
         δ::Float64 = 0.0
-        J2000_to_pci::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
+        L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
+        Clm::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        Slm::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        Clm_topo::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        Slm_topo::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
         name::String = ""
+        A_grav::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        A_topo::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        VR01::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        VR11::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        N1::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        N2::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        A::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        Re::Vector{Float64} = [0.0, 0.0, 0.0]
+        Im::Vector{Float64} = [0.0, 0.0, 0.0]
+        topography_function::Function = (args, Clm, Slm, latitude, longitude) -> 0.0
     end
 
     @kwdef mutable struct Aerodynamics
@@ -73,6 +89,8 @@ module config
         minute::Int64 = 0
         second::Float64 = 0.0
         time_rot::Float64 = 0.0
+        DateTimeIC::Epoch = from_utc(2000, 1, 1, 12, 0, 0)
+        DateTimeJ2000::Epoch = from_utc(2000, 1, 1, 12, 0, 0)
     end
 
     @kwdef mutable struct Model 
@@ -88,6 +106,8 @@ module config
     @kwdef mutable struct Cnf
         impact::Bool = false
         altitude_periapsis::Vector{Float64} = []
+        latitude_periapsis::Vector{Float64} = []
+        longitude_periapsis::Vector{Float64} = []
         max_heatrate::Vector{Float64} = []
         solution_intermediate::Vector{Any} = []
         atmospheric_data::Dict{String,Float64} = Dict()
@@ -120,6 +140,7 @@ module config
         α_past::Float64 = pi/2
         raise_man_orbit::Vector{Float64} = []
         lower_man_orbit::Vector{Float64} = []
+        et::Float64 = 0.0
 
         # Results to delete
         periapsis_list::Vector{Float64} = []
@@ -165,6 +186,7 @@ module config
         count_guidance::Int64 = 0
         count_heat_rate_check::Int64 = 0
         count_heat_load_check_exit::Int64 = 0
+        count_final_entry_altitude_reached::Int64 = 0
         t_out_drag_passage::Float64 = 0.0
         t_time_switch_func::Vector{Float64} = []
 

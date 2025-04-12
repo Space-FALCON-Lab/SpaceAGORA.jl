@@ -4,8 +4,6 @@ include("../physical_models/MonteCarlo_pertrubations.jl")
 include("../utils/Reference_system.jl")
 include("Misc.jl")
 
- # import .config
-
 using LinearAlgebra
 using Statistics
 using AstroTime
@@ -63,31 +61,13 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
                 index = alt_index[1] + idx_orbit[1]
                 step_time = length(alt_index)
 
-                # println(step_time)
-
                 initialcondition = [config.solution.orientation.oe[1][index], config.solution.orientation.oe[2][index], config.solution.orientation.oe[3][index], config.solution.orientation.oe[4][index], config.solution.orientation.oe[5][index], config.solution.orientation.oe[6][index], config.solution.performance.mass[index]]
-
-                # println(initialcondition)
 
                 T = config.solution.physical_properties.T[index]
                 α = config.solution.physical_properties.α[index]
                 t0 = config.solution.orientation.time[index]
 
                 t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time)
-
-                # println("")
-                # println(t_cf)
-                # println("")
-                # println(alt_index)
-                # println("")
-                # println(idx_orbit)
-                # println("")
-
-                # println(" ")
-                # println(t_cf)
-                # println(" ")
-                # println(h_cf)
-                # println(" ")
 
                 t[(alt_index[1]+idx_orbit[1]):(alt_index[1]+length(alt_index)+idx_orbit[1])] = t_cf
                 h[(alt_index[1]+idx_orbit[1]):(alt_index[1]+length(alt_index)+idx_orbit[1])] = h_cf
@@ -117,7 +97,7 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
     #online -> not save results and initial conditions given
 end
 
-function closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time = 0, α_profile = [], online = 0)
+function closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time = 0, α_profile = [], online = 0) 
     if config.cnf.count_numberofpassage != 1
         t_prev = config.solution.orientation.time[end]
     else
@@ -125,31 +105,19 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     end
 
     pos_ii_org, vel_ii_org = orbitalelemtorv(initialcondition, mission.planet)
-    pos_ii = pos_ii_org
-    vel_ii = vel_ii_org
+    pos_ii = SVector{3, Float64}(pos_ii_org)
+    vel_ii = SVector{3, Float64}(vel_ii_org)
 
     r0 = norm(pos_ii) # Inertial position magnitude
     v0 = norm(vel_ii) # Inertial velocity magnitude
     h0 = r0 - mission.planet.Rp_e
 
-    # println(" ")
-    # println(r0)
-    # println("")
-    # println(v0)
-    # println("")
-    # println(h0)
-    # println("")
-
-    pos_pp, vel_pp = r_intor_p(pos_ii, vel_ii, mission.planet, 0, 0, date_initial, t0)
+    pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, mission.planet, config.cnf.et)
 
     LatLong = rtolatlong(pos_pp, mission.planet)
     lat = LatLong[2]
     lon = LatLong[3]
     h0 = LatLong[1] 
-
-    # println("")
-    # println(h0)
-    # println("")
 
     h_ii = cross(pos_ii, vel_ii)
     arg = median([-1, 1, norm(h_ii)/(r0*v0)])   # limit to[-1, 1]
@@ -170,16 +138,13 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     Δt = sqrt(a^3 / mission.planet.μ) * ((E_finalstate - e*sin(E_finalstate)) - (E_initialstate - e*sin(E_initialstate)))
     t_p = Δt/2
 
-    # println("")
-    # println(Δt)
-    # println("")
+    mass = initialcondition[end]
 
-    # TODO: NEEDS TO CHANGE THIS TO ARGS[:EI]
     if h0 < args[:EI]*1e3 #if initial condition are lower than drag passage initial condition #this happens only running MC cases
         # let's calculate pos_ii,v_ii for the point of trajectory corresponding to h = 160 km
         h0 = args[:EI]*1e3
         r = mission.planet.Rp_e + h0
-        OE = rvtoorbitalelement(pos_ii_org, vel_ii_org, mission, mission.planet)
+        OE = rvtoorbitalelement(pos_ii, vel_ii, mass, mission.planet)
         a, e, i, Ω, ω, vi = OE[1], OE[2], OE[3], OE[4], OE[5], OE[6]
         vi = 2*pi - acos(((a*(1 - e^2)/r)-1)/e)
         E_real_finalstate = 2 * atan(sqrt((1-e)/(1+e)) * tan(-vi/2)) # eccentric anomaly
@@ -190,11 +155,6 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     if step_time == 0
         temp = Δt * args[:trajectory_rate]/10
 
-        # println(length(config.cnf.heat_rate_list))
-        # println("")
-        # println(temp)
-        # println("")
-
         if temp > length(config.cnf.heat_rate_list)
             step_time = temp
         else
@@ -202,34 +162,20 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
         end
     end
 
-    # t_cf = collect(0:Int64(step_time):Δt)
     t_cf = collect(range(start=0, stop=Δt, length=floor(Int, step_time)))
-
-    # println(step_time)
-    # println("")
-    # println(Δt)
-    # println("")
-    # println(t_cf)
-    # println("")
 
     cost_3 = v0 * γ0
 
     h_cf = h0 .+ cost_3*(t_cf - (t_cf.^2/(2*t_p)))
 
-    # println(size(h_cf))
-
-    ρ = density_exp(h_cf, mission.planet)[1]
-
-    # println(" ")
-    # println(ρ)
-    # println(" ")
+    ρ = density_poly(h_cf*1e-3, mission.planet)[1]
 
     RT = T * mission.planet.R
     S = v0/sqrt(2*RT)
     CL90, CD90 = aerodynamic_coefficient_fM(pi/2, mission.body, T, S, mission.aerodynamics)
     CL0, CD0 = aerodynamic_coefficient_fM(0, mission.body, T, S, mission.aerodynamics)
     Area_tot = mission.body.area_SC + mission.body.area_SA
-    mass = initialcondition[end]
+    
     Rp = mission.planet.Rp_e
 
     if length(α_profile) == 0
@@ -256,9 +202,150 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     mean_b = -8.25
     mean_d = -0.001
 
-    f1 = -0.005 * v0 + 27.87
-    f2 = (a0 * (mean_a^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_b * (v0/1000 - 3.7))) + 
-          c0 * (mean_c^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_d * (v0/1000 - 3.7)))) * (t_cf) / (2 * t_p)
+    # f1 = -0.005 * v0 + 27.87
+    # f2 = (a0 * (mean_a^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_b * (v0/1000 - 3.7))) + 
+    #       c0 * (mean_c^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_d * (v0/1000 - 3.7)))) * (t_cf) / (2 * t_p)
+
+    if mission.planet.name == "mars"
+        v0_first = 3900
+        γ0_end = -3
+
+        mean_b = -0.0139
+        mean_d = -0.0099
+        
+        a2 = 0.1067
+        a3 = 0.0067
+        b2 = -1.9566
+        b3 = -1.3664
+
+        f1 = (-5.031e-11)*v0^4 + (8.919e-7)*v0^3 + (-0.005921)*v0^2 + (17.44)*v0 - 1.922e4
+
+        f2 = (a2*exp(b2*(rad2deg(γ0) - γ0_end))*exp(mean_b*(v0 - v0_first)) + 
+              a3*exp(b3*(rad2deg(γ0) - γ0_end))*exp(mean_d*(v0 - v0_first))) * (t_cf) / (2 * t_p)
+
+    elseif mission.planet.name == "venus"
+        # v0_first = 8400
+        # γ0_end = -3
+
+        # mean_b = -0.0123
+        # mean_d = -0.0039
+        
+        # a2 = 6.5539e-4
+        # a3 = 0.0026
+        # b2 = -5.9985
+        # b3 = -3.4274
+
+        f1 = (-1.364e-11)*v0^4 + (4.984e-7)*v0^3 + (-0.006825)*v0^2 + (41.51)*v0 - 9.459e4
+
+        # f2 = (a2*exp(b2*(rad2deg(γ0) - γ0_end))*exp(mean_b*(v0 - v0_first)) + 
+        #       a3*exp(b3*(rad2deg(γ0) - γ0_end))*exp(mean_d*(v0 - v0_first))) * (t_cf) / (2 * t_p)
+
+        x = rad2deg(γ0)
+        y = v0
+
+        p00 =   4274 
+        p10 =  -865.8 
+        p01 =  -2.216 
+        p20 =   30.28
+        p11 =   0.2986  
+        p02 =   0.0004211 
+        p30 =   1.309 
+        p21 =  -0.003775  
+        p12 =  -3.272e-5  
+        p03 =  -3.478e-8  
+        p40 =  -0.2126  
+        p31 =  -0.0005503 
+        p22 =  -2.191e-7
+        p13 =   1.063e-9  
+        p04 =   1.044e-12
+
+        f2 = p00 + p10*x + p01*y + p20*x^2 + p11*x*y + p02*y^2 + p30*x^3 + p21*x^2*y + p12*x*y^2 + p03*y^3 + p40*x^4 + p31*x^3*y + p22*x^2*y^2 + p13*x*y^3 + p04*y^4
+
+        f2 = exp(f2) * (t_cf) / (2 * t_p)
+    elseif mission.planet.name == "earth"
+        # v0_first = 8350
+        # γ0_end = -3
+
+        # mean_b = -0.0164
+        # mean_d = -7.9792e-4
+        
+        # a2 = 2.7402e-6
+        # a3 = 0.0047
+        # b2 = -5.1505
+        # b3 = -0.4760
+
+        f1 = (1.271e-12)*v0^4 + (-4.733e-8)*v0^3 + (0.0006621)*v0^2 + (-4.127)*v0 + 9697
+
+        # f2 = (a2*exp(b2*(rad2deg(γ0) - γ0_end))*exp(mean_b*(v0 - v0_first)) + 
+        #       a3*exp(b3*(rad2deg(γ0) - γ0_end))*exp(mean_d*(v0 - v0_first))) * (t_cf) / (2 * t_p)
+
+        x = rad2deg(γ0)
+        y = v0
+
+        p00 =        4731  
+        p10 =      -759.6
+        p01 =      -2.402 
+        p20 =       47.19  
+        p11 =      0.2952  
+        p02 =   0.0004592  
+        p30 =      -1.377  
+        p21 =    -0.01233  
+        p12 =  -3.823e-05  
+        p03 =  -3.913e-08  
+        p40 =     0.00949  
+        p31 =   0.0001648  
+        p22 =   7.891e-07  
+        p13 =   1.644e-09 
+        p04 =   1.252e-12  
+
+        f2 = p00 + p10*x + p01*y + p20*x^2 + p11*x*y + p02*y^2 + p30*x^3 + p21*x^2*y + p12*x*y^2 + p03*y^3 + p40*x^4 + p31*x^3*y + p22*x^2*y^2 + p13*x*y^3 + p04*y^4
+
+        f2 = exp(f2) * (t_cf) / (2 * t_p)
+    elseif mission.planet.name == "titan"
+        # v0_first = 1900
+        # γ0_end = -6
+
+        # mean_b = -0.0188
+        # mean_d = -0.0049
+        
+        # a2 = 2.3512e-6
+        # a3 = 1.0144e-4
+        # b2 = -1.0153
+        # b3 = -0.5682
+
+        f1 = (9.39e-12)*v0^4 + (-8.141e-8)*v0^3 + (0.0002664)*v0^2 + (-0.3915)*v0 + 219.4
+
+        # f2 = (a2*exp(b2*(rad2deg(γ0) - γ0_end))*exp(mean_b*(v0 - v0_first)) + 
+        #       a3*exp(b3*(rad2deg(γ0) - γ0_end))*exp(mean_d*(v0 - v0_first))) * (t_cf) / (2 * t_p)
+
+        x = rad2deg(γ0)
+        y = v0
+
+        # println("x: ", x)
+        # println("y: ", y)
+
+        p00 =       934.1
+        p10 =       -33.4  
+        p01 =      -1.903  
+        p20 =      0.4016 
+        p11 =     0.04816  
+        p02 =    0.001434  
+        p30 =    0.001327  
+        p21 =  -0.0003013  
+        p12 =  -2.301e-5
+        p03 =  -4.798e-7  
+        p40 =  -0.0001555 
+        p31 =  -4.661e-6
+        p22 =   2.175e-8
+        p13 =   3.506e-9
+        p04 =   5.988e-11
+
+        f2 = p00 + p10*x + p01*y + p20*x^2 + p11*x*y + p02*y^2 + p30*x^3 + p21*x^2*y + p12*x*y^2 + p03*y^3 + p40*x^4 + p31*x^3*y + p22*x^2*y^2 + p13*x*y^3 + p04*y^4
+
+        # println("f2: ", exp(f2))
+
+        f2 = exp(f2) * (t_cf) / (2 * t_p)
+    end
 
     f2_solar_panels = f2 * α * mission.body.area_SA / Area_tot
     f2_spacecraft = f2 * pi / 2 * mission.body.area_SC / Area_tot
@@ -270,10 +357,6 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     k3 = -mission.planet.g_ref .- ϵ
 
     cost = v0 - (k2[1]/k1[1] - sqrt((k2[1]/k1[1])^2 - 4 * (k3[1]/k1[1]))) / 2
-
-    # println(" ")
-    # println(size(k1))
-    # println(" ")
 
     v_cf = ((k2 ./ k1) .- sqrt.((k2 ./ k1).^2 - 4*(k3 ./ k1))) / 2 .+ cost
     γ_cf = cost_3 * (1 .- t_cf./t_p) ./ v_cf
@@ -288,10 +371,4 @@ function results(t_cf, h_cf, γ_cf, v_cf)
     append!(config.solution.closed_form.h_cf, h_cf)
     append!(config.solution.closed_form.γ_cf, γ_cf)
     append!(config.solution.closed_form.v_cf, v_cf)
-
-    # println(" ")
-    # println(config.solution.closed_form.t_cf)
-    # println(" ")
-    # println(config.solution.closed_form.h_cf)
-    # println(" ")
 end

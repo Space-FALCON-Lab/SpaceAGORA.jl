@@ -5,7 +5,6 @@ include("heatload_control/Time_switch_calcs.jl")
 include("heatload_control/Second_tsw_calcs.jl")
 include("heatload_control/Security_mode.jl")
 
- # import .config
 
 using SpecialFunctions
 using Roots
@@ -51,7 +50,7 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
 
         f(x) = L .* ((S.^2 .+ (γ) / (γ - 1) - (γ + 1) / (2 * (γ - 1)) * (T_w ./ T_p)) * (exp.(-(S .* sin.(x)).^2) + (pi^0.5) * (S .* sin.(x)) * (1 + erf.(S .* sin.(x)))) - 0.5 * exp.(-(S .* sin.(x)).^2)) .- thermal_limit
 
-        # α = pi/2
+        α = config.cnf.α # pi/2
 
         if (heat_rate_max < thermal_limit)
             α = max_α
@@ -61,27 +60,34 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
             x_0 = config.cnf.α_past
 
             # println("try")
-            df(x) = L .* S * cos.(x) * ((pi^0.5) * (S.^2 .+ γ / (γ - 1) + (γ + 1) / (2 * (γ - 1)) .* T_w ./ T_p) .* (1 + erf.(S .* sin.(x))) .+ S .* sin.(x) * exp.(-(S .* sin.(x)).^2))
-            α = find_zero((f, df), x_0, Roots.Newton())
-            # println(find_zero((f, df), x_0, Roots.Newton()))
-
-            if α < 0 || α > pi/2
-                α = find_zero((f, df), 1e-1, Roots.Newton())
-            end
-
-            if α < 0 || α > pi/2
-                if abs(heat_rate_max - thermal_limit) < abs(heat_rate_min - thermal_limit)   # Newton method is unable to find a solution since there are multiple ones. We need to provide a good initial guess
-                    x_0 = 2 * max_α / 3
-                elseif abs(heat_rate_max - thermal_limit) > abs(heat_rate_min - thermal_limit)
-                    x_0 = 2 * max_α / 6
-                    α = find_zero((f, df), x_0, Roots.Newton())
-                end
+            try
+                df(x) = L .* S * cos.(x) * ((pi^0.5) * (S.^2 .+ γ / (γ - 1) + (γ + 1) / (2 * (γ - 1)) .* T_w ./ T_p) .* (1 + erf.(S .* sin.(x))) .+ S .* sin.(x) * exp.(-(S .* sin.(x)).^2))
+                α = find_zero((f, df), x_0, Roots.Newton())
+                # println(find_zero((f, df), x_0, Roots.Newton()))
 
                 if α < 0 || α > pi/2
+                    α = find_zero((f, df), 1e-1, Roots.Newton())
+                end
+
+            catch
+
+            # if α < 0 || α > pi/2
+                try
+                    if abs(heat_rate_max - thermal_limit) < abs(heat_rate_min - thermal_limit)   # Newton method is unable to find a solution since there are multiple ones. We need to provide a good initial guess
+                        x_0 = 2 * max_α / 3
+                    elseif abs(heat_rate_max - thermal_limit) > abs(heat_rate_min - thermal_limit)
+                        x_0 = 2 * max_α / 6
+                        α = find_zero((f, df), x_0, Roots.Newton())
+                    end
+                catch
+                # if α < 0 || α > pi/2
                     println("Check - heat rate controller does not converge")
                     α = min_α
+                # end
                 end
+            # end
             end
+
         else
             println("Check Controller - Second Check")
         end

@@ -2,8 +2,6 @@ include("../../physical_models/MonteCarlo_pertrubations.jl")
 include("../../physical_models/Density_models.jl")
 include("../../utils/Closed_form_solution.jl")
 
- # import .config
-
 function security_mode(ip, m, position, args, t, heat_rate_control=false)
     T = m.planet.T
 
@@ -13,7 +11,7 @@ function security_mode(ip, m, position, args, t, heat_rate_control=false)
 
     S = v_cf / sqrt(2*RT)
 
-    ρ = density_exp(h_cf, m.planet)[1]
+    ρ = density_poly(h_cf/1e3, m.planet)[1]
 
     # Security mode
     aoa_cf_min = zeros(length(t_cf))

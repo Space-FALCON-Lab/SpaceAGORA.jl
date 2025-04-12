@@ -1,13 +1,12 @@
 using CSV
 using DataFrames
 
- # import .config
-
 function save_csv(filename, args)
 
     touch(filename)
 
     writer = open(filename, "w")
+    periapsis_alt = vcat(config.cnf.altitude_periapsis, zeros(length(config.solution.orientation.time) - length(config.cnf.altitude_periapsis)))
 
     data_push = DataFrame(time = config.solution.orientation.time,
                           year = config.solution.orientation.year,

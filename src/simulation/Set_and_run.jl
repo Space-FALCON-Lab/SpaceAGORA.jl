@@ -4,10 +4,10 @@ include("../physical_models/Mission.jl")
 include("../utils/Save_csv.jl")
 include("../utils/Plot_data.jl")
 include("Aerobraking.jl")
-
+include("../utils/Reference_system.jl")
 using SPICE
-
- # import .config
+using StaticArrays
+using AstroTime
 
 function aerobraking_campaign(args, state)
     save_res = args[:results]
@@ -35,15 +35,130 @@ function aerobraking_campaign(args, state)
     ip = mission_def(mission)
     p_class = planet_data(ip.M.planet)
 
-    furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-    furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-    furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
+    # furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
+    # furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
+    # furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
+    # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
+    # furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
+    
+    # If using lat/lon initial conditions, correct the initial orbital elements
+    if args[:orientation_type] == 1
+        # Get the latitude and longitude of the initial conditions
+        lat = args[:latitude]
+        lon = args[:longitude]
 
-    # n-body gravity
+        # Convert latitude and longitude to radians
+        lat_rad = deg2rad(lat)
+        lon_rad = deg2rad(lon)
+        α_rad = deg2rad(args[:azimuth])
+        γ_rad = deg2rad(args[:γ_initial_a])
+        config.cnf.et = utc2et(to_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))
+        p_class.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_" * uppercase(p_class.name), config.cnf.et))*p_class.J2000_to_pci'
+        # will have to rethink this to use the gamma/v step initial conditions
+        OE = latlongtoOE([lat_rad, lon_rad, args[:EI]*1e3], p_class, γ_rad, α_rad, args[:v_initial_a])
+ 
+        OE[3:5] = rad2deg.(OE[3:5])
+        args[:inclination] = OE[3]
+        args[:Ω] = OE[4]
+        args[:ω] = OE[5]
+        state[:Inclination] = OE[3]
+        state[:Ω] = OE[4]
+        state[:ω] = OE[5]
+    end
+    # Set up n-body gravity
     if length(args[:n_bodies]) != 0
         for i=1:length(args[:n_bodies])
             push!(config.cnf.n_bodies_list, planet_data(args[:n_bodies][i]))
         end
+    end
+
+    # Set up spherical harmonics coefficients
+    if args[:gravity_harmonics] == true
+        # Read in the gravity harmonics data
+        harmonics_data = CSV.read(args[:gravity_harmonics_file], DataFrame)
+        
+        # Pre-initialize the Clm and Slm arrays
+        total_data_size = size(harmonics_data, 1)
+        degree = maximum(harmonics_data[:, 1]) + 1
+
+        p_class.A_grav = zeros(degree+1, degree+1) # Preallocate the matrix for the Associated Legendre Polynomial evaluations
+        p_class.Clm = zeros(degree, degree)
+        p_class.Slm = zeros(degree, degree)
+
+        # Read in all the data from the DataFrame
+        for i=1:total_data_size
+            l = harmonics_data[i, 1] + 1 # Get the degree, l, from the data and convert to an index (subtract 1 because the data starts at 2nd degree coefficient)
+            m = harmonics_data[i, 2] + 1 # Get the order, m, from the data and convert to an index (add 1 because the data starts at 0th order coefficient)
+            p_class.Clm[l, m] = harmonics_data[i, 3]
+            p_class.Slm[l, m] = harmonics_data[i, 4]
+        end
+
+        # Precalculate N1, N2
+        L = args[:L]
+        M = args[:M]
+        N1 = zeros(L+4, L+4)
+        N2 = zeros(L+4, L+4)
+        VR01 = zeros(L+1, L+1)
+        VR11 = zeros(L+1, L+1)
+        sqrt_2 = sqrt(2)
+        for m = 0:M+2
+            j = m + 1
+            for l = m+2:L+2
+                i = l + 1
+                N1[i, j] = √((2*l+1)*(2*l-1)/(l+m)/(l-m))
+                N2[i, j] = √((l+m-1)*(2*l+1)*(l-m-1)/(2*l-3)/(l+m)/(l-m))
+            end
+        end
+
+        for l = 0:L
+            i = l + 1
+            for m = 0:min(M, l)
+                j = m + 1
+                divisor = m == 0 ? sqrt_2 : 1
+                VR01[i, j] = sqrt((l-m)*(l+m+1)) / divisor
+                VR11[i, j] = sqrt((2*l+1)*(l+m+2)*(l+m+1)/(2*l+3)) / divisor
+            end
+        end
+        p_class.N1 = N1
+        p_class.N2 = N2
+        p_class.VR01 = VR01
+        p_class.VR11 = VR11
+
+        A = zeros(L+4, L+4)
+        R = zeros(L+4)
+        I = zeros(L+4)
+        A[1, 1] = 1
+        # Fill the diagonal elements of A
+        for l = 1:L+2
+            i = l + 1
+            A[i, i] = sqrt((2*l+1)/(2*l))*A[i-1, i-1]
+        end
+        p_class.Re = R
+        p_class.Im = I
+        p_class.A = A
+
+    end
+
+    # Set up the planet shape
+    if args[:topography_model] == "Spherical Harmonics"
+        harmonics_data = CSV.read(args[:topography_harmonics_file], DataFrame)
+        
+        # Pre-initialize the Clm and Slm arrays
+        total_data_size = size(harmonics_data, 1)
+        degree = maximum(harmonics_data[:, 1]) + 1
+
+        p_class.A_topo = zeros(degree+1, degree+1) # Preallocate the matrix for the Associated Legendre Polynomial evaluations
+        p_class.Clm_topo = zeros(degree, degree)
+        p_class.Slm_topo = zeros(degree, degree)
+
+        # Read in all the data from the DataFrame
+        for i=1:total_data_size
+            l = harmonics_data[i, 1] + 1 # Get the degree, l, from the data and convert to an index (subtract 1 because the data starts at 2nd degree coefficient)
+            m = harmonics_data[i, 2] + 1 # Get the order, m, from the data and convert to an index (add 1 because the data starts at 0th order coefficient)
+            p_class.Clm_topo[l, m] = harmonics_data[i, 3]
+            p_class.Slm_topo[l, m] = harmonics_data[i, 4]
+        end
+
     end
 
     if args[:gravity_model] == "Inverse Squared"
@@ -151,8 +266,9 @@ function aerobraking_campaign(args, state)
         min = args[:minutes]
         second = args[:secs]
         time_rot = args[:planettime]
-
-        ic = config.Initial_condition(a, e, i, Ω, ω, vi, m0, year, month, day, hour, min, second, time_rot)
+        DateTimeIC = from_utc(DateTime(year, month, day, hour, min, second))
+        DateTimeJ2000 = from_utc(DateTime(2000, 1, 1, 12, 0, 0))
+        ic = config.Initial_condition(a, e, i, Ω, ω, vi, m0, year, month, day, hour, min, second, time_rot, DateTimeIC, DateTimeJ2000)
 
         return ic
     end
@@ -210,9 +326,9 @@ function aerobraking_campaign(args, state)
     config.cnf.save_index_heat = 0
     config.cnf.index_propellant_mass = 1
     config.cnf.counter_random = 0
-    config.cnf.DU = semimajoraxis_in
-    config.cnf.TU = sqrt(config.cnf.DU^3 / m.planet.μ)
-    config.cnf.MU = mass
+    config.cnf.DU = Bool(args[:normalize]) ? semimajoraxis_in : 1
+    config.cnf.TU = Bool(args[:normalize]) ? sqrt(config.cnf.DU^3 / m.planet.μ) : 1
+    config.cnf.MU = Bool(args[:normalize]) ? mass : 1
 
     ##########################################################
     # RUN SIMULATION
@@ -222,9 +338,6 @@ function aerobraking_campaign(args, state)
     end
     ##########################################################
 
-    # println(" ")
-    # println(config.solution)
-    # println(" ")
 
     if Bool(args[:print_res])
         println("ρ: " * string(maximum(config.solution.physical_properties.ρ)) * " kg/m^3")

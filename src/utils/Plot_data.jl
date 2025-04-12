@@ -25,13 +25,8 @@ function plots(state, m, name, args)
         drag_passage_plot(name, args)
     end
 
-    if args[:type_of_mission] == "Drag Passage"
-        drag_passage_plot(name, args)
-    end
-
-    # if args[:Odyssey_sim] == 1 || args[:vex_sim] == 1 || args[:magellan_sim] == 1
-        ABM_periapsis(name)
-    end
+    ABM_periapsis(name)
+    ground_track(state, m, name, args)
 end
 
 function drag_passage_plot(name, args)

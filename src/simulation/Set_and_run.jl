@@ -38,7 +38,7 @@ function aerobraking_campaign(args, state)
     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-    furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
+    # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
     
     # If using lat/lon initial conditions, correct the initial orbital elements
@@ -56,7 +56,7 @@ function aerobraking_campaign(args, state)
         p_class.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_" * uppercase(p_class.name), config.cnf.et))*p_class.J2000_to_pci'
         # will have to rethink this to use the gamma/v step initial conditions
         OE = latlongtoOE([lat_rad, lon_rad, args[:EI]*1e3], p_class, γ_rad, α_rad, args[:v_initial_a])
-        println("OE:", OE)
+ 
         OE[3:5] = rad2deg.(OE[3:5])
         args[:inclination] = OE[3]
         args[:Ω] = OE[4]

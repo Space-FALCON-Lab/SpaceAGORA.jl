@@ -1,7 +1,8 @@
 include("../utils/Reference_system.jl")
 
 using PythonCall
-
+using SatelliteToolbox
+SpaceIndices.init()
 sys = pyimport("sys")
 
 function interp(a, b, x)
@@ -113,75 +114,50 @@ function density_exp(h, p, OE=0, lat=0, lon=0, timereal=0, t0=0, tf_prev=0, mont
     return ρ, T, wind
 end
 
-# @pyexec """
-# def density_gram(h, p, OE, lat, lon, timereal, t0, tf_prev, montecarlo, Wind, args, elapsed time, version=[], atmosphere=None):
-
-#     if not version:
-#         version = args[:MarsGram_version]
-
-#     if config.drag_state == False:
-#         rho , T , wind = density_exp(h, p)
-#     else:
-#         position = gram.Position()
-#         position.height = h*1e-3
-#         lat = rad2deg(lat)
-#         lon = rad2deg(lon)
-#         position.latitude = lat
-#         position.longitude = lon
-#         position.elapsedTime = 0 
-#         atmosphere.setPosition(position)
-#         atmosphere.update()
-#         atmos = atmosphere.getAtmosphereState()
-#         rho = atmos.density
-#         T = atmos.temperature
-#         wind = [atmos.perturbedEWWind if montecarlo else atmos.ewWind,
-#                 atmos.perturbedNSWind if montecarlo else atmos.nsWind,
-#                 atmos.verticalWind if montecarlo else 0]
-
-#     return rho, T, wind """ => density_gram
-
 function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Bool, Wind::Bool, args::Dict, el_time::Float64, atmosphere=nothing, gram=nothing)
     """
 
     """
 
-    # sys.path.append(args[:directory_Gram])
-
-    # gram = pyimport("gram")
-    # println("Lat: $lat, Lon: $lon, Alt: $h")
     if config.cnf.drag_state == false && args[:keplerian] == false
         rho , T , wind = density_exp(h, p)
         rho = 0.0
     elseif config.cnf.drag_state == true || args[:keplerian] == true
         position = gram.Position()
         position.height = h * 1e-3
-        # println("Height: ", position.height)
-        # println("Lat: $lat, Lon: $lon, Alt: $h")
         lat = rad2deg(lat)
         lon = rad2deg(lon)
         position.latitude = lat
-        # position.longitude = 165 + 2/(24*60*60)*el_time
         position.longitude = lon
         
         position.elapsedTime = el_time # Time since start in s
         atmosphere.setPosition(position)
-        # if p.name == "mars"   
-        #     position.height += atmosphere.getPosition().surfaceHeight
-        #     atmosphere.setPosition(position)
-        # end
-        # println("set planet position ", position.latitude, position.longitude, position.height)
-        # sleep(1.0)
         atmosphere.update()
-        # println("update")
-        # sleep(1.0)
         atmos = atmosphere.getAtmosphereState()
-        # println("get atmo state")
-        # sleep(1.0)
         rho = atmos.density
         T = atmos.temperature
         wind = [montecarlo ? atmos.perturbedEWWind : atmos.ewWind,
                 montecarlo ? atmos.perturbedNSWind : atmos.nsWind,
                 atmos.verticalWind]
+    end
+
+    return rho, T, wind
+end
+
+    function density_nrlmsise(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Bool, Wind::Bool, args::Dict, current_time::DateTime)
+    """
+
+    """
+
+    if config.cnf.drag_state == false && args[:keplerian] == false
+        rho , T , wind = density_exp(h, p)
+        rho = 0.0
+    elseif config.cnf.drag_state == true || args[:keplerian] == true
+        jd = datetime2julian(current_time)
+        atmo = SatelliteToolbox.AtmosphericModels.nrlmsise00(jd, h, lat, lon, 150, 150, 3)
+        rho = atmo.total_density
+        T = atmo.temperature
+        wind = [0.0,0.0,0.0]
     end
 
     return rho, T, wind

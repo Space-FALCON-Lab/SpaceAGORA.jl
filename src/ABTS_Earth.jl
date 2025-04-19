@@ -8,13 +8,13 @@ args = Dict(# Misc Simulation
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 0,                                                                                    # Print some lines True=1, False=0
             :directory_results => "/workspaces/ABTS.jl/output/earth",            # Directory where to save the results
-            :filename_results => "Earth_Aerobraking_x_x_x.csv",            # Filename of the results
+            :filename_results => nothing,            # Filename of the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                   # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",           # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
+            :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
@@ -29,7 +29,7 @@ args = Dict(# Misc Simulation
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
-            :density_model => "nrlmsise",                               # choices=['No-Density', 'Constant' , 'Exponential' , 'nrlmsise', 'Gram']
+            :density_model => "Gram",                               # choices=['No-Density', 'Constant' , 'Exponential' , 'nrlmsise', 'Gram']
             :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
             :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
             :topo_degree => 50,                                     # Maximum degree of the topography harmonics (Defined in the file)
@@ -40,9 +40,9 @@ args = Dict(# Misc Simulation
             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
             
             # Perturbations
-            :n_bodies => [],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
+            :n_bodies => ["Moon", "Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :srp => 0,                                             # Solar Radiation Pressure True=1, False=0
-            :gravity_harmonics => 0,                               # Gravity Harmonics True=1, False=0
+            :gravity_harmonics => 1,                               # Gravity Harmonics True=1, False=0
             :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/egm96.csv",                  # Gravity Harmonics file to use
             :L => 50,                                              # Maximum degree of gravity harmonics
             :M => 50,                                              # Maximum order of gravity harmonics

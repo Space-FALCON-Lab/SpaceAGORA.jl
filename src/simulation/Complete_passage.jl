@@ -397,7 +397,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
 
         if length(args[:n_bodies]) != 0
-
             for k = 1:length(args[:n_bodies])  
                 gravity_ii += mass * gravity_n_bodies(config.cnf.et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
             end

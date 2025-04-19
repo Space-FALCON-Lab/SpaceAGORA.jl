@@ -420,8 +420,6 @@ end
 function ABM_periapsis(name)
     orbit_number = config.cnf.orbit_number_list .- 1
     periapsis_altitude = config.cnf.periapsis_list
-    println("Periapsis altitude [km]: ", periapsis_altitude)
-    println("Orbit number: ", orbit_number)
     delta_v = [0.0]
 
     delta_v_raise = []

@@ -420,7 +420,6 @@ end
 function ABM_periapsis(name)
     orbit_number = config.cnf.orbit_number_list .- 1
     periapsis_altitude = config.cnf.periapsis_list
-
     delta_v = [0.0]
 
     delta_v_raise = []
@@ -455,7 +454,7 @@ function ground_track(state, m, name, args)
         Plot the ground track of the spacecraft during the drag passages
     """
 
-    if args[:type_of_mission] == "Entry"
+    if config.solution.orientation.number_of_passage[end] == 1
         lats_traces = scatter(x=config.solution.orientation.time, y=rad2deg.(config.solution.orientation.lat), mode="lines", line=attr(color="black"))
         lons_traces = scatter(x=config.solution.orientation.time, y=rad2deg.(config.solution.orientation.lon), mode="lines", line=attr(color="black"))
     else

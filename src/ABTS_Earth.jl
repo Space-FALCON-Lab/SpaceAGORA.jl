@@ -2,10 +2,11 @@ include("simulation/Run.jl")
 include("config.jl")
 include("utils/maneuver_plans.jl")
 
+using SPICE
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => 1,                                                                                    # Print some lines True=1, False=0
+            :print_res => 0,                                                                                    # Print some lines True=1, False=0
             :directory_results => "/workspaces/ABTS.jl/output/earth",            # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                   # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",           # Directory where Gram data is
@@ -27,7 +28,7 @@ args = Dict(# Misc Simulation
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
-            :density_model => "Gram",                               # choices=['No-Density', 'Constant' , 'Exponential' , 'Gram']
+            :density_model => "Gram",                               # choices=['No-Density', 'Constant' , 'Exponential' , 'nrlmsise', 'Gram']
             :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
             :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
             :topo_degree => 50,                                     # Maximum degree of the topography harmonics (Defined in the file)
@@ -38,7 +39,7 @@ args = Dict(# Misc Simulation
             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
             
             # Perturbations
-            :n_bodies => ["Sun", "Moon"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
+            :n_bodies => ["Moon", "Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :srp => 0,                                             # Solar Radiation Pressure True=1, False=0
             :gravity_harmonics => 1,                               # Gravity Harmonics True=1, False=0
             :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/egm96.csv",                  # Gravity Harmonics file to use
@@ -87,7 +88,7 @@ args = Dict(# Misc Simulation
             :ra_initial_a => 56378e3, # 56378e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 1e21,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e21,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 150590.0,#200590.0,#                                 # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_a => 143590.0,#200590.0,#                                 # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 9990000.0,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 1e20,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 3700.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
@@ -101,8 +102,8 @@ args = Dict(# Misc Simulation
             :inclination => 89.876,                                   # Inclination Orbit, deg
             :ω => 75.505,                                              # AOP, deg
             :Ω => 104.115,                                              # RAAN, deg
-            :EI => 1000.0,                                           # Entry Interface, km
-            :AE => 1000.0,                                           # Atmospheric Exit, km
+            :EI => 800.0,                                           # Entry Interface, km
+            :AE => 800.0,                                           # Atmospheric Exit, km
             :year => 2014,                                          # Mission year
             :month => 5,                                           # Mission month
             :day => 27,                                             # Mission day
@@ -165,6 +166,40 @@ args = Dict(# Misc Simulation
 #     end
 #     println("COMPUTATIONAL TIME = " * string(t) * " s")
 # end
+
+#####################
+# For comparison with GMAT with different perturbations #
+#####################
+# gravity_models = ["Inverse Squared", "Inverse Squared and J2 effect", "Inverse Squared and J2 effect"]
+# density_models = ["No-Density", "nrlmsise", "GRAM"]
+# n_bodies = [[], ["Moon"], ["Sun"], ["Moon", "Sun"]]
+
+# furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
+# furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
+# furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
+# furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
+# furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
+
+# for i in 1:length(density_models)
+#     for j in 1:length(gravity_models)
+#         for k in 1:length(n_bodies)
+#             args[:gravity_model] = gravity_models[j]
+#             if j == 3
+#                 args[:gravity_harmonics] = 1
+#             end
+#             args[:density_model] = density_models[i]
+#             args[:n_bodies] = n_bodies[k]
+#             # args[:directory_results] = "/workspaces/ABTS.jl/output/earth"
+#             args[:filename_results] = "Earth_Aerobraking_" * string(i) * "_" * string(j) * "_" * string(k)
+#             println("Running simulation with density model: " * density_models[i] * ", gravity model: " * gravity_models[j] * ", n_bodies: " * string(n_bodies[k]))
+#             t = @elapsed begin
+#                 sol = run_analysis(args)
+#             end
+#             println("COMPUTATIONAL TIME = " * string(t) * " s")
+#         end
+#     end
+# end
+
 t = @elapsed begin
             
     # Run the simulation

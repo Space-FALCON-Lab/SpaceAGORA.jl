@@ -38,7 +38,7 @@ function aerobraking_campaign(args, state)
     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-    # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
+    furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
     
     # If using lat/lon initial conditions, correct the initial orbital elements
@@ -353,6 +353,9 @@ function aerobraking_campaign(args, state)
                 folder_name = args[:simulation_filename]
             end
 
+            if args[:filename_results] !== nothing
+                folder_name = args[:filename_results]
+            end
             name = args[:directory_results] * "/" * folder_name
 
             if !isdir(args[:directory_results])

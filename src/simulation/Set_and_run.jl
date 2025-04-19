@@ -35,7 +35,7 @@ function aerobraking_campaign(args, state)
     ip = mission_def(mission)
     p_class = planet_data(ip.M.planet)
     config.model.planet = p_class
-    
+
     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
@@ -353,10 +353,7 @@ function aerobraking_campaign(args, state)
             else
                 folder_name = args[:simulation_filename]
             end
-
-            if args[:filename_results] !== nothing
-                folder_name = args[:filename_results]
-            end
+            
             name = args[:directory_results] * "/" * folder_name
 
             if !isdir(args[:directory_results])

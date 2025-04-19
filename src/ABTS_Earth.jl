@@ -8,7 +8,6 @@ args = Dict(# Misc Simulation
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 0,                                                                                    # Print some lines True=1, False=0
             :directory_results => "/workspaces/ABTS.jl/output/earth",            # Directory where to save the results
-            :filename_results => nothing,            # Filename of the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                   # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",           # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located

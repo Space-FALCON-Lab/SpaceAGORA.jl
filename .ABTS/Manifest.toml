@@ -2,7 +2,7 @@
 
 julia_version = "1.11.3"
 manifest_format = "2.0"
-project_hash = "816236eebb4c00cadabeba2c51c4197dadb4ad82"
+project_hash = "86a36c876f29e5acff64255a2b136af0c6aa9024"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "fb97701c117c8162e84dfcf80215caa904aef44f"
@@ -1971,6 +1971,11 @@ git-tree-sha1 = "645bed98cd47f72f67316fd42fc47dee771aefcd"
 uuid = "1d0040c9-8b98-4ee7-8388-3f51789ca0ad"
 version = "0.2.2"
 
+[[deps.PolynomialRoots]]
+git-tree-sha1 = "5f807b5345093487f733e520a1b7395ee9324825"
+uuid = "3a141323-8675-5d76-9d11-e1df1406c778"
+version = "1.0.0"
+
 [[deps.PooledArrays]]
 deps = ["DataAPI", "Future"]
 git-tree-sha1 = "36d8b4b899628fb92c2749eb488d884a926614d3"
@@ -2144,6 +2149,12 @@ git-tree-sha1 = "45e428421666073eab6f2da5c9d310d99bb12f9b"
 uuid = "189a3867-3050-52da-a836-e630ba90ab69"
 version = "1.2.2"
 
+[[deps.ReferenceFrameRotations]]
+deps = ["Crayons", "LinearAlgebra", "Printf", "Random", "StaticArrays"]
+git-tree-sha1 = "c1fadb2e94fa53c8bb8b937118e87d388012eaf6"
+uuid = "74f56ac7-18b3-5285-802d-d4bd4f104033"
+version = "3.0.2"
+
 [[deps.RelocatableFolders]]
 deps = ["SHA", "Scratch"]
 git-tree-sha1 = "ffdaf70d81cf6ff22c2b6e733c900c3321cab864"
@@ -2226,6 +2237,71 @@ deps = ["CSPICE_jll", "LinearAlgebra"]
 git-tree-sha1 = "505455711ac4c9d6b190e433bac95e48c0a38329"
 uuid = "5bab7191-041a-5c2e-a744-024b9c3a5062"
 version = "0.2.3"
+
+[[deps.SatelliteToolbox]]
+deps = ["Dates", "Reexport", "SatelliteToolboxAtmosphericModels", "SatelliteToolboxBase", "SatelliteToolboxCelestialBodies", "SatelliteToolboxGeomagneticField", "SatelliteToolboxGravityModels", "SatelliteToolboxLegendre", "SatelliteToolboxPropagators", "SatelliteToolboxSgp4", "SatelliteToolboxTle", "SatelliteToolboxTransformations"]
+git-tree-sha1 = "7657e60ebb22e394b3b081342e8a0a39b8cdf1d5"
+uuid = "6ac157d9-b43d-51bb-8fab-48bf53814f4a"
+version = "1.0.0"
+
+[[deps.SatelliteToolboxAtmosphericModels]]
+deps = ["Accessors", "Crayons", "LinearAlgebra", "PolynomialRoots", "Printf", "Reexport", "SatelliteToolboxBase", "SatelliteToolboxCelestialBodies", "SatelliteToolboxLegendre", "SpaceIndices"]
+git-tree-sha1 = "2f075bd18c768eea56a1a8ebb2a63cb6249875db"
+uuid = "5718ef0a-a30f-426d-bcd9-4cf31dd12909"
+version = "1.0.0"
+
+[[deps.SatelliteToolboxBase]]
+deps = ["Crayons", "Dates", "LinearAlgebra", "PrecompileTools", "Printf", "ReferenceFrameRotations", "StaticArrays"]
+git-tree-sha1 = "aa23ea6f28e835afdea291a6ec2950d209b395b5"
+uuid = "9e17983a-0463-41a7-9a16-1682db6d8b66"
+version = "1.0.0"
+
+[[deps.SatelliteToolboxCelestialBodies]]
+deps = ["Dates", "Reexport", "SatelliteToolboxBase", "StaticArrays"]
+git-tree-sha1 = "efe68356916cfee2ac4cfb5748ccf89391b53662"
+uuid = "b0edd99f-a7ca-4aa6-9a1e-a53e8f506046"
+version = "1.0.0"
+
+[[deps.SatelliteToolboxGeomagneticField]]
+deps = ["LinearAlgebra", "ReferenceFrameRotations", "SatelliteToolboxLegendre", "SatelliteToolboxTransformations", "StaticArrays"]
+git-tree-sha1 = "550b6ae3d851ea62bfc7e79b2fe35e990a31f59f"
+uuid = "9fc549ba-b5d7-49a2-b268-8171e5fb6e89"
+version = "1.0.0"
+
+[[deps.SatelliteToolboxGravityModels]]
+deps = ["Crayons", "Dates", "Downloads", "ReferenceFrameRotations", "SatelliteToolboxBase", "SatelliteToolboxLegendre", "SatelliteToolboxTransformations", "Scratch", "StaticArrays"]
+git-tree-sha1 = "5175ee4645d3eee5ca76bbd722f47bf7a3a6a6ac"
+uuid = "bd9e9728-6f7b-4d28-9e50-c765cb1b7c8c"
+version = "1.0.0"
+
+[[deps.SatelliteToolboxLegendre]]
+git-tree-sha1 = "1045766d1ed7792fcde194959a04c8457563ff32"
+uuid = "7fa26607-a272-47b2-9aa2-a6c1d419d9d2"
+version = "1.1.0"
+
+[[deps.SatelliteToolboxPropagators]]
+deps = ["Crayons", "Dates", "LinearAlgebra", "PrecompileTools", "Printf", "Reexport", "SatelliteToolboxBase", "SatelliteToolboxSgp4", "SatelliteToolboxTle", "StaticArrays"]
+git-tree-sha1 = "f983d88e96979900091df544a7ca3097c161213c"
+uuid = "c2b69894-ea78-4e2b-9ba6-cedbbc3d14d7"
+version = "1.0.0"
+
+[[deps.SatelliteToolboxSgp4]]
+deps = ["Crayons", "Dates", "LinearAlgebra", "PrecompileTools", "Printf", "Reexport", "SatelliteToolboxBase", "SatelliteToolboxTle", "StaticArrays"]
+git-tree-sha1 = "08f821f0406fc57995dec34611751a6ad4c0e984"
+uuid = "ba14ac17-bfc9-4710-a76f-b32930ef2339"
+version = "2.3.0"
+
+[[deps.SatelliteToolboxTle]]
+deps = ["Crayons", "Dates", "Downloads", "PrecompileTools", "Printf", "URIs"]
+git-tree-sha1 = "4e0dffa35e0629b9da1c5a479548483998f2dde7"
+uuid = "7ff27aeb-5fff-4337-a9ee-a9fe6b7ed35e"
+version = "1.1.0"
+
+[[deps.SatelliteToolboxTransformations]]
+deps = ["Crayons", "Dates", "DelimitedFiles", "Downloads", "Interpolations", "LinearAlgebra", "Reexport", "ReferenceFrameRotations", "SatelliteToolboxBase", "Scratch", "StaticArrays"]
+git-tree-sha1 = "e61da3c8d0f2a69ce19f75da6df818eb6ebf6888"
+uuid = "6b019ec1-7a1e-4f04-96c7-a9db1ca5514d"
+version = "1.0.0"
 
 [[deps.SciMLBase]]
 deps = ["ADTypes", "Accessors", "ArrayInterface", "CommonSolve", "ConstructionBase", "Distributed", "DocStringExtensions", "EnumX", "Expronicon", "FunctionWrappersWrappers", "IteratorInterfaceExtensions", "LinearAlgebra", "Logging", "Markdown", "PrecompileTools", "Preferences", "Printf", "RecipesBase", "RecursiveArrayTools", "Reexport", "RuntimeGeneratedFunctions", "SciMLOperators", "SciMLStructures", "StaticArraysCore", "Statistics", "SymbolicIndexingInterface"]
@@ -2351,6 +2427,12 @@ deps = ["DataStructures"]
 git-tree-sha1 = "66e0a8e672a0bdfca2c3f5937efb8538b9ddc085"
 uuid = "a2af1166-a08f-5f64-846c-94a0d3cef48c"
 version = "1.2.1"
+
+[[deps.SpaceIndices]]
+deps = ["Dates", "DelimitedFiles", "Downloads", "OptionalData", "Reexport", "Scratch"]
+git-tree-sha1 = "4a2cd0c47c3293a993da58266f8f3740c7d15f0e"
+uuid = "5a540a4e-639f-452a-b107-23ea09ed4d36"
+version = "1.2.2"
 
 [[deps.SparseArrays]]
 deps = ["Libdl", "LinearAlgebra", "Random", "Serialization", "SuiteSparse_jll"]

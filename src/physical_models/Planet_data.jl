@@ -17,7 +17,7 @@ function planet_data(ip)
         mass = 5.97219e24          # mass, kg
         g_ref = 9.798              # acceleration due to gravity, m/s²
         ρ_ref = 1.225              # density, kg/m³
-        μ = 3.9860e14              # gravitational parameter, m³/s²
+        μ = 3.986004418e14              # gravitational parameter, m³/s²
         h_ref = 0 * 1e3            # reference altitude, m
         H = 8.5 * 1e3              # scale height, m
         R = 287.1                  # specific gas constant, J/(kg·K)
@@ -92,7 +92,7 @@ function planet_data(ip)
         mass = 1.9891e30           # mass, kg
         g_ref = 274                # m/s^2
         ρ_ref = 0
-        μ = 1.32712440018e20       # gravitational parameter, m^3/s^2
+        μ = 1.3271244001799e20       # gravitational parameter, m^3/s^2
         h_ref = 0
         H = 0
         R = 0
@@ -116,7 +116,7 @@ function planet_data(ip)
         mass = 0.07346e24           # mass, kg
         g_ref = 1.62                # acceleration due to gravity, m/s²
         ρ_ref = 0
-        μ = 0.00490e15              # gravitational parameter, m³/s²
+        μ = 4.9028005821478e12              # gravitational parameter, m³/s²
         h_ref = 0
         H = 0
         R = 0
@@ -209,11 +209,15 @@ function planet_data(ip)
     # frame based on the planet's North pole of rotation
     # α = Right ascension of the north pole of rotation, radians
     # δ = Declination of the north pole of rotation, radians
-    σ1 = sqrt(cos(δ)^4 + cos(δ)^2*sin(δ)^2)
-    J2000_to_pci = SMatrix{3, 3, Float64}([-sin(α) cos(α) 0;
-                    -cos(δ)*cos(α)*sin(δ)/σ1 -cos(δ)*sin(α)*sin(δ)/σ1 cos(δ)^2/σ1;
-                    cos(δ)*cos(α) cos(δ)*sin(α) sin(δ)])    
-    config.model.planet = config.Planet(Rp_e, 
+    if name == "earth"
+        J2000_to_pci = [1 0 0; 0 1 0; 0 0 1]
+    else
+        σ1 = sqrt(cos(δ)^4 + cos(δ)^2*sin(δ)^2)
+        J2000_to_pci = SMatrix{3, 3, Float64}([-sin(α) cos(α) 0;
+                        -cos(δ)*cos(α)*sin(δ)/σ1 -cos(δ)*sin(α)*sin(δ)/σ1 cos(δ)^2/σ1;
+                        cos(δ)*cos(α) cos(δ)*sin(α) sin(δ)])   
+    end 
+    planet = config.Planet(Rp_e, 
                                         Rp_p, 
                                         Rp_m, 
                                         mass, 
@@ -251,5 +255,5 @@ function planet_data(ip)
                                         zeros(3),
                                         topography_function)
     
-    return config.model.planet
+    return planet
 end

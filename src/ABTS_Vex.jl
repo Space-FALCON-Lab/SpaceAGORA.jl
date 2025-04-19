@@ -91,6 +91,8 @@ args = Dict(# Misc Simulation
             :v_initial_a => 9300.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 10000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_step => 100000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            
+            :orientation_type => 0,                               # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
             :γ_initial_a => -16.6,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => -17.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_step => -5.0,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma

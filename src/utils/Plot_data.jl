@@ -8,25 +8,27 @@ function plots(state, m, name, args)
         traj_3D(state, m, name, args)
         traj_2D(state, m, name, args)
     else
-        traj_3D(state, m, name, args)
+        # traj_3D(state, m, name, args)
         traj_2D(state, m, name, args)
 
         performance_plots(state, m, name, args)
     end
 
-    if args[:body_shape] == "Spacecraft" && !config.cnf.impact && args[:keplerian] == false
-        if lowercase(m.planet.name) == "mars" || lowercase(m.planet.name) == "venus"
-            # closed_form_solution_plot(name, m)
-        end
-        angle_of_attack_plot(name, args)
-    end
+    ABM_periapsis(name)
+    ground_track(state, m, name, args)
+    
+    # if args[:body_shape] == "Spacecraft" && !config.cnf.impact && args[:keplerian] == false
+    #     if lowercase(m.planet.name) == "mars" || lowercase(m.planet.name) == "venus"
+    #         # closed_form_solution_plot(name, m)
+    #     end
+    #     angle_of_attack_plot(name, args)
+    # end
 
     if args[:type_of_mission] == "Drag Passage"
         drag_passage_plot(name, args)
     end
 
-    ABM_periapsis(name)
-    ground_track(state, m, name, args)
+    
 end
 
 function drag_passage_plot(name, args)

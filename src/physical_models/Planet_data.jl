@@ -34,6 +34,7 @@ function planet_data(ip)
         SF = 1361.0                # Solar irradiance, W/m²
         δ = pi/2                    # Declination of the north pole of rotation, radians
         topography_function = Earth_elevation! # Earth topography function
+        polyfit_coeffs = [-1.7539409645214832e-57, 2.735656076315809e-53, -1.8243490769488347e-49, 6.504765617793163e-46, -1.1637408657034938e-42, 8.044884138893168e-41, 4.264962263039017e-36, -7.651115834387683e-33, -3.188248308052816e-30, 3.8370830656820503e-26, -8.557502178008995e-23, 1.137879849173412e-19, -1.0408232216096158e-16, 6.834085016894604e-14, -3.2506596548183e-11, 1.1089006707870246e-08, -2.639423772958483e-06, 0.0004165844083994442, -0.03967261693733797, 1.8349343859319074, -38.14918904018883]
         name = "earth"
     elseif (ip == 1 || (typeof(ip) == String && cmp(lowercase(ip), "mars") == 0)) # Mars
         Rp_e = 3.3962e6 #3.3962           # equatorial radius, m
@@ -59,6 +60,7 @@ function planet_data(ip)
         δ = deg2rad(52.88650)      # Declination of the north pole of rotation, radians
         SF = 586.2                # Solar irradiance, W/m²
         topography_function = Mars_elevation! # Mars topography function
+        polyfit_coeffs = [-3.691310097181554e-58, 5.819173546214448e-54, -3.9285937578286423e-50, 1.4222601230188116e-46, -2.606951392190571e-43, 3.2943551967480965e-41, 9.394166176413728e-37, -1.7651753457891617e-33, -5.79069281873952e-31, 8.639557954110502e-27, -1.991207114225621e-23, 2.7207390647640917e-20, -2.5611296697872007e-17, 1.7386922029136165e-14, -8.619727907575625e-12, 3.1040218147963276e-09, -7.949080301839893e-07, 0.00013834108975291533, -0.014729001168514675, 0.6707044510751348, -19.414578139119545]
         name = "mars"
     elseif (ip == 2 || (typeof(ip) == String && cmp(lowercase(ip), "venus") == 0)) # Venus
         Rp_e = 6.0518e6            # equatorial radius, m
@@ -84,6 +86,7 @@ function planet_data(ip)
         δ = deg2rad(67.16)         # Declination of the north pole of rotation, radians
         SF = 2601.3                # Solar irradiance, W/m²
         topography_function = Venus_elevation! # Venus topography function
+        polyfit_coeffs = [1.295014716586507e-57, -1.920381283790201e-53, 1.2024671159968765e-49, -3.931503383921753e-46, 5.985870736864543e-43, 2.115956905107091e-40, -2.4659597875857534e-36, 3.0591710987549437e-33, 3.951465781537392e-30, -1.8949093746237393e-26, 3.123829612747949e-23, -2.928033666820754e-20, 1.5168683041510048e-17, -1.5135241597177884e-15, -3.865230229956326e-12, 3.1328117105612896e-09, -1.2501690556294552e-06, 0.00028978339946121796, -0.03741075092352375, 2.149847471180469, -43.08275565785116]
         name = "venus"
     elseif (ip == 3 || (typeof(ip) == String && cmp(lowercase(ip), "sun") == 0)) # Sun
         Rp_e = 6.9634e8            # equatorial radius, m
@@ -108,6 +111,7 @@ function planet_data(ip)
         δ = 0.0
         SF = 0
         topography_function = (args, Clm, Slm, latitude, longitude) -> 0.0
+        polyfit_coeffs = zeros(1)
         name = "sun"
     elseif (ip == 4 || (typeof(ip) == String && cmp(lowercase(ip), "moon") == 0)) # Moon
         Rp_e = 1.7381e6            # equatorial radius, m
@@ -132,6 +136,7 @@ function planet_data(ip)
         δ = 0.0
         SF = 1361.0                # Solar irradiance, W/m²
         topography_function = (args, Clm, Slm, latitude, longitude) -> 0.0
+        polyfit_coeffs = zeros(1)
         name = "moon"
     elseif (ip == 5 || (typeof(ip) == String && cmp(lowercase(ip), "jupiter") == 0))
         Rp_e = 7.1492e7
@@ -155,6 +160,8 @@ function planet_data(ip)
         α = 0.0
         δ = 0.0
         SF = 50.26                # Solar irradiance, W/m²
+        topography_function = (args, Clm, Slm, latitude, longitude) -> 0.0 # Jupiter topography function
+        polyfit_coeffs = zeros(1)
         name = "jupiter"
     elseif (ip == 6 || (typeof(ip) == String && cmp(lowercase(ip), "saturn") == 0))
         Rp_e = 6.0268e7
@@ -178,6 +185,8 @@ function planet_data(ip)
         α = deg2rad(40.589)
         δ = deg2rad(83.537)
         SF = 14.82                # Solar irradiance, W/m²
+        topography_function = (args, Clm, Slm, latitude, longitude) -> 0.0 # Saturn topography function
+        polyfit_coeffs = zeros(1)
         name = "saturn"
     elseif (ip == 7 || (typeof(ip) == String && cmp(lowercase(ip), "titan") == 0))
         Rp_e = 2.575e6
@@ -201,6 +210,8 @@ function planet_data(ip)
         α = deg2rad(39.4827)
         δ = deg2rad(83.4279)
         SF = 14.82                # Solar irradiance, W/m², probably same as Saturn but couldn't find real data
+        topography_function = (args, Clm, Slm, latitude, longitude) -> 0.0 # Titan topography function
+        polyfit_coeffs = [1.7989756686197253e-58, -2.7298975030491325e-54, 1.7620522402686604e-50, -6.025021166267467e-47, 1.0056316643424087e-43, 9.494104496406468e-42, -3.8472088727076255e-37, 6.051435602297366e-34, 4.074478639170247e-31, -3.244699052533356e-27, 6.66877802035039e-24, -8.360025139024445e-21, 7.301165978344981e-18, -4.650857357165472e-15, 2.1978197729328097e-12, -7.705014392936314e-10, 1.9713879988437584e-07, -3.551889476633975e-05, 0.004248542489215875, -0.3277965440319509, 8.128293001726805] 
         name = "titan"
     end
 
@@ -218,42 +229,43 @@ function planet_data(ip)
                         cos(δ)*cos(α) cos(δ)*sin(α) sin(δ)])   
     end 
     planet = config.Planet(Rp_e, 
-                                        Rp_p, 
-                                        Rp_m, 
-                                        mass, 
-                                        p, 
-                                        k, 
-                                        ω, 
-                                        g_ref, 
-                                        ρ_ref, 
-                                        h_ref, 
-                                        H, 
-                                        R, 
-                                        γ, 
-                                        T, 
-                                        J2, 
-                                        μ, 
-                                        μ_fluid, 
-                                        Lz, 
-                                        α, 
-                                        δ, 
-                                        J2000_to_pci,
-                                        MMatrix{3, 3, Float64}(zeros(3,3)), 
-                                        zeros(3, 3), 
-                                        zeros(3, 3), 
-                                        zeros(3, 3),
-                                        zeros(3, 3),
-                                        name,
-                                        zeros(3, 3),
-                                        zeros(3, 3),
-                                        zeros(3, 3),
-                                        zeros(3, 3),
-                                        zeros(3, 3),
-                                        zeros(3, 3),
-                                        zeros(3, 3),
-                                        zeros(3),
-                                        zeros(3),
-                                        topography_function)
+                            Rp_p, 
+                            Rp_m, 
+                            mass, 
+                            p, 
+                            k, 
+                            ω, 
+                            g_ref, 
+                            ρ_ref, 
+                            h_ref, 
+                            H, 
+                            R, 
+                            γ, 
+                            T, 
+                            J2, 
+                            μ, 
+                            μ_fluid, 
+                            Lz, 
+                            α, 
+                            δ, 
+                            J2000_to_pci,
+                            MMatrix{3, 3, Float64}(zeros(3,3)), 
+                            zeros(3, 3), 
+                            zeros(3, 3), 
+                            zeros(3, 3),
+                            zeros(3, 3),
+                            name,
+                            zeros(3, 3),
+                            zeros(3, 3),
+                            zeros(3, 3),
+                            zeros(3, 3),
+                            zeros(3, 3),
+                            zeros(3, 3),
+                            zeros(3, 3),
+                            zeros(3),
+                            zeros(3),
+                            polyfit_coeffs,
+                            topography_function)
     
     return planet
 end

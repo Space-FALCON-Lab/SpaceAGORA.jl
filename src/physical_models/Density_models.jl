@@ -114,14 +114,79 @@ function density_exp(h, p, OE=0, lat=0, lon=0, timereal=0, t0=0, tf_prev=0, mont
     return ρ, T, wind
 end
 
+function density_polyfit(h::Float64, p, lat::Float64=0.0, lon::Float64=0.0, montecarlo::Bool=false, Wind::Bool=false, args::Dict=nothing, el_time::Float64=0.0, atmosphere=nothing, gram=nothing)
+    """
+    Calculate the density using polynomial fit coefficients.
+
+    Parameters
+    ----------
+    h : Float64
+        Height in meters.
+    p : Planet struct
+        Planet data
+    OE : Any
+        Orbital elements (not used in this function).
+    lat : Float64
+        Latitude in radians (not used in this function).
+    lon : Float64
+        Longitude in radians (not used in this function).
+    timereal : Any
+        Real time (not used in this function).
+    t0 : Any
+        Initial time (not used in this function).
+    tf_prev : Any
+        Previous final time (not used in this function).
+    montecarlo : Bool
+        Whether to use Monte Carlo simulation (not used in this function).
+    Wind : Bool
+        Whether to include wind effects (not used in this function).
+    args : Any
+        Additional arguments (not used in this function).
+    version : Any
+        GRAM Version information (not used in this function).
+    
+    Returns
+    -------
+    ρ : Float64
+        Density in kg/m³.
+    T : Float64
+        Temperature in Kelvin.
+    wind : Vector{Float64}
+        Wind vector in m/s.
+    """
+
+    polyfit = p.polyfit_coeffs
+    power = zeros(length(polyfit))
+    # Convert height from meters to kilometers
+    h = h * 1e-3
+    # Calculate the polynomial value at height h
+    for i=1:length(polyfit)
+        power[i] = (h)^(length(polyfit)-i)
+    end
+    # Calculate the exponent term of the density using the polynomial coefficients
+    exponent = sum(polyfit .* power)
+    # Calculate the density
+    ρ = exp(exponent)
+    T = temperature_linear(h, p)
+
+    wind = [0, 0, 0]
+
+    return ρ, T, wind
+end
+
 function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Bool, Wind::Bool, args::Dict, el_time::Float64, atmosphere=nothing, gram=nothing)
     """
 
     """
-
     if config.cnf.drag_state == false && args[:keplerian] == false
-        rho , T , wind = density_exp(h, p)
-        rho = 0.0
+        if h > 2000.0e3
+
+            rho = 0.0
+            T = temperature_linear(h, p)
+            wind = [0.0, 0.0, 0.0]
+        else
+            rho, T, wind = density_polyfit(h, p)
+        end
     elseif config.cnf.drag_state == true || args[:keplerian] == true
         position = gram.Position()
         position.height = h * 1e-3
@@ -144,7 +209,7 @@ function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Boo
     return rho, T, wind
 end
 
-    function density_nrlmsise(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Bool, Wind::Bool, args::Dict, current_time::DateTime)
+function density_nrlmsise(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Bool, Wind::Bool, args::Dict, current_time::DateTime)
     """
 
     """

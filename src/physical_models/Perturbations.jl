@@ -35,7 +35,7 @@ function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64
     ----------
     r_sat : Vector{Float64}
         Position vector of the satellite relative to the planet.
-    r_sun : Vectro{Float64}
+    r_sun : Vector{Float64}
         Position vector of the Sun relative to the planet.
     A : Float64
         Area of the satellite.

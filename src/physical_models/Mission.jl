@@ -39,27 +39,29 @@ function mission_def(mission)
     M = Mission(e, d, l, a, p)
 
     # Gravity Model Selection
-    if mission[:Gravity_Model] == "constant" || mission[:Gravity_Model] == "Constant"
+    if uppercase(mission[:Gravity_Model]) == "CONSTANT"
         gm = 0
-    elseif mission[:Gravity_Model] == "Inverse squared" || mission[:Gravity_Model] == "inverse squared" || mission[:Gravity_Model] == "Inverse Squared"
+    elseif uppercase(mission[:Gravity_Model]) == "INVERSE SQUARED"
         gm = 1
-    elseif mission[:Gravity_Model] == "Inverse Squared and J2 effect" || mission[:Gravity_Model] == "inverse squared and J2 effect" || mission[:Gravity_Model] == "Inverse quared and J2 effect"
+    elseif uppercase(mission[:Gravity_Model]) == "INVERSE SQUARED AND J2 EFFECT"
         gm = 2
-    elseif mission[:Gravity_Model] == "Gram" || mission[:Gravity_Model] == "GRAM"
+    elseif uppercase(mission[:Gravity_Model]) == "GRAM"
         gm = 3
     else
         gm = 1
     end
 
     # Density Model Selection
-    if mission[:Density_Model] == "constant" || mission[:Density_Model] == "Constant"
+    if uppercase(mission[:Density_Model]) == "CONSTANT"
         dm = 0
-    elseif mission[:Density_Model] == "expopnential" || mission[:Density_Model] == "Exponential"
+    elseif uppercase(mission[:Density_Model]) == "EXPONENTIAL"
         dm = 1
-    elseif mission[:Density_Model] == "No-Density" || mission[:Density_Model] == "No-density"
+    elseif uppercase(mission[:Density_Model]) == "NO-DENSITY"
         dm = 2
-    elseif mission[:Density_Model] == "Gram" || mission[:Density_Model] == "GRAM"
+    elseif uppercase(mission[:Density_Model]) == "GRAM"
         dm = 3
+    elseif uppercase(mission[:Density_Model]) == "NRLMSISE"
+        dm = 4
     else
         dm = 1
     end

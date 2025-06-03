@@ -212,16 +212,23 @@ function heat_rate_control_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofp
 end
 
 function Earth_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, args=nothing)
-    max_q = 0.6 # Max dynamic pressure
-    min_q = 0.5 # Min dynamic pressure
-    estimated_ρ = planet.ρ_ref * exp(-(rp-6378e3) / planet.H)
-    periapsis_velocity = sqrt(planet.μ *(2/rp - 2/(ra+rp)))
-    q = 0.5 * estimated_ρ * periapsis_velocity^2
-    if q > max_q
-        rp_new = -planet.H*log(2*min_q/(planet.ρ_ref*periapsis_velocity^2)) + 6378e3
-        println("Aerobraking at ", rp, " m")
-        println("New periapsis: ", rp_new, " m")
-        args[:delta_v] = abs(sqrt(2*planet.μ/rp - planet.μ*2/(rp+ra)) - sqrt(2*planet.μ/rp_new - planet.μ*2/(rp_new+ra)))
+    # max_q = 100000 # Max heat rate
+    # min_q = 99000 # Min heat rate
+    # estimated_ρ = planet.ρ_ref * exp(-(rp-6378e3) / planet.H)
+    # periapsis_velocity = sqrt(planet.μ *(2/rp - 2/(ra+rp)))
+    # q = 0.5 * estimated_ρ * periapsis_velocity^3
+    # println("Estimated q: ", q, " W/cm^2")
+    if rp < 120e3 + planet.Rp_e
+        # rp_new = -planet.H*log(2*min_q/(planet.ρ_ref*periapsis_velocity^3)) + 6378e3
+        # println("Aerobraking at ", rp, " m")
+        # println("New periapsis: ", rp_new, " m")
+        target_periapsis_altitude = 140e3 # Target periapsis altitude in meters
+        a_i = (rp + ra) / 2 # Initial semi-major axis
+        a_f = (target_periapsis_altitude + planet.Rp_e + ra) / 2 # Final semi-major axis
+        v_i = sqrt(planet.μ * (2 / ra - 1 / a_i))
+        v_f = sqrt(planet.μ * (2 / ra - 1 / a_f))
+        args[:delta_v] = v_f - v_i
+        # args[:delta_v] = abs(sqrt(2*planet.μ/rp - planet.μ*2/(rp+ra)) - sqrt(2*planet.μ/rp_new - planet.μ*2/(rp_new+ra)))
         args[:phi] = deg2rad(180.0)
     else
         args[:delta_v] = 0.0
@@ -277,7 +284,8 @@ function titan_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, 
     periapsis_altitude = periapsis_radius - titan_radius
     mu_titan = 8.981e12 # Gravitational parameter of titan in m^3/s^2
     target_periapsis_altitude = 800_000
-    if periapsis_altitude < 500e3
+    target_min_periapsis_altitude = 550_000
+    if periapsis_altitude < target_min_periapsis_altitude || abs(periapsis_altitude - target_min_periapsis_altitude) < 5e3
         # Calculate delta-v required to raise periapsis to 141,000 m
         a_i = (periapsis_radius + apoapsis_radius) / 2 # Initial semi-major axis
         a_f = (target_periapsis_altitude + titan_radius + apoapsis_radius) / 2 # Final semi-major axis

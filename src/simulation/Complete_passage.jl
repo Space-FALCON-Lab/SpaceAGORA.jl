@@ -37,7 +37,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     OE = SVector{7, Float64}([initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m])
 
-    if (OE[1] > (m.planet.Rp_e*1e-3 + 50 + args[:EI])*1e3) && (args[:drag_passage] == false) && (args[:body_shape] == "Spacecraft")
+    if (OE[1] > (m.planet.Rp_e*1e-3 + args[:EI])*1e3) && (args[:drag_passage] == false) && (args[:body_shape] == "Spacecraft")
         index_steps_EOM = 3
     else
         index_steps_EOM = 1
@@ -234,6 +234,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         elseif ip.dm == 3
             ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
             ρ, T_p, wind = pyconvert(Float64, ρ), pyconvert(Float32, T_p), SVector{3, Float32}([pyconvert(Float32, wind[1]), pyconvert(Float32, wind[2]), pyconvert(Float32, wind[3])])
+        elseif ip.dm == 4
+            ρ, T_p, wind = density_nrlmsise(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, time_real)
         end
 
         # Define output.txt containing density data
@@ -395,7 +397,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
 
         if length(args[:n_bodies]) != 0
-
             for k = 1:length(args[:n_bodies])  
                 gravity_ii += mass * gravity_n_bodies(config.cnf.et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
             end

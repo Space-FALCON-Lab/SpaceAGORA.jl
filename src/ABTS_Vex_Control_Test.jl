@@ -30,6 +30,8 @@ args = Dict(# Misc Simulation
             :planet => 2,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                  # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
+            
+            :n_bodies => ["Sun"],                                   # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
             :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
             :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/MGN-V-RDRS-5-TOPO-L2.csv", # File with the topography harmonics coefficients

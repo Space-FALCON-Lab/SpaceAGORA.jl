@@ -162,7 +162,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
             step_time = length(config.cnf.heat_rate_list)
         end
     end
-    println("Step time: ", step_time)
+    
     t_cf = collect(range(start=0, stop=Δt, length=step_time))
 
     cost_3 = v0 * γ0

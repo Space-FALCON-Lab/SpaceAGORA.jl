@@ -15,7 +15,7 @@ args = Dict(# Misc Simulation
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
+            :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
@@ -24,7 +24,7 @@ args = Dict(# Misc Simulation
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 300,                                 # Number of aerobraking passage
+            :number_of_orbits => 35,                                 # Number of aerobraking passage
 
             # Physical Model
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -78,7 +78,7 @@ args = Dict(# Misc Simulation
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
-            :control_mode => 3,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
+            :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
             :security_mode => 1,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
@@ -123,7 +123,7 @@ args = Dict(# Misc Simulation
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
             :ra_fin_orbit => 25000e3,                               # Target final apoapsis for the orbit, m
-            :maneuver_plan => Odyssey_control_firing_plan, # Odyssey_firing_plan,                # Maneuver plan function
+            :maneuver_plan => Odyssey_firing_plan,                # Maneuver plan function
             
             # Monte Carlo Simulations
             :montecarlo => 0,                                       # Run Monte Carlo simulation True=1, False=0
@@ -178,53 +178,54 @@ args = Dict(# Misc Simulation
 
 # #     for i in 1:Threads.nthreads() 
 
-                
-#         # Run the simulation
-#         sol = run_analysis(args)
-#         if Bool(args[:passresults])
-#             println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#         end
-# end
-
-#         println("COPMUTATIONAL TIME = " * string(t) * " s")
-# end
-#         end
-#     end
-# end
-mc_runs = 50
-nominal_ra = args[:ra_initial_a]
-nominal_rp = args[:hp_initial_a]
-nominal_i = args[:inclination]
-nominal_Ω = args[:Ω]
-nominal_ω = args[:ω]
-for i in 24:mc_runs
-    a = @allocated begin
-        t = @elapsed begin
-            args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey_MC_polyfit_atmo_orig_disp/" * string(i)
-            println("Monte Carlo Run: ", i)
-            if i == 1
-                args[:print_res] = 1
-            else
-                args[:print_res] = 0
-            end
-            # args[:print_res] = 1
-            # println(randn()*sqrt(args[:ra_dispersion]) * 1e3)
-            args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3
-            args[:hp_initial_a] = nominal_rp + randn()*sqrt(args[:rp_dispersion]) * 1e3
-            args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])
-            args[:Ω] = nominal_Ω + randn()*sqrt(args[:Ω_dispersion])
-            args[:ω] = nominal_ω + randn()*sqrt(args[:ω_dispersion])
-
-            # Run the simulation
-            sol = run_analysis(args)
-
-            if Bool(args[:passresults])
-                println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-            end
+t = @elapsed begin          
+        # Run the simulation
+        sol = run_analysis(args)
+        if Bool(args[:passresults])
+            println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
         end
-
-        println("COMPUTATIONAL TIME = " * string(t) * " s")
-        config.reset_config()
-    end
-    println("Memory allocated = " * string(a / 1e6) * " MB")
 end
+
+        println("COPMUTATIONAL TIME = " * string(t) * " s")
+# end
+        # end
+    # end
+# end
+
+# mc_runs = 50
+# nominal_ra = args[:ra_initial_a]
+# nominal_rp = args[:hp_initial_a]
+# nominal_i = args[:inclination]
+# nominal_Ω = args[:Ω]
+# nominal_ω = args[:ω]
+# for i in 24:mc_runs
+#     a = @allocated begin
+#         t = @elapsed begin
+#             args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey_MC_polyfit_atmo_orig_disp/" * string(i)
+#             println("Monte Carlo Run: ", i)
+#             if i == 1
+#                 args[:print_res] = 1
+#             else
+#                 args[:print_res] = 0
+#             end
+#             # args[:print_res] = 1
+#             # println(randn()*sqrt(args[:ra_dispersion]) * 1e3)
+#             args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3
+#             args[:hp_initial_a] = nominal_rp + randn()*sqrt(args[:rp_dispersion]) * 1e3
+#             args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])
+#             args[:Ω] = nominal_Ω + randn()*sqrt(args[:Ω_dispersion])
+#             args[:ω] = nominal_ω + randn()*sqrt(args[:ω_dispersion])
+
+#             # Run the simulation
+#             sol = run_analysis(args)
+
+#             if Bool(args[:passresults])
+#                 println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+#             end
+#         end
+
+#         println("COMPUTATIONAL TIME = " * string(t) * " s")
+#         config.reset_config()
+#     end
+#     println("Memory allocated = " * string(a / 1e6) * " MB")
+# end

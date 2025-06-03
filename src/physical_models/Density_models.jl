@@ -155,7 +155,7 @@ function density_polyfit(h, p, lat::Float64=0.0, lon::Float64=0.0, montecarlo::B
         Wind vector in m/s.
     """
 
-    if length(h) >= 1
+    if typeof(h) != Float64
         polyfit = p.polyfit_coeffs
         power = zeros(length(polyfit),length(h))
         # Convert height from meters to kilometers
@@ -185,7 +185,7 @@ function density_polyfit(h, p, lat::Float64=0.0, lon::Float64=0.0, montecarlo::B
         h = h * 1e-3
         # Calculate the polynomial value at height h
         for i=1:length(polyfit)
-            power[i] = (h).^(length(polyfit)-i)
+            power[i] = (h)^(length(polyfit)-i)
         end
         # Calculate the exponent term of the density using the polynomial coefficients
         exponent = sum(polyfit .* power)

@@ -49,7 +49,7 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
                 idx_orbit = findall(x -> x == i, config.solution.orientation.number_of_passage) # [idx for (idx, val) in enumerate(config.solution.orientation.number_of_passage) if val == i]
 
                 alt = [config.solution.orientation.pos_ii_mag[item] - mission.planet.Rp_e for item in idx_orbit]
-                alt_index = findall(x -> x <= 160*1e3, alt) # [idx for (idx, val) in enumerate(alt) if val <= 160e3]
+                alt_index = findall(x -> x < args[:EI]*1e3, alt) # [idx for (idx, val) in enumerate(alt) if val <= 160e3]
 
                 if length(alt_index) == 0
                     len_sol = length(config.solution.orientation.time)
@@ -68,11 +68,12 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
                 t0 = config.solution.orientation.time[index]
 
                 t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time)
-
-                t[(alt_index[1]+idx_orbit[1]):(alt_index[1]+length(alt_index)+idx_orbit[1])] = t_cf
-                h[(alt_index[1]+idx_orbit[1]):(alt_index[1]+length(alt_index)+idx_orbit[1])] = h_cf
-                γ[(alt_index[1]+idx_orbit[1]):(alt_index[1]+length(alt_index)+idx_orbit[1])] = γ_cf
-                v[(alt_index[1]+idx_orbit[1]):(alt_index[1]+length(alt_index)+idx_orbit[1])] = v_cf
+                # println("Length of interval: ", length(t[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])]))
+                step_time = step_time - 1 # -1 because we start from 0
+                t[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = t_cf
+                h[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = h_cf
+                γ[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = γ_cf
+                v[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = v_cf
             end
             # For loop for the number of orbits
 
@@ -156,13 +157,13 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
         temp = Δt * args[:trajectory_rate]/10
 
         if temp > length(config.cnf.heat_rate_list)
-            step_time = temp
+            step_time = ceil(Int, temp)
         else
             step_time = length(config.cnf.heat_rate_list)
         end
     end
-
-    t_cf = collect(range(start=0, stop=Δt, length=floor(Int, step_time)))
+    println("Step time: ", step_time)
+    t_cf = collect(range(start=0, stop=Δt, length=step_time))
 
     cost_3 = v0 * γ0
 

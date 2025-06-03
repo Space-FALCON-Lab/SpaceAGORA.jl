@@ -19,9 +19,9 @@ os = pyimport("os")
 # sys.path.append(os.path.join(os.path.dirname(os.path.abspath(@__FILE__)), "GRAMpy"))
 
 function aerobraking(ip, m, args)
-
-    sys.path.append(args[:directory_Gram])
-
+    if !(args[:directory_Gram] in pyconvert(Vector{String}, sys.path))
+        sys.path.append(args[:directory_Gram])
+    end
     gram = pyimport("gram")
 
     initial_state = m.initial_condition
@@ -82,7 +82,7 @@ function aerobraking(ip, m, args)
         end
         gram_atmosphere.setPerturbationScales(1.5)
         gram_atmosphere.setMinRelativeStepSize(0.5)
-        gram_atmosphere.setSeed(1001)
+        gram_atmosphere.setSeed(Int(round(rand()*10000)))
         if planet_name == "mars"
             gram_atmosphere.setMOLAHeights(false)
         end
@@ -100,7 +100,7 @@ function aerobraking(ip, m, args)
 
         if args[:print_res] == true
             println("--> Start Passage #" * string(numberofpassage))
-        end
+        end 
 
         t_el_ab = @elapsed begin
         
@@ -108,11 +108,15 @@ function aerobraking(ip, m, args)
                 r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
                 r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
                 args = args[:maneuver_plan](m.planet, r_a, r_p, numberofpassage, args)
+                # println(args[:delta_v])
             end
             
             if ip.tc == 1
-                if args[:delta_v] != 0.0
+                if numberofpassage == 1
+                    args[:delta_v] = 0.0
+                end
 
+                if args[:delta_v] != 0.0
                     if round(rad2deg(args[:phi])) == 180
                         append!(config.cnf.raise_man_orbit, numberofpassage)
                     else

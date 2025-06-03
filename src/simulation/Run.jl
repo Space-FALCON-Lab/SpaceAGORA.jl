@@ -48,7 +48,7 @@ function run_vgamma(args)
     final_apoapsis = args[:final_apoapsis]
 
     for γ in γ_0
-        γ = -γ
+        γ = -γ/100
 
         for v in v_0
             state = Dict()
@@ -82,7 +82,7 @@ function run_vgamma(args)
 end
 
 function run_analysis(args)
-
+    config.reset_config()
     args = def_miss(args)
 
     if args[:initial_condition_type] == 1 && (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone")

@@ -4,14 +4,14 @@ include("utils/maneuver_plans.jl")
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => 1,                                                                                    # Print some lines True=1, False=0
+            :print_res => 0,                                                                                    # Print some lines True=1, False=0
             :directory_results => "/workspaces/ABTS.jl/output/venus_express",            # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                   # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",           # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
+            :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
@@ -20,7 +20,7 @@ args = Dict(# Misc Simulation
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 55,                                 # Number of aerobraking passage
+            :number_of_orbits => 50,                                 # Number of aerobraking passage
 
             # Physical Model
             :planet => 2,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -128,11 +128,11 @@ args = Dict(# Misc Simulation
             # Monte Carlo Perturbations
             :CD_dispersion => 10.0,                                 # Max dispersion of CD for Uniform Distribution, %
             :CL_dispersion => 10.0,                                 # Max dispersion of CL for Uniform Distribution, %
-            :rp_dispersion => 2.5,                                  # Max dispersion for initial vacuum periapsis radius following uniform distribution, km
-            :ra_dispersion => 2.5,                                  # Max dispersion for initial apoapsis radius following uniform distribution, km
-            :i_dispersion => 0.25,                                  # Max dispersion for initial inclination following uniform distribution, deg
-            :Ω_dispersion => 0.25,                                  # Max dispersion for initial right ascension of the ascending node following uniform distribution, deg
-            :ω_dispersion => 0.25,                                  # Max dispersion for initial argument of periapsis following uniform distribution, deg
+            :rp_dispersion => 186.6*0.05/3,                                  # Max dispersion for initial vacuum periapsis radius following uniform distribution, km
+            :ra_dispersion => 72000*0.05/3,                                  # Max dispersion for initial apoapsis radius following uniform distribution, km
+            :i_dispersion => 0.25/3,                                  # Max dispersion for initial inclination following uniform distribution, deg
+            :Ω_dispersion => 0.25/3,                                  # Max dispersion for initial right ascension of the ascending node following uniform distribution, deg
+            :ω_dispersion => 0.25/3,                                  # Max dispersion for initial argument of periapsis following uniform distribution, deg
             :vi_dispersion => 0.025,                                # Max dispersion for initial true anomaly following uniform distribution, deg
             
             # MonteCarlo Perturbation Guidance - Closed Form Solution (only for online)
@@ -155,14 +155,39 @@ args = Dict(# Misc Simulation
             )
 
 # Calculating time of simulation
-t = @elapsed begin
+# t = @elapsed begin
             
-    # Run the simulation
-    sol = run_analysis(args)
+#     # Run the simulation
+#     sol = run_analysis(args)
 
-    if Bool(args[:passresults])
-        println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+#     if Bool(args[:passresults])
+#         println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+#     end
+# end
+
+# println("COMPUTATIONAL TIME = " * string(t) * " s")
+mc_runs = 50
+nominal_ra = args[:ra_initial_a]
+nominal_rp = args[:hp_initial_a]
+nominal_i = args[:inclination]
+nominal_Ω = args[:Ω]
+nominal_ω = args[:ω]
+for i in 1:mc_runs
+    t = @elapsed begin
+        args[:directory_results] = "/workspaces/ABTS.jl/output/vex_MC_5p_disp/" * string(i)
+        args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3
+        args[:hp_initial_a] = nominal_rp + randn()*sqrt(args[:rp_dispersion]) * 1e3
+        args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])
+        args[:Ω] = nominal_Ω + randn()*sqrt(args[:Ω_dispersion])
+        args[:ω] = nominal_ω + randn()*sqrt(args[:ω_dispersion])
+        println("ra_initial_a = " * string(args[:ra_initial_a] * 1e-3) * " km, hp_initial_a = " * string(args[:hp_initial_a] * 1e-3) * " km, inclination = " * string(args[:inclination]) * " deg, Ω = " * string(args[:Ω]) * " deg, ω = " * string(args[:ω]) * " deg")
+        # Run the simulation
+        sol = run_analysis(args)
+
+        if Bool(args[:passresults])
+            println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+        end
     end
-end
 
-println("COMPUTATIONAL TIME = " * string(t) * " s")
+    println("COMPUTATIONAL TIME = " * string(t) * " s")
+end

@@ -54,6 +54,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         A::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
         Re::Vector{Float64} = [0.0, 0.0, 0.0]
         Im::Vector{Float64} = [0.0, 0.0, 0.0]
+        polyfit_coeffs::Vector{Float64} = [0.0, 0.0, 0.0]
         topography_function::Function = (args, Clm, Slm, latitude, longitude) -> 0.0
     end
 
@@ -296,4 +297,10 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
 
     solution = Solution()
 
+    function reset_config()
+        global model = Model()
+        global cnf = Cnf()
+        global controller = Controller()
+        global solution = Solution()
+    end
 end

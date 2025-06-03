@@ -114,7 +114,7 @@ function density_exp(h, p, OE=0, lat=0, lon=0, timereal=0, t0=0, tf_prev=0, mont
     return ρ, T, wind
 end
 
-function density_polyfit(h::Float64, p, lat::Float64=0.0, lon::Float64=0.0, montecarlo::Bool=false, Wind::Bool=false, args::Dict=nothing, el_time::Float64=0.0, atmosphere=nothing, gram=nothing)
+function density_polyfit(h, p, lat::Float64=0.0, lon::Float64=0.0, montecarlo::Bool=false, Wind::Bool=false, args::Dict=Dict(), el_time::Float64=0.0, atmosphere=nothing, gram=nothing)
     """
     Calculate the density using polynomial fit coefficients.
 
@@ -155,23 +155,48 @@ function density_polyfit(h::Float64, p, lat::Float64=0.0, lon::Float64=0.0, mont
         Wind vector in m/s.
     """
 
-    polyfit = p.polyfit_coeffs
-    power = zeros(length(polyfit))
-    # Convert height from meters to kilometers
-    h = h * 1e-3
-    # Calculate the polynomial value at height h
-    for i=1:length(polyfit)
-        power[i] = (h)^(length(polyfit)-i)
+    if length(h) >= 1
+        polyfit = p.polyfit_coeffs
+        power = zeros(length(polyfit),length(h))
+        # Convert height from meters to kilometers
+        h = h * 1e-3
+        # Calculate the polynomial value at height h
+        for i=1:length(polyfit)
+            power[i,:] = (h).^(length(polyfit)-i)
+        end
+
+        # Calculate the exponent term of the density using the polynomial coefficients
+        exponent = zeros(length(h))
+        for j=1:length(h)
+            exponent[j] = sum(polyfit .* power[:,j])
+        end
+
+        # Calculate the density
+        ρ = exp.(exponent)
+        T = temperature_linear(h, p)
+
+        wind = [0, 0, 0]
+
+        return ρ, T, wind
+    else
+        polyfit = p.polyfit_coeffs
+        power = zeros(length(polyfit))
+        # Convert height from meters to kilometers
+        h = h * 1e-3
+        # Calculate the polynomial value at height h
+        for i=1:length(polyfit)
+            power[i] = (h).^(length(polyfit)-i)
+        end
+        # Calculate the exponent term of the density using the polynomial coefficients
+        exponent = sum(polyfit .* power)
+        # Calculate the density
+        ρ = exp(exponent)
+        T = temperature_linear(h, p)
+
+        wind = [0, 0, 0]
+
+        return ρ, T, wind
     end
-    # Calculate the exponent term of the density using the polynomial coefficients
-    exponent = sum(polyfit .* power)
-    # Calculate the density
-    ρ = exp(exponent)
-    T = temperature_linear(h, p)
-
-    wind = [0, 0, 0]
-
-    return ρ, T, wind
 end
 
 function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Bool, Wind::Bool, args::Dict, el_time::Float64, atmosphere=nothing, gram=nothing)

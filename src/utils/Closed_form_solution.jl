@@ -168,7 +168,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
 
     h_cf = h0 .+ cost_3*(t_cf - (t_cf.^2/(2*t_p)))
 
-    ρ = density_poly(h_cf*1e-3, mission.planet)[1]
+    ρ = density_polyfit(h_cf, mission.planet)[1]
 
     RT = T * mission.planet.R
     S = v0/sqrt(2*RT)

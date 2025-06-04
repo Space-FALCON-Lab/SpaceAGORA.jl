@@ -1,10 +1,31 @@
 include("simulation/Run.jl")
 include("config.jl")
 include("utils/maneuver_plans.jl")
+include("SpacecraftModel.jl")
 
 import .config
 import .ref_sys
 
+# Define spacecraft model
+spacecraft = SpacecraftModel([], 1, [], [], Dict(), true)
+# Add bodies to the spacecraft model
+main_bus = Box("Main Bus", 411.0-20.0, SMatrix{3, 3, Float64}(I), SVector{3, Float64}(2.2, 1.7, 2.6), 5.72, SVector{3, Float64}(0.0, 0.0, 0.0))
+add_body!(spacecraft, main_bus, FixedJoint(), nothing, translation(SVector{3, Float64}(0.0, 0.0, 0.0)))
+
+L_panel = FlatPlate("Left Solar Panel", 10.0, SMatrix{3, 3, Float64}(I), SVector{2, Float64}(3.76, 1.93), 3.76*1.93, SVector{3, Float64}(0.0, 0.0, 0.0))
+add_body!(spacecraft, L_panel, RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, translation(SVector{3, Float64}(2.2/2 + 3.76/2, 1.7/2 + 1.93/2, 0.0)))
+
+R_panel = FlatPlate("Right Solar Panel", 10.0, SMatrix{3, 3, Float64}(I), SVector{2, Float64}(3.76, 1.93), 3.76*1.93, SVector{3, Float64}(0.0, 0.0, 0.0))
+add_body!(spacecraft, R_panel, RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, translation(SVector{3, Float64}(-2.2/2 - 3.76/2, 1.7/2 + 1.93/2, 0.0)))
+for (i, node) in enumerate(spacecraft.bodies)
+    println("Body $i: $(node.body.name)")
+    if !isnothing(node.parent)
+        println("  Parent: $(spacecraft.bodies[node.parent].body.name)")
+        println("  Joint: $(typeof(node.joint))")
+    else
+        println("  Root body")
+    end
+end
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0

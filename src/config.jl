@@ -18,6 +18,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
     end
 
     @kwdef mutable struct Planet
+        central_body::Bool = false
         Rp_e::Float64 = 0.0
         Rp_p::Float64 = 0.0
         Rp_m::Float64 = 0.0

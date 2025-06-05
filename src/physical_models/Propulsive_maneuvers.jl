@@ -18,7 +18,7 @@ function propulsion_ic_calcs(m, args, initial_state)
     v_exausted = m.engines.Isp * m.engines.g_e
 
     if length(config.solution.performance.mass) == 0
-        m_i = m.body.mass
+        m_i = m.body.dry_mass + m.body.prop_mass
     else
         m_i = config.solution.performance.mass[end]
     end

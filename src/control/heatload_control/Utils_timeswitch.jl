@@ -3,8 +3,8 @@ include("../../utils/Closed_form_solution.jl")
 
 function lambdas(m, aoa, k, t, h, γ, v, coeff)
     CD_slope, CL_0, CD_0 = coeff
-    S_ref = m.body.area_tot
-    mass = m.body.mass
+    S_ref = config.get_spacecraft_reference_area(m.body)
+    mass = m.body.dry_mass + m.body.prop_mass
     Rp = m.planet.Rp_e
     μ = m.planet.μ
     g0 = m.planet.g_ref

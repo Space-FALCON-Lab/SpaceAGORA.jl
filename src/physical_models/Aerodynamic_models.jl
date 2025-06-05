@@ -69,8 +69,11 @@ function aerodynamic_coefficient_fM(α, body, T, S, args, montecarlo=false)
     CL_sc = CN_sc*cos(pi*0.5) - CA_sc*sin(pi*0.5)
     CD_sc = CA_sc*cos(pi*0.5) + CN_sc*sin(pi*0.5)
 
-    CD_body = (CD_sa*body.area_SA + CD_sc*body.area_SC) / (body.area_SA + body.area_SC)
-    CL_body = (CL_sa*body.area_SA + CL_sc*body.area_SC) / (body.area_SA + body.area_SC)
+    area_SA = config.get_SA_area(body)
+    area_SC = config.get_SC_area(body)
+    
+    CD_body = (CD_sa*area_SA + CD_sc*area_SC) / (area_SA + area_SC)
+    CL_body = (CL_sa*area_SA + CL_sc*area_SC) / (area_SA + area_SC)
     if montecarlo == true
         CL_body, CD_body = monte_carlo_aerodynamics(CL_body, CD_body, args)
     end

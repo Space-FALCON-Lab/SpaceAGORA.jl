@@ -175,7 +175,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     S = v0/sqrt(2*RT)
     CL90, CD90 = aerodynamic_coefficient_fM(pi/2, mission.body, T, S, mission.aerodynamics)
     CL0, CD0 = aerodynamic_coefficient_fM(0, mission.body, T, S, mission.aerodynamics)
-    Area_tot = mission.body.area_SC + mission.body.area_SA
+    Area_tot = config.get_SC_area(mission.body) + config.get_SA_area(mission.body)  
     
     Rp = mission.planet.Rp_e
 
@@ -348,8 +348,8 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
         f2 = exp(f2) * (t_cf) / (2 * t_p)
     end
 
-    f2_solar_panels = f2 * α * mission.body.area_SA / Area_tot
-    f2_spacecraft = f2 * pi / 2 * mission.body.area_SC / Area_tot
+    f2_solar_panels = f2 * α * config.get_SA_area(mission.body) / Area_tot
+    f2_spacecraft = f2 * pi / 2 * config.get_SC_area(mission.body) / Area_tot
 
     ϵ = f1 .+ f2_solar_panels .+ f2_spacecraft
 

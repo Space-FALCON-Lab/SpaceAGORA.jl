@@ -121,7 +121,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         ω_planet = m.planet.ω
         γ = m.planet.γ
         μ_fluid = m.planet.μ_fluid
-        area_tot = m.body.area_tot
+        area_tot = config.get_spacecraft_reference_area(m.body) # Total reference area of the spacecraft
 
         # TRANSFORM THE STATE
         # Inertial to planet relative transformation
@@ -241,7 +241,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # Define output.txt containing density data
         p = 0.0
         if args[:body_shape] == "Spacecraft"
-            length_car = m.body.length_SA + m.body.length_SC
+            length_car = config.get_spacecraft_length(m.body) # Length of the spacecraft
         elseif args[:body_shape] == "Blunted Cone"
             length_car = m.body.base_radius * 2
         end
@@ -439,7 +439,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Check if propellant mass is greater than 0 kg
         if config.cnf.index_propellant_mass == 1
-            if mass - args[:dry_mass] <= 0.5
+            if mass - m.body.dry_mass <= 0.5
                 config.cnf.index_propellant_mass = 0
                 m.engines.T = 0
 
@@ -769,7 +769,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         mass = y[7] * config.cnf.MU
         Δv = (m.engines.g_e * m.engines.Isp) * log(initial_state.m/mass)
-        
+        m.body.prop_mass = mass - m.body.dry_mass
         Δv - args[:delta_v]  # upcrossing and downcrossing
     end
     function stop_firing_affect!(integrator)
@@ -1362,7 +1362,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
 
     append!(config.cnf.max_heatrate, maximum(config.solution.performance.heat_rate[save_pre_index:save_post_index]))
-    config.cnf.Δv_man = (m.engines.g_e * m.engines.Isp) * log(m.body.mass / config.solution.performance.mass[end])
+    config.cnf.Δv_man = (m.engines.g_e * m.engines.Isp) * log((m.body.dry_mass + m.body.prop_mass) / config.solution.performance.mass[end])
 
 
     if Bool(args[:print_res])
@@ -1381,7 +1381,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
 
         # Print Fuel Mass
-        println("Fuel Mass is " * string(config.solution.performance.mass[end] - args[:dry_mass]) * " kg")
+        println("Fuel Mass is " * string(config.solution.performance.mass[end] - m.body.dry_mass) * " kg")
 
         # Print Total Time
         if args[:keplerian] == false

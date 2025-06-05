@@ -5,6 +5,7 @@ include("../utils/Save_csv.jl")
 include("../utils/Plot_data.jl")
 include("Aerobraking.jl")
 include("../utils/Reference_system.jl")
+
 using SPICE
 using StaticArrays
 using AstroTime
@@ -168,27 +169,27 @@ function aerobraking_campaign(args, state)
 
     # Vehicle - calculation notebook page1
     # Mass
-    dry_mass = args[:dry_mass]
-    prop_mass = args[:prop_mass]
+    dry_mass = args[:spacecraft_model].dry_mass
+    prop_mass = args[:spacecraft_model].prop_mass 
     mass = dry_mass + prop_mass
 
     # Spacecraft Shape
-    if args[:body_shape] == "Spacecraft"
-        area_body = args[:length_sp] * args[:height_sp]   # 33.38 # 7.26# This is recalculated for the new sc config. 11 (look notes)# m^2 2001 Mars Odyssey Aerobraking, Smith & Bell paper
-        length_sp = args[:length_sp]                      # 11.4 # 3.7617#5.7 # m solar array length https://www.jpl.nasa.gov/news/press_kits/odysseyarrival.pdf
-        height_sp = area_body / length_sp
+    # if args[:body_shape] == "Spacecraft"
+    #     area_body = args[:length_sp] * args[:height_sp]   # 33.38 # 7.26# This is recalculated for the new sc config. 11 (look notes)# m^2 2001 Mars Odyssey Aerobraking, Smith & Bell paper
+    #     length_sp = args[:length_sp]                      # 11.4 # 3.7617#5.7 # m solar array length https://www.jpl.nasa.gov/news/press_kits/odysseyarrival.pdf
+    #     height_sp = area_body / length_sp
 
-        # Main Body
-        length_ody = args[:length_sat]   # m 
-        height_ody = args[:height_sat]   # m
-        width_ody = args[:width_sat]     # m
+    #     # Main Body
+    #     length_ody = args[:length_sat]   # m 
+    #     height_ody = args[:height_sat]   # m
+    #     width_ody = args[:width_sat]     # m
 
-    # Blunted Body Shape
-    elseif args[:body_shape] == "Blunted Cone"
-        δ = args[:cone_angle] # deg
-        nose_radius = args[:nose_radius] # 0.6638 # m
-        base_radius = args[:base_radius] # 2.65/2 # m
-    end
+    # # Blunted Body Shape
+    # elseif args[:body_shape] == "Blunted Cone"
+    #     δ = args[:cone_angle] # deg
+    #     nose_radius = args[:nose_radius] # 0.6638 # m
+    #     base_radius = args[:base_radius] # 2.65/2 # m
+    # end
 
     apoapsis = state[:Apoapsis]
 
@@ -229,18 +230,19 @@ function aerobraking_campaign(args, state)
     # Body
     if args[:body_shape] == "Spacecraft"
 
-        Mass = mass
-        length_SA = length_sp
-        height_SA = height_sp
-        Area_SA = length_SA * height_SA
-        length_SC = length_ody
-        height_SC = height_ody
-        Area_SC = length_ody * height_ody
-        Area_tot = Area_SA + Area_SC
+        # Mass = mass
+        # length_SA = length_sp
+        # height_SA = height_sp
+        # Area_SA = length_SA * height_SA
+        # length_SC = length_ody
+        # height_SC = height_ody
+        # Area_SC = length_ody * height_ody
+        # Area_tot = Area_SA + Area_SC
 
-        b_class = config.Body(Mass, length_SA, height_SA, Area_SA, length_SC, height_SC, Area_SC, Area_tot, 0.0, 0.0, 0.0)
+        b_class = args[:spacecraft_model]
+        # b_class = config.Body(Mass, length_SA, height_SA, Area_SA, length_SC, height_SC, Area_SC, Area_tot, 0.0, 0.0, 0.0)
 
-    elseif args[:body_shape] == "Blunted Cone"
+    elseif args[:body_shape] == "Blunted Cone" # TODO: Change this to new spacecraft model method
 
         Mass = mass
         Delta = δ

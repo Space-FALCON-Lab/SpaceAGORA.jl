@@ -82,7 +82,12 @@ function aerobraking(ip, m, args)
         end
         gram_atmosphere.setPerturbationScales(1.5)
         gram_atmosphere.setMinRelativeStepSize(0.5)
-        gram_atmosphere.setSeed(Int(round(rand()*10000)))
+        if args[:montecarlo] == 1
+            gram_atmosphere.setSeed(Int(round(rand()*10000)))
+        else
+            gram_atmosphere.setSeed(1001)
+        end
+        
         if planet_name == "mars"
             gram_atmosphere.setMOLAHeights(false)
         end
@@ -193,7 +198,7 @@ function aerobraking(ip, m, args)
         end
     end
 
-    if m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan"
+    if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
         closed_form(args, m)
     else
         len_sol = length(config.solution.orientation.time)

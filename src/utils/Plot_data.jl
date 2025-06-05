@@ -17,7 +17,7 @@ function plots(state, m, name, args)
     ABM_periapsis(name)
     ground_track(state, m, name, args)
     
-    if args[:body_shape] == "Spacecraft" && !config.cnf.impact && args[:keplerian] == false
+    if args[:closed_form] == 1 && args[:body_shape] == "Spacecraft" && !config.cnf.impact && args[:keplerian] == false
         closed_form_solution_plot(name, m)
         # angle_of_attack_plot(name, args)
     end
@@ -277,7 +277,7 @@ function performance_plots(state, m, name, args)
     plot_heat_load = plot([plot_traces_heat_load...], layout_heat_load)
 
     if args[:body_shape] == "Spacecraft"
-        plot_traces_4 = scatter(x=[item/(60*60*24) for item in config.solution.orientation.time], y=[item - args[:dry_mass] for item in config.solution.performance.mass], mode="lines", line=attr(color="black"))
+        plot_traces_4 = scatter(x=[item/(60*60*24) for item in config.solution.orientation.time], y=[item - m.body.dry_mass for item in config.solution.performance.mass], mode="lines", line=attr(color="black"))
         layout_4 = Layout(xaxis_title="Time [days]", yaxis_title="Mass [kg]")
     else
         index = findall(x -> x > 0, config.solution.performance.q)

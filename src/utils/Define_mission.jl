@@ -18,7 +18,7 @@ function def_miss(args)
     if args[:body_shape] == "Spacecraft"
         if args[:aerodynamic_model] == "No-Ballistic flight with axial coefficient"
             args[:aerodynamic_model] = "Mach-dependent"
-            println("--AERODYNAMIC MODEL CHANGED TO: MACH-dependent - Specific for a a flat-plate--")
+            println("--AERODYNAMIC MODEL CHANGED TO: MACH-dependent - Specific for a flat-plate--")
         end
 
         if args[:thermal_model] != "Maxwellian Heat Transfer"
@@ -64,12 +64,12 @@ function def_miss(args)
     end
 
     if Bool(args[:Odyssey_sim])
-        args[:control_mode] = 3
+        args[:control_mode] = 0
         args[:type_of_mission] = "Aerobraking Campaign"
         args[:number_of_orbits] = 350
         args[:planet] = 1 # "Mars"
         args[:body_shape] = "Spacecraft"
-        args[:dry_mass] = 411.0
+        # args[:dry_mass] = 411.0
         args[:prop_mass] = 50.0
         args[:α] = 90.0
         args[:inital_condition_type] = 0
@@ -95,7 +95,7 @@ function def_miss(args)
         args[:month] = 11
         args[:day] = 6
 
-        args[:final_apoapsis] = 4900e3 # 3390.0e3 + 503e3 # 4905.97e3  
+        args[:final_apoapsis] = 3390.0e3 + 503e3 # 4905.97e3  
         args[:montecarlo] = 0
         args[:drag_passage] = 0
     end

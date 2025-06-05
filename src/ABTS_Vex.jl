@@ -1,6 +1,33 @@
 include("simulation/Run.jl")
-include("config.jl")
+# include("config.jl")
 include("utils/maneuver_plans.jl")
+
+import .config
+import .ref_sys
+# import .SpacecraftModel
+# Define spacecraft model
+spacecraft = config.SpacecraftModel([], 1, [], [], Dict(), true, 0.0, 10.0)
+# Add bodies to the spacecraft model
+main_bus = config.Box("Main Bus", 600, SMatrix{3, 3, Float64}(I), SVector{3, Float64}(2.05, 2.8, 3.7), 10.4, SVector{3, Float64}(0.0, 0.0, 0.0))
+config.add_body!(spacecraft, main_bus, config.FixedJoint(), nothing, config.translation(SVector{3, Float64}(0.0, 0.0, 0.0))...)
+
+L_panel = config.FlatPlate("Left Solar Panel", 20.0, SMatrix{3, 3, Float64}(I), SVector{2, Float64}(5.7/2, 1.0), 5.7/2, SVector{3, Float64}(0.0, 0.0, 0.0))
+config.add_body!(spacecraft, L_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, -2.8/2 - 5.7/4, 0.0))...)
+
+R_panel = config.FlatPlate("Right Solar Panel", 20.0, SMatrix{3, 3, Float64}(I), SVector{2, Float64}(5.7/2, 1.0), 5.7/2, SVector{3, Float64}(0.0, 0.0, 0.0))
+config.add_body!(spacecraft, R_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, 2.8/2 + 5.7/4, 0.0))...)
+for (i, node) in enumerate(spacecraft.bodies)
+    println("Body $i: $(node.body.name)")
+    if !isnothing(node.parent)
+        println("  Parent: $(spacecraft.bodies[node.parent].body.name)")
+        println("  Joint: $(typeof(node.joint))")
+    else
+        println("  Root body")
+    end
+end
+println("Spacecraft model initialized with $(length(spacecraft.bodies)) bodies.")
+println("Spacecraft dry mass: $(spacecraft.dry_mass) kg, fuel mass: $(spacecraft.prop_mass) kg.")
+
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
@@ -16,7 +43,7 @@ args = Dict(# Misc Simulation
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
             :normalize => 0,                                         # Normalize during integration True=1, False=0
-
+            :closed_form => 0,                                     # Closed form solution True=1, False=0
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
@@ -54,23 +81,24 @@ args = Dict(# Misc Simulation
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
             :max_heat_rate => 0.29,                                 # Max heat rate the heat rate control will start to react to
             :max_heat_load => 50.0,                                 # Max heat load the heat load control will not be overcomed
-            :dry_mass => 640.0,                                     # Initial dry mass of body in kg
+            # :dry_mass => 640.0,                                     # Initial dry mass of body in kg
             :prop_mass => 10.0,                                     # Initial propellant mass of body in kg
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
             :α => 90.0,                                             # Max angle of attack of solar panels
 
             # Fill for Spacecraft body shape only
-            :length_sat => 2.05,                                     # Length of the satellite in m
-            :height_sat => 2.8,                                     # Height of the satellite in m
-            :width_sat => 3.7,                                      # Width of the satellite in m
-            :length_sp => 5.7,                                     # Length of the solar panels in m
-            :height_sp => 1.0,                                     # Height of the solar panels in m
+            # :length_sat => 2.05,                                     # Length of the satellite in m
+            # :height_sat => 2.8,                                     # Height of the satellite in m
+            # :width_sat => 3.7,                                      # Width of the satellite in m
+            # :length_sp => 5.7,                                     # Length of the solar panels in m
+            # :height_sp => 1.0,                                     # Height of the solar panels in m
 
-            # Fill for Blunted Cone body shape only
-            :cone_angle => 70.0,                                    # Cone angle of the blunted cone in deg
-            :base_radius => 2.65/2,                                 # Base radius of the blunted cone in m
-            :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
+            # # Fill for Blunted Cone body shape only
+            # :cone_angle => 70.0,                                    # Cone angle of the blunted cone in deg
+            # :base_radius => 2.65/2,                                 # Base radius of the blunted cone in m
+            # :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
+            :spacecraft_model => spacecraft,                            # Spacecraft model object
             
             # Engine
             :thrust => 4.0,                                         # Maximum magnitude thrust in N

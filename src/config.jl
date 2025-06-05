@@ -1,24 +1,26 @@
+
 module config
+include("SpacecraftModel.jl")
+import .SpacecraftModel
 using StaticArrays
 using AstroTime
 export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model
 
-    @kwdef mutable struct Body
-        mass::Float64 = 0.0
-        length_SA::Float64 = 0.0
-        height_SA::Float64 = 0.0
-        area_SA::Float64 = 0.0
-        length_SC::Float64 = 0.0
-        height_SC::Float64 = 0.0
-        area_SC::Float64 = 0.0
-        area_tot::Float64 = 0.0
-        δ::Float64 = 0.0
-        nose_radius::Float64 = 0.0
-        base_radius::Float64 = 0.0
-    end
+    # @kwdef mutable struct Body
+    #     mass::Float64 = 0.0
+    #     length_SA::Float64 = 0.0
+    #     height_SA::Float64 = 0.0
+    #     area_SA::Float64 = 0.0
+    #     length_SC::Float64 = 0.0
+    #     height_SC::Float64 = 0.0
+    #     area_SC::Float64 = 0.0
+    #     area_tot::Float64 = 0.0
+    #     δ::Float64 = 0.0
+    #     nose_radius::Float64 = 0.0
+    #     base_radius::Float64 = 0.0
+    # end
 
     @kwdef mutable struct Planet
-        central_body::Bool = false
         Rp_e::Float64 = 0.0
         Rp_p::Float64 = 0.0
         Rp_m::Float64 = 0.0
@@ -96,7 +98,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
     end
 
     @kwdef mutable struct Model 
-        body::Body = Body()
+        body::SpacecraftModel = SpacecraftModel([], 0, [], [], Dict{Int, Int}(), true, 0.0, 0.0)
         planet::Planet = Planet()
         aerodynamics::Aerodynamics = Aerodynamics()
         engines::Engines = Engines()

@@ -1,22 +1,22 @@
 include("simulation/Run.jl")
-include("config.jl")
+# include("config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("utils/maneuver_plans.jl")
-include("SpacecraftModel.jl")
+# include("SpacecraftModel.jl")
 
 import .config
 import .ref_sys
-
+# import .SpacecraftModel
 # Define spacecraft model
-spacecraft = SpacecraftModel([], 1, [], [], Dict(), true)
+spacecraft = config.SpacecraftModel([], 1, [], [], Dict(), true, 0.0, 50.0)
 # Add bodies to the spacecraft model
-main_bus = Box("Main Bus", 411.0-20.0, SMatrix{3, 3, Float64}(I), SVector{3, Float64}(2.2, 1.7, 2.6), 5.72, SVector{3, Float64}(0.0, 0.0, 0.0))
-add_body!(spacecraft, main_bus, FixedJoint(), nothing, translation(SVector{3, Float64}(0.0, 0.0, 0.0)))
+main_bus = config.Box("Main Bus", 391.0, SMatrix{3, 3, Float64}(I), SVector{3, Float64}(2.2, 1.7, 2.6), 5.72, SVector{3, Float64}(0.0, 0.0, 0.0))
+config.add_body!(spacecraft, main_bus, config.FixedJoint(), nothing, config.translation(SVector{3, Float64}(0.0, 0.0, 0.0))...)
 
-L_panel = FlatPlate("Left Solar Panel", 10.0, SMatrix{3, 3, Float64}(I), SVector{2, Float64}(3.76, 1.93), 3.76*1.93, SVector{3, Float64}(0.0, 0.0, 0.0))
-add_body!(spacecraft, L_panel, RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, translation(SVector{3, Float64}(2.2/2 + 3.76/2, 1.7/2 + 1.93/2, 0.0)))
+L_panel = config.FlatPlate("Left Solar Panel", 10.0, SMatrix{3, 3, Float64}(I), SVector{2, Float64}(3.76/2, 1.93/2), 3.76*1.93/4, SVector{3, Float64}(0.0, 0.0, 0.0))
+config.add_body!(spacecraft, L_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, 1.7/2 - 3.76/4, 0.0))...)
 
-R_panel = FlatPlate("Right Solar Panel", 10.0, SMatrix{3, 3, Float64}(I), SVector{2, Float64}(3.76, 1.93), 3.76*1.93, SVector{3, Float64}(0.0, 0.0, 0.0))
-add_body!(spacecraft, R_panel, RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, translation(SVector{3, Float64}(-2.2/2 - 3.76/2, 1.7/2 + 1.93/2, 0.0)))
+R_panel = config.FlatPlate("Right Solar Panel", 10.0, SMatrix{3, 3, Float64}(I), SVector{2, Float64}(3.76/2, 1.93/2), 3.76*1.93/4, SVector{3, Float64}(0.0, 0.0, 0.0))
+config.add_body!(spacecraft, R_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, 1.7/2 + 3.76/4, 0.0))...)
 for (i, node) in enumerate(spacecraft.bodies)
     println("Body $i: $(node.body.name)")
     if !isnothing(node.parent)
@@ -26,10 +26,13 @@ for (i, node) in enumerate(spacecraft.bodies)
         println("  Root body")
     end
 end
+println("Spacecraft model initialized with $(length(spacecraft.bodies)) bodies.")
+println("Spacecraft dry mass: $(spacecraft.dry_mass) kg, fuel mass: $(spacecraft.prop_mass) kg.")
+
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => 1,                                                                                    # Print some lines True=1, False=0
+            :print_res => 0,                                                                                    # Print some lines True=1, False=0
             :directory_results => "/workspaces/ABTS.jl/output/odyssey_control_maneuver",                # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
@@ -40,8 +43,8 @@ args = Dict(# Misc Simulation
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 1,                                       # Normalize the integration True=1, False=0
-
+            :normalize => 0,                                       # Normalize the integration True=1, False=0
+            :closed_form => 0,                                     # Closed form solution True=1, False=0
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
@@ -77,23 +80,24 @@ args = Dict(# Misc Simulation
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
             :max_heat_rate => 0.15,                                 # Max heat rate the heat rate control will start to react to
             :max_heat_load => 30.0,                                 # Max heat load the heat load control will not be overcomed
-            :dry_mass => 411.0,                                     # Initial dry mass of body in kg
+            # :dry_mass => 411.0,                                     # Initial dry mass of body in kg
             :prop_mass => 50.0,                                     # Initial propellant mass of body in kg
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
             :α => 90.0,                                             # Max angle of attack of solar panels
 
-            # Fill for Spacecraft body shape only
-            :length_sat => 2.2,                                     # Length of the satellite in m
-            :height_sat => 1.7,                                     # Height of the satellite in m
-            :width_sat => 2.6,                                      # Width of the satellite in m
-            :length_sp => 3.76,                                     # Length of the solar panels in m
-            :height_sp => 1.93,                                     # Height of the solar panels in m
+            # # Fill for Spacecraft body shape only
+            # :length_sat => 2.2,                                     # Length of the satellite in m
+            # :height_sat => 1.7,                                     # Height of the satellite in m
+            # :width_sat => 2.6,                                      # Width of the satellite in m
+            # :length_sp => 3.76,                                     # Length of the solar panels in m
+            # :height_sp => 1.93,                                     # Height of the solar panels in m
 
-            # Fill for Blunted Cone body shape only
-            :cone_angle => 70.0,                                    # Cone angle of the blunted cone in deg
-            :base_radius => 2.65/2,                                 # Base radius of the blunted cone in m
-            :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
+            # # Fill for Blunted Cone body shape only
+            # :cone_angle => 70.0,                                    # Cone angle of the blunted cone in deg
+            # :base_radius => 2.65/2,                                 # Base radius of the blunted cone in m
+            # :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
+            :spacecraft_model => spacecraft,                            # Spacecraft model with bodies and joints
             
             # Engine
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
@@ -177,7 +181,7 @@ args = Dict(# Misc Simulation
             :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
-            :Odyssey_sim => 0                                      # Simulate Odyssey Mission
+            :Odyssey_sim => 1                                      # Simulate Odyssey Mission
             )
 
 # # Calculating time of simulation

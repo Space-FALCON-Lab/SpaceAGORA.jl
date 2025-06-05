@@ -7,15 +7,15 @@ import .config
 import .ref_sys
 # import .SpacecraftModel
 # Define spacecraft model
-spacecraft = config.SpacecraftModel([], 1, [], [], Dict(), true, 0.0, 50.0)
+spacecraft = config.SpacecraftModel([], 1, [], [], Dict(), true, 0.0, 50.0, zeros(3, 3), zeros(3))
 # Add bodies to the spacecraft model
-main_bus = config.Box("Main Bus", 391.0, SMatrix{3, 3, Float64}(I), SVector{3, Float64}(2.2, 1.7, 2.6), 5.72, SVector{3, Float64}(0.0, 0.0, 0.0))
+main_bus = config.Box("Main Bus", 391.0, SVector{3, Float64}(2.2, 1.7, 2.6), 5.72, SVector{3, Float64}(0.0, 0.0, 0.0))
 config.add_body!(spacecraft, main_bus, config.FixedJoint(), nothing, config.translation(SVector{3, Float64}(0.0, 0.0, 0.0))...)
 
-L_panel = config.FlatPlate("Left Solar Panel", 10.0, SMatrix{3, 3, Float64}(I), SVector{2, Float64}(3.76/2, 1.93/2), 3.76*1.93/4, SVector{3, Float64}(0.0, 0.0, 0.0))
-config.add_body!(spacecraft, L_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, 1.7/2 - 3.76/4, 0.0))...)
+L_panel = config.FlatPlate("Left Solar Panel", 10.0, SVector{2, Float64}(3.76/2, 1.93/2), 3.76*1.93/4, SVector{3, Float64}(0.0, 0.0, 0.0))
+config.add_body!(spacecraft, L_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, -1.7/2 - 3.76/4, 0.0))...)
 
-R_panel = config.FlatPlate("Right Solar Panel", 10.0, SMatrix{3, 3, Float64}(I), SVector{2, Float64}(3.76/2, 1.93/2), 3.76*1.93/4, SVector{3, Float64}(0.0, 0.0, 0.0))
+R_panel = config.FlatPlate("Right Solar Panel", 10.0, SVector{2, Float64}(3.76/2, 1.93/2), 3.76*1.93/4, SVector{3, Float64}(0.0, 0.0, 0.0))
 config.add_body!(spacecraft, R_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, 1.7/2 + 3.76/4, 0.0))...)
 for (i, node) in enumerate(spacecraft.bodies)
     println("Body $i: $(node.body.name)")
@@ -32,7 +32,7 @@ println("Spacecraft dry mass: $(spacecraft.dry_mass) kg, fuel mass: $(spacecraft
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => 0,                                                                                    # Print some lines True=1, False=0
+            :print_res => 1,                                                                                    # Print some lines True=1, False=0
             :directory_results => "/workspaces/ABTS.jl/output/odyssey_control_maneuver",                # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is

@@ -98,7 +98,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
     end
 
     @kwdef mutable struct Model 
-        body::SpacecraftModel = SpacecraftModel([], 0, [], [], Dict{Int, Int}(), true, 0.0, 0.0)
+        body::SpacecraftModel = SpacecraftModel([], 0, [], [], Dict{Int, Int}(), true, 0.0, 0.0, zeros(3, 3), zeros(3))
         planet::Planet = Planet()
         aerodynamics::Aerodynamics = Aerodynamics()
         engines::Engines = Engines()
@@ -226,6 +226,8 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         vel_ii::Vector{Vector{Float64}} = [[], [], []]
         pos_ii_mag::Vector{Float64} = []
         vel_ii_mag::Vector{Float64} = []
+        quaternion::Vector{Vector{Float64}} = [[], [], [], []]
+        ω::Vector{Vector{Float64}} = [[], [], []]
         pos_pp::Vector{Vector{Float64}} = [[], [], []]
         pos_pp_mag::Vector{Float64} = []
         vel_pp::Vector{Vector{Float64}} = [[], [], []]

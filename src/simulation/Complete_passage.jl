@@ -2,6 +2,7 @@ include("../utils/Reference_system.jl")
 include("../integrator/Integrators.jl")
 include("../integrator/Events.jl")
 include("../utils/Save_results.jl")
+include("../utils/quaternion_utils.jl")
 
 include("../physical_models/Gravity_models.jl")
 include("../physical_models/Density_models.jl")
@@ -23,6 +24,7 @@ sys = pyimport("sys")
 
 import .config
 import .ref_sys
+import .quaternion_utils
 
 function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothing, gram=nothing)
     wind_m = false
@@ -113,6 +115,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # Assign state
         pos_ii = SVector{3, Float64}(in_cond[1:3] * config.cnf.DU)                      # Inertial position 
         vel_ii = SVector{3, Float64}(in_cond[4:6] * config.cnf.DU / config.cnf.TU)      # Inertial velocity
+        quaternion = SVector{4, Float64}(in_cond[7:10])                                   # Quaternion
+        ω = SVector{3, Float64}(in_cond[11:13] * config.cnf.TU)                # Angular velocity vector [rad / s]
         mass = in_cond[7] * config.cnf.MU                                          # Mass kg
         pos_ii_mag = norm(pos_ii)                                  # Magnitude of the inertial position
         vel_ii_mag = norm(vel_ii)                                  # Magnitude of the inertial velocity
@@ -431,8 +435,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # Force Calculation
         drag_pp_hat = -vel_pp_rw_hat    # PLanet relative drag force direction
 
-        drag_pp = q * CD * area_tot * drag_pp_hat                       # PLanet relative drag force vector
-        lift_pp = q * CL * area_tot * lift_pp_hat * cos(bank_angle)     # PLanet relative lift force vector
+        drag_pp = q * CD * area_tot * drag_pp_hat                       # Planet relative drag force vector
+        lift_pp = q * CL * area_tot * lift_pp_hat * cos(bank_angle)     # Planet relative lift force vector
 
         drag_ii = m.planet.L_PI' * drag_pp   # Inertial drag force vector
         lift_ii = m.planet.L_PI' * lift_pp   # Inertial lift force vector
@@ -471,10 +475,18 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # Total inetrial external force vector on body [N]
         force_ii = drag_ii + lift_ii + gravity_ii + thrust_ii + srp_ii
         
+        # Torques
+        τ_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize torque vector
+        # Gravity gradient torque
+        τ_ii += 3*m.planet.μ * cross(pos_ii, m.body.inertia_tensor*pos_ii) / pos_ii_mag^5
+        # 
         y_dot[1:3] = vel_ii * (config.cnf.TU / config.cnf.DU)
         y_dot[4:6] = force_ii / mass * (config.cnf.TU^2 / config.cnf.DU) 
         y_dot[7] = -norm(thrust_ii) / (m.engines.g_e * m.engines.Isp) * config.cnf.TU / config.cnf.MU       # mass variation
         y_dot[8] = heat_rate * config.cnf.TU^3 / config.cnf.MU # * 1e-4
+        Ξ = [quaternion[4]*diagm([1, 1, 1]) + hat(quaternion[1:3]); -quaternion[1:3]'] # Quaternion matrix
+        y_dot[9:12] = 0.5*Ξ*ω   # Angular velocity
+        y_dot[13:15] = inv(m.body.inertia_tensor)*(-hat(ω)*m.body.inertia_tensor*ω + τ_ii)   # Angular acceleration
         energy = (vel_ii_mag^2)/2 - (m.planet.μ / pos_ii_mag)
 
         ## SAVE RESULTS
@@ -484,9 +496,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         pos_pp_mag, vel_pp..., vel_pp_mag, OE[1], OE[2], OE[3], OE[4], OE[5], OE[6],
                         lat, lon, alt, γ_ii, γ_pp, h_ii..., h_pp..., h_ii_mag, h_pp_mag, uD..., uE..., uN..., vN, vE,
                         azi_pp, ρ, T_p, p, wind..., CL, CD, α, S, mass, heat_rate, heat_load, T_r, 
-                        q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., energy, config.cnf.index_MonteCarlo, Int64(config.cnf.drag_state)]
+                        q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., energy, config.cnf.index_MonteCarlo, Int64(config.cnf.drag_state),
+                        quaternion..., ω...]
 
-            sol = reshape(sol, (1, 91))
+            sol = reshape(sol, (1, 98))
 
             push!(config.cnf.solution_intermediate, sol)
         end
@@ -920,13 +933,17 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     continue_campaign = false
 
     # Def initial conditions
-    in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], Mass+1e-10, 0.0]
+    root_body = m.body.bodies[m.body.root]
+    in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], Mass+1e-10, 0.0, root_body.q[1],
+               root_body.q[2], root_body.q[3], root_body.q[4], 0.0, 0.0, 0.0]
 
     # non dimensionalization
     in_cond[1:3] = in_cond[1:3] / config.cnf.DU
     in_cond[4:6] = in_cond[4:6] * config.cnf.TU / config.cnf.DU
     in_cond[7] = in_cond[7] / config.cnf.MU
     in_cond[8] = in_cond[8] * config.cnf.TU^2 / config.cnf.MU # * 1e4
+    in_cond[9:12] = in_cond[9:12] / norm(in_cond[9:12])  # Quaternion normalization
+    in_cond[13:15] = in_cond[13:15] * config.cnf.TU  # Angular velocity
 
     # If aerobraking maneuver allowed, add a prephase 0
     range_phase_i = 1
@@ -1144,7 +1161,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
                 sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
                 config.cnf.counter_integrator += 1
-                in_cond = [sol[1,end], sol[2,end], sol[3, end], sol[4, end], sol[5, end], sol[6, end], sol[7, end], sol[8, end]]
+                in_cond = [sol[1,end], sol[2,end], sol[3, end], sol[4, end], sol[5, end], sol[6, end], sol[7, end], sol[8, end], 
+                            sol[9, end], sol[10, end], sol[11, end], sol[12, end], sol[13, end], sol[14, end], sol[15, end]]
               
 
                 # Save results 
@@ -1302,13 +1320,17 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     while final_conditions_notmet
         in_cond = [config.solution.orientation.pos_ii[1][end], config.solution.orientation.pos_ii[2][end], config.solution.orientation.pos_ii[3][end], 
                    config.solution.orientation.vel_ii[1][end], config.solution.orientation.vel_ii[2][end], config.solution.orientation.vel_ii[3][end],
-                   config.solution.performance.mass[end], config.solution.performance.heat_load[end]]
+                   config.solution.performance.mass[end], config.solution.performance.heat_load[end], config.solution.orientation.quaternion[1][end],
+                   config.solution.orientation.quaternion[2][end], config.solution.orientation.quaternion[3][end], config.solution.orientation.quaternion[4][end],
+                   config.solution.orientation.ω[1][end], config.solution.orientation.ω[2][end], config.solution.orientation.ω[3][end]]
 
         # non dimensionalization
         in_cond[1:3] = in_cond[1:3] / config.cnf.DU
         in_cond[4:6] = in_cond[4:6] * config.cnf.TU / config.cnf.DU
         in_cond[7] = in_cond[7] / config.cnf.MU
         in_cond[8] = in_cond[8] * config.cnf.TU^2 / config.cnf.MU # * 1e4
+        in_cond[9:12] = in_cond[9:12] / norm(in_cond[9:12])  # Quaternion normalization
+        in_cond[13:15] = in_cond[13:15] * config.cnf.TU  # Angular velocity
 
                     
         initial_time, final_time = time_0 / config.cnf.TU, (time_0 + 1000) / config.cnf.TU 

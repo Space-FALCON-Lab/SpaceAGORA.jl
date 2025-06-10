@@ -5,7 +5,6 @@ import .SpacecraftModel
 using StaticArrays
 using AstroTime
 export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model
-
     # @kwdef mutable struct Body
     #     mass::Float64 = 0.0
     #     length_SA::Float64 = 0.0
@@ -98,7 +97,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
     end
 
     @kwdef mutable struct Model 
-        body::SpacecraftModel = SpacecraftModel([], 0, [], [], Dict{Int, Int}(), true, 0.0, 0.0, zeros(3, 3), zeros(3))
+        body::SpacecraftModel = SpacecraftModel()
         planet::Planet = Planet()
         aerodynamics::Aerodynamics = Aerodynamics()
         engines::Engines = Engines()

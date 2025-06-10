@@ -6,15 +6,15 @@ import .config
 import .ref_sys
 # import .SpacecraftModel
 # Define spacecraft model
-spacecraft = config.SpacecraftModel([], 1, [], [], Dict(), true, 0.0, 10.0)
+spacecraft = config.SpacecraftModel([], 1, [], [], Dict(), true, 0.0, 10.0, MMatrix{3, 3}(zeros(3, 3)), SVector{3}(zeros(3)))
 # Add bodies to the spacecraft model
-main_bus = config.Box("Main Bus", 600, SMatrix{3, 3, Float64}(I), SVector{3, Float64}(2.05, 2.8, 3.7), 10.4, SVector{3, Float64}(0.0, 0.0, 0.0))
+main_bus = config.Box("Main Bus", 600.0, SVector{3, Float64}(2.05, 2.8, 3.7), 2.05*2.8, SVector{3, Float64}(0.0, 0.0, 0.0))
 config.add_body!(spacecraft, main_bus, config.FixedJoint(), nothing, config.translation(SVector{3, Float64}(0.0, 0.0, 0.0))...)
 
-L_panel = config.FlatPlate("Left Solar Panel", 20.0, SMatrix{3, 3, Float64}(I), SVector{2, Float64}(5.7/2, 1.0), 5.7/2, SVector{3, Float64}(0.0, 0.0, 0.0))
+L_panel = config.FlatPlate("Left Solar Panel", 20.0, SVector{2, Float64}(5.7/2, 1.0), 5.7/2, SVector{3, Float64}(0.0, 0.0, 0.0))
 config.add_body!(spacecraft, L_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, -2.8/2 - 5.7/4, 0.0))...)
 
-R_panel = config.FlatPlate("Right Solar Panel", 20.0, SMatrix{3, 3, Float64}(I), SVector{2, Float64}(5.7/2, 1.0), 5.7/2, SVector{3, Float64}(0.0, 0.0, 0.0))
+R_panel = config.FlatPlate("Right Solar Panel", 20.0, SVector{2, Float64}(5.7/2, 1.0), 5.7/2, SVector{3, Float64}(0.0, 0.0, 0.0))
 config.add_body!(spacecraft, R_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, 2.8/2 + 5.7/4, 0.0))...)
 for (i, node) in enumerate(spacecraft.bodies)
     println("Body $i: $(node.body.name)")
@@ -82,7 +82,7 @@ args = Dict(# Misc Simulation
             :max_heat_rate => 0.29,                                 # Max heat rate the heat rate control will start to react to
             :max_heat_load => 50.0,                                 # Max heat load the heat load control will not be overcomed
             # :dry_mass => 640.0,                                     # Initial dry mass of body in kg
-            :prop_mass => 10.0,                                     # Initial propellant mass of body in kg
+            # :prop_mass => 10.0,                                     # Initial propellant mass of body in kg
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
             :α => 90.0,                                             # Max angle of attack of solar panels
@@ -204,12 +204,12 @@ nominal_Ω = args[:Ω]
 nominal_ω = args[:ω]
 for i in 1:mc_runs
     t = @elapsed begin
-        args[:directory_results] = "/workspaces/ABTS.jl/output/vex_MC_5p_disp/" * string(i)
-        args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3
-        args[:hp_initial_a] = nominal_rp + randn()*sqrt(args[:rp_dispersion]) * 1e3
-        args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])
-        args[:Ω] = nominal_Ω + randn()*sqrt(args[:Ω_dispersion])
-        args[:ω] = nominal_ω + randn()*sqrt(args[:ω_dispersion])
+        # args[:directory_results] = "/workspaces/ABTS.jl/output/vex_MC_5p_disp/" * string(i)
+        # args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3
+        # args[:hp_initial_a] = nominal_rp + randn()*sqrt(args[:rp_dispersion]) * 1e3
+        # args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])
+        # args[:Ω] = nominal_Ω + randn()*sqrt(args[:Ω_dispersion])
+        # args[:ω] = nominal_ω + randn()*sqrt(args[:ω_dispersion])
         println("ra_initial_a = " * string(args[:ra_initial_a] * 1e-3) * " km, hp_initial_a = " * string(args[:hp_initial_a] * 1e-3) * " km, inclination = " * string(args[:inclination]) * " deg, Ω = " * string(args[:Ω]) * " deg, ω = " * string(args[:ω]) * " deg")
         # Run the simulation
         sol = run_analysis(args)

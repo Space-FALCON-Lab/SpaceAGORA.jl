@@ -9,6 +9,7 @@ include("../utils/Reference_system.jl")
 using SPICE
 using StaticArrays
 using AstroTime
+using PythonCall
 
 function aerobraking_campaign(args, state)
     save_res = args[:results]
@@ -37,6 +38,7 @@ function aerobraking_campaign(args, state)
     p_class = planet_data(ip.M.planet)
     config.model.planet = p_class
 
+    # Load SPICE kernels
     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
@@ -169,9 +171,11 @@ function aerobraking_campaign(args, state)
 
     # Vehicle - calculation notebook page1
     # Mass
-    dry_mass = args[:spacecraft_model].dry_mass
-    prop_mass = args[:spacecraft_model].prop_mass 
-    mass = dry_mass + prop_mass
+    # dry_mass = args[:spacecraft_model].dry_mass
+    # prop_mass = args[:spacecraft_model].prop_mass 
+    # mass = dry_mass + prop_mass
+    mass = config.get_spacecraft_mass(args[:spacecraft_model])
+
 
     # Spacecraft Shape
     # if args[:body_shape] == "Spacecraft"
@@ -240,6 +244,8 @@ function aerobraking_campaign(args, state)
         # Area_tot = Area_SA + Area_SC
 
         b_class = args[:spacecraft_model]
+        # println("Using spacecraft model: ", b_class.name)
+        println("Area: " * string(config.get_spacecraft_reference_area(b_class)) * " m^2")
         # b_class = config.Body(Mass, length_SA, height_SA, Area_SA, length_SC, height_SC, Area_SC, Area_tot, 0.0, 0.0, 0.0)
 
     elseif args[:body_shape] == "Blunted Cone" # TODO: Change this to new spacecraft model method
@@ -323,6 +329,76 @@ function aerobraking_campaign(args, state)
 
     m = model()
 
+    # Define gram atmosphere
+    gram = nothing
+    gram_atmosphere = nothing
+    if uppercase(args[:density_model]) == "GRAM"
+        sys = pyimport("sys")
+        os = pyimport("os")
+        if !(args[:directory_Gram] in pyconvert(Vector{String}, sys.path))
+            sys.path.append(args[:directory_Gram])
+        end
+        gram = pyimport("gram")
+        inputParameters = Dict("earth" => gram.EarthInputParameters(),
+                               "mars" => gram.MarsInputParameters(),
+                               "venus" => gram.VenusInputParameters(),
+                               "titan" => gram.TitanInputParameters())
+        
+        namelistReaders = Dict("earth" => gram.EarthNamelistReader(),
+                               "mars" => gram.MarsNamelistReader(),
+                               "venus" => gram.VenusNamelistReader(),
+                               "titan" => gram.TitanNamelistReader())
+            
+        atmospheres = Dict("earth" => gram.EarthAtmosphere(),
+                           "mars" => gram.MarsAtmosphere(),
+                           "venus" => gram.VenusAtmosphere(),
+                           "titan" => gram.TitanAtmosphere())
+
+        planet_name = m.planet.name
+        input_parameters = inputParameters[planet_name]
+
+        # Mars has some weird specific parameters, so this line is just to check to make sure the it doesn't do it for the other planets
+        if planet_name == "mars"
+            # input_parameters.dataPath = os.path.join(os.path.dirname(os.path.abspath(@__FILE__)),"..", "GRAM_Data", "Mars", "data", "")
+            input_parameters.dataPath = args[:directory_Gram_data] * "/Mars/data/"
+            if !Bool(os.path.exists(input_parameters.dataPath))
+                throw(ArgumentError("GRAM data path not found: " * input_parameters.dataPath))
+            end
+        end
+
+        if planet_name == "earth"
+            # input_parameters.dataPath = os.path.join(os.path.dirname(os.path.abspath(@__FILE__)),"..", "GRAM_Data", "Mars", "data", "")
+            input_parameters.dataPath = args[:directory_Gram_data] * "/Earth/data/"
+            if !Bool(os.path.exists(input_parameters.dataPath))
+                throw(ArgumentError("GRAM data path not found: " * input_parameters.dataPath))
+            end
+        end
+
+        reader = namelistReaders[planet_name]
+        reader.tryGetSpicePath(input_parameters)
+
+        gram_atmosphere = atmospheres[planet_name]
+        gram_atmosphere.setInputParameters(input_parameters)
+        
+        if planet_name == "earth"
+            gram_atmosphere.setMERRA2Parameters(0, -90.0, 90.0, 0.0, 359.99999)
+        end
+        gram_atmosphere.setPerturbationScales(1.5)
+        gram_atmosphere.setMinRelativeStepSize(0.5)
+        if args[:montecarlo] == 1
+            gram_atmosphere.setSeed(Int(round(rand()*10000)))
+        else
+            gram_atmosphere.setSeed(1001)
+        end
+
+        if planet_name == "mars"
+            gram_atmosphere.setMOLAHeights(false)
+        end
+
+        ttime = gram.GramTime()
+        ttime.setStartTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs], gram.UTC, gram.PET)
+        gram_atmosphere.setStartTime(ttime)
+    end
     # Initialization - Reset all the config index for new simulation
     config.cnf.count_aerobraking = 0
     config.cnf.count_overcome_hr = 0
@@ -337,7 +413,7 @@ function aerobraking_campaign(args, state)
     # RUN SIMULATION
     config.cnf.heat_rate_limit = args[:max_heat_rate]
     t_el = @elapsed begin
-        aerobraking(ip, m, args)
+        aerobraking(ip, m, args, gram, gram_atmosphere)
     end
     ##########################################################
 

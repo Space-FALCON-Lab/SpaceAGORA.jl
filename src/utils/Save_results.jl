@@ -48,7 +48,6 @@ function save_results(time, ratio)
 
     t = [i + config.cnf.initial_time_saved for i in t]
 
-
     ## SAVE RESULTS GLOBAL
     append!(config.solution.orientation.time, t)
     append!(config.solution.orientation.year, results[1,:])
@@ -73,7 +72,6 @@ function save_results(time, ratio)
     append!(config.solution.orientation.ω[1], results[95,:])
     append!(config.solution.orientation.ω[2], results[96,:])
     append!(config.solution.orientation.ω[3], results[97,:])
-
 
     append!(config.solution.orientation.pos_pp[1], results[16,:])
     append!(config.solution.orientation.pos_pp[2], results[17,:])
@@ -183,6 +181,13 @@ function clean_results()
     config.solution.orientation.vel_ii[3] = []
     config.solution.orientation.pos_ii_mag = []
     config.solution.orientation.vel_ii_mag = []
+    config.solution.orientation.quaternion[1] = []
+    config.solution.orientation.quaternion[2] = []
+    config.solution.orientation.quaternion[3] = []
+    config.solution.orientation.quaternion[4] = []
+    config.solution.orientation.ω[1] = []
+    config.solution.orientation.ω[2] = []
+    config.solution.orientation.ω[3] = []
 
     config.solution.orientation.pos_pp[1] = []
     config.solution.orientation.pos_pp[2] = []

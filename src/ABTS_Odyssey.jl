@@ -9,13 +9,13 @@ import .ref_sys
 # Define spacecraft model
 spacecraft = config.SpacecraftModel([], 1, [], [], Dict(), true, 0.0, 50.0, zeros(3, 3), zeros(3))
 # Add bodies to the spacecraft model
-main_bus = config.Box("Main Bus", 391.0, SVector{3, Float64}(2.2, 1.7, 2.6), 5.72, SVector{3, Float64}(0.0, 0.0, 0.0))
+main_bus = config.Box("Main Bus", 391.0, SVector{3, Float64}(2.2, 1.7, 2.6), 2.2*1.7, SVector{3, Float64}(0.0, 0.0, 0.0))
 config.add_body!(spacecraft, main_bus, config.FixedJoint(), nothing, config.translation(SVector{3, Float64}(0.0, 0.0, 0.0))...)
 
-L_panel = config.FlatPlate("Left Solar Panel", 10.0, SVector{2, Float64}(3.76/2, 1.93/2), 3.76*1.93/4, SVector{3, Float64}(0.0, 0.0, 0.0))
+L_panel = config.FlatPlate("Left Solar Panel", 10.0, SVector{2, Float64}(3.76/2, 1.93), 3.76*1.93/2, SVector{3, Float64}(0.0, 0.0, 0.0))
 config.add_body!(spacecraft, L_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, -1.7/2 - 3.76/4, 0.0))...)
 
-R_panel = config.FlatPlate("Right Solar Panel", 10.0, SVector{2, Float64}(3.76/2, 1.93/2), 3.76*1.93/4, SVector{3, Float64}(0.0, 0.0, 0.0))
+R_panel = config.FlatPlate("Right Solar Panel", 10.0, SVector{2, Float64}(3.76/2, 1.93), 3.76*1.93/2, SVector{3, Float64}(0.0, 0.0, 0.0))
 config.add_body!(spacecraft, R_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, 1.7/2 + 3.76/4, 0.0))...)
 for (i, node) in enumerate(spacecraft.bodies)
     println("Body $i: $(node.body.name)")
@@ -33,7 +33,7 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/odyssey_control_maneuver",                # Directory where to save the results
+            :directory_results => "/workspaces/ABTS.jl/output/odyssey_rotation_testing",                # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
@@ -48,7 +48,7 @@ args = Dict(# Misc Simulation
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 35,                                 # Number of aerobraking passage
+            :number_of_orbits => 10,                                 # Number of aerobraking passage
 
             # Physical Model
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -81,7 +81,7 @@ args = Dict(# Misc Simulation
             :max_heat_rate => 0.15,                                 # Max heat rate the heat rate control will start to react to
             :max_heat_load => 30.0,                                 # Max heat load the heat load control will not be overcomed
             # :dry_mass => 411.0,                                     # Initial dry mass of body in kg
-            :prop_mass => 50.0,                                     # Initial propellant mass of body in kg
+            # :prop_mass => 50.0,                                     # Initial propellant mass of body in kg
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
             :α => 90.0,                                             # Max angle of attack of solar panels

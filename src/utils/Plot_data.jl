@@ -26,7 +26,7 @@ function plots(state, m, name, args)
         drag_passage_plot(name, args)
     end
 
-    
+    attitude_plot(name, args)
 end
 
 function drag_passage_plot(name, args)
@@ -470,4 +470,25 @@ function ground_track(state, m, name, args)
     display(p)
     savefig(p, name * "_ground_track.pdf", format="pdf")
 
+end
+
+function attitude_plot(name, args)
+    """
+        Plot the attitude of the spacecraft during the drag passages
+    """
+
+    time = config.solution.orientation.time
+    quaternions = config.solution.orientation.quaternion
+    euler_angles = zeros(3, length(time))
+    for i in 1:length(quaternions[1])
+        quaternion = [quaternions[1][i], quaternions[2][i], quaternions[3][i], quaternions[4][i]]
+        euler_angles[:, i] = qToEulerAngles(quaternion)
+    end
+    r_traces = scatter(x=time, y=rad2deg.(euler_angles[1,:]), mode="lines", line=attr(color="red"), name="Roll")
+    p_traces = scatter(x=time, y=rad2deg.(euler_angles[2,:]), mode="lines", line=attr(color="green"), name="Pitch")
+    y_traces = scatter(x=time, y=rad2deg.(euler_angles[3,:]), mode="lines", line=attr(color="blue"), name="Yaw")
+    layout = Layout(xaxis_title="Time [s]", yaxis_title="Angle (Degrees)", template="simple_white", showlegend=true)
+    p = plot([r_traces, p_traces, y_traces], layout)
+    display(p)
+    savefig(p, name * "_attitude.pdf", format="pdf")
 end

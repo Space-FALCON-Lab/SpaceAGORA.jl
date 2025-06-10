@@ -115,8 +115,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # Assign state
         pos_ii = SVector{3, Float64}(in_cond[1:3] * config.cnf.DU)                      # Inertial position 
         vel_ii = SVector{3, Float64}(in_cond[4:6] * config.cnf.DU / config.cnf.TU)      # Inertial velocity
-        quaternion = SVector{4, Float64}(in_cond[7:10])                                   # Quaternion
-        ω = SVector{3, Float64}(in_cond[11:13] * config.cnf.TU)                # Angular velocity vector [rad / s]
+        quaternion = SVector{4, Float64}(in_cond[9:12]/norm(in_cond[9:12]))                                   # Quaternion
+
+        ω = SVector{3, Float64}(in_cond[13:15] * config.cnf.TU)                # Angular velocity vector [rad / s]
         mass = in_cond[7] * config.cnf.MU                                          # Mass kg
         pos_ii_mag = norm(pos_ii)                                  # Magnitude of the inertial position
         vel_ii_mag = norm(vel_ii)                                  # Magnitude of the inertial velocity
@@ -472,19 +473,21 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         thrust_ii = m.planet.L_PI' * thrust_pp
 
         # Total Force
-        # Total inetrial external force vector on body [N]
+        # Total inertial external force vector on body [N]
         force_ii = drag_ii + lift_ii + gravity_ii + thrust_ii + srp_ii
         
         # Torques
         τ_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize torque vector
         # Gravity gradient torque
         τ_ii += 3*m.planet.μ * cross(pos_ii, m.body.inertia_tensor*pos_ii) / pos_ii_mag^5
+        println("τ_ii: ", τ_ii)
         # 
+        Ξ = [quaternion[4]*diagm([1, 1, 1]) + hat(quaternion[1:3]); -quaternion[1:3]'] # Quaternion matrix
+
         y_dot[1:3] = vel_ii * (config.cnf.TU / config.cnf.DU)
         y_dot[4:6] = force_ii / mass * (config.cnf.TU^2 / config.cnf.DU) 
         y_dot[7] = -norm(thrust_ii) / (m.engines.g_e * m.engines.Isp) * config.cnf.TU / config.cnf.MU       # mass variation
         y_dot[8] = heat_rate * config.cnf.TU^3 / config.cnf.MU # * 1e-4
-        Ξ = [quaternion[4]*diagm([1, 1, 1]) + hat(quaternion[1:3]); -quaternion[1:3]'] # Quaternion matrix
         y_dot[9:12] = 0.5*Ξ*ω   # Angular velocity
         y_dot[13:15] = inv(m.body.inertia_tensor)*(-hat(ω)*m.body.inertia_tensor*ω + τ_ii)   # Angular acceleration
         energy = (vel_ii_mag^2)/2 - (m.planet.μ / pos_ii_mag)
@@ -529,8 +532,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         Event function to detect the periapsis crossing.
         """
         m = integrator.p[1]
-        pos_ii = [y[1], y[2], y[3]] * config.cnf.DU  # Inertial position
-        vel_ii = [y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU  # Inertial Velocity
+        pos_ii = SVector{3, Float64}([y[1], y[2], y[3]] * config.cnf.DU)  # Inertial position
+        vel_ii = SVector{3, Float64}([y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU)  # Inertial Velocity
 
         vi = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf.MU, m.planet)[6]
 

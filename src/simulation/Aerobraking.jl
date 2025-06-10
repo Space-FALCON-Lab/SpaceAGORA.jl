@@ -1,11 +1,6 @@
 include("Complete_passage.jl")
 include("../utils/Ref_system_conf.jl")
 include("../utils/Closed_form_solution.jl")
-# include("../utils/Odyssey_maneuver_plan.jl")
-# include("../utils/VEx_maneuver_plan.jl")
-# include("../utils/Magellan_maneuver_plan.jl")
-# include("../utils/Earth_maneuver_plan.jl")
-# include("../utils/TSSM_maneuver_plan.jl")
 include("../utils/Save_results.jl")
 include("../physical_models/Propulsive_maneuvers.jl")
 
@@ -16,13 +11,7 @@ sys = pyimport("sys")
 
 os = pyimport("os")
 
-# sys.path.append(os.path.join(os.path.dirname(os.path.abspath(@__FILE__)), "GRAMpy"))
-
-function aerobraking(ip, m, args)
-    if !(args[:directory_Gram] in pyconvert(Vector{String}, sys.path))
-        sys.path.append(args[:directory_Gram])
-    end
-    gram = pyimport("gram")
+function aerobraking(ip, m, args, gram, gram_atmosphere)
 
     initial_state = m.initial_condition
     FinalState = true
@@ -34,68 +23,6 @@ function aerobraking(ip, m, args)
 
     config.cnf.time_OP = 1
     config.cnf.time_IP = 1
-
-    if args[:density_model] == "Gram" || args[:density_model] == "GRAM"
-        inputParameters = Dict("earth" => gram.EarthInputParameters(),
-                               "mars" => gram.MarsInputParameters(),
-                               "venus" => gram.VenusInputParameters(),
-                               "titan" => gram.TitanInputParameters())
-        
-        namelistReaders = Dict("earth" => gram.EarthNamelistReader(),
-                               "mars" => gram.MarsNamelistReader(),
-                               "venus" => gram.VenusNamelistReader(),
-                               "titan" => gram.TitanNamelistReader())
-            
-        atmospheres = Dict("earth" => gram.EarthAtmosphere(),
-                           "mars" => gram.MarsAtmosphere(),
-                           "venus" => gram.VenusAtmosphere(),
-                           "titan" => gram.TitanAtmosphere())
-
-        planet_name = m.planet.name
-        input_parameters = inputParameters[planet_name]
-
-        # Mars has some weird specific parameters, so this line is just to check to make sure the it doesn't do it for the other planets
-        if planet_name == "mars"
-            # input_parameters.dataPath = os.path.join(os.path.dirname(os.path.abspath(@__FILE__)),"..", "GRAM_Data", "Mars", "data", "")
-            input_parameters.dataPath = args[:directory_Gram_data] * "/Mars/data/"
-            if !Bool(os.path.exists(input_parameters.dataPath))
-                throw(ArgumentError("GRAM data path not found: " * input_parameters.dataPath))
-            end
-        end
-
-        if planet_name == "earth"
-            # input_parameters.dataPath = os.path.join(os.path.dirname(os.path.abspath(@__FILE__)),"..", "GRAM_Data", "Mars", "data", "")
-            input_parameters.dataPath = args[:directory_Gram_data] * "/Earth/data/"
-            if !Bool(os.path.exists(input_parameters.dataPath))
-                throw(ArgumentError("GRAM data path not found: " * input_parameters.dataPath))
-            end
-        end
-
-        reader = namelistReaders[planet_name]
-        reader.tryGetSpicePath(input_parameters)
-
-        gram_atmosphere = atmospheres[planet_name]
-        gram_atmosphere.setInputParameters(input_parameters)
-        
-        if planet_name == "earth"
-            gram_atmosphere.setMERRA2Parameters(0, -90.0, 90.0, 0.0, 359.99999)
-        end
-        gram_atmosphere.setPerturbationScales(1.5)
-        gram_atmosphere.setMinRelativeStepSize(0.5)
-        if args[:montecarlo] == 1
-            gram_atmosphere.setSeed(Int(round(rand()*10000)))
-        else
-            gram_atmosphere.setSeed(1001)
-        end
-        
-        if planet_name == "mars"
-            gram_atmosphere.setMOLAHeights(false)
-        end
-
-        ttime = gram.GramTime()
-        ttime.setStartTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs], gram.UTC, gram.PET)
-        gram_atmosphere.setStartTime(ttime)
-    end
     
     # Aerobraking Campaign
     while continue_campaign && FinalState
@@ -108,12 +35,11 @@ function aerobraking(ip, m, args)
         end 
 
         t_el_ab = @elapsed begin
-        
+            # Define maneuver
             if uppercase(args[:thrust_control]) == "AEROBRAKING MANEUVER" && numberofpassage != 1
                 r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
                 r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
                 args = args[:maneuver_plan](m.planet, r_a, r_p, numberofpassage, args)
-                # println(args[:delta_v])
             end
             
             if ip.tc == 1

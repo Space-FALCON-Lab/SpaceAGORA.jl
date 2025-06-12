@@ -7,27 +7,45 @@ import .config
 import .ref_sys
 # import .SpacecraftModel
 # Define spacecraft model
-spacecraft = config.SpacecraftModel([], 1, [], [], Dict(), true, 0.0, 50.0, zeros(3, 3), zeros(3))
+spacecraft = config.SpacecraftModel()
 # Add bodies to the spacecraft model
-main_bus = config.Box("Main Bus", 391.0, SVector{3, Float64}(2.2, 1.7, 2.6), 2.2*1.7, SVector{3, Float64}(0.0, 0.0, 0.0))
-config.add_body!(spacecraft, main_bus, config.FixedJoint(), nothing, config.translation(SVector{3, Float64}(0.0, 0.0, 0.0))...)
+main_bus = config.Link(root=true, 
+                        r=SVector{3, Float64}(0.0, 0.0, 0.0), 
+                        q=SVector{4, Float64}([0, 0, 0, 1]),
+                        ṙ=SVector{3, Float64}([0,0,0]), 
+                        dims=SVector{3, Float64}([2.2,1.7,2.6]), 
+                        ref_area=2.2*1.7,
+                        m=391.0, 
+                        gyro=0)
 
-L_panel = config.FlatPlate("Left Solar Panel", 10.0, SVector{2, Float64}(3.76/2, 1.93), 3.76*1.93/2, SVector{3, Float64}(0.0, 0.0, 0.0))
-config.add_body!(spacecraft, L_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, -1.7/2 - 3.76/4, 0.0))...)
+L_panel = config.Link(r=SVector{3, Float64}(0.0, -1.7/2 - 3.76/4, 0.0), 
+                        q=SVector{4, Float64}([0, 0, 0, 1]),
+                        ṙ=SVector{3, Float64}([0,0,0]), 
+                        dims=SVector{3, Float64}([3.76/2, 1.93, 0.01]), 
+                        ref_area=3.76*1.93/2,
+                        m=10.0, 
+                        gyro=0)
+R_panel = config.Link(r=SVector{3, Float64}(0.0, 1.7/2 + 3.76/4, 0.0),
+                        q=SVector{4, Float64}([0, 0, 0, 1]),
+                        ṙ=SVector{3, Float64}([0,0,0]), 
+                        dims=SVector{3, Float64}([3.76/2, 1.93, 0.01]), 
+                        ref_area=3.76*1.93/2,
+                        m=10.0, 
+                        gyro=0)
 
-R_panel = config.FlatPlate("Right Solar Panel", 10.0, SVector{2, Float64}(3.76/2, 1.93), 3.76*1.93/2, SVector{3, Float64}(0.0, 0.0, 0.0))
-config.add_body!(spacecraft, R_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, 1.7/2 + 3.76/4, 0.0))...)
-for (i, node) in enumerate(spacecraft.bodies)
-    println("Body $i: $(node.body.name)")
-    if !isnothing(node.parent)
-        println("  Parent: $(spacecraft.bodies[node.parent].body.name)")
-        println("  Joint: $(typeof(node.joint))")
-    else
-        println("  Root body")
-    end
-end
-println("Spacecraft model initialized with $(length(spacecraft.bodies)) bodies.")
-println("Spacecraft dry mass: $(spacecraft.dry_mass) kg, fuel mass: $(spacecraft.prop_mass) kg.")
+config.add_body!(spacecraft, main_bus, prop_mass=50.0)
+config.add_body!(spacecraft, L_panel)
+config.add_body!(spacecraft, R_panel)
+
+L_panel_joint = config.Joint(main_bus, L_panel)
+R_panel_joint = config.Joint(R_panel, main_bus)
+config.add_joint!(spacecraft, L_panel_joint)
+config.add_joint!(spacecraft, R_panel_joint)
+
+println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
+# println("Spacecraft roots: $spacecraft.roots")
+println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
+println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0

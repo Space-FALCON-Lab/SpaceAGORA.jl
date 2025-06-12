@@ -44,6 +44,7 @@ function aerobraking_campaign(args, state)
     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
     furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
+    furnsh(args[:directory_Spice] * "/spk/satellites/mar097_GRAM.bsp")
     
     # If using lat/lon initial conditions, correct the initial orbital elements
     if args[:orientation_type] == 1

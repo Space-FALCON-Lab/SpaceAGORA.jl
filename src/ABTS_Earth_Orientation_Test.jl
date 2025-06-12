@@ -1,5 +1,5 @@
 include("simulation/Run.jl")
-include("config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
+# include("config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("utils/maneuver_plans.jl")
 # include("SpacecraftModel.jl")
 
@@ -33,7 +33,7 @@ R_panel = config.Link(r=SVector{3, Float64}(0.0, 1.7/2 + 3.76/4, 0.0),
                         m=10.0, 
                         gyro=0)
 
-config.add_body!(spacecraft, main_bus,prop_mass=50.0)
+config.add_body!(spacecraft, main_bus, prop_mass=50.0)
 config.add_body!(spacecraft, L_panel)
 config.add_body!(spacecraft, R_panel)
 
@@ -43,6 +43,7 @@ config.add_joint!(spacecraft, L_panel_joint)
 config.add_joint!(spacecraft, R_panel_joint)
 
 println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
+# println("Spacecraft roots: $spacecraft.roots")
 println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
 println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 # main_bus = config.Box("Main Bus", 391.0, SVector{3, Float64}(2.2, 1.7, 2.6), 2.2*1.7, SVector{3, Float64}(0.0, 0.0, 0.0))

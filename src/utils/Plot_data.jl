@@ -27,6 +27,7 @@ function plots(state, m, name, args)
     end
 
     attitude_plot(name, args)
+    quaternion_plot(name)
 end
 
 function drag_passage_plot(name, args)
@@ -277,7 +278,7 @@ function performance_plots(state, m, name, args)
     plot_heat_load = plot([plot_traces_heat_load...], layout_heat_load)
 
     if args[:body_shape] == "Spacecraft"
-        plot_traces_4 = scatter(x=[item/(60*60*24) for item in config.solution.orientation.time], y=[item - m.body.dry_mass for item in config.solution.performance.mass], mode="lines", line=attr(color="black"))
+        plot_traces_4 = scatter(x=[item/(60*60*24) for item in config.solution.orientation.time], y=[item - config.get_spacecraft_mass(m.body, m.body.roots[1], dry=true) for item in config.solution.performance.mass], mode="lines", line=attr(color="black"))
         layout_4 = Layout(xaxis_title="Time [days]", yaxis_title="Mass [kg]")
     else
         index = findall(x -> x > 0, config.solution.performance.q)
@@ -491,4 +492,21 @@ function attitude_plot(name, args)
     p = plot([r_traces, p_traces, y_traces], layout)
     display(p)
     savefig(p, name * "_attitude.pdf", format="pdf")
+end
+
+function quaternion_plot(name)
+    """
+        Plot the quaternion of the spacecraft during the drag passages
+    """
+
+    time = config.solution.orientation.time
+    quaternions = config.solution.orientation.quaternion
+    q1_traces = scatter(x=time, y=quaternions[1], mode="lines", line=attr(color="red"), name="q1")
+    q2_traces = scatter(x=time, y=quaternions[2], mode="lines", line=attr(color="green"), name="q2")
+    q3_traces = scatter(x=time, y=quaternions[3], mode="lines", line=attr(color="blue"), name="q3")
+    q4_traces = scatter(x=time, y=quaternions[4], mode="lines", line=attr(color="orange"), name="q4")
+    layout = Layout(xaxis_title="Time [s]", yaxis_title="Quaternion", template="simple_white", showlegend=true)
+    p = plot([q1_traces, q2_traces, q3_traces, q4_traces], layout)
+    display(p)
+    savefig(p, name * "_quaternion.pdf", format="pdf")
 end

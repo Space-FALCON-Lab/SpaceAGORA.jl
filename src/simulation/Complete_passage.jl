@@ -126,7 +126,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         ω_planet = m.planet.ω
         γ = m.planet.γ
         μ_fluid = m.planet.μ_fluid
-        area_tot = config.get_spacecraft_reference_area(m.body) # Total reference area of the spacecraft
+        bodies, root_index = config.traverse_bodies(m.body, m.body.roots[1]) # Get all bodies in the simulation
+        area_tot = config.get_spacecraft_reference_area(m.body, m.body.roots[1]) # Total reference area of the spacecraft
 
         # TRANSFORM THE STATE
         # Inertial to planet relative transformation
@@ -246,7 +247,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # Define output.txt containing density data
         p = 0.0
         if args[:body_shape] == "Spacecraft"
-            length_car = config.get_spacecraft_length(m.body) # Length of the spacecraft
+            length_car = config.get_spacecraft_length(m.body, m.body.roots[1]) # Length of the spacecraft
         elseif args[:body_shape] == "Blunted Cone"
             length_car = m.body.base_radius * 2
         end
@@ -389,7 +390,22 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Dynamic Pressure, CHANGE THE VELOCITY WITH THE WIND VELOCITY
         q = 0.5 * ρ * norm(vel_pp_rw)^2               # dynamic pressure based on wind, Pa
-               
+        
+        # Update the force on each link on the spacecraft
+        # for b in bodies
+        #     mass = b.m # Mass of the spacecraft link
+        #     if b.root
+        #         mass += mass-config.get_spacecraft_mass(m.body, b, dry=true) # Add the mass of the propellant to the root body
+        #     end
+        #     # println("pos_ii: $pos_ii")
+        #     # println("pos_ii_mag: $pos_ii_mag")
+        #     pos_ii_body = pos_ii + rot(root_body.q)' * rot(b.q)' * b.r # Update the position of the spacecraft link in inertial frame
+        #     # println("pos_ii_body: $pos_ii_body")
+        #     pos_pp_body = pos_pp + m.planet.L_PI * rot(root_body.q)' * rot(b.q)' * b.r # Update the position of the spacecraft link in planet relative frame
+        #     # println("pos_pp: $pos_pp")
+        #     # println("pos_pp_body: $pos_pp_body")
+        #     # sleep(1)
+        #     pos_ii_body_mag = norm(pos_ii_body) # Magnitude of the inertial position of the spacecraft link
         # Nominal gravity calculation
         if ip.gm == 0
             gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
@@ -406,16 +422,42 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 gravity_ii += mass * gravity_n_bodies(config.cnf.et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
             end
         end
-
-        srp_ii = zeros(3) # solar radiation pressure vector
-        if args[:srp] == true
-            p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
-            srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, config.cnf.et)
-        end
-
         if args[:gravity_harmonics] == 1
             gravity_ii += mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_e, m.planet)
         end
+        #     # Update the force on the spacecraft link
+        #     b.net_force += gravity_ii
+        # end
+
+        srp_ii = zeros(3) # solar radiation pressure vector
+        if args[:srp] == true
+            sun_earth_vector = m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", config.cnf.et, "J2000", "NONE", uppercase(m.planet.name))[1])
+            for b in bodies
+                mass_body = b.m # Mass of the spacecraft link
+                if b.root
+                    mass_body += mass-config.get_spacecraft_mass(m.body, b, dry=true) # Add the mass of the root body
+                end
+                # Calculate the position of the spacecraft link in inertial frame
+                pos_ii_body = pos_ii + rot(b.q)' * b.r # Update the position of the spacecraft link in inertial frame
+                pos_ii_body_mag = norm(pos_ii_body) # Magnitude of the inertial position of the spacecraft link
+                p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
+                srp_ii = mass_body * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii_body, config.cnf.et)
+                # Account for angle of incidence of sunlight
+                normal_vector_ii = (rot(root_body.q)'*rot(b.q)'*[1;0;0])
+                normal_vector_ii_hat = normal_vector_ii / norm(normal_vector_ii) # Unit vector of the normal vector
+                # Sun vector
+                sun_vector_ii = sun_earth_vector - pos_ii_body # Vector from the spacecraft link to the Sun
+                sun_vector_ii_hat = sun_vector_ii / norm(sun_vector_ii) # Unit vector of the Sun vector
+                # Calculate the angle of incidence
+                cos_θ = dot(normal_vector_ii_hat, sun_vector_ii_hat) # Cosine of the angle of incidence
+                b.net_force += srp_ii*cos_θ # Update the force on the spacecraft link
+            end
+        end
+
+        # gravity_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize gravity vector
+        # if args[:gravity_harmonics] == 1
+        #     gravity_ii += mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_e, m.planet)
+        # end
 
         bank_angle = deg2rad(0.0)
 
@@ -423,28 +465,30 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Vehicle Aerodynamic Forces
         # CL and CD
-        if ip.am == 0
-            CL, CD = aerodynamic_coefficient_constant(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
-        elseif ip.am == 1
-            CL, CD = aerodynamic_coefficient_fM(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
-        elseif ip.am == 2
-            CL, CD = aerodynamic_coefficient_no_ballistic_flight(α, m.body, args, T_p, S, m.aerodynamics, MonteCarlo)
+        for b in bodies
+            if ip.am == 0
+                CL, CD = aerodynamic_coefficient_constant(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
+            elseif ip.am == 1
+                CL, CD = aerodynamic_coefficient_fM(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
+            elseif ip.am == 2
+                CL, CD = aerodynamic_coefficient_no_ballistic_flight(α, m.body, args, T_p, S, m.aerodynamics, MonteCarlo)
+            end
+
+            β = mass / (CD*area_tot)    # ballistic coefficient, kg / m ^ 2
+
+            # Force Calculation
+            drag_pp_hat = -vel_pp_rw_hat    # PLanet relative drag force direction
+
+            drag_pp = q * CD * area_tot * drag_pp_hat                       # Planet relative drag force vector
+            lift_pp = q * CL * area_tot * lift_pp_hat * cos(bank_angle)     # Planet relative lift force vector
+
+            drag_ii = m.planet.L_PI' * drag_pp   # Inertial drag force vector
+            lift_ii = m.planet.L_PI' * lift_pp   # Inertial lift force vector
         end
-
-        β = mass / (CD*area_tot)    # ballistic coefficient, kg / m ^ 2
-
-        # Force Calculation
-        drag_pp_hat = -vel_pp_rw_hat    # PLanet relative drag force direction
-
-        drag_pp = q * CD * area_tot * drag_pp_hat                       # Planet relative drag force vector
-        lift_pp = q * CL * area_tot * lift_pp_hat * cos(bank_angle)     # Planet relative lift force vector
-
-        drag_ii = m.planet.L_PI' * drag_pp   # Inertial drag force vector
-        lift_ii = m.planet.L_PI' * lift_pp   # Inertial lift force vector
 
         # Check if propellant mass is greater than 0 kg
         if config.cnf.index_propellant_mass == 1
-            if mass - m.body.dry_mass <= 0.5
+            if mass - config.get_spacecraft_mass(m.body, m.body.roots[1], dry=true) <= 0.5
                 config.cnf.index_propellant_mass = 0
                 m.engines.T = 0
 
@@ -474,24 +518,32 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Total Force
         # Total inertial external force vector on body [N]
+        # gravity_ii = sum([b.net_force for b in bodies]) # Sum of all forces on the spacecraft links
+
         force_ii = drag_ii + lift_ii + gravity_ii + thrust_ii + srp_ii
         
         # Torques
         τ_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize torque vector
         # Gravity gradient torque
-        τ_ii += 3*m.planet.μ * cross(pos_ii, m.body.inertia_tensor*pos_ii) / pos_ii_mag^5
-        println("τ_ii: ", τ_ii)
+        τ_ii += 3*m.planet.μ * cross(pos_ii, config.get_inertia_tensor(m.body, m.body.roots[1])*pos_ii) / pos_ii_mag^5
+        # τ_ii += sum(cross.([b.net_force for b in bodies], [rot(root_body.q)' * rot(b.q)' * b.r for b in bodies])) # Sum of all torques on the spacecraft links
+
+        # println("τ_ii: ", τ_ii)
         # 
         Ξ = [quaternion[4]*diagm([1, 1, 1]) + hat(quaternion[1:3]); -quaternion[1:3]'] # Quaternion matrix
-
+        inertia_tensor = config.get_inertia_tensor(m.body, m.body.roots[1]) # Inertia tensor of the body
         y_dot[1:3] = vel_ii * (config.cnf.TU / config.cnf.DU)
         y_dot[4:6] = force_ii / mass * (config.cnf.TU^2 / config.cnf.DU) 
         y_dot[7] = -norm(thrust_ii) / (m.engines.g_e * m.engines.Isp) * config.cnf.TU / config.cnf.MU       # mass variation
         y_dot[8] = heat_rate * config.cnf.TU^3 / config.cnf.MU # * 1e-4
         y_dot[9:12] = 0.5*Ξ*ω   # Angular velocity
-        y_dot[13:15] = inv(m.body.inertia_tensor)*(-hat(ω)*m.body.inertia_tensor*ω + τ_ii)   # Angular acceleration
+        y_dot[13:15] = inv(inertia_tensor)*(-hat(ω)*inertia_tensor*ω + τ_ii)   # Angular acceleration
         energy = (vel_ii_mag^2)/2 - (m.planet.μ / pos_ii_mag)
 
+        for b in bodies
+            b.net_force .= SVector{3, Float64}(0.0, 0.0, 0.0) # Reset the net force on each link
+            b.net_torque .= SVector{3, Float64}(0.0, 0.0, 0.0) # Reset the net torque on each link
+        end
         ## SAVE RESULTS
         if Bool(config.cnf.results_save)
             sol = [t0, timereal.year, timereal.month, timereal.day, timereal.hour, timereal.minute,
@@ -785,7 +837,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         mass = y[7] * config.cnf.MU
         Δv = (m.engines.g_e * m.engines.Isp) * log(initial_state.m/mass)
-        m.body.prop_mass = mass - m.body.dry_mass
+        m.body.prop_mass .= [mass - config.get_spacecraft_mass(m.body, m.body.roots[1], dry=true)]
         Δv - args[:delta_v]  # upcrossing and downcrossing
     end
     function stop_firing_affect!(integrator)
@@ -936,9 +988,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     continue_campaign = false
 
     # Def initial conditions
-    root_body = m.body.bodies[m.body.root]
+    root_body = m.body.roots[1]  # Root body of the mission
     in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], Mass+1e-10, 0.0, root_body.q[1],
-               root_body.q[2], root_body.q[3], root_body.q[4], 0.0, 0.0, 0.0]
+               root_body.q[2], root_body.q[3], root_body.q[4], root_body.ω[1], root_body.ω[2], root_body.ω[3]]
 
     # non dimensionalization
     in_cond[1:3] = in_cond[1:3] / config.cnf.DU
@@ -1166,7 +1218,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 config.cnf.counter_integrator += 1
                 in_cond = [sol[1,end], sol[2,end], sol[3, end], sol[4, end], sol[5, end], sol[6, end], sol[7, end], sol[8, end], 
                             sol[9, end], sol[10, end], sol[11, end], sol[12, end], sol[13, end], sol[14, end], sol[15, end]]
-              
+                # Update model parameters
+                m.body.roots[1].q = SVector{4, Float64}(sol[9, end], sol[10, end], sol[11, end], sol[12, end])
+                m.body.roots[1].ω = SVector{3, Float64}(sol[13, end], sol[14, end], sol[15, end])
+                m.body.roots[1].q = normalize(m.body.roots[1].q)  # Quaternion normalization
 
                 # Save results 
                 push!(time_solution, (sol.t * config.cnf.TU)...)
@@ -1366,6 +1421,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
         sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
 
+        # Update model parameters
+        m.body.roots[1].q = SVector{4, Float64}(sol[9, end], sol[10, end], sol[11, end], sol[12, end])
+        m.body.roots[1].ω = SVector{3, Float64}(sol[13, end], sol[14, end], sol[15, end])
+        m.body.roots[1].q = normalize(m.body.roots[1].q)  # Quaternion normalization
+
         config.cnf.counter_integrator += 1
         time_0 = save_results(sol.t * config.cnf.TU, 1.0)
         count_temp += 1
@@ -1387,7 +1447,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
 
     append!(config.cnf.max_heatrate, maximum(config.solution.performance.heat_rate[save_pre_index:save_post_index]))
-    config.cnf.Δv_man = (m.engines.g_e * m.engines.Isp) * log((m.body.dry_mass + m.body.prop_mass) / config.solution.performance.mass[end])
+    config.cnf.Δv_man = (m.engines.g_e * m.engines.Isp) * log((config.get_spacecraft_mass(m.body, m.body.roots[1])) / config.solution.performance.mass[end])
 
 
     if Bool(args[:print_res])
@@ -1406,7 +1466,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
 
         # Print Fuel Mass
-        println("Fuel Mass is " * string(config.solution.performance.mass[end] - m.body.dry_mass) * " kg")
+        println("Fuel Mass is " * string(config.solution.performance.mass[end] - config.get_spacecraft_mass(m.body, dry=true)) * " kg")
 
         # Print Total Time
         if args[:keplerian] == false

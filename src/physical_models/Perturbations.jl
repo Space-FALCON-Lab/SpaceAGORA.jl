@@ -337,8 +337,10 @@ function acc_gravity_pines!(rVec_cart::SVector{3, Float64}, Clm::Matrix{Float64}
             i = l + 1
             A[i, j] = u*N1[i, j]*A[i-1, j] - N2[i, j]*A[i-2, j]
         end
-        R[j] = ifelse(m == 0, 1, s*R[j-1] - t*I[j-1])
-        I[j] = ifelse(m == 0, 0, s*I[j-1] + t*R[j-1])
+        R_term = R[j-1]
+        I_term = I[j-1]
+        R[j] = ifelse(m == 0, 1, s*R_term - t*I_term)
+        I[j] = ifelse(m == 0, 0, s*I_term + t*R_term)
     end
 
     ρ = RE/r
@@ -353,10 +355,13 @@ function acc_gravity_pines!(rVec_cart::SVector{3, Float64}, Clm::Matrix{Float64}
         sum4 = 0
         @inbounds @turbo for m = 0:min(l, M)
             j = m + 1
-            C, S = Clm[i, j], Slm[i, j]
+            C = Clm[i, j]
+            S = Slm[i, j]
+            R_term = R[j-1]
+            I_term = I[j-1]
             D =                   (C*R[j] + S*I[j])     * sqrt_2
-            E = ifelse(m == 0, 0, (C*R[j-1] + S*I[j-1]) * sqrt_2)
-            F = ifelse(m == 0, 0, (S*R[j-1] - C*I[j-1]) * sqrt_2)
+            E = ifelse(m == 0, 0, (C*R_term + S*I_term) * sqrt_2)
+            F = ifelse(m == 0, 0, (S*R_term - C*I_term) * sqrt_2)
 
             Avv00, Avv01, Avv11 = A[i, j], VR01[i, j]*A[i, j+1], VR11[i, j]*A[i+1, j+1]
 

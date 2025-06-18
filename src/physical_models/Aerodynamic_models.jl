@@ -81,6 +81,70 @@ function aerodynamic_coefficient_fM(α, body, T, S, args, montecarlo=false)
     return CL_body, CD_body
 end
 
+function aerodynamic_coefficient_fM(α::Float64, β::Float64, body, T::Float64, S::Float64, args, montecarlo::Bool=false)
+    """
+    Calculate the aerodynamic coefficients for a blunt body in ballistic flight using the F.M. model.
+    # Arguments
+    - `α`: Angle of attack, rad
+    - `β`: Angle of sideslip, rad
+    - `body`: Body object containing dimensions and properties
+    - `T`: Temperature, K
+    - `S`: Surface area, m²
+    - `args`: Dictionary containing additional parameters like reflection coefficient
+    - `montecarlo`: Boolean flag to apply Monte Carlo perturbations
+    # Returns
+    - `CL`: Lift coefficient
+    - `CD`: Drag coefficient
+    - `CS`: Sideslip coefficient
+    # Notes
+    - Equations are from Hart et al. (2017, https://doi.org/10.2514/1.A33606), for a rectangular prism. 
+    """
+
+    σ = args.reflection_coefficient
+    Tw = T
+    lx = body.dims[1]
+    ly = body.dims[2]
+    lz = body.dims[3]
+    σN = σ
+    σT = σ
+    cosα = cos(α)
+    cosβ = cos(β)
+    sinβ = sin(β)
+    sinα = sin(α)
+
+    # Calculate the aerodynamic coefficients in the body frame
+    # Axial
+    CA = ((2-σN)/(S*√(π))*cosα*cosβ+sign(cosα*cosβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*cosα^2*cosβ^2) +
+            (2-σN)*(cosα^2*cosβ^2+1/(2*S^2)) * (sign(cosα*cosβ)+erf(S*cosα*cosβ)) + 
+            (σN/(2*S)*cosα*cosβ*√(π*Tw/T)) * (1+sign(cosα*cosβ)*erf(S*cosα*cosβ)) +
+            σT*cosα*cosβ*(lx/ly*(1/(S*√(π))*exp(-S^2*sinβ^2)+sinβ*(sign(sinβ)+erf(S*sinβ))) +
+            lx/lz*(1/(S*√(π))*exp(-S^2*sinα^2*cosβ^2)+sinα*cosβ*(sign(sinα*cosβ)+erf(S*sinα*cosβ))))
+    # Crossflow
+    CS = lx/ly*(((2-σN)/(S*√(π))*sinβ+sign(sinβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*sinβ^2) +
+                (2-σN)*(sinβ^2+1/(2*S^2)) * (sign(sinβ)+erf(S*sinβ)) + 
+                (σN/(2*S)*sinβ*√(π*Tw/T)) * (1+sign(sinβ)*erf(S*sinβ))) +
+                σT*sinβ*(1/(S*√(π))*exp(-S^2*cosα^2*cosβ^2) + cosα*cosβ*(sign(cosα*cosβ)+erf(S*cosα*cosβ)) + 
+                lx/lz*(1/(S*√(π))*exp(-S^2*sinα^2*cosβ^2) + sinα*cosβ*(sign(sinα*cosβ)+erf(S*sinα*cosβ))))
+    # Normal
+    CN = lx/lz*((((2-σN)/(S*√(π))*sinα*cosβ+sign(sinα*cosβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*sinα^2*cosβ^2) +
+                (2-σN)*(sinα^2*cosβ^2+1/(2*S^2)) * (sign(sinα*cosβ)+erf(S*sinα*cosβ)) + 
+                (σN/(2*S)*sinα*cosβ*√(π*Tw/T)) * (1+sign(sinα*cosβ)*erf(S*sinα*cosβ)))) +
+                σT*sinα*cosβ*(lx/ly*(1/(S*√(π))*exp(-S^2*sinβ^2) + sinβ*(sign(sinβ)+erf(S*sinβ))) + 
+                (1/(S*√(π))*exp(-S^2*cosα^2*cosβ^2) + cosα*cosβ*(sign(cosα*cosβ)+erf(S*cosα*cosβ))))
+
+    # Calculate the aerodynamic coefficients in the wind frame
+    CL = sinα*CA + cosα*CN
+    CD = cosα*cosβ*CA - sinβ*CS - sinα*cosβ*CN
+    CS = cosα*sinβ*CA + cosβ*CS - sinα*sinβ*CN
+
+    # If doing Monte Carlo simulations, apply perturbations to the coefficients
+    if montecarlo == true
+        CL, CD = monte_carlo_aerodynamics(CL, CD, args)
+    end
+
+    return CL, CD, CS
+end
+
 function aerodynamic_coefficient_no_ballistic_flight(α, body, args, T=0, S=0, a=0, montecarlo=false)
     """
 

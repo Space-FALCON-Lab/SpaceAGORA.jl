@@ -116,6 +116,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         pos_ii = SVector{3, Float64}(in_cond[1:3] * config.cnf.DU)                      # Inertial position 
         vel_ii = SVector{3, Float64}(in_cond[4:6] * config.cnf.DU / config.cnf.TU)      # Inertial velocity
         quaternion = SVector{4, Float64}(in_cond[9:12]/norm(in_cond[9:12]))                                   # Quaternion
+        
 
         ω = SVector{3, Float64}(in_cond[13:15] * config.cnf.TU)                # Angular velocity vector [rad / s]
         mass = in_cond[7] * config.cnf.MU                                          # Mass kg
@@ -128,6 +129,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         μ_fluid = m.planet.μ_fluid
         bodies, root_index = config.traverse_bodies(m.body, m.body.roots[1]) # Get all bodies in the simulation
         area_tot = config.get_spacecraft_reference_area(m.body, m.body.roots[1]) # Total reference area of the spacecraft
+        m.body.roots[1].q = quaternion
+        m.body.roots[1].ω = ω
 
         # TRANSFORM THE STATE
         # Inertial to planet relative transformation
@@ -239,7 +242,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         elseif ip.dm == 3
             ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
-            ρ, T_p, wind = pyconvert(Float64, ρ), pyconvert(Float32, T_p), SVector{3, Float32}([pyconvert(Float32, wind[1]), pyconvert(Float32, wind[2]), pyconvert(Float32, wind[3])])
+            ρ, T_p, wind = pyconvert(Float64, ρ), pyconvert(Float64, T_p), SVector{3, Float32}([pyconvert(Float32, wind[1]), pyconvert(Float32, wind[2]), pyconvert(Float32, wind[3])])
         elseif ip.dm == 4
             ρ, T_p, wind = density_nrlmsise(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, time_real)
         end
@@ -392,20 +395,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         q = 0.5 * ρ * norm(vel_pp_rw)^2               # dynamic pressure based on wind, Pa
         
         # Update the force on each link on the spacecraft
-        # for b in bodies
-        #     mass = b.m # Mass of the spacecraft link
-        #     if b.root
-        #         mass += mass-config.get_spacecraft_mass(m.body, b, dry=true) # Add the mass of the propellant to the root body
-        #     end
-        #     # println("pos_ii: $pos_ii")
-        #     # println("pos_ii_mag: $pos_ii_mag")
-        #     pos_ii_body = pos_ii + rot(root_body.q)' * rot(b.q)' * b.r # Update the position of the spacecraft link in inertial frame
-        #     # println("pos_ii_body: $pos_ii_body")
-        #     pos_pp_body = pos_pp + m.planet.L_PI * rot(root_body.q)' * rot(b.q)' * b.r # Update the position of the spacecraft link in planet relative frame
-        #     # println("pos_pp: $pos_pp")
-        #     # println("pos_pp_body: $pos_pp_body")
-        #     # sleep(1)
-        #     pos_ii_body_mag = norm(pos_ii_body) # Magnitude of the inertial position of the spacecraft link
         # Nominal gravity calculation
         if ip.gm == 0
             gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
@@ -431,26 +420,28 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         srp_ii = zeros(3) # solar radiation pressure vector
         if args[:srp] == true
-            sun_earth_vector = m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", config.cnf.et, "J2000", "NONE", uppercase(m.planet.name))[1])
+            # sun_earth_vector = m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", config.cnf.et, "J2000", "NONE", uppercase(m.planet.name))[1])
             for b in bodies
                 mass_body = b.m # Mass of the spacecraft link
                 if b.root
                     mass_body += mass-config.get_spacecraft_mass(m.body, b, dry=true) # Add the mass of the root body
                 end
                 # Calculate the position of the spacecraft link in inertial frame
-                pos_ii_body = pos_ii + rot(b.q)' * b.r # Update the position of the spacecraft link in inertial frame
+                R = config.rotate_to_inertial(m.body, b, root_index) # Rotation matrix from the root body to the spacecraft link
+                pos_ii_body = pos_ii + R * b.r # Update the position of the spacecraft link in inertial frame
                 pos_ii_body_mag = norm(pos_ii_body) # Magnitude of the inertial position of the spacecraft link
                 p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
-                srp_ii = mass_body * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii_body, config.cnf.et)
-                # Account for angle of incidence of sunlight
-                normal_vector_ii = (rot(root_body.q)'*rot(b.q)'*[1;0;0])
-                normal_vector_ii_hat = normal_vector_ii / norm(normal_vector_ii) # Unit vector of the normal vector
-                # Sun vector
-                sun_vector_ii = sun_earth_vector - pos_ii_body # Vector from the spacecraft link to the Sun
-                sun_vector_ii_hat = sun_vector_ii / norm(sun_vector_ii) # Unit vector of the Sun vector
-                # Calculate the angle of incidence
-                cos_θ = dot(normal_vector_ii_hat, sun_vector_ii_hat) # Cosine of the angle of incidence
-                b.net_force += srp_ii*cos_θ # Update the force on the spacecraft link
+                srp_ii = mass_body * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, b.ref_area, b.m, pos_ii_body, config.cnf.et)
+                # # Account for angle of incidence of sunlight
+                # normal_vector_ii = (rot(root_body.q)'*rot(b.q)'*[1;0;0])
+                # normal_vector_ii_hat = normal_vector_ii / norm(normal_vector_ii) # Unit vector of the normal vector
+                # # Sun vector
+                # sun_vector_ii = sun_earth_vector - pos_ii_body # Vector from the spacecraft link to the Sun
+                # sun_vector_ii_hat = sun_vector_ii / norm(sun_vector_ii) # Unit vector of the Sun vector
+                # # Calculate the angle of incidence
+                # cos_θ = dot(normal_vector_ii_hat, sun_vector_ii_hat) # Cosine of the angle of incidence
+                b.net_force += srp_ii # Update the force on the spacecraft link
+                b.net_torque += cross(R*b.r, srp_ii) # Update the torque on the spacecraft link
             end
         end
 
@@ -462,29 +453,88 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         bank_angle = deg2rad(0.0)
 
         lift_pp_hat = cross(h_pp_hat, vel_pp_rw_hat)
-
+        lift_pp_hat /= norm(lift_pp_hat) # Normalize the lift vector in planet relative frame
+        drag_pp_hat = -vel_pp_rw_hat # Planet relative drag force direction
+        cross_pp_hat = cross(drag_pp_hat, lift_pp_hat) # Cross product of the drag and lift vectors in planet relative frame
+        
+        CL, CD = 0.0, 0.0 # Initialize aerodynamic coefficients
+        total_area = 0.0 # Initialize total area
+        
+        lift_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize inertial lift force vector
+        drag_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize inertial drag force vector
+        drag_pp = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize planet relative drag force vector
+        lift_pp = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize planet relative lift force vector
+        # Determine angle of attack (α) and sideslip angle (β)
         # Vehicle Aerodynamic Forces
         # CL and CD
         for b in bodies
+            R = config.rotate_to_inertial(m.body, b, root_index) # Rotation matrix from the root body to the spacecraft link
+            body_frame_velocity = R' * m.planet.L_PI' * vel_pp_rw # Velocity of the spacecraft link in inertial frame
+            
+            α = atan(body_frame_velocity[3], body_frame_velocity[1]) # Angle of attack in radians
+            β = atan(body_frame_velocity[2], norm([body_frame_velocity[1], body_frame_velocity[3]])) # Sideslip angle in radians
+
+            tangent_vector = m.planet.L_PI * config.get_tangent_vector(m.body, b, root_index) # Normal vector of the spacecraft link in inertial frame
+            tangent_vector /= norm(tangent_vector) # Normalize the normal vector
+            
+            normal_vector = m.planet.L_PI * config.get_normal_vector(m.body, b, root_index) # Normal vector of the spacecraft link in inertial frame
+            normal_vector /= norm(normal_vector) # Normalize the normal vector
+            # α = acos(dot(normal_vector, lift_pp_hat)) # Angle of attack in radians
+            
+            projection_normal_to_drag = normal_vector - dot(normal_vector, lift_pp_hat) * lift_pp_hat # Project the normal vector onto the plane perpendicular to the position vector 
+            projection_normal_to_drag /= norm(projection_normal_to_drag) # Normalize the projected normal vector
+            
+            # α = acos(dot(projection_normal_to_drag, normal_vector) / (norm(projection_normal_to_drag) * norm(normal_vector))) # Angle of attack in radians
+            # β = acos(dot(projection_normal_to_drag, vel_pp_rw_hat) / (norm(projection_normal_to_drag) * norm(vel_pp_rw_hat))) # Sideslip angle in radians
+            α = 0.0
+            β = 0.0
+            # if α > π
+            #     α = 2*π - α # Ensure α is in the range [0, π/2]
+            # end
+            # if β > π
+            #     β = 2*π - β # Ensure β is in the range [0, π/2]
+            # end
+            # println("α: ", α, " β: ", β)
             if ip.am == 0
                 CL, CD = aerodynamic_coefficient_constant(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
             elseif ip.am == 1
-                CL, CD = aerodynamic_coefficient_fM(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
+                CL_body, CD_body, CS_body = aerodynamic_coefficient_fM(α, β, b, T_p, S, m.aerodynamics, MonteCarlo)
             elseif ip.am == 2
                 CL, CD = aerodynamic_coefficient_no_ballistic_flight(α, m.body, args, T_p, S, m.aerodynamics, MonteCarlo)
             end
-
-            β = mass / (CD*area_tot)    # ballistic coefficient, kg / m ^ 2
+            # println("α: ", α, " β: ", β, " CL: ", CL_body, " CD: ", CD_body)
+            # β = mass / (CD*area_tot)    # ballistic coefficient, kg / m ^ 2
 
             # Force Calculation
-            drag_pp_hat = -vel_pp_rw_hat    # PLanet relative drag force direction
+            # drag_pp_hat = -vel_pp_rw_hat    # PLanet relative drag force direction
 
-            drag_pp = q * CD * area_tot * drag_pp_hat                       # Planet relative drag force vector
-            lift_pp = q * CL * area_tot * lift_pp_hat * cos(bank_angle)     # Planet relative lift force vector
+            drag_pp_body = q * CD_body * b.ref_area * drag_pp_hat                       # Planet relative drag force vector
+            lift_pp_body = q * CL_body * b.ref_area * lift_pp_hat * cos(bank_angle)     # Planet relative lift force vector
+            cross_pp_body = q * CS_body * b.ref_area * cross_pp_hat # Planet relative cross force vector
 
-            drag_ii = m.planet.L_PI' * drag_pp   # Inertial drag force vector
-            lift_ii = m.planet.L_PI' * lift_pp   # Inertial lift force vector
+            drag_ii_body = m.planet.L_PI' * drag_pp_body   # Inertial drag force vector
+            lift_ii_body = m.planet.L_PI' * lift_pp_body   # Inertial lift force vector
+            cross_ii_body = m.planet.L_PI' * cross_pp_body # Inertial cross force vector
+            # println("drag_pp_body: ", drag_pp_body, " lift_pp_body: ", lift_pp_body, " cross_pp_body: ", cross_pp_body)
+            # println("Cd: ", CD_body, " Cl: ", CL_body, " Cs: ", CS_body)
+            # println("vel_pp_rw_hat: ", vel_pp_rw_hat)
+            # Update the force on the spacecraft link
+            b.net_force += drag_ii_body + lift_ii_body + cross_ii_body # Update the force on the spacecraft link
+            b.net_torque += cross(R*b.r, drag_ii_body + lift_ii_body + cross_ii_body) # Update the torque on the spacecraft link
+
+            # Update the total CL/CD
+            CL += CL_body * b.ref_area
+            CD += CD_body * b.ref_area
+            total_area += b.ref_area # Update the total area
+            drag_ii += drag_ii_body # Update the total drag force
+            lift_ii += lift_ii_body # Update the total lift force
+            drag_pp += drag_pp_body # Update the total drag force in planet relative frame
+            lift_pp += lift_pp_body # Update the total lift force in planet relative frame
         end
+        
+        # Normalize the aerodynamic coefficients
+        CL = CL / total_area
+        CD = CD / total_area
 
         # Check if propellant mass is greater than 0 kg
         if config.cnf.index_propellant_mass == 1
@@ -516,22 +566,38 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         thrust_pp = thrust_pp_mag * thrust_pp_hat
         thrust_ii = m.planet.L_PI' * thrust_pp
 
+        # Attitude control torques
+        for b in bodies
+            if b.gyro != 0.0
+                b.net_torque += b.attitude_control_function(m, t0, b, bodies, root_index, args, vel_pp_rw) # Update the torque on the spacecraft link
+            end
+        end
+
         # Total Force
         # Total inertial external force vector on body [N]
         # gravity_ii = sum([b.net_force for b in bodies]) # Sum of all forces on the spacecraft links
-
-        force_ii = drag_ii + lift_ii + gravity_ii + thrust_ii + srp_ii
+        # aerodynamics_ii = sum([b.net_force for b in bodies]) # Sum of all aerodynamic forces on the spacecraft links
+        body_forces = sum([b.net_force for b in bodies]) # Sum of all forces on the spacecraft links
+        force_ii = body_forces + gravity_ii + thrust_ii
+        # force_ii = aerodynamics_ii + gravity_ii + thrust_ii + srp_ii # Total inertial external force vector on body [N]
         
         # Torques
         τ_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize torque vector
         # Gravity gradient torque
-        τ_ii += 3*m.planet.μ * cross(pos_ii, config.get_inertia_tensor(m.body, m.body.roots[1])*pos_ii) / pos_ii_mag^5
-        # τ_ii += sum(cross.([b.net_force for b in bodies], [rot(root_body.q)' * rot(b.q)' * b.r for b in bodies])) # Sum of all torques on the spacecraft links
+        R = config.rotate_to_inertial(m.body, m.body.roots[1], root_index) # Rotation matrix from the root body to the spacecraft link
+        inertia_tensor = R * config.get_inertia_tensor(m.body, m.body.roots[1]) * R' # Inertia tensor of the body
+        τ_ii += 3*m.planet.μ * cross(pos_ii, inertia_tensor*pos_ii) / pos_ii_mag^5 # Gravity gradient torque
+        τ_ii += sum([b.net_torque for b in bodies]) # Sum of all torques on the spacecraft links
 
         # println("τ_ii: ", τ_ii)
         # 
-        Ξ = [quaternion[4]*diagm([1, 1, 1]) + hat(quaternion[1:3]); -quaternion[1:3]'] # Quaternion matrix
-        inertia_tensor = config.get_inertia_tensor(m.body, m.body.roots[1]) # Inertia tensor of the body
+        # Ξ = [quaternion[4]*diagm([1, 1, 1]) + hat(quaternion[1:3]); -quaternion[1:3]'] # Quaternion matrix
+        q1, q2, q3, q4 = quaternion
+        Ξ = [q4 -q3 q2; 
+             q3 q4 -q1; 
+             -q2 q1 q4; 
+             -q1 -q2 -q3] # Quaternion matrix
+        # inertia_tensor = config.get_inertia_tensor(m.body, m.body.roots[1]) # Inertia tensor of the body
         y_dot[1:3] = vel_ii * (config.cnf.TU / config.cnf.DU)
         y_dot[4:6] = force_ii / mass * (config.cnf.TU^2 / config.cnf.DU) 
         y_dot[7] = -norm(thrust_ii) / (m.engines.g_e * m.engines.Isp) * config.cnf.TU / config.cnf.MU       # mass variation
@@ -563,6 +629,28 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
 
     ## EVENTS: 
+    function every_step_condition(y, t, integrator)
+        """
+        Event function to be run at every step. Used for reaction wheels.
+        """
+        true
+    end
+    function reaction_wheels_affect!(integrator)
+        """
+        Event function to update the reaction wheels at every step.
+        """
+        m = integrator.p[1]
+        args = integrator.p[8]
+        bodies, root_index = config.traverse_bodies(m.body, m.body.roots[1])
+        for b in bodies
+            if b.gyro != 0.0
+                reaction_wheel_model!(b, b.rw_τ, integrator.dt)
+            end
+        end
+    end
+
+    reaction_wheel_update = DiscreteCallback(every_step_condition, reaction_wheels_affect!)
+
     function eventfirststep_condition(y, t, integrator)
         """
         Event function to detect the entry interface downcrossing.
@@ -1022,39 +1110,39 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Definition of eventsecondstep
         if aerobraking_phase == 0
-            events = CallbackSet(stop_firing, apoapsisgreaterperiapsis, impact)
+            events = CallbackSet(stop_firing, apoapsisgreaterperiapsis, impact, reaction_wheel_update)
             t_event_0 = "stop_firing"
             t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 1 && args[:keplerian] == true
-            events = CallbackSet(eventfirststep_periapsis, apoapsisgreaterperiapsis, impact, periapsispoint)
+            events = CallbackSet(eventfirststep_periapsis, apoapsisgreaterperiapsis, impact, periapsispoint, reaction_wheel_update)
             t_event_0 = "eventfirststep_periapsis"
             t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 1
-            events = CallbackSet(eventfirststep, apoapsisgreaterperiapsis, impact)
+            events = CallbackSet(eventfirststep, apoapsisgreaterperiapsis, impact, reaction_wheel_update)
             t_event_0 = "eventfirststep"
             t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 2 && Bool(args[:drag_passage]) && args[:type_of_mission] != "Entry"
-            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact)
+            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update)
             t_event_0 = "out_drag_passage"
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 2 && Bool(args[:drag_passage]) && args[:type_of_mission] == "Entry"
-            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, final_entry_altitude_reached)
+            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, final_entry_altitude_reached, reaction_wheel_update)
             t_event_0 = "final_altitude_reached"
             t_event_1 = "out_drag_passage"
         elseif aerobraking_phase == 2 && index_steps_EOM == 1 && args[:body_shape] == "Blunted Cone"
-            events = CallbackSet(out_drag_passage, apoapsispoint, periapsispoint, impact)
+            events = CallbackSet(out_drag_passage, apoapsispoint, periapsispoint, impact, reaction_wheel_update)
             t_event_0 = "out_drag_passage"
             t_event_1 = "apoapsispoint"
         elseif aerobraking_phase == 2 && index_steps_EOM == 1 && args[:drag_passage] == false
-            events = CallbackSet(apoapsispoint, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact)
+            events = CallbackSet(apoapsispoint, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update)
             t_event_0 = "apoapsispoint"
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 2
-            events = CallbackSet(eventsecondstep, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact)
+            events = CallbackSet(eventsecondstep, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update)
             t_event_0 = "eventsecondstep"
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 3
-            events = CallbackSet(apoapsispoint, periapsispoint, apoapsisgreaterperiapsis, impact)
+            events = CallbackSet(apoapsispoint, periapsispoint, apoapsisgreaterperiapsis, impact, reaction_wheel_update)
             t_event_0 = "apoapsispoint"
             t_event_1 = "periapsispoint"
         end

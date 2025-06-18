@@ -74,7 +74,7 @@ function rot(q)
     Convert quaternion to rotation matrix
     """
     q1, q2, q3, q4 = q
-    return (q4^2-norm(q[1:3])^2)*I - 2*q4*hat(q[1:3]) + 2*q[1:3]*q[1:3]'
+    return SMatrix{3, 3, Float64}((q4^2-norm(q[1:3])^2)*I - 2*q4*hat(q[1:3]) + 2*q[1:3]*q[1:3]')
 end
 
 ## take angle components (4, 3)

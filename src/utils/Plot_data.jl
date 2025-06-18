@@ -28,6 +28,7 @@ function plots(state, m, name, args)
 
     attitude_plot(name, args)
     quaternion_plot(name)
+    angular_velocity_plot(name)
 end
 
 function drag_passage_plot(name, args)
@@ -485,10 +486,10 @@ function attitude_plot(name, args)
         quaternion = [quaternions[1][i], quaternions[2][i], quaternions[3][i], quaternions[4][i]]
         euler_angles[:, i] = qToEulerAngles(quaternion)
     end
-    r_traces = scatter(x=time, y=rad2deg.(euler_angles[1,:]), mode="lines", line=attr(color="red"), name="Roll")
-    p_traces = scatter(x=time, y=rad2deg.(euler_angles[2,:]), mode="lines", line=attr(color="green"), name="Pitch")
-    y_traces = scatter(x=time, y=rad2deg.(euler_angles[3,:]), mode="lines", line=attr(color="blue"), name="Yaw")
-    layout = Layout(xaxis_title="Time [s]", yaxis_title="Angle (Degrees)", template="simple_white", showlegend=true)
+    r_traces = scatter(x=time/60, y=rad2deg.(euler_angles[1,:]), mode="lines", line=attr(color="red"), name="Roll")
+    p_traces = scatter(x=time/60, y=rad2deg.(euler_angles[2,:]), mode="lines", line=attr(color="green"), name="Pitch")
+    y_traces = scatter(x=time/60, y=rad2deg.(euler_angles[3,:]), mode="lines", line=attr(color="blue"), name="Yaw")
+    layout = Layout(xaxis_title="Time [min]", yaxis_title="Angle (Degrees)", template="simple_white", showlegend=true)
     p = plot([r_traces, p_traces, y_traces], layout)
     display(p)
     savefig(p, name * "_attitude.pdf", format="pdf")
@@ -501,12 +502,28 @@ function quaternion_plot(name)
 
     time = config.solution.orientation.time
     quaternions = config.solution.orientation.quaternion
-    q1_traces = scatter(x=time, y=quaternions[1], mode="lines", line=attr(color="red"), name="q1")
-    q2_traces = scatter(x=time, y=quaternions[2], mode="lines", line=attr(color="green"), name="q2")
-    q3_traces = scatter(x=time, y=quaternions[3], mode="lines", line=attr(color="blue"), name="q3")
-    q4_traces = scatter(x=time, y=quaternions[4], mode="lines", line=attr(color="orange"), name="q4")
-    layout = Layout(xaxis_title="Time [s]", yaxis_title="Quaternion", template="simple_white", showlegend=true)
+    q1_traces = scatter(x=time/60, y=quaternions[1], mode="lines", line=attr(color="red"), name="q1")
+    q2_traces = scatter(x=time/60, y=quaternions[2], mode="lines", line=attr(color="green"), name="q2")
+    q3_traces = scatter(x=time/60, y=quaternions[3], mode="lines", line=attr(color="blue"), name="q3")
+    q4_traces = scatter(x=time/60, y=quaternions[4], mode="lines", line=attr(color="orange"), name="q4")
+    layout = Layout(xaxis_title="Time [min]", yaxis_title="Quaternion", template="simple_white", showlegend=true)
     p = plot([q1_traces, q2_traces, q3_traces, q4_traces], layout)
     display(p)
     savefig(p, name * "_quaternion.pdf", format="pdf")
+end
+
+function angular_velocity_plot(name)
+    """
+        Plot the angular velocity of the spacecraft during the drag passages
+    """
+
+    time = config.solution.orientation.time
+    angular_velocity = config.solution.orientation.ω
+    ω1_traces = scatter(x=time/60, y=rad2deg.(angular_velocity[1])*60, mode="lines", line=attr(color="red"), name="ω1")
+    ω2_traces = scatter(x=time/60, y=rad2deg.(angular_velocity[2])*60, mode="lines", line=attr(color="green"), name="ω2")
+    ω3_traces = scatter(x=time/60, y=rad2deg.(angular_velocity[3])*60, mode="lines", line=attr(color="blue"), name="ω3")
+    layout = Layout(xaxis_title="Time [min]", yaxis_title="Angular Velocity (deg/min)", template="simple_white", showlegend=true)
+    p = plot([ω1_traces, ω2_traces, ω3_traces], layout)
+    display(p)
+    savefig(p, name * "_angular_velocity.pdf", format="pdf")
 end

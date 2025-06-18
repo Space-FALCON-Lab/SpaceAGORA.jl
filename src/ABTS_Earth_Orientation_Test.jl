@@ -13,23 +13,23 @@ main_bus = config.Link(root=true,
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), 
                         q=SVector{4, Float64}([0, 0, 0, 1]),
                         ṙ=SVector{3, Float64}([0,0,0]), 
-                        dims=SVector{3, Float64}([2.2,1.7,2.6]), 
-                        ref_area=2.2*1.7,
+                        dims=SVector{3, Float64}([2.2,2.6,1.7]), 
+                        ref_area=2.6*1.7,
                         m=391.0, 
                         gyro=0)
 
-L_panel = config.Link(r=SVector{3, Float64}(0.0, -1.7/2 - 3.76/4, 0.0), 
+L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.6/2 - 3.89/4, 0.0), 
                         q=SVector{4, Float64}([0, 0, 0, 1]),
                         ṙ=SVector{3, Float64}([0,0,0]), 
-                        dims=SVector{3, Float64}([3.76/2, 1.93, 0.01]), 
-                        ref_area=3.76*1.93/2,
+                        dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
+                        ref_area=3.89*1.7/2,
                         m=10.0, 
                         gyro=0)
-R_panel = config.Link(r=SVector{3, Float64}(0.0, 1.7/2 + 3.76/4, 0.0),
+R_panel = config.Link(r=SVector{3, Float64}(0.0, 2.6/2 + 3.89/4, 0.0),
                         q=SVector{4, Float64}([0, 0, 0, 1]),
                         ṙ=SVector{3, Float64}([0,0,0]), 
-                        dims=SVector{3, Float64}([3.76/2, 1.93, 0.01]), 
-                        ref_area=3.76*1.93/2,
+                        dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
+                        ref_area=3.89*1.7/2,
                         m=10.0, 
                         gyro=0)
 
@@ -46,25 +46,6 @@ println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
 # println("Spacecraft roots: $spacecraft.roots")
 println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
 println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
-# main_bus = config.Box("Main Bus", 391.0, SVector{3, Float64}(2.2, 1.7, 2.6), 2.2*1.7, SVector{3, Float64}(0.0, 0.0, 0.0))
-# config.add_body!(spacecraft, main_bus, config.FixedJoint(), nothing, config.translation(SVector{3, Float64}(0.0, 0.0, 0.0))...)
-
-# L_panel = config.FlatPlate("Left Solar Panel", 10.0, SVector{2, Float64}(3.76/2, 1.93), 3.76*1.93/2, SVector{3, Float64}(0.0, 0.0, 0.0))
-# config.add_body!(spacecraft, L_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, -1.7/2 - 3.76/4, 0.0))...)
-
-# R_panel = config.FlatPlate("Right Solar Panel", 10.0, SVector{2, Float64}(3.76/2, 1.93), 3.76*1.93/2, SVector{3, Float64}(0.0, 0.0, 0.0))
-# config.add_body!(spacecraft, R_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, 1.7/2 + 3.76/4, 0.0))...)
-# for (i, node) in enumerate(spacecraft.bodies)
-#     println("Body $i: $(node.body.name)")
-#     if !isnothing(node.parent)
-#         println("  Parent: $(spacecraft.bodies[node.parent].body.name)")
-#         println("  Joint: $(typeof(node.joint))")
-#     else
-#         println("  Root body")
-#     end
-# end
-# println("Spacecraft model initialized with $(length(spacecraft.bodies)) bodies.")
-# println("Spacecraft dry mass: $(spacecraft.dry_mass) kg, fuel mass: $(spacecraft.prop_mass) kg.")
 
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
@@ -85,7 +66,7 @@ args = Dict(# Misc Simulation
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 20,                                 # Number of aerobraking passage
+            :number_of_orbits => 500,                                 # Number of aerobraking passage
 
             # Physical Model
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -101,8 +82,8 @@ args = Dict(# Misc Simulation
             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
             
             # Perturbations
-            :n_bodies => [],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
-            :srp => 0,                                             # Solar Radiation Pressure True=1, False=0
+            :n_bodies => ["Sun", "Moon"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
+            :srp => 1,                                             # Solar Radiation Pressure True=1, False=0
             :gravity_harmonics => 1,                                            # Gravity Spherical harmonics True=1, False=0
             :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/Mars50c.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
@@ -148,10 +129,10 @@ args = Dict(# Misc Simulation
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 10000.0e3,                # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_a => 7000.0e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 10000.0e3-6378.0e3,                                 # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_a => 622.0e3,                                 # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 1590000.0e3,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 1e12,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
@@ -163,7 +144,7 @@ args = Dict(# Misc Simulation
             :γ_initial_a => -2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_step => 100,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :inclination => 93.522,                                   # Inclination Orbit, deg
+            :inclination => 60.0,                                   # Inclination Orbit, deg
             :ω => 109.7454,                                              # AOP, deg
             :Ω => 28.1517,                                              # RAAN, deg
             :EI => 160.0,                                           # Entry Interface, km

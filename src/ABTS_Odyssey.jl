@@ -13,23 +13,23 @@ main_bus = config.Link(root=true,
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), 
                         q=SVector{4, Float64}([0, 0, 0, 1]),
                         ṙ=SVector{3, Float64}([0,0,0]), 
-                        dims=SVector{3, Float64}([2.2,1.7,2.6]), 
-                        ref_area=2.2*1.7,
+                        dims=SVector{3, Float64}([2.2,2.6,1.7]), 
+                        ref_area=2.6*1.7,
                         m=391.0, 
                         gyro=0)
 
-L_panel = config.Link(r=SVector{3, Float64}(0.0, -1.7/2 - 3.76/4, 0.0), 
+L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.6/2 - 3.89/4, 0.0), 
                         q=SVector{4, Float64}([0, 0, 0, 1]),
                         ṙ=SVector{3, Float64}([0,0,0]), 
-                        dims=SVector{3, Float64}([3.76/2, 1.93, 0.01]), 
-                        ref_area=3.76*1.93/2,
+                        dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
+                        ref_area=3.89*1.7/2,
                         m=10.0, 
                         gyro=0)
-R_panel = config.Link(r=SVector{3, Float64}(0.0, 1.7/2 + 3.76/4, 0.0),
+R_panel = config.Link(r=SVector{3, Float64}(0.0, 2.6/2 + 3.89/4, 0.0),
                         q=SVector{4, Float64}([0, 0, 0, 1]),
                         ṙ=SVector{3, Float64}([0,0,0]), 
-                        dims=SVector{3, Float64}([3.76/2, 1.93, 0.01]), 
-                        ref_area=3.76*1.93/2,
+                        dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
+                        ref_area=3.89*1.7/2,
                         m=10.0, 
                         gyro=0)
 
@@ -154,7 +154,7 @@ args = Dict(# Misc Simulation
             :day => 6,                                             # Mission day
             :hours => 19,                                           # Mission hour
             :minutes => 0,                                         # Mission minute
-            :secs => 0.0,                                          # Mission second
+            :secs => 32.0,                                          # Mission second
             
             # Final Conditions
             :final_apoapsis => 3390.0e3+503e3, # 5088116.837416616, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign

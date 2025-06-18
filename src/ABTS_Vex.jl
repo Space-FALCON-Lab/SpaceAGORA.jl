@@ -1,37 +1,57 @@
 include("simulation/Run.jl")
 # include("config.jl")
 include("utils/maneuver_plans.jl")
-
+include("utils/attitude_control_plans.jl")
 import .config
 import .ref_sys
 # import .SpacecraftModel
 # Define spacecraft model
-spacecraft = config.SpacecraftModel([], 1, [], [], Dict(), true, 0.0, 10.0, MMatrix{3, 3}(zeros(3, 3)), SVector{3}(zeros(3)))
+spacecraft = config.SpacecraftModel()
 # Add bodies to the spacecraft model
-main_bus = config.Box("Main Bus", 600.0, SVector{3, Float64}(2.05, 2.8, 3.7), 2.05*2.8, SVector{3, Float64}(0.0, 0.0, 0.0))
-config.add_body!(spacecraft, main_bus, config.FixedJoint(), nothing, config.translation(SVector{3, Float64}(0.0, 0.0, 0.0))...)
+main_bus = config.Link(root=true, 
+                        r=SVector{3, Float64}(0.0, 0.0, 0.0), 
+                        q=SVector{4, Float64}([0, 0, 0, 1]),
+                        ṙ=SVector{3, Float64}([0,0,0]), 
+                        dims=SVector{3, Float64}([3.7,2.05,2.8]), 
+                        ref_area=2.05*2.8,
+                        m=620.0, 
+                        gyro=0,
+                        J_rw=MMatrix{3, 3, Float64}([1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]),
+                        attitude_control_function=constant_α_β) # Reaction wheel inertia
 
-L_panel = config.FlatPlate("Left Solar Panel", 20.0, SVector{2, Float64}(5.7/2, 1.0), 5.7/2, SVector{3, Float64}(0.0, 0.0, 0.0))
-config.add_body!(spacecraft, L_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, -2.8/2 - 5.7/4, 0.0))...)
+L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.05/2 - 5.7/4, 0.0), 
+                        q=SVector{4, Float64}([0, 0, 0, 1]),
+                        ṙ=SVector{3, Float64}([0,0,0]), 
+                        dims=SVector{3, Float64}([0.01, 5.7/2, 1.0]), 
+                        ref_area=1.0*5.7/2,
+                        m=10.0, 
+                        gyro=0)
+R_panel = config.Link(r=SVector{3, Float64}(0.0, 2.05/2 + 5.7/4, 0.0),
+                        q=SVector{4, Float64}([0, 0, 0, 1]),
+                        ṙ=SVector{3, Float64}([0,0,0]), 
+                        dims=SVector{3, Float64}([0.01, 5.7/2, 1.0]), 
+                        ref_area=1.0*5.7/2,
+                        m=10.0, 
+                        gyro=0)
 
-R_panel = config.FlatPlate("Right Solar Panel", 20.0, SVector{2, Float64}(5.7/2, 1.0), 5.7/2, SVector{3, Float64}(0.0, 0.0, 0.0))
-config.add_body!(spacecraft, R_panel, config.RevoluteJoint(SVector{3, Float64}(0.0, 1.0, 0.0)), 1, config.translation(SVector{3, Float64}(0.0, 2.8/2 + 5.7/4, 0.0))...)
-for (i, node) in enumerate(spacecraft.bodies)
-    println("Body $i: $(node.body.name)")
-    if !isnothing(node.parent)
-        println("  Parent: $(spacecraft.bodies[node.parent].body.name)")
-        println("  Joint: $(typeof(node.joint))")
-    else
-        println("  Root body")
-    end
-end
-println("Spacecraft model initialized with $(length(spacecraft.bodies)) bodies.")
-println("Spacecraft dry mass: $(spacecraft.dry_mass) kg, fuel mass: $(spacecraft.prop_mass) kg.")
+config.add_body!(spacecraft, main_bus, prop_mass=10.0)
+config.add_body!(spacecraft, L_panel)
+config.add_body!(spacecraft, R_panel)
+
+L_panel_joint = config.Joint(main_bus, L_panel)
+R_panel_joint = config.Joint(R_panel, main_bus)
+config.add_joint!(spacecraft, L_panel_joint)
+config.add_joint!(spacecraft, R_panel_joint)
+
+println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
+# println("Spacecraft roots: $spacecraft.roots")
+println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
+println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => 0,                                                                                    # Print some lines True=1, False=0
+            :print_res => 1,                                                                                    # Print some lines True=1, False=0
             :directory_results => "/workspaces/ABTS.jl/output/venus_express",            # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                   # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",           # Directory where Gram data is
@@ -74,7 +94,7 @@ args = Dict(# Misc Simulation
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
-            :save_rate => 3.0,                                      # Rate at which the data trajectory are saved
+            :save_rate => 5.0,                                      # Rate at which the data trajectory are saved
         
             
             # Body
@@ -82,7 +102,7 @@ args = Dict(# Misc Simulation
             :max_heat_rate => 0.29,                                 # Max heat rate the heat rate control will start to react to
             :max_heat_load => 50.0,                                 # Max heat load the heat load control will not be overcomed
             # :dry_mass => 640.0,                                     # Initial dry mass of body in kg
-            # :prop_mass => 10.0,                                     # Initial propellant mass of body in kg
+            :prop_mass => 10.0,                                     # Initial propellant mass of body in kg
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
             :α => 90.0,                                             # Max angle of attack of solar panels

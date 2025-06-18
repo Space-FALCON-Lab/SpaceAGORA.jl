@@ -162,6 +162,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         counter_integrator::Int64 = 0
         prev_step_integrator::Float64 = 0.0
         initial_time_saved::Float64 = 0.0
+        prev_timestep::Float64 = 0.0
 
         # Extra variables missing in python version
         counter::Int64 = 0

@@ -1,0 +1,65 @@
+include("../physical_models/Attitude_control_models.jl")
+include("quaternion_utils.jl")
+using Rotations, LinearAlgebra
+
+
+# Function to compute the rotation quaternion between two vectors
+function rotation_between(v1::SVector{3, Float64}, v2::SVector{3, Float64})
+    v1 = normalize(v1)
+    v2 = normalize(v2)
+    dot_prod = dot(v1, v2)
+
+    if isapprox(dot_prod, 1.0; atol=1e-8)
+        return SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)  # identity rotation
+    elseif isapprox(dot_prod, -1.0; atol=1e-8)
+        # Choose orthogonal axis
+        axis = normalize(cross(v1, SVector(1.0, 0.0, 0.0)))
+        if norm(axis) < 1e-8
+            axis = normalize(cross(v1, SVector(0.0, 1.0, 0.0)))
+        end
+        q = UnitQuaternion(RotXYZ(π * axis))
+        return SVector{4, Float64}(q.v[1], q.v[2], q.v[3], q.s)
+    else
+        c = cross(v1, v2)
+        s = sqrt((1 + dot_prod) * 2)
+        q = SVector{4, Float64}(c[1] / s, c[2] / s, c[3] / s, s / 2)
+        return q
+    end
+end
+
+function constant_α_β(m, t0, b, bodies, root_index, args, vel_pp_rw)
+"""
+    Generate a constant attitude control plan with fixed angles α and β set to 0.
+    
+    # Arguments
+    - `m`: Mission object containing spacecraft and other parameters.
+    - `t0`: Initial time for the control plan.
+    - `args`: Simulation parameters.
+    
+    # Returns
+    - A tuple containing the time vector, attitude vector, and angular velocity vector.
+"""
+    # α = 0.0  # Angle of attack in radians
+    # β = 0.0  # Angle of sideslip in radians
+
+    # R = config.rotate_to_inertial(m.body, b, root_index)
+    # body_frame_velocity = R' * m.planet.L_PI' * vel_pp_rw
+    # current_α = atan(body_frame_velocity[2], body_frame_velocity[1])
+    # current_β = atan(body_frame_velocity[2], norm(body_frame_velocity[1:2:3]))
+    # ω = b.ω
+    # Calculate the body frame x axis in the inertial frame
+    x_axis_inertial = rot(m.body.roots[root_index].q) * SVector(1.0, 0.0, 0.0)
+    # Calculate the wind-relative velocity in the inertial frame
+    wind_relative_velocity = m.planet.L_PI' * vel_pp_rw
+    # Calculate the orientation quaternion from the inertial x-axis to the wind-relative velocity
+    orientation_quat = rotation_between(x_axis_inertial, wind_relative_velocity)
+    δq = orientation_quat[1:3]
+    δω = b.ω
+    R = config.rotate_to_inertial(m.body, b, root_index)
+    inertia_tensor = R * config.get_inertia_tensor(m.body, b) * R'
+    kp = 0.01
+    kd = 0.006
+    b.rw_τ = cross(b.ω, inertia_tensor * b.ω) - kp*δq - kd*b.ω
+
+    return b.rw_τ
+end

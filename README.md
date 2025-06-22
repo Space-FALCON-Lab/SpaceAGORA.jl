@@ -44,3 +44,41 @@ The following described necessary modifications to the example code in several c
 * Change the ```directory_GRAM``` argument to ```""```.
 > Docker is not properly set up
 * Change the file path arguments (```directory_Gram```, ```directory_Spice```, etc.) to match your system. Curently they are configured for the Docker environment assuming all GRAM and SPICE files are present in the correct locations.
+
+# Usage Guide
+This section provides a brief overview of the structure and usage of this simulator. Generally, user interaction with the simulator is through a program similar to those given in the ```ABTS_*.jl``` files. This is where simulation settings and variables are defined and where the run function is called. The user may use this format to easily modify settings or perform a Monte Carlo analysis.
+## Initial Conditions
+The initial conditions are defined either through initial orbital elements or through initial velocity and flight-path angle. If running a full aerobraking campaign, the terminal condition is defined through the desired final apoapsis radius.
+
+## Vehicle Definition
+The spacecraft is modeled either as a box with two flat plates attached, representing the spacecraft main bus with a solar panel on each side, or as a blunted cone, referred to as "Spacecraft" and "Blunted Cone", respectively. In the "Spacecraft" case, the main bus is defined with a length, width, and height, and the solar panels are defined with a length and height. The overall spacecraft is defined with a dry mass, propellant mass, reflection coefficient, and thermal accomodation factor. The engine thrust, used for propulsive maneuvers to change the periapsis altitude, must also be defined. The "Blunted Cone" case is defined similarly, with the length, width, and height parameters being replaced by cone angle, nose radius, and base radius. 
+
+For propulsive maneuvers, a function must be defined in ```utils/maneuver_plans.jl``` with the following input arguments: 
+```julia
+planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, args=nothing
+```
+It must also modify the ```:delta_v``` and ```:phi``` fields of ```args``` and return ```args```. The ```:delta_v``` field specifies the $\Delta V$ of the propulsive maneuver, and the ```:phi``` field specifies the direction in which the thruster is oriented, with $\phi=\pi$ being a raise maneuver, and $\phi=0$ being a lower maneuver.
+
+## Planet
+The planet model is mostly predefined, with the option to specify the models used for different physical characteristics such as atmospheric density and gravity. The planet shape and size are predefined in ```src/physical_models/Planet_data.jl```. The orientation is determined using the SPICE system for accurate latitude and longitude calculations.
+
+### Density Models
+The atmospheric density calculation can be done using several built-in methods. The most accurate is to use the GRAM Suite, the set up for which is discussed previously. Other models include an exponential atmosphere model and a constant density model.
+
+### Gravity Models
+The nominal gravitational acceleration can also be computed using different built-in functions. First, a constant law sets the gravity to be constant at all altitudes, latitudes, and longitudes. Next, an inverse square law calculates the gravity as a function of altitude. Finally, an inverse square law accounting for the J2 effect determines the gravity as a function of both altitude and latitude.
+
+### Aerodynamic and Thermal Models
+The aerodynamic coefficients are Mach-dependent and use the [Flow of Rarefied Gases](https://books.google.com/books?hl=en&lr=&id=DIIrDgAAQBAJ&oi=fnd&pg=PP1&dq=rarefied+flow+schaaf+and+chambre&ots=PWLd04BJmj&sig=DaKV6gVakAuvKRgQDM3ZE9uFrdQ#v=onepage&q=rarefied%20flow%20schaaf%20and%20chambre&f=false) theory from Shaaf and Chambre, and the thermal model follows the Maxwellian heat transfer theory also from Shaaf and Chambre.
+
+## Perturbing Forces
+The most significant perturbing forces&mdash;third-body gravity, solar radiation pressure (SRP), and gravitational harmonics&mdash;are built into the simulator.
+
+### Third-body Gravity
+The gravitational effect of massive third-bodies is calculated using SPICE to determine the relative positions of each body. The third-bodies to consider are defined using the ```:n_bodies``` field, which is a vector of strings containing the SPICE names (often just the standard names, e.g., "Sun", "Moon") of the bodies to be considered. Additional SPICE files may be required if performing an analysis at destinations other than Venus, Earth, Mars, or Titan.
+
+### Solar Radiation Pressure
+Solar radiation pressure is also calculated using SPICE, this time to determine the relative position of the Sun and the central body. This is important both for determining the direction and magnitude of the SRP, but also in the case of a partial eclipse of the spacecraft, the area receiving sunlight. This is all done behind the scenes, and the only user input required is a flag that indicates whether to consider SRP.
+
+### Gravitational Harmonics
+This is the most complex perturbation, computationally. Very high degree and order models can cause significant performance loss with negligible benefit to the accuracy of the simulation. In the examples, 50th degree and order models were found to be sufficient for most purposes. This requires the user to specify the file from which the spherical harmonic coefficients are drawn and the degree and order (```:L``` and ```:M```, respectively).

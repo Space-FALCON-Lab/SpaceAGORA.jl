@@ -36,12 +36,20 @@ function aerobraking_campaign(args, state)
     p_class = planet_data(ip.M.planet)
     config.model.planet = p_class
 
+    # Set up appropriate SPICE files
+    if !isdir(args[:directory_Spice])
+        throw(ArgumentError("SPICE directory does not exist: " * args[:directory_Spice]))
+    end
     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-    furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
+    if args[:directory_Gram] != ""
+        furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
+        furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
+    else
+        furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
+        furnsh(args[:directory_Spice] * "/spk/satellites/sat441.bsp")
+    end
     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-    furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-    furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-    
+
     # If using lat/lon initial conditions, correct the initial orbital elements
     if args[:orientation_type] == 1
         # Get the latitude and longitude of the initial conditions
@@ -66,6 +74,7 @@ function aerobraking_campaign(args, state)
         state[:Ω] = OE[4]
         state[:ω] = OE[5]
     end
+
     # Set up n-body gravity
     if length(args[:n_bodies]) != 0
         for i=1:length(args[:n_bodies])
@@ -73,7 +82,7 @@ function aerobraking_campaign(args, state)
         end
     end
 
-    # Set up spherical harmonics coefficients
+    # Set up spherical harmonics coefficients to use Pines' method from GMAT
     if args[:gravity_harmonics] == true
         # Read in the gravity harmonics data
         harmonics_data = CSV.read(args[:gravity_harmonics_file], DataFrame)

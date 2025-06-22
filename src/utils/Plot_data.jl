@@ -17,7 +17,7 @@ function plots(state, m, name, args)
     ABM_periapsis(name)
     ground_track(state, m, name, args)
     
-    if args[:body_shape] == "Spacecraft" && !config.cnf.impact && args[:keplerian] == false
+    if args[:closed_form] == 1 && args[:body_shape] == "Spacecraft" && !config.cnf.impact && args[:keplerian] == false
         closed_form_solution_plot(name, m)
         # angle_of_attack_plot(name, args)
     end

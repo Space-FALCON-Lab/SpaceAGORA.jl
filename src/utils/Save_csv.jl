@@ -97,11 +97,20 @@ function save_csv(filename, args)
                           force_ii_2 = config.solution.forces.force_ii[2],
                           force_ii_3 = config.solution.forces.force_ii[3],
                           energy = config.solution.forces.energy,
-                          t_cf = config.solution.closed_form.t_cf,
-                          h_cf = config.solution.closed_form.h_cf,
-                          gamma_cf = config.solution.closed_form.γ_cf,
-                          v_cf = config.solution.closed_form.v_cf)
+                          t_cf = zeros(length(config.solution.orientation.time)),
+                          h_cf = zeros(length(config.solution.orientation.time)),
+                          gamma_cf = zeros(length(config.solution.orientation.time)),
+                          v_cf = zeros(length(config.solution.orientation.time)))
+                        #   h_cf = config.solution.closed_form.h_cf,
+                        #   gamma_cf = config.solution.closed_form.γ_cf,
+                        #   v_cf = config.solution.closed_form.v_cf)
     
+    if args[:closed_form] == 1
+        data_push[!, :t_cf] = config.solution.closed_form.t_cf
+        data_push[!, :h_cf] = config.solution.closed_form.h_cf
+        data_push[!, :gamma_cf] = config.solution.closed_form.γ_cf
+        data_push[!, :v_cf] = config.solution.closed_form.v_cf
+    end
     CSV.write(filename, data_push)
 
 end

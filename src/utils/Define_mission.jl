@@ -64,7 +64,7 @@ function def_miss(args)
     end
 
     if Bool(args[:Odyssey_sim])
-        args[:control_mode] = 3
+        args[:control_mode] = 0
         args[:type_of_mission] = "Aerobraking Campaign"
         args[:number_of_orbits] = 350
         args[:planet] = 1 # "Mars"
@@ -95,7 +95,7 @@ function def_miss(args)
         args[:month] = 11
         args[:day] = 6
 
-        args[:final_apoapsis] = 4900e3 # 3390.0e3 + 503e3 # 4905.97e3  
+        args[:final_apoapsis] = 3390.0e3 + 503e3 # 4905.97e3  
         args[:montecarlo] = 0
         args[:drag_passage] = 0
     end

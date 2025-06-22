@@ -193,7 +193,7 @@ function aerobraking(ip, m, args)
         end
     end
 
-    if m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan"
+    if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
         closed_form(args, m)
     else
         len_sol = length(config.solution.orientation.time)

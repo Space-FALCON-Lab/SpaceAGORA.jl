@@ -66,7 +66,7 @@ function def_miss(args)
     if Bool(args[:Odyssey_sim])
         args[:control_mode] = 0
         args[:type_of_mission] = "Orbits"
-        args[:number_of_orbits] = 100
+        args[:number_of_orbits] = 300
         args[:planet] = 1 # "Mars"
         args[:body_shape] = "Spacecraft"
         # args[:dry_mass] = 411.0

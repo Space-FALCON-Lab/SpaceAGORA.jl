@@ -19,8 +19,8 @@ mutable struct Link
     aᵇ::SVector{3, Float64} # Left extent (Body frame)
     bᵇ::SVector{3, Float64} # Right extent (Body frame)
     gyro::Int64 # Number of Gyroscope
-    rw::MVector{3, Float64} # angular velocity reaction wheels
-    J_rw::MMatrix{3, 3, Float64}#J_rw::SMatrix{3,} # reaction wheel jacobian
+    rw::Vector{Float64} # angular velocity reaction wheels
+    J_rw::Matrix{Float64}#J_rw::SMatrix{3,} # reaction wheel jacobian
     rw_τ::MVector{3, Float64} # Reaction wheel torque vector, to be updated at each simulation step
     net_force::MVector{3, Float64} # Net force acting on the link, to be updated at each simulation step
     net_torque::MVector{3, Float64} # Net torque acting on the link, to be updated at each simulation step
@@ -39,13 +39,14 @@ mutable struct Link
                     a=SVector{3, Float64}([-0.5*dims[1], 0, 0]),
                     b=SVector{3, Float64}([0.5*dims[1], 0, 0]),
                     gyro = 3,
-                    rw = MVector{3, Float64}(zeros(3)),
-                    J_rw=MMatrix{3, 3, Float64}(zeros(3, 3)),
+                    rw = MVector{gyro, Float64}(zeros(gyro)),
+                    J_rw=MMatrix{3, gyro, Float64}(zeros(3, gyro)),
                     rw_τ=MVector{3, Float64}(zeros(3)),
                     net_force=MVector{3, Float64}(zeros(3)),
                     net_torque=MVector{3, Float64}(zeros(3)),
                     attitude_control_function=()->0.0,
                     actuation_function=()->0.0)#SMatrix{3,Int(gyro)}(1.0I))
+                    println(length(rw))
         new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, gyro, rw, J_rw, rw_τ, net_force, net_torque, attitude_control_function, actuation_function)
     end
 end
@@ -106,14 +107,16 @@ mutable struct SpacecraftModel
     # dry_mass::Float64 # Dry mass of the spacecraft
     prop_mass::Vector{Float64} # Fuel mass available for maneuvers
     inertia_tensors::Vector{SMatrix{3, 3, Float64}} # Inertia tensors of the spacecraft bodies
+    n_reaction_wheels::Int64 # Number of reaction wheels in the spacecraft model
     # inertia_tensor::MMatrix{3, 3, Float64} # Inertia tensor of the spacecraft in the inertial frame
     # COM::SVector{3, Float64} # Center of mass in the body frame (relative to origin of the root body)
 
     function SpacecraftModel(;joints=Joint[], links=Link[], roots=Link[], 
                         instant_actuation=true, 
                         prop_mass=Float64[],
-                        inertia_tensors=SMatrix{3, 3, Float64}[])
-        new(joints, links, roots, instant_actuation, prop_mass, inertia_tensors)
+                        inertia_tensors=SMatrix{3, 3, Float64}[],
+                        n_reaction_wheels=0)
+        new(joints, links, roots, instant_actuation, prop_mass, inertia_tensors, n_reaction_wheels)
     end
 end
 
@@ -134,6 +137,7 @@ function add_body!(model::SpacecraftModel,
         push!(model.prop_mass, prop_mass) # Add propellant mass for root body
         # Initialize inertia tensor for the root body
     end
+    model.n_reaction_wheels += body.gyro # Increment the number of reaction wheels
 end
 
 # Function to add a joint to the spacecraft model

@@ -1,6 +1,7 @@
 include("simulation/Run.jl")
-# include("config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
+include("config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("utils/maneuver_plans.jl")
+include("utils/attitude_control_plans.jl")
 # include("SpacecraftModel.jl")
 
 import .config
@@ -16,7 +17,9 @@ main_bus = config.Link(root=true,
                         dims=SVector{3, Float64}([2.2,2.6,1.7]), 
                         ref_area=2.6*1.7,
                         m=391.0, 
-                        gyro=0)
+                        gyro=4,
+                        J_rw=MMatrix{3, 4, Float64}([1.0 0.0 0.0 0.57735; 0.0 1.0 0.0 0.57735; 0.0 0.0 1.0 0.57735]),
+                        attitude_control_function=constant_α_β)
 
 L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.6/2 - 3.89/4, 0.0), 
                         q=SVector{4, Float64}([0, 0, 0, 1]),
@@ -46,7 +49,9 @@ println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
 # println("Spacecraft roots: $spacecraft.roots")
 println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
 println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
-
+# config.model.body = spacecraft
+# println("Number of reaction wheels: ", config.model.body.n_reaction_wheels)
+# println("Number of reaction wheels true: $(spacecraft.n_reaction_wheels)")
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
@@ -153,7 +158,7 @@ args = Dict(# Misc Simulation
             :month => 11,                                           # Mission month
             :day => 6,                                             # Mission day
             :hours => 19,                                           # Mission hour
-            :minutes => 0,                                         # Mission minute
+            :minutes => 15,                                         # Mission minute
             :secs => 32.0,                                          # Mission second
             
             # Final Conditions

@@ -258,7 +258,10 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         cL::Vector{Float64} = []
         cD::Vector{Float64} = []
         α::Vector{Float64} = []
+        β::Vector{Float64} = []
         S::Vector{Float64} = []
+        h_rw::Vector{Vector{Float64}} = []
+        τ_rw::Vector{Vector{Float64}} = [[], [], []]
     end
 
     @kwdef mutable struct Performance

@@ -15,7 +15,7 @@ main_bus = config.Link(root=true,
                         dims=SVector{3, Float64}([3.7,2.05,2.8]), 
                         ref_area=2.05*2.8,
                         m=620.0, 
-                        gyro=0,
+                        gyro=3,
                         J_rw=MMatrix{3, 3, Float64}([1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]),
                         attitude_control_function=constant_α_β) # Reaction wheel inertia
 

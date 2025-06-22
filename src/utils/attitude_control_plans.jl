@@ -17,8 +17,7 @@ function rotation_between(v1::SVector{3, Float64}, v2::SVector{3, Float64})
         if norm(axis) < 1e-8
             axis = normalize(cross(v1, SVector(0.0, 1.0, 0.0)))
         end
-        q = UnitQuaternion(RotXYZ(π * axis))
-        return SVector{4, Float64}(q.v[1], q.v[2], q.v[3], q.s)
+        return SVector{4, Float64}(axis[1], axis[2], axis[3], 0.0)
     else
         c = cross(v1, v2)
         s = sqrt((1 + dot_prod) * 2)
@@ -48,17 +47,18 @@ function constant_α_β(m, t0, b, bodies, root_index, args, vel_pp_rw)
     # current_β = atan(body_frame_velocity[2], norm(body_frame_velocity[1:2:3]))
     # ω = b.ω
     # Calculate the body frame x axis in the inertial frame
-    x_axis_inertial = rot(m.body.roots[root_index].q) * SVector(1.0, 0.0, 0.0)
+    x_axis_inertial = rot(m.body.roots[root_index].q)' * SVector(1.0, 0.0, 0.0)
     # Calculate the wind-relative velocity in the inertial frame
     wind_relative_velocity = m.planet.L_PI' * vel_pp_rw
     # Calculate the orientation quaternion from the inertial x-axis to the wind-relative velocity
-    orientation_quat = rotation_between(x_axis_inertial, wind_relative_velocity)
-    δq = orientation_quat[1:3]
+    orientation_quat = rotation_between(SVector(1.0, 0.0, 0.0), wind_relative_velocity)
+    error_quat = error_quaternion(m.body.roots[root_index].q, orientation_quat)
+    δq = error_quat[1:3]
     δω = b.ω
     R = config.rotate_to_inertial(m.body, b, root_index)
     inertia_tensor = R * config.get_inertia_tensor(m.body, b) * R'
-    kp = 0.01
-    kd = 0.006
+    kp = 0.01*100
+    kd = 0.075*100
     b.rw_τ = cross(b.ω, inertia_tensor * b.ω) - kp*δq - kd*b.ω
 
     return b.rw_τ

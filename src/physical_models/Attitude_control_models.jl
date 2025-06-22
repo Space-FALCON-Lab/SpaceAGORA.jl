@@ -24,11 +24,23 @@ function reaction_wheel_model!(
         # u: current angular velocity vector
         # p: parameters (link properties)
         # t: time (not used here)
-        du = p \ u
-    end
+        J_rw = p[1]  # Reaction wheel inertia
+        # println("J_rw: $J_rw")
+        # println("pinv(J_rw): $(pinv(J_rw))")
+        τ = p[2]     # Applied torque vector
+        # println("τ: $τ")
+        du[1:4] = pinv(J_rw)*τ
 
-    prob = ODEProblem(ω_dot!, τ, (0.0, dt), link.J_rw)
-    link.rw = solve(prob, Tsit5(), dt=dt).u[end]
+        # println("du: $du")
+    end
+    # println("τ: $τ")
+    # println("dt: $dt")
+    rw = link.rw
+    prob = ODEProblem(ω_dot!, rw, (0.0, dt), [link.J_rw, τ])
+    # println("link.rw: $(link.rw)")
+    link.rw = solve(prob).u[end]
+    # println("Updated link.rw: $(link.rw)")
+    # println("link.rw post: $(link.rw)")
 end
 
 

@@ -77,6 +77,26 @@ function rot(q)
     return SMatrix{3, 3, Float64}((q4^2-norm(q[1:3])^2)*I - 2*q4*hat(q[1:3]) + 2*q[1:3]*q[1:3]')
 end
 
+function error_quaternion(current, target)
+    q = current
+    q_bar = current[1:3]'
+    q_bar_cross = [0 -q_bar[3] q_bar[2]; q_bar[3] 0 -q_bar[1]; -q_bar[2] q_bar[1] 0]
+    q_matrix = [q[4]*I(3)-q_bar_cross q_bar'; -q_bar q[4]]
+
+    qd = [-target[1]; -target[2]; -target[3]; target[4]]
+    qe = q_matrix * qd
+
+    # q = -current
+    # q_bar = current[1:3]'
+    # q_bar_cross = [0 -q_bar[3] q_bar[2]; q_bar[3] 0 -q_bar[1]; -q_bar[2] q_bar[1] 0]
+    # q_matrix = [q[4]*I(3)-q_bar_cross q_bar'; -q_bar q[4]]
+
+    # qd = [-target[1]; -target[2]; -target[3]; target[4]]
+    # qe_neg = q_matrix * qd
+    # qe = qe_pos[4] > qe_neg[4] ? qe_pos : qe_neg
+    return qe
+end
+
 ## take angle components (4, 3)
 H = SMatrix{4,3}([zeros(1, 3); I]);
 S = SMatrix{4,3}([[1 0 0]; zeros(3,3)])

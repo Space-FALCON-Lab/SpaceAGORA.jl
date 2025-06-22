@@ -83,6 +83,7 @@ end
 
 function run_analysis(args)
     config.reset_config()
+    config.model.body = args[:spacecraft_model]
     args = def_miss(args)
 
     if args[:initial_condition_type] == 1 && (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone")

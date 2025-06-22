@@ -38,13 +38,15 @@ function aerobraking_campaign(args, state)
     p_class = planet_data(ip.M.planet)
     config.model.planet = p_class
 
-    # Load SPICE kernels
-    furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-    furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-    furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-    furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-    furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-    furnsh(args[:directory_Spice] * "/spk/satellites/mar097_GRAM.bsp")
+    # Load SPICE kernels if required
+    if !isempty(args[:n_bodies]) || args[:srp] == 1
+        furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
+        furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
+        furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
+        furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
+        furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
+        furnsh(args[:directory_Spice] * "/spk/satellites/mar097_GRAM.bsp")
+    end
     
     # If using lat/lon initial conditions, correct the initial orbital elements
     if args[:orientation_type] == 1

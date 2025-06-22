@@ -19,7 +19,7 @@ function plots(state, m, name, args)
     
     if args[:closed_form] == 1 && args[:body_shape] == "Spacecraft" && !config.cnf.impact && args[:keplerian] == false
         closed_form_solution_plot(name, m)
-        # angle_of_attack_plot(name, args)
+        angle_of_attack_plot(name, args)
     end
 
     if args[:type_of_mission] == "Drag Passage"
@@ -29,6 +29,11 @@ function plots(state, m, name, args)
     attitude_plot(name, args)
     quaternion_plot(name)
     angular_velocity_plot(name)
+    wind_relative_attitude_plot(name)
+    if m.body.n_reaction_wheels > 0
+        reaction_wheel_h_plot(name)
+        reaction_wheel_torque_plot(name)
+    end
 end
 
 function drag_passage_plot(name, args)
@@ -526,4 +531,55 @@ function angular_velocity_plot(name)
     p = plot([ω1_traces, ω2_traces, ω3_traces], layout)
     display(p)
     savefig(p, name * "_angular_velocity.pdf", format="pdf")
+end
+
+function wind_relative_attitude_plot(name)
+    """
+        Plot the angle of attack and sideslip angles
+    """
+    time = config.solution.orientation.time
+    α = config.solution.physical_properties.α
+    β = config.solution.physical_properties.β
+
+    α_traces = scatter(x=time, y=rad2deg.(α), mode="lines", line=attr(color="red"), name="α")
+    β_traces = scatter(x=time, y=rad2deg.(β), mode="lines", line=attr(color="blue"), name="β")
+    layout = Layout(xaxis_title="Time [sec]", yaxis_title="Angle (deg)", template="simple_white", showlegend=true)
+    p = plot([α_traces, β_traces], layout)
+    display(p)
+    savefig(p, name * "_alpha_beta.pdf", format="pdf")
+end
+
+function reaction_wheel_h_plot(name)
+    """
+        Plot the reaction wheel angular momentum
+    """
+    time = config.solution.orientation.time
+    h = config.solution.physical_properties.h_rw
+    color_choices = ["red", "green", "blue", "orange", "purple", "cyan", "magenta", "yellow", "black"]
+    h_traces = []
+    
+    for i in eachindex(h)
+        push!(h_traces, scatter(x=time, y=h[i], mode="lines", line=attr(color=color_choices[i%length(color_choices)]), name="h$i"))
+    end
+    layout = Layout(xaxis_title="Time [sec]", yaxis_title="Angular Momentum (kg*m²/s)", template="simple_white", showlegend=true)
+    p = plot([h_traces...], layout)
+    display(p)
+    savefig(p, name * "_reaction_wheel_h.pdf", format="pdf")
+end
+
+function reaction_wheel_torque_plot(name)
+    """
+        Plot the reaction wheel torque
+    """
+    time = config.solution.orientation.time
+    τ = config.solution.physical_properties.τ_rw
+    colors = ["red", "green", "blue"]
+    τ_traces = []
+    for i in eachindex(τ)
+        push!(τ_traces, scatter(x=time, y=τ[i], mode="lines", line=attr(color=colors[i]), name="τ$i"))
+    end
+    layout = Layout(xaxis_title="Time [sec]", yaxis_title="Torque (N*m)", template="simple_white", showlegend=true)
+    p = plot([τ_traces...], layout)
+    display(p)
+    savefig(p, name * "_reaction_wheel_torque.pdf", format="pdf")
 end

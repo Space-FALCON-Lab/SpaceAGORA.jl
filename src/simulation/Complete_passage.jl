@@ -464,6 +464,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         drag_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize inertial drag force vector
         drag_pp = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize planet relative drag force vector
         lift_pp = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize planet relative lift force vector
+        α = 0.0
+        β = 0.0
         # Determine angle of attack (α) and sideslip angle (β)
         # Vehicle Aerodynamic Forces
         # CL and CD
@@ -471,23 +473,27 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             R = config.rotate_to_inertial(m.body, b, root_index) # Rotation matrix from the root body to the spacecraft link
             body_frame_velocity = R' * m.planet.L_PI' * vel_pp_rw # Velocity of the spacecraft link in inertial frame
             
-            α = atan(body_frame_velocity[3], body_frame_velocity[1]) # Angle of attack in radians
-            β = atan(body_frame_velocity[2], norm([body_frame_velocity[1], body_frame_velocity[3]])) # Sideslip angle in radians
+            α_body = atan(body_frame_velocity[3], body_frame_velocity[1]) # Angle of attack in radians
+            β_body = atan(body_frame_velocity[2], norm([body_frame_velocity[1], body_frame_velocity[3]])) # Sideslip angle in radians
 
-            tangent_vector = m.planet.L_PI * config.get_tangent_vector(m.body, b, root_index) # Normal vector of the spacecraft link in inertial frame
-            tangent_vector /= norm(tangent_vector) # Normalize the normal vector
+            if b.root
+                α = α_body
+                β = β_body
+            end
+            # tangent_vector = m.planet.L_PI * config.get_tangent_vector(m.body, b, root_index) # Normal vector of the spacecraft link in inertial frame
+            # tangent_vector /= norm(tangent_vector) # Normalize the normal vector
             
-            normal_vector = m.planet.L_PI * config.get_normal_vector(m.body, b, root_index) # Normal vector of the spacecraft link in inertial frame
-            normal_vector /= norm(normal_vector) # Normalize the normal vector
-            # α = acos(dot(normal_vector, lift_pp_hat)) # Angle of attack in radians
+            # normal_vector = m.planet.L_PI * config.get_normal_vector(m.body, b, root_index) # Normal vector of the spacecraft link in inertial frame
+            # normal_vector /= norm(normal_vector) # Normalize the normal vector
+            # # α = acos(dot(normal_vector, lift_pp_hat)) # Angle of attack in radians
             
-            projection_normal_to_drag = normal_vector - dot(normal_vector, lift_pp_hat) * lift_pp_hat # Project the normal vector onto the plane perpendicular to the position vector 
-            projection_normal_to_drag /= norm(projection_normal_to_drag) # Normalize the projected normal vector
+            # projection_normal_to_drag = normal_vector - dot(normal_vector, lift_pp_hat) * lift_pp_hat # Project the normal vector onto the plane perpendicular to the position vector 
+            # projection_normal_to_drag /= norm(projection_normal_to_drag) # Normalize the projected normal vector
             
             # α = acos(dot(projection_normal_to_drag, normal_vector) / (norm(projection_normal_to_drag) * norm(normal_vector))) # Angle of attack in radians
             # β = acos(dot(projection_normal_to_drag, vel_pp_rw_hat) / (norm(projection_normal_to_drag) * norm(vel_pp_rw_hat))) # Sideslip angle in radians
-            α = 0.0
-            β = 0.0
+            # α = 0.0
+            # β = 0.0
             # if α > π
             #     α = 2*π - α # Ensure α is in the range [0, π/2]
             # end
@@ -498,7 +504,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             if ip.am == 0
                 CL, CD = aerodynamic_coefficient_constant(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
             elseif ip.am == 1
-                CL_body, CD_body, CS_body = aerodynamic_coefficient_fM(α, β, b, T_p, S, m.aerodynamics, MonteCarlo)
+                CL_body, CD_body, CS_body = aerodynamic_coefficient_fM(α_body, β_body, b, T_p, S, m.aerodynamics, MonteCarlo)
             elseif ip.am == 2
                 CL, CD = aerodynamic_coefficient_no_ballistic_flight(α, m.body, args, T_p, S, m.aerodynamics, MonteCarlo)
             end
@@ -567,9 +573,12 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         thrust_ii = m.planet.L_PI' * thrust_pp
 
         # Attitude control torques
+        τ_rw = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize reaction wheel torque vector
         for b in bodies
             if b.gyro != 0.0
-                b.net_torque += b.attitude_control_function(m, t0, b, bodies, root_index, args, vel_pp_rw) # Update the torque on the spacecraft link
+                τ = b.attitude_control_function(m, t0, b, bodies, root_index, args, vel_pp_rw) # Calculate the reaction wheel torque
+                τ_rw += τ # Sum the reaction wheel torques
+                b.net_torque += τ # Update the torque on the spacecraft link
             end
         end
 
@@ -610,6 +619,18 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             b.net_force .= SVector{3, Float64}(0.0, 0.0, 0.0) # Reset the net force on each link
             b.net_torque .= SVector{3, Float64}(0.0, 0.0, 0.0) # Reset the net torque on each link
         end
+        rw_h = MVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels)) # Initialize reaction wheel angular momentum vector
+        counter = 1
+        # println("length of rw_h: ", length(rw_h))
+        for b in bodies
+            # println("b.rw: ", length(b.rw))
+            for i in 1:b.gyro
+                # println("b.gyro: ", b.gyro, " counter: ", counter)
+                # println("b.rw[i]: ", length(b.rw[i]))
+                rw_h[counter] = b.rw[i] # Reaction wheel angular momentum vector
+                counter += 1
+            end
+        end
         ## SAVE RESULTS
         if Bool(config.cnf.results_save)
             sol = [t0, timereal.year, timereal.month, timereal.day, timereal.hour, timereal.minute,
@@ -618,9 +639,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         lat, lon, alt, γ_ii, γ_pp, h_ii..., h_pp..., h_ii_mag, h_pp_mag, uD..., uE..., uN..., vN, vE,
                         azi_pp, ρ, T_p, p, wind..., CL, CD, α, S, mass, heat_rate, heat_load, T_r, 
                         q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., energy, config.cnf.index_MonteCarlo, Int64(config.cnf.drag_state),
-                        quaternion..., ω...]
-
-            sol = reshape(sol, (1, 98))
+                        quaternion..., ω..., β, rw_h..., τ_rw...]
+            # TODO: Figure out how to store reaction wheel states
+            sol = reshape(sol, (1, length(sol)))
 
             push!(config.cnf.solution_intermediate, sol)
         end
@@ -1302,7 +1323,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
                 # Run simulation
                 prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
-                sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+                sol = solve(prob, abstol=a_tol, reltol=r_tol, callback=events)
                 config.cnf.counter_integrator += 1
                 in_cond = [sol[1,end], sol[2,end], sol[3, end], sol[4, end], sol[5, end], sol[6, end], sol[7, end], sol[8, end], 
                             sol[9, end], sol[10, end], sol[11, end], sol[12, end], sol[13, end], sol[14, end], sol[15, end]]

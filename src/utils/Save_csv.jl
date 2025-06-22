@@ -104,10 +104,18 @@ function save_csv(filename, args)
                           force_ii_2 = config.solution.forces.force_ii[2],
                           force_ii_3 = config.solution.forces.force_ii[3],
                           energy = config.solution.forces.energy,
+                          rw_torque_ii_1 = config.solution.physical_properties.τ_rw[1],
+                          rw_torque_ii_2 = config.solution.physical_properties.τ_rw[2],
+                          rw_torque_ii_3 = config.solution.physical_properties.τ_rw[3],
                           t_cf = zeros(length(config.solution.orientation.time)),
                           h_cf = zeros(length(config.solution.orientation.time)),
                           gamma_cf = zeros(length(config.solution.orientation.time)),
                           v_cf = zeros(length(config.solution.orientation.time)))
+    for i in 1:config.model.body.n_reaction_wheels
+        data_push[!, Symbol("rw_h_$(i)_1")] = config.solution.physical_properties.h_rw[i]
+        data_push[!, Symbol("rw_h_$(i)_2")] = config.solution.physical_properties.h_rw[i]
+        data_push[!, Symbol("rw_h_$(i)_3")] = config.solution.physical_properties.h_rw[i]
+    end
     if args[:closed_form] == 1
         data_push[!, :t_cf] = config.solution.closed_form.t_cf
         data_push[!, :h_cf] = config.solution.closed_form.h_cf

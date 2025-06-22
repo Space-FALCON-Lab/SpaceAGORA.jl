@@ -102,7 +102,7 @@ function propulsion_ic_calcs(m, args, initial_state)
         dist_b = dist_list[index_b]
 
         t_in_new = (config.solution.orientation.time[index_a] + (config.solution.orientation.time[index_b] - config.solution.orientation.time[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results = ones(97)
+        results = ones(98 + config.model.body.n_reaction_wheels + 3)
         results[1] = (config.solution.orientation.year[index_a] + (config.solution.orientation.year[index_b] - config.solution.orientation.year[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
         results[2] = (config.solution.orientation.month[index_a] + (config.solution.orientation.month[index_b] - config.solution.orientation.month[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
         results[3] = (config.solution.orientation.day[index_a] + (config.solution.orientation.day[index_b] - config.solution.orientation.day[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
@@ -178,6 +178,15 @@ function propulsion_ic_calcs(m, args, initial_state)
         results[61] = (config.solution.physical_properties.cL[index_a] + (config.solution.physical_properties.cL[index_b] - config.solution.physical_properties.cL[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a)) 
         results[62] = (config.solution.physical_properties.cD[index_a] + (config.solution.physical_properties.cD[index_b] - config.solution.physical_properties.cD[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
         results[63] = (config.solution.physical_properties.α[index_a] + (config.solution.physical_properties.α[index_b] - config.solution.physical_properties.α[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[98] = (config.solution.physical_properties.β[index_a] + (config.solution.physical_properties.β[index_b] - config.solution.physical_properties.β[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        n_reaction_wheels = config.model.body.n_reaction_wheels
+        for i in 1:n_reaction_wheels
+            results[98 + i] = (config.solution.physical_properties.h_rw[i][index_a] + (config.solution.physical_properties.h_rw[i][index_b] - config.solution.physical_properties.h_rw[i][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        end
+        results[98 + n_reaction_wheels + 1] = (config.solution.physical_properties.τ_rw[1][index_a] + (config.solution.physical_properties.τ_rw[1][index_b] - config.solution.physical_properties.τ_rw[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[98 + n_reaction_wheels + 2] = (config.solution.physical_properties.τ_rw[2][index_a] + (config.solution.physical_properties.τ_rw[2][index_b] - config.solution.physical_properties.τ_rw[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[98 + n_reaction_wheels + 3] = (config.solution.physical_properties.τ_rw[3][index_a] + (config.solution.physical_properties.τ_rw[3][index_b] - config.solution.physical_properties.τ_rw[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+
         results[64] = (config.solution.physical_properties.S[index_a] + (config.solution.physical_properties.S[index_b] - config.solution.physical_properties.S[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
 
         results[65] = (config.solution.performance.mass[index_a] + (config.solution.performance.mass[index_b] - config.solution.performance.mass[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
@@ -300,7 +309,16 @@ function propulsion_ic_calcs(m, args, initial_state)
         deleteat!(config.solution.physical_properties.cL, range(start=index_b+1,step=1,stop=length(config.solution.physical_properties.cL)))
         deleteat!(config.solution.physical_properties.cD, range(start=index_b+1,step=1,stop=length(config.solution.physical_properties.cD)))
         deleteat!(config.solution.physical_properties.α, range(start=index_b+1,step=1,stop=length(config.solution.physical_properties.α)))
+        deleteat!(config.solution.physical_properties.β, range(start=index_b+1,step=1,stop=length(config.solution.physical_properties.β)))
         deleteat!(config.solution.physical_properties.S, range(start=index_b+1,step=1,stop=length(config.solution.physical_properties.S)))
+        for i in 1:config.model.body.n_reaction_wheels
+            deleteat!(config.solution.physical_properties.h_rw[i], range(start=index_b+1,step=1,stop=length(config.solution.physical_properties.h_rw[i])))
+            deleteat!(config.solution.physical_properties.h_rw[i], range(start=index_b+1,step=1,stop=length(config.solution.physical_properties.h_rw[i])))
+            deleteat!(config.solution.physical_properties.h_rw[i], range(start=index_b+1,step=1,stop=length(config.solution.physical_properties.h_rw[i])))
+        end
+        deleteat!(config.solution.physical_properties.τ_rw[1], range(start=index_b+1,step=1,stop=length(config.solution.physical_properties.τ_rw[1])))
+        deleteat!(config.solution.physical_properties.τ_rw[2], range(start=index_b+1,step=1,stop=length(config.solution.physical_properties.τ_rw[2])))
+        deleteat!(config.solution.physical_properties.τ_rw[3], range(start=index_b+1,step=1,stop=length(config.solution.physical_properties.τ_rw[3])))
 
         deleteat!(config.solution.performance.mass, range(start=index_b+1,step=1,stop=length(config.solution.performance.mass)))
         deleteat!(config.solution.performance.heat_rate, range(start=index_b+1,step=1,stop=length(config.solution.performance.heat_rate)))
@@ -408,8 +426,23 @@ function propulsion_ic_calcs(m, args, initial_state)
         append!(config.solution.physical_properties.cL, results[61])
         append!(config.solution.physical_properties.cD, results[62])
         append!(config.solution.physical_properties.α, results[63])
+        append!(config.solution.physical_properties.β, results[98])
         append!(config.solution.physical_properties.S, results[64])
 
+        n_reaction_wheels = config.model.body.n_reaction_wheels
+        # Initialize the reaction wheel properties if they are not already initialized
+        if isempty(config.solution.physical_properties.h_rw)
+            for i in 1:n_reaction_wheels
+                append!(config.solution.physical_properties.h_rw, [])
+            end
+        end
+        for i in 1:n_reaction_wheels
+            append!(config.solution.physical_properties.h_rw[i], results[99 + (i-1),:]) # rw_h
+        end
+        append!(config.solution.physical_properties.τ_rw[1], results[99 + n_reaction_wheels,:]) # h_rw_mag
+        append!(config.solution.physical_properties.τ_rw[2], results[99 + n_reaction_wheels+1,:]) # τ_rw_x
+        append!(config.solution.physical_properties.τ_rw[3], results[99 + n_reaction_wheels+2,:]) # τ_rw_y
+    
         append!(config.solution.performance.mass, results[65])
         append!(config.solution.performance.heat_rate, results[66])
         append!(config.solution.performance.heat_load, results[67])

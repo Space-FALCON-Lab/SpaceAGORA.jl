@@ -82,3 +82,6 @@ Solar radiation pressure is also calculated using SPICE, this time to determine 
 
 ### Gravitational Harmonics
 This is the most complex perturbation, computationally. Very high degree and order models can cause significant performance loss with negligible benefit to the accuracy of the simulation. In the examples, 50th degree and order models were found to be sufficient for most purposes. This requires the user to specify the file from which the spherical harmonic coefficients are drawn and the degree and order (```:L``` and ```:M```, respectively).
+
+## Control
+The simulator currently enables two forms of control: propulsive control, discussed previously, and atmospheric-drag control. As described in [Energy Depletion Guidance for Aerobraking Atmospheric Passes](https://arc.aiaa.org/doi/abs/10.2514/1.G006171), drag-modulation trajectory control is possible through the use of rotating solar panels. This form of control is only available for the "Spacecraft" body type. The goal of this control method is to maximize the energy depletion during the drag passage without exceeding the spacecraft's thermal limits. There are thus three configurations for this type of control: 1) heat rate limited, 2) heat load limited, and 3) heat rate and heat load limited.

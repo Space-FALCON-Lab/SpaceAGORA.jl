@@ -1,9 +1,9 @@
 # ABTS.jl
-The Julia Aerobraking Trajectory Simulator is the successor to the Python-based Aerobraking Trajectory Simulator ([link](https://github.com/Space-FALCON-Lab/Aerobraking-Trajectory-Simulator)). This simulator can be used to model a wide range of atmospheric and non-atmospheric missions with high-fidelity models of perturbing effects such as third-body gravity, solar radiation pressure, and gravitational harmonics. In addition, this simulator includes the capability to use high-fidelity atmospheric models through the GRAM Suite, with the option to use spherical harmonic topography models to determine altitude. This iteration of the simulator provides order-of-magnitude speed improvements compared to the Python version, as well as the inclusion of a wider range of perturbations and planets. Finally, the simulator provides estimates of several important physical parameters in atmospheric flight, including dynamic pressure, heat rate, heat load, and energy depletion rate. This means it is not only an aerobraking mission simulator, but is also easily extensible to other mission profiles, such as entry and aerocapture. 
+The Julia Aerobraking Trajectory Simulator is the successor to the Python-based Aerobraking Trajectory Simulator ([ABTS](https://github.com/Space-FALCON-Lab/Aerobraking-Trajectory-Simulator)). This simulator can be used to model a wide range of atmospheric and non-atmospheric missions with high-fidelity models of perturbing effects such as third-body gravity, solar radiation pressure, and gravitational harmonics. In addition, this simulator includes the capability to use high-fidelity atmospheric models through the GRAM Suite, with the option to use spherical harmonic topography models to determine altitude. This iteration of the simulator provides order-of-magnitude speed improvements compared to the Python version, as well as the inclusion of a wider range of perturbations and planets. Finally, the simulator provides estimates of several important physical parameters in atmospheric flight, including dynamic pressure, heat rate, heat load, and energy depletion rate. This means it is not only an aerobraking mission simulator, but is also easily extensible to other mission profiles, such as entry and aerocapture. 
 
 # Setting up the Docker Environment (Currently not working for Apple Silicon Macs)
 To ensure that all the package versions are consistent, a Docker environment has been configured for use with ABTS.jl. This guarantees consistent results between computers. This is needed for running on Apple Silicon Macs because of how GRAM was compiled. For other virtualization options, see [GRAM Setup](https://github.com/Space-FALCON-Lab/Aerobraking-Trajectory-Simulator/tree/GRAM-updates?tab=readme-ov-file#gram-setup). The process of setting it up is as follows:
-1. Download and sign in to Docker Desktop ([link](https://www.docker.com/get-started/)). If on Linux, follow these instructions to sign in ([link](https://docs.docker.com/desktop/setup/sign-in/))
+1. Download and sign in to [Docker Desktop](https://www.docker.com/get-started/). If on Linux, follow [these](https://docs.docker.com/desktop/setup/sign-in/) instructions to sign in.
 2. In VSCode, download the Docker and Dev Container extensions
 3. Open the ABTS.jl directory in VSCode and click on the remote window icon in the bottom left corner
 4. Select "Reopen in container". This will open a window with the ABTS.jl repository open in the preconfigured Docker environment.
@@ -38,7 +38,7 @@ If GRAM is installed properly and the included Docker environment is being used,
 > LSK files
 >> * ```naif0012.tls```: Timing data
 
-The following described necessary modifications to the example code in several cases:
+The following describes necessary modifications to the example code in several cases:
 > GRAM is not installed properly
 * Change the ```density_model``` argument to ```Constant``` or ```Exponential```. This will change the model used to calculate the atmospheric density at each step from GRAM to either an exponential model or a constant density model.
 * Change the ```directory_GRAM``` argument to ```""```.

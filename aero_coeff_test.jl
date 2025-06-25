@@ -115,7 +115,7 @@ Tw = 300
 β = deg2rad(0.0)
 # σ_list = [0, 0.2, 0.4, 0.6, 0.8, 1]
 σ_list = [0.9]
-lx = 0.01
+lx = 0.0001
 ly = 3.76/2
 lz = 1.93
 gas_constant = 287.05  # Specific gas constant for air, J/(kg·K)
@@ -139,9 +139,9 @@ for σ in σ_list
         push!(cn_list, cn)
         push!(cs_list, cs)
     end
-    plot!(p, [min_angle:max_angle], ca_list, label="σ = $σ, CA", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
-    plot!(p, [min_angle:max_angle], cn_list, label="σ = $σ, CN", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
-    plot!(p, [min_angle:max_angle], cs_list, label="σ = $σ, CS", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
+    plot!(p, [min_angle:max_angle], ca_list, label=" CA", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
+    plot!(p, [min_angle:max_angle], cn_list, label=" CN", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
+    plot!(p, [min_angle:max_angle], cs_list, label=" CS", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
 end
 display(p)
 
@@ -165,11 +165,11 @@ for σ in σ_list
         push!(ca_old_list, ca_old)
         push!(cn_old_list, cn_old)
     end
-    plot!(p, [min_angle:max_angle], ca_old_list, linestyle=:dash, label="σ = $σ, CA (old)", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
-    plot!(p, [min_angle:max_angle], cn_old_list, linestyle=:dash, label="σ = $σ, CN (old)", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
-    plot!(p, [min_angle:max_angle], ca_list, label="σ = $σ, CA", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
-    plot!(p, [min_angle:max_angle], cn_list, label="σ = $σ, CN", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
-    # plot!(p, [min_angle:max_angle], cs_list, label="σ = $σ, CS", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+    plot!(p, [min_angle:max_angle], ca_old_list, linestyle=:dash, label=" CA (old)", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+    plot!(p, [min_angle:max_angle], cn_old_list, linestyle=:dash, label=" CN (old)", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+    plot!(p, [min_angle:max_angle], ca_list, label=" CA", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+    plot!(p, [min_angle:max_angle], cn_list, label=" CN", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+    # plot!(p, [min_angle:max_angle], cs_list, label=" CS", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
 end
 display(p)
 
@@ -178,21 +178,31 @@ for σ in σ_list
     cd_list = Float64[]
     cl_list = Float64[]
     cs_list = Float64[]
+    cd_old_list = Float64[]
+    cl_old_list = Float64[]
     for α in min_angle:max_angle
-        α_rad = -deg2rad(α)
+        α_rad = deg2rad(α)
         ca = CA(S, α_rad, β, σ, T, Tw, lx, ly, lz)
         cn = CN(S, α_rad, β, σ, T, Tw, lx, ly, lz)
         cs = CS(S, α_rad, β, σ, T, Tw, lx, ly, lz)
-        cd = cos(α_rad)*cos(β)*ca + sin(β)*cs - sin(α_rad)*cos(β)*cn
-        cl = sin(α_rad)*ca + cos(α_rad)*cn
+        ca_old = axialcoefficient(S, α_rad, σ)
+        cn_old = normalcoefficient(S, α_rad, σ)
+        cd = cos(α_rad)*cos(β)*ca + sin(β)*cs + sin(α_rad)*cos(β)*cn
+        cl = -sin(α_rad)*ca + cos(α_rad)*cn
         cs = cos(α_rad)*sin(β)*ca - cos(β)*cs - sin(α_rad)*sin(β)*cn
+        cd_old = cos(α_rad)*ca_old + sin(α_rad)*cn_old
+        cl_old = -sin(α_rad)*ca_old + cos(α_rad)*cn_old
         push!(cd_list, cd)
         push!(cl_list, cl)
         push!(cs_list, cs)
+        push!(cd_old_list, cd_old)
+        push!(cl_old_list, cl_old)
     end
-    plot!(p, [min_angle:max_angle], cd_list, label="σ = $σ, CD", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
-    plot!(p, [min_angle:max_angle], cl_list, label="σ = $σ, CL", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
-    plot!(p, [min_angle:max_angle], cs_list, label="σ = $σ, CS", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+    plot!(p, [min_angle:max_angle], cd_list, label=" CD", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+    plot!(p, [min_angle:max_angle], cl_list, label=" CL", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+    # plot!(p, [min_angle:max_angle], cs_list, label=" CS", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+    plot!(p, [min_angle:max_angle], cd_old_list, linestyle=:dash, label=" CD (old)", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+    plot!(p, [min_angle:max_angle], cl_old_list, linestyle=:dash, label=" CL (old)", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
 end
 display(p)
 
@@ -213,8 +223,8 @@ for σ in σ_list
         push!(cl_list, cl)
         push!(cs_list, cs)
     end
-    plot!(p, [min_angle:max_angle], cd_list, label="σ = $σ, CD", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
-    plot!(p, [min_angle:max_angle], cl_list, label="σ = $σ, CL", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
-    plot!(p, [min_angle:max_angle], cs_list, label="σ = $σ, CS", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
+    plot!(p, [min_angle:max_angle], cd_list, label=" CD", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
+    plot!(p, [min_angle:max_angle], cl_list, label=" CL", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
+    plot!(p, [min_angle:max_angle], cs_list, label=" CS", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
 end
 display(p)

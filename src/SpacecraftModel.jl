@@ -19,7 +19,9 @@ mutable struct Link
     aᵇ::SVector{3, Float64} # Left extent (Body frame)
     bᵇ::SVector{3, Float64} # Right extent (Body frame)
     gyro::Int64 # Number of Gyroscope
-    rw::Vector{Float64} # angular velocity reaction wheels
+    max_torque::Float64 # Maximum torque that can be applied by the reaction wheels
+    max_h::Float64 # Maximum angular momentum that can be stored in the reaction wheels
+    rw::Vector{Float64} # angular momentum reaction wheels
     J_rw::Matrix{Float64}#J_rw::SMatrix{3,} # reaction wheel jacobian
     rw_τ::MVector{3, Float64} # Reaction wheel torque vector, to be updated at each simulation step
     net_force::MVector{3, Float64} # Net force acting on the link, to be updated at each simulation step
@@ -39,6 +41,8 @@ mutable struct Link
                     a=SVector{3, Float64}([-0.5*dims[1], 0, 0]),
                     b=SVector{3, Float64}([0.5*dims[1], 0, 0]),
                     gyro = 3,
+                    max_torque = 0.25,
+                    max_h = 70.0,
                     rw = MVector{gyro, Float64}(zeros(gyro)),
                     J_rw=MMatrix{3, gyro, Float64}(zeros(3, gyro)),
                     rw_τ=MVector{3, Float64}(zeros(3)),
@@ -47,7 +51,7 @@ mutable struct Link
                     attitude_control_function=()->0.0,
                     actuation_function=()->0.0)#SMatrix{3,Int(gyro)}(1.0I))
                     println(length(rw))
-        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, gyro, rw, J_rw, rw_τ, net_force, net_torque, attitude_control_function, actuation_function)
+        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, gyro, max_torque, max_h, rw, J_rw, rw_τ, net_force, net_torque, attitude_control_function, actuation_function)
     end
 end
 
@@ -455,10 +459,8 @@ function rotate_to_inertial(model::SpacecraftModel, body::Link, root_index::Int)
     - `body`: The body for which to get the rotation matrix.
     """
     if body.root
-        R = rot(body.q)' # Rotation matrix from quaternion
+        return rot(body.q)' # Rotation matrix from quaternion
     else
-        R = rot(model.roots[root_index].q)' * rot(body.q)' # Rotation matrix from quaternion
+        return rot(model.roots[root_index].q)' * rot(body.q)' # Rotation matrix from quaternion
     end
-    # println("R: ", R)
-    return R # Return the rotation matrix
 end

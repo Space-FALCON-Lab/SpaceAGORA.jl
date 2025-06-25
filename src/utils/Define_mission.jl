@@ -66,14 +66,14 @@ function def_miss(args)
     if Bool(args[:Odyssey_sim])
         args[:control_mode] = 0
         args[:type_of_mission] = "Orbits"
-        args[:number_of_orbits] = 300
+        args[:number_of_orbits] = 5
         args[:planet] = 1 # "Mars"
         args[:body_shape] = "Spacecraft"
         # args[:dry_mass] = 411.0
         args[:prop_mass] = 50.0
         args[:α] = 90.0
         args[:inital_condition_type] = 0
-        args[:thrust_control] = "Aerobraking Maneuver"
+        args[:thrust_control] = "None"
 
         ## For Mars Odyssey Starting at 2001-11-06
         args[:ra_initial_a] = 28559.615e3

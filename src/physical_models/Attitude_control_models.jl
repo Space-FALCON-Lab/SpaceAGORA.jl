@@ -29,7 +29,7 @@ function reaction_wheel_model!(
         # println("pinv(J_rw): $(pinv(J_rw))")
         τ = p[2]     # Applied torque vector
         # println("τ: $τ")
-        du[1:4] = pinv(J_rw)*τ
+        du[:] = pinv(J_rw)*τ
 
         # println("du: $du")
     end

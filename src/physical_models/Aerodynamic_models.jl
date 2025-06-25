@@ -84,6 +84,7 @@ end
 function aerodynamic_coefficient_fM(α::Float64, β::Float64, body, T::Float64, S::Float64, args, montecarlo::Bool=false)
     """
     Calculate the aerodynamic coefficients for a blunt body in ballistic flight using the F.M. model.
+        Angle of attack and side slip are calculated as angles between CA (normal to flat plate), and wind-relative velocity vector.
     # Arguments
     - `α`: Angle of attack, rad
     - `β`: Angle of sideslip, rad
@@ -100,6 +101,7 @@ function aerodynamic_coefficient_fM(α::Float64, β::Float64, body, T::Float64, 
     - Equations are from Hart et al. (2017, https://doi.org/10.2514/1.A33606), for a rectangular prism. 
     """
 
+    α -= π/2
     σ = args.reflection_coefficient
     Tw = T
     lx = body.dims[1]
@@ -133,8 +135,8 @@ function aerodynamic_coefficient_fM(α::Float64, β::Float64, body, T::Float64, 
                 (1/(S*√(π))*exp(-S^2*cosα^2*cosβ^2) + cosα*cosβ*(sign(cosα*cosβ)+erf(S*cosα*cosβ))))
 
     # Calculate the aerodynamic coefficients in the wind frame
-    CL = sinα*CA + cosα*CN
-    CD = cosα*cosβ*CA - sinβ*CS - sinα*cosβ*CN
+    CL = -sinα*CA + cosα*CN
+    CD = cosα*cosβ*CA + sinβ*CS + sinα*cosβ*CN
     CS = cosα*sinβ*CA + cosβ*CS - sinα*sinβ*CN
 
     # If doing Monte Carlo simulations, apply perturbations to the coefficients

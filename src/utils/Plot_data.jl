@@ -33,6 +33,7 @@ function plots(state, m, name, args)
     if m.body.n_reaction_wheels > 0
         reaction_wheel_h_plot(name)
         reaction_wheel_torque_plot(name)
+        total_reaction_wheel_torque_plot(name)
     end
 end
 
@@ -94,7 +95,7 @@ function angle_of_attack_plot(name, args)
 
     if length(index_orbit) <= 2 # If onlly 1 orbit
         time = [config.solution.orientation.time[i] for i in alt_idx]
-        aoa = [rad2deg(config.solution.physical_properties.α[i]) for i in alt_idx]
+        aoa = [rad2deg(config.solution.physical_properties.α_control[i]) for i in alt_idx]
         trace1 = scatter(x=time, y=aoa, mode="lines", line=attr(color="black"))
         layout = Layout(xaxis_title="Time [s]", yaxis_title="α [deg]", template="simple_white", showlegend=false)
         p = plot(trace1, layout)
@@ -107,7 +108,7 @@ function angle_of_attack_plot(name, args)
 
         for i in range(start=1, step=1, stop=length(index_orbit)-1)
             time = [config.solution.orientation.time[j] for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
-            aoa = [rad2deg(config.solution.physical_properties.α[j]) for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
+            aoa = [rad2deg(config.solution.physical_properties.α_control[j]) for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
 
             push!(plots_aoa_mark, scatter(x=[i], y=[aoa[end]], mode="markers", marker=attr(color="red")))
             push!(plots_aoa_line, scatter(x=(time .- time[1])./(time[end] - time[1]) .+ (i-1), y=aoa, mode="lines", line=attr(color="black")))
@@ -554,7 +555,7 @@ function reaction_wheel_h_plot(name)
         Plot the reaction wheel angular momentum
     """
     time = config.solution.orientation.time
-    h = config.solution.physical_properties.h_rw
+    h = config.solution.physical_properties.rw_h
     color_choices = ["red", "green", "blue", "orange", "purple", "cyan", "magenta", "yellow", "black"]
     h_traces = []
     
@@ -567,7 +568,7 @@ function reaction_wheel_h_plot(name)
     savefig(p, name * "_reaction_wheel_h.pdf", format="pdf")
 end
 
-function reaction_wheel_torque_plot(name)
+function total_reaction_wheel_torque_plot(name)
     """
         Plot the reaction wheel torque
     """
@@ -582,4 +583,22 @@ function reaction_wheel_torque_plot(name)
     p = plot([τ_traces...], layout)
     display(p)
     savefig(p, name * "_reaction_wheel_torque.pdf", format="pdf")
+end
+
+function reaction_wheel_torque_plot(name)
+    """
+        Plot the reaction wheel angular momentum
+    """
+    time = config.solution.orientation.time
+    τ = config.solution.physical_properties.rw_τ
+    color_choices = ["red", "green", "blue", "orange", "purple", "cyan", "magenta", "yellow", "black"]
+    τ_traces = []
+    
+    for i in eachindex(τ)
+        push!(τ_traces, scatter(x=time, y=τ[i], mode="lines", line=attr(color=color_choices[i%length(color_choices)]), name="τ$i"))
+    end
+    layout = Layout(xaxis_title="Time [sec]", yaxis_title="Torque (N⋅m)", template="simple_white", showlegend=true)
+    p = plot([τ_traces...], layout)
+    display(p)
+    savefig(p, name * "_reaction_wheel_tau.pdf", format="pdf")
 end

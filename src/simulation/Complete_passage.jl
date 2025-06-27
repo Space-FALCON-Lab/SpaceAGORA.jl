@@ -118,7 +118,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         quaternion = SVector{4, Float64}(in_cond[9:12]/norm(in_cond[9:12]))                                   # Quaternion
         
 
-        ω = SVector{3, Float64}(in_cond[13:15] * config.cnf.TU)                # Angular velocity vector [rad / s]
+        ω = SVector{3, Float64}(in_cond[13:15] / config.cnf.TU)                # Angular velocity vector [rad / s]
         mass = in_cond[7] * config.cnf.MU                                          # Mass kg
         pos_ii_mag = norm(pos_ii)                                  # Magnitude of the inertial position
         vel_ii_mag = norm(vel_ii)                                  # Magnitude of the inertial velocity
@@ -464,12 +464,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         drag_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize inertial drag force vector
         drag_pp = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize planet relative drag force vector
         lift_pp = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize planet relative lift force vector
-        α = 0.0
-        β = 0.0
+        # α = MVector{length(bodies), Float64}(zeros(length(bodies))) # Initialize angle of attack vector
+        # β = MVector{length(bodies), Float64}(zeros(length(bodies))) # Initialize sideslip angle vector
+        α = 0.0 # Initialize angle of attack
+        β = 0.0 # Initialize sideslip angle
         # Determine angle of attack (α) and sideslip angle (β)
         # Vehicle Aerodynamic Forces
         # CL and CD
-        for b in bodies
+        for (i, b) in enumerate(bodies)
             R = config.rotate_to_inertial(m.body, b, root_index) # Rotation matrix from the root body to the spacecraft link
             body_frame_velocity = R' * m.planet.L_PI' * vel_pp_rw # Velocity of the spacecraft link in inertial frame
             
@@ -477,9 +479,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             β_body = atan(body_frame_velocity[2], norm([body_frame_velocity[1], body_frame_velocity[3]])) # Sideslip angle in radians
             # α_body = 0.0
             # β_body = 0.0
+            # α[i] = α_body # Angle of attack for the spacecraft link
+            # β[i] = β_body # Sideslip angle for the spacecraft link
             if b.root
-                α = α_body
-                β = β_body
+                α = α_body # Angle of attack for the root body
+                β = β_body # Sideslip angle for the root body
             end
             # tangent_vector = m.planet.L_PI * config.get_tangent_vector(m.body, b, root_index) # Normal vector of the spacecraft link in inertial frame
             # tangent_vector /= norm(tangent_vector) # Normalize the normal vector
@@ -575,11 +579,15 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Attitude control torques
         τ_rw = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize reaction wheel torque vector
+        total_rw_h = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize total reaction wheel angular momentum vector
+        rw_h = MVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels)) # Initialize vector of reaction wheel angular momentum magnitudes
+        rw_τ = MVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels)) # Initialize vector of reaction wheel torque magnitudes
+        counter = 1 # Counter for reaction wheel angular momentum vector
         for b in bodies
             Rot = config.rotate_to_inertial(m.body, b, root_index) # Rotation matrix from the root body to the spacecraft link
             if b.gyro != 0.0 # If the body has reaction wheels and we are in the aerobraking phase
                 # Determine the angular momentum derivatives of the reaction wheels
-                ω_wheel_derivatives = b.attitude_control_function(m, t0, b, bodies, root_index, args, vel_pp_rw, aerobraking_phase) # Calculate the reaction wheel torque
+                ω_wheel_derivatives = b.attitude_control_function(m, t0, b, bodies, root_index, args, vel_pp_rw, h_pp_hat, aerobraking_phase) # Calculate the reaction wheel torque
                 
                 τ = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize reaction wheel torque vector
                 for i in 1:b.gyro
@@ -594,6 +602,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         rw_torque = rw_torque / norm(rw_torque) * b.max_torque # Limit the reaction wheel torque to the maximum torque
                     end
                     τ += rw_torque # Sum the reaction wheel torques
+                    total_rw_h += Rot * b.J_rw[:, i] * b.rw[i] # Update the total reaction wheel angular momentum
+                    rw_h[counter] = b.rw[i] # Update the reaction wheel angular momentum vector
+                    rw_τ[counter] = norm(rw_torque) # Update the reaction wheel torque vector
+                    counter += 1 # Increment the counter for the reaction wheel angular momentum vector
                 end
                 b.rw_τ = Rot'*τ # Save the reaction wheel torque in the body
                 τ_rw += b.rw_τ # Sum the reaction wheel torques
@@ -618,43 +630,40 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         τ_ii += sum([b.net_torque for b in bodies]) # Sum of all torques on the spacecraft links
 
         # Get angular momentums of each reaction wheel
-        rw_h = MVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels)) # Initialize reaction wheel angular momentum vector
-        counter = 1
-        total_rw_h = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize total reaction wheel angular momentum vector
-        # println("length of rw_h: ", length(rw_h))
-        for b in bodies
-            # println("b.rw: ", length(b.rw))
-            for i in 1:b.gyro
-                # println("b.gyro: ", b.gyro, " counter: ", counter)
-                # println("b.rw[i]: ", length(b.rw[i]))
-                rw_h[counter] = b.rw[i] # Reaction wheel angular momentum vector
-                counter += 1
-            end
-            if b.gyro != 0
-                n = b.gyro    
-                Rot = config.rotate_to_inertial(m.body, b, root_index)
-                J_rw_inertial = zeros(3, n)
-                for i in 1:n
-                    J_rw_inertial[:, i] = Rot * b.J_rw[:, i]
-                end
-                total_rw_h += J_rw_inertial * b.rw # Sum the reaction wheel angular momentum vectors
-            end
-        end
+        
+        # counter = 1
+        # total_rw_h = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize total reaction wheel angular momentum vector
+        # # println("length of rw_h: ", length(rw_h))
+        # for b in bodies
+        #     # println("b.rw: ", length(b.rw))
+        #     for i in 1:b.gyro
+        #         # println("b.gyro: ", b.gyro, " counter: ", counter)
+        #         # println("b.rw[i]: ", length(b.rw[i]))
+        #         rw_h[counter] = b.rw[i] # Reaction wheel angular momentum vector
+        #         counter += 1
+        #     end
+        #     if b.gyro != 0
+        #         n = b.gyro    
+        #         Rot = config.rotate_to_inertial(m.body, b, root_index)
+        #         J_rw_inertial = zeros(3, n)
+        #         for i in 1:n
+        #             J_rw_inertial[:, i] = Rot * b.J_rw[:, i]
+        #         end
+        #         total_rw_h += J_rw_inertial * b.rw # Sum the reaction wheel angular momentum vectors
+        #     end
+        # end
         # println("τ_ii: ", τ_ii)
         # 
         # Ξ = [quaternion[4]*diagm([1, 1, 1]) + hat(quaternion[1:3]); -quaternion[1:3]'] # Quaternion matrix
-        q1, q2, q3, q4 = quaternion
-        Ξ = [q4 -q3 q2; 
-             q3 q4 -q1; 
-             -q2 q1 q4; 
-             -q1 -q2 -q3] # Quaternion matrix
+        # q1, q2, q3, q4 = quaternion
+        # Ξ = Ξ(quaternion)
         # inertia_tensor = config.get_inertia_tensor(m.body, m.body.roots[1]) # Inertia tensor of the body
         y_dot[1:3] = vel_ii * (config.cnf.TU / config.cnf.DU)
         y_dot[4:6] = force_ii / mass * (config.cnf.TU^2 / config.cnf.DU) 
         y_dot[7] = -norm(thrust_ii) / (m.engines.g_e * m.engines.Isp) * config.cnf.TU / config.cnf.MU       # mass variation
         y_dot[8] = heat_rate * config.cnf.TU^3 / config.cnf.MU # * 1e-4
-        y_dot[9:12] = 0.5*Ξ*ω   # Angular velocity
-        y_dot[13:15] = inv(inertia_tensor)*(-hat(ω)*(inertia_tensor*ω + total_rw_h)+ τ_ii)   # Angular acceleration
+        y_dot[9:12] = (0.5*Ξ(quaternion)*ω) * config.cnf.TU  # Angular velocity
+        y_dot[13:15] = (inertia_tensor\(-hat(ω)*(inertia_tensor*ω + total_rw_h)+ τ_ii)) * config.cnf.TU^2  # Angular acceleration
         energy = (vel_ii_mag^2)/2 - (m.planet.μ / pos_ii_mag)
 
         for b in bodies
@@ -670,7 +679,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         lat, lon, alt, γ_ii, γ_pp, h_ii..., h_pp..., h_ii_mag, h_pp_mag, uD..., uE..., uN..., vN, vE,
                         azi_pp, ρ, T_p, p, wind..., CL, CD, α, S, mass, heat_rate, heat_load, T_r, 
                         q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., energy, config.cnf.index_MonteCarlo, Int64(config.cnf.drag_state),
-                        quaternion..., ω..., β, rw_h..., τ_rw...]
+                        quaternion..., ω..., β, config.cnf.α, τ_rw..., rw_h..., rw_τ...]
             # TODO: Figure out how to store reaction wheel states
             sol = reshape(sol, (1, length(sol)))
 
@@ -866,13 +875,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         if ip.gm == 2 && !Bool(args[:drag_passage])
             cond = (h0 - args[:EI]*1e3)
-            thr = 500
+            thr = 5000
         else
             cond = norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:EI]*1e3
             thr = 1e-3
         end
 
         if abs(cond) <= thr && length(config.cnf.initial_position_closed_form) == 0
+            println(h0)
             config.controller.guidance_t_eval = collect(t*config.cnf.TU:1/args[:flash1_rate]:(t*config.cnf.TU)+1500)
 
             # State definition for control 2, 3 State used by closed-form solution
@@ -1138,7 +1148,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     in_cond[7] = in_cond[7] / config.cnf.MU
     in_cond[8] = in_cond[8] * config.cnf.TU^2 / config.cnf.MU # * 1e4
     in_cond[9:12] = in_cond[9:12] / norm(in_cond[9:12])  # Quaternion normalization
-    in_cond[13:15] = in_cond[13:15] * config.cnf.TU  # Angular velocity
+    in_cond[13:15] = in_cond[13:15] / config.cnf.TU  # Angular velocity
 
     # If aerobraking maneuver allowed, add a prephase 0
     range_phase_i = 1
@@ -1529,7 +1539,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         in_cond[7] = in_cond[7] / config.cnf.MU
         in_cond[8] = in_cond[8] * config.cnf.TU^2 / config.cnf.MU # * 1e4
         in_cond[9:12] = in_cond[9:12] / norm(in_cond[9:12])  # Quaternion normalization
-        in_cond[13:15] = in_cond[13:15] * config.cnf.TU  # Angular velocity
+        in_cond[13:15] = in_cond[13:15] / config.cnf.TU  # Angular velocity
 
                     
         initial_time, final_time = time_0 / config.cnf.TU, (time_0 + 1000) / config.cnf.TU 
@@ -1564,7 +1574,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Update model parameters
         m.body.roots[1].q = SVector{4, Float64}(sol[9, end], sol[10, end], sol[11, end], sol[12, end])
-        m.body.roots[1].ω = SVector{3, Float64}(sol[13, end], sol[14, end], sol[15, end])
+        m.body.roots[1].ω = SVector{3, Float64}([sol[13, end], sol[14, end], sol[15, end]] / config.cnf.TU)
         m.body.roots[1].q = normalize(m.body.roots[1].q)  # Quaternion normalization
 
         config.cnf.counter_integrator += 1

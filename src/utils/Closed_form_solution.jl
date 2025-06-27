@@ -140,7 +140,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     t_p = Δt/2
 
     mass = initialcondition[end]
-
+    bodies, _ = config.traverse_bodies(mission.body, mission.body.roots[1])
     if h0 < args[:EI]*1e3 #if initial condition are lower than drag passage initial condition #this happens only running MC cases
         # let's calculate pos_ii,v_ii for the point of trajectory corresponding to h = 160 km
         h0 = args[:EI]*1e3
@@ -175,7 +175,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     S = v0/sqrt(2*RT)
     CL90, CD90 = aerodynamic_coefficient_fM(pi/2, mission.body, T, S, mission.aerodynamics)
     CL0, CD0 = aerodynamic_coefficient_fM(0, mission.body, T, S, mission.aerodynamics)
-    Area_tot = config.get_SC_area(mission.body) + config.get_SA_area(mission.body)  
+    Area_tot = config.get_SC_area(bodies) + config.get_SA_area(bodies)  
     
     Rp = mission.planet.Rp_e
 
@@ -348,8 +348,8 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
         f2 = exp(f2) * (t_cf) / (2 * t_p)
     end
 
-    f2_solar_panels = f2 * α * config.get_SA_area(mission.body) / Area_tot
-    f2_spacecraft = f2 * pi / 2 * config.get_SC_area(mission.body) / Area_tot
+    f2_solar_panels = f2 * α * config.get_SA_area(bodies) / Area_tot
+    f2_spacecraft = f2 * pi / 2 * config.get_SC_area(bodies) / Area_tot
 
     ϵ = f1 .+ f2_solar_panels .+ f2_spacecraft
 

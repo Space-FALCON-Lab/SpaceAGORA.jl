@@ -129,21 +129,25 @@ function save_results(time, ratio)
     append!(config.solution.physical_properties.α, results[63,:])
     append!(config.solution.physical_properties.β, results[98,:])
     append!(config.solution.physical_properties.S, results[64,:])
+    append!(config.solution.physical_properties.α_control, results[99,:])
+    append!(config.solution.physical_properties.τ_rw[1], results[100,:]) # total reaction wheel torque τ_rw_x
+    append!(config.solution.physical_properties.τ_rw[2], results[101,:]) # total reaction wheel torque τ_rw_y
+    append!(config.solution.physical_properties.τ_rw[3], results[102,:]) # total reaction wheel torque τ_rw_z
 
     n_reaction_wheels = config.model.body.n_reaction_wheels
     # Initialize the reaction wheel properties if they are not already initialized
-    if isempty(config.solution.physical_properties.h_rw)
+    if isempty(config.solution.physical_properties.rw_h)
         for i in 1:n_reaction_wheels
-            append!(config.solution.physical_properties.h_rw, [[]])
+            append!(config.solution.physical_properties.rw_h, [[]])
+            append!(config.solution.physical_properties.rw_τ, [[]])
         end
     end
 
     for i in 1:n_reaction_wheels
-        append!(config.solution.physical_properties.h_rw[i], results[99 + (i-1),:]) # rw_h
+        append!(config.solution.physical_properties.rw_h[i], results[102 + (i-1),:])
+        append!(config.solution.physical_properties.rw_τ[i], results[102 + n_reaction_wheels + i,:]) # rw_τ
     end
-    append!(config.solution.physical_properties.τ_rw[1], results[99 + n_reaction_wheels,:]) # h_rw_mag
-    append!(config.solution.physical_properties.τ_rw[2], results[99 + n_reaction_wheels+1,:]) # τ_rw_x
-    append!(config.solution.physical_properties.τ_rw[3], results[99 + n_reaction_wheels+2,:]) # τ_rw_y
+    
 
     # Performance
     append!(config.solution.performance.mass, results[65,:])

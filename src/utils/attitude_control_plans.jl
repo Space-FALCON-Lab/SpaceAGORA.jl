@@ -64,7 +64,56 @@ function constant_α_β(m, t0, b, bodies, root_index, args, vel_pp_rw)
     return R * b.rw_τ
 end
 
-function lqr_constant_α_β(m, t0::Float64, b::config.Link, bodies::Vector{config.Link}, root_index::Int, args, vel_pp_rw::SVector{3, Float64}, aerobraking_phase::Int)
+function lqr_constant_α_β(m, t0::Float64, b::config.Link, bodies::Vector{config.Link}, root_index::Int, args, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
+    """
+    Generate a constant attitude control plan using LQR with fixed angles α and β set to 0.
+    
+    # Arguments
+    - `m`: Mission object containing spacecraft and other parameters.
+    - `t0`: Initial time for the control plan.
+    - `args`: Simulation parameters.
+    
+    # Returns
+    - A tuple containing the time vector, attitude vector, and angular velocity vector.
+    """
+    if aerobraking_phase != 2
+        # x_axis_inertial = rot(m.body.roots[root_index].q)' * SVector(1.0, 0.0, 0.0)
+        Rot = config.rotate_to_inertial(m.body, b, root_index)
+
+        # Calculate the wind-relative velocity in the inertial frame
+        wind_relative_velocity = m.planet.L_PI' * vel_pp_rw
+        # Calculate the orientation quaternion from the inertial x-axis to the wind-relative velocity
+        orientation_quat = rotation_between(SVector{3, Float64}([1.0, 0.0, 0.0]), wind_relative_velocity)
+        error_quat = error_quaternion(SVector{4, Float64}(m.body.roots[root_index].q), orientation_quat)
+        G = (q) -> [q[4] -q[3] q[2];
+                    q[3] q[4] -q[1];
+                    -q[2] q[1] q[4]]
+        
+        n = b.gyro
+        J = Rot * config.get_inertia_tensor(m.body, root_index) * Rot'
+        state = SVector{6+n, Float64}([error_quat[1:3]; b.ω; b.rw])
+
+        A = SMatrix{length(state), length(state)}([zeros(3, 3) 0.5*I(3) zeros(3, n);
+            zeros(3+n, 6+n)]) - 1e-6*I 
+
+        J_rw_inertial = zeros(3, n)
+        for i in 1:n
+            J_rw_inertial[:, i] = Rot * b.J_rw[:, i]
+        end
+        B = SMatrix{length(state), n, Float64}([zeros(3, n); inv(J)*(J_rw_inertial); I])# + 1e-6*ones(length(state), n)
+
+        Q = Diagonal(vcat(1e2*ones(3), ones(3), 1e-6*ones(n)))
+
+        R = 1e-1*I(n)
+
+        K = lqr(A, B, Q, R)#ControlSystemsBase.Discrete, 
+        # Return the wheel momentum derivatives
+        return -K * state
+    end
+    return SVector{b.gyro, Float64}(zeros(b.gyro))  # If aerobraking phase is 2, return zero control input
+end
+
+function lqr_constant_α_β_σ(m, t0::Float64, b::config.Link, bodies::Vector{config.Link}, root_index::Int, args, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
     """
     Generate a constant attitude control plan using LQR with fixed angles α and β set to 0.
     
@@ -78,13 +127,21 @@ function lqr_constant_α_β(m, t0::Float64, b::config.Link, bodies::Vector{confi
     """
     # x_axis_inertial = rot(m.body.roots[root_index].q)' * SVector(1.0, 0.0, 0.0)
     Rot = config.rotate_to_inertial(m.body, b, root_index)
-    was_lqr = false
-    was_pid = false
+
     # Calculate the wind-relative velocity in the inertial frame
     wind_relative_velocity = m.planet.L_PI' * vel_pp_rw
     # Calculate the orientation quaternion from the inertial x-axis to the wind-relative velocity
     orientation_quat = rotation_between(SVector{3, Float64}([1.0, 0.0, 0.0]), wind_relative_velocity)
-    error_quat = error_quaternion(m.body.roots[root_index].q, orientation_quat)
+    error_quat = error_quaternion(SVector{4, Float64}(m.body.roots[root_index].q), orientation_quat)
+
+    # Error quaternion for bank angle
+    h_ii_hat = m.planet.L_PI' * h_pp_hat
+    orientation_quat = rotation_between(SVector{3, Float64}([1.0, 0.0, 0.0]), h_ii_hat)
+    sc_orientation_quat = rotation_between(SVector{3, Float64}([1.0, 0.0, 0.0]), Rot*SVector{3, Float64}([0.0, 1.0, 0.0]))
+    sc_orientation_error_quat = error_quaternion(sc_orientation_quat, orientation_quat)
+    error_quat_2 = error_quaternion(error_quat, sc_orientation_error_quat)
+
+    error_quat = SMatrix{4, 4, Float64}([Ψ(error_quat_2) error_quat_2])*error_quat
     G = (q) -> [q[4] -q[3] q[2];
                 q[3] q[4] -q[1];
                 -q[2] q[1] q[4]]
@@ -93,8 +150,8 @@ function lqr_constant_α_β(m, t0::Float64, b::config.Link, bodies::Vector{confi
     J = Rot * config.get_inertia_tensor(m.body, root_index) * Rot'
     state = SVector{6+n, Float64}([error_quat[1:3]; b.ω; b.rw])
 
-    A = ([zeros(3, 3) 0.5*I(3) zeros(3, n);
-        zeros(3+n, 6+n)]) - 1e-6*I #SMatrix{length(state), length(state)}
+    A = SMatrix{length(state), length(state)}([zeros(3, 3) 0.5*I(3) zeros(3, n);
+        zeros(3+n, 6+n)]) - 1e-6*I 
 
     J_rw_inertial = zeros(3, n)
     for i in 1:n

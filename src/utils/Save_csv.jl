@@ -79,6 +79,7 @@ function save_csv(filename, args)
                           cL = config.solution.physical_properties.cL,
                           cD = config.solution.physical_properties.cD,
                           aoa = config.solution.physical_properties.α,
+                          aoa_control = config.solution.physical_properties.α_control,
                           S = config.solution.physical_properties.S,
                           mass = config.solution.performance.mass,
                           heat_rate = config.solution.performance.heat_rate,
@@ -112,9 +113,8 @@ function save_csv(filename, args)
                           gamma_cf = zeros(length(config.solution.orientation.time)),
                           v_cf = zeros(length(config.solution.orientation.time)))
     for i in 1:config.model.body.n_reaction_wheels
-        data_push[!, Symbol("rw_h_$(i)_1")] = config.solution.physical_properties.h_rw[i]
-        data_push[!, Symbol("rw_h_$(i)_2")] = config.solution.physical_properties.h_rw[i]
-        data_push[!, Symbol("rw_h_$(i)_3")] = config.solution.physical_properties.h_rw[i]
+        data_push[!, Symbol("rw_h_$(i)")] = config.solution.physical_properties.rw_h[i]
+        data_push[!, Symbol("rw_tau_$(i)")] = config.solution.physical_properties.rw_τ[i]
     end
     if args[:closed_form] == 1
         data_push[!, :t_cf] = config.solution.closed_form.t_cf

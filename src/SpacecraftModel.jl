@@ -325,6 +325,15 @@ function get_spacecraft_mass(model::SpacecraftModel;dry=false)
     return length(model.roots) == 1 ? masses[1] : masses # Return the total mass of all roots
 end
 
+function get_spacecraft_mass(model::SpacecraftModel, bodies::Vector{Link}, root_index::Int; dry=false)
+    """
+    Calculates the total mass of a collection of bodies by summing their masses.
+    - `bodies`: A vector of bodies for which to calculate the total mass.
+    """
+    total_mass = sum([b.m for b in bodies]) # Sum the mass of each body
+    return dry ? total_mass : total_mass + model.prop_mass[root_index] # Return the total mass
+end
+
 function get_spacecraft_reference_area(model::SpacecraftModel)
     """
     Calculates the total reference area of the spacecraft model by summing the areas of all bodies.
@@ -354,6 +363,20 @@ function get_spacecraft_reference_area(model::SpacecraftModel, body::Link)
     total_area = 0.0
     # BFS starting from body to find all bodies attached to the current body
     bodies, root_index = traverse_bodies(model, body)
+    for body in bodies
+        if body.ref_area > 0.0 # Only consider bodies with defined area
+            total_area += body.ref_area # Sum the reference areas of each body
+        end
+    end
+    return total_area # Return the total area
+end
+
+function get_spacecraft_reference_area(bodies::Vector{Link})
+    """
+    Calculates the total reference area of a collection of bodies by summing their areas.
+    - `bodies`: A vector of bodies for which to calculate the total reference area.
+    """
+    total_area = 0.0
     for body in bodies
         if body.ref_area > 0.0 # Only consider bodies with defined area
             total_area += body.ref_area # Sum the reference areas of each body
@@ -398,6 +421,20 @@ function get_SA_area(model::SpacecraftModel, body::Link)
     return total_area # Return the total area of the solar array
 end
 
+function get_SA_area(bodies::Vector{Link})
+    """
+    Calculates the total surface area of a collection of bodies by summing the areas of all flat plates.
+    - `bodies`: A vector of bodies for which to calculate the total surface area of the solar array.
+    """
+    total_area = 0.0
+    for b in bodies
+        if !b.root # Only consider flat plates
+            total_area += b.ref_area # Sum the areas of flat plates
+        end
+    end
+    return total_area # Return the total area of the solar array
+end
+
 function get_SC_area(model::SpacecraftModel, body::Link)
     """
     Calculates the total surface area of the spacecraft bus by summing the areas of all boxes.
@@ -408,6 +445,20 @@ function get_SC_area(model::SpacecraftModel, body::Link)
     total_area = 0.0
     # BFS starting from body to find all bodies attached to the current body
     bodies, root_index = traverse_bodies(model, body)
+    for b in bodies
+        if b.root # Only consider boxes
+            total_area += b.ref_area # Sum the areas of boxes
+        end
+    end
+    return total_area # Return the total area of the spacecraft bus
+end
+
+function get_SC_area(bodies::Vector{Link})
+    """
+    Calculates the total surface area of a collection of bodies by summing the areas of all boxes.
+    - `bodies`: A vector of bodies for which to calculate the total surface area of the spacecraft bus.
+    """
+    total_area = 0.0
     for b in bodies
         if b.root # Only consider boxes
             total_area += b.ref_area # Sum the areas of boxes
@@ -463,4 +514,41 @@ function rotate_to_inertial(model::SpacecraftModel, body::Link, root_index::Int)
     else
         return rot(model.roots[root_index].q)' * rot(body.q)' # Rotation matrix from quaternion
     end
+end
+
+function rotate_link(body::Link, q::SVector{4, Float64})
+    """
+    Rotates the link to a new orientation defined by the quaternion `q`.
+    - `body`: The body to be rotated.
+    - `root_index`: The index of the root body in the model.
+    - `q`: The new orientation quaternion.
+    """
+    @assert !body.root "Cannot rotate a root body directly"
+    # Update the orientation of the body
+    body.q .= q # Set the new orientation quaternion
+end
+
+function rotate_link(body::Link, dcm::SMatrix{3, 3, Float64})
+    """
+    Rotates the link to a new orientation defined by the direction cosine matrix `dcm`.
+    - `body`: The body to be rotated.
+    - `dcm`: The direction cosine matrix representing the new orientation.
+    """
+    @assert !body.root "Cannot rotate a root body directly"
+    # Update the orientation of the body
+    body.q .= dcm_to_quaternion(dcm)
+end
+
+function rotate_link(body::Link, axis::SVector{3, Float64},  θ::Float64)
+    """
+    Rotates the link to a new orientation defined by the Euler angles `θ`.
+    - `body`: The body to be rotated.
+    - `axis`: The rotation axis as a 3D vector.
+    - `θ`: The rotation angle in radians.
+
+    """
+    @assert !body.root "Cannot rotate a root body directly"
+    axis = axis / norm(axis) # Normalize the rotation axis
+    # Update the orientation of the body
+    body.q .= SVector{4, Float64}([axis .* sin(θ/2); cos(θ/2)]) # Convert Euler angles to quaternion
 end

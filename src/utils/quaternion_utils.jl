@@ -77,13 +77,14 @@ function rot(q)
     return SMatrix{3, 3, Float64}((q4^2-norm(q[1:3])^2)*I - 2*q4*hat(q[1:3]) + 2*q[1:3]*q[1:3]')
 end
 
-function error_quaternion(current, target)
+function error_quaternion(current::SVector{4, Float64}, target::SVector{4, Float64})
+
     q = current
     q_bar = current[1:3]'
-    q_bar_cross = [0 -q_bar[3] q_bar[2]; q_bar[3] 0 -q_bar[1]; -q_bar[2] q_bar[1] 0]
-    q_matrix = [q[4]*I(3)-q_bar_cross q_bar'; -q_bar q[4]]
+    q_bar_cross = SMatrix{3, 3, Float64}([0 -q_bar[3] q_bar[2]; q_bar[3] 0 -q_bar[1]; -q_bar[2] q_bar[1] 0])
+    q_matrix = SMatrix{4, 4, Float64}([q[4]*I(3)-q_bar_cross q_bar'; -q_bar q[4]])
 
-    qd = [-target[1]; -target[2]; -target[3]; target[4]]
+    qd = SVector{4, Float64}([-target[1]; -target[2]; -target[3]; target[4]])
     qe = q_matrix * qd
 
     # q = -current
@@ -94,7 +95,7 @@ function error_quaternion(current, target)
     # qd = [-target[1]; -target[2]; -target[3]; target[4]]
     # qe_neg = q_matrix * qd
     # qe = qe_pos[4] > qe_neg[4] ? qe_pos : qe_neg
-    return qe
+    return SVector{4, Float64}(qe)
 end
 
 ## take angle components (4, 3)
@@ -245,4 +246,64 @@ function rotation_matrix(link)
          2*qx*qy + 2*qz*qw    1 - 2*qx^2 - 2*qz^2    2*qy*qz - 2*qx*qw;
          2*qx*qz - 2*qy*qw    2*qy*qz + 2*qx*qw    1 - 2*qx^2 - 2*qy^2]
     return R
+end
+
+function dcm_to_quaternion(dcm::SMatrix{3, 3, Float64})
+    """
+    Convert a Direction Cosine Matrix (DCM) to a quaternion.
+    
+    # Arguments
+    - `dcm`: A 3x3 Direction Cosine Matrix (DCM) represented as a StaticVector.
+    
+    # Returns
+    - A quaternion represented as a StaticVector{4, Float64}.
+    """
+    tr = dcm[1, 1] + dcm[2, 2] + dcm[3, 3]
+    i = argmax([dcm[1, 1], dcm[2, 2], dcm[3, 3], tr])
+    if i == 4
+        q = SVector{4, Float64}([dcm[2, 3] - dcm[3, 2], dcm[3, 1] - dcm[1, 3], dcm[1, 2] - dcm[2, 1], 1+tr])
+        return q / norm(q)
+    else
+        q = zeros(4)
+        q[i] = 1+2*dcm[i, i] - tr
+        for j in 1:4
+            if j != i
+                if j != 4
+                    q[j] = dcm[i, j] + dcm[j, i]
+                else
+                    idx = i+1 > 3 ? (i+1)%3 : i+1
+                    second_idx = i+2 > 3 ? (i+2)%3 : i+2
+                    
+                    q[j] = dcm[idx, second_idx] - dcm[second_idx, idx]
+                end
+            end
+        end
+        return q / norm(q)
+    end
+end
+
+function Ψ(q::SVector{4, Float64})
+    """
+    Convert quaternion to Euler angles in 3-2-1 sequence.
+
+    # Arguments
+    - `q`: A quaternion represented as a StaticVector{4, Float64}.
+
+    # Returns
+    - A StaticVector{3, Float64} containing the Euler angles (roll, pitch, yaw).
+    """
+    return SMatrix{4, 3, Float64}([q[4]*I(3) - hat(q[1:3]); -q[1:3]'])
+end
+
+function Ξ(q::SVector{4, Float64})
+    """
+    Convert quaternion to Euler angles in 3-2-1 sequence.
+
+    # Arguments
+    - `q`: A quaternion represented as a StaticVector{4, Float64}.
+
+    # Returns
+    - A StaticVector{3, Float64} containing the Euler angles (roll, pitch, yaw).
+    """
+    return SMatrix{4, 3, Float64}([q[4]*I(3) + hat(q[1:3]); -q[1:3]'])
 end

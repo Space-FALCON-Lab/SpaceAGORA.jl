@@ -97,7 +97,17 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
         end
 
         # println("control: ", α)
-
+        # Update solar panel angle
+        # Assumes that the spacecraft is the standard 2 panels one bus
+        root = m.body.roots[1]
+        bodies, root_index = config.traverse_bodies(m.body, root)
+        for body in bodies
+            if !body.root
+                axis = SVector{3, Float64}(abs.(body.r))
+                # Rotate the solar panel to the angle α
+                config.rotate_link(body, axis, π/2 - α)
+            end
+        end
         return α
     else
         return config.cnf.α
@@ -177,6 +187,18 @@ function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, po
 
     config.cnf.heat_load_ppast = config.cnf.heat_load_past
 
+    # Update solar panel angle
+    # Assumes that the spacecraft is the standard 2 panels one bus
+    root = m.body.roots[1]
+    bodies, root_index = config.traverse_bodies(m.body, root)
+    for body in bodies
+        if !body.root
+            axis = SVector{3, Float64}(abs.(body.r))
+            # Rotate the solar panel to the angle α
+            config.rotate_link(body, axis, π/2 - α)
+        end
+    end
+
     return α
 end
 
@@ -198,6 +220,16 @@ function control_solarpanels_openloop(ip, m, args, index_ratio, state, t=0, posi
     end
 
     config.cnf.α_past = α
-
+    # Update solar panel angle
+    # Assumes that the spacecraft is the standard 2 panels one bus
+    root = m.body.roots[1]
+    bodies, root_index = config.traverse_bodies(m.body, root)
+    for body in bodies
+        if !body.root
+            axis = SVector{3, Float64}(abs.(body.r))
+            # Rotate the solar panel to the angle α
+            config.rotate_link(body, axis, π/2 - α)
+        end
+    end
     return α
 end

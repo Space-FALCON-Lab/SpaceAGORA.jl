@@ -78,7 +78,6 @@ function save_csv(filename, args)
                           wind_3 = config.solution.physical_properties.wind[3],
                           cL = config.solution.physical_properties.cL,
                           cD = config.solution.physical_properties.cD,
-                          aoa = config.solution.physical_properties.α,
                           aoa_control = config.solution.physical_properties.α_control,
                           S = config.solution.physical_properties.S,
                           mass = config.solution.performance.mass,
@@ -112,6 +111,15 @@ function save_csv(filename, args)
                           h_cf = zeros(length(config.solution.orientation.time)),
                           gamma_cf = zeros(length(config.solution.orientation.time)),
                           v_cf = zeros(length(config.solution.orientation.time)))
+    
+    # Save physical properties with varying length based on the number of bodies
+    n_bodies = length(config.model.body.links)
+    for i in 1:n_bodies
+        data_push[!, Symbol("link_$(i)_aoa")] = config.solution.physical_properties.α[i]
+        data_push[!, Symbol("link_$(i)_sideslip")] = config.solution.physical_properties.β[i]
+    end
+
+    # Save properties based on the number of reaction wheels
     for i in 1:config.model.body.n_reaction_wheels
         data_push[!, Symbol("rw_h_$(i)")] = config.solution.physical_properties.rw_h[i]
         data_push[!, Symbol("rw_tau_$(i)")] = config.solution.physical_properties.rw_τ[i]

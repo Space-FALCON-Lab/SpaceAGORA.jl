@@ -341,19 +341,19 @@ function aerobraking_campaign(args, state)
         end
         gram = pyimport("gram")
         inputParameters = Dict("earth" => gram.EarthInputParameters(),
-                               "mars" => gram.MarsInputParameters(),
-                               "venus" => gram.VenusInputParameters(),
-                               "titan" => gram.TitanInputParameters())
+                            "mars" => gram.MarsInputParameters(),
+                            "venus" => gram.VenusInputParameters(),
+                            "titan" => gram.TitanInputParameters())
         
         namelistReaders = Dict("earth" => gram.EarthNamelistReader(),
-                               "mars" => gram.MarsNamelistReader(),
-                               "venus" => gram.VenusNamelistReader(),
-                               "titan" => gram.TitanNamelistReader())
+                            "mars" => gram.MarsNamelistReader(),
+                            "venus" => gram.VenusNamelistReader(),
+                            "titan" => gram.TitanNamelistReader())
             
         atmospheres = Dict("earth" => gram.EarthAtmosphere(),
-                           "mars" => gram.MarsAtmosphere(),
-                           "venus" => gram.VenusAtmosphere(),
-                           "titan" => gram.TitanAtmosphere())
+                        "mars" => gram.MarsAtmosphere(),
+                        "venus" => gram.VenusAtmosphere(),
+                        "titan" => gram.TitanAtmosphere())
 
         planet_name = m.planet.name
         input_parameters = inputParameters[planet_name]

@@ -3,6 +3,7 @@
 # using Plots
 # import .config
 using DifferentialEquations
+# using SimpleDiffEq
 using StaticArrays
 # using BenchmarkTools
 
@@ -36,7 +37,7 @@ function reaction_wheel_model!(
     # println("τ: $τ")
     # println("dt: $dt")
     rw = link.rw
-    prob = ODEProblem(ω_dot!, rw, (0.0, dt), [link.J_rw, τ])
+    prob = ODEProblem(ω_dot!, rw, (0.0, dt), [link.J_rw, τ], dt=dt)
     # println("link.rw: $(link.rw)")
     link.rw = solve(prob).u[end]
     # println("Updated link.rw: $(link.rw)")

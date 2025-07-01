@@ -14,40 +14,40 @@ main_bus = config.Link(root=true,
                         # q=SVector{4, Float64}([0, -0.6321683, -0.07370895, 0.7713171]),
                         q=SVector{4, Float64}([0, 0, 0, 1]),
                         ṙ=SVector{3, Float64}([0,0,0]), 
-                        dims=SVector{3, Float64}([2.2,2.6,1.7]), 
-                        ref_area=2.6*1.7,
-                        m=391.0, 
+                        dims=SVector{3, Float64}([0.00001, 0.00001, 0.00001]), 
+                        ref_area=0.0,
+                        m=1.0, 
                         gyro=4,
                         # max_torque=5.0,
                         # max_h=100.0,
                         J_rw=MMatrix{3, 4, Float64}([1.0 0.0 0.0 0.57735; 0.0 1.0 0.0 0.57735; 0.0 0.0 1.0 0.57735]),#0.57735
                         attitude_control_function=lqr_constant_α_β)
 
-L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.6/2 - 3.89/4, 0.0), 
+box = config.Link(r=SVector{3, Float64}(0.0, 0.0, 0.0), 
                         # q=SVector{4, Float64}([0, 0.4617, 0, 0.8870]),
                         q=SVector{4, Float64}([0, 0, 0, 1]),
                         ṙ=SVector{3, Float64}([0,0,0]), 
-                        dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
-                        ref_area=3.89*1.7/2,
-                        m=10.0, 
+                        dims=SVector{3, Float64}([2.2, 2.6, 1.7]), 
+                        ref_area=2.6*1.7,
+                        m=441.0, 
                         gyro=0)
-R_panel = config.Link(r=SVector{3, Float64}(0.0, 2.6/2 + 3.89/4, 0.0),
-                        # q=SVector{4, Float64}([0, 0.4617, 0, 0.8870]),
-                        q=SVector{4, Float64}([0, 0, 0, 1]),
-                        ṙ=SVector{3, Float64}([0,0,0]), 
-                        dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
-                        ref_area=3.89*1.7/2,
-                        m=10.0, 
-                        gyro=0)
+# R_panel = config.Link(r=SVector{3, Float64}(0.0, 2.6/2 + 3.89/4, 0.0),
+#                         # q=SVector{4, Float64}([0, 0.4617, 0, 0.8870]),
+#                         q=SVector{4, Float64}([0, 0, 0, 1]),
+#                         ṙ=SVector{3, Float64}([0,0,0]), 
+#                         dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
+#                         ref_area=3.89*1.7/2,
+#                         m=10.0, 
+#                         gyro=0)
 
-config.add_body!(spacecraft, main_bus, prop_mass=50.0)
-config.add_body!(spacecraft, L_panel)
-config.add_body!(spacecraft, R_panel)
+config.add_body!(spacecraft, main_bus, prop_mass=1.0)
+config.add_body!(spacecraft, box)
+# config.add_body!(spacecraft, R_panel)
 
-L_panel_joint = config.Joint(main_bus, L_panel)
-R_panel_joint = config.Joint(R_panel, main_bus)
+L_panel_joint = config.Joint(main_bus, box)
+# R_panel_joint = config.Joint(R_panel, main_bus)
+# config.add_joint!(spacecraft, L_panel_joint)
 config.add_joint!(spacecraft, L_panel_joint)
-config.add_joint!(spacecraft, R_panel_joint)
 
 println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
 # println("Spacecraft roots: $spacecraft.roots")

@@ -29,7 +29,7 @@ function plots(state, m, name, args)
     attitude_plot(name, args)
     quaternion_plot(name)
     angular_velocity_plot(name)
-    wind_relative_attitude_plot(name)
+    wind_relative_attitude_plot(name, args)
     if m.body.n_reaction_wheels > 0
         reaction_wheel_h_plot(name)
         reaction_wheel_torque_plot(name)
@@ -534,18 +534,27 @@ function angular_velocity_plot(name)
     savefig(p, name * "_angular_velocity.pdf", format="pdf")
 end
 
-function wind_relative_attitude_plot(name)
+function wind_relative_attitude_plot(name, args)
     """
         Plot the angle of attack and sideslip angles
     """
     time = config.solution.orientation.time
     α = config.solution.physical_properties.α
     β = config.solution.physical_properties.β
-
-    α_traces = scatter(x=time, y=rad2deg.(α), mode="lines", line=attr(color="red"), name="α")
-    β_traces = scatter(x=time, y=rad2deg.(β), mode="lines", line=attr(color="blue"), name="β")
+    α_traces = []
+    β_traces = []
+    α_control_traces = []
+    color_choices = ["red", "green", "blue", "orange", "purple", "cyan", "magenta", "yellow", "black"]
+    for i in eachindex(α)
+        push!(α_traces, scatter(x=time, y=rad2deg.(α[i]), mode="lines", line=attr(color=color_choices[i%length(color_choices)]), name="α$i"))
+        push!(β_traces, scatter(x=time, y=rad2deg.(β[i]), mode="lines", line=attr(color=color_choices[i%length(color_choices)], dash="dash"), name="β$i"))
+    end
+    
+    if args[:control_mode] != 0
+        push!(α_control_traces, scatter(x=time, y=rad2deg.(config.solution.physical_properties.α_control), mode="lines", line=attr(color="black", dash="dot"), name="α_control"))
+    end
     layout = Layout(xaxis_title="Time [sec]", yaxis_title="Angle (deg)", template="simple_white", showlegend=true)
-    p = plot([α_traces, β_traces], layout)
+    p = plot([α_traces..., β_traces..., α_control_traces...], layout)
     display(p)
     savefig(p, name * "_alpha_beta.pdf", format="pdf")
 end

@@ -548,6 +548,10 @@ function rotate_link(body::Link, axis::SVector{3, Float64},  θ::Float64)
 
     """
     @assert !body.root "Cannot rotate a root body directly"
+    if norm(axis) <= 1e-6
+        @warn "Rotation axis norm is too small, using default axis (0, 1, 0)"
+        axis = SVector{3, Float64}(0.0, 1.0, 0.0) # Default axis if norm is too small
+    end
     axis = axis / norm(axis) # Normalize the rotation axis
     # Update the orientation of the body
     body.q .= SVector{4, Float64}([axis .* sin(θ/2); cos(θ/2)]) # Convert Euler angles to quaternion

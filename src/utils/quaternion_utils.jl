@@ -74,7 +74,9 @@ function rot(q)
     Convert quaternion to rotation matrix
     """
     q1, q2, q3, q4 = q
-    return SMatrix{3, 3, Float64}((q4^2-norm(q[1:3])^2)*I - 2*q4*hat(q[1:3]) + 2*q[1:3]*q[1:3]')
+    return SMatrix{3, 3, Float64}([q1^2-q2^2-q3^2+q4^2 2*(q1*q2+q3*q4) 2*(q1*q3-q2*q4);
+                                    2*(q1*q2-q3*q4) -q1^2+q2^2-q3^2+q4^2 2*(q2*q3+q1*q4);
+                                    2*(q1*q3+q2*q4) 2*(q2*q3-q1*q4) -q1^2-q2^2+q3^2+q4^2])
 end
 
 function error_quaternion(current::SVector{4, Float64}, target::SVector{4, Float64})

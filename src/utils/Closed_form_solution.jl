@@ -23,7 +23,7 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
             step_time = length(config.solution.orientation.time)
             initialcondition = [config.solution.orientation.oe[1][1], config.solution.orientation.oe[2][1], config.solution.orientation.oe[3][1], config.solution.orientation.oe[4][1], config.solution.orientation.oe[5][1], config.solution.orientation.oe[6][1], config.solution.performance.mass[1]]
             T = config.solution.physical_properties.T[1]
-            α = config.solution.physical_properties.α[1]
+            α = config.solution.physical_properties.α_control[1]
             t0 = config.solution.orientation.time[1]
 
             t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time)
@@ -64,7 +64,7 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
                 initialcondition = [config.solution.orientation.oe[1][index], config.solution.orientation.oe[2][index], config.solution.orientation.oe[3][index], config.solution.orientation.oe[4][index], config.solution.orientation.oe[5][index], config.solution.orientation.oe[6][index], config.solution.performance.mass[index]]
 
                 T = config.solution.physical_properties.T[index]
-                α = config.solution.physical_properties.α[index]
+                α = config.solution.physical_properties.α_control[index]
                 t0 = config.solution.orientation.time[index]
 
                 t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time)

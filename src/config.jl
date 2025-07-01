@@ -257,8 +257,8 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         wind::Vector{Vector{Float64}} = [[], [], []] 
         cL::Vector{Float64} = []
         cD::Vector{Float64} = []
-        α::Vector{Float64} = []
-        β::Vector{Float64} = []
+        α::Vector{Vector{Float64}} = []
+        β::Vector{Vector{Float64}} = []
         S::Vector{Float64} = []
         α_control::Vector{Float64} = []
         rw_h::Vector{Vector{Float64}} = [] # angular momentum magnitudes of each reaction wheel

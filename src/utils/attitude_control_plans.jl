@@ -109,8 +109,9 @@ function lqr_constant_α_β(m, t0::Float64, b::config.Link, bodies::Vector{confi
         K = lqr(A, B, Q, R)#ControlSystemsBase.Discrete, 
         # Return the wheel momentum derivatives
         return -K * state
+    else
+        return SVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels))
     end
-    return SVector{b.gyro, Float64}(zeros(b.gyro))  # If aerobraking phase is 2, return zero control input
 end
 
 function lqr_constant_α_β_σ(m, t0::Float64, b::config.Link, bodies::Vector{config.Link}, root_index::Int, args, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)

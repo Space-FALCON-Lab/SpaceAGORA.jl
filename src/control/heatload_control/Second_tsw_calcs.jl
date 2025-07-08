@@ -49,7 +49,7 @@ function second_time_switch_recalc_with_integration(ip, m, position, args, t, he
     # println("time_switch: ", typeof(time_switch))
 
     try
-        time_switch = fzero(k -> func(k), [t, b], Roots.Brent())
+        time_switch = fzero(ts -> func(ts), [t, b], Roots.Brent())
     catch
         nothing
     end

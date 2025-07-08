@@ -8,3 +8,4 @@ output/*
 GRAMpy/*
 *.pdf
 *.csv
+.ABTS\.CondaPkg\*

@@ -11,7 +11,7 @@ function security_mode(ip, m, position, args, t, heat_rate_control=false)
 
     S = v_cf / sqrt(2*RT)
 
-    ρ = density_poly(h_cf/1e3, m.planet)[1]
+    ρ = density_polyfit(h_cf/1e3, m.planet)[1]
 
     # Security mode
     aoa_cf_min = zeros(length(t_cf))

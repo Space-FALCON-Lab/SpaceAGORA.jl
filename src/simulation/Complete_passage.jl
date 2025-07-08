@@ -370,9 +370,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             heat_rate = 0.0
         end
 
-        α = config.cnf.α
-        config.cnf.heat_rate_prev = heat_rate # save current heat rate
-
         # Convert wind to pp(PCPF) frame
         wE = wind[1] # positive to the east , m / s
         wN = wind[2] # positive to the north , m / s
@@ -384,6 +381,32 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Dynamic Pressure, CHANGE THE VELOCITY WITH THE WIND VELOCITY
         q = 0.5 * ρ * norm(vel_pp_rw)^2               # dynamic pressure based on wind, Pa
+
+        if args[:struct_ctrl] == 1
+            α_struct = control_struct_load(ip, m, args, S, T_p, q, MonteCarlo)
+
+            config.cnf.α = min(config.cnf.α, α_struct) # limit the angle of attack to the structural load control
+        end
+
+        α = config.cnf.α
+
+        if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
+            # Heat Rate 
+            if ip.tm == 1
+                heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
+            elseif ip.tm == 2
+                heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
+            end
+            
+            cp = m.planet.γ / (m.planet.γ - 1) * m.planet.R
+
+            T_r = 0.0
+        else
+            T_r = 0.0
+            heat_rate = 0.0
+        end
+
+        config.cnf.heat_rate_prev = heat_rate # save current heat rate
                
         # Nominal gravity calculation
         if ip.gm == 0

@@ -9,17 +9,18 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/odyssey_error_aoa",                # Directory where to save the results
+            :directory_results => "/workspaces/ABTS.jl/output/odyssey_struct_load_ctrl",                # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
+            :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
             :normalize => 0,                                       # Normalize the integration True=1, False=0
+            :closed_form => 1,
             :closed_form_fitting_data => 1, 
 
             # Type of Mission
@@ -55,11 +56,12 @@ args = Dict(# Misc Simulation
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
             :max_heat_rate => 0.15,                                 # Max heat rate the heat rate control will start to react to
             :max_heat_load => 30.0,                                 # Max heat load the heat load control will not be overcomed
+            :max_dyn_press => 0.5,                                  # Max dynamic pressure the structural load control will not be overcomed
             :dry_mass => 411.0,                                     # Initial dry mass of body in kg
             :prop_mass => 50.0,                                     # Initial propellant mass of body in kg
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
-            :α => 90.0,                                             # Max angle of attack of solar panels
+            :α => 90,                                               # Max angle of attack of solar panels
 
             # Fill for Spacecraft body shape only
             :length_sat => 2.2,                                     # Length of the satellite in m
@@ -77,18 +79,19 @@ args = Dict(# Misc Simulation
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
-            :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
+            :control_mode => 1,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
             :security_mode => 1,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+            :struct_ctrl => 1,                                      # Structural Load Control True=1, False=0
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
             :ra_initial_a => 20000e3, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 85e3,                                 # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_a => 100e3,                                 # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 159000.0,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 4350.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
@@ -178,16 +181,35 @@ t = @elapsed begin
     end
 end
 
-
 # t = @elapsed begin
-#     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-#     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-#     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-#     furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-#     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
+#     # furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
+#     # furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
+#     # furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
+#     # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
+#     # furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
             
 #     # Run the simulation
-#     for vel in collect(range(4350,4800,step=50))
+#     for aoa in collect(range(1,90,step=1))
+#         args[:α] = aoa
+#         sol = run_analysis(args)
+#     end
+
+#     println(" ")
+
+#     # if Bool(args[:passresults])
+#     #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+#     # end
+# end
+
+# t = @elapsed begin
+#     # furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
+#     # furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
+#     # furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
+#     # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
+#     # furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
+            
+#     # Run the simulation
+#     for vel in collect(range(4300,4800,step=50))
 #         for gam in collect(range(7.5,3.0,step=-0.25))
 #             args[:v_initial_a] = vel
 #             args[:γ_initial_a] = gam

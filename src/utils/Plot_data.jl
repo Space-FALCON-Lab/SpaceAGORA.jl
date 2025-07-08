@@ -23,13 +23,13 @@ function plots(state, m, name, args)
     end
 
     if args[:type_of_mission] == "Drag Passage"
-        drag_passage_plot(name, args)
+        drag_passage_plot(name, args, m)
     end
 
     
 end
 
-function drag_passage_plot(name, args)
+function drag_passage_plot(name, args, m)
     alt_idx = findall(x -> x < args[:AE]*1e3, config.solution.orientation.alt)
 
     time = [config.solution.orientation.time[i] for i in alt_idx]
@@ -56,7 +56,28 @@ function drag_passage_plot(name, args)
     relayout!(p, width=2200, height=1000, template="simple_white", showlegend=false)
 
     display(p)
-    savefig(p, name * "_drag_passage.pdf", format="pdf")
+    savefig(p, name * "_drag_passage_heat.pdf", format="pdf")
+    
+    time = [config.solution.orientation.time[i] for i in index]
+    dyn_press = config.solution.performance.q[index]
+    trace2 = scatter(x=time, y=dyn_press, mode="lines", line=attr(color="black"))
+    trace4 = scatter(x=time, y=args[:max_dyn_press]*ones(size(dyn_press)), mode="lines", line=attr(color="red"))
+    layout = Layout(yaxis_title="Dynamic Pressure [N/m²]")
+    p_dyn_press = plot([trace2, trace4], layout)
+
+    time = [config.solution.orientation.time[i] for i in index]
+    drag = dyn_press .* config.solution.physical_properties.cD[index] * m.body.area_tot
+    drag_lim = args[:max_dyn_press] * config.solution.physical_properties.cD[1] * m.body.area_tot * ones(size(drag))
+    trace3 = scatter(x=time, y=drag, mode="lines", marker=attr(color="black"))
+    trace5 = scatter(x=time, y=drag_lim, mode="lines", marker=attr(color="red"))
+    layout = Layout(xaxis_title="Time [s]", yaxis_title="Drag [N]")
+    p_drag = plot([trace3, trace5], layout)
+
+    p = [p_aoa; p_dyn_press; p_drag]
+    relayout!(p, width=2200, height=1000, template="simple_white", showlegend=false)
+
+    display(p)
+    savefig(p, name * "_drag_passage_struct.pdf", format="pdf")
 
     time = [config.solution.orientation.time[i] for i in alt_idx]
     alt = [config.solution.orientation.alt[i] for i in alt_idx]

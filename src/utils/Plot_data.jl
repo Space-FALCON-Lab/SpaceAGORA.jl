@@ -41,7 +41,7 @@ function drag_passage_plot(name, args)
     alt_idx = findall(x -> x < args[:AE]*1e3, config.solution.orientation.alt)
 
     time = [config.solution.orientation.time[i] for i in alt_idx]
-    aoa = [rad2deg(config.solution.physical_properties.α[i]) for i in alt_idx]
+    aoa = [rad2deg(config.solution.physical_properties.α_control[i]) for i in alt_idx]
     trace1 = scatter(x=time, y=aoa, mode="lines", line=attr(color="black"))
     layout = Layout(yaxis_title="α [deg]")
     p_aoa = plot(trace1, layout)

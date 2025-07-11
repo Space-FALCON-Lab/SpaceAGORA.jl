@@ -18,7 +18,7 @@ mutable struct InitalParameters
     mc::Int64
 end
 
-function mission_def(mission)
+function mission_def(mission::Dict{Symbol, Any})
 
     e, d, l, a = 0, 0, 0, 1     # e = Entry, d = Descent, l = Landing, a = Aerobraking : 0 - No, 1 - Yes
 

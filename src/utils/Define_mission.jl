@@ -64,16 +64,16 @@ function def_miss(args)
     end
 
     if Bool(args[:Odyssey_sim])
-        args[:control_mode] = 3
-        args[:type_of_mission] = "Drag Passage"
-        args[:number_of_orbits] = 1
+        args[:control_mode] = 0
+        args[:type_of_mission] = "Orbits"
+        args[:number_of_orbits] = 300
         args[:planet] = 1 # "Mars"
         args[:body_shape] = "Spacecraft"
         # args[:dry_mass] = 411.0
-        args[:prop_mass] = 50.0
+        # args[:prop_mass] = 50.0
         args[:α] = 90.0
         args[:inital_condition_type] = 0
-        args[:thrust_control] = "None"
+        args[:thrust_control] = "Aerobraking Maneuver"
 
         ## For Mars Odyssey Starting at 2001-11-06
         args[:ra_initial_a] = 28559.615e3
@@ -83,7 +83,7 @@ function def_miss(args)
         if args[:gravity_model] == "Inverse Squared"
             args[:hp_initial_a] = 87000 #108600
         else
-            args[:hp_initial_a] = 87000 # 70000 #84200 # 86000 # 100399 # 86000 works for spherical harmonic topography (a little low, but close enough for now), 95000 for regular
+            args[:hp_initial_a] = 88500 # 70000 #84200 # 86000 # 100399 # 86000 works for spherical harmonic topography (a little low, but close enough for now), 95000 for regular
         end
 
         args[:hp_initial_b] = 110000

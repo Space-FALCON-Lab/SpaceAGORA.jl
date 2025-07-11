@@ -11,8 +11,10 @@ spacecraft = config.SpacecraftModel()
 # Add bodies to the spacecraft model
 main_bus = config.Link(root=true, 
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), 
-                        # q=SVector{4, Float64}([0, -0.6321683, -0.07370895, 0.7713171]),
+                        # q=SVector{4, Float64}([0, -0.6321683, -0.07370895, 0.7713171]), # true odyssey
                         q=SVector{4, Float64}([0, 0, 0, 1]),
+                        # q=SVector{4, Float64}([0, 0, 0.6371, 0.7707]), # 0 inc
+                        # q=SVector{4, Float64}([0, -0.6358, -0.0338, 0.7711]), # 90 inc
                         ṙ=SVector{3, Float64}([0,0,0]), 
                         dims=SVector{3, Float64}([2.2,2.6,1.7]), 
                         ref_area=2.6*1.7,
@@ -58,7 +60,7 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/odyssey_error_aoa",                # Directory where to save the results
+            :directory_results => "/workspaces/ABTS.jl/output/odyssey_0inc",                # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
@@ -68,13 +70,13 @@ args = Dict(# Misc Simulation
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 0,                                       # Normalize the integration True=1, False=0
-            :closed_form => 1,                                    # Closed form solution True=1, False=0
+            :normalize => 1,                                       # Normalize the integration True=1, False=0
+            :closed_form => 0,                                    # Closed form solution True=1, False=0
 
             # Type of Mission
             :type_of_mission => "Orbits",                     # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 1,                                 # Number of aerobraking passage
+            :number_of_orbits => 10,                                 # Number of aerobraking passage
 
             # Physical Model
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -98,7 +100,7 @@ args = Dict(# Misc Simulation
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
-            :save_rate => 1.0,                                      # Rate at which the data trajectory are saved
+            :save_rate => 5.0,                                      # Rate at which the data trajectory are saved
             
             # Body
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
@@ -127,7 +129,7 @@ args = Dict(# Misc Simulation
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
-            :control_mode => 3,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
+            :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
             :security_mode => 1,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
@@ -205,28 +207,59 @@ args = Dict(# Misc Simulation
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
 
+            # Integration tolerances, set *_orbit and *_drag to 0 to use default values (a_tol and r_tol)
+            :a_tol => 1e-5,                                         # Absolute tolerance for integration
+            :r_tol => 1e-3,                                         # Relative tolerance for integration
+            :a_tol_orbit => 1e-6,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :r_tol_orbit => 1e-3,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :a_tol_drag => 1e-6,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
+            :r_tol_drag => 1e-4,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
+            :a_tol_quaternion => 1e-5,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :r_tol_quaternion => 1e-4,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             # Mission Selection
             :Odyssey_sim => 0,                                      # Simulate Odyssey Mission
             :vex_sim => 0,                                          # Simulate Venus Express Mission   
             :magellan_sim => 0                                     # Simulate Magellan Mission
             )
-
+# @profview run_analysis(args)
+            # using CSV
+# open("time_log.csv", "a")
+# r_exp_list = -5.0:-3.0
+# a_exp_list = -9.0:-5.0
+# for atol in a_exp_list
+#     for rtol in r_exp_list
+#         args[:a_tol] = 10^atol
+#         args[:r_tol] = 10^rtol
+#         args[:a_tol_orbit] = 10^atol
+#         args[:r_tol_orbit] = 10^rtol
+#         args[:a_tol_drag] = 10^atol
+#         args[:r_tol_drag] = 10^rtol
+#         args[:a_tol_quaternion] = 1e-6
+#         args[:r_tol_quaternion] = 1e-4
+#         args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey_tolerance_test/atol_" * string(atol) * "_rtol_" * string(rtol)
+       
 # Calculating time of simulation
-t = @elapsed begin
+        t = @elapsed begin
 
-    # furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-    # furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-    # furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-    # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-    # furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
+            # furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
+            # furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
+            # furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
+            # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
+            # furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
 
-    # Run the simulation
-    sol = run_analysis(args)
+            # Run the simulation
+            sol = run_analysis(args)
 
-    if Bool(args[:passresults])
-        println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-    end
-end
+            if Bool(args[:passresults])
+                println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+            end
+        end
+        println("COMPUTATIONAL TIME = " * string(t) * " s")
+
+        # CSV.write("time_log.csv", DataFrame(atol=10^atol, rtol=10^rtol, time=t))
+    # end
+# end
+# close("time_log.csv")
 
 
 # t = @elapsed begin
@@ -278,4 +311,3 @@ end
 #     # end
 # end
 
-println("COMPUTATIONAL TIME = " * string(t) * " s")

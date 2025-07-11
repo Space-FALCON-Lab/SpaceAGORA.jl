@@ -2,6 +2,7 @@ include("../physical_models/Attitude_control_models.jl")
 include("quaternion_utils.jl")
 using Rotations, LinearAlgebra
 using ControlSystemsBase
+using MatrixEquations
 
 # Function to compute the rotation quaternion between two vectors
 function rotation_between(v1::SVector{3, Float64}, v2::SVector{3, Float64})
@@ -26,7 +27,7 @@ function rotation_between(v1::SVector{3, Float64}, v2::SVector{3, Float64})
     end
 end
 
-function constant_α_β(m, t0, b, bodies, root_index, args, vel_pp_rw)
+function constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
 """
     Generate a constant attitude control plan with fixed angles α and β set to 0.
     
@@ -38,21 +39,13 @@ function constant_α_β(m, t0, b, bodies, root_index, args, vel_pp_rw)
     # Returns
     - A tuple containing the time vector, attitude vector, and angular velocity vector.
 """
-    # α = 0.0  # Angle of attack in radians
-    # β = 0.0  # Angle of sideslip in radians
+    # Rot = config.rotate_to_inertial(m.body, b, root_index)
 
-    # R = config.rotate_to_inertial(m.body, b, root_index)
-    # body_frame_velocity = R' * m.planet.L_PI' * vel_pp_rw
-    # current_α = atan(body_frame_velocity[2], body_frame_velocity[1])
-    # current_β = atan(body_frame_velocity[2], norm(body_frame_velocity[1:2:3]))
-    # ω = b.ω
-    # Calculate the body frame x axis in the inertial frame
-    x_axis_inertial = rot(m.body.roots[root_index].q)' * SVector(1.0, 0.0, 0.0)
     # Calculate the wind-relative velocity in the inertial frame
     wind_relative_velocity = m.planet.L_PI' * vel_pp_rw
     # Calculate the orientation quaternion from the inertial x-axis to the wind-relative velocity
     orientation_quat = rotation_between(SVector{3, Float64}([1.0, 0.0, 0.0]), wind_relative_velocity)
-    error_quat = error_quaternion(m.body.roots[root_index].q, orientation_quat)
+    error_quat = error_quaternion(SVector{4, Float64}(m.body.roots[root_index].q), orientation_quat)
     δq = error_quat[1:3]
     δω = b.ω
     R = config.rotate_to_inertial(m.body, b, root_index)
@@ -60,11 +53,17 @@ function constant_α_β(m, t0, b, bodies, root_index, args, vel_pp_rw)
     kp = 0.5*100
     kd = 1.0*100
     b.rw_τ = R' * (cross(b.ω, inertia_tensor * b.ω) - kp*δq - kd*b.ω)
-
-    return R * b.rw_τ
+    ω_wheel_derivatives = MVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels))
+    # println("b.rw_τ: $(size(b.rw_τ))")
+    # println("b.J_rw: $(size((1/b.J_rw[:, 1])))")
+    # println("r: $(size(R))")
+    for i in 1:m.body.n_reaction_wheels
+        ω_wheel_derivatives[i] = ((1/b.J_rw[:,i]) * R' * b.rw_τ)[1]
+    end
+    return ω_wheel_derivatives
 end
 
-function lqr_constant_α_β(m, t0::Float64, b::config.Link, bodies::Vector{config.Link}, root_index::Int, args, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
+function lqr_constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
     """
     Generate a constant attitude control plan using LQR with fixed angles α and β set to 0.
     
@@ -75,9 +74,8 @@ function lqr_constant_α_β(m, t0::Float64, b::config.Link, bodies::Vector{confi
     
     # Returns
     - A tuple containing the time vector, attitude vector, and angular velocity vector.
-    """
-    if aerobraking_phase != 2
-        # x_axis_inertial = rot(m.body.roots[root_index].q)' * SVector(1.0, 0.0, 0.0)
+    """ 
+    # x_axis_inertial = rot(m.body.roots[root_index].q)' * SVector(1.0, 0.0, 0.0)
         Rot = config.rotate_to_inertial(m.body, b, root_index)
 
         # Calculate the wind-relative velocity in the inertial frame
@@ -85,36 +83,45 @@ function lqr_constant_α_β(m, t0::Float64, b::config.Link, bodies::Vector{confi
         # Calculate the orientation quaternion from the inertial x-axis to the wind-relative velocity
         orientation_quat = rotation_between(SVector{3, Float64}([1.0, 0.0, 0.0]), wind_relative_velocity)
         error_quat = error_quaternion(SVector{4, Float64}(m.body.roots[root_index].q), orientation_quat)
-        G = (q) -> [q[4] -q[3] q[2];
-                    q[3] q[4] -q[1];
-                    -q[2] q[1] q[4]]
+        # println("error_quat: $(error_quat)")
+        # G = (q) -> [q[4] -q[3] q[2];
+        # q[3] q[4] -q[1];
+        # -q[2] q[1] q[4]]
         
         n = b.gyro
-        J = Rot * config.get_inertia_tensor(m.body, root_index) * Rot'
         state = SVector{6+n, Float64}([error_quat[1:3]; b.ω; b.rw])
 
-        A = SMatrix{length(state), length(state)}([zeros(3, 3) 0.5*I(3) zeros(3, n);
-            zeros(3+n, 6+n)]) - 1e-6*I 
+        J = Rot * config.get_inertia_tensor(m.body, root_index) * Rot'
+        A = SMatrix{length(state), length(state)}(Float64[zeros(3, 3) 0.5*I(3) zeros(3, n);
+                                                    zeros(3+n, 6+n)]) - 1e-3*I 
 
-        J_rw_inertial = zeros(3, n)
-        for i in 1:n
-            J_rw_inertial[:, i] = Rot * b.J_rw[:, i]
+        J_rw_inertial = MMatrix{3, n, Float64}(zeros(3, n))
+        @inbounds for i in 1:n
+            J_rw_inertial[:, i] .= Rot * b.J_rw[:, i]
         end
-        B = SMatrix{length(state), n, Float64}([zeros(3, n); inv(J)*(J_rw_inertial); I])# + 1e-6*ones(length(state), n)
+        B = SMatrix{length(state), n, Float64}([zeros(Float64, 3, n); J\J_rw_inertial; I(n)])# + 1e-6*ones(length(state), n)
 
-        Q = Diagonal(vcat(1e2*ones(3), ones(3), 1e-6*ones(n)))
+        Q = Diagonal(SVector{6+n, Float64}([1.0e2*ones(3); 1.0*ones(3); 1.0e-6*ones(n)]))
 
-        R = 1e-1*I(n)
-
-        K = lqr(A, B, Q, R)#ControlSystemsBase.Discrete, 
-        # Return the wheel momentum derivatives
-        return -K * state
-    else
-        return SVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels))
-    end
+        R = SMatrix{n, n, Float64}(0.1*I(n))
+        if config.cnf.P == zeros(3, 3)
+        #     # Use LQR to compute the gain matrix K
+            K = SMatrix{n, length(state), Float64}(lqr(A, B, Q, R))
+            # println(typeof(K))
+            config.cnf.P = pinv(B')*R*K
+            P = SMatrix{length(state), length(state), Float64}(config.cnf.P)
+        else
+            P = solve_care_newton(A, B, Q, R; P0=config.cnf.P, max_iter=100, tol=1e-4)
+            config.cnf.P .= P
+            # config.cnf.K .= R \ B' * config.cnf.P
+        end
+        # # Return the wheel momentum derivatives
+        # println(typeof(config.cnf.P))
+        return -R \ B' * P * state
+        # return -K * state
 end
 
-function lqr_constant_α_β_σ(m, t0::Float64, b::config.Link, bodies::Vector{config.Link}, root_index::Int, args, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
+function lqr_constant_α_β_σ(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
     """
     Generate a constant attitude control plan using LQR with fixed angles α and β set to 0.
     
@@ -167,4 +174,58 @@ function lqr_constant_α_β_σ(m, t0::Float64, b::config.Link, bodies::Vector{co
     K = lqr(A, B, Q, R)#ControlSystemsBase.Discrete, 
     # Return the wheel momentum derivatives
     return -K * state
+end
+
+function solve_care_newton(A::AbstractMatrix, B::AbstractMatrix, Q::AbstractMatrix, R::AbstractMatrix;
+                          P0::Union{AbstractMatrix, Nothing}=nothing,
+                          max_iter::Int=100, tol::Float64=1e-8,
+                          verbose::Bool=false)
+    @fastmath begin
+        n = size(A, 1)
+
+        # Pre-compute common terms
+        BRinvBt = SMatrix{size(B, 1), size(B, 1), Float64}(B * (R \ B')) # B * inv(R) * B'
+
+        # Initial guess for P
+        P_k = isnothing(P0) ? MMatrix{n, n, Float64}(zeros(n, n)) : MMatrix{n, n, Float64}(P0)
+        if !issymmetric(P_k)
+            P_k .= Symmetric(P_k + P_k') / 2 # Ensure symmetry
+        end
+
+        converged = false
+        residual_norm = Inf
+        F_Pk = MMatrix{n, n, Float64}(zeros(n, n))
+        Ak = MMatrix{n, n, Float64}(zeros(n, n))
+        Delta_P = MMatrix{n, n, Float64}(zeros(n, n))
+        @inbounds for _ in 1:max_iter
+            # 1. Compute the residual F(P_k) = A'P_k + P_k A - P_k BRinvBt P_k + Q
+            F_Pk .= A'P_k + P_k * A - P_k * BRinvBt * P_k + Q
+            residual_norm = norm(F_Pk)
+
+            # 2. Check for convergence
+            if residual_norm < tol
+                converged = true
+                break
+            end
+
+            # 3. Compute A_k = A - BRinvBt P_k
+            Ak .= A - BRinvBt * P_k
+
+            # 4. Solve the Lyapunov equation: Ak' ΔP + ΔP Ak = -F(P_k) for ΔP
+            # MatrixEquations.lyap solves AX + XB = C
+            # Here: A -> Ak', X -> ΔP, B -> Ak, C -> -F_Pk
+            Delta_P .= MatrixEquations.lyapc(Ak', F_Pk)
+            if !issymmetric(Delta_P)
+                Delta_P .= Symmetric(Delta_P + Delta_P') / 2 # Ensure symmetry for ΔP
+            end
+
+
+            # 5. Update P_k = P_k + ΔP
+            P_k .+= Delta_P
+            if !issymmetric(P_k)
+                P_k .= Symmetric(P_k + P_k') / 2 # Re-symmetrize P_k to combat numerical errors
+            end
+        end
+    end
+    return SMatrix{n, n, Float64}(P_k)
 end

@@ -308,11 +308,12 @@ function acc_gravity_pines!(rVec_cart::SVector{3, Float64}, Clm::Matrix{Float64}
         planet : config.Planet
             Planet object with the spherical harmonics and other parameters.
     """
-    x, y, z = rVec_cart
+    # x, y, z = rVec_cart
     r = norm(rVec_cart)
-    s = x/r
-    t = y/r
-    u = z/r
+    # s = x/r
+    # t = y/r
+    # u = z/r
+    s,t,u=normalize(rVec_cart)
     
 
     VR01 = planet.VR01
@@ -322,59 +323,61 @@ function acc_gravity_pines!(rVec_cart::SVector{3, Float64}, Clm::Matrix{Float64}
     A = planet.A
     R = planet.Re
     I = planet.Im
-    sqrt_2 = sqrt(2)
+    sqrt_2 = sqrt(2.0)
 
-    A[2, 1] = u*sqrt(3)
-    # Fill the off diagonal elements of A
-    @inbounds @simd for n = 1:L+1
-        i = n + 1
-        A[i+1, i] = u*sqrt(2*n+3)*A[i, i]
-    end
-    # Fill the rest of A
-    @inbounds for m = 0:M+1
-        j = m + 1
-        @inbounds for l = m+2:L+1
-            i = l + 1
-            A[i, j] = u*N1[i, j]*A[i-1, j] - N2[i, j]*A[i-2, j]
+    @fastmath begin
+        A[2, 1] = u*sqrt(3.0)
+        # Fill the off diagonal elements of A
+        @inbounds @simd for n = 1:L+1
+            i = n + 1
+            A[i+1, i] = u*sqrt(2.0*n+3.0)*A[i, i]
         end
-        R_term = R[j-1]
-        I_term = I[j-1]
-        R[j] = ifelse(m == 0, 1, s*R_term - t*I_term)
-        I[j] = ifelse(m == 0, 0, s*I_term + t*R_term)
-    end
-
-    ρ = RE/r
-    ρ_np1 = -μ/r * ρ
-    a1 = a2 = a3 = a4 = 0.0
-    @inbounds for l = 1:L
-        i = l + 1
-        ρ_np1 *= ρ
-        sum1 = 0
-        sum2 = 0
-        sum3 = 0
-        sum4 = 0
-        @inbounds @turbo for m = 0:min(l, M)
+        # Fill the rest of A
+        @inbounds for m = 0:M+1
             j = m + 1
-            C = Clm[i, j]
-            S = Slm[i, j]
+            @inbounds for l = m+2:L+1
+                i = l + 1
+                A[i, j] = u*N1[i, j]*A[i-1, j] - N2[i, j]*A[i-2, j]
+            end
             R_term = R[j-1]
             I_term = I[j-1]
-            D =                   (C*R[j] + S*I[j])     * sqrt_2
-            E = ifelse(m == 0, 0, (C*R_term + S*I_term) * sqrt_2)
-            F = ifelse(m == 0, 0, (S*R_term - C*I_term) * sqrt_2)
-
-            Avv00, Avv01, Avv11 = A[i, j], VR01[i, j]*A[i, j+1], VR11[i, j]*A[i+1, j+1]
-
-            sum1 += m * Avv00 * E
-            sum2 += m * Avv00 * F
-            sum3 +=     Avv01 * D
-            sum4 +=     Avv11 * D
+            R[j] = ifelse(m == 0, 1, s*R_term - t*I_term)
+            I[j] = ifelse(m == 0, 0, s*I_term + t*R_term)
         end
-        rr = ρ_np1/RE
-        a1 += rr * sum1
-        a2 += rr * sum2
-        a3 += rr * sum3
-        a4 -= rr * sum4
+
+        ρ = RE/r
+        ρ_np1 = -μ/r * ρ
+        a1 = a2 = a3 = a4 = 0.0
+        @inbounds for l = 1:L
+            i = l + 1
+            ρ_np1 *= ρ
+            sum1 = 0.0
+            sum2 = 0.0
+            sum3 = 0.0
+            sum4 = 0.0
+            @turbo for m = 0:min(l, M)
+                j = m + 1
+                C = Clm[i, j]
+                S = Slm[i, j]
+                R_term = R[j-1]
+                I_term = I[j-1]
+                D =                   (C*R[j] + S*I[j])     * sqrt_2
+                E = ifelse(m == 0, 0.0, (C*R_term + S*I_term) * sqrt_2)
+                F = ifelse(m == 0, 0.0, (S*R_term - C*I_term) * sqrt_2)
+
+                Avv00, Avv01, Avv11 = A[i, j], VR01[i, j]*A[i, j+1], VR11[i, j]*A[i+1, j+1]
+
+                sum1 += m * Avv00 * E
+                sum2 += m * Avv00 * F
+                sum3 +=     Avv01 * D
+                sum4 +=     Avv11 * D
+            end
+            rr = ρ_np1/RE
+            a1 += rr * sum1
+            a2 += rr * sum2
+            a3 += rr * sum3
+            a4 -= rr * sum4
+        end
     end
     
     return SVector(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4)

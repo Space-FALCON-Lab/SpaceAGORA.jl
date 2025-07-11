@@ -4,14 +4,13 @@ include("../utils/Closed_form_solution.jl")
 include("../utils/Save_results.jl")
 include("../physical_models/Propulsive_maneuvers.jl")
 
-
 using PythonCall
 
 sys = pyimport("sys")
 
 os = pyimport("os")
 
-function aerobraking(ip, m, args, gram, gram_atmosphere)
+function aerobraking(ip, m, args, gram, gram_atmosphere, filename)
 
     initial_state = m.initial_condition
     FinalState = true
@@ -28,7 +27,7 @@ function aerobraking(ip, m, args, gram, gram_atmosphere)
     while continue_campaign && FinalState
         config.cnf.index_Mars_Gram_call = 0
         firing_orbit = 0
-        numberofpassage = 1 + numberofpassage
+        numberofpassage += 1
 
         if args[:print_res] == true
             println("--> Start Passage #" * string(numberofpassage))
@@ -82,13 +81,14 @@ function aerobraking(ip, m, args, gram, gram_atmosphere)
                 m.initial_condition.hour = round(config.solution.orientation.hour[end])
                 m.initial_condition.minute = round(config.solution.orientation.minute[end])
                 m.initial_condition.second = round(config.solution.orientation.second[end])
-
+                m.initial_condition.el_time = config.solution.orientation.time[end]
                 if (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone") && continue_campaign
                     r = m.planet.Rp_e + args[:EI]*1e3
                     initial_state.vi = -acos(1 / initial_state.e * (initial_state.a * (1 - initial_state.e^2) / r - 1))
                 end
             end
 
+            clean_results()
             if uppercase(args[:density_model]) == "GRAM"
                 continue_campaign = asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere, gram)
             else
@@ -121,6 +121,13 @@ function aerobraking(ip, m, args, gram, gram_atmosphere)
 
         if Bool(args[:print_res])
             println(" ")
+        end
+
+        if args[:results] == 1
+            # Save the current passage results
+            save_csv(filename, args)
+            # Clear the config data buffer
+            # clean_results()
         end
     end
 

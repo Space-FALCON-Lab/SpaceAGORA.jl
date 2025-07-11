@@ -16,10 +16,10 @@ function save_results(time, ratio)
 
     n_variable_to_save = length(config.cnf.solution_intermediate[1]) - 1
     range_time = [item[1] for item in config.cnf.solution_intermediate]
-    results = Array{Float64}(undef, (n_variable_to_save, 1))
+    results = Matrix{Float64}(zeros(n_variable_to_save, Int(ceil(length(time)/ratio))))
 
 
-    t = []
+    t = zeros(Float64, Int(ceil(length(time)/ratio)))
     i = 0
 
     index_prev = 1
@@ -27,13 +27,13 @@ function save_results(time, ratio)
     for true_time in time
         if isapprox(i % ratio, 0, atol = 0.1) || true_time == time[end]
             index = findfirst(x -> x == true_time, range_time[index_prev:end])
-            append!(t, range_time[index+index_prev] + initial_time)
-            range_solution = reshape(config.cnf.solution_intermediate[index+index_prev], (n_variable_to_save + 1, 1))
+            t[Int(floor(i/ratio)+1)] = range_time[index+index_prev] + initial_time
+            # range_solution = SVector{n_variable_to_save + 1, Float64}([config.cnf.solution_intermediate[index+index_prev], 0])
 
             if length(t) == 1
-                results = range_solution[2:end]
+                results[:, 1] .= config.cnf.solution_intermediate[index+index_prev][2:end]
             else
-                results = hcat(results, range_solution[2:end])
+                results[:, Int(floor(i/ratio)+1)] .= config.cnf.solution_intermediate[index+index_prev][2:end]
             end
             
             index_prev = index
@@ -44,7 +44,7 @@ function save_results(time, ratio)
 
     time_0 = time[end]
     config.cnf.prev_step_integrator = time_0
-    config.cnf.solution_intermediate = []
+    config.cnf.solution_intermediate = Vector{Number}[]
 
     t = [i + config.cnf.initial_time_saved for i in t]
 
@@ -200,123 +200,123 @@ function save_results(time, ratio)
 end
 
 function clean_results()
-    config.solution.orientation.time = []
-    config.solution.orientation.year = []
-    config.solution.orientation.month = []
-    config.solution.orientation.day = []
-    config.solution.orientation.hour = []
-    config.solution.orientation.minute = []
-    config.solution.orientation.second = []
-    config.solution.orientation.number_of_passage = []
-    config.solution.orientation.pos_ii[1] = []
-    config.solution.orientation.pos_ii[2] = []
-    config.solution.orientation.pos_ii[3] = []
-    config.solution.orientation.vel_ii[1] = []
-    config.solution.orientation.vel_ii[2] = []
-    config.solution.orientation.vel_ii[3] = []
-    config.solution.orientation.pos_ii_mag = []
-    config.solution.orientation.vel_ii_mag = []
-    config.solution.orientation.quaternion[1] = []
-    config.solution.orientation.quaternion[2] = []
-    config.solution.orientation.quaternion[3] = []
-    config.solution.orientation.quaternion[4] = []
-    config.solution.orientation.ω[1] = []
-    config.solution.orientation.ω[2] = []
-    config.solution.orientation.ω[3] = []
+    # config.solution.orientation.time = []
+    # config.solution.orientation.year = []
+    # config.solution.orientation.month = []
+    # config.solution.orientation.day = []
+    # config.solution.orientation.hour = []
+    # config.solution.orientation.minute = []
+    # config.solution.orientation.second = []
+    # config.solution.orientation.number_of_passage = []
+    # config.solution.orientation.pos_ii[1] = []
+    # config.solution.orientation.pos_ii[2] = []
+    # config.solution.orientation.pos_ii[3] = []
+    # config.solution.orientation.vel_ii[1] = []
+    # config.solution.orientation.vel_ii[2] = []
+    # config.solution.orientation.vel_ii[3] = []
+    # config.solution.orientation.pos_ii_mag = []
+    # config.solution.orientation.vel_ii_mag = []
+    # config.solution.orientation.quaternion[1] = []
+    # config.solution.orientation.quaternion[2] = []
+    # config.solution.orientation.quaternion[3] = []
+    # config.solution.orientation.quaternion[4] = []
+    # config.solution.orientation.ω[1] = []
+    # config.solution.orientation.ω[2] = []
+    # config.solution.orientation.ω[3] = []
 
-    config.solution.orientation.pos_pp[1] = []
-    config.solution.orientation.pos_pp[2] = []
-    config.solution.orientation.pos_pp[3] = []
-    config.solution.orientation.pos_pp_mag = []
-    config.solution.orientation.vel_pp[1] = []
-    config.solution.orientation.vel_pp[2] = []
-    config.solution.orientation.vel_pp[3] = []
-    config.solution.orientation.vel_pp_mag = []
+    # config.solution.orientation.pos_pp[1] = []
+    # config.solution.orientation.pos_pp[2] = []
+    # config.solution.orientation.pos_pp[3] = []
+    # config.solution.orientation.pos_pp_mag = []
+    # config.solution.orientation.vel_pp[1] = []
+    # config.solution.orientation.vel_pp[2] = []
+    # config.solution.orientation.vel_pp[3] = []
+    # config.solution.orientation.vel_pp_mag = []
 
-    config.solution.orientation.oe[1] = []
-    config.solution.orientation.oe[2] = []
-    config.solution.orientation.oe[3] = []
-    config.solution.orientation.oe[4] = []
-    config.solution.orientation.oe[5] = []
-    config.solution.orientation.oe[6] = []
+    # config.solution.orientation.oe[1] = []
+    # config.solution.orientation.oe[2] = []
+    # config.solution.orientation.oe[3] = []
+    # config.solution.orientation.oe[4] = []
+    # config.solution.orientation.oe[5] = []
+    # config.solution.orientation.oe[6] = []
 
-    config.solution.orientation.lat = []
-    config.solution.orientation.lon = []
-    config.solution.orientation.alt = []
-    config.solution.orientation.γ_ii = []
-    config.solution.orientation.γ_pp = []
+    # config.solution.orientation.lat = []
+    # config.solution.orientation.lon = []
+    # config.solution.orientation.alt = []
+    # config.solution.orientation.γ_ii = []
+    # config.solution.orientation.γ_pp = []
 
-    config.solution.orientation.h_ii[1] = []
-    config.solution.orientation.h_ii[2] = []
-    config.solution.orientation.h_ii[3] = []
-    config.solution.orientation.h_pp[1] = []
-    config.solution.orientation.h_pp[2] = []
-    config.solution.orientation.h_pp[3] = []
-    config.solution.orientation.h_ii_mag = []
-    config.solution.orientation.h_pp_mag = []
+    # config.solution.orientation.h_ii[1] = []
+    # config.solution.orientation.h_ii[2] = []
+    # config.solution.orientation.h_ii[3] = []
+    # config.solution.orientation.h_pp[1] = []
+    # config.solution.orientation.h_pp[2] = []
+    # config.solution.orientation.h_pp[3] = []
+    # config.solution.orientation.h_ii_mag = []
+    # config.solution.orientation.h_pp_mag = []
 
-    config.solution.orientation.uD[1] = []
-    config.solution.orientation.uD[2] = []
-    config.solution.orientation.uD[3] = []
-    config.solution.orientation.uE[1] = []
-    config.solution.orientation.uE[2] = []
-    config.solution.orientation.uE[3] = []
-    config.solution.orientation.uN[1] = []
-    config.solution.orientation.uN[2] = []
-    config.solution.orientation.uN[3] = []
-    config.solution.orientation.vN = []
-    config.solution.orientation.vE = []
-    config.solution.orientation.azi_pp = []
+    # config.solution.orientation.uD[1] = []
+    # config.solution.orientation.uD[2] = []
+    # config.solution.orientation.uD[3] = []
+    # config.solution.orientation.uE[1] = []
+    # config.solution.orientation.uE[2] = []
+    # config.solution.orientation.uE[3] = []
+    # config.solution.orientation.uN[1] = []
+    # config.solution.orientation.uN[2] = []
+    # config.solution.orientation.uN[3] = []
+    # config.solution.orientation.vN = []
+    # config.solution.orientation.vE = []
+    # config.solution.orientation.azi_pp = []
 
-    # Physical properties
-    config.solution.physical_properties.ρ = []
-    config.solution.physical_properties.T = []
-    config.solution.physical_properties.p = []
-    config.solution.physical_properties.wind[1] = []
-    config.solution.physical_properties.wind[2] = []
-    config.solution.physical_properties.wind[3] = []
-    config.solution.physical_properties.cL = []
-    config.solution.physical_properties.cD = []
-    config.solution.physical_properties.α = []
-    config.solution.physical_properties.S = []
+    # # Physical properties
+    # config.solution.physical_properties.ρ = []
+    # config.solution.physical_properties.T = []
+    # config.solution.physical_properties.p = []
+    # config.solution.physical_properties.wind[1] = []
+    # config.solution.physical_properties.wind[2] = []
+    # config.solution.physical_properties.wind[3] = []
+    # config.solution.physical_properties.cL = []
+    # config.solution.physical_properties.cD = []
+    # config.solution.physical_properties.α = []
+    # config.solution.physical_properties.S = []
 
-    # Performance
-    config.solution.performance.mass = []
-    config.solution.performance.heat_rate = []
-    config.solution.performance.heat_load = []
-    config.solution.performance.T_r = []
-    config.solution.performance.q = []
+    # # Performance
+    # config.solution.performance.mass = []
+    # config.solution.performance.heat_rate = []
+    # config.solution.performance.heat_load = []
+    # config.solution.performance.T_r = []
+    # config.solution.performance.q = []
 
-    # Forces
-    config.solution.forces.gravity_ii[1] = []
-    config.solution.forces.gravity_ii[2] = []
-    config.solution.forces.gravity_ii[3] = []
-    config.solution.forces.drag_pp[1] = []
-    config.solution.forces.drag_pp[2] = []
-    config.solution.forces.drag_pp[3] = []
-    config.solution.forces.drag_ii[1] = []
-    config.solution.forces.drag_ii[2] = []
-    config.solution.forces.drag_ii[3] = []
-    config.solution.forces.lift_pp[1] = []
-    config.solution.forces.lift_pp[2] = []
-    config.solution.forces.lift_pp[3] = []
-    config.solution.forces.lift_ii[1] = []
-    config.solution.forces.lift_ii[2] = []
-    config.solution.forces.lift_ii[3] = []
-    config.solution.forces.force_ii[1] = []
-    config.solution.forces.force_ii[2] = []
-    config.solution.forces.force_ii[3] = []
-    config.solution.forces.energy = []
+    # # Forces
+    # config.solution.forces.gravity_ii[1] = []
+    # config.solution.forces.gravity_ii[2] = []
+    # config.solution.forces.gravity_ii[3] = []
+    # config.solution.forces.drag_pp[1] = []
+    # config.solution.forces.drag_pp[2] = []
+    # config.solution.forces.drag_pp[3] = []
+    # config.solution.forces.drag_ii[1] = []
+    # config.solution.forces.drag_ii[2] = []
+    # config.solution.forces.drag_ii[3] = []
+    # config.solution.forces.lift_pp[1] = []
+    # config.solution.forces.lift_pp[2] = []
+    # config.solution.forces.lift_pp[3] = []
+    # config.solution.forces.lift_ii[1] = []
+    # config.solution.forces.lift_ii[2] = []
+    # config.solution.forces.lift_ii[3] = []
+    # config.solution.forces.force_ii[1] = []
+    # config.solution.forces.force_ii[2] = []
+    # config.solution.forces.force_ii[3] = []
+    # config.solution.forces.energy = []
 
-    # Simulation
-    config.solution.simulation.MC_seed = []
-    config.solution.simulation.drag_passage = []
+    # # Simulation
+    # config.solution.simulation.MC_seed = []
+    # config.solution.simulation.drag_passage = []
 
-    # Closed form
-    config.solution.closed_form.t_cf = []
-    config.solution.closed_form.h_cf = []
-    config.solution.closed_form.γ_cf = []
-    config.solution.closed_form.v_cf = []
-
+    # # Closed form
+    # config.solution.closed_form.t_cf = []
+    # config.solution.closed_form.h_cf = []
+    # config.solution.closed_form.γ_cf = []
+    # config.solution.closed_form.v_cf = []
+    config.solution = config.Solution()
     return
 end

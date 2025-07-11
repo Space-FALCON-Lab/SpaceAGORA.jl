@@ -14,17 +14,20 @@ include("../control/Control.jl")
 include("../control/Propulsive_maneuvers.jl")
 
 using LinearAlgebra
-using DifferentialEquations
+using OrdinaryDiffEq
 using Dates
 using AstroTime
 using SPICE
 using PythonCall
 using StaticArrays
+using Quaternions
+using Enzyme
 sys = pyimport("sys")
 
 import .config
 import .ref_sys
 import .quaternion_utils
+
 
 function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothing, gram=nothing)
     wind_m = false
@@ -49,9 +52,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     Ω = OE[4]
     ω = OE[5]
 
-    T_ijk = [cos(Ω)*cos(ω)-sin(Ω)*sin(ω)*cos(i)   sin(Ω)*cos(ω)+cos(Ω)*sin(ω)*cos(i)    sin(ω)*sin(i);
+    T_ijk = SMatrix{3, 3, Float64}([cos(Ω)*cos(ω)-sin(Ω)*sin(ω)*cos(i)   sin(Ω)*cos(ω)+cos(Ω)*sin(ω)*cos(i)    sin(ω)*sin(i);
              -cos(Ω)*sin(ω)-sin(Ω)*cos(ω)*cos(i)  -sin(Ω)*sin(ω)+cos(Ω)*cos(ω)*cos(i)   cos(ω)*sin(i);
-             sin(Ω)*sin(i)                        -cos(Ω)*sin(i)                        cos(i)]
+             sin(Ω)*sin(i)                        -cos(Ω)*sin(i)                        cos(i)])
 
 
     r0, v0 = orbitalelemtorv(OE, m.planet)
@@ -66,584 +69,620 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                                     m.initial_condition.minute, 
                                     m.initial_condition.second))
 
-    config.cnf.count_numberofpassage = config.cnf.count_numberofpassage + 1
+    config.cnf.count_numberofpassage += 1
+    t_prev = 0.0
+    # if config.cnf.count_numberofpassage != 1
+    #     t_prev = config.solution.orientation.time[end]
+    # else
+    #     t_prev = m.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # m.initial_condition.time_rot
+    # end
 
-    if config.cnf.count_numberofpassage != 1
-        t_prev = config.solution.orientation.time[end]
-    else
-        t_prev = m.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # m.initial_condition.time_rot
-    end
-
-    function f!(y_dot, in_cond, param, t0)
+    function f!(y_dot, in_cond, param, t0::Float64)
         m = param[1]
         index_phase_aerobraking = param[2]
         ip = param[3]
         aerobraking_phase = param[4]
-        t_prev = param[5]
+        # t_prev = param[5]
         date_initial = param[6]
         time_0 = param[7]
         args = param[8]
         initial_state = param[9]
         gram_atmosphere = param[10]
         gram = param[11]
+        numberofpassage = param[12]
 
         
         ## Counters
         # Counter for all along the simulation of all passages
-        config.cnf.count_aerobraking = config.cnf.count_aerobraking + 1
-        passage_number = config.cnf.count_aerobraking
+        config.cnf.count_aerobraking += 1
         # Counter for one entire passage
-        config.cnf.count_dori = config.cnf.count_dori + 1
+        config.cnf.count_dori += 1
         # Counter for one phase
-        config.cnf.count_phase = config.cnf.count_phase + 1
+        config.cnf.count_phase += 1
 
-        t0 = t0 * config.cnf.TU
+        t0 *= config.cnf.TU
 
         # Clock
-        current_epoch = date_initial + t0*seconds # Precompute the current epoch
-        time_real = DateTime(current_epoch) # date_initial + Second(t0)
-        timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
+        @fastmath begin
+            current_epoch = date_initial + (t0-m.initial_condition.el_time)*seconds # Precompute the current epoch
+            time_real = DateTime(current_epoch) # date_initial + Second(t0)
+            timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
 
-        # Timing variables
-        el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation
-        current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
-        time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
-        config.cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
-        m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), config.cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
-        
+            # Timing variables
+            el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation
+            current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
+            time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
+            config.cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
+            m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), config.cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+            
 
-        # Assign state
-        pos_ii = SVector{3, Float64}(in_cond[1:3] * config.cnf.DU)                      # Inertial position 
-        vel_ii = SVector{3, Float64}(in_cond[4:6] * config.cnf.DU / config.cnf.TU)      # Inertial velocity
-        quaternion = SVector{4, Float64}(in_cond[9:12]/norm(in_cond[9:12]))                                   # Quaternion
-        
+            # Assign state
+            # println(in_cond)
+            # quaternion = SVector{4, Float64}(in_cond[1:4]) # Quaternion
+            # pos_ii = SVector{3, Float64}(in_cond[1:3] * config.cnf.DU)                      # Inertial position
+            # vel_ii = SVector{3, Float64}(in_cond[4:6] * config.cnf.DU / config.cnf.TU)      # Inertial velocity
+            # mass = in_cond[7] * config.cnf.MU                                          # Mass kg
+            # ω = SVector{3, Float64}(in_cond[9:11] / config.cnf.TU)                # Angular velocity vector [rad / s]
+            pos_ii = SVector{3, Float64}((@view in_cond[1:3]) * config.cnf.DU)                      # Inertial position 
+            vel_ii = SVector{3, Float64}((@view in_cond[4:6]) * config.cnf.DU / config.cnf.TU)      # Inertial velocity
+            quaternion = SVector{4, Float64}(@view in_cond[9:12]) # Quaternion
 
-        ω = SVector{3, Float64}(in_cond[13:15] / config.cnf.TU)                # Angular velocity vector [rad / s]
-        mass = in_cond[7] * config.cnf.MU                                          # Mass kg
-        pos_ii_mag = norm(pos_ii)                                  # Magnitude of the inertial position
-        vel_ii_mag = norm(vel_ii)                                  # Magnitude of the inertial velocity
+            ω = SVector{3, Float64}((@view in_cond[13:15]) / config.cnf.TU)                # Angular velocity vector [rad / s]
+            mass = in_cond[7] * config.cnf.MU                                          # Mass kg
+            pos_ii_mag = norm(pos_ii)                                  # Magnitude of the inertial position
+            vel_ii_mag = norm(vel_ii)                                  # Magnitude of the inertial velocity
 
-        # Assign parameters
-        ω_planet = m.planet.ω
-        γ = m.planet.γ
-        μ_fluid = m.planet.μ_fluid
-        bodies, root_index = config.traverse_bodies(m.body, m.body.roots[1]) # Get all bodies in the simulation
-        area_tot = config.get_spacecraft_reference_area(m.body, m.body.roots[1]) # Total reference area of the spacecraft
-        m.body.roots[1].q = quaternion
-        m.body.roots[1].ω = ω
+            # Assign parameters
+            ω_planet = m.planet.ω
+            γ = m.planet.γ
+            μ_fluid = m.planet.μ_fluid
+            bodies, root_index = config.traverse_bodies(m.body, m.body.roots[1]) # Get all bodies in the simulation
+            # area_tot = config.get_spacecraft_reference_area(m.body, m.body.roots[1]) # Total reference area of the spacecraft
+            m.body.roots[1].q .= quaternion
+            # quaternion = SVector{4, Float64}(m.body.roots[1].q)
+            m.body.roots[1].ω .= ω
 
-        # TRANSFORM THE STATE
-        # Inertial to planet relative transformation
-        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, config.cnf.et) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
-        pos_pp_mag = norm(pos_pp) # Magnitude of the planet relative position
-        pos_pp_hat = pos_pp / pos_pp_mag # Unit vector of the planet relative position
-        pos_ii_hat = pos_ii / pos_ii_mag # Unit vector of the inertial position
+            # TRANSFORM THE STATE
+            # Inertial to planet relative transformation
+            pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, config.cnf.et) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
+            pos_pp_mag = norm(pos_pp) # Magnitude of the planet relative position
+            # pos_pp_hat = normalize(pos_pp) # Unit vector of the planet relative position
+            # pos_ii_hat = normalize(pos_ii) # Unit vector of the inertial position
 
-        vel_pp_mag = norm(vel_pp)
-        vel_pp_hat = vel_pp / vel_pp_mag
+            vel_pp_mag = norm(vel_pp)
+            # vel_pp_hat = vel_pp / vel_pp_mag
 
-        # Orbital Elements
-        # println("pos_ii: ", pos_ii, " vel_ii: ", vel_ii, " mass: ", mass)
-        # # sleep(5.0)
-        OE = rvtoorbitalelement(pos_ii, vel_ii, mass, m.planet)
-        vi = OE[6]
+            # Orbital Elements
+            # println("pos_ii: ", pos_ii, " vel_ii: ", vel_ii, " mass: ", mass)
+            # # sleep(5.0)
+            OE = rvtoorbitalelement(pos_ii, vel_ii, mass, m.planet)
+            vi = OE[6]
 
-        
-        # m.planet.L_PI .= pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
-        # println("L_PI: ", m.planet.L_PI)
-        # # sleep(5.0)
-        Mars_Gram_recalled_at_periapsis = false
+            
+            # m.planet.L_PI .= pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+            # println("L_PI: ", m.planet.L_PI)
+            # # sleep(5.0)
+            Mars_Gram_recalled_at_periapsis = false
 
-        if vi > 0 && vi < pi/2 && config.cnf.ascending_phase == false
-            config.cnf.ascending_phase = true
-        elseif vi >= pi/2 && vi <= pi && config.cnf.ascending_phase == true && args[:body_shape] == "Blunted Cone"
-            config.cnf.ascending_phase = false
-        end
-
-        if config.cnf.ascending_phase == true && config.cnf.MarsGram_recall == false
-            config.cnf.atmospheric_data = Dict()
-        end
-
-        # Angular Momentum Calculations 
-        h_ii = cross(pos_ii, vel_ii)    # Inertial angular momentum vector [m ^ 2 / s]
-
-        h_ii_mag = norm(h_ii)           # Magnitude of the inertial angular momentum [m ^ 2 / s]
-        h_pp = cross(pos_pp, vel_pp)
-        
-        h_pp_mag = norm(h_pp)
-        h_pp_hat = h_pp / h_pp_mag
-
-        # Inertial flight path angle 
-        arg = median([-1, 1, h_ii_mag / (pos_ii_mag * vel_ii_mag)])     # limit to[-1, 1]
-        γ_ii = acos(arg)    
-        if dot(pos_ii, vel_ii) < 0
-            γ_ii = -γ_ii
-        end
-
-        # Relative flight path angle
-        arg = median([-1, 1, h_pp_mag / (pos_pp_mag * vel_pp_mag)])     # limit to[-1, 1]
-        γ_pp = acos(arg)
-        if dot(pos_pp, vel_pp) < 0
-            γ_pp = -γ_pp
-        end
-
-        ## Derived Quantity Calculations
-
-        # Compute latitude and longitude
-        LatLong = rtolatlong(pos_pp, m.planet, args[:topography_model] == "Spherical Harmonics" && norm(pos_ii) - m.planet.Rp_e < args[:EI] * 1e3)
-        
-        lat = LatLong[2]
-        lon = LatLong[3]
-        alt = LatLong[1]
-        
-        # println(" ")
-        # println(" Altitude: ", alt)
-        # println(" ")
-
-        if aerobraking_phase == 2 || aerobraking_phase == 0
-            if (pos_ii_mag - m.planet.Rp_e - args[:EI] * 1e3) <= 0 && config.cnf.drag_state == false && config.cnf.ascending_phase == false
-                config.cnf.drag_state = true
-                config.cnf.time_IEI = t0
-            elseif (pos_ii_mag - m.planet.Rp_e >= args[:EI] * 1e3) && config.cnf.drag_state == true && config.cnf.ascending_phase
-                config.cnf.drag_state = false
-                config.cnf.time_OEI = t0
+            if vi > 0 && vi < pi/2 && config.cnf.ascending_phase == false
+                config.cnf.ascending_phase = true
+            elseif vi >= pi/2 && vi <= pi && config.cnf.ascending_phase == true && args[:body_shape] == "Blunted Cone"
+                config.cnf.ascending_phase = false
             end
-        end
 
-        if aerobraking_phase == 2 || aerobraking_phase == 0
-            if args[:control_mode] == 1
-                x = 120
+            if config.cnf.ascending_phase == true && config.cnf.MarsGram_recall == false
+                config.cnf.atmospheric_data = Dict()
+            end
+
+            # Angular Momentum Calculations 
+            h_ii = cross(pos_ii, vel_ii)    # Inertial angular momentum vector [m ^ 2 / s]
+
+            h_ii_mag = norm(h_ii)           # Magnitude of the inertial angular momentum [m ^ 2 / s]
+            h_pp = cross(pos_pp, vel_pp)
+            
+            h_pp_mag = norm(h_pp)
+            h_pp_hat = normalize(h_pp) # Unit vector of the planet relative angular momentum
+
+            # Inertial flight path angle 
+            γ_ii = acos(clamp(h_ii_mag / (pos_ii_mag * vel_ii_mag), -1.0, 1.0))     # limit to[-1, 1]
+            # γ_ii = acos(arg)    
+            if dot(pos_ii, vel_ii) < 0.0
+                γ_ii = -γ_ii
+            end
+
+            # Relative flight path angle
+            γ_pp = acos(clamp(h_pp_mag / (pos_pp_mag * vel_pp_mag), -1.0, 1.0))     # limit to[-1, 1]
+            # γ_pp = acos(arg)
+            if dot(pos_pp, vel_pp) < 0.0
+                γ_pp = -γ_pp
+            end
+
+            ## Derived Quantity Calculations
+
+            # Compute latitude and longitude
+            alt,lat,lon = rtolatlong(pos_pp, m.planet, args[:topography_model] == "Spherical Harmonics" && norm(pos_ii) - m.planet.Rp_e < args[:EI] * 1e3)
+            
+            # alt,lat,lon = LatLong
+            
+            # println(" ")
+            # println(" Altitude: ", alt)
+            # println(" ")
+
+            if aerobraking_phase == 2 || aerobraking_phase == 0
+                if (pos_ii_mag - m.planet.Rp_e - args[:EI] * 1.0e3) <= 0.0 && config.cnf.drag_state == false && config.cnf.ascending_phase == false
+                    config.cnf.drag_state = true
+                    config.cnf.time_IEI = t0
+                elseif (pos_ii_mag - m.planet.Rp_e >= args[:EI] * 1.0e3) && config.cnf.drag_state == true && config.cnf.ascending_phase
+                    config.cnf.drag_state = false
+                    config.cnf.time_OEI = t0
+                end
+            end
+
+            if aerobraking_phase == 2 || aerobraking_phase == 0
+                if args[:control_mode] == 1
+                    x = 120.0
+                else
+                    x = 140.0
+                end
+
+                if (config.cnf.heat_rate_prev > 0.005 || abs(pos_ii_mag - m.planet.Rp_e <= x*1.0e3)) && config.cnf.sensible_loads == false && config.cnf.ascending_phase == false
+                    config.cnf.sensible_loads = true
+                elseif config.cnf.heat_rate_prev > 0.005 && config.cnf.sensible_loads == true && config.cnf.ascending_phase
+                    config.cnf.sensible_loads = false
+                end
+            end
+
+            # Compute NED basis unit vectors
+            uD, uN, uE = latlongtoNED([alt,lat,lon])
+
+            # copmute azimuth
+            vN = dot(vel_pp, uN)
+            vE = dot(vel_pp, uE)
+            azi_pp = atan(vE, vN)
+
+            # Get density, pressure , temperature and winds
+            config.cnf.Gram_justrecalled = 0
+            if ip.dm == 0
+                ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+            elseif ip.dm == 1
+                ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+            elseif ip.dm == 2
+                ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+            elseif ip.dm == 3
+                ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
+                ρ, T_p, wind = pyconvert(Float64, ρ), pyconvert(Float64, T_p), SVector{3, Float64}([pyconvert(Float64, wind[1]), pyconvert(Float64, wind[2]), pyconvert(Float64, wind[3])])
+            elseif ip.dm == 4
+                ρ, T_p, wind = density_nrlmsise(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, time_real)
+            end
+
+            # Define output.txt containing density data
+            p = 0.0
+            if args[:body_shape] == "Spacecraft"
+                length_car = config.get_spacecraft_length(m.body, m.body.roots[1]) # Length of the spacecraft
+            elseif args[:body_shape] == "Blunted Cone"
+                length_car = m.body.base_radius * 2.0
+            end
+
+            Re = vel_pp_mag * ρ * length_car / μ_fluid  # Reynolds number
+
+            # Mach Number
+            sound_velocity = sqrt(γ * m.planet.R * T_p)
+            Mach = vel_pp_mag / sound_velocity
+            S = sqrt(γ/2.0) * Mach    # Molecular speed ratio
+            heat_load = in_cond[8] * config.cnf.MU / config.cnf.TU^2 # * 1e4
+
+            if config.cnf.drag_state == true
+                ## Check type of fluid and check if this changes for different planets
+                Kn = 1.26 * sqrt(γ) * Mach / (Re + 1.0e-5)
+                if index_phase_aerobraking == 2
+                    if (alt < 80000.0) && (config.cnf.index_warning_alt == 0)
+                        println("WARNING: Altitude < 80 km!")
+                    end
+
+                    config.cnf.index_warning_alt = 1
+                elseif alt > 100000.0
+                    config.cnf.index_warning_alt = 0
+                end
+
+                if Kn < 0.1 && config.cnf.index_warning_flow == 0
+                    if Bool(args[:print_res])
+                        println("WARNING: Transitional flow passage!")
+                    end
+                    
+                    config.cnf.index_warning_flow = 1
+                elseif Kn >= 0.1
+                    config.cnf.index_warning_flow = 0
+                end
+            end
+
+            config.cnf.heat_load_past = heat_load
+
+            # Heat rate and Control
+            if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
+                # evaluates the closed form solution the first time at EI km
+                if abs(pos_ii_mag - m.planet.Rp_e - args[:EI] * 1.0e3) <= 1.0e-2 && (args[:control_mode] == 2 || args[:control_mode] == 3) && config.cnf.time_switch_1 == 0
+                    if ip.cm == 3
+                        control_solarpanels_openloop(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, 0, true, gram_atmosphere)
+                    elseif ip.cm == 2
+                        control_solarpanels_heatload(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, 0, gram_atmosphere)
+                    elseif ip.cm == 1
+                        control_solarpanels_heatrate(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
+                    elseif ip.cm == 0
+                        no_control(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
+                    end
+                end
+
+                # if config.cnf.Gram_justrecalled == true && config.cnf.index_Mars_Gram_call != 1  # in MC, when we reavaluate Mars Gram there is a discontinuity with the density which is created by how the density data are created. This discontinuity create really high peaks. We recalculate aoa for the new density data.
+                #     if ip.cm == 3
+                #         config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
+                #     elseif ip.cm == 2
+                #         config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
+                #     elseif ip.cm == 1
+                #         config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
+                #     elseif ip.cm == 0
+                #         config.cnf.α = no_control(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
+                #     end
+                    
+                #     push!(config.cnf.state_flesh1, [T_p, ρ, S])
+
+                #     if ip.tm == 1
+                #         heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
+                #     elseif ip.tm == 2
+                #         heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
+                #     end
+                # end
+
+                if index_phase_aerobraking == 2
+                    if Bool(args[:control_in_loop])
+                        config.cnf.state_flesh1 = [[T_p, ρ, S]]
+                        if ip.cm == 3
+                            config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
+                        elseif ip.cm == 2
+                            config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
+                            # println("control_solarpanels_heatload: ", config.cnf.α)
+                        elseif ip.cm == 1
+                            config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+                        elseif ip.cm == 0
+                            config.cnf.α = no_control(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+                        end
+                    elseif args[:control_in_loop] == false && args[:integrator] == "Julia"
+                        if config.controller.count_controller != config.controller.count_prev_controller && config.controller.stored_state == 0 && t0 != config.controller.prev_time
+                            push!(config.cnf.state_flesh1, [T_p, ρ, S]) # might have to change to push!
+
+                            if config.controller.count_controller == 2
+                                state = config.cnf.state_flesh1[end]
+                            else
+                                state = config.cnf.state_flesh1[end-1]
+                                deleteat!(config.cnf.state_flesh1, 1)
+                            end
+
+                            config.controller.stored_state = 1
+                            config.controller.prev_time = time_0
+
+                            if ip.cm == 3
+                                config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
+                            elseif ip.cm == 2
+                                config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
+                            elseif ip.cm == 1
+                                config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+                            elseif ip.cm == 0
+                                config.cnf.α = no_control(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+                            end
+                        end
+                    end
+                end
+
+                # Heat Rate 
+                # heat_rate = MVector{length(bodies), Float64}(zeros(length(bodies))) # Heat rate vector for each body
+                if ip.tm == 1
+                    heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
+                elseif ip.tm == 2
+                    heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
+                end
+                
+                cp = m.planet.γ / (m.planet.γ - 1) * m.planet.R
+
+                T_r = 0.0
             else
-                x = 140
+                T_r = 0.0
+                heat_rate = 0.0
             end
 
-            if (config.cnf.heat_rate_prev > 0.005 || abs(pos_ii_mag - m.planet.Rp_e <= x*1e3)) && config.cnf.sensible_loads == false && config.cnf.ascending_phase == false
-                config.cnf.sensible_loads = true
-            elseif config.cnf.heat_rate_prev > 0.005 && config.cnf.sensible_loads == true && config.cnf.ascending_phase
-                config.cnf.sensible_loads = false
+            config.cnf.heat_rate_prev = heat_rate # save current heat rate
+
+            # Convert wind to pp(PCPF) frame
+            wE, wN, wU = wind # positive to the east , m / s
+            # wN = wind[2] # positive to the north , m / s
+            # wU = wind[3] # positive up , m / s
+
+            wind_pp = wN * uN + wE * uE - wU * uD         # wind velocity in pp frame, m / s 
+            vel_pp_rw = vel_pp + wind_pp                  # relative wind vector, m / s
+            vel_pp_rw_hat = normalize(vel_pp_rw)   # relative wind unit vector 
+
+            # Dynamic Pressure, CHANGE THE VELOCITY WITH THE WIND VELOCITY
+            q = 0.5 * ρ * norm(vel_pp_rw)^2               # dynamic pressure based on wind, Pa
+            
+            # Update the force on each link on the spacecraft
+            gravity_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize gravity vector
+            # Nominal gravity calculation
+            if ip.gm == 0
+                gravity_ii += mass * gravity_const(pos_ii_mag, pos_ii, m.planet)
+            elseif ip.gm == 1
+                gravity_ii += mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet)
+            elseif ip.gm == 2
+                gravity_ii += mass * (args[:gravity_harmonics] == 1 ? gravity_invsquared(pos_ii_mag, pos_ii, m.planet) : gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet))
+            elseif ip.gm == 3
+                gravity_ii += mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
             end
-        end
 
-        # Compute NED basis unit vectors
-        uD, uN, uE = latlongtoNED(LatLong)
-
-        # copmute azimuth
-        vN = dot(vel_pp, uN)
-        vE = dot(vel_pp, uE)
-        azi_pp = atan(vE, vN)
-
-        # Get density, pressure , temperature and winds
-        config.cnf.Gram_justrecalled = 0
-        if ip.dm == 0
-            ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 1
-            ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 2
-            ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 3
-            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
-            ρ, T_p, wind = pyconvert(Float64, ρ), pyconvert(Float64, T_p), SVector{3, Float32}([pyconvert(Float32, wind[1]), pyconvert(Float32, wind[2]), pyconvert(Float32, wind[3])])
-        elseif ip.dm == 4
-            ρ, T_p, wind = density_nrlmsise(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, time_real)
-        end
-
-        # Define output.txt containing density data
-        p = 0.0
-        if args[:body_shape] == "Spacecraft"
-            length_car = config.get_spacecraft_length(m.body, m.body.roots[1]) # Length of the spacecraft
-        elseif args[:body_shape] == "Blunted Cone"
-            length_car = m.body.base_radius * 2
-        end
-
-        Re = vel_pp_mag * ρ * length_car / μ_fluid  # Reynolds number
-
-        # Mach Number
-        sound_velocity = sqrt(γ * m.planet.R * T_p)
-        Mach = vel_pp_mag / sound_velocity
-        S = sqrt(γ/2) * Mach    # Molecular speed ratio
-        heat_load = in_cond[8] * config.cnf.MU / config.cnf.TU^2 # * 1e4
-
-        if config.cnf.drag_state == true
-            ## Check type of fluid and check if this changes for different planets
-            Kn = 1.26 * sqrt(γ) * Mach / (Re + 1e-5)
-            if index_phase_aerobraking == 2
-                if (alt < 80000) && (config.cnf.index_warning_alt == 0)
-                    println("WARNING: Altitude < 80 km!")
+            if length(args[:n_bodies]) != 0
+                for k = 1:length(args[:n_bodies])  
+                    gravity_ii += mass * gravity_n_bodies(config.cnf.et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
                 end
-
-                config.cnf.index_warning_alt = 1
-            elseif alt > 100000
-                config.cnf.index_warning_alt = 0
+            end
+            if args[:gravity_harmonics] == 1
+                gravity_ii += mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_e, m.planet)
             end
 
-            if Kn < 0.1 && config.cnf.index_warning_flow == 0
-                if Bool(args[:print_res])
-                    println("WARNING: Transitional flow passage!")
-                end
-                
-                config.cnf.index_warning_flow = 1
-            elseif Kn >= 0.1
-                config.cnf.index_warning_flow = 0
+            srp_ii = MVector{3, Float64}(zeros(3)) # solar radiation pressure vector
+            Rot = [MMatrix{3,3,Float64}(zeros(3, 3)) for i in eachindex(bodies)] # Rotation matrix from the root body to the spacecraft link
+            @inbounds for (i, b) in enumerate(bodies)
+                Rot[i] .= config.rotate_to_inertial(m.body, b, root_index) # Rotation matrix from the root body to the spacecraft link
             end
-        end
-
-        config.cnf.heat_load_past = heat_load
-
-        # Heat rate and Control
-        if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
-            # evaluates the closed form solution the first time at EI km
-            if abs(pos_ii_mag - m.planet.Rp_e - args[:EI] * 1e3) <= 1e-2 && (args[:control_mode] == 2 || args[:control_mode] == 3) && config.cnf.time_switch_1 == 0
-                if ip.cm == 3
-                    control_solarpanels_openloop(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, 0, true, gram_atmosphere)
-                elseif ip.cm == 2
-                    control_solarpanels_heatload(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, 0, gram_atmosphere)
-                elseif ip.cm == 1
-                    control_solarpanels_heatrate(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
-                elseif ip.cm == 0
-                    no_control(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
+            if args[:srp] == true
+                # sun_earth_vector = m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", config.cnf.et, "J2000", "NONE", uppercase(m.planet.name))[1])
+                for (i, b) in enumerate(bodies)
+                    mass_body = b.m # Mass of the spacecraft link
+                    if b.root
+                        mass_body += mass-config.get_spacecraft_mass(m.body, b, dry=true) # Add the mass of the root body
+                    end
+                    # Calculate the position of the spacecraft link in inertial frame
+                    R = Rot[i] # Rotation matrix from the root body to the spacecraft link
+                    pos_ii_body = pos_ii + R * b.r # Update the position of the spacecraft link in inertial frame
+                    pos_ii_body_mag = norm(pos_ii_body) # Magnitude of the inertial position of the spacecraft link
+                    p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
+                    srp_ii = mass_body * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, b.ref_area, b.m, pos_ii_body, config.cnf.et)
+                    # # Account for angle of incidence of sunlight
+                    # normal_vector_ii = (rot(root_body.q)'*rot(b.q)'*[1;0;0])
+                    # normal_vector_ii_hat = normal_vector_ii / norm(normal_vector_ii) # Unit vector of the normal vector
+                    # # Sun vector
+                    # sun_vector_ii = sun_earth_vector - pos_ii_body # Vector from the spacecraft link to the Sun
+                    # sun_vector_ii_hat = sun_vector_ii / norm(sun_vector_ii) # Unit vector of the Sun vector
+                    # # Calculate the angle of incidence
+                    # cos_θ = dot(normal_vector_ii_hat, sun_vector_ii_hat) # Cosine of the angle of incidence
+                    b.net_force += srp_ii # Update the force on the spacecraft link
+                    b.net_torque += cross(R*b.r, srp_ii) # Update the torque on the spacecraft link
                 end
             end
 
-            # if config.cnf.Gram_justrecalled == true && config.cnf.index_Mars_Gram_call != 1  # in MC, when we reavaluate Mars Gram there is a discontinuity with the density which is created by how the density data are created. This discontinuity create really high peaks. We recalculate aoa for the new density data.
-            #     if ip.cm == 3
-            #         config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
-            #     elseif ip.cm == 2
-            #         config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
-            #     elseif ip.cm == 1
-            #         config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
-            #     elseif ip.cm == 0
-            #         config.cnf.α = no_control(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
-            #     end
-                
-            #     push!(config.cnf.state_flesh1, [T_p, ρ, S])
-
-            #     if ip.tm == 1
-            #         heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
-            #     elseif ip.tm == 2
-            #         heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
-            #     end
+            # gravity_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize gravity vector
+            # if args[:gravity_harmonics] == 1
+            #     gravity_ii += mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_e, m.planet)
             # end
 
-            if index_phase_aerobraking == 2
-                if Bool(args[:control_in_loop])
-                    config.cnf.state_flesh1 = [[T_p, ρ, S]]
-                    if ip.cm == 3
-                        config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
-                    elseif ip.cm == 2
-                        config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
-                        # println("control_solarpanels_heatload: ", config.cnf.α)
-                    elseif ip.cm == 1
-                        config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
-                    elseif ip.cm == 0
-                        config.cnf.α = no_control(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
-                    end
-                elseif args[:control_in_loop] == false && args[:integrator] == "Julia"
-                    if config.controller.count_controller != config.controller.count_prev_controller && config.controller.stored_state == 0 && t0 != config.controller.prev_time
-                        push!(config.cnf.state_flesh1, [T_p, ρ, S]) # might have to change to push!
+            bank_angle = deg2rad(0.0)
 
-                        if config.controller.count_controller == 2
-                            state = config.cnf.state_flesh1[end]
-                        else
-                            state = config.cnf.state_flesh1[end-1]
-                            deleteat!(config.cnf.state_flesh1, 1)
-                        end
-
-                        config.controller.stored_state = 1
-                        config.controller.prev_time = time_0
-
-                        if ip.cm == 3
-                            config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
-                        elseif ip.cm == 2
-                            config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
-                        elseif ip.cm == 1
-                            config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
-                        elseif ip.cm == 0
-                            config.cnf.α = no_control(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
-                        end
-                    end
-                end
-            end
-
-            # Heat Rate 
-            # heat_rate = MVector{length(bodies), Float64}(zeros(length(bodies))) # Heat rate vector for each body
-            if ip.tm == 1
-                heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
-            elseif ip.tm == 2
-                heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
-            end
+            lift_pp_hat = normalize(cross(h_pp_hat, vel_pp_rw_hat))
+            # lift_pp_hat /= norm(lift_pp_hat) # Normalize the lift vector in planet relative frame
+            drag_pp_hat = -vel_pp_rw_hat # Planet relative drag force direction
+            cross_pp_hat = cross(drag_pp_hat, lift_pp_hat) # Cross product of the drag and lift vectors in planet relative frame
             
-            cp = m.planet.γ / (m.planet.γ - 1) * m.planet.R
-
-            T_r = 0.0
-        else
-            T_r = 0.0
-            heat_rate = 0.0
-        end
-
-        config.cnf.heat_rate_prev = heat_rate # save current heat rate
-
-        # Convert wind to pp(PCPF) frame
-        wE = wind[1] # positive to the east , m / s
-        wN = wind[2] # positive to the north , m / s
-        wU = wind[3] # positive up , m / s
-
-        wind_pp = wN * uN + wE * uE - wU * uD         # wind velocity in pp frame, m / s 
-        vel_pp_rw = vel_pp + wind_pp                  # relative wind vector, m / s
-        vel_pp_rw_hat = vel_pp_rw / norm(vel_pp_rw)   # relative wind unit vector 
-
-        # Dynamic Pressure, CHANGE THE VELOCITY WITH THE WIND VELOCITY
-        q = 0.5 * ρ * norm(vel_pp_rw)^2               # dynamic pressure based on wind, Pa
-        
-        # Update the force on each link on the spacecraft
-        # Nominal gravity calculation
-        if ip.gm == 0
-            gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 1
-            gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 2
-            gravity_ii = mass * (args[:gravity_harmonics] == 1 ? gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii) : gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii))
-        elseif ip.gm == 3
-            gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
-        end
-
-        if length(args[:n_bodies]) != 0
-            for k = 1:length(args[:n_bodies])  
-                gravity_ii += mass * gravity_n_bodies(config.cnf.et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
-            end
-        end
-        if args[:gravity_harmonics] == 1
-            gravity_ii += mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_e, m.planet)
-        end
-
-        srp_ii = zeros(3) # solar radiation pressure vector
-        if args[:srp] == true
-            # sun_earth_vector = m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", config.cnf.et, "J2000", "NONE", uppercase(m.planet.name))[1])
-            for b in bodies
-                mass_body = b.m # Mass of the spacecraft link
-                if b.root
-                    mass_body += mass-config.get_spacecraft_mass(m.body, b, dry=true) # Add the mass of the root body
-                end
-                # Calculate the position of the spacecraft link in inertial frame
-                R = config.rotate_to_inertial(m.body, b, root_index) # Rotation matrix from the root body to the spacecraft link
-                pos_ii_body = pos_ii + R * b.r # Update the position of the spacecraft link in inertial frame
-                pos_ii_body_mag = norm(pos_ii_body) # Magnitude of the inertial position of the spacecraft link
-                p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
-                srp_ii = mass_body * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, b.ref_area, b.m, pos_ii_body, config.cnf.et)
-                # # Account for angle of incidence of sunlight
-                # normal_vector_ii = (rot(root_body.q)'*rot(b.q)'*[1;0;0])
-                # normal_vector_ii_hat = normal_vector_ii / norm(normal_vector_ii) # Unit vector of the normal vector
-                # # Sun vector
-                # sun_vector_ii = sun_earth_vector - pos_ii_body # Vector from the spacecraft link to the Sun
-                # sun_vector_ii_hat = sun_vector_ii / norm(sun_vector_ii) # Unit vector of the Sun vector
-                # # Calculate the angle of incidence
-                # cos_θ = dot(normal_vector_ii_hat, sun_vector_ii_hat) # Cosine of the angle of incidence
-                b.net_force += srp_ii # Update the force on the spacecraft link
-                b.net_torque += cross(R*b.r, srp_ii) # Update the torque on the spacecraft link
-            end
-        end
-
-        # gravity_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize gravity vector
-        # if args[:gravity_harmonics] == 1
-        #     gravity_ii += mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_e, m.planet)
-        # end
-
-        bank_angle = deg2rad(0.0)
-
-        lift_pp_hat = cross(h_pp_hat, vel_pp_rw_hat)
-        lift_pp_hat /= norm(lift_pp_hat) # Normalize the lift vector in planet relative frame
-        drag_pp_hat = -vel_pp_rw_hat # Planet relative drag force direction
-        cross_pp_hat = cross(drag_pp_hat, lift_pp_hat) # Cross product of the drag and lift vectors in planet relative frame
-        
-        CL, CD = 0.0, 0.0 # Initialize aerodynamic coefficients
-        total_area = 0.0 # Initialize total area
-        
-        lift_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize inertial lift force vector
-        drag_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize inertial drag force vector
-        drag_pp = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize planet relative drag force vector
-        lift_pp = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize planet relative lift force vector
-        α = MVector{length(bodies), Float64}(zeros(length(bodies))) # Initialize angle of attack vector
-        β = MVector{length(bodies), Float64}(zeros(length(bodies))) # Initialize sideslip angle vector
-        # Determine angle of attack (α) and sideslip angle (β)
-        # Vehicle Aerodynamic Forces
-        # CL and CD
-        for (i, b) in enumerate(bodies)
-            R = config.rotate_to_inertial(m.body, b, root_index) # Rotation matrix from the root body to the spacecraft link
-            body_frame_velocity = R' * m.planet.L_PI' * vel_pp_rw # Velocity of the spacecraft link in inertial frame
+            CL, CD = 0.0, 0.0 # Initialize aerodynamic coefficients
+            total_area = 0.0 # Initialize total area
             
-            α_body = atan(body_frame_velocity[1], body_frame_velocity[3]) # Angle of attack in radians
-            β_body = atan(body_frame_velocity[2], norm([body_frame_velocity[1], body_frame_velocity[3]])) # Sideslip angle in radians
-            α[i] = α_body # Angle of attack for the spacecraft link
-            β[i] = β_body # Sideslip angle for the spacecraft link
-            
-            if ip.am == 0
-                CL, CD = aerodynamic_coefficient_constant(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
-            elseif ip.am == 1
-                CL_body, CD_body, CS_body = aerodynamic_coefficient_fM(α_body, β_body, b, T_p, S, m.aerodynamics, MonteCarlo)
-            elseif ip.am == 2
-                CL, CD = aerodynamic_coefficient_no_ballistic_flight(α, m.body, args, T_p, S, m.aerodynamics, MonteCarlo)
-            end
-
-            drag_pp_body = q * CD_body * b.ref_area * drag_pp_hat                       # Planet relative drag force vector
-            lift_pp_body = q * CL_body * b.ref_area * lift_pp_hat * cos(bank_angle)     # Planet relative lift force vector
-            cross_pp_body = q * CS_body * b.ref_area * cross_pp_hat # Planet relative cross force vector
-
-            drag_ii_body = m.planet.L_PI' * drag_pp_body   # Inertial drag force vector
-            lift_ii_body = m.planet.L_PI' * lift_pp_body   # Inertial lift force vector
-            cross_ii_body = m.planet.L_PI' * cross_pp_body # Inertial cross force vector
-            # Update the force on the spacecraft link
-            b.net_force += drag_ii_body + lift_ii_body + cross_ii_body # Update the force on the spacecraft link
-            b.net_torque += cross(R*b.r, drag_ii_body + lift_ii_body + cross_ii_body) # Update the torque on the spacecraft link
-            # Update the total CL/CD
-            CL += CL_body * b.ref_area
-            CD += CD_body * b.ref_area
-            total_area += b.ref_area # Update the total area
-            drag_ii += drag_ii_body # Update the total drag force
-            lift_ii += lift_ii_body # Update the total lift force
-            drag_pp += drag_pp_body # Update the total drag force in planet relative frame
-            lift_pp += lift_pp_body # Update the total lift force in planet relative frame
-        end
-        
-        # Normalize the aerodynamic coefficients
-        CL = CL / total_area
-        CD = CD / total_area
-
-        # Check if propellant mass is greater than 0 kg
-        if config.cnf.index_propellant_mass == 1
-            if mass - config.get_spacecraft_mass(m.body, m.body.roots[1], dry=true) <= 0.5
-                config.cnf.index_propellant_mass = 0
-                m.engines.T = 0
-
-                if Bool(args[:print_res])
-                    println("WARNING: No fuel left!")
-                end
-            end
-        end
-
-        # Thrust
-        Δv = m.engines.g_e * m.engines.Isp * log(initial_state.m / mass)
-
-        if ip.tc == 0
-            thrust_pp_mag = no_maneuver(t0, m.engines.T, Δv, args, index_phase_aerobraking)
-        elseif ip.tc == 1
-            thrust_pp_mag = abms(t0, m.engines.T, Δv, args, index_phase_aerobraking)
-        elseif ip.tc == 2
-            thrust_pp_mag = deceleration_drag_passage(t0, m.engines.T, Δv, args, index_phase_aerobraking)
-        end
-
-        # Rodrigues rotation formula to rotate thrust vector of angle phi around angular vector from D direction
-        D_L_per_pp_hat = cross(drag_pp_hat, lift_pp_hat)
-        thrust_pp_hat =  drag_pp_hat * cos(args[:phi]) + cross(D_L_per_pp_hat, drag_pp_hat) * sin(args[:phi]) + D_L_per_pp_hat * dot(D_L_per_pp_hat, drag_pp_hat) * (1 - cos(args[:phi]))
-        #these two ways give the same direction
-        thrust_pp = thrust_pp_mag * thrust_pp_hat
-        thrust_ii = m.planet.L_PI' * thrust_pp
-
-        # Attitude control torques
-        τ_rw = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize reaction wheel torque vector
-        total_rw_h = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize total reaction wheel angular momentum vector
-        rw_h = MVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels)) # Initialize vector of reaction wheel angular momentum magnitudes
-        rw_τ = MVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels)) # Initialize vector of reaction wheel torque magnitudes
-        counter = 1 # Counter for reaction wheel angular momentum vector
-        for b in bodies
-            Rot = config.rotate_to_inertial(m.body, b, root_index) # Rotation matrix from the root body to the spacecraft link
-            if b.gyro != 0.0 # If the body has reaction wheels and we are in the aerobraking phase
-                # Determine the angular momentum derivatives of the reaction wheels
-                ω_wheel_derivatives = b.attitude_control_function(m, t0, b, bodies, root_index, args, vel_pp_rw, h_pp_hat, aerobraking_phase) # Calculate the reaction wheel torque
+            lift_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize inertial lift force vector
+            drag_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize inertial drag force vector
+            drag_pp = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize planet relative drag force vector
+            lift_pp = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize planet relative lift force vector
+            α = MVector{length(bodies), Float64}(zeros(length(bodies))) # Initialize angle of attack vector
+            β = MVector{length(bodies), Float64}(zeros(length(bodies))) # Initialize sideslip angle vector
+            R = MMatrix{3, 3, Float64}(zeros(3, 3)) # Rotation matrix from the root body to the spacecraft link
+            # Determine angle of attack (α) and sideslip angle (β)
+            # Vehicle Aerodynamic Forces
+            # CL and CD
+            @inbounds for (i, b) in enumerate(bodies)
+                R .= Rot[i] # Rotation matrix from the root body to the spacecraft link
+                body_frame_velocity = R' * m.planet.L_PI' * vel_pp_rw # Velocity of the spacecraft link in inertial frame
                 
-                τ = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize reaction wheel torque vector
-                for i in 1:b.gyro
-                    if b.rw[i] >= b.max_h &&  ω_wheel_derivatives[i] > 0.0
-                        b.rw[i] = b.max_h # Limit the reaction wheel angular momentum to the maximum angular momentum
-                        ω_wheel_derivatives[i] = 0.0 # Set the angular momentum derivative to zero if the maximum angular momentum is reached
-                    elseif b.rw[i] <= -b.max_h && ω_wheel_derivatives[i] < 0.0
-                        b.rw[i] = -b.max_h # Limit the reaction wheel angular momentum to the minimum angular momentum
-                    end
-                    rw_torque = Rot*b.J_rw[:, i] * ω_wheel_derivatives[i] # Update the reaction wheel torque
-                    if norm(rw_torque) > b.max_torque
-                        rw_torque = rw_torque / norm(rw_torque) * b.max_torque # Limit the reaction wheel torque to the maximum torque
-                    end
-                    τ += rw_torque # Sum the reaction wheel torques
-                    total_rw_h += Rot * b.J_rw[:, i] * b.rw[i] # Update the total reaction wheel angular momentum
-                    rw_h[counter] = b.rw[i] # Update the reaction wheel angular momentum vector
-                    rw_τ[counter] = norm(rw_torque) # Update the reaction wheel torque vector
-                    counter += 1 # Increment the counter for the reaction wheel angular momentum vector
+                α_body = atan(body_frame_velocity[1], body_frame_velocity[3]) # Angle of attack in radians
+                β_body = atan(body_frame_velocity[2], norm([body_frame_velocity[1], body_frame_velocity[3]])) # Sideslip angle in radians
+                α[i] = α_body # Angle of attack for the spacecraft link
+                β[i] = β_body # Sideslip angle for the spacecraft link
+                
+                if ip.am == 0
+                    CL, CD = aerodynamic_coefficient_constant(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
+                elseif ip.am == 1
+                    CL_body, CD_body, CS_body = aerodynamic_coefficient_fM(α_body, β_body, b, T_p, S, m.aerodynamics, MonteCarlo)
+                elseif ip.am == 2
+                    CL, CD = aerodynamic_coefficient_no_ballistic_flight(α, m.body, args, T_p, S, m.aerodynamics, MonteCarlo)
                 end
-                b.rw_τ = Rot'*τ # Save the reaction wheel torque in the body
-                τ_rw += b.rw_τ # Sum the reaction wheel torques
-                b.net_torque += τ # Update the torque on the spacecraft link
+
+                drag_pp_body = q * CD_body * b.ref_area * drag_pp_hat                       # Planet relative drag force vector
+                lift_pp_body = q * CL_body * b.ref_area * lift_pp_hat * cos(bank_angle)     # Planet relative lift force vector
+                cross_pp_body = q * CS_body * b.ref_area * cross_pp_hat # Planet relative cross force vector
+
+                drag_ii_body = m.planet.L_PI' * drag_pp_body   # Inertial drag force vector
+                lift_ii_body = m.planet.L_PI' * lift_pp_body   # Inertial lift force vector
+                cross_ii_body = m.planet.L_PI' * cross_pp_body # Inertial cross force vector
+
+                # Update the force on the spacecraft link
+                b.net_force += drag_ii_body + lift_ii_body + cross_ii_body # Update the force on the spacecraft link
+                b.net_torque += cross(R*b.r, drag_ii_body + lift_ii_body + cross_ii_body) # Update the torque on the spacecraft link
+                # Update the total CL/CD
+                CL += CL_body * b.ref_area
+                CD += CD_body * b.ref_area
+                total_area += b.ref_area # Update the total area
+                drag_ii += drag_ii_body # Update the total drag force
+                lift_ii += lift_ii_body # Update the total lift force
+                drag_pp += drag_pp_body # Update the total drag force in planet relative frame
+                lift_pp += lift_pp_body # Update the total lift force in planet relative frame
             end
+            
+            # Normalize the aerodynamic coefficients
+            CL = CL / total_area
+            CD = CD / total_area
+
+            # Check if propellant mass is greater than 0 kg
+            if config.cnf.index_propellant_mass == 1
+                if mass - config.get_spacecraft_mass(m.body, m.body.roots[1], dry=true) <= 0.5
+                    config.cnf.index_propellant_mass = 0
+                    m.engines.T = 0
+
+                    if Bool(args[:print_res])
+                        println("WARNING: No fuel left!")
+                    end
+                end
+            end
+
+            # Thrust
+            Δv = m.engines.g_e * m.engines.Isp * log(initial_state.m / mass)
+
+            if ip.tc == 0
+                thrust_pp_mag = no_maneuver(t0, m.engines.T, Δv, args, index_phase_aerobraking)
+            elseif ip.tc == 1
+                thrust_pp_mag = abms(t0, m.engines.T, Δv, args, index_phase_aerobraking)
+            elseif ip.tc == 2
+                thrust_pp_mag = deceleration_drag_passage(t0, m.engines.T, Δv, args, index_phase_aerobraking)
+            end
+
+            # Rodrigues rotation formula to rotate thrust vector of angle phi around angular vector from D direction
+            D_L_per_pp_hat = cross(drag_pp_hat, lift_pp_hat)
+            thrust_pp_hat = normalize(drag_pp_hat * cos(args[:phi]) + cross(D_L_per_pp_hat, drag_pp_hat) * sin(args[:phi]) + D_L_per_pp_hat * dot(D_L_per_pp_hat, drag_pp_hat) * (1 - cos(args[:phi])))
+            #these two ways give the same direction
+            thrust_pp = thrust_pp_mag * thrust_pp_hat
+            thrust_ii = m.planet.L_PI' * thrust_pp
+
+            # Attitude control torques
+            τ_rw = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize reaction wheel torque vector
+            total_rw_h = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize total reaction wheel angular momentum vector
+            rw_h = MVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels)) # Initialize vector of reaction wheel angular momentum magnitudes
+            rw_τ = MVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels)) # Initialize vector of reaction wheel torque magnitudes
+            ω_wheel_derivatives = MVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels)) # Initialize vector of reaction wheel angular momentum derivatives
+            counter = 1 # Counter for reaction wheel angular momentum vector
+            @inbounds for (i, b) in enumerate(bodies)
+                R .= Rot[i] # Rotation matrix from the root body to the spacecraft link
+                if b.gyro != 0.0 # If the body has reaction wheels and we are in the aerobraking phase
+                    # Determine the angular momentum derivatives of the reaction wheels
+                    ω_wheel_derivatives .= b.attitude_control_function(m, b, root_index, vel_pp_rw, h_pp_hat, aerobraking_phase) # Calculate the reaction wheel torque
+                    
+                    τ = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize reaction wheel torque vector
+                    clamp!(b.rw, -b.max_h, b.max_h) # Clamp the reaction wheel angular momentum to the maximum angular momentum
+                    @inbounds for i in 1:b.gyro
+                        if abs(b.rw[i] - b.max_h) == 0.0
+                            ω_wheel_derivatives[i] = 0.0 # Set the angular momentum derivative to zero if the maximum angular momentum is reached
+                        end
+                        rw_torque = R*b.J_rw[:, i] * ω_wheel_derivatives[i] # Update the reaction wheel torque
+                        if norm(rw_torque) > b.max_torque
+                            rw_torque = normalize(rw_torque) * b.max_torque # Limit the reaction wheel torque to the maximum torque
+                        end
+                        τ += rw_torque # Sum the reaction wheel torques
+                        total_rw_h += R * b.J_rw[:, i] * b.rw[i] # Update the total reaction wheel angular momentum
+                        rw_h[counter] = b.rw[i] # Update the reaction wheel angular momentum vector
+                        rw_τ[counter] = norm(rw_torque) # Update the reaction wheel torque vector
+                        counter += 1 # Increment the counter for the reaction wheel angular momentum vector
+                    end
+                    b.rw_τ .= R'*τ # Save the reaction wheel torque in the body
+                    τ_rw += b.rw_τ # Sum the reaction wheel torques
+                    b.net_torque += τ # Update the torque on the spacecraft link
+                end
+            end
+
+            # Total Force
+            # Total inertial external force vector on body [N]
+            # gravity_ii = sum([b.net_force for b in bodies]) # Sum of all forces on the spacecraft links
+            # aerodynamics_ii = sum([b.net_force for b in bodies]) # Sum of all aerodynamic forces on the spacecraft links
+            body_forces = sum([b.net_force for b in bodies]) # Sum of all forces on the spacecraft links
+            force_ii = body_forces + gravity_ii + thrust_ii
+            # force_ii = aerodynamics_ii + gravity_ii + thrust_ii + srp_ii # Total inertial external force vector on body [N]
+            
+            # Torques
+            τ_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize torque vector
+            # Gravity gradient torque
+            R .= config.rotate_to_inertial(m.body, m.body.roots[1], root_index) # Rotation matrix from the root body to the spacecraft link
+            inertia_tensor = R * config.get_inertia_tensor(m.body, root_index) * R' # Inertia tensor of the body
+            τ_ii += 3.0*m.planet.μ * cross(pos_ii, inertia_tensor*pos_ii) / pos_ii_mag^5 # Gravity gradient torque
+            τ_ii += sum([b.net_torque for b in bodies]) # Sum of all torques on the spacecraft links
+
+            # Get angular momentums of each reaction wheel
+            
+            # counter = 1
+            # total_rw_h = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize total reaction wheel angular momentum vector
+            # # println("length of rw_h: ", length(rw_h))
+            # for b in bodies
+            #     # println("b.rw: ", length(b.rw))
+            #     for i in 1:b.gyro
+            #         # println("b.gyro: ", b.gyro, " counter: ", counter)
+            #         # println("b.rw[i]: ", length(b.rw[i]))
+            #         rw_h[counter] = b.rw[i] # Reaction wheel angular momentum vector
+            #         counter += 1
+            #     end
+            #     if b.gyro != 0
+            #         n = b.gyro    
+            #         Rot = config.rotate_to_inertial(m.body, b, root_index)
+            #         J_rw_inertial = zeros(3, n)
+            #         for i in 1:n
+            #             J_rw_inertial[:, i] = Rot * b.J_rw[:, i]
+            #         end
+            #         total_rw_h += J_rw_inertial * b.rw # Sum the reaction wheel angular momentum vectors
+            #     end
+            # end
+            # println("τ_ii: ", τ_ii)
+            # 
+            # Ξ = [quaternion[4]*diagm([1, 1, 1]) + hat(quaternion[1:3]); -quaternion[1:3]'] # Quaternion matrix
+            # q1, q2, q3, q4 = quaternion
+            # Ξ = Ξ(quaternion)
+            # inertia_tensor = config.get_inertia_tensor(m.body, m.body.roots[1]) # Inertia tensor of the body
+            
+            y_dot[1:3] .= vel_ii * (config.cnf.TU / config.cnf.DU)
+            y_dot[4:6] .= force_ii / mass * (config.cnf.TU^2 / config.cnf.DU)
+            y_dot[7] = -norm(thrust_ii) / (m.engines.g_e * m.engines.Isp) * config.cnf.TU / config.cnf.MU       # mass variation
+            y_dot[8] = heat_rate * config.cnf.TU^3 / config.cnf.MU # * 1e-4
+            y_dot[9:12] .= (0.5*Ξ(quaternion)*ω) * config.cnf.TU  # Angular velocity
+            y_dot[13:15] .= (inertia_tensor\(-hat(ω)*(inertia_tensor*ω + total_rw_h)+ τ_ii)) * config.cnf.TU^2  # Angular acceleration
         end
-
-        # Total Force
-        # Total inertial external force vector on body [N]
-        # gravity_ii = sum([b.net_force for b in bodies]) # Sum of all forces on the spacecraft links
-        # aerodynamics_ii = sum([b.net_force for b in bodies]) # Sum of all aerodynamic forces on the spacecraft links
-        body_forces = sum([b.net_force for b in bodies]) # Sum of all forces on the spacecraft links
-        force_ii = body_forces + gravity_ii + thrust_ii
-        # force_ii = aerodynamics_ii + gravity_ii + thrust_ii + srp_ii # Total inertial external force vector on body [N]
-        
-        # Torques
-        τ_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize torque vector
-        # Gravity gradient torque
-        R = config.rotate_to_inertial(m.body, m.body.roots[1], root_index) # Rotation matrix from the root body to the spacecraft link
-        inertia_tensor = R * config.get_inertia_tensor(m.body, root_index) * R' # Inertia tensor of the body
-        τ_ii += 3*m.planet.μ * cross(pos_ii, inertia_tensor*pos_ii) / pos_ii_mag^5 # Gravity gradient torque
-        τ_ii += sum([b.net_torque for b in bodies]) # Sum of all torques on the spacecraft links
-
-        # Get angular momentums of each reaction wheel
-        
-        # counter = 1
-        # total_rw_h = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize total reaction wheel angular momentum vector
-        # # println("length of rw_h: ", length(rw_h))
-        # for b in bodies
-        #     # println("b.rw: ", length(b.rw))
-        #     for i in 1:b.gyro
-        #         # println("b.gyro: ", b.gyro, " counter: ", counter)
-        #         # println("b.rw[i]: ", length(b.rw[i]))
-        #         rw_h[counter] = b.rw[i] # Reaction wheel angular momentum vector
-        #         counter += 1
-        #     end
-        #     if b.gyro != 0
-        #         n = b.gyro    
-        #         Rot = config.rotate_to_inertial(m.body, b, root_index)
-        #         J_rw_inertial = zeros(3, n)
-        #         for i in 1:n
-        #             J_rw_inertial[:, i] = Rot * b.J_rw[:, i]
-        #         end
-        #         total_rw_h += J_rw_inertial * b.rw # Sum the reaction wheel angular momentum vectors
-        #     end
-        # end
-        # println("τ_ii: ", τ_ii)
-        # 
-        # Ξ = [quaternion[4]*diagm([1, 1, 1]) + hat(quaternion[1:3]); -quaternion[1:3]'] # Quaternion matrix
-        # q1, q2, q3, q4 = quaternion
-        # Ξ = Ξ(quaternion)
-        # inertia_tensor = config.get_inertia_tensor(m.body, m.body.roots[1]) # Inertia tensor of the body
-        y_dot[1:3] = vel_ii * (config.cnf.TU / config.cnf.DU)
-        y_dot[4:6] = force_ii / mass * (config.cnf.TU^2 / config.cnf.DU) 
-        y_dot[7] = -norm(thrust_ii) / (m.engines.g_e * m.engines.Isp) * config.cnf.TU / config.cnf.MU       # mass variation
-        y_dot[8] = heat_rate * config.cnf.TU^3 / config.cnf.MU # * 1e-4
-        y_dot[9:12] = (0.5*Ξ(quaternion)*ω) * config.cnf.TU  # Angular velocity
-        y_dot[13:15] = (inertia_tensor\(-hat(ω)*(inertia_tensor*ω + total_rw_h)+ τ_ii)) * config.cnf.TU^2  # Angular acceleration
-        energy = (vel_ii_mag^2)/2 - (m.planet.μ / pos_ii_mag)
+        # y_dot[1:4] = 0.5*Ξ(quaternion) * ω * (config.cnf.TU)
+        # y_dot[5:7] = vel_ii * config.cnf.TU / config.cnf.DU
+        # y_dot[8:10] = force_ii / mass * (config.cnf.TU^2 / config.cnf.DU)
+        # y_dot[11] = -norm(thrust_ii) / (m.engines.g_e * m.engines.Isp) * config.cnf.TU / config.cnf.MU       # mass variation
+        # y_dot[12] = heat_rate * config.cnf.TU^3 / config.cnf.MU # * 1e-4
+        # y_dot[13:15] = inertia_tensor\(-hat(ω)*(inertia_tensor*ω + total_rw_h)+ τ_ii) * config.cnf.TU^2  # Angular acceleration
+        energy = (vel_ii_mag^2)/2.0 - (m.planet.μ / pos_ii_mag)
 
         for b in bodies
-            b.net_force .= SVector{3, Float64}(0.0, 0.0, 0.0) # Reset the net force on each link
-            b.net_torque .= SVector{3, Float64}(0.0, 0.0, 0.0) # Reset the net torque on each link
+            b.net_force .= [0.0, 0.0, 0.0] # Reset the net force on each link
+            b.net_torque .= [0.0, 0.0, 0.0] # Reset the net torque on each link
         end
         
         ## SAVE RESULTS
         if Bool(config.cnf.results_save)
-            sol = [t0, timereal.year, timereal.month, timereal.day, timereal.hour, timereal.minute,
-                        timereal.second, numberofpassage, pos_ii..., vel_ii..., pos_ii_mag, vel_ii_mag, pos_pp..., 
-                        pos_pp_mag, vel_pp..., vel_pp_mag, OE[1], OE[2], OE[3], OE[4], OE[5], OE[6],
-                        lat, lon, alt, γ_ii, γ_pp, h_ii..., h_pp..., h_ii_mag, h_pp_mag, uD..., uE..., uN..., vN, vE,
-                        azi_pp, ρ, T_p, p, wind..., CL, CD, S, mass, heat_rate, heat_load, T_r, 
-                        q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., energy, config.cnf.index_MonteCarlo, Int64(config.cnf.drag_state),
-                        quaternion..., ω..., config.cnf.α, τ_rw..., α..., β..., rw_h..., rw_τ...]
-            # TODO: Figure out how to store reaction wheel states
-            sol = reshape(sol, (1, length(sol)))
-
-            push!(config.cnf.solution_intermediate, sol)
+            # println("Number of passages in complete_passage: ", numberofpassage)
+            if config.solution.simulation.solution_states != 0
+                sol = SVector{config.solution.simulation.solution_states, Number}(Number[t0, timereal.year, timereal.month, timereal.day, timereal.hour, timereal.minute,
+                            timereal.second, numberofpassage, pos_ii..., vel_ii..., pos_ii_mag, vel_ii_mag, pos_pp..., 
+                            pos_pp_mag, vel_pp..., vel_pp_mag, OE[1], OE[2], OE[3], OE[4], OE[5], OE[6],
+                            lat, lon, alt, γ_ii, γ_pp, h_ii..., h_pp..., h_ii_mag, h_pp_mag, uD..., uE..., uN..., vN, vE,
+                            azi_pp, ρ, T_p, p, wind..., CL, CD, S, mass, heat_rate, heat_load, T_r, 
+                            q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., energy, config.cnf.index_MonteCarlo, Int64(config.cnf.drag_state),
+                            quaternion..., ω..., config.cnf.α, τ_rw..., α..., β..., rw_h..., rw_τ...])
+                if !isempty(config.cnf.solution_intermediate) && config.cnf.solution_intermediate[end][1] == t0
+                    config.cnf.solution_intermediate[end][:] .= sol
+                else
+                    push!(config.cnf.solution_intermediate, sol)
+                end
+                # config.cnf.solution_intermediate .= sol
+            else
+                sol = Number[t0, timereal.year, timereal.month, timereal.day, timereal.hour, timereal.minute,
+                            timereal.second, numberofpassage, pos_ii..., vel_ii..., pos_ii_mag, vel_ii_mag, pos_pp..., 
+                            pos_pp_mag, vel_pp..., vel_pp_mag, OE[1], OE[2], OE[3], OE[4], OE[5], OE[6],
+                            lat, lon, alt, γ_ii, γ_pp, h_ii..., h_pp..., h_ii_mag, h_pp_mag, uD..., uE..., uN..., vN, vE,
+                            azi_pp, ρ, T_p, p, wind..., CL, CD, S, mass, heat_rate, heat_load, T_r, 
+                            q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., energy, config.cnf.index_MonteCarlo, Int64(config.cnf.drag_state),
+                            quaternion..., ω..., config.cnf.α, τ_rw..., α..., β..., rw_h..., rw_τ...]
+                config.solution.simulation.solution_states = length(sol)
+                push!(config.cnf.solution_intermediate, sol)
+            end
+                # sol = reshape(sol, (1, length(sol)))
+            # push!(config.cnf.solution_intermediate, sol)
         end
 
         return y_dot
@@ -672,12 +711,41 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     reaction_wheel_update = DiscreteCallback(every_step_condition, reaction_wheels_affect!)
 
+    function quaternion_update_affect!(integrator)
+        """
+        Event function to update the quaternion at every step.
+        """
+        # quaternion = m.body.roots[1].q
+        # ω = integrator.u[13:15] / config.cnf.TU  # Angular velocity
+        # dt = integrator.dt * config.cnf.TU  # Time step in seconds
+        # quaternion_update_function = (du, u, p, t) -> du[:] .= 0.5*Ξ(SVector{4, Float64}(u))*ω
+        # # Update the quaternion using the angular velocity
+        # prob = ODEProblem(quaternion_update_function, quaternion, (0.0, dt))
+        # m.body.roots[1].q .= solve(prob, Tsit5()).u[end]  # Update the quaternion in the body
+        # integrator.u[9:12] .= m.body.roots[1].q  # Update the quaternion in the integrator
+    end
+    quaternion_update = DiscreteCallback(every_step_condition, quaternion_update_affect!)
+
+    function quaternion_normalize_condition(y, t, integrator)
+        """
+        Event function to be run at every step. Used for quaternion normalization.
+        """
+        abs(norm(y[9:12]) - 1.0) > 1.0e-6  # Check if the quaternion is not normalized
+    end
+    function quaternion_normalize_affect!(integrator)
+        """
+        Event function to update the quaternion at every step.
+        """
+        normalize!(integrator.u[9:12])  # Normalize the quaternion
+    end
+    quaternion_normalize = DiscreteCallback(quaternion_normalize_condition, quaternion_normalize_affect!)
+
     function eventfirststep_condition(y, t, integrator)
         """
         Event function to detect the entry interface downcrossing.
         """
         m = integrator.p[1]
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - (args[:EI])*1e3   #  downcrossing
+        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - (args[:EI])*1.0e3   #  downcrossing
     end
     function eventfirststep_affect!(integrator)
         """
@@ -698,7 +766,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         vi = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf.MU, m.planet)[6]
 
-        rad2deg(vi) - 180  # downcrossing
+        rad2deg(vi) - 180.0  # downcrossing
     end
 
     function eventfirststep_periapsis_affect!(integrator)
@@ -715,7 +783,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         Event function to detect the atmospheric exit upcrossing.
         """
         m = integrator.p[1]
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - (args[:AE])*1e3   # upcrossing
+        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - (args[:AE])*1.0e3   # upcrossing
     end
     function eventsecondstep_affect!(integrator)
         """
@@ -732,7 +800,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         """
         m = integrator.p[1]
         args = integrator.p[8]
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:EI]*1e3  # downcrossing
+        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:EI]*1.0e3  # downcrossing
         # norm(y[1:3]) - m.planet.Rp_e - args[:EI]*1e3  # downcrossing
     end
     function reached_EI_affect!(integrator)
@@ -749,7 +817,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         """
         m = integrator.p[1]
         args = integrator.p[8]
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
+        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:AE]*1.0e3  # upcrossing
     end
     function reached_AE_affect!(integrator)
         """
@@ -1037,7 +1105,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
     final_entry_altitude_reached = ContinuousCallback(final_entry_altitude_reached_condition, final_entry_altitude_reached_affect!)
 
-    time_0 = 0
+    time_0 = m.initial_condition.el_time
     if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 2
         config.cnf.α = m.aerodynamics.α
     elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 3
@@ -1099,16 +1167,16 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     # Def initial conditions
     root_body = m.body.roots[1]  # Root body of the mission
-    in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], Mass+1e-10, 0.0, root_body.q[1],
-               root_body.q[2], root_body.q[3], root_body.q[4], root_body.ω[1], root_body.ω[2], root_body.ω[3]]
+    in_cond = MVector{15, Float64}([r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], Mass+1e-10, 0.0, root_body.q[1],
+               root_body.q[2], root_body.q[3], root_body.q[4], root_body.ω[1], root_body.ω[2], root_body.ω[3]])
 
     # non dimensionalization
-    in_cond[1:3] = in_cond[1:3] / config.cnf.DU
-    in_cond[4:6] = in_cond[4:6] * config.cnf.TU / config.cnf.DU
-    in_cond[7] = in_cond[7] / config.cnf.MU
-    in_cond[8] = in_cond[8] * config.cnf.TU^2 / config.cnf.MU # * 1e4
-    in_cond[9:12] = in_cond[9:12]  # Quaternion normalization
-    in_cond[13:15] = in_cond[13:15] * config.cnf.TU  # Angular velocity
+    in_cond[1:3] ./= config.cnf.DU
+    in_cond[4:6] .*= config.cnf.TU / config.cnf.DU
+    in_cond[7] /= config.cnf.MU
+    in_cond[8] *= config.cnf.TU^2 / config.cnf.MU # * 1e4
+    normalize!(in_cond[9:12])  # Quaternion normalization
+    in_cond[13:15] .*= config.cnf.TU  # Angular velocity
 
     # If aerobraking maneuver allowed, add a prephase 0
     range_phase_i = 1
@@ -1132,39 +1200,39 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Definition of eventsecondstep
         if aerobraking_phase == 0
-            events = CallbackSet(stop_firing, apoapsisgreaterperiapsis, impact, reaction_wheel_update)
+            events = CallbackSet(stop_firing, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update)
             t_event_0 = "stop_firing"
             t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 1 && args[:keplerian] == true
-            events = CallbackSet(eventfirststep_periapsis, apoapsisgreaterperiapsis, impact, periapsispoint, reaction_wheel_update)
+            events = CallbackSet(eventfirststep_periapsis, apoapsisgreaterperiapsis, impact, periapsispoint, reaction_wheel_update, quaternion_normalize, quaternion_update)
             t_event_0 = "eventfirststep_periapsis"
             t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 1
-            events = CallbackSet(eventfirststep, apoapsisgreaterperiapsis, impact, reaction_wheel_update)
+            events = CallbackSet(eventfirststep, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update)
             t_event_0 = "eventfirststep"
             t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 2 && Bool(args[:drag_passage]) && args[:type_of_mission] != "Entry"
-            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update)
+            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update)
             t_event_0 = "out_drag_passage"
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 2 && Bool(args[:drag_passage]) && args[:type_of_mission] == "Entry"
-            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, final_entry_altitude_reached, reaction_wheel_update)
+            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, final_entry_altitude_reached, reaction_wheel_update, quaternion_normalize, quaternion_update)
             t_event_0 = "final_altitude_reached"
             t_event_1 = "out_drag_passage"
         elseif aerobraking_phase == 2 && index_steps_EOM == 1 && args[:body_shape] == "Blunted Cone"
-            events = CallbackSet(out_drag_passage, apoapsispoint, periapsispoint, impact, reaction_wheel_update)
+            events = CallbackSet(out_drag_passage, apoapsispoint, periapsispoint, impact, reaction_wheel_update, quaternion_normalize, quaternion_update)
             t_event_0 = "out_drag_passage"
             t_event_1 = "apoapsispoint"
         elseif aerobraking_phase == 2 && index_steps_EOM == 1 && args[:drag_passage] == false
-            events = CallbackSet(apoapsispoint, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update)
+            events = CallbackSet(apoapsispoint, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update)
             t_event_0 = "apoapsispoint"
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 2
-            events = CallbackSet(eventsecondstep, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update)
+            events = CallbackSet(eventsecondstep, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update)
             t_event_0 = "eventsecondstep"
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 3
-            events = CallbackSet(apoapsispoint, periapsispoint, apoapsisgreaterperiapsis, impact, reaction_wheel_update)
+            events = CallbackSet(apoapsispoint, periapsispoint, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize)
             t_event_0 = "apoapsispoint"
             t_event_1 = "periapsispoint"
         end
@@ -1177,23 +1245,23 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # Definition step size
         if aerobraking_phase == 1 || aerobraking_phase == 3
             step = 5.0
-            r_tol = 1e-9#1e-7
-            a_tol = 1e-11#1e-9
+            r_tol = args[:r_tol_orbit] == 0.0 ? args[:r_tol] : args[:r_tol_orbit] #1e-7
+            a_tol = args[:a_tol_orbit] == 0.0 ? args[:a_tol] : args[:a_tol_orbit] #1e-9
             simulator = "Julia"
             method = Tsit5()
-            save_ratio = 5
+            save_ratio = args[:save_rate]
         elseif aerobraking_phase == 0
             step = 1.0
-            r_tol = 1e-9
-            a_tol = 1e-11
+            r_tol = args[:r_tol_orbit] == 0.0 ? args[:r_tol] : args[:r_tol_orbit] #1e-7
+            a_tol = args[:a_tol_orbit] == 0.0 ? args[:a_tol] : args[:a_tol_orbit] #1e-9
             simulator = "Julia"
             method = Tsit5()
             save_ratio = 5
         elseif aerobraking_phase == 2
             if args[:integrator] == "Julia"
                 step = 0.1
-                r_tol = 1e-9
-                a_tol = 1e-11
+                r_tol = args[:r_tol_drag] == 0.0 ? args[:r_tol] : args[:r_tol_drag] #1e-7
+                a_tol = args[:a_tol_drag] == 0.0 ? args[:a_tol] : args[:a_tol_drag] #1e-9
 
                 if MonteCarlo
                     method = Tsit5()
@@ -1320,13 +1388,30 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 initial_time, final_time = time_0 / config.cnf.TU, (time_0 + length_sim) / config.cnf.TU 
 
                 # Parameter Definition
-                param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
+                param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage)
 
                 # Run simulation
-                prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
-                sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)#
+                # method = ImplicitMidpoint()
+                if !config.cnf.prob_set
+                    config.cnf.prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
+                    # prob = complete(modelingtoolkitize(prob))
+                    # ModelingToolkit.generate_jacobian(prob)[2]
+                    # config.cnf.prob = prob
+                    config.cnf.prob_set = true
+                else
+                    config.cnf.prob = remake(config.cnf.prob, u0=in_cond, tspan=(initial_time, final_time), p=param)
+                end
+                # a_tol = 1e-3
+                # r_tol = 1e-2
+                a_tol_list = a_tol * ones(length(in_cond))
+                r_tol_list = r_tol * ones(length(in_cond))
+                r_tol_quat = args[:r_tol_quaternion] == 0.0 ? args[:r_tol] : args[:r_tol_quaternion] #1e-7
+                a_tol_quat = args[:a_tol_quaternion] == 0.0 ? args[:a_tol] : args[:a_tol_quaternion] #1e-9
+                a_tol_list[9:12] .= a_tol_quat*ones(4)  # Quaternion
+                r_tol_list[9:12] .= r_tol_quat*ones(4)  # Quaternion
+                sol = solve(config.cnf.prob, method, abstol=a_tol_list, reltol=r_tol_list, callback=events)#abstol=a_tol, reltol=r_tol,
                 config.cnf.counter_integrator += 1
-                in_cond = [sol[1,end], sol[2,end], sol[3, end], sol[4, end], sol[5, end], sol[6, end], sol[7, end], sol[8, end], 
+                in_cond .= [sol[1,end], sol[2,end], sol[3, end], sol[4, end], sol[5, end], sol[6, end], sol[7, end], sol[8, end], 
                             sol[9, end], sol[10, end], sol[11, end], sol[12, end], sol[13, end], sol[14, end], sol[15, end]]
                 # Update model parameters
                 # m.body.roots[1].q = SVector{4, Float64}(sol[9, end], sol[10, end], sol[11, end], sol[12, end])
@@ -1476,7 +1561,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     config.cnf.count_dori = 0
 
     # Check tolerance here on true anomaly
-    if args[:drag_passage] == false && (pi - config.solution.orientation.oe[end][end] > 1e-5) && continue_campaign == true && args[:body_shape] != "Blunted Cone"
+    println("Final conditions check: ", pi - config.solution.orientation.oe[end][end])
+    if args[:drag_passage] == false && (pi - config.solution.orientation.oe[end][end] > 1e-3) && continue_campaign == true && args[:body_shape] != "Blunted Cone"
         final_conditions_notmet = true
         events = CallbackSet(apoapsispoint)
     else
@@ -1487,22 +1573,22 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     while final_conditions_notmet
         println("Final conditions not met, re-running simulation...")
-        in_cond = [config.solution.orientation.pos_ii[1][end], config.solution.orientation.pos_ii[2][end], config.solution.orientation.pos_ii[3][end], 
+        in_cond = MVector{15, Float64}([config.solution.orientation.pos_ii[1][end], config.solution.orientation.pos_ii[2][end], config.solution.orientation.pos_ii[3][end], 
                    config.solution.orientation.vel_ii[1][end], config.solution.orientation.vel_ii[2][end], config.solution.orientation.vel_ii[3][end],
                    config.solution.performance.mass[end], config.solution.performance.heat_load[end], config.solution.orientation.quaternion[1][end],
                    config.solution.orientation.quaternion[2][end], config.solution.orientation.quaternion[3][end], config.solution.orientation.quaternion[4][end],
-                   config.solution.orientation.ω[1][end], config.solution.orientation.ω[2][end], config.solution.orientation.ω[3][end]]
+                   config.solution.orientation.ω[1][end], config.solution.orientation.ω[2][end], config.solution.orientation.ω[3][end]])
 
         # non dimensionalization
-        in_cond[1:3] = in_cond[1:3] / config.cnf.DU
-        in_cond[4:6] = in_cond[4:6] * config.cnf.TU / config.cnf.DU
-        in_cond[7] = in_cond[7] / config.cnf.MU
-        in_cond[8] = in_cond[8] * config.cnf.TU^2 / config.cnf.MU # * 1e4
-        in_cond[9:12] = in_cond[9:12] # Quaternion normalization
-        in_cond[13:15] = in_cond[13:15] * config.cnf.TU  # Angular velocity
+        in_cond[1:3] ./= config.cnf.DU
+        in_cond[4:6] .*= config.cnf.TU / config.cnf.DU
+        in_cond[7] /= config.cnf.MU
+        in_cond[8] *= config.cnf.TU^2 / config.cnf.MU # * 1e4
+        normalize!(in_cond[9:12])  # Quaternion normalization
+        in_cond[13:15] .*= config.cnf.TU  # Angular velocity
 
                     
-        initial_time, final_time = time_0 / config.cnf.TU, (time_0 + 1000) / config.cnf.TU 
+        initial_time, final_time = time_0 / config.cnf.TU, (time_0 + 5000) / config.cnf.TU 
         step = 0.05
         r_tol = 1e-12
         a_tol = 1e-13
@@ -1526,7 +1612,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         config.cnf.count_heat_load_check_exit = 0
 
         # Parameter Definition
-        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
+        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage)
 
         # Run simulation
         prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
@@ -1538,14 +1624,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # m.body.roots[1].q = normalize(m.body.roots[1].q)  # Quaternion normalization
 
         config.cnf.counter_integrator += 1
-        time_0 = save_results(sol.t * config.cnf.TU, 1.0)
+        time_0 = save_results(sol.t * config.cnf.TU, args[:save_rate])
         count_temp += 1
 
         if count_temp > 15
             break
         end
 
-        if args[:drag_passage] == false && pi - config.solution.orientation.oe[end][end] > 1e-5 && continue_campaign == true
+        if args[:drag_passage] == false && pi - config.solution.orientation.oe[end][end] > 1e-3 && continue_campaign == true
             final_conditions_notmet = true
             events = CallbackSet(apoapsispoint)
         else
@@ -1588,7 +1674,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Print Delta-v and Delta-E
         println("Delta-v is " * string(config.cnf.Δv_man) * " m/s")
-        println("Delta-E is " * string((config.solution.forces.energy[Int64(config.cnf.time_OP)-1] - config.solution.forces.energy[Int64(config.cnf.time_IP)]) * 1e-3) * " kJ")
+        println("Delta-E is " * string((config.solution.forces.energy[Int64(config.cnf.time_OP)-1] - config.solution.forces.energy[begin]) * 1e-3) * " kJ")#Int64(config.cnf.time_IP)
 
         # Find periapsis latitude and longitude
         min_index = argmin(config.solution.orientation.alt[save_pre_index:save_post_index]) + save_pre_index - 1

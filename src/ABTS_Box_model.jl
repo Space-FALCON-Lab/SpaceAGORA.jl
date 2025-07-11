@@ -12,15 +12,17 @@ spacecraft = config.SpacecraftModel()
 main_bus = config.Link(root=true, 
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), 
                         # q=SVector{4, Float64}([0, -0.6321683, -0.07370895, 0.7713171]),
-                        q=SVector{4, Float64}([0, 0, 0, 1]),
+                        # q=SVector{4, Float64}([0, 0, 0, 1]),
+                         q=SVector{4, Float64}([0, 0, 0.6371, 0.7707]), # 0 inc
+                        # q=SVector{4, Float64}([0, -0.6358, -0.0338, 0.7711]), # 90 inc
                         ṙ=SVector{3, Float64}([0,0,0]), 
                         dims=SVector{3, Float64}([0.00001, 0.00001, 0.00001]), 
                         ref_area=0.0,
                         m=1.0, 
-                        gyro=4,
+                        gyro=0,
                         # max_torque=5.0,
                         # max_h=100.0,
-                        J_rw=MMatrix{3, 4, Float64}([1.0 0.0 0.0 0.57735; 0.0 1.0 0.0 0.57735; 0.0 0.0 1.0 0.57735]),#0.57735
+                        J_rw=MMatrix{3, 3, Float64}([1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]),#0.57735
                         attitude_control_function=lqr_constant_α_β)
 
 box = config.Link(r=SVector{3, Float64}(0.0, 0.0, 0.0), 
@@ -58,7 +60,7 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/odyssey_error_aoa",                # Directory where to save the results
+            :directory_results => "/workspaces/ABTS.jl/output/box_0inc",                # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
@@ -72,7 +74,7 @@ args = Dict(# Misc Simulation
             :closed_form => 1,                                    # Closed form solution True=1, False=0
 
             # Type of Mission
-            :type_of_mission => "Orbits",                     # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
+            :type_of_mission => "Drag Passage",                     # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 1,                                 # Number of aerobraking passage
 
@@ -127,7 +129,7 @@ args = Dict(# Misc Simulation
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
-            :control_mode => 3,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
+            :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
             :security_mode => 1,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
@@ -149,7 +151,7 @@ args = Dict(# Misc Simulation
             :γ_initial_a => 7.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => 10.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_step => 10.5,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :inclination => 93.6,                                # Inclination Orbit, deg
+            :inclination => 0.0,                                # Inclination Orbit, deg
             :ω => 0,                                              # AOP, deg
             :Ω => 0,                                              # RAAN, deg
             :EI => 160.0,                                           # Entry Interface, km

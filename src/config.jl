@@ -4,6 +4,7 @@ include("SpacecraftModel.jl")
 import .SpacecraftModel
 using StaticArrays
 using AstroTime
+using OrdinaryDiffEq
 export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model
     # @kwdef mutable struct Body
     #     mass::Float64 = 0.0
@@ -92,6 +93,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         minute::Int64 = 0
         second::Float64 = 0.0
         time_rot::Float64 = 0.0
+        el_time::Float64 = 0.0 # Elapsed time in seconds
         DateTimeIC::Epoch = from_utc(2000, 1, 1, 12, 0, 0)
         DateTimeJ2000::Epoch = from_utc(2000, 1, 1, 12, 0, 0)
     end
@@ -112,7 +114,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         latitude_periapsis::Vector{Float64} = []
         longitude_periapsis::Vector{Float64} = []
         max_heatrate::Vector{Float64} = []
-        solution_intermediate::Vector{Any} = []
+        solution_intermediate::Vector{Vector{Number}} = []
         atmospheric_data::Dict{String,Float64} = Dict()
         previous_atmospheric_data::Dict{String,Float64} = Dict()
         drag_state::Bool = false
@@ -193,6 +195,9 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         count_final_entry_altitude_reached::Int64 = 0
         t_out_drag_passage::Float64 = 0.0
         t_time_switch_func::Vector{Float64} = []
+        prob::ODEProblem = ODEProblem((u, p, t) -> u, [0.0], (0.0, 1.0), [])
+        prob_set::Bool = false
+        P::Matrix{Float64} = zeros(3,3)
 
         n_bodies_list::Vector{Planet} = []
         DU::Float64 = 0.0
@@ -287,6 +292,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
     @kwdef mutable struct Simulation
         MC_seed::Vector{Int64} = []
         drag_passage::Vector{Int64} = []
+        solution_states::Int64 = 0
     end
 
     @kwdef mutable struct Closed_form

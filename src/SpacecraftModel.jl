@@ -4,6 +4,61 @@ using StaticArrays
 using LinearAlgebra
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 
+# """
+# Index Structure for constructing or extracting state information from N link model in both maximal coordinates with quaternions or axis-angle
+# """
+# mutable struct Idx
+#     N::Integer
+#     Nx::Integer
+#     Nz::Integer
+#     Nv::Integer
+#     Nż::Integer
+#     Nu::Integer
+#     Ng::Integer
+#     ir::Array{SVector{3}}
+#     iq::Array{SVector{4}} 
+#     iṙ::Array{SVector{3}} 
+#     iω::Array{SVector{3}} 
+#     ir̃::Array{SVector{3}}
+#     iq̃::Array{SVector{3}} 
+#     iṙ̃::Array{SVector{3}} 
+#     iω̃::Array{SVector{3}} 
+#     iuṙ::Array{SVector{3}} 
+#     iuω::Array{SVector{3}} 
+#     irw::Array{SVector{1}} 
+#     iug::Array{SVector{1}} 
+    
+#     function Idx(N::Integer, N_g::Integer)
+#         ir, iq, iṙ, iω, ir̃, iq̃, iṙ̃, iω̃, iuṙ, iuω, irw, iug = get_indexes(N, N_g)
+
+#         new(N, 13*N+N_g, 7*N, 6*N, 6*N, 6*N+N_g, N_g, ir, iq, iṙ, iω, ir̃, iq̃, iṙ̃, iω̃, iuṙ, iuω, irw, iug)
+#     end
+
+#     function get_indexes(N::Integer, N_g::Integer)
+#         Nz = 7*N
+#         Nv = 6*N
+#         Nż = 6*N
+
+#         ir = [SVector{3}(1:3) .+ 7 * (i - 1) for i in 1:N]
+#         iq = [SVector{4}(4:7) .+ 7 * (i - 1) for i in 1:N]
+#         iṙ = [SVector{3}(1:3) .+ Nz .+ 6 * (i - 1) for i in 1:N]
+#         iω = [SVector{3}(4:6) .+ Nz .+ 6 * (i - 1) for i in 1:N]
+
+#         ir̃ = [SVector{3}(1:3) .+ 6 * (i - 1) for i in 1:N]
+#         iq̃ = [SVector{3}(4:6) .+ 6 * (i - 1) for i in 1:N]
+#         iṙ̃ = [SVector{3}(1:3) .+ Nv .+ 6 * (i - 1) for i in 1:N]
+#         iω̃ = [SVector{3}(4:6) .+ Nv .+ 6 * (i - 1) for i in 1:N]
+
+#         irw = [SVector{1}(1:1) .+ 1 * (i - 1) for i in 1:N_g]
+
+#         iuṙ = [SVector{3}(1:3) .+ 6 * (i - 1) for i in 1:N]
+#         iuω = [SVector{3}(4:6) .+ 6 * (i - 1) for i in 1:N]
+
+#         iug = [SVector{1}(1:1) .+ 1 * (i - 1) for i in 1:N_g]
+#         return ir, iq, iṙ, iω, ir̃, iq̃, iṙ̃, iω̃, iuṙ, iuω, irw, iug
+#     end
+# end
+
 mutable struct Link
     root::Bool # Whether this link is a root link (i.e., the main bus or core body of the spacecraft). 
     #^ This will have orientation expressed relative to the inertial frame.
@@ -68,20 +123,20 @@ mutable struct Joint
     rotational_displacement::SVector{4, Float64} # Rotational displacement vector (quaternion)
     function Joint(link1::Link, p1ᵇ::SVector{3, Float64}, 
                     link2::Link, p2ᵇ::SVector{3, Float64}, 
-                    Kx=SMatrix{3,3}(0.0I), 
-                    Kt=SMatrix{3,3}(0.0I), 
-                    Cx=zeros(SMatrix{3,3}),
-                    Ct=zeros(SMatrix{3,3}))
+                    Kx=SMatrix{3,3, Float64}(0.0I), 
+                    Kt=SMatrix{3,3, Float64}(0.0I), 
+                    Cx=zeros(SMatrix{3,3, Float64}),
+                    Ct=zeros(SMatrix{3,3, Float64}))
         new(link1, link2, p1ᵇ, p2ᵇ, Kx, Kt, Cx, Ct,
-            SVector{3}(0.0, 0.0, 0.0), SVector{4}(0.0, 0.0, 0.0, 1.0))
+            SVector{3, Float64}(0.0, 0.0, 0.0), SVector{4, Float64}(0.0, 0.0, 0.0, 1.0))
     end
 
     function Joint(link1::Link, link2::Link; p1=link1.bᵇ, 
                                  p2=link2.aᵇ, 
-                                 Kx=SMatrix{3,3}(0.0I), 
-                                 Kt=SMatrix{3,3}(0.0I), 
-                                 Cx=zeros(SMatrix{3,3}),
-                                 Ct=zeros(SMatrix{3,3}),
+                                 Kx=SMatrix{3,3, Float64}(0.0I), 
+                                 Kt=SMatrix{3,3, Float64}(0.0I), 
+                                 Cx=zeros(SMatrix{3,3, Float64}),
+                                 Ct=zeros(SMatrix{3,3, Float64}),
                                  translational_displacement=SVector{3, Float64}(0.0, 0.0, 0.0),
                                  rotational_displacement=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0))
         
@@ -91,12 +146,12 @@ mutable struct Joint
 
     function Joint(;link1=Link(), link2=Link(), p1=link1.bᵇ, 
         p2=link2.aᵇ, 
-        Kx=SMatrix{3,3}(1.0I), 
-        Kt=SMatrix{3,3}(1.0I), 
-        Cx=zeros(SMatrix{3,3}),
-        Ct=zeros(SMatrix{3,3}),
-        translational_displacement=SVector{3}(0.0, 0.0, 0.0),
-        rotational_displacement=SVector{4}(0.0, 0.0, 0.0, 1.0))
+        Kx=SMatrix{3,3, Float64}(1.0I), 
+        Kt=SMatrix{3,3, Float64}(1.0I), 
+        Cx=zeros(SMatrix{3,3, Float64}),
+        Ct=zeros(SMatrix{3,3, Float64}),
+        translational_displacement=SVector{3, Float64}(0.0, 0.0, 0.0),
+        rotational_displacement=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0))
 
         new(link1, link2, p1, p2, Kx, Kt, Cx, Ct, 
             translational_displacement, rotational_displacement)
@@ -231,7 +286,8 @@ function update_inertia_tensor!(model::SpacecraftModel, body::Link)
         # Apply parallel axis theorem to update inertia tensor
         R = rot(b.q) # Rotation matrix from quaternion
         I_body = R * b.inertia * R' # Transform inertia tensor to the body frame
-        inertia_tensor += I_body + b.m * hat(b.r) * hat(b.r)' # Parallel axis theorem
+        r = SVector{3, Float64}(b.r) # Position vector of the body
+        inertia_tensor += I_body + b.m * hat(r) * hat(r)' # Parallel axis theorem
     end
     if root_index > length(model.inertia_tensors)
         # If the root index is out of bounds, extend the inertia tensors vector
@@ -549,10 +605,109 @@ function rotate_link(body::Link, axis::SVector{3, Float64},  θ::Float64)
     """
     @assert !body.root "Cannot rotate a root body directly"
     if norm(axis) <= 1e-6
-        @warn "Rotation axis norm is too small, using default axis (0, 1, 0)"
+        # @warn "Rotation axis norm is too small, using default axis (0, 1, 0)"
         axis = SVector{3, Float64}(0.0, 1.0, 0.0) # Default axis if norm is too small
     end
     axis = axis / norm(axis) # Normalize the rotation axis
     # Update the orientation of the body
     body.q .= SVector{4, Float64}([axis .* sin(θ/2); cos(θ/2)]) # Convert Euler angles to quaternion
 end
+
+# function update_func(A, u, p, t)
+#     """
+#     Update the quaternion orientation of the spacecraft model using the angular velocity `ω` and time step `dt`.
+#     - `A`: The current quaternion orientation of the spacecraft model.
+#     - `u`: The angular velocity vector in inertial frame
+#     - `p`: Integration parameters, should be none
+#     - `t`: The current time.
+#     """
+#     A .= [0.0, p[3], p[2], p[1];
+#           -p[3], 0.0, p[1], p[2];
+#           p[2], -p[1], 0.0, p[3];
+#           -p[1], -p[2], -p[3], 0.0] # Update the quaternion orientation
+# end
+# function integrate_quaternion!(body::Link, ω::SVector{3, Float64}, dt::Float64)
+#     """
+#     Integrates the quaternion orientation of the spacecraft model using the angular velocity `ω` and time step `dt`.
+#     - `model`: The spacecraft model.
+#     - `ω`: The angular velocity vector in body frame.
+#     - `dt`: The time step for integration.
+#     """
+#     # Quaternion multiplication: q ⊗ p, scalar-last convention
+#     function quat_mult(q::AbstractVector, p::AbstractVector)
+#         qv, qs = q[1:3], q[4]
+#         pv, ps = p[1:3], p[4]
+#         vecpart = qs*pv + ps*qv + cross(qv, pv)
+#         scalarpart = qs*ps - dot(qv, pv)
+#         return [vecpart; scalarpart]
+#     end
+
+#     # Quaternion exponential map: exp(Δ) maps ℝ³ → S³ (scalar last)
+#     function exp_quat(Δ::AbstractVector)
+#         θ = norm(Δ)
+#         if θ ≈ 0
+#             return [0.0, 0.0, 0.0, 1.0]
+#         else
+#             return [sin(θ)/θ * Δ; cos(θ)]
+#         end
+#     end
+
+#     # Quaternion derivative: dq/dt = 0.5 * q ⊗ [ω; 0]
+#     function quaternion_rhs(q, ω)
+#         ω_quat = [ω; 0.0]
+#         return 0.5 * quat_mult(q, ω_quat)
+#     end
+
+#     # RKMK4 step
+#     function rkmk4_step(q, ω, dt)
+#         f(q) = quaternion_rhs(q, ω)
+
+#         k1 = f(q)
+#         q2 = quat_mult(q, exp_quat(dt * 0.5 * k1[1:3]))
+
+#         k2 = f(q2)
+#         q3 = quat_mult(q, exp_quat(dt * 0.5 * k2[1:3]))
+
+#         k3 = f(q3)
+#         q4 = quat_mult(q, exp_quat(dt * k3[1:3]))
+
+#         k4 = f(q4)
+
+#         Δ = dt * (
+#             (1/6) * k1[1:3] +
+#             (1/3) * k2[1:3] +
+#             (1/3) * k3[1:3] +
+#             (1/6) * k4[1:3]
+#         )
+
+#         q_next = quat_mult(q, exp_quat(Δ))
+#         return q_next ./ norm(q_next)
+#     end
+
+#     # Integrate quaternion over time span
+#     function integrate_quaternion_rkmk4(
+#             q0,
+#             ω::Function,
+#             tspan::AbstractVector{<:Real},
+#             dt::Real
+#         )
+#         if dt <= 1e-8
+#             return q0 # No integration needed if dt is zero
+#         end
+#         N = Int(ceil((tspan[end] - tspan[1]) / dt)) + 1
+#         q = q0
+
+#         for i in 2:N
+#             t = tspan[1] + (i-1)*dt
+#             q = rkmk4_step(q, ω(t), dt)
+#             # ts[i] = t
+#         end
+
+#         return q
+#     end
+#     # Integrate the quaternion orientation of the body
+#     tspan = [0.0, dt] # Time span for integration
+#     ω_func(t) = body.ω # Angular velocity function, constant in this case
+#     body.q .= integrate_quaternion_rkmk4(body.q, ω_func, tspan, min(dt, 0.1))
+
+# end

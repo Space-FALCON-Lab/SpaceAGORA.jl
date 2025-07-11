@@ -5,8 +5,8 @@ function save_csv(filename, args)
 
     touch(filename)
 
-    writer = open(filename, "w")
-    periapsis_alt = vcat(config.cnf.altitude_periapsis, zeros(length(config.solution.orientation.time) - length(config.cnf.altitude_periapsis)))
+    writer = open(filename, "a")
+    # periapsis_alt = vcat(config.cnf.altitude_periapsis, zeros(length(config.solution.orientation.time) - length(config.cnf.altitude_periapsis)))
 
     data_push = DataFrame(time = config.solution.orientation.time,
                           year = config.solution.orientation.year,
@@ -130,7 +130,11 @@ function save_csv(filename, args)
         data_push[!, :gamma_cf] = config.solution.closed_form.γ_cf
         data_push[!, :v_cf] = config.solution.closed_form.v_cf
     end
-
-    CSV.write(filename, data_push)
+    if filesize(filename) == 0
+        # Write header if file is empty
+        CSV.write(filename, data_push, writeheader=true)
+    else
+        CSV.write(filename, data_push, append=true)
+    end
 
 end

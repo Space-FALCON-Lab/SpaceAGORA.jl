@@ -3,10 +3,20 @@ using StaticArrays
 using SparseArrays
 
 ### Quaternion Function ###
+# Quaternion multiplication
+function quat_mult(q::AbstractVector, p::AbstractVector)
+    q0, qv = q[4], q[1:3]
+    p0, pv = p[4], p[1:3]
+
+    s = q0*p0 - dot(qv, pv)
+    v = q0*pv + p0*qv + cross(qv, pv)
+    return [v; s]
+end
+
 ## skew matrix
 hatIs = [1; 1; 2; 2; 3; 3]
 hatJs = [2; 3; 1; 3; 1; 2]
-function hat(ω)
+function hat(ω::AbstractVector{<:Float64})
     """
     skew matrix, The matrix equivalent of cross product
     params: 
@@ -15,8 +25,10 @@ function hat(ω)
     [ω]x 
     """
 
-    Vs = [-ω[3]; ω[2]; ω[3]; -ω[1]; -ω[2]; ω[1]]
-    return sparse(hatIs, hatJs, Vs)
+    # Vs = [-ω[3]; ω[2]; ω[3]; -ω[1]; -ω[2]; ω[1]]
+    return SMatrix{3, 3, Float64}([0 -ω[3] ω[2];
+                                   ω[3] 0 -ω[1];
+                                   -ω[2] ω[1] 0])
     # return [0 -ω[3] ω[2]
     #     ω[3] 0 -ω[1]
     #     -ω[2] ω[1] 0]
@@ -81,13 +93,13 @@ end
 
 function error_quaternion(current::SVector{4, Float64}, target::SVector{4, Float64})
 
-    q = current
+    q = current[4]
     q_bar = current[1:3]'
-    q_bar_cross = SMatrix{3, 3, Float64}([0 -q_bar[3] q_bar[2]; q_bar[3] 0 -q_bar[1]; -q_bar[2] q_bar[1] 0])
-    q_matrix = SMatrix{4, 4, Float64}([q[4]*I(3)-q_bar_cross q_bar'; -q_bar q[4]])
+    q_bar_cross = hat(SVector{3, Float64}(q_bar))
+    q_matrix = SMatrix{4, 4, Float64}(Float64[q*I(3)-q_bar_cross q_bar'; -q_bar q])
 
-    qd = SVector{4, Float64}([-target[1]; -target[2]; -target[3]; target[4]])
-    qe = q_matrix * qd
+    qd = SVector{4, Float64}(Float64[-target[1:3]; target[4]])
+    return normalize(q_matrix * qd)
 
     # q = -current
     # q_bar = current[1:3]'
@@ -97,7 +109,7 @@ function error_quaternion(current::SVector{4, Float64}, target::SVector{4, Float
     # qd = [-target[1]; -target[2]; -target[3]; target[4]]
     # qe_neg = q_matrix * qd
     # qe = qe_pos[4] > qe_neg[4] ? qe_pos : qe_neg
-    return SVector{4, Float64}(qe)
+    # return SVector{4, Float64}(normalize(qe))
 end
 
 ## take angle components (4, 3)
@@ -299,13 +311,13 @@ end
 
 function Ξ(q::SVector{4, Float64})
     """
-    Convert quaternion to Euler angles in 3-2-1 sequence.
+    Convert quaternion to kinematics matrix Ξ.
 
     # Arguments
     - `q`: A quaternion represented as a StaticVector{4, Float64}.
 
     # Returns
-    - A StaticVector{3, Float64} containing the Euler angles (roll, pitch, yaw).
+    - A StaticMatrix{4, 3, Float64} containing the quaternion kinematics matrix.
     """
     return SMatrix{4, 3, Float64}([q[4]*I(3) + hat(q[1:3]); -q[1:3]'])
 end

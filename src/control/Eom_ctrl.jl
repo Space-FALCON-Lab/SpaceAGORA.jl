@@ -10,7 +10,7 @@ include("../utils/Closed_form_solution.jl")
 # include("heatload_control/Utils_timeswitch.jl")
 
 using LinearAlgebra
-using DifferentialEquations
+using OrdinaryDiffEq
 using Dates
 using AstroTime
 using SPICE

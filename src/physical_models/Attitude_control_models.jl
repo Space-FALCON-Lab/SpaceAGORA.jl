@@ -2,7 +2,7 @@
 # include("../config.jl")
 # using Plots
 # import .config
-using DifferentialEquations
+using OrdinaryDiffEq
 # using SimpleDiffEq
 using StaticArrays
 # using BenchmarkTools
@@ -25,21 +25,14 @@ function reaction_wheel_model!(
         # u: current angular velocity vector
         # p: parameters (link properties)
         # t: time (not used here)
-        J_rw = p[1]  # Reaction wheel inertia
-        # println("J_rw: $J_rw")
-        # println("pinv(J_rw): $(pinv(J_rw))")
-        τ = p[2]     # Applied torque vector
-        # println("τ: $τ")
-        du[:] = pinv(J_rw)*τ
+        du[:] .= p[1]*p[2]  # du = J_rw \ τ
 
         # println("du: $du")
     end
-    # println("τ: $τ")
-    # println("dt: $dt")
-    rw = link.rw
-    prob = ODEProblem(ω_dot!, rw, (0.0, dt), [link.J_rw, τ], dt=dt)
+
+    prob = ODEProblem(ω_dot!, link.rw, (0.0, dt), [pinv(link.J_rw), τ])
     # println("link.rw: $(link.rw)")
-    link.rw = solve(prob).u[end]
+    link.rw .= solve(prob, BS3()).u[end]
     # println("Updated link.rw: $(link.rw)")
     # println("link.rw post: $(link.rw)")
 end

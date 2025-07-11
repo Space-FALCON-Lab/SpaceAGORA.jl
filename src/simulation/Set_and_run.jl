@@ -276,9 +276,10 @@ function aerobraking_campaign(args, state)
         min = args[:minutes]
         second = args[:secs]
         time_rot = args[:planettime]
+        el_time = 0.0 # Elapsed time in seconds
         DateTimeIC = from_utc(DateTime(year, month, day, hour, min, second))
         DateTimeJ2000 = from_utc(DateTime(2000, 1, 1, 12, 0, 0))
-        ic = config.Initial_condition(a, e, i, Ω, ω, vi, m0, year, month, day, hour, min, second, time_rot, DateTimeIC, DateTimeJ2000)
+        ic = config.Initial_condition(a, e, i, Ω, ω, vi, m0, year, month, day, hour, min, second, time_rot, el_time, DateTimeIC, DateTimeJ2000)
 
         return ic
     end
@@ -410,20 +411,6 @@ function aerobraking_campaign(args, state)
     config.cnf.TU = Bool(args[:normalize]) ? sqrt(config.cnf.DU^3 / m.planet.μ) : 1
     config.cnf.MU = Bool(args[:normalize]) ? mass : 1
 
-    ##########################################################
-    # RUN SIMULATION
-    config.cnf.heat_rate_limit = args[:max_heat_rate]
-    t_el = @elapsed begin
-        aerobraking(ip, m, args, gram, gram_atmosphere)
-    end
-    ##########################################################
-
-
-    if Bool(args[:print_res])
-        println("ρ: " * string(maximum(config.solution.physical_properties.ρ)) * " kg/m^3")
-        println("heat rate: " * string(maximum(config.solution.performance.heat_rate)) * " W/cm^2")
-    end
-
     # Save results
     if save_res == 1
         if args[:filename] == 1
@@ -449,8 +436,29 @@ function aerobraking_campaign(args, state)
 
             filename = name * ".csv"
         end
-        save_csv(filename, args)
+        # if the file already exists, clear the current data
+        if filesize(filename) > 0
+            file = open(filename, "w")
+            truncate(file, 0)
+        end
+        # save_csv(filename, args)
     end
+
+    ##########################################################
+    # RUN SIMULATION
+    config.cnf.heat_rate_limit = args[:max_heat_rate]
+    t_el = @elapsed begin
+        aerobraking(ip, m, args, gram, gram_atmosphere, filename)
+    end
+    ##########################################################
+
+
+    if Bool(args[:print_res])
+        println("ρ: " * string(maximum(config.solution.physical_properties.ρ)) * " kg/m^3")
+        println("heat rate: " * string(maximum(config.solution.performance.heat_rate)) * " W/cm^2")
+    end
+
+    
 
     if Bool(args[:print_res])
         println("Elapsed time: " * string(t_el) * " s")

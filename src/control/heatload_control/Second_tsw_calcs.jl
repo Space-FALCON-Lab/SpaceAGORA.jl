@@ -66,7 +66,7 @@ function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, 
     time_switch_1 = config.cnf.time_switch_1
     time_switch_2 = config.cnf.time_switch_2
 
-    Q_past = config.cnf.heat_load_past
+    Q_past = maximum(config.cnf.heat_load_past)
 
     function func(time_switch)
         # predict the rest part of the passage heat load

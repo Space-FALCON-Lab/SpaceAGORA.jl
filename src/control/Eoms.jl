@@ -92,7 +92,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         
         pos_ii = SVector{3, Float64}(in_cond[1:3])       # Inertial position 
         vel_ii = SVector{3, Float64}(in_cond[4:6])       # Inertial velocity
-        mass = m.body.mass                             # Mass kg
+        mass = config.get_spacecraft_mass(m.body)                             # Mass kg
         pos_ii_mag = norm(pos_ii)   # Magnitude of the inertial position
         vel_ii_mag = norm(vel_ii)   # Magnitude of the inertial velocity
         lambdav_ii = in_cond[7]
@@ -102,7 +102,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         # Assign Parameters
         ω_planet = m.planet.ω
         γ = m.planet.γ
-        area_tot = m.body.area_tot
+        area_tot = config.get_spacecraft_reference_area(m.body) # Total area of the spacecraft, m²
 
         # TRANSFORM THE STATE
         # Inertial to planet relative transformation
@@ -175,7 +175,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
 
         if time_switch_eval == true
 
-            lambda_switch = (k_cf * 2.0 * m.body.mass * vel_ii_mag) ./ (area_tot * CD_slope * pi)
+            lambda_switch = (k_cf * 2.0 * mass * vel_ii_mag) ./ (area_tot * CD_slope * pi)
 
             if args[:heat_load_sol] == 0
                 if lambdav_ii < lambda_switch
@@ -237,11 +237,11 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         #         0.0             0.0             1.0]    # rotation matrix
         
         if ip.gm == 0
-            gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+            gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet)
         elseif ip.gm == 1
-            gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+            gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet)
         elseif ip.gm == 2
-            gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+            gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet)
         elseif ip.gm == 3
             gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
         end
@@ -256,7 +256,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
 
         if args[:srp] == true
             p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
-            srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, et)
+            srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, area_tot, mass, pos_ii, et)
         end
 
 
@@ -328,8 +328,9 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
 
         vel_ii = y[4:6]
         vel_ii_mag = norm(vel_ii)
-
-        lambda_switch = (k_cf * 2 * m.body.mass * vel_ii_mag) ./ (m.body.area_tot * CD_slope * pi)
+        mass = config.get_spacecraft_mass(m.body)  # Mass kg
+        area_tot = config.get_spacecraft_reference_area(m.body)  # Total area of the
+        lambda_switch = (k_cf * 2 * mass * vel_ii_mag) ./ (area_tot * CD_slope * pi)
         lambda_switch - y[7]
     end
     function time_switch_func_affect!(integrator)

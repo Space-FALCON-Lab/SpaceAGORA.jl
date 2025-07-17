@@ -64,21 +64,21 @@ function aerodynamic_coefficient_fM(α, body, T, S, args, montecarlo=false)
     CD_sa = CA_sa*cos(α) + CN_sa*sin(α)
 
     # Spacecraft
-    CN_sc = normalcoefficient(S, pi*0.5, σ)
-    CA_sc = axialcoefficient(S, pi*0.5, σ)
-    CL_sc = CN_sc*cos(pi*0.5) - CA_sc*sin(pi*0.5)
-    CD_sc = CA_sc*cos(pi*0.5) + CN_sc*sin(pi*0.5)
+    # CN_sc = normalcoefficient(S, pi*0.5, σ)
+    # CA_sc = axialcoefficient(S, pi*0.5, σ)
+    # CL_sc = CN_sc*cos(pi*0.5) - CA_sc*sin(pi*0.5)
+    # CD_sc = CA_sc*cos(pi*0.5) + CN_sc*sin(pi*0.5)
 
-    area_SA = config.get_SA_area(body, body.roots[1])
-    area_SC = config.get_SC_area(body, body.roots[1])
+    # area_SA = config.get_SA_area(body, body.roots[1])
+    # area_SC = config.get_SC_area(body, body.roots[1])
     
-    CD_body = (CD_sa*area_SA + CD_sc*area_SC) / (area_SA + area_SC)
-    CL_body = (CL_sa*area_SA + CL_sc*area_SC) / (area_SA + area_SC)
+    # CD_body = (CD_sa*area_SA + CD_sc*area_SC) / (area_SA + area_SC)
+    # CL_body = (CL_sa*area_SA + CL_sc*area_SC) / (area_SA + area_SC)
     if montecarlo == true
         CL_body, CD_body = monte_carlo_aerodynamics(CL_body, CD_body, args)
     end
 
-    return CL_body, CD_body
+    return CL_sa, CD_sa
 end
 
 function aerodynamic_coefficient_fM(α::Float64, β::Float64, body, T::Float64, S::Float64, args, montecarlo::Bool=false)

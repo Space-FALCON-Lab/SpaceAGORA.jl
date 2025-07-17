@@ -81,8 +81,8 @@ function save_csv(filename, args)
                           aoa_control = config.solution.physical_properties.α_control,
                           S = config.solution.physical_properties.S,
                           mass = config.solution.performance.mass,
-                          heat_rate = config.solution.performance.heat_rate,
-                          heat_load = config.solution.performance.heat_load,
+                        #   heat_rate = config.solution.performance.heat_rate,
+                        #   heat_load = config.solution.performance.heat_load,
                           T_r = config.solution.performance.T_r,
                           q = config.solution.performance.q,
                           gravity_ii_1 = config.solution.forces.gravity_ii[1],
@@ -117,6 +117,8 @@ function save_csv(filename, args)
     for i in 1:n_bodies
         data_push[!, Symbol("link_$(i)_aoa")] = config.solution.physical_properties.α[i]
         data_push[!, Symbol("link_$(i)_sideslip")] = config.solution.physical_properties.β[i]
+        data_push[!, Symbol("link_$(i)_heat_rate")] = config.solution.performance.heat_rate[i]
+        data_push[!, Symbol("link_$(i)_heat_load")] = config.solution.performance.heat_load[i]
     end
 
     # Save properties based on the number of reaction wheels

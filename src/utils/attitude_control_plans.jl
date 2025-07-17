@@ -110,13 +110,16 @@ function lqr_constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVect
             # println(typeof(K))
             config.cnf.P = pinv(B')*R*K
             P = SMatrix{length(state), length(state), Float64}(config.cnf.P)
+        elseif acosd(error_quat[4])*2 < 1.0 # 2 degrees
+            # Use LQR to compute the gain matrix K
+            P = config.cnf.P
         else
-            P = solve_care_newton(A, B, Q, R; P0=config.cnf.P, max_iter=100, tol=1e-4)
+            P = solve_care_newton(A, B, Q, R; P0=config.cnf.P, max_iter=100, tol=1e-6)
             config.cnf.P .= P
             # config.cnf.K .= R \ B' * config.cnf.P
         end
+        # K = lqr(A, B, Q, R) #ControlSystemsBase.Discrete,
         # # Return the wheel momentum derivatives
-        # println(typeof(config.cnf.P))
         return -R \ B' * P * state
         # return -K * state
 end

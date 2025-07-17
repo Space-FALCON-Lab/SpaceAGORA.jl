@@ -160,9 +160,9 @@ function phi_from_q(q)
     ϕ -> axis (r) * angle (θ) 
     """
     # cayley_map(q)
-    v = @view q[2:4]
+    v = @view q[1:3]
     # v = SVector(q[2], q[3], q[4])
-    s = q[1]
+    s = q[4]
     normv = norm(v)
 
     # if isapprox(normv, 0, atol=eps())

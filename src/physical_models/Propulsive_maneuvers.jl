@@ -178,67 +178,69 @@ function propulsion_ic_calcs(m, args, initial_state)
         results[61] = (config.solution.physical_properties.cL[index_a] + (config.solution.physical_properties.cL[index_b] - config.solution.physical_properties.cL[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a)) 
         results[62] = (config.solution.physical_properties.cD[index_a] + (config.solution.physical_properties.cD[index_b] - config.solution.physical_properties.cD[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
         results[63] = (config.solution.physical_properties.S[index_a] + (config.solution.physical_properties.S[index_b] - config.solution.physical_properties.S[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[97] = (config.solution.physical_properties.α_control[index_a] + (config.solution.physical_properties.α_control[index_b] - config.solution.physical_properties.α_control[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[98] = (config.solution.physical_properties.τ_rw[1][index_a] + (config.solution.physical_properties.τ_rw[1][index_b] - config.solution.physical_properties.τ_rw[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[99] = (config.solution.physical_properties.τ_rw[2][index_a] + (config.solution.physical_properties.τ_rw[2][index_b] - config.solution.physical_properties.τ_rw[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[100] = (config.solution.physical_properties.τ_rw[3][index_a] + (config.solution.physical_properties.τ_rw[3][index_b] - config.solution.physical_properties.τ_rw[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[95] = (config.solution.physical_properties.α_control[index_a] + (config.solution.physical_properties.α_control[index_b] - config.solution.physical_properties.α_control[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[96] = (config.solution.physical_properties.τ_rw[1][index_a] + (config.solution.physical_properties.τ_rw[1][index_b] - config.solution.physical_properties.τ_rw[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[97] = (config.solution.physical_properties.τ_rw[2][index_a] + (config.solution.physical_properties.τ_rw[2][index_b] - config.solution.physical_properties.τ_rw[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[98] = (config.solution.physical_properties.τ_rw[3][index_a] + (config.solution.physical_properties.τ_rw[3][index_b] - config.solution.physical_properties.τ_rw[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
         
         n_bodies = length(config.model.body.links)
         for i in 1:n_bodies
-            results[100 + i] = (config.solution.physical_properties.α[i][index_a] + (config.solution.physical_properties.α[i][index_b] - config.solution.physical_properties.α[i][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-            results[100 + n_bodies + i] = (config.solution.physical_properties.β[i][index_a] + (config.solution.physical_properties.β[i][index_b] - config.solution.physical_properties.β[i][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+            results[98 + i] = (config.solution.physical_properties.α[i][index_a] + (config.solution.physical_properties.α[i][index_b] - config.solution.physical_properties.α[i][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+            results[98 + n_bodies + i] = (config.solution.physical_properties.β[i][index_a] + (config.solution.physical_properties.β[i][index_b] - config.solution.physical_properties.β[i][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+            results[98 + 2*n_bodies + i] = (config.solution.performance.heat_rate[i][index_a] + (config.solution.performance.heat_rate[i][index_b] - config.solution.performance.heat_rate[i][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+            results[98 + 3*n_bodies + i] = (config.solution.performance.heat_load[i][index_a] + (config.solution.performance.heat_load[i][index_b] - config.solution.performance.heat_load[i][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
         end
         n_reaction_wheels = config.model.body.n_reaction_wheels
         for i in 1:n_reaction_wheels
-            results[100 + 2*n_bodies + i] = (config.solution.physical_properties.rw_h[i][index_a] + (config.solution.physical_properties.rw_h[i][index_b] - config.solution.physical_properties.rw_h[i][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-            results[100 + 2*n_bodies + n_reaction_wheels + i] = (config.solution.physical_properties.rw_τ[i][index_a] + (config.solution.physical_properties.rw_τ[i][index_b] - config.solution.physical_properties.rw_τ[i][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+            results[98 + 4*n_bodies + i] = (config.solution.physical_properties.rw_h[i][index_a] + (config.solution.physical_properties.rw_h[i][index_b] - config.solution.physical_properties.rw_h[i][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+            results[98 + 4*n_bodies + n_reaction_wheels + i] = (config.solution.physical_properties.rw_τ[i][index_a] + (config.solution.physical_properties.rw_τ[i][index_b] - config.solution.physical_properties.rw_τ[i][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
         end
-        results[99 + n_reaction_wheels + 1] = (config.solution.physical_properties.τ_rw[1][index_a] + (config.solution.physical_properties.τ_rw[1][index_b] - config.solution.physical_properties.τ_rw[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[99 + n_reaction_wheels + 2] = (config.solution.physical_properties.τ_rw[2][index_a] + (config.solution.physical_properties.τ_rw[2][index_b] - config.solution.physical_properties.τ_rw[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[99 + n_reaction_wheels + 3] = (config.solution.physical_properties.τ_rw[3][index_a] + (config.solution.physical_properties.τ_rw[3][index_b] - config.solution.physical_properties.τ_rw[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        # results[98 + 4*n_bodies + 2*n_reaction_wheels + 1] = (config.solution.physical_properties.τ_rw[1][index_a] + (config.solution.physical_properties.τ_rw[1][index_b] - config.solution.physical_properties.τ_rw[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        # results[98 + 4*n_bodies + 2*n_reaction_wheels + 2] = (config.solution.physical_properties.τ_rw[2][index_a] + (config.solution.physical_properties.τ_rw[2][index_b] - config.solution.physical_properties.τ_rw[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        # results[98 + 4*n_bodies + 2*n_reaction_wheels + 3] = (config.solution.physical_properties.τ_rw[3][index_a] + (config.solution.physical_properties.τ_rw[3][index_b] - config.solution.physical_properties.τ_rw[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
 
         results[64] = (config.solution.performance.mass[index_a] + (config.solution.performance.mass[index_b] - config.solution.performance.mass[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[65] = (config.solution.performance.heat_rate[index_a] + (config.solution.performance.heat_rate[index_b] - config.solution.performance.heat_rate[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[66] = (config.solution.performance.heat_load[index_a] + (config.solution.performance.heat_load[index_b] - config.solution.performance.heat_load[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[67] = (config.solution.performance.T_r[index_a] + (config.solution.performance.T_r[index_b] - config.solution.performance.T_r[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[68] = (config.solution.performance.q[index_a] + (config.solution.performance.q[index_b] - config.solution.performance.q[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        # results[65] = (config.solution.performance.heat_rate[index_a] + (config.solution.performance.heat_rate[index_b] - config.solution.performance.heat_rate[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        # results[66] = (config.solution.performance.heat_load[index_a] + (config.solution.performance.heat_load[index_b] - config.solution.performance.heat_load[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[65] = (config.solution.performance.T_r[index_a] + (config.solution.performance.T_r[index_b] - config.solution.performance.T_r[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[66] = (config.solution.performance.q[index_a] + (config.solution.performance.q[index_b] - config.solution.performance.q[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
 
-        results[69] = (config.solution.forces.gravity_ii[1][index_a] + (config.solution.forces.gravity_ii[1][index_b] - config.solution.forces.gravity_ii[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[70] = (config.solution.forces.gravity_ii[2][index_a] + (config.solution.forces.gravity_ii[2][index_b] - config.solution.forces.gravity_ii[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[71] = (config.solution.forces.gravity_ii[3][index_a] + (config.solution.forces.gravity_ii[3][index_b] - config.solution.forces.gravity_ii[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[67] = (config.solution.forces.gravity_ii[1][index_a] + (config.solution.forces.gravity_ii[1][index_b] - config.solution.forces.gravity_ii[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[68] = (config.solution.forces.gravity_ii[2][index_a] + (config.solution.forces.gravity_ii[2][index_b] - config.solution.forces.gravity_ii[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[69] = (config.solution.forces.gravity_ii[3][index_a] + (config.solution.forces.gravity_ii[3][index_b] - config.solution.forces.gravity_ii[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
 
-        results[72] = (config.solution.forces.drag_pp[1][index_a] + (config.solution.forces.drag_pp[1][index_b] - config.solution.forces.drag_pp[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[73] = (config.solution.forces.drag_pp[2][index_a] + (config.solution.forces.drag_pp[2][index_b] - config.solution.forces.drag_pp[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[74] = (config.solution.forces.drag_pp[3][index_a] + (config.solution.forces.drag_pp[3][index_b] - config.solution.forces.drag_pp[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[70] = (config.solution.forces.drag_pp[1][index_a] + (config.solution.forces.drag_pp[1][index_b] - config.solution.forces.drag_pp[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[71] = (config.solution.forces.drag_pp[2][index_a] + (config.solution.forces.drag_pp[2][index_b] - config.solution.forces.drag_pp[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[72] = (config.solution.forces.drag_pp[3][index_a] + (config.solution.forces.drag_pp[3][index_b] - config.solution.forces.drag_pp[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
 
-        results[75] = (config.solution.forces.drag_ii[1][index_a] + (config.solution.forces.drag_ii[1][index_b] - config.solution.forces.drag_ii[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[76] = (config.solution.forces.drag_ii[2][index_a] + (config.solution.forces.drag_ii[2][index_b] - config.solution.forces.drag_ii[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[77] = (config.solution.forces.drag_ii[3][index_a] + (config.solution.forces.drag_ii[3][index_b] - config.solution.forces.drag_ii[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[73] = (config.solution.forces.drag_ii[1][index_a] + (config.solution.forces.drag_ii[1][index_b] - config.solution.forces.drag_ii[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[74] = (config.solution.forces.drag_ii[2][index_a] + (config.solution.forces.drag_ii[2][index_b] - config.solution.forces.drag_ii[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[75] = (config.solution.forces.drag_ii[3][index_a] + (config.solution.forces.drag_ii[3][index_b] - config.solution.forces.drag_ii[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
 
-        results[78] = (config.solution.forces.lift_pp[1][index_a] + (config.solution.forces.lift_pp[1][index_b] - config.solution.forces.lift_pp[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[79] = (config.solution.forces.lift_pp[2][index_a] + (config.solution.forces.lift_pp[2][index_b] - config.solution.forces.lift_pp[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[80] = (config.solution.forces.lift_pp[3][index_a] + (config.solution.forces.lift_pp[3][index_b] - config.solution.forces.lift_pp[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[76] = (config.solution.forces.lift_pp[1][index_a] + (config.solution.forces.lift_pp[1][index_b] - config.solution.forces.lift_pp[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[77] = (config.solution.forces.lift_pp[2][index_a] + (config.solution.forces.lift_pp[2][index_b] - config.solution.forces.lift_pp[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[78] = (config.solution.forces.lift_pp[3][index_a] + (config.solution.forces.lift_pp[3][index_b] - config.solution.forces.lift_pp[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
 
-        results[81] = (config.solution.forces.lift_ii[1][index_a] + (config.solution.forces.lift_ii[1][index_b] - config.solution.forces.lift_ii[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[82] = (config.solution.forces.lift_ii[2][index_a] + (config.solution.forces.lift_ii[2][index_b] - config.solution.forces.lift_ii[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[83] = (config.solution.forces.lift_ii[3][index_a] + (config.solution.forces.lift_ii[3][index_b] - config.solution.forces.lift_ii[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[79] = (config.solution.forces.lift_ii[1][index_a] + (config.solution.forces.lift_ii[1][index_b] - config.solution.forces.lift_ii[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[80] = (config.solution.forces.lift_ii[2][index_a] + (config.solution.forces.lift_ii[2][index_b] - config.solution.forces.lift_ii[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[81] = (config.solution.forces.lift_ii[3][index_a] + (config.solution.forces.lift_ii[3][index_b] - config.solution.forces.lift_ii[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
 
-        results[84] = (config.solution.forces.force_ii[1][index_a] + (config.solution.forces.force_ii[1][index_b] - config.solution.forces.force_ii[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[85] = (config.solution.forces.force_ii[2][index_a] + (config.solution.forces.force_ii[2][index_b] - config.solution.forces.force_ii[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[86] = (config.solution.forces.force_ii[3][index_a] + (config.solution.forces.force_ii[3][index_b] - config.solution.forces.force_ii[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[82] = (config.solution.forces.force_ii[1][index_a] + (config.solution.forces.force_ii[1][index_b] - config.solution.forces.force_ii[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[83] = (config.solution.forces.force_ii[2][index_a] + (config.solution.forces.force_ii[2][index_b] - config.solution.forces.force_ii[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[84] = (config.solution.forces.force_ii[3][index_a] + (config.solution.forces.force_ii[3][index_b] - config.solution.forces.force_ii[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
 
-        results[87] = (config.solution.forces.energy[index_a] + (config.solution.forces.energy[index_b] - config.solution.forces.energy[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[85] = (config.solution.forces.energy[index_a] + (config.solution.forces.energy[index_b] - config.solution.forces.energy[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
 
-        results[88] = (config.solution.simulation.MC_seed[index_a] + (config.solution.simulation.MC_seed[index_b] - config.solution.simulation.MC_seed[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[89] = (config.solution.simulation.drag_passage[index_a] + (config.solution.simulation.drag_passage[index_b] - config.solution.simulation.drag_passage[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[86] = (config.solution.simulation.MC_seed[index_a] + (config.solution.simulation.MC_seed[index_b] - config.solution.simulation.MC_seed[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[87] = (config.solution.simulation.drag_passage[index_a] + (config.solution.simulation.drag_passage[index_b] - config.solution.simulation.drag_passage[index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
 
-        results[90] = (config.solution.orientation.quaternion[1][index_a] + (config.solution.orientation.quaternion[1][index_b] - config.solution.orientation.quaternion[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[91] = (config.solution.orientation.quaternion[2][index_a] + (config.solution.orientation.quaternion[2][index_b] - config.solution.orientation.quaternion[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[92] = (config.solution.orientation.quaternion[3][index_a] + (config.solution.orientation.quaternion[3][index_b] - config.solution.orientation.quaternion[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[93] = (config.solution.orientation.quaternion[4][index_a] + (config.solution.orientation.quaternion[4][index_b] - config.solution.orientation.quaternion[4][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[94] = (config.solution.orientation.ω[1][index_a] + (config.solution.orientation.ω[1][index_b] - config.solution.orientation.ω[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[95] = (config.solution.orientation.ω[2][index_a] + (config.solution.orientation.ω[2][index_b] - config.solution.orientation.ω[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
-        results[96] = (config.solution.orientation.ω[3][index_a] + (config.solution.orientation.ω[3][index_b] - config.solution.orientation.ω[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[88] = (config.solution.orientation.quaternion[1][index_a] + (config.solution.orientation.quaternion[1][index_b] - config.solution.orientation.quaternion[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[89] = (config.solution.orientation.quaternion[2][index_a] + (config.solution.orientation.quaternion[2][index_b] - config.solution.orientation.quaternion[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[90] = (config.solution.orientation.quaternion[3][index_a] + (config.solution.orientation.quaternion[3][index_b] - config.solution.orientation.quaternion[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[91] = (config.solution.orientation.quaternion[4][index_a] + (config.solution.orientation.quaternion[4][index_b] - config.solution.orientation.quaternion[4][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[92] = (config.solution.orientation.ω[1][index_a] + (config.solution.orientation.ω[1][index_b] - config.solution.orientation.ω[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[93] = (config.solution.orientation.ω[2][index_a] + (config.solution.orientation.ω[2][index_b] - config.solution.orientation.ω[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        results[94] = (config.solution.orientation.ω[3][index_a] + (config.solution.orientation.ω[3][index_b] - config.solution.orientation.ω[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
 
         deleteat!(config.solution.orientation.time, range(start=index_b+1, step=1, stop=length(config.solution.orientation.time)))
         deleteat!(config.solution.orientation.year, range(start=index_b+1,step=1,stop=length(config.solution.orientation.year)))
@@ -377,13 +379,13 @@ function propulsion_ic_calcs(m, args, initial_state)
         append!(config.solution.orientation.vel_ii[3], results[13])
         append!(config.solution.orientation.pos_ii_mag, results[14])
         append!(config.solution.orientation.vel_ii_mag, results[15])
-        append!(config.solution.orientation.quaternion[1], results[90])
-        append!(config.solution.orientation.quaternion[2], results[91])
-        append!(config.solution.orientation.quaternion[3], results[92])
-        append!(config.solution.orientation.quaternion[4], results[93])
-        append!(config.solution.orientation.ω[1], results[94])
-        append!(config.solution.orientation.ω[2], results[95])
-        append!(config.solution.orientation.ω[3], results[96])
+        append!(config.solution.orientation.quaternion[1], results[88])
+        append!(config.solution.orientation.quaternion[2], results[89])
+        append!(config.solution.orientation.quaternion[3], results[90])
+        append!(config.solution.orientation.quaternion[4], results[91])
+        append!(config.solution.orientation.ω[1], results[92])
+        append!(config.solution.orientation.ω[2], results[93])
+        append!(config.solution.orientation.ω[3], results[94])
 
         append!(config.solution.orientation.pos_pp[1], results[16])
         append!(config.solution.orientation.pos_pp[2], results[17])
@@ -438,10 +440,10 @@ function propulsion_ic_calcs(m, args, initial_state)
         append!(config.solution.physical_properties.cL, results[61])
         append!(config.solution.physical_properties.cD, results[62])
         append!(config.solution.physical_properties.S, results[63])
-        append!(config.solution.physical_properties.α_control, results[97])
-        append!(config.solution.physical_properties.τ_rw[1], results[98,:]) # h_rw_mag
-        append!(config.solution.physical_properties.τ_rw[2], results[99,:]) # τ_rw_x
-        append!(config.solution.physical_properties.τ_rw[3], results[100,:]) # τ_rw_y
+        append!(config.solution.physical_properties.α_control, results[95])
+        append!(config.solution.physical_properties.τ_rw[1], results[96,:]) # h_rw_mag
+        append!(config.solution.physical_properties.τ_rw[2], results[97,:]) # τ_rw_x
+        append!(config.solution.physical_properties.τ_rw[3], results[98,:]) # τ_rw_y
         
         # Initialize α and β if they are not already initialized
         n_bodies = length(config.model.body.links)
@@ -449,13 +451,17 @@ function propulsion_ic_calcs(m, args, initial_state)
             for i in 1:n_bodies
                 append!(config.solution.physical_properties.α, [[]])
                 append!(config.solution.physical_properties.β, [[]])
+                append!(config.solution.performance.heat_rate, [[]])
+                append!(config.solution.performance.heat_load, [[]])
             end
         end
 
         # Append α and β for each link
         for i in 1:n_bodies
-            append!(config.solution.physical_properties.α[i], results[100 + i,:]) # α
-            append!(config.solution.physical_properties.β[i], results[100 + n_bodies + i,:]) # β
+            append!(config.solution.physical_properties.α[i], results[98 + i,:]) # α
+            append!(config.solution.physical_properties.β[i], results[98 + n_bodies + i,:]) # β
+            append!(config.solution.performance.heat_rate[i], results[98 + 2*n_bodies + i,:]) # heat_rate
+            append!(config.solution.performance.heat_load[i], results[98 + 3*n_bodies + i,:]) # heat_load
         end
         
         n_reaction_wheels = config.model.body.n_reaction_wheels
@@ -468,39 +474,39 @@ function propulsion_ic_calcs(m, args, initial_state)
         end
 
         for i in 1:n_reaction_wheels
-            append!(config.solution.physical_properties.rw_h[i], results[100 + 2*n_bodies + i,:])
-            append!(config.solution.physical_properties.rw_τ[i], results[100 + 2*n_bodies + n_reaction_wheels + i,:]) # rw_τ
+            append!(config.solution.physical_properties.rw_h[i], results[98 + 4*n_bodies + i,:])
+            append!(config.solution.physical_properties.rw_τ[i], results[98 + 4*n_bodies + n_reaction_wheels + i,:]) # rw_τ
         end
  
     
         append!(config.solution.performance.mass, results[64])
-        append!(config.solution.performance.heat_rate, results[65])
-        append!(config.solution.performance.heat_load, results[66])
-        append!(config.solution.performance.T_r, results[67])
-        append!(config.solution.performance.q, results[68])
+        # append!(config.solution.performance.heat_rate, results[65])
+        # append!(config.solution.performance.heat_load, results[66])
+        append!(config.solution.performance.T_r, results[65])
+        append!(config.solution.performance.q, results[66])
 
-        append!(config.solution.forces.gravity_ii[1], results[69])
-        append!(config.solution.forces.gravity_ii[2], results[70])
-        append!(config.solution.forces.gravity_ii[3], results[71])
-        append!(config.solution.forces.drag_pp[1], results[72])
-        append!(config.solution.forces.drag_pp[2], results[73])
-        append!(config.solution.forces.drag_pp[3], results[74])
-        append!(config.solution.forces.drag_ii[1], results[75])
-        append!(config.solution.forces.drag_ii[2], results[76])
-        append!(config.solution.forces.drag_ii[3], results[77])
-        append!(config.solution.forces.lift_pp[1], results[78])
-        append!(config.solution.forces.lift_pp[2], results[79])
-        append!(config.solution.forces.lift_pp[3], results[80])
-        append!(config.solution.forces.lift_ii[1], results[81])
-        append!(config.solution.forces.lift_ii[2], results[82])
-        append!(config.solution.forces.lift_ii[3], results[83])
-        append!(config.solution.forces.force_ii[1], results[84])
-        append!(config.solution.forces.force_ii[2], results[85])
-        append!(config.solution.forces.force_ii[3], results[86])
-        append!(config.solution.forces.energy, results[87])
+        append!(config.solution.forces.gravity_ii[1], results[67])
+        append!(config.solution.forces.gravity_ii[2], results[68])
+        append!(config.solution.forces.gravity_ii[3], results[69])
+        append!(config.solution.forces.drag_pp[1], results[70])
+        append!(config.solution.forces.drag_pp[2], results[71])
+        append!(config.solution.forces.drag_pp[3], results[72])
+        append!(config.solution.forces.drag_ii[1], results[73])
+        append!(config.solution.forces.drag_ii[2], results[74])
+        append!(config.solution.forces.drag_ii[3], results[75])
+        append!(config.solution.forces.lift_pp[1], results[76])
+        append!(config.solution.forces.lift_pp[2], results[77])
+        append!(config.solution.forces.lift_pp[3], results[78])
+        append!(config.solution.forces.lift_ii[1], results[79])
+        append!(config.solution.forces.lift_ii[2], results[80])
+        append!(config.solution.forces.lift_ii[3], results[81])
+        append!(config.solution.forces.force_ii[1], results[82])
+        append!(config.solution.forces.force_ii[2], results[83])
+        append!(config.solution.forces.force_ii[3], results[84])
+        append!(config.solution.forces.energy, results[85])
 
-        append!(config.solution.simulation.MC_seed, results[88])
-        append!(config.solution.simulation.drag_passage, results[89])
+        append!(config.solution.simulation.MC_seed, results[86])
+        append!(config.solution.simulation.drag_passage, results[87])
 
         return initial_state
     end

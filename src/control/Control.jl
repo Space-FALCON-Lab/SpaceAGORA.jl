@@ -167,7 +167,7 @@ function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, po
                 config.cnf.time_switch_1, config.cnf.time_switch_2 = second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, current_position, reevaluation_mode)
             end
         end
-    elseif config.cnf.heat_load_past > 0.98*m.aerodynamics.heat_load_limit && (config.cnf.heat_load_past - config.cnf.heat_load_ppast) < 2 && args[:security_mode] == 1 && config.cnf.security_mode == false && index_ratio[2] == 1
+    elseif maximum(config.cnf.heat_load_past) > 0.98*m.aerodynamics.heat_load_limit && any(i -> i > 2, config.cnf.heat_load_past - config.cnf.heat_load_ppast) && args[:security_mode] == 1 && config.cnf.security_mode == false && index_ratio[2] == 1
         config.cnf.time_switch_1, config.cnf.time_switch_2 = security_mode(ip, m, position, args, t, false)
     end
 
@@ -185,7 +185,10 @@ function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, po
         end
     end
 
-    config.cnf.heat_load_ppast = config.cnf.heat_load_past
+    if isempty(config.cnf.heat_load_ppast)
+        config.cnf.heat_load_ppast = zeros(length(m.body.links))
+    end
+    config.cnf.heat_load_ppast .= config.cnf.heat_load_past
 
     # Update solar panel angle
     # Assumes that the spacecraft is the standard 2 panels one bus

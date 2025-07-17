@@ -73,6 +73,8 @@ mutable struct Link
     inertia::SMatrix{3, 3, Float64} # Inertial matrix
     aᵇ::SVector{3, Float64} # Left extent (Body frame)
     bᵇ::SVector{3, Float64} # Right extent (Body frame)
+    α::Float64 # Angle of attack, rad
+    β::Float64 # Sideslip angle, rad
     gyro::Int64 # Number of Gyroscope
     max_torque::Float64 # Maximum torque that can be applied by the reaction wheels
     max_h::Float64 # Maximum angular momentum that can be stored in the reaction wheels
@@ -83,6 +85,8 @@ mutable struct Link
     net_torque::MVector{3, Float64} # Net torque acting on the link, to be updated at each simulation step
     attitude_control_function::Function # Function to control the attitude of the link (apply a torque via reaction wheels, thrusters, etc.), assumes rigid joints
     actuation_function::Function # Function to apply actuation forces/torques at the link (change orientation of solar panels, etc.)  
+    attitude_control_rate::Float64 # Rate at which the attitude control function is called, in seconds
+    ω_wheel_derivatives::Vector{Float64} # Angular momentum derivatives of the reaction wheels, to be updated at each simulation step
     function Link(;root=false,
                     r=SVector{3, Float64}([0, 0, 0]), 
                     q=SVector{4, Float64}([0,0,0,1]), 
@@ -95,6 +99,8 @@ mutable struct Link
                     inertia=SMatrix{3, 3, Float64}(1 / 12 * m * diagm([dims[2]^2 + dims[3]^2; dims[1]^2 + dims[3]^2; dims[1]^2 + dims[2]^2])),
                     a=SVector{3, Float64}([-0.5*dims[1], 0, 0]),
                     b=SVector{3, Float64}([0.5*dims[1], 0, 0]),
+                    α=pi/2.0,
+                    β=0.0,
                     gyro = 3,
                     max_torque = 0.25,
                     max_h = 70.0,
@@ -104,9 +110,16 @@ mutable struct Link
                     net_force=MVector{3, Float64}(zeros(3)),
                     net_torque=MVector{3, Float64}(zeros(3)),
                     attitude_control_function=()->0.0,
-                    actuation_function=()->0.0)#SMatrix{3,Int(gyro)}(1.0I))
+                    actuation_function=()->0.0,
+                    attitude_control_rate=0.1,
+                    ω_wheel_derivatives=MVector{gyro, Float64}(zeros(gyro)))#SMatrix{3,Int(gyro)}(1.0I))
                     println(length(rw))
-        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, gyro, max_torque, max_h, rw, J_rw, rw_τ, net_force, net_torque, attitude_control_function, actuation_function)
+        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, gyro, max_torque, max_h, rw, J_rw, rw_τ, net_force, net_torque, attitude_control_function, actuation_function, attitude_control_rate, ω_wheel_derivatives)
+    end
+
+    function Link(link::Link)
+        new(link.root, link.r, link.q, link.ṙ, link.ω, link.dims, link.ref_area, link.m, link.mass, link.inertia, link.aᵇ, link.bᵇ, link.gyro, link.max_torque, link.max_h, copy(link.rw), copy(link.J_rw), copy(link.rw_τ), copy(link.net_force), copy(link.net_torque), 
+            link.attitude_control_function, link.actuation_function, link.attitude_control_rate, copy(link.ω_wheel_derivatives))
     end
 end
 
@@ -155,6 +168,12 @@ mutable struct Joint
 
         new(link1, link2, p1, p2, Kx, Kt, Cx, Ct, 
             translational_displacement, rotational_displacement)
+    end
+
+    function Joint(joint::Joint)
+        new(joint.link1, joint.link2, joint.p1ᵇ, joint.p2ᵇ, 
+            joint.Kx, joint.Kt, joint.Cx, joint.Ct,
+            joint.translational_displacement, joint.rotational_displacement)
     end
 end
 
@@ -613,6 +632,22 @@ function rotate_link(body::Link, axis::SVector{3, Float64},  θ::Float64)
     body.q .= SVector{4, Float64}([axis .* sin(θ/2); cos(θ/2)]) # Convert Euler angles to quaternion
 end
 
+function copy(model::SpacecraftModel)
+    """
+    Creates a deep copy of the spacecraft model.
+    - `model`: The spacecraft model to be copied.
+    """
+    new_model = SpacecraftModel(
+        joints = Joint[Joint(j.link1, j.p1ᵇ, j.link2, j.p2ᵇ, j.Kx, j.Kt, j.Cx, j.Ct) for j in model.joints],
+        links = Link[Link(j) for j in model.links],
+        roots = Link[Link(r) for r in model.roots],
+        instant_actuation = model.instant_actuation,
+        prop_mass = copy(model.prop_mass),
+        inertia_tensors = [copy(it) for it in model.inertia_tensors],
+        n_reaction_wheels = model.n_reaction_wheels
+    )
+    return new_model # Return the deep copy of the spacecraft model
+end
 # function update_func(A, u, p, t)
 #     """
 #     Update the quaternion orientation of the spacecraft model using the angular velocity `ω` and time step `dt`.

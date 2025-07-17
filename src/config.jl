@@ -151,20 +151,21 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         periapsis_list::Vector{Float64} = []
         Δv_list::Vector{Float64} = []
         orbit_number_list::Vector{Int64} = []
-        heat_load_past::Float64 = 0.0
-        heat_load_ppast::Float64 = 0.0
+        heat_load_past::Vector{Float64} = []
+        heat_load_ppast::Vector{Float64} = []
         state_flesh1::Vector{Vector{Float64}} = [[]]
         α_list::Vector{Float64} = []
         initial_position_closed_form::Vector{Float64} = []
         continue_simulation::Bool = true
         timer_revaluation::Float64 = 0.0
         MarsGram_recall::Int64 = 0
-        heat_rate_prev::Float64 = 0.0
+        heat_rate_prev::Vector{Float64} = []
         sensible_loads::Bool = false
         counter_integrator::Int64 = 0
         prev_step_integrator::Float64 = 0.0
         initial_time_saved::Float64 = 0.0
         prev_timestep::Float64 = 0.0
+        ω_wheel_derivatives::Vector{Vector{Float64}} = []
 
         # Extra variables missing in python version
         counter::Int64 = 0
@@ -273,8 +274,8 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
 
     @kwdef mutable struct Performance
         mass::Vector{Float64} = []
-        heat_rate::Vector{Float64} = []
-        heat_load::Vector{Float64} = []
+        heat_rate::Vector{Vector{Float64}} = []
+        heat_load::Vector{Vector{Float64}} = []
         T_r::Vector{Float64} = []
         q::Vector{Float64} = []
     end

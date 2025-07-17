@@ -309,13 +309,13 @@ function Venus_Express_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassa
     if numberofpassage == 6
         args[:delta_v] = 0.428
         args[:phi] = deg2rad(180)
-    elseif numberofpassage == 36
+    elseif numberofpassage == 37
         args[:delta_v] = 0.177
         args[:phi] = 0.0
-    elseif numberofpassage == 41
+    elseif numberofpassage == 42
         args[:delta_v] = 0.07
         args[:phi] = 0.0
-    elseif numberofpassage == 45
+    elseif numberofpassage == 46
         args[:delta_v] = 0.05
         args[:phi] = 0.0
     else

@@ -15,9 +15,10 @@ main_bus = config.Link(root=true,
                         dims=SVector{3, Float64}([3.7,2.05,2.8]), 
                         ref_area=2.05*2.8,
                         m=620.0, 
-                        gyro=3,
-                        J_rw=MMatrix{3, 3, Float64}([1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]),
-                        attitude_control_function=constant_α_β) # Reaction wheel inertia
+                        gyro=4,
+                        attitude_control_rate=1.0/3.0,
+                        J_rw=MMatrix{3, 4, Float64}([1.0 0.0 0.0 0.57735; 0.0 1.0 0.0 0.57735; 0.0 0.0 1.0 0.57735]),#0.57735
+                        attitude_control_function=lqr_constant_α_β) # Reaction wheel inertia
 
 L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.05/2 - 5.7/4, 0.0), 
                         q=SVector{4, Float64}([0, 0, 0, 1]),
@@ -68,13 +69,14 @@ args = Dict(# Misc Simulation
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 50,                                 # Number of aerobraking passage
+            :orientation_sim => true,                                 # Orientation simulation True=1, False=0
 
             # Physical Model
             :planet => 2,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                  # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
-            :topography_model => "Spherical Harmonics",                             # choices=['None' , 'Spherical Harmonics']
+            :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
             :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/MGN-V-RDRS-5-TOPO-L2.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 90, 
@@ -85,7 +87,7 @@ args = Dict(# Misc Simulation
 
             # Perturbations
             :n_bodies => ["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
-            :srp => 0,                                             # Solar Radiation Pressure True=1, False=0
+            :srp => 1,                                             # Solar Radiation Pressure True=1, False=0
             :gravity_harmonics => 1,                                # Gravity Harmonics True=1, False=0
             :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/MGNP180U.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
@@ -124,12 +126,13 @@ args = Dict(# Misc Simulation
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
-            :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
+            :control_mode => 3,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
             :security_mode => 0,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 1,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
-            
+            :solar_panel_control_rate => 1.0/3.0,                        # Rate at which the solar panel controller is called
+
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
             :ra_initial_a => 66597e3 + 6.0518e6, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
@@ -149,14 +152,14 @@ args = Dict(# Misc Simulation
             :inclination => 89.876,                                   # Inclination Orbit, deg
             :ω => 75.505,                                              # AOP, deg
             :Ω => 104.115,                                              # RAAN, deg
-            :EI => 200.0,                                           # Entry Interface, km
-            :AE => 200.0,                                           # Atmospheric Exit, km
+            :EI => 250.0,                                           # Entry Interface, km
+            :AE => 250.0,                                           # Atmospheric Exit, km
             :year => 2014,                                          # Mission year
             :month => 5,                                           # Mission month
             :day => 19,                                             # Mission day
-            :hours => 4,                                           # Mission hour
-            :minutes => 0,                                         # Mission minute
-            :secs => 0.0,                                          # Mission second
+            :hours => 14,                                           # Mission hour
+            :minutes => 7,                                         # Mission minute
+            :secs => 32.0,                                          # Mission second
             
             # Final Conditions
             :final_apoapsis => 62822e3 + 6.0518e6, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
@@ -201,6 +204,19 @@ args = Dict(# Misc Simulation
             :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
+
+            :a_tol => 1e-5,                                         # Absolute tolerance for integration
+            :r_tol => 1e-3,                                         # Relative tolerance for integration
+            :a_tol_orbit => 1e-8,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :r_tol_orbit => 1e-6,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :a_tol_drag => 1e-10,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
+            :r_tol_drag => 1e-8,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
+            :a_tol_quaternion => 1e-8,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :r_tol_quaternion => 1e-5,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :dt_max => 1.0,                                         # Maximum time step for integration, s
+            :dt_max_orbit => 10.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
+            :dt_max_drag => 0.1,                                    # Maximum time step for drag passage
+
             :Odyssey_sim => 0                                       # Simulate Odyssey Mission
             )
 

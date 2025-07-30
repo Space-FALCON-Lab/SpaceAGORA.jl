@@ -105,7 +105,7 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
             if !body.root
                 axis = SVector{3, Float64}(abs.(body.r))
                 # Rotate the solar panel to the angle α
-                config.rotate_link(body, axis, π/2 - α)
+                config.rotate_link(body, axis, π/2 - α + (m.body.roots[root_index].α-π/2))
             end
         end
         return α
@@ -198,7 +198,7 @@ function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, po
         if !body.root
             axis = SVector{3, Float64}(abs.(body.r))
             # Rotate the solar panel to the angle α
-            config.rotate_link(body, axis, π/2 - α)
+            config.rotate_link(body, axis, π/2 - α + (m.body.roots[root_index].α-π/2))
         end
     end
 
@@ -231,7 +231,7 @@ function control_solarpanels_openloop(ip, m, args, index_ratio, state, t=0, posi
         if !body.root
             axis = SVector{3, Float64}(abs.(body.r))
             # Rotate the solar panel to the angle α
-            config.rotate_link(body, axis, π/2 - α)
+            config.rotate_link(body, axis, π/2 - α + (m.body.roots[root_index].α-π/2))
         end
     end
     return α

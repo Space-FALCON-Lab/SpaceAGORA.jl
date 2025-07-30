@@ -215,20 +215,18 @@ function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Boo
     elseif config.cnf.drag_state == true || args[:keplerian] == true
         position = gram.Position()
         position.height = h * 1e-3
-        lat = rad2deg(lat)
-        lon = rad2deg(lon)
-        position.latitude = lat
-        position.longitude = lon
-        
+        position.latitude = rad2deg(lat)
+        position.longitude = rad2deg(lon)
+
         position.elapsedTime = el_time # Time since start in s
         atmosphere.setPosition(position)
         atmosphere.update()
         atmos = atmosphere.getAtmosphereState()
-        rho = atmos.density
-        T = atmos.temperature
-        wind = [montecarlo ? atmos.perturbedEWWind : atmos.ewWind,
-                montecarlo ? atmos.perturbedNSWind : atmos.nsWind,
-                atmos.verticalWind]
+        rho = pyconvert(Float64, atmos.density)
+        T = pyconvert(Float64, atmos.temperature)
+        wind = SVector{3, Float64}([pyconvert(Float64, montecarlo ? atmos.perturbedEWWind : atmos.ewWind),
+                pyconvert(Float64, montecarlo ? atmos.perturbedNSWind : atmos.nsWind),
+                pyconvert(Float64, atmos.verticalWind)])
     end
 
     return rho, T, wind

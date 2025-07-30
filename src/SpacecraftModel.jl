@@ -216,6 +216,7 @@ function add_body!(model::SpacecraftModel,
         # Initialize inertia tensor for the root body
     end
     model.n_reaction_wheels += body.gyro # Increment the number of reaction wheels
+    update_inertia_tensor!(model, body) # Calculate inertia tensor for the body
 end
 
 # Function to add a joint to the spacecraft model

@@ -208,7 +208,7 @@ end
 function qToEulerAngles(q)
     # // this implementation assumes normalized quaternion
     # // converts to Euler angles in 3-2-1 sequence
-    qx, qy, qz, qw = q
+    qx, qy, qz, qw = normalize(q)
     # roll (x-axis rotation)
     sinr_cosp = 2 * (qw * qx + qy * qz);
     cosr_cosp = 1 - 2 * (qx * qx + qy * qy);

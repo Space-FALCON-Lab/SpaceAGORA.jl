@@ -101,24 +101,24 @@ function lqr_constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVect
         end
         B = SMatrix{length(state), n, Float64}([zeros(Float64, 3, n); J\J_rw_inertial; I(n)])# + 1e-6*ones(length(state), n)
 
-        Q = Diagonal(SVector{6+n, Float64}([1.0e2*ones(3); 1.0*ones(3); 1.0e-6*ones(n)]))
+        Q = Diagonal(SVector{6+n, Float64}([1.0e5*ones(3); 1.0*ones(3); 1.0e-6*ones(n)]))
 
         R = SMatrix{n, n, Float64}(0.1*I(n))
-        if config.cnf.P == zeros(3, 3)
+        if config.cnf.P == zeros(3, 3) || acosd(error_quat[4])*2 > 0.5 # if the error is larger than 0.5 degrees, recalculate using full LQR method
         #     # Use LQR to compute the gain matrix K
             K = SMatrix{n, length(state), Float64}(lqr(A, B, Q, R))
             # println(typeof(K))
             config.cnf.P = pinv(B')*R*K
             P = SMatrix{length(state), length(state), Float64}(config.cnf.P)
-        elseif acosd(error_quat[4])*2 < 1.0 # 2 degrees
-            # Use LQR to compute the gain matrix K
-            P = config.cnf.P
+        # elseif acosd(error_quat[4])*2 < 0.1 # 2 degrees
+        #     # Use LQR to compute the gain matrix K
+        #     P = config.cnf.P
         else
-            P = solve_care_newton(A, B, Q, R; P0=config.cnf.P, max_iter=100, tol=1e-6)
+            P = solve_care_newton(A, B, Q, R; P0=config.cnf.P, max_iter=100, tol=1e-8)
             config.cnf.P .= P
             # config.cnf.K .= R \ B' * config.cnf.P
         end
-        # K = lqr(A, B, Q, R) #ControlSystemsBase.Discrete,
+        # K = lqr(A, B, Q, R)
         # # Return the wheel momentum derivatives
         return -R \ B' * P * state
         # return -K * state
@@ -153,30 +153,39 @@ function lqr_constant_α_β_σ(m, b::config.Link, root_index::Int, vel_pp_rw::SV
     error_quat_2 = error_quaternion(error_quat, sc_orientation_error_quat)
 
     error_quat = SMatrix{4, 4, Float64}([Ψ(error_quat_2) error_quat_2])*error_quat
-    G = (q) -> [q[4] -q[3] q[2];
-                q[3] q[4] -q[1];
-                -q[2] q[1] q[4]]
-    
     n = b.gyro
-    J = Rot * config.get_inertia_tensor(m.body, root_index) * Rot'
     state = SVector{6+n, Float64}([error_quat[1:3]; b.ω; b.rw])
 
-    A = SMatrix{length(state), length(state)}([zeros(3, 3) 0.5*I(3) zeros(3, n);
-        zeros(3+n, 6+n)]) - 1e-6*I 
+    J = Rot * config.get_inertia_tensor(m.body, root_index) * Rot'
+    A = SMatrix{length(state), length(state)}(Float64[zeros(3, 3) 0.5*I(3) zeros(3, n);
+                                                zeros(3+n, 6+n)]) - 1e-3*I 
 
-    J_rw_inertial = zeros(3, n)
-    for i in 1:n
-        J_rw_inertial[:, i] = Rot * b.J_rw[:, i]
+    J_rw_inertial = MMatrix{3, n, Float64}(zeros(3, n))
+    @inbounds for i in 1:n
+        J_rw_inertial[:, i] .= Rot * b.J_rw[:, i]
     end
-    B = SMatrix{length(state), n, Float64}([zeros(3, n); inv(J)*(J_rw_inertial); I])# + 1e-6*ones(length(state), n)
+    B = SMatrix{length(state), n, Float64}([zeros(Float64, 3, n); J\J_rw_inertial; I(n)])# + 1e-6*ones(length(state), n)
 
-    Q = Diagonal(vcat(1e2*ones(3), ones(3), 1e-6*ones(n)))
+    Q = Diagonal(SVector{6+n, Float64}([1.0e5*ones(3); 1.0*ones(3); 1.0e-6*ones(n)]))
 
-    R = 1e-1*I(n)
-
-    K = lqr(A, B, Q, R)#ControlSystemsBase.Discrete, 
-    # Return the wheel momentum derivatives
-    return -K * state
+    R = SMatrix{n, n, Float64}(0.1*I(n))
+    if config.cnf.P == zeros(3, 3)
+    #     # Use LQR to compute the gain matrix K
+        K = SMatrix{n, length(state), Float64}(lqr(A, B, Q, R))
+        # println(typeof(K))
+        config.cnf.P = pinv(B')*R*K
+        P = SMatrix{length(state), length(state), Float64}(config.cnf.P)
+    # elseif acosd(error_quat[4])*2 < 0.1 # 2 degrees
+    #     # Use LQR to compute the gain matrix K
+    #     P = config.cnf.P
+    else
+        P = solve_care_newton(A, B, Q, R; P0=config.cnf.P, max_iter=100, tol=1e-6)
+        config.cnf.P .= P
+        # config.cnf.K .= R \ B' * config.cnf.P
+    end
+    # K = lqr(A, B, Q, R) #ControlSystemsBase.Discrete,
+    # # Return the wheel momentum derivatives
+    return -R \ B' * P * state
 end
 
 function solve_care_newton(A::AbstractMatrix, B::AbstractMatrix, Q::AbstractMatrix, R::AbstractMatrix;

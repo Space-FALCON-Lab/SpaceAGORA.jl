@@ -55,14 +55,15 @@ function aerodynamic_coefficient_fM(α, body, T, S, args, montecarlo=false)
         return CA
     end
 
-    # println("aero models: ", α)
+    # println("α: ", α)
 
     # Solar Panels
     CN_sa = normalcoefficient(S, α, σ)
     CA_sa = axialcoefficient(S, α, σ)
     CL_sa = CN_sa*cos(α) - CA_sa*sin(α)
     CD_sa = CA_sa*cos(α) + CN_sa*sin(α)
-
+    # println("CL_sa: ", CL_sa)
+    # println("CD_sa: ", CD_sa)
     # Spacecraft
     # CN_sc = normalcoefficient(S, pi*0.5, σ)
     # CA_sc = axialcoefficient(S, pi*0.5, σ)

@@ -199,7 +199,7 @@ function aerobraking_campaign(args, state)
     apoapsis = state[:Apoapsis]
 
     state[:Periapsis] = p_class.Rp_e + state[:Periapsis]*1e3
-    state[:vi] = deg2rad(180.0001)
+    state[:vi] = (lowercase(args[:type_of_mission]) == "time" && args[:ν] >= 0.0) ? deg2rad(args[:ν]) : deg2rad(180.0001)
 
     if args[:montecarlo] == true
         state = monte_carlo_initial_condition(state, args)
@@ -234,20 +234,8 @@ function aerobraking_campaign(args, state)
     # Initial Model Definition
     # Body
     if args[:body_shape] == "Spacecraft"
-
-        # Mass = mass
-        # length_SA = length_sp
-        # height_SA = height_sp
-        # Area_SA = length_SA * height_SA
-        # length_SC = length_ody
-        # height_SC = height_ody
-        # Area_SC = length_ody * height_ody
-        # Area_tot = Area_SA + Area_SC
-
         b_class = args[:spacecraft_model]
-        # println("Using spacecraft model: ", b_class.name)
         println("Area: " * string(config.get_spacecraft_reference_area(b_class)) * " m^2")
-        # b_class = config.Body(Mass, length_SA, height_SA, Area_SA, length_SC, height_SC, Area_SC, Area_tot, 0.0, 0.0, 0.0)
 
     elseif args[:body_shape] == "Blunted Cone" # TODO: Change this to new spacecraft model method
 
@@ -455,7 +443,7 @@ function aerobraking_campaign(args, state)
 
     if Bool(args[:print_res])
         println("ρ: " * string(maximum(config.solution.physical_properties.ρ)) * " kg/m^3")
-        println("heat rate: " * string(maximum(config.solution.performance.heat_rate)) * " W/cm^2")
+        println("heat rate: " * string(maximum(maximum.(config.solution.performance.heat_rate))) * " W/cm^2")
     end
 
     

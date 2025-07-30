@@ -20,3 +20,21 @@ function ic_calculation_rptoae(planet, γ, v, args)
 
     return ra, hp
 end
+
+function ic_calculation_ae(planet, a, e, args)
+    if Bool(args[:drag_passage])
+        h_0 = args[:EI] * 1e3
+    elseif args[:body_shape] == "Blunted Cone"
+        h_0 = args[:EI] * 1e3
+    end
+
+    rp = a * (1 - e) # Periapsis radius
+    ra = a * (1 + e) # Apoapsis radius
+    hp = rp - planet.Rp_e # Periapsis altitude
+
+    if hp < 0
+        println("WARNING AT initial_cond_calc: ALTITUDE PERIAPSIS < 0!")
+    end
+
+    return ra, hp
+end

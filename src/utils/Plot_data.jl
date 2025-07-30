@@ -10,7 +10,6 @@ function plots(state, m, name, args)
     else
         # traj_3D(state, m, name, args)
         traj_2D(state, m, name, args)
-
         performance_plots(state, m, name, args)
     end
 
@@ -228,56 +227,61 @@ function performance_plots(state, m, name, args)
     end
 
     plot_1 = plot([plot_traces_1], layout_1)
-
-    index = findall(x -> x > 0, config.solution.performance.heat_rate)
-    heat_rate = config.solution.performance.heat_rate[index]
-    index_orbit = [1]
-    time_0 = [config.solution.orientation.time[index[1]]]
-
-    for i in range(start=2, step=1, stop=length(index))
-        if index[i] - index[i - 1] > 50
-            append!(index_orbit, i)
-            append!(time_0, config.solution.orientation.time[index[i]])
-        end
-    end
+    colors = ["black", "red", "blue", "green", "orange", "purple"]
     plot_traces_heat_rate = []
+    for k in eachindex(config.solution.performance.heat_rate)
+        index = findall(x -> x > 0, config.solution.performance.heat_rate[k])
+        if isempty(index)
+            index = 1:length(config.solution.performance.heat_rate[k])
+        end
+        heat_rate = config.solution.performance.heat_rate[k][index]
+        index_orbit = [1]
+        time_0 = [config.solution.orientation.time[index[1]]]
 
-    if length(index_orbit) <= 2
-        time = [config.solution.orientation.time[i] for i in index]
-        push!(plot_traces_heat_rate, scatter(x=time, y=heat_rate, mode="lines", line=attr(color="black")))
-    else
-        time_end = 0
-        for i in range(start=1, step=1, stop=length(index_orbit)-1)
-            time = [config.solution.orientation.time[j] - time_0[i] + time_end for j in index[index_orbit[i]:index_orbit[i+1]-1]]
-            heat_rate = [config.solution.performance.heat_rate[j] for j in index[index_orbit[i]:index_orbit[i+1]-1]]
-            max_value = maximum(heat_rate)
-            max_index = findfirst(x -> x == max_value, heat_rate)
+        for i in range(start=2, step=1, stop=length(index))
+            if index[i] - index[i - 1] > 50
+                append!(index_orbit, i)
+                append!(time_0, config.solution.orientation.time[index[i]])
+            end
+        end
 
-            push!(plot_traces_heat_rate, scatter(x=[i] , y=[heat_rate[max_index]], mode="markers", marker=attr(color="black")))
+        if length(index_orbit) <= 2
+            time = [config.solution.orientation.time[i] for i in index]
+            push!(plot_traces_heat_rate, scatter(x=time, y=heat_rate, mode="lines", line=attr(color=colors[k])))
+        else
+            time_end = 0
+            for i in range(start=1, step=1, stop=length(index_orbit)-1)
+                time = [config.solution.orientation.time[j] - time_0[i] + time_end for j in index[index_orbit[i]:index_orbit[i+1]-1]]
+                heat_rate = [config.solution.performance.heat_rate[j] for j in index[index_orbit[i]:index_orbit[i+1]-1]]
+                max_value = maximum(heat_rate)
+                max_index = findfirst(x -> x == max_value, heat_rate)
 
-            time_end = time[end]
+                push!(plot_traces_heat_rate, scatter(x=[i] , y=[heat_rate[max_index]], mode="markers", marker=attr(color=colors[k])))
+
+                time_end = time[end]
+            end
         end
     end
-
     layout_heat_rate = Layout(xaxis_title="Orbits", yaxis_title="Heat rate [W/cm^2]")
     plot_heat_rate = plot([plot_traces_heat_rate...], layout_heat_rate)
 
     plot_traces_heat_load = []
+    for k in eachindex(config.solution.performance.heat_load)
+        if length(index_orbit) <= 2
+            time = [config.solution.orientation.time[i] for i in index]
+            heat_load = [config.solution.performance.heat_load[k][i] for i in index]
+            push!(plot_traces_heat_load, scatter(x=time, y=heat_load, mode="markers", marker=attr(color=colors[k])))
+        else
+            time_end = 0
 
-    if length(index_orbit) <= 2
-        time = [config.solution.orientation.time[i] for i in index]
-        heat_load = [config.solution.performance.heat_load[i] for i in index]
-        push!(plot_traces_heat_load, scatter(x=time, y=heat_load, mode="markers", marker=attr(color="black")))
-    else
-        time_end = 0
+            for i in range(start=1, step=1, stop=length(index_orbit)-1)
+                time = [config.solution.orientation.time[j] - time_0[i] + time_end for j in index[index_orbit[i]:index_orbit[i+1]-1]]
+                heat_load = [config.solution.performance.heat_load[j] for j in index[index_orbit[i]:index_orbit[i+1]-1]]
 
-        for i in range(start=1, step=1, stop=length(index_orbit)-1)
-            time = [config.solution.orientation.time[j] - time_0[i] + time_end for j in index[index_orbit[i]:index_orbit[i+1]-1]]
-            heat_load = [config.solution.performance.heat_load[j] for j in index[index_orbit[i]:index_orbit[i+1]-1]]
+                push!(plot_traces_heat_load, scatter(x=[i] , y=[heat_load[end]], mode="markers", marker=attr(color=colors[k])))
 
-            push!(plot_traces_heat_load, scatter(x=[i] , y=[heat_load[end]], mode="markers", marker=attr(color="black")))
-
-            time_end = time[end]
+                time_end = time[end]
+            end
         end
     end
 

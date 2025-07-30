@@ -5,6 +5,7 @@ include("utils/attitude_control_plans.jl")
 
 import .config
 import .ref_sys
+using BenchmarkTools
 
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
@@ -74,9 +75,10 @@ args = Dict(# Misc Simulation
             :closed_form => 0,                                    # Closed form solution True=1, False=0
 
             # Type of Mission
-            :type_of_mission => "Orbits",                     # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
+            :type_of_mission => "Time",                     # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign', 'Time']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 10,                                 # Number of aerobraking passage
+            :mission_time => 600.0,                                  # Mission time in seconds, used only for Time mission type
 
             # Physical Model
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -221,7 +223,7 @@ args = Dict(# Misc Simulation
             :vex_sim => 0,                                          # Simulate Venus Express Mission   
             :magellan_sim => 0                                     # Simulate Magellan Mission
             )
-# @profview run_analysis(args)
+@benchmark run_analysis(args)
             # using CSV
 # open("time_log.csv", "a")
 # r_exp_list = -5.0:-3.0

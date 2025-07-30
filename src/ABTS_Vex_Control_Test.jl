@@ -5,6 +5,7 @@ include("utils/attitude_control_plans.jl")
 
 import .config
 import .ref_sys
+using BenchmarkTools
 
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
@@ -17,7 +18,7 @@ main_bus = config.Link(root=true,
                         ref_area=2.05*2.8,
                         m=620.0, 
                         gyro=4,
-                        attitude_control_rate=1.0/3.0,
+                        attitude_control_rate=0.3,
                         J_rw=MMatrix{3, 4, Float64}([1.0 0.0 0.0 0.57735; 0.0 1.0 0.0 0.57735; 0.0 0.0 1.0 0.57735]),#0.57735
                         attitude_control_function=lqr_constant_α_β) # Reaction wheel inertia
 
@@ -60,11 +61,11 @@ args = Dict(# Misc Simulation
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
+            :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 0,                                         # Normalize during integration True=1, False=0
+            :normalize => 1,                                         # Normalize during integration True=1, False=0
             :closed_form => 0,                                     # Closed form solution True=1, False=0
 
             # Type of Mission
@@ -134,15 +135,15 @@ args = Dict(# Misc Simulation
             :security_mode => 0,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
-            :flash2_through_integration => 1,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
-            :solar_panel_control_rate => 1.0/3.0,                        # Rate at which the solar panel controller is called
+            :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+            :solar_panel_control_rate => 0.3,                        # Rate at which the solar panel controller is called
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
             :ra_initial_a => 66597e3 + 6.0518e6, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 1e21,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e21,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 125e3, # 186600.0,#176590.0,#188140.0                                 # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_a => 120e3, # 186600.0,#176590.0,#188140.0                                 # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 1590000.0,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 8400.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
@@ -225,22 +226,22 @@ args = Dict(# Misc Simulation
             )
 
 # Calculating time of simulation
-t = @elapsed begin
+# t = @elapsed begin
 
-    # furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-    # furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-    # furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-    # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-    # furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
+#     # furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
+#     # furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
+#     # furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
+#     # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
+#     # furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
             
-    # Run the simulation
-    sol = run_analysis(args)
+#     # Run the simulation
+#     sol = run_analysis(args)
 
-    if Bool(args[:passresults])
-        println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-    end
-end
-
+#     if Bool(args[:passresults])
+#         println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+#     end
+# end
+@benchmark run_analysis(args)
 # t = @elapsed begin
 
 #     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")

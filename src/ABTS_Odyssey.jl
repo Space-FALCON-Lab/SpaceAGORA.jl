@@ -22,9 +22,9 @@ main_bus = config.Link(root=true,
                         ref_area=2.6*1.7,
                         m=391.0, 
                         gyro=4,
-                        # max_torque=1.0,
-                        # max_h=100.0,
-                        attitude_control_rate=1.0/3.0, # 3 Hz
+                        max_torque=2.0,
+                        max_h=200.0,
+                        attitude_control_rate=1.0/10.0, # 3 Hz
                         J_rw=MMatrix{3, 4, Float64}([1.0 0.0 0.0 0.57735; 0.0 1.0 0.0 0.57735; 0.0 0.0 1.0 0.57735]),#0.57735
                         attitude_control_function=lqr_constant_α_β)
 
@@ -65,7 +65,7 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/odyssey_finite_diff_high_EI",                # Directory where to save the results
+            :directory_results => "/workspaces/ABTS.jl/output/odyssey_quat_test",                # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
@@ -78,9 +78,10 @@ args = Dict(# Misc Simulation
             :normalize => 1,                                       # Normalize the integration True=1, False=0
             :closed_form => 0,                                     # Closed form solution True=1, False=0
             # Type of Mission
-            :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
+            :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 3,                                 # Number of aerobraking passage
+            :number_of_orbits => 1,                                 # Number of aerobraking passage
+            :mission_time => 600.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => false,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
 
             # Physical Model
@@ -98,7 +99,7 @@ args = Dict(# Misc Simulation
             
             # Perturbations
             :n_bodies => ["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
-            :srp => 0,                                             # Solar Radiation Pressure True=1, False=0
+            :srp => 1,                                             # Solar Radiation Pressure True=1, False=0
             :gravity_harmonics => 1,                                            # Gravity Spherical harmonics True=1, False=0
             :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/Mars50c.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
@@ -144,7 +145,7 @@ args = Dict(# Misc Simulation
             :solar_panel_control_rate => 1.0/3.0,                        # Rate at which the solar panel controller is called
 
             # Initial Conditions
-            :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
+            :initial_condition_type => 2,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1, Initial Condition a, e = 2
             :ra_initial_a => 28559.615e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
@@ -155,6 +156,12 @@ args = Dict(# Misc Simulation
             :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_step => 1000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :a_initial_a => 16018.0e3,                               # Initial Semi-major axis (m) for for-loop if initial conditions are in a and e
+            :a_initial_b => 116000.0e3,                               # Final Semi-major axis (m) for for-loop if initial conditions are in a and e
+            :a_step => 1000.0e10,                                     # Step Semi-major axis (m) for for-loop if initial conditions are in a and e
+            :e_initial_a => 0.782935,                                       # Initial Eccentricity for for-loop if initial conditions are in a and e 
+            :e_initial_b => 0.79,                                       # Final Eccentricity for for-loop if initial conditions are in a and e
+            :e_step => 0.1,                                         # Step Eccentricity for for-loop if initial conditions are in a and e
             
             :orientation_type => 0,                                   # Initial Condition orientation = 0, Initial Condition orientation and velocity = 1
             :γ_initial_a => -2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
@@ -163,14 +170,15 @@ args = Dict(# Misc Simulation
             :inclination => 93.522,                                   # Inclination Orbit, deg
             :ω => 109.7454,                                              # AOP, deg
             :Ω => 28.1517,                                              # RAAN, deg
-            :EI => 200.0,                                           # Entry Interface, km
-            :AE => 200.0,                                           # Atmospheric Exit, km
+            :ν => 320.0,                                              # True Anomaly, deg, set to negative value to start at apoapsis if type_of_mission is "Time"
+            :EI => 250.0,                                           # Entry Interface, km
+            :AE => 250.0,                                           # Atmospheric Exit, km
             :year => 2001,                                          # Mission year
             :month => 11,                                           # Mission month
             :day => 6,                                             # Mission day
-            :hours => 10,                                           # Mission hour
-            :minutes => 5,                                         # Mission minute
-            :secs => 13.0,                                          # Mission second
+            :hours => 19,                                           # Mission hour
+            :minutes => 0,                                         # Mission minute
+            :secs => 32.0,                                          # Mission second
             
             # Final Conditions
             :final_apoapsis => 3390.0e3+503e3, # 5088116.837416616, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
@@ -220,14 +228,14 @@ args = Dict(# Misc Simulation
             :r_tol => 1e-3,                                         # Relative tolerance for integration
             :a_tol_orbit => 1e-8,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
             :r_tol_orbit => 1e-6,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
-            :a_tol_drag => 1e-10,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
-            :r_tol_drag => 1e-8,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
-            :a_tol_quaternion => 1e-8,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
-            :r_tol_quaternion => 1e-5,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :a_tol_drag => 1e-8,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
+            :r_tol_drag => 1e-6,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
+            :a_tol_quaternion => 1e-9,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :r_tol_quaternion => 1e-7,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :dt_max => 1.0,                                         # Maximum time step for integration, s
-            :dt_max_orbit => 10.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
-            :dt_max_drag => 0.1,                                    # Maximum time step for drag passage
-            :Odyssey_sim => 1                                      # Simulate Odyssey Mission
+            :dt_max_orbit => 30.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
+            :dt_max_drag => 1.0,                                    # Maximum time step for drag passage
+            :Odyssey_sim => 0                                      # Simulate Odyssey Mission
             )
 
 # # Calculating time of simulation
@@ -258,7 +266,7 @@ t = @elapsed begin
         end
 end
 
-        println("COPMUTATIONAL TIME = " * string(t) * " s")
+        println("COMPUTATIONAL TIME = " * string(t) * " s")
 
 # end
         # end

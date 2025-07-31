@@ -10,12 +10,12 @@ function gravity_n_bodies(et::Float64, pos_ii::SVector{3, Float64}, p, n_body)
 
     primary_body_name = p.name
     n_body_name = n_body.name
-
-    if cmp(lowercase(primary_body_name), "mars") == 0 || cmp(lowercase(primary_body_name), "jupiter") == 0 || cmp(lowercase(primary_body_name), "saturn") == 0 || cmp(lowercase(primary_body_name), "uranus") == 0 || cmp(lowercase(primary_body_name), "neptune") == 0 || cmp(lowercase(primary_body_name), "earth") == 0
+    barycenter_bodies = ["mars", "jupiter", "saturn", "uranus", "neptune", "earth"]
+    if !isnothing(findfirst(==(primary_body_name), barycenter_bodies))
         primary_body_name *= "_barycenter"
     end
 
-    if cmp(lowercase(n_body_name), "mars") == 0 || cmp(lowercase(n_body_name), "jupiter") == 0 || cmp(lowercase(n_body_name), "saturn") == 0 || cmp(lowercase(n_body_name), "uranus") == 0 || cmp(lowercase(n_body_name), "neptune") == 0 || cmp(lowercase(n_body_name), "earth") == 0
+    if !isnothing(findfirst(==(n_body_name), barycenter_bodies))
         n_body_name *= "_barycenter"
     end
 
@@ -355,7 +355,7 @@ function acc_gravity_pines!(rVec_cart::SVector{3, Float64}, Clm::Matrix{Float64}
             sum2 = 0.0
             sum3 = 0.0
             sum4 = 0.0
-            @turbo for m = 0:min(l, M)
+            @inbounds for m = 0:min(l, M)
                 j = m + 1
                 C = Clm[i, j]
                 S = Slm[i, j]

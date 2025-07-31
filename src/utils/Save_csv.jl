@@ -1,7 +1,8 @@
 using CSV
 using DataFrames
+using Arrow
 
-function save_csv(filename, args)
+function save_csv(filename, args, temp_name)
 
     touch(filename)
 
@@ -138,5 +139,12 @@ function save_csv(filename, args)
     else
         CSV.write(filename, data_push, append=true)
     end
-
+    if args[:plot] == true
+        # Write to Arrow file for plotting
+        println("Writing data to Arrow file for plotting...")
+        # println(config.solution.orientation.number_of_passage[1])
+        # temp_file = joinpath(temp_name, "data$(uuid4()).arrow")
+        Arrow.append(temp_name, data_push)
+        println("Data written to Arrow file for plotting.")
+    end
 end

@@ -6,6 +6,7 @@ include("utils/attitude_control_plans.jl")
 
 import .config
 import .ref_sys
+using Profile
 # import .SpacecraftModel
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
@@ -67,7 +68,7 @@ args = Dict(# Misc Simulation
             # Type of Mission
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 500,                                 # Number of aerobraking passage
+            :number_of_orbits => 10,                                 # Number of aerobraking passage
             :mission_time => 6000.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => true,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
 
@@ -132,10 +133,10 @@ args = Dict(# Misc Simulation
             
             # Initial Conditions
             :initial_condition_type => 2,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 7000.0e3,                # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_a => 15000.0e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 622.0e3,                                 # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_a => 145.0e3,                                 # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 1590000.0e3,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 1e12,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
@@ -244,6 +245,7 @@ args = Dict(# Misc Simulation
 
 # #     for i in 1:Threads.nthreads() 
 
+# @profview run_analysis(args)
 t = @elapsed begin          
         # Run the simulation
         sol = run_analysis(args)

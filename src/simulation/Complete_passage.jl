@@ -686,18 +686,18 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         ## SAVE RESULTS
         if Bool(config.cnf.results_save)
             # println("Number of passages in complete_passage: ", numberofpassage)
-            if config.solution.simulation.solution_states != 0
-                sol = SVector{config.solution.simulation.solution_states, Real}(t0, timereal.year, timereal.month, timereal.day, timereal.hour, timereal.minute,
+            if config.solution.simulation.solution_states != 0 && length(param) >= 19
+                param[19] .= Real[t0, timereal.year, timereal.month, timereal.day, timereal.hour, timereal.minute,
                             timereal.second, numberofpassage, pos_ii..., vel_ii..., pos_ii_mag, vel_ii_mag, pos_pp..., 
-                            pos_pp_mag, vel_pp..., vel_pp_mag, OE[1], OE[2], OE[3], OE[4], OE[5], OE[6],
+                            pos_pp_mag, vel_pp..., vel_pp_mag, OE[1:6]...,
                             lat, lon, alt, γ_ii, γ_pp, h_ii..., h_pp..., h_ii_mag, h_pp_mag, uD..., uE..., uN..., vN, vE,
                             azi_pp, ρ, T_p, p, wind..., CL, CD, S, mass, T_r, 
                             q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., energy, config.cnf.index_MonteCarlo, Int64(config.cnf.drag_state),
-                            quaternion..., ω..., config.cnf.α, τ_rw..., α..., β..., heat_rate..., heat_load..., rw_h..., rw_τ...)
+                            quaternion..., ω..., config.cnf.α, τ_rw..., α..., β..., heat_rate..., heat_load..., rw_h..., rw_τ...]
                 if !isempty(config.cnf.solution_intermediate) && config.cnf.solution_intermediate[end][1] == t0
-                    config.cnf.solution_intermediate[end][:] .= sol
+                    config.cnf.solution_intermediate[end][:] .= copy(param[19])
                 else
-                    push!(config.cnf.solution_intermediate, sol)
+                    push!(config.cnf.solution_intermediate, copy(param[19]))
                 end
                 # config.cnf.solution_intermediate .= sol
             else
@@ -709,6 +709,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                             q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., energy, config.cnf.index_MonteCarlo, Int64(config.cnf.drag_state),
                             quaternion..., ω..., config.cnf.α, τ_rw..., α..., β..., heat_rate..., heat_load..., rw_h..., rw_τ...]
                 config.solution.simulation.solution_states = length(sol)
+                # param[19] = zeros(Real, config.solution.simulation.solution_states) # Initialize the parameter array for the solution
                 push!(config.cnf.solution_intermediate, sol)
             end
                 # sol = reshape(sol, (1, length(sol)))
@@ -1326,7 +1327,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         range_phase_i = 0
     elseif args[:keplerian] == false && norm(r0) - m.planet.Rp_e <= args[:EI]*1e3
         range_phase_i = 2
-    elseif norm(r0) - m.planet.Rp_e >= args[:AE]*1e3 && OE[6] < π
+    elseif norm(r0) - m.planet.Rp_e >= args[:AE]*1e3 && OE[6] < π - 0.1
+        println("true anomaly: ", OE[6])
         range_phase_i = 3
     end
 
@@ -1340,7 +1342,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         if (index_steps_EOM == 1 || Bool(args[:drag_passage])) && (aerobraking_phase == 1 || aerobraking_phase == 3 || aerobraking_phase == 0)
             continue
-        elseif cmp(lowercase(args[:type_of_mission]), "orbits") == 0 && args[:keplerian] == true && aerobraking_phase == 2  
+        elseif (lowercase(args[:type_of_mission]) == "orbits" || lowercase(args[:type_of_mission]) == "time") && args[:keplerian] == true && aerobraking_phase == 2
             continue
         end
 
@@ -1535,7 +1537,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 # Time initialization
                 initial_time, final_time = time_0 / config.cnf.TU, (time_0 + length_sim) / config.cnf.TU 
                 # Parameter Definition
-                param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage, Bool(args[:orientation_sim]), MVector{3, Float64}(0.0, 0.0, 0.0), MVector{3, Float64}(0.0, 0.0, 0.0), args, ip, MVector{3, Float64}(0.0, 0.0, 0.0))
+                if config.solution.simulation.solution_states != 0
+                    param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage, Bool(args[:orientation_sim]), MVector{3, Float64}(0.0, 0.0, 0.0), MVector{3, Float64}(0.0, 0.0, 0.0), args, ip, MVector{3, Float64}(0.0, 0.0, 0.0), zeros(config.solution.simulation.solution_states))
+                else
+                    param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage, Bool(args[:orientation_sim]), MVector{3, Float64}(0.0, 0.0, 0.0), MVector{3, Float64}(0.0, 0.0, 0.0), args, ip, MVector{3, Float64}(0.0, 0.0, 0.0))
+                end
 
                 # Run simulation
                 # method = TRBDF2(autodiff=false)
@@ -1861,7 +1867,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         println("Fuel Mass is " * string(config.solution.performance.mass[end] - config.get_spacecraft_mass(m.body, dry=true)) * " kg")
 
         # Print Total Time
-        if args[:keplerian] == false
+        if args[:keplerian] == false && save_post_index > 1
             println("Total time is " * string(config.solution.orientation.time[save_post_index-1] - config.solution.orientation.time[save_pre_index]) * " s")
         else
             println("Total time is " * string(config.solution.orientation.time[end] - config.solution.orientation.time[save_pre_index]) * " s")

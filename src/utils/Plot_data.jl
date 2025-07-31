@@ -2,41 +2,45 @@ include("Misc.jl")
 
 using PlotlyJS
 using LaTeXStrings
+using Arrow
 
-function plots(state, m, name, args)
+function plots(state, m, name, args, temp_name)
+    data_table = DataFrame(Arrow.Table(temp_name))
+    println("Data table loaded with $(nrow(data_table)) rows and $(ncol(data_table)) columns.")
+
     if args[:keplerian] == true
-        traj_3D(state, m, name, args)
-        traj_2D(state, m, name, args)
+        traj_3D(state, m, name, args, data_table)
+        traj_2D(state, m, name, args, data_table)
     else
         # traj_3D(state, m, name, args)
-        traj_2D(state, m, name, args)
-        performance_plots(state, m, name, args)
+        traj_2D(state, m, name, args, data_table)
+        performance_plots(state, m, name, args, data_table)
     end
 
     ABM_periapsis(name)
-    ground_track(state, m, name, args)
+    ground_track(state, m, name, args, data_table)
     
     if args[:closed_form] == 1 && args[:body_shape] == "Spacecraft" && !config.cnf.impact && args[:keplerian] == false
-        closed_form_solution_plot(name, m)
-        angle_of_attack_plot(name, args)
+        closed_form_solution_plot(name, m, data_table)
+        angle_of_attack_plot(name, args, data_table)
     end
 
     if args[:type_of_mission] == "Drag Passage"
-        drag_passage_plot(name, args)
+        drag_passage_plot(name, args, data_table)
     end
 
-    attitude_plot(name, args)
-    quaternion_plot(name)
-    angular_velocity_plot(name)
-    wind_relative_attitude_plot(name, args)
+    attitude_plot(name, args, data_table)
+    quaternion_plot(name, data_table)
+    angular_velocity_plot(name, data_table)
+    wind_relative_attitude_plot(name, args, data_table)
     if m.body.n_reaction_wheels > 0
-        reaction_wheel_h_plot(name)
-        reaction_wheel_torque_plot(name)
-        total_reaction_wheel_torque_plot(name)
+        reaction_wheel_h_plot(name, data_table)
+        reaction_wheel_torque_plot(name, data_table)
+        total_reaction_wheel_torque_plot(name, data_table)
     end
 end
 
-function drag_passage_plot(name, args)
+function drag_passage_plot(name, args, data_table)
     alt_idx = findall(x -> x < args[:AE]*1e3, config.solution.orientation.alt)
 
     time = [config.solution.orientation.time[i] for i in alt_idx]
@@ -77,24 +81,24 @@ function drag_passage_plot(name, args)
     
 end
 
-function angle_of_attack_plot(name, args)
-    alt_idx = findall(x -> x < args[:AE]*1e3, config.solution.orientation.alt)
+function angle_of_attack_plot(name, args, data_table)
+    alt_idx = findall(x -> x < args[:AE]*1e3, data_table.alt)
     # println(config.solution.orientation.alt)
     index_orbit = [1]
-    time_0 = [config.solution.orientation.time[alt_idx[1]]]
+    time_0 = [data_table.time[alt_idx[1]]]
 
     for i in range(start=2, step=1, stop=length(alt_idx))
         if alt_idx[i] - alt_idx[i - 1] > 2
             append!(index_orbit, i)
-            append!(time_0, config.solution.orientation.time[alt_idx[i-1]])
+            append!(time_0, data_table.time[alt_idx[i-1]])
         end
     end
 
     append!(index_orbit, length(alt_idx))
 
     if length(index_orbit) <= 2 # If onlly 1 orbit
-        time = [config.solution.orientation.time[i] for i in alt_idx]
-        aoa = [rad2deg(config.solution.physical_properties.α_control[i]) for i in alt_idx]
+        time = [data_table.time[i] for i in alt_idx]
+        aoa = [rad2deg(data_table.aoa_control[i]) for i in alt_idx]
         trace1 = scatter(x=time, y=aoa, mode="lines", line=attr(color="black"))
         layout = Layout(xaxis_title="Time [s]", yaxis_title="α [deg]", template="simple_white", showlegend=false)
         p = plot(trace1, layout)
@@ -106,8 +110,8 @@ function angle_of_attack_plot(name, args)
         plots_aoa_mark = []
 
         for i in range(start=1, step=1, stop=length(index_orbit)-1)
-            time = [config.solution.orientation.time[j] for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
-            aoa = [rad2deg(config.solution.physical_properties.α_control[j]) for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
+            time = [data_table.time[j] for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
+            aoa = [rad2deg(data_table.aoa_control[j]) for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
 
             push!(plots_aoa_mark, scatter(x=[i], y=[aoa[end]], mode="markers", marker=attr(color="red")))
             push!(plots_aoa_line, scatter(x=(time .- time[1])./(time[end] - time[1]) .+ (i-1), y=aoa, mode="lines", line=attr(color="black")))
@@ -124,7 +128,7 @@ function angle_of_attack_plot(name, args)
     savefig(p, name * "_angle_of_attack_profile.pdf", format="pdf")
 end
 
-function closed_form_solution_plot(name, mission)
+function closed_form_solution_plot(name, mission, data_table)
     alt = [item - mission.planet.Rp_e for item in config.solution.orientation.pos_ii_mag]
     alt_idx = findall(x -> x <= (args[:EI])*1e3, alt)
 
@@ -200,27 +204,27 @@ function closed_form_solution_plot(name, mission)
     savefig(p, name * "_closed_form_solution.pdf", format="pdf")
 end
 
-function performance_plots(state, m, name, args)
+function performance_plots(state, m, name, args, data_table)
     if args[:body_shape] == "Spacecraft"
-        plot_traces_1 = scatter(x=[item/(60*60*24) for item in config.solution.orientation.time], y=[item * 1e-6 for item in config.solution.forces.energy], mode="lines", line=attr(color="black"))
+        plot_traces_1 = scatter(x=[item/(60*60*24) for item in data_table.time], y=[item * 1e-6 for item in data_table.energy], mode="lines", line=attr(color="black"))
         layout_1 = Layout(xaxis_title="Time [days]", yaxis_title="Energy [MJ/kg]")
     else
-        index = findall(x -> x < (args[:EI] + 100)*1e3, config.solution.orientation.alt)
-        alt = config.solution.orientation.alt[index]
+        index = findall(x -> x < (args[:EI] + 100)*1e3, data_table.alt)
+        alt = data_table.alt[index]
 
         index_orbit = [1]
-        time_0 = [config.solution.orientation.time[index[1]]]
+        time_0 = [data_table.time[index[1]]]
 
         for i in range(start=2, step=1, stop=length(index))
             if index[i] - index[i - 1] > 50
                 append!(index_orbit, i)
-                append!(time_0, config.solution.orientation.time[index[i]])
+                append!(time_0, data_table.time[index[i]])
             end
         end
         append!(index_orbit, length(index))
 
         if length(index_orbit) <= 2
-            time = [config.solution.orientation.time[i] for i in index]
+            time = [data_table.time[i] for i in index]
             plot_traces_1 = scatter(x=time/(60*60*24), y=alt, mode="markers", marker=attr(color="black"))
             layout_1 = Layout(xaxis_title="Time [days]", yaxis_title="Altitude [km]")
         end
@@ -229,30 +233,30 @@ function performance_plots(state, m, name, args)
     plot_1 = plot([plot_traces_1], layout_1)
     colors = ["black", "red", "blue", "green", "orange", "purple"]
     plot_traces_heat_rate = []
-    for k in eachindex(config.solution.performance.heat_rate)
-        index = findall(x -> x > 0, config.solution.performance.heat_rate[k])
+    for k in 1:length(config.model.body.links)
+        index = findall(x -> x > 0, data_table[!, Symbol("link_$(k)_heat_rate")])
         if isempty(index)
-            index = 1:length(config.solution.performance.heat_rate[k])
+            index = 1:length(data_table[!, Symbol("link_$(k)_heat_rate")])
         end
-        heat_rate = config.solution.performance.heat_rate[k][index]
+        heat_rate = data_table[!, Symbol("link_$(k)_heat_rate")][index]
         index_orbit = [1]
-        time_0 = [config.solution.orientation.time[index[1]]]
+        time_0 = [data_table.time[index[1]]]
 
         for i in range(start=2, step=1, stop=length(index))
             if index[i] - index[i - 1] > 50
                 append!(index_orbit, i)
-                append!(time_0, config.solution.orientation.time[index[i]])
+                append!(time_0, data_table.time[index[i]])
             end
         end
 
         if length(index_orbit) <= 2
-            time = [config.solution.orientation.time[i] for i in index]
+            time = [data_table.time[i] for i in index]
             push!(plot_traces_heat_rate, scatter(x=time, y=heat_rate, mode="lines", line=attr(color=colors[k])))
         else
             time_end = 0
             for i in range(start=1, step=1, stop=length(index_orbit)-1)
-                time = [config.solution.orientation.time[j] - time_0[i] + time_end for j in index[index_orbit[i]:index_orbit[i+1]-1]]
-                heat_rate = [config.solution.performance.heat_rate[j] for j in index[index_orbit[i]:index_orbit[i+1]-1]]
+                time = [data_table.time[j] - time_0[i] + time_end for j in index[index_orbit[i]:index_orbit[i+1]-1]]
+                heat_rate = [data_table.heat_rate[j] for j in index[index_orbit[i]:index_orbit[i+1]-1]]
                 max_value = maximum(heat_rate)
                 max_index = findfirst(x -> x == max_value, heat_rate)
 
@@ -266,17 +270,17 @@ function performance_plots(state, m, name, args)
     plot_heat_rate = plot([plot_traces_heat_rate...], layout_heat_rate)
 
     plot_traces_heat_load = []
-    for k in eachindex(config.solution.performance.heat_load)
+    for k in 1:length(config.model.body.links)
         if length(index_orbit) <= 2
-            time = [config.solution.orientation.time[i] for i in index]
-            heat_load = [config.solution.performance.heat_load[k][i] for i in index]
+            time = [data_table.time[i] for i in index]
+            heat_load = [data_table[!, Symbol("link_$(k)_heat_load")][i] for i in index]
             push!(plot_traces_heat_load, scatter(x=time, y=heat_load, mode="markers", marker=attr(color=colors[k])))
         else
             time_end = 0
 
             for i in range(start=1, step=1, stop=length(index_orbit)-1)
-                time = [config.solution.orientation.time[j] - time_0[i] + time_end for j in index[index_orbit[i]:index_orbit[i+1]-1]]
-                heat_load = [config.solution.performance.heat_load[j] for j in index[index_orbit[i]:index_orbit[i+1]-1]]
+                time = [data_table.time[j] - time_0[i] + time_end for j in index[index_orbit[i]:index_orbit[i+1]-1]]
+                heat_load = [data_table[!, Symbol("link_$(k)_heat_load")][j] for j in index[index_orbit[i]:index_orbit[i+1]-1]]
 
                 push!(plot_traces_heat_load, scatter(x=[i] , y=[heat_load[end]], mode="markers", marker=attr(color=colors[k])))
 
@@ -289,25 +293,25 @@ function performance_plots(state, m, name, args)
     plot_heat_load = plot([plot_traces_heat_load...], layout_heat_load)
 
     if args[:body_shape] == "Spacecraft"
-        plot_traces_4 = scatter(x=[item/(60*60*24) for item in config.solution.orientation.time], y=[item - config.get_spacecraft_mass(m.body, m.body.roots[1], dry=true) for item in config.solution.performance.mass], mode="lines", line=attr(color="black"))
+        plot_traces_4 = scatter(x=[item/(60*60*24) for item in data_table.time], y=[item - config.get_spacecraft_mass(m.body, m.body.roots[1], dry=true) for item in data_table.mass], mode="lines", line=attr(color="black"))
         layout_4 = Layout(xaxis_title="Time [days]", yaxis_title="Mass [kg]")
     else
-        index = findall(x -> x > 0, config.solution.performance.q)
-        q = config.solution.performance.q[index]
+        index = findall(x -> x > 0, data_table.q)
+        q = data_table.q[index]
         index_orbit = [1]
-        time_0 = [config.solution.orientation.time[index[1]]]
+        time_0 = [data_table.time[index[1]]]
 
         for i in range(start=2, step=1, stop=length(index))
             if index[i] - index[i - 1] > 50
                 append!(index_orbit, i-1)
-                append!(time_0, config.solution.orientation.time[index[i-1]])
+                append!(time_0, data_table.time[index[i-1]])
             end
         end
 
         append!(index_orbit, length(index))
 
         if length(index_orbit) <= 2
-            time = [config.solution.orientation.time[i] for i in index]
+            time = [data_table.time[i] for i in index]
             plot_traces_4 = scatter(x=time/(60*60*24), y=q, mode="markers", marker=attr(color="black"))
             layout_4 = Layout(xaxis_title="Time [days]", yaxis_title="Dynamic pressure [Pa]")
         end
@@ -322,13 +326,15 @@ function performance_plots(state, m, name, args)
     savefig(p, name * "_performance.pdf", format="pdf")
 end
 
-function traj_2D(state, m, name, args)
-    x = [item*1e-3 for item in config.solution.orientation.pos_ii[1]]
-    y = [item*1e-3 for item in config.solution.orientation.pos_ii[2]]
-    z = [item*1e-3 for item in config.solution.orientation.pos_ii[3]]
-    i = config.solution.orientation.oe[3][1]
-    Ω = config.solution.orientation.oe[4][1]
-    ω = config.solution.orientation.oe[5][1]
+function traj_2D(state, m, name, args, data_table)
+    x = data_table.pos_ii_1 * 1e-3
+    y = data_table.pos_ii_2 * 1e-3
+    z = data_table.pos_ii_3 * 1e-3
+    # y = [item*1e-3 for item in config.solution.orientation.pos_ii[2]]
+    # z = [item*1e-3 for item in config.solution.orientation.pos_ii[3]]
+    i = data_table.i[1]
+    Ω = data_table.OMEGA[1]
+    ω = data_table.omega[1]
 
     T_ijk = [cos(Ω)*cos(ω)-sin(Ω)*sin(ω)*cos(i) sin(Ω)*cos(ω)+cos(Ω)*sin(ω)*cos(i) sin(ω)*sin(i);
              -cos(Ω)*sin(ω)-sin(Ω)*cos(ω)*cos(i) -sin(Ω)*sin(ω)+cos(Ω)*cos(ω)*cos(i) cos(ω)*sin(i);
@@ -357,11 +363,13 @@ function traj_2D(state, m, name, args)
     savefig(p, name * "_traj2D.pdf", width=800, height=800, format="pdf")
 end
 
-function traj_3D(state, m, name, args)
+function traj_3D(state, m, name, args, data_table)
 
-    x = [item*1e-3 for item in config.solution.orientation.pos_ii[1]]
-    y = [item*1e-3 for item in config.solution.orientation.pos_ii[2]]
-    z = [item*1e-3 for item in config.solution.orientation.pos_ii[3]]
+    x = data_table.pos_ii_1 * 1e-3
+    y = data_table.pos_ii_2 * 1e-3
+    z = data_table.pos_ii_3 * 1e-3
+    # y = [item*1e-3 for item in config.solution.orientation.pos_ii[2]]
+    # z = [item*1e-3 for item in config.solution.orientation.pos_ii[3]]
 
     planet_radius = m.planet.Rp_e*1e-3
     x_min = min(minimum(x), -(planet_radius + 250))
@@ -393,13 +401,13 @@ function traj_3D(state, m, name, args)
     sphere2 = surface(x=xs, y=ys, z=zs, opacity=0.2, showscale=false, surfacecolor=@. xs^2 + ys^2 + zs^2 - 100) # "rgba(255, 255, 0, 0.25)")
 
     index = [1]
-    for i in range(start=1, step=1, stop=length(config.solution.orientation.number_of_passage)-1)
-        if config.solution.orientation.number_of_passage[i+1] - config.solution.orientation.number_of_passage[i] > 0
+    for i in range(start=1, step=1, stop=length(data_table.number_of_passage)-1)
+        if data_table.number_of_passage[i+1] - data_table.number_of_passage[i] > 0
             append!(index, i)
         end
     end
 
-    append!(index, length(config.solution.orientation.number_of_passage))
+    append!(index, length(data_table.number_of_passage))
 
     x_lables = range(start=axis_min, step=5000, stop=axis_max)
     y_labels = range(start=axis_min, step=5000, stop=axis_max)
@@ -407,7 +415,7 @@ function traj_3D(state, m, name, args)
 
     traj_3D_traces = []
     for i in range(start=1, step=1, stop=length(index)-1)
-        if config.solution.orientation.number_of_passage[end] == 1 
+        if data_table.number_of_passage[end] == 1 
             x_s = x
             y_s = y
             z_s = z
@@ -461,21 +469,24 @@ function ABM_periapsis(name)
 
 end
 
-function ground_track(state, m, name, args)
+function ground_track(state, m, name, args, data_table)
     """
         Plot the ground track of the spacecraft during the drag passages
     """
-
-    if config.solution.orientation.number_of_passage[end] == 1
-        lats_traces = scatter(x=config.solution.orientation.time, y=rad2deg.(config.solution.orientation.lat), mode="lines", line=attr(color="black"))
-        lons_traces = scatter(x=config.solution.orientation.time, y=rad2deg.(config.solution.orientation.lon), mode="lines", line=attr(color="black"))
+    time = data_table.time
+    xaxis_title = ""
+    if config.solution.orientation.number_of_passage[end] == 1 || args[:type_of_mission] == "Time"
+        lats_traces = scatter(x=time, y=rad2deg.(data_table.lat), mode="lines", line=attr(color="black"))
+        lons_traces = scatter(x=time, y=rad2deg.(data_table.lon), mode="lines", line=attr(color="black"))
+        xaxis_title = "Time [s]"
     else
         lats_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.latitude_periapsis, mode="lines", line=attr(color="black"))
         lons_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.longitude_periapsis, mode="lines", line=attr(color="black"))
+        xaxis_title = "Orbit number"
     end
 
-    lats_plot = plot(lats_traces, Layout(xaxis_title="Orbit number", yaxis_title="Latitude [deg]", template="simple_white", showlegend=false))
-    lons_plot = plot(lons_traces, Layout(xaxis_title="Orbit number", yaxis_title="Longitude [deg]", template="simple_white", showlegend=false))
+    lats_plot = plot(lats_traces, Layout(xaxis_title=xaxis_title, yaxis_title="Latitude [deg]", template="simple_white", showlegend=false))
+    lons_plot = plot(lons_traces, Layout(xaxis_title=xaxis_title, yaxis_title="Longitude [deg]", template="simple_white", showlegend=false))
     p = [lats_plot lons_plot]
     relayout!(p, width=1200, height=600, template="simple_white", showlegend=false)
     
@@ -484,16 +495,19 @@ function ground_track(state, m, name, args)
 
 end
 
-function attitude_plot(name, args)
+function attitude_plot(name, args, data_table)
     """
         Plot the attitude of the spacecraft during the drag passages
     """
 
-    time = config.solution.orientation.time
-    quaternions = config.solution.orientation.quaternion
+    time = data_table.time
+    q1 = data_table.q_1
+    q2 = data_table.q_2
+    q3 = data_table.q_3
+    q4 = data_table.q_4
     euler_angles = zeros(3, length(time))
-    for i in 1:length(quaternions[1])
-        quaternion = [quaternions[1][i], quaternions[2][i], quaternions[3][i], quaternions[4][i]]
+    @inbounds for i in 1:length(q1)
+        quaternion = [q1[i], q2[i], q3[i], q4[i]]
         euler_angles[:, i] = qToEulerAngles(quaternion)
     end
     r_traces = scatter(x=time/60, y=rad2deg.(euler_angles[1,:]), mode="lines", line=attr(color="red"), name="Roll")
@@ -505,57 +519,64 @@ function attitude_plot(name, args)
     savefig(p, name * "_attitude.pdf", format="pdf")
 end
 
-function quaternion_plot(name)
+function quaternion_plot(name, data_table)
     """
         Plot the quaternion of the spacecraft during the drag passages
     """
 
-    time = config.solution.orientation.time
-    quaternions = config.solution.orientation.quaternion
-    q1_traces = scatter(x=time/60, y=quaternions[1], mode="lines", line=attr(color="red"), name="q1")
-    q2_traces = scatter(x=time/60, y=quaternions[2], mode="lines", line=attr(color="green"), name="q2")
-    q3_traces = scatter(x=time/60, y=quaternions[3], mode="lines", line=attr(color="blue"), name="q3")
-    q4_traces = scatter(x=time/60, y=quaternions[4], mode="lines", line=attr(color="orange"), name="q4")
+    time = data_table.time
+    # quaternions = data_table.quaternion
+    q1_traces = scatter(x=time/60, y=data_table.q_1, mode="lines", line=attr(color="red"), name="q1")
+    q2_traces = scatter(x=time/60, y=data_table.q_2, mode="lines", line=attr(color="green"), name="q2")
+    q3_traces = scatter(x=time/60, y=data_table.q_3, mode="lines", line=attr(color="blue"), name="q3")
+    q4_traces = scatter(x=time/60, y=data_table.q_4, mode="lines", line=attr(color="orange"), name="q4")
     layout = Layout(xaxis_title="Time [min]", yaxis_title="Quaternion", template="simple_white", showlegend=true)
     p = plot([q1_traces, q2_traces, q3_traces, q4_traces], layout)
     display(p)
     savefig(p, name * "_quaternion.pdf", format="pdf")
 end
 
-function angular_velocity_plot(name)
+function angular_velocity_plot(name, data_table)
     """
         Plot the angular velocity of the spacecraft during the drag passages
     """
 
-    time = config.solution.orientation.time
-    angular_velocity = config.solution.orientation.ω
-    ω1_traces = scatter(x=time/60, y=rad2deg.(angular_velocity[1])*60, mode="lines", line=attr(color="red"), name="ω1")
-    ω2_traces = scatter(x=time/60, y=rad2deg.(angular_velocity[2])*60, mode="lines", line=attr(color="green"), name="ω2")
-    ω3_traces = scatter(x=time/60, y=rad2deg.(angular_velocity[3])*60, mode="lines", line=attr(color="blue"), name="ω3")
+    time = data_table.time
+    # angular_velocity = data_table.ω
+    ω1_traces = scatter(x=time/60, y=rad2deg.(data_table.omega_1)*60, mode="lines", line=attr(color="red"), name="ω1")
+    ω2_traces = scatter(x=time/60, y=rad2deg.(data_table.omega_2)*60, mode="lines", line=attr(color="green"), name="ω2")
+    ω3_traces = scatter(x=time/60, y=rad2deg.(data_table.omega_3)*60, mode="lines", line=attr(color="blue"), name="ω3")
     layout = Layout(xaxis_title="Time [min]", yaxis_title="Angular Velocity (deg/min)", template="simple_white", showlegend=true)
     p = plot([ω1_traces, ω2_traces, ω3_traces], layout)
     display(p)
     savefig(p, name * "_angular_velocity.pdf", format="pdf")
 end
 
-function wind_relative_attitude_plot(name, args)
+function wind_relative_attitude_plot(name, args, data_table)
     """
         Plot the angle of attack and sideslip angles
     """
-    time = config.solution.orientation.time
-    α = config.solution.physical_properties.α
-    β = config.solution.physical_properties.β
+    time = data_table.time
+    # α = []
+    # β = []
+    # for i in 1:config.model.body.number_of_links
+    #     if !haskey(data_table, Symbol("link_$(i)_aoa")) || !haskey(data_table, Symbol("link_$(i)_sideslip"))
+    #         error("Data table does not contain link $i angle of attack or sideslip data.")
+    #     end
+    #     push!(α, data_table[:, Symbol("link_$(i)_aoa")])
+    #     push!(β, data_table[:, Symbol("link_$(i)_sideslip")])
+    # end
     α_traces = []
     β_traces = []
     α_control_traces = []
     color_choices = ["red", "green", "blue", "orange", "purple", "cyan", "magenta", "yellow", "black"]
-    for i in eachindex(α)
-        push!(α_traces, scatter(x=time, y=rad2deg.(α[i]), mode="lines", line=attr(color=color_choices[i%length(color_choices)]), name="α$i"))
-        push!(β_traces, scatter(x=time, y=rad2deg.(β[i]), mode="lines", line=attr(color=color_choices[i%length(color_choices)], dash="dash"), name="β$i"))
+    for i in eachindex(config.model.body.links)
+        push!(α_traces, scatter(x=time, y=rad2deg.(data_table[:, Symbol("link_$(i)_aoa")]), mode="lines", line=attr(color=color_choices[i%length(color_choices) + 1]), name="α$i"))
+        push!(β_traces, scatter(x=time, y=rad2deg.(data_table[:, Symbol("link_$(i)_sideslip")]), mode="lines", line=attr(color=color_choices[i%length(color_choices) + 1], dash="dash"), name="β$i"))
     end
     
     if args[:control_mode] != 0
-        push!(α_control_traces, scatter(x=time, y=rad2deg.(config.solution.physical_properties.α_control), mode="lines", line=attr(color="black", dash="dot"), name="α_control"))
+        push!(α_control_traces, scatter(x=time, y=rad2deg.(data_table.aoa_control), mode="lines", line=attr(color="black", dash="dot"), name="α_control"))
     end
     layout = Layout(xaxis_title="Time [sec]", yaxis_title="Angle (deg)", template="simple_white", showlegend=true)
     p = plot([α_traces..., β_traces..., α_control_traces...], layout)
@@ -563,7 +584,7 @@ function wind_relative_attitude_plot(name, args)
     savefig(p, name * "_alpha_beta.pdf", format="pdf")
 end
 
-function reaction_wheel_h_plot(name)
+function reaction_wheel_h_plot(name, data_table)
     """
         Plot the reaction wheel angular momentum
     """
@@ -581,12 +602,12 @@ function reaction_wheel_h_plot(name)
     savefig(p, name * "_reaction_wheel_h.pdf", format="pdf")
 end
 
-function total_reaction_wheel_torque_plot(name)
+function total_reaction_wheel_torque_plot(name, data_table)
     """
         Plot the reaction wheel torque
     """
-    time = config.solution.orientation.time
-    τ = config.solution.physical_properties.τ_rw
+    time = data_table.time
+    τ = data_table[:, [:rw_torque_ii_1, :rw_torque_ii_2, :rw_torque_ii_3]]
     colors = ["red", "green", "blue"]
     τ_traces = []
     for i in eachindex(τ)
@@ -598,7 +619,7 @@ function total_reaction_wheel_torque_plot(name)
     savefig(p, name * "_reaction_wheel_torque.pdf", format="pdf")
 end
 
-function reaction_wheel_torque_plot(name)
+function reaction_wheel_torque_plot(name, data_table)
     """
         Plot the reaction wheel angular momentum
     """

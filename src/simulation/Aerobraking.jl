@@ -10,7 +10,7 @@ sys = pyimport("sys")
 
 os = pyimport("os")
 
-function aerobraking(ip, m, args, gram, gram_atmosphere, filename)
+function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name)
 
     initial_state = m.initial_condition
     FinalState = true
@@ -104,7 +104,7 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename)
             println("--> PASSAGE #" * string(numberofpassage) * " COMPLETE")
         end
 
-        if args[:number_of_orbits] == numberofpassage
+        if lowercase(args[:type_of_mission]) != "time" && args[:number_of_orbits] == numberofpassage
             continue_campaign = false
         end
 
@@ -125,7 +125,7 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename)
 
         if args[:results] == 1
             # Save the current passage results
-            save_csv(filename, args)
+            save_csv(filename, args, temp_name)
             # Clear the config data buffer
             # clean_results()
         end

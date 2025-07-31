@@ -10,6 +10,7 @@ using SPICE
 using StaticArrays
 using AstroTime
 using PythonCall
+using Arrow
 
 function aerobraking_campaign(args, state)
     save_res = args[:results]
@@ -432,15 +433,29 @@ function aerobraking_campaign(args, state)
         # save_csv(filename, args)
     end
 
+    # Initialize the arrow writer for plotting
+    arrow_writer = nothing
+    temp_name = nothing
+    if args[:plot] == true
+        temp_name = tempname()
+        println("Temporary directory created for plotting: " * temp_name)
+        arrow_writer = open(Arrow.Writer, temp_name)
+    end
+
     ##########################################################
     # RUN SIMULATION
     config.cnf.heat_rate_limit = args[:max_heat_rate]
     t_el = @elapsed begin
-        aerobraking(ip, m, args, gram, gram_atmosphere, filename)
+        aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name)
     end
     ##########################################################
 
-
+    # Finalize the arrow writer if plotting is enabled
+    if args[:plot] == true
+        close(arrow_writer)
+        println("Arrow writer closed. Data saved to: " * temp_name)
+    end
+    # Print final results
     if Bool(args[:print_res])
         println("ρ: " * string(maximum(config.solution.physical_properties.ρ)) * " kg/m^3")
         println("heat rate: " * string(maximum(maximum.(config.solution.performance.heat_rate))) * " W/cm^2")
@@ -453,6 +468,8 @@ function aerobraking_campaign(args, state)
     end
 
     if args[:plot] == true
-        plots(state, m, name, args)
+        plots(state, m, name, args, temp_name)
     end
+
+    # rm(temp_name, recursive=true, force=true) # Remove the temporary directory used for plotting
 end

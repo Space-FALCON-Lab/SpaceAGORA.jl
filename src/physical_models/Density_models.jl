@@ -213,20 +213,27 @@ function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Boo
             rho, T, wind = density_polyfit(h, p)
         end
     elseif config.cnf.drag_state == true || args[:keplerian] == true
-        position = gram.Position()
-        position.height = h * 1e-3
-        position.latitude = rad2deg(lat)
-        position.longitude = rad2deg(lon)
+        if h > 2000.0e3
 
-        position.elapsedTime = el_time # Time since start in s
-        atmosphere.setPosition(position)
-        atmosphere.update()
-        atmos = atmosphere.getAtmosphereState()
-        rho = pyconvert(Float64, atmos.density)
-        T = pyconvert(Float64, atmos.temperature)
-        wind = SVector{3, Float64}([pyconvert(Float64, montecarlo ? atmos.perturbedEWWind : atmos.ewWind),
-                pyconvert(Float64, montecarlo ? atmos.perturbedNSWind : atmos.nsWind),
-                pyconvert(Float64, atmos.verticalWind)])
+            rho = 0.0
+            T = temperature_linear(h, p)
+            wind = [0.0, 0.0, 0.0]
+        else
+            position = gram.Position()
+            position.height = h * 1e-3
+            position.latitude = rad2deg(lat)
+            position.longitude = rad2deg(lon)
+
+            position.elapsedTime = el_time # Time since start in s
+            atmosphere.setPosition(position)
+            atmosphere.update()
+            atmos = atmosphere.getAtmosphereState()
+            rho = pyconvert(Float64, atmos.density)
+            T = pyconvert(Float64, atmos.temperature)
+            wind = SVector{3, Float64}([pyconvert(Float64, montecarlo ? atmos.perturbedEWWind : atmos.ewWind),
+                    pyconvert(Float64, montecarlo ? atmos.perturbedNSWind : atmos.nsWind),
+                    pyconvert(Float64, atmos.verticalWind)])
+        end
     end
 
     return rho, T, wind

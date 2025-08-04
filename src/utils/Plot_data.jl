@@ -29,14 +29,18 @@ function plots(state, m, name, args, temp_name)
         drag_passage_plot(name, args, data_table)
     end
 
-    attitude_plot(name, args, data_table)
-    quaternion_plot(name, data_table)
-    angular_velocity_plot(name, data_table)
-    wind_relative_attitude_plot(name, args, data_table)
-    if m.body.n_reaction_wheels > 0
-        reaction_wheel_h_plot(name, data_table)
-        reaction_wheel_torque_plot(name, data_table)
-        total_reaction_wheel_torque_plot(name, data_table)
+    if args[:orientation_sim]
+        attitude_plot(name, args, data_table)
+        quaternion_plot(name, data_table)
+        angular_velocity_plot(name, data_table)
+        wind_relative_attitude_plot(name, args, data_table)
+        torque_plot(name, data_table)
+        inertia_plot(name, data_table)
+        if m.body.n_reaction_wheels > 0
+            reaction_wheel_h_plot(name, data_table)
+            reaction_wheel_torque_plot(name, data_table)
+            total_reaction_wheel_torque_plot(name, data_table)
+        end
     end
 end
 
@@ -623,8 +627,14 @@ function reaction_wheel_torque_plot(name, data_table)
     """
         Plot the reaction wheel angular momentum
     """
-    time = config.solution.orientation.time
-    τ = config.solution.physical_properties.rw_τ
+    time = data_table.time
+    τ = zeros(config.model.body.number_of_reaction_wheels, length(time))
+    for i in 1:config.model.body.number_of_reaction_wheels
+        if !haskey(data_table, Symbol("rw_tau_ii_$(i)"))
+            error("Data table does not contain rw_tau_ii_$(i) data.")
+        end
+        τ[i, :] = data_table[!, Symbol("rw_tau_ii_$(i)")]
+    end
     color_choices = ["red", "green", "blue", "orange", "purple", "cyan", "magenta", "yellow", "black"]
     τ_traces = []
     
@@ -635,4 +645,57 @@ function reaction_wheel_torque_plot(name, data_table)
     p = plot([τ_traces...], layout)
     display(p)
     savefig(p, name * "_reaction_wheel_tau.pdf", format="pdf")
+end
+
+function torque_plot(name, data_table)
+    """
+        Plot the total torque
+    """
+    time = data_table.time
+    τ1 = data_table.tau_ii_1
+    τ2 = data_table.tau_ii_2
+    τ3 = data_table.tau_ii_3
+    τ = [τ1, τ2, τ3]
+    colors = ["red", "green", "blue"]
+    τ_traces = []
+    for i in eachindex(τ)
+        push!(τ_traces, scatter(x=time, y=τ[i], mode="lines", line=attr(color=colors[i]), name="τ$i"))
+    end
+    layout = Layout(xaxis_title="Time [sec]", yaxis_title="Torque (N⋅m)", template="simple_white", showlegend=true)
+    p = plot([τ_traces...], layout)
+    display(p)
+    savefig(p, name * "_total_torque.pdf", format="pdf")
+end
+
+function inertia_plot(name, data_table)
+    """
+        Plot the inertia tensor
+    """
+    time = data_table.time
+    I1 = data_table.J_ii_1
+    I2 = data_table.J_ii_2
+    I3 = data_table.J_ii_3
+    I4 = data_table.J_ii_4
+    I5 = data_table.J_ii_5
+    I6 = data_table.J_ii_6
+    I7 = data_table.J_ii_7
+    I8 = data_table.J_ii_8
+    I9 = data_table.J_ii_9
+
+    traces = [
+        scatter(x=time, y=I1, mode="lines", line=attr(color="red"), name="I1"),
+        scatter(x=time, y=I2, mode="lines", line=attr(color="green"), name="I2"),
+        scatter(x=time, y=I3, mode="lines", line=attr(color="blue"), name="I3"),
+        scatter(x=time, y=I4, mode="lines", line=attr(color="orange"), name="I4"),
+        scatter(x=time, y=I5, mode="lines", line=attr(color="purple"), name="I5"),
+        scatter(x=time, y=I6, mode="lines", line=attr(color="cyan"), name="I6"),
+        scatter(x=time, y=I7, mode="lines", line=attr(color="magenta"), name="I7"),
+        scatter(x=time, y=I8, mode="lines", line=attr(color="yellow"), name="I8"),
+        scatter(x=time, y=I9, mode="lines", line=attr(color="black"), name="I9")
+    ]
+
+    layout = Layout(xaxis_title="Time [sec]", yaxis_title="Inertia Tensor (kg⋅m²)", template="simple_white", showlegend=true)
+    p = plot(traces, layout)
+    display(p)
+    savefig(p, name * "_inertia_tensor.pdf", format="pdf")
 end

@@ -319,5 +319,9 @@ function Ξ(q::SVector{4, Float64})
     # Returns
     - A StaticMatrix{4, 3, Float64} containing the quaternion kinematics matrix.
     """
-    return SMatrix{4, 3, Float64}([q[4]*I(3) + hat(q[1:3]); -q[1:3]'])
+    # return SMatrix{4, 3, Float64}([q[4]*I(3) + hat(q[1:3]); -q[1:3]'])
+    return SMatrix{4, 3, Float64}([q[4] -q[3] q[2];
+                                    q[3] q[4] -q[1];
+                                    -q[2] q[1] q[4];
+                                    -q[1] -q[2] -q[3]])
 end

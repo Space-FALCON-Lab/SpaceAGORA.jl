@@ -11,13 +11,27 @@ using Profile
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
 # Add bodies to the spacecraft model
+p = SVector{3, Float64}([0.1, 0.2, -0.3])
+q = 1/(1+norm(p)^2)*SVector{4, Float64}([2*p; 1-norm(p)^2])
+skew = (ω) -> SMatrix{3, 3, Float64}([0 -ω[3] ω[2];
+                                   ω[3] 0 -ω[1];
+                                   -ω[2] ω[1] 0])
+dcm = (q[4]^2 - norm(q[1:3])^2)*I(3) - 2*q[4]*skew(q[1:3]) + 2*q[1:3]*q[1:3]' # DCM from quaternion
+ω_body = SVector{3, Float64}([0.001, -0.01, 0.03]) # Reference angular velocity
+ω_ref = dcm'*ω_body
+h = sqrt(30.0/7.0)
+w = sqrt(6.0)
+d = sqrt(66.0/7.0)
+# q = SVector{4, Float64}([0.0, 0.0, sin(pi/4), cos(pi/4)]) # Quaternion for the main bus
 main_bus = config.Link(root=true, 
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), 
-                        q=SVector{4, Float64}([0, 0, 0, 1]),
+                        q=SVector{4, Float64}(q),
+                        # q=SVector{4, Float64}([0, 0, 0, 1]),
                         ṙ=SVector{3, Float64}([0,0,0]), 
-                        dims=SVector{3, Float64}([2.2,2.6,1.7]), 
+                        ω=SVector{3, Float64}(ω_ref),
+                        dims=SVector{3, Float64}([2.000001, 2.36643,2.9664]), 
                         ref_area=2.6*1.7,
-                        m=700.0, 
+                        m=750.0, 
                         gyro=0)
 
 # L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.6/2 - 3.89/4, 0.0), 
@@ -35,7 +49,9 @@ main_bus = config.Link(root=true,
 #                         m=10.0, 
 #                         gyro=0)
 
-config.add_body!(spacecraft, main_bus, prop_mass=50.0)
+config.add_body!(spacecraft, main_bus, prop_mass=1.0)
+config.set_inertia_tensor!(spacecraft, main_bus, 
+                        SMatrix{3, 3, Float64}(Diagonal([900.0, 800.0, 600.0])))
 # config.add_body!(spacecraft, L_panel)
 # config.add_body!(spacecraft, R_panel)
 
@@ -53,7 +69,7 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/earth_rotation_testing",                # Directory where to save the results
+            :directory_results => "/workspaces/ABTS.jl/output/basilisk_comparison",                # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
@@ -75,9 +91,9 @@ args = Dict(# Misc Simulation
             # Physical Model
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
-            :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
+            :gravity_model => "Inverse Squared",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
-            :topography_model => "Spherical Harmonics",                             # choices=['None' , 'Spherical Harmonics']
+            :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
             :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 90,                                      # Maximum order of the topography harmonics (Defined in the file)
@@ -86,9 +102,9 @@ args = Dict(# Misc Simulation
             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
             
             # Perturbations
-            :n_bodies => ["Sun", "Moon"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
-            :srp => 1,                                             # Solar Radiation Pressure True=1, False=0
-            :gravity_harmonics => 1,                                            # Gravity Spherical harmonics True=1, False=0
+            :n_bodies => [],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
+            :srp => 0,                                             # Solar Radiation Pressure True=1, False=0
+            :gravity_harmonics => 0,                                            # Gravity Spherical harmonics True=1, False=0
             :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
@@ -144,7 +160,7 @@ args = Dict(# Misc Simulation
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_step => 1000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :a_initial_a => 10000.0e3,                # Initial Semi-major axis for for-loop in m
-            :a_initial_b => 50000e3,                               # Final Semi-major axis for for-loop in m
+            :a_initial_b => 10000e3,                               # Final Semi-major axis for for-loop in m
             :a_step => 5e10,                                       # Step Semi-major axis for for-loop in m
             :e_initial_a => 0.1,                                   # Initial Eccentricity for for-loop in m
             :e_initial_b => 0.11,                                   # Final Eccentricity for for-loop in m
@@ -156,7 +172,7 @@ args = Dict(# Misc Simulation
             :γ_step => 100,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
             :inclination => 33.3,                                   # Inclination Orbit, deg
             :ω => 347.8,                                              # AOP, deg
-            :Ω => 48.7,                                              # RAAN, deg
+            :Ω => 48.2,                                              # RAAN, deg
             :ν => 85.3,                                               # True Anomaly, deg
             :EI => 160.0,                                           # Entry Interface, km
             :AE => 160.0,                                           # Atmospheric Exit, km
@@ -213,14 +229,14 @@ args = Dict(# Misc Simulation
 
             :a_tol => 1e-5,                                         # Absolute tolerance for integration
             :r_tol => 1e-3,                                         # Relative tolerance for integration
-            :a_tol_orbit => 1e-8,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
-            :r_tol_orbit => 1e-6,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :a_tol_orbit => 1e-10,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :r_tol_orbit => 1e-8,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
             :a_tol_drag => 1e-8,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
             :r_tol_drag => 1e-6,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
-            :a_tol_quaternion => 1e-9,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
-            :r_tol_quaternion => 1e-7,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :a_tol_quaternion => 1e-11,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :r_tol_quaternion => 1e-9,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :dt_max => 1.0,                                         # Maximum time step for integration, s
-            :dt_max_orbit => 30.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
+            :dt_max_orbit => 10.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
             :dt_max_drag => 1.0,                                    # Maximum time step for drag passage
 
             :Odyssey_sim => 0                                      # Simulate Odyssey Mission

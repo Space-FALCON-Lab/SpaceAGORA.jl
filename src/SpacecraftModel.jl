@@ -184,7 +184,7 @@ mutable struct SpacecraftModel
     instant_actuation::Bool # Whether control inputs (e.g., solar panel angles) are applied instantly
     # dry_mass::Float64 # Dry mass of the spacecraft
     prop_mass::Vector{Float64} # Fuel mass available for maneuvers
-    inertia_tensors::Vector{SMatrix{3, 3, Float64}} # Inertia tensors of the spacecraft bodies
+    inertia_tensors::Vector{SMatrix{3, 3, Float64}} # Inertia tensors of the spacecraft bodies in the body frame
     n_reaction_wheels::Int64 # Number of reaction wheels in the spacecraft model
     # inertia_tensor::MMatrix{3, 3, Float64} # Inertia tensor of the spacecraft in the inertial frame
     # COM::SVector{3, Float64} # Center of mass in the body frame (relative to origin of the root body)
@@ -299,15 +299,16 @@ function update_inertia_tensor!(model::SpacecraftModel, body::Link)
     """
     # Initialize inertia tensor to zero
     inertia_tensor = SMatrix{3, 3, Float64}(zeros(3, 3))
-    total_mass = 0.0
+    # total_mass = 0.0
     # BFS starting from body to find all bodies attached to the current body
     bodies, root_index = traverse_bodies(model, body)
     for b in bodies
         # Apply parallel axis theorem to update inertia tensor
-        R = rot(b.q) # Rotation matrix from quaternion
+        R = b.root ? SMatrix{3, 3, Float64}(I(3)) : rot(b.q) # Rotation matrix from quaternion
         I_body = R * b.inertia * R' # Transform inertia tensor to the body frame
         r = SVector{3, Float64}(b.r) # Position vector of the body
-        inertia_tensor += I_body + b.m * hat(r) * hat(r)' # Parallel axis theorem
+        fuel_mass = b.root ? model.prop_mass[root_index] : 0.0 # Get propellant mass if root body
+        inertia_tensor += I_body + (b.m+fuel_mass) * hat(r) * hat(r)' # Parallel axis theorem
     end
     if root_index > length(model.inertia_tensors)
         # If the root index is out of bounds, extend the inertia tensors vector
@@ -327,8 +328,9 @@ function update_inertia_tensor(bodies::Vector{Link})
     total_mass = 0.0
     for body in bodies
         # Apply parallel axis theorem to update inertia tensor
-        R = rot(body.q) # Rotation matrix from quaternion
+        R = body.root ? SMatrix{3, 3, Float64}(I(3)) : rot(body.q) # Rotation matrix from quaternion
         I_body = R * body.inertia * R' # Transform inertia tensor to the body frame
+        # fuel_mass = body.root ? body.m : 0.0 # Get propellant mass if root body
         inertia_tensor += I_body + body.m * hat(body.r) * hat(body.r)' # Parallel axis theorem
         total_mass += body.m # Sum the mass
     end
@@ -337,13 +339,13 @@ end
 
 function get_inertia_tensor(model::SpacecraftModel, body::Link)
     """
-    Returns the inertia tensor of the spacecraft that the body is a part of.
+    Returns the inertia tensor of the spacecraft that the body is a part of, in the body frame.
     - `model`: The spacecraft model.
     - `body`: The body for which to get the inertia tensor.
     """
     # Initialize inertia tensor to zero
-    inertia_tensor = SMatrix{3, 3, Float64}(zeros(3, 3))
-    total_mass = 0.0
+    # inertia_tensor = SMatrix{3, 3, Float64}(zeros(3, 3))
+    # total_mass = 0.0
     # BFS starting from body to find all bodies attached to the current body
     bodies, root_index = traverse_bodies(model, body)
     return model.inertia_tensors[root_index] # Return the inertia tensor of the root body    
@@ -357,6 +359,19 @@ function get_inertia_tensor(model::SpacecraftModel, root_index::Int)
     """
     @assert root_index <= length(model.inertia_tensors) "Root index out of bounds"
     return model.inertia_tensors[root_index] # Return the inertia tensor of the root body
+end
+
+function set_inertia_tensor!(model::SpacecraftModel, body::Link, inertia_tensor::SMatrix{3, 3, Float64})
+    """
+    Sets the inertia tensor of a body in the spacecraft model.
+    - `model`: The spacecraft model.
+    - `body`: The body for which to set the inertia tensor.
+    - `inertia_tensor`: The inertia tensor to set.
+    """
+    # Find the index of the body in the links vector
+    bodies, root_index = traverse_bodies(model, body)
+    # @assert index !== nothing "Body not found in the model"
+    model.inertia_tensors[root_index] = inertia_tensor # Set the inertia tensor for the body
 end
 
 

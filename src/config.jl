@@ -266,6 +266,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         α::Vector{Vector{Float64}} = []
         β::Vector{Vector{Float64}} = []
         S::Vector{Float64} = []
+        inertia_tensor::Vector{Vector{Float64}} = [[], [], [], [], [], [], [], [], []] # inertia tensor components
         α_control::Vector{Float64} = []
         rw_h::Vector{Vector{Float64}} = [] # angular momentum magnitudes of each reaction wheel
         rw_τ::Vector{Vector{Float64}} = [] # torque magnitude applied by each reaction wheel
@@ -287,6 +288,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         lift_pp::Vector{Vector{Float64}} = [[], [], []]
         lift_ii::Vector{Vector{Float64}} = [[], [], []]
         force_ii::Vector{Vector{Float64}} = [[], [], []]
+        τ_ii::Vector{Vector{Float64}} = [[], [], []] # total torque applied by all forces
         energy::Vector{Float64} = []
     end
 

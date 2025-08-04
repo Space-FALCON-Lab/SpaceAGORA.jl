@@ -17,7 +17,7 @@ function planet_data(ip)
         mass = 5.97219e24          # mass, kg
         g_ref = 9.798              # acceleration due to gravity, m/s²
         ρ_ref = 1.225              # density, kg/m³
-        μ = 3.986004418e14              # gravitational parameter, m³/s²
+        μ = 3.986004415e14              # gravitational parameter, m³/s²
         h_ref = 0 * 1e3            # reference altitude, m
         H = 8.5 * 1e3              # scale height, m
         R = 287.1                  # specific gas constant, J/(kg·K)

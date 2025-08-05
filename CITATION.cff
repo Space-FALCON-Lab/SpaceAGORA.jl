@@ -2,7 +2,7 @@
 # Visit https://bit.ly/cffinit to generate yours today!
 
 cff-version: 1.2.0
-title: J-ABTS
+title: SpaceAGORA.jl
 message: >-
   If you use this software, please cite it using the
   metadata from this file.
@@ -20,4 +20,8 @@ authors:
     family-names: Falcone
     email: falconeg@umich.edu
     affiliation: University of Michigan
-repository-code: 'https://github.com/Space-FALCON-Lab/ABTS.jl'
+repository-code: 'https://github.com/Space-FALCON-Lab/SpaceAGORA.jl'
+license: MIT
+commit: 67af9b9
+version: '1.0'
+date-released: '2025-08-05'

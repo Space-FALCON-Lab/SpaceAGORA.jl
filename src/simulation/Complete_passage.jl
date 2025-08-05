@@ -381,9 +381,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             config.cnf.α = min(config.cnf.α, α_struct) # limit the angle of attack to the structural load control
         end
 
-        if t0 >= 384.2872
-            config.cnf.α = deg2rad(90)
-        end
+        # if t0 >= 384.2872
+        #     config.cnf.α = deg2rad(90)
+        # end
 
         α = config.cnf.α
 

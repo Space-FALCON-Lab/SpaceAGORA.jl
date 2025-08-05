@@ -1,6 +1,6 @@
-include("simulation/Run.jl")
-include("config.jl")
-include("utils/maneuver_plans.jl")
+include("../simulation/Run.jl")
+include("../config.jl")
+include("../utils/maneuver_plans.jl")
 
 import .config
 import .ref_sys

@@ -235,8 +235,8 @@ function performance_plots(state, m, name, args)
 
         if length(index_orbit) <= 2
             time = [config.solution.orientation.time[i] for i in index]
-            plot_traces_1 = scatter(x=time/(60*60*24), y=alt, mode="markers", marker=attr(color="black"))
-            layout_1 = Layout(xaxis_title="Time [days]", yaxis_title="Altitude [km]")
+            plot_traces_1 = scatter(x=time, y=alt, mode="markers", marker=attr(color="black"))
+            layout_1 = Layout(xaxis_title="Time [s]", yaxis_title="Altitude [km]")
         end
     end
 
@@ -254,12 +254,13 @@ function performance_plots(state, m, name, args)
         end
     end
     plot_traces_heat_rate = []
-
+    xaxis_title = "Time [s]"
     if length(index_orbit) <= 2
         time = [config.solution.orientation.time[i] for i in index]
         push!(plot_traces_heat_rate, scatter(x=time, y=heat_rate, mode="lines", line=attr(color="black")))
     else
         time_end = 0
+        xaxis_title = "Orbit number"
         for i in range(start=1, step=1, stop=length(index_orbit)-1)
             time = [config.solution.orientation.time[j] - time_0[i] + time_end for j in index[index_orbit[i]:index_orbit[i+1]-1]]
             heat_rate = [config.solution.performance.heat_rate[j] for j in index[index_orbit[i]:index_orbit[i+1]-1]]
@@ -272,7 +273,7 @@ function performance_plots(state, m, name, args)
         end
     end
 
-    layout_heat_rate = Layout(xaxis_title="Orbits", yaxis_title="Heat rate [W/cm^2]")
+    layout_heat_rate = Layout(xaxis_title=xaxis_title, yaxis_title="Heat rate [W/cm^2]")
     plot_heat_rate = plot([plot_traces_heat_rate...], layout_heat_rate)
 
     plot_traces_heat_load = []
@@ -294,7 +295,7 @@ function performance_plots(state, m, name, args)
         end
     end
 
-    layout_heat_load = Layout(xaxis_title="Orbits", yaxis_title="Heat load [J/cm^2]")
+    layout_heat_load = Layout(xaxis_title=xaxis_title, yaxis_title="Heat load [J/cm^2]")
     plot_heat_load = plot([plot_traces_heat_load...], layout_heat_load)
 
     if args[:body_shape] == "Spacecraft"
@@ -317,8 +318,8 @@ function performance_plots(state, m, name, args)
 
         if length(index_orbit) <= 2
             time = [config.solution.orientation.time[i] for i in index]
-            plot_traces_4 = scatter(x=time/(60*60*24), y=q, mode="markers", marker=attr(color="black"))
-            layout_4 = Layout(xaxis_title="Time [days]", yaxis_title="Dynamic pressure [Pa]")
+            plot_traces_4 = scatter(x=time, y=q, mode="markers", marker=attr(color="black"))
+            layout_4 = Layout(xaxis_title="Time [s]", yaxis_title="Dynamic pressure [Pa]")
         end
     end
 
@@ -474,17 +475,18 @@ function ground_track(state, m, name, args)
     """
         Plot the ground track of the spacecraft during the drag passages
     """
-
+    xaxis_title = "Time [s]"
     if config.solution.orientation.number_of_passage[end] == 1
         lats_traces = scatter(x=config.solution.orientation.time, y=rad2deg.(config.solution.orientation.lat), mode="lines", line=attr(color="black"))
         lons_traces = scatter(x=config.solution.orientation.time, y=rad2deg.(config.solution.orientation.lon), mode="lines", line=attr(color="black"))
     else
         lats_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.latitude_periapsis, mode="lines", line=attr(color="black"))
         lons_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.longitude_periapsis, mode="lines", line=attr(color="black"))
+        xaxis_title = "Orbit number"
     end
 
-    lats_plot = plot(lats_traces, Layout(xaxis_title="Orbit number", yaxis_title="Latitude [deg]", template="simple_white", showlegend=false))
-    lons_plot = plot(lons_traces, Layout(xaxis_title="Orbit number", yaxis_title="Longitude [deg]", template="simple_white", showlegend=false))
+    lats_plot = plot(lats_traces, Layout(xaxis_title=xaxis_title, yaxis_title="Latitude [deg]", template="simple_white", showlegend=false))
+    lons_plot = plot(lons_traces, Layout(xaxis_title=xaxis_title, yaxis_title="Longitude [deg]", template="simple_white", showlegend=false))
     p = [lats_plot lons_plot]
     relayout!(p, width=1200, height=600, template="simple_white", showlegend=false)
     

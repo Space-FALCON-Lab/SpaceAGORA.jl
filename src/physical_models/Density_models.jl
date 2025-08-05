@@ -213,22 +213,26 @@ function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Boo
             rho, T, wind = density_polyfit(h, p)
         end
     elseif config.cnf.drag_state == true || args[:keplerian] == true
-        position = gram.Position()
-        position.height = h * 1e-3
-        lat = rad2deg(lat)
-        lon = rad2deg(lon)
-        position.latitude = lat
-        position.longitude = lon
-        
-        position.elapsedTime = el_time # Time since start in s
-        atmosphere.setPosition(position)
-        atmosphere.update()
-        atmos = atmosphere.getAtmosphereState()
-        rho = atmos.density
-        T = atmos.temperature
-        wind = [montecarlo ? atmos.perturbedEWWind : atmos.ewWind,
-                montecarlo ? atmos.perturbedNSWind : atmos.nsWind,
-                atmos.verticalWind]
+        if h > 200.0e3
+            rho, T, wind = density_polyfit(h, p)
+        else
+            position = gram.Position()
+            position.height = h * 1e-3
+            lat = rad2deg(lat)
+            lon = rad2deg(lon)
+            position.latitude = lat
+            position.longitude = lon
+            
+            position.elapsedTime = el_time # Time since start in s
+            atmosphere.setPosition(position)
+            atmosphere.update()
+            atmos = atmosphere.getAtmosphereState()
+            rho = atmos.density
+            T = atmos.temperature
+            wind = [montecarlo ? atmos.perturbedEWWind : atmos.ewWind,
+                    montecarlo ? atmos.perturbedNSWind : atmos.nsWind,
+                    atmos.verticalWind]
+        end
     end
 
     return rho, T, wind

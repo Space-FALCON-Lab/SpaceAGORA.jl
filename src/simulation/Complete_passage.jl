@@ -134,16 +134,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         vel_pp_hat = vel_pp / vel_pp_mag
 
         # Orbital Elements
-        # println("pos_ii: ", pos_ii, " vel_ii: ", vel_ii, " mass: ", mass)
-        # # sleep(5.0)
         OE = rvtoorbitalelement(pos_ii, vel_ii, mass, m.planet)
         vi = OE[6]
-
-        
-        # m.planet.L_PI .= pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
-        # println("L_PI: ", m.planet.L_PI)
-        # # sleep(5.0)
-        Mars_Gram_recalled_at_periapsis = false
 
         if vi > 0 && vi < pi/2 && config.cnf.ascending_phase == false
             config.cnf.ascending_phase = true
@@ -186,10 +178,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         lat = LatLong[2]
         lon = LatLong[3]
         alt = LatLong[1]
-        
-        # println(" ")
-        # println(" Altitude: ", alt)
-        # println(" ")
 
         if aerobraking_phase == 2 || aerobraking_phase == 0
             if (pos_ii_mag - m.planet.Rp_e - args[:EI] * 1e3) <= 0 && config.cnf.drag_state == false && config.cnf.ascending_phase == false
@@ -295,26 +283,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 end
             end
 
-            # if config.cnf.Gram_justrecalled == true && config.cnf.index_Mars_Gram_call != 1  # in MC, when we reavaluate Mars Gram there is a discontinuity with the density which is created by how the density data are created. This discontinuity create really high peaks. We recalculate aoa for the new density data.
-            #     if ip.cm == 3
-            #         config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
-            #     elseif ip.cm == 2
-            #         config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
-            #     elseif ip.cm == 1
-            #         config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
-            #     elseif ip.cm == 0
-            #         config.cnf.α = no_control(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
-            #     end
-                
-            #     push!(config.cnf.state_flesh1, [T_p, ρ, S])
-
-            #     if ip.tm == 1
-            #         heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
-            #     elseif ip.tm == 2
-            #         heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
-            #     end
-            # end
-
             if index_phase_aerobraking == 2
                 if Bool(args[:control_in_loop])
                     config.cnf.state_flesh1 = [[T_p, ρ, S]]
@@ -322,7 +290,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
                     elseif ip.cm == 2
                         config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
-                        # println("control_solarpanels_heatload: ", config.cnf.α)
                     elseif ip.cm == 1
                         config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
                     elseif ip.cm == 0
@@ -330,7 +297,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     end
                 elseif args[:control_in_loop] == false && args[:integrator] == "Julia"
                     if config.controller.count_controller != config.controller.count_prev_controller && config.controller.stored_state == 0 && t0 != config.controller.prev_time
-                        push!(config.cnf.state_flesh1, [T_p, ρ, S]) # might have to change to push!
+                        push!(config.cnf.state_flesh1, [T_p, ρ, S])
 
                         if config.controller.count_controller == 2
                             state = config.cnf.state_flesh1[end]
@@ -539,8 +506,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         Event function to detect the periapsis crossing.
         """
         m = integrator.p[1]
-        pos_ii = [y[1], y[2], y[3]] * config.cnf.DU  # Inertial position
-        vel_ii = [y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU  # Inertial Velocity
+        pos_ii = SVector{3, Float64}([y[1], y[2], y[3]] * config.cnf.DU)  # Inertial position
+        vel_ii = SVector{3, Float64}([y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU)  # Inertial Velocity
 
         vi = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf.MU, m.planet)[6]
 
@@ -579,7 +546,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         m = integrator.p[1]
         args = integrator.p[8]
         norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:EI]*1e3  # downcrossing
-        # norm(y[1:3]) - m.planet.Rp_e - args[:EI]*1e3  # downcrossing
     end
     function reached_EI_affect!(integrator)
         """
@@ -609,7 +575,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         m = integrator.p[1]
         args = integrator.p[8]
 
-        if abs(norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:AE]*1e3) <= 1e-5  # abs(norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3) <= 1e-5
+        if abs(norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:AE]*1e3) <= 1e-5 
             if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 2
                 config.cnf.α = m.aerodynamics.α
             elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 3
@@ -833,7 +799,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             x = 160
         end
 
-        if abs(norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - x*1e3) <= 1e-5 # abs(norm(y[1:3]) - m.planet.Rp_e - x*1e3) <= 1e-5
+        if abs(norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - x*1e3) <= 1e-5
             config.controller.guidance_t_eval = collect(range(start=t * config.cnf.TU, stop=(t * config.cnf.TU)+2500, step=1/args[:flash1_rate]))
         end
 
@@ -916,8 +882,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     config.cnf.timer_revaluation = 0
     config.cnf.closed_form_solution_off = 1         # used in closed form solution online to run the solution only once
     config.cnf.initial_position_closed_form = []
-    config.cnf.heat_rate_list = []                  # checked this - if used
-    config.cnf.α_list = []                          # checked this - if used
+    config.cnf.heat_rate_list = []               
+    config.cnf.α_list = []
 
     config.controller.guidance_t_eval = []
     config.controller.count_prev_controller = 0
@@ -1177,40 +1143,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 if aerobraking_phase == 0
                     new_periapsis(m, in_cond[1:3] * config.cnf.DU, in_cond[4:6] * config.cnf.DU / config.cnf.TU, args)
                 end
-            elseif simulator == "Costumed"
-                # if args[:integrator] == "Costumed"
-                #     # mutable struct Sol
-                #     #     t_events::Vector{Vector{Float64}}
-                #     # end
-
-                #     # sol = Sol([[],[]])
-                # end
-
-                # while stop_simulation == false
-                #     initial_time = time_0
-                #     ## Costumed Integrator
-                #     config.cnf.MarsGram_recall = 1
-                #     config.cnf.results_save = 0
-                #     y, t, stop_simulation, sol = RK4(f, step, initial_time, in_cond, m, T_ijk, index_phase_aerobraking, args, sol)
-
-                #     in_cond = [y[1], y[2], y[3], y[4], y[5], y[6], y[7], y[8]]
-                #     config.cnf.counter_integrator += 1
-                #     config.cnf.results_save = 1
-                #     f(t, in_cond, m, index_phase_aerobraking, ip)
-
-                #     # New initial Condition
-                #     time_0 = t_prev
-
-                #     # Save Results
-                #     append!(time_solution, t)
-
-                #     ## Guidance, Navigation and Control
-                #     if args[:control_mode] != 0
-                #         # DO LATER
-                #     end
-                # end
-
-                # i_sim += 1
             end
 
             # Define breaker campaign impact km or apoapsis greater than periapsis

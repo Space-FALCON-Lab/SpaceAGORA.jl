@@ -51,6 +51,7 @@ args = Dict(# Misc Simulation
             :control_in_loop => 0,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             :struct_ctrl => 0,                                     # Structural control, True=1, False=0
+            :targeting_ctrl => 0,                                   # Targeting control True=1, False=0
             
             # Body
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']

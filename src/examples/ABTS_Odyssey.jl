@@ -85,6 +85,7 @@ args = Dict(# Misc Simulation
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             :struct_ctrl => 0,                                    # Structural thermal control, True=1, False=0 
+            :targeting_ctrl => 0,                                   # Targeting control True=1, False=0
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1

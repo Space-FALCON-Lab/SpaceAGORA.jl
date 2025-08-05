@@ -21,7 +21,7 @@ args = Dict(# Misc Simulation
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
             :normalize => 0,                                        # Normalize the state during integration True=1, False=0
             :closed_form => 1,                                   # Closed form solution for the drag passage True=1, False=0
-            
+
             # Type of Mission
             :type_of_mission => "Drag Passage",                     # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
@@ -85,7 +85,8 @@ args = Dict(# Misc Simulation
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             :struct_ctrl => 0,                                    # Structural thermal control, True=1, False=0
-
+            :targeting_ctrl => 0,                                   # Targeting control True=1, False=0
+            
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
             :ra_initial_a => 15000e3 + 2.5755e6, # 28523.95e3,      # Initial Apoapsis Radius for for-loop in m

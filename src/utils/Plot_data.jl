@@ -24,9 +24,19 @@ function plots(state, m, name, args)
 
     if args[:type_of_mission] == "Drag Passage"
         drag_passage_plot(name, args, m)
+        # lambda_plot(name, args)
     end
-
     
+end
+
+function lambda_plot(name, args)
+    trace1 = scatter(x=config.cnf.time_switch_list, y=config.cnf.lambda_switch_list, name="λ_switch", mode="lines", line=attr(color="black"))
+    trace2 = scatter(x=config.cnf.time_list, y=config.cnf.lamv_list, mode="lines", name="λᵥ", line=attr(color="red"))
+    layout = Layout(xaxis_title="Time [s]", yaxis_title="λᵥ", template="simple_white", showlegend=true)
+    p = plot([trace1, trace2], layout)
+
+    display(p)
+    savefig(p, name * "_lambda_v.pdf", format="pdf")
 end
 
 function drag_passage_plot(name, args, m)

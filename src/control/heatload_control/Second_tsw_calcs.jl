@@ -1,6 +1,6 @@
 include("../../utils/Closed_form_solution.jl")
 include("../../physical_models/Density_models.jl")
-include("../Eoms.jl")
+include("../utils/Eoms.jl")
 
 using Roots
 

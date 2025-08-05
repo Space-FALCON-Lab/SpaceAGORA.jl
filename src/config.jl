@@ -195,6 +195,16 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         DU::Float64 = 0.0
         TU::Float64 = 0.0
         MU::Float64 = 0.0   
+
+        targeting::Int64 = 0
+        Vf::Float64 = 0.0
+        hf::Float64 = 0.0
+        γf::Float64 = 0.0
+
+        lambda_switch_list::Vector{Float64} = []
+        time_switch_list::Vector{Float64} = []
+        time_list::Vector{Float64} = []
+        lamv_list::Vector{Float64} = []
     end
 
     cnf = Cnf()

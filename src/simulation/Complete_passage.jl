@@ -10,7 +10,11 @@ include("../physical_models/Thermal_models.jl")
 include("../physical_models/Perturbations.jl")
 
 include("../control/Control.jl")
-include("../control/Propulsive_maneuvers.jl")
+include("../control/utils/Propulsive_maneuvers.jl")
+include("../control/targeting_control/targeting.jl")
+
+include("../control/utils/Eom_ctrl.jl")
+include("../control/targeting_control/Eom_targeting.jl")
 
 using LinearAlgebra
 using DifferentialEquations
@@ -71,6 +75,24 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     else
         t_prev = m.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # m.initial_condition.time_rot
     end
+
+    # sol_lam = asim_ctrl_plot(ip, m, 0, OE, args, 0.03565, true, gram_atmosphere)
+
+    # hf = 159239.22062235978 # args[:AE] * 1e3
+    # vf = 4189.437607154456 # 4196.4868
+    # γf = 0.10961219849455787 # deg2rad(5.874)
+
+    # sol_lam = asim_ctrl_targeting_plot(ip, m, 0, OE, args, hf, vf, γf, 0.03565, false, gram_atmosphere)
+
+    
+    # println("hf: ", norm(sol_lam[1:3,end]) - m.planet.Rp_e)
+    # println("vf: ", norm(sol_lam[4:6,end]))
+    # println("γf: ", rad2deg(asin(sol_lam[1:3,end]'*sol_lam[4:6,end]/norm(sol_lam[4:6,end]) / norm(sol_lam[1:3,end]))))
+
+    # println("Final Energy: ", norm(sol_lam[4:6,end])^2/2 - m.planet.μ/norm(sol_lam[1:3,end]))
+
+    # push!(config.cnf.time_list, sol_lam.t...)
+    # push!(config.cnf.lamv_list, sol_lam[7,:]...)
 
     function f!(y_dot, in_cond, param, t0)
         m = param[1]
@@ -272,7 +294,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
             # evaluates the closed form solution the first time at EI km
             if abs(pos_ii_mag - m.planet.Rp_e - args[:EI] * 1e3) <= 1e-2 && (args[:control_mode] == 2 || args[:control_mode] == 3) && config.cnf.time_switch_1 == 0
-                if ip.cm == 3
+                if config.cnf.targeting == 1
+                    control_solarpanels_targeting()
+                elseif ip.cm == 3
                     control_solarpanels_openloop(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, 0, true, gram_atmosphere)
                 elseif ip.cm == 2
                     control_solarpanels_heatload(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, 0, gram_atmosphere)
@@ -286,7 +310,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             if index_phase_aerobraking == 2
                 if Bool(args[:control_in_loop])
                     config.cnf.state_flesh1 = [[T_p, ρ, S]]
-                    if ip.cm == 3
+                    if config.cnf.targeting == 1
+                        config.cnf.α = control_solarpanels_targeting()
+                    elseif ip.cm == 3
                         config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
                     elseif ip.cm == 2
                         config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
@@ -355,10 +381,15 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             config.cnf.α = min(config.cnf.α, α_struct) # limit the angle of attack to the structural load control
         end
 
+        if t0 >= 384.2872
+            config.cnf.α = deg2rad(90)
+        end
+
         α = config.cnf.α
 
+        # Heat Rate 
         if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
-            # Heat Rate 
+            
             if ip.tm == 1
                 heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
             elseif ip.tm == 2
@@ -1103,7 +1134,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             end
 
             if simulator == "Julia"
-                # counter for events
+                # Counter for events
                 config.cnf.count_eventfirststep = 0
                 config.cnf.eventfirststep_periapsis = 0
                 config.cnf.count_eventsecondstep = 0
@@ -1124,17 +1155,21 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
                 ## Julia Integrator
                 # Time initialization
-                initial_time, final_time = time_0 / config.cnf.TU, (time_0 + length_sim) / config.cnf.TU 
+                initial_time, final_time = time_0 / config.cnf.TU, (time_0 + length_sim) / config.cnf.TU
 
                 # Parameter Definition
                 param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
+
+                # Energy targeting 
+                if args[:targeting_ctrl] == 1 && aerobraking_phase == 2
+                    
+                end
 
                 # Run simulation
                 prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
                 sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
                 config.cnf.counter_integrator += 1
                 in_cond = [sol[1,end], sol[2,end], sol[3, end], sol[4, end], sol[5, end], sol[6, end], sol[7, end], sol[8, end]]
-              
 
                 # Save results 
                 push!(time_solution, (sol.t * config.cnf.TU)...)

@@ -16,10 +16,40 @@ function save_results(time, ratio)
 
     n_variable_to_save = length(config.cnf.solution_intermediate[1]) - 1
     range_time = [item[1] for item in config.cnf.solution_intermediate]
-    results = Array{Float64}(undef, (n_variable_to_save, 1))
+    # results = Array{Float64}(undef, (n_variable_to_save, 1))
 
 
-    t = []
+    # t = []
+    # i = 0
+
+    # index_prev = 1
+
+    # for true_time in time
+    #     if isapprox(i % ratio, 0, atol = 0.1) || true_time == time[end]
+    #         index = findfirst(x -> x == true_time, range_time[index_prev:end])
+    #         append!(t, range_time[index+index_prev] + initial_time)
+    #         range_solution = reshape(config.cnf.solution_intermediate[index+index_prev], (n_variable_to_save + 1, 1))
+
+    #         if length(t) == 1
+    #             results = range_solution[2:end]
+    #         else
+    #             results = hcat(results, range_solution[2:end])
+    #         end
+            
+    #         index_prev = index
+    #     end
+
+    #     i += 1
+    # end
+
+    # time_0 = time[end]
+    # config.cnf.prev_step_integrator = time_0
+    # config.cnf.solution_intermediate = []
+
+    results = Matrix{Float64}(zeros(n_variable_to_save, Int(ceil(length(time)/ratio))))
+
+
+    t = zeros(Float64, Int(ceil(length(time)/ratio)))
     i = 0
 
     index_prev = 1
@@ -27,13 +57,13 @@ function save_results(time, ratio)
     for true_time in time
         if isapprox(i % ratio, 0, atol = 0.1) || true_time == time[end]
             index = findfirst(x -> x == true_time, range_time[index_prev:end])
-            append!(t, range_time[index+index_prev] + initial_time)
-            range_solution = reshape(config.cnf.solution_intermediate[index+index_prev], (n_variable_to_save + 1, 1))
+            t[Int(floor(i/ratio)+1)] = range_time[index+index_prev] + initial_time
+            # range_solution = SVector{n_variable_to_save + 1, Float64}([config.cnf.solution_intermediate[index+index_prev], 0])
 
             if length(t) == 1
-                results = range_solution[2:end]
+                results[:, 1] .= config.cnf.solution_intermediate[index+index_prev][2:end]
             else
-                results = hcat(results, range_solution[2:end])
+                results[:, Int(floor(i/ratio)+1)] .= config.cnf.solution_intermediate[index+index_prev][2:end]
             end
             
             index_prev = index
@@ -44,7 +74,7 @@ function save_results(time, ratio)
 
     time_0 = time[end]
     config.cnf.prev_step_integrator = time_0
-    config.cnf.solution_intermediate = []
+    config.cnf.solution_intermediate = Vector{Number}[]
 
     t = [i + config.cnf.initial_time_saved for i in t]
 

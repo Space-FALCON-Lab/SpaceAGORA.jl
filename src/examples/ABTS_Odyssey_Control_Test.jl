@@ -9,7 +9,7 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/odyssey_struct_load_ctrl",                # Directory where to save the results
+            :directory_results => "/workspaces/ABTS.jl/output/switching_analysis_targeting",                              # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
@@ -19,7 +19,7 @@ args = Dict(# Misc Simulation
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 0,                                       # Normalize the integration True=1, False=0
+            :normalize => 0,                                        # Normalize the integration True=1, False=0
             :closed_form => 1,
             :closed_form_fitting_data => 1, 
 
@@ -34,11 +34,11 @@ args = Dict(# Misc Simulation
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
             :gravity_harmonics => 0,                                # Gravity Spherical harmonics True=1, False=0
             :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/Mars50c.csv", # File with the gravity harmonics coefficients
-            :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
-            :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
+            :L => 50,                                               # Maximum degree of the gravity harmonics (Defined in the file)
+            :M => 50,                                               # Maximum order of the gravity harmonics (Defined in the file)
             :n_bodies => [],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
-            :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
+            :topography_model => "None",                            # choices=['None' , 'Spherical Harmonics']
             :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/MOLA.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 90,                                      # Maximum order of the topography harmonics (Defined in the file)
@@ -61,7 +61,7 @@ args = Dict(# Misc Simulation
             :prop_mass => 50.0,                                     # Initial propellant mass of body in kg
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
-            :α => 90,                                               # Max angle of attack of solar panels
+            :α => 0,                                               # Max angle of attack of solar panels
 
             # Fill for Spacecraft body shape only
             :length_sat => 2.2,                                     # Length of the satellite in m
@@ -79,40 +79,41 @@ args = Dict(# Misc Simulation
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
-            :control_mode => 1,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
+            :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
             :security_mode => 1,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
-            :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
-            :struct_ctrl => 1,                                      # Structural Load Control True=1, False=0
+            :flash2_through_integration => 1,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+            :struct_ctrl => 0,                                      # Structural Load Control True=1, False=0
+            :targeting_ctrl => 0,                                   # Targeting Control True=1, False=0
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 20000e3, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_a => 9800e3, # 28523.95e3,                  # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 100e3,                                 # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_a => 93e3,                                  # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 159000.0,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 4350.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :v_step => 10000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :v_step => 10000.0,                                     # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
 
-            :orientation_type => 0,                                   # Initial Condition orientation = 0, Initial Condition orientation and velocity = 1
+            :orientation_type => 0,                                 # Initial Condition orientation = 0, Initial Condition orientation and velocity = 1
             :γ_initial_a => 7.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :γ_initial_b => 10.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :γ_step => 10.5,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :inclination => 93.6,                                # Inclination Orbit, deg
-            :ω => 0,                                              # AOP, deg
-            :Ω => 0,                                              # RAAN, deg
+            :γ_initial_b => 10.0,                                   # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :γ_step => 10.5,                                        # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :inclination => 93.6,                                   # Inclination Orbit, deg
+            :ω => 0,                                                # AOP, deg
+            :Ω => 0,                                                # RAAN, deg
             :EI => 160.0,                                           # Entry Interface, km
             :AE => 160.0,                                           # Atmospheric Exit, km
             :year => 2001,                                          # Mission year
-            :month => 11,                                            # Mission month
-            :day => 6,                                             # Mission day
-            :hours => 8,                                           # Mission hour
+            :month => 11,                                           # Mission month
+            :day => 6,                                              # Mission day
+            :hours => 8,                                            # Mission hour
             :minutes => 30,                                         # Mission minute
-            :secs => 0,                                          # Mission second
+            :secs => 0,                                             # Mission second
             
             # Final Conditions
             :final_apoapsis => 4905.974818462152e3, # 5088116.837416616, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
@@ -123,7 +124,8 @@ args = Dict(# Misc Simulation
             :phi => 180.0,                                          # Thrust Angle, deg
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
-            :ra_fin_orbit => 25000e3,                               # Target final apoapsis for the orbit, m
+            :ra_fin_orbit => 15000e3,                               # Target final apoapsis for the orbit, m
+            :hp_fin_orbit => 100e3,                                 # Target final periapsis for the orbit, m
             :maneuver_plan => Odyssey_firing_plan_true_beginning,   # MAneuver plan function
             
             # Monte Carlo Simulations
@@ -161,7 +163,7 @@ args = Dict(# Misc Simulation
             # Mission Selection
             :Odyssey_sim => 0,                                      # Simulate Odyssey Mission
             :vex_sim => 0,                                          # Simulate Venus Express Mission   
-            :magellan_sim => 0                                     # Simulate Magellan Mission
+            :magellan_sim => 0                                      # Simulate Magellan Mission
             )
 
 # Calculating time of simulation
@@ -232,16 +234,16 @@ end
 #     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
             
 #     # Run the simulation
-#     for alph in collect(range(0, 90, step=15))
-#         args[:α] = alph
-#         for ra in collect(range(5000,25000,step=5000))
-#             for hp in collect(range(90,115,step=5))
-#                 args[:ra_initial_a] = ra*1e3 + 3.3895e6
-#                 args[:hp_initial_a] = hp*1e3
-#                 sol = run_analysis(args)
-#             end
+#     # for alph in collect(range(0, 90, step=15))
+#     #     args[:α] = alph
+#     for ra in collect(range(5000,25000,step=5000))
+#         for hp in collect(range(90,115,step=5))
+#             args[:ra_initial_a] = ra*1e3 + 3.3895e6
+#             args[:hp_initial_a] = hp*1e3
+#             sol = run_analysis(args)
 #         end
 #     end
+#     # end
 
 #     println(" ")
 

@@ -4,60 +4,14 @@ using StaticArrays
 using LinearAlgebra
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 
-# """
-# Index Structure for constructing or extracting state information from N link model in both maximal coordinates with quaternions or axis-angle
-# """
-# mutable struct Idx
-#     N::Integer
-#     Nx::Integer
-#     Nz::Integer
-#     Nv::Integer
-#     Nż::Integer
-#     Nu::Integer
-#     Ng::Integer
-#     ir::Array{SVector{3}}
-#     iq::Array{SVector{4}} 
-#     iṙ::Array{SVector{3}} 
-#     iω::Array{SVector{3}} 
-#     ir̃::Array{SVector{3}}
-#     iq̃::Array{SVector{3}} 
-#     iṙ̃::Array{SVector{3}} 
-#     iω̃::Array{SVector{3}} 
-#     iuṙ::Array{SVector{3}} 
-#     iuω::Array{SVector{3}} 
-#     irw::Array{SVector{1}} 
-#     iug::Array{SVector{1}} 
-    
-#     function Idx(N::Integer, N_g::Integer)
-#         ir, iq, iṙ, iω, ir̃, iq̃, iṙ̃, iω̃, iuṙ, iuω, irw, iug = get_indexes(N, N_g)
-
-#         new(N, 13*N+N_g, 7*N, 6*N, 6*N, 6*N+N_g, N_g, ir, iq, iṙ, iω, ir̃, iq̃, iṙ̃, iω̃, iuṙ, iuω, irw, iug)
-#     end
-
-#     function get_indexes(N::Integer, N_g::Integer)
-#         Nz = 7*N
-#         Nv = 6*N
-#         Nż = 6*N
-
-#         ir = [SVector{3}(1:3) .+ 7 * (i - 1) for i in 1:N]
-#         iq = [SVector{4}(4:7) .+ 7 * (i - 1) for i in 1:N]
-#         iṙ = [SVector{3}(1:3) .+ Nz .+ 6 * (i - 1) for i in 1:N]
-#         iω = [SVector{3}(4:6) .+ Nz .+ 6 * (i - 1) for i in 1:N]
-
-#         ir̃ = [SVector{3}(1:3) .+ 6 * (i - 1) for i in 1:N]
-#         iq̃ = [SVector{3}(4:6) .+ 6 * (i - 1) for i in 1:N]
-#         iṙ̃ = [SVector{3}(1:3) .+ Nv .+ 6 * (i - 1) for i in 1:N]
-#         iω̃ = [SVector{3}(4:6) .+ Nv .+ 6 * (i - 1) for i in 1:N]
-
-#         irw = [SVector{1}(1:1) .+ 1 * (i - 1) for i in 1:N_g]
-
-#         iuṙ = [SVector{3}(1:3) .+ 6 * (i - 1) for i in 1:N]
-#         iuω = [SVector{3}(4:6) .+ 6 * (i - 1) for i in 1:N]
-
-#         iug = [SVector{1}(1:1) .+ 1 * (i - 1) for i in 1:N_g]
-#         return ir, iq, iṙ, iω, ir̃, iq̃, iṙ̃, iω̃, iuṙ, iuω, irw, iug
-#     end
-# end
+@kwdef mutable struct Facet
+    area::Float64 = 0.0 # Area of the facet
+    attitude::MVector{4, Float64} = @MVector [0.0, 0.0, 0.0, 1.0] # Attitude of the facet relative to the body frame
+    normal_vector::MVector{3, Float64} = @MVector [1.0, 0.0, 0.0] # Normal vector in the facet body frame, for flat plate this is in the x-direction
+    cp::MVector{3, Float64} = @MVector [0.0, 0.0, 0.0] # Center of pressure with respect to the center of mass of the Link containing the facet, in the Link frame
+    ρ::Float64 = 0.0 # Diffuse coefficient
+    δ::Float64 = 0.0 # Specular coefficient
+end
 
 mutable struct Link
     root::Bool # Whether this link is a root link (i.e., the main bus or core body of the spacecraft). 
@@ -87,6 +41,7 @@ mutable struct Link
     actuation_function::Function # Function to apply actuation forces/torques at the link (change orientation of solar panels, etc.)  
     attitude_control_rate::Float64 # Rate at which the attitude control function is called, in seconds
     ω_wheel_derivatives::Vector{Float64} # Angular momentum derivatives of the reaction wheels, to be updated at each simulation step
+    SRP_facets::Vector{Facet}
     function Link(;root=false,
                     r=SVector{3, Float64}([0, 0, 0]), 
                     q=SVector{4, Float64}([0,0,0,1]), 
@@ -112,9 +67,10 @@ mutable struct Link
                     attitude_control_function=()->0.0,
                     actuation_function=()->0.0,
                     attitude_control_rate=0.1,
-                    ω_wheel_derivatives=MVector{gyro, Float64}(zeros(gyro)))#SMatrix{3,Int(gyro)}(1.0I))
+                    ω_wheel_derivatives=MVector{gyro, Float64}(zeros(gyro)),
+                    SRP_facets=[])#SMatrix{3,Int(gyro)}(1.0I))
                     println(length(rw))
-        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, gyro, max_torque, max_h, rw, J_rw, rw_τ, net_force, net_torque, attitude_control_function, actuation_function, attitude_control_rate, ω_wheel_derivatives)
+        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, gyro, max_torque, max_h, rw, J_rw, rw_τ, net_force, net_torque, attitude_control_function, actuation_function, attitude_control_rate, ω_wheel_derivatives, SRP_facets)
     end
 
     function Link(link::Link)
@@ -216,7 +172,9 @@ function add_body!(model::SpacecraftModel,
         # Initialize inertia tensor for the root body
     end
     model.n_reaction_wheels += body.gyro # Increment the number of reaction wheels
-    update_inertia_tensor!(model, body) # Calculate inertia tensor for the body
+    if body.root
+        update_inertia_tensor!(model, body) # Calculate inertia tensor for the body
+    end
 end
 
 # Function to add a joint to the spacecraft model
@@ -228,6 +186,36 @@ function add_joint!(model::SpacecraftModel, joint::Joint)
     """
     push!(model.joints, joint) # Add the joint to the joints vector
     update_inertia_tensor!(model, joint.link1) # Calculate inertia tensor
+end
+
+function add_facet!(link::Link, facet::Facet)
+    """
+    Adds a facet to the Link
+    - `link` : The Link to which the facet is added
+    - `facet` : The facet to add
+    """
+    push!(link.SRP_facets, facet)
+end
+
+function add_facet!(link::Link, facets::Vector{Facet})
+    """
+    Adds a facet to the Link
+    - `link` : The Link to which the facet is added
+    - `facet` : The facet to add
+    """
+    push!(link.SRP_facets, facets...)
+end
+
+function create_facet_list(area_list::Vector{Float64}, attitude_list::Vector{SVector{4, Float64}}, normal_vector_list::Vector{SVector{3, Float64}}, 
+                            cp_loc_list::Vector{SVector{3, Float64}}, diffuse_coeffs_list::Vector{Float64}, specular_coeffs_list::Vector{Float64})
+    list_length = length(area_list)
+    lists = Vector[area_list, attitude_list, normal_vector_list, cp_loc_list, specular_coeffs_list, diffuse_coeffs_list]
+    @assert all(l -> length(l) == list_length, lists) "Not all lists are the same length"
+    facet_vector = Vector{Facet}(undef, list_length)
+    for i in eachindex(area_list)
+        facet_vector[i] = Facet(area_list[i], attitude_list[i], normal_vector_list[i], cp_loc_list[i], diffuse_coeffs_list[i], specular_coeffs_list[i])
+    end
+    return facet_vector
 end
 
 function traverse_bodies(model::SpacecraftModel, body::Link)

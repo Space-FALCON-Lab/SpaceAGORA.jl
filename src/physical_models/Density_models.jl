@@ -2,7 +2,7 @@ include("../utils/Reference_system.jl")
 
 using PythonCall
 using SatelliteToolbox
-SpaceIndices.init()
+# SpaceIndices.init()
 sys = pyimport("sys")
 
 function interp(a, b, x)

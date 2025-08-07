@@ -432,7 +432,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             gravity_ii += mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_e, m.planet)
         end
 
-        srp_ii = MVector{3, Float64}(zeros(3)) # solar radiation pressure vector
         if orientation_sim
             Rot = [MMatrix{3,3,Float64}(zeros(3, 3)) for i in eachindex(bodies)] # Rotation matrix from the root body to the spacecraft link
             @inbounds for (i, b) in enumerate(bodies)
@@ -440,7 +439,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             end
         end
         if args[:srp] == true
-            # sun_earth_vector = m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", config.cnf.et, "J2000", "NONE", uppercase(m.planet.name))[1])
+            r_sun_planet = m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", config.cnf.et, "J2000", "NONE", uppercase(m.planet.name))[1])*1e3 # Vector describing the position of the Sun wrt the planet in J2000 frame
+            eclipse_ratio = eclipse_area_calc(pos_ii, r_sun_planet, m.planet.Rp_e)
+            R0 = 149597870.7e3 # 1AU, m
+            P_srp = 4.5566666e-6*(R0/norm(r_sun_planet))^2
             for (i, b) in enumerate(bodies)
                 mass_body = b.m # Mass of the spacecraft link
                 if b.root
@@ -454,27 +456,25 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 end
                 pos_ii_body = pos_ii + R * b.r # Update the position of the spacecraft link in inertial frame
                 pos_ii_body_mag = norm(pos_ii_body) # Magnitude of the inertial position of the spacecraft link
-                p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
-                srp_ii = mass_body * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, b.ref_area, b.m, pos_ii_body, config.cnf.et)
+                sun_direction = r_sun_planet - pos_ii_body
+                sun_direction = normalize(sun_direction)
+                srp!(m.body, root_index, sun_direction, b, P_srp, eclipse_ratio, orientation_sim)
                 # # Account for angle of incidence of sunlight
-                # normal_vector_ii = (rot(root_body.q)'*rot(b.q)'*[1;0;0])
+                # normal_vector_ii = config.get_normal_vector(m.body, b, root_index, normalized=true) # Normal vector of the spacecraft link in inertial frame
                 # normal_vector_ii_hat = normal_vector_ii / norm(normal_vector_ii) # Unit vector of the normal vector
                 # # Sun vector
-                # sun_vector_ii = sun_earth_vector - pos_ii_body # Vector from the spacecraft link to the Sun
+                # sun_vector_ii = r_sun_planet - pos_ii_body # Vector from the spacecraft link to the Sun
                 # sun_vector_ii_hat = sun_vector_ii / norm(sun_vector_ii) # Unit vector of the Sun vector
                 # # Calculate the angle of incidence
                 # cos_θ = dot(normal_vector_ii_hat, sun_vector_ii_hat) # Cosine of the angle of incidence
-                b.net_force += srp_ii # Update the force on the spacecraft link
-                if orientation_sim
-                    b.net_torque += cross(R*b.r, srp_ii) # Update the torque on the spacecraft link
-                end
+                # sin_θ = sqrt(1.0 - cos_θ^2) # Sine of the angle of incidence
+                
+                # b.net_force += srp_ii # Update the force on the spacecraft link
+                # if orientation_sim
+                #     b.net_torque += cross(R*b.r, srp_ii) # Update the torque on the spacecraft link
+                # end
             end
         end
-
-        # gravity_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize gravity vector
-        # if args[:gravity_harmonics] == 1
-        #     gravity_ii += mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_e, m.planet)
-        # end
 
         bank_angle = deg2rad(0.0)
 
@@ -646,10 +646,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             inertia_tensor = R * config.get_inertia_tensor(m.body, root_index) * R' # Inertia tensor of the body
             # println("Inertia tensor: ", inertia_tensor)
             # println("R: ", R)
-            τ_ii += 3.0*m.planet.μ * cross(pos_ii, inertia_tensor*pos_ii) / pos_ii_mag^5 # Gravity gradient torque
-            
+            τ_ii += args[:gravity_gradient] ? 3.0*m.planet.μ * cross(pos_ii, inertia_tensor*pos_ii) / pos_ii_mag^5 : SVector{3, Float64}(0.0, 0.0, 0.0) # Gravity gradient torque
+
             # All other torques
             τ_ii += sum([b.net_torque for b in bodies]) # Sum of all torques on the spacecraft links
+            # println("tau_ii: ", τ_ii)
         end
         
         y_dot[1:3] .= vel_ii * (config.cnf.TU / config.cnf.DU) # Position derivative in inertial frame

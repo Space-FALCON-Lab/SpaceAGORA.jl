@@ -176,7 +176,7 @@ end
 
 function q_from_phi(ϕ)
     """
-    axis angle from quaternion (scalar last)
+    quaternion from axis angle (scalar last)
     params: 
     ϕ -> axis (r) * angle (θ) 
     returns: 
@@ -186,10 +186,10 @@ function q_from_phi(ϕ)
     θ = norm(ϕ)
 
     if θ == 0.0
-        return [1, 0, 0, 0]
+        return SVector{4, Float64}([0.0, 0.0, 0.0, 1.0])
     else
         r = ϕ / θ
-        return [cos(θ/2); r*sin(θ/2)]
+        return SVector{4, Float64}([r*sin(θ/2); cos(θ/2)])
     end
 end
 

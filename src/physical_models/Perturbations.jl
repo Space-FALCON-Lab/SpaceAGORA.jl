@@ -3,6 +3,7 @@ using LoopVectorization
 using AssociatedLegendrePolynomials
 using LinearAlgebra
 
+# import .config
 # Define delta function
 δ(x,y) = ==(x,y)
 δ(x) = δ(x,0)
@@ -27,7 +28,7 @@ function gravity_n_bodies(et::Float64, pos_ii::SVector{3, Float64}, p, n_body)
     return g
 end
 
-function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64}, A::Float64, rp::Float64)
+function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64}, rp::Float64)
     """
     Calculate the exposed area of the satellite. Translated from Python to Julia.
 
@@ -45,8 +46,8 @@ function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64
 
     Returns
     -------
-    A_exp : Float64
-        Exposed area of the satellite.
+    eclipse_ratio : Float64
+        Eclipse ratio of the satellite.
     
     """
     shadow = "none"
@@ -75,54 +76,120 @@ function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64
     end
 
     if shadow == "none"
-        A_exp = A
+        eclipse_ratio = 1
     elseif shadow == "penumbra"
-        A_exp = A * (1 - (1 - (sat_vert / pen_vert))^2)
+        eclipse_ratio = (1 - (1 - (sat_vert / pen_vert))^2)
     else 
-        A_exp = 0
+        eclipse_ratio = 0
     end
     
-    return A_exp
+    return eclipse_ratio
 end
 
-function srp(p, p_srp_unscaled::Float64, cR::Float64, A_sat::Float64, m::Float64, r_sat::SVector{3, Float64}, time_et::Float64)
-    """
-    Calculate acceleration due to solar radiation pressure. 
+# function srp(p::config.Planet, facet::config.Facet, b::config.Body)
+#     """
+#     Calculate SRP force on a single facet, i.e., a single face of a rigid body.
 
-    Parameters 
+#     Parameters
+#     ----------
+#     p : Planet struct
+#         Contains planetary parameters, including equatorial radius.
+#     facet : Facet struct
+#         Contains information about the facet.
+#     b : Body struct
+#         Contains physical information about the entire rigid body.
+    
+#     Returns
+#     -------
+#     F_srp : SVector{3, Float64}
+#         Force on the facet in the inertial frame
+#     """
+
+# end
+
+function srp!(model, root_index::Int64, sun_dir_ii::SVector{3, Float64}, body, P_srp::Float64, eclipse_ratio, orientation::Bool)
+    """
+    Calculate force on a body due to solar radiation pressure.
+
+    Parameters
     ----------
-    p : Struct
-        Contains planetary parameters, including equatorial radius.
-    p_srp_unscaled : Float64
-        Solar radiation pressure at 1 AU.
-    cR : Float64 
-        Coefficient of reflectivity.
-    A_sat : Float64
-        Area of the satellite
-    m : Float64
-        Mass of the satellite
-    r_sat : Vector{Float64}
-        Position vector of the satellite relative to the planet.
-    time_et : String
-        Ephemeris time of the simulation, used for SPICE calculations.
+    pos_ii : SVector{3, Float64}
+        Position of the body in the inertial frame (J2000)
+    sun_dir_ii : SVector{3, Float64}
+        Unit vector in the direction of the Sun expressed in the inertial frame
+    body : Body struct
+        Struct containing physical information about the body
+    r_sun_norm : Float64
+        Magnitude of the spacecraft distance to the Sun
+    P_srp : Float64
+        Magnitude of the solar radiation pressure force at r_sun_norm meters from the Sun
     
     Returns
     -------
-    srp_accel : Vector{Float64}
-        Acceleration due to solar radiation pressure.
+    F_srp : SVector{3, Float64}
+        Force on the body in the inertial frame
     """
-    rp = p.Rp_e # Equatorial radius of the planet
-    r_sun = p.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", time_et, "J2000", "NONE", uppercase(p.name))[1])
-    r_sun = r_sun .* 1e3 # Convert from km to m
 
-    A_exp = eclipse_area_calc(r_sat, r_sun, A_sat, rp)
-    p_srp = p_srp_unscaled * norm(r_sun - r_sat) / (1.496e11) # Scale SRP for distance from Sun
-    r_sat_to_sun = r_sun - r_sat
-    r_sat_to_sun_mag = norm(r_sat_to_sun)
-
-    srp_accel = -p_srp * cR * A_exp / m * (r_sat_to_sun / r_sat_to_sun_mag)
-    return srp_accel
+    for facet in body.SRP_facets
+        rot_RF = config.rotate_to_inertial(model, body, root_index) * rot(facet.attitude)' # Rotation matrix from facet frame to inertial frame
+        r = normalize(rot_RF * facet.normal_vector) # Normal vector of the facet in the inertial frame
+        cos_α_srp = dot(r, sun_dir_ii)
+        # println("cos alpha: ", cos_α_srp)
+        if cos_α_srp > 0 && eclipse_ratio != 0 # If the facet is illuminated by the Sun
+            F_SRP = -P_srp * facet.area * cos_α_srp * ((1 - facet.δ) * sun_dir_ii + 2 * (facet.ρ / 3 + facet.δ * cos_α_srp) * r) * eclipse_ratio
+            body.net_force += F_SRP
+            if orientation
+                R_facet = config.rotate_to_inertial(model, body, root_index)*facet.cp + rot(model.links[root_index].q)'*body.r # Vector from CoM of spacecraft to facet Cp in inertial frame
+                # println("cross: ", cross(R_facet, F_SRP))
+                body.net_torque += cross(R_facet, F_SRP)
+                # println("body net torque: ", body.net_torque)
+            end
+        end
+    end
 end
+# function srp(p, p_srp_unscaled::Float64, cR::Float64, A_sat::Float64, m::Float64, r_sun::SVector{3, Float64}, r_sat::SVector{3, Float64}, time_et::Float64, α_srp::Float64)
+#     """
+#     Calculate acceleration due to solar radiation pressure. 
+
+#     Parameters 
+#     ----------
+#     p : Struct
+#         Contains planetary parameters, including equatorial radius.
+#     p_srp_unscaled : Float64
+#         Solar radiation pressure at 1 AU.
+#     cR : Float64 
+#         Coefficient of reflectivity.
+#     A_sat : Float64
+#         Area of the satellite
+#     m : Float64
+#         Mass of the satellite
+#     r_sat : Vector{Float64}
+#         Position vector of the satellite relative to the planet.
+#     time_et : String
+#         Ephemeris time of the simulation, used for SPICE calculations.
+    
+#     Returns
+#     -------
+#     srp_accel : Vector{Float64}
+#         Acceleration due to solar radiation pressure.
+#     """
+#     rp = p.Rp_e # Equatorial radius of the planet
+#     # # r_sun = p.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", time_et, "J2000", "NONE", uppercase(p.name))[1])
+#     # r_sun = r_sun .* 1e3 # Convert from km to m
+#     # G_SC = 1.361e3 # Solar constant, W/m^2
+#     # c = 3.0e8 # Speed of light, m/s
+#     # R0 = 1.49597871e8 # 1AU, km
+
+#     # A_exp = eclipse_area_calc(r_sat, r_sun, A_sat, rp)
+#     # p_srp = p_srp_unscaled * norm(r_sun - r_sat) / (1.496e11) # Scale SRP for distance from Sun
+#     # r_sat_to_sun = r_sun - r_sat
+#     # r_sat_to_sun_mag = norm(r_sat_to_sun)
+#     # F_srp = A_exp * G_SC / c * (R0/r_sat_to_sun_mag)^2*[(1+cR)*cos(α_srp)^2; (1-cR)*sin(α_srp)*cos(α_srp); 0]
+
+#     # srp_accel = -p_srp * cR * A_exp / m * (r_sat_to_sun / r_sat_to_sun_mag)
+#     # return srp_accel
+#     return F_srp / m
+# end
 
 """
     alf_IDR(x::Real, N::Integer, M::Integer)

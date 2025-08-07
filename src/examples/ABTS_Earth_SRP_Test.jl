@@ -1,7 +1,8 @@
 include("../simulation/Run.jl")
-include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
+# include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
+include("../utils/quaternion_utils.jl")
 # include("SpacecraftModel.jl")
 
 import .config
@@ -11,54 +12,121 @@ using Profile
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
 # Add bodies to the spacecraft model
-p = SVector{3, Float64}([0.1, 0.2, -0.3])
+p = SVector{3, Float64}([0.0, 0.0, 0.0])
 q = 1/(1+norm(p)^2)*SVector{4, Float64}([2*p; 1-norm(p)^2])
 skew = (ω) -> SMatrix{3, 3, Float64}([0 -ω[3] ω[2];
                                    ω[3] 0 -ω[1];
                                    -ω[2] ω[1] 0])
 dcm = (q[4]^2 - norm(q[1:3])^2)*I(3) - 2*q[4]*skew(q[1:3]) + 2*q[1:3]*q[1:3]' # DCM from quaternion
-ω_body = SVector{3, Float64}([0.001, -0.01, 0.03]) # Reference angular velocity
+ω_body = SVector{3, Float64}([0.0, 0.0, 0.0]) # Reference angular velocity
 ω_ref = dcm'*ω_body
 h = sqrt(30.0/7.0)
 w = sqrt(6.0)
 d = sqrt(66.0/7.0)
+
 # q = SVector{4, Float64}([0.0, 0.0, sin(pi/4), cos(pi/4)]) # Quaternion for the main bus
 main_bus = config.Link(root=true, 
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), 
-                        q=SVector{4, Float64}(q),
-                        # q=SVector{4, Float64}([0, 0, 0, 1]),
+                        # q=SVector{4, Float64}(q),
+                        q=SVector{4, Float64}([0, 0, 0, 1]),
                         ṙ=SVector{3, Float64}([0,0,0]), 
-                        ω=SVector{3, Float64}(ω_ref),
-                        dims=SVector{3, Float64}([2.000001, 2.36643,2.9664]), 
-                        ref_area=2.6*1.7,
-                        m=750.0, 
+                        ω=SVector{3, Float64}(ω_body),
+                        dims=SVector{3, Float64}([1.5, 1.8, 2.86]), 
+                        ref_area=1.5*2.86,
+                        m=200.0, 
                         gyro=0)
 
-# L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.6/2 - 3.89/4, 0.0), 
-#                         q=SVector{4, Float64}([0, 0, 0, 1]),
-#                         ṙ=SVector{3, Float64}([0,0,0]), 
-#                         dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
-#                         ref_area=3.89*1.7/2,
-#                         m=10.0, 
-#                         gyro=0)
-# R_panel = config.Link(r=SVector{3, Float64}(0.0, 2.6/2 + 3.89/4, 0.0),
-#                         q=SVector{4, Float64}([0, 0, 0, 1]),
-#                         ṙ=SVector{3, Float64}([0,0,0]), 
-#                         dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
-#                         ref_area=3.89*1.7/2,
-#                         m=10.0, 
-#                         gyro=0)
+L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.86/2-7.262/2, 0.45), 
+                        q=SVector{4, Float64}([0, 0, 0, 1]),
+                        ṙ=SVector{3, Float64}([0,0,0]), 
+                        dims=SVector{3, Float64}([0.05, 7.262, 7.262]), 
+                        ref_area=pi*(7.262/2)^2,
+                        m=0.01, 
+                        gyro=0)
+R_panel = config.Link(r=SVector{3, Float64}(0.0, 2.86/2+7.262/2, 0.45),
+                        q=SVector{4, Float64}([0, 0, 0, 1]),
+                        ṙ=SVector{3, Float64}([0,0,0]), 
+                        dims=SVector{3, Float64}([0.05, 7.262, 7.262]), 
+                        ref_area=pi*(7.262/2)^2,
+                        m=0.01, 
+                        gyro=0)
 
 config.add_body!(spacecraft, main_bus, prop_mass=1.0)
+config.add_body!(spacecraft, L_panel)
+config.add_body!(spacecraft, R_panel)
+
+L_panel_joint = config.Joint(main_bus, L_panel)
+R_panel_joint = config.Joint(R_panel, main_bus)
+config.add_joint!(spacecraft, L_panel_joint)
+config.add_joint!(spacecraft, R_panel_joint)
 config.set_inertia_tensor!(spacecraft, main_bus, 
                         SMatrix{3, 3, Float64}(Diagonal([900.0, 800.0, 600.0])))
-# config.add_body!(spacecraft, L_panel)
-# config.add_body!(spacecraft, R_panel)
+lenXHub = 1.50 # m
+lenYHub = 1.80 # m
+lenZHub = 2.86 # m
+array_width = 7.262 # m
+area2 = pi*array_width/2*array_width/2
+# Define facet areas
+bus_facet_area_list = [lenYHub * lenZHub,
+                    lenXHub * lenZHub,
+                    lenYHub * lenZHub,
+                    lenXHub * lenZHub,
+                    lenXHub * lenYHub,
+                    lenXHub * lenYHub]
 
-# L_panel_joint = config.Joint(main_bus, L_panel)
-# R_panel_joint = config.Joint(R_panel, main_bus)
-# config.add_joint!(spacecraft, L_panel_joint)
-# config.add_joint!(spacecraft, R_panel_joint)
+panel_facet_area_list = [area2, area2]
+
+# Define facet attitudes - these are in the link frame so articulated components are automatically accounted for
+bus_facet_attitude_list = [q_from_phi([0.0, 0.0, 0.0]),
+                            q_from_phi(deg2rad(-90.0) * [0.0, 0.0, 1.0]),
+                            q_from_phi(deg2rad(180.0) * [0.0, 0.0, 1.0]),
+                            q_from_phi(deg2rad(90.0) * [0.0, 0.0, 1.0]),
+                            q_from_phi(deg2rad(90.0) * [0.0, 1.0, 0.0]),
+                            q_from_phi(deg2rad(-90.0) * [0.0, 1.0, 0.0])]
+panel_facet_attitude_list = [q_from_phi([0.0, 0.0, 0.0]),
+                             q_from_phi(deg2rad(180.0) * [0.0, 0.0, 1.0])]
+
+# Define facet normal vectors - these are in the facet frame, so will usually be [1.0, 0.0, 0.0] as long as you're working with objects composed of flat faces, e.g., boxes, flat plates, etc.
+bus_facet_normal_vectors = [SVector{3, Float64}([1.0, 0.0, 0.0]),
+                            SVector{3, Float64}([1.0, 0.0, 0.0]),
+                            SVector{3, Float64}([1.0, 0.0, 0.0]),
+                            SVector{3, Float64}([1.0, 0.0, 0.0]),
+                            SVector{3, Float64}([1.0, 0.0, 0.0]),
+                            SVector{3, Float64}([1.0, 0.0, 0.0])]
+panel_facet_normal_vectors = [SVector{3, Float64}([1.0, 0.0, 0.0]),
+                              SVector{3, Float64}([1.0, 0.0, 0.0])]
+
+# Define facet center of pressure locations - these are in the link frame, relative to the center of mass of the link.
+bus_facet_locs = [SVector{3, Float64}([0.5 * lenXHub, 0.0, 0.0]),
+                  SVector{3, Float64}([0.0, -0.5 * lenYHub, 0.0]),
+                  SVector{3, Float64}([-0.5 * lenXHub, 0.0, 0.0]),
+                  SVector{3, Float64}([0.0, 0.5 * lenYHub, 0.0]),
+                  SVector{3, Float64}([0.0, 0.0, -0.5 * lenZHub]),
+                  SVector{3, Float64}([0.0, 0.0, 0.5 * lenZHub])]
+panel_facet_locs = [SVector{3, Float64}(zeros(3)), 
+                    SVector{3, Float64}(zeros(3))]
+
+# Define optical coefficients
+bus_specular_coeffs = [0.336, 0.336, 0.336, 0.336, 0.336, 0.336]
+panel_specular_coeffs = [0.16, 0.0]
+bus_diffuse_coeffs = [0.139, 0.139, 0.139, 0.139, 0.139, 0.139]
+panel_diffuse_coeffs = [0.16, 0.56]
+
+bus_facets = config.create_facet_list(bus_facet_area_list,
+                                      bus_facet_attitude_list,
+                                      bus_facet_normal_vectors,
+                                      bus_facet_locs,
+                                      bus_diffuse_coeffs,
+                                      bus_specular_coeffs)
+panel_facets = config.create_facet_list(panel_facet_area_list,
+                                        panel_facet_attitude_list,
+                                        panel_facet_normal_vectors,
+                                        panel_facet_locs,
+                                        panel_diffuse_coeffs,
+                                        panel_specular_coeffs)
+config.add_facet!(main_bus, bus_facets)
+config.add_facet!(L_panel, panel_facets)
+config.add_facet!(R_panel, panel_facets)
 
 println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
 # println("Spacecraft roots: $spacecraft.roots")
@@ -69,7 +137,7 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/basilisk_comparison",                # Directory where to save the results
+            :directory_results => "/workspaces/ABTS.jl/output/basilisk_srp_comparison",                # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
@@ -244,24 +312,6 @@ args = Dict(# Misc Simulation
             )
 
 # # Calculating time of simulation
-# println("Threads: ", Threads.nthreads())
-# nbodies = [["Sun"], ["Sun", "Jupiter"], ["Jupiter"]]
-# for nbody in nbodies
-#     for hours in 0:23
-#         for minutes in 0:30:31
-#         args[:hours] = hours
-#         args[:minutes] = minutes
-#         args[:n_bodies] = nbody
-#         println("Hours: ", args[:hours], " Minutes: ", args[:minutes])
-#         args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey/" * string(args[:hours]) * "_" * string(args[:minutes]) * "_" * string(nbody) * "/"
-# orbits = 200 # 1, 5, 10, 20, 50, 100, 200
-# # for num_orbits in orbits
-# args[:number_of_orbits] = orbits
-# println("Number of Orbits: ", orbits)
-# args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey/" * string(orbits) * "/"
-
-# #     for i in 1:Threads.nthreads() 
-
 # @profview run_analysis(args)
 t = @elapsed begin          
         # Run the simulation
@@ -271,46 +321,4 @@ t = @elapsed begin
         end
 end
 
-        println("COPMUTATIONAL TIME = " * string(t) * " s")
-# end
-        # end
-    # end
-# end
-
-# mc_runs = 50
-# nominal_ra = args[:ra_initial_a]
-# nominal_rp = args[:hp_initial_a]
-# nominal_i = args[:inclination]
-# nominal_Ω = args[:Ω]
-# nominal_ω = args[:ω]
-# for i in 24:mc_runs
-#     a = @allocated begin
-#         t = @elapsed begin
-#             args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey_MC_polyfit_atmo_orig_disp/" * string(i)
-#             println("Monte Carlo Run: ", i)
-#             if i == 1
-#                 args[:print_res] = 1
-#             else
-#                 args[:print_res] = 0
-#             end
-#             # args[:print_res] = 1
-#             # println(randn()*sqrt(args[:ra_dispersion]) * 1e3)
-#             args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3
-#             args[:hp_initial_a] = nominal_rp + randn()*sqrt(args[:rp_dispersion]) * 1e3
-#             args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])
-#             args[:Ω] = nominal_Ω + randn()*sqrt(args[:Ω_dispersion])
-#             args[:ω] = nominal_ω + randn()*sqrt(args[:ω_dispersion])
-
-#             # Run the simulation
-#             sol = run_analysis(args)
-
-#             if Bool(args[:passresults])
-#                 println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#             end
-#         end
-
-#         println("COMPUTATIONAL TIME = " * string(t) * " s")
-#         config.reset_config()
-#     end
-#     println("Memory allocated = " * string(a / 1e6) * " MB")
-# end
+println("COMPUTATIONAL TIME = " * string(t) * " s")

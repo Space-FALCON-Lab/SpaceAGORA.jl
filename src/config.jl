@@ -6,19 +6,6 @@ using StaticArrays
 using AstroTime
 using OrdinaryDiffEq
 export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model
-    # @kwdef mutable struct Body
-    #     mass::Float64 = 0.0
-    #     length_SA::Float64 = 0.0
-    #     height_SA::Float64 = 0.0
-    #     area_SA::Float64 = 0.0
-    #     length_SC::Float64 = 0.0
-    #     height_SC::Float64 = 0.0
-    #     area_SC::Float64 = 0.0
-    #     area_tot::Float64 = 0.0
-    #     δ::Float64 = 0.0
-    #     nose_radius::Float64 = 0.0
-    #     base_radius::Float64 = 0.0
-    # end
 
     @kwdef mutable struct Planet
         Rp_e::Float64 = 0.0

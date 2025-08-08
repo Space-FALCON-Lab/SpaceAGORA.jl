@@ -28,25 +28,25 @@ d = sqrt(66.0/7.0)
 main_bus = config.Link(root=true, 
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), 
                         # q=SVector{4, Float64}(q),
-                        q=SVector{4, Float64}([0, 0, 0, 1]),
-                        ṙ=SVector{3, Float64}([0,0,0]), 
+                        q=SVector{4, Float64}([0.0, 0.0, 0.0, 1.0]),
+                        ṙ=SVector{3, Float64}([0.0, 0.0, 0.0]), 
                         ω=SVector{3, Float64}(ω_body),
                         dims=SVector{3, Float64}([1.5, 1.8, 2.86]), 
                         ref_area=1.5*2.86,
                         m=200.0, 
                         gyro=0)
 
-L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.86/2-7.262/2, 0.45), 
-                        q=SVector{4, Float64}([0, 0, 0, 1]),
-                        ṙ=SVector{3, Float64}([0,0,0]), 
-                        dims=SVector{3, Float64}([0.05, 7.262, 7.262]), 
+L_panel = config.Link(r=SVector{3, Float64}(-1.5/2-3.75, 0.0, 0.45), 
+                        q=SVector{4, Float64}([0.0, 0.0, 0.0, 1.0]),
+                        ṙ=SVector{3, Float64}([0.0, 0.0, 0.0]), 
+                        dims=SVector{3, Float64}([7.262, 0.05, 7.262]), 
                         ref_area=pi*(7.262/2)^2,
                         m=0.01, 
                         gyro=0)
-R_panel = config.Link(r=SVector{3, Float64}(0.0, 2.86/2+7.262/2, 0.45),
-                        q=SVector{4, Float64}([0, 0, 0, 1]),
-                        ṙ=SVector{3, Float64}([0,0,0]), 
-                        dims=SVector{3, Float64}([0.05, 7.262, 7.262]), 
+R_panel = config.Link(r=SVector{3, Float64}(1.5/2+3.75, 0.0, 0.45),
+                        q=SVector{4, Float64}([0.0, 0.0, 0.0, 1]),
+                        ṙ=SVector{3, Float64}([0.0, 0.0, 0.0]), 
+                        dims=SVector{3, Float64}([7.262, 0.05, 7.262]), 
                         ref_area=pi*(7.262/2)^2,
                         m=0.01, 
                         gyro=0)
@@ -83,8 +83,8 @@ bus_facet_attitude_list = [q_from_phi([0.0, 0.0, 0.0]),
                             q_from_phi(deg2rad(90.0) * [0.0, 0.0, 1.0]),
                             q_from_phi(deg2rad(90.0) * [0.0, 1.0, 0.0]),
                             q_from_phi(deg2rad(-90.0) * [0.0, 1.0, 0.0])]
-panel_facet_attitude_list = [q_from_phi([0.0, 0.0, 0.0]),
-                             q_from_phi(deg2rad(180.0) * [0.0, 0.0, 1.0])]
+panel_facet_attitude_list = [q_from_phi(deg2rad(90.0) * [0.0, 0.0, 1.0]),
+                             q_from_phi(deg2rad(-90.0) * [0.0, 0.0, 1.0])]
 
 # Define facet normal vectors - these are in the facet frame, so will usually be [1.0, 0.0, 0.0] as long as you're working with objects composed of flat faces, e.g., boxes, flat plates, etc.
 bus_facet_normal_vectors = [SVector{3, Float64}([1.0, 0.0, 0.0]),
@@ -97,14 +97,14 @@ panel_facet_normal_vectors = [SVector{3, Float64}([1.0, 0.0, 0.0]),
                               SVector{3, Float64}([1.0, 0.0, 0.0])]
 
 # Define facet center of pressure locations - these are in the link frame, relative to the center of mass of the link.
-bus_facet_locs = [SVector{3, Float64}([0.5 * lenXHub, 0.0, 0.0]),
-                  SVector{3, Float64}([0.0, -0.5 * lenYHub, 0.0]),
-                  SVector{3, Float64}([-0.5 * lenXHub, 0.0, 0.0]),
-                  SVector{3, Float64}([0.0, 0.5 * lenYHub, 0.0]),
-                  SVector{3, Float64}([0.0, 0.0, -0.5 * lenZHub]),
-                  SVector{3, Float64}([0.0, 0.0, 0.5 * lenZHub])]
-panel_facet_locs = [SVector{3, Float64}(zeros(3)), 
-                    SVector{3, Float64}(zeros(3))]
+bus_facet_locs = [SVector{3, Float64}([0.5 * lenXHub, 0.0, 0.5 * lenZHub]),
+                  SVector{3, Float64}([0.0, -0.5 * lenYHub, 0.5 * lenZHub]),
+                  SVector{3, Float64}([-0.5 * lenXHub, 0.0, 0.5 * lenZHub]),
+                  SVector{3, Float64}([0.0, 0.5 * lenYHub, 0.5 * lenZHub]),
+                  SVector{3, Float64}([0.0, 0.0, 0.0]),
+                  SVector{3, Float64}([0.0, 0.0, 1.0 * lenZHub])]
+panel_facet_locs = [SVector{3, Float64}([0.0, 0.0, 0.0]), 
+                    SVector{3, Float64}([0.0, 0.0, 0.0])]
 
 # Define optical coefficients
 bus_specular_coeffs = [0.336, 0.336, 0.336, 0.336, 0.336, 0.336]

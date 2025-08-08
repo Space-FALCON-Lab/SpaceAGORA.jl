@@ -30,6 +30,7 @@ import .config
 import .ref_sys
 import .quaternion_utils
 
+const R0 = 149597870.7e3 # 1AU, m
 
 function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothing, gram=nothing)
     wind_m = false
@@ -441,8 +442,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         if args[:srp] == true
             r_sun_planet = m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", config.cnf.et, "J2000", "NONE", uppercase(m.planet.name))[1])*1e3 # Vector describing the position of the Sun wrt the planet in J2000 frame
             eclipse_ratio = eclipse_area_calc(pos_ii, r_sun_planet, m.planet.Rp_e)
-            R0 = 149597870.7e3 # 1AU, m
-            P_srp = 4.5566666e-6*(R0/norm(r_sun_planet))^2
+            if eclipse_ratio != 1
+                println("et: $el_time, eclipse_ratio: $eclipse_ratio")
+            end
+            P_srp = 4.5566666e-6*(R0/norm(r_sun_planet - pos_ii))^2
+            F_SRP_tracker = MVector{3, Float64}(zeros(3))
             for (i, b) in enumerate(bodies)
                 mass_body = b.m # Mass of the spacecraft link
                 if b.root
@@ -458,7 +462,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 pos_ii_body_mag = norm(pos_ii_body) # Magnitude of the inertial position of the spacecraft link
                 sun_direction = r_sun_planet - pos_ii_body
                 sun_direction = normalize(sun_direction)
-                srp!(m.body, root_index, sun_direction, b, P_srp, eclipse_ratio, orientation_sim)
+                F_SRP_tracker += srp!(m.body, root_index, sun_direction, b, P_srp, eclipse_ratio, orientation_sim)
                 # # Account for angle of incidence of sunlight
                 # normal_vector_ii = config.get_normal_vector(m.body, b, root_index, normalized=true) # Normal vector of the spacecraft link in inertial frame
                 # normal_vector_ii_hat = normal_vector_ii / norm(normal_vector_ii) # Unit vector of the normal vector
@@ -474,6 +478,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 #     b.net_torque += cross(R*b.r, srp_ii) # Update the torque on the spacecraft link
                 # end
             end
+            # println("F_SRP_tracker: $F_SRP_tracker")
         end
 
         bank_angle = deg2rad(0.0)

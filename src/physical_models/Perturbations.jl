@@ -129,23 +129,31 @@ function srp!(model, root_index::Int64, sun_dir_ii::SVector{3, Float64}, body, P
     F_srp : SVector{3, Float64}
         Force on the body in the inertial frame
     """
-
+    F_SRP_tracker = MVector{3, Float64}(zeros(3))
     for facet in body.SRP_facets
         rot_RF = config.rotate_to_inertial(model, body, root_index) * rot(facet.attitude)' # Rotation matrix from facet frame to inertial frame
-        r = normalize(rot_RF * facet.normal_vector) # Normal vector of the facet in the inertial frame
-        cos_α_srp = dot(r, sun_dir_ii)
+        n = normalize(rot_RF * facet.normal_vector) # Normal vector of the facet in the inertial frame
+        # println("n: $n")
+        cos_α_srp = dot(n, sun_dir_ii)
         # println("cos alpha: ", cos_α_srp)
         if cos_α_srp > 0 && eclipse_ratio != 0 # If the facet is illuminated by the Sun
-            F_SRP = -P_srp * facet.area * cos_α_srp * ((1 - facet.δ) * sun_dir_ii + 2 * (facet.ρ / 3 + facet.δ * cos_α_srp) * r) * eclipse_ratio
+            F_SRP = -P_srp * facet.area * cos_α_srp * ((1 - facet.δ) * sun_dir_ii + 2 * (facet.ρ / 3 + facet.δ * cos_α_srp) * n) * eclipse_ratio
+            # F_SRP_tracker += F_SRP
             body.net_force += F_SRP
             if orientation
                 R_facet = config.rotate_to_inertial(model, body, root_index)*facet.cp + rot(model.links[root_index].q)'*body.r # Vector from CoM of spacecraft to facet Cp in inertial frame
+                # println("R_facet: $R_facet")
+                # println("F_SRP: $F_SRP")
+                # println("cross: $(cross(R_facet, F_SRP))")
                 # println("cross: ", cross(R_facet, F_SRP))
                 body.net_torque += cross(R_facet, F_SRP)
+                F_SRP_tracker += cross(R_facet, F_SRP)
                 # println("body net torque: ", body.net_torque)
             end
         end
     end
+    return F_SRP_tracker
+    # println("Total F_SRP: $F_SRP_tracker")
 end
 # function srp(p, p_srp_unscaled::Float64, cR::Float64, A_sat::Float64, m::Float64, r_sun::SVector{3, Float64}, r_sat::SVector{3, Float64}, time_et::Float64, α_srp::Float64)
 #     """

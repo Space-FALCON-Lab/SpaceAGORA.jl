@@ -247,3 +247,25 @@ function constant_thruster!(m, b::config.Link, root_index::Int, vel_pp_rw::SVect
         thruster.thrust = 1.0
     end
 end
+
+function rw_mrp_feedback_control!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
+    """
+    MRP feedback control for comparison with Basilisk
+    """
+    # target_MRP = SVector{3, Float64}(zeros(3))    
+    q = m.body.links[root_index].q
+    ω = -m.body.links[root_index].ω
+    current_MRP = -q[1:3]/(1+q[4])
+    if norm(current_MRP) > 1
+        current_MRP .= -current_MRP/norm(current_MRP)^2 # If the rotation is larger than 180 degrees, switch to shadow set
+    end
+    
+    # Determine the error rotation
+    R = config.rotate_to_inertial(m.body, b, root_index)
+    J = config.get_inertia_tensor(m.body, b)
+    ω_body = R' * ω
+    P = 30.0
+    K = 3.5
+    Lr = -K*current_MRP - P*ω_body + cross(ω_body, J*ω_body) # Total control torque, body frame
+    b.ω_wheel_derivatives .= -pinv(b.J_rw)*Lr
+end

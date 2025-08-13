@@ -30,7 +30,8 @@ end
 
 function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64}, rp::Float64)
     """
-    Calculate the exposed area of the satellite. Translated from Python to Julia.
+    Calculate the exposed area of the satellite. Translated from Python to Julia. 
+    See equations and diagrams in Basilisk documentation: https://avslab.github.io/basilisk/Documentation/simulation/environment/eclipse/eclipse.html
 
     Parameters 
     ----------
@@ -50,40 +51,73 @@ function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64
         Eclipse ratio of the satellite.
     
     """
-    shadow = "none"
-    rs = 6.9634e8 # Radius of the Sun in meters 
-    RP = norm(r_sun) # Distance from Sun to the planet 
-    alpha_umb = asin((rs - rp) / RP)  # Umbra angle
-    alpha_pen = asin((rs + rp) / RP)  # Penumbra angle
-
-    if dot(r_sun, r_sat) < 0 # if the angle is greater than 90 degrees, satellite is potentially in an eclipse
-        # Compute the satellite's horizontal and vertical distances
-        sigma = acos(dot(-r_sat, r_sun) / (norm(r_sat) * norm(r_sun)))
-        sat_horiz = norm(r_sat) * cos(sigma)
-        sat_vert = norm(r_sat) * sin(sigma)
-        # Determine the eclipse conditions
-        x = rp / sin(alpha_pen)
-        pen_vert = tan(alpha_pen) * (x + sat_horiz)
-
-        if sat_vert <= pen_vert # if true, the satellite is in partial shadow(penumbra)
-            shadow = "penumbra"
-            y = rp / sin(alpha_umb)
-            umb_vert = tan(alpha_umb) * (y - sat_horiz)
-            if sat_vert <= umb_vert
-                shadow = "umbra"
-            end
-        end
+    rs = 695000e3 # Radius of the Sun in meters
+    if dot(r_sun, r_sat) >= 0 # check the cos of the angle between the satellite and the Sun. If positive (angle less than 90 degrees), the satellite is not in eclipse
+        return 1.0 # If the satellite is not in eclipse, return 1.0
     end
-
-    if shadow == "none"
-        eclipse_ratio = 1
-    elseif shadow == "penumbra"
-        eclipse_ratio = (1 - (1 - (sat_vert / pen_vert))^2)
-    else 
-        eclipse_ratio = 0
-    end
+    # Eclipse conditions
+    f1 = asin((rs + rp) / norm(r_sun)) # Penumbra angle
+    f2 = asin((rs - rp) / norm(r_sun)) # Umbra angle
+    s0 = -dot(r_sat, r_sun) / (norm(r_sun)) # Plane-axis intersection and planet center distance
+    c1 = s0 + rp * sin(f1) # Distance from fundamental plane to cone vertex V1
+    c2 = s0 - rp * sin(f2) # Distance from fundamental plane to cone vertex V2
+    l1 = c1*tan(f1) # Radius of penumbra cone in fundamental plane
+    l2 = c2*tan(f2) # Radius of umbra cone in fundamental plane
+    l = √(norm(r_sat)^2 - s0^2) # Distance from fundamental plane to satellite
     
-    return eclipse_ratio
+    # Apparent radii of sun, planet, and apparent separation of sun and planet, respectively
+    a = asin(rs / norm(r_sun)) # Apparent radius of the Sun
+    b = asin(rp / norm(r_sat)) # Apparent radius of the planet
+    c = acos(-dot(r_sun, r_sat) / (norm(r_sun) * norm(r_sat))) # Apparent separation of the Sun and planet
+    if c < b - a # Total eclipse condition
+        return 0.0 # If the satellite is in total eclipse, return 0.0
+    elseif c < a - b # Annular eclipse condition
+        A_sun = π * a^2 # Apparent area of the Sun
+        A_planet = π * b^2 # Apparent area of the planet
+        return b^2 / a^2 # Shadow fraction
+    elseif c < a + b # Partial eclipse condition
+        x = (c^2 + a^2 - b^2) / (2 * c)
+        y = √(a^2 - x^2)
+        A = a^2 * acos(x / a) + b^2 * acos((c - x) / b) - c * y
+        return 1 - A / (π * a^2) # Shadow fraction
+    else # No eclipse condition
+        return 1.0 # If the satellite is not in eclipse, return 1.0
+    end
+
+    # shadow = "none"
+    # rs = 6.9634e8 # Radius of the Sun in meters 
+    # RP = norm(r_sun) # Distance from Sun to the planet 
+    # alpha_umb = asin((rs - rp) / RP)  # Umbra angle
+    # alpha_pen = asin((rs + rp) / RP)  # Penumbra angle
+
+    # if dot(r_sun, r_sat) < 0 # if the angle is greater than 90 degrees, satellite is potentially in an eclipse
+    #     # Compute the satellite's horizontal and vertical distances
+    #     sigma = acos(dot(-r_sat, r_sun) / (norm(r_sat) * norm(r_sun)))
+    #     sat_horiz = norm(r_sat) * cos(sigma)
+    #     sat_vert = norm(r_sat) * sin(sigma)
+    #     # Determine the eclipse conditions
+    #     x = rp / sin(alpha_pen)
+    #     pen_vert = tan(alpha_pen) * (x + sat_horiz)
+
+    #     if sat_vert <= pen_vert # if true, the satellite is in partial shadow(penumbra)
+    #         shadow = "penumbra"
+    #         y = rp / sin(alpha_umb)
+    #         umb_vert = tan(alpha_umb) * (y - sat_horiz)
+    #         if sat_vert <= umb_vert
+    #             shadow = "umbra"
+    #         end
+    #     end
+    # end
+
+    # if shadow == "none"
+    #     eclipse_ratio = 1
+    # elseif shadow == "penumbra"
+    #     eclipse_ratio = (1 - (1 - (sat_vert / pen_vert))^2)
+    # else 
+    #     eclipse_ratio = 0
+    # end
+    
+    # return eclipse_ratio
 end
 
 # function srp(p::config.Planet, facet::config.Facet, b::config.Body)
@@ -131,14 +165,19 @@ function srp!(model, root_index::Int64, sun_dir_ii::SVector{3, Float64}, body, P
     """
     F_SRP_tracker = MVector{3, Float64}(zeros(3))
     for facet in body.SRP_facets
+        
         rot_RF = config.rotate_to_inertial(model, body, root_index) * rot(facet.attitude)' # Rotation matrix from facet frame to inertial frame
         n = normalize(rot_RF * facet.normal_vector) # Normal vector of the facet in the inertial frame
         # println("n: $n")
-        cos_α_srp = dot(n, sun_dir_ii)
+        cos_α_srp = dot(n, sun_dir_ii) / norm(n) / norm(sun_dir_ii)
         # println("cos alpha: ", cos_α_srp)
-        if cos_α_srp > 0 && eclipse_ratio != 0 # If the facet is illuminated by the Sun
+        if cos_α_srp > 0 && eclipse_ratio != 0.0 # If the facet is illuminated by the Sun
+            # if eclipse_ratio >= 32280 && eclipse_ratio <= 32290 
+            #     println("facet cp: ", facet.cp)
+            #     println("facet attitude: ", facet.attitude)
+            # end
             F_SRP = -P_srp * facet.area * cos_α_srp * ((1 - facet.δ) * sun_dir_ii + 2 * (facet.ρ / 3 + facet.δ * cos_α_srp) * n) * eclipse_ratio
-            # F_SRP_tracker += F_SRP
+            F_SRP_tracker += F_SRP
             body.net_force += F_SRP
             if orientation
                 R_facet = config.rotate_to_inertial(model, body, root_index)*facet.cp + rot(model.links[root_index].q)'*body.r # Vector from CoM of spacecraft to facet Cp in inertial frame
@@ -147,7 +186,7 @@ function srp!(model, root_index::Int64, sun_dir_ii::SVector{3, Float64}, body, P
                 # println("cross: $(cross(R_facet, F_SRP))")
                 # println("cross: ", cross(R_facet, F_SRP))
                 body.net_torque += cross(R_facet, F_SRP)
-                F_SRP_tracker += cross(R_facet, F_SRP)
+                # F_SRP_tracker += cross(R_facet, F_SRP)
                 # println("body net torque: ", body.net_torque)
             end
         end

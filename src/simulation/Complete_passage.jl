@@ -31,6 +31,7 @@ import .ref_sys
 import .quaternion_utils
 
 const R0 = 149597870.7e3 # 1AU, m
+const g_e = 9.81 # Gravitational acceleration of Earth at surface, m/s^2
 
 function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothing, gram=nothing)
     wind_m = false
@@ -441,27 +442,24 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
         if args[:srp] == true
             r_sun_planet = m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", config.cnf.et, "J2000", "NONE", uppercase(m.planet.name))[1])*1e3 # Vector describing the position of the Sun wrt the planet in J2000 frame
-            eclipse_ratio = eclipse_area_calc(pos_ii, r_sun_planet, m.planet.Rp_e)
-            if eclipse_ratio != 1
-                println("et: $el_time, eclipse_ratio: $eclipse_ratio")
-            end
-            P_srp = 4.5566666e-6*(R0/norm(r_sun_planet - pos_ii))^2
+            eclipse_ratio = args[:eclipse] ? eclipse_area_calc(pos_ii, r_sun_planet, m.planet.Rp_e) : 1.0
+            P_srp = 4.56e-6*(R0/norm(r_sun_planet - pos_ii))^2#4.5566666e-6
             F_SRP_tracker = MVector{3, Float64}(zeros(3))
+
             for (i, b) in enumerate(bodies)
-                mass_body = b.m # Mass of the spacecraft link
-                if b.root
-                    mass_body += mass-config.get_spacecraft_mass(m.body, b, dry=true) # Add the mass of the root body
-                end
+                # mass_body = b.m # Mass of the spacecraft link
+                # if b.root
+                #     mass_body += mass-config.get_spacecraft_mass(m.body, b, dry=true) # Add the mass of the root body
+                # end
                 # Calculate the position of the spacecraft link in inertial frame
                 if orientation_sim
-                    R = Rot[i] # Rotation matrix from the root body to the spacecraft link
+                    R = Rot[i] # Rotation matrix from the inertial frame to the spacecraft link
                 else
-                    R = rot(b.q) # Rotation matrix from the root body to the spacecraft link
+                    R = rot(b.q) # Rotation matrix from the inertial frame to the spacecraft link
                 end
-                pos_ii_body = pos_ii + R * b.r # Update the position of the spacecraft link in inertial frame
-                pos_ii_body_mag = norm(pos_ii_body) # Magnitude of the inertial position of the spacecraft link
-                sun_direction = r_sun_planet - pos_ii_body
-                sun_direction = normalize(sun_direction)
+                pos_ii_body = pos_ii + rot(m.body.links[root_index].q)' * b.r # Update the position of the spacecraft link in inertial frame
+                # pos_ii_body_mag = norm(pos_ii_body) # Magnitude of the inertial position of the spacecraft link
+                sun_direction = normalize(r_sun_planet - pos_ii_body)
                 F_SRP_tracker += srp!(m.body, root_index, sun_direction, b, P_srp, eclipse_ratio, orientation_sim)
                 # # Account for angle of incidence of sunlight
                 # normal_vector_ii = config.get_normal_vector(m.body, b, root_index, normalized=true) # Normal vector of the spacecraft link in inertial frame
@@ -478,6 +476,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 #     b.net_torque += cross(R*b.r, srp_ii) # Update the torque on the spacecraft link
                 # end
             end
+            # if el_time >= 32280 && el_time <= 32290
+            #     println("et: ", el_time)
+            # end
             # println("F_SRP_tracker: $F_SRP_tracker")
         end
 
@@ -580,7 +581,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
 
         # Thrust
-        Δv = m.engines.g_e * m.engines.Isp * log(initial_state.m / mass)
+        Δv = g_e * m.engines.Isp * log(initial_state.m / mass)
 
         if ip.tc == 0
             thrust_pp_mag = no_maneuver(t0, m.engines.T, Δv, args, index_phase_aerobraking)
@@ -602,12 +603,13 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         total_rw_h = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize total reaction wheel angular momentum vector
         rw_h = MVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels)) # Initialize vector of reaction wheel angular momentum magnitudes
         rw_τ = MVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels)) # Initialize vector of reaction wheel torque magnitudes
+        thruster_fuel_mass_consumption = 0.0 # Tracks mass consumption rate of all attitude control thrusters
         if orientation_sim
             # ω_wheel_derivatives = MVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels)) # Initialize vector of reaction wheel angular momentum derivatives
             counter = 1 # Counter for reaction wheel angular momentum vector
             @inbounds for (i, b) in enumerate(bodies)
-                R .= Rot[i] # Rotation matrix from the root body to the spacecraft link
-                if b.gyro != 0 # If the body has reaction wheels and we are in the aerobraking phase
+                R .= Rot[i] # Rotation matrix from the inertial frame to the spacecraft link frame
+                if b.gyro != 0 # If the body has reaction wheels
                     # Determine the angular momentum derivatives of the reaction wheels
                     # if el_time - b.attitude_control_last_called >= b.attitude_control_rate
                     #     b.ω_wheel_derivatives .= b.attitude_control_function(m, b, root_index, vel_pp_rw, h_pp_hat, aerobraking_phase) # Calculate the reaction wheel torque
@@ -633,6 +635,28 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     b.rw_τ .= R'*τ # Save the reaction wheel torque in the body
                     τ_rw .+= b.rw_τ # Sum the reaction wheel torques
                     b.net_torque .+= τ # Update the torque on the spacecraft link
+                end
+
+                # Attitude control thruster torques and forces
+                # Check that the current body has thrusters
+                if !isempty(b.thrusters)
+                    # Ensure the thrust magnitudes are less than the maximum
+                    thrusts = MVector{length(b.thrusters), Float64}(zeros(length(b.thrusters))) # Create an MVector with the same number of elements as thrusters
+                    println(length(b.thrusters))
+                    for thrust_idx in eachindex(b.thrusters)
+                        thruster = b.thrusters[thrust_idx]
+                        thruster.thrust = clamp(thruster.thrust, 0.0, thruster.max_thrust)
+                        thrusts[thrust_idx] = thruster.thrust
+                    end
+                    # Add the torques due to the thrusters
+                    b.net_torque += R' * (b.J_thruster * thrusts)
+                    # Add the forces due to the thrusters
+                    for thrust_idx in eachindex(b.thrusters)
+                        thruster = b.thrusters[thrust_idx]
+                        thrust = thrusts[thrust_idx]
+                        b.net_force += R' * (thruster.direction * thrust)
+                        thruster_fuel_mass_consumption -= thrust / (g_e * thruster.Isp)
+                    end
                 end
             end
         end
@@ -660,7 +684,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         
         y_dot[1:3] .= vel_ii * (config.cnf.TU / config.cnf.DU) # Position derivative in inertial frame
         y_dot[4:6] .= force_ii / mass * (config.cnf.TU^2 / config.cnf.DU) # Velocity derivative in inertial frame
-        y_dot[7] = -norm(thrust_ii) / (m.engines.g_e * m.engines.Isp) * config.cnf.TU / config.cnf.MU       # mass variation
+        y_dot[7] = (-norm(thrust_ii) / (g_e * m.engines.Isp) + thruster_fuel_mass_consumption) * config.cnf.TU / config.cnf.MU       # mass variation
         y_dot[8:8+length(bodies)-1] .= heat_rate * config.cnf.TU^3 / config.cnf.MU # Heat load derivatives
         # for i in eachindex(bodies)
         #     y_dot[7+i] = heat_rate[i] * config.cnf.TU^3 / config.cnf.MU # Body heat load derivatives
@@ -798,9 +822,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             aerobraking_phase = 2 # Aerobraking phase
             bodies, root_index = config.traverse_bodies(m.body, m.body.roots[1])
             for b in bodies
-                if b.gyro != 0.0
-                    # Determine the angular momentum derivatives of the reaction wheels
-                    b.ω_wheel_derivatives .= b.attitude_control_function(m, b, root_index, vel_pp_rw, h_pp_hat, aerobraking_phase) # Calculate the reaction wheel torque
+                if b.gyro != 0 || !isempty(b.thrusters)
+                    b.attitude_control_function(m, b, root_index, vel_pp_rw, h_pp_hat, aerobraking_phase) # Calculate the reaction wheel torque
                 end
             end
         end
@@ -1148,7 +1171,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         initial_state = integrator.p[9]
 
         mass = y[7] * config.cnf.MU
-        Δv = (m.engines.g_e * m.engines.Isp) * log(initial_state.m/mass)
+        Δv = (g_e * m.engines.Isp) * log(initial_state.m/mass)
         m.body.prop_mass .= [mass - config.get_spacecraft_mass(m.body, m.body.roots[1], dry=true)]
         Δv - args[:delta_v]  # upcrossing and downcrossing
     end
@@ -1566,7 +1589,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     a_tol_list[next_index:next_index+3] .= a_tol_quat*ones(4)  # Quaternion
                     r_tol_list[next_index:next_index+3] .= r_tol_quat*ones(4)  # Quaternion
                 end
-                # method = ImplicitMidpoint(autodiff=false)
+                # method = Tsit5()
                 sol = solve(config.cnf.prob, method, abstol=a_tol_list, reltol=r_tol_list, callback=events, dtmax=dt_max/config.cnf.TU)
                 config.cnf.counter_integrator += 1
                 in_cond .= sol.u[end]  # Update initial condition for next step
@@ -1841,7 +1864,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
     println("Max heat rate is " * string(max_heat_rate) * " W/cm^2")
     append!(config.cnf.max_heatrate, max_heat_rate)
-    config.cnf.Δv_man = (m.engines.g_e * m.engines.Isp) * log((config.get_spacecraft_mass(m.body, m.body.roots[1])) / config.solution.performance.mass[end])
+    config.cnf.Δv_man = (g_e * m.engines.Isp) * log((config.get_spacecraft_mass(m.body, m.body.roots[1])) / config.solution.performance.mass[end])
 
 
     if Bool(args[:print_res])

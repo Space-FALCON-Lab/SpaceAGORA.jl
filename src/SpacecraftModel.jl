@@ -13,6 +13,14 @@ const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
     δ::Float64 = 0.0 # Specular coefficient
 end
 
+@kwdef mutable struct Thruster
+    max_thrust::Float64 = 1.0 # Maximum thrust, N
+    location::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Location in the link frame, relative to the CoM of the link, m
+    direction::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Unit vector direction of thrust in the link frame, n/d
+    Isp::Float64 = 0.0 # Specific impulse of the thruster, s
+    thrust::Float64 = 0.0 # Current thrust magnitude, to be updated during simulation. N
+end
+
 mutable struct Link
     root::Bool # Whether this link is a root link (i.e., the main bus or core body of the spacecraft). 
     #^ This will have orientation expressed relative to the inertial frame.
@@ -33,7 +41,7 @@ mutable struct Link
     max_torque::Float64 # Maximum torque that can be applied by the reaction wheels
     max_h::Float64 # Maximum angular momentum that can be stored in the reaction wheels
     rw::Vector{Float64} # angular momentum reaction wheels
-    J_rw::Matrix{Float64}#J_rw::SMatrix{3,} # reaction wheel jacobian
+    J_rw::Matrix{Float64} # reaction wheel jacobian
     rw_τ::MVector{3, Float64} # Reaction wheel torque vector, to be updated at each simulation step
     net_force::MVector{3, Float64} # Net force acting on the link, to be updated at each simulation step
     net_torque::MVector{3, Float64} # Net torque acting on the link, to be updated at each simulation step
@@ -42,6 +50,8 @@ mutable struct Link
     attitude_control_rate::Float64 # Rate at which the attitude control function is called, in seconds
     ω_wheel_derivatives::Vector{Float64} # Angular momentum derivatives of the reaction wheels, to be updated at each simulation step
     SRP_facets::Vector{Facet}
+    J_thruster::Matrix{Float64} # Thruster Jacobian matrix
+    thrusters::Vector{Thruster}
     function Link(;root=false,
                     r=SVector{3, Float64}([0, 0, 0]), 
                     q=SVector{4, Float64}([0,0,0,1]), 
@@ -68,9 +78,11 @@ mutable struct Link
                     actuation_function=()->0.0,
                     attitude_control_rate=0.1,
                     ω_wheel_derivatives=MVector{gyro, Float64}(zeros(gyro)),
-                    SRP_facets=[])#SMatrix{3,Int(gyro)}(1.0I))
+                    SRP_facets=Facet[],
+                    J_thruster=Matrix{Float64}(zeros(3, 1)),
+                    thrusters=Thruster[])#SMatrix{3,Int(gyro)}(1.0I))
                     println(length(rw))
-        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, gyro, max_torque, max_h, rw, J_rw, rw_τ, net_force, net_torque, attitude_control_function, actuation_function, attitude_control_rate, ω_wheel_derivatives, SRP_facets)
+        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, gyro, max_torque, max_h, rw, J_rw, rw_τ, net_force, net_torque, attitude_control_function, actuation_function, attitude_control_rate, ω_wheel_derivatives, SRP_facets, J_thruster, thrusters)
     end
 
     function Link(link::Link)
@@ -204,6 +216,24 @@ function add_facet!(link::Link, facets::Vector{Facet})
     - `facet` : The facet to add
     """
     push!(link.SRP_facets, facets...)
+end
+
+function add_thruster!(link::Link, thruster::Thruster)
+    """
+    Adds a thruster to the Link
+    - `link` : The Link to which the thruster is added
+    - `thruster` : The thruster to add
+    """
+    # Add the thruster torque to the Jacobian matrix
+    if isempty(link.thrusters)
+        link.J_thruster .= cross(thruster.location, thruster.direction) # If this is the first thruster to be added, simply set the Jacobian equal to the r x F vector
+    else
+        link.J_thruster = hcat(link.J_thruster, cross(thruster.location, thruster.direction)) # If there are already thrusters in the link, append the new r x F vector to the Jacobian
+    end
+    # Append the thruster to the list of thrusters for future reference
+    # Ensure the thruster direction is a unit vector
+    normalize!(thruster.direction)
+    push!(link.thrusters, thruster)
 end
 
 function create_facet_list(area_list::Vector{Float64}, attitude_list::Vector{SVector{4, Float64}}, normal_vector_list::Vector{SVector{3, Float64}}, 

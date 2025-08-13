@@ -12,7 +12,7 @@ using Profile
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
 # Add bodies to the spacecraft model
-p = SVector{3, Float64}([0.0, 0.0, 0.0])
+p = SVector{3, Float64}([0.1, 0.0, 0.0])
 q = 1/(1+norm(p)^2)*SVector{4, Float64}([2*p; 1-norm(p)^2])
 skew = (ω) -> SMatrix{3, 3, Float64}([0 -ω[3] ω[2];
                                    ω[3] 0 -ω[1];
@@ -27,8 +27,8 @@ d = sqrt(66.0/7.0)
 # q = SVector{4, Float64}([0.0, 0.0, sin(pi/4), cos(pi/4)]) # Quaternion for the main bus
 main_bus = config.Link(root=true, 
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), 
-                        # q=SVector{4, Float64}(q),
-                        q=SVector{4, Float64}([0.0, 0.0, 0.0, 1.0]),
+                        q=SVector{4, Float64}(q),
+                        # q=SVector{4, Float64}([0.0, 0.0, 0.0, 1.0]),
                         ṙ=SVector{3, Float64}([0.0, 0.0, 0.0]), 
                         ω=SVector{3, Float64}(ω_body),
                         dims=SVector{3, Float64}([1.5, 1.8, 2.86]), 
@@ -36,14 +36,14 @@ main_bus = config.Link(root=true,
                         m=200.0, 
                         gyro=0)
 
-L_panel = config.Link(r=SVector{3, Float64}(-1.5/2-3.75, 0.0, 0.45), 
+L_panel = config.Link(r=SVector{3, Float64}(-1.5/2-3.75, 0.0, 0.0), 
                         q=SVector{4, Float64}([0.0, 0.0, 0.0, 1.0]),
                         ṙ=SVector{3, Float64}([0.0, 0.0, 0.0]), 
                         dims=SVector{3, Float64}([7.262, 0.05, 7.262]), 
                         ref_area=pi*(7.262/2)^2,
                         m=0.01, 
                         gyro=0)
-R_panel = config.Link(r=SVector{3, Float64}(1.5/2+3.75, 0.0, 0.45),
+R_panel = config.Link(r=SVector{3, Float64}(1.5/2+3.75, 0.0, 0.0),
                         q=SVector{4, Float64}([0.0, 0.0, 0.0, 1]),
                         ṙ=SVector{3, Float64}([0.0, 0.0, 0.0]), 
                         dims=SVector{3, Float64}([7.262, 0.05, 7.262]), 
@@ -52,13 +52,13 @@ R_panel = config.Link(r=SVector{3, Float64}(1.5/2+3.75, 0.0, 0.45),
                         gyro=0)
 
 config.add_body!(spacecraft, main_bus, prop_mass=1.0)
-config.add_body!(spacecraft, L_panel)
-config.add_body!(spacecraft, R_panel)
+# config.add_body!(spacecraft, L_panel)
+# config.add_body!(spacecraft, R_panel)
 
 L_panel_joint = config.Joint(main_bus, L_panel)
 R_panel_joint = config.Joint(R_panel, main_bus)
-config.add_joint!(spacecraft, L_panel_joint)
-config.add_joint!(spacecraft, R_panel_joint)
+# config.add_joint!(spacecraft, L_panel_joint)
+# config.add_joint!(spacecraft, R_panel_joint)
 config.set_inertia_tensor!(spacecraft, main_bus, 
                         SMatrix{3, 3, Float64}(Diagonal([900.0, 800.0, 600.0])))
 lenXHub = 1.50 # m
@@ -68,44 +68,53 @@ array_width = 7.262 # m
 area2 = pi*array_width/2*array_width/2
 # Define facet areas
 bus_facet_area_list = [lenYHub * lenZHub,
-                    lenXHub * lenZHub,
-                    lenYHub * lenZHub,
-                    lenXHub * lenZHub,
-                    lenXHub * lenYHub,
-                    lenXHub * lenYHub]
+                        lenXHub * lenZHub,
+                        lenYHub * lenZHub,
+                        lenXHub * lenZHub,
+                        lenXHub * lenYHub,
+                        lenXHub * lenYHub]
 
 panel_facet_area_list = [area2, area2]
 
 # Define facet attitudes - these are in the link frame so articulated components are automatically accounted for
-bus_facet_attitude_list = [q_from_phi([0.0, 0.0, 0.0]),
-                            q_from_phi(deg2rad(-90.0) * [0.0, 0.0, 1.0]),
-                            q_from_phi(deg2rad(180.0) * [0.0, 0.0, 1.0]),
-                            q_from_phi(deg2rad(90.0) * [0.0, 0.0, 1.0]),
-                            q_from_phi(deg2rad(90.0) * [0.0, 1.0, 0.0]),
-                            q_from_phi(deg2rad(-90.0) * [0.0, 1.0, 0.0])]
-panel_facet_attitude_list = [q_from_phi(deg2rad(90.0) * [0.0, 0.0, 1.0]),
-                             q_from_phi(deg2rad(-90.0) * [0.0, 0.0, 1.0])]
+# bus_facet_attitude_list = [q_from_phi([0.0, 0.0, 0.0]),
+#                             q_from_phi(deg2rad(-90.0) * [0.0, 0.0, 1.0]),
+#                             q_from_phi(deg2rad(180.0) * [0.0, 0.0, 1.0]),
+#                             q_from_phi(deg2rad(90.0) * [0.0, 0.0, 1.0]),
+#                             q_from_phi(deg2rad(90.0) * [0.0, 1.0, 0.0]),
+#                             q_from_phi(deg2rad(-90.0) * [0.0, 1.0, 0.0])]
+bus_facet_attitude_list = [q_from_phi(deg2rad(-90.0) * [0.0, 0.0, 1.0]),
+                           q_from_phi(deg2rad(0.0) * [0.0, 0.0, 1.0]),
+                           q_from_phi(deg2rad(90.0) * [0.0, 0.0, 1.0]),
+                           q_from_phi(deg2rad(180.0) * [0.0, 0.0, 1.0]),
+                           q_from_phi(deg2rad(90.0) * [1.0, 0.0, 0.0]),
+                           q_from_phi(deg2rad(-90.0) * [1.0, 0.0, 0.0])]
+panel_facet_attitude_list = [q_from_phi(deg2rad(0.0) * [0.0, 0.0, 1.0]),
+                             q_from_phi(deg2rad(180.0) * [0.0, 0.0, 1.0])]
 
 # Define facet normal vectors - these are in the facet frame, so will usually be [1.0, 0.0, 0.0] as long as you're working with objects composed of flat faces, e.g., boxes, flat plates, etc.
-bus_facet_normal_vectors = [SVector{3, Float64}([1.0, 0.0, 0.0]),
-                            SVector{3, Float64}([1.0, 0.0, 0.0]),
-                            SVector{3, Float64}([1.0, 0.0, 0.0]),
-                            SVector{3, Float64}([1.0, 0.0, 0.0]),
-                            SVector{3, Float64}([1.0, 0.0, 0.0]),
-                            SVector{3, Float64}([1.0, 0.0, 0.0])]
-panel_facet_normal_vectors = [SVector{3, Float64}([1.0, 0.0, 0.0]),
-                              SVector{3, Float64}([1.0, 0.0, 0.0])]
+bus_facet_normal_vectors = [SVector{3, Float64}([0.0, 1.0, 0.0]),
+                            SVector{3, Float64}([0.0, 1.0, 0.0]),
+                            SVector{3, Float64}([0.0, 1.0, 0.0]),
+                            SVector{3, Float64}([0.0, 1.0, 0.0]),
+                            SVector{3, Float64}([0.0, 1.0, 0.0]),
+                            SVector{3, Float64}([0.0, 1.0, 0.0])]
+panel_facet_normal_vectors = [SVector{3, Float64}([0.0, 1.0, 0.0]),
+                              SVector{3, Float64}([0.0, 1.0, 0.0])]
 
 # Define facet center of pressure locations - these are in the link frame, relative to the center of mass of the link.
-bus_facet_locs = [SVector{3, Float64}([0.5 * lenXHub, 0.0, 0.5 * lenZHub]),
-                  SVector{3, Float64}([0.0, -0.5 * lenYHub, 0.5 * lenZHub]),
-                  SVector{3, Float64}([-0.5 * lenXHub, 0.0, 0.5 * lenZHub]),
-                  SVector{3, Float64}([0.0, 0.5 * lenYHub, 0.5 * lenZHub]),
-                  SVector{3, Float64}([0.0, 0.0, 0.0]),
-                  SVector{3, Float64}([0.0, 0.0, 1.0 * lenZHub])]
+bus_facet_locs = [SVector{3, Float64}([0.5 * lenXHub, 0.0, 0.0]),
+                  SVector{3, Float64}([0.0, 0.5 * lenYHub, 0.0]),
+                  SVector{3, Float64}([-0.5 * lenXHub, 0.0, 0.0]),
+                  SVector{3, Float64}([0.0, -0.5 * lenYHub, 0.0]),
+                  SVector{3, Float64}([0.0, 0.0, -lenZHub / 2]),
+                  SVector{3, Float64}([0.0, 0.0, lenZHub / 2])]
+# panel_facet_locs_R = [SVector{3, Float64}([3.75 + 0.5 * lenXHub, 0.0, 0.45]), 
+#                     SVector{3, Float64}([3.75 + 0.5 * lenXHub, 0.0, 0.45])]
+# panel_facet_locs_L = [SVector{3, Float64}([-3.75 - 0.5 * lenXHub, 0.0, 0.45]), 
+#                     SVector{3, Float64}([-3.75 - 0.5 * lenXHub, 0.0, 0.45])]
 panel_facet_locs = [SVector{3, Float64}([0.0, 0.0, 0.0]), 
                     SVector{3, Float64}([0.0, 0.0, 0.0])]
-
 # Define optical coefficients
 bus_specular_coeffs = [0.336, 0.336, 0.336, 0.336, 0.336, 0.336]
 panel_specular_coeffs = [0.16, 0.0]
@@ -118,15 +127,21 @@ bus_facets = config.create_facet_list(bus_facet_area_list,
                                       bus_facet_locs,
                                       bus_diffuse_coeffs,
                                       bus_specular_coeffs)
-panel_facets = config.create_facet_list(panel_facet_area_list,
+panel_facets_R = config.create_facet_list(panel_facet_area_list,
+                                        panel_facet_attitude_list,
+                                        panel_facet_normal_vectors,
+                                        panel_facet_locs,
+                                        panel_diffuse_coeffs,
+                                        panel_specular_coeffs)
+panel_facets_L = config.create_facet_list(panel_facet_area_list,
                                         panel_facet_attitude_list,
                                         panel_facet_normal_vectors,
                                         panel_facet_locs,
                                         panel_diffuse_coeffs,
                                         panel_specular_coeffs)
 config.add_facet!(main_bus, bus_facets)
-config.add_facet!(L_panel, panel_facets)
-config.add_facet!(R_panel, panel_facets)
+config.add_facet!(L_panel, panel_facets_L)
+config.add_facet!(R_panel, panel_facets_R)
 
 println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
 # println("Spacecraft roots: $spacecraft.roots")
@@ -153,7 +168,7 @@ args = Dict(# Misc Simulation
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 10,                                 # Number of aerobraking passage
-            :mission_time => 6000.0,                                  # Mission time in seconds, used only for Time mission type
+            :mission_time => 1000000.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => true,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
 
             # Physical Model
@@ -172,7 +187,8 @@ args = Dict(# Misc Simulation
             # Perturbations
             :n_bodies => [],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :srp => true,                                             # Solar Radiation Pressure true/false
-            :gravity_gradient => false,                                   # Gravity Gradient true/false
+            :eclipse => false,                                         # Whether to include eclipse conditions in SRP calculation
+            :gravity_gradient => true,                                   # Gravity Gradient true/false
             :gravity_harmonics => 0,                                            # Gravity Spherical harmonics True=1, False=0
             :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
@@ -228,8 +244,8 @@ args = Dict(# Misc Simulation
             :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_step => 1000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :a_initial_a => 10000.0e3,                # Initial Semi-major axis for for-loop in m
-            :a_initial_b => 10000e3,                               # Final Semi-major axis for for-loop in m
+            :a_initial_a => 12345.0e3,                # Initial Semi-major axis for for-loop in m
+            :a_initial_b => 12346.0e3,                               # Final Semi-major axis for for-loop in m
             :a_step => 5e10,                                       # Step Semi-major axis for for-loop in m
             :e_initial_a => 0.1,                                   # Initial Eccentricity for for-loop in m
             :e_initial_b => 0.11,                                   # Final Eccentricity for for-loop in m
@@ -239,10 +255,10 @@ args = Dict(# Misc Simulation
             :γ_initial_a => -2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_step => 100,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :inclination => 33.3,                                   # Inclination Orbit, deg
-            :ω => 347.8,                                              # AOP, deg
-            :Ω => 48.2,                                              # RAAN, deg
-            :ν => 85.3,                                               # True Anomaly, deg
+            :inclination => 45.0,                                   # Inclination Orbit, deg
+            :ω => 75.0,                                              # AOP, deg
+            :Ω => 60.0,                                              # RAAN, deg
+            :ν => 69.0,                                               # True Anomaly, deg
             :EI => 160.0,                                           # Entry Interface, km
             :AE => 160.0,                                           # Atmospheric Exit, km
             :year => 2001,                                          # Mission year
@@ -314,11 +330,11 @@ args = Dict(# Misc Simulation
 # # Calculating time of simulation
 # @profview run_analysis(args)
 t = @elapsed begin          
-        # Run the simulation
-        sol = run_analysis(args)
-        if Bool(args[:passresults])
-            println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-        end
+    # Run the simulation
+    sol = run_analysis(args)
+    if Bool(args[:passresults])
+        println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+    end
 end
 
 println("COMPUTATIONAL TIME = " * string(t) * " s")

@@ -241,3 +241,9 @@ function solve_care_newton(A::AbstractMatrix, B::AbstractMatrix, Q::AbstractMatr
     end
     return SMatrix{n, n, Float64}(P_k)
 end
+
+function constant_thruster!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
+    for thruster in b.thrusters
+        thruster.thrust = 1.0
+    end
+end

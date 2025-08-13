@@ -634,7 +634,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     end
                     b.rw_τ .= R'*τ # Save the reaction wheel torque in the body
                     τ_rw .+= τ # Sum the reaction wheel torques in the inertial frame
-                    b.net_torque .+= τ # Update the torque on the spacecraft link
+                    b.net_torque .-= τ # Update the torque on the spacecraft link
                 end
 
                 # Attitude control thruster torques and forces
@@ -823,7 +823,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             bodies, root_index = config.traverse_bodies(m.body, m.body.roots[1])
             for b in bodies
                 if b.gyro != 0 || !isempty(b.thrusters)
-                    b.attitude_control_function(m, b, root_index, vel_pp_rw, h_pp_hat, aerobraking_phase) # Calculate the reaction wheel torque
+                    b.attitude_control_function(m, b, root_index, vel_pp_rw, h_pp_hat, aerobraking_phase, integrator.t * config.cnf.TU) # Calculate the reaction wheel torque
                 end
             end
         end

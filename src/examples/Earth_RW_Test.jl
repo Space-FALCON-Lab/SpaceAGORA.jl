@@ -37,9 +37,9 @@ main_bus = config.Link(root=true,
                         gyro=3,
                         max_torque=0.2,
                         max_h=50.0,
-                        attitude_control_rate=6.0, # 3 Hz
+                        attitude_control_rate=0.1, # 10 Hz
                         J_rw=MMatrix{3, 3, Float64}([1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]),#0.57735
-                        attitude_control_function=rw_mrp_feedback_control!)
+                        attitude_control_function=rw_polyfit_control!)
 
 # L_panel = config.Link(r=SVector{3, Float64}(-1.5/2-3.75, 0.0, 0.0), 
 #                         q=SVector{4, Float64}([0.0, 0.0, 0.0, 1.0]),

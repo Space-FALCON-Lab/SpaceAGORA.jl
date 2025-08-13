@@ -248,13 +248,13 @@ function constant_thruster!(m, b::config.Link, root_index::Int, vel_pp_rw::SVect
     end
 end
 
-function rw_mrp_feedback_control!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
+function rw_mrp_feedback_control!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     """
     MRP feedback control for comparison with Basilisk
     """
     # target_MRP = SVector{3, Float64}(zeros(3))    
     q = m.body.links[root_index].q
-    ω = -m.body.links[root_index].ω
+    ω = m.body.links[root_index].ω
     current_MRP = -q[1:3]/(1+q[4])
     if norm(current_MRP) > 1
         current_MRP .= -current_MRP/norm(current_MRP)^2 # If the rotation is larger than 180 degrees, switch to shadow set
@@ -268,4 +268,30 @@ function rw_mrp_feedback_control!(m, b::config.Link, root_index::Int, vel_pp_rw:
     K = 3.5
     Lr = -K*current_MRP - P*ω_body + cross(ω_body, J*ω_body) # Total control torque, body frame
     b.ω_wheel_derivatives .= -pinv(b.J_rw)*Lr
+end
+
+function rw_polyfit_control!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
+    rw1 = [-5.60895312e-36,  2.67405595e-32, -5.75833882e-29,  7.39858321e-26,
+       -6.30995548e-23,  3.75879226e-20, -1.60171291e-17,  4.91432034e-15,
+       -1.07698378e-12,  1.64628922e-10, -1.67735734e-08,  1.04916101e-06,
+       -3.43892609e-05,  4.42626398e-04, -8.56999390e-03,  3.83306056e-01]
+    rw2 = [ 1.12500939e-35, -5.19204031e-32,  1.07916760e-28, -1.33381746e-25,
+        1.08997484e-22, -6.19243499e-20,  2.50278492e-17, -7.23567055e-15,
+        1.48276059e-12, -2.10179799e-10,  1.97229165e-08, -1.13827583e-06,
+        3.48996218e-05, -2.05866906e-04, -2.64800295e-02,  4.02809724e-01]
+    rw3 = [ 8.71762704e-36, -3.92648983e-32,  7.94120288e-29, -9.51632719e-26,
+        7.50680130e-23, -4.09401651e-20,  1.57679295e-17, -4.29964414e-15,
+        8.18216619e-13, -1.04948256e-10,  8.50458803e-09, -3.93126674e-07,
+        1.09634047e-05, -5.65654872e-04,  2.88211721e-02, -1.41382754e-01]
+    function polyfit(coeffs, t)
+        exponent = length(coeffs) - 1
+        output = 0
+        for i in eachindex(coeffs)
+            output += coeffs[i] * t^exponent
+            exponent -= 1
+        end
+        return output
+    end
+    # println(t)
+    b.ω_wheel_derivatives .= t < 375 ? [polyfit(rw1, t), polyfit(rw2, t), polyfit(rw3, t)] : [0.0, 0.0, 0.0]
 end

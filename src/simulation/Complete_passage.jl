@@ -443,7 +443,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         if args[:srp] == true
             r_sun_planet = m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", config.cnf.et, "J2000", "NONE", uppercase(m.planet.name))[1])*1e3 # Vector describing the position of the Sun wrt the planet in J2000 frame
             eclipse_ratio = args[:eclipse] ? eclipse_area_calc(pos_ii, r_sun_planet, m.planet.Rp_e) : 1.0
-            P_srp = 4.56e-6*(R0/norm(r_sun_planet - pos_ii))^2#4.5566666e-6
+            P_srp = 4.556666e-6*(R0/norm(r_sun_planet - pos_ii))^2#4.5566666e-6
             F_SRP_tracker = MVector{3, Float64}(zeros(3))
 
             for (i, b) in enumerate(bodies)
@@ -629,11 +629,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         τ .+= rw_torque # Sum the reaction wheel torques
                         total_rw_h .+= R * b.J_rw[:, j] * b.rw[j] # Update the total reaction wheel angular momentum
                         rw_h[counter] = b.rw[j] # Update the reaction wheel angular momentum vector
-                        rw_τ[counter] = norm(rw_torque) # Update the reaction wheel torque vector
+                        rw_τ[counter] = clamp(b.ω_wheel_derivatives[j], -b.max_torque, b.max_torque) # Update the reaction wheel torque vector
                         counter += 1 # Increment the counter for the reaction wheel angular momentum vector
                     end
                     b.rw_τ .= R'*τ # Save the reaction wheel torque in the body
-                    τ_rw .+= b.rw_τ # Sum the reaction wheel torques
+                    τ_rw .+= τ # Sum the reaction wheel torques in the inertial frame
                     b.net_torque .+= τ # Update the torque on the spacecraft link
                 end
 
@@ -830,8 +830,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
 
     attitude_controller = PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU)
-    attitude_controller_orbit = DiscreteCallback(run_attitude_controller_condition, run_attitude_controller!)
-    # attitude_controller_orbit = PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU)
+    # attitude_controller_orbit = DiscreteCallback(run_attitude_controller_condition, run_attitude_controller!)
+    attitude_controller_orbit = PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU)
 
     function run_solar_panel_controller!(integrator)
         """

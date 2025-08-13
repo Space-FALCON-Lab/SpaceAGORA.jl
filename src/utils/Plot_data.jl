@@ -614,8 +614,8 @@ function total_reaction_wheel_torque_plot(name, data_table)
     τ = data_table[:, [:rw_torque_ii_1, :rw_torque_ii_2, :rw_torque_ii_3]]
     colors = ["red", "green", "blue"]
     τ_traces = []
-    for i in eachindex(τ)
-        push!(τ_traces, scatter(x=time, y=τ[i], mode="lines", line=attr(color=colors[i]), name="τ$i"))
+    for (i, colvals) in enumerate(eachcol(τ))
+        push!(τ_traces, scatter(x=time, y=colvals, mode="lines", line=attr(color=colors[i]), name="τ$i"))
     end
     layout = Layout(xaxis_title="Time [sec]", yaxis_title="Torque (N*m)", template="simple_white", showlegend=true)
     p = plot([τ_traces...], layout)
@@ -628,18 +628,18 @@ function reaction_wheel_torque_plot(name, data_table)
         Plot the reaction wheel angular momentum
     """
     time = data_table.time
-    τ = zeros(config.model.body.number_of_reaction_wheels, length(time))
-    for i in 1:config.model.body.number_of_reaction_wheels
-        if !haskey(data_table, Symbol("rw_tau_ii_$(i)"))
-            error("Data table does not contain rw_tau_ii_$(i) data.")
-        end
-        τ[i, :] = data_table[!, Symbol("rw_tau_ii_$(i)")]
+    τ = zeros(config.model.body.n_reaction_wheels, length(time))
+    for i in 1:config.model.body.n_reaction_wheels
+        # if !haskey(data_table, Symbol("rw_tau_ii_$(i)"))
+        #     error("Data table does not contain rw_tau_ii_$(i) data.")
+        # end
+        τ[i, :] = data_table[!, Symbol("rw_tau_$(i)")]
     end
     color_choices = ["red", "green", "blue", "orange", "purple", "cyan", "magenta", "yellow", "black"]
     τ_traces = []
     
-    for i in eachindex(τ)
-        push!(τ_traces, scatter(x=time, y=τ[i], mode="lines", line=attr(color=color_choices[i%length(color_choices)]), name="τ$i"))
+    for (i, rowvals) in enumerate(eachrow(τ))
+        push!(τ_traces, scatter(x=time, y=rowvals, mode="lines", line=attr(color=color_choices[i%length(color_choices)]), name="τ$i"))
     end
     layout = Layout(xaxis_title="Time [sec]", yaxis_title="Torque (N⋅m)", template="simple_white", showlegend=true)
     p = plot([τ_traces...], layout)

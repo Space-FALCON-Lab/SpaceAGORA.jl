@@ -204,6 +204,11 @@ function propulsion_ic_calcs(m, args, initial_state)
             results[110 + 4*n_bodies + i] = (config.solution.physical_properties.rw_h[i][index_a] + (config.solution.physical_properties.rw_h[i][index_b] - config.solution.physical_properties.rw_h[i][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
             results[110 + 4*n_bodies + n_reaction_wheels + i] = (config.solution.physical_properties.rw_τ[i][index_a] + (config.solution.physical_properties.rw_τ[i][index_b] - config.solution.physical_properties.rw_τ[i][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
         end
+
+        n_thrusters = config.model.body.n_thrusters
+        for i in 1:n_thrusters
+            results[110 + 4*n_bodies + 2*n_reaction_wheels + i] = (config.solution.physical_properties.thruster_h[i][index_a] + (config.solution.physical_properties.thruster_h[i][index_b] - config.solution.physical_properties.thruster_h[i][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
+        end
         # results[98 + 4*n_bodies + 2*n_reaction_wheels + 1] = (config.solution.physical_properties.τ_rw[1][index_a] + (config.solution.physical_properties.τ_rw[1][index_b] - config.solution.physical_properties.τ_rw[1][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
         # results[98 + 4*n_bodies + 2*n_reaction_wheels + 2] = (config.solution.physical_properties.τ_rw[2][index_a] + (config.solution.physical_properties.τ_rw[2][index_b] - config.solution.physical_properties.τ_rw[2][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))
         # results[98 + 4*n_bodies + 2*n_reaction_wheels + 3] = (config.solution.physical_properties.τ_rw[3][index_a] + (config.solution.physical_properties.τ_rw[3][index_b] - config.solution.physical_properties.τ_rw[3][index_a]) / (dist_b + abs(dist_a)) * abs(dist_a))

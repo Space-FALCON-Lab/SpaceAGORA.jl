@@ -3,6 +3,7 @@ include("quaternion_utils.jl")
 using Rotations, LinearAlgebra
 using ControlSystemsBase
 using MatrixEquations
+using CSV
 
 # Function to compute the rotation quaternion between two vectors
 function rotation_between(v1::SVector{3, Float64}, v2::SVector{3, Float64})
@@ -294,4 +295,42 @@ function rw_polyfit_control!(m, b::config.Link, root_index::Int, vel_pp_rw::SVec
     end
     # println(t)
     b.ω_wheel_derivatives .= t < 375 ? [polyfit(rw1, t), polyfit(rw2, t), polyfit(rw3, t)] : [0.0, 0.0, 0.0]
+end
+
+function basilisk_rw_read_csv!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
+    # Read the CSV file
+    data = CSV.File("/workspaces/ABTS.jl/basilisk_rw_torque.csv", delim=',', header=true) |> DataFrame
+    data = Matrix(data)
+    # Extract time and wheel values
+    times = data[:, 1]
+    rw_values = data[:, 2:end]
+
+    # Find the index of the closest time
+    idx = findmin(abs.(times .- t))[2]
+    if t < times[idx]
+        idx -= 1
+    end
+
+    # Set the wheel momentum derivatives
+    b.ω_wheel_derivatives .= rw_values[idx, :]
+end
+
+function basilisk_thruster_read_csv!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
+    # Read the CSV file
+    data = CSV.File("/workspaces/ABTS.jl/basilisk_thruster_force.csv", delim=',', header=true) |> DataFrame
+    data = Matrix(data)
+    # Extract time and thruster values
+    times = data[:, 1]
+    thruster_values = data[:, 2:end]
+
+    # Find the index of the closest time
+    idx = findmin(abs.(times .- t))[2]
+    if t < times[idx]
+        idx -= 1
+    end
+
+    # Set the thruster values
+    for (i, thruster) in enumerate(b.thrusters)
+        thruster.thrust = thruster_values[idx, i]
+    end
 end

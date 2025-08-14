@@ -257,6 +257,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         α_control::Vector{Float64} = []
         rw_h::Vector{Vector{Float64}} = [] # angular momentum magnitudes of each reaction wheel
         rw_τ::Vector{Vector{Float64}} = [] # torque magnitude applied by each reaction wheel
+        thruster_forces::Vector{Vector{Float64}} = [] # forces applied by each thruster
         τ_rw::Vector{Vector{Float64}} = [[], [], []] # total torque applied by all reaction wheels
     end
 

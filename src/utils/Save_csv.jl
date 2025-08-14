@@ -139,13 +139,18 @@ function save_csv(filename, args, temp_name)
         data_push[!, Symbol("rw_h_$(i)")] = config.solution.physical_properties.rw_h[i]
         data_push[!, Symbol("rw_tau_$(i)")] = config.solution.physical_properties.rw_τ[i]
     end
+
+    for i in 1:config.model.body.n_thrusters
+        data_push[!, Symbol("thruster_force_$(i)")] = config.solution.physical_properties.thruster_forces[i]
+    end
+    
     if args[:closed_form] == 1
         data_push[!, :t_cf] = config.solution.closed_form.t_cf
         data_push[!, :h_cf] = config.solution.closed_form.h_cf
         data_push[!, :gamma_cf] = config.solution.closed_form.γ_cf
         data_push[!, :v_cf] = config.solution.closed_form.v_cf
     end
-    if filesize(filename) == 0
+    if filesize(filename) == 0.0
         # Write header if file is empty
         CSV.write(filename, data_push, writeheader=true)
     else

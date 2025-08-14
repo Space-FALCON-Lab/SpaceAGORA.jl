@@ -39,7 +39,7 @@ main_bus = config.Link(root=true,
                         max_h=50.0,
                         attitude_control_rate=0.1, # 10 Hz
                         J_rw=MMatrix{3, 3, Float64}([1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]),#0.57735
-                        attitude_control_function=rw_polyfit_control!)
+                        attitude_control_function=basilisk_rw_read_csv!)
 
 # L_panel = config.Link(r=SVector{3, Float64}(-1.5/2-3.75, 0.0, 0.0), 
 #                         q=SVector{4, Float64}([0.0, 0.0, 0.0, 1.0]),

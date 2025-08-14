@@ -172,6 +172,7 @@ function save_results(time, ratio)
 
 
     n_reaction_wheels = config.model.body.n_reaction_wheels
+    n_thrusters = config.model.body.n_thrusters
     # Initialize the reaction wheel properties if they are not already initialized
     if isempty(config.solution.physical_properties.rw_h)
         for i in 1:n_reaction_wheels
@@ -180,9 +181,22 @@ function save_results(time, ratio)
         end
     end
 
+    # Append reaction wheel angular momentum and torque for each reaction wheel
     for i in 1:n_reaction_wheels
         append!(config.solution.physical_properties.rw_h[i], results[110 + 4*n_bodies + i,:])
         append!(config.solution.physical_properties.rw_τ[i], results[110 + 4*n_bodies + n_reaction_wheels + i,:]) # rw_τ
+    end
+
+    # Initialize thruster forces if they are not already initialized
+    if isempty(config.solution.physical_properties.thruster_forces)
+        for i in 1:n_thrusters
+            append!(config.solution.physical_properties.thruster_forces, [[]])
+        end
+    end
+    
+    # Append thruster forces for each thruster
+    for i in 1:n_thrusters
+        append!(config.solution.physical_properties.thruster_forces[i], results[110 + 4*n_bodies + 2*n_reaction_wheels + i,:]) # thruster forces
     end
     
 

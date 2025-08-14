@@ -603,10 +603,12 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         total_rw_h = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize total reaction wheel angular momentum vector
         rw_h = MVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels)) # Initialize vector of reaction wheel angular momentum magnitudes
         rw_τ = MVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels)) # Initialize vector of reaction wheel torque magnitudes
+        thruster_forces = MVector{m.body.n_thrusters, Float64}(zeros(m.body.n_thrusters)) # Initialize vector of thruster forces
         thruster_fuel_mass_consumption = 0.0 # Tracks mass consumption rate of all attitude control thrusters
         if orientation_sim
             # ω_wheel_derivatives = MVector{m.body.n_reaction_wheels, Float64}(zeros(m.body.n_reaction_wheels)) # Initialize vector of reaction wheel angular momentum derivatives
             counter = 1 # Counter for reaction wheel angular momentum vector
+            counter_thrusters = 1 # Counter for thruster forces vector
             @inbounds for (i, b) in enumerate(bodies)
                 R .= Rot[i] # Rotation matrix from the inertial frame to the spacecraft link frame
                 if b.gyro != 0 # If the body has reaction wheels
@@ -634,7 +636,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     end
                     b.rw_τ .= R'*τ # Save the reaction wheel torque in the body
                     τ_rw .+= τ # Sum the reaction wheel torques in the inertial frame
-                    b.net_torque .-= τ # Update the torque on the spacecraft link
+                    b.net_torque .-= τ # Update the torque on the spacecraft link. Subtract the reaction wheel torque because the reaction torque on the spacecraft is opposite to the reaction wheel torque
                 end
 
                 # Attitude control thruster torques and forces
@@ -642,21 +644,18 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 if !isempty(b.thrusters)
                     # Ensure the thrust magnitudes are less than the maximum
                     thrusts = MVector{length(b.thrusters), Float64}(zeros(length(b.thrusters))) # Create an MVector with the same number of elements as thrusters
-                    println(length(b.thrusters))
                     for thrust_idx in eachindex(b.thrusters)
                         thruster = b.thrusters[thrust_idx]
                         thruster.thrust = clamp(thruster.thrust, 0.0, thruster.max_thrust)
-                        thrusts[thrust_idx] = thruster.thrust
+                        thrust = thruster.thrust # Get the thrust magnitude of the thruster
+                        thrusts[thrust_idx] = thrust
+                        b.net_force .+= rot(m.body.links[root_index].q)' * (thruster.direction * thrust)
+                        thruster_fuel_mass_consumption -= thrust / (g_e * thruster.Isp)
+                        thruster_forces[counter_thrusters] = thrust # Update the thruster forces vector
+                        counter_thrusters += 1 # Increment the counter for the thruster forces vector
                     end
                     # Add the torques due to the thrusters
-                    b.net_torque += R' * (b.J_thruster * thrusts)
-                    # Add the forces due to the thrusters
-                    for thrust_idx in eachindex(b.thrusters)
-                        thruster = b.thrusters[thrust_idx]
-                        thrust = thrusts[thrust_idx]
-                        b.net_force += R' * (thruster.direction * thrust)
-                        thruster_fuel_mass_consumption -= thrust / (g_e * thruster.Isp)
-                    end
+                    b.net_torque .+= rot(m.body.links[root_index].q)' * (b.J_thruster * thrusts)
                 end
             end
         end
@@ -714,7 +713,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                             lat, lon, alt, γ_ii, γ_pp, h_ii..., h_pp..., h_ii_mag, h_pp_mag, uD..., uE..., uN..., vN, vE,
                             azi_pp, ρ, T_p, p, wind..., CL, CD, S, mass, T_r, 
                             q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., τ_ii..., energy, config.cnf.index_MonteCarlo, Int64(config.cnf.drag_state),
-                            quaternion..., ω..., config.cnf.α, vec(inertia_tensor)..., τ_rw..., α..., β..., heat_rate..., heat_load..., rw_h..., rw_τ...]
+                            quaternion..., ω..., config.cnf.α, vec(inertia_tensor)..., τ_rw..., α..., β..., heat_rate..., heat_load..., rw_h..., rw_τ..., thruster_forces...]
                 if !isempty(config.cnf.solution_intermediate) && config.cnf.solution_intermediate[end][1] == t0
                     config.cnf.solution_intermediate[end][:] .= copy(param[19])
                 else
@@ -728,7 +727,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                             lat, lon, alt, γ_ii, γ_pp, h_ii..., h_pp..., h_ii_mag, h_pp_mag, uD..., uE..., uN..., vN, vE,
                             azi_pp, ρ, T_p, p, wind..., CL, CD, S, mass, T_r, 
                             q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., τ_ii..., energy, config.cnf.index_MonteCarlo, Int64(config.cnf.drag_state),
-                            quaternion..., ω..., config.cnf.α, vec(inertia_tensor)..., τ_rw..., α..., β..., heat_rate..., heat_load..., rw_h..., rw_τ...]
+                            quaternion..., ω..., config.cnf.α, vec(inertia_tensor)..., τ_rw..., α..., β..., heat_rate..., heat_load..., rw_h..., rw_τ..., thruster_forces...]
                 config.solution.simulation.solution_states = length(sol)
                 # param[19] = zeros(Real, config.solution.simulation.solution_states) # Initialize the parameter array for the solution
                 push!(config.cnf.solution_intermediate, sol)
@@ -793,6 +792,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         """
         # true
         m = integrator.p[1]
+        if (m.body.n_reaction_wheels == 0 && m.body.n_thrusters == 0) || !args[:orientation_sim]
+            return false # Do not run the attitude controller if there are no reaction wheels or orientation simulation is disabled
+        end
         vel_pp_rw = SVector{3, Float64}(integrator.p[15]) # Relative wind vector
         h_pp_hat = SVector{3, Float64}(integrator.p[14]) # Relative wind unit vector
         aerobraking_phase = 2 # Aerobraking phase   

@@ -185,13 +185,13 @@ function srp!(model, root_index::Int64, sun_dir_ii::SVector{3, Float64}, body, P
                 # println("F_SRP: $F_SRP")
                 # println("cross: $(cross(R_facet, F_SRP))")
                 # println("cross: ", cross(R_facet, F_SRP))
-                body.net_torque += rot(model.body.links[root_index].q)' * cross(R_facet, F_SRP) # Calculate body frame net torque
+                body.net_torque += rot(model.links[root_index].q) * cross(R_facet, F_SRP) # Calculate body frame net torque
                 # F_SRP_tracker += cross(R_facet, F_SRP)
                 # println("body net torque: ", body.net_torque)
             end
         end
     end
-    return F_SRP_tracker
+    # return F_SRP_tracker
     # println("Total F_SRP: $F_SRP_tracker")
 end
 # function srp(p, p_srp_unscaled::Float64, cR::Float64, A_sat::Float64, m::Float64, r_sun::SVector{3, Float64}, r_sat::SVector{3, Float64}, time_et::Float64, α_srp::Float64)

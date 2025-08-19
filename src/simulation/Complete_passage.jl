@@ -444,18 +444,18 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             r_sun_planet = m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", config.cnf.et, "J2000", "NONE", uppercase(m.planet.name))[1])*1e3 # Vector describing the position of the Sun wrt the planet in J2000 frame
             eclipse_ratio = args[:eclipse] ? eclipse_area_calc(pos_ii, r_sun_planet, m.planet.Rp_e) : 1.0
             P_srp = 4.556666e-6*(R0/norm(r_sun_planet - pos_ii))^2#4.5566666e-6
-            F_SRP_tracker = MVector{3, Float64}(zeros(3))
+            # F_SRP_tracker = MVector{3, Float64}(zeros(3))
 
             for (i, b) in enumerate(bodies)
                 # Calculate the position of the spacecraft link in inertial frame
-                if orientation_sim
-                    R = Rot[i] # Rotation matrix from the spacecraft link to the inertial frame
-                else
-                    R = rot(b.q)' # Rotation matrix from the root body to the inertial frame
-                end
+                # if orientation_sim
+                #     R = Rot[i] # Rotation matrix from the spacecraft link to the inertial frame
+                # else
+                #     R = rot(b.q)' # Rotation matrix from the root body to the inertial frame
+                # end
                 pos_ii_body = pos_ii + rot(m.body.links[root_index].q)' * b.r # Update the position of the spacecraft link in inertial frame
                 sun_direction = normalize(r_sun_planet - pos_ii_body)
-                F_SRP_tracker += srp!(m.body, root_index, sun_direction, b, P_srp, eclipse_ratio, orientation_sim)
+                srp!(m.body, root_index, sun_direction, b, P_srp, eclipse_ratio, orientation_sim)
             end
         end
 
@@ -529,8 +529,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             lift_ii_body = m.planet.L_PI' * lift_pp_body   # Inertial lift force vector
 
             # Update the force on the spacecraft link
-            b.net_force += drag_ii_body + lift_ii_body + cross_ii_body # Update the force on the spacecraft link
-            b.net_torque += cross(b.r, R'*(drag_ii_body + lift_ii_body + cross_ii_body)) # Update the torque on the spacecraft link
+            b.net_force += drag_ii_body + lift_ii_body + cross_ii_body # Update the force on the spacecraft link, inertial frame
+            b.net_torque += cross(b.r, R'*(drag_ii_body + lift_ii_body + cross_ii_body)) # Update the torque on the spacecraft link, body frame
             # Update the total CL/CD
             CL += CL_body * b.ref_area
             CD += CD_body * b.ref_area
@@ -621,11 +621,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         thruster.thrust = clamp(thruster.thrust, 0.0, thruster.max_thrust)
                         thrust = thruster.thrust # Get the thrust magnitude of the thruster
                         thrusts[thrust_idx] = thrust # Update thrusts to be used for calculating torque
-                        b.net_force .+= thruster.direction * thrust
+                        b.net_force .+= R' * thruster.direction * thrust # Get the net force in the inertial frame
                         thruster_fuel_mass_consumption -= thrust / (g_e * thruster.Isp)
                         thruster_forces[counter_thrusters] = thrust # Update the thruster forces vector
                         counter_thrusters += 1 # Increment the counter for the thruster forces vector
-                        b.net_torque .+= cross(thruster.location, thruster.direction) * thrust
+                        b.net_torque .+= cross(thruster.location + b.r, config.rotate_to_body(b) * thruster.direction) * thrust # Get the net torque in the body frame
                     end
                     # Add the torques due to the thrusters
                     # TODO: Need to make J_thrusters work properly when bodies are rotated relative to each other, i.e., update direction and magnitude when joint states are modified
@@ -648,7 +648,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             # Gravity gradient torque
             R .= config.rotate_to_inertial(m.body, m.body.roots[1], root_index) # Rotation matrix from the root body to the spacecraft link
             inertia_tensor = config.get_inertia_tensor(m.body, root_index) # Inertia tensor of the body
-            τ_body += args[:gravity_gradient] ? R'*(3.0*m.planet.μ * cross(pos_ii, inertia_tensor* (pos_ii)) / pos_ii_mag^5) : SVector{3, Float64}(0.0, 0.0, 0.0) # Gravity gradient torque
+            τ_body += args[:gravity_gradient] ? R'*(3.0*m.planet.μ * cross(pos_ii, (R*inertia_tensor*R') * pos_ii) / pos_ii_mag^5) : SVector{3, Float64}(0.0, 0.0, 0.0) # Gravity gradient torque
             # All other torques
             τ_body += sum([b.net_torque for b in bodies]) # Sum of all torques on the spacecraft links
         end
@@ -661,7 +661,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         next_index = 8 + length(bodies)
 
         if orientation_sim
-            y_dot[next_index:next_index+3] .= (0.5*Ξ(quaternion)*(ω)) * config.cnf.TU  # Quaternion derivative
+            y_dot[next_index:next_index+3] .= (0.5*Ξ(quaternion)*ω) * config.cnf.TU  # Quaternion derivative
             y_dot[next_index+4:next_index+6] .= (inertia_tensor\(-hat(ω)*(inertia_tensor*ω + total_rw_h)+ τ_body)) * config.cnf.TU^2  # Angular velocity derivative
         end
 
@@ -798,7 +798,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     attitude_controller = PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU)
     # attitude_controller_orbit = DiscreteCallback(run_attitude_controller_condition, run_attitude_controller!)
-    attitude_controller_orbit = PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU)
+    attitude_controller_orbit = m.body.n_reaction_wheels != 0 || m.body.n_thrusters != 0 ? PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU) : nothing
 
     function run_solar_panel_controller!(integrator)
         """

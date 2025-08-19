@@ -243,7 +243,7 @@ function solve_care_newton(A::AbstractMatrix, B::AbstractMatrix, Q::AbstractMatr
     return SMatrix{n, n, Float64}(P_k)
 end
 
-function constant_thruster!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
+function constant_thruster!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     for thruster in b.thrusters
         thruster.thrust = 1.0
     end
@@ -325,9 +325,9 @@ function basilisk_thruster_read_csv!(m, b::config.Link, root_index::Int, vel_pp_
 
     # Find the index of the closest time
     idx = findmin(abs.(times .- t))[2]
-    if t < times[idx]
-        idx -= 1
-    end
+    # if t < times[idx] - 1e-6 # don't update the thrust command until after the time has passed
+    #     idx -= 1
+    # end
 
     # Set the thruster values
     for (i, thruster) in enumerate(b.thrusters)

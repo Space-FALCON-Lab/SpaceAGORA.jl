@@ -322,9 +322,12 @@ function basilisk_thruster_read_csv!(m, b::config.Link, root_index::Int, vel_pp_
     # Extract time and thruster values
     times = data[:, 1]
     thruster_values = data[:, 2:end]
-
+    
     # Find the index of the closest time
     idx = findmin(abs.(times .- t))[2]
+    idx += 1
+    # println(thruster_values[idx, :])
+    # println(idx)
     # if t < times[idx] - 1e-6 # don't update the thrust command until after the time has passed
     #     idx -= 1
     # end

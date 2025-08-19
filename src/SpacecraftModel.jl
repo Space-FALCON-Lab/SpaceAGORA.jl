@@ -228,12 +228,14 @@ function add_thruster!(model::SpacecraftModel, link::Link, thruster::Thruster)
     """
     # Add the thruster torque to the Jacobian matrix
     normalize!(thruster.direction) # Ensure the thruster direction is a unit vector
+    # TODO: The if statement here to add thrusters to the jacobian matrix may not be necessary. 
+    # This can instead be calculated at each step in Complete_passage since it will have to account for articulated joints
     if isempty(link.thrusters)
-        link.J_thruster = cross(thruster.location, thruster.direction) # If this is the first thruster to be added, simply set the Jacobian equal to the r x F vector
+        link.J_thruster .= cross(thruster.location, thruster.direction) # If this is the first thruster to be added, simply set the Jacobian equal to the r x F vector
     else
         link.J_thruster = hcat(link.J_thruster, cross(thruster.location, thruster.direction)) # If there are already thrusters in the link, append the new r x F vector to the Jacobian
     end
-    
+
     # Append the thruster to the list of thrusters for future reference
     push!(link.thrusters, thruster)
     model.n_thrusters += 1 # Increment the number of thrusters in the spacecraft model
@@ -618,7 +620,7 @@ end
 
 function rotate_to_inertial(model::SpacecraftModel, body::Link, root_index::Int)
     """
-    Returns the rotation matrix to convert from the body frame to the inertial frame.
+    Returns the rotation matrix to convert from the link frame to the inertial frame.
     - `model`: The spacecraft model.
     - `body`: The body for which to get the rotation matrix.
     """
@@ -629,6 +631,18 @@ function rotate_to_inertial(model::SpacecraftModel, body::Link, root_index::Int)
     end
 end
 
+function rotate_to_body(body::Link)
+    """
+    Returns the rotation matrix to convert from the link frame to the body frame
+    - `model` : The spacecraft model.
+    - `body` : The body for which to get the rotation matrix
+    """
+    if body.root
+        return I(3)
+    else
+        return rot(body.q)'
+    end
+end
 function rotate_link(body::Link, q::SVector{4, Float64})
     """
     Rotates the link to a new orientation defined by the quaternion `q`.

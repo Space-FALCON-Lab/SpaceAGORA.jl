@@ -12,8 +12,8 @@ using Profile
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
 # Add bodies to the spacecraft model
-# p = SVector{3, Float64}([0.1, 0.2, -0.3])
-p = SVector{3, Float64}([0.1, 0.0, 0.0])
+p = SVector{3, Float64}([0.1, 0.2, -0.3])
+# p = SVector{3, Float64}([0.0, 0.0, -0.3])
 q = 1/(1+norm(p)^2)*SVector{4, Float64}([2*p; 1-norm(p)^2])
 skew = (ω) -> SMatrix{3, 3, Float64}([0 -ω[3] ω[2];
                                    ω[3] 0 -ω[1];
@@ -31,7 +31,7 @@ main_bus = config.Link(root=true,
                         q=SVector{4, Float64}(q),
                         # q=SVector{4, Float64}([0.0, 0.0, 0.0, 1.0]),
                         ṙ=SVector{3, Float64}([0.0, 0.0, 0.0]), 
-                        # ω=SVector{3, Float64}(ω_body),
+                        # ω=SVector{3, Float64}(ω_body),    
                         dims=SVector{3, Float64}([1.5, 1.8, 2.86]), 
                         ref_area=1.5*2.86,
                         m=750.0, 
@@ -64,10 +64,10 @@ config.add_body!(spacecraft, main_bus, prop_mass=10.0)
 # config.add_joint!(spacecraft, L_panel_joint)
 # config.add_joint!(spacecraft, R_panel_joint)
 config.set_inertia_tensor!(spacecraft, main_bus, 
-                        SMatrix{3, 3, Float64}(Diagonal([900.0, 800.0, 600.0])))
-# thruster = config.Thruster(1.0, MVector{3, Float64}(1.0, 0.0, -1.0), MVector{3, Float64}(1.0, 1.0, 0.0), 227.5, 0.0)
+                        SMatrix{3, 3, Float64}(Diagonal([800.0, 800.0, 800.0])))
+# thruster = config.Thruster(1.0, MVector{3, Float64}(1.0, 0.0, 0.0), MVector{3, Float64}(0.0, 1.0, 0.0), 227.5, 0.0)
 # config.add_thruster!(spacecraft, main_bus, thruster)
-# thruster = config.Thruster(1.0, MVector{3, Float64}(1.0, 0.0, 1.0), MVector{3, Float64}(1.0, 1.0, 0.0), 227.5, 0.0)
+# thruster = config.Thruster(1.0, MVector{3, Float64}(-1.0, 0.0, 0.0), MVector{3, Float64}(0.0, 1.0, 0.0), 227.5, 0.0)
 # config.add_thruster!(spacecraft, main_bus, thruster)
 # thruster = config.Thruster(1.0, MVector{3, Float64}(-1.0, 0.0, -0.999), MVector{3, Float64}(-1.0, 1.0, 0.0), 227.5, 0.0)
 # config.add_thruster!(spacecraft, main_bus, thruster)
@@ -80,34 +80,34 @@ thruster1 = config.Thruster(0.9,
                             227.5, 
                             0.0)
 config.add_thruster!(spacecraft, main_bus, thruster1)
-# # Thruster 2
-# thruster2 = config.Thruster(0.9, 
-#                             MVector{3, Float64}(3.874945160902288e-2,-1.206182747348013,-0.85245), 
-#                             MVector{3, Float64}(-0.7071067811865476,0.7071067811865475,0.0), 
-#                             227.5, 
-#                             0.0)
-# config.add_thruster!(spacecraft, main_bus, thruster2)
-# # Thruster 3
-# thruster3 = config.Thruster(0.9, 
-#                             MVector{3, Float64}(-3.8749451609022656e-2,-1.206182747348013,0.85245), 
-#                             MVector{3, Float64}(0.7071067811865476,0.7071067811865475,0.0), 
-#                             227.5, 
-#                             0.0)
-# config.add_thruster!(spacecraft, main_bus, thruster3)
-# # Thruster 4
-# thruster4 = config.Thruster(0.9, 
-#                             MVector{3, Float64}(-3.874945160902288e-2,-1.206182747348013,-0.85245), 
-#                             MVector{3, Float64}(0.7071067811865476,0.7071067811865475,0.0), 
-#                             227.5, 
-#                             0.0)
-# config.add_thruster!(spacecraft, main_bus, thruster4)
-# # Thruster 5
-# thruster5 = config.Thruster(0.9, 
-#                             MVector{3, Float64}(-3.874945160902288e-2,1.206182747348013,0.85245), 
-#                             MVector{3, Float64}(0.7071067811865476,-0.7071067811865475,0.0), 
-#                             227.5, 
-#                             0.0)
-# config.add_thruster!(spacecraft, main_bus, thruster5)
+# Thruster 2
+thruster2 = config.Thruster(0.9, 
+                            MVector{3, Float64}(3.874945160902288e-2,-1.206182747348013,-0.85245), 
+                            MVector{3, Float64}(-0.7071067811865476,0.7071067811865475,0.0), 
+                            227.5, 
+                            0.0)
+config.add_thruster!(spacecraft, main_bus, thruster2)
+# Thruster 3
+thruster3 = config.Thruster(0.9, 
+                            MVector{3, Float64}(-3.8749451609022656e-2,-1.206182747348013,0.85245), 
+                            MVector{3, Float64}(0.7071067811865476,0.7071067811865475,0.0), 
+                            227.5, 
+                            0.0)
+config.add_thruster!(spacecraft, main_bus, thruster3)
+# Thruster 4
+thruster4 = config.Thruster(0.9, 
+                            MVector{3, Float64}(-3.874945160902288e-2,-1.206182747348013,-0.85245), 
+                            MVector{3, Float64}(0.7071067811865476,0.7071067811865475,0.0), 
+                            227.5, 
+                            0.0)
+config.add_thruster!(spacecraft, main_bus, thruster4)
+# Thruster 5
+thruster5 = config.Thruster(0.9, 
+                            MVector{3, Float64}(-3.874945160902288e-2,1.206182747348013,0.85245), 
+                            MVector{3, Float64}(0.7071067811865476,-0.7071067811865475,0.0), 
+                            227.5, 
+                            0.0)
+config.add_thruster!(spacecraft, main_bus, thruster5)
 # Thruster 6
 thruster6 = config.Thruster(0.9, 
                             MVector{3, Float64}(-3.874945160902288e-2,1.206182747348013,-0.85245), 
@@ -115,20 +115,20 @@ thruster6 = config.Thruster(0.9,
                             227.5, 
                             0.0)
 config.add_thruster!(spacecraft, main_bus, thruster6)
-# # Thruster 7
-# thruster7 = config.Thruster(0.9, 
-#                             MVector{3, Float64}(3.8749451609022656e-2,1.206182747348013,0.85245), 
-#                             MVector{3, Float64}(-0.7071067811865476,-0.7071067811865475,0.0), 
-#                             227.5, 
-#                             0.0)
-# config.add_thruster!(spacecraft, main_bus, thruster7)
-# # Thruster 8
-# thruster8 = config.Thruster(0.9, 
-#                             MVector{3, Float64}(3.8749451609022656e-2,1.206182747348013,-0.85245), 
-#                             MVector{3, Float64}(-0.7071067811865476,-0.7071067811865475,0.0), 
-#                             227.5, 
-#                             0.0)
-# config.add_thruster!(spacecraft, main_bus, thruster8)
+# Thruster 7
+thruster7 = config.Thruster(0.9, 
+                            MVector{3, Float64}(3.8749451609022656e-2,1.206182747348013,0.85245), 
+                            MVector{3, Float64}(-0.7071067811865476,-0.7071067811865475,0.0), 
+                            227.5, 
+                            0.0)
+config.add_thruster!(spacecraft, main_bus, thruster7)
+# Thruster 8
+thruster8 = config.Thruster(0.9, 
+                            MVector{3, Float64}(3.8749451609022656e-2,1.206182747348013,-0.85245), 
+                            MVector{3, Float64}(-0.7071067811865476,-0.7071067811865475,0.0), 
+                            227.5, 
+                            0.0)
+config.add_thruster!(spacecraft, main_bus, thruster8)
 lenXHub = 1.50 # m
 lenYHub = 1.80 # m
 lenZHub = 2.86 # m
@@ -382,12 +382,12 @@ args = Dict(# Misc Simulation
 
             :a_tol => 1e-5,                                         # Absolute tolerance for integration
             :r_tol => 1e-3,                                         # Relative tolerance for integration
-            :a_tol_orbit => 1e-11,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
-            :r_tol_orbit => 1e-9,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :a_tol_orbit => 1e-7,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :r_tol_orbit => 1e-5,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
             :a_tol_drag => 1e-8,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
             :r_tol_drag => 1e-6,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
-            :a_tol_quaternion => 1e-11,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
-            :r_tol_quaternion => 1e-9,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :a_tol_quaternion => 1e-6,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :r_tol_quaternion => 1e-4,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :dt_max => 1.0,                                         # Maximum time step for integration, s
             :dt_max_orbit => 10.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
             :dt_max_drag => 1.0,                                    # Maximum time step for drag passage

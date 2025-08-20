@@ -321,11 +321,12 @@ function basilisk_thruster_read_csv!(m, b::config.Link, root_index::Int, vel_pp_
     data = Matrix(data)
     # Extract time and thruster values
     times = data[:, 1]
-    thruster_values = data[:, 2:end]
-    
+    thruster_values = data[:, 2:2:end]
+    firing_time = data[:, 3:2:end]
     # Find the index of the closest time
     idx = findmin(abs.(times .- t))[2]
-    idx += 1
+    # idx += 1
+    # println("firing_time: $(firing_time[idx, :])")
     # println(thruster_values[idx, :])
     # println(idx)
     # if t < times[idx] - 1e-6 # don't update the thrust command until after the time has passed
@@ -334,6 +335,11 @@ function basilisk_thruster_read_csv!(m, b::config.Link, root_index::Int, vel_pp_
 
     # Set the thruster values
     for (i, thruster) in enumerate(b.thrusters)
-        thruster.thrust = thruster_values[idx, i]
+        thruster.thrust = thruster.max_thrust #thruster_values[idx, i]
+        thruster.stop_firing_time = t + firing_time[idx, i]
     end
+end
+
+function schmitt_trigger(thruster, thrust_value)
+    if thruster.
 end

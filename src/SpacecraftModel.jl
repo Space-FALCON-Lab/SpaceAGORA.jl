@@ -18,7 +18,10 @@ end
     location::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Location in the link frame, relative to the CoM of the link, m
     direction::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Unit vector direction of thrust in the link frame, n/d
     Isp::Float64 = 0.0 # Specific impulse of the thruster, s
+    cutoff_frequency::Float64 = 1.0 # Governing parameter for thruster ramp-up/ramp-down, rad/s. See https://avslab.github.io/basilisk/Documentation/simulation/dynamics/Thrusters/thrusterStateEffector/thrusterStateEffector.html for details
+    κ::Float64 = 0.0 # Thrust factor, nd. This value is integrated during ramp up/down as part of the first-order filter describing the true thrust from the thruster.
     thrust::Float64 = 0.0 # Current thrust magnitude, to be updated during simulation. N
+    stop_firing_time::Float64 = 0.0 # Time at which the thruster stops firing, s. To be updated during simulation.
 end
 
 mutable struct Link

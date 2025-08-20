@@ -36,7 +36,7 @@ main_bus = config.Link(root=true,
                         ref_area=1.5*2.86,
                         m=750.0, 
                         gyro=0,
-                        attitude_control_rate=0.1, # seconds
+                        attitude_control_rate=0.5, # seconds
                         attitude_control_function=basilisk_thruster_read_csv!)
                         # attitude_control_function=constant_thruster!)
 
@@ -78,27 +78,39 @@ thruster1 = config.Thruster(0.9,
                             MVector{3, Float64}(3.874945160902288e-2,-1.206182747348013,0.85245), 
                             MVector{3, Float64}(-0.7071067811865476,0.7071067811865475,0.0), 
                             227.5, 
-                            0.0)
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0) # Stop firing time set to 0.0, will be updated during simulation
 config.add_thruster!(spacecraft, main_bus, thruster1)
 # Thruster 2
 thruster2 = config.Thruster(0.9, 
                             MVector{3, Float64}(3.874945160902288e-2,-1.206182747348013,-0.85245), 
                             MVector{3, Float64}(-0.7071067811865476,0.7071067811865475,0.0), 
                             227.5, 
-                            0.0)
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0) # Stop firing time set to 0.0, will be updated during simulation
 config.add_thruster!(spacecraft, main_bus, thruster2)
 # Thruster 3
 thruster3 = config.Thruster(0.9, 
                             MVector{3, Float64}(-3.8749451609022656e-2,-1.206182747348013,0.85245), 
                             MVector{3, Float64}(0.7071067811865476,0.7071067811865475,0.0), 
                             227.5, 
-                            0.0)
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0) # Stop firing time set to 0.0, will be updated during simulation
 config.add_thruster!(spacecraft, main_bus, thruster3)
 # Thruster 4
 thruster4 = config.Thruster(0.9, 
                             MVector{3, Float64}(-3.874945160902288e-2,-1.206182747348013,-0.85245), 
                             MVector{3, Float64}(0.7071067811865476,0.7071067811865475,0.0), 
                             227.5, 
+                            1.0,
+                            0.0,
+                            0.0,
                             0.0)
 config.add_thruster!(spacecraft, main_bus, thruster4)
 # Thruster 5
@@ -106,6 +118,9 @@ thruster5 = config.Thruster(0.9,
                             MVector{3, Float64}(-3.874945160902288e-2,1.206182747348013,0.85245), 
                             MVector{3, Float64}(0.7071067811865476,-0.7071067811865475,0.0), 
                             227.5, 
+                            1.0,
+                            0.0,
+                            0.0,
                             0.0)
 config.add_thruster!(spacecraft, main_bus, thruster5)
 # Thruster 6
@@ -113,6 +128,9 @@ thruster6 = config.Thruster(0.9,
                             MVector{3, Float64}(-3.874945160902288e-2,1.206182747348013,-0.85245), 
                             MVector{3, Float64}(0.7071067811865476,-0.7071067811865475,0.0), 
                             227.5, 
+                            1.0,
+                            0.0,
+                            0.0,
                             0.0)
 config.add_thruster!(spacecraft, main_bus, thruster6)
 # Thruster 7
@@ -120,6 +138,9 @@ thruster7 = config.Thruster(0.9,
                             MVector{3, Float64}(3.8749451609022656e-2,1.206182747348013,0.85245), 
                             MVector{3, Float64}(-0.7071067811865476,-0.7071067811865475,0.0), 
                             227.5, 
+                            1.0,
+                            0.0,
+                            0.0,
                             0.0)
 config.add_thruster!(spacecraft, main_bus, thruster7)
 # Thruster 8
@@ -127,6 +148,9 @@ thruster8 = config.Thruster(0.9,
                             MVector{3, Float64}(3.8749451609022656e-2,1.206182747348013,-0.85245), 
                             MVector{3, Float64}(-0.7071067811865476,-0.7071067811865475,0.0), 
                             227.5, 
+                            1.0,
+                            0.0,
+                            0.0,
                             0.0)
 config.add_thruster!(spacecraft, main_bus, thruster8)
 lenXHub = 1.50 # m
@@ -207,7 +231,7 @@ panel_facets_L = config.create_facet_list(panel_facet_area_list,
                                         panel_facet_locs,
                                         panel_diffuse_coeffs,
                                         panel_specular_coeffs)
-config.add_facet!(main_bus, bus_facets)
+# config.add_facet!(main_bus, bus_facets)
 # config.add_facet!(L_panel, panel_facets_L)
 # config.add_facet!(R_panel, panel_facets_R)
 
@@ -265,7 +289,7 @@ args = Dict(# Misc Simulation
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
-            :save_rate => 1.0,                                      # Rate at which the data trajectory are saved
+            :save_rate => 5.0,                                      # Rate at which the data trajectory are saved
             
             # Body
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
@@ -386,10 +410,10 @@ args = Dict(# Misc Simulation
             :r_tol_orbit => 1e-5,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
             :a_tol_drag => 1e-8,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
             :r_tol_drag => 1e-6,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
-            :a_tol_quaternion => 1e-6,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
-            :r_tol_quaternion => 1e-4,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :a_tol_quaternion => 1e-10,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :r_tol_quaternion => 1e-8,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :dt_max => 1.0,                                         # Maximum time step for integration, s
-            :dt_max_orbit => 10.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
+            :dt_max_orbit => 0.1,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
             :dt_max_drag => 1.0,                                    # Maximum time step for drag passage
 
             :Odyssey_sim => 0                                      # Simulate Odyssey Mission

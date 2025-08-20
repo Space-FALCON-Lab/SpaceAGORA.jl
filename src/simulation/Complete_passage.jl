@@ -614,18 +614,22 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 # Attitude control thruster torques and forces
                 # Check that the current body has thrusters
                 if !isempty(b.thrusters)
-                    # Ensure the thrust magnitudes are less than the maximum
-                    thrusts = MVector{length(b.thrusters), Float64}(zeros(length(b.thrusters))) # Create an MVector with the same number of elements as thrusters
                     for thrust_idx in eachindex(b.thrusters)
                         thruster = b.thrusters[thrust_idx]
-                        thruster.thrust = clamp(thruster.thrust, 0.0, thruster.max_thrust)
-                        thrust = thruster.thrust # Get the thrust magnitude of the thruster
-                        thrusts[thrust_idx] = thrust # Update thrusts to be used for calculating torque
-                        b.net_force .+= R' * thruster.direction * thrust # Get the net force in the inertial frame
-                        thruster_fuel_mass_consumption -= thrust / (g_e * thruster.Isp)
-                        thruster_forces[counter_thrusters] = thrust # Update the thruster forces vector
-                        counter_thrusters += 1 # Increment the counter for the thruster forces vector
-                        b.net_torque .+= cross(thruster.location + b.r, config.rotate_to_body(b) * thruster.direction) * thrust # Get the net torque in the body frame
+                        thruster.thrust = clamp(thruster.thrust, 0.0, thruster.max_thrust) # Ensure thruster magnitudes are capped at the max
+                        if t0*config.cnf.TU >= thruster.stop_firing_time # check if the thruster firing time condition is met
+                            thruster.thrust = 0.0
+                            thruster_forces[counter_thrusters] = 0.0
+                            counter_thrusters += 1
+                        else
+                            thrust = thruster.κ * thruster.thrust # Get the thrust magnitude of the thruster
+                            b.net_force .+= R * thruster.direction * thrust # Get the net force in the inertial frame
+                            thruster_fuel_mass_consumption -= thrust / (g_e * thruster.Isp)
+                            thruster_forces[counter_thrusters] = thrust # Update the thruster forces vector
+                            counter_thrusters += 1 # Increment the counter for the thruster forces vector
+                            rot_to_body = config.rotate_to_body(b) # Get the rotation matrix from the link frame to the body frame
+                            b.net_torque .+= cross(rot_to_body * thruster.location + b.r, rot_to_body * thruster.direction) * thrust # Get the net torque in the body frame
+                        end
                     end
                     # Add the torques due to the thrusters
                     # TODO: Need to make J_thrusters work properly when bodies are rotated relative to each other, i.e., update direction and magnitude when joint states are modified
@@ -799,6 +803,27 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     attitude_controller = PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU)
     # attitude_controller_orbit = DiscreteCallback(run_attitude_controller_condition, run_attitude_controller!)
     attitude_controller_orbit = m.body.n_reaction_wheels != 0 || m.body.n_thrusters != 0 ? PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU) : nothing
+    function thrust_factor_integrator!(integrator)
+        """
+        Integrate the thrust factors for the thrusters
+        """
+        m = integrator.p[1]
+        bodies, root_index = config.traverse_bodies(m.body, m.body.roots[1])
+        @inbounds for b in bodies
+            if !isempty(b.thrusters)
+                @inbounds for thruster in b.thrusters
+                    if thruster.thrust == 0.0
+                        f = (du, u, p, t) -> du[1] = -thruster.cutoff_frequency * u[1]
+                    else
+                        f = (du, u, p, t) -> du[1] = thruster.cutoff_frequency * (1.0 - u[1])
+                    end
+                    prob = ODEProblem(f,[thruster.κ],(0.0,integrator.dt*config.cnf.TU))
+                    thruster.κ = solve(prob,Midpoint()).u[end][1]
+                end
+            end
+        end
+    end
+    thrust_factor_integrator = m.body.n_thrusters != 0 ? DiscreteCallback(every_step_condition, thrust_factor_integrator!) : nothing
 
     function run_solar_panel_controller!(integrator)
         """
@@ -826,6 +851,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
 
     solar_panel_controller = ip.cm != 0 ? PeriodicCallback(run_solar_panel_controller!, args[:solar_panel_control_rate] / config.cnf.TU) : nothing
+
     # attitude_controller_orbit = PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU)
     function quaternion_update_affect!(integrator)
         """
@@ -1339,39 +1365,39 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Definition of eventsecondstep
         if aerobraking_phase == 0
-            events = CallbackSet(stop_firing, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller_orbit, time_check)
+            events = CallbackSet(stop_firing, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller_orbit, time_check, thrust_factor_integrator)
             t_event_0 = "stop_firing"
             t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 1 && args[:keplerian] == true
-            events = CallbackSet(eventfirststep_periapsis, apoapsisgreaterperiapsis, impact, periapsispoint, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller_orbit, time_check)
+            events = CallbackSet(eventfirststep_periapsis, apoapsisgreaterperiapsis, impact, periapsispoint, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller_orbit, time_check, thrust_factor_integrator)
             t_event_0 = "eventfirststep_periapsis"
             t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 1
-            events = CallbackSet(eventfirststep, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller_orbit, time_check)
+            events = CallbackSet(eventfirststep, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller_orbit, time_check, thrust_factor_integrator)
             t_event_0 = "eventfirststep"
             t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 2 && Bool(args[:drag_passage]) && args[:type_of_mission] != "Entry"
-            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check)
+            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator)
             t_event_0 = "out_drag_passage"
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 2 && Bool(args[:drag_passage]) && args[:type_of_mission] == "Entry"
-            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, final_entry_altitude_reached, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check)
+            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, final_entry_altitude_reached, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator)
             t_event_0 = "final_altitude_reached"
             t_event_1 = "out_drag_passage"
         elseif aerobraking_phase == 2 && index_steps_EOM == 1 && args[:body_shape] == "Blunted Cone"
-            events = CallbackSet(out_drag_passage, apoapsispoint, periapsispoint, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check)
+            events = CallbackSet(out_drag_passage, apoapsispoint, periapsispoint, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator)
             t_event_0 = "out_drag_passage"
             t_event_1 = "apoapsispoint"
         elseif aerobraking_phase == 2 && index_steps_EOM == 1 && args[:drag_passage] == false
-            events = CallbackSet(apoapsispoint, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check)
+            events = CallbackSet(apoapsispoint, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator)
             t_event_0 = "apoapsispoint"
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 2
-            events = CallbackSet(eventsecondstep, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check)
+            events = CallbackSet(eventsecondstep, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator)
             t_event_0 = "eventsecondstep"
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 3
-            events = CallbackSet(apoapsispoint, periapsispoint, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, attitude_controller_orbit, time_check)
+            events = CallbackSet(apoapsispoint, periapsispoint, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, attitude_controller_orbit, time_check, thrust_factor_integrator)
             t_event_0 = "apoapsispoint"
             t_event_1 = "periapsispoint"
         end

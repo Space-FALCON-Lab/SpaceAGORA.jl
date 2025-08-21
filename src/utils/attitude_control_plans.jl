@@ -321,25 +321,52 @@ function basilisk_thruster_read_csv!(m, b::config.Link, root_index::Int, vel_pp_
     data = Matrix(data)
     # Extract time and thruster values
     times = data[:, 1]
-    thruster_values = data[:, 2:2:end]
-    firing_time = data[:, 3:2:end]
+    thruster_values = data[:, 2:end]
+    # firing_time = data[:, 3:2:end]
     # Find the index of the closest time
     idx = findmin(abs.(times .- t))[2]
     # idx += 1
     # println("firing_time: $(firing_time[idx, :])")
     # println(thruster_values[idx, :])
     # println(idx)
-    # if t < times[idx] - 1e-6 # don't update the thrust command until after the time has passed
+    # if t < times[idx] # don't update the thrust command until after the time has passed
     #     idx -= 1
     # end
-
     # Set the thruster values
     for (i, thruster) in enumerate(b.thrusters)
-        thruster.thrust = thruster.max_thrust #thruster_values[idx, i]
-        thruster.stop_firing_time = t + firing_time[idx, i]
+        # ti = thruster_values[idx, i] / thruster.max_thrust * b.attitude_control_rate
+        # if ti >= b.attitude_control_rate
+        #     ti = b.attitude_control_rate * 1.1
+        # end
+        # thruster.thrust = thruster.max_thrust # thruster_values[idx, i] >= 1e-20 ? thruster_values[idx, i] : 0.0 # 
+        # thruster.stop_firing_time = t + ti
+        thruster.thrust = thruster_values[idx, i]
+        thruster.stop_firing_time = Inf
     end
 end
 
-function schmitt_trigger(thruster, thrust_value)
-    if thruster.
+function basilisk_thruster_torque_read_csv!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
+    # Read the CSV file
+    data = CSV.File("/workspaces/ABTS.jl/basilisk_thruster_torque.csv", delim=',', header=true) |> DataFrame
+    data = Matrix(data)
+    # Extract time and thruster values
+    times = data[:, 1]
+    thruster_torques = data[:, 2:end]
+    idx = findmin(abs.(times .- t))[2]
+
+    # Map torques onto Thrusters
+    thruster_forces = pinv(b.J_thruster)*thruster_torques[idx, :]
+    for (i, thruster) in enumerate(b.thrusters)
+        ti = thruster_forces[i] / thruster.max_thrust * b.attitude_control_rate
+        if ti >= b.attitude_control_rate
+            ti = b.attitude_control_rate * 1.1
+        end
+        thruster.thrust = thruster.max_thrust
+        thruster.stop_firing_time = t + ti
+    end
+    # return clamp!(thruster_values[idx, :], -1.0, 1.0)
 end
+
+# function schmitt_trigger(thruster, thrust_value)
+#     if thruster.
+# end

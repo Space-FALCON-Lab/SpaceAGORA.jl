@@ -31,12 +31,13 @@ main_bus = config.Link(root=true,
                         q=SVector{4, Float64}(q),
                         # q=SVector{4, Float64}([0.0, 0.0, 0.0, 1.0]),
                         ṙ=SVector{3, Float64}([0.0, 0.0, 0.0]), 
-                        # ω=SVector{3, Float64}(ω_body),    
+                        ω=SVector{3, Float64}(ω_body),    
                         dims=SVector{3, Float64}([1.5, 1.8, 2.86]), 
                         ref_area=1.5*2.86,
                         m=750.0, 
                         gyro=0,
-                        attitude_control_rate=0.5, # seconds
+                        attitude_control_rate=0.1, # seconds
+                        # attitude_control_function=basilisk_thruster_torque_read_csv!)
                         attitude_control_function=basilisk_thruster_read_csv!)
                         # attitude_control_function=constant_thruster!)
 
@@ -64,10 +65,10 @@ config.add_body!(spacecraft, main_bus, prop_mass=10.0)
 # config.add_joint!(spacecraft, L_panel_joint)
 # config.add_joint!(spacecraft, R_panel_joint)
 config.set_inertia_tensor!(spacecraft, main_bus, 
-                        SMatrix{3, 3, Float64}(Diagonal([800.0, 800.0, 800.0])))
-# thruster = config.Thruster(1.0, MVector{3, Float64}(1.0, 0.0, 0.0), MVector{3, Float64}(0.0, 1.0, 0.0), 227.5, 0.0)
+                        SMatrix{3, 3, Float64}(Diagonal([900.0, 800.0, 600.0])))
+# thruster = config.Thruster(1.0, MVector{3, Float64}(1.0, 0.0, 0.0), MVector{3, Float64}(0.0, 1.0, 0.0), 227.5, 1.0, 0.0, 0.0, 0.0)
 # config.add_thruster!(spacecraft, main_bus, thruster)
-# thruster = config.Thruster(1.0, MVector{3, Float64}(-1.0, 0.0, 0.0), MVector{3, Float64}(0.0, 1.0, 0.0), 227.5, 0.0)
+# thruster = config.Thruster(1.0, MVector{3, Float64}(-1.0, 0.0, 0.0), MVector{3, Float64}(0.0, 1.0, 0.0), 227.5, 1.0, 0.0, 0.0, 0.0)
 # config.add_thruster!(spacecraft, main_bus, thruster)
 # thruster = config.Thruster(1.0, MVector{3, Float64}(-1.0, 0.0, -0.999), MVector{3, Float64}(-1.0, 1.0, 0.0), 227.5, 0.0)
 # config.add_thruster!(spacecraft, main_bus, thruster)
@@ -289,7 +290,7 @@ args = Dict(# Misc Simulation
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
-            :save_rate => 5.0,                                      # Rate at which the data trajectory are saved
+            :save_rate => 10.0,                                      # Rate at which the data trajectory are saved
             
             # Body
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
@@ -406,12 +407,12 @@ args = Dict(# Misc Simulation
 
             :a_tol => 1e-5,                                         # Absolute tolerance for integration
             :r_tol => 1e-3,                                         # Relative tolerance for integration
-            :a_tol_orbit => 1e-7,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
-            :r_tol_orbit => 1e-5,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :a_tol_orbit => 1e-11,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :r_tol_orbit => 1e-9,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
             :a_tol_drag => 1e-8,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
             :r_tol_drag => 1e-6,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
-            :a_tol_quaternion => 1e-10,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
-            :r_tol_quaternion => 1e-8,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :a_tol_quaternion => 1e-11,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :r_tol_quaternion => 1e-9,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :dt_max => 1.0,                                         # Maximum time step for integration, s
             :dt_max_orbit => 0.1,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
             :dt_max_drag => 1.0,                                    # Maximum time step for drag passage

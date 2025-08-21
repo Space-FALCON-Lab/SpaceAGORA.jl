@@ -613,24 +613,27 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
                 # Attitude control thruster torques and forces
                 # Check that the current body has thrusters
+
                 if !isempty(b.thrusters)
-                    for thrust_idx in eachindex(b.thrusters)
+                    @inbounds for thrust_idx in eachindex(b.thrusters)
                         thruster = b.thrusters[thrust_idx]
                         thruster.thrust = clamp(thruster.thrust, 0.0, thruster.max_thrust) # Ensure thruster magnitudes are capped at the max
-                        if t0*config.cnf.TU >= thruster.stop_firing_time # check if the thruster firing time condition is met
+                        if t0 >= thruster.stop_firing_time # check if the thruster firing time condition is met
                             thruster.thrust = 0.0
                             thruster_forces[counter_thrusters] = 0.0
                             counter_thrusters += 1
                         else
-                            thrust = thruster.κ * thruster.thrust # Get the thrust magnitude of the thruster
+                            thrust =  thruster.thrust # Get the thrust magnitude of the thruster  thruster.κ *
                             b.net_force .+= R * thruster.direction * thrust # Get the net force in the inertial frame
                             thruster_fuel_mass_consumption -= thrust / (g_e * thruster.Isp)
                             thruster_forces[counter_thrusters] = thrust # Update the thruster forces vector
                             counter_thrusters += 1 # Increment the counter for the thruster forces vector
                             rot_to_body = config.rotate_to_body(b) # Get the rotation matrix from the link frame to the body frame
-                            b.net_torque .+= cross(rot_to_body * thruster.location + b.r, rot_to_body * thruster.direction) * thrust # Get the net torque in the body frame
+                            # println("Body net torque up to thruster $thrust_idx: ", b.net_torque)
+                            b.net_torque .+= cross(rot_to_body * thruster.location + b.r, rot_to_body * thruster.direction * thrust)  # Get the net torque in the body frame
                         end
                     end
+                    # b.net_torque .+= b.attitude_control_function(m, b, root_index, vel_pp_rw, h_pp_hat, aerobraking_phase, t0)
                     # Add the torques due to the thrusters
                     # TODO: Need to make J_thrusters work properly when bodies are rotated relative to each other, i.e., update direction and magnitude when joint states are modified
                     # Maybe make get_J_Thruster function that calculates the body frame J from the link frame J and link r, q whenever it's called
@@ -646,15 +649,17 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         force_ii = body_forces + gravity_ii + thrust_ii
         
         # Torques
+        τ_body = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize torque vector
         if orientation_sim
-            τ_body = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize torque vector
-            
             # Gravity gradient torque
             R .= config.rotate_to_inertial(m.body, m.body.roots[1], root_index) # Rotation matrix from the root body to the spacecraft link
             inertia_tensor = config.get_inertia_tensor(m.body, root_index) # Inertia tensor of the body
             τ_body += args[:gravity_gradient] ? R'*(3.0*m.planet.μ * cross(pos_ii, (R*inertia_tensor*R') * pos_ii) / pos_ii_mag^5) : SVector{3, Float64}(0.0, 0.0, 0.0) # Gravity gradient torque
             # All other torques
             τ_body += sum([b.net_torque for b in bodies]) # Sum of all torques on the spacecraft links
+            # if t0 > 300
+            #     τ_body = MVector{3, Float64}(zeros(3))
+            # end
         end
         
         y_dot[1:3] .= vel_ii * (config.cnf.TU / config.cnf.DU) # Position derivative in inertial frame
@@ -666,7 +671,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         if orientation_sim
             y_dot[next_index:next_index+3] .= (0.5*Ξ(quaternion)*ω) * config.cnf.TU  # Quaternion derivative
-            y_dot[next_index+4:next_index+6] .= (inertia_tensor\(-hat(ω)*(inertia_tensor*ω + total_rw_h)+ τ_body)) * config.cnf.TU^2  # Angular velocity derivative
+            y_dot[next_index+4:next_index+6] .= (inertia_tensor\(-hat(ω) * (inertia_tensor * ω + total_rw_h) + τ_body)) * config.cnf.TU^2  # Angular velocity derivative
         end
 
         energy = (vel_ii_mag^2)/2.0 - (m.planet.μ / pos_ii_mag)
@@ -800,7 +805,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
     end
 
-    attitude_controller = PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU)
+    attitude_controller = m.body.n_reaction_wheels != 0 || m.body.n_thrusters != 0 ? PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU) : nothing
     # attitude_controller_orbit = DiscreteCallback(run_attitude_controller_condition, run_attitude_controller!)
     attitude_controller_orbit = m.body.n_reaction_wheels != 0 || m.body.n_thrusters != 0 ? PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU) : nothing
     function thrust_factor_integrator!(integrator)

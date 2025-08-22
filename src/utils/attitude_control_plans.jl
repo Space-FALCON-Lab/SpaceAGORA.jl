@@ -354,16 +354,17 @@ function basilisk_thruster_torque_read_csv!(m, b::config.Link, root_index::Int, 
     thruster_torques = data[:, 2:end]
     idx = findmin(abs.(times .- t))[2]
 
+    config.update_thrusters!(b, thruster_torques[idx, :])
     # Map torques onto Thrusters
-    thruster_forces = pinv(b.J_thruster)*thruster_torques[idx, :]
-    for (i, thruster) in enumerate(b.thrusters)
-        ti = thruster_forces[i] / thruster.max_thrust * b.attitude_control_rate
-        if ti >= b.attitude_control_rate
-            ti = b.attitude_control_rate * 1.1
-        end
-        thruster.thrust = thruster.max_thrust
-        thruster.stop_firing_time = t + ti
-    end
+    # thruster_forces = pinv(b.J_thruster)*thruster_torques[idx, :]
+    # for (i, thruster) in enumerate(b.thrusters)
+    #     ti = thruster_forces[i] / thruster.max_thrust * b.attitude_control_rate
+    #     if ti >= b.attitude_control_rate
+    #         ti = b.attitude_control_rate * 1.1
+    #     end
+    #     thruster.thrust = thruster.max_thrust
+    #     thruster.stop_firing_time = t + ti
+    # end
     # return clamp!(thruster_values[idx, :], -1.0, 1.0)
 end
 

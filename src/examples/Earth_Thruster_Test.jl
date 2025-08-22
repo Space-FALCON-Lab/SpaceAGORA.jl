@@ -1,5 +1,5 @@
 include("../simulation/Run.jl")
-# include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
+include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 include("../utils/quaternion_utils.jl")
@@ -37,8 +37,10 @@ main_bus = config.Link(root=true,
                         m=750.0, 
                         gyro=0,
                         attitude_control_rate=0.1, # seconds
-                        # attitude_control_function=basilisk_thruster_torque_read_csv!)
-                        attitude_control_function=basilisk_thruster_read_csv!)
+                        thrust_calculation_function=config.thrust_calculation_schmitt_trigger!, # Function to calculate the average thrust over the control period
+                        attitude_control_function=basilisk_thruster_torque_read_csv!
+                        )
+                        # attitude_control_function=basilisk_thruster_read_csv!)
                         # attitude_control_function=constant_thruster!)
 
 # L_panel = config.Link(r=SVector{3, Float64}(-1.5/2-3.75, 0.0, 0.0), 
@@ -80,7 +82,9 @@ thruster1 = config.Thruster(0.9,
                             MVector{3, Float64}(-0.7071067811865476,0.7071067811865475,0.0), 
                             227.5, 
                             1.0,
-                            0.0,
+                            0.0002,
+                            0.75,
+                            0.25,
                             0.0,
                             0.0) # Stop firing time set to 0.0, will be updated during simulation
 config.add_thruster!(spacecraft, main_bus, thruster1)
@@ -90,7 +94,9 @@ thruster2 = config.Thruster(0.9,
                             MVector{3, Float64}(-0.7071067811865476,0.7071067811865475,0.0), 
                             227.5, 
                             1.0,
-                            0.0,
+                            0.0002,
+                            0.75,
+                            0.25,
                             0.0,
                             0.0) # Stop firing time set to 0.0, will be updated during simulation
 config.add_thruster!(spacecraft, main_bus, thruster2)
@@ -100,7 +106,9 @@ thruster3 = config.Thruster(0.9,
                             MVector{3, Float64}(0.7071067811865476,0.7071067811865475,0.0), 
                             227.5, 
                             1.0,
-                            0.0,
+                            0.0002,
+                            0.75,
+                            0.25,
                             0.0,
                             0.0) # Stop firing time set to 0.0, will be updated during simulation
 config.add_thruster!(spacecraft, main_bus, thruster3)
@@ -110,7 +118,9 @@ thruster4 = config.Thruster(0.9,
                             MVector{3, Float64}(0.7071067811865476,0.7071067811865475,0.0), 
                             227.5, 
                             1.0,
-                            0.0,
+                            0.0002,
+                            0.75,
+                            0.25,
                             0.0,
                             0.0)
 config.add_thruster!(spacecraft, main_bus, thruster4)
@@ -120,7 +130,9 @@ thruster5 = config.Thruster(0.9,
                             MVector{3, Float64}(0.7071067811865476,-0.7071067811865475,0.0), 
                             227.5, 
                             1.0,
-                            0.0,
+                            0.0002,
+                            0.75,
+                            0.25,
                             0.0,
                             0.0)
 config.add_thruster!(spacecraft, main_bus, thruster5)
@@ -130,7 +142,9 @@ thruster6 = config.Thruster(0.9,
                             MVector{3, Float64}(0.7071067811865476,-0.7071067811865475,0.0), 
                             227.5, 
                             1.0,
-                            0.0,
+                            0.0002,
+                            0.75,
+                            0.25,
                             0.0,
                             0.0)
 config.add_thruster!(spacecraft, main_bus, thruster6)
@@ -140,7 +154,9 @@ thruster7 = config.Thruster(0.9,
                             MVector{3, Float64}(-0.7071067811865476,-0.7071067811865475,0.0), 
                             227.5, 
                             1.0,
-                            0.0,
+                            0.0002,
+                            0.75,
+                            0.25,
                             0.0,
                             0.0)
 config.add_thruster!(spacecraft, main_bus, thruster7)
@@ -150,7 +166,9 @@ thruster8 = config.Thruster(0.9,
                             MVector{3, Float64}(-0.7071067811865476,-0.7071067811865475,0.0), 
                             227.5, 
                             1.0,
-                            0.0,
+                            0.0002,
+                            0.75,
+                            0.25,
                             0.0,
                             0.0)
 config.add_thruster!(spacecraft, main_bus, thruster8)

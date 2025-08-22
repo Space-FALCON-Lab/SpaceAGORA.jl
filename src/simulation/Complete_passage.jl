@@ -618,20 +618,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     @inbounds for thrust_idx in eachindex(b.thrusters)
                         thruster = b.thrusters[thrust_idx]
                         thruster.thrust = clamp(thruster.thrust, 0.0, thruster.max_thrust) # Ensure thruster magnitudes are capped at the max
-                        if t0 >= thruster.stop_firing_time # check if the thruster firing time condition is met
-                            thruster.thrust = 0.0
-                            thruster_forces[counter_thrusters] = 0.0
-                            counter_thrusters += 1
-                        else
-                            thrust =  thruster.thrust # Get the thrust magnitude of the thruster  thruster.κ *
-                            b.net_force .+= R * thruster.direction * thrust # Get the net force in the inertial frame
-                            thruster_fuel_mass_consumption -= thrust / (g_e * thruster.Isp)
-                            thruster_forces[counter_thrusters] = thrust # Update the thruster forces vector
-                            counter_thrusters += 1 # Increment the counter for the thruster forces vector
-                            rot_to_body = config.rotate_to_body(b) # Get the rotation matrix from the link frame to the body frame
-                            # println("Body net torque up to thruster $thrust_idx: ", b.net_torque)
-                            b.net_torque .+= cross(rot_to_body * thruster.location + b.r, rot_to_body * thruster.direction * thrust)  # Get the net torque in the body frame
-                        end
+                        thrust =  thruster.thrust # Get the thrust magnitude of the thruster  thruster.κ *
+                        b.net_force .+= R * thruster.direction * thrust # Get the net force in the inertial frame
+                        thruster_fuel_mass_consumption -= thrust / (g_e * thruster.Isp)
+                        thruster_forces[counter_thrusters] = thrust # Update the thruster forces vector
+                        counter_thrusters += 1 # Increment the counter for the thruster forces vector
+                        rot_to_body = config.rotate_to_body(b) # Get the rotation matrix from the link frame to the body frame
+                        # println("Body net torque up to thruster $thrust_idx: ", b.net_torque)
+                        b.net_torque .+= cross(rot_to_body * thruster.location + b.r, rot_to_body * thruster.direction * thrust)  # Get the net torque in the body frame
                     end
                     # b.net_torque .+= b.attitude_control_function(m, b, root_index, vel_pp_rw, h_pp_hat, aerobraking_phase, t0)
                     # Add the torques due to the thrusters

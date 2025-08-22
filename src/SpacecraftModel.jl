@@ -19,9 +19,11 @@ end
     direction::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Unit vector direction of thrust in the link frame, n/d
     Isp::Float64 = 0.0 # Specific impulse of the thruster, s
     cutoff_frequency::Float64 = 1.0 # Governing parameter for thruster ramp-up/ramp-down, rad/s. See https://avslab.github.io/basilisk/Documentation/simulation/dynamics/Thrusters/thrusterStateEffector/thrusterStateEffector.html for details
+    min_firing_time::Float64 = 0.0 # Minimum time for the thruster to be firing, s.
+    level_on::Float64 = 0.75 # Upper threshold for the Schmitt trigger, nd
+    level_off::Float64 = 0.25 # Lower threshold for the Schmitt trigger, nd
     κ::Float64 = 0.0 # Thrust factor, nd. This value is integrated during ramp up/down as part of the first-order filter describing the true thrust from the thruster.
     thrust::Float64 = 0.0 # Current thrust magnitude, to be updated during simulation. N
-    stop_firing_time::Float64 = 0.0 # Time at which the thruster stops firing, s. To be updated during simulation.
 end
 
 mutable struct Link
@@ -55,6 +57,7 @@ mutable struct Link
     SRP_facets::Vector{Facet}
     J_thruster::Matrix{Float64} # Thruster Jacobian matrix
     thrusters::Vector{Thruster}
+    thrust_calculation_function::Function # Function to calculate the average thrust over the control period, e.g., Schmitt trigger
     function Link(;root=false,
                     r=SVector{3, Float64}([0, 0, 0]), 
                     q=SVector{4, Float64}([0,0,0,1]), 
@@ -83,14 +86,15 @@ mutable struct Link
                     ω_wheel_derivatives=MVector{gyro, Float64}(zeros(gyro)),
                     SRP_facets=Facet[],
                     J_thruster=Matrix{Float64}(zeros(3, 1)),
-                    thrusters=Thruster[])#SMatrix{3,Int(gyro)}(1.0I))
+                    thrusters=Thruster[],
+                    thrust_calculation_function=()->0.0)#SMatrix{3,Int(gyro)}(1.0I))
                     println(length(rw))
-        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, gyro, max_torque, max_h, rw, J_rw, rw_τ, net_force, net_torque, attitude_control_function, actuation_function, attitude_control_rate, ω_wheel_derivatives, SRP_facets, J_thruster, thrusters)
+        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, gyro, max_torque, max_h, rw, J_rw, rw_τ, net_force, net_torque, attitude_control_function, actuation_function, attitude_control_rate, ω_wheel_derivatives, SRP_facets, J_thruster, thrusters, thrust_calculation_function)
     end
 
     function Link(link::Link)
         new(link.root, link.r, link.q, link.ṙ, link.ω, link.dims, link.ref_area, link.m, link.mass, link.inertia, link.aᵇ, link.bᵇ, link.gyro, link.max_torque, link.max_h, copy(link.rw), copy(link.J_rw), copy(link.rw_τ), copy(link.net_force), copy(link.net_torque), 
-            link.attitude_control_function, link.actuation_function, link.attitude_control_rate, copy(link.ω_wheel_derivatives))
+            link.attitude_control_function, link.actuation_function, link.attitude_control_rate, copy(link.ω_wheel_derivatives), copy(link.SRP_facets), copy(link.J_thruster), copy(link.thrusters), link.thrust_calculation_function)
     end
 end
 
@@ -223,6 +227,9 @@ function add_facet!(link::Link, facets::Vector{Facet})
     push!(link.SRP_facets, facets...)
 end
 
+##########################
+### Thruster functions ###
+##########################
 function add_thruster!(model::SpacecraftModel, link::Link, thruster::Thruster)
     """
     Adds a thruster to the Link
@@ -244,6 +251,52 @@ function add_thruster!(model::SpacecraftModel, link::Link, thruster::Thruster)
     model.n_thrusters += 1 # Increment the number of thrusters in the spacecraft model
 
 end
+
+function update_thrusters!(link::Link, torque::AbstractVector{Float64})
+    """
+    Updates the thrusters of the Link with the given torque vector.
+    - `link`: The Link whose thrusters are to be updated.
+    - `torque`: The torque vector to apply to the thrusters.
+    """
+    # Update the thruster Jacobian matrix to account for possible articulated joints
+    link.J_thruster = MMatrix{3, length(link.thrusters), Float64}(zeros(3, length(link.thrusters))) # Reset the Jacobian matrix
+    rot_to_body = rotate_to_body(link) # Get the rotation matrix to convert from inertial to body frame
+    for (i, thruster) in enumerate(link.thrusters)
+        normalize!(thruster.direction) # Ensure the thruster direction is a unit vector
+        link.J_thruster[:, i] = cross(rot_to_body * thruster.location + link.r, rot_to_body * thruster.direction) # Update the Jacobian matrix with the r x F vector in the body frame
+    end
+    # Calculate the thrust vector from the torque vector
+    thrust_vector = pinv(link.J_thruster) * torque # Solve for the thrust vector using the Jacobian matrix
+    for (i, thruster) in enumerate(link.thrusters)
+        thruster.thrust = thrust_vector[i] # Reset the thrust value for each thruster
+        link.thrust_calculation_function(link, thruster, thrust_vector[i]) # Call the function to calculate the average thrust over the control period
+    end
+end
+
+####################################
+### Thrust Calculation functions ###
+####################################
+function thrust_calculation_schmitt_trigger!(link::Link, thruster::Thruster, thrust::Float64)
+    """
+    Applies a Schmitt trigger to the thrusters of the Link.
+    - `link`: The Link whose thrusters are to be updated.
+    - `thruster`: The thruster to apply the thrust to.
+    - `thrust`: The thrust value to apply to the thruster.
+    """
+    # Interate over each thrust value and determine the firing time
+    ti = min(thrust / thruster.max_thrust * link.attitude_control_rate, link.attitude_control_rate) # Calculate the time interval for the thrust
+    if ti < thruster.min_firing_time # If the time interval is less than the minimum firing time, set it to the minimum firing time or 0, based on schmitt trigger
+        ti = schmitt_trigger(ti, thruster.level_on, thruster.level_off) * thruster.min_firing_time # Use Schmitt trigger to determine if the thruster should fire
+    end
+
+    # Integrate the thrust over the time interval to determine the total impulse, accounting for ramp-up/ramp-down
+    impulse = integrate_impulse(link, thruster, ti) # Integrate the impulse over the time interval
+    # Update the thruster state with the integrated impulse
+    thruster.thrust = impulse / link.attitude_control_rate # Update the average thrust value in the thruster
+end
+#####################################
+#####################################
+#####################################
 
 function create_facet_list(area_list::Vector{Float64}, attitude_list::Vector{SVector{4, Float64}}, normal_vector_list::Vector{SVector{3, Float64}}, 
                             cp_loc_list::Vector{SVector{3, Float64}}, diffuse_coeffs_list::Vector{Float64}, specular_coeffs_list::Vector{Float64})
@@ -703,101 +756,75 @@ function copy(model::SpacecraftModel)
     )
     return new_model # Return the deep copy of the spacecraft model
 end
-# function update_func(A, u, p, t)
-#     """
-#     Update the quaternion orientation of the spacecraft model using the angular velocity `ω` and time step `dt`.
-#     - `A`: The current quaternion orientation of the spacecraft model.
-#     - `u`: The angular velocity vector in inertial frame
-#     - `p`: Integration parameters, should be none
-#     - `t`: The current time.
-#     """
-#     A .= [0.0, p[3], p[2], p[1];
-#           -p[3], 0.0, p[1], p[2];
-#           p[2], -p[1], 0.0, p[3];
-#           -p[1], -p[2], -p[3], 0.0] # Update the quaternion orientation
-# end
-# function integrate_quaternion!(body::Link, ω::SVector{3, Float64}, dt::Float64)
-#     """
-#     Integrates the quaternion orientation of the spacecraft model using the angular velocity `ω` and time step `dt`.
-#     - `model`: The spacecraft model.
-#     - `ω`: The angular velocity vector in body frame.
-#     - `dt`: The time step for integration.
-#     """
-#     # Quaternion multiplication: q ⊗ p, scalar-last convention
-#     function quat_mult(q::AbstractVector, p::AbstractVector)
-#         qv, qs = q[1:3], q[4]
-#         pv, ps = p[1:3], p[4]
-#         vecpart = qs*pv + ps*qv + cross(qv, pv)
-#         scalarpart = qs*ps - dot(qv, pv)
-#         return [vecpart; scalarpart]
-#     end
 
-#     # Quaternion exponential map: exp(Δ) maps ℝ³ → S³ (scalar last)
-#     function exp_quat(Δ::AbstractVector)
-#         θ = norm(Δ)
-#         if θ ≈ 0
-#             return [0.0, 0.0, 0.0, 1.0]
-#         else
-#             return [sin(θ)/θ * Δ; cos(θ)]
-#         end
-#     end
+#################################
+### Thruster helper functions ###
+#################################
+function schmitt_trigger(input::Float64, level_on::Float64, level_off::Float64)
+    """
+    Implements a Schmitt trigger.
+    - `input`: The input signal to the Schmitt trigger.
+    - `level_on`: The threshold above which the output is activated.
+    - `level_off`: The threshold below which the output is deactivated.
+    """
+    state = 0.0
+    if input > level_on
+        state = 1.0
+    elseif input < level_off
+        state = 0.0
+    end
+    return state
+end
 
-#     # Quaternion derivative: dq/dt = 0.5 * q ⊗ [ω; 0]
-#     function quaternion_rhs(q, ω)
-#         ω_quat = [ω; 0.0]
-#         return 0.5 * quat_mult(q, ω_quat)
-#     end
+function integrate_impulse(link::Link, thruster::Thruster, on_time_request::Float64)
+    """
+    Integrates the impulse and thrust factor over the on-time request period.
+    """
+    ω = thruster.cutoff_frequency # Get the cutoff frequency of the thruster
+    # Calculate the impulse using the first-order filter
+    κ0 = 0.0 # thruster.κ # Get the current thrust factor
+    # Numerically integrate the impulse over the on-time request period
+    prob = ODEProblem(thrust_ramp_up_integration_function!, 
+                      [κ0, 0.0], (0.0, min(on_time_request, link.attitude_control_rate)), 
+                      (thruster.max_thrust, ω)) # Create the ODE problem for the impulse integration
+    sol = solve(prob, Midpoint()) # Solve the ODE problem using the Midpoint method
+    κ = sol.u[end][1] # Get the final value of the thrust factor from the solution
+    impulse = sol.u[end][2] # Get the final value of the impulse from the solution
+    if on_time_request < link.attitude_control_rate
+        prob = ODEProblem(thrust_ramp_down_integration_function!, 
+                        [κ, impulse], (0.0, link.attitude_control_rate - on_time_request), 
+                        (thruster.max_thrust, ω)) # Create the ODE problem for the impulse integration
+        sol = solve(prob, Midpoint()) # Solve the ODE problem using the Midpoint method
+        κ = sol.u[end][1] # Get the final value of the thrust factor from the solution
+        impulse = sol.u[end][2] # Get the final value of the impulse from the solution
+    end
+    thruster.κ = κ # Update the thrust factor in the thruster
+    return impulse # Return the total impulse integrated over the control period
+end
+function thrust_ramp_up_integration_function!(du, u, p, t)
+    """
+    Integrates the thrust over time using a first-order filter. State is κ, which is the current thrust factor, and the total impulse.
+    - `du`: The derivative of the state vector.
+    - `u`: The current state vector.
+    - `p`: The parameters (e.g., thrust, cutoff frequency).
+    - `t`: The current time.
+    """
+    thrust = p[1] # Extract thrust from parameters
+    ω = p[2] # Extract cutoff frequency from parameters
+    du[1] = ω * (1.0 - u[1]) # Time derivative of the thrust factor during ramp-up
+    du[2] = thrust * u[1] # Time derivative of the total impulse
+end
 
-#     # RKMK4 step
-#     function rkmk4_step(q, ω, dt)
-#         f(q) = quaternion_rhs(q, ω)
-
-#         k1 = f(q)
-#         q2 = quat_mult(q, exp_quat(dt * 0.5 * k1[1:3]))
-
-#         k2 = f(q2)
-#         q3 = quat_mult(q, exp_quat(dt * 0.5 * k2[1:3]))
-
-#         k3 = f(q3)
-#         q4 = quat_mult(q, exp_quat(dt * k3[1:3]))
-
-#         k4 = f(q4)
-
-#         Δ = dt * (
-#             (1/6) * k1[1:3] +
-#             (1/3) * k2[1:3] +
-#             (1/3) * k3[1:3] +
-#             (1/6) * k4[1:3]
-#         )
-
-#         q_next = quat_mult(q, exp_quat(Δ))
-#         return q_next ./ norm(q_next)
-#     end
-
-#     # Integrate quaternion over time span
-#     function integrate_quaternion_rkmk4(
-#             q0,
-#             ω::Function,
-#             tspan::AbstractVector{<:Real},
-#             dt::Real
-#         )
-#         if dt <= 1e-8
-#             return q0 # No integration needed if dt is zero
-#         end
-#         N = Int(ceil((tspan[end] - tspan[1]) / dt)) + 1
-#         q = q0
-
-#         for i in 2:N
-#             t = tspan[1] + (i-1)*dt
-#             q = rkmk4_step(q, ω(t), dt)
-#             # ts[i] = t
-#         end
-
-#         return q
-#     end
-#     # Integrate the quaternion orientation of the body
-#     tspan = [0.0, dt] # Time span for integration
-#     ω_func(t) = body.ω # Angular velocity function, constant in this case
-#     body.q .= integrate_quaternion_rkmk4(body.q, ω_func, tspan, min(dt, 0.1))
-
-# end
+function thrust_ramp_down_integration_function!(du, u, p, t)
+    """
+    Integrates the thrust over time using a first-order filter. State is κ, which is the current thrust factor, and the total impulse.
+    - `du`: The derivative of the state vector.
+    - `u`: The current state vector.
+    - `p`: The parameters (e.g., thrust, cutoff frequency).
+    - `t`: The current time.
+    """
+    thrust = p[1] # Extract max thrust from parameters
+    ω = p[2] # Extract cutoff frequency from parameters
+    du[1] = -ω * u[1] # Time derivative of the thrust factor during ramp-down
+    du[2] = thrust * u[1] # Time derivative of the total impulse
+end

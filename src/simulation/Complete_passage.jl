@@ -617,8 +617,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 if !isempty(b.thrusters)
                     @inbounds for thrust_idx in eachindex(b.thrusters)
                         thruster = b.thrusters[thrust_idx]
+                        # Check if the thruster has a stop firing time and if the current time is greater than or equal to the stop firing time
                         thruster.thrust = clamp(thruster.thrust, 0.0, thruster.max_thrust) # Ensure thruster magnitudes are capped at the max
-                        thrust =  thruster.thrust # Get the thrust magnitude of the thruster  thruster.κ *
+                        thrust = thruster.thrust # Get the thrust magnitude of the thruster (after thrust factor is applied) thruster.max_thrust * thruster.κ
                         b.net_force .+= R * thruster.direction * thrust # Get the net force in the inertial frame
                         thruster_fuel_mass_consumption -= thrust / (g_e * thruster.Isp)
                         thruster_forces[counter_thrusters] = thrust # Update the thruster forces vector
@@ -811,18 +812,19 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         @inbounds for b in bodies
             if !isempty(b.thrusters)
                 @inbounds for thruster in b.thrusters
-                    if thruster.thrust == 0.0
-                        f = (du, u, p, t) -> du[1] = -thruster.cutoff_frequency * u[1]
-                    else
-                        f = (du, u, p, t) -> du[1] = thruster.cutoff_frequency * (1.0 - u[1])
+                    if thruster.stop_firing_time == 0.0
+                        continue # If there is no stop firing time, skip to the next thruster
                     end
-                    prob = ODEProblem(f,[thruster.κ],(0.0,integrator.dt*config.cnf.TU))
-                    thruster.κ = solve(prob,Midpoint()).u[end][1]
+                    if thruster.stop_firing_time < integrator.t * config.cnf.TU + integrator.dt * config.cnf.TU
+                        thruster.κ *= exp(-thruster.cutoff_frequency * integrator.dt * config.cnf.TU)
+                    elseif thruster.stop_firing_time > integrator.t * config.cnf.TU + integrator.dt * config.cnf.TU
+                        thruster.κ = 1 + (thruster.κ - 1) * exp(-thruster.cutoff_frequency * integrator.dt * config.cnf.TU)
+                    end
                 end
             end
         end
     end
-    thrust_factor_integrator = m.body.n_thrusters != 0 ? DiscreteCallback(every_step_condition, thrust_factor_integrator!) : nothing
+    thrust_factor_integrator = nothing#m.body.n_thrusters != 0 ? DiscreteCallback(every_step_condition, thrust_factor_integrator!) : nothing
 
     function run_solar_panel_controller!(integrator)
         """

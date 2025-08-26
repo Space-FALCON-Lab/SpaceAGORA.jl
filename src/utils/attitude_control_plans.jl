@@ -353,19 +353,29 @@ function basilisk_thruster_torque_read_csv!(m, b::config.Link, root_index::Int, 
     times = data[:, 1]
     thruster_torques = data[:, 2:end]
     idx = findmin(abs.(times .- t))[2]
-
-    config.update_thrusters!(b, thruster_torques[idx, :])
+    if t < times[idx]
+        idx -= 1
+    end
+    config.update_thrusters!(b, thruster_torques[idx, :], t)
     # Map torques onto Thrusters
-    # thruster_forces = pinv(b.J_thruster)*thruster_torques[idx, :]
+    # torque = SVector{3, Float64}(thruster_torques[idx, :])
+    # b.J_thruster = MMatrix{3, length(b.thrusters), Float64}(zeros(3, length(b.thrusters))) # Reset the Jacobian matrix
+    # rot_to_body = config.rotate_to_body(b) # Get the rotation matrix to convert from inertial to body frame
+    # # println("Rotation matrix: $rot_to_body")
     # for (i, thruster) in enumerate(b.thrusters)
-    #     ti = thruster_forces[i] / thruster.max_thrust * b.attitude_control_rate
-    #     if ti >= b.attitude_control_rate
-    #         ti = b.attitude_control_rate * 1.1
-    #     end
-    #     thruster.thrust = thruster.max_thrust
-    #     thruster.stop_firing_time = t + ti
+    #     normalize!(thruster.direction) # Ensure the thruster direction is a unit vector
+    #     b.J_thruster[:, i] = cross(rot_to_body * thruster.location + b.r, rot_to_body * thruster.direction) # Update the Jacobian matrix with the r x F vector in the body frame
     # end
-    # return clamp!(thruster_values[idx, :], -1.0, 1.0)
+    # # Calculate the thrust vector from the torque vector
+    # # println("J_thruster: $(b.J_thruster)")
+    # # println("Torque req: $torque")
+    # thrust_vector = pinv(b.J_thruster) * torque # Solve for the thrust vector using the Jacobian matrix
+    # thrust_vector .-= minimum(thrust_vector) # Ensure no negative thrust values
+    # for (i, thruster) in enumerate(b.thrusters)
+    #     # println("thruster $i: Requested thrust: $(thrust_vector[i]) N")
+    #     # thruster.thrust = thrust_vector[i] # Update the requested thrust in the thruster
+    #     b.thrust_calculation_function(b, thruster, thrust_vector[i], t) # Call the function to calculate the average thrust over the control period
+    # end
 end
 
 # function schmitt_trigger(thruster, thrust_value)

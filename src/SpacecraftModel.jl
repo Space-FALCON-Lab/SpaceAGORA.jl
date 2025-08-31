@@ -280,7 +280,7 @@ function update_thrusters!(link::Link, torque::AbstractVector{Float64}, t::Float
     # thrust_vector = data[idx, 2:end] # Get the thrust vector from the CSV file
     # println("Thrust vector: $thrust_vector")
     for (i, thruster) in enumerate(link.thrusters)
-        println("thruster $i: Requested thrust: $(thrust_vector[i]) N")
+        # println("thruster $i: Requested thrust: $(thrust_vector[i]) N")
         thruster.thrust = thrust_vector[i] # Update the requested thrust in the thruster
         link.thrust_calculation_function(link, thruster, thrust_vector[i], t) # Call the function to calculate the average thrust over the control period
     end
@@ -807,7 +807,8 @@ function integrate_impulse!(link::Link, thruster::Thruster, on_time_request::Flo
     # κ *= exp(-ω * 0.1) # Update the thrust factor after initial non-firing time
 
     # on_time = min(on_time_request, link.attitude_control_rate) # Ensure the on-time does not exceed the control period
-    println("On-time request: $on_time_request s, κ: $κ")
+    # on_time_request -= 0.001
+    # println("On-time request: $on_time_request s, κ: $κ")
     total_integrated_thrust = thruster.max_thrust * (on_time_request + (κ - 1)/ω * (1-exp(-ω * on_time_request))) # Calculate the total impulse
     κ = 1 + (κ - 1) * exp(-ω * on_time_request) # Calculate the final thrust factor
     if on_time_request < link.attitude_control_rate

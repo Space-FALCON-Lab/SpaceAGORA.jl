@@ -12,7 +12,7 @@ using Profile
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
 # Add bodies to the spacecraft model
-p = SVector{3, Float64}([0.1, 0.0, 0.0])
+p = SVector{3, Float64}([0.1, 0.2, -0.3])
 q = 1/(1+norm(p)^2)*SVector{4, Float64}([2*p; 1-norm(p)^2])
 skew = (ω) -> SMatrix{3, 3, Float64}([0 -ω[3] ω[2];
                                    ω[3] 0 -ω[1];
@@ -244,8 +244,8 @@ args = Dict(# Misc Simulation
             :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_step => 1000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :a_initial_a => 12345.0e3,                # Initial Semi-major axis for for-loop in m
-            :a_initial_b => 12346.0e3,                               # Final Semi-major axis for for-loop in m
+            :a_initial_a => 10000.0e3,                # Initial Semi-major axis for for-loop in m
+            :a_initial_b => 10001.0e3,                               # Final Semi-major axis for for-loop in m
             :a_step => 5e10,                                       # Step Semi-major axis for for-loop in m
             :e_initial_a => 0.1,                                   # Initial Eccentricity for for-loop in m
             :e_initial_b => 0.11,                                   # Final Eccentricity for for-loop in m
@@ -255,10 +255,10 @@ args = Dict(# Misc Simulation
             :γ_initial_a => -2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_step => 100,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :inclination => 45.0,                                   # Inclination Orbit, deg
-            :ω => 75.0,                                              # AOP, deg
-            :Ω => 60.0,                                              # RAAN, deg
-            :ν => 69.0,                                               # True Anomaly, deg
+            :inclination => 33.3,                                   # Inclination Orbit, deg
+            :ω => 347.8,                                              # AOP, deg
+            :Ω => 48.2,                                              # RAAN, deg
+            :ν => 85.3,                                               # True Anomaly, deg
             :EI => 160.0,                                           # Entry Interface, km
             :AE => 160.0,                                           # Atmospheric Exit, km
             :year => 2001,                                          # Mission year
@@ -314,8 +314,8 @@ args = Dict(# Misc Simulation
 
             :a_tol => 1e-5,                                         # Absolute tolerance for integration
             :r_tol => 1e-3,                                         # Relative tolerance for integration
-            :a_tol_orbit => 1e-6,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
-            :r_tol_orbit => 1e-4,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :a_tol_orbit => 1e-11,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :r_tol_orbit => 1e-9,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
             :a_tol_drag => 1e-8,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
             :r_tol_drag => 1e-6,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
             :a_tol_quaternion => 1e-11,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)

@@ -649,8 +649,12 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             # Gravity gradient torque
             R .= config.rotate_to_inertial(m.body, m.body.roots[1], root_index) # Rotation matrix from the root body to the spacecraft link
             inertia_tensor = config.get_inertia_tensor(m.body, root_index) # Inertia tensor of the body
-            τ_body += args[:gravity_gradient] ? R'*(3.0*m.planet.μ * cross(pos_ii, (R*inertia_tensor*R') * pos_ii) / pos_ii_mag^5) : SVector{3, Float64}(0.0, 0.0, 0.0) # Gravity gradient torque
+            pos_body = R'*pos_ii # Position of the body in body frame
+            pos_body_mag = norm(pos_body) # Magnitude of the position vector in body frame
+            pos_body = normalize(pos_body) # Normalize the position vector in body frame
+            τ_body += args[:gravity_gradient] ? (3.0*m.planet.μ * cross(pos_body, inertia_tensor * pos_body) / pos_body_mag/pos_body_mag/pos_body_mag) : SVector{3, Float64}(0.0, 0.0, 0.0) # Gravity gradient torque
             # All other torques
+
             τ_body += sum([b.net_torque for b in bodies]) # Sum of all torques on the spacecraft links
             # if t0 > 300
             #     τ_body = MVector{3, Float64}(zeros(3))
@@ -666,7 +670,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         if orientation_sim
             y_dot[next_index:next_index+3] .= (0.5*Ξ(quaternion)*ω) * config.cnf.TU  # Quaternion derivative
-            y_dot[next_index+4:next_index+6] .= (inertia_tensor\(-hat(ω) * (inertia_tensor * ω + total_rw_h) + τ_body)) * config.cnf.TU^2  # Angular velocity derivative
+            y_dot[next_index+4:next_index+6] .= (inertia_tensor\(τ_body - cross(ω, inertia_tensor * ω + total_rw_h))) * config.cnf.TU^2  # Angular velocity derivative
         end
 
         energy = (vel_ii_mag^2)/2.0 - (m.planet.μ / pos_ii_mag)
@@ -1583,7 +1587,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     a_tol_list[next_index:next_index+3] .= a_tol_quat*ones(4)  # Quaternion
                     r_tol_list[next_index:next_index+3] .= r_tol_quat*ones(4)  # Quaternion
                 end
-                # method = Tsit5()
+                method = Tsit5()
                 sol = solve(config.cnf.prob, method, abstol=a_tol_list, reltol=r_tol_list, callback=events, dtmax=dt_max/config.cnf.TU)
                 config.cnf.counter_integrator += 1
                 in_cond .= sol.u[end]  # Update initial condition for next step

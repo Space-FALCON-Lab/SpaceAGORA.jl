@@ -649,10 +649,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             # Gravity gradient torque
             R .= config.rotate_to_inertial(m.body, m.body.roots[1], root_index) # Rotation matrix from the root body to the spacecraft link
             inertia_tensor = config.get_inertia_tensor(m.body, root_index) # Inertia tensor of the body
-            pos_body = R'*pos_ii # Position of the body in body frame
+            pos_body = rot(m.body.roots[1].q)*pos_ii # Position of the body in body frame
             pos_body_mag = norm(pos_body) # Magnitude of the position vector in body frame
             pos_body = normalize(pos_body) # Normalize the position vector in body frame
-            τ_body += args[:gravity_gradient] ? (3.0*m.planet.μ * cross(pos_body, inertia_tensor * pos_body) / pos_body_mag/pos_body_mag/pos_body_mag) : SVector{3, Float64}(0.0, 0.0, 0.0) # Gravity gradient torque
+            τ_body += args[:gravity_gradient] ? cross(pos_body, 3.0 * m.planet.μ / pos_body_mag / pos_body_mag / pos_body_mag * (inertia_tensor * pos_body)) : SVector{3, Float64}(0.0, 0.0, 0.0) # Gravity gradient torque
             # All other torques
 
             τ_body += sum([b.net_torque for b in bodies]) # Sum of all torques on the spacecraft links
@@ -726,9 +726,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         """
         # Check if the time is greater than the end time
         if lowercase(args[:type_of_mission]) == "time"
-            return t*config.cnf.TU - args[:mission_time] >= 0
+            return t*config.cnf.TU - args[:mission_time]
         else
-            return false # Do not terminate if the mission type is not "time"
+            return -1 # Do not terminate if the mission type is not "time"
         end
         # return lowercase(args[:type_of_mission]) == "time" && t >= args[:mission_time] / config.cnf.TU
     end
@@ -736,10 +736,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         """
         Event function to end the sim if the time condition is met.
         """
+        config.cnf.time_termination = true
         terminate!(integrator) # Terminate the integrator if the time condition is met
     end
 
-    time_check = DiscreteCallback(time_condition, time_affect!)
+    time_check = ContinuousCallback(time_condition, time_affect!, nothing)
 
     function reaction_wheels_affect!(integrator)
         """
@@ -1554,6 +1555,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 config.cnf.count_heat_rate_check = 0
                 config.cnf.count_heat_load_check_exit = 0
                 config.cnf.count_final_entry_altitude_reached = 0
+                config.cnf.time_termination = false
 
                 ## Julia Integrator
                 # Time initialization
@@ -1714,7 +1716,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     break
                 end
 
-                if lowercase(args[:type_of_mission]) == "time" && time_solution[end] >= args[:mission_time]
+                if lowercase(args[:type_of_mission]) == "time" && config.cnf.time_termination == true
                     continue_campaign = false
                     config.cnf.continue_simulation = false
                     println("Setting continue_simulation to false due to mission time condition.")

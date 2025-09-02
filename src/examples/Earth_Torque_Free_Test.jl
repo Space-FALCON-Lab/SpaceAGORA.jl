@@ -2,6 +2,7 @@ include("../simulation/Run.jl")
 # include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
+include("../utils/quaternion_utils.jl")
 # include("SpacecraftModel.jl")
 
 import .config
@@ -22,36 +23,20 @@ dcm = (q[4]^2 - norm(q[1:3])^2)*I(3) - 2*q[4]*skew(q[1:3]) + 2*q[1:3]*q[1:3]' # 
 h = sqrt(30.0/7.0)
 w = sqrt(6.0)
 d = sqrt(66.0/7.0)
+
 # q = SVector{4, Float64}([0.0, 0.0, sin(pi/4), cos(pi/4)]) # Quaternion for the main bus
 main_bus = config.Link(root=true, 
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), 
-                        # q=SVector{4, Float64}(q),
-                        q=SVector{4, Float64}([0, 0, 0, 1]),
-                        ṙ=SVector{3, Float64}([0,0,0]), 
-                        # ω=SVector{3, Float64}(ω_body),
-                        dims=SVector{3, Float64}([2.000001, 2.36643,2.9664]), 
-                        ref_area=2.6*1.7,
-                        m=750.0, 
+                        q=SVector{4, Float64}(q),
+                        # q=SVector{4, Float64}([0.0, 0.0, 0.0, 1.0]),
+                        ṙ=SVector{3, Float64}([0.0, 0.0, 0.0]), 
+                        ω=SVector{3, Float64}(ω_body),
+                        dims=SVector{3, Float64}([1.5, 1.8, 2.86]), 
+                        ref_area=1.5*2.86,
+                        m=200.0, 
                         gyro=0)
 
-# L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.6/2 - 3.89/4, 0.0), 
-#                         q=SVector{4, Float64}([0, 0, 0, 1]),
-#                         ṙ=SVector{3, Float64}([0,0,0]), 
-#                         dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
-#                         ref_area=3.89*1.7/2,
-#                         m=10.0, 
-#                         gyro=0)
-# R_panel = config.Link(r=SVector{3, Float64}(0.0, 2.6/2 + 3.89/4, 0.0),
-#                         q=SVector{4, Float64}([0, 0, 0, 1]),
-#                         ṙ=SVector{3, Float64}([0,0,0]), 
-#                         dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
-#                         ref_area=3.89*1.7/2,
-#                         m=10.0, 
-#                         gyro=0)
-
 config.add_body!(spacecraft, main_bus, prop_mass=1.0)
-config.set_inertia_tensor!(spacecraft, main_bus, 
-                        SMatrix{3, 3, Float64}(Diagonal([900.0, 800.0, 600.0])))
 # config.add_body!(spacecraft, L_panel)
 # config.add_body!(spacecraft, R_panel)
 
@@ -59,6 +44,13 @@ config.set_inertia_tensor!(spacecraft, main_bus,
 # R_panel_joint = config.Joint(R_panel, main_bus)
 # config.add_joint!(spacecraft, L_panel_joint)
 # config.add_joint!(spacecraft, R_panel_joint)
+config.set_inertia_tensor!(spacecraft, main_bus, 
+                        SMatrix{3, 3, Float64}(Diagonal([900.0, 800.0, 600.0])))
+lenXHub = 1.50 # m
+lenYHub = 1.80 # m
+lenZHub = 2.86 # m
+array_width = 7.262 # m
+area2 = pi*array_width/2*array_width/2
 
 println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
 # println("Spacecraft roots: $spacecraft.roots")
@@ -69,7 +61,7 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/basilisk_gg_comparison",                # Directory where to save the results
+            :directory_results => "/workspaces/ABTS.jl/output/basilisk_torque_free_comparison",                # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
@@ -85,7 +77,7 @@ args = Dict(# Misc Simulation
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 10,                                 # Number of aerobraking passage
-            :mission_time => 300000.0,                                  # Mission time in seconds, used only for Time mission type
+            :mission_time => 1000000.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => true,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
 
             # Physical Model
@@ -104,8 +96,8 @@ args = Dict(# Misc Simulation
             # Perturbations
             :n_bodies => [],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :srp => false,                                             # Solar Radiation Pressure true/false
-            :eclipse => false,
-            :gravity_gradient => true,                                   # Gravity Gradient true/false
+            :eclipse => false,                                         # Whether to include eclipse conditions in SRP calculation
+            :gravity_gradient => false,                                   # Gravity Gradient true/false
             :gravity_harmonics => 0,                                            # Gravity Spherical harmonics True=1, False=0
             :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
@@ -114,7 +106,7 @@ args = Dict(# Misc Simulation
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
-            :save_rate => 1.0,                                      # Rate at which the data trajectory are saved
+            :save_rate => 5.0,                                      # Rate at which the data trajectory are saved
             
             # Body
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
@@ -162,7 +154,7 @@ args = Dict(# Misc Simulation
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_step => 1000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :a_initial_a => 10000.0e3,                # Initial Semi-major axis for for-loop in m
-            :a_initial_b => 10000e3,                               # Final Semi-major axis for for-loop in m
+            :a_initial_b => 10001.0e3,                               # Final Semi-major axis for for-loop in m
             :a_step => 5e10,                                       # Step Semi-major axis for for-loop in m
             :e_initial_a => 0.1,                                   # Initial Eccentricity for for-loop in m
             :e_initial_b => 0.11,                                   # Final Eccentricity for for-loop in m
@@ -229,89 +221,29 @@ args = Dict(# Misc Simulation
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
 
-            :a_tol => 1e-14,                                         # Absolute tolerance for integration
-            :r_tol => 1e-12,                                         # Relative tolerance for integration
-            :a_tol_orbit => 1e-14,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
-            :r_tol_orbit => 1e-12,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :a_tol => 1e-5,                                         # Absolute tolerance for integration
+            :r_tol => 1e-3,                                         # Relative tolerance for integration
+            :a_tol_orbit => 1e-11,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :r_tol_orbit => 1e-9,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
             :a_tol_drag => 1e-8,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
             :r_tol_drag => 1e-6,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
-            :a_tol_quaternion => 1e-14,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
-            :r_tol_quaternion => 1e-12,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :a_tol_quaternion => 1e-11,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :r_tol_quaternion => 1e-9,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :dt_max => 1.0,                                         # Maximum time step for integration, s
-            :dt_max_orbit => 1.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
+            :dt_max_orbit => 10.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
             :dt_max_drag => 1.0,                                    # Maximum time step for drag passage
 
             :Odyssey_sim => 0                                      # Simulate Odyssey Mission
             )
 
 # # Calculating time of simulation
-# println("Threads: ", Threads.nthreads())
-# nbodies = [["Sun"], ["Sun", "Jupiter"], ["Jupiter"]]
-# for nbody in nbodies
-#     for hours in 0:23
-#         for minutes in 0:30:31
-#         args[:hours] = hours
-#         args[:minutes] = minutes
-#         args[:n_bodies] = nbody
-#         println("Hours: ", args[:hours], " Minutes: ", args[:minutes])
-#         args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey/" * string(args[:hours]) * "_" * string(args[:minutes]) * "_" * string(nbody) * "/"
-# orbits = 200 # 1, 5, 10, 20, 50, 100, 200
-# # for num_orbits in orbits
-# args[:number_of_orbits] = orbits
-# println("Number of Orbits: ", orbits)
-# args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey/" * string(orbits) * "/"
-
-# #     for i in 1:Threads.nthreads() 
-
 # @profview run_analysis(args)
 t = @elapsed begin          
-        # Run the simulation
-        sol = run_analysis(args)
-        if Bool(args[:passresults])
-            println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-        end
+    # Run the simulation
+    sol = run_analysis(args)
+    if Bool(args[:passresults])
+        println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+    end
 end
 
-        println("COPMUTATIONAL TIME = " * string(t) * " s")
-# end
-        # end
-    # end
-# end
-
-# mc_runs = 50
-# nominal_ra = args[:ra_initial_a]
-# nominal_rp = args[:hp_initial_a]
-# nominal_i = args[:inclination]
-# nominal_Ω = args[:Ω]
-# nominal_ω = args[:ω]
-# for i in 24:mc_runs
-#     a = @allocated begin
-#         t = @elapsed begin
-#             args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey_MC_polyfit_atmo_orig_disp/" * string(i)
-#             println("Monte Carlo Run: ", i)
-#             if i == 1
-#                 args[:print_res] = 1
-#             else
-#                 args[:print_res] = 0
-#             end
-#             # args[:print_res] = 1
-#             # println(randn()*sqrt(args[:ra_dispersion]) * 1e3)
-#             args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3
-#             args[:hp_initial_a] = nominal_rp + randn()*sqrt(args[:rp_dispersion]) * 1e3
-#             args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])
-#             args[:Ω] = nominal_Ω + randn()*sqrt(args[:Ω_dispersion])
-#             args[:ω] = nominal_ω + randn()*sqrt(args[:ω_dispersion])
-
-#             # Run the simulation
-#             sol = run_analysis(args)
-
-#             if Bool(args[:passresults])
-#                 println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#             end
-#         end
-
-#         println("COMPUTATIONAL TIME = " * string(t) * " s")
-#         config.reset_config()
-#     end
-#     println("Memory allocated = " * string(a / 1e6) * " MB")
-# end
+println("COMPUTATIONAL TIME = " * string(t) * " s")

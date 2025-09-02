@@ -181,6 +181,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         count_heat_rate_check::Int64 = 0
         count_heat_load_check_exit::Int64 = 0
         count_final_entry_altitude_reached::Int64 = 0
+        time_termination::Bool = false
         t_out_drag_passage::Float64 = 0.0
         t_time_switch_func::Vector{Float64} = []
         prob::ODEProblem = ODEProblem((u, p, t) -> u, [0.0], (0.0, 1.0), [])

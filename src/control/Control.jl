@@ -239,3 +239,15 @@ function control_solarpanels_openloop(ip, m, args, index_ratio, state, t=0, posi
 
     return α
 end
+
+# function targeting_solarpanels(ip, m, args, index_ratio, state, t=0, position=0, current_position=0, heat_rate_control=true, gram_atmosphere=nothing)
+
+#     t_switch = 
+
+#     if t > t_switch 
+
+#     else
+#         α = control_solarpanels_heatrate(ip, m, args, index_ratio, state, t)
+#     end
+    
+# end

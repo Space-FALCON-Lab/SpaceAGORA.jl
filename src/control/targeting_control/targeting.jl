@@ -1,6 +1,9 @@
-include("../utils/Eoms.jl")
+include("sim_targeting.jl")
+include("../utils/Eom_ctrl.jl")
 
-function target_planning(ip, m, args, param, initial_state, initial_time, final_time, a_tol, r_tol, method, events, )
+using Roots
+
+function target_planning(f!, ip, m, args, param, initial_state, initial_time, final_time, a_tol, r_tol, method, events, in_cond)
 
     # Run simulation
     prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
@@ -46,7 +49,7 @@ function target_planning(ip, m, args, param, initial_state, initial_time, final_
 
     r_af = 2*a_max - r_p
 
-    e_max = (r_af - r_p) / (r_af + r_p) 
+    e_max = (r_af - r_p) / (r_af + r_p)
 
     h_max = sqrt(m.planet.μ * a_max * (1 - e_max^2))
 
@@ -59,6 +62,144 @@ function target_planning(ip, m, args, param, initial_state, initial_time, final_
     config.cnf.γf = atan(V_rad_f / V_perp_f)                        # flight path angle at atmospheric interface
 end
 
-function control_solarpanels_targeting()
-    
+# function control_solarpanels_targeting(f!, energy_f, ip, m, time_0, OE, args, gram_atmosphere)
+function control_solarpanels_targeting_num_int(f!, energy_f, param, time_0, in_cond)
+
+    function func_targeting_num_int(t_switch)
+
+        sol = asim_ctrl_targeting(t_switch, param, time_0, in_cond)
+
+        m = param[1]
+
+        energy_fin = norm(sol[4:6,end])^2/2 - m.planet.μ / norm(sol[1:3,end])
+
+        return energy_fin - energy_f
+    end
+
+    t_switch = find_zero(ts -> func_targeting_num_int(ts), [0, 1500], Roots.Brent(), verbose=true, rtol=1e-5)
+
+    return t_switch
+end
+
+function control_solarpanels_targeting_heatload(energy_f, param, OE)
+
+    function func_targeting_heatload(v_E)
+        m = param[1]
+        ip = param[3]
+        time_0 = param[7]
+        args = param[8]
+        gram_atmosphere = param[10]
+
+        sol = asim_ctrl_rf(ip, m, time_0, OE, args, v_E, 0.0, false, gram_atmosphere)
+
+        energy_fin = norm(sol[4:6,end])^2/2 - m.planet.μ / norm(sol[1:3,end])
+
+        return energy_fin - energy_f
+    end
+
+    t_switch = find_zero(v_E -> func_targeting_heatload(v_E), [0, 1500], Roots.Brent(), verbose=true, rtol=1e-5)
+
+    return v_E
+end
+
+function control_solarpanels_targeting_closed_form(energy_f, param, initialcondition)
+
+    m = param[1]
+    args = param[8]
+
+    T = m.planet.T
+
+    # t_cf, _, _, _ = closed_form(args, m, OE, T, true, m.aerodynamics.α)
+
+    if config.cnf.count_numberofpassage != 1
+        t_prev = config.solution.orientation.time[end]
+    else
+        t_prev = m.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # mission.initial_condition.time_rot
+    end
+
+    pos_ii_org, vel_ii_org = orbitalelemtorv(initialcondition, m.planet)
+    pos_ii = SVector{3, Float64}(pos_ii_org)
+    vel_ii = SVector{3, Float64}(vel_ii_org)
+
+    r0 = norm(pos_ii) # Inertial position magnitude
+    v0 = norm(vel_ii) # Inertial velocity magnitude
+    h0 = r0 - m.planet.Rp_e
+
+    pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, config.cnf.et)
+
+    LatLong = rtolatlong(pos_pp, m.planet)
+    lat = LatLong[2]
+    lon = LatLong[3]
+    h0 = LatLong[1]
+
+    h_ii = cross(pos_ii, vel_ii)
+    arg = median([-1, 1, norm(h_ii)/(r0*v0)])   # limit to[-1, 1]
+    γ0 = acos(arg)
+
+    if dot(pos_ii, vel_ii) < 0
+        γ0 = -γ0
+    end
+
+    initial_state_angle = initialcondition[6]
+    e = initialcondition[2]
+    a = initialcondition[1]
+    final_state_angle = -initial_state_angle
+    E_initialstate = 2 * atan(sqrt((1-e)/(1+e)) * tan(initial_state_angle/2))
+    E_finalstate = 2 * atan(sqrt((1-e)/(1+e)) * tan(final_state_angle/2))
+
+    # Evaluate time to reach next state
+    Δt = sqrt(a^3 / m.planet.μ) * ((E_finalstate - e*sin(E_finalstate)) - (E_initialstate - e*sin(E_initialstate)))
+    t_p = Δt/2
+
+    mass = initialcondition[end]
+
+    if h0 < args[:EI]*1e3 #if initial condition are lower than drag passage initial condition # this happens only running MC cases
+        # let's calculate pos_ii,v_ii for the point of trajectory corresponding to h = 160 km
+        h0 = args[:EI]*1e3
+        r = m.planet.Rp_e + h0
+        OE = rvtoorbitalelement(pos_ii, vel_ii, mass, m.planet)
+        a, e, i, Ω, ω, vi = OE[1], OE[2], OE[3], OE[4], OE[5], OE[6]
+        vi = 2*pi - acos(((a*(1 - e^2)/r)-1)/e)
+        E_real_finalstate = 2 * atan(sqrt((1-e)/(1+e)) * tan(-vi/2)) # eccentric anomaly
+        Δt = sqrt(a^3 / m.planet.μ) * ((E_real_finalstate - e*sin(E_real_finalstate)) - (E_initialstate - e*sin(E_initialstate)))
+        t_p = Δt/2
+    end
+
+    function func_targeting_cf(t_switch)
+        # t_switch =350.0
+
+        t_cf = collect(range(start=0, stop=t_switch, step=0.1))
+
+        aoa_cf1 = ones(length(t_cf)) * m.aerodynamics.α
+
+        # println(aoa_cf)
+        println("t_switch", t_switch)
+        println(" ")
+
+        t_cf1, h_cf1, γ_cf1, v_cf1 = closed_form_targeting(0, m, (v0, γ0, h0), T, t_cf, t_p, mass, aoa_cf1)
+
+        println(v_cf1[end], " ", γ_cf1[end], " ", t_cf1[end])
+
+        v0_2, γ0_2, h0_2 = v_cf1[end], γ_cf1[end], h0 # h_cf1[end]
+
+        t_cf = collect(range(start=t_cf1[end], stop=2*t_p, step=0.1))
+        aoa_cf2 = zeros(length(t_cf))
+
+        t_cf2, h_cf2, γ_cf2, v_cf2 = closed_form_targeting(t_cf1[end], m, (v0_2, γ0_2, h0_2), T, t_cf, t_p, mass, aoa_cf2)
+
+        # println(t_cf[end])
+        println(h_cf2[end])
+        println(v_cf2[end])
+
+        energy_fin = v_cf2[end]^2/2 - m.planet.μ / (m.planet.Rp_e + h_cf2[end])
+
+        println("Final energy (closed form): ", energy_fin)
+        println(" ")
+
+        return energy_fin - energy_f
+    end
+
+    t_switch = find_zero(ts -> func_targeting_cf(ts), [1, 2*t_p - 1], Roots.Brent(), verbose=true)
+
+    return t_switch
 end

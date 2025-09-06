@@ -15,6 +15,7 @@ include("../control/targeting_control/targeting.jl")
 
 include("../control/utils/Eom_ctrl.jl")
 include("../control/targeting_control/Eom_targeting.jl")
+include("../control/targeting_control/sim_targeting.jl")
 
 using LinearAlgebra
 using DifferentialEquations
@@ -78,16 +79,25 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     # sol_lam = asim_ctrl_plot(ip, m, 0, OE, args, 0.03565, true, gram_atmosphere)
 
-    # hf = 159239.22062235978 # args[:AE] * 1e3
-    # vf = 4189.437607154456 # 4196.4868
-    # γf = 0.10961219849455787 # deg2rad(5.874)
+    # hf = 160e3 # args[:AE] * 1e3
+    # vf = 4195.4809 # 4196.4868
+    # γf = 0.10979 # deg2rad(5.874)
+    # # energy_f = -3.265e6 
+    # energy_f = vf^2 / 2 - (m.planet.μ /(hf + m.planet.Rp_e))
 
-    # sol_lam = asim_ctrl_targeting_plot(ip, m, 0, OE, args, hf, vf, γf, 0.03565, false, gram_atmosphere)
+    # println("Targeting energy: ", energy_f)
 
+    # # config.cnf.targeting = 1
+
+    # # config.cnf.t_switch_targeting = control_solarpanels_targeting(energy_f, ip, m, 0, OE, args, gram_atmosphere)
+
+    # # println("Targeting switch time: ", config.cnf.t_switch_targeting)
+
+    # sol_lam = asim_ctrl_targeting_plot(ip, m, 0, OE, args, hf, vf, γf, energy_f, 0.03565, false, gram_atmosphere)
     
     # println("hf: ", norm(sol_lam[1:3,end]) - m.planet.Rp_e)
     # println("vf: ", norm(sol_lam[4:6,end]))
-    # println("γf: ", rad2deg(asin(sol_lam[1:3,end]'*sol_lam[4:6,end]/norm(sol_lam[4:6,end]) / norm(sol_lam[1:3,end]))))
+    # println("γf: ", asin(sol_lam[1:3,end]'*sol_lam[4:6,end]/norm(sol_lam[4:6,end]) / norm(sol_lam[1:3,end])))
 
     # println("Final Energy: ", norm(sol_lam[4:6,end])^2/2 - m.planet.μ/norm(sol_lam[1:3,end]))
 
@@ -211,6 +221,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             end
         end
 
+
         if aerobraking_phase == 2 || aerobraking_phase == 0
             if args[:control_mode] == 1
                 x = 120
@@ -294,9 +305,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
             # evaluates the closed form solution the first time at EI km
             if abs(pos_ii_mag - m.planet.Rp_e - args[:EI] * 1e3) <= 1e-2 && (args[:control_mode] == 2 || args[:control_mode] == 3) && config.cnf.time_switch_1 == 0
-                if config.cnf.targeting == 1
-                    control_solarpanels_targeting()
-                elseif ip.cm == 3
+                if ip.cm == 3
                     control_solarpanels_openloop(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, 0, true, gram_atmosphere)
                 elseif ip.cm == 2
                     control_solarpanels_heatload(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, 0, gram_atmosphere)
@@ -310,9 +319,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             if index_phase_aerobraking == 2
                 if Bool(args[:control_in_loop])
                     config.cnf.state_flesh1 = [[T_p, ρ, S]]
-                    if config.cnf.targeting == 1
-                        config.cnf.α = control_solarpanels_targeting()
-                    elseif ip.cm == 3
+                    if ip.cm == 3
                         config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
                     elseif ip.cm == 2
                         config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
@@ -381,8 +388,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             config.cnf.α = min(config.cnf.α, α_struct) # limit the angle of attack to the structural load control
         end
 
-        # if t0 >= 384.2872
-        #     config.cnf.α = deg2rad(90)
+        # if config.cnf.targeting == 1
+        #     if t0 >= config.cnf.t_switch_targeting
+        #         config.cnf.α = 0
+        #     else
+        #         state = [T_p, ρ, S]
+        #         index_ratio = [1,1]
+        #         config.cnf.α = pi/2 # control_solarpanels_heatrate(ip, m, args, index_ratio, state, t0 - config.cnf.t_switch_targeting, config.cnf.initial_position_closed_form, OE)
+        #     end
         # end
 
         α = config.cnf.α
@@ -1161,9 +1174,55 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
 
                 # Energy targeting 
-                if args[:targeting_ctrl] == 1 && aerobraking_phase == 2
-                    
-                end
+                # if args[:targeting_ctrl] == 1 && aerobraking_phase == 2
+                #     target_planning(f!, ip, m, args, param, initial_state, initial_time, final_time, a_tol, r_tol, method, events, in_cond)
+                #     config.cnf.t_switch_targeting = find_target_switch_time(f!, in_cond, initial_time, final_time, param)
+                # end
+
+                config.cnf.targeting = 1
+
+                hf = 160e3 # args[:AE] * 1e3
+                vf = 4195.0 # 4196.4868
+                γf = 0.10979 # deg2rad(5.874)
+                energy_f = -3.265e6 
+                # energy_f = vf^2 / 2 - (m.planet.μ /(hf + m.planet.Rp_e))
+
+                # # config.cnf.t_switch_targeting = control_solarpanels_targeting_num_int(f!, energy_f, param, time_0, in_cond)
+
+                current_epoch = date_initial # Precompute the current epoch
+                time_real = DateTime(current_epoch) # date_initial + Second(t0)
+                timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
+
+                # Timing variables
+                el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation
+                current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
+                time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
+                config.cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
+                m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), config.cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+
+                # config.cnf.t_switch_targeting = control_solarpanels_targeting_closed_form(energy_f, param, OE)
+
+                # println("Targeting switch time: ", config.cnf.t_switch_targeting)
+
+                # config.cnf.t_switch_targeting = control_solarpanels_targeting(energy_f, ip, m, 0, OE, args, gram_atmosphere)
+
+                # println("Targeting switch time: ", config.cnf.t_switch_targeting)
+
+                # sol_lam = asim_ctrl_targeting_plot(ip, m, 0, OE, args, hf, vf, γf, energy_f, 100, 0.03565, false, gram_atmosphere)
+
+                # v_E = control_solarpanels_targeting_heatload(energy_f, param, OE)
+                
+                sol_lam = asim_ctrl_plot(ip, m, 0, OE, args, 35, 0, false, gram_atmosphere)
+                
+                println("hf: ", norm(sol_lam[1:3,end]) - m.planet.Rp_e)
+                println("vf: ", norm(sol_lam[4:6,end]))
+                println("γf: ", asin(sol_lam[1:3,end]'*sol_lam[4:6,end]/norm(sol_lam[4:6,end]) / norm(sol_lam[1:3,end])))
+
+                println("Targeting energy: ", energy_f)
+                println("Final Energy: ", norm(sol_lam[4:6,end])^2/2 - m.planet.μ/norm(sol_lam[1:3,end]))
+
+                push!(config.cnf.time_list, sol_lam.t...)
+                push!(config.cnf.lamv_list, sol_lam[7,:]...)
 
                 # Run simulation
                 prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)

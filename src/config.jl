@@ -205,6 +205,8 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         time_switch_list::Vector{Float64} = []
         time_list::Vector{Float64} = []
         lamv_list::Vector{Float64} = []
+
+        t_switch_targeting::Float64 = 0.0
     end
 
     cnf = Cnf()

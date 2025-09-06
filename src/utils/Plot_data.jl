@@ -24,7 +24,7 @@ function plots(state, m, name, args)
 
     if args[:type_of_mission] == "Drag Passage"
         drag_passage_plot(name, args, m)
-        # lambda_plot(name, args)
+        lambda_plot(name, args)
     end
     
 end

@@ -21,7 +21,8 @@ function lambdas(m, aoa, k, t, h, γ, v, coeff)
     lambdag[end] = 0
     lambdah[end] = μ / (Rp + h[end])^2
 
-    ρ = density_exp(h, m.planet)[1]
+    # ρ = density_exp(h, m.planet)[1]
+    ρ = density_polyfit(h, m.planet)[1]
 
     g = g0 * Rp^2 ./ (Rp .+ h).^2
 

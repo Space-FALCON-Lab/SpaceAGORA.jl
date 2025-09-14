@@ -645,6 +645,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         
         # Torques
         τ_body = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize torque vector
+        inertia_tensor = MMatrix{3, 3, Float64}(zeros(3, 3)) # Inertia tensor of the body
         if orientation_sim
             # Gravity gradient torque
             R .= config.rotate_to_inertial(m.body, m.body.roots[1], root_index) # Rotation matrix from the root body to the spacecraft link

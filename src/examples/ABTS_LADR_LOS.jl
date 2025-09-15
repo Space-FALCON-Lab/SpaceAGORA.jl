@@ -1,5 +1,5 @@
 include("../simulation/Run.jl")
-include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
+# include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 # include("SpacecraftModel.jl")
@@ -49,10 +49,14 @@ config.add_body!(spacecraft, main_bus, prop_mass=50.0)
 config.add_body!(spacecraft, L_panel)
 config.add_body!(spacecraft, R_panel)
 
+
+
 L_panel_joint = config.Joint(main_bus, L_panel)
 R_panel_joint = config.Joint(R_panel, main_bus)
 config.add_joint!(spacecraft, L_panel_joint)
 config.add_joint!(spacecraft, R_panel_joint)
+
+
 
 println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
 # println("Spacecraft roots: $spacecraft.roots")
@@ -83,6 +87,11 @@ args = Dict(# Misc Simulation
             :number_of_orbits => 1,                                 # Number of aerobraking passage
             :mission_time => 600.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => false,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
+
+            #swarm simulation configuration
+            :swarm_config => 1,                                      # Swarm configuration: 0 = no swarm, 1 = yes swarm
+            :n_spacecraft => 1,                                       # Number of spacecraft to simulate
+            :n_target_obj => 1,                                       # Number of target objects to simulate
 
             # Physical Model
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -145,7 +154,7 @@ args = Dict(# Misc Simulation
             :solar_panel_control_rate => 1.0/3.0,                        # Rate at which the solar panel controller is called
 
             # Initial Conditions
-            :initial_condition_type => 2,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1, Initial Condition a, e = 2
+            :initial_condition_type => 2,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1, Initial Condition a, e = 2, type=3 is constellation simulation
             :ra_initial_a => 28559.615e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
@@ -238,24 +247,113 @@ args = Dict(# Misc Simulation
             :Odyssey_sim => 0                                      # Simulate Odyssey Mission
             )
 
-# # Calculating time of simulation
-# println("Threads: ", Threads.nthreads())
-# nbodies = [["Sun"], ["Sun", "Jupiter"], ["Jupiter"]]
-# for nbody in nbodies
-#     for hours in 0:23
-#         for minutes in 0:30:31
-#         args[:hours] = hours
-#         args[:minutes] = minutes
-#         args[:n_bodies] = nbody
-#         println("Hours: ", args[:hours], " Minutes: ", args[:minutes])
-#         args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey/" * string(args[:hours]) * "_" * string(args[:minutes]) * "_" * string(nbody) * "/"
-# orbits = 200 # 1, 5, 10, 20, 50, 100, 200
-# # for num_orbits in orbits
-# args[:number_of_orbits] = orbits
-# println("Number of Orbits: ", orbits)
-# args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey/" * string(orbits) * "/"
+        # Create a dictionary of spacecraft buses using the main_bus as a template
+        spacecraft_buses = Dict{Int, typeof(main_bus)}()
 
-# #     for i in 1:Threads.nthreads() 
+        for i in 1:args[:n_spacecraft]
+                bus = config.Link(root=true, 
+                                                  r=main_bus.r, 
+                                                  q=main_bus.q, 
+                                                  ṙ=main_bus.ṙ, 
+                                                  dims=main_bus.dims, 
+                                                  ref_area=main_bus.ref_area,
+                                                  m=main_bus.m, 
+                                                  gyro=main_bus.gyro,
+                                                  max_torque=main_bus.max_torque,
+                                                  max_h=main_bus.max_h,
+                                                  attitude_control_rate=main_bus.attitude_control_rate,
+                                                  J_rw=main_bus.J_rw,
+                                                  attitude_control_function=main_bus.attitude_control_function)
+                spacecraft_buses[i] = bus
+        end
+
+        # Create a dictionary of target objects using the main_bus as a template
+        target_objects = Dict{Int, typeof(main_bus)}()
+
+        for i in 1:args[:n_target_obj]
+                target = config.Link(root=true, 
+                                                         r=main_bus.r, 
+                                                         q=main_bus.q, 
+                                                         ṙ=main_bus.ṙ, 
+                                                         dims=main_bus.dims, 
+                                                         ref_area=main_bus.ref_area,
+                                                         m=main_bus.m, 
+                                                         gyro=main_bus.gyro,
+                                                         max_torque=main_bus.max_torque,
+                                                         max_h=main_bus.max_h,
+                                                         attitude_control_rate=main_bus.attitude_control_rate,
+                                                         J_rw=main_bus.J_rw,
+                                                         attitude_control_function=main_bus.attitude_control_function)
+                target_objects[i] = target
+        end
+
+        # Create a dictionary of initial conditions for each spacecraft
+        spacecraft_initial_conditions = Dict{Int, Dict{Symbol, Any}}()
+
+        for i in 1:args[:n_spacecraft]
+                spacecraft_initial_conditions[i] = Dict(
+                        :ra_initial_a => args[:ra_initial_a],
+                        :ra_initial_b => args[:ra_initial_b],
+                        :ra_step => args[:ra_step],
+                        :hp_initial_a => args[:hp_initial_a],
+                        :hp_initial_b => args[:hp_initial_b],
+                        :hp_step => args[:hp_step],
+                        :v_initial_a => args[:v_initial_a],
+                        :v_initial_b => args[:v_initial_b],
+                        :v_step => args[:v_step],
+                        :a_initial_a => args[:a_initial_a],
+                        :a_initial_b => args[:a_initial_b],
+                        :a_step => args[:a_step],
+                        :e_initial_a => args[:e_initial_a],
+                        :e_initial_b => args[:e_initial_b],
+                        :e_step => args[:e_step],
+                        :γ_initial_a => args[:γ_initial_a],
+                        :γ_initial_b => args[:γ_initial_b],
+                        :γ_step => args[:γ_step],
+                        :inclination => args[:inclination],
+                        :ω => args[:ω],
+                        :Ω => args[:Ω],
+                        :ν => args[:ν]
+                )
+        end
+        # Create a dictionary of initial conditions for each debris object
+        target_initial_conditions = Dict{Int, Dict{Symbol, Any}}()
+
+        for i in 1:args[:n_target_obj]
+                target_initial_conditions[i] = Dict(
+                        :ra_initial_a => args[:ra_initial_a],
+                        :ra_initial_b => args[:ra_initial_b],
+                        :ra_step => args[:ra_step],
+                        :hp_initial_a => args[:hp_initial_a],
+                        :hp_initial_b => args[:hp_initial_b],
+                        :hp_step => args[:hp_step],
+                        :v_initial_a => args[:v_initial_a],
+                        :v_initial_b => args[:v_initial_b],
+                        :v_step => args[:v_step],
+                        :a_initial_a => args[:a_initial_a],
+                        :a_initial_b => args[:a_initial_b],
+                        :a_step => args[:a_step],
+                        :e_initial_a => args[:e_initial_a],
+                        :e_initial_b => args[:e_initial_b],
+                        :e_step => args[:e_step],
+                        :γ_initial_a => args[:γ_initial_a],
+                        :γ_initial_b => args[:γ_initial_b],
+                        :γ_step => args[:γ_step],
+                        :inclination => args[:inclination],
+                        :ω => args[:ω],
+                        :Ω => args[:Ω],
+                        :ν => args[:ν]
+                )
+        end
+
+        args[:target_objects] = target_obj
+        args[:spacecraft_buses] = spacecraft_buses
+        args[:target_initial_conditions] = target_initial_conditions
+        args[:spacecraft_initial_conditions] = spacecraft_initial_conditions
+
+        println("Initialized $(length(target_objects)) target objects.")
+
+        println("Initialized $(length(spacecraft_buses)) spacecraft buses.")
 
 # @profview run_analysis(args)
 t = @elapsed begin          

@@ -84,6 +84,8 @@ function run_vgamma(args)
 end
 
 function run_orbitalelements_ae(args)
+    #Used to run orbital simulation if initial conditions are in terms of sma and eccentricity
+
     a, e, inclination, Ω, ω = collect(range(start=round(args[:a_initial_a]), stop=round(args[:a_initial_b]), step=round(args[:a_step]))), 
                                                  collect(range(start=args[:e_initial_a], stop=args[:e_initial_b], step=args[:e_step])), 
                                                  args[:inclination], args[:Ω], args[:ω]
@@ -120,6 +122,25 @@ function run_orbitalelements_ae(args)
             end
         end
     end
+end
+
+function run_sc_vehicles(args)
+    """
+    Running Space AGORA simulation designed for constellation simulation or otherwise non atmospheric spacecraft
+    inputs: args struct
+    outputs: Csv file with results
+    """
+
+    #extracting initial conditions from the args dict
+    target_objs_dict = args[:target_objs]
+    spacecraft_dict = args[:spacecraft]
+    target_initial_conditions = args[:target_initial_conditions]
+    spacecraft_initial_conditions = args[:spacecraft_initial_conditions]
+
+    
+
+
+
 end
 
 function run_analysis(args)

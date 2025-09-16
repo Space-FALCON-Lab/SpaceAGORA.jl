@@ -167,6 +167,14 @@ mutable struct SpacecraftModel
     n_thrusters::Int64 # Number of thrusters in the spacecraft model
     # inertia_tensor::MMatrix{3, 3, Float64} # Inertia tensor of the spacecraft in the inertial frame
     # COM::SVector{3, Float64} # Center of mass in the body frame (relative to origin of the root body)
+    laser_effector::Bool # Whether the spacecraft has a laser effector
+
+    sc_states::Dict{Symbol, Any} # Dictionary to hold state information for the spacecraft
+    laser_power::Float64 # Power of the laser effector, W
+    laser_range::Float64 # Range of the laser effector, m
+    uid:: Int64 #id number for the craft. "friendly" spacecraft have regular uid. "target" space objects have a negative uid
+
+    timestep_complete_flag:: Bool #flag to indicate that the spacecraft has completed its timestep calculations
 
     function SpacecraftModel(;joints=Joint[], links=Link[], roots=Link[], 
                         instant_actuation=true, 

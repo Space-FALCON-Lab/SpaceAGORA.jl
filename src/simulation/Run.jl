@@ -86,37 +86,56 @@ end
 function run_orbitalelements_ae(args)
     #Used to run orbital simulation if initial conditions are in terms of sma and eccentricity
 
+    # Generate ranges for semi-major axis (a) and eccentricity (e) based on input arguments
     a, e, inclination, Ω, ω = collect(range(start=round(args[:a_initial_a]), stop=round(args[:a_initial_b]), step=round(args[:a_step]))), 
-                                                 collect(range(start=args[:e_initial_a], stop=args[:e_initial_b], step=args[:e_step])), 
-                                                 args[:inclination], args[:Ω], args[:ω]
+                             collect(range(start=args[:e_initial_a], stop=args[:e_initial_b], step=args[:e_step])), 
+                             args[:inclination], args[:Ω], args[:ω]
 
+    # Extract final apoapsis value from arguments
     final_apoapsis = args[:final_apoapsis]
 
+    # Get planet data using the planet name from arguments
     planet = planet_data(args[:planet])
+
+    # Loop over all eccentricity values
     for e_item in e
+        # Loop over all semi-major axis values
         for a_item in a
+            # Calculate apoapsis and periapsis from a and e for the given planet and arguments
             apoapsis_item, periapsis_item = ic_calculation_ae(planet, a_item, e_item, args)
+
+            # Optionally print the current apoapsis and periapsis values in km
             if Bool(args[:print_res])
                 println("Apoapsis Radius: " * string(apoapsis_item/10^3) * " km, Periapsis Altitude: " * string(periapsis_item/10^3) * " km")  
             end
 
+            # Initialize state dictionary for simulation parameters
             state = Dict()
 
+            # Set up Monte Carlo simulation parameters and counter
             MC, count, args = MonteCarlo_setting(args)
 
+            # Loop over Monte Carlo runs
             for mc_index in range(args[:initial_montecarlo_number], args[:montecarlo_size], step=1)
+                # Assign current simulation state values
                 state[:Apoapsis], state[:Periapsis], state[:Inclination], state[:Ω], state[:ω], state[:Final_sma] = apoapsis_item, Float64(periapsis_item*1e-3), inclination, Ω, ω, final_apoapsis
 
+                # Generate a filename for simulation results based on current parameters
                 args[:simulation_filename] = "Results_ctrl=" * string(args[:control_mode]) * "_ra=" * string(Int64(round(apoapsis_item/1e3))) * "_rp=" * string(Float64(periapsis_item/1e3)) * "_hl=" * string(args[:max_heat_rate])
 
+                # If Monte Carlo mode is enabled, update arguments for this run
                 if args[:montecarlo] == true
                     args = MonteCarlo_setting_passage(mc_index, args)
                 end
 
+                # Run the aerobraking campaign simulation with current arguments and state
                 aerobraking_campaign(args, state)
+
+                # Append results of this run to the Monte Carlo collection
                 MonteCarlo_append(MC, args, count)
             end
 
+            # If Monte Carlo mode is enabled, save all results for this set of runs
             if args[:montecarlo] == true
                 MonteCarlo_save(args, state, MC)
             end
@@ -137,9 +156,80 @@ function run_sc_vehicles(args)
     target_initial_conditions = args[:target_initial_conditions]
     spacecraft_initial_conditions = args[:spacecraft_initial_conditions]
 
-    
+    # Get planet data using the planet name from arguments
+    planet = planet_data(args[:planet])
 
+    #storage for state values for targets and spacecraft
+    sc_states = Dict()
+    target_states = Dict()
+    space_objects_dict = Dict()
 
+    #assign initial state values for targets
+    for target in keys(target_objs_dict)
+        target_state = target_initial_conditions[target]
+        state = Dict()
+        apoapsis_item, periapsis_item = ic_calculation_ae(planet, target_state[1], target_state[2], args)
+        inclination, Ω, ω = target_state[3], target_state[4], target_state[5]
+        final_apoapsis = args[:final_apoapsis]
+
+        if Bool(args[:print_res])
+            println("Apoapsis Radius: " * string(apoapsis_item/10^3) * " km, Periapsis Altitude: " * string(periapsis_item/10^3) * " km")  
+        end
+
+        state[:Apoapsis], state[:Periapsis], state[:Inclination], state[:Ω], state[:ω], state[:Final_sma] = apoapsis_item, Float64(periapsis_item*1e-3), inclination, Ω, ω, final_apoapsis
+
+        target_states[target] = state
+        target_objs_dict[target].sc_states = state
+        space_objects_dict[target] = target_objs_dict[target]
+    end
+
+    #assign initial state values for spacecraft
+    for sc in keys(spacecraft_dict)
+        sc_state = spacecraft_initial_conditions[sc]
+        state = Dict()
+        apoapsis_item, periapsis_item = ic_calculation_ae(planet, sc_state[1], sc_state[2], args)
+        inclination, Ω, ω = sc_state[3], sc_state[4], sc_state[5]
+        final_apoapsis = args[:final_apoapsis]
+
+        if Bool(args[:print_res])
+            println("Apoapsis Radius: " * string(apoapsis_item/10^3) * " km, Periapsis Altitude: " * string(periapsis_item/10^3) * " km")  
+        end
+
+        state[:Apoapsis], state[:Periapsis], state[:Inclination], state[:Ω], state[:ω], state[:Final_sma] = apoapsis_item, Float64(periapsis_item*1e-3), inclination, Ω, ω, final_apoapsis
+
+        sc_states[sc] = state
+        spacecraft_dict[sc].sc_states = state
+        space_objects_dict[sc] = spacecraft_dict[sc]
+    end
+
+    #resorting back into args struct
+    args[:spacecraft] = spacecraft_dict
+    args[:target_objects] = target_objs_dict
+
+    #create a csv to store cartesian state data on each space object
+    if args[:passresults] == true
+        config.solution = DataFrame()
+        config.solution[:time] = Float64[]
+        for obj_id in keys(space_objects_dict)
+            config.solution[Symbol("x_" * string(obj_id))] = Float64[]
+            config.solution[Symbol("y_" * string(obj_id))] = Float64[]
+            config.solution[Symbol("z_" * string(obj_id))] = Float64[]
+            config.solution[Symbol("vx_" * string(obj_id))] = Float64[]
+            config.solution[Symbol("vy_" * string(obj_id))] = Float64[]
+            config.solution[Symbol("vz_" * string(obj_id))] = Float64[]
+        end
+    end
+    #write to csv
+    if args[:passresults] == true
+        CSV.write("constellation_simulation_results.csv", config.solution)
+    end
+
+    #begin synchronous parallel processing of spacecraft and space objects
+    for obj_id in keys(space_objects_dict)
+        obj = space_objects_dict[obj_id]
+        print("begin aero campaign")
+        aerobraking_campaign(args, obj.sc_states)
+    end
 
 end
 
@@ -154,6 +244,9 @@ function run_analysis(args)
         run_orbitalelements(args)
     elseif args[:initial_condition_type] == 2
         run_orbitalelements_ae(args)
+    elseif args[:initial_condition_type] == 3
+        #Running the swarm/constellation mission type
+        run_sc_vehicles(args)
     end
 
     if Bool(args[:passresults])

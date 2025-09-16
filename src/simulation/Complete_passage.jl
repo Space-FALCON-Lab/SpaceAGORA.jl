@@ -35,6 +35,7 @@ const g_e = 9.81 # Gravitational acceleration of Earth at surface, m/s^2
 
 function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothing, gram=nothing)
     wind_m = false
+    print("asim started")
     if ip.wm == 1
         wind_m = true
     end

@@ -7,6 +7,7 @@ include("../utils/attitude_control_plans.jl")
 import .config
 import .ref_sys
 using Profile
+using Random
 # import .SpacecraftModel
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
@@ -86,12 +87,14 @@ args = Dict(# Misc Simulation
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 1,                                 # Number of aerobraking passage
             :mission_time => 600.0,                                  # Mission time in seconds, used only for Time mission type
-            :orientation_sim => false,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
+            :orientation_sim => false,                               # Orientation simulation True=1, False=0, if false, will only propagate position
+            :rng => MersenneTwister(12345),                               # Random number generator for reproducibility
 
+        
             #swarm simulation configuration
             :swarm_config => 1,                                      # Swarm configuration: 0 = no swarm, 1 = yes swarm
-            :n_spacecraft => 1,                                       # Number of spacecraft to simulate
-            :n_target_obj => 1,                                       # Number of target objects to simulate
+            :n_spacecraft => 2,                                       # Number of spacecraft to simulate
+            :n_target_obj => 2,                                       # Number of target objects to simulate
 
             # Physical Model
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -104,7 +107,8 @@ args = Dict(# Misc Simulation
             :topo_order => 90,                                      # Maximum order of the topography harmonics (Defined in the file)
             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
             :aerodynamic_model => "Mach-dependent",                 # choices=['Cd and Cl Constant' , 'Mach-dependent' , 'No-Ballistic flight with axial coefficient']: "Mach-dependent" specific for spacecraft shape, "No-Ballistic flight" specific for blunted-cone shape
-            :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
+            :thermal_model => "Maxwellian Heat Transfer",    # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
+            :interactive_forces => true,                     # Interactive forces between spacecraft toggle. True= include interactive forces, False= do not include interactive forces
             
             # Perturbations
             :n_bodies => ["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
@@ -248,72 +252,77 @@ args = Dict(# Misc Simulation
             )
 
         # Create a dictionary of spacecraft buses using the main_bus as a template
-        spacecraft_buses = Dict{Int, typeof(main_bus)}()
+        spacecraft_buses = Dict{Int, typeof(config.SpacecraftModel())}()
 
         for i in 1:args[:n_spacecraft]
-                bus = config.Link(root=true, 
-                                                  r=main_bus.r, 
-                                                  q=main_bus.q, 
-                                                  ṙ=main_bus.ṙ, 
-                                                  dims=main_bus.dims, 
-                                                  ref_area=main_bus.ref_area,
-                                                  m=main_bus.m, 
-                                                  gyro=main_bus.gyro,
-                                                  max_torque=main_bus.max_torque,
-                                                  max_h=main_bus.max_h,
-                                                  attitude_control_rate=main_bus.attitude_control_rate,
-                                                  J_rw=main_bus.J_rw,
-                                                  attitude_control_function=main_bus.attitude_control_function)
-                spacecraft_buses[i] = bus
+                # bus = config.Link(root=true, 
+                #                                   r=main_bus.r, 
+                #                                   q=main_bus.q, 
+                #                                   ṙ=main_bus.ṙ, 
+                #                                   dims=main_bus.dims, 
+                #                                   ref_area=main_bus.ref_area,
+                #                                   m=main_bus.m, 
+                #                                   gyro=main_bus.gyro,
+                #                                   max_torque=main_bus.max_torque,
+                #                                   max_h=main_bus.max_h,
+                #                                   attitude_control_rate=main_bus.attitude_control_rate,
+                #                                   J_rw=main_bus.J_rw,
+                spacecraft_buses[i] = deepcopy(args[:spacecraft_model])
+                spacecraft_buses[i].laser_effector = true
+                spacecraft_buses[i].laser_power = 100e3 # 100 kW PLACEHOLDER VALUE
+                spacecraft_buses[i].laser_range = 1000e3 # 1000 km PLACEHOLDER VALUE
+                spacecraft_buses[i].uid = i #setting spacecraft id
         end
 
         # Create a dictionary of target objects using the main_bus as a template
-        target_objects = Dict{Int, typeof(main_bus)}()
+        target_objects = Dict{Int, typeof(config.SpacecraftModel())}()
 
         for i in 1:args[:n_target_obj]
-                target = config.Link(root=true, 
-                                                         r=main_bus.r, 
-                                                         q=main_bus.q, 
-                                                         ṙ=main_bus.ṙ, 
-                                                         dims=main_bus.dims, 
-                                                         ref_area=main_bus.ref_area,
-                                                         m=main_bus.m, 
-                                                         gyro=main_bus.gyro,
-                                                         max_torque=main_bus.max_torque,
-                                                         max_h=main_bus.max_h,
-                                                         attitude_control_rate=main_bus.attitude_control_rate,
-                                                         J_rw=main_bus.J_rw,
-                                                         attitude_control_function=main_bus.attitude_control_function)
-                target_objects[i] = target
+                # target = config.Link(root=true, 
+                #                                          r=main_bus.r, 
+                #                                          q=main_bus.q, 
+                #                                          ṙ=main_bus.ṙ, 
+                #                                          dims=main_bus.dims, 
+                #                                          ref_area=main_bus.ref_area,
+                #                                          m=main_bus.m, 
+                #                                          gyro=main_bus.gyro,
+                #                                          max_torque=main_bus.max_torque,
+                #                                          max_h=main_bus.max_h,
+                #                                          attitude_control_rate=main_bus.attitude_control_rate,
+                #                                          J_rw=main_bus.J_rw,
+                #                                          attitude_control_function=main_bus.attitude_control_function)
+                target_objects[i] = deepcopy(args[:spacecraft_model])
+                target_objects[i].uid = -i #setting debris object id
         end
 
         # Create a dictionary of initial conditions for each spacecraft
         spacecraft_initial_conditions = Dict{Int, Dict{Symbol, Any}}()
+        rng = args[:rng]
 
         for i in 1:args[:n_spacecraft]
                 spacecraft_initial_conditions[i] = Dict(
-                        :ra_initial_a => args[:ra_initial_a],
-                        :ra_initial_b => args[:ra_initial_b],
-                        :ra_step => args[:ra_step],
-                        :hp_initial_a => args[:hp_initial_a],
-                        :hp_initial_b => args[:hp_initial_b],
-                        :hp_step => args[:hp_step],
-                        :v_initial_a => args[:v_initial_a],
-                        :v_initial_b => args[:v_initial_b],
-                        :v_step => args[:v_step],
-                        :a_initial_a => args[:a_initial_a],
-                        :a_initial_b => args[:a_initial_b],
-                        :a_step => args[:a_step],
-                        :e_initial_a => args[:e_initial_a],
-                        :e_initial_b => args[:e_initial_b],
-                        :e_step => args[:e_step],
-                        :γ_initial_a => args[:γ_initial_a],
-                        :γ_initial_b => args[:γ_initial_b],
-                        :γ_step => args[:γ_step],
-                        :inclination => args[:inclination],
-                        :ω => args[:ω],
-                        :Ω => args[:Ω],
-                        :ν => args[:ν]
+                        :ra_initial_a => 28559.615e3 + rand(rng)*sqrt(28559.0*0.05/3) * 1e3,
+                        :ra_initial_b => 50000e3 + rand(rng)*sqrt(28559.0*0.05/3) * 1e3,
+                        :ra_step => 5e10,
+                        :hp_initial_a => 87000.0 + rand(rng)*sqrt(87.0*0.05/3) * 1e3,
+                        :hp_initial_b => 1590000.0 + rand(rng)*sqrt(87.0*0.05/3) * 1e3,
+                        :hp_step => 1e12,
+                        :v_initial_a => 4500.0 + rand(rng)*sqrt(0.025),
+                        :v_initial_b => 5000.0 + rand(rng)*sqrt(0.025),
+                        :v_step => 1000.0,
+                        :a_initial_a => 16018.0e3 + rand(rng)*sqrt(28559.0*0.05/3),
+                        :a_initial_b => 116000.0e3 + rand(rng)*sqrt(28559.0*0.05/3),
+                        :a_step => 1000.0e10,
+                        :e_initial_a => 0.782935 + rand(rng)*sqrt(0.1),
+                        :e_initial_b => 0.79 + rand(rng)*sqrt(0.1),
+                        :e_step => 0.1,
+                        :γ_initial_a => -2.5 + rand(rng)*sqrt(0.25),
+                        :γ_initial_b => 7.0 + rand(rng)*sqrt(0.25),
+                        :γ_step => 100,
+                        :inclination => 93.522 + rand(rng)*sqrt(0.25),
+                        :ω => 109.7454 + rand(rng)*sqrt(0.25),
+                        :Ω => 28.1517 + rand(rng)*sqrt(0.25),
+                        :ν => 320.0 + rand(rng)*sqrt(0.025)
                 )
         end
         # Create a dictionary of initial conditions for each debris object
@@ -321,32 +330,32 @@ args = Dict(# Misc Simulation
 
         for i in 1:args[:n_target_obj]
                 target_initial_conditions[i] = Dict(
-                        :ra_initial_a => args[:ra_initial_a],
-                        :ra_initial_b => args[:ra_initial_b],
-                        :ra_step => args[:ra_step],
-                        :hp_initial_a => args[:hp_initial_a],
-                        :hp_initial_b => args[:hp_initial_b],
-                        :hp_step => args[:hp_step],
-                        :v_initial_a => args[:v_initial_a],
-                        :v_initial_b => args[:v_initial_b],
-                        :v_step => args[:v_step],
-                        :a_initial_a => args[:a_initial_a],
-                        :a_initial_b => args[:a_initial_b],
-                        :a_step => args[:a_step],
-                        :e_initial_a => args[:e_initial_a],
-                        :e_initial_b => args[:e_initial_b],
-                        :e_step => args[:e_step],
-                        :γ_initial_a => args[:γ_initial_a],
-                        :γ_initial_b => args[:γ_initial_b],
-                        :γ_step => args[:γ_step],
-                        :inclination => args[:inclination],
-                        :ω => args[:ω],
-                        :Ω => args[:Ω],
-                        :ν => args[:ν]
+                        :ra_initial_a => 28559.615e3 + rand(rng)*sqrt(28559.0*0.05/3) * 1e3,
+                        :ra_initial_b => 50000e3 + rand(rng)*sqrt(28559.0*0.05/3) * 1e3,
+                        :ra_step => 5e10,
+                        :hp_initial_a => 87000.0 + rand(rng)*sqrt(87.0*0.05/3) * 1e3,
+                        :hp_initial_b => 1590000.0 + rand(rng)*sqrt(87.0*0.05/3) * 1e3,
+                        :hp_step => 1e12,
+                        :v_initial_a => 4500.0 + rand(rng)*sqrt(0.025),
+                        :v_initial_b => 5000.0 + rand(rng)*sqrt(0.025),
+                        :v_step => 1000.0,
+                        :a_initial_a => 16018.0e3 + rand(rng)*sqrt(28559.0*0.05/3),
+                        :a_initial_b => 116000.0e3 + rand(rng)*sqrt(28559.0*0.05/3),
+                        :a_step => 1000.0e10,
+                        :e_initial_a => 0.782935 + rand(rng)*sqrt(0.1),
+                        :e_initial_b => 0.79 + rand(rng)*sqrt(0.1),
+                        :e_step => 0.1,
+                        :γ_initial_a => -2.5 + rand(rng)*sqrt(0.25),
+                        :γ_initial_b => 7.0 + rand(rng)*sqrt(0.25),
+                        :γ_step => 100,
+                        :inclination => 93.522 + rand(rng)*sqrt(0.25),
+                        :ω => 109.7454 + rand(rng)*sqrt(0.25),
+                        :Ω => 28.1517 + rand(rng)*sqrt(0.25),
+                        :ν => 320.0 + rand(rng)*sqrt(0.025)
                 )
         end
 
-        args[:target_objects] = target_obj
+        args[:target_objects] = target_objects
         args[:spacecraft_buses] = spacecraft_buses
         args[:target_initial_conditions] = target_initial_conditions
         args[:spacecraft_initial_conditions] = spacecraft_initial_conditions

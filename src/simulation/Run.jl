@@ -151,8 +151,8 @@ function run_sc_vehicles(args)
     """
 
     #extracting initial conditions from the args dict
-    target_objs_dict = args[:target_objs]
-    spacecraft_dict = args[:spacecraft]
+    target_objs_dict = args[:target_objects]
+    spacecraft_dict = args[:spacecraft_buses]
     target_initial_conditions = args[:target_initial_conditions]
     spacecraft_initial_conditions = args[:spacecraft_initial_conditions]
 
@@ -168,8 +168,8 @@ function run_sc_vehicles(args)
     for target in keys(target_objs_dict)
         target_state = target_initial_conditions[target]
         state = Dict()
-        apoapsis_item, periapsis_item = ic_calculation_ae(planet, target_state[1], target_state[2], args)
-        inclination, Ω, ω = target_state[3], target_state[4], target_state[5]
+        apoapsis_item, periapsis_item = ic_calculation_ae(planet, args[:target_initial_conditions][target][:a_initial_a], args[:target_initial_conditions][target][:e_initial_a], args)
+        inclination, Ω, ω = args[:inclination], args[:Ω], args[:ω]
         final_apoapsis = args[:final_apoapsis]
 
         if Bool(args[:print_res])
@@ -187,8 +187,8 @@ function run_sc_vehicles(args)
     for sc in keys(spacecraft_dict)
         sc_state = spacecraft_initial_conditions[sc]
         state = Dict()
-        apoapsis_item, periapsis_item = ic_calculation_ae(planet, sc_state[1], sc_state[2], args)
-        inclination, Ω, ω = sc_state[3], sc_state[4], sc_state[5]
+        apoapsis_item, periapsis_item = ic_calculation_ae(planet, args[:spacecraft_initial_conditions][sc][:a_initial_a], args[:spacecraft_initial_conditions][sc][:e_initial_a], args)
+        inclination, Ω, ω = args[:inclination], args[:Ω], args[:ω]
         final_apoapsis = args[:final_apoapsis]
 
         if Bool(args[:print_res])
@@ -209,14 +209,14 @@ function run_sc_vehicles(args)
     #create a csv to store cartesian state data on each space object
     if args[:passresults] == true
         config.solution = DataFrame()
-        config.solution[:time] = Float64[]
+        config.solution[!, :time] = Float64[]
         for obj_id in keys(space_objects_dict)
-            config.solution[Symbol("x_" * string(obj_id))] = Float64[]
-            config.solution[Symbol("y_" * string(obj_id))] = Float64[]
-            config.solution[Symbol("z_" * string(obj_id))] = Float64[]
-            config.solution[Symbol("vx_" * string(obj_id))] = Float64[]
-            config.solution[Symbol("vy_" * string(obj_id))] = Float64[]
-            config.solution[Symbol("vz_" * string(obj_id))] = Float64[]
+            config.solution[!, Symbol("x_" * string(obj_id))] = Float64[]
+            config.solution[!, Symbol("y_" * string(obj_id))] = Float64[]
+            config.solution[!, Symbol("z_" * string(obj_id))] = Float64[]
+            config.solution[!, Symbol("vx_" * string(obj_id))] = Float64[]
+            config.solution[!, Symbol("vy_" * string(obj_id))] = Float64[]
+            config.solution[!, Symbol("vz_" * string(obj_id))] = Float64[]
         end
     end
     #write to csv
@@ -225,10 +225,12 @@ function run_sc_vehicles(args)
     end
 
     #begin synchronous parallel processing of spacecraft and space objects
+    println(keys(space_objects_dict))
     for obj_id in keys(space_objects_dict)
         obj = space_objects_dict[obj_id]
-        print("begin aero campaign")
+        println("begin aero campaign")
         aerobraking_campaign(args, obj.sc_states)
+        println("Aero campaign complete for " * string(obj_id))
     end
 
 end

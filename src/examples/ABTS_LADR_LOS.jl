@@ -122,6 +122,7 @@ args = Dict(# Misc Simulation
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
             :save_rate => 5.0,                                      # Rate at which the data trajectory are saved
+            :simulation_filename => "filename",
             
             # Body
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
@@ -158,7 +159,7 @@ args = Dict(# Misc Simulation
             :solar_panel_control_rate => 1.0/3.0,                        # Rate at which the solar panel controller is called
 
             # Initial Conditions
-            :initial_condition_type => 2,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1, Initial Condition a, e = 2, type=3 is constellation simulation
+            :initial_condition_type => 3,                          # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1, Initial Condition a, e = 2, type=3 is constellation simulation
             :ra_initial_a => 28559.615e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
@@ -301,28 +302,28 @@ args = Dict(# Misc Simulation
 
         for i in 1:args[:n_spacecraft]
                 spacecraft_initial_conditions[i] = Dict(
-                        :ra_initial_a => 28559.615e3 + rand(rng)*sqrt(28559.0*0.05/3) * 1e3,
-                        :ra_initial_b => 50000e3 + rand(rng)*sqrt(28559.0*0.05/3) * 1e3,
-                        :ra_step => 5e10,
-                        :hp_initial_a => 87000.0 + rand(rng)*sqrt(87.0*0.05/3) * 1e3,
-                        :hp_initial_b => 1590000.0 + rand(rng)*sqrt(87.0*0.05/3) * 1e3,
-                        :hp_step => 1e12,
-                        :v_initial_a => 4500.0 + rand(rng)*sqrt(0.025),
-                        :v_initial_b => 5000.0 + rand(rng)*sqrt(0.025),
-                        :v_step => 1000.0,
-                        :a_initial_a => 16018.0e3 + rand(rng)*sqrt(28559.0*0.05/3),
-                        :a_initial_b => 116000.0e3 + rand(rng)*sqrt(28559.0*0.05/3),
-                        :a_step => 1000.0e10,
-                        :e_initial_a => 0.782935 + rand(rng)*sqrt(0.1),
-                        :e_initial_b => 0.79 + rand(rng)*sqrt(0.1),
-                        :e_step => 0.1,
-                        :γ_initial_a => -2.5 + rand(rng)*sqrt(0.25),
-                        :γ_initial_b => 7.0 + rand(rng)*sqrt(0.25),
-                        :γ_step => 100,
-                        :inclination => 93.522 + rand(rng)*sqrt(0.25),
-                        :ω => 109.7454 + rand(rng)*sqrt(0.25),
-                        :Ω => 28.1517 + rand(rng)*sqrt(0.25),
-                        :ν => 320.0 + rand(rng)*sqrt(0.025)
+                        :ra_initial_a => args[:ra_initial_a],
+                        :ra_initial_b => args[:ra_initial_a],
+                        :ra_step => args[:ra_step],
+                        :hp_initial_a => args[:hp_initial_a],
+                        :hp_initial_b => args[:hp_initial_a],
+                        :hp_step => args[:hp_step],
+                        :v_initial_a => args[:v_initial_a],
+                        :v_initial_b => args[:v_initial_a],
+                        :v_step => args[:v_step],
+                        :a_initial_a => args[:a_initial_a],
+                        :a_initial_b => args[:a_initial_a],
+                        :a_step => args[:a_step],
+                        :e_initial_a => args[:e_initial_a],
+                        :e_initial_b => args[:e_initial_a],
+                        :e_step => args[:e_step],
+                        :γ_initial_a => args[:γ_initial_a],
+                        :γ_initial_b => args[:γ_initial_a],
+                        :γ_step => args[:γ_step],
+                        :inclination => args[:inclination],
+                        :ω => args[:ω],
+                        :Ω => args[:Ω],
+                        :ν => args[:ν]
                 )
         end
         # Create a dictionary of initial conditions for each debris object
@@ -330,28 +331,28 @@ args = Dict(# Misc Simulation
 
         for i in 1:args[:n_target_obj]
                 target_initial_conditions[i] = Dict(
-                        :ra_initial_a => 28559.615e3 + rand(rng)*sqrt(28559.0*0.05/3) * 1e3,
-                        :ra_initial_b => 50000e3 + rand(rng)*sqrt(28559.0*0.05/3) * 1e3,
-                        :ra_step => 5e10,
-                        :hp_initial_a => 87000.0 + rand(rng)*sqrt(87.0*0.05/3) * 1e3,
-                        :hp_initial_b => 1590000.0 + rand(rng)*sqrt(87.0*0.05/3) * 1e3,
-                        :hp_step => 1e12,
-                        :v_initial_a => 4500.0 + rand(rng)*sqrt(0.025),
-                        :v_initial_b => 5000.0 + rand(rng)*sqrt(0.025),
-                        :v_step => 1000.0,
-                        :a_initial_a => 16018.0e3 + rand(rng)*sqrt(28559.0*0.05/3),
-                        :a_initial_b => 116000.0e3 + rand(rng)*sqrt(28559.0*0.05/3),
-                        :a_step => 1000.0e10,
-                        :e_initial_a => 0.782935 + rand(rng)*sqrt(0.1),
-                        :e_initial_b => 0.79 + rand(rng)*sqrt(0.1),
-                        :e_step => 0.1,
-                        :γ_initial_a => -2.5 + rand(rng)*sqrt(0.25),
-                        :γ_initial_b => 7.0 + rand(rng)*sqrt(0.25),
-                        :γ_step => 100,
-                        :inclination => 93.522 + rand(rng)*sqrt(0.25),
-                        :ω => 109.7454 + rand(rng)*sqrt(0.25),
-                        :Ω => 28.1517 + rand(rng)*sqrt(0.25),
-                        :ν => 320.0 + rand(rng)*sqrt(0.025)
+                        :ra_initial_a => args[:ra_initial_a],
+                        :ra_initial_b => args[:ra_initial_a],
+                        :ra_step => args[:ra_step],
+                        :hp_initial_a => args[:hp_initial_a],
+                        :hp_initial_b => args[:hp_initial_a],
+                        :hp_step => args[:hp_step],
+                        :v_initial_a => args[:v_initial_a],
+                        :v_initial_b => args[:v_initial_a],
+                        :v_step => args[:v_step],
+                        :a_initial_a => args[:a_initial_a],
+                        :a_initial_b => args[:a_initial_a],
+                        :a_step => args[:a_step],
+                        :e_initial_a => args[:e_initial_a],
+                        :e_initial_b => args[:e_initial_a],
+                        :e_step => args[:e_step],
+                        :γ_initial_a => args[:γ_initial_a],
+                        :γ_initial_b => args[:γ_initial_a],
+                        :γ_step => args[:γ_step],
+                        :inclination => args[:inclination],
+                        :ω => args[:ω],
+                        :Ω => args[:Ω],
+                        :ν => args[:ν]
                 )
         end
 
@@ -373,7 +374,7 @@ t = @elapsed begin
         end
 end
 
-        println("COMPUTATIONAL TIME = " * string(t) * " s")
+        println("COMPUTATIONAL TIME = " * string(t) * " s") 
 
 # end
         # end

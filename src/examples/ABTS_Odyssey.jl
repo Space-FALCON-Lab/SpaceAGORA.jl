@@ -132,6 +132,7 @@ args = Dict(# Misc Simulation
             # :base_radius => 2.65/2,                                 # Base radius of the blunted cone in m
             # :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
             :spacecraft_model => spacecraft,                            # Spacecraft model with bodies and joints
+            :simulation_filename => "filename",
             
             # Engine
             :thrust => 4.0,                                         # Maximum magnitude thrust in N

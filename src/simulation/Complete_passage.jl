@@ -667,6 +667,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         y_dot[4:6] .= force_ii / mass * (config.cnf.TU^2 / config.cnf.DU) # Velocity derivative in inertial frame
         y_dot[7] = (-norm(thrust_ii) / (g_e * m.engines.Isp) + thruster_fuel_mass_consumption) * config.cnf.TU / config.cnf.MU       # mass variation
         y_dot[8:8+length(bodies)-1] .= heat_rate * config.cnf.TU^3 / config.cnf.MU # Heat load derivatives
+
+        #log y_dot to spacecraft state
+        
         
         next_index = 8 + length(bodies)
 

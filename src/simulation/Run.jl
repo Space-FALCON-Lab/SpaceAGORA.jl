@@ -181,6 +181,7 @@ function run_sc_vehicles(args)
         target_states[target] = state
         target_objs_dict[target].sc_states = state
         space_objects_dict[target] = target_objs_dict[target]
+        print(keys(space_objects_dict))
     end
 
     #assign initial state values for spacecraft
@@ -206,32 +207,16 @@ function run_sc_vehicles(args)
     args[:spacecraft] = spacecraft_dict
     args[:target_objects] = target_objs_dict
 
-    #create a csv to store cartesian state data on each space object
-    if args[:passresults] == true
-        config.solution = DataFrame()
-        config.solution[!, :time] = Float64[]
-        for obj_id in keys(space_objects_dict)
-            config.solution[!, Symbol("x_" * string(obj_id))] = Float64[]
-            config.solution[!, Symbol("y_" * string(obj_id))] = Float64[]
-            config.solution[!, Symbol("z_" * string(obj_id))] = Float64[]
-            config.solution[!, Symbol("vx_" * string(obj_id))] = Float64[]
-            config.solution[!, Symbol("vy_" * string(obj_id))] = Float64[]
-            config.solution[!, Symbol("vz_" * string(obj_id))] = Float64[]
-        end
-    end
-    #write to csv
-    if args[:passresults] == true
-        CSV.write("constellation_simulation_results.csv", config.solution)
-    end
-
     #begin synchronous parallel processing of spacecraft and space objects
-    println(keys(space_objects_dict))
     for obj_id in keys(space_objects_dict)
         obj = space_objects_dict[obj_id]
         println("begin aero campaign")
         aerobraking_campaign(args, obj.sc_states)
         println("Aero campaign complete for " * string(obj_id))
     end
+
+    #visualize simulation run
+
 
 end
 

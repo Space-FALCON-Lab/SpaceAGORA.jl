@@ -8,6 +8,7 @@ import .config
 import .ref_sys
 using Profile
 using Random
+using GLMakie, GeometryBasics #ADD TO TOML/MANIFEST
 # import .SpacecraftModel
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
@@ -89,6 +90,8 @@ args = Dict(# Misc Simulation
             :mission_time => 600.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => false,                               # Orientation simulation True=1, False=0, if false, will only propagate position
             :rng => MersenneTwister(12345),                               # Random number generator for reproducibility
+            :synchronized_threads => true,                           # Synchronized threads for multi spacecraft simulation
+            :orb_picture_viz => true,                               # Visualize orbit picture during simulation
 
         
             #swarm simulation configuration
@@ -292,8 +295,8 @@ args = Dict(# Misc Simulation
                 #                                          attitude_control_rate=main_bus.attitude_control_rate,
                 #                                          J_rw=main_bus.J_rw,
                 #                                          attitude_control_function=main_bus.attitude_control_function)
-                target_objects[i] = deepcopy(args[:spacecraft_model])
-                target_objects[i].uid = -i #setting debris object id
+                target_objects[-i] = deepcopy(args[:spacecraft_model])
+                target_objects[-i].uid = -i #setting debris object id
         end
 
         # Create a dictionary of initial conditions for each spacecraft
@@ -330,7 +333,7 @@ args = Dict(# Misc Simulation
         target_initial_conditions = Dict{Int, Dict{Symbol, Any}}()
 
         for i in 1:args[:n_target_obj]
-                target_initial_conditions[i] = Dict(
+                target_initial_conditions[-i] = Dict(
                         :ra_initial_a => args[:ra_initial_a],
                         :ra_initial_b => args[:ra_initial_a],
                         :ra_step => args[:ra_step],

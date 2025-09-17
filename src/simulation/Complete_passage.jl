@@ -723,6 +723,19 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         Event function to be run at every step. Used for reaction wheels.
         """
         true
+        args = integrator.p[8] #getting args from the integrator parameters
+        try
+            current_run_id = args[:run_id]
+            # Update the space object's state from integrator.u
+            space_object_state = integrator.u
+            #write latest spacecraft state to historical data storage for the spacecraft
+            push!(args[:space_objects_dict][current_run_id].sc_state_history, space_object_state)
+
+            
+        catch
+            print("Error: run_id not found in args. Setting current_run_id to 0.")
+            current_run_id = 0
+        end
     end
 
     function time_condition(y, t, integrator)

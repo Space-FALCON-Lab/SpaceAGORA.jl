@@ -1,5 +1,5 @@
 include("../simulation/Run.jl")
-# include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
+include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 # include("SpacecraftModel.jl")
@@ -8,7 +8,7 @@ import .config
 import .ref_sys
 using Profile
 using Random
-using GLMakie, GeometryBasics #ADD TO TOML/MANIFEST
+using WGLMakie 
 # import .SpacecraftModel
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()

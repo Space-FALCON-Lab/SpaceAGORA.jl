@@ -4,7 +4,7 @@ libstdcxx-ng = ">=3.4,<15.0"
 
     [dependencies.python]
     channel = "conda-forge"
-    build = "*cpython*"
+    build = "*cp*"
     version = ">=3.8,<4"
 
 [project]

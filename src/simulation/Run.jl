@@ -206,13 +206,23 @@ function run_sc_vehicles(args)
     #resorting back into args struct
     args[:spacecraft] = spacecraft_dict
     args[:target_objects] = target_objs_dict
+    args[:space_objects_dict] = space_objects_dict
 
     #begin synchronous parallel processing of spacecraft and space objects
     for obj_id in keys(space_objects_dict)
         obj = space_objects_dict[obj_id]
         println("begin aero campaign")
+        args[:current_run_id] = obj_id
         aerobraking_campaign(args, obj.sc_states)
         println("Aero campaign complete for " * string(obj_id))
+    end
+    #writing all simulation results to csv files
+    for obj_id in keys(space_objects_dict)
+        obj = space_objects_dict[obj_id]
+        sc_state_history = obj.sc_state_history
+        csv_filename = string(obj_id, "_spacecraft_states.csv")
+        CSV.write(csv_filename, sc_state_history)
+        println("State history written to ", csv_filename)
     end
 
     #visualize simulation run

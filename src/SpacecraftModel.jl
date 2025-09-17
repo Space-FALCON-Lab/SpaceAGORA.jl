@@ -175,6 +175,8 @@ mutable struct SpacecraftModel
     uid:: Int64 #id number for the craft. "friendly" spacecraft have regular uid. "target" space objects have a negative uid
 
     timestep_complete_flag:: Bool #flag to indicate that the spacecraft has completed its timestep calculations
+
+    sc_state_history:: DataFrame #DataFrame to hold the history of the spacecraft states over time
     
 
     function SpacecraftModel(;joints=Joint[], links=Link[], roots=Link[], 

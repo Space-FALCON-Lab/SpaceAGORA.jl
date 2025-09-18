@@ -1,5 +1,5 @@
 include("../simulation/Run.jl")
-include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
+# include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 # include("SpacecraftModel.jl")
@@ -8,7 +8,8 @@ import .config
 import .ref_sys
 using Profile
 using Random
-using WGLMakie 
+using WGLMakie
+using PlotlyJS
 # import .SpacecraftModel
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
@@ -96,8 +97,8 @@ args = Dict(# Misc Simulation
         
             #swarm simulation configuration
             :swarm_config => 1,                                      # Swarm configuration: 0 = no swarm, 1 = yes swarm
-            :n_spacecraft => 2,                                       # Number of spacecraft to simulate
-            :n_target_obj => 2,                                       # Number of target objects to simulate
+            :n_spacecraft => 1,                                       # Number of spacecraft to simulate
+            :n_target_obj => 1,                                       # Number of target objects to simulate
 
             # Physical Model
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -328,6 +329,7 @@ args = Dict(# Misc Simulation
                         :Ω => args[:Ω],
                         :ν => args[:ν]
                 )
+
         end
         # Create a dictionary of initial conditions for each debris object
         target_initial_conditions = Dict{Int, Dict{Symbol, Any}}()

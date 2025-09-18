@@ -33,7 +33,7 @@ import .quaternion_utils
 const R0 = 149597870.7e3 # 1AU, m
 const g_e = 9.81 # Gravitational acceleration of Earth at surface, m/s^2
 
-function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothing, gram=nothing)
+function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothing, gram=nothing,sim_id=1)
     wind_m = false
     print("asim started")
     if ip.wm == 1
@@ -719,23 +719,24 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     ## EVENTS: 
     function every_step_condition(y, t, integrator)
-        """
-        Event function to be run at every step. Used for reaction wheels.
-        """
-        true
-        args = integrator.p[8] #getting args from the integrator parameters
+        args = integrator.p[8]
         try
-            current_run_id = args[:run_id]
-            # Update the space object's state from integrator.u
-            space_object_state = integrator.u
-            #write latest spacecraft state to historical data storage for the spacecraft
-            push!(args[:space_objects_dict][current_run_id].sc_state_history, space_object_state)
+            current_run_id = sim_id  # avoid globals like sim_id
+            obj_dict = args[:space_objects_dict]
+            obj = obj_dict[current_run_id]
 
-            
-        catch
-            print("Error: run_id not found in args. Setting current_run_id to 0.")
-            current_run_id = 0
+            state = collect(integrator.u)
+            # Store as a vector of vectors: [time, state...]
+            # Use fieldnames and getfield instead of haskey for mutable struct
+            if !isdefined(obj, :sc_state_history) || obj.sc_state_history === nothing
+                obj.sc_state_history = Vector{Vector{Float64}}()
+            end
+            push!(obj.sc_state_history, vcat([t], state))
+        catch e
+            @warn "Error running every_step_condition callback" error=e
         end
+
+        return true
     end
 
     function time_condition(y, t, integrator)

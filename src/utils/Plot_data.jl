@@ -1,6 +1,8 @@
 include("Misc.jl")
 
 using PlotlyJS
+using PlotlyJS: scatter
+using PlotlyJS: plot
 using LaTeXStrings
 using Arrow
 

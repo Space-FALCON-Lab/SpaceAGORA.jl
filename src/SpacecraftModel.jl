@@ -176,7 +176,7 @@ mutable struct SpacecraftModel
 
     timestep_complete_flag:: Bool #flag to indicate that the spacecraft has completed its timestep calculations
 
-    sc_state_history:: DataFrame #DataFrame to hold the history of the spacecraft states over time
+    sc_state_history::Vector{Any} # Store the history of spacecraft states in a single large array
     
 
     function SpacecraftModel(;joints=Joint[], links=Link[], roots=Link[], 

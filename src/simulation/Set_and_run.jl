@@ -12,7 +12,7 @@ using AstroTime
 using PythonCall
 using Arrow
 
-function aerobraking_campaign(args, state)
+function aerobraking_campaign(args, state,sim_id=1)
     save_res = args[:results]
     config.cnf.Gram_directory = args[:directory_Gram]
 
@@ -447,7 +447,7 @@ function aerobraking_campaign(args, state)
     # RUN SIMULATION
     config.cnf.heat_rate_limit = args[:max_heat_rate]
     t_el = @elapsed begin
-        aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name)
+        aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim_id)
     end
     ##########################################################
 

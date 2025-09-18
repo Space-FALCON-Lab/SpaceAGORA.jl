@@ -180,6 +180,7 @@ function run_sc_vehicles(args)
 
         target_states[target] = state
         target_objs_dict[target].sc_states = state
+        # target_objs_dict[target].sc_state_history = DataFrame([state])
         space_objects_dict[target] = target_objs_dict[target]
         print(keys(space_objects_dict))
     end
@@ -200,6 +201,7 @@ function run_sc_vehicles(args)
 
         sc_states[sc] = state
         spacecraft_dict[sc].sc_states = state
+        spacecraft_dict[sc].sc_state_history = [state]
         space_objects_dict[sc] = spacecraft_dict[sc]
     end
 
@@ -208,21 +210,22 @@ function run_sc_vehicles(args)
     args[:target_objects] = target_objs_dict
     args[:space_objects_dict] = space_objects_dict
 
+
     #begin synchronous parallel processing of spacecraft and space objects
     for obj_id in keys(space_objects_dict)
         obj = space_objects_dict[obj_id]
         println("begin aero campaign")
-        args[:current_run_id] = obj_id
-        aerobraking_campaign(args, obj.sc_states)
+        aerobraking_campaign(args, obj.sc_states,obj_id)
         println("Aero campaign complete for " * string(obj_id))
     end
     #writing all simulation results to csv files
+
     for obj_id in keys(space_objects_dict)
         obj = space_objects_dict[obj_id]
         sc_state_history = obj.sc_state_history
-        csv_filename = string(obj_id, "_spacecraft_states.csv")
-        CSV.write(csv_filename, sc_state_history)
-        println("State history written to ", csv_filename)
+
+        filename = string(obj_id, "_state_data.csv")
+        CSV.write(filename, Tables.table(sc_state_history), writeheader=false)
     end
 
     #visualize simulation run

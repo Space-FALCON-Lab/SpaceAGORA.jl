@@ -10,7 +10,7 @@ sys = pyimport("sys")
 
 os = pyimport("os")
 
-function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name)
+function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim_id)
 
     initial_state = m.initial_condition
     FinalState = true
@@ -90,9 +90,9 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name)
 
             clean_results()
             if uppercase(args[:density_model]) == "GRAM"
-                continue_campaign = asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere, gram)
+                continue_campaign = asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere, gram,sim_id)
             else
-                continue_campaign = asim(ip, m, initial_state, numberofpassage, args)
+                continue_campaign = asim(ip, m, initial_state, numberofpassage, args,sim_id)
             end
 
             r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])

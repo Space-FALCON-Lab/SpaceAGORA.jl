@@ -388,15 +388,16 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             config.cnf.α = min(config.cnf.α, α_struct) # limit the angle of attack to the structural load control
         end
 
-        # if config.cnf.targeting == 1
-        #     if t0 >= config.cnf.t_switch_targeting
-        #         config.cnf.α = 0
-        #     else
-        #         state = [T_p, ρ, S]
-        #         index_ratio = [1,1]
-        #         config.cnf.α = pi/2 # control_solarpanels_heatrate(ip, m, args, index_ratio, state, t0 - config.cnf.t_switch_targeting, config.cnf.initial_position_closed_form, OE)
-        #     end
-        # end
+        if config.cnf.targeting == 1
+            # if t0 >= config.cnf.t_switch_targeting
+            if t0 >= config.cnf.ts_targ_1 && t0 <= config.cnf.ts_targ_2
+                config.cnf.α = 0
+            else
+                state = [T_p, ρ, S]
+                index_ratio = [1,1]
+                config.cnf.α = control_solarpanels_heatrate(ip, m, args, index_ratio, state, t0 - config.cnf.t_switch_targeting, config.cnf.initial_position_closed_form, OE)
+            end
+        end
 
         α = config.cnf.α
 
@@ -1184,10 +1185,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 hf = 160e3 # args[:AE] * 1e3
                 vf = 4195.0 # 4196.4868
                 γf = 0.10979 # deg2rad(5.874)
-                energy_f = -3.265e6 
+                energy_f = -3.3e6 # -3.265e6 
                 # energy_f = vf^2 / 2 - (m.planet.μ /(hf + m.planet.Rp_e))
-
-                # # config.cnf.t_switch_targeting = control_solarpanels_targeting_num_int(f!, energy_f, param, time_0, in_cond)
 
                 current_epoch = date_initial # Precompute the current epoch
                 time_real = DateTime(current_epoch) # date_initial + Second(t0)
@@ -1204,15 +1203,25 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
                 # println("Targeting switch time: ", config.cnf.t_switch_targeting)
 
-                # config.cnf.t_switch_targeting = control_solarpanels_targeting(energy_f, ip, m, 0, OE, args, gram_atmosphere)
+                # config.cnf.t_switch_targeting = control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
 
                 # println("Targeting switch time: ", config.cnf.t_switch_targeting)
 
                 # sol_lam = asim_ctrl_targeting_plot(ip, m, 0, OE, args, hf, vf, γf, energy_f, 100, 0.03565, false, gram_atmosphere)
 
-                # v_E = control_solarpanels_targeting_heatload(energy_f, param, OE)
+                v_E = control_solarpanels_targeting_heatload(energy_f, param, OE) # 28.075
+
+                # v_E = 27.892163870200108
+
+                println("v_E: ", v_E)
+
+                config.cnf.lambda_switch_list = []
+                config.cnf.time_switch_list = []
                 
-                sol_lam = asim_ctrl_plot(ip, m, 0, OE, args, 35, 0, false, gram_atmosphere)
+                sol_lam, time_switch = asim_ctrl_rf(ip, m, 0, OE, args, v_E, 1.0, true, gram_atmosphere)
+
+                config.cnf.ts_targ_1 = time_switch[1]
+                config.cnf.ts_targ_2 = time_switch[2]
                 
                 println("hf: ", norm(sol_lam[1:3,end]) - m.planet.Rp_e)
                 println("vf: ", norm(sol_lam[4:6,end]))
@@ -1220,6 +1229,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
                 println("Targeting energy: ", energy_f)
                 println("Final Energy: ", norm(sol_lam[4:6,end])^2/2 - m.planet.μ/norm(sol_lam[1:3,end]))
+
 
                 push!(config.cnf.time_list, sol_lam.t...)
                 push!(config.cnf.lamv_list, sol_lam[7,:]...)

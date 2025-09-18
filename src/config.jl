@@ -190,6 +190,9 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         count_final_entry_altitude_reached::Int64 = 0
         t_out_drag_passage::Float64 = 0.0
         t_time_switch_func::Vector{Float64} = []
+        t_time_switch_targ::Vector{Float64} = []
+        ts_targ_1::Float64 = 0.0
+        ts_targ_2::Float64 = 0.0
 
         n_bodies_list::Vector{Planet} = []
         DU::Float64 = 0.0

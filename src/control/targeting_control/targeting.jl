@@ -63,7 +63,7 @@ function target_planning(f!, ip, m, args, param, initial_state, initial_time, fi
 end
 
 # function control_solarpanels_targeting(f!, energy_f, ip, m, time_0, OE, args, gram_atmosphere)
-function control_solarpanels_targeting_num_int(f!, energy_f, param, time_0, in_cond)
+function control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
 
     function func_targeting_num_int(t_switch)
 
@@ -78,7 +78,7 @@ function control_solarpanels_targeting_num_int(f!, energy_f, param, time_0, in_c
 
     t_switch = find_zero(ts -> func_targeting_num_int(ts), [0, 1500], Roots.Brent(), verbose=true, rtol=1e-5)
 
-    return t_switch
+    return t_switch 
 end
 
 function control_solarpanels_targeting_heatload(energy_f, param, OE)
@@ -90,16 +90,18 @@ function control_solarpanels_targeting_heatload(energy_f, param, OE)
         args = param[8]
         gram_atmosphere = param[10]
 
-        sol = asim_ctrl_rf(ip, m, time_0, OE, args, v_E, 0.0, false, gram_atmosphere)
+        sol, _ = asim_ctrl_rf(ip, m, time_0, OE, args, v_E, 1.0, true, gram_atmosphere)
 
         energy_fin = norm(sol[4:6,end])^2/2 - m.planet.μ / norm(sol[1:3,end])
 
-        return energy_fin - energy_f
+        println("v_E: ", v_E, " energy_fin: ", energy_fin)
+
+        return (energy_fin - energy_f) / 1e6
     end
 
-    t_switch = find_zero(v_E -> func_targeting_heatload(v_E), [0, 1500], Roots.Brent(), verbose=true, rtol=1e-5)
+    v_E_fin = find_zero(v_E -> func_targeting_heatload(v_E), [1, 40], Roots.Brent(), verbose=true, rtol=1e-5)
 
-    return v_E
+    return v_E_fin
 end
 
 function control_solarpanels_targeting_closed_form(energy_f, param, initialcondition)

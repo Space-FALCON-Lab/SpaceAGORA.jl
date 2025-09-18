@@ -362,7 +362,7 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, g
     # println("h_cf: ", h_cf)
     # println("v_cf: ", v_cf)
 
-    lambdav = v_E * 4390 # v_cf[end]
+    lambdav = v_E * 4180 # v_cf[end]
     lambdag = 0.0
     lambdah = v_E * m.planet.μ / (m.planet.Rp_e + args[:AE]*1e3)^2 # m.planet.μ / (m.planet.Rp_e + h_cf[end])^2
 
@@ -671,9 +671,8 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         S = sqrt(γ/2) * Mach   # molecular speed ratio
 
         
-        # lambda_switch = (k_cf * 2.0 * m.body.mass * vel_ii_mag) / (area_tot * CD_slope * pi)
-        lambda_switch = (2.0 * m.body.mass * vel_ii_mag) / (area_tot * CD_slope * pi)
-
+        lambda_switch = (k_cf * 2.0 * m.body.mass * vel_ii_mag) / (area_tot * CD_slope * pi)
+    
         if lambdav_ii < lambda_switch
             aoa = 0.0
         else
@@ -769,27 +768,38 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         g_ii = norm(gravity_ii) / mass
 
         # EOM
-        # lambdav_dot = -3 * k_cf * ρ * vel_ii_mag^2 * aoa / pi + 
-        #               lambdav_ii * (ρ* area_tot * CD * vel_ii_mag) / mass - 
-        #               lambdagamma_ii * ((ρ * area_tot * CL) / (2 * mass) + g_ii /  vel_ii_mag^2 + 1 / (pos_ii_mag)) - 
-        #               lambdah_ii * γ_ii
-        
-        # lambdag_dot = lambdav_ii * g_ii - lambdah_ii * vel_ii_mag
-        
-        # lambdah_dot = k_cf * ρ * vel_ii_mag^3 * aoa/ (pi * m.planet.H) - 
-        #               lambdav_ii * ((ρ * area_tot *CD * vel_ii_mag^2) / (2 * mass * m.planet.H) + 2 * g_ii * γ_ii/ (pos_ii_mag)) + 
-        #               lambdagamma_ii * (ρ * area_tot * CL * vel_ii_mag / (2 * mass * m.planet.H) - 2 * g_ii / (pos_ii_mag * vel_ii_mag) + vel_ii_mag / (pos_ii_mag)^2)
-
-        lambdav_dot = -3 * ρ * vel_ii_mag^2 * aoa / pi + 
+        lambdav_dot = -3 * k_cf * ρ * vel_ii_mag^2 * aoa / pi + 
                       lambdav_ii * (ρ* area_tot * CD * vel_ii_mag) / mass - 
                       lambdagamma_ii * ((ρ * area_tot * CL) / (2 * mass) + g_ii /  vel_ii_mag^2 + 1 / (pos_ii_mag)) - 
                       lambdah_ii * γ_ii
         
         lambdag_dot = lambdav_ii * g_ii - lambdah_ii * vel_ii_mag
         
-        lambdah_dot = ρ * vel_ii_mag^3 * aoa/ (pi * m.planet.H) - 
+        lambdah_dot = k_cf * ρ * vel_ii_mag^3 * aoa/ (pi * m.planet.H) - 
                       lambdav_ii * ((ρ * area_tot *CD * vel_ii_mag^2) / (2 * mass * m.planet.H) + 2 * g_ii * γ_ii/ (pos_ii_mag)) + 
                       lambdagamma_ii * (ρ * area_tot * CL * vel_ii_mag / (2 * mass * m.planet.H) - 2 * g_ii / (pos_ii_mag * vel_ii_mag) + vel_ii_mag / (pos_ii_mag)^2)
+
+        # lambdav_dot = -3 * ρ * vel_ii_mag^2 * aoa / pi + 
+        #               lambdav_ii * (ρ* area_tot * CD * vel_ii_mag) / mass - 
+        #               lambdagamma_ii * ((ρ * area_tot * CL) / (2 * mass) + g_ii /  vel_ii_mag^2 + 1 / (pos_ii_mag)) - 
+        #               lambdah_ii * γ_ii
+        
+        # lambdag_dot = lambdav_ii * g_ii - lambdah_ii * vel_ii_mag
+        
+        # lambdah_dot = ρ * vel_ii_mag^3 * aoa/ (pi * m.planet.H) - 
+        #               lambdav_ii * ((ρ * area_tot *CD * vel_ii_mag^2) / (2 * mass * m.planet.H) + 2 * g_ii * γ_ii/ (pos_ii_mag)) + 
+        #               lambdagamma_ii * (ρ * area_tot * CL * vel_ii_mag / (2 * mass * m.planet.H) - 2 * g_ii / (pos_ii_mag * vel_ii_mag) + vel_ii_mag / (pos_ii_mag)^2)
+
+        # lambdav_dot = -3 * ρ * vel_ii_mag^2 * aoa / pi + 
+        #               lambdav_ii * (ρ* area_tot * CD * vel_ii_mag) / mass - 
+        #               lambdagamma_ii * ((ρ * area_tot * CL) / (2 * mass) + g_ii /  vel_ii_mag^2 + 1 / (pos_ii_mag)) - 
+        #               lambdah_ii * γ_ii
+        
+        # lambdag_dot = lambdav_ii * g_ii - lambdah_ii * vel_ii_mag
+        
+        # lambdah_dot = ρ * vel_ii_mag^3 * aoa/ (pi * m.planet.H) - 
+        #               lambdav_ii * ((ρ * area_tot *CD * vel_ii_mag^2) / (2 * mass * m.planet.H) + 2 * g_ii * γ_ii/ (pos_ii_mag)) + 
+        #               lambdagamma_ii * (ρ * area_tot * CL * vel_ii_mag / (2 * mass * m.planet.H) - 2 * g_ii / (pos_ii_mag * vel_ii_mag) + vel_ii_mag / (pos_ii_mag)^2)
 
         y_dot[1:3] = vel_ii
         y_dot[4:6] = force_ii / mass
@@ -819,9 +829,9 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         m = integrator.p[1]
         k_cf = integrator.p[12]
 
-        CL_90, CD_90 = aerodynamic_coefficient_fM(pi/2, m.body, T, S, m.aerodynamics, 0)
-        CL_0, CD_0 = aerodynamic_coefficient_fM(0, m.body, T, S, m.aerodynamics, 0)
-        CD_slope = (CD_90 - CD_0) / (pi/2)
+        # CL_90, CD_90 = aerodynamic_coefficient_fM(pi/2, m.body, T, S, m.aerodynamics, 0)
+        # CL_0, CD_0 = aerodynamic_coefficient_fM(0, m.body, T, S, m.aerodynamics, 0)
+        # CD_slope = (CD_90 - CD_0) / (pi/2)
 
         # println("CD_slope inside event: ", CD_slope)
         # println("k_cf inside event: ", k_cf)
@@ -833,15 +843,9 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         lambda_switch - y[7]
     end
     function time_switch_func_affect!(integrator)
-        # println("entered time_switch_func_affect! in Eoms.jl")
-        append!(config.cnf.t_time_switch_func, integrator.t)
+        append!(config.cnf.t_time_switch_targ, integrator.t)
+        # print("Entered time switch function at t = ", integrator.t, "\n")
         nothing
-
-        # if length(config.cnf.t_time_switch_func) == 2
-        #     terminate!(integrator)
-        # else
-        #     nothing
-        # end
     end
     time_switch_func = ContinuousCallback(time_switch_func_condition, time_switch_func_affect!)
 
@@ -854,7 +858,7 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
     # println("h_cf: ", h_cf)
     # println("v_cf: ", v_cf)
 
-    lambdav = v_E * 4390 # v_cf[end]
+    lambdav = v_E * v_cf[end]
     lambdag = 0.0
     lambdah = v_E * m.planet.μ / (m.planet.Rp_e + args[:AE]*1e3)^2 # m.planet.μ / (m.planet.Rp_e + h_cf[end])^2
 
@@ -864,9 +868,9 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
 
     # println("lambda init: ", [lambdav, lambdag, lambdah])
 
-    lambda_v_fin = 10000
-    lambda_γ_fin = 10000
-    lambda_h_fin = 10000
+    lambda_v_fin = 100000
+    lambda_γ_fin = 100000
+    lambda_h_fin = 100000
 
     lambda_v_fin_actual = 0
     lambda_γ_fin_actual = 0
@@ -965,33 +969,31 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
 
     v_ii_mag = [norm(sol[4:6,i]) for i in 1:length(sol.t)]
 
-    # println("v_ii_mag: ", v_ii_mag)
+    lambda_switch_list = (k_cf * 2.0 * m.body.mass * v_ii_mag) ./ (m.body.area_tot * CD_slope * pi)
 
-    # lambda_switch_list = (k_cf * 2.0 * m.body.mass * v_ii_mag) ./ (m.body.area_tot * CD_slope * pi)
-    lambda_switch_list = (2.0 * m.body.mass * v_ii_mag) ./ (m.body.area_tot * CD_slope * pi)
+    push!(config.cnf.lambda_switch_list, lambda_switch_list...)
+    push!(config.cnf.time_switch_list, sol.t...)
 
-    # println("lambda_switch_list: ", lambda_switch_list)
+    ## Time switch definition
+    time_switch = [0.0, 0.0]
 
-    # Initial condition initialization
-    in_cond = [sol[1,end], sol[2,end], sol[3,end], sol[4,end], sol[5,end], sol[6,end], sol[7,end], sol[8,end], sol[9,end], 0.0]
+    temp = config.cnf.t_time_switch_targ
 
-    # println("in_cond: ", in_cond)
+    println("time switch targ: ", config.cnf.t_time_switch_targ)
+    println("temp: ", temp)
 
-    # Time initialization
-    initial_time, final_time = sol.t[end], 0
+    if length(temp) == 2
+        # time_switch = temp
+        time_switch = temp
+        # time_switch[2] = temp[end]
+    elseif length(temp) == 1
+        time_switch[1] = temp[1]
+        time_switch[2] = sol.t[end]
+    end
 
-    # Parameter Definition
-    param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
+    config.cnf.t_time_switch_targ = []
 
-    method = Tsit5()
-    a_tol = 1e-9
-    r_tol = 1e-9
+    println(time_switch)
 
-    events = CallbackSet(out_drag_pass, time_switch_func)
-
-    # Run simulation
-    prob = ODEProblem(f_ctrl!, in_cond, (initial_time, final_time), param)
-    sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
-
-    return sol
+    return sol, time_switch
 end

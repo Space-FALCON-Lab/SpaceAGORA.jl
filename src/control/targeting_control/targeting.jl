@@ -5,6 +5,9 @@ using Roots
 
 function target_planning(f!, ip, m, args, param, initial_state, initial_time, final_time, a_tol, r_tol, method, events, in_cond)
 
+    OE = SVector{7, Float64}([initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m])
+    r0, v0 = orbitalelemtorv(OE, m.planet)
+
     # Run simulation
     prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
     sol_max_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
@@ -17,49 +20,64 @@ function target_planning(f!, ip, m, args, param, initial_state, initial_time, fi
     m_temp.aerodynamics.α = 0.0
 
     param_temp = param
-    param_temp[1] = m_temp
-    param_temp[3] = ip_temp
+
+    # println(param_temp[1])
+    # println(" ")
+    # println(m_temp)
+
+    param_temp = (m_temp, param[2], ip_temp, param[4:end]...)
+
+    # param_temp[1] = m_temp
+    # param_temp[3] = ip_temp
 
     # Run simulation
     prob = ODEProblem(f!, in_cond, (initial_time, final_time), param_temp)
     sol_min_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
 
-    energy_target_max = norm(sol_max_dratio[4:6, end])^2 * 0.5 - m.planet.μ / norm(sol_max_dratio[1:3, end])
-    energy_target_min = norm(sol_min_dratio[4:6, end])^2 * 0.5 - m.planet.μ / norm(sol_min_dratio[1:3, end])
-    
+    energy_target_min = norm(sol_max_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_max_dratio[1:3, end])
+    energy_target_max = norm(sol_min_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_min_dratio[1:3, end])
+
+    println("Energy target min: ", energy_target_min)
+    println("Energy target max: ", energy_target_max)
+
     h0 = norm(cross(r0, v0))
     r_p = h0^2 / (m.planet.μ * (1 + initial_state.e))               # periapsis radius
 
-    target_energy = -m.planet.μ / (args[:ra_fin_orbit] + (r_p + m.planet.Rp_e)) # change to current periapsis
+    # println("Current periapsis: ", r_p - m.planet.Rp_e)
 
-    if target_energy < energy_target_max
-        target_energy = energy_target_max
+    target_energy = -m.planet.μ / (args[:ra_fin_orbit] + r_p) # change to current periapsis
+
+    println("Target energy: ", target_energy)
+
+    if target_energy < energy_target_min
         config.cnf.targeting = 0
-    elseif target_energy < energy_target_min && target_energy > energy_target_max
+    elseif target_energy < energy_target_max && target_energy > energy_target_min
         config.cnf.targeting = 1
     else
         println("Cannot target energy level that is larger than possible with minimum drag ratio")
     end
 
-    config.cnf.hf = args[:AE]*1e3
+    # config.cnf.hf = args[:AE]*1e3
 
-    config.cnf.Vf = sqrt(2*(target_energy + m.planet.μ / (m.planet.Rp_e + config.cnf.hf)))
+    # config.cnf.Vf = sqrt(2*(target_energy + m.planet.μ / (m.planet.Rp_e + config.cnf.hf)))
 
-    a_max = -m.planet.μ / (2 * target_energy) # maximum semi-major axis for the target energy level
+    # a_max = -m.planet.μ / (2 * target_energy) # maximum semi-major axis for the target energy level
 
-    r_af = 2*a_max - r_p
+    # r_af = 2*a_max - r_p
 
-    e_max = (r_af - r_p) / (r_af + r_p)
+    # e_max = (r_af - r_p) / (r_af + r_p)
 
-    h_max = sqrt(m.planet.μ * a_max * (1 - e_max^2))
+    # h_max = sqrt(m.planet.μ * a_max * (1 - e_max^2))
 
-    vi_EI = acos((h_max^2/(m.planet.μ * (m.planet.Rp_e + config.cnf.hf)) - 1)/e_max)     # true anomaly at entry interface
+    # vi_EI = acos((h_max^2/(m.planet.μ * (m.planet.Rp_e + config.cnf.hf)) - 1)/e_max)     # true anomaly at entry interface
 
-    V_perp_f = m.planet.μ / h_max * (1 + e_max*cos(vi_EI))          # perpendicular velocity at atmospheric interface
+    # V_perp_f = m.planet.μ / h_max * (1 + e_max*cos(vi_EI))          # perpendicular velocity at atmospheric interface
 
-    V_rad_f = m.planet.μ / h_max * e_max * sin(vi_EI)               # radial velocity at atmospheric interface
+    # V_rad_f = m.planet.μ / h_max * e_max * sin(vi_EI)               # radial velocity at atmospheric interface
 
-    config.cnf.γf = atan(V_rad_f / V_perp_f)                        # flight path angle at atmospheric interface
+    # config.cnf.γf = atan(V_rad_f / V_perp_f)                        # flight path angle at atmospheric interface
+
+    return target_energy
 end
 
 # function control_solarpanels_targeting(f!, energy_f, ip, m, time_0, OE, args, gram_atmosphere)
@@ -90,7 +108,7 @@ function control_solarpanels_targeting_heatload(energy_f, param, OE)
         args = param[8]
         gram_atmosphere = param[10]
 
-        sol, _ = asim_ctrl_rf(ip, m, time_0, OE, args, v_E, 1.0, true, gram_atmosphere)
+        sol, _ = asim_ctrl_rf(ip, m, time_0, OE, args, v_E, 1.0, false, gram_atmosphere)
 
         energy_fin = norm(sol[4:6,end])^2/2 - m.planet.μ / norm(sol[1:3,end])
 
@@ -99,7 +117,7 @@ function control_solarpanels_targeting_heatload(energy_f, param, OE)
         return (energy_fin - energy_f) / 1e6
     end
 
-    v_E_fin = find_zero(v_E -> func_targeting_heatload(v_E), [1, 40], Roots.Brent(), verbose=true, rtol=1e-5)
+    v_E_fin = find_zero(v_E -> func_targeting_heatload(v_E), [0.1, 100], Roots.Brent(), verbose=true, rtol=1e-5)
 
     return v_E_fin
 end

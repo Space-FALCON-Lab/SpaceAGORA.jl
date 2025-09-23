@@ -181,7 +181,10 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
                 if lambdav_ii < lambda_switch
                     aoa = 0.0001
                 else
-                    aoa = m.aerodynamics.α
+                    state = [T_p, ρ, S]
+                    index_ratio = [1]
+                    aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state)
+                    # aoa = m.aerodynamics.α
                 end
             elseif args[:heat_load_sol] == 1
                 if lambdav_ii < lambda_switch
@@ -195,7 +198,10 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
                 if t0 >= config.cnf.time_switch_1 && t0 <= time_switch_2
                     aoa = 0.0001
                 else
-                    aoa = m.aerodynamics.α
+                    state = [T_p, ρ, S]
+                    index_ratio = [1]
+                    aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state)
+                    # aoa = m.aerodynamics.α
                 end
             elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 2
                 if t0 >= config.cnf.time_switch_1 && t0 <= time_switch_2

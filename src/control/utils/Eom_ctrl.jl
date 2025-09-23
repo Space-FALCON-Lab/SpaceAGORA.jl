@@ -676,7 +676,10 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         if lambdav_ii < lambda_switch
             aoa = 0.0
         else
-            aoa = m.aerodynamics.α
+            state = [T_p, ρ, S]
+            index_ratio = [1]
+            
+            aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state) # m.aerodynamics.α 
         end
 
         # Convert wind to pp(PCPF) frame
@@ -853,12 +856,12 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
     # USE CLOSED FORM SOLUTION TO DEFINE lambda_zero:
     T = m.planet.T  # fixed temperature
 
-    # t_cf, h_cf, γ_cf, v_cf = closed_form(args, m, OE, T, true, m.aerodynamics.α)  # define closed-form solution
+    t_cf, h_cf, γ_cf, v_cf = closed_form(args, m, OE, T, true, m.aerodynamics.α)  # define closed-form solution
 
     # println("h_cf: ", h_cf)
     # println("v_cf: ", v_cf)
 
-    lambdav = v_E * 3500 # v_cf[end]
+    lambdav = v_E * v_cf[end]
     lambdag = 0.0
     lambdah = v_E * m.planet.μ / (m.planet.Rp_e + args[:AE]*1e3)^2 # m.planet.μ / (m.planet.Rp_e + h_cf[end])^2
 
@@ -983,7 +986,6 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
     println("temp: ", temp)
 
     if length(temp) == 2
-        # time_switch = temp
         time_switch = temp
         # time_switch[2] = temp[end]
     elseif length(temp) == 1

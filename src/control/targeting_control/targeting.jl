@@ -3,9 +3,9 @@ include("../utils/Eom_ctrl.jl")
 
 using Roots
 
-function target_planning(f!, ip, m, args, param, initial_state, initial_time, final_time, a_tol, r_tol, method, events, in_cond)
+function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a_tol, r_tol, method, events, in_cond)
 
-    OE = SVector{7, Float64}([initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m])
+    # OE = SVector{7, Float64}([initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m])
     r0, v0 = orbitalelemtorv(OE, m.planet)
 
     # Run simulation
@@ -41,7 +41,7 @@ function target_planning(f!, ip, m, args, param, initial_state, initial_time, fi
     println("Energy target max: ", energy_target_max)
 
     h0 = norm(cross(r0, v0))
-    r_p = h0^2 / (m.planet.μ * (1 + initial_state.e))               # periapsis radius
+    r_p = h0^2 / (m.planet.μ * (1 + OE[2]))               # periapsis radius
 
     # println("Current periapsis: ", r_p - m.planet.Rp_e)
 
@@ -91,10 +91,12 @@ function control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
 
         energy_fin = norm(sol[4:6,end])^2/2 - m.planet.μ / norm(sol[1:3,end])
 
-        return energy_fin - energy_f
+        println("t_switch: ", t_switch, " energy_fin: ", energy_fin)
+
+        return (energy_fin - energy_f) / 1e6
     end
 
-    t_switch = find_zero(ts -> func_targeting_num_int(ts), [0, 1500], Roots.Brent(), verbose=true, rtol=1e-5)
+    t_switch = find_zero(ts -> func_targeting_num_int(ts), [0, 600], Roots.Brent(), verbose=true, rtol=1e-5)
 
     return t_switch 
 end
@@ -117,7 +119,7 @@ function control_solarpanels_targeting_heatload(energy_f, param, OE)
         return (energy_fin - energy_f) / 1e6
     end
 
-    v_E_fin = find_zero(v_E -> func_targeting_heatload(v_E), [0.1, 100], Roots.Brent(), verbose=true, rtol=1e-5)
+    v_E_fin = find_zero(v_E -> func_targeting_heatload(v_E), [1, 40], Roots.Brent(), verbose=true, rtol=1e-5)
 
     return v_E_fin
 end

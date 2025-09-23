@@ -28,7 +28,7 @@ function switch_calculation_with_integration(ip, m, position, args, t, heat_rate
 
     if m.planet.name == "mars"
         low_lim = 3.3
-        high_lim = 4.5
+        high_lim = 10.0
     elseif m.planet.name == "venus"
         low_lim = 1.0
         high_lim = 10.0

@@ -166,6 +166,10 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     
     t_cf = collect(range(start=0, stop=Δt, length=step_time))
 
+    # println("t_cf length: ", t_cf)
+    # println("step_time: ", step_time)
+    # println("Δt: ", Δt)
+
     cost_3 = v0 * γ0
 
     h_cf = h0 .+ cost_3*(t_cf - (t_cf.^2/(2*t_p)))

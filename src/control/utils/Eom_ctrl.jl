@@ -720,7 +720,7 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         end
 
         # Rotation Calculation
-        L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci'
+        # L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci'
         # rot_angle = norm(ω_planet) * t0     # rad
         # L_PI = [cos(rot_angle)  sin(rot_angle)  0.0;
         #         -sin(rot_angle) cos(rot_angle)  0.0; 
@@ -761,8 +761,8 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         drag_pp = q * CD * area_tot * drag_pp_hat                       # PLanet relative drag force vector
         lift_pp = q * CL * area_tot * lift_pp_hat * cos(bank_angle)     # PLanet relative lift force vector
 
-        drag_ii = L_PI' * drag_pp                                       # Inertial drag force vector
-        lift_ii = L_PI' * lift_pp                                       # Inertial lift force vector
+        drag_ii = m.planet.L_PI' * drag_pp                                       # Inertial drag force vector
+        lift_ii = m.planet.L_PI' * lift_pp                                       # Inertial lift force vector
 
         # Total Force
         # Total inertial external force vector on body [N]

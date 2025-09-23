@@ -9,7 +9,7 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/SpaceAGORA.jl/output/switching_analysis_targeting",                              # Directory where to save the results
+            :directory_results => "/workspaces/SpaceAGORA.jl/output/switching_analysis_targeting_campaign",     # Directory where to save the results
             :directory_Gram => "/workspaces/SpaceAGORA.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/SpaceAGORA.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/SpaceAGORA.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
@@ -24,7 +24,7 @@ args = Dict(# Misc Simulation
             :closed_form_fitting_data => 1, 
 
             # Type of Mission
-            :type_of_mission => "Drag Passage",                     # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
+            :type_of_mission => "Aerobraking Campaign",             # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 1,                                 # Number of aerobraking passage
 
@@ -79,7 +79,7 @@ args = Dict(# Misc Simulation
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
-            :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
+            :control_mode => 3,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
             :security_mode => 0,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
@@ -124,7 +124,7 @@ args = Dict(# Misc Simulation
             :phi => 180.0,                                          # Thrust Angle, deg
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
-            :ra_fin_orbit => 8000e3,                                # Target final apoapsis for the orbit, m
+            :ra_fin_orbit => 9600e3,                                # Target final apoapsis for the orbit, m
             :hp_fin_orbit => 100e3,                                 # Target final periapsis for the orbit, m
             :maneuver_plan => Odyssey_firing_plan_true_beginning,   # MAneuver plan function
             

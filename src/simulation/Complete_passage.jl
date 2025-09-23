@@ -119,9 +119,13 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation
         current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
         time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
-        config.cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
-        m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), config.cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
-        
+
+        if args[:spice_call] #only if spice was loaded
+            config.cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
+            m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), config.cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+        else
+            m.planet.L_PI .= SMatrix{3, 3, Float64}(I)
+        end
 
         # Assign state
         # println(in_cond)
@@ -427,8 +431,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
 
         if length(args[:n_bodies]) != 0
-            for k = 1:length(args[:n_bodies])  
-                gravity_ii += mass * gravity_n_bodies(config.cnf.et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
+            for k = 1:length(args[:n_bodies])
+                if args[:spice_call] 
+                    gravity_ii += mass * gravity_n_bodies(config.cnf.et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
+                end
             end
         end
         if args[:gravity_harmonics] == 1
@@ -1165,6 +1171,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         Energy = norm(v)^2 * 0.5 - m.planet.μ / norm(r)
         a = -m.planet.μ / (2 * Energy)
         h = cross(r, v)
+        # println(Energy)
+        # println(h)
+        # println(dot(h,h))
+        # println(m.planet.μ)
         e = sqrt(1 + (2 * Energy * dot(h,h) / (m.planet.μ)^2))
 
         r_a = a * (1 + e)

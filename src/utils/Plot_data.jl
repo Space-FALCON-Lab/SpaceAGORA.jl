@@ -3,6 +3,8 @@ include("Misc.jl")
 using PlotlyJS
 using PlotlyJS: scatter
 using PlotlyJS: plot
+using PlotlyJS: surface
+using PlotlyJS: Layout
 using LaTeXStrings
 using Arrow
 

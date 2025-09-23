@@ -10,7 +10,6 @@ using Profile
 using Random
 using WGLMakie
 using PlotlyJS
-using Base.Threads
 # import .SpacecraftModel
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
@@ -83,13 +82,13 @@ args = Dict(# Misc Simulation
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 0,                                       # Normalize the integration True=1, False=0
+            :normalize => 1,                                       # Normalize the integration True=1, False=0
             :closed_form => 0,                                     # Closed form solution True=1, False=0
             # Type of Mission
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
+            :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 1,                                 # Number of aerobraking passage
-            :mission_time => 60000.0,                                  # Mission time in seconds, used only for Time mission type
+            :mission_time => 600.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => false,                               # Orientation simulation True=1, False=0, if false, will only propagate position
             :rng => MersenneTwister(12345),                               # Random number generator for reproducibility
             :synchronized_threads => true,                           # Synchronized threads for multi spacecraft simulation
@@ -102,7 +101,7 @@ args = Dict(# Misc Simulation
             :n_target_obj => 1,                                       # Number of target objects to simulate
 
             # Physical Model
-            :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
+            :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
@@ -114,7 +113,7 @@ args = Dict(# Misc Simulation
             :aerodynamic_model => "Mach-dependent",                 # choices=['Cd and Cl Constant' , 'Mach-dependent' , 'No-Ballistic flight with axial coefficient']: "Mach-dependent" specific for spacecraft shape, "No-Ballistic flight" specific for blunted-cone shape
             :thermal_model => "Maxwellian Heat Transfer",    # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
             :interactive_forces => true,                     # Interactive forces between spacecraft toggle. True= include interactive forces, False= do not include interactive forces
-            :spice_call => false,                                 # Call SPICE for every time step
+            
             # Perturbations
             :n_bodies => ["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :srp => 0,                                             # Solar Radiation Pressure True=1, False=0
@@ -165,21 +164,22 @@ args = Dict(# Misc Simulation
 
             # Initial Conditions
             :initial_condition_type => 3,                          # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1, Initial Condition a, e = 2, type=3 is constellation simulation
-        :ra_initial_a => 6571e3,                # Initial Apoapsis Radius for ISS orbit in m (Earth radius + ~400 km)
-        :ra_initial_b => 6571e3,                # Final Apoapsis Radius for ISS orbit in m
-        :ra_step => 5e10,                       # Step Apoapsis Radius for for-loop in m (single value)
-        :hp_initial_a => 6771e3,                # Initial Periapsis Altitude for ISS orbit in m (circular orbit)
-        :hp_initial_b => 6771e3,                # Final Periapsis Altitude for ISS orbit in m
-        :hp_step => 10000000.0,                        # Step Periapsis Radius for for-loop in m (single value)
-        :v_initial_a => 7660.0,                 # Initial Velocity (m/s) for ISS orbit
-        :v_initial_b => 7660.0,                 # Final Velocity (m/s) for ISS orbit
-        :v_step => 10000.0,                         # Step Velocity (m/s) for for-loop (single value)
-        :a_initial_a => 6771e3,                 # Initial Semi-major axis (m) for ISS orbit
-        :a_initial_b => 6771e3,                 # Final Semi-major axis (m) for ISS orbit
-        :a_step => 1.0,                         # Step Semi-major axis (m) for for-loop (single value)
-        :e_initial_a => 0.01,                    # Initial Eccentricity for ISS orbit (circular)
-        :e_initial_b => 0.01,                    # Final Eccentricity for ISS orbit
-        :e_step => 0.1,                        # Step Eccentricity for for-loop (single value)
+            :ra_initial_a => 28559.615e3,                # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
+            :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
+            :hp_initial_a => 87000.0,                                 # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_b => 1590000.0,                              # Final Periapsis Altitude for for-loop in m
+            :hp_step => 1e12,                                 # Step Periapsis Radius for for-loop in m
+            :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :v_step => 1000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :a_initial_a => 16018.0e3,                               # Initial Semi-major axis (m) for for-loop if initial conditions are in a and e
+            :a_initial_b => 116000.0e3,                               # Final Semi-major axis (m) for for-loop if initial conditions are in a and e
+            :a_step => 1000.0e10,                                     # Step Semi-major axis (m) for for-loop if initial conditions are in a and e
+            :e_initial_a => 0.782935,                                       # Initial Eccentricity for for-loop if initial conditions are in a and e 
+            :e_initial_b => 0.79,                                       # Final Eccentricity for for-loop if initial conditions are in a and e
+            :e_step => 0.1,                                         # Step Eccentricity for for-loop if initial conditions are in a and e
             
             :orientation_type => 0,                                   # Initial Condition orientation = 0, Initial Condition orientation and velocity = 1
             :γ_initial_a => -2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
@@ -334,7 +334,7 @@ args = Dict(# Misc Simulation
         # Create a dictionary of initial conditions for each debris object
         target_initial_conditions = Dict{Int, Dict{Symbol, Any}}()
 
-        Threads.@threads for i in 1:args[:n_target_obj]
+        for i in 1:args[:n_target_obj]
                 target_initial_conditions[-i] = Dict(
                         :ra_initial_a => args[:ra_initial_a],
                         :ra_initial_b => args[:ra_initial_a],

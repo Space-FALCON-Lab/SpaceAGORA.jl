@@ -2,7 +2,7 @@
 
 julia_version = "1.11.6"
 manifest_format = "2.0"
-project_hash = "b8a48518dd05a2f38335c9d74d5ded2f7c0d0b25"
+project_hash = "6c3c7cde3e7587cffa9dee03b247d13f982c1165"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "27cecae79e5cc9935255f90c53bb831cc3c870d7"
@@ -486,6 +486,39 @@ version = "0.3.1"
 git-tree-sha1 = "249fe38abf76d48563e2f4556bebd215aa317e15"
 uuid = "a8cc5b0e-0ffa-5ad4-8c14-923d3ee1735f"
 version = "4.1.1"
+
+[[deps.Dash]]
+deps = ["Base64", "CodecZlib", "DashBase", "DashCoreComponents", "DashHtmlComponents", "DashTable", "DataStructures", "HTTP", "JSON", "JSON3", "MD5", "Pkg", "Sockets", "Test", "UUIDs", "YAML"]
+git-tree-sha1 = "826c9960644b38dcf0689115a86b57c3f1aa7f1d"
+uuid = "1b08a953-4be3-4667-9a23-3db579824955"
+version = "1.5.0"
+
+[[deps.DashBase]]
+deps = ["JSON3", "Requires"]
+git-tree-sha1 = "f56a284687c4f7a67a1341a275baf733c99149ba"
+uuid = "03207cf0-e2b3-4b91-9ca8-690cf0fb507e"
+version = "1.0.0"
+weakdeps = ["PlotlyBase", "PlotlyJS", "Plots"]
+
+    [deps.DashBase.extensions]
+    DashBasePlotlyBaseExt = "PlotlyBase"
+    DashBasePlotlyJSExt = "PlotlyJS"
+    DashBasePlotsExt = "Plots"
+
+[[deps.DashCoreComponents]]
+git-tree-sha1 = "f50f65803f79f4d131a1dad8843fcd51c7c71f7d"
+uuid = "1b08a953-4be3-4667-9a23-9da06441d987"
+version = "2.0.0"
+
+[[deps.DashHtmlComponents]]
+git-tree-sha1 = "972f71ee6c3c22841cdc6a44eca6117fb843c86c"
+uuid = "1b08a953-4be3-4667-9a23-24100242a84a"
+version = "2.0.0"
+
+[[deps.DashTable]]
+git-tree-sha1 = "923491df78fc9b36191162f0f0f4b0c38467a5db"
+uuid = "1b08a953-4be3-4667-9a23-f0e2ba4deb9a"
+version = "5.0.0"
 
 [[deps.DataAPI]]
 git-tree-sha1 = "abe83f3a2f1b857aac70ef8b269080af17764bbe"
@@ -1699,6 +1732,12 @@ deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "191686b1ac1ea9c89fc52e996ad15d1d241d1e33"
 uuid = "5ced341a-0733-55b8-9ab6-a4889d929147"
 version = "1.10.1+0"
+
+[[deps.MD5]]
+deps = ["Random", "SHA"]
+git-tree-sha1 = "1576f756617d31eb397a4a517b68562fd28dc2b4"
+uuid = "6ac74813-4b46-53a4-afec-0b5dc9d7885c"
+version = "0.2.3"
 
 [[deps.MKL_jll]]
 deps = ["Artifacts", "IntelOpenMP_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "oneTBB_jll"]
@@ -2930,6 +2969,12 @@ git-tree-sha1 = "83151ba8065a73f53ca2ae98bc7274d817aa30f2"
 uuid = "7792a7ef-975c-4747-a70f-980b88e8d1da"
 version = "0.5.8"
 
+[[deps.StringEncodings]]
+deps = ["Libiconv_jll"]
+git-tree-sha1 = "b765e46ba27ecf6b44faf70df40c57aa3a547dcb"
+uuid = "69024149-9ee7-55f6-a4c4-859efe599b68"
+version = "0.3.7"
+
 [[deps.StringManipulation]]
 deps = ["PrecompileTools"]
 git-tree-sha1 = "725421ae8e530ec29bcbdddbe91ff8053421d023"
@@ -3414,6 +3459,12 @@ deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "a63799ff68005991f9d9491b6e95bd3478d783cb"
 uuid = "c5fb5394-a638-5e4d-96e5-b29de1b5cf10"
 version = "1.6.0+0"
+
+[[deps.YAML]]
+deps = ["Base64", "Dates", "Printf", "StringEncodings"]
+git-tree-sha1 = "2f58ac39f64b41fb812340347525be3b590cce3b"
+uuid = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
+version = "0.4.14"
 
 [[deps.Zlib_jll]]
 deps = ["Libdl"]

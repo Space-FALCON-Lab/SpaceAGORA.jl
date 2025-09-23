@@ -2,6 +2,7 @@ include("../utils/Define_mission.jl")
 include("../utils/MonteCarlo_set.jl")
 include("../utils/Initial_cond_calc.jl")
 include("Set_and_run.jl")
+include("../utils/Mission_anim.jl")
 
 function run_orbitalelements(args)
     apoapsis, periapsis_alt, inclination, Ω, ω = collect(range(start=round(args[:ra_initial_a]), stop=round(args[:ra_initial_b]), step=round(args[:ra_step]))), 
@@ -201,7 +202,7 @@ function run_sc_vehicles(args)
 
         sc_states[sc] = state
         spacecraft_dict[sc].sc_states = state
-        spacecraft_dict[sc].sc_state_history = [state]
+        # spacecraft_dict[sc].sc_state_history = [state]
         space_objects_dict[sc] = spacecraft_dict[sc]
     end
 
@@ -210,14 +211,33 @@ function run_sc_vehicles(args)
     args[:target_objects] = target_objs_dict
     args[:space_objects_dict] = space_objects_dict
 
+    # Create temporary copies of the SPICE kernel for each thread/object
+    # spice_kernel_path = args[:directory_Spice]
+    # temp_kernel_paths = Dict{Any, String}()
 
-    #begin synchronous parallel processing of spacecraft and space objects
-    for obj_id in keys(space_objects_dict)
-        obj = space_objects_dict[obj_id]
-        println("begin aero campaign")
+    # for obj_id in keys(space_objects_dict)
+    #     temp_path = "/tmp/spice_kernel_$(obj_id)_$(space_objects_dict[obj_id].uid)"
+    #     cp(spice_kernel_path, temp_path; force=true)
+    #     temp_kernel_paths[obj_id] = temp_path
+    # end
+    # #to verify
+    # print(temp_kernel_paths)
+
+    # const SPICE_LOCK = ReentrantLock()
+    # Threads.@threads 
+    for obj_id in collect(keys(space_objects_dict))
+        obj = args[:space_objects_dict][obj_id]
+        # try
+        #     obj.spice_path = temp_kernel_paths[obj_id]
+        # catch e
+        #     println("no multiple spice paths")
+        #     obj.spice_path = args[:directory_Spice]
+        # end
+        println("begin aero campaign for obj_id: ", obj_id)
         aerobraking_campaign(args, obj.sc_states,obj_id)
         println("Aero campaign complete for " * string(obj_id))
     end
+
     #writing all simulation results to csv files
 
     for obj_id in keys(space_objects_dict)
@@ -226,9 +246,13 @@ function run_sc_vehicles(args)
 
         filename = string(obj_id, "_state_data.csv")
         CSV.write(filename, Tables.table(sc_state_history), writeheader=false)
+
     end
 
-    #visualize simulation run
+    # #visualize simulation run
+    start_viz_dashboard(args,space_objects_dict)
+    
+
 
 
 end

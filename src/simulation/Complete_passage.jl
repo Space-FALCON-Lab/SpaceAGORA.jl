@@ -1189,62 +1189,62 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
                     config.cnf.initial_position_closed_form = OE_AI
 
-                    # println("OE_AI: ", OE_AI)
+                    # # println("OE_AI: ", OE_AI)
 
-                    r0_AI, v0_AI = orbitalelemtorv(OE_AI, m.planet)
+                    # r0_AI, v0_AI = orbitalelemtorv(OE_AI, m.planet)
 
-                    # Run simulation
-                    prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
-                    sol_max_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+                    # # Run simulation
+                    # prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
+                    # sol_max_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
 
-                    # Minimum drag ratio Run
-                    ip_temp = ip
-                    ip_temp.cm = 0
+                    # # Minimum drag ratio Run
+                    # ip_temp = ip
+                    # ip_temp.cm = 0
 
-                    m_temp = m
-                    m_temp.aerodynamics.α = 0.0
+                    # m_temp = m
+                    # m_temp.aerodynamics.α = 0.0
 
-                    param_temp = param
+                    # param_temp = param
 
-                    # println(param_temp[1])
-                    # println(" ")
-                    # println(m_temp)
+                    # # println(param_temp[1])
+                    # # println(" ")
+                    # # println(m_temp)
 
-                    param_temp = (m_temp, param[2], ip_temp, param[4:end]...)
+                    # param_temp = (m_temp, param[2], ip_temp, param[4:end]...)
 
-                    # param_temp[1] = m_temp
-                    # param_temp[3] = ip_temp
+                    # # param_temp[1] = m_temp
+                    # # param_temp[3] = ip_temp
 
-                    # Run simulation
-                    prob = ODEProblem(f!, in_cond, (initial_time, final_time), param_temp)
-                    sol_min_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+                    # # Run simulation
+                    # prob = ODEProblem(f!, in_cond, (initial_time, final_time), param_temp)
+                    # sol_min_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
 
-                    energy_target_min = norm(sol_max_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_max_dratio[1:3, end])
-                    energy_target_max = norm(sol_min_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_min_dratio[1:3, end])
+                    # energy_target_min = norm(sol_max_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_max_dratio[1:3, end])
+                    # energy_target_max = norm(sol_min_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_min_dratio[1:3, end])
 
-                    println("Energy target min: ", energy_target_min)
-                    println("Energy target max: ", energy_target_max)
+                    # println("Energy target min: ", energy_target_min)
+                    # println("Energy target max: ", energy_target_max)
 
-                    h0 = norm(cross(r0_AI, v0_AI))
-                    r_p = h0^2 / (m.planet.μ * (1 + OE_AI[2]))               # periapsis radius
+                    # h0 = norm(cross(r0_AI, v0_AI))
+                    # r_p = h0^2 / (m.planet.μ * (1 + OE_AI[2]))               # periapsis radius
 
-                    # println("Current periapsis: ", r_p - m.planet.Rp_e)
+                    # # println("Current periapsis: ", r_p - m.planet.Rp_e)
 
-                    target_energy = -m.planet.μ / (args[:ra_fin_orbit] + r_p) # change to current periapsis
+                    # target_energy = -m.planet.μ / (args[:ra_fin_orbit] + r_p) # change to current periapsis
 
-                    println("Target energy: ", target_energy)
+                    # println("Target energy: ", target_energy)
 
-                    if target_energy < energy_target_min
-                        config.cnf.targeting = 0
-                    elseif target_energy < energy_target_max && target_energy > energy_target_min
-                        config.cnf.targeting = 1
-                    else
-                        println("Cannot target energy level that is larger than possible with minimum drag ratio")
-                    end
+                    # if target_energy < energy_target_min
+                    #     config.cnf.targeting = 0
+                    # elseif target_energy < energy_target_max && target_energy > energy_target_min
+                    #     config.cnf.targeting = 1
+                    # else
+                    #     println("Cannot target energy level that is larger than possible with minimum drag ratio")
+                    # end
 
-                    energy_f = target_energy
+                    # energy_f = target_energy
 
-                    # energy_f = target_planning(f!, ip, m, args, param, OE_AI, initial_time, final_time, a_tol, r_tol, method, events, in_cond)
+                    energy_f = target_planning(f!, ip, m, args, param, OE_AI, initial_time, final_time, a_tol, r_tol, method, events, in_cond)
 
                     println(config.cnf.targeting)
 

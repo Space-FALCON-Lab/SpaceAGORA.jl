@@ -124,7 +124,7 @@ args = Dict(# Misc Simulation
             :phi => 180.0,                                          # Thrust Angle, deg
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
-            :ra_fin_orbit => 9600e3,                                # Target final apoapsis for the orbit, m
+            :ra_fin_orbit => 9690e3,                                # Target final apoapsis for the orbit, m
             :hp_fin_orbit => 100e3,                                 # Target final periapsis for the orbit, m
             :maneuver_plan => Odyssey_firing_plan_true_beginning,   # MAneuver plan function
             

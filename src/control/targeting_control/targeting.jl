@@ -49,9 +49,9 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
 
     println("Target energy: ", target_energy)
 
-    if target_energy < energy_target_min
+    if target_energy < energy_target_max && target_energy > energy_target_min
         config.cnf.targeting = 0
-    elseif target_energy < energy_target_max && target_energy > energy_target_min
+    elseif target_energy < energy_target_min
         config.cnf.targeting = 1
     else
         println("Cannot target energy level that is larger than possible with minimum drag ratio")

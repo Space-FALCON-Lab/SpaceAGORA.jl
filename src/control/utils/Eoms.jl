@@ -384,7 +384,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
             aerobraking_phase = nothing
             initial_state = nothing
 
-            step = 5
+            step = 100
 
             while abs(lambda_v_fin_actual - lambda_v_fin) > 0.1 || abs(lambda_γ_fin_actual - lambda_γ_fin) > 0.1 || abs(lambda_h_fin_actual - lambda_h_fin) > 0.01
                 count += 1

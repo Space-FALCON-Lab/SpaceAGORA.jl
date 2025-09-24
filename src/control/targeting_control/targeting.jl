@@ -13,10 +13,10 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     sol_max_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
 
     # Minimum drag ratio Run
-    ip_temp = ip
+    ip_temp = deepcopy(ip)
     ip_temp.cm = 0
 
-    m_temp = m
+    m_temp = deepcopy(m)
     m_temp.aerodynamics.α = 0.0
 
     param_temp = param
@@ -34,8 +34,8 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     prob = ODEProblem(f!, in_cond, (initial_time, final_time), param_temp)
     sol_min_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
 
-    energy_target_min = norm(sol_max_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_max_dratio[1:3, end])
-    energy_target_max = norm(sol_min_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_min_dratio[1:3, end])
+    energy_target_min = norm(sol_max_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_max_dratio[1:3, end]) # Lowest possible energy with maximum drag ratio, most negative
+    energy_target_max = norm(sol_min_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_min_dratio[1:3, end]) # Highest possible energy with minimum drag ratio, least negative
 
     println("Energy target min: ", energy_target_min)
     println("Energy target max: ", energy_target_max)
@@ -49,10 +49,10 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
 
     println("Target energy: ", target_energy)
 
-    if target_energy < energy_target_max && target_energy > energy_target_min
-        config.cnf.targeting = 0
-    elseif target_energy < energy_target_min
+    if target_energy > energy_target_max && target_energy < energy_target_min
         config.cnf.targeting = 1
+    elseif target_energy < energy_target_min
+        config.cnf.targeting = 0
     else
         println("Cannot target energy level that is larger than possible with minimum drag ratio")
     end
@@ -119,7 +119,7 @@ function control_solarpanels_targeting_heatload(energy_f, param, OE)
         return (energy_fin - energy_f) / 1e6
     end
 
-    v_E_fin = find_zero(v_E -> func_targeting_heatload(v_E), [1, 40], Roots.Brent(), verbose=true, rtol=1e-5)
+    v_E_fin = find_zero(v_E -> func_targeting_heatload(v_E), [1, 100], Roots.Brent(), verbose=true, rtol=1e-5)
 
     return v_E_fin
 end

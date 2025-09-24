@@ -533,6 +533,9 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
     r0 = SVector{3, Float64}(r0)
     v0 = SVector{3, Float64}(v0)
 
+    println("r0: ", (norm(r0)-m.planet.Rp_e)/1e3)
+    println("v0: ", norm(v0))
+
     # Clock
     date_initial = from_utc(DateTime(m.initial_condition.year, 
                                     m.initial_condition.month,
@@ -610,12 +613,6 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         # Orbital Elements
         OE = rvtoorbitalelement(pos_ii, vel_ii, mass, m.planet)
 
-        # Timing variables
-        el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))) # Elapsed time since the beginning of the simulation
-        current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
-        time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
-        et = utc2et(time_real_utc) # Current time in Ephemeris Time
-
         # Angular Momentum Calculations
         h_ii = cross(pos_ii, vel_ii)        # Inertial angular momentum vector[m ^ 2 / s]
         h_ii_mag = norm(h_ii)               # Magnitude of the inertial angular momentum
@@ -672,14 +669,18 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
 
         
         lambda_switch = (k_cf * 2.0 * m.body.mass * vel_ii_mag) / (area_tot * CD_slope * pi)
+
+        # println("m.aero.alpha: ", m.aerodynamics.α)
     
         if lambdav_ii < lambda_switch
             aoa = 0.0
         else
+
             state = [T_p, ρ, S]
-            index_ratio = [1]
-            
+            index_ratio = [1,1]
             aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state) # m.aerodynamics.α 
+
+            # println("aoa: ", aoa)
         end
 
         # Convert wind to pp(PCPF) frame

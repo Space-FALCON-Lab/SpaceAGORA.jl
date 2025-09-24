@@ -19,7 +19,9 @@ function plots(state, m, name, args)
     
     if args[:closed_form] == 1 && args[:body_shape] == "Spacecraft" && !config.cnf.impact && args[:keplerian] == false
         closed_form_solution_plot(name, m)
-        # angle_of_attack_plot(name, args)
+        angle_of_attack_plot(name, args)
+        drag_passage_plot(name, args, m)
+        lambda_plot(name, args)
     end
 
     if args[:type_of_mission] == "Drag Passage"

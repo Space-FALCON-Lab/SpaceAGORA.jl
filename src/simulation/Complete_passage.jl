@@ -1180,85 +1180,35 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 # Energy targeting 
                 if args[:targeting_ctrl] == 1 && aerobraking_phase == 2
 
-                    println("in_cond: ", [(norm(in_cond[1:3])-m.planet.Rp_e)/1e3, norm(in_cond[4:6])])
-                    println("index_phase_aerobraking: ", index_phase_aerobraking)
-                    println("aerobraking_phase: ", aerobraking_phase)
-                    println("config_drag_state: ", config.cnf.drag_state)
+                    # println("in_cond: ", [(norm(in_cond[1:3])-m.planet.Rp_e)/1e3, norm(in_cond[4:6])])
+                    # println("index_phase_aerobraking: ", index_phase_aerobraking)
+                    # println("aerobraking_phase: ", aerobraking_phase)
+                    # println("config_drag_state: ", config.cnf.drag_state)
+
+                    println("m_aero_alpha_a before targeting: ", m.aerodynamics.α)
 
                     OE_AI = rvtoorbitalelement(SVector{3, Float64}(in_cond[1:3]), SVector{3, Float64}(in_cond[4:6]), in_cond[7], m.planet)
 
-                    config.cnf.initial_position_closed_form = OE_AI
-
-                    # # println("OE_AI: ", OE_AI)
-
-                    # r0_AI, v0_AI = orbitalelemtorv(OE_AI, m.planet)
-
-                    # # Run simulation
-                    # prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
-                    # sol_max_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
-
-                    # # Minimum drag ratio Run
-                    # ip_temp = ip
-                    # ip_temp.cm = 0
-
-                    # m_temp = m
-                    # m_temp.aerodynamics.α = 0.0
-
-                    # param_temp = param
-
-                    # # println(param_temp[1])
-                    # # println(" ")
-                    # # println(m_temp)
-
-                    # param_temp = (m_temp, param[2], ip_temp, param[4:end]...)
-
-                    # # param_temp[1] = m_temp
-                    # # param_temp[3] = ip_temp
-
-                    # # Run simulation
-                    # prob = ODEProblem(f!, in_cond, (initial_time, final_time), param_temp)
-                    # sol_min_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
-
-                    # energy_target_min = norm(sol_max_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_max_dratio[1:3, end])
-                    # energy_target_max = norm(sol_min_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_min_dratio[1:3, end])
-
-                    # println("Energy target min: ", energy_target_min)
-                    # println("Energy target max: ", energy_target_max)
-
-                    # h0 = norm(cross(r0_AI, v0_AI))
-                    # r_p = h0^2 / (m.planet.μ * (1 + OE_AI[2]))               # periapsis radius
-
-                    # # println("Current periapsis: ", r_p - m.planet.Rp_e)
-
-                    # target_energy = -m.planet.μ / (args[:ra_fin_orbit] + r_p) # change to current periapsis
-
-                    # println("Target energy: ", target_energy)
-
-                    # if target_energy < energy_target_min
-                    #     config.cnf.targeting = 0
-                    # elseif target_energy < energy_target_max && target_energy > energy_target_min
-                    #     config.cnf.targeting = 1
-                    # else
-                    #     println("Cannot target energy level that is larger than possible with minimum drag ratio")
-                    # end
-
-                    # energy_f = target_energy
+                    config.cnf.initial_position_closed_form = OE_AI # need this for simulation to enter the control conditional statements in f!
 
                     energy_f = target_planning(f!, ip, m, args, param, OE_AI, initial_time, final_time, a_tol, r_tol, method, events, in_cond)
 
                     println(config.cnf.targeting)
+                    println("m_aero_alpha_a after targeting: ", m.aerodynamics.α)
+
+                    config.cnf.initial_position_closed_form = []
 
                     if config.cnf.targeting == 1
-                        # current_epoch = date_initial + time_0*seconds # Precompute the current epoch
-                        # time_real = DateTime(current_epoch) # date_initial + Second(t0)
-                        # timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
+                        current_epoch = date_initial + time_0*seconds # Precompute the current epoch
+                        time_real = DateTime(current_epoch) # date_initial + Second(t0)
+                        timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
 
-                        # # Timing variables
-                        # el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation
-                        # current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
-                        # time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
-                        # config.cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
-                        # m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), config.cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+                        # Timing variables
+                        el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation
+                        current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
+                        time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
+                        config.cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
+                        m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), config.cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
 
                         v_E = control_solarpanels_targeting_heatload(energy_f, param, OE_AI) # 28.075
 
@@ -1267,7 +1217,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         config.cnf.lambda_switch_list = []
                         config.cnf.time_switch_list = []
                         
-                        sol_lam, time_switch = asim_ctrl_rf(ip, m, time_0, OE_AI, args, v_E, 1.0, true, gram_atmosphere)
+                        sol_lam, time_switch = asim_ctrl_rf(ip, m, time_0, OE_AI, args, v_E, 1.0, false, gram_atmosphere)
 
                         # config.cnf.t_switch_targeting = control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
 
@@ -1283,8 +1233,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
                         push!(config.cnf.time_list, sol_lam.t...)
                         push!(config.cnf.lamv_list, sol_lam[7,:]...)
+
+                        ip.cm = 0
+
+                        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
                     end
                 end
+
+                println("ip: ", ip.cm)
 
                 # config.cnf.targeting = 1
 
@@ -1440,10 +1396,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Re-Set count index to 0
         config.cnf.count_phase = 0
-
-        if config.cnf.targeting == 1
-            continue_campaign = false
-        end
 
         # Define breaker campaign
         if continue_campaign == false

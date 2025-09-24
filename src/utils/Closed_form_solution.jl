@@ -69,7 +69,7 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
 
                 t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time)
                 # println("Length of interval: ", length(t[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])]))
-                step_time = step_time - 1 # -1 because we start from 0
+                step_time = step_time - 2 # -1 because we start from 0
                 t[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = t_cf
                 h[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = h_cf
                 γ[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = γ_cf
@@ -164,7 +164,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
         end
     end
     
-    t_cf = collect(range(start=0, stop=Δt, length=step_time))
+    t_cf = collect(range(start=0, stop=Δt, length=step_time-1))
 
     # println("t_cf length: ", t_cf)
     # println("step_time: ", step_time)

@@ -16,16 +16,16 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim
     FinalState = true
     continue_campaign = true
     numberofpassage = 0
-    config.cnf.count_numberofpassage = 0
+    config.cnf().count_numberofpassage = 0
 
     clean_results()
 
-    config.cnf.time_OP = 1
-    config.cnf.time_IP = 1
+    config.cnf().time_OP = 1
+    config.cnf().time_IP = 1
     
     # Aerobraking Campaign
     while continue_campaign && FinalState
-        config.cnf.index_Mars_Gram_call = 0
+        config.cnf().index_Mars_Gram_call = 0
         firing_orbit = 0
         numberofpassage += 1
 
@@ -36,8 +36,8 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim
         t_el_ab = @elapsed begin
             # Define maneuver
             if uppercase(args[:thrust_control]) == "AEROBRAKING MANEUVER" && numberofpassage != 1
-                r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
-                r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
+                r_a = config.solution().orientation.oe[1][end] * (1 + config.solution().orientation.oe[2][end])
+                r_p = config.solution().orientation.oe[1][end] * (1 - config.solution().orientation.oe[2][end])
                 args = args[:maneuver_plan](m.planet, r_a, r_p, numberofpassage, args)
             end
             
@@ -48,9 +48,9 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim
 
                 if args[:delta_v] != 0.0
                     if round(rad2deg(args[:phi])) == 180
-                        append!(config.cnf.raise_man_orbit, numberofpassage)
+                        append!(config.cnf().raise_man_orbit, numberofpassage)
                     else
-                        append!(config.cnf.lower_man_orbit, numberofpassage)
+                        append!(config.cnf().lower_man_orbit, numberofpassage)
                     end
 
                     if ip.tc == 1
@@ -67,21 +67,21 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim
 
             if numberofpassage != 1
                 # Orbtial Elements Results
-                initial_state.a = config.solution.orientation.oe[1][end]
-                initial_state.e = config.solution.orientation.oe[2][end]
-                initial_state.i = config.solution.orientation.oe[3][end]
-                initial_state.Ω = config.solution.orientation.oe[4][end]
-                initial_state.ω = config.solution.orientation.oe[5][end]
-                initial_state.m = config.solution.performance.mass[end]
-                initial_state.vi = config.solution.orientation.oe[6][end]
+                initial_state.a = config.solution().orientation.oe[1][end]
+                initial_state.e = config.solution().orientation.oe[2][end]
+                initial_state.i = config.solution().orientation.oe[3][end]
+                initial_state.Ω = config.solution().orientation.oe[4][end]
+                initial_state.ω = config.solution().orientation.oe[5][end]
+                initial_state.m = config.solution().performance.mass[end]
+                initial_state.vi = config.solution().orientation.oe[6][end]
 
-                m.initial_condition.year = round(config.solution.orientation.year[end])
-                m.initial_condition.month = round(config.solution.orientation.month[end])
-                m.initial_condition.day = round(config.solution.orientation.day[end])
-                m.initial_condition.hour = round(config.solution.orientation.hour[end])
-                m.initial_condition.minute = round(config.solution.orientation.minute[end])
-                m.initial_condition.second = round(config.solution.orientation.second[end])
-                m.initial_condition.el_time = config.solution.orientation.time[end]
+                m.initial_condition.year = round(config.solution().orientation.year[end])
+                m.initial_condition.month = round(config.solution().orientation.month[end])
+                m.initial_condition.day = round(config.solution().orientation.day[end])
+                m.initial_condition.hour = round(config.solution().orientation.hour[end])
+                m.initial_condition.minute = round(config.solution().orientation.minute[end])
+                m.initial_condition.second = round(config.solution().orientation.second[end])
+                m.initial_condition.el_time = config.solution().orientation.time[end]
                 if (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone") && continue_campaign
                     r = m.planet.Rp_e + args[:EI]*1e3
                     initial_state.vi = -acos(1 / initial_state.e * (initial_state.a * (1 - initial_state.e^2) / r - 1))
@@ -95,8 +95,8 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim
                 continue_campaign = asim(ip, m, initial_state, numberofpassage, args,sim_id)
             end
 
-            r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
-            r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
+            r_a = config.solution().orientation.oe[1][end] * (1 + config.solution().orientation.oe[2][end])
+            r_p = config.solution().orientation.oe[1][end] * (1 - config.solution().orientation.oe[2][end])
         end
 
         if Bool(args[:print_res])
@@ -111,7 +111,7 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim
         if r_a <= args[:final_apoapsis] && args[:keplerian] == false
             FinalState = false
             println("Reached FinalState! R_a = " * string(r_a*1e-3) * " km")
-            println("Thermal Limit overcomed totally " * string(config.cnf.count_overcome_hr) * " times")
+            println("Thermal Limit overcomed totally " * string(config.cnf().count_overcome_hr) * " times")
         end
 
         if r_p - m.planet.Rp_e >= args[:EI]*1e3 && args[:keplerian] == false
@@ -134,7 +134,7 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim
     if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
         closed_form(args, m)
     else
-        len_sol = length(config.solution.orientation.time)
+        len_sol = length(config.solution().orientation.time)
         results(zeros(len_sol), (args[:EI] - 10)*1e3*ones(len_sol), zeros(len_sol), zeros(len_sol))
     end
 

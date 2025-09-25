@@ -30,7 +30,7 @@ function temperature_linear(h, p)
     """
 
     # into atmosphere
-    if config.cnf.drag_state == true
+    if config.cnf().drag_state == true
         T = p.T
     else
         T = p.T
@@ -75,7 +75,7 @@ function density_constant(h, p, OE=0, lat=0, lon=0, timereal=0, t0=0, tf_prev=0,
 
     """
 
-    if config.cnf.drag_state == false
+    if config.cnf().drag_state == false
         ρ = 0.0
     else
         ρ = p.ρ_ref
@@ -203,7 +203,7 @@ function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Boo
     """
 
     """
-    if config.cnf.drag_state == false && args[:keplerian] == false
+    if config.cnf().drag_state == false && args[:keplerian] == false
         if h > 2000.0e3
 
             rho = 0.0
@@ -212,7 +212,7 @@ function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Boo
         else
             rho, T, wind = density_polyfit(h, p)
         end
-    elseif config.cnf.drag_state == true || args[:keplerian] == true
+    elseif config.cnf().drag_state == true || args[:keplerian] == true
         if h > 2000.0e3
 
             rho = 0.0
@@ -244,10 +244,10 @@ function density_nrlmsise(h::Float64, p, lat::Float64, lon::Float64, montecarlo:
 
     """
 
-    if config.cnf.drag_state == false && args[:keplerian] == false
+    if config.cnf().drag_state == false && args[:keplerian] == false
         rho , T , wind = density_exp(h, p)
         rho = 0.0
-    elseif config.cnf.drag_state == true || args[:keplerian] == true
+    elseif config.cnf().drag_state == true || args[:keplerian] == true
         jd = datetime2julian(current_time)
         atmo = SatelliteToolbox.AtmosphericModels.nrlmsise00(jd, h, lat, lon, 150, 150, 3)
         rho = atmo.total_density

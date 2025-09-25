@@ -39,8 +39,8 @@ const g_e = 9.81 # Gravitational acceleration of Earth at surface, m/s^2
 
 function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothing, gram=nothing,sim_id=1)
     #enable thread specific configs
-    config.reset_thread_configs()
-    config = args[:get_config]
+    # config.reset_thread_configs()
+    # config = args[:get_config]
     # println(config)
 
     print("asim started")
@@ -82,10 +82,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                                     m.initial_condition.minute, 
                                     m.initial_condition.second))
 
-    config.cnf.count_numberofpassage += 1
+    config.cnf().count_numberofpassage += 1
     t_prev = 0.0
-    # if config.cnf.count_numberofpassage != 1
-    #     t_prev = config.solution.orientation.time[end]
+    # if config.cnf().count_numberofpassage != 1
+    #     t_prev = config.solution().orientation.time[end]
     # else
     #     t_prev = m.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # m.initial_condition.time_rot
     # end
@@ -110,13 +110,13 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         
         ## Counters
         # Counter for all along the simulation of all passages
-        config.cnf.count_aerobraking += 1
+        config.cnf().count_aerobraking += 1
         # Counter for one entire passage
-        config.cnf.count_dori += 1
+        config.cnf().count_dori += 1
         # Counter for one phase
-        config.cnf.count_phase += 1
+        config.cnf().count_phase += 1
 
-        t0 *= config.cnf.TU
+        t0 *= config.cnf().TU
 
         # Clock
         current_epoch = date_initial + (t0-m.initial_condition.el_time)*seconds # Precompute the current epoch
@@ -129,8 +129,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
 
         if args[:spice_call] #only if spice was loaded
-            config.cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
-            m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), config.cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+            config.cnf().et = utc2et(time_real_utc) # Current time in Ephemeris Time
+            m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), config.cnf().et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
         else
             m.planet.L_PI .= SMatrix{3, 3, Float64}(I)
         end
@@ -138,16 +138,16 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # Assign state
         # println(in_cond)
         # quaternion = SVector{4, Float64}(in_cond[1:4]) # Quaternion
-        # pos_ii = SVector{3, Float64}(in_cond[1:3] * config.cnf.DU)                      # Inertial position
-        # vel_ii = SVector{3, Float64}(in_cond[4:6] * config.cnf.DU / config.cnf.TU)      # Inertial velocity
-        # mass = in_cond[7] * config.cnf.MU                                          # Mass kg
-        # ω = SVector{3, Float64}(in_cond[9:11] / config.cnf.TU)                # Angular velocity vector [rad / s]
-        pos_ii = SVector{3, Float64}((@view in_cond[1:3]) * config.cnf.DU)                      # Inertial position 
-        vel_ii = SVector{3, Float64}((@view in_cond[4:6]) * config.cnf.DU / config.cnf.TU)      # Inertial velocity
+        # pos_ii = SVector{3, Float64}(in_cond[1:3] * config.cnf().DU)                      # Inertial position
+        # vel_ii = SVector{3, Float64}(in_cond[4:6] * config.cnf().DU / config.cnf().TU)      # Inertial velocity
+        # mass = in_cond[7] * config.cnf().MU                                          # Mass kg
+        # ω = SVector{3, Float64}(in_cond[9:11] / config.cnf().TU)                # Angular velocity vector [rad / s]
+        pos_ii = SVector{3, Float64}((@view in_cond[1:3]) * config.cnf().DU)                      # Inertial position 
+        vel_ii = SVector{3, Float64}((@view in_cond[4:6]) * config.cnf().DU / config.cnf().TU)      # Inertial velocity
         quat_idx = 8 + length(m.body.links)
         if orientation_sim
             quaternion = SVector{4, Float64}(@view in_cond[quat_idx:quat_idx+3]) # Quaternion
-            ω = SVector{3, Float64}((@view in_cond[quat_idx+4:quat_idx+6]) / config.cnf.TU)                # Angular velocity vector [rad / s]
+            ω = SVector{3, Float64}((@view in_cond[quat_idx+4:quat_idx+6]) / config.cnf().TU)                # Angular velocity vector [rad / s]
             m.body.roots[1].q .= quaternion
             # quaternion = SVector{4, Float64}(m.body.roots[1].q)
             m.body.roots[1].ω .= ω # Body frame angular velocity
@@ -155,7 +155,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             quaternion = SVector{4, Float64}(0.0, 0.0, 0.0, 0.0) # Quaternion, set to all zeros if orientation simulation is not enabled
             ω = SVector{3, Float64}(0.0, 0.0, 0.0)                # Angular velocity vector [rad / s]
         end
-        mass = in_cond[7] * config.cnf.MU                                          # Mass kg
+        mass = in_cond[7] * config.cnf().MU                                          # Mass kg
         pos_ii_mag = norm(pos_ii)                                  # Magnitude of the inertial position
         vel_ii_mag = norm(vel_ii)                                  # Magnitude of the inertial velocity
 
@@ -167,7 +167,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # TRANSFORM THE STATE
         # Inertial to planet relative transformation
-        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, config.cnf.et) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
+        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, config.cnf().et) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
         pos_pp_mag = norm(pos_pp) # Magnitude of the planet relative position
 
         vel_pp_mag = norm(vel_pp)
@@ -178,14 +178,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         Mars_Gram_recalled_at_periapsis = false
 
-        if vi > 0 && vi < pi/2 && config.cnf.ascending_phase == false
-            config.cnf.ascending_phase = true
-        elseif vi >= pi/2 && vi <= pi && config.cnf.ascending_phase == true && args[:body_shape] == "Blunted Cone"
-            config.cnf.ascending_phase = false
+        if vi > 0 && vi < pi/2 && config.cnf().ascending_phase == false
+            config.cnf().ascending_phase = true
+        elseif vi >= pi/2 && vi <= pi && config.cnf().ascending_phase == true && args[:body_shape] == "Blunted Cone"
+            config.cnf().ascending_phase = false
         end
 
-        if config.cnf.ascending_phase == true && config.cnf.MarsGram_recall == false
-            config.cnf.atmospheric_data = Dict()
+        if config.cnf().ascending_phase == true && config.cnf().MarsGram_recall == false
+            config.cnf().atmospheric_data = Dict()
         end
 
         # Angular Momentum Calculations 
@@ -223,12 +223,12 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # println(" ")
 
         if aerobraking_phase == 2 || aerobraking_phase == 0
-            if (pos_ii_mag - m.planet.Rp_e - args[:EI] * 1.0e3) <= 0.0 && config.cnf.drag_state == false && config.cnf.ascending_phase == false
-                config.cnf.drag_state = true
-                config.cnf.time_IEI = t0
-            elseif (pos_ii_mag - m.planet.Rp_e >= args[:EI] * 1.0e3) && config.cnf.drag_state == true && config.cnf.ascending_phase
-                config.cnf.drag_state = false
-                config.cnf.time_OEI = t0
+            if (pos_ii_mag - m.planet.Rp_e - args[:EI] * 1.0e3) <= 0.0 && config.cnf().drag_state == false && config.cnf().ascending_phase == false
+                config.cnf().drag_state = true
+                config.cnf().time_IEI = t0
+            elseif (pos_ii_mag - m.planet.Rp_e >= args[:EI] * 1.0e3) && config.cnf().drag_state == true && config.cnf().ascending_phase
+                config.cnf().drag_state = false
+                config.cnf().time_OEI = t0
             end
         end
 
@@ -239,10 +239,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 x = 140.0
             end
 
-            if (any(i -> i > 0.005, config.cnf.heat_rate_prev) || abs(pos_ii_mag - m.planet.Rp_e <= x*1.0e3)) && config.cnf.sensible_loads == false && config.cnf.ascending_phase == false
-                config.cnf.sensible_loads = true
-            elseif any(i -> i > 0.005, config.cnf.heat_rate_prev) && config.cnf.sensible_loads == true && config.cnf.ascending_phase
-                config.cnf.sensible_loads = false
+            if (any(i -> i > 0.005, config.cnf().heat_rate_prev) || abs(pos_ii_mag - m.planet.Rp_e <= x*1.0e3)) && config.cnf().sensible_loads == false && config.cnf().ascending_phase == false
+                config.cnf().sensible_loads = true
+            elseif any(i -> i > 0.005, config.cnf().heat_rate_prev) && config.cnf().sensible_loads == true && config.cnf().ascending_phase
+                config.cnf().sensible_loads = false
             end
         end
 
@@ -255,7 +255,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         azi_pp = atan(vE, vN)
 
         # Get density, pressure , temperature and winds
-        config.cnf.Gram_justrecalled = 0
+        config.cnf().Gram_justrecalled = 0
         if ip.dm == 0
             ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         elseif ip.dm == 1
@@ -283,107 +283,107 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         Mach = vel_pp_mag / sound_velocity
         S = sqrt(γ/2.0) * Mach    # Molecular speed ratio
         param[18] .= [ρ, T_p, S] # Update the density, temperature and speed ratio in the parameter array for later use
-        heat_load = in_cond[8:8+length(bodies)-1] * config.cnf.MU / config.cnf.TU^2 # * 1e4
+        heat_load = in_cond[8:8+length(bodies)-1] * config.cnf().MU / config.cnf().TU^2 # * 1e4
 
-        if config.cnf.drag_state == true
+        if config.cnf().drag_state == true
             ## Check type of fluid and check if this changes for different planets
             Kn = 1.26 * sqrt(γ) * Mach / (Re + 1.0e-5)
             if index_phase_aerobraking == 2
-                if (alt < 80000.0) && (config.cnf.index_warning_alt == 0)
+                if (alt < 80000.0) && (config.cnf().index_warning_alt == 0)
                     println("WARNING: Altitude < 80 km!")
                 end
 
-                config.cnf.index_warning_alt = 1
+                config.cnf().index_warning_alt = 1
             elseif alt > 100000.0
-                config.cnf.index_warning_alt = 0
+                config.cnf().index_warning_alt = 0
             end
 
-            if Kn < 0.1 && config.cnf.index_warning_flow == 0
+            if Kn < 0.1 && config.cnf().index_warning_flow == 0
                 if Bool(args[:print_res])
                     println("WARNING: Transitional flow passage!")
                 end
                 
-                config.cnf.index_warning_flow = 1
+                config.cnf().index_warning_flow = 1
             elseif Kn >= 0.1
-                config.cnf.index_warning_flow = 0
+                config.cnf().index_warning_flow = 0
             end
         end
 
-        if isempty(config.cnf.heat_load_past)
-            config.cnf.heat_load_past = zeros(length(bodies))
+        if isempty(config.cnf().heat_load_past)
+            config.cnf().heat_load_past = zeros(length(bodies))
         end
-        config.cnf.heat_load_past .= heat_load
+        config.cnf().heat_load_past .= heat_load
 
         # Heat rate and Control
-        if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
+        if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf().drag_state && length(config.cnf().initial_position_closed_form) != 0
             # evaluates the closed form solution the first time at EI km
-            if abs(pos_ii_mag - m.planet.Rp_e - args[:EI] * 1.0e3) <= 1.0e-2 && (args[:control_mode] == 2 || args[:control_mode] == 3) && config.cnf.time_switch_1 == 0
+            if abs(pos_ii_mag - m.planet.Rp_e - args[:EI] * 1.0e3) <= 1.0e-2 && (args[:control_mode] == 2 || args[:control_mode] == 3) && config.cnf().time_switch_1 == 0
                 if ip.cm == 3
-                    control_solarpanels_openloop(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, 0, true, gram_atmosphere)
+                    control_solarpanels_openloop(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form, 0, true, gram_atmosphere)
                 elseif ip.cm == 2
-                    control_solarpanels_heatload(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, 0, gram_atmosphere)
+                    control_solarpanels_heatload(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form, 0, gram_atmosphere)
                 elseif ip.cm == 1
-                    control_solarpanels_heatrate(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
+                    control_solarpanels_heatrate(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form)
                 elseif ip.cm == 0
-                    no_control(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
+                    no_control(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form)
                 end
             end
 
-            # if config.cnf.Gram_justrecalled == true && config.cnf.index_Mars_Gram_call != 1  # in MC, when we reavaluate Mars Gram there is a discontinuity with the density which is created by how the density data are created. This discontinuity create really high peaks. We recalculate aoa for the new density data.
+            # if config.cnf().Gram_justrecalled == true && config.cnf().index_Mars_Gram_call != 1  # in MC, when we reavaluate Mars Gram there is a discontinuity with the density which is created by how the density data are created. This discontinuity create really high peaks. We recalculate aoa for the new density data.
             #     if ip.cm == 3
-            #         config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
+            #         config.cnf().α = control_solarpanels_openloop(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form)
             #     elseif ip.cm == 2
-            #         config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
+            #         config.cnf().α = control_solarpanels_heatload(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form)
             #     elseif ip.cm == 1
-            #         config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
+            #         config.cnf().α = control_solarpanels_heatrate(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form)
             #     elseif ip.cm == 0
-            #         config.cnf.α = no_control(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
+            #         config.cnf().α = no_control(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form)
             #     end
                 
-            #     push!(config.cnf.state_flesh1, [T_p, ρ, S])
+            #     push!(config.cnf().state_flesh1, [T_p, ρ, S])
 
             #     if ip.tm == 1
-            #         heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
+            #         heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, config.cnf().α)
             #     elseif ip.tm == 2
-            #         heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
+            #         heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, config.cnf().α)
             #     end
             # end
 
             if index_phase_aerobraking == 2
                 # if Bool(args[:control_in_loop])
-                #     config.cnf.state_flesh1 = [[T_p, ρ, S]]
+                #     config.cnf().state_flesh1 = [[T_p, ρ, S]]
                 #     if ip.cm == 3
-                #         config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
+                #         config.cnf().α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf().state_flesh1[1], t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form, OE, true, gram_atmosphere)
                 #     elseif ip.cm == 2
-                #         config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
-                #         # println("control_solarpanels_heatload: ", config.cnf.α)
+                #         config.cnf().α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf().state_flesh1[1], t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form, OE, gram_atmosphere)
+                #         # println("control_solarpanels_heatload: ", config.cnf().α)
                 #     elseif ip.cm == 1
-                #         config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+                #         config.cnf().α = control_solarpanels_heatrate(ip, m, args, [1,1], config.cnf().state_flesh1[1], t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form, OE)
                 #     elseif ip.cm == 0
-                #         config.cnf.α = no_control(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+                #         config.cnf().α = no_control(ip, m, args, [1,1], config.cnf().state_flesh1[1], t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form, OE)
                 #     end
                 # elseif args[:control_in_loop] == false && args[:integrator] == "Julia"
-                    # if config.controller.count_controller != config.controller.count_prev_controller && config.controller.stored_state == 0 && t0 != config.controller.prev_time
-                    #     push!(config.cnf.state_flesh1, [T_p, ρ, S]) # might have to change to push!
+                    # if config.controller().count_controller != config.controller().count_prev_controller && config.controller().stored_state == 0 && t0 != config.controller().prev_time
+                    #     push!(config.cnf().state_flesh1, [T_p, ρ, S]) # might have to change to push!
 
-                    #     if config.controller.count_controller == 2
-                    #         state = config.cnf.state_flesh1[end]
+                    #     if config.controller().count_controller == 2
+                    #         state = config.cnf().state_flesh1[end]
                     #     else
-                    #         state = config.cnf.state_flesh1[end-1]
-                    #         deleteat!(config.cnf.state_flesh1, 1)
+                    #         state = config.cnf().state_flesh1[end-1]
+                    #         deleteat!(config.cnf().state_flesh1, 1)
                     #     end
 
-                    #     config.controller.stored_state = 1
-                    #     config.controller.prev_time = time_0
+                    #     config.controller().stored_state = 1
+                    #     config.controller().prev_time = time_0
 
                     #     if ip.cm == 3
-                    #         config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
+                    #         config.cnf().α = control_solarpanels_openloop(ip, m, args, [1,1], state, t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form, OE, true, gram_atmosphere)
                     #     elseif ip.cm == 2
-                    #         config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
+                    #         config.cnf().α = control_solarpanels_heatload(ip, m, args, [1,1], state, t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form, OE, gram_atmosphere)
                     #     elseif ip.cm == 1
-                    #         config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+                    #         config.cnf().α = control_solarpanels_heatrate(ip, m, args, [1,1], state, t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form, OE)
                     #     elseif ip.cm == 0
-                    #         config.cnf.α = no_control(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+                    #         config.cnf().α = no_control(ip, m, args, [1,1], state, t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form, OE)
                     #     end
                     # end
                 # end
@@ -407,10 +407,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             heat_rate = MVector{length(bodies), Float64}(zeros(length(bodies))) # Heat rate vector for each body
         end
 
-        if isempty(config.cnf.heat_rate_prev)
-            config.cnf.heat_rate_prev = zeros(length(bodies)) # Initialize heat rate vector if it is empty
+        if isempty(config.cnf().heat_rate_prev)
+            config.cnf().heat_rate_prev = zeros(length(bodies)) # Initialize heat rate vector if it is empty
         end
-        config.cnf.heat_rate_prev .= heat_rate # save current heat rate
+        config.cnf().heat_rate_prev .= heat_rate # save current heat rate
 
         # Convert wind to pp(PCPF) frame
         wE, wN, wU = wind # positive to the east , m / s
@@ -441,7 +441,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         if length(args[:n_bodies]) != 0
             for k = 1:length(args[:n_bodies])
                 if args[:spice_call] 
-                    gravity_ii += mass * gravity_n_bodies(config.cnf.et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
+                    gravity_ii += mass * gravity_n_bodies(config.cnf().et, pos_ii, m.planet, config.cnf().n_bodies_list[k])
                 end
             end
         end
@@ -456,7 +456,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             end
         end
         if args[:srp] == true
-            r_sun_planet = m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", config.cnf.et, "J2000", "NONE", uppercase(m.planet.name))[1])*1e3 # Vector describing the position of the Sun wrt the planet in J2000 frame
+            r_sun_planet = m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", config.cnf().et, "J2000", "NONE", uppercase(m.planet.name))[1])*1e3 # Vector describing the position of the Sun wrt the planet in J2000 frame
             eclipse_ratio = args[:eclipse] ? eclipse_area_calc(pos_ii, r_sun_planet, m.planet.Rp_e) : 1.0
             P_srp = 4.556666e-6*(R0/norm(r_sun_planet - pos_ii))^2#4.5566666e-6
             # F_SRP_tracker = MVector{3, Float64}(zeros(3))
@@ -561,9 +561,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         CD = CD / total_area
 
         # Check if propellant mass is greater than 0 kg
-        if config.cnf.index_propellant_mass == 1
+        if config.cnf().index_propellant_mass == 1
             if mass - config.get_spacecraft_mass(m.body, m.body.roots[1], dry=true) <= 0.5
-                config.cnf.index_propellant_mass = 0
+                config.cnf().index_propellant_mass = 0
                 m.engines.T = 0
 
                 if Bool(args[:print_res])
@@ -677,10 +677,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             # end
         end
         
-        y_dot[1:3] .= vel_ii * (config.cnf.TU / config.cnf.DU) # Position derivative in inertial frame
-        y_dot[4:6] .= force_ii / mass * (config.cnf.TU^2 / config.cnf.DU) # Velocity derivative in inertial frame
-        y_dot[7] = (-norm(thrust_ii) / (g_e * m.engines.Isp) + thruster_fuel_mass_consumption) * config.cnf.TU / config.cnf.MU       # mass variation
-        y_dot[8:8+length(bodies)-1] .= heat_rate * config.cnf.TU^3 / config.cnf.MU # Heat load derivatives
+        y_dot[1:3] .= vel_ii * (config.cnf().TU / config.cnf().DU) # Position derivative in inertial frame
+        y_dot[4:6] .= force_ii / mass * (config.cnf().TU^2 / config.cnf().DU) # Velocity derivative in inertial frame
+        y_dot[7] = (-norm(thrust_ii) / (g_e * m.engines.Isp) + thruster_fuel_mass_consumption) * config.cnf().TU / config.cnf().MU       # mass variation
+        y_dot[8:8+length(bodies)-1] .= heat_rate * config.cnf().TU^3 / config.cnf().MU # Heat load derivatives
 
         #log y_dot to spacecraft state
         
@@ -688,8 +688,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         next_index = 8 + length(bodies)
 
         if orientation_sim
-            y_dot[next_index:next_index+3] .= (0.5*Ξ(quaternion)*ω) * config.cnf.TU  # Quaternion derivative
-            y_dot[next_index+4:next_index+6] .= (inertia_tensor\(τ_body - cross(ω, inertia_tensor * ω + total_rw_h))) * config.cnf.TU^2  # Angular velocity derivative
+            y_dot[next_index:next_index+3] .= (0.5*Ξ(quaternion)*ω) * config.cnf().TU  # Quaternion derivative
+            y_dot[next_index+4:next_index+6] .= (inertia_tensor\(τ_body - cross(ω, inertia_tensor * ω + total_rw_h))) * config.cnf().TU^2  # Angular velocity derivative
         end
 
         energy = (vel_ii_mag^2)/2.0 - (m.planet.μ / pos_ii_mag)
@@ -701,20 +701,20 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         
         
          ## SAVE RESULTS
-        if Bool(config.cnf.results_save)
+        if Bool(config.cnf().results_save)
             # println("Number of passages in complete_passage: ", numberofpassage)
-            if config.solution.simulation.solution_states != 0 && length(param) >= 19
+            if config.solution().simulation.solution_states != 0 && length(param) >= 19
                 param[19] .= Real[t0, timereal.year, timereal.month, timereal.day, timereal.hour, timereal.minute,
                             timereal.second, numberofpassage, pos_ii..., vel_ii..., pos_ii_mag, vel_ii_mag, pos_pp..., 
                             pos_pp_mag, vel_pp..., vel_pp_mag, OE[1:6]...,
                             lat, lon, alt, γ_ii, γ_pp, h_ii..., h_pp..., h_ii_mag, h_pp_mag, uD..., uE..., uN..., vN, vE,
                             azi_pp, ρ, T_p, p, wind..., CL, CD, S, mass, T_r, 
-                            q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., τ_body..., energy, config.cnf.index_MonteCarlo, Int64(config.cnf.drag_state),
-                            quaternion..., ω..., config.cnf.α, vec(inertia_tensor)..., τ_rw..., α..., β..., heat_rate..., heat_load..., rw_h..., rw_τ..., thruster_forces...]
-                if !isempty(config.cnf.solution_intermediate) && config.cnf.solution_intermediate[end][1] == t0
-                    config.cnf.solution_intermediate[end][:] .= copy(param[19])
+                            q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., τ_body..., energy, config.cnf().index_MonteCarlo, Int64(config.cnf().drag_state),
+                            quaternion..., ω..., config.cnf().α, vec(inertia_tensor)..., τ_rw..., α..., β..., heat_rate..., heat_load..., rw_h..., rw_τ..., thruster_forces...]
+                if !isempty(config.cnf().solution_intermediate) && config.cnf().solution_intermediate[end][1] == t0
+                    config.cnf().solution_intermediate[end][:] .= copy(param[19])
                 else
-                    push!(config.cnf.solution_intermediate, copy(param[19]))
+                    push!(config.cnf().solution_intermediate, copy(param[19]))
                 end
             else
                 sol = Real[t0, timereal.year, timereal.month, timereal.day, timereal.hour, timereal.minute,
@@ -722,10 +722,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                             pos_pp_mag, vel_pp..., vel_pp_mag, OE[1], OE[2], OE[3], OE[4], OE[5], OE[6],
                             lat, lon, alt, γ_ii, γ_pp, h_ii..., h_pp..., h_ii_mag, h_pp_mag, uD..., uE..., uN..., vN, vE,
                             azi_pp, ρ, T_p, p, wind..., CL, CD, S, mass, T_r, 
-                            q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., τ_body..., energy, config.cnf.index_MonteCarlo, Int64(config.cnf.drag_state),
-                            quaternion..., ω..., config.cnf.α, vec(inertia_tensor)..., τ_rw..., α..., β..., heat_rate..., heat_load..., rw_h..., rw_τ..., thruster_forces...]
-                config.solution.simulation.solution_states = length(sol)
-                push!(config.cnf.solution_intermediate, sol)
+                            q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., τ_body..., energy, config.cnf().index_MonteCarlo, Int64(config.cnf().drag_state),
+                            quaternion..., ω..., config.cnf().α, vec(inertia_tensor)..., τ_rw..., α..., β..., heat_rate..., heat_load..., rw_h..., rw_τ..., thruster_forces...]
+                config.solution().simulation.solution_states = length(sol)
+                push!(config.cnf().solution_intermediate, sol)
             end
         end
         return y_dot
@@ -759,11 +759,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         """
         # Check if the time is greater than the end time
         if lowercase(args[:type_of_mission]) == "time"
-            return t*config.cnf.TU - args[:mission_time] >= 0
+            return t*config.cnf().TU - args[:mission_time] >= 0
         else
             return false # Do not terminate if the mission type is not "time"
         end
-        # return lowercase(args[:type_of_mission]) == "time" && t >= args[:mission_time] / config.cnf.TU
+        # return lowercase(args[:type_of_mission]) == "time" && t >= args[:mission_time] / config.cnf().TU
     end
     function time_affect!(integrator)
         """
@@ -784,7 +784,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             bodies, root_index = config.traverse_bodies(m.body, m.body.roots[1])
             for b in bodies
                 if b.gyro != 0.0
-                    reaction_wheel_model!(b, b.rw_τ, integrator.dt*config.cnf.TU)
+                    reaction_wheel_model!(b, b.rw_τ, integrator.dt*config.cnf().TU)
                 end
             end
         end
@@ -831,15 +831,15 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             bodies, root_index = config.traverse_bodies(m.body, m.body.roots[1])
             for b in bodies
                 if b.gyro != 0 || !isempty(b.thrusters)
-                    b.attitude_control_function(m, b, root_index, vel_pp_rw, h_pp_hat, aerobraking_phase, integrator.t * config.cnf.TU) # Calculate the reaction wheel torque
+                    b.attitude_control_function(m, b, root_index, vel_pp_rw, h_pp_hat, aerobraking_phase, integrator.t * config.cnf().TU) # Calculate the reaction wheel torque
                 end
             end
         end
     end
 
-    attitude_controller = m.body.n_reaction_wheels != 0 || m.body.n_thrusters != 0 ? PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU) : nothing
+    attitude_controller = m.body.n_reaction_wheels != 0 || m.body.n_thrusters != 0 ? PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf().TU) : nothing
     # attitude_controller_orbit = DiscreteCallback(run_attitude_controller_condition, run_attitude_controller!)
-    attitude_controller_orbit = m.body.n_reaction_wheels != 0 || m.body.n_thrusters != 0 ? PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU) : nothing
+    attitude_controller_orbit = m.body.n_reaction_wheels != 0 || m.body.n_thrusters != 0 ? PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf().TU) : nothing
     function thrust_factor_integrator!(integrator)
         """
         Integrate the thrust factors for the thrusters
@@ -852,10 +852,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     if thruster.stop_firing_time == 0.0
                         continue # If there is no stop firing time, skip to the next thruster
                     end
-                    if thruster.stop_firing_time < integrator.t * config.cnf.TU + integrator.dt * config.cnf.TU
-                        thruster.κ *= exp(-thruster.cutoff_frequency * integrator.dt * config.cnf.TU)
-                    elseif thruster.stop_firing_time > integrator.t * config.cnf.TU + integrator.dt * config.cnf.TU
-                        thruster.κ = 1 + (thruster.κ - 1) * exp(-thruster.cutoff_frequency * integrator.dt * config.cnf.TU)
+                    if thruster.stop_firing_time < integrator.t * config.cnf().TU + integrator.dt * config.cnf().TU
+                        thruster.κ *= exp(-thruster.cutoff_frequency * integrator.dt * config.cnf().TU)
+                    elseif thruster.stop_firing_time > integrator.t * config.cnf().TU + integrator.dt * config.cnf().TU
+                        thruster.κ = 1 + (thruster.κ - 1) * exp(-thruster.cutoff_frequency * integrator.dt * config.cnf().TU)
                     end
                 end
             end
@@ -870,34 +870,34 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         index_phase_aerobraking = integrator.p[2]  # Index of the aerobraking phase
         if index_phase_aerobraking == 2
             m = integrator.p[1]
-            t0 = integrator.t * config.cnf.TU  # Current time in seconds
+            t0 = integrator.t * config.cnf().TU  # Current time in seconds
             args = integrator.p[8]  # Arguments passed to the integrator
             ρ, T_p, S = integrator.p[18]  # Atmospheric density, temperature, and solar panel area
-            config.cnf.state_flesh1 = [[T_p, ρ, S]]
+            config.cnf().state_flesh1 = [[T_p, ρ, S]]
             if ip.cm == 3
-                config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
+                config.cnf().α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf().state_flesh1[1], t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form, OE, true, gram_atmosphere)
             elseif ip.cm == 2
                 println("Control solar panels with heat load")
-                config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
-                println("control_solarpanels_heatload: ", config.cnf.α)
+                config.cnf().α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf().state_flesh1[1], t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form, OE, gram_atmosphere)
+                println("control_solarpanels_heatload: ", config.cnf().α)
             elseif ip.cm == 1
-                config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+                config.cnf().α = control_solarpanels_heatrate(ip, m, args, [1,1], config.cnf().state_flesh1[1], t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form, OE)
             elseif ip.cm == 0
-                config.cnf.α = no_control(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+                config.cnf().α = no_control(ip, m, args, [1,1], config.cnf().state_flesh1[1], t0 - config.cnf().time_IEI, config.cnf().initial_position_closed_form, OE)
             end
         end
     end
 
-    solar_panel_controller = ip.cm != 0 ? PeriodicCallback(run_solar_panel_controller!, args[:solar_panel_control_rate] / config.cnf.TU) : nothing
+    solar_panel_controller = ip.cm != 0 ? PeriodicCallback(run_solar_panel_controller!, args[:solar_panel_control_rate] / config.cnf().TU) : nothing
 
-    # attitude_controller_orbit = PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU)
+    # attitude_controller_orbit = PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf().TU)
     function quaternion_update_affect!(integrator)
         """
         Event function to update the quaternion at every step.
         """
         # quaternion = m.body.roots[1].q
-        # ω = integrator.u[13:15] / config.cnf.TU  # Angular velocity
-        # dt = integrator.dt * config.cnf.TU  # Time step in seconds
+        # ω = integrator.u[13:15] / config.cnf().TU  # Angular velocity
+        # dt = integrator.dt * config.cnf().TU  # Time step in seconds
         # quaternion_update_function = (du, u, p, t) -> du[:] .= 0.5*Ξ(SVector{4, Float64}(u))*ω
         # # Update the quaternion using the angular velocity
         # prob = ODEProblem(quaternion_update_function, quaternion, (0.0, dt))
@@ -933,13 +933,13 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         Event function to detect the entry interface downcrossing.
         """
         m = integrator.p[1]
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - (args[:EI])*1.0e3   #  downcrossing
+        norm(y[1:3]) * config.cnf().DU - m.planet.Rp_e - (args[:EI])*1.0e3   #  downcrossing
     end
     function eventfirststep_affect!(integrator)
         """
         Event function to terminate the integration at the entry interface downcrossing.
         """
-        config.cnf.count_eventfirststep += 1
+        config.cnf().count_eventfirststep += 1
         terminate!(integrator)
     end
     eventfirststep = ContinuousCallback(eventfirststep_condition, nothing, eventfirststep_affect!)
@@ -949,10 +949,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         Event function to detect the periapsis crossing.
         """
         m = integrator.p[1]
-        pos_ii = SVector{3, Float64}([y[1], y[2], y[3]] * config.cnf.DU)  # Inertial position
-        vel_ii = SVector{3, Float64}([y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU)  # Inertial Velocity
+        pos_ii = SVector{3, Float64}([y[1], y[2], y[3]] * config.cnf().DU)  # Inertial position
+        vel_ii = SVector{3, Float64}([y[4], y[5], y[6]] * config.cnf().DU / config.cnf().TU)  # Inertial Velocity
 
-        vi = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf.MU, m.planet)[6]
+        vi = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf().MU, m.planet)[6]
 
         rad2deg(vi) - 180.0  # downcrossing
     end
@@ -961,7 +961,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         """
         Event function to terminate the integration at the periapsis crossing.
         """
-        config.cnf.eventfirststep_periapsis += 1
+        config.cnf().eventfirststep_periapsis += 1
         terminate!(integrator)
     end
     eventfirststep_periapsis = ContinuousCallback(eventfirststep_periapsis_condition, eventfirststep_periapsis_affect!)
@@ -971,13 +971,13 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         Event function to detect the atmospheric exit upcrossing.
         """
         m = integrator.p[1]
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - (args[:AE])*1.0e3   # upcrossing
+        norm(y[1:3]) * config.cnf().DU - m.planet.Rp_e - (args[:AE])*1.0e3   # upcrossing
     end
     function eventsecondstep_affect!(integrator)
         """
         Event function to terminate the integration at the atmospheric exit upcrossing.
         """
-        config.cnf.count_eventsecondstep += 1
+        config.cnf().count_eventsecondstep += 1
         terminate!(integrator)
     end
     eventsecondstep = ContinuousCallback(eventsecondstep_condition, eventsecondstep_affect!, nothing)
@@ -988,7 +988,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         """
         m = integrator.p[1]
         args = integrator.p[8]
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:EI]*1.0e3  # downcrossing
+        norm(y[1:3]) * config.cnf().DU - m.planet.Rp_e - args[:EI]*1.0e3  # downcrossing
         # norm(y[1:3]) - m.planet.Rp_e - args[:EI]*1e3  # downcrossing
     end
     function reached_EI_affect!(integrator)
@@ -1005,7 +1005,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         """
         m = integrator.p[1]
         args = integrator.p[8]
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:AE]*1.0e3  # upcrossing
+        norm(y[1:3]) * config.cnf().DU - m.planet.Rp_e - args[:AE]*1.0e3  # upcrossing
     end
     function reached_AE_affect!(integrator)
         """
@@ -1019,18 +1019,18 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         m = integrator.p[1]
         args = integrator.p[8]
 
-        if abs(norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:AE]*1e3) <= 1e-5  # abs(norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3) <= 1e-5
+        if abs(norm(y[1:3]) * config.cnf().DU - m.planet.Rp_e - args[:AE]*1e3) <= 1e-5  # abs(norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3) <= 1e-5
             if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 2
-                config.cnf.α = m.aerodynamics.α
+                config.cnf().α = m.aerodynamics.α
             elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 3
-                config.cnf.α = 0.0
+                config.cnf().α = 0.0
             end
         end
 
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
+        norm(y[1:3]) * config.cnf().DU - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
     end
     function out_drag_passage_affect!(integrator)
-        config.cnf.count_out_drag_passage += 1
+        config.cnf().count_out_drag_passage += 1
         terminate!(integrator)
     end
     out_drag_passage = ContinuousCallback(out_drag_passage_condition, out_drag_passage_affect!, nothing)
@@ -1041,9 +1041,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         t_prev = integrator.p[5]
         ip = integrator.p[3]
         date_initial = integrator.p[6]
-        pos_ii = SVector{3, Float64}([y[1], y[2], y[3]] * config.cnf.DU)  # Inertial position
-        vel_ii = SVector{3, Float64}([y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU)  # Inertial velocity
-        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, config.cnf.et)
+        pos_ii = SVector{3, Float64}([y[1], y[2], y[3]] * config.cnf().DU)  # Inertial position
+        vel_ii = SVector{3, Float64}([y[4], y[5], y[6]] * config.cnf().DU / config.cnf().TU)  # Inertial velocity
+        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, config.cnf().et)
 
         LatLong = rtolatlong(pos_pp, m.planet)
 
@@ -1053,24 +1053,24 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             cond = h0 - args[:EI] * 1e3
             thr = 500
         else
-            cond = norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:EI]*1e3
+            cond = norm(y[1:3]) * config.cnf().DU - m.planet.Rp_e - args[:EI]*1e3
             thr = 1e-5
         end
 
         if abs(cond) <= thr
-            config.controller.guidance_t_eval = collect(t*config.cnf.TU:1/args[:flash1_rate]:(t*config.cnf.TU)+1500)
+            config.controller().guidance_t_eval = collect(t*config.cnf().TU:1/args[:flash1_rate]:(t*config.cnf().TU)+1500)
         
             # State definition for control 2, 3 State used by closed-form solution
-            pos_ii = SVector{3, Float64}([y[1], y[2], y[3]]) * config.cnf.DU                     # Inertial position
-            vel_ii = SVector{3, Float64}([y[4], y[5], y[6]]) * config.cnf.DU / config.cnf.TU     # Inertial velocity
-            OE_closedform = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf.MU, m.planet)
-            config.cnf.initial_position_closed_form = OE_closedform
+            pos_ii = SVector{3, Float64}([y[1], y[2], y[3]]) * config.cnf().DU                     # Inertial position
+            vel_ii = SVector{3, Float64}([y[4], y[5], y[6]]) * config.cnf().DU / config.cnf().TU     # Inertial velocity
+            OE_closedform = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf().MU, m.planet)
+            config.cnf().initial_position_closed_form = OE_closedform
         end
 
         cond  # downcrossing
     end
     function in_drag_passage_affect!(integrator) 
-        config.cnf.count_in_drag_passage += 1
+        config.cnf().count_in_drag_passage += 1
         terminate!(integrator)
     end
     in_drag_passage = ContinuousCallback(in_drag_passage_condition, nothing, in_drag_passage_affect!)
@@ -1081,9 +1081,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         t_prev = integrator.p[5]
         ip = integrator.p[3]
         date_initial = integrator.p[6]
-        pos_ii = SVector{3, Float64}([y[1], y[2], y[3]] * config.cnf.DU)                    # Inertial position
-        vel_ii = SVector{3, Float64}([y[4], y[5], y[6]] * config.cnf.DU / config.cnf.TU)    # Inertial velocity
-        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, config.cnf.et)
+        pos_ii = SVector{3, Float64}([y[1], y[2], y[3]] * config.cnf().DU)                    # Inertial position
+        vel_ii = SVector{3, Float64}([y[4], y[5], y[6]] * config.cnf().DU / config.cnf().TU)    # Inertial velocity
+        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, config.cnf().et)
 
         LatLong = rtolatlong(pos_pp, m.planet)#, args[:topography_model] == "Spherical Harmonics" && norm(pos_ii) < m.planet.Rp_e + args[:EI]*1e3)
 
@@ -1093,61 +1093,61 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             cond = (h0 - args[:EI]*1e3)
             thr = 500
         else
-            cond = norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:EI]*1e3
+            cond = norm(y[1:3]) * config.cnf().DU - m.planet.Rp_e - args[:EI]*1e3
             thr = 1e-3
         end
 
-        if abs(cond) <= thr && length(config.cnf.initial_position_closed_form) == 0
+        if abs(cond) <= thr && length(config.cnf().initial_position_closed_form) == 0
             println(h0)
-            config.controller.guidance_t_eval = collect(t*config.cnf.TU:1/args[:flash1_rate]:(t*config.cnf.TU)+1500)
+            config.controller().guidance_t_eval = collect(t*config.cnf().TU:1/args[:flash1_rate]:(t*config.cnf().TU)+1500)
 
             # State definition for control 2, 3 State used by closed-form solution
-            OE_closedform = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf.MU, m.planet)
-            config.cnf.initial_position_closed_form = OE_closedform
+            OE_closedform = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf().MU, m.planet)
+            config.cnf().initial_position_closed_form = OE_closedform
         end
 
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:EI]*1e3  # downcrossing
+        norm(y[1:3]) * config.cnf().DU - m.planet.Rp_e - args[:EI]*1e3  # downcrossing
     end
     function in_drag_passage_nt_affect!(integrator)
-        config.cnf.count_in_drag_passage_nt += 1
+        config.cnf().count_in_drag_passage_nt += 1
         nothing
     end
     in_drag_passage_nt = ContinuousCallback(in_drag_passage_nt_condition, nothing, in_drag_passage_nt_affect!)
 
     function apoapsispoint_condition(y, t, integrator)
         m = integrator.p[1]
-        pos_ii = SVector{3, Float64}([y[1], y[2], y[3]]) * config.cnf.DU  # Inertial position
-        vel_ii = SVector{3, Float64}([y[4], y[5], y[6]]) * config.cnf.DU / config.cnf.TU  # Inertial Velocity
+        pos_ii = SVector{3, Float64}([y[1], y[2], y[3]]) * config.cnf().DU  # Inertial position
+        vel_ii = SVector{3, Float64}([y[4], y[5], y[6]]) * config.cnf().DU / config.cnf().TU  # Inertial Velocity
 
-        vi = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf.MU, m.planet)[6]
+        vi = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf().MU, m.planet)[6]
         
         rad2deg(vi) - 180 # upcrossing
     end
     function apoapsispoint_affect!(integrator)
-        config.cnf.count_apoapsispoint += 1
+        config.cnf().count_apoapsispoint += 1
         terminate!(integrator)
     end
     apoapsispoint = ContinuousCallback(apoapsispoint_condition, apoapsispoint_affect!, nothing)
 
     function periapsispoint_condition(y, t, integrator)
         m = integrator.p[1]
-        pos_ii = SVector{3, Float64}([y[1], y[2], y[3]]) * config.cnf.DU  # Inertial position
-        vel_ii = SVector{3, Float64}([y[4], y[5], y[6]]) * config.cnf.DU / config.cnf.TU  # Inertial Velocity
+        pos_ii = SVector{3, Float64}([y[1], y[2], y[3]]) * config.cnf().DU  # Inertial position
+        vel_ii = SVector{3, Float64}([y[4], y[5], y[6]]) * config.cnf().DU / config.cnf().TU  # Inertial Velocity
 
-        vi = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf.MU, m.planet)[6]
+        vi = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf().MU, m.planet)[6]
 
         rad2deg(vi) - 180  # downcrossing
     end
     function periapsispoint_affect!(integrator)
-        config.cnf.count_periapsispoint += 1
-        r_p, _ = r_intor_p!(SVector{3, Float64}(integrator.u[1:3] * config.cnf.DU), 
-                        SVector{3, Float64}(integrator.u[4:6] * config.cnf.DU / config.cnf.TU), 
+        config.cnf().count_periapsispoint += 1
+        r_p, _ = r_intor_p!(SVector{3, Float64}(integrator.u[1:3] * config.cnf().DU), 
+                        SVector{3, Float64}(integrator.u[4:6] * config.cnf().DU / config.cnf().TU), 
                         integrator.p[1].planet, 
-                        config.cnf.et)
+                        config.cnf().et)
         r, lat, lon = rtolatlong(r_p, integrator.p[1].planet, args[:topography_model] == "Spherical Harmonics")
-        append!(config.cnf.altitude_periapsis, r*1e-3)
-        append!(config.cnf.latitude_periapsis, rad2deg(lat))
-        append!(config.cnf.longitude_periapsis, rad2deg(lon))
+        append!(config.cnf().altitude_periapsis, r*1e-3)
+        append!(config.cnf().latitude_periapsis, rad2deg(lat))
+        append!(config.cnf().longitude_periapsis, rad2deg(lon))
         nothing
     end
     periapsispoint = ContinuousCallback(periapsispoint_condition, nothing, periapsispoint_affect!)
@@ -1162,10 +1162,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             min_alt = 35 * 1e3
         end
 
-        norm(y[1:3]) * config.cnf.DU - (m.planet.Rp_e + min_alt) # upcrossing and downcrossing
+        norm(y[1:3]) * config.cnf().DU - (m.planet.Rp_e + min_alt) # upcrossing and downcrossing
     end
     function impact_affect!(integrator)
-        config.cnf.count_impact += 1
+        config.cnf().count_impact += 1
         terminate!(integrator)
     end
     impact = ContinuousCallback(impact_condition, impact_affect!)
@@ -1174,8 +1174,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         m = integrator.p[1]
         args = integrator.p[8]
 
-        r = y[1:3] * config.cnf.DU
-        v = y[4:6] * config.cnf.DU / config.cnf.TU
+        r = y[1:3] * config.cnf().DU
+        v = y[4:6] * config.cnf().DU / config.cnf().TU
         Energy = norm(v)^2 * 0.5 - m.planet.μ / norm(r)
         a = -m.planet.μ / (2 * Energy)
         h = cross(r, v)
@@ -1195,7 +1195,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         r_a - r_p  # upcrossing and downcrossing
     end
     function apoapsisgreaterperiapsis_affect!(integrator)
-        config.cnf.count_apoapsisgreaterperiapsis += 1
+        config.cnf().count_apoapsisgreaterperiapsis += 1
         terminate!(integrator)
     end
     apoapsisgreaterperiapsis = ContinuousCallback(apoapsisgreaterperiapsis_condition, apoapsisgreaterperiapsis_affect!)
@@ -1205,33 +1205,33 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         args = integrator.p[8]
         initial_state = integrator.p[9]
 
-        mass = y[7] * config.cnf.MU
+        mass = y[7] * config.cnf().MU
         Δv = (g_e * m.engines.Isp) * log(initial_state.m/mass)
         m.body.prop_mass .= [mass - config.get_spacecraft_mass(m.body, m.body.roots[1], dry=true)]
         Δv - args[:delta_v]  # upcrossing and downcrossing
     end
     function stop_firing_affect!(integrator)
-        config.cnf.count_stop_firing += 1
+        config.cnf().count_stop_firing += 1
         terminate!(integrator)
     end
     stop_firing = ContinuousCallback(stop_firing_condition, stop_firing_affect!)
 
     function guidance_condition(y, t, integrator)
-        if config.controller.stored_state == 1
-            config.controller.count_prev_controller = config.controller.count_controller
+        if config.controller().stored_state == 1
+            config.controller().count_prev_controller = config.controller().count_controller
         end
 
-        if t * config.cnf.TU - config.controller.t > 1 # t - config.controller.t > 1
+        if t * config.cnf().TU - config.controller().t > 1 # t - config.controller().t > 1
             println("Decrease step size of integration and tolerance")
         end
 
-        if abs(t * config.cnf.TU - config.controller.t) <= 1e-8 # abs(t - config.controller.t) <= 1e-8 
-            config.controller.stored_state = 0
-            config.controller.count_controller += 1
-            config.controller.t = config.controller.guidance_t_eval[config.controller.count_controller]
+        if abs(t * config.cnf().TU - config.controller().t) <= 1e-8 # abs(t - config.controller().t) <= 1e-8 
+            config.controller().stored_state = 0
+            config.controller().count_controller += 1
+            config.controller().t = config.controller().guidance_t_eval[config.controller().count_controller]
         end
 
-        t * config.cnf.TU - config.controller.t  # upcrossing
+        t * config.cnf().TU - config.controller().t  # upcrossing
     end
     function guidance_affect!(integrator)
         nothing
@@ -1248,14 +1248,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             x = 160
         end
 
-        if abs(norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - x*1e3) <= 1e-5 # abs(norm(y[1:3]) - m.planet.Rp_e - x*1e3) <= 1e-5
-            config.controller.guidance_t_eval = collect(range(start=t * config.cnf.TU, stop=(t * config.cnf.TU)+2500, step=1/args[:flash1_rate]))
+        if abs(norm(y[1:3]) * config.cnf().DU - m.planet.Rp_e - x*1e3) <= 1e-5 # abs(norm(y[1:3]) - m.planet.Rp_e - x*1e3) <= 1e-5
+            config.controller().guidance_t_eval = collect(range(start=t * config.cnf().TU, stop=(t * config.cnf().TU)+2500, step=1/args[:flash1_rate]))
         end
 
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - x*1e3  # upcrossing and downcrossing
+        norm(y[1:3]) * config.cnf().DU - m.planet.Rp_e - x*1e3  # upcrossing and downcrossing
     end
     function heat_rate_check_affect!(integrator)
-        config.cnf.count_heat_rate_check += 1
+        config.cnf().count_heat_rate_check += 1
         terminate!(integrator)
     end
     heat_rate_check = ContinuousCallback(heat_rate_check_condition, heat_rate_check_affect!)
@@ -1270,10 +1270,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             x = 160
         end
 
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - x*1e3  # upcrossing
+        norm(y[1:3]) * config.cnf().DU - m.planet.Rp_e - x*1e3  # upcrossing
     end
     function heat_load_check_exit_affect!(integrator)
-        config.cnf.count_heat_load_check_exit += 1
+        config.cnf().count_heat_load_check_exit += 1
         terminate!(integrator)
     end
     heat_load_check_exit = ContinuousCallback(heat_load_check_exit_condition, heat_load_check_exit_affect!, nothing)
@@ -1283,25 +1283,25 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         args = integrator.p[8]
         min_alt = args[:final_altitude]
 
-        r_p, _ = r_intor_p!(SVector{3, Float64}(y[1:3] * config.cnf.DU), 
-                        SVector{3, Float64}(y[4:6] * config.cnf.DU / config.cnf.TU), 
+        r_p, _ = r_intor_p!(SVector{3, Float64}(y[1:3] * config.cnf().DU), 
+                        SVector{3, Float64}(y[4:6] * config.cnf().DU / config.cnf().TU), 
                         integrator.p[1].planet, 
-                        config.cnf.et)
+                        config.cnf().et)
         alt, lat, lon = rtolatlong(r_p, integrator.p[1].planet, args[:topography_model] == "Spherical Harmonics")
         alt - min_alt # upcrossing and downcrossing
     end
 
     function final_entry_altitude_reached_affect!(integrator)
-        config.cnf.count_final_entry_altitude_reached += 1
+        config.cnf().count_final_entry_altitude_reached += 1
         terminate!(integrator)
     end
     final_entry_altitude_reached = ContinuousCallback(final_entry_altitude_reached_condition, final_entry_altitude_reached_affect!)
 
     time_0 = m.initial_condition.el_time
     if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 2
-        config.cnf.α = m.aerodynamics.α
+        config.cnf().α = m.aerodynamics.α
     elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 3
-        config.cnf.α = 0.0
+        config.cnf().α = 0.0
     end
 
     stop_simulation = false
@@ -1310,50 +1310,50 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     save_pre_index = 1
     save_post_index = 1
 
-    config.cnf.impact = false
-    config.cnf.solution_intermediate = []
-    config.cnf.count_dori = 0
-    config.cnf.atmospheric_data = Dict()
-    config.cnf.previous_atmospheric_data = Dict()
-    config.cnf.ascending_phase = false
-    config.cnf.evaluate_switch_heat_load = false
-    config.cnf.state_inner_boundary_atmosphere = [] # used in Density model for vi def
-    config.cnf.time_IP = config.cnf.time_OP
-    config.cnf.time_IEI = 0
-    config.cnf.time_OEI = 0
-    config.cnf.time_switch_1 = 0.0
-    config.cnf.time_switch_2 = 0.0
+    config.cnf().impact = false
+    config.cnf().solution_intermediate = []
+    config.cnf().count_dori = 0
+    config.cnf().atmospheric_data = Dict()
+    config.cnf().previous_atmospheric_data = Dict()
+    config.cnf().ascending_phase = false
+    config.cnf().evaluate_switch_heat_load = false
+    config.cnf().state_inner_boundary_atmosphere = [] # used in Density model for vi def
+    config.cnf().time_IP = config.cnf().time_OP
+    config.cnf().time_IEI = 0
+    config.cnf().time_OEI = 0
+    config.cnf().time_switch_1 = 0.0
+    config.cnf().time_switch_2 = 0.0
 
     if args[:heat_load_sol] == 2
-        config.cnf.time_switch_2 = 1000.0
+        config.cnf().time_switch_2 = 1000.0
     end
 
-    config.cnf.timer_revaluation = 0
-    config.cnf.closed_form_solution_off = 1         # used in closed form solution online to run the solution only once
-    config.cnf.initial_position_closed_form = []
-    config.cnf.heat_rate_list = []                  # checked this - if used
-    config.cnf.α_list = []                          # checked this - if used
+    config.cnf().timer_revaluation = 0
+    config.cnf().closed_form_solution_off = 1         # used in closed form solution online to run the solution only once
+    config.cnf().initial_position_closed_form = []
+    config.cnf().heat_rate_list = []                  # checked this - if used
+    config.cnf().α_list = []                          # checked this - if used
 
-    config.controller.guidance_t_eval = []
-    config.controller.count_prev_controller = 0
-    config.controller.count_controller = 1
-    config.controller.stored_state = 1
-    config.controller.prev_time = 0
-    config.controller.t = 0
+    config.controller().guidance_t_eval = []
+    config.controller().count_prev_controller = 0
+    config.controller().count_controller = 1
+    config.controller().stored_state = 1
+    config.controller().prev_time = 0
+    config.controller().t = 0
 
-    config.cnf.security_mode = false
-    config.cnf.stop_simulation = false
-    config.cnf.results_save = 1
-    config.cnf.drag_state = false
-    config.cnf.α_past = m.aerodynamics.α
+    config.cnf().security_mode = false
+    config.cnf().stop_simulation = false
+    config.cnf().results_save = 1
+    config.cnf().drag_state = false
+    config.cnf().α_past = m.aerodynamics.α
 
     if norm(r0) - m.planet.Rp_e <= args[:EI]*1e3
-        config.cnf.drag_state = true
-        config.cnf.initial_position_closed_form = OE
+        config.cnf().drag_state = true
+        config.cnf().initial_position_closed_form = OE
     end
 
-    config.cnf.sensible_loads = false
-    config.cnf.counter_integrator = 0
+    config.cnf().sensible_loads = false
+    config.cnf().counter_integrator = 0
 
     continue_campaign = false
 
@@ -1367,17 +1367,17 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
 
     # non dimensionalization
-    in_cond[1:3] ./= config.cnf.DU
-    in_cond[4:6] .*= config.cnf.TU / config.cnf.DU
-    in_cond[7] /= config.cnf.MU
+    in_cond[1:3] ./= config.cnf().DU
+    in_cond[4:6] .*= config.cnf().TU / config.cnf().DU
+    in_cond[7] /= config.cnf().MU
     for i in eachindex(m.body.links)
-        in_cond[7 + i] *= config.cnf.TU^2 / config.cnf.MU  # Mass of the links
+        in_cond[7 + i] *= config.cnf().TU^2 / config.cnf().MU  # Mass of the links
     end
     next_index = 7 + length(m.body.links) + 1
-    # in_cond[8] *= config.cnf.TU^2 / config.cnf.MU # * 1e4
+    # in_cond[8] *= config.cnf().TU^2 / config.cnf().MU # * 1e4
     if args[:orientation_sim]
         normalize!(in_cond[next_index:next_index+3])  # Quaternion normalization
-        in_cond[next_index+4:next_index+6] .*= config.cnf.TU  # Angular velocity
+        in_cond[next_index+4:next_index+6] .*= config.cnf().TU  # Angular velocity
     end
 
     # If aerobraking maneuver allowed, add a prephase 0
@@ -1445,7 +1445,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
 
         if index_phase_aerobraking == 2 || (index_phase_aerobraking == 1 && args[:keplerian] == 1)
-            save_pre_index = length(config.solution.orientation.time) + 1
+            save_pre_index = length(config.solution().orientation.time) + 1
             simulator = args[:integrator]
         end
 
@@ -1490,12 +1490,12 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         i_sim = 0
         time_solution = Float64[]  # Time solution for the simulation
 
-        config.cnf.continue_simulation = true
+        config.cnf().continue_simulation = true
 
-        while config.cnf.continue_simulation
+        while config.cnf().continue_simulation
             index_phase_aerobraking = aerobraking_phase
             # if control mode =! 0, redefine sim setting and creates two more phases until reaching EI and out of the AE phase 2: between 120 km alt
-            if aerobraking_phase == 2 && (args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == true && config.cnf.sensible_loads == true && config.cnf.ascending_phase == false)
+            if aerobraking_phase == 2 && (args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf().drag_state == true && config.cnf().sensible_loads == true && config.cnf().ascending_phase == false)
                 simulator = args[:integrator]
                 events = CallbackSet(out_drag_passage, heat_load_check_exit, periapsispoint, apoapsisgreaterperiapsis, impact)
                 t_event_0 = "out_drag_passage"
@@ -1520,10 +1520,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     end
                 end
 
-                config.controller.t = config.controller.guidance_t_eval[config.controller.count_controller]
+                config.controller().t = config.controller().guidance_t_eval[config.controller().count_controller]
             
-            #phase 1.75: between EI km alt and 120 kmconfig.controller.t
-            elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == true && config.cnf.ascending_phase == false
+            #phase 1.75: between EI km alt and 120 kmconfig.controller().t
+            elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf().drag_state == true && config.cnf().ascending_phase == false
                 events = CallbackSet(periapsispoint, out_drag_passage, heat_rate_check, apoapsisgreaterperiapsis, impact)
                 t_event_0 = "periapsispoint"
                 t_event_1 = "out_drag_passage"
@@ -1534,7 +1534,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 a_tol = 1e-7
                 method = Tsit5() # KenCarp58(autodiff = false) # Tsit5()
             # phase 1.5: between 250 km alt and EI km
-            elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == false && config.cnf.ascending_phase == false
+            elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf().drag_state == false && config.cnf().ascending_phase == false
                 events = CallbackSet(periapsispoint, in_drag_passage, apoapsisgreaterperiapsis, impact)
                 t_event_0 = "periapsispoint"
                 t_event_1 = "in_drag_passage"
@@ -1545,7 +1545,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 index_phase_aerobraking = 1.5
                 method = Tsit5()
             # phase 2.25: between 120 km alt and AE km
-            elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.drag_state == true && config.cnf.ascending_phase == true
+            elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf().drag_state == true && config.cnf().ascending_phase == true
                 events = CallbackSet(periapsispoint, out_drag_passage, apoapsisgreaterperiapsis, impact)
                 t_event_0 = "periapsispoint"
                 t_event_1 = "out_drag_passage"
@@ -1556,7 +1556,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 index_phase_aerobraking = 2.25
                 method = Tsit5()
             # phase 2.5: between AE km alt and 250 km
-            elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf.ascending_phase == true
+            elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf().ascending_phase == true
                 events = CallbackSet(eventsecondstep, periapsispoint, eventsecondstep, apoapsisgreaterperiapsis, impact)
                 t_event_0 = "eventsecondstep"
                 t_event_1 = "periapsispoint"
@@ -1574,45 +1574,45 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
             if simulator == "Julia"
                 # counter for events
-                config.cnf.count_eventfirststep = 0
-                config.cnf.eventfirststep_periapsis = 0
-                config.cnf.count_eventsecondstep = 0
-                config.cnf.count_reached_EI = 0
-                config.cnf.count_reached_AE = 0
-                config.cnf.count_out_drag_passage = 0
-                config.cnf.count_in_drag_passage = 0
-                config.cnf.count_in_drag_passage_nt = 0
-                config.cnf.count_apoapsispoint = 0
-                config.cnf.count_periapsispoint = 0
-                config.cnf.count_impact = 0
-                config.cnf.count_apoapsisgreaterperiapsis = 0
-                config.cnf.count_stop_firing = 0
-                config.cnf.count_guidance = 0
-                config.cnf.count_heat_rate_check = 0
-                config.cnf.count_heat_load_check_exit = 0
-                config.cnf.count_final_entry_altitude_reached = 0
+                config.cnf().count_eventfirststep = 0
+                config.cnf().eventfirststep_periapsis = 0
+                config.cnf().count_eventsecondstep = 0
+                config.cnf().count_reached_EI = 0
+                config.cnf().count_reached_AE = 0
+                config.cnf().count_out_drag_passage = 0
+                config.cnf().count_in_drag_passage = 0
+                config.cnf().count_in_drag_passage_nt = 0
+                config.cnf().count_apoapsispoint = 0
+                config.cnf().count_periapsispoint = 0
+                config.cnf().count_impact = 0
+                config.cnf().count_apoapsisgreaterperiapsis = 0
+                config.cnf().count_stop_firing = 0
+                config.cnf().count_guidance = 0
+                config.cnf().count_heat_rate_check = 0
+                config.cnf().count_heat_load_check_exit = 0
+                config.cnf().count_final_entry_altitude_reached = 0
 
                 ## Julia Integrator
                 # Time initialization
-                initial_time, final_time = time_0 / config.cnf.TU, (time_0 + length_sim) / config.cnf.TU 
+                initial_time, final_time = time_0 / config.cnf().TU, (time_0 + length_sim) / config.cnf().TU 
                 # Parameter Definition
-                if config.solution.simulation.solution_states != 0
-                    param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage, Bool(args[:orientation_sim]), MVector{3, Float64}(0.0, 0.0, 0.0), MVector{3, Float64}(0.0, 0.0, 0.0), args, ip, MVector{3, Float64}(0.0, 0.0, 0.0), zeros(config.solution.simulation.solution_states))
+                if config.solution().simulation.solution_states != 0
+                    param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage, Bool(args[:orientation_sim]), MVector{3, Float64}(0.0, 0.0, 0.0), MVector{3, Float64}(0.0, 0.0, 0.0), args, ip, MVector{3, Float64}(0.0, 0.0, 0.0), zeros(config.solution().simulation.solution_states))
                 else
                     param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage, Bool(args[:orientation_sim]), MVector{3, Float64}(0.0, 0.0, 0.0), MVector{3, Float64}(0.0, 0.0, 0.0), args, ip, MVector{3, Float64}(0.0, 0.0, 0.0))
                 end
 
                 # Run simulation
                 # method = TRBDF2(autodiff=false)
-                if !config.cnf.prob_set
-                    # config.cnf.prob = ODEProblem(ODEFunction(f!, jac=f_jac), in_cond, (initial_time, final_time), param)
-                    config.cnf.prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
+                if !config.cnf().prob_set
+                    # config.cnf().prob = ODEProblem(ODEFunction(f!, jac=f_jac), in_cond, (initial_time, final_time), param)
+                    config.cnf().prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
                     # prob = complete(modelingtoolkitize(prob))
                     # ModelingToolkit.generate_jacobian(prob)[2]
-                    # config.cnf.prob = prob
-                    config.cnf.prob_set = true
+                    # config.cnf().prob = prob
+                    config.cnf().prob_set = true
                 else
-                    config.cnf.prob = remake(config.cnf.prob, u0=in_cond, tspan=(initial_time, final_time), p=param)
+                    config.cnf().prob = remake(config.cnf().prob, u0=in_cond, tspan=(initial_time, final_time), p=param)
                 end
                 # a_tol = 1e-3
                 # r_tol = 1e-2
@@ -1625,8 +1625,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     r_tol_list[next_index:next_index+3] .= r_tol_quat*ones(4)  # Quaternion
                 end
                 method = Tsit5()
-                sol = solve(config.cnf.prob, method, abstol=a_tol_list, reltol=r_tol_list, callback=events, dtmax=dt_max/config.cnf.TU)
-                config.cnf.counter_integrator += 1
+                sol = solve(config.cnf().prob, method, abstol=a_tol_list, reltol=r_tol_list, callback=events, dtmax=dt_max/config.cnf().TU)
+                config.cnf().counter_integrator += 1
                 in_cond .= sol.u[end]  # Update initial condition for next step
                 # if args[:orientation_sim]
                 #     in_cond .= [sol[1,end], sol[2,end], sol[3, end], sol[4, end], sol[5, end], sol[6, end], sol[7, end], sol[8, end], 
@@ -1640,11 +1640,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 # m.body.roots[1].q = normalize(m.body.roots[1].q)  # Quaternion normalization
 
                 # Save results 
-                push!(time_solution, (sol.t * config.cnf.TU)...)
+                push!(time_solution, (sol.t * config.cnf().TU)...)
                 time_0 = time_solution[end]
 
                 if aerobraking_phase == 0
-                    new_periapsis(m, in_cond[1:3] * config.cnf.DU, in_cond[4:6] * config.cnf.DU / config.cnf.TU, args)
+                    new_periapsis(m, in_cond[1:3] * config.cnf().DU, in_cond[4:6] * config.cnf().DU / config.cnf().TU, args)
                 end
             elseif simulator == "Costumed"
                 # if args[:integrator] == "Costumed"
@@ -1658,13 +1658,13 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 # while stop_simulation == false
                 #     initial_time = time_0
                 #     ## Costumed Integrator
-                #     config.cnf.MarsGram_recall = 1
-                #     config.cnf.results_save = 0
+                #     config.cnf().MarsGram_recall = 1
+                #     config.cnf().results_save = 0
                 #     y, t, stop_simulation, sol = RK4(f, step, initial_time, in_cond, m, T_ijk, index_phase_aerobraking, args, sol)
 
                 #     in_cond = [y[1], y[2], y[3], y[4], y[5], y[6], y[7], y[8]]
-                #     config.cnf.counter_integrator += 1
-                #     config.cnf.results_save = 1
+                #     config.cnf().counter_integrator += 1
+                #     config.cnf().results_save = 1
                 #     f(t, in_cond, m, index_phase_aerobraking, ip)
 
                 #     # New initial Condition
@@ -1683,83 +1683,83 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             end
 
             # Define breaker campaign impact km or apoapsis greater than periapsis
-            continue_campaign = event(config.cnf.count_impact, config.cnf.count_apoapsisgreaterperiapsis)
+            continue_campaign = event(config.cnf().count_impact, config.cnf().count_apoapsisgreaterperiapsis)
 
             if continue_campaign == false
-                config.cnf.impact = true
+                config.cnf().impact = true
                 break
             end
 
             time_ev_0, time_ev_1 = 0, 0
 
             if t_event_0 == "stop_firing"
-                time_ev_0 = config.cnf.count_stop_firing
+                time_ev_0 = config.cnf().count_stop_firing
             elseif t_event_0 == "eventfirststep"
-                time_ev_0 = config.cnf.count_eventfirststep
+                time_ev_0 = config.cnf().count_eventfirststep
             elseif t_event_0 == "eventfirststep_periapsis"
-                time_ev_0 = config.cnf.eventfirststep_periapsis
+                time_ev_0 = config.cnf().eventfirststep_periapsis
             elseif t_event_0 == "eventsecondstep"
-                time_ev_0 = config.cnf.count_eventsecondstep
+                time_ev_0 = config.cnf().count_eventsecondstep
             elseif t_event_0 == "out_drag_passage"
-                time_ev_0 = config.cnf.count_out_drag_passage
+                time_ev_0 = config.cnf().count_out_drag_passage
             elseif t_event_0 == "in_drag_passage"
-                time_ev_0 = config.cnf.count_in_drag_passage
+                time_ev_0 = config.cnf().count_in_drag_passage
             elseif t_event_0 == "in_drag_passage_nt"
-                time_ev_0 = config.cnf.count_in_drag_passage_nt
+                time_ev_0 = config.cnf().count_in_drag_passage_nt
             elseif t_event_0 == "apoapsispoint"
-                time_ev_0 = config.cnf.count_apoapsispoint
+                time_ev_0 = config.cnf().count_apoapsispoint
             elseif t_event_0 == "periapsispoint"
-                time_ev_0 = config.cnf.count_periapsispoint
+                time_ev_0 = config.cnf().count_periapsispoint
             elseif t_event_0 == "apoapsisgreaterperiapsis"
-                time_ev_0 = config.cnf.count_apoapsisgreaterperiapsis
+                time_ev_0 = config.cnf().count_apoapsisgreaterperiapsis
             elseif t_event_0 == "heat_load_check_exit"
-                time_ev_0 = config.cnf.count_heat_load_check_exit
+                time_ev_0 = config.cnf().count_heat_load_check_exit
             elseif t_event_0 == "final_altitude_reached"
-                time_ev_0 = config.cnf.count_final_entry_altitude_reached
+                time_ev_0 = config.cnf().count_final_entry_altitude_reached
             end
 
             if t_event_1 == "stop_firing"
-                time_ev_1 = config.cnf.count_stop_firing
+                time_ev_1 = config.cnf().count_stop_firing
             elseif t_event_1 == "eventfirststep"
-                time_ev_1 = config.cnf.count_eventfirststep
+                time_ev_1 = config.cnf().count_eventfirststep
             elseif t_event_1 == "eventfirststep_periapsis"
-                time_ev_1 = config.cnf.eventfirststep_periapsis
+                time_ev_1 = config.cnf().eventfirststep_periapsis
             elseif t_event_1 == "eventsecondstep"
-                time_ev_1 = config.cnf.count_eventsecondstep
+                time_ev_1 = config.cnf().count_eventsecondstep
             elseif t_event_1 == "out_drag_passage"
-                time_ev_1 = config.cnf.count_out_drag_passage
+                time_ev_1 = config.cnf().count_out_drag_passage
             elseif t_event_1 == "in_drag_passage"
-                time_ev_1 = config.cnf.count_in_drag_passage
+                time_ev_1 = config.cnf().count_in_drag_passage
             elseif t_event_1 == "in_drag_passage_nt"
-                time_ev_1 = config.cnf.count_in_drag_passage_nt
+                time_ev_1 = config.cnf().count_in_drag_passage_nt
             elseif t_event_1 == "apoapsispoint"
-                time_ev_1 = config.cnf.count_apoapsispoint
+                time_ev_1 = config.cnf().count_apoapsispoint
             elseif t_event_1 == "periapsispoint"
-                time_ev_1 = config.cnf.count_periapsispoint
+                time_ev_1 = config.cnf().count_periapsispoint
             elseif t_event_1 == "apoapsisgreaterperiapsis"
-                time_ev_1 = config.cnf.count_apoapsisgreaterperiapsis
+                time_ev_1 = config.cnf().count_apoapsisgreaterperiapsis
             elseif t_event_1 == "heat_load_check_exit"
-                time_ev_1 = config.cnf.count_heat_load_check_exit
+                time_ev_1 = config.cnf().count_heat_load_check_exit
             elseif t_event_1 == "final_altitude_reached"
-                time_ev_1 = config.cnf.count_final_entry_altitude_reached
+                time_ev_1 = config.cnf().count_final_entry_altitude_reached
             end
 
             # Breaker conditions
             if simulator == "Julia"
                 if time_ev_0 != 0 || (Bool(args[:drag_passage]) && index_phase_aerobraking == 2.25 && time_ev_1 != 0)
-                    config.cnf.continue_simulation = false
+                    config.cnf().continue_simulation = false
                     break
                 end
 
                 if lowercase(args[:type_of_mission]) == "time" && time_solution[end] >= args[:mission_time]
                     continue_campaign = false
-                    config.cnf.continue_simulation = false
+                    config.cnf().continue_simulation = false
                     println("Setting continue_simulation to false due to mission time condition.")
                     break
                 end
             else
                 if args[:control_mode] == 0 && stop_simulation == true
-                    config.cnf.continue_simulation = false
+                    config.cnf().continue_simulation = false
                     break
                 end
             end
@@ -1769,16 +1769,16 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         time_0 = save_results(time_solution, save_ratio)
 
         if index_phase_aerobraking == 2 || index_phase_aerobraking == 2.5 || (index_phase_aerobraking == 2.25 && Bool(args[:drag_passage])) || (index_phase_aerobraking == 3 && Bool(args[:keplerian]))
-            save_post_index = length(config.solution.orientation.time)
+            save_post_index = length(config.solution().orientation.time)
         end
 
         # Re-Set count index to 0
-        config.cnf.count_phase = 0
+        config.cnf().count_phase = 0
 
         # Define breaker campaign
         if continue_campaign == false
             if save_post_index == 1
-                save_post_index = length(config.solution.orientation.time)
+                save_post_index = length(config.solution().orientation.time)
             end
 
             break
@@ -1786,14 +1786,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
 
     # Re-set count index to 0
-    config.cnf.count_dori = 0
+    config.cnf().count_dori = 0
 
     # Check tolerance here on true anomaly
-    if args[:drag_passage] == false && (pi - config.solution.orientation.oe[end][end] > 1e-3) && continue_campaign == true && args[:body_shape] != "Blunted Cone"
+    if args[:drag_passage] == false && (pi - config.solution().orientation.oe[end][end] > 1e-3) && continue_campaign == true && args[:body_shape] != "Blunted Cone"
         final_conditions_notmet = true
         if lowercase(args[:type_of_mission]) == "time"
             println("Final time conditions not met, re-running simulation...")
-            println("Current time: ", config.solution.orientation.time[end], " | Mission time: ", args[:mission_time])
+            println("Current time: ", config.solution().orientation.time[end], " | Mission time: ", args[:mission_time])
             events = CallbackSet(apoapsispoint, time_check)
         else
             println("Final conditions not met, re-running simulation for apoapsis point...")
@@ -1809,80 +1809,80 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         println("Final conditions not met, re-running simulation...")
         heat_loads = MVector{length(m.body.links), Float64}(zeros(length(m.body.links)))
         for i in 1:length(m.body.links)
-            heat_loads[i] = config.solution.performance.heat_load[i][end]
+            heat_loads[i] = config.solution().performance.heat_load[i][end]
         end
         if args[:orientation_sim]
-            in_cond = MVector{14+length(m.body.links), Float64}([config.solution.orientation.pos_ii[1][end], config.solution.orientation.pos_ii[2][end], config.solution.orientation.pos_ii[3][end], 
-                    config.solution.orientation.vel_ii[1][end], config.solution.orientation.vel_ii[2][end], config.solution.orientation.vel_ii[3][end],
-                    config.solution.performance.mass[end], heat_loads..., config.solution.orientation.quaternion[1][end],
-                    config.solution.orientation.quaternion[2][end], config.solution.orientation.quaternion[3][end], config.solution.orientation.quaternion[4][end],
-                    config.solution.orientation.ω[1][end], config.solution.orientation.ω[2][end], config.solution.orientation.ω[3][end]])
+            in_cond = MVector{14+length(m.body.links), Float64}([config.solution().orientation.pos_ii[1][end], config.solution().orientation.pos_ii[2][end], config.solution().orientation.pos_ii[3][end], 
+                    config.solution().orientation.vel_ii[1][end], config.solution().orientation.vel_ii[2][end], config.solution().orientation.vel_ii[3][end],
+                    config.solution().performance.mass[end], heat_loads..., config.solution().orientation.quaternion[1][end],
+                    config.solution().orientation.quaternion[2][end], config.solution().orientation.quaternion[3][end], config.solution().orientation.quaternion[4][end],
+                    config.solution().orientation.ω[1][end], config.solution().orientation.ω[2][end], config.solution().orientation.ω[3][end]])
         else
-            in_cond = MVector{7+length(m.body.links), Float64}([config.solution.orientation.pos_ii[1][end], config.solution.orientation.pos_ii[2][end], config.solution.orientation.pos_ii[3][end], 
-                    config.solution.orientation.vel_ii[1][end], config.solution.orientation.vel_ii[2][end], config.solution.orientation.vel_ii[3][end],
-                    config.solution.performance.mass[end], heat_loads...])
+            in_cond = MVector{7+length(m.body.links), Float64}([config.solution().orientation.pos_ii[1][end], config.solution().orientation.pos_ii[2][end], config.solution().orientation.pos_ii[3][end], 
+                    config.solution().orientation.vel_ii[1][end], config.solution().orientation.vel_ii[2][end], config.solution().orientation.vel_ii[3][end],
+                    config.solution().performance.mass[end], heat_loads...])
         end
         println("In_cond: ", in_cond)
         # non dimensionalization
-        in_cond[1:3] ./= config.cnf.DU
-        in_cond[4:6] .*= config.cnf.TU / config.cnf.DU
-        in_cond[7] /= config.cnf.MU
+        in_cond[1:3] ./= config.cnf().DU
+        in_cond[4:6] .*= config.cnf().TU / config.cnf().DU
+        in_cond[7] /= config.cnf().MU
         for i in eachindex(m.body.links)
-            in_cond[7 + i] *= config.cnf.TU^2 / config.cnf.MU  # Heat loads
+            in_cond[7 + i] *= config.cnf().TU^2 / config.cnf().MU  # Heat loads
         end
         next_index = 7 + length(m.body.links) + 1
-        # in_cond[8] *= config.cnf.TU^2 / config.cnf.MU # * 1e4
+        # in_cond[8] *= config.cnf().TU^2 / config.cnf().MU # * 1e4
         if args[:orientation_sim]
             normalize!(in_cond[next_index:next_index+3])  # Quaternion normalization
-            in_cond[next_index+4:next_index+6] .*= config.cnf.TU  # Angular velocity
+            in_cond[next_index+4:next_index+6] .*= config.cnf().TU  # Angular velocity
         end
 
 
-        initial_time, final_time = time_0 / config.cnf.TU, (time_0 + 5000) / config.cnf.TU
+        initial_time, final_time = time_0 / config.cnf().TU, (time_0 + 5000) / config.cnf().TU
         step = 0.05
         r_tol = 1e-12
         a_tol = 1e-13
         dt_max = args[:dt_max_orbit] == 0.0 ? args[:dt_max] : args[:dt_max_orbit] #1e-3
 
         # counter for events
-        config.cnf.count_eventfirststep = 0
-        config.cnf.eventfirststep_periapsis = 0
-        config.cnf.count_eventsecondstep = 0
-        config.cnf.count_reached_EI = 0
-        config.cnf.count_reached_AE = 0
-        config.cnf.count_out_drag_passage = 0
-        config.cnf.count_in_drag_passage = 0
-        config.cnf.count_in_drag_passage_nt = 0
-        config.cnf.count_apoapsispoint = 0
-        config.cnf.count_periapsispoint = 0
-        config.cnf.count_impact = 0
-        config.cnf.count_apoapsisgreaterperiapsis = 0
-        config.cnf.count_stop_firing = 0
-        config.cnf.count_guidance = 0
-        config.cnf.count_heat_rate_check = 0
-        config.cnf.count_heat_load_check_exit = 0
+        config.cnf().count_eventfirststep = 0
+        config.cnf().eventfirststep_periapsis = 0
+        config.cnf().count_eventsecondstep = 0
+        config.cnf().count_reached_EI = 0
+        config.cnf().count_reached_AE = 0
+        config.cnf().count_out_drag_passage = 0
+        config.cnf().count_in_drag_passage = 0
+        config.cnf().count_in_drag_passage_nt = 0
+        config.cnf().count_apoapsispoint = 0
+        config.cnf().count_periapsispoint = 0
+        config.cnf().count_impact = 0
+        config.cnf().count_apoapsisgreaterperiapsis = 0
+        config.cnf().count_stop_firing = 0
+        config.cnf().count_guidance = 0
+        config.cnf().count_heat_rate_check = 0
+        config.cnf().count_heat_load_check_exit = 0
 
         # Parameter Definition
         param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage, Bool(args[:orientation_sim]), MVector{3, Float64}(0.0, 0.0, 0.0), MVector{3, Float64}(0.0, 0.0, 0.0), args, ip, MVector{3, Float64}(0.0, 0.0, 0.0))
 
         # Run simulation
         prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
-        sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events, dtmax=dt_max/config.cnf.TU)#abstol=a_tol, reltol=r_tol,
+        sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events, dtmax=dt_max/config.cnf().TU)#abstol=a_tol, reltol=r_tol,
 
         # Update model parameters
         # m.body.roots[1].q = SVector{4, Float64}(sol[9, end], sol[10, end], sol[11, end], sol[12, end])
-        # m.body.roots[1].ω = SVector{3, Float64}([sol[13, end], sol[14, end], sol[15, end]] / config.cnf.TU)
+        # m.body.roots[1].ω = SVector{3, Float64}([sol[13, end], sol[14, end], sol[15, end]] / config.cnf().TU)
         # m.body.roots[1].q = normalize(m.body.roots[1].q)  # Quaternion normalization
 
-        config.cnf.counter_integrator += 1
-        time_0 = save_results(sol.t * config.cnf.TU, args[:save_rate])
+        config.cnf().counter_integrator += 1
+        time_0 = save_results(sol.t * config.cnf().TU, args[:save_rate])
         count_temp += 1
 
         if count_temp > 15
             break
         end
 
-        if args[:drag_passage] == false && pi - config.solution.orientation.oe[end][end] > 1e-3 && continue_campaign == true
+        if args[:drag_passage] == false && pi - config.solution().orientation.oe[end][end] > 1e-3 && continue_campaign == true
             final_conditions_notmet = true
             events = CallbackSet(apoapsispoint)
         else
@@ -1890,84 +1890,84 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
     end
 
-    config.cnf.save_index_heat = length(config.solution.orientation.time)
-    config.cnf.time_OP = length(config.solution.orientation.time)
+    config.cnf().save_index_heat = length(config.solution().orientation.time)
+    config.cnf().time_OP = length(config.solution().orientation.time)
 
-    max_heat_rate = maximum(config.solution.performance.heat_rate[1][save_pre_index:save_post_index])
-    for i in 2:size(config.solution.performance.heat_rate, 1)
-        max_heat_rate = max(max_heat_rate, maximum(config.solution.performance.heat_rate[i][save_pre_index:save_post_index]))
+    max_heat_rate = maximum(config.solution().performance.heat_rate[1][save_pre_index:save_post_index])
+    for i in 2:size(config.solution().performance.heat_rate, 1)
+        max_heat_rate = max(max_heat_rate, maximum(config.solution().performance.heat_rate[i][save_pre_index:save_post_index]))
     end
     println("Max heat rate is " * string(max_heat_rate) * " W/cm^2")
-    append!(config.cnf.max_heatrate, max_heat_rate)
-    config.cnf.Δv_man = (g_e * m.engines.Isp) * log((config.get_spacecraft_mass(m.body, m.body.roots[1])) / config.solution.performance.mass[end])
+    append!(config.cnf().max_heatrate, max_heat_rate)
+    config.cnf().Δv_man = (g_e * m.engines.Isp) * log((config.get_spacecraft_mass(m.body, m.body.roots[1])) / config.solution().performance.mass[end])
 
 
     if Bool(args[:print_res])
         # Print Actual periapsis altitude and Vacuum periapsis altitude
-        if args[:type_of_mission] != "Entry" && !isempty(config.cnf.altitude_periapsis)
-            println("Actual periapsis altitude " * string(config.cnf.altitude_periapsis[end]) * " km - Vacuum periapsis altitude = " * string((config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end]) - m.planet.Rp_e)*1e-3) * " km")
+        if args[:type_of_mission] != "Entry" && !isempty(config.cnf().altitude_periapsis)
+            println("Actual periapsis altitude " * string(config.cnf().altitude_periapsis[end]) * " km - Vacuum periapsis altitude = " * string((config.solution().orientation.oe[1][end] * (1 - config.solution().orientation.oe[2][end]) - m.planet.Rp_e)*1e-3) * " km")
 
         # Print Ra new (Apoapsis)
-            println("Ra new = " * string((config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end]))*1e-3) * " km")
+            println("Ra new = " * string((config.solution().orientation.oe[1][end] * (1 + config.solution().orientation.oe[2][end]))*1e-3) * " km")
         end
 
         # Print Heat Rate and Heat Load
-        max_heat_load = maximum(config.solution.performance.heat_load[1][save_pre_index:save_post_index])
-        for i in 2:size(config.solution.performance.heat_load, 1)
-            max_heat_load = max(max_heat_load, maximum(config.solution.performance.heat_load[i][save_pre_index:save_post_index]))
+        max_heat_load = maximum(config.solution().performance.heat_load[1][save_pre_index:save_post_index])
+        for i in 2:size(config.solution().performance.heat_load, 1)
+            max_heat_load = max(max_heat_load, maximum(config.solution().performance.heat_load[i][save_pre_index:save_post_index]))
         end
 
         if args[:keplerian] == false
-            println("HEAT RATE IS " * string(maximum(config.cnf.max_heatrate[end])) * " W/cm^2")
+            println("HEAT RATE IS " * string(maximum(config.cnf().max_heatrate[end])) * " W/cm^2")
             println("HEAT LOAD IS " * string(max_heat_load) * " J/cm^2")
         end
 
         # Print Fuel Mass
-        println("Fuel Mass is " * string(config.solution.performance.mass[end] - config.get_spacecraft_mass(m.body, dry=true)) * " kg")
+        println("Fuel Mass is " * string(config.solution().performance.mass[end] - config.get_spacecraft_mass(m.body, dry=true)) * " kg")
 
         # Print Total Time
         if args[:keplerian] == false && save_post_index > 1
-            println("Total time is " * string(config.solution.orientation.time[save_post_index-1] - config.solution.orientation.time[save_pre_index]) * " s")
+            println("Total time is " * string(config.solution().orientation.time[save_post_index-1] - config.solution().orientation.time[save_pre_index]) * " s")
         else
-            println("Total time is " * string(config.solution.orientation.time[end] - config.solution.orientation.time[save_pre_index]) * " s")
+            println("Total time is " * string(config.solution().orientation.time[end] - config.solution().orientation.time[save_pre_index]) * " s")
         end
 
         # Print Delta-v and Delta-E
 
-        println("Delta-v is " * string(config.cnf.Δv_man) * " m/s")
-        if !isempty(config.solution.forces.energy)
-            ΔE = config.solution.forces.energy[max(1, save_post_index-1)] - config.solution.forces.energy[save_pre_index]
+        println("Delta-v is " * string(config.cnf().Δv_man) * " m/s")
+        if !isempty(config.solution().forces.energy)
+            ΔE = config.solution().forces.energy[max(1, save_post_index-1)] - config.solution().forces.energy[save_pre_index]
         else
             ΔE = 0.0
         end
-        println("Delta-E is " * string(ΔE * 1e-3) * " kJ")#Int64(config.cnf.time_IP)
+        println("Delta-E is " * string(ΔE * 1e-3) * " kJ")#Int64(config.cnf().time_IP)
 
         # Find periapsis latitude and longitude
-        min_index = argmin(config.solution.orientation.alt[save_pre_index:save_post_index]) + save_pre_index - 1
-        println("Latitude of periapsis is " * string(rad2deg(config.solution.orientation.lat[min_index])) * " deg")
-        println("Longitude of periapsis is " * string(rad2deg(config.solution.orientation.lon[min_index])) * " deg")
+        min_index = argmin(config.solution().orientation.alt[save_pre_index:save_post_index]) + save_pre_index - 1
+        println("Latitude of periapsis is " * string(rad2deg(config.solution().orientation.lat[min_index])) * " deg")
+        println("Longitude of periapsis is " * string(rad2deg(config.solution().orientation.lon[min_index])) * " deg")
 
         # If the body shape is 'Blunted Cone', print additional information
         if args[:body_shape] == "Blunted Cone"
             # Max Dynamic Pressure
-            max_value = maximum(config.solution.performance.q)
-            max_index = argmax(config.solution.performance.q)
-            println("Max Dynamic Pressure " * string(max_value) * " N/m^2 at time " * string(config.solution.orientation.time[max_index]) * " s")
+            max_value = maximum(config.solution().performance.q)
+            max_index = argmax(config.solution().performance.q)
+            println("Max Dynamic Pressure " * string(max_value) * " N/m^2 at time " * string(config.solution().orientation.time[max_index]) * " s")
 
             # Max Heat Rate
-            max_value = maximum(maximum(config.solution.performance.heat_rate))
-            max_index = argmax(maximum(config.solution.performance.heat_rate))
-            println("Max Heat Rate " * string(max_value) * " W/cm^2 at time " * string(config.solution.orientation.time[max_index]) * " s")
+            max_value = maximum(maximum(config.solution().performance.heat_rate))
+            max_index = argmax(maximum(config.solution().performance.heat_rate))
+            println("Max Heat Rate " * string(max_value) * " W/cm^2 at time " * string(config.solution().orientation.time[max_index]) * " s")
 
             # Max Heat Load
-            max_value = maximum(maximum(config.solution.performance.heat_load))
-            max_index = argmax(maximum(config.solution.performance.heat_load))
-            println("Max Heat Load " * string(max_value) * " J/cm^2 at time " * string(config.solution.orientation.time[max_index]) * " s")
+            max_value = maximum(maximum(config.solution().performance.heat_load))
+            max_index = argmax(maximum(config.solution().performance.heat_load))
+            println("Max Heat Load " * string(max_value) * " J/cm^2 at time " * string(config.solution().orientation.time[max_index]) * " s")
         end
     end
 
-    append!(config.cnf.periapsis_list, minimum(config.solution.orientation.alt[save_pre_index:save_post_index])*1e-3)
-    append!(config.cnf.orbit_number_list, config.cnf.count_numberofpassage + 1)
-    append!(config.cnf.Δv_list, config.cnf.Δv_man)
+    append!(config.cnf().periapsis_list, minimum(config.solution().orientation.alt[save_pre_index:save_post_index])*1e-3)
+    append!(config.cnf().orbit_number_list, config.cnf().count_numberofpassage + 1)
+    append!(config.cnf().Δv_list, config.cnf().Δv_man)
     return continue_campaign
 end

@@ -233,17 +233,23 @@ function run_sc_vehicles(args)
     args[:space_objects_dict] = space_objects_dict
 
 
+    #begin spacecraft simulation threads
     Threads.@threads for obj_id in collect(keys(space_objects_dict))
         obj = args[:space_objects_dict][obj_id]
-        # println(args[:get_config])
-        # try
-        #     obj.spice_path = temp_kernel_paths[obj_id]
-        # catch e
-        #     println("no multiple spice paths")
-        #     obj.spice_path = args[:directory_Spice]
-        # end
+
+        # 1) Make a private config for this iteration
+        cfg = deepcopy(config.config_data())   # start from thread baseline (or DEFAULT)
+
+        # (optional) tweak per-run settings on cfg here
+        # cfg.cnf.index_MonteCarlo = obj_id
+
         println("begin aero campaign for obj_id: ", obj_id)
-        aerobraking_campaign(args, obj.sc_states,obj_id)
+        # aerobraking_campaign(args, obj.sc_states,obj_id)
+        
+        # 3) Run this iteration with the task-local config in scope
+        config.with_config(cfg) do
+            aerobraking_campaign(args, obj.sc_states, obj_id)
+        end
         println("Aero campaign complete for " * string(obj_id))
     end
 
@@ -267,15 +273,14 @@ function run_sc_vehicles(args)
 end
 
 function run_analysis(args)
-    config.reset_config()
-    config.model.body = args[:spacecraft_model]
+    config.reset_all_configs!()
+    config.model().body = args[:spacecraft_model]
     args = def_miss(args)
 
     #create thread local configs
     # thread_configs = [deepcopy(config) for _ in 1:Threads.nthreads()]
     # get_config() = thread_configs[Threads.threadid()]
-    config.reset_thread_configs()
-    args[:get_config] = config.get_config()
+    # args[:get_config] = config.get_config()
 
     if args[:initial_condition_type] == 1 && (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone")
         run_vgamma(args)

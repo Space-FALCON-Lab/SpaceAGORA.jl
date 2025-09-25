@@ -50,7 +50,7 @@ end
 
 function aerobraking_campaign(args, state,sim_id=1)
     save_res = args[:results]
-    config.cnf.Gram_directory = args[:directory_Gram]
+    config.cnf().Gram_directory = args[:directory_Gram]
 
     # Descent towards Mars
     purpose = "Aerobraking around Mars"
@@ -73,7 +73,7 @@ function aerobraking_campaign(args, state,sim_id=1)
 
     ip = mission_def(mission)
     p_class = planet_data(ip.M.planet)
-    config.model.planet = p_class
+    config.model().planet = p_class
 
     # Load SPICE kernels if required
     if args[:spice_call]
@@ -108,8 +108,8 @@ function aerobraking_campaign(args, state,sim_id=1)
         lon_rad = deg2rad(lon)
         α_rad = deg2rad(args[:azimuth])
         γ_rad = deg2rad(args[:γ_initial_a])
-        config.cnf.et = utc2et(to_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))
-        p_class.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_" * uppercase(p_class.name), config.cnf.et))*p_class.J2000_to_pci'
+        config.cnf().et = utc2et(to_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))
+        p_class.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_" * uppercase(p_class.name), config.cnf().et))*p_class.J2000_to_pci'
         # will have to rethink this to use the gamma/v step initial conditions
         OE = latlongtoOE([lat_rad, lon_rad, args[:EI]*1e3], p_class, γ_rad, α_rad, args[:v_initial_a])
  
@@ -124,7 +124,7 @@ function aerobraking_campaign(args, state,sim_id=1)
     # Set up n-body gravity
     if length(args[:n_bodies]) != 0
         for i=1:length(args[:n_bodies])
-            push!(config.cnf.n_bodies_list, planet_data(args[:n_bodies][i]))
+            push!(config.cnf().n_bodies_list, planet_data(args[:n_bodies][i]))
         end
     end
 
@@ -363,7 +363,12 @@ function aerobraking_campaign(args, state,sim_id=1)
         aerodynamics = a_class
         engine = e_class
 
+        # m = config.model()(body, planet, aerodynamics, engine, initialcondition)
+        # Call the TYPE (constructor), not the accessor:
         m = config.Model(body, planet, aerodynamics, engine, initialcondition)
+
+        # Put it into this Task’s config (if you want it stored there):
+        config.get_config().model = m
 
         return m
     end
@@ -443,14 +448,14 @@ function aerobraking_campaign(args, state,sim_id=1)
         gram_atmosphere.setStartTime(ttime)
     end
     # Initialization - Reset all the config index for new simulation
-    config.cnf.count_aerobraking = 0
-    config.cnf.count_overcome_hr = 0
-    config.cnf.save_index_heat = 0
-    config.cnf.index_propellant_mass = 1
-    config.cnf.counter_random = 0
-    config.cnf.DU = Bool(args[:normalize]) ? semimajoraxis_in : 1
-    config.cnf.TU = Bool(args[:normalize]) ? sqrt(config.cnf.DU^3 / m.planet.μ) : 1
-    config.cnf.MU = Bool(args[:normalize]) ? mass : 1
+    config.cnf().count_aerobraking = 0
+    config.cnf().count_overcome_hr = 0
+    config.cnf().save_index_heat = 0
+    config.cnf().index_propellant_mass = 1
+    config.cnf().counter_random = 0
+    config.cnf().DU = Bool(args[:normalize]) ? semimajoraxis_in : 1
+    config.cnf().TU = Bool(args[:normalize]) ? sqrt(config.cnf().DU^3 / m.planet.μ) : 1
+    config.cnf().MU = Bool(args[:normalize]) ? mass : 1
 
     # Save results
     if save_res == 1
@@ -496,7 +501,7 @@ function aerobraking_campaign(args, state,sim_id=1)
 
     ##########################################################
     # RUN SIMULATION
-    config.cnf.heat_rate_limit = args[:max_heat_rate]
+    config.cnf().heat_rate_limit = args[:max_heat_rate]
     t_el = @elapsed begin
         aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim_id)
     end
@@ -509,8 +514,8 @@ function aerobraking_campaign(args, state,sim_id=1)
     end
     # Print final results
     if Bool(args[:print_res])
-        println("ρ: " * string(maximum(config.solution.physical_properties.ρ)) * " kg/m^3")
-        println("heat rate: " * string(maximum(maximum.(config.solution.performance.heat_rate))) * " W/cm^2")
+        println("ρ: " * string(maximum(config.solution().physical_properties.ρ)) * " kg/m^3")
+        println("heat rate: " * string(maximum(maximum.(config.solution().performance.heat_rate))) * " W/cm^2")
     end
 
     

@@ -7,6 +7,7 @@ include("../utils/attitude_control_plans.jl")
 import .config
 import .ref_sys
 using Profile
+using Interpolations
 # import .SpacecraftModel
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
@@ -31,7 +32,7 @@ main_bus = config.Link(root=true,
                         # ω=SVector{3, Float64}(ω_body),
                         dims=SVector{3, Float64}([2.000001, 2.36643,2.9664]), 
                         ref_area=2.6*1.7,
-                        m=750.0, 
+                        m=749.0, 
                         gyro=0)
 
 # L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.6/2 - 3.89/4, 0.0), 
@@ -64,7 +65,20 @@ println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
 # println("Spacecraft roots: $spacecraft.roots")
 println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
 println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
+table = Arrow.Table("basilisk_gg_quat_pos_torque.feather")
 
+q1_itp = cubic_spline_interpolation(range(0.0, table.time[end], length(table.time)), table.q1)
+q2_itp = cubic_spline_interpolation(range(0.0, table.time[end], length(table.time)), table.q2)
+q3_itp = cubic_spline_interpolation(range(0.0, table.time[end], length(table.time)), table.q3)
+q4_itp = cubic_spline_interpolation(range(0.0, table.time[end], length(table.time)), table.q4)
+pos_1_itp = cubic_spline_interpolation(range(0.0, table.time[end], length(table.time)), table.pos_1)
+pos_2_itp = cubic_spline_interpolation(range(0.0, table.time[end], length(table.time)), table.pos_2)
+pos_3_itp = cubic_spline_interpolation(range(0.0, table.time[end], length(table.time)), table.pos_3)
+tau_1_itp = cubic_spline_interpolation(range(0.0, table.time[end], length(table.time)), table.torque_1)
+tau_2_itp = cubic_spline_interpolation(range(0.0, table.time[end], length(table.time)), table.torque_2)
+tau_3_itp = cubic_spline_interpolation(range(0.0, table.time[end], length(table.time)), table.torque_3)
+
+# println("Read arrow table, time=$t0")
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
@@ -75,17 +89,17 @@ args = Dict(# Misc Simulation
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
+            :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 1,                                       # Normalize the integration True=1, False=0
+            :normalize => 0,                                       # Normalize the integration True=1, False=0
             :closed_form => 0,                                     # Closed form solution True=1, False=0
             # Type of Mission
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 10,                                 # Number of aerobraking passage
-            :mission_time => 300000.0,                                  # Mission time in seconds, used only for Time mission type
+            :mission_time => 1000000.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => true,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
 
             # Physical Model
@@ -114,7 +128,7 @@ args = Dict(# Misc Simulation
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
-            :save_rate => 1.0,                                      # Rate at which the data trajectory are saved
+            :save_rate => 10.0,                                      # Rate at which the data trajectory are saved
             
             # Body
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
@@ -231,16 +245,25 @@ args = Dict(# Misc Simulation
 
             :a_tol => 1e-14,                                         # Absolute tolerance for integration
             :r_tol => 1e-12,                                         # Relative tolerance for integration
-            :a_tol_orbit => 1e-14,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
-            :r_tol_orbit => 1e-12,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :a_tol_orbit => 1e-11,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :r_tol_orbit => 1e-9,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
             :a_tol_drag => 1e-8,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
             :r_tol_drag => 1e-6,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
-            :a_tol_quaternion => 1e-14,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
-            :r_tol_quaternion => 1e-12,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :a_tol_quaternion => 1e-11,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :r_tol_quaternion => 1e-9,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :dt_max => 1.0,                                         # Maximum time step for integration, s
-            :dt_max_orbit => 1.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
+            :dt_max_orbit => 0.1,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
             :dt_max_drag => 1.0,                                    # Maximum time step for drag passage
-
+            :q1_itp => q1_itp,
+            :q2_itp => q2_itp,
+            :q3_itp => q3_itp,
+            :q4_itp => q4_itp,
+            :p1_itp => pos_1_itp,
+            :p2_itp => pos_2_itp,
+            :p3_itp => pos_3_itp,
+            :tau_1_itp => tau_1_itp,
+            :tau_2_itp => tau_2_itp,
+            :tau_3_itp => tau_3_itp,
             :Odyssey_sim => 0                                      # Simulate Odyssey Mission
             )
 

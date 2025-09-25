@@ -27,13 +27,13 @@ d = sqrt(66.0/7.0)
 # q = SVector{4, Float64}([0.0, 0.0, sin(pi/4), cos(pi/4)]) # Quaternion for the main bus
 main_bus = config.Link(root=true, 
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), 
-                        q=SVector{4, Float64}(q),
-                        # q=SVector{4, Float64}([0.0, 0.0, 0.0, 1.0]),
+                        # q=SVector{4, Float64}(q),
+                        q=SVector{4, Float64}([0.0, 0.0, 0.0, 1.0]),
                         ṙ=SVector{3, Float64}([0.0, 0.0, 0.0]), 
                         # ω=SVector{3, Float64}(ω_body),
                         dims=SVector{3, Float64}([1.5, 1.8, 2.86]), 
                         ref_area=1.5*2.86,
-                        m=200.0, 
+                        m=199.97, 
                         gyro=0)
 
 L_panel = config.Link(r=SVector{3, Float64}(-1.5/2-3.75, 0.0, 0.0), 
@@ -51,14 +51,14 @@ R_panel = config.Link(r=SVector{3, Float64}(1.5/2+3.75, 0.0, 0.0),
                         m=0.01, 
                         gyro=0)
 
-config.add_body!(spacecraft, main_bus, prop_mass=1.0)
-# config.add_body!(spacecraft, L_panel)
-# config.add_body!(spacecraft, R_panel)
+config.add_body!(spacecraft, main_bus, prop_mass=0.01)
+config.add_body!(spacecraft, L_panel)
+config.add_body!(spacecraft, R_panel)
 
 L_panel_joint = config.Joint(main_bus, L_panel)
 R_panel_joint = config.Joint(R_panel, main_bus)
-# config.add_joint!(spacecraft, L_panel_joint)
-# config.add_joint!(spacecraft, R_panel_joint)
+config.add_joint!(spacecraft, L_panel_joint)
+config.add_joint!(spacecraft, R_panel_joint)
 config.set_inertia_tensor!(spacecraft, main_bus, 
                         SMatrix{3, 3, Float64}(Diagonal([900.0, 800.0, 600.0])))
 lenXHub = 1.50 # m
@@ -92,7 +92,7 @@ bus_facet_attitude_list = [q_from_phi(deg2rad(-90.0) * [0.0, 0.0, 1.0]),
 panel_facet_attitude_list = [q_from_phi(deg2rad(0.0) * [0.0, 0.0, 1.0]),
                              q_from_phi(deg2rad(180.0) * [0.0, 0.0, 1.0])]
 
-# Define facet normal vectors - these are in the facet frame, so will usually be [1.0, 0.0, 0.0] as long as you're working with objects composed of flat faces, e.g., boxes, flat plates, etc.
+# Define facet normal vectors - these are in the facet frame, so will usually be [0.0, 1.0, 0.0] as long as you're working with objects composed of flat faces, e.g., boxes, flat plates, etc.
 bus_facet_normal_vectors = [SVector{3, Float64}([0.0, 1.0, 0.0]),
                             SVector{3, Float64}([0.0, 1.0, 0.0]),
                             SVector{3, Float64}([0.0, 1.0, 0.0]),
@@ -107,8 +107,8 @@ bus_facet_locs = [SVector{3, Float64}([0.5 * lenXHub, 0.0, 0.0]),
                   SVector{3, Float64}([0.0, 0.5 * lenYHub, 0.0]),
                   SVector{3, Float64}([-0.5 * lenXHub, 0.0, 0.0]),
                   SVector{3, Float64}([0.0, -0.5 * lenYHub, 0.0]),
-                  SVector{3, Float64}([0.0, 0.0, -lenZHub / 2]),
-                  SVector{3, Float64}([0.0, 0.0, lenZHub / 2])]
+                  SVector{3, Float64}([0.0, 0.0, -lenZHub / 2.0]),
+                  SVector{3, Float64}([0.0, 0.0, lenZHub / 2.0])]
 # panel_facet_locs_R = [SVector{3, Float64}([3.75 + 0.5 * lenXHub, 0.0, 0.45]), 
 #                     SVector{3, Float64}([3.75 + 0.5 * lenXHub, 0.0, 0.45])]
 # panel_facet_locs_L = [SVector{3, Float64}([-3.75 - 0.5 * lenXHub, 0.0, 0.45]), 
@@ -121,24 +121,30 @@ panel_specular_coeffs = [0.16, 0.0]
 bus_diffuse_coeffs = [0.139, 0.139, 0.139, 0.139, 0.139, 0.139]
 panel_diffuse_coeffs = [0.16, 0.56]
 
+bus_facet_names = ["right_hub", "front_hub", "left_hub", "back_hub", "bot_hub", "top_hub"]
+panel_facet_names_left = ["left_front_panel", "left_back_panel"]
+panel_facet_names_right = ["right_front_panel", "right_back_panel"]
 bus_facets = config.create_facet_list(bus_facet_area_list,
                                       bus_facet_attitude_list,
                                       bus_facet_normal_vectors,
                                       bus_facet_locs,
                                       bus_diffuse_coeffs,
-                                      bus_specular_coeffs)
+                                      bus_specular_coeffs,
+                                      bus_facet_names)
 panel_facets_R = config.create_facet_list(panel_facet_area_list,
                                         panel_facet_attitude_list,
                                         panel_facet_normal_vectors,
                                         panel_facet_locs,
                                         panel_diffuse_coeffs,
-                                        panel_specular_coeffs)
+                                        panel_specular_coeffs,
+                                        panel_facet_names_right)
 panel_facets_L = config.create_facet_list(panel_facet_area_list,
                                         panel_facet_attitude_list,
                                         panel_facet_normal_vectors,
                                         panel_facet_locs,
                                         panel_diffuse_coeffs,
-                                        panel_specular_coeffs)
+                                        panel_specular_coeffs,
+                                        panel_facet_names_left)
 config.add_facet!(main_bus, bus_facets)
 config.add_facet!(L_panel, panel_facets_L)
 config.add_facet!(R_panel, panel_facets_R)
@@ -147,7 +153,10 @@ println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
 # println("Spacecraft roots: $spacecraft.roots")
 println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
 println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
-
+facet_file_path = "facet_forces.csv"
+open(facet_file_path, "w") do io
+    truncate(io, 0)
+end
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
@@ -185,7 +194,7 @@ args = Dict(# Misc Simulation
             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
             
             # Perturbations
-            :n_bodies => [],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
+            :n_bodies => ["sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :srp => true,                                             # Solar Radiation Pressure true/false
             :eclipse => false,                                         # Whether to include eclipse conditions in SRP calculation
             :gravity_gradient => false,                                   # Gravity Gradient true/false
@@ -321,7 +330,7 @@ args = Dict(# Misc Simulation
             :a_tol_quaternion => 1e-11,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :r_tol_quaternion => 1e-9,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :dt_max => 1.0,                                         # Maximum time step for integration, s
-            :dt_max_orbit => 10.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
+            :dt_max_orbit => 1.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
             :dt_max_drag => 1.0,                                    # Maximum time step for drag passage
 
             :Odyssey_sim => 0                                      # Simulate Odyssey Mission

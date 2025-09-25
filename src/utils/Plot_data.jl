@@ -438,7 +438,6 @@ function traj_3D(state, m, name, args, data_table)
     p = plot([sphere1, sphere2, traj_3D_traces...], layout)
     display(p)
     savefig(p, name * "_traj3D.pdf", format="pdf")
-
 end
 
 function ABM_periapsis(name)

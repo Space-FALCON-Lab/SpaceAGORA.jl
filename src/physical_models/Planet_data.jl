@@ -17,7 +17,7 @@ function planet_data(ip)
         mass = 5.97219e24          # mass, kg
         g_ref = 9.798              # acceleration due to gravity, m/s²
         ρ_ref = 1.225              # density, kg/m³
-        μ = 3.98600436e14#3.986004418e14              # gravitational parameter, m³/s²
+        μ = 3.98600436000000e14#3.986004418e14              # gravitational parameter, m³/s²
         h_ref = 0 * 1e3            # reference altitude, m
         H = 8.5 * 1e3              # scale height, m
         R = 287.1                  # specific gas constant, J/(kg·K)
@@ -43,7 +43,7 @@ function planet_data(ip)
         mass = 6.4169e23           # mass, kg
         g_ref = 3.73               # acceleration due to gravity, m/s²
         ρ_ref = 8.7489231e-07      # density, kg/m³
-        μ = 4.282837362069909e13 # 4.2828314258067e13              # gravitational parameter, m³/s²
+        μ = 4.28283140000000e13 # 4.2828314258067e13              # gravitational parameter, m³/s²
         h_ref = 90 * 1e3           # reference altitude, m
         H = 6.308278108 * 1e3      # scale height, m
         R = 188.92                 # specific gas constant, J/(kg·K)
@@ -95,7 +95,7 @@ function planet_data(ip)
         mass = 1.9891e30           # mass, kg
         g_ref = 274                # m/s^2
         ρ_ref = 0
-        μ = 1.3271244001799e20       # gravitational parameter, m^3/s^2
+        μ = 1.3271244002331e20       # gravitational parameter, m^3/s^2
         h_ref = 0
         H = 0
         R = 0
@@ -221,7 +221,7 @@ function planet_data(ip)
     # α = Right ascension of the north pole of rotation, radians
     # δ = Declination of the north pole of rotation, radians
     if name == "earth"
-        J2000_to_pci = [1 0 0; 0 1 0; 0 0 1]
+        J2000_to_pci = SMatrix{3, 3, Float64}([1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0])
     else
         σ1 = sqrt(cos(δ)^4 + cos(δ)^2*sin(δ)^2)
         J2000_to_pci = SMatrix{3, 3, Float64}([-sin(α) cos(α) 0;

@@ -40,7 +40,7 @@ function aerobraking_campaign(args, state)
     config.model.planet = p_class
 
     # Load SPICE kernels if required
-    furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
+    furnsh(args[:directory_Spice] * "/pck/pck00010.tpc")
     # furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
     # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")

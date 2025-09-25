@@ -2,7 +2,9 @@ using SPICE
 using LoopVectorization
 using AssociatedLegendrePolynomials
 using LinearAlgebra
+using CSV
 
+include("../utils/quaternion_utils.jl")
 # import .config
 # Define delta function
 δ(x,y) = ==(x,y)
@@ -141,7 +143,7 @@ end
 
 # end
 
-function srp!(model, root_index::Int64, sun_dir_ii::SVector{3, Float64}, body, P_srp::Float64, eclipse_ratio, orientation::Bool)
+function srp!(model, root_index::Int64, sun_dir_ii::SVector{3, Float64}, body, P_srp::Float64, eclipse_ratio::Float64, orientation::Bool)
     """
     Calculate force on a body due to solar radiation pressure.
 
@@ -163,34 +165,23 @@ function srp!(model, root_index::Int64, sun_dir_ii::SVector{3, Float64}, body, P
     F_srp : SVector{3, Float64}
         Force on the body in the inertial frame
     """
-    F_SRP_tracker = MVector{3, Float64}(zeros(3))
     for facet in body.SRP_facets
-        
         rot_RF = config.rotate_to_inertial(model, body, root_index) * rot(facet.attitude)' # Rotation matrix from facet frame to inertial frame
         n = normalize(rot_RF * facet.normal_vector) # Normal vector of the facet in the inertial frame
-        # println("n: $n")
         cos_α_srp = dot(n, sun_dir_ii) / norm(n) / norm(sun_dir_ii)
-        # println("cos alpha: ", cos_α_srp)
+
         if cos_α_srp > 0 && eclipse_ratio != 0.0 # If the facet is illuminated by the Sun
-            # if eclipse_ratio >= 32280 && eclipse_ratio <= 32290 
-            #     println("facet cp: ", facet.cp)
-            #     println("facet attitude: ", facet.attitude)
-            # end
-            F_SRP = -P_srp * facet.area * cos_α_srp * ((1 - facet.δ) * sun_dir_ii + 2 * (facet.ρ / 3 + facet.δ * cos_α_srp) * n) * eclipse_ratio
-            F_SRP_tracker += F_SRP
-            body.net_force += F_SRP
+            F_SRP = -P_srp * facet.area * cos_α_srp * ((1 - facet.δ) * sun_dir_ii + 2 * (facet.ρ / 3 + facet.δ * cos_α_srp) * n)# * eclipse_ratio
+            body.net_force += F_SRP # Rotate F_SRP from body frame to inertial frame
+
             if orientation
                 R_facet = config.rotate_to_inertial(model, body, root_index)*facet.cp + rot(model.links[root_index].q)'*body.r # Vector from CoM of spacecraft to facet Cp in inertial frame
-                # println("R_facet: $R_facet")
-                # println("F_SRP: $F_SRP")
-                # println("cross: $(cross(R_facet, F_SRP))")
-                # println("cross: ", cross(R_facet, F_SRP))
-                body.net_torque += rot(model.links[root_index].q) * cross(R_facet, F_SRP) # Calculate body frame net torque
-                # F_SRP_tracker += cross(R_facet, F_SRP)
-                # println("body net torque: ", body.net_torque)
+                R_facet_body = config.rotate_to_body(body)*facet.cp + body.r
+                body.net_torque += rot(model.links[root_index].q) * hat(R_facet) * F_SRP # Calculate body frame net torque
             end
         end
     end
+    # CSV.write("facet_forces.csv", df)
     # return F_SRP_tracker
     # println("Total F_SRP: $F_SRP_tracker")
 end

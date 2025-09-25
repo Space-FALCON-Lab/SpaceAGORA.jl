@@ -13,6 +13,7 @@ const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
     cp::MVector{3, Float64} = @MVector [0.0, 0.0, 0.0] # Center of pressure with respect to the center of mass of the Link containing the facet, in the Link frame
     ρ::Float64 = 0.0 # Diffuse coefficient
     δ::Float64 = 0.0 # Specular coefficient
+    name::String = "" # Identifying name
 end
 
 @kwdef mutable struct Thruster
@@ -317,13 +318,13 @@ end
 #####################################
 
 function create_facet_list(area_list::Vector{Float64}, attitude_list::Vector{SVector{4, Float64}}, normal_vector_list::Vector{SVector{3, Float64}}, 
-                            cp_loc_list::Vector{SVector{3, Float64}}, diffuse_coeffs_list::Vector{Float64}, specular_coeffs_list::Vector{Float64})
+                            cp_loc_list::Vector{SVector{3, Float64}}, diffuse_coeffs_list::Vector{Float64}, specular_coeffs_list::Vector{Float64}, facet_names_list::Vector{String})
     list_length = length(area_list)
     lists = Vector[area_list, attitude_list, normal_vector_list, cp_loc_list, specular_coeffs_list, diffuse_coeffs_list]
     @assert all(l -> length(l) == list_length, lists) "Not all lists are the same length"
     facet_vector = Vector{Facet}(undef, list_length)
     for i in eachindex(area_list)
-        facet_vector[i] = Facet(area_list[i], attitude_list[i], normal_vector_list[i], cp_loc_list[i], diffuse_coeffs_list[i], specular_coeffs_list[i])
+        facet_vector[i] = Facet(area_list[i], attitude_list[i], normal_vector_list[i], cp_loc_list[i], diffuse_coeffs_list[i], specular_coeffs_list[i], facet_names_list[i])
     end
     return facet_vector
 end

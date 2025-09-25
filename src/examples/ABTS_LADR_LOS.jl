@@ -1,5 +1,5 @@
 include("../simulation/Run.jl")
-include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
+# include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 # include("SpacecraftModel.jl")
@@ -80,6 +80,7 @@ args = Dict(# Misc Simulation
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
             :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
+            :dashboard => true,                                                                                     # Start dashboard True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
@@ -96,6 +97,7 @@ args = Dict(# Misc Simulation
             :orb_picture_viz => true,                               # Visualize orbit picture during simulation
 
         
+            
             #swarm simulation configuration
             :swarm_config => 1,                                      # Swarm configuration: 0 = no swarm, 1 = yes swarm
             :n_spacecraft => 1,                                       # Number of spacecraft to simulate
@@ -103,9 +105,9 @@ args = Dict(# Misc Simulation
 
             # Physical Model
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
-            :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
+            :planettime => 0.0,                                     # Initial time of the mission, sec. Importalmnt for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
-            :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
+            :density_model => "Exponential",                               # choices=['Constant' , 'Exponential' , 'Gram']
             :topography_model => "Spherical Harmonics",                             # choices=['None' , 'Spherical Harmonics']
             :topography_harmonics_file => "/workspaces/SpaceAGORA.jl/Topography_harmonics_data/MOLA.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
@@ -324,7 +326,7 @@ args = Dict(# Misc Simulation
                         :γ_initial_a => args[:γ_initial_a],
                         :γ_initial_b => args[:γ_initial_a],
                         :γ_step => args[:γ_step],
-                        :inclination => args[:inclination],
+                        :inclination => args[:inclination]-45.2,
                         :ω => args[:ω],
                         :Ω => args[:Ω],
                         :ν => args[:ν]

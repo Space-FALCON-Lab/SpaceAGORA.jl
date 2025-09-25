@@ -12,6 +12,42 @@ using AstroTime
 using PythonCall
 using Arrow
 
+# Call this anywhere you need GRAM; it's safe to call from multiple threads.
+function ensure_gram!(args)
+    # stash a shared lock in args (or keep a module-global if you prefer)
+    haskey(args, :_gram_lock) || (args[:_gram_lock] = ReentrantLock())
+
+    # Fast path: if already imported, return immediately (no lock contention)
+    if haskey(args, :_gram_mod) && !isnothing(args[:_gram_mod])
+        return args[:_gram_mod]::PyObject
+    end
+
+    # Slow path: do the Python sys.path mutation + import under a lock
+    lock(args[:_gram_lock]) do
+        # Double-check after acquiring lock (another thread may have finished)
+        if haskey(args, :_gram_mod) && !isnothing(args[:_gram_mod])
+            return args[:_gram_mod]::PyObject
+        end
+
+        sys = pyimport("sys")
+        os  = pyimport("os")
+
+        gram_dir = String(args[:directory_Gram])
+
+        # Read python's sys.path once, as Julia Vector{String}
+        py_path = pyconvert(Vector{String}, sys[:path])
+        if gram_dir ∉ py_path
+            # Append under the lock to avoid races
+            sys[:path].append(gram_dir)
+        end
+
+        gram = pyimport("gram")  # safe to import here; guarded by lock
+        args[:_gram_mod] = gram  # cache for future calls
+
+        return gram
+    end
+end
+
 function aerobraking_campaign(args, state,sim_id=1)
     save_res = args[:results]
     config.cnf.Gram_directory = args[:directory_Gram]
@@ -338,12 +374,14 @@ function aerobraking_campaign(args, state,sim_id=1)
     gram = nothing
     gram_atmosphere = nothing
     if uppercase(args[:density_model]) == "GRAM"
+
         sys = pyimport("sys")
         os = pyimport("os")
         if !(args[:directory_Gram] in pyconvert(Vector{String}, sys.path))
             sys.path.append(args[:directory_Gram])
         end
-        gram = pyimport("gram")
+        # gram = pyimport("gram")
+        gram = ensure_gram!(args)
         inputParameters = Dict("earth" => gram.EarthInputParameters(),
                             "mars" => gram.MarsInputParameters(),
                             "venus" => gram.VenusInputParameters(),

@@ -15,7 +15,8 @@ function save_results(time, ratio)
     end
 
     n_variable_to_save = length(config.cnf.solution_intermediate[1]) - 1
-    range_time = [item[1] for item in config.cnf.solution_intermediate]
+    #commented out due to errors with multi threading, and also seemingly not being used anywhere
+    # range_time = [item[1] for item in config.cnf.solution_intermediate]
     unique!(time) # Remove duplicate time entries
     results = Matrix{Float64}(zeros(n_variable_to_save, Int(ceil(length(time)/ratio))))
 

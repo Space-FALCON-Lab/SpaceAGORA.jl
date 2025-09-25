@@ -4,6 +4,13 @@ include("../utils/Initial_cond_calc.jl")
 include("Set_and_run.jl")
 include("../utils/Mission_anim.jl")
 
+using Dash
+using DashCoreComponents
+using DashHtmlComponents
+import .config
+
+
+
 function run_orbitalelements(args)
     apoapsis, periapsis_alt, inclination, Ω, ω = collect(range(start=round(args[:ra_initial_a]), stop=round(args[:ra_initial_b]), step=round(args[:ra_step]))), 
                                                  collect(range(start=round(args[:hp_initial_a]), stop=round(args[:hp_initial_b]), step=round(args[:hp_step]))), 
@@ -165,6 +172,20 @@ function run_sc_vehicles(args)
     target_states = Dict()
     space_objects_dict = Dict()
 
+
+    #initialize SpaceAGORA dashboard
+    app = dash(external_stylesheets = ["https://codepen.io/chriddyp/pen/bWLwgP.css"])
+    app.layout = html_div([
+        html_h1("SpaceAGORA Dashboard"),
+        html_div("Dash.jl: Julia interface for Dash")
+    ])
+
+    # run_server(app, "0.0.0.0", debug=true)
+    # Threads.@spawn run_server(app)
+    #store in args struct
+    # args[:dashboard_app] = app
+    
+
     #assign initial state values for targets
     for target in keys(target_objs_dict)
         target_state = target_initial_conditions[target]
@@ -211,22 +232,10 @@ function run_sc_vehicles(args)
     args[:target_objects] = target_objs_dict
     args[:space_objects_dict] = space_objects_dict
 
-    # Create temporary copies of the SPICE kernel for each thread/object
-    # spice_kernel_path = args[:directory_Spice]
-    # temp_kernel_paths = Dict{Any, String}()
 
-    # for obj_id in keys(space_objects_dict)
-    #     temp_path = "/tmp/spice_kernel_$(obj_id)_$(space_objects_dict[obj_id].uid)"
-    #     cp(spice_kernel_path, temp_path; force=true)
-    #     temp_kernel_paths[obj_id] = temp_path
-    # end
-    # #to verify
-    # print(temp_kernel_paths)
-
-    # const SPICE_LOCK = ReentrantLock()
-    # Threads.@threads 
-    for obj_id in collect(keys(space_objects_dict))
+    Threads.@threads for obj_id in collect(keys(space_objects_dict))
         obj = args[:space_objects_dict][obj_id]
+        # println(args[:get_config])
         # try
         #     obj.spice_path = temp_kernel_paths[obj_id]
         # catch e
@@ -250,7 +259,7 @@ function run_sc_vehicles(args)
     end
 
     # #visualize simulation run
-    start_viz_dashboard(args,space_objects_dict)
+    # start_viz_dashboard(args,space_objects_dict)
     
 
 
@@ -261,6 +270,12 @@ function run_analysis(args)
     config.reset_config()
     config.model.body = args[:spacecraft_model]
     args = def_miss(args)
+
+    #create thread local configs
+    # thread_configs = [deepcopy(config) for _ in 1:Threads.nthreads()]
+    # get_config() = thread_configs[Threads.threadid()]
+    config.reset_thread_configs()
+    args[:get_config] = config.get_config()
 
     if args[:initial_condition_type] == 1 && (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone")
         run_vgamma(args)

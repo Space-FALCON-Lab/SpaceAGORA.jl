@@ -28,7 +28,7 @@ function rotation_between(v1::SVector{3, Float64}, v2::SVector{3, Float64})
     end
 end
 
-function constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
+function constant_α_β(m, b, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
 """
     Generate a constant attitude control plan with fixed angles α and β set to 0.
     
@@ -64,7 +64,7 @@ function constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3
     return ω_wheel_derivatives
 end
 
-function lqr_constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
+function lqr_constant_α_β(m, b, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
     """
     Generate a constant attitude control plan using LQR with fixed angles α and β set to 0.
     
@@ -125,7 +125,7 @@ function lqr_constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVect
         # return -K * state
 end
 
-function lqr_constant_α_β_σ(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
+function lqr_constant_α_β_σ(m, b, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
     """
     Generate a constant attitude control plan using LQR with fixed angles α and β set to 0.
     
@@ -243,13 +243,13 @@ function solve_care_newton(A::AbstractMatrix, B::AbstractMatrix, Q::AbstractMatr
     return SMatrix{n, n, Float64}(P_k)
 end
 
-function constant_thruster!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
+function constant_thruster!(m, b, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     for thruster in b.thrusters
         thruster.thrust = 1.0
     end
 end
 
-function rw_mrp_feedback_control!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
+function rw_mrp_feedback_control!(m, b, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     """
     MRP feedback control for comparison with Basilisk
     """
@@ -271,7 +271,7 @@ function rw_mrp_feedback_control!(m, b::config.Link, root_index::Int, vel_pp_rw:
     b.ω_wheel_derivatives .= -pinv(b.J_rw)*Lr
 end
 
-function rw_polyfit_control!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
+function rw_polyfit_control!(m, b, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     rw1 = [-5.60895312e-36,  2.67405595e-32, -5.75833882e-29,  7.39858321e-26,
        -6.30995548e-23,  3.75879226e-20, -1.60171291e-17,  4.91432034e-15,
        -1.07698378e-12,  1.64628922e-10, -1.67735734e-08,  1.04916101e-06,
@@ -297,7 +297,7 @@ function rw_polyfit_control!(m, b::config.Link, root_index::Int, vel_pp_rw::SVec
     b.ω_wheel_derivatives .= t < 375 ? [polyfit(rw1, t), polyfit(rw2, t), polyfit(rw3, t)] : [0.0, 0.0, 0.0]
 end
 
-function basilisk_rw_read_csv!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
+function basilisk_rw_read_csv!(m, b, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     # Read the CSV file
     data = CSV.File("/workspaces/ABTS.jl/basilisk_rw_torque.csv", delim=',', header=true) |> DataFrame
     data = Matrix(data)
@@ -315,7 +315,7 @@ function basilisk_rw_read_csv!(m, b::config.Link, root_index::Int, vel_pp_rw::SV
     b.ω_wheel_derivatives .= rw_values[idx, :]
 end
 
-function basilisk_thruster_read_csv!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
+function basilisk_thruster_read_csv!(m, b, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     # Read the CSV file
     data = CSV.File("/workspaces/ABTS.jl/basilisk_thruster_force.csv", delim=',', header=true) |> DataFrame
     data = Matrix(data)
@@ -345,7 +345,7 @@ function basilisk_thruster_read_csv!(m, b::config.Link, root_index::Int, vel_pp_
     end
 end
 
-function basilisk_thruster_torque_read_csv!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
+function basilisk_thruster_torque_read_csv!(m, b, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     # Read the CSV file
     data = CSV.File("/workspaces/ABTS.jl/basilisk_thruster_torque.csv", delim=',', header=true) |> DataFrame
     data = Matrix(data)

@@ -13,6 +13,7 @@ include("../physical_models/Perturbations.jl")
 
 include("../control/Control.jl")
 include("../control/Propulsive_maneuvers.jl")
+# include("../config.jl")
 
 using LinearAlgebra
 using OrdinaryDiffEq
@@ -30,11 +31,18 @@ import .config
 import .ref_sys
 import .quaternion_utils
 
+# using .config
+
+
 const R0 = 149597870.7e3 # 1AU, m
 const g_e = 9.81 # Gravitational acceleration of Earth at surface, m/s^2
 
 function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothing, gram=nothing,sim_id=1)
-    wind_m = false
+    #enable thread specific configs
+    config.reset_thread_configs()
+    config = args[:get_config]
+    # println(config)
+
     print("asim started")
     if ip.wm == 1
         wind_m = true
@@ -691,7 +699,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             b.net_torque .= [0.0, 0.0, 0.0] # Reset the net torque on each link
         end
         
-        ## SAVE RESULTS
+        
+         ## SAVE RESULTS
         if Bool(config.cnf.results_save)
             # println("Number of passages in complete_passage: ", numberofpassage)
             if config.solution.simulation.solution_states != 0 && length(param) >= 19
@@ -719,28 +728,27 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 push!(config.cnf.solution_intermediate, sol)
             end
         end
-
         return y_dot
     end
 
     ## EVENTS: 
     function every_step_condition(y, t, integrator)
-        args = integrator.p[8]
-        try
-            current_run_id = sim_id  # avoid globals like sim_id
-            obj_dict = args[:space_objects_dict]
-            obj = obj_dict[current_run_id]
+        # args = integrator.p[8]
+        # try
+        #     current_run_id = sim_id  # avoid globals like sim_id
+        #     obj_dict = args[:space_objects_dict]
+        #     obj = obj_dict[current_run_id]
 
-            state = collect(integrator.u)
-            # Store as a vector of vectors: [time, state...]
-            # Use fieldnames and getfield instead of haskey for mutable struct
-            if !isdefined(obj, :sc_state_history) || obj.sc_state_history === nothing
-                obj.sc_state_history = Vector{Vector{Float64}}()
-            end
-            push!(obj.sc_state_history, vcat([t], state))
-        catch e
-            @warn "Error running every_step_condition callback" error=e
-        end
+        #     state = collect(integrator.u)
+        #     # Store as a vector of vectors: [time, state...]
+        #     # Use fieldnames and getfield instead of haskey for mutable struct
+        #     if !isdefined(obj, :sc_state_history) || obj.sc_state_history === nothing
+        #         obj.sc_state_history = Vector{Vector{Float64}}()
+        #     end
+        #     push!(obj.sc_state_history, vcat([t], state))
+        # catch e
+        #     @warn "Error running every_step_condition callback" error=e
+        # end
 
         return true
     end

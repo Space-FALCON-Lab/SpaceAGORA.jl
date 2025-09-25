@@ -6,6 +6,13 @@ using StaticArrays
 using AstroTime
 using OrdinaryDiffEq
 export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model
+using Base.Threads
+
+export config_data, get_config
+export reset_thread_configs
+# Your configuration data (can be a Dict, struct, etc.)
+
+
 
     @kwdef mutable struct Planet
         Rp_e::Float64 = 0.0
@@ -310,4 +317,22 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         global controller = Controller()
         global solution = Solution()
     end
+
+    function reset_thread_configs()
+        for i in 1:length(thread_configs)
+            thread_configs[i] = deepcopy(ConfigData())
+        end
+    end
+
+    @kwdef mutable struct ConfigData
+        model::Model = Model()
+        cnf::Cnf = Cnf()
+        controller::Controller = Controller()
+        solution::Solution = Solution()
+    end
+
+    config_data = ConfigData()
+
+    const thread_configs = [deepcopy(config_data) for _ in 1:nthreads()]
+    get_config() = thread_configs[threadid()]
 end

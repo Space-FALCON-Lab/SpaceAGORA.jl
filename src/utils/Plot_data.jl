@@ -7,6 +7,79 @@ using PlotlyJS: surface
 using PlotlyJS: Layout
 using LaTeXStrings
 using Arrow
+using DashBase: set_props!
+using Dash, DashHtmlComponents, DashCoreComponents
+
+#helper function for pushing PlotLY plots to dashboard
+function maybe_push!(args, comp_id::String, traces, layout; also_return::Bool=true)
+    fig = figure_dict(traces, layout)
+    if haskey(args, :app) && !isnothing(get(args, :app, nothing))
+        set_props!(args[:app], comp_id, Dict("figure" => fig))
+    end
+    return also_return ? fig : nothing
+end
+
+# push full figure (initial)
+function push_figure!(args, comp_id::String, traces, layout)
+    figs = ensure_cache!(args)
+    fig = Dict("data" => (traces isa AbstractVector ? traces : [traces]),
+               "layout" => layout)
+    figs[comp_id] = fig
+    set_props!(args[:app], comp_id, Dict("figure" => fig))
+    return fig
+end
+
+# append a trace to an existing figure
+function append_trace!(args, comp_id::String, new_trace)
+    figs = ensure_cache!(args)
+    fig = get(figs, comp_id, Dict("data"=>Any[], "layout"=>Layout()))  # default if missing
+    data = get(fig, "data", Any[])
+    push!(data, new_trace)
+    fig["data"] = data
+    figs[comp_id] = fig
+    set_props!(args[:app], comp_id, Dict("figure" => fig))
+    return fig
+end
+
+using Dash, PlotlyJS
+import DashBase: set_props!
+
+# --- tiny helpers ----------------------------------------------------------
+function ensure_cache!(args)
+    haskey(args, :fig_cache) || (args[:fig_cache] = Dict{String, Dict}())
+    return args[:fig_cache]::Dict{String, Dict}
+end
+
+# Create or append a trace to an existing Dash graph (by id).
+# If the graph doesn't exist, it initializes with `base_traces` + `new_trace` and `layout`.
+function upsert_trace!(args, comp_id::String; base_traces=Any[], new_trace=nothing, layout=Layout())
+    figs = ensure_cache!(args)
+
+    if !haskey(figs, comp_id)
+        # initialize
+        data = Any[]
+        append!(data, base_traces)
+        if new_trace !== nothing
+            push!(data, new_trace)
+        end
+        fig = Dict("data" => data, "layout" => layout)
+        figs[comp_id] = fig
+        set_props!(args[:app], comp_id, Dict("figure" => fig))
+        return fig
+    else
+        # append to existing
+        fig = figs[comp_id]
+        data = get(fig, "data", Any[])
+        if new_trace !== nothing
+            push!(data, new_trace)
+            fig["data"] = data
+        end
+        # (optionally merge layout updates here if you pass them)
+        set_props!(args[:app], comp_id, Dict("figure" => fig))
+        return fig
+    end
+end
+
 
 function plots(state, m, name, args, temp_name)
     data_table = DataFrame(Arrow.Table(temp_name))
@@ -440,8 +513,21 @@ function traj_3D(state, m, name, args, data_table)
     end
     layout = Layout(scene_aspectmode="cube", scene_xaxis_range=[axis_min, axis_max], scene_yaxis_range=[axis_min, axis_max], scene_zaxis_range=[axis_min, axis_max], xaxis_title="x [km]", yaxis_title="y [km]", zaxis_title="z [km]", template="simple_white", showlegend=false)
     p = plot([sphere1, sphere2, traj_3D_traces...], layout)
+
     display(p)
-    savefig(p, name * "_traj3D.pdf", format="pdf")
+
+    # Push Plotly graph to dashboard
+    comp_id = String(name)  # e.g., "traj_3d"
+
+    # First call: will initialize if missing (sphere1, sphere2, traj_traces... plus 'extra')
+    upsert_trace!(
+        args, comp_id,
+        base_traces=[sphere1, sphere2, traj_3D_traces...],
+        new_trace=scatter3d(x=[0,10], y=[0,10], z=[0,10], mode="lines"),
+        layout=layout
+        )
+
+    
 
 end
 

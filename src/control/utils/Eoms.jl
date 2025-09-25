@@ -19,6 +19,7 @@ sys = pyimport("sys")
 
 
 function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval=false, gram_atmosphere=nothing, time_switch_2=0, reevaluation_mode=1)
+    heat_rate_control = false
     sys.path.append(args[:directory_Gram])
     gram = pyimport("gram")
 
@@ -182,7 +183,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
                     aoa = 0.0001
                 else
                     state = [T_p, ρ, S]
-                    index_ratio = [1]
+                    index_ratio = [1,1]
                     aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state)
                     # aoa = m.aerodynamics.α
                 end
@@ -199,7 +200,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
                     aoa = 0.0001
                 else
                     state = [T_p, ρ, S]
-                    index_ratio = [1]
+                    index_ratio = [1,1]
                     aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state)
                     # aoa = m.aerodynamics.α
                 end

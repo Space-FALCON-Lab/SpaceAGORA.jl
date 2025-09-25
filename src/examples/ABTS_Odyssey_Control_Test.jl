@@ -80,7 +80,7 @@ args = Dict(# Misc Simulation
             
             # Control Mode
             :control_mode => 3,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
-            :security_mode => 0,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
+            :security_mode => 1,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 1,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
@@ -124,7 +124,7 @@ args = Dict(# Misc Simulation
             :phi => 180.0,                                          # Thrust Angle, deg
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
-            :ra_fin_orbit => 9690e3,                                # Target final apoapsis for the orbit, m
+            :ra_fin_orbit => 9760e3,                                # Target final apoapsis for the orbit, m
             :hp_fin_orbit => 100e3,                                 # Target final periapsis for the orbit, m
             :maneuver_plan => Odyssey_firing_plan_true_beginning,   # MAneuver plan function
             

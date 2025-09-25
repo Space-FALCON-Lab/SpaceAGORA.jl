@@ -12,12 +12,16 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
     sol_max_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
 
+    println("m.aero.alpha before deepcopying: ", m.aerodynamics.α)
+
     # Minimum drag ratio Run
     ip_temp = deepcopy(ip)
     ip_temp.cm = 0
 
     m_temp = deepcopy(m)
     m_temp.aerodynamics.α = 0.0
+
+    println("m.aero.alpha after deepcopying: ", m.aerodynamics.α)
 
     param_temp = param
 
@@ -34,6 +38,8 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     prob = ODEProblem(f!, in_cond, (initial_time, final_time), param_temp)
     sol_min_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
 
+    println("m.aero.alpha after deepcopying and running zero aoa case: ", m.aerodynamics.α)
+
     energy_target_min = norm(sol_max_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_max_dratio[1:3, end]) # Lowest possible energy with maximum drag ratio, most negative
     energy_target_max = norm(sol_min_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_min_dratio[1:3, end]) # Highest possible energy with minimum drag ratio, least negative
 
@@ -41,7 +47,7 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     println("Energy target max: ", energy_target_max)
 
     h0 = norm(cross(r0, v0))
-    r_p = h0^2 / (m.planet.μ * (1 + OE[2]))               # periapsis radius
+    r_p = h0^2 / (m.planet.μ * (1 + OE[2]))
 
     # println("Current periapsis: ", r_p - m.planet.Rp_e)
 
@@ -49,7 +55,7 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
 
     println("Target energy: ", target_energy)
 
-    if target_energy > energy_target_max && target_energy < energy_target_min
+    if target_energy < energy_target_max && target_energy > energy_target_min
         config.cnf.targeting = 1
     elseif target_energy < energy_target_min
         config.cnf.targeting = 0

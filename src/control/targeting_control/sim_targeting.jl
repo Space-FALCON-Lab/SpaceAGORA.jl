@@ -271,7 +271,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         else
             state = [T_p, ρ, S]
             index_ratio = [1,1]
-            config.cnf.α = pi/2 # control_solarpanels_heatrate(ip, m, args, index_ratio, state, t0 - config.cnf.t_switch_targeting, config.cnf.initial_position_closed_form, OE)
+            config.cnf.α = control_solarpanels_heatrate(ip, m, args, index_ratio, state, t0 - config.cnf.t_switch_targeting, config.cnf.initial_position_closed_form, OE)
         end
 
         α = config.cnf.α

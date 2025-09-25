@@ -1194,21 +1194,24 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     energy_f = target_planning(f!, ip, m, args, param, OE_AI, initial_time, final_time, a_tol, r_tol, method, events, in_cond)
 
                     println(config.cnf.targeting)
+                    println("energy_f: ", energy_f)
+
+                    m.aerodynamics.α = deg2rad(args[:α])
                     println("m_aero_alpha_a after targeting: ", m.aerodynamics.α)
 
                     config.cnf.initial_position_closed_form = []
 
                     if config.cnf.targeting == 1
-                        current_epoch = date_initial + time_0*seconds # Precompute the current epoch
-                        time_real = DateTime(current_epoch) # date_initial + Second(t0)
-                        timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
+                        # current_epoch = date_initial + time_0*seconds # Precompute the current epoch
+                        # time_real = DateTime(current_epoch) # date_initial + Second(t0)
+                        # timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
 
-                        # Timing variables
-                        el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation
-                        current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
-                        time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
-                        config.cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
-                        m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), config.cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+                        # # Timing variables
+                        # el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation
+                        # current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
+                        # time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
+                        # config.cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
+                        # m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), config.cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
 
                         v_E = control_solarpanels_targeting_heatload(energy_f, param, OE_AI) # 28.075
 

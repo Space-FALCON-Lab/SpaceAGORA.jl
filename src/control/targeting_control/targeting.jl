@@ -23,7 +23,10 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
 
     println("m.aero.alpha after deepcopying: ", m.aerodynamics.α)
 
-    param_temp = param
+    config.cnf.ascending_phase = false
+    config.cnf.drag_state = true
+
+    # param_temp = param
 
     # println(param_temp[1])
     # println(" ")
@@ -83,6 +86,9 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
 
     # config.cnf.γf = atan(V_rad_f / V_perp_f)                        # flight path angle at atmospheric interface
 
+    # ip.cm = ip_cm_copy
+    # m.aerodynamics.α = deg2rad(args[:α])
+
     return target_energy
 end
 
@@ -125,7 +131,7 @@ function control_solarpanels_targeting_heatload(energy_f, param, OE)
         return (energy_fin - energy_f) / 1e6
     end
 
-    v_E_fin = find_zero(v_E -> func_targeting_heatload(v_E), [1, 100], Roots.Brent(), verbose=true, rtol=1e-5)
+    v_E_fin = find_zero(v_E -> func_targeting_heatload(v_E), [1, 100], Roots.Brent(), verbose=true, rtol=1e-8)
 
     return v_E_fin
 end

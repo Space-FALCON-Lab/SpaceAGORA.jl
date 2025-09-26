@@ -1185,7 +1185,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     # println("aerobraking_phase: ", aerobraking_phase)
                     # println("config_drag_state: ", config.cnf.drag_state)
 
-                    println("m_aero_alpha_a before targeting: ", m.aerodynamics.α)
+                    # println("m_aero_alpha_a before targeting: ", m.aerodynamics.α)
 
                     OE_AI = rvtoorbitalelement(SVector{3, Float64}(in_cond[1:3]), SVector{3, Float64}(in_cond[4:6]), in_cond[7], m.planet)
 
@@ -1193,13 +1193,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
                     energy_f = target_planning(f!, ip, m, args, param, OE_AI, initial_time, final_time, a_tol, r_tol, method, events, in_cond)
 
-                    println(config.cnf.targeting)
-                    println("energy_f: ", energy_f)
+                    # println(config.cnf.targeting)
+                    # println("energy_f: ", energy_f)
 
                     m.aerodynamics.α = deg2rad(args[:α])
-                    println("m_aero_alpha_a after targeting: ", m.aerodynamics.α)
-
-                    config.cnf.initial_position_closed_form = []
+                    # println("m_aero_alpha_a after targeting: ", m.aerodynamics.α)
 
                     if config.cnf.targeting == 1
                         # current_epoch = date_initial + time_0*seconds # Precompute the current epoch
@@ -1231,8 +1229,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         println("vf: ", norm(sol_lam[4:6,end]))
                         println("γf: ", asin(sol_lam[1:3,end]'*sol_lam[4:6,end]/norm(sol_lam[4:6,end]) / norm(sol_lam[1:3,end])))
 
+                        fin_energy = norm(sol_lam[4:6,end])^2/2 - m.planet.μ/norm(sol_lam[1:3,end])
+
                         println("Targeting energy: ", energy_f)
-                        println("Final Energy: ", norm(sol_lam[4:6,end])^2/2 - m.planet.μ/norm(sol_lam[1:3,end]))
+                        println("Final Energy: ", fin_energy)
 
                         push!(config.cnf.time_list, sol_lam.t...)
                         push!(config.cnf.lamv_list, sol_lam[7,:]...)
@@ -1308,6 +1308,21 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 # Save results 
                 push!(time_solution, (sol.t * config.cnf.TU)...)
                 time_0 = time_solution[end]
+
+                if aerobraking_phase == 2
+                    r0 = SVector{3, Float64}(in_cond[1:3])
+                    v0 = SVector{3, Float64}(in_cond[4:6])
+
+                    energy_fin = norm(v0)^2/2 - m.planet.μ/norm(r0)
+
+                    a = -m.planet.μ/(2*energy_fin)
+
+                    e = sqrt(1 - (norm(cross(r0, v0))^2)/(m.planet.μ*a))
+
+                    rp = a*(1 - e)
+
+                    println("rp_fin = ", 2*a - rp)
+                end
 
                 if aerobraking_phase == 0
                     new_periapsis(m, in_cond[1:3] * config.cnf.DU, in_cond[4:6] * config.cnf.DU / config.cnf.TU, args)
@@ -1470,6 +1485,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         count_temp += 1
 
         if count_temp > 15
+            println("entering")
             break
         end
 
@@ -1495,7 +1511,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             println("Actual periapsis altitude " * string(config.cnf.altitude_periapsis[end]) * " km - Vacuum periapsis altitude = " * string((config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end]) - m.planet.Rp_e)*1e-3) * " km")
 
         # Print Ra new (Apoapsis)
-            println("Ra new = " * string((config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end]))*1e-3) * " km")
+            println("Ra new = " * string(config.solution.orientation.pos_ii_mag[end]/1e3) * " km") # string((config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end]))*1e-3) * " km")
         end
 
         # Print Heat Rate and Heat Load

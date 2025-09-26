@@ -12,7 +12,7 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
     date_initial = from_utc(DateTime(mission.initial_condition.year, mission.initial_condition.month, mission.initial_condition.day, mission.initial_condition.hour, mission.initial_condition.minute, mission.initial_condition.second))
 
     if args[:body_shape] == "Blunted Cone"
-        len_sol = length(config.solution.orientation.time)
+        len_sol = length(config.solution().orientation.time)
         results(zeros(len_sol), zeros(len_sol), zeros(len_sol), zeros(len_sol))
 
         return zeros(len_sol), zeros(len_sol), zeros(len_sol), zeros(len_sol)
@@ -20,39 +20,39 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
 
     if online == false
         if args[:type_of_mission] == "Drag Passage"
-            step_time = length(config.solution.orientation.time)
-            initialcondition = [config.solution.orientation.oe[1][1], config.solution.orientation.oe[2][1], config.solution.orientation.oe[3][1], config.solution.orientation.oe[4][1], config.solution.orientation.oe[5][1], config.solution.orientation.oe[6][1], config.solution.performance.mass[1]]
-            T = config.solution.physical_properties.T[1]
-            α = config.solution.physical_properties.α_control[1]
-            t0 = config.solution.orientation.time[1]
+            step_time = length(config.solution().orientation.time)
+            initialcondition = [config.solution().orientation.oe[1][1], config.solution().orientation.oe[2][1], config.solution().orientation.oe[3][1], config.solution().orientation.oe[4][1], config.solution().orientation.oe[5][1], config.solution().orientation.oe[6][1], config.solution().performance.mass[1]]
+            T = config.solution().physical_properties.T[1]
+            α = config.solution().physical_properties.α_control[1]
+            t0 = config.solution().orientation.time[1]
 
             t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time)
             results(t_cf, h_cf, γ_cf, v_cf)
         elseif args[:type_of_mission] != "Drag Passage"
             # Calculate the number of orbit
-            number_orbits = config.solution.orientation.number_of_passage[end]
-            length_solution = length(config.solution.orientation.number_of_passage)
+            number_orbits = config.solution().orientation.number_of_passage[end]
+            length_solution = length(config.solution().orientation.number_of_passage)
 
             t, h, γ, v = zeros(length_solution), zeros(length_solution), zeros(length_solution), zeros(length_solution)
             cnt = 0
             for i in range(1,ceil(number_orbits))
 
-                # idx_orbit = findall(val -> val == i, config.solution.orientation.number_of_passage)
+                # idx_orbit = findall(val -> val == i, config.solution().orientation.number_of_passage)
                 # # idx_orbit = [idx for idx, val in enumerate(solution.orientation.numberofpassage) if val == i]
                 
-                # alt = [(config.solution.orientation.pos_ii_mag[item] - mission.planet.Rp_e) for item in idx_orbit]
+                # alt = [(config.solution().orientation.pos_ii_mag[item] - mission.planet.Rp_e) for item in idx_orbit]
                 # # alt_index = [idx for idx, val in enumerate(alt) if val <= 160*1e3]
 
                 # # TODO: CHANGE TO ARGS[:EI]
                 # alt_index = findall(val -> val <= 160*1e3, alt)
 
-                idx_orbit = findall(x -> x == i, config.solution.orientation.number_of_passage) # [idx for (idx, val) in enumerate(config.solution.orientation.number_of_passage) if val == i]
+                idx_orbit = findall(x -> x == i, config.solution().orientation.number_of_passage) # [idx for (idx, val) in enumerate(config.solution().orientation.number_of_passage) if val == i]
 
-                alt = [config.solution.orientation.pos_ii_mag[item] - mission.planet.Rp_e for item in idx_orbit]
+                alt = [config.solution().orientation.pos_ii_mag[item] - mission.planet.Rp_e for item in idx_orbit]
                 alt_index = findall(x -> x < args[:EI]*1e3, alt) # [idx for (idx, val) in enumerate(alt) if val <= 160e3]
 
                 if length(alt_index) == 0
-                    len_sol = length(config.solution.orientation.time)
+                    len_sol = length(config.solution().orientation.time)
                     results(zeros(len_sol), zeros(len_sol), zeros(len_sol), zeros(len_sol))
                     
                     return zeros(len_sol), zeros(len_sol), zeros(len_sol), zeros(len_sol)
@@ -61,11 +61,11 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
                 index = alt_index[1] + idx_orbit[1]
                 step_time = length(alt_index)
 
-                initialcondition = [config.solution.orientation.oe[1][index], config.solution.orientation.oe[2][index], config.solution.orientation.oe[3][index], config.solution.orientation.oe[4][index], config.solution.orientation.oe[5][index], config.solution.orientation.oe[6][index], config.solution.performance.mass[index]]
+                initialcondition = [config.solution().orientation.oe[1][index], config.solution().orientation.oe[2][index], config.solution().orientation.oe[3][index], config.solution().orientation.oe[4][index], config.solution().orientation.oe[5][index], config.solution().orientation.oe[6][index], config.solution().performance.mass[index]]
 
-                T = config.solution.physical_properties.T[index]
-                α = config.solution.physical_properties.α_control[index]
-                t0 = config.solution.orientation.time[index]
+                T = config.solution().physical_properties.T[index]
+                α = config.solution().physical_properties.α_control[index]
+                t0 = config.solution().orientation.time[index]
 
                 t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time)
                 # println("Length of interval: ", length(t[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])]))
@@ -80,8 +80,8 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
             results(t, h, γ, v)
         end
     else # online for control
-        if args[:montecarlo] == true && Bool(config.cnf.closed_form_solution_off)
-            config.cnf.closed_form_solution_off = 0
+        if args[:montecarlo] == true && Bool(config.cnf().closed_form_solution_off)
+            config.cnf().closed_form_solution_off = 0
             state = Dict(:ra => 0, :rp => 0, :i => 0, :Ω => 0, :ω => 0, :vi => 0)
             state[:ra], state[:rp], state[:i], state[:Ω], state[:ω], state[:vi] = initialcondition[1]*(1+initialcondition[2]), initialcondition[1]*(1-initialcondition[2]), initialcondition[3], initialcondition[4], initialcondition[5], initialcondition[6]
             state = monte_carlo_guidance_closedform(state, args)
@@ -99,8 +99,8 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
 end
 
 function closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time = 0, α_profile = [], online = 0) 
-    if config.cnf.count_numberofpassage != 1
-        t_prev = config.solution.orientation.time[end]
+    if config.cnf().count_numberofpassage != 1
+        t_prev = config.solution().orientation.time[end]
     else
         t_prev = mission.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # mission.initial_condition.time_rot
     end
@@ -113,7 +113,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     v0 = norm(vel_ii) # Inertial velocity magnitude
     h0 = r0 - mission.planet.Rp_e
 
-    pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, mission.planet, config.cnf.et)
+    pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, mission.planet, config.cnf().et)
 
     LatLong = rtolatlong(pos_pp, mission.planet)
     lat = LatLong[2]
@@ -156,10 +156,10 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     if step_time == 0
         temp = Δt * args[:trajectory_rate]/10
 
-        if temp > length(config.cnf.heat_rate_list)
+        if temp > length(config.cnf().heat_rate_list)
             step_time = ceil(Int, temp)
         else
-            step_time = length(config.cnf.heat_rate_list)
+            step_time = length(config.cnf().heat_rate_list)
         end
     end
     
@@ -368,8 +368,8 @@ end
 
 function results(t_cf, h_cf, γ_cf, v_cf)
     # Save results
-    append!(config.solution.closed_form.t_cf, t_cf)
-    append!(config.solution.closed_form.h_cf, h_cf)
-    append!(config.solution.closed_form.γ_cf, γ_cf)
-    append!(config.solution.closed_form.v_cf, v_cf)
+    append!(config.solution().closed_form.t_cf, t_cf)
+    append!(config.solution().closed_form.h_cf, h_cf)
+    append!(config.solution().closed_form.γ_cf, γ_cf)
+    append!(config.solution().closed_form.v_cf, v_cf)
 end

@@ -3,6 +3,7 @@ include("../utils/MonteCarlo_set.jl")
 include("../utils/Initial_cond_calc.jl")
 include("Set_and_run.jl")
 include("../utils/Mission_anim.jl")
+# include("../utils/plot_data_multi.jl")
 
 using Dash
 using DashCoreComponents
@@ -180,10 +181,8 @@ function run_sc_vehicles(args)
         html_div("Dash.jl: Julia interface for Dash")
     ])
 
-    # run_server(app, "0.0.0.0", debug=true)
-    # Threads.@spawn run_server(app)
-    #store in args struct
-    # args[:dashboard_app] = app
+    # Run Dash.jl server asynchronously
+    @async run_server(app, "0.0.0.0", 8050)
     
 
     #assign initial state values for targets
@@ -232,25 +231,36 @@ function run_sc_vehicles(args)
     args[:target_objects] = target_objs_dict
     args[:space_objects_dict] = space_objects_dict
 
+    # Dictionary to store all outputs of aerobraking_campaign for each spacecraft
+    aerobraking_outputs = Dict{Any, Any}()
 
-    #begin spacecraft simulation threads
-    Threads.@threads for obj_id in collect(keys(space_objects_dict))
+    # This will be populated inside the simulation threads below
+    args[:aerobraking_outputs] = aerobraking_outputs
+
+    # Begin spacecraft simulation tasks (true parallelism)
+    tasks = Dict{Any, Task}()
+
+    for obj_id in collect(keys(space_objects_dict))
         obj = args[:space_objects_dict][obj_id]
 
-        # 1) Make a private config for this iteration
-        cfg = deepcopy(config.config_data())   # start from thread baseline (or DEFAULT)
+        # Make a private config for this iteration
+        cfg = deepcopy(config.config_data())
 
-        # (optional) tweak per-run settings on cfg here
-        # cfg.cnf.index_MonteCarlo = obj_id
-
-        println("begin aero campaign for obj_id: ", obj_id)
-        # aerobraking_campaign(args, obj.sc_states,obj_id)
-        
-        # 3) Run this iteration with the task-local config in scope
-        config.with_config(cfg) do
-            aerobraking_campaign(args, obj.sc_states, obj_id)
+        # Spawn each simulation as a separate task on available threads
+        tasks[obj_id] = Threads.@spawn begin
+            println("begin aero campaign for obj_id: ", obj_id)
+            result = config.with_config(cfg) do
+                state, m, name, args, temp_name = aerobraking_campaign(args, obj.sc_states, obj_id)
+                (state=state, m=m, name=name, args=args, temp_name=temp_name)
+            end
+            println("Aero campaign complete for " * string(obj_id))
+            result
         end
-        println("Aero campaign complete for " * string(obj_id))
+    end
+
+    # Wait for all tasks to finish and collect results
+    for (obj_id, t) in tasks
+        aerobraking_outputs[obj_id] = fetch(t)
     end
 
     #writing all simulation results to csv files
@@ -266,6 +276,16 @@ function run_sc_vehicles(args)
 
     # #visualize simulation run
     # start_viz_dashboard(args,space_objects_dict)
+
+    
+    if args[:plot] == true
+        # for obj_id in keys(aerobraking_outputs)
+        #     output = aerobraking_outputs[obj_id]
+        #     plots(output.state, output.m, output.name, output.args, output.temp_name)
+        # end
+        plots_multi(aerobraking_outputs)
+        # plots(state, m, name, args, temp_name)
+    end
     
 
 

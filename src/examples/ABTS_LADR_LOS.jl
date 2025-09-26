@@ -11,6 +11,7 @@ using Random
 using WGLMakie
 using PlotlyJS
 using Base.Threads
+import DashBase
 # import .SpacecraftModel
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()

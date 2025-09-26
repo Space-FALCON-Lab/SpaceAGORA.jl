@@ -404,7 +404,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         α = config.cnf.α
 
         # Heat Rate 
-        if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
+        if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state
             
             if ip.tm == 1
                 heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
@@ -1196,7 +1196,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     # println(config.cnf.targeting)
                     # println("energy_f: ", energy_f)
 
-                    m.aerodynamics.α = deg2rad(args[:α])
+                    m.aerodynamics.α = deg2rad(args[:α])    
+                    config.cnf.ascending_phase = false
+                    config.cnf.drag_state = true
                     # println("m_aero_alpha_a after targeting: ", m.aerodynamics.α)
 
                     if config.cnf.targeting == 1

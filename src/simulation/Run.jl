@@ -265,14 +265,14 @@ function run_sc_vehicles(args)
 
     #writing all simulation results to csv files
 
-    for obj_id in keys(space_objects_dict)
-        obj = space_objects_dict[obj_id]
-        sc_state_history = obj.sc_state_history
+    # for obj_id in keys(space_objects_dict)
+    #     obj = space_objects_dict[obj_id]
+    #     sc_state_history = obj.sc_state_history
 
-        filename = string(obj_id, "_state_data.csv")
-        CSV.write(filename, Tables.table(sc_state_history), writeheader=false)
+    #     filename = string(obj_id, "_state_data.csv")
+    #     CSV.write(filename, Tables.table(sc_state_history), writeheader=false)
 
-    end
+    # end
 
     # #visualize simulation run
     # start_viz_dashboard(args,space_objects_dict)

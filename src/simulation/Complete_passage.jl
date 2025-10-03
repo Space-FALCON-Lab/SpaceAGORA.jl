@@ -1213,6 +1213,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         # config.cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
                         # m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), config.cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
 
+                        # Uncomment from here for targeting with shooting
                         v_E = control_solarpanels_targeting_heatload(energy_f, param, OE_AI) # 28.075
 
                         println("v_E: ", v_E)
@@ -1222,11 +1223,17 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         
                         sol_lam, time_switch = asim_ctrl_rf(ip, m, time_0, OE_AI, args, v_E, 1.0, false, gram_atmosphere)
 
-                        # config.cnf.t_switch_targeting = control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
-
                         config.cnf.ts_targ_1 = time_switch[1]
                         config.cnf.ts_targ_2 = time_switch[2]
-                        
+
+                        # time_switch = control_solarpanels_targeting_closed_form(energy_f, param, OE_AI)
+
+                        # root finding num int
+                        # config.cnf.t_switch_targeting = control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
+
+                        # config.cnf.ts_targ_1 = initial_time + time_switch[1]
+                        # config.cnf.ts_targ_2 = initial_time + time_switch[2]
+
                         println("hf: ", norm(sol_lam[1:3,end]) - m.planet.Rp_e)
                         println("vf: ", norm(sol_lam[4:6,end]))
                         println("γf: ", asin(sol_lam[1:3,end]'*sol_lam[4:6,end]/norm(sol_lam[4:6,end]) / norm(sol_lam[1:3,end])))

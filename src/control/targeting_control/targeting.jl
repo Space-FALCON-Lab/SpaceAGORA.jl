@@ -199,41 +199,64 @@ function control_solarpanels_targeting_closed_form(energy_f, param, initialcondi
         t_p = Δt/2
     end
 
+    println("h0 = ", h0)
+
     function func_targeting_cf(t_switch)
         # t_switch =350.0
 
         t_cf = collect(range(start=0, stop=t_switch, step=0.1))
 
-        aoa_cf1 = ones(length(t_cf)) * m.aerodynamics.α
-
-        # println(aoa_cf)
-        println("t_switch", t_switch)
-        println(" ")
+        aoa_cf1 = ones(length(t_cf)) * pi/2
 
         t_cf1, h_cf1, γ_cf1, v_cf1 = closed_form_targeting(0, m, (v0, γ0, h0), T, t_cf, t_p, mass, aoa_cf1)
 
-        println(v_cf1[end], " ", γ_cf1[end], " ", t_cf1[end])
+        function cf_switching!(resid, z)
+            v0_n = z[1]
+            γ0_n = z[2]
 
-        v0_2, γ0_2, h0_2 = v_cf1[end], γ_cf1[end], h0 # h_cf1[end]
+            aoa_cf = zeros(length(t_cf))
 
-        t_cf = collect(range(start=t_cf1[end], stop=2*t_p, step=0.1))
-        aoa_cf2 = zeros(length(t_cf))
+            t_cf_n, h_cf_n, γ_cf_n, v_cf_n = closed_form_targeting(0, m, (v0_n, γ0_n, h0), T, t_cf, t_p, mass, aoa_cf)
 
-        t_cf2, h_cf2, γ_cf2, v_cf2 = closed_form_targeting(t_cf1[end], m, (v0_2, γ0_2, h0_2), T, t_cf, t_p, mass, aoa_cf2)
+            resid[1] = v_cf_n[end] - v_cf1[end]
+            resid[2] = γ_cf_n[end] - γ_cf1[end]
+        end
 
-        # println(t_cf[end])
-        println(h_cf2[end])
-        println(v_cf2[end])
+        # println(v_cf1[end], " ", γ_cf1[end], " ", t_cf1[end])
+
+        # v0_2, γ0_2, h0_2 = v_cf1[end], γ_cf1[end], h0 # h_cf1[end]
+
+        # t_cf = collect(range(start=t_cf1[end], stop=2*t_p, step=0.1))
+        # aoa_cf2 = zeros(length(t_cf))
+
+        # t_cf2, h_cf2, γ_cf2, v_cf2 = closed_form_targeting(t_cf1[end], m, (v0_2, γ0_2, h0_2), T, t_cf, t_p, mass, aoa_cf2)
+
+        # # println(t_cf[end])
+        # println(h_cf2[end])
+        # println(v_cf2[end])
+
+        z0 = [v0 - 150, γ0 + 0.1]
+
+        sol_NL = nlsolve((resid, z) -> cf_switching!(resid, z), z0, show_trace=false)
+
+        # println(sol_NL)
+
+        v0_2, γ0_2, h0_2 = sol_NL.zero[1], sol_NL.zero[2], h0 # h_cf1[end]
+
+        t_cf2 = collect(range(start=0, stop=2*t_p, step=0.1))
+        aoa_cf2 = zeros(length(t_cf2))
+
+        t_cf2, h_cf2, γ_cf2, v_cf2 = closed_form_targeting(t_cf2[1], m, (v0_2, γ0_2, h0_2), T, t_cf2, t_p, mass, aoa_cf2)
 
         energy_fin = v_cf2[end]^2/2 - m.planet.μ / (m.planet.Rp_e + h_cf2[end])
 
-        println("Final energy (closed form): ", energy_fin)
-        println(" ")
+        # println("Final energy (closed form): ", energy_fin)
+        # println(" ")
 
         return energy_fin - energy_f
     end
 
     t_switch = find_zero(ts -> func_targeting_cf(ts), [1, 2*t_p - 1], Roots.Brent(), verbose=true)
 
-    return t_switch
+    return [t_switch, 2*t_p]
 end

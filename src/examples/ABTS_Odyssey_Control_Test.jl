@@ -11,11 +11,11 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/SpaceAGORA.jl/output/switching_analysis_targeting_campaign_mc",     # Directory where to save the results
+            :directory_results => "/workspaces/SpaceAGORA.jl/output/switching_analysis_targeting_cf",     # Directory where to save the results
             :directory_Gram => "/workspaces/SpaceAGORA.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/SpaceAGORA.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/SpaceAGORA.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
-            :Gram_version => 0,                                                                                 # MarsGram x file to use
+            :Gram_version => 1,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
             :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
@@ -90,19 +90,19 @@ args = Dict(# Misc Simulation
             :targeting_ctrl => 1,                                   # Targeting Control True=1, False=0
             
             # Initial Conditions
-            :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
+            :initial_condition_type => 1,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
             :ra_initial_a => 9800e3, # 28523.95e3,                  # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
             :hp_initial_a => 93e3,                                  # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 159000.0,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
-            :v_initial_a => 4350.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :v_initial_a => 4200.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_step => 10000.0,                                     # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
 
             :orientation_type => 0,                                 # Initial Condition orientation = 0, Initial Condition orientation and velocity = 1
-            :γ_initial_a => 7.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :γ_initial_a => 6.25,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => 10.0,                                   # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_step => 10.5,                                        # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
             :inclination => 93.6,                                   # Inclination Orbit, deg
@@ -126,7 +126,7 @@ args = Dict(# Misc Simulation
             :phi => 180.0,                                          # Thrust Angle, deg
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
-            :ra_fin_orbit => 9735e3,                                # Target final apoapsis for the orbit, m
+            :ra_fin_orbit => 9730e3, # 9650e3, # 9730e3,                                # Target final apoapsis for the orbit, m
             :hp_fin_orbit => 100e3,                                 # Target final periapsis for the orbit, m
             :maneuver_plan => Odyssey_firing_plan_true_beginning,   # MAneuver plan function
             
@@ -185,23 +185,24 @@ t = @elapsed begin
     end
 end
 
-t = @elapsed begin
+# t = @elapsed begin
+#     ra_initial_a = args[:ra_initial_a]
             
-    # Run the simulation
-    for i in collect(range(1,10,step=1))
+#     # Run the simulation
+#     for i in collect(range(1,100,step=1))
 
-        d = Uniform(-5,5)
-        args[:ra_initial_a] = args[:ra_initial_a] + rand(d)*1e3
+#         d = Uniform(-5,+5)
+#         args[:ra_initial_a] = ra_initial_a + rand(d)*1e3
 
-        sol = run_analysis(args)
-    end
+#         sol = run_analysis(args)
+#     end
 
-    println(" ")
+#     println(" ")
 
-    # if Bool(args[:passresults])
-    #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-    # end
-end
+#     # if Bool(args[:passresults])
+#     #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+#     # end
+# end
 
 # t = @elapsed begin
 #     # furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
@@ -223,28 +224,28 @@ end
 #     # end
 # end
 
-# t = @elapsed begin
-#     # furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-#     # furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-#     # furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-#     # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-#     # furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
+t = @elapsed begin
+    # furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
+    # furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
+    # furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
+    # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
+    # furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
             
-#     # Run the simulation
-#     for vel in collect(range(4300,4800,step=50))
-#         for gam in collect(range(7.5,3.0,step=-0.25))
-#             args[:v_initial_a] = vel
-#             args[:γ_initial_a] = gam
-#             sol = run_analysis(args)
-#         end
-#     end
+    # Run the simulation
+    for vel in collect(range(4300,4800,step=100))
+        for gam in collect(range(7.0,3.0,step=-1.0))
+            args[:v_initial_a] = vel
+            args[:γ_initial_a] = gam
+            sol = run_analysis(args)
+        end
+    end
 
-#     println(" ")
+    println(" ")
 
-#     # if Bool(args[:passresults])
-#     #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#     # end
-# end
+    # if Bool(args[:passresults])
+    #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+    # end
+end
 
 # t = @elapsed begin
 #     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")

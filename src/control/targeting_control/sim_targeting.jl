@@ -470,7 +470,7 @@ function closed_form_targeting(t0, mission, initialcondition, T, t_cf, t_p, mass
     # println(CD_t)
     # println(" ")
 
-    cost_1 = ρ .* CD_t * Area_tot / (2*mass)
+    cost_1 = ρ .* CD_t * Area_tot / (2*mass) .* α_profile
     cost_2 = ρ .* CL_t * Area_tot / (2*mass)
 
     # a0 = 0.0016

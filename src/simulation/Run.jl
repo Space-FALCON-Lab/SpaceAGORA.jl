@@ -24,7 +24,7 @@ function run_orbitalelements(args)
             for mc_index in range(args[:initial_montecarlo_number], args[:montecarlo_size], step=1)
                 state[:Apoapsis], state[:Periapsis], state[:Inclination], state[:Ω], state[:ω], state[:Final_sma] = apoapsis_item, Float64(periapsis_item*1e-3), inclination, Ω, ω, final_apoapsis
 
-                args[:simulation_filename] = "Results_ctrl=" * string(args[:control_mode]) * "_ra=" * string(Int64(round(apoapsis_item/1e3))) * "_rp=" * string(Float64(periapsis_item/1e3)) * "_hl=" * string(args[:max_heat_rate]) * "_" * string(args[:α])
+                args[:simulation_filename] = "Results_ctrl=" * string(args[:control_mode]) * "_ra=" * string(Float64(apoapsis_item/1e3)) * "_rp=" * string(Float64(periapsis_item/1e3)) * "_hl=" * string(args[:max_heat_rate]) * "_" * string(args[:α])
 
                 if args[:montecarlo] == true
                     args = MonteCarlo_setting_passage(mc_index, args)

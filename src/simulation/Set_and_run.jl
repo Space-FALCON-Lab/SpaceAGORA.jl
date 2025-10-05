@@ -237,7 +237,9 @@ function aerobraking_campaign(args, state)
     # Body
     if args[:body_shape] == "Spacecraft"
         b_class = args[:spacecraft_model]
-        println("Area: " * string(config.get_spacecraft_reference_area(b_class)) * " m^2")
+        if args[:print_res]
+            println("Area: " * string(config.get_spacecraft_reference_area(b_class)) * " m^2")
+        end
 
     elseif args[:body_shape] == "Blunted Cone" # TODO: Change this to new spacecraft model method
 
@@ -258,6 +260,7 @@ function aerobraking_campaign(args, state)
         Ω = deg2rad(state[:Ω])
         ω = deg2rad(state[:ω])
         vi = state[:vi]
+        println("vi: ", vi)
         m0 = mass
         year = args[:year]
         month = args[:month]
@@ -381,6 +384,7 @@ function aerobraking_campaign(args, state)
             gram_atmosphere.setSeed(Int(round(rand()*10000)))
         else
             gram_atmosphere.setSeed(1001)
+            # gram_atmosphere.setSeed(Int(round(rand()*10000)))
         end
 
         if planet_name == "mars"
@@ -418,7 +422,10 @@ function aerobraking_campaign(args, state)
             
             filename = name * ".csv"
         else
-            name = args[:directory_results] * "/" * "GRAMver_" * string(args[:Gram_version])
+            name = args[:directory_results] * "/results"
+            if args[:monte_carlo_run] != 0
+                name = name * "_$(args[:monte_carlo_run])"
+            end
 
             if !isdir(args[:directory_results])
                 mkpath(args[:directory_results])
@@ -427,35 +434,41 @@ function aerobraking_campaign(args, state)
             filename = name * ".csv"
         end
         # if the file already exists, clear the current data
-        if filesize(filename) > 0
+        if filesize(filename) > 0 && args[:save_csv]
             file = open(filename, "w")
             truncate(file, 0)
         end
+
+        # Initialize the arrow writer for plotting
+        # arrow_writer = nothing
+        # temp_name = nothing
+    # if args[:plot] == true
+        arrow_filename = name * ".feather"
+        if args[:print_res]
+            println("Temporary directory created for plotting: " * arrow_filename)
+        end
+        arrow_writer = open(Arrow.Writer, arrow_filename)
+    # end
         # save_csv(filename, args)
     end
 
-    # Initialize the arrow writer for plotting
-    arrow_writer = nothing
-    temp_name = nothing
-    if args[:plot] == true
-        temp_name = tempname()
-        println("Temporary directory created for plotting: " * temp_name)
-        arrow_writer = open(Arrow.Writer, temp_name)
-    end
+    
 
     ##########################################################
     # RUN SIMULATION
     config.cnf.heat_rate_limit = args[:max_heat_rate]
     t_el = @elapsed begin
-        aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name)
+        aerobraking(ip, m, args, gram, gram_atmosphere, filename, arrow_filename)
     end
     ##########################################################
 
     # Finalize the arrow writer if plotting is enabled
-    if args[:plot] == true
+    # if args[:plot] == true
         close(arrow_writer)
-        println("Arrow writer closed. Data saved to: " * temp_name)
-    end
+        if args[:print_res]
+            println("Arrow writer closed. Data saved to: " * arrow_filename)
+        end
+    # end
     # Print final results
     if Bool(args[:print_res])
         println("ρ: " * string(maximum(config.solution.physical_properties.ρ)) * " kg/m^3")
@@ -469,7 +482,7 @@ function aerobraking_campaign(args, state)
     end
 
     if args[:plot] == true
-        plots(state, m, name, args, temp_name)
+        plots(state, m, name, args, arrow_filename)
     end
 
     # rm(temp_name, recursive=true, force=true) # Remove the temporary directory used for plotting

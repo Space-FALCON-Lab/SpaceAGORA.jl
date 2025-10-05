@@ -1,5 +1,5 @@
 include("../simulation/Run.jl")
-# include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
+include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 include("../utils/quaternion_utils.jl")
@@ -60,7 +60,7 @@ println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => 1,                                                                                    # Print some lines True=1, False=0
+            :print_res => true,                                                                                    # Print some lines True=1, False=0
             :directory_results => "/workspaces/ABTS.jl/output/basilisk_torque_free_comparison",                # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
@@ -71,8 +71,9 @@ args = Dict(# Misc Simulation
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 1,                                       # Normalize the integration True=1, False=0
+            :normalize => 0,                                       # Normalize the integration True=1, False=0
             :closed_form => 0,                                     # Closed form solution True=1, False=0
+            :save_csv => false,
             # Type of Mission
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
@@ -230,7 +231,7 @@ args = Dict(# Misc Simulation
             :a_tol_quaternion => 1e-11,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :r_tol_quaternion => 1e-9,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :dt_max => 1.0,                                         # Maximum time step for integration, s
-            :dt_max_orbit => 10.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
+            :dt_max_orbit => 1.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
             :dt_max_drag => 1.0,                                    # Maximum time step for drag passage
 
             :Odyssey_sim => 0                                      # Simulate Odyssey Mission

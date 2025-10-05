@@ -3,6 +3,9 @@
 using LinearAlgebra
 using AstroTime
 using StaticArrays
+using SatelliteToolboxTransformations
+using SatelliteToolbox
+# eop_iau2000a = fetch_iers_eop(Val(:IAU2000A))
 
 function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet, et)
     # From PCI (planet centered inertial) to PCPF (planet centered/planet fixed)
@@ -34,7 +37,7 @@ function r_pintor_i(r_p::SVector{3, Float64}, v_p::SVector{3, Float64}, planet)
     return r_i, v_i
 end
 
-function orbitalelemtorv(oe, planet)
+function orbitalelemtorv(oe::SVector{7, Float64}, planet)
     # From orbital element to ECI (Planet Centered Inertial)
 
     a, e, i, Ω, ω, vi = oe[1], oe[2], oe[3], oe[4], oe[5], oe[6]
@@ -42,12 +45,12 @@ function orbitalelemtorv(oe, planet)
     p = a*(1 - e^2)
     h = sqrt(planet.μ * p)
 
-    r_x = (h^2) / planet.μ * (1 / (1 + e * cos(vi))) * [cos(vi); sin(vi); 0]
-    v_x = planet.μ / h * [-sin(vi); e + cos(vi); 0]
+    r_x = (h^2) / planet.μ * (1 / (1 + e * cos(vi))) * SVector{3, Float64}([cos(vi); sin(vi); 0])
+    v_x = planet.μ / h * SVector{3, Float64}([-sin(vi); e + cos(vi); 0])
     
-    Q = [-sin(Ω)*cos(i)*sin(ω)+cos(Ω)*cos(ω) cos(Ω)*cos(i)*sin(ω)+sin(Ω)*cos(ω) sin(i)*sin(ω); 
+    Q = SMatrix{3, 3, Float64}([-sin(Ω)*cos(i)*sin(ω)+cos(Ω)*cos(ω) cos(Ω)*cos(i)*sin(ω)+sin(Ω)*cos(ω) sin(i)*sin(ω); 
          -sin(Ω)*cos(i)*cos(ω)-cos(Ω)*sin(ω) cos(Ω)*cos(i)*cos(ω)-sin(Ω)*sin(ω) sin(i)*cos(ω);
-          sin(Ω)*sin(i) -cos(Ω)*sin(i) cos(i)]
+          sin(Ω)*sin(i) -cos(Ω)*sin(i) cos(i)])
 
     R = Q' * r_x
     V = Q' * v_x
@@ -325,3 +328,184 @@ function latlongtoNED(H_LAN_LON)
 
     return SVector{3, SVector{3, Float64}}([uD, uN, uE])
 end
+
+# function inertialToLVLHFromOE(a::Float64, e::Float64, i::Float64, ω::Float64, Ω::Float64, ν::Float64)::SVector{4, Float64}
+#     """
+#     Determine the quaternion from the inertial frame to the LVLH frame based on the orbital elements
+
+#     Args:
+#         a::Float64 : Semimajor axis
+#         e::Float64 : Eccentricity
+#         i::Float64 : Inclination, rad
+#         ω::Float64 : Argument of periapsis, rad
+#         Ω::Float64 : RAAN, rad 
+#         ν::Float64 : True anomaly, rad
+
+#     Returns:
+#         q::SVector{4, Float64} : Quaternion expressing rotation from inertial to body frame
+    # """
+
+
+"""
+    orbital_elements_to_lvlh_quaternion(raan, inclination, arg_of_perigee, true_anomaly)
+
+Calculates the quaternion representing the rotation from the inertial frame to the 
+Local-Vertical/Local-Horizontal (LVLH) frame.
+
+The LVLH frame is defined as:
+- Z-axis: Points from the satellite to the Earth's center (nadir).
+- Y-axis: Opposite to the orbital angular momentum vector.
+- X-axis: Completes the right-handed system (generally in the velocity direction).
+
+The resulting quaternion `q` transforms a vector `v_inertial` to `v_lvlh`.
+
+# Arguments
+- `raan::Float64`: Right Ascension of the Ascending Node (Ω) in radians.
+- `inclination::Float64`: Inclination (i) in radians.
+- `arg_of_perigee::Float64`: Argument of Perigee (ω) in radians.
+- `true_anomaly::Float64`: True Anomaly (ν) in radians.
+
+# Returns
+- `Vector{Float64}`: A 4-element quaternion `[qx, qy, qz, qw]`.
+"""
+function orbital_elements_to_lvlh_quaternion(
+    raan::Float64,
+    inclination::Float64,
+    arg_of_perigee::Float64,
+    true_anomaly::Float64
+)::SVector{4, Float64}
+
+    # 1. Calculate Argument of Latitude (u)
+    u = arg_of_perigee + true_anomaly
+
+    # Pre-compute sines and cosines for clarity and efficiency
+    su = sin(u)
+    cu = cos(u)
+    si = sin(inclination)
+    ci = cos(inclination)
+    sO = sin(raan)
+    cO = cos(raan)
+
+    # 2. Find LVLH axes in the inertial frame
+    
+    # Position unit vector (r_hat) in inertial frame
+    r_hat_inertial = SVector{3, Float64}([
+        cO * cu - sO * su * ci;
+        sO * cu + cO * su * ci;
+        su * si
+    ])
+
+    # Angular momentum unit vector (h_hat) in inertial frame
+    h_hat_inertial = SVector{3, Float64}([
+        sO * si;
+        -cO * si;
+        ci
+    ])
+
+    # Define LVLH axes based on r_hat and h_hat
+    z_lvlh = -r_hat_inertial
+    y_lvlh = -h_hat_inertial
+    x_lvlh = cross(y_lvlh, z_lvlh)
+    
+    # Normalize to ensure perfect orthogonality due to potential floating point errors
+    x_lvlh = normalize(x_lvlh)
+
+    # 3. Construct the Direction Cosine Matrix (DCM) from Inertial to LVLH
+    # The rows of the DCM are the basis vectors of the new frame (LVLH)
+    # expressed in the old frame's (Inertial) coordinates.
+    C = SMatrix{3, 3, Float64}([
+        x_lvlh';
+        y_lvlh';
+        z_lvlh'
+    ])
+
+    # 4. Convert DCM to a quaternion (numerically stable method)
+    trace = tr(C) # Trace of the matrix
+    
+    if trace > 0
+        S = sqrt(trace + 1.0) * 2
+        qw = 0.25 * S
+        qx = (C[3, 2] - C[2, 3]) / S
+        qy = (C[1, 3] - C[3, 1]) / S
+        qz = (C[2, 1] - C[1, 2]) / S
+    elseif (C[1, 1] > C[2, 2]) && (C[1, 1] > C[3, 3])
+        S = sqrt(1.0 + C[1, 1] - C[2, 2] - C[3, 3]) * 2
+        qw = (C[3, 2] - C[2, 3]) / S
+        qx = 0.25 * S
+        qy = (C[1, 2] + C[2, 1]) / S
+        qz = (C[1, 3] + C[3, 1]) / S
+    elseif C[2, 2] > C[3, 3]
+        S = sqrt(1.0 + C[2, 2] - C[1, 1] - C[3, 3]) * 2
+        qw = (C[1, 3] - C[3, 1]) / S
+        qx = (C[1, 2] + C[2, 1]) / S
+        qy = 0.25 * S
+        qz = (C[2, 3] + C[3, 2]) / S
+    else
+        S = sqrt(1.0 + C[3, 3] - C[1, 1] - C[2, 2]) * 2
+        qw = (C[2, 1] - C[1, 2]) / S
+        qx = (C[1, 3] + C[3, 1]) / S
+        qy = (C[2, 3] + C[3, 2]) / S
+        qz = 0.25 * S
+    end
+
+    quaternion = SVector{4, Float64}([qx, qy, qz, qw])
+    return normalize(quaternion) # Final normalization for safety
+end
+
+"""
+    rotate_vector_by_quaternion(v, q)
+
+Rotates a 3D vector `v` by a quaternion `q`.
+Quaternion format is [qx, qy, qz, qw].
+"""
+function rotate_vector_by_quaternion(v::Vector{Float64}, q::Vector{Float64})
+    q_vec = q[1:3]
+    q_scalar = q[4]
+    
+    # Using the formula: v' = v + 2 * q_vec x (q_vec x v + q_scalar * v)
+    t = 2 * cross(q_vec, v)
+    v_rotated = v + q_scalar * t + cross(q_vec, t)
+    
+    return v_rotated
+end
+
+"""
+    ned_to_ecef(v_ned::AbstractVector, date::DateTime, lat::Number, lon::Number)
+
+Converts a vector `v_ned` from the local North-East-Down (NED) frame to the
+Earth-Centered, Earth-Fixed (ECEF) frame.
+
+# Args
+
+- `v_ned`: A 3-element vector in the NED frame `[North, East, Down]`.
+- `date`: The `DateTime` at which the conversion is to be performed. This is
+          crucial for determining the Earth's orientation.
+- `lat`: The geodetic latitude of the observer [radians].
+- `lon`: The longitude of the observer [radians].
+
+# Returns
+
+- A 3-element `SVector` representing the vector in the GCRF frame.
+"""
+# function ned_to_ecef(v_ned::AbstractVector, date::DateTime, lat::Float64, lon::Float64, alt_m::Float64)
+#     # Ensure the input vector is a 3-element SVector for performance.
+#     v_ned_svector = SVector{3, Float64}(v_ned)
+
+#     # == Step 1: Get the rotation from NED to ECEF (Earth-Centered, Earth-Fixed)
+#     # This rotation depends only on the observer's position (latitude, longitude).
+#     # It transforms the local frame to the global Earth-fixed frame.
+#     R_NED_to_ECEF = ned_to_ecef(v_ned_svector, lat, lon, alt_m)
+
+#     # == Step 2: Get the rotation from ECEF to GCRF (Inertial)
+#     # This rotation depends on the time and accounts for Earth's rotation.
+#     # SatelliteToolbox.jl handles the complex calculations of Earth's orientation
+#     # (precession, nutation, polar motion) automatically.
+#     R_ECEF_to_GCRF = r_ecef_to_eci(DCM, ITRF(), GCRF(), date_to_jd(date), eop_iau2000a)
+
+#     # == Step 3: Combine the rotations and apply to the vector
+#     # The order is crucial: first apply the NED->ECEF rotation, then ECEF->GCRF.
+#     # v_gcrf = R_ECEF_to_GCRF * R_NED_to_ECEF * v_ned
+#     v_gcrf = R_ECEF_to_GCRF * R_NED_to_ECEF
+
+#     return v_gcrf
+# end

@@ -2,11 +2,13 @@ using CSV
 using DataFrames
 using Arrow
 
-function save_csv(filename, args, temp_name)
+function save_csv(filename, args, arrow_filename)
 
-    touch(filename)
+    if args[:save_csv]
+        touch(filename)
 
-    writer = open(filename, "a")
+        writer = open(filename, "a")
+    end
     # periapsis_alt = vcat(config.cnf.altitude_periapsis, zeros(length(config.solution.orientation.time) - length(config.cnf.altitude_periapsis)))
 
     data_push = DataFrame(time = config.solution.orientation.time,
@@ -150,18 +152,20 @@ function save_csv(filename, args, temp_name)
         data_push[!, :gamma_cf] = config.solution.closed_form.γ_cf
         data_push[!, :v_cf] = config.solution.closed_form.v_cf
     end
-    if filesize(filename) == 0.0
+    if filesize(filename) == 0.0 && args[:save_csv]
         # Write header if file is empty
         CSV.write(filename, data_push, writeheader=true)
-    else
+    elseif args[:save_csv]
         CSV.write(filename, data_push, append=true)
     end
-    if args[:plot] == true
-        # Write to Arrow file for plotting
-        println("Writing data to Arrow file for plotting...")
-        # println(config.solution.orientation.number_of_passage[1])
-        # temp_file = joinpath(temp_name, "data$(uuid4()).arrow")
-        Arrow.append(temp_name, data_push)
-        println("Data written to Arrow file for plotting.")
+    # Write to Arrow file for plotting
+    if args[:print_res]
+        println("Writing data to Arrow file...")
+    end
+    # println(config.solution.orientation.number_of_passage[1])
+    # temp_file = joinpath(temp_name, "data$(uuid4()).arrow")
+    Arrow.append(arrow_filename, data_push)
+    if args[:print_res]
+        println("Data written to Arrow file.")
     end
 end

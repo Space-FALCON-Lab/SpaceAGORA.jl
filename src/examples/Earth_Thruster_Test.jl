@@ -237,24 +237,24 @@ panel_specular_coeffs = [0.16, 0.0]
 bus_diffuse_coeffs = [0.139, 0.139, 0.139, 0.139, 0.139, 0.139]
 panel_diffuse_coeffs = [0.16, 0.56]
 
-bus_facets = config.create_facet_list(bus_facet_area_list,
-                                      bus_facet_attitude_list,
-                                      bus_facet_normal_vectors,
-                                      bus_facet_locs,
-                                      bus_diffuse_coeffs,
-                                      bus_specular_coeffs)
-panel_facets_R = config.create_facet_list(panel_facet_area_list,
-                                        panel_facet_attitude_list,
-                                        panel_facet_normal_vectors,
-                                        panel_facet_locs,
-                                        panel_diffuse_coeffs,
-                                        panel_specular_coeffs)
-panel_facets_L = config.create_facet_list(panel_facet_area_list,
-                                        panel_facet_attitude_list,
-                                        panel_facet_normal_vectors,
-                                        panel_facet_locs,
-                                        panel_diffuse_coeffs,
-                                        panel_specular_coeffs)
+# bus_facets = config.create_facet_list(bus_facet_area_list,
+#                                       bus_facet_attitude_list,
+#                                       bus_facet_normal_vectors,
+#                                       bus_facet_locs,
+#                                       bus_diffuse_coeffs,
+#                                       bus_specular_coeffs)
+# panel_facets_R = config.create_facet_list(panel_facet_area_list,
+#                                         panel_facet_attitude_list,
+#                                         panel_facet_normal_vectors,
+#                                         panel_facet_locs,
+#                                         panel_diffuse_coeffs,
+#                                         panel_specular_coeffs)
+# panel_facets_L = config.create_facet_list(panel_facet_area_list,
+#                                         panel_facet_attitude_list,
+#                                         panel_facet_normal_vectors,
+#                                         panel_facet_locs,
+#                                         panel_diffuse_coeffs,
+#                                         panel_specular_coeffs)
 # config.add_facet!(main_bus, bus_facets)
 # config.add_facet!(L_panel, panel_facets_L)
 # config.add_facet!(R_panel, panel_facets_R)
@@ -267,7 +267,7 @@ println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => 1,                                                                                    # Print some lines True=1, False=0
+            :print_res => true,                                                                                    # Print some lines True=1, False=0
             :directory_results => "/workspaces/ABTS.jl/output/thruster_test",                # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
@@ -280,11 +280,12 @@ args = Dict(# Misc Simulation
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
             :normalize => 0,                                       # Normalize the integration True=1, False=0
             :closed_form => 0,                                     # Closed form solution True=1, False=0
+            :save_csv => true,
             # Type of Mission
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 10,                                 # Number of aerobraking passage
-            :mission_time => 200.0,                                  # Mission time in seconds, used only for Time mission type
+            :mission_time => 600.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => true,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
 
             # Physical Model

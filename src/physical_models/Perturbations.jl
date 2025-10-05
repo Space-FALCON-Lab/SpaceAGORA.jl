@@ -2,6 +2,9 @@ using SPICE
 using LoopVectorization
 using AssociatedLegendrePolynomials
 using LinearAlgebra
+using SatelliteToolbox
+using SatelliteToolboxGeomagneticField
+using DateFormats
 using CSV
 
 include("../utils/quaternion_utils.jl")
@@ -9,6 +12,118 @@ include("../utils/quaternion_utils.jl")
 # Define delta function
 δ(x,y) = ==(x,y)
 δ(x) = δ(x,0)
+
+# Constants for the Tilted Dipole Model (Epoch 2020.0)
+# Reference magnetic field strength at the equator on the Earth's surface.
+const B0_2020 = 3.12e-5  # Tesla
+# WGS84 Earth radius for the model.
+const R_EARTH_MODEL = 6371.2e3 # meters
+# North Magnetic Pole location (geocentric).
+const POLE_LAT_2020 = deg2rad(80.7)  # Radians
+const POLE_LON_2020 = deg2rad(-72.7) # Radians
+
+# Pre-calculate the magnetic pole axis vector in ECEF for efficiency.
+const M_HAT_ECEF = SVector{3, Float64}(
+    cos(POLE_LAT_2020) * cos(POLE_LON_2020),
+    cos(POLE_LAT_2020) * sin(POLE_LON_2020),
+    sin(POLE_LAT_2020)
+)
+
+"""
+    get_magnetic_field_dipole(r_ecef::AbstractVector)
+
+Calculates the Earth's magnetic field using a fast tilted dipole approximation.
+
+This model is significantly faster than the full WMM and is suitable for use
+inside performance-critical code like numerical integrators.
+
+# Args
+
+- `r_ecef`: The position vector of the spacecraft in an Earth-Centered,
+            Earth-Fixed (ECEF) frame [meters].
+
+# Returns
+
+- A 3-element `SVector` representing the magnetic field `[Bx, By, Bz]` in the
+  ECEF frame [Tesla].
+"""
+function get_magnetic_field_dipole(r_ecef::AbstractVector, L_PI::MMatrix{3, 3, Float64})
+    r_norm = norm(r_ecef)
+    r_hat = r_ecef / r_norm
+
+    # Cosine of the magnetic colatitude
+    cos_colat = dot(r_hat, M_HAT_ECEF)
+
+    # Dipole field equation. This is a standard formulation.
+    B_ecef = -B0_2020 * (R_EARTH_MODEL / r_norm)^3 * (M_HAT_ECEF - 3 * cos_colat * r_hat)
+
+    return L_PI' * B_ecef
+end
+
+"""
+    get_magnetic_field(date::DateTime, lat_deg::Number, lon_deg::Number, alt_m::Number)
+
+Computes the Earth's magnetic field vector in the local North-East-Down (NED)
+frame using the World Magnetic Model (WMM).
+
+The function automatically uses the correct WMM version based on the input `date`.
+
+# Args
+
+- `date`: The `DateTime` of the measurement.
+- `lat_deg`: The geodetic latitude of the observer [degrees].
+- `lon_deg`: The longitude of the observer [degrees].
+- `alt_m`: The altitude above the WGS84 ellipsoid [meters].
+
+# Returns
+
+- A 3-element `SVector` representing the magnetic field `[B_north, B_east, B_down]`
+  in nanoTeslas [nT].
+"""
+function get_magnetic_field(date::DateTime, lat_rad::Number, lon_rad::Number, alt_m::Number, L_PI::MMatrix{3, 3, Float64})
+    # println("Calculating magnetic field at lat: $lat_rad, lon: $lon_rad, alt: $alt_m, date: $date")
+    # Calculate the magnetic field vector using the World Magnetic Model.
+    # The result is in the NED frame and has units of nT.
+    B_ned = igrf(yeardecimal(date), alt_m, lat_rad, lon_rad, Val(:geodetic))
+    B_pp = ned_to_ecef(B_ned, lat_rad, lon_rad, alt_m)
+    B_ii = L_PI' * B_pp
+    return B_ii
+end
+
+"""
+    calculate_magnetic_torque(m::AbstractVector, B::AbstractVector)
+
+Calculates the magnetic torque exerted on a magnetic dipole by an external
+magnetic field.
+
+**τ** = **m** × **B**
+
+The magnetic dipole moment `m` and the magnetic field `B` vectors **must** be
+expressed in the same reference frame. The resulting torque vector `τ` will be
+in that same frame.
+
+# Args
+
+- `m`: The magnetic dipole moment vector of the spacecraft [A·m²].
+- `B`: The external magnetic field vector [Tesla].
+
+# Returns
+
+- A 3-element `SVector` representing the magnetic torque `[τ_x, τ_y, τ_z]` [N·m].
+"""
+function calculate_magnetic_torque(m::AbstractVector, B::AbstractVector)
+    # Ensure inputs are StaticArrays for performance
+    m_svector = SVector{3, Float64}(m)
+    B_svector = SVector{3, Float64}(B)
+
+    # Calculate the torque using the cross product
+    # τ = m × B
+    τ = cross(m_svector, B_svector)
+
+    return τ
+end
+
+
 function gravity_n_bodies(et::Float64, pos_ii::SVector{3, Float64}, p, n_body)
 
     primary_body_name = p.name
@@ -165,19 +280,21 @@ function srp!(model, root_index::Int64, sun_dir_ii::SVector{3, Float64}, body, P
     F_srp : SVector{3, Float64}
         Force on the body in the inertial frame
     """
-    for facet in body.SRP_facets
-        rot_RF = config.rotate_to_inertial(model, body, root_index) * rot(facet.attitude)' # Rotation matrix from facet frame to inertial frame
+    rot_inertial = config.rotate_to_inertial(model, body, root_index)
+    rot_body_to_inertial = rot(model.links[root_index].q)
+    @inbounds for facet in body.SRP_facets
+        rot_RF = rot_inertial * rot(facet.attitude)' # Rotation matrix from facet frame to inertial frame
         n = normalize(rot_RF * facet.normal_vector) # Normal vector of the facet in the inertial frame
         cos_α_srp = dot(n, sun_dir_ii) / norm(n) / norm(sun_dir_ii)
 
         if cos_α_srp > 0 && eclipse_ratio != 0.0 # If the facet is illuminated by the Sun
-            F_SRP = -P_srp * facet.area * cos_α_srp * ((1 - facet.δ) * sun_dir_ii + 2 * (facet.ρ / 3 + facet.δ * cos_α_srp) * n)# * eclipse_ratio
+            F_SRP = -P_srp * facet.area * cos_α_srp * ((1 - facet.δ) * sun_dir_ii + 2 * (facet.ρ / 3 + facet.δ * cos_α_srp) * n) * eclipse_ratio
             body.net_force += F_SRP # Rotate F_SRP from body frame to inertial frame
 
             if orientation
-                R_facet = config.rotate_to_inertial(model, body, root_index)*facet.cp + rot(model.links[root_index].q)'*body.r # Vector from CoM of spacecraft to facet Cp in inertial frame
-                R_facet_body = config.rotate_to_body(body)*facet.cp + body.r
-                body.net_torque += rot(model.links[root_index].q) * hat(R_facet) * F_SRP # Calculate body frame net torque
+                R_facet = rot_inertial*facet.cp + rot_body_to_inertial'*body.r # Vector from CoM of spacecraft to facet Cp in inertial frame
+                # R_facet_body = config.rotate_to_body(body)*facet.cp + body.r
+                body.net_torque += rot_body_to_inertial * cross(R_facet, F_SRP) # Calculate body frame net torque
             end
         end
     end

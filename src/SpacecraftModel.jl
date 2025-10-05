@@ -30,6 +30,11 @@ end
     stop_firing_time::Float64 = 0.0 # Time at which the thruster should stop firing, s. This is used to determine how long to continue firing the thruster into the next timestep
 end
 
+@kwdef struct Magnet
+    m::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Magnetic dipole moment in the body frame, nT
+    location::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Location in the link frame, relative to the CoM of the link, m
+end
+
 mutable struct Link
     root::Bool # Whether this link is a root link (i.e., the main bus or core body of the spacecraft). 
     #^ This will have orientation expressed relative to the inertial frame.
@@ -46,6 +51,7 @@ mutable struct Link
     bᵇ::SVector{3, Float64} # Right extent (Body frame)
     α::Float64 # Angle of attack, rad
     β::Float64 # Sideslip angle, rad
+    θ::Float64 # Flow angle, rad
     gyro::Int64 # Number of Gyroscope
     max_torque::Float64 # Maximum torque that can be applied by the reaction wheels
     max_h::Float64 # Maximum angular momentum that can be stored in the reaction wheels
@@ -62,6 +68,7 @@ mutable struct Link
     J_thruster::Matrix{Float64} # Thruster Jacobian matrix
     thrusters::Vector{Thruster}
     thrust_calculation_function::Function # Function to calculate the average thrust over the control period, e.g., Schmitt trigger
+    magnets::Vector{Magnet} # List of magnetic dipoles attached to the link
     function Link(;root=false,
                     r=SVector{3, Float64}([0, 0, 0]), 
                     q=SVector{4, Float64}([0,0,0,1]), 
@@ -76,7 +83,8 @@ mutable struct Link
                     b=SVector{3, Float64}([0.5*dims[1], 0, 0]),
                     α=pi/2.0,
                     β=0.0,
-                    gyro = 3,
+                    θ=0.0,
+                    gyro = 0,
                     max_torque = 0.25,
                     max_h = 70.0,
                     rw = MVector{gyro, Float64}(zeros(gyro)),
@@ -91,9 +99,10 @@ mutable struct Link
                     SRP_facets=Facet[],
                     J_thruster=Matrix{Float64}(zeros(3, 1)),
                     thrusters=Thruster[],
-                    thrust_calculation_function=()->0.0)#SMatrix{3,Int(gyro)}(1.0I))
+                    thrust_calculation_function=()->0.0,
+                    magnets=Magnet[])#SMatrix{3,Int(gyro)}(1.0I))
                     println(length(rw))
-        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, gyro, max_torque, max_h, rw, J_rw, rw_τ, net_force, net_torque, attitude_control_function, actuation_function, attitude_control_rate, ω_wheel_derivatives, SRP_facets, J_thruster, thrusters, thrust_calculation_function)
+        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, gyro, max_torque, max_h, rw, J_rw, rw_τ, net_force, net_torque, attitude_control_function, actuation_function, attitude_control_rate, ω_wheel_derivatives, SRP_facets, J_thruster, thrusters, thrust_calculation_function, magnets)
     end
 
     function Link(link::Link)
@@ -231,6 +240,23 @@ function add_facet!(link::Link, facets::Vector{Facet})
     push!(link.SRP_facets, facets...)
 end
 
+function add_magnet!(link::Link, magnet::Magnet)
+    """
+    Adds a magnetic dipole to the Link
+    - `link` : The Link to which the magnet is added
+    - `magnet` : The magnet to add
+    """
+    push!(link.magnets, magnet)
+end
+
+function add_magnet!(link::Link, magnets::Vector{Magnet})
+    """
+    Adds a magnetic dipole to the Link
+    - `link` : The Link to which the magnet is added
+    - `magnet` : The magnet to add
+    """
+    push!(link.magnets, magnets...)
+end
 ##########################
 ### Thruster functions ###
 ##########################

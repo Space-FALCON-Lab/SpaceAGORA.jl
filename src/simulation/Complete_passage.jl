@@ -102,6 +102,12 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # args = param[16]
         ip = param[17]
 
+        # Orbital Elements
+        pos_ii = SVector{3, Float64}((@view in_cond[1:3]) * config.cnf.DU)                      # Inertial position 
+        vel_ii = SVector{3, Float64}((@view in_cond[4:6]) * config.cnf.DU / config.cnf.TU)      # Inertial velocity
+        mass = in_cond[7] * config.cnf.MU                                          # Mass kg
+        OE = rvtoorbitalelement(pos_ii, vel_ii, mass, m.planet)
+        vi = OE[6]
         
         ## Counters
 
@@ -127,8 +133,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # vel_ii = SVector{3, Float64}(in_cond[4:6] * config.cnf.DU / config.cnf.TU)      # Inertial velocity
         # mass = in_cond[7] * config.cnf.MU                                          # Mass kg
         # ω = SVector{3, Float64}(in_cond[9:11] / config.cnf.TU)                # Angular velocity vector [rad / s]
-        pos_ii = SVector{3, Float64}((@view in_cond[1:3]) * config.cnf.DU)                      # Inertial position 
-        vel_ii = SVector{3, Float64}((@view in_cond[4:6]) * config.cnf.DU / config.cnf.TU)      # Inertial velocity
+        
         quat_idx = 8 + length(m.body.links)
         if orientation_sim
             quaternion = SVector{4, Float64}(@view in_cond[quat_idx:quat_idx+3]) # Quaternion
@@ -136,11 +141,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             m.body.roots[1].q .= quaternion
             # quaternion = SVector{4, Float64}(m.body.roots[1].q)
             m.body.roots[1].ω .= ω # Body frame angular velocity
+            rot_body_to_inertial = rot(quaternion)' # Rotation matrix from body frame to inertial frame
         else
-            quaternion = SVector{4, Float64}(0.0, 0.0, 0.0, 0.0) # Quaternion, set to all zeros if orientation simulation is not enabled
+            quaternion = orbital_elements_to_lvlh_quaternion(OE[4], OE[3], OE[5], OE[6]) # Quaternion, set to align with LVLH frame if orientation simulation is not enabled
             ω = SVector{3, Float64}(0.0, 0.0, 0.0)                # Angular velocity vector [rad / s]
         end
-        mass = in_cond[7] * config.cnf.MU                                          # Mass kg
         pos_ii_mag = norm(pos_ii)                                  # Magnitude of the inertial position
         vel_ii_mag = norm(vel_ii)                                  # Magnitude of the inertial velocity
 
@@ -157,9 +162,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         vel_pp_mag = norm(vel_pp)
 
-        # Orbital Elements
-        OE = rvtoorbitalelement(pos_ii, vel_ii, mass, m.planet)
-        vi = OE[6]
+        
 
         Mars_Gram_recalled_at_periapsis = false
 
@@ -425,14 +428,14 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # n-body perturbations
         if length(args[:n_bodies]) != 0
-            for k = 1:length(args[:n_bodies])  
-                gravity_ii += mass * gravity_n_bodies(config.cnf.et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
+            for k = 1:length(args[:n_bodies])
+                gravity_ii .+= mass * gravity_n_bodies(config.cnf.et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
             end
         end
 
         # Calculate gravitational harmonics using Pines' method
         if args[:gravity_harmonics] == 1
-            gravity_ii += mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_e, m.planet)
+            gravity_ii .+= mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_e, m.planet)
         end
 
         if orientation_sim
@@ -447,14 +450,26 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             numAU = AstU / norm(r_sun_planet - pos_ii) # 1 / Number of Astronomical Units from the Sun
             P_srp = (solarRadFlux / speedLight) * numAU * numAU # Solar radiation pressure at the spacecraft location, N/m^2
 
-            for (i, b) in enumerate(bodies)
+            @inbounds for (i, b) in enumerate(bodies)
                 # Calculate the position of the spacecraft link in inertial frame
-                pos_ii_body = pos_ii + rot(m.body.links[root_index].q)' * b.r # Update the position of the spacecraft link in inertial frame
+                pos_ii_body = pos_ii + rot_body_to_inertial * b.r # Update the position of the spacecraft link in inertial frame
                 sun_direction = normalize(r_sun_planet - pos_ii)
                 srp!(m.body, root_index, sun_direction, b, P_srp, eclipse_ratio, orientation_sim)
             end
         end
 
+        if args[:magnetic_field]
+            B_ii = get_magnetic_field_dipole(pos_pp, m.planet.L_PI) # Magnetic field vector in inertial frame, T
+            # B_ii = get_magnetic_field(time_real, lat, lon, alt, m.planet.L_PI) # Magnetic field vector in inertial frame, T
+            @inbounds for (i, b) in enumerate(bodies)
+                if !isempty(b.magnets)
+                    @inbounds for magnet in b.magnets
+                        b.net_torque .+= calculate_magnetic_torque(magnet.m, rot_body_to_inertial' * B_ii)
+                        # break
+                    end
+                end
+            end
+        end
         bank_angle = deg2rad(0.0)
 
         lift_pp_hat = normalize(cross(h_pp_hat, vel_pp_rw_hat))
@@ -486,7 +501,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 β[i] = β_body # Sideslip angle for the spacecraft link
                 b.α = α_body
                 b.β = β_body
+                b.θ = acos(clamp(vel_pp_rw[1]/norm(vel_pp_rw), -1.0, 1.0)) # Elevation angle for the spacecraft link
             else
+                # TODO: Change this so that it just uses above code even with orientation_sim = false
                 if b.root
                     # if the body is the root body, then the angle of attack is 90 degrees
                     α[i] = pi/2
@@ -502,10 +519,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 CL, CD = aerodynamic_coefficient_constant(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
             elseif ip.am == 1
                 if orientation_sim
-                    CL_body, CD_body, CS_body = aerodynamic_coefficient_fM(α_body, β_body, b, T_p, S, m.aerodynamics, MonteCarlo)
+                    CL_body, CD_body, CS_body, Cl_body, Cm_body, Cn_body = aerodynamic_coefficient_fM(b, T_p, S, m.aerodynamics, MonteCarlo)
                 else
                     # CL_body, CD_body = aerodynamic_coefficient_fM(α[i], m.body, T_p, S, m.aerodynamics, MonteCarlo)
-                    CL_body, CD_body, CS_body = aerodynamic_coefficient_fM(α[i], 0.0, b, T_p, S, m.aerodynamics, MonteCarlo)
+                    CL_body, CD_body, CS_body, Cl_body, Cm_body, Cn_body = aerodynamic_coefficient_fM(b, T_p, S, m.aerodynamics, MonteCarlo)
                 end
             elseif ip.am == 2
                 CL, CD = aerodynamic_coefficient_no_ballistic_flight(α, m.body, args, T_p, S, m.aerodynamics, MonteCarlo)
@@ -525,8 +542,12 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             lift_body = m.planet.L_PI' * lift_pp_body   # Inertial lift force vector
 
             # Update the force on the spacecraft link
-            b.net_force += drag_body + lift_body + cross_body # Update the force on the spacecraft link, inertial frame
-            b.net_torque += cross(b.r, drag_body + lift_body + cross_body) # Update the torque on the spacecraft link, body frame
+            b.net_force .+= drag_body + lift_body + cross_body # Update the force on the spacecraft link, inertial frame
+            # aero_torque = q * Cl_body * b.ref_area * b.dims[1] * SVector{3, Float64}(1.0, 0.0, 0.0) + # Aerodynamic roll torque, body frame
+            #               q * Cm_body * b.ref_area * b.dims[2] * SVector{3, Float64}(0.0, 1.0, 0.0) + # Aerodynamic pitch torque, body frame
+            #               q * Cn_body * b.ref_area * b.dims[3] * SVector{3, Float64}(0.0, 0.0, 1.0)   # Aerodynamic yaw torque, body frame
+            # b.net_torque .+= aero_torque # Update the torque on the spacecraft link, body frame
+            b.net_torque .+= cross(b.r, rot_body_to_inertial' * (drag_body + lift_body + cross_body)) # Update the torque on the spacecraft link, body frame
             # Update the total CL/CD
             CL += CL_body * b.ref_area
             CD += CD_body * b.ref_area
@@ -765,6 +786,19 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     time_check = ContinuousCallback(time_condition, time_affect!, nothing)
 
+    function save_steps_condition(y, t, integrator)
+        """
+        Check the length of solution_intermediate to determine if it exceeds the :num_steps_to_save argument
+        """
+        return length(config.cnf.solution_intermediate) >= args[:num_steps_to_save]
+    end
+
+    function save_steps_affect!(integrator)
+        terminate!(integrator) # Stop the integration 
+    end
+
+    save_steps_check = DiscreteCallback(save_steps_condition, save_steps_affect!)
+
     function reaction_wheels_affect!(integrator)
         """
         Event function to update the reaction wheels at every step.
@@ -828,9 +862,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
     end
 
-    attitude_controller = m.body.n_reaction_wheels != 0 || m.body.n_thrusters != 0 ? PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU) : nothing
+    attitude_controller = args[:orientation_sim] && (m.body.n_reaction_wheels != 0 || m.body.n_thrusters != 0) ? PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU) : nothing
     # attitude_controller_orbit = DiscreteCallback(run_attitude_controller_condition, run_attitude_controller!)
-    attitude_controller_orbit = m.body.n_reaction_wheels != 0 || m.body.n_thrusters != 0 ? PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU) : nothing
+    attitude_controller_orbit = args[:orientation_sim] && (m.body.n_reaction_wheels != 0 || m.body.n_thrusters != 0) ? PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU) : nothing
     function thrust_factor_integrator!(integrator)
         """
         Integrate the thrust factors for the thrusters
@@ -895,7 +929,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # m.body.roots[1].q .= solve(prob, Tsit5()).u[end]  # Update the quaternion in the body
         # integrator.u[9:12] .= m.body.roots[1].q  # Update the quaternion in the integrator
     end
-    quaternion_update = DiscreteCallback(every_step_condition, quaternion_update_affect!)
+    quaternion_update = nothing
 
     function quaternion_normalize_condition(y, t, integrator)
         """
@@ -904,8 +938,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         m = integrator.p[1]
         quat_idx = length(m.body.links)
         if args[:orientation_sim]
-            # abs(norm(y[8+quat_idx:8+quat_idx+3]) - 1.0) > args[:a_tol_quaternion]  # Check if the quaternion is not normalized
-            true
+            abs(norm(y[8+quat_idx:8+quat_idx+3]) - 1.0) > args[:a_tol_quaternion]  # Check if the quaternion is not normalized
+            # true
         else
             false  # If orientation simulation is not enabled, do not normalize
         end
@@ -918,7 +952,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         quat_idx = length(m.body.links)
         normalize!(integrator.u[8+quat_idx:8+quat_idx+3])  # Normalize the quaternion
     end
-    quaternion_normalize = DiscreteCallback(quaternion_normalize_condition, quaternion_normalize_affect!)
+    quaternion_normalize = args[:orientation_sim] ? DiscreteCallback(quaternion_normalize_condition, quaternion_normalize_affect!) : nothing
 
     function eventfirststep_condition(y, t, integrator)
         """
@@ -1375,7 +1409,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     elseif args[:keplerian] == false && norm(r0) - m.planet.Rp_e <= args[:EI]*1e3
         range_phase_i = 2
     elseif norm(r0) - m.planet.Rp_e >= args[:AE]*1e3 && OE[6] < π - 0.1
-        println("true anomaly: ", OE[6])
         range_phase_i = 3
     end
 
@@ -1386,7 +1419,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     # Solve Equations of Motion 
     for aerobraking_phase in range(range_phase_i, 3)
         index_phase_aerobraking = aerobraking_phase
-
+        # If keplerian, just use step 3 so that it automatically exits the for loop at the end
+        if args[:keplerian]
+            aerobraking_phase = 3
+        end
         if (index_steps_EOM == 1 || Bool(args[:drag_passage])) && (aerobraking_phase == 1 || aerobraking_phase == 3 || aerobraking_phase == 0)
             continue
         elseif (lowercase(args[:type_of_mission]) == "orbits" || lowercase(args[:type_of_mission]) == "time") && args[:keplerian] == true && aerobraking_phase == 2
@@ -1398,10 +1434,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             events = CallbackSet(stop_firing, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller_orbit, time_check, thrust_factor_integrator, gravity_gradient)
             t_event_0 = "stop_firing"
             t_event_1 = "apoapsisgreaterperiapsis"
-        elseif aerobraking_phase == 1 && args[:keplerian] == true
-            events = CallbackSet(eventfirststep_periapsis, apoapsisgreaterperiapsis, impact, periapsispoint, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller_orbit, time_check, thrust_factor_integrator, gravity_gradient)
-            t_event_0 = "eventfirststep_periapsis"
-            t_event_1 = "apoapsisgreaterperiapsis"
+        # elseif aerobraking_phase == 1 && args[:keplerian] == true
+        #     events = CallbackSet(eventfirststep_periapsis, apoapsisgreaterperiapsis, impact, periapsispoint, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller_orbit, time_check, thrust_factor_integrator, gravity_gradient)
+        #     t_event_0 = "eventfirststep_periapsis"
+        #     t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 1
             events = CallbackSet(eventfirststep, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller_orbit, time_check, thrust_factor_integrator, gravity_gradient)
             t_event_0 = "eventfirststep"
@@ -1426,6 +1462,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             events = CallbackSet(eventsecondstep, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator, gravity_gradient)
             t_event_0 = "eventsecondstep"
             t_event_1 = "periapsispoint"
+        elseif aerobraking_phase == 3 && args[:keplerian] && lowercase(args[:type_of_mission]) == "time" # In cases where the mission type is time and the orbit is keplerian, just integrate for some predetermined number of steps before saving to avoid the CYGNSS true anomaly issues
+            events = CallbackSet(impact, attitude_controller_orbit, reaction_wheel_update, quaternion_normalize, time_check, save_steps_check)
+            t_event_0 = ""
+            t_event_1 = ""
         elseif aerobraking_phase == 3
             events = CallbackSet(apoapsispoint, periapsispoint, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, attitude_controller_orbit, time_check, thrust_factor_integrator, gravity_gradient)
             t_event_0 = "apoapsispoint"
@@ -1740,11 +1780,17 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     break
                 end
 
-                if lowercase(args[:type_of_mission]) == "time" && config.cnf.time_termination == true
+                if lowercase(args[:type_of_mission]) == "time" && (config.cnf.time_termination == true || time_solution[end] >= args[:mission_time])
                     continue_campaign = false
                     config.cnf.continue_simulation = false
-                    println("Setting continue_simulation to false due to mission time condition.")
+                    if args[:print_res]
+                        println("Setting continue_simulation to false due to mission time condition.")
+                    end
                     break
+                end
+
+                if args[:keplerian]
+                    config.cnf.continue_simulation = false
                 end
             else
                 if args[:control_mode] == 0 && stop_simulation == true
@@ -1778,15 +1824,19 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     config.cnf.count_dori = 0
 
     # Check tolerance here on true anomaly
-    if args[:drag_passage] == false && (pi - config.solution.orientation.oe[end][end] > 1e-3) && continue_campaign == true && args[:body_shape] != "Blunted Cone"
+    if args[:drag_passage] == false && !args[:keplerian] && (pi - config.solution.orientation.oe[end][end] > 1e-3) && continue_campaign == true && args[:body_shape] != "Blunted Cone"
         final_conditions_notmet = true
         if lowercase(args[:type_of_mission]) == "time"
-            println("Final time conditions not met, re-running simulation...")
-            println("Current time: ", config.solution.orientation.time[end], " | Mission time: ", args[:mission_time])
-            events = CallbackSet(apoapsispoint, time_check)
+            if args[:print_res]
+                println("Final time conditions not met, re-running simulation...")
+                println("Current time: ", config.solution.orientation.time[end], " | Mission time: ", args[:mission_time])
+            end
+            events = CallbackSet(apoapsispoint, time_check, quaternion_normalize, periapsispoint)
         else
-            println("Final conditions not met, re-running simulation for apoapsis point...")
-            events = CallbackSet(apoapsispoint)
+            if args[:print_res]
+                println("Final conditions not met, re-running simulation for apoapsis point...")
+            end
+            events = CallbackSet(apoapsispoint, quaternion_normalize, periapsispoint)
         end
     else
         final_conditions_notmet = false
@@ -1795,7 +1845,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     count_temp = 0
 
     while final_conditions_notmet
-        println("Final conditions not met, re-running simulation...")
+        if args[:print_res]
+            println("Final conditions not met, re-running simulation...")
+        end
         heat_loads = MVector{length(m.body.links), Float64}(zeros(length(m.body.links)))
         for i in 1:length(m.body.links)
             heat_loads[i] = config.solution.performance.heat_load[i][end]
@@ -1811,7 +1863,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     config.solution.orientation.vel_ii[1][end], config.solution.orientation.vel_ii[2][end], config.solution.orientation.vel_ii[3][end],
                     config.solution.performance.mass[end], heat_loads...])
         end
-        println("In_cond: ", in_cond)
+        # println("In_cond: ", in_cond)
         # non dimensionalization
         in_cond[1:3] ./= config.cnf.DU
         in_cond[4:6] .*= config.cnf.TU / config.cnf.DU
@@ -1831,7 +1883,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         step = 0.05
         r_tol = 1e-12
         a_tol = 1e-13
-        dt_max = args[:dt_max_orbit] == 0.0 ? args[:dt_max] : args[:dt_max_orbit] #1e-3
+        dt_max = args[:dt_max_orbit] == 0.0 ? args[:dt_max]/10.0 : args[:dt_max_orbit]/10.0 #1e-3
 
         # counter for events
         config.cnf.count_eventfirststep = 0
@@ -1852,7 +1904,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         config.cnf.count_heat_load_check_exit = 0
 
         # Parameter Definition
-        param = (m, 
+        if config.solution.simulation.solution_states != 0
+                                param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage, Bool(args[:orientation_sim]), MVector{3, Float64}(0.0, 0.0, 0.0), MVector{3, Float64}(0.0, 0.0, 0.0), args, ip, MVector{3, Float64}(0.0, 0.0, 0.0), zeros(config.solution.simulation.solution_states))
+        else
+            param = (m, 
                 index_phase_aerobraking, 
                 ip, 
                 aerobraking_phase, 
@@ -1870,6 +1925,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 args, 
                 ip, 
                 MVector{3, Float64}(0.0, 0.0, 0.0))
+        end
 
         # Run simulation
         prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
@@ -1890,9 +1946,23 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         if args[:drag_passage] == false && pi - config.solution.orientation.oe[end][end] > 1e-3 && continue_campaign == true
             final_conditions_notmet = true
-            events = CallbackSet(apoapsispoint)
+            if args[:type_of_mission] == "time"
+                events = CallbackSet(apoapsispoint, time_check, quaternion_normalize, periapsispoint)
+            else
+                events = CallbackSet(apoapsispoint, quaternion_normalize, periapsispoint)
+            end
         else
             final_conditions_notmet = false
+        end
+
+        if lowercase(args[:type_of_mission]) == "time" && (config.cnf.time_termination == true || sol.t[end] * config.cnf.TU >= args[:mission_time])
+            continue_campaign = false
+            config.cnf.continue_simulation = false
+            final_conditions_notmet = false
+            if args[:print_res]
+                println("Setting continue_simulation to false due to mission time condition.")
+            end
+            break
         end
     end
 
@@ -1903,7 +1973,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     for i in 2:size(config.solution.performance.heat_rate, 1)
         max_heat_rate = max(max_heat_rate, maximum(config.solution.performance.heat_rate[i][save_pre_index:save_post_index]))
     end
-    println("Max heat rate is " * string(max_heat_rate) * " W/cm^2")
+    if args[:print_res]
+        println("Max heat rate is " * string(max_heat_rate) * " W/cm^2")
+    end
     append!(config.cnf.max_heatrate, max_heat_rate)
     config.cnf.Δv_man = (g_e * m.engines.Isp) * log((config.get_spacecraft_mass(m.body, m.body.roots[1])) / config.solution.performance.mass[end])
 

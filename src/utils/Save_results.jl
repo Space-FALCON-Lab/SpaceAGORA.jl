@@ -21,17 +21,16 @@ function save_results(time, ratio)
 
 
     t = zeros(Float64, Int(ceil(length(time)/ratio)))
-    i = 0
 
     index_prev = 1
 
-    for true_time in time
+    for (i, true_time) in enumerate(time)
         # if isapprox(true_time, range_time[index_prev], atol = 1e-8) # Skip duplicate time entries
         #     continue
         # end
-        if isapprox(i % ratio, 0, atol = 0.1) || true_time == time[end]
+        if isapprox((i-1) % ratio, 0, atol = 0.1) || i == length(time) # Save every 'ratio' time steps or the last time step
             index = findfirst(x -> x == true_time, range_time[index_prev:end])
-            t[Int(floor(i/ratio)+1)] = true_time == time[end] ? true_time : range_time[index+index_prev] + initial_time
+            t[Int(floor(i/ratio))] = i == length(time) ? true_time : range_time[index+index_prev] + initial_time
             # range_solution = SVector{n_variable_to_save + 1, Float64}([config.cnf.solution_intermediate[index+index_prev], 0])
 
             if length(t) == 1
@@ -41,14 +40,14 @@ function save_results(time, ratio)
                     results[:, 1] .= config.cnf.solution_intermediate[end][2:end]
                 end
             elseif true_time != time[end]
-                results[:, Int(floor(i/ratio)+1)] .= config.cnf.solution_intermediate[index+index_prev][2:end]
+                results[:, Int(floor(i/ratio))] .= config.cnf.solution_intermediate[index+index_prev][2:end]
             else
-                results[:, Int(floor(i/ratio)+1)] .= config.cnf.solution_intermediate[end][2:end]
+                results[:, Int(floor(i/ratio))] .= config.cnf.solution_intermediate[end][2:end]
             end
             index_prev = index
         end
 
-        i += 1
+        # i += 1
     end
 
     time_0 = time[end]

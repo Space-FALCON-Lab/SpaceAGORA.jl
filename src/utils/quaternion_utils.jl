@@ -16,7 +16,7 @@ end
 ## skew matrix
 hatIs = [1; 1; 2; 2; 3; 3]
 hatJs = [2; 3; 1; 3; 1; 2]
-function hat(ω::AbstractVector{<:Float64})
+function hat(ω::AbstractVector{<:Float64})::SMatrix{3, 3, Float64}
     """
     skew matrix, The matrix equivalent of cross product
     params: 
@@ -81,14 +81,24 @@ function R(Q)
     # return [Q[1] -Q[2:4]'; Q[2:4] Q[1]*I-hat(Q[2:4])]
 end
 
-function rot(q)
+function rot(q::AbstractVector{<:Float64})::SMatrix{3, 3, Float64}
     """
     Convert quaternion to rotation matrix
     """
     q1, q2, q3, q4 = q
-    return SMatrix{3, 3, Float64}([q1^2-q2^2-q3^2+q4^2 2*(q1*q2+q3*q4) 2*(q1*q3-q2*q4);
-                                    2*(q1*q2-q3*q4) -q1^2+q2^2-q3^2+q4^2 2*(q2*q3+q1*q4);
-                                    2*(q1*q3+q2*q4) 2*(q2*q3-q1*q4) -q1^2-q2^2+q3^2+q4^2])
+    q1q1 = q1*q1
+    q2q2 = q2*q2
+    q3q3 = q3*q3
+    q4q4 = q4*q4
+    q1q2 = q1*q2
+    q1q3 = q1*q3
+    q1q4 = q1*q4
+    q2q3 = q2*q3
+    q2q4 = q2*q4
+    q3q4 = q3*q4
+    return SMatrix{3, 3, Float64}([q1q1-q2q2-q3q3+q4q4 2*(q1q2+q3q4) 2*(q1q3-q2q4);
+                                    2*(q1q2-q3q4) -q1q1+q2q2-q3q3+q4q4 2*(q2q3+q1q4);
+                                    2*(q1q3+q2q4) 2*(q2q3-q1q4) -q1q1-q2q2+q3q3+q4q4])
 end
 
 function error_quaternion(current::SVector{4, Float64}, target::SVector{4, Float64})
@@ -100,16 +110,6 @@ function error_quaternion(current::SVector{4, Float64}, target::SVector{4, Float
 
     qd = SVector{4, Float64}(Float64[-target[1:3]; target[4]])
     return normalize(q_matrix * qd)
-
-    # q = -current
-    # q_bar = current[1:3]'
-    # q_bar_cross = [0 -q_bar[3] q_bar[2]; q_bar[3] 0 -q_bar[1]; -q_bar[2] q_bar[1] 0]
-    # q_matrix = [q[4]*I(3)-q_bar_cross q_bar'; -q_bar q[4]]
-
-    # qd = [-target[1]; -target[2]; -target[3]; target[4]]
-    # qe_neg = q_matrix * qd
-    # qe = qe_pos[4] > qe_neg[4] ? qe_pos : qe_neg
-    # return SVector{4, Float64}(normalize(qe))
 end
 
 ## take angle components (4, 3)

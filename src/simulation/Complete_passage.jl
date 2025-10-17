@@ -572,6 +572,30 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             end
         end
 
+        # Check for interactive forces (lasers, etc)
+        for sc_id in args[:spacecraft_obj]
+            #dont check yourself before you wreck(thrust) yourself
+            if sim_id == sc_id
+                continue
+            end
+            this_obj = args[:spacecraft_obj][sim_id]
+            sc = args[:spacecraft_obj][sc_id]
+            sc_pos = sc.current_pos
+            force_range = 0.0
+            #get range of object in question, determine valid access
+            if sc.laser_effector
+                force_range = sc.laser_range
+            end
+
+            #"apply" forces
+            if sc_pos - this_obj.current_pos < force_range
+                print("IN RANGE IN RANGE")
+            end
+            
+
+        end
+
+
         # Thrust
         Δv = g_e * m.engines.Isp * log(initial_state.m / mass)
 
@@ -733,22 +757,25 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     ## EVENTS: 
     function every_step_condition(y, t, integrator)
-        # args = integrator.p[8]
-        # try
-        #     current_run_id = sim_id  # avoid globals like sim_id
-        #     obj_dict = args[:space_objects_dict]
-        #     obj = obj_dict[current_run_id]
+        args = integrator.p[8]
+        try
+            current_run_id = sim_id
+            obj_dict = args[:space_objects_dict]
+            obj = obj_dict[current_run_id]
 
-        #     state = collect(integrator.u)
-        #     # Store as a vector of vectors: [time, state...]
-        #     # Use fieldnames and getfield instead of haskey for mutable struct
-        #     if !isdefined(obj, :sc_state_history) || obj.sc_state_history === nothing
-        #         obj.sc_state_history = Vector{Vector{Float64}}()
-        #     end
-        #     push!(obj.sc_state_history, vcat([t], state))
-        # catch e
-        #     @warn "Error running every_step_condition callback" error=e
-        # end
+            state = collect(integrator.u)
+            # Store as a vector of vectors: [time, state...]
+            # Use fieldnames and getfield instead of haskey for mutable struct
+            if !isdefined(obj, :sc_state_history) || obj.sc_state_history === nothing
+                obj.sc_state_history = Vector{Vector{Float64}}()
+            end
+            obj.current_pos = state
+            push!(obj.sc_state_history, vcat([t], state))
+        catch e
+            @warn "Error running every_step_condition callback" error=e
+        end
+
+
 
         return true
     end

@@ -179,6 +179,7 @@ mutable struct SpacecraftModel
     sc_state_history::Vector{Any} # Store the history of spacecraft states in a single large array
     spice_path:: String # Path to the SPICE kernel file for this spacecraft
     
+    current_pos:: Vector{Float64,Float64,Float64}
 
     function SpacecraftModel(;joints=Joint[], links=Link[], roots=Link[], 
                         instant_actuation=true, 
@@ -188,6 +189,9 @@ mutable struct SpacecraftModel
                         n_thrusters=0)
         new(joints, links, roots, instant_actuation, prop_mass, inertia_tensors, n_reaction_wheels, n_thrusters)
     end
+
+    function get_sc_pos()
+
 end
 
 # Function to add a body to the spacecraft model

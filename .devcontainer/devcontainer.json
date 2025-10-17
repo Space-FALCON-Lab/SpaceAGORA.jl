@@ -10,7 +10,7 @@
 				 "ghcr.io/devcontainers/features/python:1": {}},
 
 	"runArgs": [
-		"--memory=8g"
+		"--memory=12g"
 	],
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.

@@ -259,9 +259,9 @@ function run_sc_vehicles(args)
     end
 
     # Wait for all tasks to finish and collect results
-    for (obj_id, t) in tasks
-        aerobraking_outputs[obj_id] = fetch(t)
-    end
+    # for (obj_id, t) in tasks
+    #     aerobraking_outputs[obj_id] = fetch(t)
+    # end
 
     #writing all simulation results to csv files
 

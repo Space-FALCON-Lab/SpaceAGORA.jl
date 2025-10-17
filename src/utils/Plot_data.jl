@@ -42,7 +42,7 @@ function append_trace!(args, comp_id::String, new_trace)
 end
 
 using Dash, PlotlyJS
-using DashBase: set_props!
+import DashBase: set_props!
 
 # --- tiny helpers ----------------------------------------------------------
 function ensure_cache!(args)
@@ -75,9 +75,7 @@ function upsert_trace!(args, comp_id::String; base_traces=Any[], new_trace=nothi
             fig["data"] = data
         end
         # (optionally merge layout updates here if you pass them)
-        if haskey(args, :app) && !isnothing(get(args, :app, nothing))
-            set_props!(args[:app], comp_id, Dict("figure" => fig))
-        end
+        set_props!(args[:app], comp_id, Dict("figure" => fig))
         return fig
     end
 end

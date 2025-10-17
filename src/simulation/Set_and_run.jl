@@ -494,8 +494,8 @@ function aerobraking_campaign(args, state,sim_id=1)
     arrow_writer = nothing
     temp_name = nothing
     if args[:plot] == true
-        temp_name = tempname() * "_" * string(sim_id) * ".arrow"
-        println("Temporary file created for plotting: " * temp_name)
+        temp_name = tempname()
+        println("Temporary directory created for plotting: " * temp_name)
         arrow_writer = open(Arrow.Writer, temp_name)
     end
 
@@ -524,11 +524,9 @@ function aerobraking_campaign(args, state,sim_id=1)
         println("Elapsed time: " * string(t_el) * " s")
     end
 
-    if args[:plot] == true && args[:swarm_config] == 0
+    if args[:plot] == true
         plots(state, m, name, args, temp_name)
     end
-
-    return state,m,name,args,temp_name
 
     # rm(temp_name, recursive=true, force=true) # Remove the temporary directory used for plotting
 end

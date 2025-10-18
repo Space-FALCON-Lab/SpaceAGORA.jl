@@ -313,3 +313,16 @@ args = Dict(# Misc Simulation
 #     # end
 # end
 
+# t = @elapsed begin
+#     ra_initial_a = args[:ra_initial_a]
+            
+#     # Run the simulation
+#     for i in collect(range(1,100,step=1))
+
+#         d = Uniform(-5,+5)
+#         args[:ra_initial_a] = ra_initial_a + rand(d)*1e3
+
+#         sol = run_analysis(args)
+#     end
+
+println("COMPUTATIONAL TIME = " * string(t) * " s")

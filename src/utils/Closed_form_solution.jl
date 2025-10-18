@@ -69,7 +69,7 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
 
                 t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time)
                 # println("Length of interval: ", length(t[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])]))
-                step_time = step_time - 1 # -1 because we start from 0
+                step_time = step_time - 2 # -1 because we start from 0
                 t[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = t_cf
                 h[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = h_cf
                 γ[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = γ_cf
@@ -93,12 +93,13 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
 
     return t_cf, h_cf, γ_cf, v_cf
 
-    #drag_passage -> save results and initial conditions given
-    #all_passage -> save results and initial conditions not given
-    #online -> not save results and initial conditions given
+    # drag_passage -> save results and initial conditions given
+    # all_passage -> save results and initial conditions not given
+    # online -> not save results and initial conditions given
 end
 
-function closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time = 0, α_profile = [], online = 0) 
+function closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time = 0, α_profile = [], online = 0)
+    
     if config.cnf.count_numberofpassage != 1
         t_prev = config.solution.orientation.time[end]
     else
@@ -118,7 +119,7 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     LatLong = rtolatlong(pos_pp, mission.planet)
     lat = LatLong[2]
     lon = LatLong[3]
-    h0 = LatLong[1] 
+    h0 = LatLong[1]
 
     h_ii = cross(pos_ii, vel_ii)
     arg = median([-1, 1, norm(h_ii)/(r0*v0)])   # limit to[-1, 1]
@@ -163,7 +164,11 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
         end
     end
     
-    t_cf = collect(range(start=0, stop=Δt, length=step_time))
+    t_cf = collect(range(start=0, stop=Δt, length=step_time-1))
+
+    # println("t_cf length: ", t_cf)
+    # println("step_time: ", step_time)
+    # println("Δt: ", Δt)
 
     cost_3 = v0 * γ0
 
@@ -193,15 +198,19 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     CD_t = CD0 .+ (α_profile * (CD90 - CD0)) / (pi/2)
     CL_t = CL0 .+ (α_profile * (CL90 - CL0)) / (pi/2)
 
-    cost_1 = ρ .* CD_t * Area_tot / (2*mass)
+    # println(α_profile)
+    # println(CD_t)
+    # println(" ")
+
+    cost_1 = ρ .* CD_t * Area_tot / (2*mass) .* α_profile
     cost_2 = ρ .* CL_t * Area_tot / (2*mass)
 
-    a0 = 0.0016
-    c0 = 5e-6
-    mean_a = 3.38
-    mean_c = 2.6
-    mean_b = -8.25
-    mean_d = -0.001
+    # a0 = 0.0016
+    # c0 = 5e-6
+    # mean_a = 3.38
+    # mean_c = 2.6
+    # mean_b = -8.25
+    # mean_d = -0.001
 
     # f1 = -0.005 * v0 + 27.87
     # f2 = (a0 * (mean_a^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_b * (v0/1000 - 3.7))) + 
@@ -209,20 +218,31 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
 
     if mission.planet.name == "mars"
         v0_first = 3900
-        γ0_end = -3
+        γ0_end = -3.0
 
-        mean_b = -0.0139
-        mean_d = -0.0099
+        mean_b = 2.1858e-4
+        mean_d = -0.0036
         
-        a2 = 0.1067
-        a3 = 0.0067
-        b2 = -1.9566
-        b3 = -1.3664
+        a2 = -11.7322
+        a3 = 1.7060
+        b2 = 0.2450
+        b3 = -0.4948
 
-        f1 = (-5.031e-11)*v0^4 + (8.919e-7)*v0^3 + (-0.005921)*v0^2 + (17.44)*v0 - 1.922e4
+        f1 = (-4.894e-11)*v0^4 + (8.678e-7)*v0^3 + (-0.005762)*v0^2 + (16.98)*v0 - 1.871e4
 
-        f2 = (a2*exp(b2*(rad2deg(γ0) - γ0_end))*exp(mean_b*(v0 - v0_first)) + 
-              a3*exp(b3*(rad2deg(γ0) - γ0_end))*exp(mean_d*(v0 - v0_first))) * (t_cf) / (2 * t_p)
+        f2 = exp((a2*exp(b2*(rad2deg(γ0) - γ0_end))*exp(mean_b*(v0 - v0_first)) + 
+                  a3*exp(b3*(rad2deg(γ0) - γ0_end))*exp(mean_d*(v0 - v0_first)))) * (t_cf) / (2 * t_p)
+
+        # a0 = 0.0016
+        # c0 = 5e-6
+        # mean_a = 3.38
+        # mean_c = 2.6
+        # mean_b = -8.25
+        # mean_d = -0.001
+
+        # f1 = -0.005 * v0 + 27.87
+        # f2 = (a0 * (mean_a^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_b * (v0/1000 - 3.7))) + 
+        #       c0 * (mean_c^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_d * (v0/1000 - 3.7)))) * (t_cf) / (2 * t_p)
 
     elseif mission.planet.name == "venus"
         # v0_first = 8400

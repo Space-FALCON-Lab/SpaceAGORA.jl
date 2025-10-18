@@ -17,6 +17,7 @@ args = Dict(# Misc Simulation
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
             :normalize => 0,                                       # Normalize the state during integration True=1, False=0
+            :closed_form => 0,                                     # Closed form solution for the drag passage True=1, False=0
 
             # Type of Mission
             :type_of_mission => "Entry",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
@@ -51,7 +52,8 @@ args = Dict(# Misc Simulation
             :save_rate => 3.0,                                      # Rate at which the data trajectory are saved
             :control_in_loop => 0,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
-            
+            :struct_ctrl => 0,                                     # Structure control True=1, False=0
+            :targeting_ctrl => 0,                                     # Targeting control True=1, False=0
             # Body
             :body_shape => "Blunted Cone",                            # choices=['Spacecraft' , 'Blunted Cone']
             :max_heat_rate => 0.15,                                 # Max heat rate the heat rate control will start to react to

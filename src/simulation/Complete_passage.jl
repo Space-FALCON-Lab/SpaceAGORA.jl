@@ -12,7 +12,12 @@ include("../physical_models/Thermal_models.jl")
 include("../physical_models/Perturbations.jl")
 
 include("../control/Control.jl")
-include("../control/Propulsive_maneuvers.jl")
+include("../control/utils/Propulsive_maneuvers.jl")
+include("../control/targeting_control/targeting.jl")
+
+include("../control/utils/Eom_ctrl.jl")
+include("../control/targeting_control/Eom_targeting.jl")
+include("../control/targeting_control/sim_targeting.jl")
 
 using LinearAlgebra
 using OrdinaryDiffEq
@@ -220,6 +225,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             end
         end
 
+
         if aerobraking_phase == 2 || aerobraking_phase == 0
             if args[:control_mode] == 1
                 x = 120.0
@@ -317,26 +323,6 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 end
             end
 
-            # if config.cnf.Gram_justrecalled == true && config.cnf.index_Mars_Gram_call != 1  # in MC, when we reavaluate Mars Gram there is a discontinuity with the density which is created by how the density data are created. This discontinuity create really high peaks. We recalculate aoa for the new density data.
-            #     if ip.cm == 3
-            #         config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
-            #     elseif ip.cm == 2
-            #         config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
-            #     elseif ip.cm == 1
-            #         config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
-            #     elseif ip.cm == 0
-            #         config.cnf.α = no_control(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form)
-            #     end
-                
-            #     push!(config.cnf.state_flesh1, [T_p, ρ, S])
-
-            #     if ip.tm == 1
-            #         heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
-            #     elseif ip.tm == 2
-            #         heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
-            #     end
-            # end
-
             if index_phase_aerobraking == 2
                 # if Bool(args[:control_in_loop])
                 #     config.cnf.state_flesh1 = [[T_p, ρ, S]]
@@ -412,6 +398,45 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Dynamic Pressure, CHANGE THE VELOCITY WITH THE WIND VELOCITY
         q = 0.5 * ρ * norm(vel_pp_rw)^2               # dynamic pressure based on wind, Pa
+
+        if args[:struct_ctrl] == 1
+            α_struct = control_struct_load(ip, m, args, S, T_p, q, MonteCarlo)
+
+            config.cnf.α = min(config.cnf.α, α_struct) # limit the angle of attack to the structural load control
+        end
+
+        if config.cnf.targeting == 1
+            # if t0 >= config.cnf.t_switch_targeting
+            if t0 >= config.cnf.ts_targ_1 && t0 <= config.cnf.ts_targ_2
+                config.cnf.α = 0
+            else
+                state = [T_p, ρ, S]
+                index_ratio = [1,1]
+                config.cnf.α = control_solarpanels_heatrate(ip, m, args, index_ratio, state, t0 - config.cnf.t_switch_targeting, config.cnf.initial_position_closed_form, OE)
+            end
+        end
+
+        α = config.cnf.α
+
+        # Heat Rate 
+        if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state
+            
+            if ip.tm == 1
+                heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
+            elseif ip.tm == 2
+                heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
+            end
+            
+            cp = m.planet.γ / (m.planet.γ - 1) * m.planet.R
+
+            T_r = 0.0
+        else
+            T_r = 0.0
+            heat_rate = 0.0
+        end
+
+        config.cnf.heat_rate_prev = heat_rate # save current heat rate
+               
         
         # Update the force on each link on the spacecraft
         gravity_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize gravity vector
@@ -1045,7 +1070,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         m = integrator.p[1]
         args = integrator.p[8]
 
-        if abs(norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:AE]*1e3) <= 1e-5  # abs(norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3) <= 1e-5
+        if abs(norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:AE]*1e3) <= 1e-5 
             if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 2
                 config.cnf.α = m.aerodynamics.α
             elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 3
@@ -1270,7 +1295,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             x = 160
         end
 
-        if abs(norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - x*1e3) <= 1e-5 # abs(norm(y[1:3]) - m.planet.Rp_e - x*1e3) <= 1e-5
+        if abs(norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - x*1e3) <= 1e-5
             config.controller.guidance_t_eval = collect(range(start=t * config.cnf.TU, stop=(t * config.cnf.TU)+2500, step=1/args[:flash1_rate]))
         end
 
@@ -1353,8 +1378,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     config.cnf.timer_revaluation = 0
     config.cnf.closed_form_solution_off = 1         # used in closed form solution online to run the solution only once
     config.cnf.initial_position_closed_form = []
-    config.cnf.heat_rate_list = []                  # checked this - if used
-    config.cnf.α_list = []                          # checked this - if used
+    config.cnf.heat_rate_list = []               
+    config.cnf.α_list = []
 
     config.controller.guidance_t_eval = []
     config.controller.count_prev_controller = 0
@@ -1601,7 +1626,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             end
 
             if simulator == "Julia"
-                # counter for events
+                # Counter for events
                 config.cnf.count_eventfirststep = 0
                 config.cnf.eventfirststep_periapsis = 0
                 config.cnf.count_eventsecondstep = 0
@@ -1623,13 +1648,158 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
                 ## Julia Integrator
                 # Time initialization
-                initial_time, final_time = time_0 / config.cnf.TU, (time_0 + length_sim) / config.cnf.TU 
+                initial_time, final_time = time_0 / config.cnf.TU, (time_0 + length_sim) / config.cnf.TU
+
                 # Parameter Definition
                 if config.solution.simulation.solution_states != 0
                     param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage, Bool(args[:orientation_sim]), MVector{3, Float64}(0.0, 0.0, 0.0), MVector{3, Float64}(0.0, 0.0, 0.0), args, ip, MVector{3, Float64}(0.0, 0.0, 0.0), zeros(config.solution.simulation.solution_states))
                 else
                     param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage, Bool(args[:orientation_sim]), MVector{3, Float64}(0.0, 0.0, 0.0), MVector{3, Float64}(0.0, 0.0, 0.0), args, ip, MVector{3, Float64}(0.0, 0.0, 0.0))
                 end
+                println("ip: ", ip.cm)
+
+                # Energy targeting 
+                if args[:targeting_ctrl] == 1 && aerobraking_phase == 2
+
+                    # println("in_cond: ", [(norm(in_cond[1:3])-m.planet.Rp_e)/1e3, norm(in_cond[4:6])])
+                    # println("index_phase_aerobraking: ", index_phase_aerobraking)
+                    # println("aerobraking_phase: ", aerobraking_phase)
+                    # println("config_drag_state: ", config.cnf.drag_state)
+
+                    # println("m_aero_alpha_a before targeting: ", m.aerodynamics.α)
+
+                    OE_AI = rvtoorbitalelement(SVector{3, Float64}(in_cond[1:3]), SVector{3, Float64}(in_cond[4:6]), in_cond[7], m.planet)
+
+                    config.cnf.initial_position_closed_form = OE_AI # need this for simulation to enter the control conditional statements in f!
+
+                    energy_f = target_planning(f!, ip, m, args, param, OE_AI, initial_time, final_time, a_tol, r_tol, method, events, in_cond)
+
+                    # println(config.cnf.targeting)
+                    # println("energy_f: ", energy_f)
+
+                    m.aerodynamics.α = deg2rad(args[:α])    
+                    config.cnf.ascending_phase = false
+                    config.cnf.drag_state = true
+                    # println("m_aero_alpha_a after targeting: ", m.aerodynamics.α)
+
+                    if config.cnf.targeting == 1
+                        # current_epoch = date_initial + time_0*seconds # Precompute the current epoch
+                        # time_real = DateTime(current_epoch) # date_initial + Second(t0)
+                        # timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
+
+                        # # Timing variables
+                        # el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation
+                        # current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
+                        # time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
+                        # config.cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
+                        # m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), config.cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+
+                        # Uncomment from here for targeting with shooting
+                        v_E = control_solarpanels_targeting_heatload(energy_f, param, OE_AI) # 28.075
+
+                        println("v_E: ", v_E)
+
+                        config.cnf.lambda_switch_list = []
+                        config.cnf.time_switch_list = []
+
+                        # root finding num int
+                        # config.cnf.t_switch_targeting = control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
+                        
+                        sol_lam, time_switch = asim_ctrl_rf(ip, m, time_0, OE_AI, args, v_E, 1.0, false, gram_atmosphere)
+
+                        if time_switch[2] == Inf
+                            time_switch[2] = 1e50
+                        end
+
+                        config.cnf.ts_targ_1 = time_switch[1]
+                        config.cnf.ts_targ_2 = time_switch[2]
+
+                        # time_switch = control_solarpanels_targeting_closed_form(energy_f, param, OE_AI)
+
+                        # time_switch = control_solarpanels_targeting_closed_form(energy_f, ip, m, OE_AI, args, 0, true, 0, 0)
+
+                        # println("Time Switch: ", time_switch)
+
+                        # config.cnf.ts_targ_1 = initial_time + time_switch[1]
+                        # config.cnf.ts_targ_2 = initial_time + time_switch[2]
+
+                        println("hf: ", norm(sol_lam[1:3,end]) - m.planet.Rp_e)
+                        println("vf: ", norm(sol_lam[4:6,end]))
+                        println("γf: ", asin(sol_lam[1:3,end]'*sol_lam[4:6,end]/norm(sol_lam[4:6,end]) / norm(sol_lam[1:3,end])))
+
+                        fin_energy = norm(sol_lam[4:6,end])^2/2 - m.planet.μ/norm(sol_lam[1:3,end])
+
+                        println("Targeting energy: ", energy_f)
+                        println("Final Energy: ", fin_energy)
+
+                        push!(config.cnf.time_list, sol_lam.t...)
+                        push!(config.cnf.lamv_list, sol_lam[7,:]...)
+
+                        # println(config.cnf.lambda_switch_list)
+                        # println(config.cnf.time_switch_list)
+                        # println(config.cnf.lamv_list)
+
+                        ip.cm = 0
+
+                        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
+                    end
+                end
+
+                println("ip: ", ip.cm)
+
+                # config.cnf.targeting = 1
+
+                # hf = 160e3 # args[:AE] * 1e3
+                # vf = 4195.0 # 4196.4868
+                # γf = 0.10979 # deg2rad(5.874)
+                # energy_f = -3.2687e6 # -3.265e6 
+                # # energy_f = vf^2 / 2 - (m.planet.μ /(hf + m.planet.Rp_e))
+
+                # current_epoch = date_initial # Precompute the current epoch
+                # time_real = DateTime(current_epoch) # date_initial + Second(t0)
+                # timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
+
+                # # Timing variables
+                # el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation
+                # current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
+                # time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
+                # config.cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
+                # m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), config.cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+
+                # config.cnf.t_switch_targeting = control_solarpanels_targeting_closed_form(energy_f, param, OE)
+
+                # println("Targeting switch time: ", config.cnf.t_switch_targeting)
+
+                # config.cnf.t_switch_targeting = control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
+
+                # println("Targeting switch time: ", config.cnf.t_switch_targeting)
+
+                # sol_lam = asim_ctrl_targeting_plot(ip, m, 0, OE, args, hf, vf, γf, energy_f, 100, 0.03565, false, gram_atmosphere)
+
+                # v_E = control_solarpanels_targeting_heatload(energy_f, param, OE) # 28.075
+
+                # v_E = 27.892163870200108
+
+                # println("v_E: ", v_E)
+
+                # config.cnf.lambda_switch_list = []
+                # config.cnf.time_switch_list = []
+                
+                # sol_lam, time_switch = asim_ctrl_rf(ip, m, 0, OE, args, v_E, 1.0, true, gram_atmosphere)
+
+                # config.cnf.ts_targ_1 = time_switch[1]
+                # config.cnf.ts_targ_2 = time_switch[2]
+                
+                # println("hf: ", norm(sol_lam[1:3,end]) - m.planet.Rp_e)
+                # println("vf: ", norm(sol_lam[4:6,end]))
+                # println("γf: ", asin(sol_lam[1:3,end]'*sol_lam[4:6,end]/norm(sol_lam[4:6,end]) / norm(sol_lam[1:3,end])))
+
+                # println("Targeting energy: ", energy_f)
+                # println("Final Energy: ", norm(sol_lam[4:6,end])^2/2 - m.planet.μ/norm(sol_lam[1:3,end]))
+
+
+                # push!(config.cnf.time_list, sol_lam.t...)
+                # push!(config.cnf.lamv_list, sol_lam[7,:]...)
 
                 # Run simulation
                 # method = TRBDF2(autodiff=false)
@@ -1672,43 +1842,24 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 push!(time_solution, (sol.t * config.cnf.TU)...)
                 time_0 = time_solution[end]
 
+                if aerobraking_phase == 2
+                    r0 = SVector{3, Float64}(in_cond[1:3])
+                    v0 = SVector{3, Float64}(in_cond[4:6])
+
+                    energy_fin = norm(v0)^2/2 - m.planet.μ/norm(r0)
+
+                    a = -m.planet.μ/(2*energy_fin)
+
+                    e = sqrt(1 - (norm(cross(r0, v0))^2)/(m.planet.μ*a))
+
+                    rp = a*(1 - e)
+
+                    println("rp_fin = ", 2*a - rp)
+                end
+
                 if aerobraking_phase == 0
                     new_periapsis(m, in_cond[1:3] * config.cnf.DU, in_cond[4:6] * config.cnf.DU / config.cnf.TU, args)
                 end
-            elseif simulator == "Costumed"
-                # if args[:integrator] == "Costumed"
-                #     # mutable struct Sol
-                #     #     t_events::Vector{Vector{Float64}}
-                #     # end
-
-                #     # sol = Sol([[],[]])
-                # end
-
-                # while stop_simulation == false
-                #     initial_time = time_0
-                #     ## Costumed Integrator
-                #     config.cnf.MarsGram_recall = 1
-                #     config.cnf.results_save = 0
-                #     y, t, stop_simulation, sol = RK4(f, step, initial_time, in_cond, m, T_ijk, index_phase_aerobraking, args, sol)
-
-                #     in_cond = [y[1], y[2], y[3], y[4], y[5], y[6], y[7], y[8]]
-                #     config.cnf.counter_integrator += 1
-                #     config.cnf.results_save = 1
-                #     f(t, in_cond, m, index_phase_aerobraking, ip)
-
-                #     # New initial Condition
-                #     time_0 = t_prev
-
-                #     # Save Results
-                #     append!(time_solution, t)
-
-                #     ## Guidance, Navigation and Control
-                #     if args[:control_mode] != 0
-                #         # DO LATER
-                #     end
-                # end
-
-                # i_sim += 1
             end
 
             # Define breaker campaign impact km or apoapsis greater than periapsis
@@ -1941,6 +2092,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         count_temp += 1
 
         if count_temp > 15
+            println("entering")
             break
         end
 
@@ -1986,7 +2138,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             println("Actual periapsis altitude " * string(config.cnf.altitude_periapsis[end]) * " km - Vacuum periapsis altitude = " * string((config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end]) - m.planet.Rp_e)*1e-3) * " km")
 
         # Print Ra new (Apoapsis)
-            println("Ra new = " * string((config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end]))*1e-3) * " km")
+            println("Ra new = " * string(config.solution.orientation.pos_ii_mag[end]/1e3) * " km") # string((config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end]))*1e-3) * " km")
         end
 
         # Print Heat Rate and Heat Load

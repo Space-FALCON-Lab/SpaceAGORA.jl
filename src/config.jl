@@ -184,6 +184,10 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         time_termination::Bool = false
         t_out_drag_passage::Float64 = 0.0
         t_time_switch_func::Vector{Float64} = []
+        t_time_switch_targ::Vector{Float64} = []
+        ts_targ_1::Float64 = 0.0
+        ts_targ_2::Float64 = 0.0
+        
         prob::ODEProblem = ODEProblem((u, p, t) -> u, [0.0], (0.0, 1.0), [])
         prob_set::Bool = false
         P::Matrix{Float64} = zeros(3,3)
@@ -192,6 +196,18 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         DU::Float64 = 0.0
         TU::Float64 = 0.0
         MU::Float64 = 0.0   
+
+        targeting::Int64 = 0
+        Vf::Float64 = 0.0
+        hf::Float64 = 0.0
+        γf::Float64 = 0.0
+
+        lambda_switch_list::Vector{Float64} = []
+        time_switch_list::Vector{Float64} = []
+        time_list::Vector{Float64} = []
+        lamv_list::Vector{Float64} = []
+
+        t_switch_targeting::Float64 = 0.0
     end
 
     cnf = Cnf()

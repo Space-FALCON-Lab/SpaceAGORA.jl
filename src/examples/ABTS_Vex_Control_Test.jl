@@ -78,11 +78,9 @@ args = Dict(# Misc Simulation
             :planet => 2,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                  # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
-            
-            :n_bodies => ["Sun"],                                   # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
             :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
-            :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/MGN-V-RDRS-5-TOPO-L2.csv", # File with the topography harmonics coefficients
+            :topography_harmonics_file => "/workspaces/SpaceAGORA.jl/Topography_harmonics_data/MGN-V-RDRS-5-TOPO-L2.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 90, 
             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
@@ -94,7 +92,7 @@ args = Dict(# Misc Simulation
             :n_bodies => ["Sun"],                                  # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :srp => 1,                                             # Solar Radiation Pressure True=1, False=0
             :gravity_harmonics => 0,                               # Gravity Harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/MGNP180U.csv", # File with the gravity harmonics coefficients
+            :gravity_harmonics_file => "/workspaces/SpaceAGORA.jl/Gravity_harmonics_data/MGNP180U.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
 
@@ -175,8 +173,8 @@ args = Dict(# Misc Simulation
             :phi => 180.0,                                          # Thrust Angle, deg
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
-            :ra_fin_orbit => 25000e3,                               # Target final apoapsis for the orbit, m
-            :maneuver_plan => Venus_Express_firing_plan,          # MAneuver plan function
+            :ra_fin_orbit => 60950e3 + 6.0518e6,                    # Target final apoapsis for the orbit, m
+            :maneuver_plan => Venus_Express_firing_plan,            # MAneuver plan function
             
             # Monte Carlo Simulations
             :montecarlo => 0,                                       # Run Monte Carlo simulation True=1, False=0
@@ -236,6 +234,30 @@ args = Dict(# Misc Simulation
             
 #     # Run the simulation
 #     sol = run_analysis(args)
+
+#     if Bool(args[:passresults])
+#         println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+#     end
+# end
+
+t = @elapsed begin
+    ra_initial_a = args[:ra_initial_a]
+            
+    # Run the simulation
+    for i in collect(range(1,100,step=1))
+
+        d = Uniform(-5,+5)
+        args[:ra_initial_a] = ra_initial_a + rand(d)*1e3
+
+        sol = run_analysis(args)
+    end
+
+    println(" ")
+
+    # if Bool(args[:passresults])
+    #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+    # end
+end
 
 #     if Bool(args[:passresults])
 #         println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")

@@ -953,7 +953,7 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
     # Initial condition initialization
     in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], lambdav, lambdag, lambdah, 0.0]
 
-    # println("in_cond: ", in_cond)
+    println("in_cond: ", in_cond)
 
     # Time initialization
     initial_time, final_time = time_0, time_0 + 1500
@@ -973,6 +973,8 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
 
     v_ii_mag = [norm(sol[4:6,i]) for i in 1:length(sol.t)]
 
+    println("CD_slope: ", CD_slope)
+
     lambda_switch_list = (k_cf * 2.0 * m.body.mass * v_ii_mag) ./ (m.body.area_tot * CD_slope * pi)
 
     push!(config.cnf.lambda_switch_list, lambda_switch_list...)
@@ -991,7 +993,7 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         # time_switch[2] = temp[end]
     elseif length(temp) == 1
         time_switch[1] = temp[1]
-        time_switch[2] = sol.t[end]
+        time_switch[2] = Inf
     end
 
     config.cnf.t_time_switch_targ = []

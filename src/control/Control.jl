@@ -38,7 +38,7 @@ function control_struct_load(ip, m, args, S, T_p, q, MonteCarlo=false)
         try
             α = find_zero(f, (0, pi/2), Roots.Bisection())
         catch
-            println("Check - heat rate controller does not converge")
+            # println("Check - heat rate controller does not converge")
             α = min_α
         end
     else
@@ -119,7 +119,7 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
                     end
                 catch
                 # if α < 0 || α > pi/2
-                    println("Check - heat rate controller does not converge")
+                    # println("Check - heat rate controller does not converge")
                     α = min_α
                 # end
                 end

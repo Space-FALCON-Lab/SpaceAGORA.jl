@@ -1220,16 +1220,24 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
                         config.cnf.lambda_switch_list = []
                         config.cnf.time_switch_list = []
+
+                        # root finding num int
+                        # config.cnf.t_switch_targeting = control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
                         
                         sol_lam, time_switch = asim_ctrl_rf(ip, m, time_0, OE_AI, args, v_E, 1.0, false, gram_atmosphere)
+
+                        if time_switch[2] == Inf
+                            time_switch[2] = 1e50
+                        end
 
                         config.cnf.ts_targ_1 = time_switch[1]
                         config.cnf.ts_targ_2 = time_switch[2]
 
                         # time_switch = control_solarpanels_targeting_closed_form(energy_f, param, OE_AI)
 
-                        # root finding num int
-                        # config.cnf.t_switch_targeting = control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
+                        # time_switch = control_solarpanels_targeting_closed_form(energy_f, ip, m, OE_AI, args, 0, true, 0, 0)
+
+                        # println("Time Switch: ", time_switch)
 
                         # config.cnf.ts_targ_1 = initial_time + time_switch[1]
                         # config.cnf.ts_targ_2 = initial_time + time_switch[2]
@@ -1245,6 +1253,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
                         push!(config.cnf.time_list, sol_lam.t...)
                         push!(config.cnf.lamv_list, sol_lam[7,:]...)
+
+                        # println(config.cnf.lambda_switch_list)
+                        # println(config.cnf.time_switch_list)
+                        # println(config.cnf.lamv_list)
 
                         ip.cm = 0
 

@@ -81,7 +81,7 @@ function switch_calculation(ip, m, position, args, t, heat_rate_control, reevalu
     coeff = (CD_slope, CL_0, CD_0)
 
     # Evaluates max Q
-    aoa_cf = aoa(m, 0.1, t_cf, h_cf, γ_cf, v_cf, coeff)[1]
+    aoa_cf = aoa(m, 0.1, t_cf, h_cf, γ_cf, v_cf, coeff, 1)[1]
 
     approx_sol = (t_cf, h_cf, γ_cf, v_cf)
 
@@ -98,7 +98,7 @@ function switch_calculation(ip, m, position, args, t, heat_rate_control, reevalu
 
     t_cf, v_cf, γ_cf, h_cf = func(k_cf, m, args, coeff, position, heat_rate_control, approx_sol, aoa_cf, false, true)
 
-    lambda_switch, lambdav = lambdas(m, aoa_cf, k_cf, t_cf, h_cf, γ_cf, v_cf, coeff)[1:2]
+    lambda_switch, lambdav = lambdas(m, aoa_cf, k_cf, t_cf, h_cf, γ_cf, v_cf, coeff, 1)[1:2]
 
     index_array = lambdav .< lambda_switch
 

@@ -15,68 +15,90 @@ using Arrow
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
 # Add bodies to the spacecraft model
-p = SVector{3, Float64}([0.1, 0.2, -0.3])
-q = 1/(1+norm(p)^2)*SVector{4, Float64}([2*p; 1-norm(p)^2])
-skew = (ω) -> SMatrix{3, 3, Float64}([0 -ω[3] ω[2];
-                                   ω[3] 0 -ω[1];
-                                   -ω[2] ω[1] 0])
-dcm = (q[4]^2 - norm(q[1:3])^2)*I(3) - 2*q[4]*skew(q[1:3]) + 2*q[1:3]*q[1:3]' # DCM from quaternion
-ω_body = SVector{3, Float64}([0.001, -0.01, 0.03]) # Reference angular velocity
-ω_ref = dcm'*ω_body
-h = sqrt(30.0/7.0)
-w = sqrt(6.0)
-d = sqrt(66.0/7.0)
+# p = SVector{3, Float64}([0.1, 0.2, -0.3])
+# q = 1/(1+norm(p)^2)*SVector{4, Float64}([2*p; 1-norm(p)^2])
+# skew = (ω) -> SMatrix{3, 3, Float64}([0 -ω[3] ω[2];
+#                                    ω[3] 0 -ω[1];
+#                                    -ω[2] ω[1] 0])
+# dcm = (q[4]^2 - norm(q[1:3])^2)*I(3) - 2*q[4]*skew(q[1:3]) + 2*q[1:3]*q[1:3]' # DCM from quaternion
+# ω_body = SVector{3, Float64}([0.001, -0.01, 0.03]) # Reference angular velocity
+# ω_ref = dcm'*ω_body
+# h = sqrt(30.0/7.0)
+# w = sqrt(6.0)
+# d = sqrt(66.0/7.0)
 
-rw_torques_data = DataFrame(Arrow.Table("/workspaces/ABTS.jl/cygnss_rw_torques.feather"))
+rw_torques_data = DataFrame(Arrow.Table("/workspaces/ABTS.jl/cygnss_rw_momentum_derivatives.feather"))
 # println(rw_torques_data[])
 # time_itp = LinearInterpolation(rw_torques_data.time_offset)
 println("RW torque data loaded from file, time range: $(minimum(rw_torques_data[!, 1])) to $(maximum(rw_torques_data[!, 1])) seconds.")
-rw_1_itp = cubic_spline_interpolation(range(0.0, rw_torques_data[end, 1], length(rw_torques_data[!, 3])), rw_torques_data[!, 3])
-rw_2_itp = cubic_spline_interpolation(range(0.0, rw_torques_data[end, 1], length(rw_torques_data[!, 4])), rw_torques_data[!, 4])
-rw_3_itp = cubic_spline_interpolation(range(0.0, rw_torques_data[end, 1], length(rw_torques_data[!, 5])), rw_torques_data[!, 5])
+rw_1_itp = cubic_spline_interpolation(range(0.0, rw_torques_data[end, 1], length(rw_torques_data[!, 2])), rw_torques_data[!, 2])
+rw_2_itp = cubic_spline_interpolation(range(0.0, rw_torques_data[end, 1], length(rw_torques_data[!, 3])), rw_torques_data[!, 3])
+rw_3_itp = cubic_spline_interpolation(range(0.0, rw_torques_data[end, 1], length(rw_torques_data[!, 4])), rw_torques_data[!, 4])
 rw_torque_itp = (t) -> SVector{3, Float64}([rw_1_itp(t), rw_2_itp(t), rw_3_itp(t)])
 println(rw_torque_itp(2))
+
+rw_torques_cloth = DataFrame(Arrow.Table("/workspaces/ABTS.jl/slew_maneuver_torques_0.1s_eci_unfiltered.feather"))
+cloth_times = rw_torques_cloth[1, 1]:rw_torques_cloth[2, 1] - rw_torques_cloth[1, 1]:rw_torques_cloth[end, 1]
+println(length(cloth_times))
+println(length(rw_torques_cloth[!, 5]))
+rw_1_itp_cloth = cubic_spline_interpolation(range(rw_torques_cloth[1, 1], stop=rw_torques_cloth[end, 1], length=length(rw_torques_cloth[!, 5])), rw_torques_cloth[!, 5])
+rw_2_itp_cloth = cubic_spline_interpolation(range(rw_torques_cloth[1, 1], stop=rw_torques_cloth[end, 1], length=length(rw_torques_cloth[!, 5])), rw_torques_cloth[!, 6])
+rw_3_itp_cloth = cubic_spline_interpolation(range(rw_torques_cloth[1, 1], stop=rw_torques_cloth[end, 1], length=length(rw_torques_cloth[!, 5])), rw_torques_cloth[!, 7])
+rw_torque_itp_cloth = (t) -> SVector{3, Float64}([rw_1_itp_cloth(t), rw_2_itp_cloth(t), rw_3_itp_cloth(t)])
+
 # q = SVector{4, Float64}([0.0, 0.0, sin(pi/4), cos(pi/4)]) # Quaternion for the main bus
 main_bus = config.Link(root=true, 
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), # Body z-axis points down, origin is at bottom, CoM from engineering drawing 
                         # q=SVector{4, Float64}(q),
-                        q=SVector{4, Float64}([0.28047528 -0.17599893  0.9414761  -0.06309311]),
+                        # q=SVector{4, Float64}([0.28047528 -0.17599893  0.9414761  -0.06309311]),
+                        # q=SVector{4, Float64}([ -0.000178090669, 0.000196625584, -0.000787386924,0.999990655]), # Initial quaternion, from slew data, LVLH
+                        # q=SVector{4, Float64}([-1.78090669e-04, 1.96625584e-04, -7.87386924e-04, 9.99999655e-01]), # Stating from ~900s, from slew data, assumes scalar first, LVLH
+                        q=SVector{4, Float64}([-0.769326211835314, -0.0287409968395995, 0.368405744863056, 0.521141383921568]), # Initial quaternion, from slew data, ECI
+                        # q=SVector{4, Float64}([-0.49694828,  -0.27337817, 0.69593993, 0.44042526]), # Starting from ~900s, from slew data, ECI
                         ṙ=SVector{3, Float64}([0.0, 0.0, 0.0]), 
-                        ω=SVector{3, Float64}([0.00029976 -0.00091251  0.00051997]), # Initial angular velocity rad/s, from CYGNSS documentation
+                        # ω=SVector{3, Float64}([0.00029976 -0.00091251  0.00051997]), # Initial angular velocity rad/s, from CYGNSS documentation
+                        # ω=SVector{3, Float64}([-9.789142632171234e-5, -8.82827330140926e-5, 0.00012436837964648057]), # Initial angular velocity rad/s, from slew data, LVLH
+                        # ω=SVector{3, Float64}([4.94494778455986e-07, -1.896896037665177e-05, -2.7264315784859147e-06]), # Starting from ~900s, from slew data, LVLH
+                        ω=SVector{3, Float64}([-9.167855927546074e-05, -0.0011950697001943617, 0.0001295462530991909]), # Initial angular velocity rad/s, from slew data, ECI
+                        # ω=SVector{3, Float64}([-1.249549492745143e-06, -0.0011257840337701133, -2.340685254945601e-06]), # Starting from ~900s, from slew data, ECI
                         dims=SVector{3, Float64}([20.222e-2, 52.12e-2, 64.09e-2]), 
                         ref_area=0.1129753, # m^2
                         # ref_area=0.0,
                         m=28.94,
                         gyro=3,
-                        attitude_control_rate=1.0, # seconds
-                        rw=SVector{3, Float64}(-122.0/6000.0*18.0e-3, -156.0/6000.0*18.0e-3, -239.0/6000.0*18.0e-3), # Initial RW angular momentum Nms, from CYGNSS documentation
+                        attitude_control_rate=0.1, # seconds
+                        rw=SVector{3, Float64}(25.790585298785203/6000.0*18.0e-3, -11.830065546928386/6000.0*18.0e-3, -532.0841089980587/6000.0*18.0e-3), # Initial RW angular momentum Nms, from CYGNSS documentation
+                        # rw=SVector{3, Float64}(-85.75349176655784/6000.0*18.0e-3, 571.8118011223758/6000.0*18.0e-3, -262.8650773012001/6000.0*18.0e-3), # Initial RW angular momentum starting from 900s, from slew data
                         max_torque=0.65536e-3, # max torque from RW datasheet, Nm
                         max_h=18.0e-3, # max angular momentum from RW datasheet, Nms
                         # J_rw=SMatrix{3, 3, Float64}([0.8165 -0.4082 -0.4082;
                         #                              0.5774 0.5774 0.5774;
                         #                              0.0 -0.7071 0.7071]),
-                        J_rw=SMatrix{3, 3, Float64}([0.8165 0.4082 -0.4082;
-                                                     -0.5774 0.5774 -0.5774;
-                                                     0.0 -0.7071 -0.7071]),
-                        attitude_control_function=(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64) -> (b.ω_wheel_derivatives .= rw_torque_itp(t)))
+                        J_rw=SMatrix{3, 3, Float64}([ 0.8164  0.4083 -0.4083;
+                                                     -0.5774  0.5773 -0.5773;
+                                                      0.0000 -0.7071 -0.7071]),
+                        # attitude_control_function=(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64) -> (b.ω_wheel_derivatives .= pinv(b.J_rw) * rw_torque_itp_cloth(t)))#+890.0017919540405))) # cloth attitude control
+                        attitude_control_function=(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64) -> (b.ω_wheel_derivatives .= rw_torque_itp(t)))#+890.0017919540405 - 0.5))) # CYGNSS data attitude control
+
 L_panel = config.Link(r=SVector{3, Float64}(0.0, 56.9e-2, -(20.222 - 13.1)*1.0e-2),
                       q=SVector{4, Float64}(0.0, sqrt(2.0)/2.0, 0.0, sqrt(2.0)/2.0),
                       dims=SVector{3, Float64}([49.71e-2, 0.05, 52.12e-2]),
                       ref_area=49.71e-4,
                       m=0.01)
+                      
 R_panel = config.Link(r=SVector{3, Float64}(0.0, -56.9e-2, -(20.222 - 13.1)*1.0e-2),
                       q=SVector{4, Float64}(0.0, sqrt(2.0)/2.0, 0.0, sqrt(2.0)/2.0),
                       dims=SVector{3, Float64}([49.71e-2, 0.05, 52.12e-2]),
                       ref_area=49.71e-4,
                       m=0.01)
 config.add_body!(spacecraft, main_bus, prop_mass=0.0)
-config.add_body!(spacecraft, L_panel)
-config.add_body!(spacecraft, R_panel)
+# config.add_body!(spacecraft, L_panel)
+# config.add_body!(spacecraft, R_panel)
 
-L_panel_joint = config.Joint(main_bus, L_panel)
-R_panel_joint = config.Joint(R_panel, main_bus)
-config.add_joint!(spacecraft, L_panel_joint)
-config.add_joint!(spacecraft, R_panel_joint)
+# L_panel_joint = config.Joint(main_bus, L_panel)
+# R_panel_joint = config.Joint(R_panel, main_bus)
+# config.add_joint!(spacecraft, L_panel_joint)
+# config.add_joint!(spacecraft, R_panel_joint)
 inertia_tensor = [1.4e6 -1.71e4 8.08e3;
                   -1.71e4 8.19e5 -5.35e3;
                   8.08e3 -5.35e3 1.95e6] * 1e-6
@@ -125,8 +147,8 @@ bus_facet_normal_vectors = [SVector{3, Float64}([1.0, 0.0, 0.0]),
 panel_facet_normal_vectors = [SVector{3, Float64}([0.0, 0.0, 1.0]),
                               SVector{3, Float64}([0.0, 0.0, 1.0])]
 
-bus_facet_locs = [SVector{3, Float64}([lenXHub * 0.5, 0.0, 0.0]),
-                  SVector{3, Float64}([-lenXHub * 0.5, 0.0, 0.0]),
+bus_facet_locs = [SVector{3, Float64}([lenXHub*1e-2 * 0.5, 0.0, 0.0]),
+                  SVector{3, Float64}([-lenXHub*1e-2 * 0.5, 0.0, 0.0]),
                   SVector{3, Float64}([0.0, 21.0915e-2, -(6.2592 - 13.1)*1.0e-2]),
                   SVector{3, Float64}([0.0, -21.0915e-2, -(6.2592 - 13.1)*1.0e-2]),
                   SVector{3, Float64}([0.0, 32.045e-2, -(12.519 + 9.388/2.0 - 13.1)*1.0e-2]),
@@ -171,7 +193,7 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => false,                                                                                  # Pass results as output True=1, False=0
             :print_res => true,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/cygnss_comparison_srp",                # Directory where to save the results
+            :directory_results => "/workspaces/ABTS.jl/output/cygnss_comparison_slew_eci",                # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
@@ -188,7 +210,7 @@ args = Dict(# Misc Simulation
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => true,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 10,                                 # Number of aerobraking passage
-            :mission_time => 48*3600.0,                                  # Mission time in seconds, used only for Time mission type
+            :mission_time => 3600.0,                                  # Mission time in seconds, used only for Time mission type
             # :mission_time => 1000.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => true,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
             :num_steps_to_save => 10000,                            # Number of timesteps between saves
@@ -208,9 +230,9 @@ args = Dict(# Misc Simulation
             
             # Perturbations
             :n_bodies => ["Sun", "Moon"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
-            :srp => true,                                             # Solar Radiation Pressure true/false
-            :eclipse => true,                                         # Whether to include eclipse conditions in SRP calculation
-            :gravity_gradient => true,                                   # Gravity Gradient true/false
+            :srp => false,                                             # Solar Radiation Pressure true/false
+            :eclipse => false,                                         # Whether to include eclipse conditions in SRP calculation
+            :gravity_gradient => false,                                   # Gravity Gradient true/false
             :gravity_harmonics => 1,                                            # Gravity Spherical harmonics True=1, False=0
             :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
@@ -267,13 +289,15 @@ args = Dict(# Misc Simulation
             :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_step => 1000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :a_initial_a => 6818.861142689749e3,                # Initial Semi-major axis for for-loop in m
+            :a_initial_a => 6815519.860683523,                # Initial Semi-major axis for for-loop in m, starting from 0s
+            # :a_initial_a => 6813679.740083234, # starting from 900s
             # :a_initial_a => 6179921.801554798,
             # :a_initial_a => 10000.0e3,
             :a_initial_b => 6920.0e3,                               # Final Semi-major axis for for-loop in m
             # :a_initial_b => 11000.0e3,
             :a_step => 5e10,                                       # Step Semi-major axis for for-loop in m
-            :e_initial_a => 0.0004790038694709286,                                   # Initial Eccentricity for for-loop in m
+            :e_initial_a => 0.001160182015198709,                                   # Initial Eccentricity for for-loop in m, starting from 0s
+            # :e_initial_a => 0.0011523634328820804, # Starting from 900s
             # :e_initial_a => 0.10332925554563428,
             # :e_initial_a => 0.01,
             :e_initial_b => 0.1,                                   # Final Eccentricity for for-loop in m
@@ -283,23 +307,27 @@ args = Dict(# Misc Simulation
             :γ_initial_a => -2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_step => 100,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :inclination => 34.93571297718656,                                   # Inclination Orbit, deg
+            :inclination => 35.006305312328244,                                   # Inclination Orbit, deg, starting from 0s
+            # :inclination => 35.00691817898257, # Starting from 900s
             # :inclination => 35.60900229798397,
-            :ω => 140.6318137514614,                                              # AOP, deg
+            :ω => 175.8048936813804,                                              # AOP, deg, starting from 0s
+            # :ω => 227.97599785070602, # Starting from 900s
             # :ω =>235.59080763543037,
-            :Ω => 177.3709027746214,                                              # RAAN, deg
+            :Ω => 143.51935099761045,                                              # RAAN, deg, starting from 0s
+            # :Ω => 143.50901715025634, # Starting from 900s
             # :Ω => 179.05921043028263,
-            :ν => 276.6553122769616,                                               # True Anomaly, deg
+            :ν => 345.19661998242003,                                               # True Anomaly, deg, starting from 0s
+            # :ν => 350.3995039488173,# Starting from 900s
             # :ν => 180.24980892300408,
             # :ν => 40.0,                                               # True Anomaly, deg
             :EI => 160.0,                                           # Entry Interface, km
             :AE => 160.0,                                           # Atmospheric Exit, km
             :year => 2025,                                          # Mission year
-            :month => 6,                                           # Mission month
-            :day => 6,                                             # Mission day
+            :month => 10,                                           # Mission month
+            :day => 4,                                             # Mission day
             :hours => 0,                                           # Mission hour
-            :minutes => 0,                                         # Mission minute
-            :secs => 0.0,                                          # Mission second
+            :minutes => 56,                                         # Mission minute
+            :secs => 59.0,                                          # Mission second
             
             # Final Conditions
             :final_apoapsis => 3390.0e3+503e3, # 5088116.837416616, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign

@@ -32,7 +32,7 @@ function reaction_wheel_model!(
 
     prob = ODEProblem(ω_dot!, link.rw, (0.0, dt), [pinv(link.J_rw), τ])
     # println("link.rw: $(link.rw)")
-    link.rw .= solve(prob, BS3()).u[end]
+    link.rw .= solve(prob, Tsit5()).u[end]
     # println("Updated link.rw: $(link.rw)")
     # println("link.rw post: $(link.rw)")
 end

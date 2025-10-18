@@ -1,5 +1,5 @@
 include("../simulation/Run.jl")
-include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
+# include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 include("../utils/quaternion_utils.jl")
@@ -14,9 +14,9 @@ spacecraft = config.SpacecraftModel()
 # Add bodies to the spacecraft model
 main_bus = config.Link(root=true, 
                         r=SVector{3, Float64}([-0.6, 1.10, 4.0]*1e-3), # CoM offsets from geometric center, m
-                        q=SVector{4, Float64}([-0.032458819945923624, 0.09119006984807741, 0.05549282990754898, 0.9937561783444029]),
+                        q=SVector{4, Float64}([0.5414904420723914, -0.3537724125231446, -0.6847938234480796, -0.3356942070533248]),
                         ṙ=SVector{3, Float64}([0.0, 0.0, 0.0]), 
-                        ω=SVector{3, Float64}([0.011232744843535336, 0.012487709752662134, -0.00768267737834827]), # rad/s, initial angular velocity in body frame, from numerical analysis of GRIFEX data
+                        ω=SVector{3, Float64}([-0.02439241373481841, 0.011887552453197957, -0.04672500812854508]), # rad/s, initial angular velocity in body frame, from numerical analysis of GRIFEX data
                         dims=SVector{3, Float64}([10.0, 10.0, 30.0]*1e-2), # m, from size of 3U cubesat
                         ref_area=0.01, # m^2
                         m=3.065) # kg, from GRIFEX documentation
@@ -102,7 +102,7 @@ args = Dict(# Misc Simulation
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
             :normalize => 1,                                       # Normalize the integration True=1, False=0
             :closed_form => 0,                                     # Closed form solution True=1, False=0
-            :save_csv => false,
+            :save_csv => true,
             # Type of Mission
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => true,                                        # Do not include drag passage: True=1, False=0

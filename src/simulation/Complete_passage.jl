@@ -624,7 +624,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         counter += 1 # Increment the counter for the reaction wheel angular momentum vector
                     end
                     b.rw_τ .= τ # Save the reaction wheel torque in the body
-                    τ_rw .+= R*τ # Sum the reaction wheel torques in the inertial frame
+                    τ_rw .+= τ # Sum the reaction wheel torques in the inertial frame
                     b.net_torque .-= τ # Update the torque on the spacecraft link. Subtract the reaction wheel torque because the reaction torque on the spacecraft is opposite to the reaction wheel torque
                 end
 

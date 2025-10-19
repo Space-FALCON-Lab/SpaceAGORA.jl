@@ -71,28 +71,7 @@ function drag_passage_plot(name, args, data_table)
     relayout!(p, width=2200, height=1000, template="simple_white", showlegend=false)
 
     display(p)
-    savefig(p, name * "_drag_passage_heat.pdf", format="pdf")
-    
-    time = [config.solution.orientation.time[i] for i in index]
-    dyn_press = config.solution.performance.q[index]
-    trace2 = scatter(x=time, y=dyn_press, mode="lines", line=attr(color="black"))
-    trace4 = scatter(x=time, y=args[:max_dyn_press]*ones(size(dyn_press)), mode="lines", line=attr(color="red"))
-    layout = Layout(yaxis_title="Dynamic Pressure [N/m²]")
-    p_dyn_press = plot([trace2, trace4], layout)
-
-    time = [config.solution.orientation.time[i] for i in index]
-    drag = dyn_press .* config.solution.physical_properties.cD[index] * m.body.area_tot
-    drag_lim = args[:max_dyn_press] * config.solution.physical_properties.cD[1] * m.body.area_tot * ones(size(drag))
-    trace3 = scatter(x=time, y=drag, mode="lines", marker=attr(color="black"))
-    trace5 = scatter(x=time, y=drag_lim, mode="lines", marker=attr(color="red"))
-    layout = Layout(xaxis_title="Time [s]", yaxis_title="Drag [N]")
-    p_drag = plot([trace3, trace5], layout)
-
-    p = [p_aoa; p_dyn_press; p_drag]
-    relayout!(p, width=2200, height=1000, template="simple_white", showlegend=false)
-
-    display(p)
-    savefig(p, name * "_drag_passage_struct.pdf", format="pdf")
+    savefig(p, name * "_drag_passage.pdf", format="pdf")
 
     time = [config.solution.orientation.time[i] for i in alt_idx]
     alt = [config.solution.orientation.alt[i] for i in alt_idx]
@@ -314,7 +293,7 @@ function performance_plots(state, m, name, args, data_table)
         end
     end
 
-    layout_heat_load = Layout(xaxis_title=xaxis_title, yaxis_title="Heat load [J/cm^2]")
+    layout_heat_load = Layout(xaxis_title="Orbits", yaxis_title="Heat load [J/cm^2]")
     plot_heat_load = plot([plot_traces_heat_load...], layout_heat_load)
 
     if args[:body_shape] == "Spacecraft"
@@ -507,11 +486,8 @@ function ground_track(state, m, name, args, data_table)
         lats_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.latitude_periapsis, mode="lines", line=attr(color="black"))
         lons_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.longitude_periapsis, mode="lines", line=attr(color="black"))
         xaxis_title = "Orbit number"
-        xaxis_title = "Orbit number"
     end
 
-    lats_plot = plot(lats_traces, Layout(xaxis_title=xaxis_title, yaxis_title="Latitude [deg]", template="simple_white", showlegend=false))
-    lons_plot = plot(lons_traces, Layout(xaxis_title=xaxis_title, yaxis_title="Longitude [deg]", template="simple_white", showlegend=false))
     lats_plot = plot(lats_traces, Layout(xaxis_title=xaxis_title, yaxis_title="Latitude [deg]", template="simple_white", showlegend=false))
     lons_plot = plot(lons_traces, Layout(xaxis_title=xaxis_title, yaxis_title="Longitude [deg]", template="simple_white", showlegend=false))
     p = [lats_plot lons_plot]

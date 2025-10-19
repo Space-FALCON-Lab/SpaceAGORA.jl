@@ -5,18 +5,16 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output",            # Directory where to save the results
-            :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                   # Directory where Gram is
-            :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",           # Directory where Gram data is
-            :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
+            :directory_results => "/mnt/c/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/src/output",            # Directory where to save the results
+            :directory_Gram => "/mnt/c/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/GRAMpy",                   # Directory where Gram is
+            :directory_Gram_data => "/mnt/c/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/GRAM_Data",           # Directory where Gram data is
+            :directory_Spice => "/mnt/c/Users/nikus/OneDrive/Documents/GitHub/ABTS.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
             :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 0,                                        # Normalize the state during integration True=1, False=0
-            :closed_form => 0,                                     # Closed form solution for the drag passage True=1, False=0
 
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
@@ -27,31 +25,18 @@ args = Dict(# Misc Simulation
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
+            :n_bodies => [],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
-            :topography_model => "Spherical Harmonics",                             # choices=['None' , 'Spherical Harmonics']
-            :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/MOLA.csv", # File with the topography harmonics coefficients
-            :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
-            :topo_order => 90,                                      # Maximum order of the topography harmonics (Defined in the file)
             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
             :aerodynamic_model => "Mach-dependent",                 # choices=['Cd and Cl Constant' , 'Mach-dependent' , 'No-Ballistic flight with axial coefficient']: "Mach-dependent" specific for spacecraft shape, "No-Ballistic flight" specific for blunted-cone shape
             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
             
-            # Perturbations
-            :n_bodies => [],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
-            :srp => 0,                                             # Solar Radiation Pressure True=1, False=0
-            :gravity_harmonics => 1,                                            # Gravity Spherical harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/Mars50c.csv", # File with the gravity harmonics coefficients
-            :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
-            :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
-
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
             :save_rate => 3.0,                                      # Rate at which the data trajectory are saved
             :control_in_loop => 0,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
-            :struct_ctrl => 0,                                     # Structural control, True=1, False=0
-            :targeting_ctrl => 0,                                   # Targeting control True=1, False=0
             
             # Body
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
@@ -82,7 +67,7 @@ args = Dict(# Misc Simulation
             :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
             :security_mode => 0,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
-            :struct_ctrl => 0,                                     # Structural control, True=1, False=0
+            
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
             :ra_initial_a => 28038e3, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
@@ -94,8 +79,6 @@ args = Dict(# Misc Simulation
             :v_initial_a => 3700.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_step => 100.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            
-            :orientation_type => 0,                               # Initial Condition ra, hp = 0, Initial Condition v, gamma = 1
             :γ_initial_a => 2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_step => 0.5,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma

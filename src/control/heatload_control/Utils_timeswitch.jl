@@ -1,7 +1,7 @@
 include("../../physical_models/Density_models.jl")
 include("../../utils/Closed_form_solution.jl")
 
-function lambdas(m, aoa, k, t, h, γ, v, coeff, nu_E)
+function lambdas(m, aoa, k, t, h, γ, v, coeff)
     CD_slope, CL_0, CD_0 = coeff
     bodies, root_index = config.traverse_bodies(m.body, m.body.roots[1])
     S_ref = config.get_spacecraft_reference_area(bodies)
@@ -18,12 +18,11 @@ function lambdas(m, aoa, k, t, h, γ, v, coeff, nu_E)
     lambdag = zeros(length(t))
     lambdah = zeros(length(t))
 
-    lambdav[end] = nu_E * v[end]
+    lambdav[end] = v[end]
     lambdag[end] = 0
-    lambdah[end] = nu_E * μ / (Rp + h[end])^2
+    lambdah[end] = μ / (Rp + h[end])^2
 
-    # ρ = density_exp(h, m.planet)[1]
-    ρ = density_polyfit(h, m.planet)[1]
+    ρ = density_exp(h, m.planet)[1]
 
     g = g0 * Rp^2 ./ (Rp .+ h).^2
 
@@ -51,12 +50,12 @@ function lambdas(m, aoa, k, t, h, γ, v, coeff, nu_E)
     return lambda_switch, lambdav, in_cond_lambda
 end
 
-function aoa(m, k_cf, t_cf, h_cf, γ_cf, v_cf, coeff, nu_E, aoa_cf=[])
+function aoa(m, k_cf, t_cf, h_cf, γ_cf, v_cf, coeff, aoa_cf=[])
     if length(aoa_cf) == 0
         aoa_cf = ones(length(t_cf)) * m.aerodynamics.α
     end
 
-    lambda_switch, lambda_v, in_cond_lambda = lambdas(m, aoa_cf, k_cf, t_cf, h_cf, γ_cf, v_cf, coeff, nu_E)
+    lambda_switch, lambda_v, in_cond_lambda = lambdas(m, aoa_cf, k_cf, t_cf, h_cf, γ_cf, v_cf, coeff)
 
     aoa_cf = ones(length(lambda_v)) * m.aerodynamics.α
     index_array = lambda_v .>= lambda_switch
@@ -77,7 +76,7 @@ function func(k_cf, m, args, coeff, position, heat_rate_control, approx_sol, aoa
     while temp_Q > 1e-3 # stop if two following trajectory evaluation provides the same Q
         # define angle of attack lagrangian multipliers
         T = m.planet.T  # fixed temperature
-        aoa_cf, in_cond_lambda = aoa(m, k_cf, t_cf, h_cf, γ_cf, v_cf, coeff, 1, aoa_cf)  # update angle of attack profile with new k
+        aoa_cf, in_cond_lambda = aoa(m, k_cf, t_cf, h_cf, γ_cf, v_cf, coeff, aoa_cf)  # update angle of attack profile with new k
         t_cf, h_cf, γ_cf, v_cf = closed_form(args, m, position, T, true, m.aerodynamics.α, aoa_cf)  # re-evaluate the closed form solution using previous angle of attack profile
 
         a = sqrt(m.planet.γ * m.planet.R * T)

@@ -9,21 +9,20 @@ args = Dict(# Misc Simulation
             :results => 1,                                                     # Generate csv file for results True=1, False=0
             :passresults => 1,                                                 # Pass results as output True=1, False=0
             :print_res => 1,                                                   # Print some lines True=1, False=0
-            :directory_results => "/workspaces/SpaceAGORA.jl/output/Earth_switching_analysis_targeting_cf",    # Directory where to save the results
-            :directory_Gram => "/workspaces/SpaceAGORA.jl/GRAMpy",                   # Directory where Gram is
-            :directory_Gram_data => "/workspaces/SpaceAGORA.jl/GRAM_Data",           # Directory where Gram data is
-            :directory_Spice => "/workspaces/SpaceAGORA.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
+            :directory_results => "/workspaces/ABTS.jl/output/earth_error_aoa",    # Directory where to save the results
+            :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                   # Directory where Gram is
+            :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",           # Directory where Gram data is
+            :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
             :Gram_version => 0,                                                # MarsGram x file to use
             :montecarlo_analysis => 0,                                         # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 1,                                                        # Generate pdf plots of results True=1, False=0
+            :plot => 0,                                                        # Generate pdf plots of results True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
             :normalize => 0,                                        # Normalize the state during integration True=1, False=0
-            :closed_form => 1,                                     # Closed form solution for the drag passage True=1, False=0
 
             # Type of Mission
-            :type_of_mission => "Aerobraking Campaign",                     # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
+            :type_of_mission => "Drag Passage",                     # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0, NOTE: Can't be used with aerobraking campaign, must be 'Orbits' in type_of_mission
             :number_of_orbits => 1,                                 # Number of aerobraking passage
 
@@ -33,7 +32,7 @@ args = Dict(# Misc Simulation
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
             :density_model => "Gram",                               # choices=['No-Density', 'Constant' , 'Exponential' , 'Gram']
             :topography_model => "None",                            # choices=['None' , 'Spherical Harmonics']
-            :topography_harmonics_file => "/workspaces/SpaceAGORA.jl/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
+            :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
             :topo_degree => 50,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 50,                                      # Maximum order of the topography harmonics (Defined in the file)
 
@@ -45,7 +44,7 @@ args = Dict(# Misc Simulation
             :n_bodies => ["Sun", "Moon"],                           # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :srp => 0,                                              # Solar Radiation Pressure True=1, False=0
             :gravity_harmonics => 0,                                # Gravity Harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/SpaceAGORA.jl/Gravity_harmonics_data/egm96.csv",                  # Gravity Harmonics file to use
+            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/egm96.csv",                  # Gravity Harmonics file to use
             :L => 50,                                               # Maximum degree of gravity harmonics
             :M => 50,                                               # Maximum order of gravity harmonics
 
@@ -58,7 +57,6 @@ args = Dict(# Misc Simulation
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
             :max_heat_rate => 0.29,                                 # Max heat rate the heat rate control will start to react to
             :max_heat_load => 40.0,                                 # Max heat load the heat load control will not be overcomed
-            :max_dyn_press => 0.3,                                  # Max dynamic pressure the control will not be overcomed
             :dry_mass => 640.0,                                     # Initial dry mass of body in kg
             :prop_mass => 50.0,                                     # Initial propellant mass of body in kg
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
@@ -81,15 +79,12 @@ args = Dict(# Misc Simulation
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
-            :control_mode => 3,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
-            :security_mode => 0,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
+            :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
+            :security_mode => 1,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
-            :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
-            :struct_ctrl => 0    ,                                      # Structural control, True=1, False=0
-            :targeting_ctrl => 1,                                    # Targeting control True=1, False=0
-
-
+            :flash2_through_integration => 1,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+            
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
             :ra_initial_a => 56378e3, # 56378e3,                    # Initial Apoapsis Radius for for-loop in m
@@ -127,7 +122,7 @@ args = Dict(# Misc Simulation
             :phi => 180.0,                                          # Thrust Angle, deg
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
-            :ra_fin_orbit => 55700e3,                               # Target final apoapsis for the orbit, m
+            :ra_fin_orbit => 25000e3,                               # Target final apoapsis for the orbit, m
             :maneuver_plan => Earth_firing_plan,                    # Firing plan function
             
             # Monte Carlo Simulations
@@ -174,45 +169,20 @@ args = Dict(# Misc Simulation
 #     println("COMPUTATIONAL TIME = " * string(t) * " s")
 # end
 
-t = @elapsed begin
-
-    furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-    furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-    furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-    furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-    furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-            
-    # Run the simulation
-    sol = run_analysis(args)
-
-    if Bool(args[:passresults])
-        println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-    end
-end
-
 # t = @elapsed begin
-#     ra_initial_a = args[:ra_initial_a]
 
 #     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
 #     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
 #     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
 #     furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
 #     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-                
+            
 #     # Run the simulation
-#     for i in collect(range(1,100,step=1))
+#     sol = run_analysis(args)
 
-#         d = Uniform(-5,+5)
-#         args[:ra_initial_a] = ra_initial_a + rand(d)*1e3
-
-#         sol = run_analysis(args)
+#     if Bool(args[:passresults])
+#         println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
 #     end
-
-#     println(" ")
-
-#     # if Bool(args[:passresults])
-#     #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#     # end
 # end
 
 # t = @elapsed begin
@@ -237,30 +207,30 @@ end
 #     # end
 # end
 
-# t = @elapsed begin
-#     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-#     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-#     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-#     furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-#     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
+t = @elapsed begin
+    furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
+    furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
+    furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
+    furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
+    furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
             
-#     # Run the simulation
-#     for alph in collect(range(0, 90, step=15))
-#         args[:α] = alph
-#         for ra in collect(range(5000,50000,step=10000))
-#             for hp in collect(range(100, 250,step=25))
-#                 args[:ra_initial_a] = ra*1e3 + 6.3710e6
-#                 args[:hp_initial_a] = hp*1e3
-#                 sol = run_analysis(args)
-#             end
-#         end
-#     end
+    # Run the simulation
+    for alph in collect(range(0, 90, step=15))
+        args[:α] = alph
+        for ra in collect(range(5000,50000,step=10000))
+            for hp in collect(range(100, 250,step=25))
+                args[:ra_initial_a] = ra*1e3 + 6.3710e6
+                args[:hp_initial_a] = hp*1e3
+                sol = run_analysis(args)
+            end
+        end
+    end
 
-#     println(" ")
+    println(" ")
 
-#     # if Bool(args[:passresults])
-#     #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#     # end
-# end
+    # if Bool(args[:passresults])
+    #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+    # end
+end
 
 println("COMPUTATIONAL TIME = " * string(t) * " s")

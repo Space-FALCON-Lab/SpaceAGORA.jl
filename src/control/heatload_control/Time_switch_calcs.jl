@@ -1,7 +1,7 @@
 include("../../physical_models/Aerodynamic_models.jl")
 include("Utils_timeswitch.jl")
 include("../../utils/Closed_form_solution.jl")
-include("../utils/Eoms.jl")
+include("../Eoms.jl")
 
 using Roots
 
@@ -28,7 +28,7 @@ function switch_calculation_with_integration(ip, m, position, args, t, heat_rate
 
     if m.planet.name == "mars"
         low_lim = 3.3
-        high_lim = 10.0
+        high_lim = 4.5
     elseif m.planet.name == "venus"
         low_lim = 1.0
         high_lim = 10.0
@@ -81,7 +81,7 @@ function switch_calculation(ip, m, position, args, t, heat_rate_control, reevalu
     coeff = (CD_slope, CL_0, CD_0)
 
     # Evaluates max Q
-    aoa_cf = aoa(m, 0.1, t_cf, h_cf, γ_cf, v_cf, coeff, 1)[1]
+    aoa_cf = aoa(m, 0.1, t_cf, h_cf, γ_cf, v_cf, coeff)[1]
 
     approx_sol = (t_cf, h_cf, γ_cf, v_cf)
 
@@ -98,7 +98,7 @@ function switch_calculation(ip, m, position, args, t, heat_rate_control, reevalu
 
     t_cf, v_cf, γ_cf, h_cf = func(k_cf, m, args, coeff, position, heat_rate_control, approx_sol, aoa_cf, false, true)
 
-    lambda_switch, lambdav = lambdas(m, aoa_cf, k_cf, t_cf, h_cf, γ_cf, v_cf, coeff, 1)[1:2]
+    lambda_switch, lambdav = lambdas(m, aoa_cf, k_cf, t_cf, h_cf, γ_cf, v_cf, coeff)[1:2]
 
     index_array = lambdav .< lambda_switch
 

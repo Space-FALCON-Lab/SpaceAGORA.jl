@@ -1,10 +1,10 @@
 include("../utils/Closed_form_solution.jl")
 include("../physical_models/Density_models.jl")
-include("../physical_models/Aerodynamic_models.jl")
 include("../physical_models/MonteCarlo_pertrubations.jl")
 include("heatload_control/Time_switch_calcs.jl")
 include("heatload_control/Second_tsw_calcs.jl")
 include("heatload_control/Security_mode.jl")
+
 
 using SpecialFunctions
 using Roots
@@ -13,44 +13,6 @@ function no_control(ip, m, args=0, index_ratio=0, state=0, t=0, position=0, curr
     α = m.aerodynamics.α
 
     return α
-end
-
-function control_struct_load(ip, m, args, S, T_p, q, MonteCarlo=false)
-
-    max_α = m.aerodynamics.α
-    min_α = 0.0001
-
-    CL90, CD90 = aerodynamic_coefficient_fM(pi/2, m.body, T_p, S, m.aerodynamics, MonteCarlo)
-
-    drag_max = q * aerodynamic_coefficient_fM(max_α, m.body, T_p, S, m.aerodynamics, MonteCarlo)[2] * m.body.area_tot
-    drag_min = q * aerodynamic_coefficient_fM(min_α, m.body, T_p, S, m.aerodynamics, MonteCarlo)[2] * m.body.area_tot
-    drag_limit = args[:max_dyn_press] * CD90 * m.body.area_tot
-
-    f(x) = q * aerodynamic_coefficient_fM(x, m.body, T_p, S, m.aerodynamics, MonteCarlo)[2] * m.body.area_tot - drag_limit
-
-    # α = config.cnf.α # pi/2
-
-    if (drag_max < drag_limit)
-        α = max_α
-    elseif (drag_min > drag_limit)
-        α = min_α
-    elseif (drag_max >= drag_limit) && (drag_min <= drag_limit)
-        try
-            α = find_zero(f, (0, pi/2), Roots.Bisection())
-        catch
-            # println("Check - heat rate controller does not converge")
-            α = min_α
-        end
-    else
-        println("Check Controller - Second Check")
-    end
-
-    if (α > max_α) || (α < 0)
-        α = 0
-    end
-
-    return α
-
 end
 
 function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, position=0, current_position=0)
@@ -119,7 +81,7 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
                     end
                 catch
                 # if α < 0 || α > pi/2
-                    # println("Check - heat rate controller does not converge")
+                    println("Check - heat rate controller does not converge")
                     α = min_α
                 # end
                 end
@@ -274,15 +236,3 @@ function control_solarpanels_openloop(ip, m, args, index_ratio, state, t=0, posi
     end
     return α
 end
-
-# function targeting_solarpanels(ip, m, args, index_ratio, state, t=0, position=0, current_position=0, heat_rate_control=true, gram_atmosphere=nothing)
-
-#     t_switch = 
-
-#     if t > t_switch 
-
-#     else
-#         α = control_solarpanels_heatrate(ip, m, args, index_ratio, state, t)
-#     end
-    
-# end

@@ -572,27 +572,62 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             end
         end
 
-        # Check for interactive forces (lasers, etc)
-        for sc_id in args[:spacecraft_obj]
-            #dont check yourself before you wreck(thrust) yourself
-            if sim_id == sc_id
-                continue
-            end
-            this_obj = args[:spacecraft_obj][sim_id]
-            sc = args[:spacecraft_obj][sc_id]
-            sc_pos = sc.current_pos
-            force_range = 0.0
-            #get range of object in question, determine valid access
-            if sc.laser_effector
-                force_range = sc.laser_range
-            end
 
-            #"apply" forces
-            if sc_pos - this_obj.current_pos < force_range
-                print("IN RANGE IN RANGE")
-            end
+        # # Check for interactive forces (lasers, etc)
+        # for sc_id in args[:space_objects_dict]
+        #     #dont check yourself before you wreck(thrust) yourself
+        #     if sim_id == sc_id
+        #         continue
+        #     end
+        #     print(sim_id, " checking ", sc_id, "\n")
+        #     this_obj = args[:space_objects_dict][sim_id]
+        #     sc = args[:space_objects_dict][sc_id]
+        #     sc_pos = sc.current_pos
+        #     force_range = 0.0
+        #     #get range of object in question, determine valid access
+        #     if sc.laser_effector
+        #         force_range = sc.laser_range
+        #     end
+
+        #     #"apply" forces
+        #     if sc_pos - this_obj.current_pos < force_range
+        #         print("IN RANGE IN RANGE")
+        #     end
             
 
+        # end
+
+        # Check for interactive forces (lasers, etc)
+        if haskey(args, :space_objects_dict) && haskey(args, :space_objects_lock)
+            lock(args[:space_objects_lock]) do
+                for sc_id in keys(args[:space_objects_dict])
+                    # Don't check yourself before you wreck(thrust) yourself
+                    if sim_id == sc_id[1]
+                        continue
+                    end
+                    
+                    this_obj = args[:space_objects_dict][sim_id]
+                    sc = args[:space_objects_dict][sc_id[1]]
+                    
+                    # Check if current_pos is available and valid
+                    if isdefined(sc, :current_pos) && sc.current_pos !== nothing && length(sc.current_pos) >= 3
+                        sc_pos = SVector{3, Float64}(sc.current_pos[1:3]) * config.cnf().DU  # Convert to proper units
+                        this_pos = pos_ii  # Current spacecraft position
+                        
+                        force_range = 0.0
+                        # Get range of object in question, determine valid access
+                        if isdefined(sc, :laser_effector) && sc.laser_effector
+                            force_range = isdefined(sc, :laser_range) ? sc.laser_range : 0.0
+                        end
+
+                        # Apply forces if in range
+                        if force_range > 0.0 && norm(sc_pos - this_pos) < force_range
+                            println("Spacecraft $sim_id in range of spacecraft $sc_id")
+                            # Apply your force calculations here
+                        end
+                    end
+                end
+            end
         end
 
 
@@ -759,24 +794,29 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     function every_step_condition(y, t, integrator)
         args = integrator.p[8]
         try
-            current_run_id = sim_id
-            obj_dict = args[:space_objects_dict]
-            obj = obj_dict[current_run_id]
-
-            state = collect(integrator.u)
-            # Store as a vector of vectors: [time, state...]
-            # Use fieldnames and getfield instead of haskey for mutable struct
-            if !isdefined(obj, :sc_state_history) || obj.sc_state_history === nothing
-                obj.sc_state_history = Vector{Vector{Float64}}()
+            if haskey(args, :space_objects_dict) && haskey(args, :space_objects_lock)
+                lock(args[:space_objects_lock]) do
+                    current_run_id = sim_id
+                    obj_dict = args[:space_objects_dict]
+                    
+                    if haskey(obj_dict, current_run_id)
+                        obj = obj_dict[current_run_id]
+                        state = collect(integrator.u)
+                        
+                        # Update current position (first 3 elements are position)
+                        obj.current_pos = state
+                        
+                        # Store state history
+                        if !isdefined(obj, :sc_state_history) || obj.sc_state_history === nothing
+                            obj.sc_state_history = Vector{Vector{Float64}}()
+                        end
+                        push!(obj.sc_state_history, vcat([t], state))
+                    end
+                end
             end
-            obj.current_pos = state
-            push!(obj.sc_state_history, vcat([t], state))
         catch e
-            @warn "Error running every_step_condition callback" error=e
+            @warn "Error in every_step_condition callback" error=e
         end
-
-
-
         return true
     end
 

@@ -1,5 +1,5 @@
 include("../simulation/Run.jl")
-include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
+# include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 # include("SpacecraftModel.jl")
@@ -11,6 +11,11 @@ using Random
 using WGLMakie
 using PlotlyJS
 using Base.Threads
+using Dash
+# using Dash
+using DashCoreComponents
+using DashHtmlComponents
+using OrdinaryDiffEq
 # import .SpacecraftModel
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
@@ -79,7 +84,8 @@ args = Dict(# Misc Simulation
             :directory_Spice => "/workspaces/SpaceAGORA.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
+            :plot => 1,
+            :plot_type => "multi", #multi or single                                                                                         # Generate pdf plots of results True=1, False=0
             :dashboard => true,                                                                                     # Start dashboard True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
@@ -90,7 +96,7 @@ args = Dict(# Misc Simulation
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 1,                                 # Number of aerobraking passage
-            :mission_time => 60000.0,                                  # Mission time in seconds, used only for Time mission type
+            :mission_time => 6000.0, #60000.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => false,                               # Orientation simulation True=1, False=0, if false, will only propagate position
             :rng => MersenneTwister(12345),                               # Random number generator for reproducibility
             :synchronized_threads => true,                           # Synchronized threads for multi spacecraft simulation
@@ -308,8 +314,8 @@ args = Dict(# Misc Simulation
 
         for i in 1:args[:n_spacecraft]
                 spacecraft_initial_conditions[i] = Dict(
-                        :ra_initial_a => args[:ra_initial_a],
-                        :ra_initial_b => args[:ra_initial_a],
+                        :ra_initial_a => args[:ra_initial_a]+100000.0, # Adding 1 km to initial apoapsis radius of debris
+                        :ra_initial_b => args[:ra_initial_a]+100000.0,
                         :ra_step => args[:ra_step],
                         :hp_initial_a => args[:hp_initial_a],
                         :hp_initial_b => args[:hp_initial_a],
@@ -336,10 +342,10 @@ args = Dict(# Misc Simulation
         # Create a dictionary of initial conditions for each debris object
         target_initial_conditions = Dict{Int, Dict{Symbol, Any}}()
 
-        Threads.@threads for i in 1:args[:n_target_obj]
+        for i in 1:args[:n_target_obj]
                 target_initial_conditions[-i] = Dict(
-                        :ra_initial_a => args[:ra_initial_a],
-                        :ra_initial_b => args[:ra_initial_a],
+                        :ra_initial_a => args[:ra_initial_a]+100000.0, # Adding 1 km to initial apoapsis radius of debris
+                        :ra_initial_b => args[:ra_initial_a]+100000.0,
                         :ra_step => args[:ra_step],
                         :hp_initial_a => args[:hp_initial_a],
                         :hp_initial_b => args[:hp_initial_a],
@@ -356,13 +362,12 @@ args = Dict(# Misc Simulation
                         :γ_initial_a => args[:γ_initial_a],
                         :γ_initial_b => args[:γ_initial_a],
                         :γ_step => args[:γ_step],
-                        :inclination => args[:inclination],
+                        :inclination => args[:inclination]-45.2,
                         :ω => args[:ω],
                         :Ω => args[:Ω],
                         :ν => args[:ν]
                 )
         end
-
         args[:target_objects] = target_objects
         args[:spacecraft_buses] = spacecraft_buses
         args[:target_initial_conditions] = target_initial_conditions
@@ -376,9 +381,9 @@ args = Dict(# Misc Simulation
 t = @elapsed begin          
         # Run the simulation
         sol = run_analysis(args)
-        if Bool(args[:passresults])
-            println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-        end
+        # if Bool(args[:passresults])
+        #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+        # end
 end
 
         println("COMPUTATIONAL TIME = " * string(t) * " s") 

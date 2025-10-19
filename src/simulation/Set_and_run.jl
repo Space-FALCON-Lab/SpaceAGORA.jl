@@ -502,9 +502,21 @@ function aerobraking_campaign(args, state,sim_id=1)
     ##########################################################
     # RUN SIMULATION
     config.cnf().heat_rate_limit = args[:max_heat_rate]
-    t_el = @elapsed begin
-        aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim_id)
+    print("reached aerobraking")
+    t_el = 0.0
+    try
+        t_el = @elapsed begin
+            aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim_id)
+        end
+    catch e
+        println("Error during aerobraking simulation: ", e)
+        println("Stack trace:")
+        for (i, frame) in enumerate(stacktrace(e))
+            println("[$i] $frame (line: $(frame.line))")
+        end
+        t_el = -1.0 # Indicate an error occurred
     end
+    print("finished aerobraking")
     ##########################################################
 
     # Finalize the arrow writer if plotting is enabled
@@ -524,9 +536,18 @@ function aerobraking_campaign(args, state,sim_id=1)
         println("Elapsed time: " * string(t_el) * " s")
     end
 
-    if args[:plot] == true
-        plots(state, m, name, args, temp_name)
+    try
+        if args[:plot] == true && args[:plot_type] == "single"
+            plots(state, m, name, args, temp_name)
+        end
+    catch e
+        println("Error during single plotting: ", e)
     end
+
+    return state,m,name,args,temp_name
+
+    
+
 
     # rm(temp_name, recursive=true, force=true) # Remove the temporary directory used for plotting
 end

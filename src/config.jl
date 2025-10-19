@@ -13,6 +13,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
 export config_data, get_config
 export reset_config!, reset_all_configs!, reset_thread_configs!
 export with_config, set_current_config!
+export controller  # Also adding controller to exports since it's defined as a function
 
 # ========================
 # === Your data types  ===

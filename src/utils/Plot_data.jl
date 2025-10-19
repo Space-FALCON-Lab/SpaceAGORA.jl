@@ -1,85 +1,8 @@
 include("Misc.jl")
 
 using PlotlyJS
-using PlotlyJS: scatter
-using PlotlyJS: plot
-using PlotlyJS: surface
-using PlotlyJS: Layout
 using LaTeXStrings
 using Arrow
-using DashBase: set_props!
-using Dash, DashHtmlComponents, DashCoreComponents
-
-#helper function for pushing PlotLY plots to dashboard
-function maybe_push!(args, comp_id::String, traces, layout; also_return::Bool=true)
-    fig = figure_dict(traces, layout)
-    if haskey(args, :app) && !isnothing(get(args, :app, nothing))
-        set_props!(args[:app], comp_id, Dict("figure" => fig))
-    end
-    return also_return ? fig : nothing
-end
-
-# push full figure (initial)
-function push_figure!(args, comp_id::String, traces, layout)
-    figs = ensure_cache!(args)
-    fig = Dict("data" => (traces isa AbstractVector ? traces : [traces]),
-               "layout" => layout)
-    figs[comp_id] = fig
-    set_props!(args[:app], comp_id, Dict("figure" => fig))
-    return fig
-end
-
-# append a trace to an existing figure
-function append_trace!(args, comp_id::String, new_trace)
-    figs = ensure_cache!(args)
-    fig = get(figs, comp_id, Dict("data"=>Any[], "layout"=>Layout()))  # default if missing
-    data = get(fig, "data", Any[])
-    push!(data, new_trace)
-    fig["data"] = data
-    figs[comp_id] = fig
-    set_props!(args[:app], comp_id, Dict("figure" => fig))
-    return fig
-end
-
-using Dash, PlotlyJS
-import DashBase: set_props!
-
-# --- tiny helpers ----------------------------------------------------------
-function ensure_cache!(args)
-    haskey(args, :fig_cache) || (args[:fig_cache] = Dict{String, Dict}())
-    return args[:fig_cache]::Dict{String, Dict}
-end
-
-# Create or append a trace to an existing Dash graph (by id).
-# If the graph doesn't exist, it initializes with `base_traces` + `new_trace` and `layout`.
-function upsert_trace!(args, comp_id::String; base_traces=Any[], new_trace=nothing, layout=Layout())
-    figs = ensure_cache!(args)
-
-    if !haskey(figs, comp_id)
-        # initialize
-        data = Any[]
-        append!(data, base_traces)
-        if new_trace !== nothing
-            push!(data, new_trace)
-        end
-        fig = Dict("data" => data, "layout" => layout)
-        figs[comp_id] = fig
-        set_props!(args[:app], comp_id, Dict("figure" => fig))
-        return fig
-    else
-        # append to existing
-        fig = figs[comp_id]
-        data = get(fig, "data", Any[])
-        if new_trace !== nothing
-            push!(data, new_trace)
-            fig["data"] = data
-        end
-        # (optionally merge layout updates here if you pass them)
-        set_props!(args[:app], comp_id, Dict("figure" => fig))
-        return fig
-    end
-end
-
 
 function plots(state, m, name, args, temp_name)
     data_table = DataFrame(Arrow.Table(temp_name))
@@ -148,7 +71,28 @@ function drag_passage_plot(name, args, data_table)
     relayout!(p, width=2200, height=1000, template="simple_white", showlegend=false)
 
     display(p)
-    savefig(p, name * "_drag_passage.pdf", format="pdf")
+    savefig(p, name * "_drag_passage_heat.pdf", format="pdf")
+    
+    time = [config.solution.orientation.time[i] for i in index]
+    dyn_press = config.solution.performance.q[index]
+    trace2 = scatter(x=time, y=dyn_press, mode="lines", line=attr(color="black"))
+    trace4 = scatter(x=time, y=args[:max_dyn_press]*ones(size(dyn_press)), mode="lines", line=attr(color="red"))
+    layout = Layout(yaxis_title="Dynamic Pressure [N/m²]")
+    p_dyn_press = plot([trace2, trace4], layout)
+
+    time = [config.solution.orientation.time[i] for i in index]
+    drag = dyn_press .* config.solution.physical_properties.cD[index] * m.body.area_tot
+    drag_lim = args[:max_dyn_press] * config.solution.physical_properties.cD[1] * m.body.area_tot * ones(size(drag))
+    trace3 = scatter(x=time, y=drag, mode="lines", marker=attr(color="black"))
+    trace5 = scatter(x=time, y=drag_lim, mode="lines", marker=attr(color="red"))
+    layout = Layout(xaxis_title="Time [s]", yaxis_title="Drag [N]")
+    p_drag = plot([trace3, trace5], layout)
+
+    p = [p_aoa; p_dyn_press; p_drag]
+    relayout!(p, width=2200, height=1000, template="simple_white", showlegend=false)
+
+    display(p)
+    savefig(p, name * "_drag_passage_struct.pdf", format="pdf")
 
     time = [config.solution.orientation.time[i] for i in alt_idx]
     alt = [config.solution.orientation.alt[i] for i in alt_idx]
@@ -370,7 +314,7 @@ function performance_plots(state, m, name, args, data_table)
         end
     end
 
-    layout_heat_load = Layout(xaxis_title="Orbits", yaxis_title="Heat load [J/cm^2]")
+    layout_heat_load = Layout(xaxis_title=xaxis_title, yaxis_title="Heat load [J/cm^2]")
     plot_heat_load = plot([plot_traces_heat_load...], layout_heat_load)
 
     if args[:body_shape] == "Spacecraft"
@@ -513,22 +457,8 @@ function traj_3D(state, m, name, args, data_table)
     end
     layout = Layout(scene_aspectmode="cube", scene_xaxis_range=[axis_min, axis_max], scene_yaxis_range=[axis_min, axis_max], scene_zaxis_range=[axis_min, axis_max], xaxis_title="x [km]", yaxis_title="y [km]", zaxis_title="z [km]", template="simple_white", showlegend=false)
     p = plot([sphere1, sphere2, traj_3D_traces...], layout)
-
     display(p)
-
-    # Push Plotly graph to dashboard
-    comp_id = String(name)  # e.g., "traj_3d"
-
-    # First call: will initialize if missing (sphere1, sphere2, traj_traces... plus 'extra')
-    upsert_trace!(
-        args, comp_id,
-        base_traces=[sphere1, sphere2, traj_3D_traces...],
-        new_trace=scatter3d(x=[0,10], y=[0,10], z=[0,10], mode="lines"),
-        layout=layout
-        )
-
-    
-
+    savefig(p, name * "_traj3D.pdf", format="pdf")
 end
 
 function ABM_periapsis(name)
@@ -577,8 +507,11 @@ function ground_track(state, m, name, args, data_table)
         lats_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.latitude_periapsis, mode="lines", line=attr(color="black"))
         lons_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.longitude_periapsis, mode="lines", line=attr(color="black"))
         xaxis_title = "Orbit number"
+        xaxis_title = "Orbit number"
     end
 
+    lats_plot = plot(lats_traces, Layout(xaxis_title=xaxis_title, yaxis_title="Latitude [deg]", template="simple_white", showlegend=false))
+    lons_plot = plot(lons_traces, Layout(xaxis_title=xaxis_title, yaxis_title="Longitude [deg]", template="simple_white", showlegend=false))
     lats_plot = plot(lats_traces, Layout(xaxis_title=xaxis_title, yaxis_title="Latitude [deg]", template="simple_white", showlegend=false))
     lons_plot = plot(lons_traces, Layout(xaxis_title=xaxis_title, yaxis_title="Longitude [deg]", template="simple_white", showlegend=false))
     p = [lats_plot lons_plot]

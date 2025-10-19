@@ -89,10 +89,15 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim
             end
 
             clean_results()
-            if uppercase(args[:density_model]) == "GRAM"
-                continue_campaign = asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere, gram,sim_id)
-            else
-                continue_campaign = asim(ip, m, initial_state, numberofpassage, args,sim_id)
+            try
+                if uppercase(args[:density_model]) == "GRAM"
+                    continue_campaign = asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere, gram,sim_id)
+                else
+                    continue_campaign = asim(ip, m, initial_state, numberofpassage, args,sim_id)
+                end
+            catch e
+                println("Error during passage simulation: ", e)
+                continue_campaign = false
             end
 
             r_a = config.solution().orientation.oe[1][end] * (1 + config.solution().orientation.oe[2][end])
@@ -131,11 +136,16 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim
         end
     end
 
-    if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
-        closed_form(args, m)
-    else
-        len_sol = length(config.solution().orientation.time)
-        results(zeros(len_sol), (args[:EI] - 10)*1e3*ones(len_sol), zeros(len_sol), zeros(len_sol))
-    end
-
+    # try
+    #     if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
+    #         closed_form(args, m)
+    #     else
+    #         len_sol = length(config.solution().orientation.time)
+    #         results(zeros(len_sol), (args[:EI] - 10)*1e3*ones(len_sol), zeros(len_sol), zeros(len_sol))
+    #     end
+    # catch e
+    #     println("Error during closed-form solution calculation: ", e)
+    #     println("args[:closed_form] value: ", args[:closed_form])
+    #     results(zeros(1), (args[:EI] - 10)*1e3*ones(1), zeros(1), zeros(1))
+    # end
 end

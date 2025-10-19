@@ -1,5 +1,5 @@
 include("../simulation/Run.jl")
-# include("config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
+include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 # include("SpacecraftModel.jl")
@@ -90,7 +90,7 @@ args = Dict(# Misc Simulation
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
             :topography_model => "Spherical Harmonics",                             # choices=['None' , 'Spherical Harmonics']
-            :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/MOLA.csv", # File with the topography harmonics coefficients
+            :topography_harmonics_file => "/workspaces/SpaceAGORA.jl/Topography_harmonics_data/MOLA.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 90,                                      # Maximum order of the topography harmonics (Defined in the file)
             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
@@ -101,7 +101,7 @@ args = Dict(# Misc Simulation
             :n_bodies => ["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :srp => 1,                                             # Solar Radiation Pressure True=1, False=0
             :gravity_harmonics => 1,                                            # Gravity Spherical harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/Mars50c.csv", # File with the gravity harmonics coefficients
+            :gravity_harmonics_file => "/workspaces/SpaceAGORA.jl/Gravity_harmonics_data/Mars50c.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
 

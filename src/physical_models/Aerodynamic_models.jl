@@ -169,8 +169,8 @@ function aerodynamic_coefficient_fM(body, T::Float64, S::Float64, args, montecar
         CL, CD = monte_carlo_aerodynamics(CL, CD, args)
     end
 
-    # return CL, CD, CS, 0.0, 0.0, 0.0#, Cl, Cm, Cn
-    return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    return CL, CD, CS, 0.0, 0.0, 0.0 #, Cl, Cm, Cn
+    # return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 end
 
 function aerodynamic_coefficient_no_ballistic_flight(α, body, args, T=0, S=0, a=0, montecarlo=false)

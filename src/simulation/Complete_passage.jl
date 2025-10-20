@@ -141,11 +141,13 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             m.body.roots[1].q .= quaternion
             # quaternion = SVector{4, Float64}(m.body.roots[1].q)
             m.body.roots[1].ω .= ω # Body frame angular velocity
-            rot_body_to_inertial = rot(quaternion)' # Rotation matrix from body frame to inertial frame
         else
             quaternion = orbital_elements_to_lvlh_quaternion(OE[4], OE[3], OE[5], OE[6]) # Quaternion, set to align with LVLH frame if orientation simulation is not enabled
             ω = SVector{3, Float64}(0.0, 0.0, 0.0)                # Angular velocity vector [rad / s]
         end
+
+        rot_body_to_inertial = rot(quaternion)' # Rotation matrix from body frame to inertial frame
+
         pos_ii_mag = norm(pos_ii)                                  # Magnitude of the inertial position
         vel_ii_mag = norm(vel_ii)                                  # Magnitude of the inertial velocity
 
@@ -904,7 +906,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             elseif ip.cm == 2
                 println("Control solar panels with heat load")
                 config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
-                println("control_solarpanels_heatload: ", config.cnf.α)
+                # println("control_solarpanels_heatload: ", config.cnf.α)
             elseif ip.cm == 1
                 config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
             elseif ip.cm == 0

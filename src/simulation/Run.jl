@@ -185,35 +185,14 @@ function run_sc_vehicles(args)
 
     # Run Dash.jl server asynchronously
     @async run_server(app, "0.0.0.0", 8050)
-    
-
-    #assign initial state values for targets
-    for target in keys(target_objs_dict)
-        target_state = target_initial_conditions[target]
-        state = Dict()
-        apoapsis_item, periapsis_item = ic_calculation_ae(planet, args[:target_initial_conditions][target][:a_initial_a], args[:target_initial_conditions][target][:e_initial_a], args)
-        inclination, Ω, ω = args[:inclination], args[:Ω], args[:ω]
-        final_apoapsis = args[:final_apoapsis]
-
-        if Bool(args[:print_res])
-            println("Apoapsis Radius: " * string(apoapsis_item/10^3) * " km, Periapsis Altitude: " * string(periapsis_item/10^3) * " km")  
-        end
-
-        state[:Apoapsis], state[:Periapsis], state[:Inclination], state[:Ω], state[:ω], state[:Final_sma] = apoapsis_item, Float64(periapsis_item*1e-3), inclination, Ω, ω, final_apoapsis
-
-        target_states[target] = state
-        target_objs_dict[target].sc_states = state
-        # target_objs_dict[target].sc_state_history = DataFrame([state])
-        space_objects_dict[target] = target_objs_dict[target]
-        print(keys(space_objects_dict))
-    end
 
     #assign initial state values for spacecraft
     for sc in keys(spacecraft_dict)
         sc_state = spacecraft_initial_conditions[sc]
         state = Dict()
         apoapsis_item, periapsis_item = ic_calculation_ae(planet, args[:spacecraft_initial_conditions][sc][:a_initial_a], args[:spacecraft_initial_conditions][sc][:e_initial_a], args)
-        inclination, Ω, ω = args[:inclination], args[:Ω], args[:ω]
+        # inclination, Ω, ω = args[:inclination], args[:Ω], args[:ω]
+        inclination, Ω, ω = args[:spacecraft_initial_conditions][sc][:inclination], args[:spacecraft_initial_conditions][sc][:Ω], args[:spacecraft_initial_conditions][sc][:ω]
         final_apoapsis = args[:final_apoapsis]
 
         if Bool(args[:print_res])
@@ -226,7 +205,33 @@ function run_sc_vehicles(args)
         spacecraft_dict[sc].sc_states = state
         # spacecraft_dict[sc].sc_state_history = [state]
         space_objects_dict[sc] = spacecraft_dict[sc]
+        space_objects_dict[sc].laser_effector = true
     end
+    
+
+    #assign initial state values for targets
+    for target in keys(target_objs_dict)
+        target_state = target_initial_conditions[target]
+        state = Dict()
+        apoapsis_item, periapsis_item = ic_calculation_ae(planet, args[:target_initial_conditions][target][:a_initial_a], args[:target_initial_conditions][target][:e_initial_a], args)
+        inclination, Ω, ω = args[:target_initial_conditions][target][:inclination], args[:target_initial_conditions][target][:Ω], args[:target_initial_conditions][target][:ω]
+        final_apoapsis = args[:final_apoapsis]
+
+        if Bool(args[:print_res])
+            println("Apoapsis Radius: " * string(apoapsis_item/10^3) * " km, Periapsis Altitude: " * string(periapsis_item/10^3) * " km")  
+        end
+
+        state[:Apoapsis], state[:Periapsis], state[:Inclination], state[:Ω], state[:ω], state[:Final_sma] = apoapsis_item, Float64(periapsis_item*1e-3), inclination, Ω, ω, final_apoapsis
+
+        target_states[target] = state
+        target_objs_dict[target].sc_states = state
+        # target_objs_dict[target].sc_state_history = DataFrame([state])
+        # Get largest existing key in space_objects_dict
+        max_key = length(space_objects_dict) > 0 ? maximum(collect(keys(space_objects_dict))) : 0
+        space_objects_dict[max_key+target] = target_objs_dict[target]
+        print(keys(space_objects_dict))
+    end
+
 
 
     #state histroy storage
@@ -266,6 +271,27 @@ function run_sc_vehicles(args)
     name_dict = Dict()
     temp_name_dict = Dict()
 
+    #check if initial conditions are identical
+    if args[:space_objects_dict][1].sc_states == args[:space_objects_dict][2].sc_states
+        println("The initial conditions for both spacecraft are identical.")
+    else
+        println("The initial conditions for the spacecraft differ.")
+    end
+
+    # Compare inclinations of space objects
+    for obj_id1 in collect(keys(space_objects_dict))
+        for obj_id2 in collect(keys(space_objects_dict))
+            if obj_id1 < obj_id2  # Avoid comparing object with itself and duplicating comparisons
+                inc1 = space_objects_dict[obj_id1].sc_states[:Inclination]
+                inc2 = space_objects_dict[obj_id2].sc_states[:Inclination]
+                println("Inclination comparison between object $obj_id1 and $obj_id2:")
+                println("Object $obj_id1 inclination: $(inc1) rad")
+                println("Object $obj_id2 inclination: $(inc2) rad")
+                println("Difference: $(abs(inc1 - inc2)) rad")
+            end
+        end
+    end
+
 
     for obj_id in collect(keys(space_objects_dict))
         obj = args[:space_objects_dict][obj_id]
@@ -296,6 +322,13 @@ function run_sc_vehicles(args)
             aerobraking_outputs[obj_id] = "Failed"  # Mark as failed
             println("Task $obj_id failed with error: ", err)
         end
+    end
+
+    #check if the output data is identical
+    if state_dict[1] == state_dict[2]
+        println("The output data from both spacecraft simulations are identical.")
+    else
+        println("The output data from the spacecraft simulations differ.")
     end
 
 

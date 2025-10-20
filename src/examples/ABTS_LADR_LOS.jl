@@ -285,6 +285,11 @@ args = Dict(# Misc Simulation
                 spacecraft_buses[i].laser_power = 100e3 # 100 kW PLACEHOLDER VALUE
                 spacecraft_buses[i].laser_range = 1000e3 # 1000 km PLACEHOLDER VALUE
                 spacecraft_buses[i].uid = i #setting spacecraft id
+
+                # Initialize access logging and storage
+                spacecraft_buses[i].access_log = Vector{Tuple{Float64, Float64, Int64}}() # (start_time, end_time, target_id)
+                spacecraft_buses[i].access_storage = Dict{Int64, config.Access}() # Dictionary storing access windows by target id
+                
         end
 
         # Create a dictionary of target objects using the main_bus as a template
@@ -304,8 +309,13 @@ args = Dict(# Misc Simulation
                 #                                          attitude_control_rate=main_bus.attitude_control_rate,
                 #                                          J_rw=main_bus.J_rw,
                 #                                          attitude_control_function=main_bus.attitude_control_function)
-                target_objects[-i] = deepcopy(args[:spacecraft_model])
-                target_objects[-i].uid = -i #setting debris object id
+                target_objects[i] = deepcopy(args[:spacecraft_model])
+                target_objects[i].uid = i #setting debris object id
+                target_objects[i].laser_effector = false
+
+                # Initialize access logging and storage
+                target_objects[i].access_log = Vector{Tuple{Float64, Float64, Int64}}() #(start_time, end_time, spacecraft_id)
+                target_objects[i].access_storage = Dict{Int64, config.Access}() # Dictionary storing access windows by spacecraft id
         end
 
         # Create a dictionary of initial conditions for each spacecraft
@@ -314,8 +324,8 @@ args = Dict(# Misc Simulation
 
         for i in 1:args[:n_spacecraft]
                 spacecraft_initial_conditions[i] = Dict(
-                        :ra_initial_a => args[:ra_initial_a]+100000.0, # Adding 1 km to initial apoapsis radius of debris
-                        :ra_initial_b => args[:ra_initial_a]+100000.0,
+                        :ra_initial_a => args[:ra_initial_a]+1000.0, # Adding 1 km to initial apoapsis radius of debris
+                        :ra_initial_b => args[:ra_initial_a]+1000.0,
                         :ra_step => args[:ra_step],
                         :hp_initial_a => args[:hp_initial_a],
                         :hp_initial_b => args[:hp_initial_a],
@@ -323,8 +333,8 @@ args = Dict(# Misc Simulation
                         :v_initial_a => args[:v_initial_a],
                         :v_initial_b => args[:v_initial_a],
                         :v_step => args[:v_step],
-                        :a_initial_a => args[:a_initial_a],
-                        :a_initial_b => args[:a_initial_a],
+                        :a_initial_a => args[:a_initial_a]+1000.0,
+                        :a_initial_b => args[:a_initial_a]+1000.0,
                         :a_step => args[:a_step],
                         :e_initial_a => args[:e_initial_a],
                         :e_initial_b => args[:e_initial_a],
@@ -332,7 +342,7 @@ args = Dict(# Misc Simulation
                         :γ_initial_a => args[:γ_initial_a],
                         :γ_initial_b => args[:γ_initial_a],
                         :γ_step => args[:γ_step],
-                        :inclination => args[:inclination]-45.2,
+                        :inclination => args[:inclination],
                         :ω => args[:ω],
                         :Ω => args[:Ω],
                         :ν => args[:ν]
@@ -343,9 +353,9 @@ args = Dict(# Misc Simulation
         target_initial_conditions = Dict{Int, Dict{Symbol, Any}}()
 
         for i in 1:args[:n_target_obj]
-                target_initial_conditions[-i] = Dict(
-                        :ra_initial_a => args[:ra_initial_a]+100000.0, # Adding 1 km to initial apoapsis radius of debris
-                        :ra_initial_b => args[:ra_initial_a]+100000.0,
+                target_initial_conditions[i] = Dict(
+                        :ra_initial_a => args[:ra_initial_a], # Adding 1 km to initial apoapsis radius of debris
+                        :ra_initial_b => args[:ra_initial_a],
                         :ra_step => args[:ra_step],
                         :hp_initial_a => args[:hp_initial_a],
                         :hp_initial_b => args[:hp_initial_a],
@@ -362,7 +372,7 @@ args = Dict(# Misc Simulation
                         :γ_initial_a => args[:γ_initial_a],
                         :γ_initial_b => args[:γ_initial_a],
                         :γ_step => args[:γ_step],
-                        :inclination => args[:inclination]-45.2,
+                        :inclination => args[:inclination],
                         :ω => args[:ω],
                         :Ω => args[:Ω],
                         :ν => args[:ν]

@@ -6,6 +6,7 @@ include("../physical_models/Propulsive_maneuvers.jl")
 
 using PythonCall
 
+
 sys = pyimport("sys")
 
 os = pyimport("os")
@@ -91,7 +92,7 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim
             clean_results()
             try
                 if uppercase(args[:density_model]) == "GRAM"
-                    continue_campaign = asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere, gram,sim_id)
+                    continue_campaign = asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmosphere, gram)
                 else
                     continue_campaign = asim(ip, m, initial_state, numberofpassage, args,sim_id)
                 end
@@ -99,6 +100,27 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim
                 println("Error during passage simulation: ", e)
                 continue_campaign = false
             end
+
+
+            # for (sc_id, sc) in args[:space_objects_dict]
+            #     if sc_id == sim_id
+            #         for (key, access) in sc.access_storage
+            #             # Only process accesses that have been opened (end_time should be -1.0 for open accesses)
+            #             if access.end_time == -1.0
+            #                 # Close the access with current time
+            #                 closed_access = config.end_access(access, sc.current_time)
+                            
+            #                 # Only push if the access has a valid duration
+            #                 if closed_access.end_time > closed_access.start_time
+            #                     push!(sc.access_log, (closed_access.start_time, closed_access.end_time, key))
+            #                 end
+            #             end
+            #         end
+            #         # Clear the access storage after processing
+            #         empty!(sc.access_storage)
+            #     end
+            # end
+
 
             r_a = config.solution().orientation.oe[1][end] * (1 + config.solution().orientation.oe[2][end])
             r_p = config.solution().orientation.oe[1][end] * (1 - config.solution().orientation.oe[2][end])
@@ -148,4 +170,5 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name,sim
     #     println("args[:closed_form] value: ", args[:closed_form])
     #     results(zeros(1), (args[:EI] - 10)*1e3*ones(1), zeros(1), zeros(1))
     # end
+
 end

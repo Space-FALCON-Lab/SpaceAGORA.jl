@@ -9,7 +9,7 @@ using OrdinaryDiffEq
 using Base.Threads
 
 # ---- Exports (tiny change: model/cnf/solution are now **functions** not globals)
-export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model
+export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model,start_access, end_access, Access
 export config_data, get_config
 export reset_config!, reset_all_configs!, reset_thread_configs!
 export with_config, set_current_config!

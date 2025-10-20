@@ -13,6 +13,7 @@ include("../physical_models/Perturbations.jl")
 
 include("../control/Control.jl")
 include("../control/Propulsive_maneuvers.jl")
+# include("../accesses/access_class.jl")
 # include("../config.jl")
 
 using LinearAlgebra
@@ -34,10 +35,11 @@ import .quaternion_utils
 # using .config
 
 
+
 const R0 = 149597870.7e3 # 1AU, m
 const g_e = 9.81 # Gravitational acceleration of Earth at surface, m/s^2
 
-function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothing, gram=nothing,sim_id=1)
+function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmosphere=nothing, gram=nothing)
     #enable thread specific configs
     # config.reset_thread_configs()
     # config = args[:get_config]
@@ -574,62 +576,81 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
 
         # # Check for interactive forces (lasers, etc)
-        # for sc_id in args[:space_objects_dict]
-        #     #dont check yourself before you wreck(thrust) yourself
-        #     if sim_id == sc_id
-        #         continue
-        #     end
-        #     print(sim_id, " checking ", sc_id, "\n")
-        #     this_obj = args[:space_objects_dict][sim_id]
-        #     sc = args[:space_objects_dict][sc_id]
-        #     sc_pos = sc.current_pos
-        #     force_range = 0.0
-        #     #get range of object in question, determine valid access
-        #     if sc.laser_effector
-        #         force_range = sc.laser_range
-        #     end
+        try
+            for (sc_id,sc) in args[:space_objects_dict]
+                this_obj = args[:space_objects_dict][sim_id]
+                sc = args[:space_objects_dict][sc_id]
+                sc_pos = sc.current_pos
+                force_range = 0.0
+                #get range of object in question, determine valid access
+                if sc.laser_effector && sc_id != sim_id
+                    # print("is laser effector ", sc_id, "\n")
+                    force_range = 1e10
+                end
 
-        #     #"apply" forces
-        #     if sc_pos - this_obj.current_pos < force_range
-        #         print("IN RANGE IN RANGE")
-        #     end
-            
-
-        # end
-
-        # Check for interactive forces (lasers, etc)
-        if haskey(args, :space_objects_dict) && haskey(args, :space_objects_lock)
-            lock(args[:space_objects_lock]) do
-                for sc_id in keys(args[:space_objects_dict])
-                    # Don't check yourself before you wreck(thrust) yourself
-                    if sim_id == sc_id[1]
-                        continue
+                # print(force_range, "\n")
+                if norm(args[:space_objects_dict][sim_id].current_pos - args[:space_objects_dict][sim_id].current_pos) < force_range 
+                    #check if there is an existing access
+                    try
+                        access_exists = false
+                        for (accessor_id,access) in this_obj.access_storage #access open, apply force
+                            if accessor_id == sc_id
+                                # println("accessor already open")
+                                access_exists = true
+                                #an access is already open
+                                #TODO: apply force
+                            end
+                        end
+                        #no access open, create one\
+                        if access_exists == false
+                            println("creating access")
+                            try
+                                new_access = config.start_access(this_obj.current_time, this_obj.uid, sc.uid)
+                                this_obj.access_storage[sc_id] = new_access
+                                # print(this_obj.access_storage, "\n")
+                            catch e
+                                print("error printing access storage: ")
+                                throw(e)
+                            end
+                            # this_obj.access_storage[sc_id] = new_access
+                            #TODO: apply force
+                        end
+                    catch e
+                        print("error opening access: ")
+                        throw(e)
                     end
-                    
-                    this_obj = args[:space_objects_dict][sim_id]
-                    sc = args[:space_objects_dict][sc_id[1]]
-                    
-                    # Check if current_pos is available and valid
-                    if isdefined(sc, :current_pos) && sc.current_pos !== nothing && length(sc.current_pos) >= 3
-                        sc_pos = SVector{3, Float64}(sc.current_pos[1:3]) * config.cnf().DU  # Convert to proper units
-                        this_pos = pos_ii  # Current spacecraft position
-                        
-                        force_range = 0.0
-                        # Get range of object in question, determine valid access
-                        if isdefined(sc, :laser_effector) && sc.laser_effector
-                            force_range = isdefined(sc, :laser_range) ? sc.laser_range : 0.0
+                else
+                    try
+                        #out of range, close if access exists
+                        for (accessor_id,access) in this_obj.access_storage
+                            # print("closing access")
+                            if accessor_id == sc_id
+                                #an access is open, close it
+                                config.end_access(access, this_obj.current_time)
+                                #log access to access_log
+                                access_data = Tuple(access.start_time, access.end_time, accessor_id)
+                                push!(this_obj.access_log, access_data)
+                                #remove from temporary storage
+                                println("closing")
+                                delete!(this_obj.access_storage, accessor_id)
+                                # continue
+                            end
                         end
-
-                        # Apply forces if in range
-                        if force_range > 0.0 && norm(sc_pos - this_pos) < force_range
-                            println("Spacecraft $sim_id in range of spacecraft $sc_id")
-                            # Apply your force calculations here
-                        end
+                    catch e
+                        print("error closing access: ", e, "\n")
                     end
                 end
+                
+
+                
+
             end
+        catch e
+            print("Error checking interactive forces: ", e, "\n")
+            throw(e)
         end
 
+    
 
         # Thrust
         Δv = g_e * m.engines.Isp * log(initial_state.m / mass)
@@ -790,33 +811,17 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         return y_dot
     end
 
-    ## EVENTS: 
-    function every_step_condition(y, t, integrator)
-        args = integrator.p[8]
+
+    function every_step_condition(y,t,integrator)
+        # print("callback")
         try
-            if haskey(args, :space_objects_dict) && haskey(args, :space_objects_lock)
-                lock(args[:space_objects_lock]) do
-                    current_run_id = sim_id
-                    obj_dict = args[:space_objects_dict]
-                    
-                    if haskey(obj_dict, current_run_id)
-                        obj = obj_dict[current_run_id]
-                        state = collect(integrator.u)
-                        
-                        # Update current position (first 3 elements are position)
-                        obj.current_pos = state
-                        
-                        # Store state history
-                        if !isdefined(obj, :sc_state_history) || obj.sc_state_history === nothing
-                            obj.sc_state_history = Vector{Vector{Float64}}()
-                        end
-                        push!(obj.sc_state_history, vcat([t], state))
-                    end
-                end
-            end
+            # print(integrator.u[1:3], "\n")
+            args[:space_objects_dict][sim_id].current_pos = integrator.u[1:3] # Update current position (first 3 elements are position)
+            args[:space_objects_dict][sim_id].current_time = t * config.cnf().TU # Update current time
         catch e
             @warn "Error in every_step_condition callback" error=e
         end
+        
         return true
     end
 

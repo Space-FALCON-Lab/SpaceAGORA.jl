@@ -48,7 +48,7 @@ function ensure_gram!(args)
     end
 end
 
-function aerobraking_campaign(args, state,sim_id=1)
+function aerobraking_campaign(args, state,sim_id)
     save_res = args[:results]
     config.cnf().Gram_directory = args[:directory_Gram]
 
@@ -517,6 +517,16 @@ function aerobraking_campaign(args, state,sim_id=1)
         t_el = -1.0 # Indicate an error occurred
     end
     print("finished aerobraking")
+    for (sc_id, sc) in args[:space_objects_dict]
+        if sc_id == sim_id
+            for (key,access) in sc.access_storage
+                println("closing in post")
+                closed_access = config.end_access(access, sc.current_time)
+                push!(sc.access_log, (closed_access.start_time, closed_access.end_time, key))
+            end
+
+        end
+    end
     ##########################################################
 
     # Finalize the arrow writer if plotting is enabled

@@ -1,5 +1,7 @@
 include("utils/quaternion_utils.jl")
+# include("accesses/access_class.jl")
 import .quaternion_utils
+import .access_class
 using StaticArrays
 using LinearAlgebra
 using CSV
@@ -100,6 +102,20 @@ mutable struct Link
             link.attitude_control_function, link.actuation_function, link.attitude_control_rate, copy(link.ω_wheel_derivatives), copy(link.SRP_facets), copy(link.J_thruster), copy(link.thrusters), link.thrust_calculation_function)
     end
 end
+mutable struct Access
+    start_time::Float64
+    end_time::Float64
+    target_id::Int64
+    spacecraft_id::Int64
+
+end
+
+function start_access(start_time::Float64, target_id::Int64, spacecraft_id::Int64)
+    return Access(start_time, -1.0, target_id, spacecraft_id)
+end
+function end_access(access::Access, end_time::Float64)
+    return Access(access.start_time, end_time, access.target_id, access.spacecraft_id)
+end
 
 mutable struct Joint
     link1::Link
@@ -180,7 +196,10 @@ mutable struct SpacecraftModel
     spice_path:: String # Path to the SPICE kernel file for this spacecraft
     
     current_pos:: Vector{Float64}
+    current_time:: Float64 #latest timestamp of spacecraft
 
+    access_log:: Vector{Tuple{Float64, Float64, Int64}} # Log of access times to other space objects
+    access_storage:: Dict{Int64, Access} # Dictionary to store access windows for each accessor id
     function SpacecraftModel(;joints=Joint[], links=Link[], roots=Link[], 
                         instant_actuation=true, 
                         prop_mass=Float64[],

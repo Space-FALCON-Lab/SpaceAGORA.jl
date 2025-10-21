@@ -53,6 +53,7 @@ function save_results(time, ratio)
     time_0 = time[end]
     config.cnf.prev_step_integrator = time_0
     config.cnf.solution_intermediate = Vector{Number}[]
+    config.cnf.solution_intermediate = Vector{Number}[]
 
     t = [i + config.cnf.initial_time_saved for i in t]
 

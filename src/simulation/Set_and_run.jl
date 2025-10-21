@@ -72,6 +72,7 @@ function aerobraking_campaign(args, state)
         state[:Ω] = OE[4]
         state[:ω] = OE[5]
     end
+
     # Set up n-body gravity
     if length(args[:n_bodies]) != 0
         for i=1:length(args[:n_bodies])
@@ -79,7 +80,7 @@ function aerobraking_campaign(args, state)
         end
     end
 
-    # Set up spherical harmonics coefficients
+    # Set up spherical harmonics coefficients to use Pines' method from GMAT
     if args[:gravity_harmonics] == true
         # Read in the gravity harmonics data
         harmonics_data = CSV.read(args[:gravity_harmonics_file], DataFrame)

@@ -1,5 +1,5 @@
 include("../simulation/Run.jl")
-# include("config.jl")
+# include("../config.jl")
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 import .config
@@ -63,9 +63,8 @@ args = Dict(# Misc Simulation
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 0,                                        # Normalize during integration True=1, False=0
-            :closed_form => 0,                                      # Closed form solution True=1, False=0
-            
+            :normalize => 0,                                         # Normalize during integration True=1, False=0
+            :closed_form => 0,                                      # Closed form solution for the drag passage True=1, False=0
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
@@ -134,6 +133,9 @@ args = Dict(# Misc Simulation
             :flash2_through_integration => 1,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             :solar_panel_control_rate => 1.0/3.0,                        # Rate at which the solar panel controller is called
 
+            :struct_ctrl => 0,                                     # Structural thermal control, True=1, False=0
+            :targeting_ctrl => 0,                                   # Targeting control True=1, False=0
+            
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
             :ra_initial_a => 66597e3 + 6.0518e6, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m

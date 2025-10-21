@@ -109,7 +109,7 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name)
             continue_campaign = false
         end
 
-        if r_a <= args[:final_apoapsis] && args[:keplerian] == false
+        if (r_a <= args[:ra_fin_orbit] || config.cnf.targeting == 1) && args[:keplerian] == false
             FinalState = false
             println("Reached FinalState! R_a = " * string(r_a*1e-3) * " km")
             println("Thermal Limit overcomed totally " * string(config.cnf.count_overcome_hr) * " times")

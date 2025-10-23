@@ -6,7 +6,7 @@ To ensure that all the package versions are consistent, a Docker environment has
 2. In VSCode, download the Docker and Dev Container extensions
 3. Open the ABTS.jl directory in VSCode and click on the remote window icon in the bottom left corner
 4. Select "Reopen in container". This will open a window with the ABTS.jl repository open in the preconfigured Docker environment.
-5. Open a terminal window in VSCode. Start Julia, enter "]" to activate the package environment, and enter ```activate .ABTS```, then ```instantiate```. This will activate the Julia project environment that has been set up and install all the packages needed to run ABTS.jl
+5. Open a terminal window in VSCode. Start Julia, enter "]" to activate the package environment, and enter ```activate .ABTS```, ```update```, ```instantiate```. This will activate the Julia project environment that has been set up and install all the packages needed to run ABTS.jl
 6. Now, you should be able to run any existing scenario or create and run a new scenario
 
 # GRAM access

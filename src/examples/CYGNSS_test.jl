@@ -27,17 +27,16 @@ spacecraft = config.SpacecraftModel()
 # w = sqrt(6.0)
 # d = sqrt(66.0/7.0)
 
-rw_torques_data = DataFrame(Arrow.Table("/workspaces/ABTS.jl/cygnss_rw_momentum_derivatives.feather"))
-# println(rw_torques_data[])
-# time_itp = LinearInterpolation(rw_torques_data.time_offset)
+rw_torques_data = DataFrame(Arrow.Table("cygnss_rw_momentum_derivatives_no_filter.feather"))
+
 println("RW torque data loaded from file, time range: $(minimum(rw_torques_data[!, 1])) to $(maximum(rw_torques_data[!, 1])) seconds.")
-rw_1_itp = cubic_spline_interpolation(range(0.0, rw_torques_data[end, 1], length(rw_torques_data[!, 2])), rw_torques_data[!, 2])
-rw_2_itp = cubic_spline_interpolation(range(0.0, rw_torques_data[end, 1], length(rw_torques_data[!, 3])), rw_torques_data[!, 3])
-rw_3_itp = cubic_spline_interpolation(range(0.0, rw_torques_data[end, 1], length(rw_torques_data[!, 4])), rw_torques_data[!, 4])
+rw_1_itp = cubic_spline_interpolation(range(rw_torques_data[1, 1], rw_torques_data[end, 1], length(rw_torques_data[!, 2])), rw_torques_data[!, 2])
+rw_2_itp = cubic_spline_interpolation(range(rw_torques_data[1, 1], rw_torques_data[end, 1], length(rw_torques_data[!, 3])), rw_torques_data[!, 3])
+rw_3_itp = cubic_spline_interpolation(range(rw_torques_data[1, 1], rw_torques_data[end, 1], length(rw_torques_data[!, 4])), rw_torques_data[!, 4])
 rw_torque_itp = (t) -> SVector{3, Float64}([rw_1_itp(t), rw_2_itp(t), rw_3_itp(t)])
 println(rw_torque_itp(2))
 
-rw_torques_cloth = DataFrame(Arrow.Table("/workspaces/ABTS.jl/slew_maneuver_torques_0.1s_eci_unfiltered.feather"))
+rw_torques_cloth = DataFrame(Arrow.Table("slew_maneuver_torques_0.1s_eci_unfiltered_estimated_jac.feather"))
 cloth_times = rw_torques_cloth[1, 1]:rw_torques_cloth[2, 1] - rw_torques_cloth[1, 1]:rw_torques_cloth[end, 1]
 println(length(cloth_times))
 println(length(rw_torques_cloth[!, 5]))
@@ -54,7 +53,7 @@ main_bus = config.Link(root=true,
                         # q=SVector{4, Float64}([ -0.000178090669, 0.000196625584, -0.000787386924,0.999990655]), # Initial quaternion, from slew data, LVLH
                         # q=SVector{4, Float64}([-1.78090669e-04, 1.96625584e-04, -7.87386924e-04, 9.99999655e-01]), # Stating from ~900s, from slew data, assumes scalar first, LVLH
                         q=SVector{4, Float64}([-0.769326211835314, -0.0287409968395995, 0.368405744863056, 0.521141383921568]), # Initial quaternion, from slew data, ECI
-                        # q=SVector{4, Float64}([-0.49694828,  -0.27337817, 0.69593993, 0.44042526]), # Starting from ~900s, from slew data, ECI
+                        # q=SVector{4, Float64}([-0.49694828, -0.27337817, 0.69593993, 0.44042526]), # Starting from ~900s, from slew data, ECI
                         ṙ=SVector{3, Float64}([0.0, 0.0, 0.0]), 
                         # ω=SVector{3, Float64}([0.00029976 -0.00091251  0.00051997]), # Initial angular velocity rad/s, from CYGNSS documentation
                         # ω=SVector{3, Float64}([-9.789142632171234e-5, -8.82827330140926e-5, 0.00012436837964648057]), # Initial angular velocity rad/s, from slew data, LVLH
@@ -71,14 +70,14 @@ main_bus = config.Link(root=true,
                         # rw=SVector{3, Float64}(-85.75349176655784/6000.0*18.0e-3, 571.8118011223758/6000.0*18.0e-3, -262.8650773012001/6000.0*18.0e-3), # Initial RW angular momentum starting from 900s, from slew data
                         max_torque=0.65536e-3, # max torque from RW datasheet, Nm
                         max_h=18.0e-3, # max angular momentum from RW datasheet, Nms
-                        # J_rw=SMatrix{3, 3, Float64}([0.8165 -0.4082 -0.4082;
-                        #                              0.5774 0.5774 0.5774;
-                        #                              0.0 -0.7071 0.7071]),
-                        J_rw=SMatrix{3, 3, Float64}([ 0.8164  0.4083 -0.4083;
-                                                     -0.5774  0.5773 -0.5773;
-                                                      0.0000 -0.7071 -0.7071]),
-                        # attitude_control_function=(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64) -> (b.ω_wheel_derivatives .= pinv(b.J_rw) * rw_torque_itp_cloth(t)))#+890.0017919540405))) # cloth attitude control
-                        attitude_control_function=(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64) -> (b.ω_wheel_derivatives .= rw_torque_itp(t)))#+890.0017919540405 - 0.5))) # CYGNSS data attitude control
+                        J_rw=SMatrix{3, 3, Float64}([ 0.81171102  0.41303249 -0.41295203;
+                                                      0.58395319 -0.56044365  0.58728322;
+                                                     -0.01113071  0.71784892  0.69610993]),
+                        # J_rw=SMatrix{3, 3, Float64}([ 0.81171104  0.41303245 -0.41295202;
+                        #                               0.58395316 -0.56044371  0.5872832 ;
+                        #                              -0.01113066  0.7178489   0.69610995]),
+                        attitude_control_function=(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64) -> (b.ω_wheel_derivatives .= pinv(b.J_rw) * rw_torque_itp_cloth(t)))#+890.0017919540405))) # cloth attitude control
+                        # attitude_control_function=(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64) -> (b.ω_wheel_derivatives .= rw_torque_itp(t)))#+890.0017919540405 - 0.5))) # CYGNSS data attitude control
 
 L_panel = config.Link(r=SVector{3, Float64}(0.0, 56.9e-2, -(20.222 - 13.1)*1.0e-2),
                       q=SVector{4, Float64}(0.0, sqrt(2.0)/2.0, 0.0, sqrt(2.0)/2.0),
@@ -193,10 +192,10 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => false,                                                                                  # Pass results as output True=1, False=0
             :print_res => true,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/cygnss_comparison_slew_eci",                # Directory where to save the results
-            :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
-            :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
-            :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
+            :directory_results => "output/cygnss_comparison_slew_eci",                # Directory where to save the results
+            :directory_Gram => "GRAMpy",                                                    # Directory where Gram is
+            :directory_Gram_data => "GRAM_Data",                                            # Directory where Gram data is
+            :directory_Spice => "GRAM_Data/SPICE",                                          # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
             :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
@@ -210,8 +209,8 @@ args = Dict(# Misc Simulation
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => true,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 10,                                 # Number of aerobraking passage
-            :mission_time => 3600.0,                                  # Mission time in seconds, used only for Time mission type
-            # :mission_time => 1000.0,                                  # Mission time in seconds, used only for Time mission type
+            # :mission_time => 3600.0,                                  # Mission time in seconds, used only for Time mission type
+            :mission_time => 1000.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => true,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
             :num_steps_to_save => 10000,                            # Number of timesteps between saves
 
@@ -221,7 +220,7 @@ args = Dict(# Misc Simulation
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
             :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
-            :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
+            :topography_harmonics_file => "Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 90,                                      # Maximum order of the topography harmonics (Defined in the file)
             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
@@ -234,7 +233,7 @@ args = Dict(# Misc Simulation
             :eclipse => false,                                         # Whether to include eclipse conditions in SRP calculation
             :gravity_gradient => false,                                   # Gravity Gradient true/false
             :gravity_harmonics => 1,                                            # Gravity Spherical harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
+            :gravity_harmonics_file => "Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
             :magnetic_field => false,                                    # Magnetic field True=1, False=0

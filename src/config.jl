@@ -277,7 +277,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         lift_pp::Vector{Vector{Float64}} = [[], [], []]
         lift_ii::Vector{Vector{Float64}} = [[], [], []]
         force_ii::Vector{Vector{Float64}} = [[], [], []]
-        τ_ii::Vector{Vector{Float64}} = [[], [], []] # total torque applied by all forces
+        τ_bb::Vector{Vector{Float64}} = [[], [], []] # total torque applied by all forces
         energy::Vector{Float64} = []
     end
 

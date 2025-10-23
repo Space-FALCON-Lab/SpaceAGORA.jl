@@ -225,9 +225,9 @@ function save_results(time, ratio)
     append!(config.solution.forces.force_ii[1], results[82,:])
     append!(config.solution.forces.force_ii[2], results[83,:])
     append!(config.solution.forces.force_ii[3], results[84,:])
-    append!(config.solution.forces.τ_ii[1], results[85,:])
-    append!(config.solution.forces.τ_ii[2], results[86,:])
-    append!(config.solution.forces.τ_ii[3], results[87,:])
+    append!(config.solution.forces.τ_bb[1], results[85,:])
+    append!(config.solution.forces.τ_bb[2], results[86,:])
+    append!(config.solution.forces.τ_bb[3], results[87,:])
     append!(config.solution.forces.energy, results[88,:])
 
     # Simulation

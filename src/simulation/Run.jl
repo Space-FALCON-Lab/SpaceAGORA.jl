@@ -255,6 +255,12 @@ function run_sc_vehicles(args)
     args[:target_objects] = target_objs_dict
     args[:space_objects_dict] = space_objects_dict
 
+    #setup cyclic barrier for thread synchronization
+    n_threads = length(collect(keys(space_objects_dict)))
+    barrier = config.CyclicBarrier(n_threads)
+    #store in args
+    args[:barrier] = barrier
+
 
     println("space_objects_dict keys: ", keys(args[:space_objects_dict]))
 
@@ -325,15 +331,15 @@ function run_sc_vehicles(args)
     end
 
     #check if the output data is identical
-    if state_dict[1] == state_dict[2]
-        println("The output data from both spacecraft simulations are identical.")
-    else
-        println("The output data from the spacecraft simulations differ.")
-    end
+    # if state_dict[1] == state_dict[2]
+    #     println("The output data from both spacecraft simulations are identical.")
+    # else
+    #     println("The output data from the spacecraft simulations differ.")
+    # end
 
 
     if args[:plot] == true && args[:plot_type] == "multi"
-
+        print("Plotting")
         plots_multi(state_dict,m_dict,name_dict,args,temp_name_dict)
     end
 

@@ -367,6 +367,114 @@ end
 # (Alias preserved from your original name)
 reset_thread_configs!() = reset_all_configs!()
 
+# =======================
+# == Thread Management ==
+# =======================
+# mutable struct CyclicBarrier
+#     n_threads::Int
+#     count::Int
+#     generation::Int
+#     lock::Base.ReentrantLock
+#     condition::Base.Condition
+
+#     function CyclicBarrier(n::Int)
+#         new(n, 0, 0, Base.ReentrantLock(), Base.Condition())  # no arg to Condition()
+#     end
+# end
+
+# function thread_wait(barrier::CyclicBarrier)
+#     Base.lock(barrier.lock) #lock the barrier struct for edit
+#     local gen = barrier.generation
+#     barrier.count += 1
+#     #if all threads have checked in, reset and notify all
+#     try
+#         if barrier.count == barrier.n_threads
+#             # print("thread checking in")
+#             barrier.generation += 1 #increment generation
+#             barrier.count = 0 #reset count of waiting threads
+#             Base.notify(barrier.condition,all=true) #wakes up all threads
+#             # Threads.unlock(barrier.lock)
+#         else
+#             # print("threads caught up, releasing ", Threads.threadid())
+#             while gen == barrier.generation
+#                 Base.wait(barrier.condition, barrier.lock)
+#             end
+#             # Threads.unlock(barrier.lock)
+#         end
+#     catch e
+#         # Threads.unlock(barrier.lock)
+#         print(e)
+#         rethrow(e)
+#     end
+#     return
+# end
+# mutable struct CyclicBarrier
+#     n_threads::Int
+#     count::Int
+#     generation::Int
+#     cond::Base.Condition
+#     function CyclicBarrier(n::Int)
+#         new(n, 0, 0, Base.Condition())   # use condition's own lock
+#     end
+# end
+
+# "Returns true for the last arriver."
+# function thread_wait(b::CyclicBarrier)::Bool
+#     Base.lock(b.cond)                    # IMPORTANT: lock the *condition* itself
+#     try
+#         gen = b.generation
+#         b.count += 1
+#         if b.count == b.n_threads        # last arriver
+#             b.generation += 1
+#             b.count = 0
+#             Base.notify(b.cond; all=true)  # notify while holding the same lock
+#             return true
+#         else
+#             while gen == b.generation
+#                 Base.wait(b.cond)          # 1-arg wait; releases/reacquires cond's lock
+#             end
+#             return false
+#         end
+#     finally
+#         Base.unlock(b.cond)
+#     end
+# end
+
+mutable struct CyclicBarrier
+    n_threads::Int
+    arrived::Int
+    generation::Int
+    cond::Threads.Condition
+    function CyclicBarrier(n::Int)
+        new(n, 0, 0, Threads.Condition())
+    end
+end
+
+function thread_wait(b::CyclicBarrier)::Bool
+    Base.lock(b.cond)                    # lock the condition itself
+    try
+        gen = b.generation
+        b.arrived += 1
+        if b.arrived == b.n_threads
+            b.generation += 1
+            b.arrived = 0
+            Base.notify(b.cond; all=true)
+            return true
+        else
+            while gen == b.generation
+                Base.wait(b.cond)        # 1-arg wait; uses condition’s own lock
+            end
+            return false
+        end
+    finally
+        Base.unlock(b.cond)
+    end
+end
+
+
+
+
+
 # ===============
 # === Public  ===
 # ===============

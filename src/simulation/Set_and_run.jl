@@ -553,7 +553,8 @@ function aerobraking_campaign(args, state,sim_id)
     catch e
         println("Error during single plotting: ", e)
     end
-
+    args[:barrier].n_threads -= 1 # Decrement the barrier thread count
+    
     return state,m,name,args,temp_name
 
     

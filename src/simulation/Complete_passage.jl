@@ -39,6 +39,19 @@ import .quaternion_utils
 const R0 = 149597870.7e3 # 1AU, m
 const g_e = 9.81 # Gravitational acceleration of Earth at surface, m/s^2
 
+function thread_sync(args,current_time)
+    # print("Thread number: ", Threads.threadid(), " reached barrier.\n")
+    #print sim time
+    sim_time = current_time
+    # print("Thread number: ", Threads.threadid(), " sim time: ", sim_time, "\n")
+    try
+        config.thread_wait(args[:barrier]) # wait for all threads to reach this point
+    catch e
+        println("Error in barrier synchronization: ", e)
+    end
+    # print("Thread number: ", Threads.threadid(), " passed barrier.\n")
+end
+
 function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmosphere=nothing, gram=nothing)
     #enable thread specific configs
     # config.reset_thread_configs()
@@ -603,7 +616,7 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
                         end
                         #no access open, create one\
                         if access_exists == false
-                            println("creating access")
+                            # println("creating access")
                             try
                                 new_access = config.start_access(this_obj.current_time, this_obj.uid, sc.uid)
                                 this_obj.access_storage[sc_id] = new_access
@@ -766,6 +779,9 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
         
         
         next_index = 8 + length(bodies)
+
+        #sync threads
+        thread_sync(args,current_time)
 
         if orientation_sim
             y_dot[next_index:next_index+3] .= (0.5*Ξ(quaternion)*ω) * config.cnf().TU  # Quaternion derivative
@@ -1469,6 +1485,7 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
 
     # Solve Equations of Motion 
     for aerobraking_phase in range(range_phase_i, 3)
+        
         index_phase_aerobraking = aerobraking_phase
 
         if (index_steps_EOM == 1 || Bool(args[:drag_passage])) && (aerobraking_phase == 1 || aerobraking_phase == 3 || aerobraking_phase == 0)
@@ -1561,6 +1578,7 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
         length_sim = lowercase(args[:type_of_mission]) == "time" ? min(args[:mission_time], 1e8) : 1e8
         i_sim = 0
         time_solution = Float64[]  # Time solution for the simulation
+        # thread_sync(args,time_solution,time_0)
 
         config.cnf().continue_simulation = true
 
@@ -1815,6 +1833,12 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
             elseif t_event_1 == "final_altitude_reached"
                 time_ev_1 = config.cnf().count_final_entry_altitude_reached
             end
+
+            #check for thread lockstep
+
+            # thread_sync(args,time_solution,time_0)
+
+
 
             # Breaker conditions
             if simulator == "Julia"

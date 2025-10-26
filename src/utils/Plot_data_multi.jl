@@ -221,7 +221,7 @@ function access_graph(state,m,name,args,data_table)
     access_traces = PlotlyJS.GenericTrace[]
     for (sc_id, access_vector) in access_dict
         # Get spacecraft name from space_objects_dict
-        println(access_vector)
+        # println(access_vector)
         if args[:space_objects_dict][sc_id].laser_effector
             sc_name = "laser_effector"
             push!(access_traces, scatter(x=time_vector, y=access_vector, mode="lines",

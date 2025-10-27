@@ -106,8 +106,8 @@ args = Dict(# Misc Simulation
             
             #swarm simulation configuration
             :swarm_config => 1,                                      # Swarm configuration: 0 = no swarm, 1 = yes swarm
-            :n_spacecraft => 1,                                       # Number of spacecraft to simulate
-            :n_target_obj => 1,                                       # Number of target objects to simulate
+            :n_spacecraft => 15,                                       # Number of spacecraft to simulate
+            :n_target_obj => 15,                                       # Number of target objects to simulate
 
             # Physical Model
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2

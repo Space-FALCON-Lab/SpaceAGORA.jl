@@ -783,6 +783,7 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
         #sync threads
         thread_sync(args,current_time)
 
+
         if orientation_sim
             y_dot[next_index:next_index+3] .= (0.5*Ξ(quaternion)*ω) * config.cnf().TU  # Quaternion derivative
             y_dot[next_index+4:next_index+6] .= (inertia_tensor\(τ_body - cross(ω, inertia_tensor * ω + total_rw_h))) * config.cnf().TU^2  # Angular velocity derivative
@@ -1583,6 +1584,18 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
         config.cnf().continue_simulation = true
 
         while config.cnf().continue_simulation
+            # Thread check-in
+            try
+                println("Thread $(Threads.threadid()) checking in at t0=$(time_0) s")
+            catch e
+                @warn "Thread check-in failed" error=e
+            end
+            thread_sync(args,args[:space_objects_dict][1].current_time)
+            try
+                println("Thread $(Threads.threadid()) checking out at t0=$(time_0) s")
+            catch e
+                @warn "Thread check-out failed" error=e
+            end
             index_phase_aerobraking = aerobraking_phase
             # if control mode =! 0, redefine sim setting and creates two more phases until reaching EI and out of the AE phase 2: between 120 km alt
             if aerobraking_phase == 2 && (args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf().drag_state == true && config.cnf().sensible_loads == true && config.cnf().ascending_phase == false)

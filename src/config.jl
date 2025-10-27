@@ -471,6 +471,18 @@ function thread_wait(b::CyclicBarrier)::Bool
     end
 end
 
+function check_threads(b::CyclicBarrier)
+    Base.lock(b.cond)
+    print("task finished, threads arrived: ")
+    print(b.arrived, " ", b.n_threads, "\n")
+    if b.arrived == b.n_threads
+        b.generation += 1
+        b.arrived = 0
+        Base.notify(b.cond; all=true)
+    end
+    Base.unlock(b.cond)
+end
+
 
 
 

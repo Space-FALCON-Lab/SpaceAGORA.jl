@@ -165,9 +165,9 @@ end
 function access_graph(state,m,name,args,data_table)
     #sort accesses by spacecraft
     access_dict = Dict()
-    println(args[:space_objects_dict][1].laser_effector)
-    println(args[:space_objects_dict][1].access_log)
-    println(args[:space_objects_dict][2].access_log)
+    # println(args[:space_objects_dict][1].laser_effector)
+    # println(args[:space_objects_dict][1].access_log)
+    # println(args[:space_objects_dict][2].access_log)
     # if isa(args[:space_objects_dict][1].access_log, Vector{Tuple{Float64, Float64, Int64}})
     #     print("detected!")
     # end

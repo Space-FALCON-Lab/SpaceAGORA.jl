@@ -34,6 +34,8 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
 
     version = args[:Gram_version]
 
+    OE = SVector{7, Float64}([OE[1], OE[2], OE[3], OE[4], OE[5], OE[6], OE[7]])
+
     r0, v0 = orbitalelemtorv(OE, m.planet)
 
     r0 = SVector{3, Float64}(r0)

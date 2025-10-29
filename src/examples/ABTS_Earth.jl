@@ -18,11 +18,8 @@ args = Dict(# Misc Simulation
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
             :normalize => 0,                                       # Normalize the state during integration True=1, False=0
-<<<<<<< HEAD
-=======
             :closed_form => 0,                                     # Closed form solution for the drag passage True=1, False=0
 
->>>>>>> targeting_attiude_merge
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0, NOTE: Can't be used with aerobraking campaign, must be 'Orbits' in type_of_mission

@@ -21,7 +21,7 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
     if online == false
         if args[:type_of_mission] == "Drag Passage"
             step_time = length(config.solution.orientation.time)
-            initialcondition = [config.solution.orientation.oe[1][1], config.solution.orientation.oe[2][1], config.solution.orientation.oe[3][1], config.solution.orientation.oe[4][1], config.solution.orientation.oe[5][1], config.solution.orientation.oe[6][1], config.solution.performance.mass[1]]
+            initialcondition = SVector{7, Float64}([config.solution.orientation.oe[1][1], config.solution.orientation.oe[2][1], config.solution.orientation.oe[3][1], config.solution.orientation.oe[4][1], config.solution.orientation.oe[5][1], config.solution.orientation.oe[6][1], config.solution.performance.mass[1]])
             T = config.solution.physical_properties.T[1]
             α = config.solution.physical_properties.α_control[1]
             t0 = config.solution.orientation.time[1]
@@ -35,6 +35,8 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
 
             t, h, γ, v = zeros(length_solution), zeros(length_solution), zeros(length_solution), zeros(length_solution)
             cnt = 0
+
+            # println("Number of orbits: ", number_orbits)
             for i in range(1,ceil(number_orbits))
 
                 # idx_orbit = findall(val -> val == i, config.solution.orientation.number_of_passage)
@@ -49,7 +51,12 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
                 idx_orbit = findall(x -> x == i, config.solution.orientation.number_of_passage) # [idx for (idx, val) in enumerate(config.solution.orientation.number_of_passage) if val == i]
 
                 alt = [config.solution.orientation.pos_ii_mag[item] - mission.planet.Rp_e for item in idx_orbit]
+
+                # println("Altitude: ", alt)
+
                 alt_index = findall(x -> x < args[:EI]*1e3, alt) # [idx for (idx, val) in enumerate(alt) if val <= 160e3]
+
+                # println("alt_index: ", alt_index)
 
                 if length(alt_index) == 0
                     len_sol = length(config.solution.orientation.time)
@@ -61,7 +68,7 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
                 index = alt_index[1] + idx_orbit[1]
                 step_time = length(alt_index)
 
-                initialcondition = [config.solution.orientation.oe[1][index], config.solution.orientation.oe[2][index], config.solution.orientation.oe[3][index], config.solution.orientation.oe[4][index], config.solution.orientation.oe[5][index], config.solution.orientation.oe[6][index], config.solution.performance.mass[index]]
+                initialcondition = SVector{7, Float64}([config.solution.orientation.oe[1][index], config.solution.orientation.oe[2][index], config.solution.orientation.oe[3][index], config.solution.orientation.oe[4][index], config.solution.orientation.oe[5][index], config.solution.orientation.oe[6][index], config.solution.performance.mass[index]])
 
                 T = config.solution.physical_properties.T[index]
                 α = config.solution.physical_properties.α_control[index]
@@ -136,9 +143,13 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     E_initialstate = 2 * atan(sqrt((1-e)/(1+e)) * tan(initial_state_angle/2))
     E_finalstate = 2 * atan(sqrt((1-e)/(1+e)) * tan(final_state_angle/2))
 
+    # println([E_initialstate, E_finalstate])
+
     # Evaluate time to reach next state
     Δt = sqrt(a^3 / mission.planet.μ) * ((E_finalstate - e*sin(E_finalstate)) - (E_initialstate - e*sin(E_initialstate)))
     t_p = Δt/2
+
+    # println("Closed-form solution Δt: ", Δt, " seconds")
 
     mass = initialcondition[end]
     bodies, _ = config.traverse_bodies(mission.body, mission.body.roots[1])
@@ -163,6 +174,8 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
             step_time = length(config.cnf.heat_rate_list)
         end
     end
+
+    # println("Closed-form solution step_time: ", step_time)
     
     t_cf = collect(range(start=0, stop=Δt, length=step_time-1))
 

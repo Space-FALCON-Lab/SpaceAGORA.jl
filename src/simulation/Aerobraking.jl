@@ -124,6 +124,13 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name)
             println(" ")
         end
 
+        if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
+            closed_form(args, m)
+        else
+            len_sol = length(config.solution.orientation.time)
+            results(zeros(len_sol), (args[:EI] - 10)*1e3*ones(len_sol), zeros(len_sol), zeros(len_sol))
+        end
+
         if args[:results] == 1
             # Save the current passage results
             save_csv(filename, args, temp_name)
@@ -132,11 +139,12 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name)
         end
     end
 
-    if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
-        closed_form(args, m)
-    else
-        len_sol = length(config.solution.orientation.time)
-        results(zeros(len_sol), (args[:EI] - 10)*1e3*ones(len_sol), zeros(len_sol), zeros(len_sol))
-    end
+    # if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
+    #     println("Computing Closed-Form Solution...")
+    #     closed_form(args, m)
+    # else
+    #     len_sol = length(config.solution.orientation.time)
+    #     results(zeros(len_sol), (args[:EI] - 10)*1e3*ones(len_sol), zeros(len_sol), zeros(len_sol))
+    # end
 
 end

@@ -145,6 +145,8 @@ function save_csv(filename, args, arrow_filename)
     for i in 1:config.model.body.n_thrusters
         data_push[!, Symbol("thruster_force_$(i)")] = config.solution.physical_properties.thruster_forces[i]
     end
+
+    println("data_push: ", size(data_push[!, :t_cf]), " config.cf: ", length(config.solution.closed_form.t_cf))
     
     if args[:closed_form] == 1
         data_push[!, :t_cf] = config.solution.closed_form.t_cf

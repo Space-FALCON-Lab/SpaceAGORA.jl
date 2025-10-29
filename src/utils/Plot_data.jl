@@ -20,12 +20,12 @@ function plots(state, m, name, args, temp_name)
     ABM_periapsis(name)
     ground_track(state, m, name, args, data_table)
     
-    # if args[:closed_form] == 1 && args[:closed_form] == 1 && args[:body_shape] == "Spacecraft" && !config.cnf.impact && args[:keplerian] == false
-        # closed_form_solution_plot(name, m, data_table)
+    if args[:closed_form] == 1 && args[:closed_form] == 1 && args[:body_shape] == "Spacecraft" && !config.cnf.impact && args[:keplerian] == false
+        closed_form_solution_plot(name, m, data_table)
         angle_of_attack_plot(name, args, data_table)
-        drag_passage_plot(name, args, m)
+        drag_passage_plot(name, args, data_table)
         lambda_plot(name, args)
-    # end
+    end
 
     if args[:type_of_mission] == "Drag Passage"
         drag_passage_plot(name, args, data_table)
@@ -61,21 +61,21 @@ function drag_passage_plot(name, args, data_table)
     alt_idx = findall(x -> x < args[:AE]*1e3, config.solution.orientation.alt)
 
     time = [config.solution.orientation.time[i] for i in alt_idx]
-    aoa = [rad2deg(config.solution.physical_properties.α_control[i]) for i in alt_idx]
+    aoa = [rad2deg(config.solution.physical_properties.α[2][i]) for i in alt_idx]
     trace1 = scatter(x=time, y=aoa, mode="lines", line=attr(color="black"))
     layout = Layout(yaxis_title="α [deg]")
     p_aoa = plot(trace1, layout)
 
-    index = findall(x -> x > 0, config.solution.performance.heat_rate)
+    index = findall(x -> x > 0, config.solution.performance.heat_rate[2])
     
     time = [config.solution.orientation.time[i] for i in index]
-    heat_rate = config.solution.performance.heat_rate[index]
+    heat_rate = config.solution.performance.heat_rate[2][index]
     trace2 = scatter(x=time, y=heat_rate, mode="lines", line=attr(color="black"))
     layout = Layout(yaxis_title="Heat Rate [W/cm²]")
     p_heatrate = plot(trace2, layout)
 
     time = [config.solution.orientation.time[i] for i in index]
-    heat_load = [config.solution.performance.heat_load[i] for i in index]
+    heat_load = [config.solution.performance.heat_load[2][i] for i in index]
     trace3 = scatter(x=time, y=heat_load, mode="lines", marker=attr(color="black"))
     layout = Layout(xaxis_title="Time [s]", yaxis_title="Heat Load [J/cm²]")
     p_heatload = plot(trace3, layout)
@@ -93,9 +93,12 @@ function drag_passage_plot(name, args, data_table)
     layout = Layout(yaxis_title="Dynamic Pressure [N/m²]")
     p_dyn_press = plot([trace2, trace4], layout)
 
+    bodies, _ = config.traverse_bodies(args[:spacecraft_model], args[:spacecraft_model].roots[1])
+    Area_tot = config.get_SC_area(bodies) + config.get_SA_area(bodies)  
+
     time = [config.solution.orientation.time[i] for i in index]
-    drag = dyn_press .* config.solution.physical_properties.cD[index] * m.body.area_tot
-    drag_lim = args[:max_dyn_press] * config.solution.physical_properties.cD[1] * m.body.area_tot * ones(size(drag))
+    drag = dyn_press .* config.solution.physical_properties.cD[index] * Area_tot
+    drag_lim = args[:max_dyn_press] * config.solution.physical_properties.cD[1] * Area_tot * ones(size(drag))
     trace3 = scatter(x=time, y=drag, mode="lines", marker=attr(color="black"))
     trace5 = scatter(x=time, y=drag_lim, mode="lines", marker=attr(color="red"))
     layout = Layout(xaxis_title="Time [s]", yaxis_title="Drag [N]")
@@ -327,7 +330,7 @@ function performance_plots(state, m, name, args, data_table)
         end
     end
 
-    layout_heat_load = Layout(xaxis_title=xaxis_title, yaxis_title="Heat load [J/cm^2]")
+    layout_heat_load = Layout(xaxis_title="Orbits", yaxis_title="Heat load [J/cm^2]")
     plot_heat_load = plot([plot_traces_heat_load...], layout_heat_load)
 
     if args[:body_shape] == "Spacecraft"

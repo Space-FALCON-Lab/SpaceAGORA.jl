@@ -6,7 +6,7 @@
 	"image": "mcr.microsoft.com/devcontainers/base:noble",
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
-	"features": {"ghcr.io/julialang/devcontainer-features/julia:1":{"channel": "1.11.3"},
+	"features": {"ghcr.io/julialang/devcontainer-features/julia:1":{"channel": "release"},
 				 "ghcr.io/devcontainers/features/python:1": {}}
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.

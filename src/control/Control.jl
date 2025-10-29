@@ -20,13 +20,15 @@ function control_struct_load(ip, m, args, S, T_p, q, MonteCarlo=false)
     max_α = m.aerodynamics.α
     min_α = 0.0001
 
+    area_tot = config.get_spacecraft_reference_area(m.body)
+
     CL90, CD90 = aerodynamic_coefficient_fM(pi/2, m.body, T_p, S, m.aerodynamics, MonteCarlo)
 
-    drag_max = q * aerodynamic_coefficient_fM(max_α, m.body, T_p, S, m.aerodynamics, MonteCarlo)[2] * m.body.area_tot
-    drag_min = q * aerodynamic_coefficient_fM(min_α, m.body, T_p, S, m.aerodynamics, MonteCarlo)[2] * m.body.area_tot
-    drag_limit = args[:max_dyn_press] * CD90 * m.body.area_tot
+    drag_max = q * aerodynamic_coefficient_fM(max_α, m.body, T_p, S, m.aerodynamics, MonteCarlo)[2] * area_tot
+    drag_min = q * aerodynamic_coefficient_fM(min_α, m.body, T_p, S, m.aerodynamics, MonteCarlo)[2] * area_tot
+    drag_limit = args[:max_dyn_press] * CD90 * area_tot
 
-    f(x) = q * aerodynamic_coefficient_fM(x, m.body, T_p, S, m.aerodynamics, MonteCarlo)[2] * m.body.area_tot - drag_limit
+    f(x) = q * aerodynamic_coefficient_fM(x, m.body, T_p, S, m.aerodynamics, MonteCarlo)[2] * area_tot - drag_limit
 
     # α = config.cnf.α # pi/2
 
@@ -48,6 +50,18 @@ function control_struct_load(ip, m, args, S, T_p, q, MonteCarlo=false)
     if (α > max_α) || (α < 0)
         α = 0
     end
+
+    # Update solar panel angle
+    # Assumes that the spacecraft is the standard 2 panels one bus
+    # root = m.body.roots[1]
+    # bodies, root_index = config.traverse_bodies(m.body, root)
+    # for body in bodies
+    #     if !body.root
+    #         axis = SVector{3, Float64}(abs.(body.r))
+    #         # Rotate the solar panel to the angle α
+    #         config.rotate_link(body, axis, - α + m.body.roots[root_index].α)
+    #     end
+    # end
 
     return α
 
@@ -137,15 +151,15 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
         # println("control: ", α)
         # Update solar panel angle
         # Assumes that the spacecraft is the standard 2 panels one bus
-        root = m.body.roots[1]
-        bodies, root_index = config.traverse_bodies(m.body, root)
-        for body in bodies
-            if !body.root
-                axis = SVector{3, Float64}(abs.(body.r))
-                # Rotate the solar panel to the angle α
-                config.rotate_link(body, axis, π/2 - α + (m.body.roots[root_index].α-π/2))
-            end
-        end
+        # root = m.body.roots[1]
+        # bodies, root_index = config.traverse_bodies(m.body, root)
+        # for body in bodies
+        #     if !body.root
+        #         axis = SVector{3, Float64}(abs.(body.r))
+        #         # Rotate the solar panel to the angle α
+        #         config.rotate_link(body, axis, - α + m.body.roots[root_index].α)
+        #     end
+        # end
         return α
     else
         return config.cnf.α
@@ -179,6 +193,7 @@ function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, po
     if (config.cnf.evaluate_switch_heat_load == false)
         if args[:flash2_through_integration] == 1
             if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 1
+                println("entering first switch calculation with integration")
                 config.cnf.time_switch_1, config.cnf.time_switch_2 = switch_calculation_with_integration(ip, m, position, args, t, heat_rate_control, 1, gram_atmosphere, position)
             end
             if args[:heat_load_sol] == 2 || args[:heat_load_sol] == 3
@@ -209,6 +224,8 @@ function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, po
         config.cnf.time_switch_1, config.cnf.time_switch_2 = security_mode(ip, m, position, args, t, false)
     end
 
+    # println("Time Switches: ", config.cnf.time_switch_1, " , ", config.cnf.time_switch_2)
+
     if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 3
         if (t > config.cnf.time_switch_1) && (t < config.cnf.time_switch_2)
             α = 0
@@ -236,7 +253,7 @@ function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, po
         if !body.root
             axis = SVector{3, Float64}(abs.(body.r))
             # Rotate the solar panel to the angle α
-            config.rotate_link(body, axis, π/2 - α + (m.body.roots[root_index].α-π/2))
+            config.rotate_link(body, axis, - α + m.body.roots[root_index].α)
         end
     end
 
@@ -260,18 +277,18 @@ function control_solarpanels_openloop(ip, m, args, index_ratio, state, t=0, posi
         end
     end
 
-    config.cnf.α_past = α
-    # Update solar panel angle
-    # Assumes that the spacecraft is the standard 2 panels one bus
-    root = m.body.roots[1]
-    bodies, root_index = config.traverse_bodies(m.body, root)
-    for body in bodies
-        if !body.root
-            axis = SVector{3, Float64}(abs.(body.r))
-            # Rotate the solar panel to the angle α
-            config.rotate_link(body, axis, π/2 - α + (m.body.roots[root_index].α-π/2))
-        end
-    end
+    # config.cnf.α_past = α
+    # # Update solar panel angle
+    # # Assumes that the spacecraft is the standard 2 panels one bus
+    # root = m.body.roots[1]
+    # bodies, root_index = config.traverse_bodies(m.body, root)
+    # for body in bodies
+    #     if !body.root
+    #         axis = SVector{3, Float64}(abs.(body.r))
+    #         # Rotate the solar panel to the angle α
+    #         config.rotate_link(body, axis, - α + m.body.roots[root_index].α)
+    #     end
+    # end
     return α
 end
 

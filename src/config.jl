@@ -142,7 +142,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         heat_load_ppast::Vector{Float64} = []
         state_flesh1::Vector{Vector{Float64}} = [[]]
         α_list::Vector{Float64} = []
-        initial_position_closed_form::Vector{Float64} = []
+        initial_position_closed_form::SVector{7,Float64} = SVector{7,Float64}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
         continue_simulation::Bool = true
         timer_revaluation::Float64 = 0.0
         MarsGram_recall::Int64 = 0

@@ -18,7 +18,7 @@ using PythonCall
 sys = pyimport("sys")
 
 
-function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval=false, gram_atmosphere=nothing, time_switch_2=0, reevaluation_mode=1)
+ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval=false, gram_atmosphere=nothing, time_switch_2=0, reevaluation_mode=1)
     heat_rate_control = false
     sys.path.append(args[:directory_Gram])
     gram = pyimport("gram")
@@ -34,6 +34,8 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
     end
 
     version = args[:Gram_version]
+
+    # println(OE)
 
     r0, v0 = orbitalelemtorv(OE, m.planet)
 
@@ -90,10 +92,27 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
         et = utc2et(time_real_utc) # Current time in Ephemeris Time
         m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+
+
+        bodies, root_index = config.traverse_bodies(m.body, m.body.roots[1]) # Get all bodies in the simulation
+
+        quat_idx = 8 + length(m.body.links)
+        if args[:orientation_sim] == true
+            quaternion = SVector{4, Float64}(@view in_cond[quat_idx:quat_idx+3]) # Quaternion
+            ω = SVector{3, Float64}((@view in_cond[quat_idx+4:quat_idx+6]) / config.cnf.TU)                # Angular velocity vector [rad / s]
+            m.body.roots[1].q .= quaternion
+            # quaternion = SVector{4, Float64}(m.body.roots[1].q)
+            m.body.roots[1].ω .= ω # Body frame angular velocity
+        else
+            quaternion = orbital_elements_to_lvlh_quaternion(OE[4], OE[3], OE[5], OE[6]) # Quaternion, set to align with LVLH frame if orientation simulation is not enabled
+            ω = SVector{3, Float64}(0.0, 0.0, 0.0)                # Angular velocity vector [rad / s]
+        end
+
+        rot_body_to_inertial = rot(quaternion)' # Rotation matrix from body frame to inertial frame
         
         pos_ii = SVector{3, Float64}(in_cond[1:3])       # Inertial position 
         vel_ii = SVector{3, Float64}(in_cond[4:6])       # Inertial velocity
-        mass = m.body.mass                             # Mass kg
+        mass = config.get_spacecraft_mass(m.body)                             # Mass kg
         pos_ii_mag = norm(pos_ii)   # Magnitude of the inertial position
         vel_ii_mag = norm(vel_ii)   # Magnitude of the inertial velocity
         lambdav_ii = in_cond[7]
@@ -103,7 +122,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         # Assign Parameters
         ω_planet = m.planet.ω
         γ = m.planet.γ
-        area_tot = m.body.area_tot
+        area_tot = config.get_spacecraft_reference_area(m.body)
 
         # TRANSFORM THE STATE
         # Inertial to planet relative transformation
@@ -176,7 +195,9 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
 
         if time_switch_eval == true
 
-            lambda_switch = (k_cf * 2.0 * m.body.mass * vel_ii_mag) ./ (area_tot * CD_slope * pi)
+            lambda_switch = (k_cf * 2.0 * mass * vel_ii_mag) ./ (area_tot * CD_slope * pi)
+
+            # println("Area tot: ", area_tot, " mass: ", mass, " CD_slope: ", CD_slope)
 
             if args[:heat_load_sol] == 0
                 if lambdav_ii < lambda_switch
@@ -250,22 +271,38 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
             # heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
         end
 
+        # Assumes that the spacecraft is the standard 2 panels one bus
+        root = m.body.roots[1]
+        # bodies, root_index = config.traverse_bodies(m.body, root)
+        for body in bodies
+            if !body.root
+                axis = SVector{3, Float64}(abs.(body.r))
+                # Rotate the solar panel to the angle α
+                config.rotate_link(body, axis, - aoa + m.body.roots[root_index].α)
+            end
+        end
+
         # Rotation Calculation
         L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci'
         # rot_angle = norm(ω_planet) * t0     # rad
         # L_PI = [cos(rot_angle)  sin(rot_angle)  0.0;
         #         -sin(rot_angle) cos(rot_angle)  0.0; 
         #         0.0             0.0             1.0]    # rotation matrix
-        
+
+        # Update the force on each link on the spacecraft
+        gravity_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize gravity vector
+        # Nominal gravity calculation
         if ip.gm == 0
-            gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+            gravity_ii += mass * gravity_const(pos_ii_mag, pos_ii, m.planet)
         elseif ip.gm == 1
-            gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+            gravity_ii += mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet)
         elseif ip.gm == 2
-            gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+            gravity_ii += mass * (args[:gravity_harmonics] == 1 ? gravity_invsquared(pos_ii_mag, pos_ii, m.planet) : gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet))
         elseif ip.gm == 3
-            gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
+            gravity_ii += mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
         end
+
+        # println("Gravity contribution from main body: ", norm(gravity_ii))
 
         if length(args[:n_bodies]) != 0
 
@@ -277,25 +314,119 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
 
         if args[:srp] == true
             p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
-            srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, et)
+            srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, area_tot, mass, pos_ii, et)
         end
 
+        bank_angle = deg2rad(0.0)
 
-        bank_angle = 0.0
-        lift_pp_hat = cross(h_pp_hat,vel_pp_rw_hat)     # perpendicular vector to angular vector and velocity
-
+        lift_pp_hat = normalize(cross(h_pp_hat, vel_pp_rw_hat))
+        # lift_pp_hat /= norm(lift_pp_hat) # Normalize the lift vector in planet relative frame
+        drag_pp_hat = -vel_pp_rw_hat # Planet relative drag force direction
+        cross_pp_hat = cross(drag_pp_hat, lift_pp_hat) # Cross product of the drag and lift vectors in planet relative frame
+        
+        CL, CD = 0.0, 0.0 # Initialize aerodynamic coefficients
+        total_area = 0.0 # Initialize total area
+        
+        lift_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize inertial lift force vector
+        drag_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize inertial drag force vector
+        drag_pp = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize planet relative drag force vector
+        lift_pp = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize planet relative lift force vector
+        α = MVector{length(bodies), Float64}(zeros(length(bodies))) # Initialize angle of attack vector
+        β = MVector{length(bodies), Float64}(zeros(length(bodies))) # Initialize sideslip angle vector
+        R = MMatrix{3, 3, Float64}(zeros(3, 3)) # Rotation matrix from the root body to the spacecraft link
+        # Determine angle of attack (α) and sideslip angle (β)
         # Vehicle Aerodynamic Forces
         # CL and CD
-        CL, CD = aerodynamic_coefficient_fM(aoa, m.body, T_p, S, m.aerodynamics, 0)
+        @inbounds for (i, b) in enumerate(bodies)
+            if args[:orientation_sim] == true
+                R .= Rot[i] # Rotation matrix from the spacecraft link to the inertial frame
+                body_frame_velocity = R' * m.planet.L_PI' * vel_pp_rw # Velocity of the spacecraft link in inertial frame
+                
+                α_body = atan(body_frame_velocity[1], body_frame_velocity[3]) # Angle of attack in radians
+                β_body = atan(body_frame_velocity[2], norm([body_frame_velocity[1], body_frame_velocity[3]])) # Sideslip angle in radians
+                α[i] = α_body # Angle of attack for the spacecraft link
+                β[i] = β_body # Sideslip angle for the spacecraft link
+                b.α = α_body
+                b.β = β_body
+                b.θ = acos(clamp(vel_pp_rw[1]/norm(vel_pp_rw), -1.0, 1.0)) # Elevation angle for the spacecraft link
+            else
+                # TODO: Change this so that it just uses above code even with orientation_sim = false
+                if b.root
+                    # if the body is the root body, then the angle of attack is 90 degrees
+                    α[i] = pi/2
+                    b.α = pi/2 # Angle of attack for the root body
+                else
+                    body_frame_velocity = rot(b.q) * SVector{3, Float64}(1.0, 0.0, 0.0) # Velocity of the spacecraft link in inertial frame
+                    α[i] = atan(body_frame_velocity[1], body_frame_velocity[3]) # Angle of attack for the spacecraft link
+                    # α[i] = pi/2 # Angle of attack for the spacecraft link, temporary hard code for testing
+                    b.α = α[i] # Angle of attack for the spacecraft link
+                end
+            end
+            if ip.am == 0
+                CL, CD = aerodynamic_coefficient_constant(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
+            elseif ip.am == 1
+                if args[:orientation_sim] == true
+                    CL_body, CD_body, CS_body, Cl_body, Cm_body, Cn_body = aerodynamic_coefficient_fM(b, T_p, S, m.aerodynamics, MonteCarlo)
+                else
+                    # CL_body, CD_body = aerodynamic_coefficient_fM(α[i], m.body, T_p, S, m.aerodynamics, MonteCarlo)
+                    CL_body, CD_body, CS_body, Cl_body, Cm_body, Cn_body = aerodynamic_coefficient_fM(b, T_p, S, m.aerodynamics, MonteCarlo)
+                end
+            elseif ip.am == 2
+                CL, CD = aerodynamic_coefficient_no_ballistic_flight(α, m.body, args, T_p, S, m.aerodynamics, MonteCarlo)
+            end
 
-        # Force calculations
-        drag_pp_hat = -vel_pp_rw_hat                    # Planet relative drag force direction
+            drag_pp_body = q * CD_body * b.ref_area * drag_pp_hat                       # Planet relative drag force vector
+            lift_pp_body = q * CL_body * b.ref_area * lift_pp_hat * cos(bank_angle)     # Planet relative lift force vector
+            if args[:orientation_sim] == true
+                cross_pp_body = q * CS_body * b.ref_area * cross_pp_hat # Planet relative cross force vector
+                cross_body = m.planet.L_PI' * cross_pp_body # Inertial cross force vector
+            else
+                cross_pp_body = SVector{3, Float64}(0.0, 0.0, 0.0) # Planet relative cross force vector
+                cross_body = SVector{3, Float64}(0.0, 0.0, 0.0) # Inertial cross force vector
+            end
 
-        drag_pp = q * CD * area_tot * drag_pp_hat                       # PLanet relative drag force vector
-        lift_pp = q * CL * area_tot * lift_pp_hat * cos(bank_angle)     # PLanet relative lift force vector
+            drag_body = m.planet.L_PI' * drag_pp_body   # Inertial drag force vector
+            lift_body = m.planet.L_PI' * lift_pp_body   # Inertial lift force vector
 
-        drag_ii = L_PI' * drag_pp                                       # Inertial drag force vector
-        lift_ii = L_PI' * lift_pp                                       # Inertial lift force vector
+            # Update the force on the spacecraft link
+            b.net_force .+= drag_body + lift_body + cross_body # Update the force on the spacecraft link, inertial frame
+            # aero_torque = q * Cl_body * b.ref_area * b.dims[1] * SVector{3, Float64}(1.0, 0.0, 0.0) + # Aerodynamic roll torque, body frame
+            #               q * Cm_body * b.ref_area * b.dims[2] * SVector{3, Float64}(0.0, 1.0, 0.0) + # Aerodynamic pitch torque, body frame
+            #               q * Cn_body * b.ref_area * b.dims[3] * SVector{3, Float64}(0.0, 0.0, 1.0)   # Aerodynamic yaw torque, body frame
+            # b.net_torque .+= aero_torque # Update the torque on the spacecraft link, body frame
+            b.net_torque .+= cross(b.r, rot_body_to_inertial' * (drag_body + lift_body + cross_body)) # Update the torque on the spacecraft link, body frame
+            # Update the total CL/CD
+            CL += CL_body * b.ref_area
+            CD += CD_body * b.ref_area
+            total_area += b.ref_area # Update the total area
+            drag_ii += drag_body # Update the total drag force
+            lift_ii += lift_body # Update the total lift force
+            drag_pp += drag_pp_body # Update the total drag force in planet relative frame
+            lift_pp += lift_pp_body # Update the total lift force in planet relative frame
+        end
+        
+        # Normalize the aerodynamic coefficients
+        CL = CL / total_area
+        CD = CD / total_area
+
+
+        # bank_angle = 0.0
+        # lift_pp_hat = cross(h_pp_hat,vel_pp_rw_hat)     # perpendicular vector to angular vector and velocity
+
+        # # Vehicle Aerodynamic Forces
+        # # CL and CD
+        # CL, CD = aerodynamic_coefficient_fM(aoa, m.body, T_p, S, m.aerodynamics, 0)
+
+        # # println("AoA (deg): ", rad2deg(aoa), " CL: ", CL, " CD: ", CD, " Heat Rate (W/m^2): ", heat_rate)
+
+        # # Force calculations
+        # drag_pp_hat = -vel_pp_rw_hat                    # Planet relative drag force direction
+
+        # drag_pp = q * CD * area_tot * drag_pp_hat                       # PLanet relative drag force vector
+        # lift_pp = q * CL * area_tot * lift_pp_hat * cos(bank_angle)     # PLanet relative lift force vector
+
+        # drag_ii = L_PI' * drag_pp                                       # Inertial drag force vector
+        # lift_ii = L_PI' * lift_pp                                       # Inertial lift force vector
 
         # Total Force
         # Total inertial external force vector on body [N]
@@ -350,7 +481,10 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         vel_ii = y[4:6]
         vel_ii_mag = norm(vel_ii)
 
-        lambda_switch = (k_cf * 2 * m.body.mass * vel_ii_mag) / (m.body.area_tot * CD_slope * pi)
+        mass = config.get_spacecraft_mass(m.body)                             # Mass kg
+        area_tot = config.get_spacecraft_reference_area(m.body)
+
+        lambda_switch = (k_cf * 2 * mass * vel_ii_mag) / (area_tot * CD_slope * pi)
         lambda_switch - y[7]
     end
     function time_switch_func_affect!(integrator)
@@ -366,6 +500,8 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
             # USE CLOSED FORM SOLUTION TO DEFINE lambda_zero:
             T = m.planet.T  # fixed temperature
             t_cf, h_cf, γ_cf, v_cf =closed_form(args, m, OE, T, true, m.aerodynamics.α)  # define closed-form solution
+
+            # println([v_cf[end], γ_cf[end], h_cf[end]])
 
             lambdav = v_cf[end]
             lambdag = 0.0
@@ -468,21 +604,26 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
 
             temp = config.cnf.t_time_switch_func
 
+            # println("Time switch function evaluations: ", temp)
+
             ## Time switch definition
             time_switch = [0.0, 0.0]
 
             # println("length of temp: ", temp)
 
-            if length(temp) == 2
+            if length(temp) >= 2
                 # time_switch = temp
-                time_switch = temp
-                # time_switch[2] = temp[end]
+
+                time_switch[1] = temp[1]
+                time_switch[2] = temp[2]
             elseif length(temp) == 1
                 time_switch[1] = temp[1]
                 time_switch[2] = sol.t[end]
             end
 
             config.cnf.t_time_switch_func = []
+
+            # println("Time switch: ", time_switch)
 
         else  # second time evaluation
             temp_0 = 0
@@ -493,7 +634,9 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
             initial_state = nothing
 
             # Initial Condition Initialization
-            in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], 0.0, 0.0, 0.0, config.cnf.heat_load_past]
+            in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], 0.0, 0.0, 0.0, config.cnf.heat_load_past[2]]
+
+            # println("in_cond: ", in_cond)
 
             step = 1
 

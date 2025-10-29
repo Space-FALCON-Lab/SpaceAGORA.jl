@@ -1,13 +1,8 @@
 include("../simulation/Run.jl")
-<<<<<<< HEAD
 # include("config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 # include("SpacecraftModel.jl")
-=======
-include("../config.jl")
-include("../utils/maneuver_plans.jl")
->>>>>>> targeting_attiude_merge
 
 import .config
 import .ref_sys
@@ -70,11 +65,7 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-<<<<<<< HEAD
             :directory_results => "/workspaces/ABTS.jl/output/odyssey_quat_test",                # Directory where to save the results
-=======
-            :directory_results => "/workspaces/ABTS.jl/output/odyssey",                # Directory where to save the results
->>>>>>> targeting_attiude_merge
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
@@ -85,12 +76,7 @@ args = Dict(# Misc Simulation
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
             :normalize => 1,                                       # Normalize the integration True=1, False=0
-<<<<<<< HEAD
             :closed_form => 0,                                     # Closed form solution True=1, False=0
-=======
-            :closed_form => 0,                                    # Closed form solution for the aerobraking maneuver True=1, False=0
-
->>>>>>> targeting_attiude_merge
             # Type of Mission
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
@@ -156,14 +142,10 @@ args = Dict(# Misc Simulation
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
-<<<<<<< HEAD
             :solar_panel_control_rate => 1.0/3.0,                        # Rate at which the solar panel controller is called
-
-=======
             :struct_ctrl => 0,                                    # Structural thermal control, True=1, False=0 
             :targeting_ctrl => 0,                                   # Targeting control True=1, False=0
             
->>>>>>> targeting_attiude_merge
             # Initial Conditions
             :initial_condition_type => 2,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1, Initial Condition a, e = 2
             :ra_initial_a => 28559.615e3,                # Initial Apoapsis Radius for for-loop in m
@@ -243,7 +225,6 @@ args = Dict(# Misc Simulation
             :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
-<<<<<<< HEAD
 
             :a_tol => 1e-5,                                         # Absolute tolerance for integration
             :r_tol => 1e-3,                                         # Relative tolerance for integration
@@ -257,9 +238,6 @@ args = Dict(# Misc Simulation
             :dt_max_orbit => 30.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
             :dt_max_drag => 1.0,                                    # Maximum time step for drag passage
             :Odyssey_sim => 0                                      # Simulate Odyssey Mission
-=======
-            :Odyssey_sim => 1                                      # Simulate Odyssey Mission
->>>>>>> targeting_attiude_merge
             )
 
 # # Calculating time of simulation

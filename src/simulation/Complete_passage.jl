@@ -28,7 +28,6 @@ using SPICE
 using PythonCall
 using StaticArrays
 using Quaternions
-using OrderedCollections
 using Arrow
 sys = pyimport("sys")
 
@@ -337,8 +336,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
         config.cnf.heat_load_past .= heat_load
 
+        # println([config.cnf.drag_state, length(config.cnf.initial_position_closed_form)])
+
         # Heat rate and Control
-        if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
+        if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && config.cnf.initial_position_closed_form[1] != 0
             # evaluates the closed form solution the first time at EI km
             if abs(pos_ii_mag - m.planet.Rp_e - args[:EI] * 1.0e3) <= 1.0e-2 && (args[:control_mode] == 2 || args[:control_mode] == 3) && config.cnf.time_switch_1 == 0
                 if ip.cm == 3
@@ -356,6 +357,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 if Bool(args[:control_in_loop])
                     config.cnf.state_flesh1 = [[T_p, ρ, S]]
                     if ip.cm == 3
+                        # println("comp pass: ", OE)
+                        # println("comp pass init_cf: ", config.cnf.initial_position_closed_form)
                         config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
                     elseif ip.cm == 2
                         config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
@@ -368,27 +371,27 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     if config.controller.count_controller != config.controller.count_prev_controller && config.controller.stored_state == 0 && t0 != config.controller.prev_time
                         push!(config.cnf.state_flesh1, [T_p, ρ, S])
 
-                    #     if config.controller.count_controller == 2
-                    #         state = config.cnf.state_flesh1[end]
-                    #     else
-                    #         state = config.cnf.state_flesh1[end-1]
-                    #         deleteat!(config.cnf.state_flesh1, 1)
-                    #     end
+                        if config.controller.count_controller == 2
+                            state = config.cnf.state_flesh1[end]
+                        else
+                            state = config.cnf.state_flesh1[end-1]
+                            deleteat!(config.cnf.state_flesh1, 1)
+                        end
 
-                    #     config.controller.stored_state = 1
-                    #     config.controller.prev_time = time_0
+                        config.controller.stored_state = 1
+                        config.controller.prev_time = time_0
 
-                    #     if ip.cm == 3
-                    #         config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
-                    #     elseif ip.cm == 2
-                    #         config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
-                    #     elseif ip.cm == 1
-                    #         config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
-                    #     elseif ip.cm == 0
-                    #         config.cnf.α = no_control(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
-                    #     end
-                    # end
-                # end
+                        if ip.cm == 3
+                            config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
+                        elseif ip.cm == 2
+                            config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
+                        elseif ip.cm == 1
+                            config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+                        elseif ip.cm == 0
+                            config.cnf.α = no_control(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+                        end
+                    end
+                end
             end
 
             # Heat Rate 
@@ -430,7 +433,13 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         if args[:struct_ctrl] == 1
             α_struct = control_struct_load(ip, m, args, S, T_p, q, MonteCarlo)
 
+            println("Structural limit angle of attack: ", rad2deg(α_struct))
+            println("Angle of attack before structural limit: ", rad2deg(config.cnf.α))
+
             config.cnf.α = min(config.cnf.α, α_struct) # limit the angle of attack to the structural load control
+
+            println("Final angle of attack after structural limit: ", rad2deg(config.cnf.α))
+            println(" ")
         end
 
         if config.cnf.targeting == 1
@@ -445,14 +454,29 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
 
         α = config.cnf.α
+        
+        # Assumes that the spacecraft is the standard 2 panels one bus
+        root = m.body.roots[1]
+        # bodies, root_index = config.traverse_bodies(m.body, root)
+        for body in bodies
+            if !body.root
+                axis = SVector{3, Float64}(abs.(body.r))
+                # Rotate the solar panel to the angle α
+                config.rotate_link(body, axis, - α + m.body.roots[root_index].α)
+            end
+        end
 
         # Heat Rate 
         if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state
             
-            if ip.tm == 1
-                heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
-            elseif ip.tm == 2
-                heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
+            # Heat Rate 
+            heat_rate = MVector{length(bodies), Float64}(zeros(length(bodies))) # Heat rate vector for each body
+            for (i, b) in enumerate(bodies)
+                if ip.tm == 1
+                    heat_rate[i] = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, b.α)
+                elseif ip.tm == 2
+                    heat_rate[i] = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, b.α)
+                end
             end
             
             cp = m.planet.γ / (m.planet.γ - 1) * m.planet.R
@@ -460,11 +484,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             T_r = 0.0
         else
             T_r = 0.0
-            heat_rate = 0.0
+            heat_rate = MVector{length(bodies), Float64}(zeros(length(bodies))) # Heat rate vector for each body
         end
 
-        config.cnf.heat_rate_prev = heat_rate # save current heat rate
-               
+        config.cnf.heat_rate_prev .= heat_rate # save current heat rate
         
         # Update the force on each link on the spacecraft
         gravity_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize gravity vector
@@ -941,32 +964,34 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
     thrust_factor_integrator = nothing#m.body.n_thrusters != 0 ? DiscreteCallback(every_step_condition, thrust_factor_integrator!) : nothing
 
-    function run_solar_panel_controller!(integrator)
-        """
-        Event function to run the solar panel controller periodically.
-        """
-        index_phase_aerobraking = integrator.p[2]  # Index of the aerobraking phase
-        if index_phase_aerobraking == 2
-            m = integrator.p[1]
-            t0 = integrator.t * config.cnf.TU  # Current time in seconds
-            args = integrator.p[8]  # Arguments passed to the integrator
-            ρ, T_p, S = integrator.p[18]  # Atmospheric density, temperature, and solar panel area
-            config.cnf.state_flesh1 = [[T_p, ρ, S]]
-            if ip.cm == 3
-                config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
-            elseif ip.cm == 2
-                println("Control solar panels with heat load")
-                config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
-                # println("control_solarpanels_heatload: ", config.cnf.α)
-            elseif ip.cm == 1
-                config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
-            elseif ip.cm == 0
-                config.cnf.α = no_control(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
-            end
-        end
-    end
+    # function run_solar_panel_controller!(integrator)
+    #     """
+    #     Event function to run the solar panel controller periodically.
+    #     """
 
-    solar_panel_controller = ip.cm != 0 ? PeriodicCallback(run_solar_panel_controller!, args[:solar_panel_control_rate] / config.cnf.TU) : nothing
+    #     index_phase_aerobraking = integrator.p[2]  # Index of the aerobraking phase
+        
+    #     if index_phase_aerobraking == 2 && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
+    #         m = integrator.p[1]
+    #         t0 = integrator.t * config.cnf.TU  # Current time in seconds
+    #         args = integrator.p[8]  # Arguments passed to the integrator
+    #         ρ, T_p, S = integrator.p[18]  # Atmospheric density, temperature, and solar panel area
+    #         config.cnf.state_flesh1 = [[T_p, ρ, S]]
+    #         if ip.cm == 3
+    #             config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
+    #         elseif ip.cm == 2
+    #             println("Control solar panels with heat load")
+    #             config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
+    #             # println("control_solarpanels_heatload: ", config.cnf.α)
+    #         elseif ip.cm == 1
+    #             config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+    #         elseif ip.cm == 0
+    #             config.cnf.α = no_control(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+    #         end
+    #     end
+    # end
+
+    # solar_panel_controller = ip.cm != 0 ? PeriodicCallback(run_solar_panel_controller!, args[:solar_panel_control_rate] / config.cnf.TU) : nothing
 
     # attitude_controller_orbit = PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU)
     function quaternion_update_affect!(integrator)
@@ -1012,7 +1037,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         Event function to detect the entry interface downcrossing.
         """
         m = integrator.p[1]
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - (args[:EI])*1.0e3   #  downcrossing
+        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:EI]*1e3   #  downcrossing
     end
     function eventfirststep_affect!(integrator)
         """
@@ -1176,8 +1201,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             thr = 1e-3
         end
 
-        if abs(cond) <= thr && length(config.cnf.initial_position_closed_form) == 0
-            println(h0)
+        # println([h0, args[:EI]*1e3])
+        # println("In drag passage nt condition check: thr = $thr , cond = $cond and ", length(config.cnf.initial_position_closed_form))
+
+        if h0 <= args[:EI]*1e3 && config.cnf.initial_position_closed_form[1] == 0
+            # println(h0)
             config.controller.guidance_t_eval = collect(t*config.cnf.TU:1/args[:flash1_rate]:(t*config.cnf.TU)+1500)
 
             # State definition for control 2, 3 State used by closed-form solution
@@ -1405,7 +1433,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     config.cnf.timer_revaluation = 0
     config.cnf.closed_form_solution_off = 1         # used in closed form solution online to run the solution only once
-    config.cnf.initial_position_closed_form = []
+    config.cnf.initial_position_closed_form = SVector{7, Float64}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)  # used to store the state at IEI for closed-form solution
     config.cnf.heat_rate_list = []               
     config.cnf.α_list = []
 
@@ -1496,23 +1524,28 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             t_event_0 = "eventfirststep"
             t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 2 && Bool(args[:drag_passage]) && args[:type_of_mission] != "Entry"
-            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator, gravity_gradient)
+            # events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator, gravity_gradient)
+            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, time_check, thrust_factor_integrator, gravity_gradient)
             t_event_0 = "out_drag_passage"
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 2 && Bool(args[:drag_passage]) && args[:type_of_mission] == "Entry"
-            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, final_entry_altitude_reached, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator, gravity_gradient)
+            # events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, final_entry_altitude_reached, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator, gravity_gradient)
+            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, final_entry_altitude_reached, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, time_check, thrust_factor_integrator, gravity_gradient)
             t_event_0 = "final_altitude_reached"
             t_event_1 = "out_drag_passage"
         elseif aerobraking_phase == 2 && index_steps_EOM == 1 && args[:body_shape] == "Blunted Cone"
-            events = CallbackSet(out_drag_passage, apoapsispoint, periapsispoint, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator, gravity_gradient)
+            # events = CallbackSet(out_drag_passage, apoapsispoint, periapsispoint, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator, gravity_gradient)
+            events = CallbackSet(out_drag_passage, apoapsispoint, periapsispoint, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, time_check, thrust_factor_integrator, gravity_gradient)
             t_event_0 = "out_drag_passage"
             t_event_1 = "apoapsispoint"
         elseif aerobraking_phase == 2 && index_steps_EOM == 1 && args[:drag_passage] == false
-            events = CallbackSet(apoapsispoint, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator, gravity_gradient)
+            # events = CallbackSet(apoapsispoint, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator, gravity_gradient)
+            events = CallbackSet(apoapsispoint, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, time_check, thrust_factor_integrator, gravity_gradient)
             t_event_0 = "apoapsispoint"
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 2
-            events = CallbackSet(eventsecondstep, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator, gravity_gradient)
+            # events = CallbackSet(eventsecondstep, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator, gravity_gradient)
+            events = CallbackSet(eventsecondstep, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, time_check, thrust_factor_integrator, gravity_gradient)
             t_event_0 = "eventsecondstep"
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 3 && args[:keplerian] && lowercase(args[:type_of_mission]) == "time" # In cases where the mission type is time and the orbit is keplerian, just integrate for some predetermined number of steps before saving to avoid the CYGNSS true anomaly issues
@@ -1681,7 +1714,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                 # Parameter Definition
                 if config.solution.simulation.solution_states != 0
                     println("ip: ", ip.cm)
-                param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage, Bool(args[:orientation_sim]), MVector{3, Float64}(0.0, 0.0, 0.0), MVector{3, Float64}(0.0, 0.0, 0.0), args, ip, MVector{3, Float64}(0.0, 0.0, 0.0), zeros(config.solution.simulation.solution_states))
+                    param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage, Bool(args[:orientation_sim]), MVector{3, Float64}(0.0, 0.0, 0.0), MVector{3, Float64}(0.0, 0.0, 0.0), args, ip, MVector{3, Float64}(0.0, 0.0, 0.0), zeros(config.solution.simulation.solution_states))
                 else
                     param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage, Bool(args[:orientation_sim]), MVector{3, Float64}(0.0, 0.0, 0.0), MVector{3, Float64}(0.0, 0.0, 0.0), args, ip, MVector{3, Float64}(0.0, 0.0, 0.0))
                 end
@@ -1769,7 +1802,13 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
                         ip.cm = 0
 
-                        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
+                        # Parameter Definition
+                        if config.solution.simulation.solution_states != 0
+                            println("ip: ", ip.cm)
+                            param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage, Bool(args[:orientation_sim]), MVector{3, Float64}(0.0, 0.0, 0.0), MVector{3, Float64}(0.0, 0.0, 0.0), args, ip, MVector{3, Float64}(0.0, 0.0, 0.0), zeros(config.solution.simulation.solution_states))
+                        else
+                            param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, numberofpassage, Bool(args[:orientation_sim]), MVector{3, Float64}(0.0, 0.0, 0.0), MVector{3, Float64}(0.0, 0.0, 0.0), args, ip, MVector{3, Float64}(0.0, 0.0, 0.0))
+                        end
                     end
                 end
 

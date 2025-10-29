@@ -1,11 +1,10 @@
 include("../simulation/Run.jl")
-# include("../config.jl")
+include("../config.jl")
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 
-import .config
-import .ref_sys
-using BenchmarkTools
+import .config 
+import .ref_sys                                                                                            
 
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
@@ -61,7 +60,7 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => true,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/SpaceAGORA.jl/output/odyssey_0inc",                # Directory where to save the results
+            :directory_results => "/workspaces/SpaceAGORA.jl/output/mars_test",                # Directory where to save the results
             :directory_Gram => "/workspaces/SpaceAGORA.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/SpaceAGORA.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/SpaceAGORA.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
@@ -71,12 +70,12 @@ args = Dict(# Misc Simulation
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 1,                                       # Normalize the integration True=1, False=0
-            :closed_form => 0,                                    # Closed form solution True=1, False=0
+            :normalize => 0,                                       # Normalize the integration True=1, False=0
+            :closed_form => 1,                                    # Closed form solution True=1, False=0
             :save_csv => false,
 
             # Type of Mission
-            :type_of_mission => "Time",                     # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign', 'Time']
+            :type_of_mission => "Aerobraking Campaign",                     # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign', 'Time']
             :keplerian => false,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 10,                                 # Number of aerobraking passage
             :mission_time => 600.0,                                  # Mission time in seconds, used only for Time mission type
@@ -123,23 +122,23 @@ args = Dict(# Misc Simulation
             :α => 90.0,                                             # Max angle of attack of solar panels
 
             # Fill for Spacecraft body shape only
-            # :length_sat => 2.2,                                     # Length of the satellite in m
-            # :height_sat => 1.7,                                     # Height of the satellite in m
-            # :width_sat => 2.6,                                      # Width of the satellite in m
-            # :length_sp => 3.76,                                     # Length of the solar panels in m
-            # :height_sp => 1.93,                                     # Height of the solar panels in m
+            # :length_sat => 2.2,                                   # Length of the satellite in m
+            # :height_sat => 1.7,                                   # Height of the satellite in m
+            # :width_sat => 2.6,                                    # Width of the satellite in m
+            # :length_sp => 3.76,                                   # Length of the solar panels in m
+            # :height_sp => 1.93,                                   # Height of the solar panels in m
 
             # # Fill for Blunted Cone body shape only
-            # :cone_angle => 70.0,                                    # Cone angle of the blunted cone in deg
-            # :base_radius => 2.65/2,                                 # Base radius of the blunted cone in m
-            # :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
+            # :cone_angle => 70.0,                                  # Cone angle of the blunted cone in deg
+            # :base_radius => 2.65/2,                               # Base radius of the blunted cone in m
+            # :nose_radius => 0.6638,                               # Nose radius of the blunted cone in m
             :spacecraft_model => spacecraft,
             
             # Engine
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
-            :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
+            :control_mode => 3,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
             :security_mode => 1,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
@@ -150,32 +149,32 @@ args = Dict(# Misc Simulation
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 20000e3, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_a => 9800e3, # 28523.95e3,                  # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 85e3,                                 # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_a => 93e3,                                  # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 159000.0,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 4350.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :v_step => 10000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :v_step => 10000.0,                                     # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
 
-            :orientation_type => 0,                                   # Initial Condition orientation = 0, Initial Condition orientation and velocity = 1
-            :γ_initial_a => 7.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :γ_initial_b => 10.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :γ_step => 10.5,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :inclination => 93.6,                                # Inclination Orbit, deg
-            :ω => 0,                                              # AOP, deg
-            :Ω => 0,                                              # RAAN, deg
+            :orientation_type => 0,                                 # Initial Condition orientation = 0, Initial Condition orientation and velocity = 1
+            :γ_initial_a => 6.25,                                   # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :γ_initial_b => 10.0,                                   # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :γ_step => 10.5,                                        # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :inclination => 93.6,                                   # Inclination Orbit, deg
+            :ω => 0,                                                # AOP, deg
+            :Ω => 0,                                                # RAAN, deg
             :ν => 180.0,
             :EI => 160.0,                                           # Entry Interface, km
             :AE => 160.0,                                           # Atmospheric Exit, km
             :year => 2001,                                          # Mission year
-            :month => 11,                                            # Mission month
-            :day => 6,                                             # Mission day
-            :hours => 8,                                           # Mission hour
+            :month => 11,                                           # Mission month
+            :day => 6,                                              # Mission day
+            :hours => 8,                                            # Mission hour
             :minutes => 30,                                         # Mission minute
-            :secs => 0,                                          # Mission second
+            :secs => 0,                                             # Mission second
             
             # Final Conditions
             :final_apoapsis => 4905.974818462152e3, # 5088116.837416616, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
@@ -186,7 +185,7 @@ args = Dict(# Misc Simulation
             :phi => 180.0,                                          # Thrust Angle, deg
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
-            :ra_fin_orbit => 25000e3,                               # Target final apoapsis for the orbit, m
+            :ra_fin_orbit => 9700e3,                               # Target final apoapsis for the orbit, m
             :maneuver_plan => Odyssey_firing_plan_true_beginning,   # MAneuver plan function
             
             # Monte Carlo Simulations

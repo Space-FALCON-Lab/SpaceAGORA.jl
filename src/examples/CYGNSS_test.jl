@@ -1,5 +1,5 @@
 include("../simulation/Run.jl")
-include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
+# include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 include("../utils/quaternion_utils.jl")
@@ -27,7 +27,7 @@ spacecraft = config.SpacecraftModel()
 # w = sqrt(6.0)
 # d = sqrt(66.0/7.0)
 
-rw_torques_data = DataFrame(Arrow.Table("/workspaces/ABTS.jl/cygnss_rw_momentum_derivatives.feather"))
+rw_torques_data = DataFrame(Arrow.Table("/workspaces/SpaceAGORA.jl/cygnss_rw_momentum_derivatives.feather"))
 # println(rw_torques_data[])
 # time_itp = LinearInterpolation(rw_torques_data.time_offset)
 println("RW torque data loaded from file, time range: $(minimum(rw_torques_data[!, 1])) to $(maximum(rw_torques_data[!, 1])) seconds.")
@@ -37,7 +37,7 @@ rw_3_itp = cubic_spline_interpolation(range(0.0, rw_torques_data[end, 1], length
 rw_torque_itp = (t) -> SVector{3, Float64}([rw_1_itp(t), rw_2_itp(t), rw_3_itp(t)])
 println(rw_torque_itp(2))
 
-rw_torques_cloth = DataFrame(Arrow.Table("/workspaces/ABTS.jl/slew_maneuver_torques_0.1s_eci_unfiltered.feather"))
+rw_torques_cloth = DataFrame(Arrow.Table("/workspaces/SpaceAGORA.jl/slew_maneuver_torques_0.1s_eci_unfiltered.feather"))
 cloth_times = rw_torques_cloth[1, 1]:rw_torques_cloth[2, 1] - rw_torques_cloth[1, 1]:rw_torques_cloth[end, 1]
 println(length(cloth_times))
 println(length(rw_torques_cloth[!, 5]))
@@ -193,10 +193,10 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => false,                                                                                  # Pass results as output True=1, False=0
             :print_res => true,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/cygnss_comparison_slew_eci",                # Directory where to save the results
-            :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
-            :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
-            :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
+            :directory_results => "/workspaces/SpaceAGORA.jl/output/cygnss_comparison_slew_eci",                # Directory where to save the results
+            :directory_Gram => "/workspaces/SpaceAGORA.jl/GRAMpy",                                                    # Directory where Gram is
+            :directory_Gram_data => "/workspaces/SpaceAGORA.jl/GRAM_Data",                                            # Directory where Gram data is
+            :directory_Spice => "/workspaces/SpaceAGORA.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
             :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
@@ -221,7 +221,7 @@ args = Dict(# Misc Simulation
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
             :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
-            :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
+            :topography_harmonics_file => "/workspaces/SpaceAGORA.jl/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 90,                                      # Maximum order of the topography harmonics (Defined in the file)
             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
@@ -234,7 +234,7 @@ args = Dict(# Misc Simulation
             :eclipse => false,                                         # Whether to include eclipse conditions in SRP calculation
             :gravity_gradient => false,                                   # Gravity Gradient true/false
             :gravity_harmonics => 1,                                            # Gravity Spherical harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
+            :gravity_harmonics_file => "/workspaces/SpaceAGORA.jl/Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
             :magnetic_field => false,                                    # Magnetic field True=1, False=0
@@ -276,6 +276,8 @@ args = Dict(# Misc Simulation
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+            :struct_ctrl => 0,                                      # Structural Load Control True=1, False=0
+            :targeting_ctrl => 0,                                   # Targeting Control True=1, False=0
             
             # Initial Conditions
             :initial_condition_type => 2,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1

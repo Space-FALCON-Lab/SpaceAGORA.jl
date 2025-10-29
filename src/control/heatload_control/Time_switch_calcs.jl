@@ -12,17 +12,20 @@ function switch_calculation_with_integration(ip, m, position, args, t, heat_rate
         global time_switch, k
 
         k = k_cf/100
+
+        # println("k: ", k)
+
         y, time_switch = asim_ctrl(ip, m, t, position, args, k, heat_rate_control, true, gram_atmosphere)
 
-        # println("time_switch 2: ", time_switch)
-
         Q = y[end,end]
+
+        # println(Q - m.aerodynamics.heat_load_limit)
 
         return Q - m.aerodynamics.heat_load_limit
     end
 
-    delta_Q_max = func(5)
-    delta_Q_min = func(0)
+    delta_Q_max = func(10)
+    delta_Q_min = func(0.1)
 
     # println("time_switch 3: ", time_switch)
 
@@ -41,6 +44,7 @@ function switch_calculation_with_integration(ip, m, position, args, t, heat_rate
     end
 
     if delta_Q_max * delta_Q_min < 0
+        # println("Finding root between ", low_lim, " and ", high_lim)
         find_zero(k -> func(k), [low_lim, high_lim], Bisection(), rtol=1e-5)
         # println("time_switch 4: ", time_switch)
     elseif delta_Q_max < 0

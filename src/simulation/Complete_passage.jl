@@ -842,10 +842,10 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
         """
         # Check if the time is greater than the end time
         if lowercase(args[:type_of_mission]) == "time"
-            print("current time: ")
-            print(t*config.cnf().TU)
-            print("mission time")
-            print(args[:mission_time], "\n")
+            # print("current time: ")
+            # print(t*config.cnf().TU)
+            # print("mission time")
+            # print(args[:mission_time], "\n")
             return t*config.cnf().TU - args[:mission_time] >= 0
         else
             return false # Do not terminate if the mission type is not "time"
@@ -861,7 +861,7 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
 
     time_check = DiscreteCallback(time_condition, time_affect!)
 
-    function thread_sync_effect!(integrator)
+    function thread_sync_effect!(y,t,integrator)
         """
         Event function to sync threads at every step.
         """

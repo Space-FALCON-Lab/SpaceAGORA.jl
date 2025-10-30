@@ -781,7 +781,7 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
         next_index = 8 + length(bodies)
 
         #sync threads
-        thread_sync(args,current_time)
+        # thread_sync(args,current_time)
 
 
         if orientation_sim
@@ -831,13 +831,7 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
 
     function every_step_condition(y,t,integrator)
         # print("callback")
-        try
-            # print(integrator.u[1:3], "\n")
-            args[:space_objects_dict][sim_id].current_pos = integrator.u[1:3] # Update current position (first 3 elements are position)
-            args[:space_objects_dict][sim_id].current_time = t * config.cnf().TU # Update current time
-        catch e
-            @warn "Error in every_step_condition callback" error=e
-        end
+
         
         return true
     end
@@ -848,6 +842,10 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
         """
         # Check if the time is greater than the end time
         if lowercase(args[:type_of_mission]) == "time"
+            print("current time: ")
+            print(t*config.cnf().TU)
+            print("mission time")
+            print(args[:mission_time], "\n")
             return t*config.cnf().TU - args[:mission_time] >= 0
         else
             return false # Do not terminate if the mission type is not "time"
@@ -862,6 +860,23 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
     end
 
     time_check = DiscreteCallback(time_condition, time_affect!)
+
+    function thread_sync_effect!(integrator)
+        """
+        Event function to sync threads at every step.
+        """
+        try
+            # print(integrator.u[1:3], "\n")
+            args[:space_objects_dict][sim_id].current_pos .= SVector{3, Float64}(integrator.u[1:3]) # Update current position (first 3 elements are position)
+            args[:space_objects_dict][sim_id].current_time = t * config.cnf().TU # Update current time
+        catch e
+            @warn "Error in every_step_condition callback" error=e
+        end
+        
+        thread_sync(args, integrator.t * config.cnf().TU)
+    end
+
+    thread_sync_callback = DiscreteCallback(every_step_condition, thread_sync_effect!)
 
     function reaction_wheels_affect!(integrator)
         """
@@ -1497,39 +1512,39 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
 
         # Definition of eventsecondstep
         if aerobraking_phase == 0
-            events = CallbackSet(stop_firing, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller_orbit, time_check, thrust_factor_integrator)
+            events = CallbackSet(stop_firing, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller_orbit, time_check, thrust_factor_integrator, thread_sync_callback)
             t_event_0 = "stop_firing"
             t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 1 && args[:keplerian] == true
-            events = CallbackSet(eventfirststep_periapsis, apoapsisgreaterperiapsis, impact, periapsispoint, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller_orbit, time_check, thrust_factor_integrator)
+            events = CallbackSet(eventfirststep_periapsis, apoapsisgreaterperiapsis, impact, periapsispoint, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller_orbit, time_check, thrust_factor_integrator, thread_sync_callback)
             t_event_0 = "eventfirststep_periapsis"
             t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 1
-            events = CallbackSet(eventfirststep, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller_orbit, time_check, thrust_factor_integrator)
+            events = CallbackSet(eventfirststep, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller_orbit, time_check, thrust_factor_integrator, thread_sync_callback)
             t_event_0 = "eventfirststep"
             t_event_1 = "apoapsisgreaterperiapsis"
         elseif aerobraking_phase == 2 && Bool(args[:drag_passage]) && args[:type_of_mission] != "Entry"
-            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator)
+            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator, thread_sync_callback)
             t_event_0 = "out_drag_passage"
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 2 && Bool(args[:drag_passage]) && args[:type_of_mission] == "Entry"
-            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, final_entry_altitude_reached, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator)
+            events = CallbackSet(out_drag_passage, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, final_entry_altitude_reached, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator, thread_sync_callback)
             t_event_0 = "final_altitude_reached"
             t_event_1 = "out_drag_passage"
         elseif aerobraking_phase == 2 && index_steps_EOM == 1 && args[:body_shape] == "Blunted Cone"
-            events = CallbackSet(out_drag_passage, apoapsispoint, periapsispoint, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator)
+            events = CallbackSet(out_drag_passage, apoapsispoint, periapsispoint, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator, thread_sync_callback)
             t_event_0 = "out_drag_passage"
             t_event_1 = "apoapsispoint"
         elseif aerobraking_phase == 2 && index_steps_EOM == 1 && args[:drag_passage] == false
-            events = CallbackSet(apoapsispoint, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator)
+            events = CallbackSet(apoapsispoint, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator, thread_sync_callback)
             t_event_0 = "apoapsispoint"
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 2
-            events = CallbackSet(eventsecondstep, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator)
+            events = CallbackSet(eventsecondstep, periapsispoint, in_drag_passage_nt, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, quaternion_update, attitude_controller, solar_panel_controller, time_check, thrust_factor_integrator, thread_sync_callback)
             t_event_0 = "eventsecondstep"
             t_event_1 = "periapsispoint"
         elseif aerobraking_phase == 3
-            events = CallbackSet(apoapsispoint, periapsispoint, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, attitude_controller_orbit, time_check, thrust_factor_integrator)
+            events = CallbackSet(apoapsispoint, periapsispoint, apoapsisgreaterperiapsis, impact, reaction_wheel_update, quaternion_normalize, attitude_controller_orbit, time_check, thrust_factor_integrator, thread_sync_callback)
             t_event_0 = "apoapsispoint"
             t_event_1 = "periapsispoint"
         end
@@ -1585,17 +1600,17 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
 
         while config.cnf().continue_simulation
             # Thread check-in
-            try
-                println("Thread $(Threads.threadid()) checking in at t0=$(time_0) s")
-            catch e
-                @warn "Thread check-in failed" error=e
-            end
-            thread_sync(args,args[:space_objects_dict][1].current_time)
-            try
-                println("Thread $(Threads.threadid()) checking out at t0=$(time_0) s")
-            catch e
-                @warn "Thread check-out failed" error=e
-            end
+            # try
+            #     println("Thread $(Threads.threadid()) checking in at t0=$(time_0) s")
+            # catch e
+            #     @warn "Thread check-in failed" error=e
+            # end
+            # thread_sync(args,args[:space_objects_dict][1].current_time)
+            # try
+            #     println("Thread $(Threads.threadid()) checking out at t0=$(time_0) s")
+            # catch e
+            #     @warn "Thread check-out failed" error=e
+            # end
             index_phase_aerobraking = aerobraking_phase
             # if control mode =! 0, redefine sim setting and creates two more phases until reaching EI and out of the AE phase 2: between 120 km alt
             if aerobraking_phase == 2 && (args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf().drag_state == true && config.cnf().sensible_loads == true && config.cnf().ascending_phase == false)
@@ -1998,6 +2013,7 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
             final_conditions_notmet = false
         end
     end
+
 
     config.cnf().save_index_heat = length(config.solution().orientation.time)
     config.cnf().time_OP = length(config.solution().orientation.time)

@@ -3,7 +3,7 @@ include("../utils/MonteCarlo_set.jl")
 include("../utils/Initial_cond_calc.jl")
 include("Set_and_run.jl")
 include("../utils/Mission_anim.jl")
-include("../utils/plot_data_multi.jl")
+include("../utils/Plot_data_multi.jl")
 
 using Dash
 using DashCoreComponents
@@ -200,8 +200,9 @@ function run_sc_vehicles(args)
             println("Apoapsis Radius: " * string(apoapsis_item/10^3) * " km, Periapsis Altitude: " * string(periapsis_item/10^3) * " km")  
         end
 
-        state[:Apoapsis], state[:Periapsis], state[:Inclination], state[:Ω], state[:ω], state[:Final_sma] = apoapsis_item, Float64(periapsis_item*1e-3), inclination, Ω, ω, final_apoapsis
-
+        state[:a], state[:e], state[:Inclination], state[:Ω], state[:ω], state[:ν] = sc_state[:a_initial_a], sc_state[:e_initial_a], inclination, Ω, ω, sc_state[:ν]
+        state[:Apoapsis] = apoapsis_item
+        state[:Periapsis] = periapsis_item
         sc_states[sc] = state
         spacecraft_dict[sc].sc_states = state
         # spacecraft_dict[sc].sc_state_history = [state]
@@ -222,7 +223,9 @@ function run_sc_vehicles(args)
             println("Apoapsis Radius: " * string(apoapsis_item/10^3) * " km, Periapsis Altitude: " * string(periapsis_item/10^3) * " km")  
         end
 
-        state[:Apoapsis], state[:Periapsis], state[:Inclination], state[:Ω], state[:ω], state[:Final_sma] = apoapsis_item, Float64(periapsis_item*1e-3), inclination, Ω, ω, final_apoapsis
+        state[:a], state[:e], state[:Inclination], state[:Ω], state[:ω], state[:ν] = target_state[:a_initial_a], target_state[:e_initial_a], inclination, Ω, ω, target_state[:ν]
+        state[:Apoapsis] = apoapsis_item
+        state[:Periapsis] = periapsis_item
 
         target_states[target] = state
         target_objs_dict[target].sc_states = state
@@ -234,17 +237,18 @@ function run_sc_vehicles(args)
     end
 
 
-
-    #state histroy storage
+    #HOLY ALLOCATION BATMAN!
+    # state histroy storage
     for (obj_id, obj) in space_objects_dict
         # Initialize current_pos with the initial state
-        initial_state = [obj.sc_states[:Apoapsis], obj.sc_states[:Periapsis], 
+        initial_state = [obj.sc_states[:a], obj.sc_states[:e], 
                         obj.sc_states[:Inclination], obj.sc_states[:Ω], 
-                        obj.sc_states[:ω], 0.0, 0.0] # Add mass and other initial values as needed
-        obj.current_pos = initial_state
+                        obj.sc_states[:ω],obj.sc_states[:ν]]
+        obj.current_pos = orbitalelemtorv(initial_state,planet)[1]
+        print(obj.current_pos, "\n")
         
         # Initialize sc_state_history as empty vector
-        obj.sc_state_history = Vector{Vector{Float64}}()
+        # obj.sc_state_history = Vector{Vector{Float64}}()
     end
 
     # Create thread-safe dictionary access

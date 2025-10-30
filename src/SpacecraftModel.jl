@@ -194,8 +194,8 @@ mutable struct SpacecraftModel
 
     sc_state_history::Vector{Any} # Store the history of spacecraft states in a single large array
     spice_path:: String # Path to the SPICE kernel file for this spacecraft
-    
-    current_pos:: Vector{Float64}
+
+    current_pos:: MVector{3, Float64}
     current_time:: Float64 #latest timestamp of spacecraft
 
     access_log:: Vector{Tuple{Float64, Float64, Int64}} # Log of access times to other space objects

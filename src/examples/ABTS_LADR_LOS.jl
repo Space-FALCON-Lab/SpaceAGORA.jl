@@ -39,7 +39,7 @@ main_bus = config.Link(root=true,
 
 L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.6/2 - 3.89/4, 0.0), 
                         # q=SVector{4, Float64}([0, 0.4617, 0, 0.8870]),
-                        q=SVector{4, Float64}([0, 0, 0, 1]),
+                        q=SVector{4, Float64}([0, 0, 0, 1]), 
                         ṙ=SVector{3, Float64}([0,0,0]), 
                         dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
                         ref_area=3.89*1.7/2,
@@ -106,8 +106,8 @@ args = Dict(# Misc Simulation
             
             #swarm simulation configuration
             :swarm_config => 1,                                      # Swarm configuration: 0 = no swarm, 1 = yes swarm
-            :n_spacecraft => 15,                                       # Number of spacecraft to simulate
-            :n_target_obj => 15,                                       # Number of target objects to simulate
+            :n_spacecraft => 1,                                       # Number of spacecraft to simulate
+            :n_target_obj => 1,                                       # Number of target objects to simulate
 
             # Physical Model
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -126,7 +126,7 @@ args = Dict(# Misc Simulation
             # Perturbations
             :n_bodies => ["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :srp => 0,                                             # Solar Radiation Pressure True=1, False=0
-            :gravity_harmonics => 1,                                            # Gravity Spherical harmonics True=1, False=0
+            :gravity_harmonics => 1,            # Add mass and other initial values as needed                                # Gravity Spherical harmonics True=1, False=0
             :gravity_harmonics_file => "/workspaces/SpaceAGORA.jl/Gravity_harmonics_data/Mars50c.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
@@ -149,7 +149,7 @@ args = Dict(# Misc Simulation
 
             # # Fill for Spacecraft body shape only
             # :length_sat => 2.2,                                     # Length of the satellite in m
-            # :height_sat => 1.7,                                     # Height of the satellite in m
+            # :height_sat => 1.7,                  # Add mass and other initial values as needed                   # Height of the satellite in m
             # :width_sat => 2.6,                                      # Width of the satellite in m
             # :length_sp => 3.76,                                     # Length of the solar panels in m
             # :height_sp => 1.93,                                     # Height of the solar panels in m
@@ -167,7 +167,7 @@ args = Dict(# Misc Simulation
             :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
             :security_mode => 1,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
-            :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
+            :control_in_loop => 1,                 # Add mass and other initial values as needed                 # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             :solar_panel_control_rate => 1.0/3.0,                        # Rate at which the solar panel controller is called
 
@@ -195,7 +195,7 @@ args = Dict(# Misc Simulation
             :γ_step => 100,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
             :inclination => 93.522,                                   # Inclination Orbit, deg
             :ω => 109.7454,                                              # AOP, deg
-            :Ω => 28.1517,                                              # RAAN, deg
+            :Ω => 28.1517,                                       # RAAN, deg
             :ν => 320.0,                                              # True Anomaly, deg, set to negative value to start at apoapsis if type_of_mission is "Time"
             :EI => 250.0,                                           # Entry Interface, km
             :AE => 250.0,                                           # Atmospheric Exit, km
@@ -267,12 +267,12 @@ args = Dict(# Misc Simulation
         # Create a dictionary of spacecraft buses using the main_bus as a template
         spacecraft_buses = Dict{Int, typeof(config.SpacecraftModel())}()
 
-        for i in 1:args[:n_spacecraft]
+        for i in 1:args[:n_spacecraft]# Add mass and other initial values as needed
                 # bus = config.Link(root=true, 
                 #                                   r=main_bus.r, 
                 #                                   q=main_bus.q, 
                 #                                   ṙ=main_bus.ṙ, 
-                #                                   dims=main_bus.dims, 
+                #               target_state[                     dims=main_bus.dims, 
                 #                                   ref_area=main_bus.ref_area,
                 #                                   m=main_bus.m, 
                 #                                   gyro=main_bus.gyro,
@@ -387,16 +387,16 @@ args = Dict(# Misc Simulation
 
         println("Initialized $(length(spacecraft_buses)) spacecraft buses.")
 
-# @profview run_analysis(args)
-t = @elapsed begin          
-        # Run the simulation
-        sol = run_analysis(args)
-        # if Bool(args[:passresults])
-        #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-        # end
-end
+@profview run_analysis(args)
+# t = @elapsed begin          
+#         # Run the simulation
+#         sol = run_analysis(args)
+#         # if Bool(args[:passresults])
+#         #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+#         # end
+# end
 
-        println("COMPUTATIONAL TIME = " * string(t) * " s") 
+#         println("COMPUTATIONAL TIME = " * string(t) * " s") 
 
 # end
         # end

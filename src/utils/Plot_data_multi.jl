@@ -192,6 +192,10 @@ function access_graph(state,m,name,args,data_table)
         end
         #create blank time series access vector
         access_vector = zeros(length(data_table.time))
+        last_time = data_table.time[end]
+        first_time = data_table.time[1]
+        println(first_time)
+        println(last_time)
         #check every access to sum them all up for each time_step
         for access in sc_accesses
             # println("iterating through")

@@ -1,5 +1,5 @@
 include("../simulation/Run.jl")
-include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
+# include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 # include("SpacecraftModel.jl")
@@ -96,7 +96,7 @@ args = Dict(# Misc Simulation
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 1,                                 # Number of aerobraking passage
-            :mission_time => 6000.0, #60000.0,                                  # Mission time in seconds, used only for Time mission type
+            :mission_time => 600.0, #60000.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => false,                               # Orientation simulation True=1, False=0, if false, will only propagate position
             :rng => MersenneTwister(12345),                               # Random number generator for reproducibility
             :synchronized_threads => true,                           # Synchronized threads for multi spacecraft simulation
@@ -168,7 +168,7 @@ args = Dict(# Misc Simulation
             :security_mode => 1,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                 # Add mass and other initial values as needed                 # Control in loop, control called during integration of trajectory, full state knowledge
-            :flash2_through_integration => 0,  e                     # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+            :flash2_through_integration => 0,                 # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             :solar_panel_control_rate => 1.0/3.0,                        # Rate at which the solar panel controller is called
 
             # Initial Conditions
@@ -387,16 +387,16 @@ args = Dict(# Misc Simulation
 
         println("Initialized $(length(spacecraft_buses)) spacecraft buses.")
 
-@profview run_analysis(args)
-# t = @elapsed begin          
-#         # Run the simulation
-#         sol = run_analysis(args)
-#         # if Bool(args[:passresults])
-#         #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#         # end
-# end
+# @profview run_analysis(args)
+t = @elapsed begin          
+        # Run the simulation
+        sol = run_analysis(args)
+        # if Bool(args[:passresults])
+        #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+        # end
+end
 
-#         println("COMPUTATIONAL TIME = " * string(t) * " s") 
+        println("COMPUTATIONAL TIME = " * string(t) * " s") 
 
 # end
         # end

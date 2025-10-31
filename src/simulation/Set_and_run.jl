@@ -513,6 +513,8 @@ function aerobraking_campaign(args, state,sim_id)
         t_el = -1.0 # Indicate an error occurred
     end
     print("finished aerobraking")
+    # Determine last recorded simulation time (robust to several possible field names)
+
     for (sc_id, sc) in args[:space_objects_dict]
         if sc_id == sim_id
             for (key,access) in sc.access_storage

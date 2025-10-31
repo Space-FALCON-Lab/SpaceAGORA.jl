@@ -202,7 +202,7 @@ function run_sc_vehicles(args)
 
         state[:a], state[:e], state[:Inclination], state[:Ω], state[:ω], state[:ν] = sc_state[:a_initial_a], sc_state[:e_initial_a], inclination, Ω, ω, sc_state[:ν]
         state[:Apoapsis] = apoapsis_item
-        state[:Periapsis] = periapsis_item
+        state[:Periapsis] = Float64(periapsis_item*1e-3)
         sc_states[sc] = state
         spacecraft_dict[sc].sc_states = state
         # spacecraft_dict[sc].sc_state_history = [state]
@@ -225,7 +225,7 @@ function run_sc_vehicles(args)
 
         state[:a], state[:e], state[:Inclination], state[:Ω], state[:ω], state[:ν] = target_state[:a_initial_a], target_state[:e_initial_a], inclination, Ω, ω, target_state[:ν]
         state[:Apoapsis] = apoapsis_item
-        state[:Periapsis] = periapsis_item
+        state[:Periapsis] = Float64(periapsis_item*1e-3)
 
         target_states[target] = state
         target_objs_dict[target].sc_states = state

@@ -846,6 +846,9 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
             # print(t*config.cnf().TU)
             # print("mission time")
             # print(args[:mission_time], "\n")
+            if t*config.cnf().TU - args[:mission_time] >= 0
+                print("Mission time reached: ", t*config.cnf().TU, " seconds\n")
+            end
             return t*config.cnf().TU - args[:mission_time] >= 0
         else
             return false # Do not terminate if the mission type is not "time"
@@ -861,14 +864,14 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
 
     time_check = DiscreteCallback(time_condition, time_affect!)
 
-    function thread_sync_effect!(y,t,integrator)
+    function thread_sync_effect!(integrator)
         """
         Event function to sync threads at every step.
         """
         try
             # print(integrator.u[1:3], "\n")
             args[:space_objects_dict][sim_id].current_pos .= SVector{3, Float64}(integrator.u[1:3]) # Update current position (first 3 elements are position)
-            args[:space_objects_dict][sim_id].current_time = t * config.cnf().TU # Update current time
+            args[:space_objects_dict][sim_id].current_time = integrator.t * config.cnf().TU # Update current time
         catch e
             @warn "Error in every_step_condition callback" error=e
         end
@@ -1615,7 +1618,7 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
             # if control mode =! 0, redefine sim setting and creates two more phases until reaching EI and out of the AE phase 2: between 120 km alt
             if aerobraking_phase == 2 && (args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf().drag_state == true && config.cnf().sensible_loads == true && config.cnf().ascending_phase == false)
                 simulator = args[:integrator]
-                events = CallbackSet(out_drag_passage, heat_load_check_exit, periapsispoint, apoapsisgreaterperiapsis, impact)
+                events = CallbackSet(out_drag_passage, heat_load_check_exit, periapsispoint, apoapsisgreaterperiapsis, impact,time_check,thread_sync_callback)
                 t_event_0 = "out_drag_passage"
                 t_event_1 = "heat_load_check_exit"
 
@@ -1633,8 +1636,8 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
                         if step >= args[:flash1_rate]
                             step = 1/(2*args[:flash1_rate])
                         end
-                        
-                        events = CallbackSet(out_drag_passage, heat_load_check_exit, periapsispoint, guidance, apoapsisgreaterperiapsis, impact)
+
+                        events = CallbackSet(out_drag_passage, heat_load_check_exit, periapsispoint, guidance, apoapsisgreaterperiapsis, impact,time_check,thread_sync_callback)
                     end
                 end
 
@@ -1642,7 +1645,7 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
             
             #phase 1.75: between EI km alt and 120 kmconfig.controller().t
             elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf().drag_state == true && config.cnf().ascending_phase == false
-                events = CallbackSet(periapsispoint, out_drag_passage, heat_rate_check, apoapsisgreaterperiapsis, impact)
+                events = CallbackSet(periapsispoint, out_drag_passage, heat_rate_check, apoapsisgreaterperiapsis, impact,time_check,thread_sync_callback)
                 t_event_0 = "periapsispoint"
                 t_event_1 = "out_drag_passage"
                 simulator = "Julia"
@@ -1653,7 +1656,7 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
                 method = Tsit5() # KenCarp58(autodiff = false) # Tsit5()
             # phase 1.5: between 250 km alt and EI km
             elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf().drag_state == false && config.cnf().ascending_phase == false
-                events = CallbackSet(periapsispoint, in_drag_passage, apoapsisgreaterperiapsis, impact)
+                events = CallbackSet(periapsispoint, in_drag_passage, apoapsisgreaterperiapsis, impact,time_check,thread_sync_callback)
                 t_event_0 = "periapsispoint"
                 t_event_1 = "in_drag_passage"
                 simulator = "Julia"
@@ -1664,7 +1667,7 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
                 method = Tsit5()
             # phase 2.25: between 120 km alt and AE km
             elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf().drag_state == true && config.cnf().ascending_phase == true
-                events = CallbackSet(periapsispoint, out_drag_passage, apoapsisgreaterperiapsis, impact)
+                events = CallbackSet(periapsispoint, out_drag_passage, apoapsisgreaterperiapsis, impact, time_check,thread_sync_callback)
                 t_event_0 = "periapsispoint"
                 t_event_1 = "out_drag_passage"
                 simulator = "Julia"
@@ -1675,7 +1678,7 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
                 method = Tsit5()
             # phase 2.5: between AE km alt and 250 km
             elseif aerobraking_phase == 2 && args[:control_mode] != 0 && args[:control_in_loop] == 0 && config.cnf().ascending_phase == true
-                events = CallbackSet(eventsecondstep, periapsispoint, eventsecondstep, apoapsisgreaterperiapsis, impact)
+                events = CallbackSet(eventsecondstep, periapsispoint, eventsecondstep, apoapsisgreaterperiapsis, impact, time_check,thread_sync_callback)
                 t_event_0 = "eventsecondstep"
                 t_event_1 = "periapsispoint"
                 simulator = "Julia"
@@ -1918,10 +1921,10 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
         if lowercase(args[:type_of_mission]) == "time"
             println("Final time conditions not met, re-running simulation...")
             println("Current time: ", config.solution().orientation.time[end], " | Mission time: ", args[:mission_time])
-            events = CallbackSet(apoapsispoint, time_check)
+            events = CallbackSet(apoapsispoint, time_check, thread_sync_callback)
         else
             println("Final conditions not met, re-running simulation for apoapsis point...")
-            events = CallbackSet(apoapsispoint)
+            events = CallbackSet(apoapsispoint,time_check,thread_sync_callback)
         end
     else
         final_conditions_notmet = false
@@ -2008,7 +2011,7 @@ function asim(ip, m, initial_state, numberofpassage, args,sim_id, gram_atmospher
 
         if args[:drag_passage] == false && pi - config.solution().orientation.oe[end][end] > 1e-3 && continue_campaign == true
             final_conditions_notmet = true
-            events = CallbackSet(apoapsispoint)
+            events = CallbackSet(apoapsispoint,time_check,thread_sync_callback)
         else
             final_conditions_notmet = false
         end

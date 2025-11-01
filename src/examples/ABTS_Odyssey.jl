@@ -64,7 +64,7 @@ println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => 1,                                                                                    # Print some lines True=1, False=0
+            :print_res => true,                                                                                    # Print some lines True=1, False=0
             :directory_results => "/workspaces/ABTS.jl/output/odyssey_quat_test",                # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
@@ -77,11 +77,12 @@ args = Dict(# Misc Simulation
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
             :normalize => 1,                                       # Normalize the integration True=1, False=0
             :closed_form => 0,                                     # Closed form solution True=1, False=0
+            :save_csv => false,
             # Type of Mission
-            :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 1,                                 # Number of aerobraking passage
-            :mission_time => 600.0,                                  # Mission time in seconds, used only for Time mission type
+            :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
+            :keplerian => true,                                        # Do not include drag passage: True=1, False=0
+            :number_of_orbits => 5,                                 # Number of aerobraking passage
+            :mission_time => 6000.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => false,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
 
             # Physical Model
@@ -99,16 +100,18 @@ args = Dict(# Misc Simulation
             
             # Perturbations
             :n_bodies => ["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
-            :srp => 1,                                             # Solar Radiation Pressure True=1, False=0
-            :gravity_harmonics => 1,                                            # Gravity Spherical harmonics True=1, False=0
+            :srp => true,                                             # Solar Radiation Pressure True=1, False=0
+            :eclipse => false,
+            :gravity_harmonics => true,                                            # Gravity Spherical harmonics True=1, False=0
             :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/Mars50c.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
+            :magnetic_field => false,
 
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
-            :save_rate => 5.0,                                      # Rate at which the data trajectory are saved
+            :save_rate => 1.0,                                      # Rate at which the data trajectory are saved
             
             # Body
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']

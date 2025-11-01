@@ -140,11 +140,12 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             m.body.roots[1].q .= quaternion
             # quaternion = SVector{4, Float64}(m.body.roots[1].q)
             m.body.roots[1].ω .= ω # Body frame angular velocity
-            rot_body_to_inertial = rot(quaternion)' # Rotation matrix from body frame to inertial frame
         else
             quaternion = orbital_elements_to_lvlh_quaternion(OE[4], OE[3], OE[5], OE[6]) # Quaternion, set to align with LVLH frame if orientation simulation is not enabled
             ω = SVector{3, Float64}(0.0, 0.0, 0.0)                # Angular velocity vector [rad / s]
         end
+        
+        rot_body_to_inertial = rot(quaternion)' # Rotation matrix from body frame to inertial frame
         pos_ii_mag = norm(pos_ii)                                  # Magnitude of the inertial position
         vel_ii_mag = norm(vel_ii)                                  # Magnitude of the inertial velocity
 
@@ -623,7 +624,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         counter += 1 # Increment the counter for the reaction wheel angular momentum vector
                     end
                     b.rw_τ .= τ # Save the reaction wheel torque in the body
-                    τ_rw .+= τ # Sum the reaction wheel torques in the inertial frame
+                    τ_rw .+= τ # Sum the reaction wheel torques in the body frame
                     b.net_torque .-= τ # Update the torque on the spacecraft link. Subtract the reaction wheel torque because the reaction torque on the spacecraft is opposite to the reaction wheel torque
                 end
 

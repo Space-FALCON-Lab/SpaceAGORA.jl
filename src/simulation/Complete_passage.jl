@@ -1,15 +1,16 @@
 include("../utils/Reference_system.jl")
 include("../integrator/Integrators.jl")
 include("../integrator/Events.jl")
-include("../integrator/implicit_midpoint_jacobian.jl")
+# include("../integrator/implicit_midpoint_jacobian.jl")
 include("../utils/Save_results.jl")
 include("../utils/quaternion_utils.jl")
 
-include("../physical_models/Gravity_models.jl")
+# include("../physical_models/Gravity_models.jl")
 include("../physical_models/Density_models.jl")
 include("../physical_models/Aerodynamic_models.jl")
 include("../physical_models/Thermal_models.jl")
-include("../physical_models/Perturbations.jl")
+# include("../physical_models/Perturbations.jl")
+include("../physical_models/DynamicEffectors.jl")
 
 include("../control/Control.jl")
 include("../control/utils/Propulsive_maneuvers.jl")
@@ -34,6 +35,7 @@ sys = pyimport("sys")
 import .config
 import .ref_sys
 import .quaternion_utils
+import .DynamicEffectors
 
 const R0 = 149597870.7e3 # 1AU, m
 const g_e = 9.81 # Gravitational acceleration of Earth at surface, m/s^2
@@ -181,6 +183,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         pos_ii_mag = norm(pos_ii)                                  # Magnitude of the inertial position
         vel_ii_mag = norm(vel_ii)                                  # Magnitude of the inertial velocity
+
+        # Define unnormalized state
+        state_vector = SVector{14, Float64}(pos_ii..., vel_ii..., mass, quaternion..., ω...) # State vector
 
         # Assign parameters
         ω_planet = m.planet.ω
@@ -491,23 +496,31 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         
         # Update the force on each link on the spacecraft
         gravity_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize gravity vector
-        # Nominal gravity calculation
-        if ip.gm == 0
-            gravity_ii += mass * gravity_const(pos_ii_mag, pos_ii, m.planet)
-        elseif ip.gm == 1
-            gravity_ii += mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet)
-        elseif ip.gm == 2
-            gravity_ii += mass * (args[:gravity_harmonics] == 1 ? gravity_invsquared(pos_ii_mag, pos_ii, m.planet) : gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet))
-        elseif ip.gm == 3
-            gravity_ii += mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
+        tau_grav = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize gravity torque vector
+        for effector in m.body.dynamic_effectors
+            force, torque = DynamicEffectors.calcForceTorque(effector, state_vector)
+            gravity_ii .+= force
+            tau_grav .+= torque
+            # gravity_ii, tau_grav .+= DynamicEffectors.calcForceTorque(effector, state_vector)
         end
+        # Nominal gravity calculation
+        # if ip.gm == 0
+        #     gravity_ii += mass * gravity_const(pos_ii_mag, pos_ii, m.planet)
+        # elseif ip.gm == 1
+        #     gravity_ii += mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet)
+        # elseif ip.gm == 2
+        #     gravity_ii += mass * (args[:gravity_harmonics] == 1 ? gravity_invsquared(pos_ii_mag, pos_ii, m.planet) : gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet))
+        # elseif ip.gm == 3
+        #     gravity_ii += mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
+        # end
+
 
         # n-body perturbations
-        if length(args[:n_bodies]) != 0
-            for k = 1:length(args[:n_bodies])
-                gravity_ii .+= mass * gravity_n_bodies(config.cnf.et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
-            end
-        end
+        # if length(args[:n_bodies]) != 0
+        #     for k = 1:length(args[:n_bodies])
+        #         gravity_ii .+= mass * gravity_n_bodies(config.cnf.et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
+        #     end
+        # end
 
         # Calculate gravitational harmonics using Pines' method
         if args[:gravity_harmonics] == 1
@@ -680,26 +693,27 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             counter = 1 # Counter for reaction wheel angular momentum vector
             counter_thrusters = 1 # Counter for thruster forces vector
             @inbounds for (i, b) in enumerate(bodies)
+                n_wheels = b.rw_assembly.n_wheels # Number of reaction wheels on the body
                 R .= Rot[i] # Rotation matrix from the spacecraft link to the inertial frame
-                if b.gyro != 0 # If the body has reaction wheels
-                    # Determine the angular momentum derivatives of the reaction wheels                    
+                if n_wheels != 0 # If the body has reaction wheels
+                    # Determine the angular momentum derivatives of the reaction wheels
                     τ = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize reaction wheel torque vector
-                    clamp!(b.rw, -b.max_h, b.max_h) # Clamp the reaction wheel angular momentum to the maximum angular momentum
-                    @inbounds for j in 1:b.gyro
-                        if abs(b.rw[j] - b.max_h) == 0.0 && sign(b.ω_wheel_derivatives[j]) == sign(b.rw[j]) # If the reaction wheel angular momentum is at its maximum and the derivative is in the same direction
+                    clamp!(b.rw_assembly.h_wheels, -b.rw_assembly.max_wheel_h, b.rw_assembly.max_wheel_h) # Clamp the reaction wheel angular momentum to the maximum angular momentum
+                    @inbounds for j in 1:n_wheels
+                        if abs(b.rw_assembly.h_wheels[j] - b.rw_assembly.max_wheel_h) == 0.0 && sign(b.ω_wheel_derivatives[j]) == sign(b.rw_assembly.h_wheels[j]) # If the reaction wheel angular momentum is at its maximum and the derivative is in the same direction
                             b.ω_wheel_derivatives[j] = 0.0 # Set the angular momentum derivative to zero if the maximum angular momentum is reached
                         end
-                        rw_torque = b.J_rw[:, j] * b.ω_wheel_derivatives[j] # Update the reaction wheel torque
-                        if norm(rw_torque) > b.max_torque
-                            rw_torque = normalize(rw_torque) * b.max_torque # Limit the reaction wheel torque to the maximum torque
+                        rw_torque = b.rw_assembly.J_rw[:, j] * b.ω_wheel_derivatives[j] # Update the reaction wheel torque
+                        if norm(rw_torque) > b.rw_assembly.max_wheel_torque
+                            rw_torque = normalize(rw_torque) * b.rw_assembly.max_wheel_torque # Limit the reaction wheel torque to the maximum torque
                         end
                         τ .+= rw_torque # Sum the reaction wheel torques
-                        total_rw_h .+= b.J_rw[:, j] * b.rw[j] # Update the total reaction wheel angular momentum
-                        rw_h[counter] = b.rw[j] # Update the reaction wheel angular momentum vector
-                        rw_τ[counter] = clamp(b.ω_wheel_derivatives[j], -b.max_torque, b.max_torque) # Update the reaction wheel torque vector
+                        total_rw_h .+= b.rw_assembly.J_rw[:, j] * b.rw_assembly.h_wheels[j] # Update the total reaction wheel angular momentum
+                        rw_h[counter] = b.rw_assembly.h_wheels[j] # Update the reaction wheel angular momentum vector
+                        rw_τ[counter] = clamp(b.ω_wheel_derivatives[j], -b.rw_assembly.max_wheel_torque, b.rw_assembly.max_wheel_torque) # Update the reaction wheel torque vector
                         counter += 1 # Increment the counter for the reaction wheel angular momentum vector
                     end
-                    b.rw_τ .= τ # Save the reaction wheel torque in the body
+                    b.rw_assembly.tau_body_net .= τ # Save the reaction wheel torque in the body
                     τ_rw .+= τ # Sum the reaction wheel torques in the inertial frame
                     b.net_torque .-= τ # Update the torque on the spacecraft link. Subtract the reaction wheel torque because the reaction torque on the spacecraft is opposite to the reaction wheel torque
                 end
@@ -931,7 +945,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             aerobraking_phase = 2 # Aerobraking phase
             bodies, root_index = config.traverse_bodies(m.body, m.body.roots[1])
             for b in bodies
-                if b.gyro != 0 || !isempty(b.thrusters)
+                if b.rw_assembly.n_wheels != 0 || !isempty(b.thrusters)
                     b.attitude_control_function(m, b, root_index, vel_pp_rw, h_pp_hat, aerobraking_phase, integrator.t * config.cnf.TU) # Calculate the reaction wheel torque
                 end
             end

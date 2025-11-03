@@ -1,5 +1,5 @@
  $INPUT
-  SpicePath = '/workspaces/SpaceAGORA.jl/GRAM_Data/SPICE'
+  SpicePath = 'GRAM_Data/SPICE'
   SpiceLsk = '/lsk/naif0012.tls'
  $END                
 

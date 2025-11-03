@@ -8,7 +8,8 @@ using DateFormats
 using CSV
 
 include("../utils/quaternion_utils.jl")
-# import .config
+include("Planet_data.jl")
+import .config
 # Define delta function
 δ(x,y) = ==(x,y)
 δ(x) = δ(x,0)
@@ -29,6 +30,41 @@ const M_HAT_ECEF = SVector{3, Float64}(
     sin(POLE_LAT_2020)
 )
 
+# N-body gravity perturbation model
+@kwdef struct NBodyGravityModel <: AbstractForceTorqueModel
+    body_names::Vector{String} = String[]  # Names of celestial bodies to include
+    primary_body_name::String = "Earth" # Name of the primary body
+    planet::config.Planet = config.Planet() # Planet data for primary body
+end
+
+# Constructor to get planet data
+function NBodyGravityModel(body_names::Vector{String}, primary_body_name::String="Earth")
+    planet = planet_data(primary_body_name)
+    return NBodyGravityModel(body_names=body_names, primary_body_name=primary_body_name, planet=planet)
+end
+
+function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64})::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    pos_ii = SVector{3, Float64}(x[1:3]) # Position in inertial frame, change to x.r if using StructArrays in Complete_passage
+    primary_body_name = model.primary_body_name
+    force_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize force vector
+    for body_name in model.body_names
+        barycenter_bodies = ["mars", "jupiter", "saturn", "uranus", "neptune", "earth"]
+        if !isnothing(findfirst(==(primary_body_name), barycenter_bodies))
+            primary_body_name *= "_barycenter"
+        end
+
+        if !isnothing(findfirst(==(body_name), barycenter_bodies))
+            body_name *= "_barycenter"
+        end
+
+        pos_primary_k = model.planet.J2000_to_pci*SVector{3, Float64}(spkpos(body_name, et, "J2000", "none", primary_body_name)[1]) * 1e3
+        pos_spacecraft_k = pos_primary_k - pos_ii
+        pos_spacecraft_k_mag = norm(pos_spacecraft_k)
+
+        force_ii += model.planet.μ * ((pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3))
+    end
+    return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
 """
     get_magnetic_field_dipole(r_ecef::AbstractVector)
 

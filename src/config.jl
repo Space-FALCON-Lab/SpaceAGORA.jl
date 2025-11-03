@@ -1,10 +1,13 @@
 
 module config
-include("SpacecraftModel.jl")
-import .SpacecraftModel
+# import .SpacecraftModel
 using StaticArrays
 using AstroTime
 using OrdinaryDiffEq
+using Reexport
+
+include("simulation_model/SimulationModel.jl")
+@reexport using .SimulationModel
 export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model
 
     @kwdef mutable struct Planet

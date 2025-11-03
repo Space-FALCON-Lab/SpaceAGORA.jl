@@ -5,6 +5,7 @@
 using OrdinaryDiffEq
 # using SimpleDiffEq
 using StaticArrays
+import .config
 # using BenchmarkTools
 
 function reaction_wheel_model!(

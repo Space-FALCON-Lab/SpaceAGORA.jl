@@ -4,6 +4,7 @@ using StaticArrays
 using LinearAlgebra
 using CSV
 using DataFrames
+
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 
 @kwdef mutable struct Facet
@@ -30,7 +31,7 @@ end
     stop_firing_time::Float64 = 0.0 # Time at which the thruster should stop firing, s. This is used to determine how long to continue firing the thruster into the next timestep
 end
 
-@kwdef struct Magnet
+@kwdef mutable struct Magnet
     m::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Magnetic dipole moment in the body frame, nT
     location::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Location in the link frame, relative to the CoM of the link, m
 end
@@ -175,6 +176,7 @@ mutable struct SpacecraftModel
     inertia_tensors::Vector{SMatrix{3, 3, Float64}} # Inertia tensors of the spacecraft bodies in the body frame
     n_reaction_wheels::Int64 # Number of reaction wheels in the spacecraft model
     n_thrusters::Int64 # Number of thrusters in the spacecraft model
+    dynamic_effectors::Tuple{AbstractForceTorqueModel} # List of dynamic effector models (gravity, drag, etc.)
     # inertia_tensor::MMatrix{3, 3, Float64} # Inertia tensor of the spacecraft in the inertial frame
     # COM::SVector{3, Float64} # Center of mass in the body frame (relative to origin of the root body)
 
@@ -256,6 +258,15 @@ function add_magnet!(link::Link, magnets::Vector{Magnet})
     - `magnet` : The magnet to add
     """
     push!(link.magnets, magnets...)
+end
+
+function add_dynamic_effector!(model::SpacecraftModel, effector::Any)
+    """
+    Adds a dynamic effector model to the spacecraft model.
+    - `model`: The spacecraft model to which the effector will be added.
+    - `effector`: The dynamic effector model to be added.
+    """
+    model.dynamic_effectors = (model.dynamic_effectors..., effector)
 end
 ##########################
 ### Thruster functions ###

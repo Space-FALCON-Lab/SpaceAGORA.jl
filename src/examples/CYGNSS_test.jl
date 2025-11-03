@@ -2,6 +2,7 @@ include("../simulation/Run.jl")
 include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../physical_models/DynamicEffectors.jl")
+include("../simulation_model/SimulationModel.jl")
 # include("../utils/attitude_control_plans.jl")
 include("../utils/quaternion_utils.jl")
 # include("SpacecraftModel.jl")
@@ -9,6 +10,7 @@ include("../utils/quaternion_utils.jl")
 import .config
 import .ref_sys
 import .DynamicEffectors
+import .SimulationModel
 using Profile
 using Interpolations
 using Arrow
@@ -18,8 +20,9 @@ using Arrow
 
 # Define dynamic effectors
 gravEffector = DynamicEffectors.InverseSquaredGravityModel()
-# nBodyGravEffector = DynamicEffectors.NBodyGravityModel(["Sun", "Moon"], "Earth")
-dynamic_effectors = (gravEffector,)
+nBodyGravEffector = DynamicEffectors.NBodyGravityModel(["Sun", "Moon"], "Earth")
+harmonicGravEffector = DynamicEffectors.GravitationalHarmonicsModel(50, 50, "Gravity_harmonics_data/EarthGGM05C.csv", "Earth")
+dynamic_effectors = (gravEffector, nBodyGravEffector, harmonicGravEffector)
 
 spacecraft = config.SpacecraftModel(dynamic_effectors=dynamic_effectors)
 # Add bodies to the spacecraft model
@@ -238,8 +241,8 @@ args = Dict(# Misc Simulation
             
             # Perturbations
             :n_bodies => ["Sun", "Moon"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
-            :srp => true,                                             # Solar Radiation Pressure true/false
-            :eclipse => true,                                         # Whether to include eclipse conditions in SRP calculation
+            :srp => false,                                             # Solar Radiation Pressure true/false
+            :eclipse => false,                                         # Whether to include eclipse conditions in SRP calculation
             :gravity_gradient => false,                                   # Gravity Gradient true/false
             :gravity_harmonics => 1,                                            # Gravity Spherical harmonics True=1, False=0
             :gravity_harmonics_file => "Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients

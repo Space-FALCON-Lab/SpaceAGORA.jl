@@ -523,9 +523,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         # end
 
         # Calculate gravitational harmonics using Pines' method
-        if args[:gravity_harmonics] == 1
-            gravity_ii .+= mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_e, m.planet)
-        end
+        # if args[:gravity_harmonics] == 1
+        #     gravity_ii .+= mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_e, m.planet)
+        # end
 
         if orientation_sim
             Rot = [MMatrix{3,3,Float64}(zeros(3, 3)) for i in eachindex(bodies)] # Rotation matrix from the root body to the spacecraft link

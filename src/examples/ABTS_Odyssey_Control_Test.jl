@@ -11,7 +11,7 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/SpaceAGORA.jl/output/mars_switching_analysis_targeting_cf",                    # Directory where to save the results
+            :directory_results => "/workspaces/SpaceAGORA.jl/output/mars_targeting_mc_J2_test",                    # Directory where to save the results
             :directory_Gram => "/workspaces/SpaceAGORA.jl/GRAMpy",                                              # Directory where Gram is
             :directory_Gram_data => "/workspaces/SpaceAGORA.jl/GRAM_Data",                                      # Directory where Gram data is
             :directory_Spice => "/workspaces/SpaceAGORA.jl/GRAM_Data/SPICE",                                    # Directory where SPICE files are located
@@ -90,7 +90,7 @@ args = Dict(# Misc Simulation
             
             # Initial Conditions
             :initial_condition_type => 1,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 9800e3, # 28523.95e3,                  # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_a => 9840e3, # 28523.95e3,                  # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
             :hp_initial_a => 93e3,                                  # Initial Periapsis Altitude for for-loop in m

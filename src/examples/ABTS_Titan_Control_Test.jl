@@ -9,7 +9,7 @@ args = Dict(# Misc Simulation
             :results => 1,                                                     # Generate csv file for results True=1, False=0
             :passresults => 1,                                                 # Pass results as output True=1, False=0
             :print_res => 1,                                                   # Print some lines True=1, False=0
-            :directory_results => "/workspaces/SpaceAGORA.jl/output/Titan_switching_analysis_targeting_mc_wo_J2",       # Directory where to save the results
+            :directory_results => "/workspaces/SpaceAGORA.jl/output/Titan_targeting_mc_J2",       # Directory where to save the results
             :directory_Gram => "/workspaces/SpaceAGORA.jl/GRAMpy",                   # Directory where Gram is
             :directory_Gram_data => "/workspaces/SpaceAGORA.jl/GRAM_Data",           # Directory where Gram data is
             :directory_Spice => "/workspaces/SpaceAGORA.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
@@ -20,10 +20,10 @@ args = Dict(# Misc Simulation
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
             :normalize => 0,                                        # Normalize the state during integration True=1, False=0
-            :closed_form => 0,                                   # Closed form solution for the drag passage True=1, False=0
+            :closed_form => 0,                                      # Closed form solution for the drag passage True=1, False=0
 
             # Type of Mission
-            :type_of_mission => "Aerobraking Campaign",                     # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
+            :type_of_mission => "Aerobraking Campaign",             # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 1,                                 # Number of aerobraking passage
 
@@ -125,7 +125,7 @@ args = Dict(# Misc Simulation
             :phi => 180.0,                                          # Thrust Angle, deg
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
-            :ra_fin_orbit => 14987.5e3 + 2.5755e6,                               # Target final apoapsis for the orbit, m
+            :ra_fin_orbit => 14987.5e3 + 2.5755e6,                  # Target final apoapsis for the orbit, m
             :maneuver_plan => titan_firing_plan,                    # Maneuver Plan for the mission
             
             # Monte Carlo Simulations

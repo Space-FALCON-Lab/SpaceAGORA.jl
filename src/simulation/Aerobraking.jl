@@ -164,6 +164,10 @@ function aerobraking(ip, m, args)
 
             r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
             r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
+
+            idx_AI_last = findall(x -> x == config.cnf.save_post_index_time, config.solution.orientation.time)
+
+            r_a_AI = config.solution.orientation.oe[1][idx_AI_last[2]] * (1 + config.solution.orientation.oe[2][idx_AI_last[2]])
         end
 
         if Bool(args[:print_res])
@@ -175,7 +179,7 @@ function aerobraking(ip, m, args)
             continue_campaign = false
         end
 
-        if (r_a <= args[:ra_fin_orbit] || config.cnf.targeting == 1) && args[:keplerian] == false
+        if (r_a_AI <= args[:ra_fin_orbit] || config.cnf.targeting == 1) && args[:keplerian] == false
             FinalState = false
             println("Reached FinalState! R_a = " * string(r_a*1e-3) * " km")
             println("Thermal Limit overcomed totally " * string(config.cnf.count_overcome_hr) * " times")

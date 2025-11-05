@@ -45,8 +45,24 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
 
     println("m.aero.alpha after deepcopying and running zero aoa case: ", m.aerodynamics.α)
 
-    energy_target_min = norm(sol_max_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_max_dratio[1:3, end]) # Lowest possible energy with maximum drag ratio, most negative
     energy_target_max = norm(sol_min_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_min_dratio[1:3, end]) # Highest possible energy with minimum drag ratio, least negative
+
+    pos_ii = SVector{3, Float64}(sol_max_dratio[1:3,end])   
+    vel_ii = SVector{3, Float64}(sol_max_dratio[4:6,end])
+
+    pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, config.cnf.et)
+
+    # pos_pp, vel_pp = r_intor_p!(SVector{3, Float64}(r0), SVector{3, Float64}(v0), m.planet, config.cnf.et)
+
+    LatLong = rtolatlong(pos_pp, m.planet, args[:topography_model] == "Spherical Harmonics" && norm(pos_ii) - m.planet.Rp_e < args[:EI] * 1e3)
+        
+    lat = deg2rad(22) # LatLong[2]
+
+    println("Latitude at entry interface: ", rad2deg(lat))
+    
+    target_energy_inc = 1 / 2 * m.planet.μ * m.planet.J2 * m.planet.Rp_e^2 / norm(pos_ii)^3 * (3*sin(lat)^2 - 1)
+
+    energy_target_min = norm(sol_max_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_max_dratio[1:3, end]) # Lowest possible energy with maximum drag ratio, most negative
 
     println("Energy target min: ", energy_target_min)
     println("Energy target max: ", energy_target_max)
@@ -57,6 +73,8 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     # println("Current periapsis: ", r_p - m.planet.Rp_e)
 
     target_energy = -m.planet.μ / (args[:ra_fin_orbit] + r_p) # change to current periapsis
+
+    target_energy -= target_energy_inc
 
     println("Target energy: ", target_energy)
 
@@ -89,7 +107,9 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     # config.cnf.γf = atan(V_rad_f / V_perp_f)                        # flight path angle at atmospheric interface
 
     # ip.cm = ip_cm_copy
-    # m.aerodynamics.α = deg2rad(args[:α])
+    # m.aerodynamics.α = deg2rad(args[:α])    
+
+    # println("Adjusted target energy (J2 effect accounted for): ", target_energy)
 
     return target_energy
 end
@@ -126,7 +146,18 @@ function control_solarpanels_targeting_heatload(energy_f, param, OE)
 
         sol, _ = asim_ctrl_rf(ip, m, time_0, OE, args, v_E, 1.0, false, gram_atmosphere)
 
-        energy_fin = norm(sol[4:6,end])^2/2 - m.planet.μ / norm(sol[1:3,end])
+        # pos_ii = SVector{3, Float64}(sol[1:3,end])   
+        # vel_ii = SVector{3, Float64}(sol[4:6,end])
+
+        # pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, config.cnf.et)
+
+        # LatLong = rtolatlong(pos_pp, m.planet, args[:topography_model] == "Spherical Harmonics" && norm(pos_ii) - m.planet.Rp_e < args[:EI] * 1e3)
+            
+        # lat = LatLong[2]
+        
+        # target_energy_inc = 3 / 2 * m.planet.μ * m.planet.J2 * m.planet.Rp_e^2 / norm(pos_ii)^3 * (3*sin(lat)^2 - 1)
+
+        energy_fin = norm(sol[4:6,end])^2/2 - m.planet.μ / norm(sol[1:3,end]) # + target_energy_inc
 
         println("v_E: ", v_E, " energy_fin: ", energy_fin)
 

@@ -1025,6 +1025,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         if index_phase_aerobraking == 2 || (index_phase_aerobraking == 1 && args[:keplerian] == 1)
             save_pre_index = length(config.solution.orientation.time) + 1
+            config.cnf.save_pre_index = save_pre_index
             simulator = args[:integrator]
         end
 
@@ -1196,7 +1197,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     # println(config.cnf.targeting)
                     # println("energy_f: ", energy_f)
 
-                    m.aerodynamics.α = deg2rad(args[:α])    
+                    m.aerodynamics.α = deg2rad(args[:α])
                     config.cnf.ascending_phase = false
                     config.cnf.drag_state = true
                     # println("m_aero_alpha_a after targeting: ", m.aerodynamics.α)
@@ -1431,6 +1432,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         if index_phase_aerobraking == 2 || index_phase_aerobraking == 2.5 || (index_phase_aerobraking == 2.25 && Bool(args[:drag_passage])) || (index_phase_aerobraking == 3 && Bool(args[:keplerian]))
             save_post_index = length(config.solution.orientation.time)
+            config.cnf.save_post_index_time = config.solution.orientation.time[save_post_index]
         end
 
         # Re-Set count index to 0
@@ -1440,6 +1442,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         if continue_campaign == false
             if save_post_index == 1
                 save_post_index = length(config.solution.orientation.time)
+                config.cnf.save_post_index_time = config.solution.orientation.time[save_post_index]
             end
 
             break

@@ -210,6 +210,9 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         lamv_list::Vector{Float64} = []
 
         t_switch_targeting::Float64 = 0.0
+
+        save_pre_index::Int64 = 1
+        save_post_index_time::Float64 = 0.0
     end
 
     cnf = Cnf()

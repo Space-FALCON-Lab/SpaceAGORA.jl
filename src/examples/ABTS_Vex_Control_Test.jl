@@ -9,7 +9,7 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/SpaceAGORA.jl/output/Vex_switching_analysis_targeting_mc_wo_J2",            # Directory where to save the results
+            :directory_results => "/workspaces/SpaceAGORA.jl/output/Vex_targeting_mc_J2",            # Directory where to save the results
             :directory_Gram => "/workspaces/SpaceAGORA.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/SpaceAGORA.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/SpaceAGORA.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
@@ -127,7 +127,7 @@ args = Dict(# Misc Simulation
             :phi => 180.0,                                          # Thrust Angle, deg
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
-            :ra_fin_orbit => 60950e3 + 6.0518e6,                    # Target final apoapsis for the orbit, m
+            :ra_fin_orbit => 60935e3 + 6.0518e6,                    # Target final apoapsis for the orbit, m
             :maneuver_plan => Venus_Express_firing_plan,            # MAneuver plan function
             
             # Monte Carlo Simulations

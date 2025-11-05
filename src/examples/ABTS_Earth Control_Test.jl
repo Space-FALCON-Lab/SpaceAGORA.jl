@@ -9,13 +9,13 @@ args = Dict(# Misc Simulation
             :results => 1,                                                     # Generate csv file for results True=1, False=0
             :passresults => 1,                                                 # Pass results as output True=1, False=0
             :print_res => 1,                                                   # Print some lines True=1, False=0
-            :directory_results => "/workspaces/SpaceAGORA.jl/output/Earth_switching_analysis_targeting_cf",    # Directory where to save the results
+            :directory_results => "/workspaces/SpaceAGORA.jl/output/Earth_targeting_mc_J2",    # Directory where to save the results
             :directory_Gram => "/workspaces/SpaceAGORA.jl/GRAMpy",                   # Directory where Gram is
             :directory_Gram_data => "/workspaces/SpaceAGORA.jl/GRAM_Data",           # Directory where Gram data is
             :directory_Spice => "/workspaces/SpaceAGORA.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
             :Gram_version => 0,                                                # MarsGram x file to use
             :montecarlo_analysis => 0,                                         # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 1,                                                        # Generate pdf plots of results True=1, False=0
+            :plot => 0,                                                        # Generate pdf plots of results True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
@@ -92,7 +92,7 @@ args = Dict(# Misc Simulation
 
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 56378e3, # 56378e3,                    # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_a => 55800e3, # 56378e3,                    # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 1e21,                                  # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e21,                                       # Step Apoapsis Radius for for-loop in m
             :hp_initial_a => 115e3,   #200590.0,#                   # Initial Periapsis Altitude for for-loop in m
@@ -174,46 +174,46 @@ args = Dict(# Misc Simulation
 #     println("COMPUTATIONAL TIME = " * string(t) * " s")
 # end
 
-t = @elapsed begin
-
-    furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-    furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-    furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-    furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-    furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-            
-    # Run the simulation
-    sol = run_analysis(args)
-
-    if Bool(args[:passresults])
-        println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-    end
-end
-
 # t = @elapsed begin
-#     ra_initial_a = args[:ra_initial_a]
 
 #     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
 #     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
 #     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
 #     furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
 #     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-                
+            
 #     # Run the simulation
-#     for i in collect(range(1,100,step=1))
+#     sol = run_analysis(args)
 
-#         d = Uniform(-5,+5)
-#         args[:ra_initial_a] = ra_initial_a + rand(d)*1e3
-
-#         sol = run_analysis(args)
+#     if Bool(args[:passresults])
+#         println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
 #     end
-
-#     println(" ")
-
-#     # if Bool(args[:passresults])
-#     #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#     # end
 # end
+
+t = @elapsed begin
+    ra_initial_a = args[:ra_initial_a]
+
+    furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
+    furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
+    furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
+    furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
+    furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
+                
+    # Run the simulation
+    for i in collect(range(1,100,step=1))
+
+        d = Uniform(-5,+5)
+        args[:ra_initial_a] = ra_initial_a + rand(d)*1e3
+
+        sol = run_analysis(args)
+    end
+
+    println(" ")
+
+    # if Bool(args[:passresults])
+    #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+    # end
+end
 
 # t = @elapsed begin
 

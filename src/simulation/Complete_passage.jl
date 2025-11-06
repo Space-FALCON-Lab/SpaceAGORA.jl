@@ -83,38 +83,12 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     config.cnf.count_numberofpassage += 1
     t_prev = 0.0
+
     # if config.cnf.count_numberofpassage != 1
     #     t_prev = config.solution.orientation.time[end]
     # else
     #     t_prev = m.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # m.initial_condition.time_rot
     # end
-
-    # sol_lam = asim_ctrl_plot(ip, m, 0, OE, args, 0.03565, true, gram_atmosphere)
-
-    # hf = 160e3 # args[:AE] * 1e3
-    # vf = 4195.4809 # 4196.4868
-    # γf = 0.10979 # deg2rad(5.874)
-    # # energy_f = -3.265e6 
-    # energy_f = vf^2 / 2 - (m.planet.μ /(hf + m.planet.Rp_e))
-
-    # println("Targeting energy: ", energy_f)
-
-    # # config.cnf.targeting = 1
-
-    # # config.cnf.t_switch_targeting = control_solarpanels_targeting(energy_f, ip, m, 0, OE, args, gram_atmosphere)
-
-    # # println("Targeting switch time: ", config.cnf.t_switch_targeting)
-
-    # sol_lam = asim_ctrl_targeting_plot(ip, m, 0, OE, args, hf, vf, γf, energy_f, 0.03565, false, gram_atmosphere)
-    
-    # println("hf: ", norm(sol_lam[1:3,end]) - m.planet.Rp_e)
-    # println("vf: ", norm(sol_lam[4:6,end]))
-    # println("γf: ", asin(sol_lam[1:3,end]'*sol_lam[4:6,end]/norm(sol_lam[4:6,end]) / norm(sol_lam[1:3,end])))
-
-    # println("Final Energy: ", norm(sol_lam[4:6,end])^2/2 - m.planet.μ/norm(sol_lam[1:3,end]))
-
-    # push!(config.cnf.time_list, sol_lam.t...)
-    # push!(config.cnf.lamv_list, sol_lam[7,:]...)
 
     function f!(y_dot, in_cond, param, t0::Float64)
         m = param[1]
@@ -278,6 +252,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Get density, pressure , temperature and winds
         config.cnf.Gram_justrecalled = 0
+
+        t_dens = @elapsed begin
         if ip.dm == 0
             ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         elseif ip.dm == 1
@@ -289,6 +265,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         elseif ip.dm == 4
             ρ, T_p, wind = density_nrlmsise(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, time_real)
         end
+        end
+
+        println(" Density computation time: ", t_dens, " seconds ")
 
         # Define output.txt containing density data
         p = 0.0
@@ -489,6 +468,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         config.cnf.heat_rate_prev .= heat_rate # save current heat rate
         
+        t_grav = @elapsed begin
         # Update the force on each link on the spacecraft
         gravity_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize gravity vector
         # Nominal gravity calculation
@@ -501,18 +481,29 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         elseif ip.gm == 3
             gravity_ii += mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
         end
+        end
 
+        println(" Gravity computation time: ", t_grav, " seconds ")
+
+        t_nbody = @elapsed begin
         # n-body perturbations
         if length(args[:n_bodies]) != 0
             for k = 1:length(args[:n_bodies])
                 gravity_ii .+= mass * gravity_n_bodies(config.cnf.et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
             end
         end
+        end
 
+        println(" N-body computation time: ", t_nbody, " seconds ")
+
+        t_grav_harm = @elapsed begin
         # Calculate gravitational harmonics using Pines' method
         if args[:gravity_harmonics] == 1
             gravity_ii .+= mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_e, m.planet)
         end
+        end
+
+        println(" Gravity Harmonics computation time: ", t_grav_harm, " seconds ")
 
         if orientation_sim
             Rot = [MMatrix{3,3,Float64}(zeros(3, 3)) for i in eachindex(bodies)] # Rotation matrix from the root body to the spacecraft link
@@ -556,6 +547,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         CL, CD = 0.0, 0.0 # Initialize aerodynamic coefficients
         total_area = 0.0 # Initialize total area
         
+        t_drag = @elapsed begin
         lift_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize inertial lift force vector
         drag_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize inertial drag force vector
         drag_pp = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize planet relative drag force vector
@@ -633,6 +625,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             drag_pp += drag_pp_body # Update the total drag force in planet relative frame
             lift_pp += lift_pp_body # Update the total lift force in planet relative frame
         end
+
+        end
+
+        println(" Aerodynamic computation time: ", t_drag, " seconds ")
+
         
         # Normalize the aerodynamic coefficients
         CL = CL / total_area

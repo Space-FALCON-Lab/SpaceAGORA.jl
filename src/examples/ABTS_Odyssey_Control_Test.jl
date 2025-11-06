@@ -93,8 +93,8 @@ args = Dict(# Misc Simulation
             :magnetic_field => false,
             :eclipse => false,                                         # Whether to include eclipse conditions in SRP calculation
             :gravity_gradient => false,
-
             :n_bodies => [],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
+
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
             :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
             :topography_harmonics_file => "/workspaces/SpaceAGORA.jl/Topography_harmonics_data/MOLA.csv", # File with the topography harmonics coefficients
@@ -157,12 +157,12 @@ args = Dict(# Misc Simulation
             :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 4350.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :v_step => 10000.0,                                     # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
-
-            :orientation_type => 0,                                 # Initial Condition orientation = 0, Initial Condition orientation and velocity = 1
-            :γ_initial_a => 6.25,                                   # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :v_step => 10000.0,     
+            :γ_initial_a => 6.25,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_initial_b => 10.0,                                   # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :γ_step => 10.5,                                        # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
+            :γ_step => 10.5,                                  # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
+
+            :orientation_type => 0,                                 # Initial Condition orientation = 0, Initial Condition orientation and velocity = 1                                        # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
             :inclination => 93.6,                                   # Inclination Orbit, deg
             :ω => 0,                                                # AOP, deg
             :Ω => 0,                                                # RAAN, deg

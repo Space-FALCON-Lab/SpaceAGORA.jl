@@ -1,3 +1,5 @@
+using .SimulationModel
+
 include("../utils/Define_mission.jl")
 include("../utils/MonteCarlo_set.jl")
 include("../utils/Initial_cond_calc.jl")
@@ -110,9 +112,9 @@ function run_orbitalelements_ae(args)
                 if args[:montecarlo] == true
                     args = MonteCarlo_setting_passage(mc_index, args)
                 end
-
+                println("State: ", state)
                 aerobraking_campaign(args, state)
-                MonteCarlo_append(MC, args, count)
+                # MonteCarlo_append(MC, args, count)
             end
 
             if args[:montecarlo] == true
@@ -123,8 +125,6 @@ function run_orbitalelements_ae(args)
 end
 
 function run_analysis(args)
-    config.reset_config()
-    config.model.body = args[:spacecraft_model]
     args = def_miss(args)
 
     if args[:initial_condition_type] == 1 && (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone")

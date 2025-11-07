@@ -1,23 +1,3 @@
-mutable struct Mission
-    e::Int64
-    d::Int64
-    l::Int64
-    a::Int64
-    planet::Int64
-end
-
-mutable struct InitalParameters
-    M::Mission
-    gm::Int64
-    dm::Int64
-    wm::Int64
-    am::Int64
-    tm::Int64
-    cm::Int64
-    tc::Int64
-    mc::Int64
-end
-
 function mission_def(mission::Dict{Symbol, Any})
 
     e, d, l, a = 0, 0, 0, 1     # e = Entry, d = Descent, l = Landing, a = Aerobraking : 0 - No, 1 - Yes
@@ -115,7 +95,7 @@ function mission_def(mission::Dict{Symbol, Any})
     mc = Int64(mission[:Monte_Carlo])
 
 
-    ip = InitalParameters(M, gm, dm, wm, am, tm, cm, tc, mc)
+    ip = InitialParameters(M, gm, dm, wm, am, tm, cm, tc, mc)
 
     return ip
 end

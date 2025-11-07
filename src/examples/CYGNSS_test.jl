@@ -1,16 +1,16 @@
+using Revise
+includet("../simulation_model/SimulationModel.jl")
+
 include("../simulation/Run.jl")
-include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
-include("../physical_models/DynamicEffectors.jl")
-include("../simulation_model/SimulationModel.jl")
 # include("../utils/attitude_control_plans.jl")
 include("../utils/quaternion_utils.jl")
 # include("SpacecraftModel.jl")
 
-import .config
-import .ref_sys
-import .DynamicEffectors
-import .SimulationModel
+# import .config
+using .ref_sys
+# using .DynamicEffectors
+using .SimulationModel
 using Profile
 using Interpolations
 using Arrow
@@ -19,12 +19,12 @@ using Arrow
 # Define spacecraft model
 
 # Define dynamic effectors
-gravEffector = DynamicEffectors.InverseSquaredGravityModel()
-nBodyGravEffector = DynamicEffectors.NBodyGravityModel(["Sun", "Moon"], "Earth")
-harmonicGravEffector = DynamicEffectors.GravitationalHarmonicsModel(50, 50, "Gravity_harmonics_data/EarthGGM05C.csv", "Earth")
+gravEffector = InverseSquaredGravityModel()
+nBodyGravEffector = NBodyGravityModel(["Sun", "Moon"], "Earth")
+harmonicGravEffector = GravitationalHarmonicsModel(50, 50, "Gravity_harmonics_data/EarthGGM05C.csv", "Earth")
 dynamic_effectors = (gravEffector, nBodyGravEffector, harmonicGravEffector)
 
-spacecraft = config.SpacecraftModel(dynamic_effectors=dynamic_effectors)
+spacecraft = SpacecraftModel(dynamic_effectors=dynamic_effectors)
 # Add bodies to the spacecraft model
 # p = SVector{3, Float64}([0.1, 0.2, -0.3])
 # q = 1/(1+norm(p)^2)*SVector{4, Float64}([2*p; 1-norm(p)^2])
@@ -58,10 +58,10 @@ rw_3_itp_cloth = cubic_spline_interpolation(range(rw_torques_cloth[1, 1], stop=r
 rw_torque_itp_cloth = (t) -> SVector{3, Float64}([rw_1_itp_cloth(t), rw_2_itp_cloth(t), rw_3_itp_cloth(t)])
 
 # q = SVector{4, Float64}([0.0, 0.0, sin(pi/4), cos(pi/4)]) # Quaternion for the main bus
-main_bus = config.Link{3}(root=true, 
+main_bus = Link{3}(root=true, 
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), # Body z-axis points down, origin is at bottom, CoM from engineering drawing 
                         # q=SVector{4, Float64}(q),
-                        # q=SVector{4, Float64}([0.28047528 -0.17599893  0.9414761  -0.06309311]),
+                           # q=SVector{4, Float64}([0.28047528 -0.17599893  0.9414761  -0.06309311]),
                         # q=SVector{4, Float64}([ -0.000178090669, 0.000196625584, -0.000787386924,0.999990655]), # Initial quaternion, from slew data, LVLH
                         # q=SVector{4, Float64}([-1.78090669e-04, 1.96625584e-04, -7.87386924e-04, 9.99999655e-01]), # Stating from ~900s, from slew data, assumes scalar first, LVLH
                         q=SVector{4, Float64}([-0.769326211835314, -0.0287409968395995, 0.368405744863056, 0.521141383921568]), # Initial quaternion, from slew data, ECI
@@ -90,35 +90,35 @@ main_bus = config.Link{3}(root=true,
                         # attitude_control_function=(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64) -> (b.ω_wheel_derivatives .= pinv(b.J_rw) * rw_torque_itp_cloth(t)))#+890.0017919540405))) # cloth attitude control
                         # attitude_control_function=(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64) -> (b.ω_wheel_derivatives .= rw_torque_itp(t)))#+890.0017919540405 - 0.5))) # CYGNSS data attitude control
 
-L_panel = config.Link{0}(r=SVector{3, Float64}(0.0, 56.9e-2, -(20.222 - 13.1)*1.0e-2),
+L_panel = Link{0}(r=SVector{3, Float64}(0.0, 56.9e-2, -(20.222 - 13.1)*1.0e-2),
                       q=SVector{4, Float64}(0.0, sqrt(2.0)/2.0, 0.0, sqrt(2.0)/2.0),
                       dims=SVector{3, Float64}([49.71e-2, 0.05, 52.12e-2]),
                       ref_area=49.71e-4,
                       m=0.01)
 
-R_panel = config.Link{0}(r=SVector{3, Float64}(0.0, -56.9e-2, -(20.222 - 13.1)*1.0e-2),
+R_panel = Link{0}(r=SVector{3, Float64}(0.0, -56.9e-2, -(20.222 - 13.1)*1.0e-2),
                       q=SVector{4, Float64}(0.0, sqrt(2.0)/2.0, 0.0, sqrt(2.0)/2.0),
                       dims=SVector{3, Float64}([49.71e-2, 0.05, 52.12e-2]),
                       ref_area=49.71e-4,
                       m=0.01)
-config.add_body!(spacecraft, main_bus, prop_mass=0.0)
-config.add_body!(spacecraft, L_panel)
-config.add_body!(spacecraft, R_panel)
+add_body!(spacecraft, main_bus, prop_mass=0.0)
+add_body!(spacecraft, L_panel)
+add_body!(spacecraft, R_panel)
 
-L_panel_joint = config.Joint(main_bus, SVector{3, Float64}(0.0, 32.045e-2, -(20.22 - 13.1)*1.0e-2), L_panel, SVector{3, Float64}(24.855e-2, 0.0, 0.0))
-R_panel_joint = config.Joint(R_panel, SVector{3, Float64}(-24.855, 0.0, 0.0), main_bus, SVector{3, Float64}(0.0, -32.045e-2, -(20.22 - 13.1)*1.0e-2))
-config.add_joint!(spacecraft, L_panel_joint)
-config.add_joint!(spacecraft, R_panel_joint)
+L_panel_joint = Joint(main_bus, SVector{3, Float64}(0.0, 32.045e-2, -(20.22 - 13.1)*1.0e-2), L_panel, SVector{3, Float64}(24.855e-2, 0.0, 0.0))
+R_panel_joint = Joint(R_panel, SVector{3, Float64}(-24.855, 0.0, 0.0), main_bus, SVector{3, Float64}(0.0, -32.045e-2, -(20.22 - 13.1)*1.0e-2))
+add_joint!(spacecraft, L_panel_joint)
+add_joint!(spacecraft, R_panel_joint)
 inertia_tensor = [1.4e6 -1.71e4 8.08e3;
                   -1.71e4 8.19e5 -5.35e3;
                   8.08e3 -5.35e3 1.95e6] * 1e-6
-config.set_inertia_tensor!(spacecraft, main_bus, 
+set_inertia_tensor!(spacecraft, main_bus, 
                         SMatrix{3, 3, Float64}(inertia_tensor))
 
 println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
 # println("Spacecraft roots: $spacecraft.roots")
-println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
-println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
+println("Spacecraft COM: $(get_COM(spacecraft, main_bus))")
+println("Spacecraft MOI: $(get_inertia_tensor(spacecraft, main_bus))")
 lenXHub = 52.12
 lenYHub = 64.09
 lenZHub = 29.21
@@ -175,30 +175,30 @@ panel_diffuse_coeffs = [0.16, 0.56]
 bus_facet_names = ["front_hub", "back_hub", "right_slant", "left_slant", "right_vert", "left_vert", "top_hub", "bot_hub"]
 panel_facet_names_left = ["left_top_panel", "left_bot_panel"]
 panel_facet_names_right = ["right_top_panel", "right_bot_panel"]
-bus_facets = config.create_facet_list(bus_facet_area_list,
+bus_facets = create_facet_list(bus_facet_area_list,
                                       bus_facet_attitude_list,
                                       bus_facet_normal_vectors,
                                       bus_facet_locs,
                                       bus_diffuse_coeffs,
                                       bus_specular_coeffs,
                                       bus_facet_names)
-panel_facets_R = config.create_facet_list(panel_facet_area_list,
+panel_facets_R = create_facet_list(panel_facet_area_list,
                                         panel_facet_attitude_list,
                                         panel_facet_normal_vectors,
                                         panel_facet_locs,
                                         panel_diffuse_coeffs,
                                         panel_specular_coeffs,
                                         panel_facet_names_right)
-panel_facets_L = config.create_facet_list(panel_facet_area_list,
+panel_facets_L = create_facet_list(panel_facet_area_list,
                                         panel_facet_attitude_list,
                                         panel_facet_normal_vectors,
                                         panel_facet_locs,
                                         panel_diffuse_coeffs,
                                         panel_specular_coeffs,
                                         panel_facet_names_left)
-config.add_facet!(main_bus, bus_facets)
-config.add_facet!(L_panel, panel_facets_L)
-config.add_facet!(R_panel, panel_facets_R)
+add_facet!(main_bus, bus_facets)
+add_facet!(L_panel, panel_facets_L)
+add_facet!(R_panel, panel_facets_R)
 
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0

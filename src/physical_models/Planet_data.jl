@@ -228,7 +228,7 @@ function planet_data(ip)
                         -cos(δ)*cos(α)*sin(δ)/σ1 -cos(δ)*sin(α)*sin(δ)/σ1 cos(δ)^2/σ1;
                         cos(δ)*cos(α) cos(δ)*sin(α) sin(δ)])   
     end 
-    planet = config.Planet(Rp_e, 
+    planet = Planet(Rp_e, 
                             Rp_p, 
                             Rp_m, 
                             mass, 

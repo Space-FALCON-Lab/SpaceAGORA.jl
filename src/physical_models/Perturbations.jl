@@ -10,7 +10,7 @@ using DataFrames
 
 include("../utils/quaternion_utils.jl")
 include("Planet_data.jl")
-import .config
+# import .config
 # Define delta function
 δ(x,y) = ==(x,y)
 δ(x) = δ(x,0)
@@ -35,7 +35,7 @@ const M_HAT_ECEF = SVector{3, Float64}(
 @kwdef struct NBodyGravityModel <: AbstractForceTorqueModel
     body_names::Vector{String} = String[]  # Names of celestial bodies to include
     primary_body_name::String = "Earth" # Name of the primary body
-    planet::config.Planet = config.Planet() # Planet data for primary body
+    planet::Planet = Planet() # Planet data for primary body
 end
 
 struct GravitationalHarmonicsModel <: AbstractForceTorqueModel
@@ -50,9 +50,14 @@ struct GravitationalHarmonicsModel <: AbstractForceTorqueModel
     VR11::Matrix{Float64} # Preallocated VR11 array
     N1::Matrix{Float64} # Preallocated N1 array
     N2::Matrix{Float64} # Preallocated N2 array
-    planet::config.Planet # Planet data for primary body
+    planet::Planet # Planet data for primary body
 end
 
+struct SolarRadiationPressureModel <: AbstractForceTorqueModel
+    Cr::Float64 # Reflectivity coefficient
+    A::Float64  # Cross-sectional area in m^2
+    AU_m::Float64 # Astronomical unit in meters
+end
 # Constructor to get planet data
 function NBodyGravityModel(body_names::Vector{String}, primary_body_name::String="Earth")
     planet = planet_data(primary_body_name)
@@ -129,9 +134,9 @@ function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::Stri
 end
 
 """
-    calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64})
+    calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
 """
-function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64})::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, param::ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     pos_ii = SVector{3, Float64}(x[1:3]) # Position in inertial frame, change to x.r if using StructArrays in Complete_passage
     mass = x[7]               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
     primary_body_name = model.primary_body_name
@@ -146,7 +151,7 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64})::
             body_name *= "_barycenter"
         end
 
-        pos_primary_k = model.planet.J2000_to_pci*SVector{3, Float64}(spkpos(body_name, config.cnf.et, "J2000", "none", primary_body_name)[1]) * 1e3
+        pos_primary_k = model.planet.J2000_to_pci*SVector{3, Float64}(spkpos(body_name, param.cnf.et, "J2000", "none", primary_body_name)[1]) * 1e3
         pos_spacecraft_k = pos_primary_k - pos_ii
         pos_spacecraft_k_mag = norm(pos_spacecraft_k)
 
@@ -155,7 +160,7 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64})::
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64})::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     rVec_cart = SVector{3, Float64}(x[1:3])
     mass = x[7]               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
 
@@ -313,28 +318,6 @@ function calculate_magnetic_torque(m::AbstractVector, B::AbstractVector)
     τ = cross(m_svector, B_svector)
 
     return τ
-end
-
-
-function gravity_n_bodies(et::Float64, pos_ii::SVector{3, Float64}, p, n_body)
-
-    primary_body_name = p.name
-    n_body_name = n_body.name
-    barycenter_bodies = ["mars", "jupiter", "saturn", "uranus", "neptune", "earth"]
-    if !isnothing(findfirst(==(primary_body_name), barycenter_bodies))
-        primary_body_name *= "_barycenter"
-    end
-
-    if !isnothing(findfirst(==(n_body_name), barycenter_bodies))
-        n_body_name *= "_barycenter"
-    end
-
-    pos_primary_k = p.J2000_to_pci*SVector{3, Float64}(spkpos(n_body_name, et, "J2000", "none", primary_body_name)[1]) * 1e3
-    pos_spacecraft_k = pos_primary_k - pos_ii
-    pos_spacecraft_k_mag = norm(pos_spacecraft_k)
-
-    g = n_body.μ * ((pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3))
-    return g
 end
 
 function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64}, rp::Float64)

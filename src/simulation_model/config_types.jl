@@ -1,14 +1,34 @@
 
-module config
+module ConfigTypes
 # import .SpacecraftModel
+# include("simulation_model/SimulationModel.jl")
+using ..PhysicalModel: SpacecraftModel
 using StaticArrays
 using AstroTime
 using OrdinaryDiffEq
 using Reexport
 
-include("simulation_model/SimulationModel.jl")
-@reexport using .SimulationModel
-export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model
+export Body, Planet, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters
+
+    @kwdef struct Mission
+        e::Int64 = 0
+        d::Int64 = 0
+        l::Int64 = 0
+        a::Int64 = 0
+        planet::Int64 = 0
+    end
+
+    @kwdef struct InitialParameters
+        M::Mission = Mission()
+        gm::Int64 = 0
+        dm::Int64 = 0
+        wm::Int64 = 0
+        am::Int64 = 0
+        tm::Int64 = 0
+        cm::Int64 = 0
+        tc::Int64 = 0
+        mc::Int64 = 0
+    end
 
     @kwdef mutable struct Planet
         Rp_e::Float64 = 0.0
@@ -96,7 +116,75 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         initial_condition::Initial_condition = Initial_condition()
     end
 
-    model = Model()
+    # model = Model()
+
+    # Struct to store simulation results at each time step
+    @kwdef struct IntermediateSolution
+        time::Float64 = 0.0
+        year::Int64 = 2000
+        month::Int64 = 1
+        day::Int64 = 1
+        hour::Int64 = 12
+        minute::Int64 = 0
+        second::Float64 = 0.0
+        number_of_passage::Int64 = 0
+        pos_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0) # Inertial position vector
+        pos_ii_mag::Float64 = 0.0
+        vel_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0) # Inertial velocity vector
+        vel_ii_mag::Float64 = 0.0
+        pos_pp::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0) # Planet-relative position vector
+        pos_pp_mag::Float64 = 0.0
+        vel_pp::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0) # Planet-relative velocity vector
+        vel_pp_mag::Float64 = 0.0
+        oe::SVector{6,Float64} = SVector{6,Float64}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0) # Orbital elements
+        lat::Float64 = 0.0
+        lon::Float64 = 0.0
+        alt::Float64 = 0.0
+        γ_ii::Float64 = 0.0 # Inertial flight path angle
+        γ_pp::Float64 = 0.0 # Planet-relative flight path angle
+        h_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0) # Inertial angular momentum vector
+        h_ii_mag::Float64 = 0.0
+        h_pp::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0) # Planet-relative angular momentum vector
+        h_pp_mag::Float64 = 0.0
+        uD::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        uE::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        uN::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        vN::Float64 = 0.0
+        vE::Float64 = 0.0
+        azi_pp::Float64 = 0.0
+        ρ::Float64 = 0.0
+        T::Float64 = 0.0
+        p::Float64 = 0.0
+        wind::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        cL::Float64 = 0.0
+        cD::Float64 = 0.0
+        S::Float64 = 0.0 # Molecular speed ratio
+        mass::Float64 = 0.0
+        T_r::Float64 = 0.0 # Not sure what this is, seem to only be set to 0 in complete passage
+        dynamic_pressure::Float64 = 0.0
+        gravity_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        drag_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        drag_pp::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        lift_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        lift_pp::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        force_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        τ_body::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        energy::Float64 = 0.0
+        MC_index::Int64 = 0
+        drag_state::Int64 = 0
+        quaternion::SVector{4,Float64} = SVector{4,Float64}(0.0, 0.0, 0.0, 0.0)
+        ω::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        α_control::Float64 = 0.0 # Angle of attack control, should probably move to another struct for control results
+        inertia_tensor::SVector{9, Float64} = SVector{9, Float64}(zeros(9)) # inertia tensor components
+        τ_rw::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0) # total torque applied by all reaction wheels, move to another struct for control results
+        α::Vector{Float64} = zeros(3) # Angle of attack
+        β::Vector{Float64} = zeros(3) # Sideslip angle
+        heat_rate::Vector{Float64} = [0.0, 0.0, 0.0]
+        heat_load::Vector{Float64} = [0.0, 0.0, 0.0]
+        rw_h::Vector{Float64} = [0.0, 0.0, 0.0] # angular momentum magnitudes of each reaction wheel, move to another struct for control results
+        rw_τ::Vector{Float64} = [0.0, 0.0, 0.0] # torque magnitude applied by each reaction wheel, move to another struct for control results
+        thruster_forces::Vector{Float64} = [0.0, 0.0, 0.0, 0.0] # forces applied by each thruster, move to another struct for control results
+    end
 
     @kwdef mutable struct Cnf
         impact::Bool = false
@@ -104,7 +192,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         latitude_periapsis::Vector{Float64} = []
         longitude_periapsis::Vector{Float64} = []
         max_heatrate::Vector{Float64} = []
-        solution_intermediate::Vector{Vector{Number}} = []
+        solution_intermediate::Vector{IntermediateSolution} = []
         atmospheric_data::Dict{String,Float64} = Dict()
         previous_atmospheric_data::Dict{String,Float64} = Dict()
         drag_state::Bool = false
@@ -213,7 +301,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         t_switch_targeting::Float64 = 0.0
     end
 
-    cnf = Cnf()
+    # cnf = Cnf()
 
     @kwdef mutable struct Controller
         guidance_t_eval::Vector{Float64} = []
@@ -224,7 +312,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         t::Float64 = 0.0
     end
 
-    controller = Controller()
+    # controller = Controller()
 
     @kwdef mutable struct Orientation
         time::Vector{Float64} = []
@@ -296,7 +384,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         lift_pp::Vector{Vector{Float64}} = [[], [], []]
         lift_ii::Vector{Vector{Float64}} = [[], [], []]
         force_ii::Vector{Vector{Float64}} = [[], [], []]
-        τ_ii::Vector{Vector{Float64}} = [[], [], []] # total torque applied by all forces
+        τ_body::Vector{Vector{Float64}} = [[], [], []] # total torque applied by all forces
         energy::Vector{Float64} = []
     end
 
@@ -322,12 +410,30 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         closed_form::Closed_form = Closed_form()
     end
 
-    solution = Solution()
-
-    function reset_config()
-        global model = Model()
-        global cnf = Cnf()
-        global controller = Controller()
-        global solution = Solution()
+    @kwdef mutable struct ODEParams
+        m::Model = Model()                      # Model struct
+        cnf::Cnf = Cnf()            # Configuration parameters
+        solution::Solution = Solution() # Solution struct
+        index_phase_aerobraking::Float64 = 0.0  # Phase index for aerobraking control
+        ip::InitialParameters                     # Input parameters struct
+        aerobraking_phase::Int64 = 0          # Aerobraking phase
+        t_prev::Float64 = 0.0                 # Previous time for Gram calls
+        date_initial::Any          # Initial date time
+        time_0::Float64 = 0.0                  # Initial time
+        initial_state::Initial_condition         # Initial state struct
+        gram_atmosphere::Any = nothing   # GRAM atmosphere data
+        gram::Any = nothing              # GRAM object
+        numberofpassage::Int64 = 0       # Current passage number
+        orientation_sim::Bool = false    # Flag for orientation simulation
+        args::Dict{Symbol, Any} = Dict{Symbol, Any}() # Arguments dictionary
+        intermediate_solution::IntermediateSolution = IntermediateSolution() # Intermediate solution struct
     end
+    # solution = Solution()
+
+    # function reset_config()
+    #     global model = Model()
+    #     global cnf = Cnf()
+    #     global controller = Controller()
+    #     global solution = Solution()
+    # end
 end

@@ -2,9 +2,9 @@ module Assembly
 
 using LinearAlgebra
 using StaticArrays
-using ..Model
+using ..PhysicalModel
 using ..Components
-using ..AbstractTypes
+# using ..AbstractTypes
 
 export add_body!, add_joint!, add_facet!, add_magnet!, add_thruster!
 

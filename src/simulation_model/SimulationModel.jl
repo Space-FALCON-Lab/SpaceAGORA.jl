@@ -8,7 +8,6 @@ using DataFrames
 using Reexport
 
 # --- Utils ---
-# Assuming you have this util file
 include("../utils/quaternion_utils.jl")
 
 # --- Submodules ---
@@ -25,7 +24,7 @@ include("components.jl")
 
 # 3. Main container structs (Link, Joint, Model)
 include("model.jl")
-@reexport using .Model
+@reexport using .PhysicalModel
 
 # 4. Functions for building the model (add_...!)
 include("assembly.jl")
@@ -43,4 +42,12 @@ include("effectors.jl")
 include("analysis.jl")
 @reexport using .Analysis
 
-end # module SpacecraftSim
+# --- Config types ---
+include("config_types.jl")
+@reexport using .ConfigTypes
+
+# --- Dynamic Effectors ---
+include("DynamicEffectors.jl")
+@reexport using .DynamicEffectors
+
+end # module SimulationModel

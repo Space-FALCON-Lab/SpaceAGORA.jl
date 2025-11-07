@@ -1,10 +1,10 @@
-module Model
+module PhysicalModel
 
 using StaticArrays
 using LinearAlgebra
 
 # Import types defined in our other files
-using ..AbstractTypes
+# using ..AbstractTypes
 using ..Components
 
 export Link, Joint, SpacecraftModel

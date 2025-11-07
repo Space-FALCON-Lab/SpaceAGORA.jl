@@ -6,7 +6,7 @@ using LinearAlgebra
 
 # --- Internal Dependencies ---
 # Import the data structs defined in other modules
-using ..Model: SpacecraftModel, Link, Joint
+using ..PhysicalModel: SpacecraftModel, Link, Joint
 using ..Kinematics: rotate_to_inertial
 
 # Import the quaternion helpers

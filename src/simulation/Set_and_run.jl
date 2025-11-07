@@ -1,3 +1,5 @@
+using .SimulationModel
+
 include("../physical_models/MonteCarlo_pertrubations.jl")
 include("../physical_models/Planet_data.jl")
 include("../physical_models/Mission.jl")
@@ -14,7 +16,7 @@ using Arrow
 
 function aerobraking_campaign(args, state)
     save_res = args[:results]
-    config.cnf.Gram_directory = args[:directory_Gram]
+    # config.cnf.Gram_directory = args[:directory_Gram]
 
     # Descent towards Mars
     purpose = "Aerobraking around Mars"
@@ -35,9 +37,13 @@ function aerobraking_campaign(args, state)
         println("Mission is: ", mission)
     end
 
+    # Create config parameters
+    m = Model()
+    cnf = Cnf()
+    solution = Solution()
+
     ip = mission_def(mission)
     p_class = planet_data(ip.M.planet)
-    config.model.planet = p_class
 
     # Load SPICE kernels if required
     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
@@ -59,7 +65,7 @@ function aerobraking_campaign(args, state)
         lon_rad = deg2rad(lon)
         α_rad = deg2rad(args[:azimuth])
         γ_rad = deg2rad(args[:γ_initial_a])
-        config.cnf.et = utc2et(to_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))
+        cnf.et = utc2et(to_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))
         p_class.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_" * uppercase(p_class.name), config.cnf.et))*p_class.J2000_to_pci'
         # will have to rethink this to use the gamma/v step initial conditions
         OE = latlongtoOE([lat_rad, lon_rad, args[:EI]*1e3], p_class, γ_rad, α_rad, args[:v_initial_a])
@@ -74,78 +80,78 @@ function aerobraking_campaign(args, state)
     end
 
     # Set up n-body gravity
-    if length(args[:n_bodies]) != 0
-        for i=1:length(args[:n_bodies])
-            push!(config.cnf.n_bodies_list, planet_data(args[:n_bodies][i]))
-        end
-    end
+    # if length(args[:n_bodies]) != 0
+    #     for i=1:length(args[:n_bodies])
+    #         push!(cnf.n_bodies_list, planet_data(args[:n_bodies][i]))
+    #     end
+    # end
 
     # Set up spherical harmonics coefficients to use Pines' method from GMAT
-    if args[:gravity_harmonics] == true
-        # Read in the gravity harmonics data
-        harmonics_data = CSV.read(args[:gravity_harmonics_file], DataFrame)
+    # if args[:gravity_harmonics] == true
+    #     # Read in the gravity harmonics data
+    #     harmonics_data = CSV.read(args[:gravity_harmonics_file], DataFrame)
         
-        # Pre-initialize the Clm and Slm arrays
-        total_data_size = size(harmonics_data, 1)
-        degree = maximum(harmonics_data[:, 1]) + 1
+    #     # Pre-initialize the Clm and Slm arrays
+    #     total_data_size = size(harmonics_data, 1)
+    #     degree = maximum(harmonics_data[:, 1]) + 1
 
-        p_class.A_grav = zeros(degree+1, degree+1) # Preallocate the matrix for the Associated Legendre Polynomial evaluations
-        p_class.Clm = zeros(degree, degree)
-        p_class.Slm = zeros(degree, degree)
+    #     p_class.A_grav = zeros(degree+1, degree+1) # Preallocate the matrix for the Associated Legendre Polynomial evaluations
+    #     p_class.Clm = zeros(degree, degree)
+    #     p_class.Slm = zeros(degree, degree)
 
-        # Read in all the data from the DataFrame
-        for i=1:total_data_size
-            l = harmonics_data[i, 1] + 1 # Get the degree, l, from the data and convert to an index (subtract 1 because the data starts at 2nd degree coefficient)
-            m = harmonics_data[i, 2] + 1 # Get the order, m, from the data and convert to an index (add 1 because the data starts at 0th order coefficient)
-            p_class.Clm[l, m] = harmonics_data[i, 3]
-            p_class.Slm[l, m] = harmonics_data[i, 4]
-        end
+    #     # Read in all the data from the DataFrame
+    #     for i=1:total_data_size
+    #         l = harmonics_data[i, 1] + 1 # Get the degree, l, from the data and convert to an index (subtract 1 because the data starts at 2nd degree coefficient)
+    #         m = harmonics_data[i, 2] + 1 # Get the order, m, from the data and convert to an index (add 1 because the data starts at 0th order coefficient)
+    #         p_class.Clm[l, m] = harmonics_data[i, 3]
+    #         p_class.Slm[l, m] = harmonics_data[i, 4]
+    #     end
 
-        # Precalculate N1, N2
-        L = args[:L]
-        M = args[:M]
-        N1 = zeros(L+4, L+4)
-        N2 = zeros(L+4, L+4)
-        VR01 = zeros(L+1, L+1)
-        VR11 = zeros(L+1, L+1)
-        sqrt_2 = sqrt(2)
-        for m = 0:M+2
-            j = m + 1
-            for l = m+2:L+2
-                i = l + 1
-                N1[i, j] = √((2*l+1)*(2*l-1)/(l+m)/(l-m))
-                N2[i, j] = √((l+m-1)*(2*l+1)*(l-m-1)/(2*l-3)/(l+m)/(l-m))
-            end
-        end
+    #     # Precalculate N1, N2
+    #     L = args[:L]
+    #     M = args[:M]
+    #     N1 = zeros(L+4, L+4)
+    #     N2 = zeros(L+4, L+4)
+    #     VR01 = zeros(L+1, L+1)
+    #     VR11 = zeros(L+1, L+1)
+    #     sqrt_2 = sqrt(2)
+    #     for m = 0:M+2
+    #         j = m + 1
+    #         for l = m+2:L+2
+    #             i = l + 1
+    #             N1[i, j] = √((2*l+1)*(2*l-1)/(l+m)/(l-m))
+    #             N2[i, j] = √((l+m-1)*(2*l+1)*(l-m-1)/(2*l-3)/(l+m)/(l-m))
+    #         end
+    #     end
 
-        for l = 0:L
-            i = l + 1
-            for m = 0:min(M, l)
-                j = m + 1
-                divisor = m == 0 ? sqrt_2 : 1
-                VR01[i, j] = sqrt((l-m)*(l+m+1)) / divisor
-                VR11[i, j] = sqrt((2*l+1)*(l+m+2)*(l+m+1)/(2*l+3)) / divisor
-            end
-        end
-        p_class.N1 = N1
-        p_class.N2 = N2
-        p_class.VR01 = VR01
-        p_class.VR11 = VR11
+    #     for l = 0:L
+    #         i = l + 1
+    #         for m = 0:min(M, l)
+    #             j = m + 1
+    #             divisor = m == 0 ? sqrt_2 : 1
+    #             VR01[i, j] = sqrt((l-m)*(l+m+1)) / divisor
+    #             VR11[i, j] = sqrt((2*l+1)*(l+m+2)*(l+m+1)/(2*l+3)) / divisor
+    #         end
+    #     end
+    #     p_class.N1 = N1
+    #     p_class.N2 = N2
+    #     p_class.VR01 = VR01
+    #     p_class.VR11 = VR11
 
-        A = zeros(L+4, L+4)
-        R = zeros(L+4)
-        I = zeros(L+4)
-        A[1, 1] = 1
-        # Fill the diagonal elements of A
-        for l = 1:L+2
-            i = l + 1
-            A[i, i] = sqrt((2*l+1)/(2*l))*A[i-1, i-1]
-        end
-        p_class.Re = R
-        p_class.Im = I
-        p_class.A = A
+    #     A = zeros(L+4, L+4)
+    #     R = zeros(L+4)
+    #     I = zeros(L+4)
+    #     A[1, 1] = 1
+    #     # Fill the diagonal elements of A
+    #     for l = 1:L+2
+    #         i = l + 1
+    #         A[i, i] = sqrt((2*l+1)/(2*l))*A[i-1, i-1]
+    #     end
+    #     p_class.Re = R
+    #     p_class.Im = I
+    #     p_class.A = A
 
-    end
+    # end
 
     # Set up the planet shape
     if args[:topography_model] == "Spherical Harmonics"
@@ -178,7 +184,7 @@ function aerobraking_campaign(args, state)
     # dry_mass = args[:spacecraft_model].dry_mass
     # prop_mass = args[:spacecraft_model].prop_mass 
     # mass = dry_mass + prop_mass
-    mass = config.get_spacecraft_mass(args[:spacecraft_model])
+    mass = get_spacecraft_mass(args[:spacecraft_model])
 
 
     # Spacecraft Shape
@@ -239,7 +245,7 @@ function aerobraking_campaign(args, state)
     if args[:body_shape] == "Spacecraft"
         b_class = args[:spacecraft_model]
         if args[:print_res]
-            println("Area: " * string(config.get_spacecraft_reference_area(b_class)) * " m^2")
+            println("Area: " * string(get_spacecraft_reference_area(b_class)) * " m^2")
         end
 
     elseif args[:body_shape] == "Blunted Cone" # TODO: Change this to new spacecraft model method
@@ -250,7 +256,7 @@ function aerobraking_campaign(args, state)
         BaseRadius = base_radius
         Area_tot = pi * BaseRadius^2
 
-        b_class = config.Body(Mass, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Area_tot, Delta, NoseRadius, BaseRadius)
+        b_class = Body(Mass, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Area_tot, Delta, NoseRadius, BaseRadius)
 
     end
 
@@ -273,7 +279,7 @@ function aerobraking_campaign(args, state)
         el_time = 0.0 # Elapsed time in seconds
         DateTimeIC = from_utc(DateTime(year, month, day, hour, min, second))
         DateTimeJ2000 = from_utc(DateTime(2000, 1, 1, 12, 0, 0))
-        ic = config.Initial_condition(a, e, i, Ω, ω, vi, m0, year, month, day, hour, min, second, time_rot, el_time, DateTimeIC, DateTimeJ2000)
+        ic = Initial_condition(a, e, i, Ω, ω, vi, m0, year, month, day, hour, min, second, time_rot, el_time, DateTimeIC, DateTimeJ2000)
 
         return ic
     end
@@ -289,7 +295,7 @@ function aerobraking_campaign(args, state)
         heat_rate_limit = args[:max_heat_rate]
         heat_load_limit = args[:max_heat_load]
 
-        a = config.Aerodynamics(δ, α, thermal_accomodation_factor, reflection_coefficient, thermal_contact, heat_rate_limit, heat_load_limit)
+        a = Aerodynamics(δ, α, thermal_accomodation_factor, reflection_coefficient, thermal_contact, heat_rate_limit, heat_load_limit)
 
         return a        
     end
@@ -304,7 +310,7 @@ function aerobraking_campaign(args, state)
         T = args[:thrust]
         Isp = 200
 
-        e = config.Engines(ϕ, g_e, T, Isp)
+        e = Engines(ϕ, g_e, T, Isp)
 
         return e
     end
@@ -318,7 +324,7 @@ function aerobraking_campaign(args, state)
         aerodynamics = a_class
         engine = e_class
 
-        m = config.Model(body, planet, aerodynamics, engine, initialcondition)
+        m = Model(body, planet, aerodynamics, engine, initialcondition)
 
         return m
     end
@@ -397,14 +403,14 @@ function aerobraking_campaign(args, state)
         gram_atmosphere.setStartTime(ttime)
     end
     # Initialization - Reset all the config index for new simulation
-    config.cnf.count_aerobraking = 0
-    config.cnf.count_overcome_hr = 0
-    config.cnf.save_index_heat = 0
-    config.cnf.index_propellant_mass = 1
-    config.cnf.counter_random = 0
-    config.cnf.DU = Bool(args[:normalize]) ? semimajoraxis_in : 1
-    config.cnf.TU = Bool(args[:normalize]) ? sqrt(config.cnf.DU^3 / m.planet.μ) : 1
-    config.cnf.MU = Bool(args[:normalize]) ? mass : 1
+    cnf.count_aerobraking = 0
+    cnf.count_overcome_hr = 0
+    cnf.save_index_heat = 0
+    cnf.index_propellant_mass = 1
+    cnf.counter_random = 0
+    cnf.DU = Bool(args[:normalize]) ? semimajoraxis_in : 1
+    cnf.TU = Bool(args[:normalize]) ? sqrt(cnf.DU^3 / m.planet.μ) : 1
+    cnf.MU = Bool(args[:normalize]) ? mass : 1
 
     # Save results
     if save_res == 1
@@ -457,24 +463,29 @@ function aerobraking_campaign(args, state)
 
     ##########################################################
     # RUN SIMULATION
-    config.cnf.heat_rate_limit = args[:max_heat_rate]
+    cnf.heat_rate_limit = args[:max_heat_rate]
+    params = (cnf, m, solution)
     t_el = @elapsed begin
-        aerobraking(ip, m, args, gram, gram_atmosphere, filename, arrow_filename)
+        aerobraking(ip, args, gram, gram_atmosphere, filename, arrow_filename, params)
     end
+    cnf = params[1]
+    m = params[2]
+    solution = params[3]
     ##########################################################
 
     # Finalize the arrow writer if plotting is enabled
     # if args[:plot] == true
-        close(arrow_writer)
-        if args[:print_res]
-            println("Arrow writer closed. Data saved to: " * arrow_filename)
-        end
+    close(arrow_writer)
+    if args[:print_res]
+        println("Arrow writer closed. Data saved to: " * arrow_filename)
+    end
     # end
     # Print final results
-    if Bool(args[:print_res])
-        println("ρ: " * string(maximum(config.solution.physical_properties.ρ)) * " kg/m^3")
-        println("heat rate: " * string(maximum(maximum.(config.solution.performance.heat_rate))) * " W/cm^2")
-    end
+    # if Bool(args[:print_res])
+    #     println(solution.physical_properties.ρ)
+    #     println("ρ: " * string(maximum(solution.physical_properties.ρ)) * " kg/m^3")
+    #     println("heat rate: " * string(maximum(maximum.(solution.performance.heat_rate))) * " W/cm^2")
+    # end
 
     
 

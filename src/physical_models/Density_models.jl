@@ -1,5 +1,6 @@
 include("../utils/Reference_system.jl")
 
+# using .SimulationModel
 using PythonCall
 using SatelliteToolbox
 # SpaceIndices.init()
@@ -168,11 +169,12 @@ function density_polyfit(h, p, lat::Float64=0.0, lon::Float64=0.0, montecarlo::B
     end
 end
 
-function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Bool, Wind::Bool, args::Dict, el_time::Float64, atmosphere=nothing, gram=nothing)
+function density_gram(h::Float64, p::Planet, lat::Float64, lon::Float64, montecarlo::Bool, Wind::Bool, args::Dict, el_time::Float64, params::ODEParams, atmosphere=nothing, gram=nothing)
     """
 
     """
-    if config.cnf.drag_state == false && args[:keplerian] == false
+    cnf = params.cnf
+    if cnf.drag_state == false && args[:keplerian] == false
         if h > 2000.0e3
 
             rho = 0.0
@@ -181,7 +183,7 @@ function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Boo
         else
             rho, T, wind = density_polyfit(h, p)
         end
-    elseif config.cnf.drag_state == true || args[:keplerian] == true
+    elseif cnf.drag_state == true || args[:keplerian] == true
         if h > 2000.0e3
 
             rho = 0.0

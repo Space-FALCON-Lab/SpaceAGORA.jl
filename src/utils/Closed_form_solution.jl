@@ -399,10 +399,10 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     return t_cf, h_cf, γ_cf, v_cf
 end
 
-function results(t_cf, h_cf, γ_cf, v_cf)
+function results(solution::Solution, t_cf, h_cf, γ_cf, v_cf)
     # Save results
-    append!(config.solution.closed_form.t_cf, t_cf)
-    append!(config.solution.closed_form.h_cf, h_cf)
-    append!(config.solution.closed_form.γ_cf, γ_cf)
-    append!(config.solution.closed_form.v_cf, v_cf)
+    append!(solution.closed_form.t_cf, t_cf)
+    append!(solution.closed_form.h_cf, h_cf)
+    append!(solution.closed_form.γ_cf, γ_cf)
+    append!(solution.closed_form.v_cf, v_cf)
 end

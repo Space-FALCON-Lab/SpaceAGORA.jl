@@ -1,7 +1,7 @@
 module Effectors
 
 using LinearAlgebra, CSV, DataFrames
-using ..Model
+using ..PhysicalModel
 using ..Components
 using ..Kinematics # We'll need this for rotate_to_body
 

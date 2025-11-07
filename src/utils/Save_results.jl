@@ -1,21 +1,23 @@
-
-function save_results(time, ratio)
+using .SimulationModel: ODEParams, IntermediateSolution, Solution
+function save_results(time, ratio, params::ODEParams)
     initial_time = 0
+    solution = params.solution
+    cnf = params.cnf
 
-    if length(config.solution.orientation.time) == 0
-        config.cnf.prev_step_integrator = 0.0
-        initial_time = config.cnf.prev_step_integrator
-        config.cnf.initial_time_saved = 0.0
+    if length(solution.orientation.time) == 0
+        cnf.prev_step_integrator = 0.0
+        initial_time = cnf.prev_step_integrator
+        cnf.initial_time_saved = 0.0
     else
-        if config.cnf.counter_integrator == 1
-            config.cnf.prev_step_integrator =  0.0
-            intial_time = config.cnf.prev_step_integrator
-            config.cnf.initial_time_saved = config.solution.orientation.time[end]
+        if cnf.counter_integrator == 1
+            cnf.prev_step_integrator =  0.0
+            intial_time = cnf.prev_step_integrator
+            cnf.initial_time_saved = solution.orientation.time[end]
         end
     end
 
-    n_variable_to_save = length(config.cnf.solution_intermediate[1]) - 1
-    range_time = [item[1] for item in config.cnf.solution_intermediate]
+    n_variable_to_save = length(cnf.solution_intermediate[1]) - 1
+    range_time = [item[1] for item in cnf.solution_intermediate]
     unique!(time) # Remove duplicate time entries
     results = Matrix{Float64}(zeros(n_variable_to_save, Int(ceil(length(time)/ratio))))
 
@@ -236,6 +238,186 @@ function save_results(time, ratio)
     append!(config.solution.simulation.drag_passage, results[90,:])
 
     return time_0
+end
+
+function save_results(params::ODEParams)
+    # println("Saveing results at time: ", params.intermediate_solution.time)
+    solution = params.solution
+    intermediate_solution = params.intermediate_solution
+    model = params.m
+    cnf = params.cnf
+    push!(solution.orientation.time, intermediate_solution.time)
+    push!(solution.orientation.year, intermediate_solution.year)
+    push!(solution.orientation.month, intermediate_solution.month)
+    push!(solution.orientation.day, intermediate_solution.day)
+    push!(solution.orientation.hour, intermediate_solution.hour)
+    push!(solution.orientation.minute, intermediate_solution.minute)
+    push!(solution.orientation.second, intermediate_solution.second)
+    push!(solution.orientation.number_of_passage, intermediate_solution.number_of_passage)
+    push!(solution.orientation.pos_ii[1], intermediate_solution.pos_ii[1])
+    push!(solution.orientation.pos_ii[2], intermediate_solution.pos_ii[2])
+    push!(solution.orientation.pos_ii[3], intermediate_solution.pos_ii[3])
+    push!(solution.orientation.vel_ii[1], intermediate_solution.vel_ii[1])
+    push!(solution.orientation.vel_ii[2], intermediate_solution.vel_ii[2])
+    push!(solution.orientation.vel_ii[3], intermediate_solution.vel_ii[3])
+    push!(solution.orientation.pos_ii_mag, intermediate_solution.pos_ii_mag)
+    push!(solution.orientation.vel_ii_mag, intermediate_solution.vel_ii_mag)
+    push!(solution.orientation.quaternion[1], intermediate_solution.quaternion[1])
+    push!(solution.orientation.quaternion[2], intermediate_solution.quaternion[2])
+    push!(solution.orientation.quaternion[3], intermediate_solution.quaternion[3])
+    push!(solution.orientation.quaternion[4], intermediate_solution.quaternion[4])
+    push!(solution.orientation.ω[1], intermediate_solution.ω[1])
+    push!(solution.orientation.ω[2], intermediate_solution.ω[2])
+    push!(solution.orientation.ω[3], intermediate_solution.ω[3])
+
+    push!(solution.orientation.pos_pp[1], intermediate_solution.pos_pp[1])
+    push!(solution.orientation.pos_pp[2], intermediate_solution.pos_pp[2])
+    push!(solution.orientation.pos_pp[3], intermediate_solution.pos_pp[3])
+    push!(solution.orientation.pos_pp_mag, intermediate_solution.pos_pp_mag)
+    push!(solution.orientation.vel_pp[1], intermediate_solution.vel_pp[1])
+    push!(solution.orientation.vel_pp[2], intermediate_solution.vel_pp[2])
+    push!(solution.orientation.vel_pp[3], intermediate_solution.vel_pp[3])
+    push!(solution.orientation.vel_pp_mag, intermediate_solution.vel_pp_mag)
+
+    push!(solution.orientation.oe[1], intermediate_solution.oe[1])
+    push!(solution.orientation.oe[2], intermediate_solution.oe[2])
+    push!(solution.orientation.oe[3], intermediate_solution.oe[3])
+    push!(solution.orientation.oe[4], intermediate_solution.oe[4])
+    push!(solution.orientation.oe[5], intermediate_solution.oe[5])
+    push!(solution.orientation.oe[6], intermediate_solution.oe[6])
+
+    push!(solution.orientation.lat, intermediate_solution.lat)
+    push!(solution.orientation.lon, intermediate_solution.lon)
+    push!(solution.orientation.alt, intermediate_solution.alt)
+    push!(solution.orientation.γ_ii, intermediate_solution.γ_ii)
+    push!(solution.orientation.γ_pp, intermediate_solution.γ_pp)
+
+    push!(solution.orientation.h_ii[1], intermediate_solution.h_ii[1])
+    push!(solution.orientation.h_ii[2], intermediate_solution.h_ii[2])
+    push!(solution.orientation.h_ii[3], intermediate_solution.h_ii[3])
+    push!(solution.orientation.h_pp[1], intermediate_solution.h_pp[1])
+    push!(solution.orientation.h_pp[2], intermediate_solution.h_pp[2])
+    push!(solution.orientation.h_pp[3], intermediate_solution.h_pp[3])
+    push!(solution.orientation.h_ii_mag, intermediate_solution.h_ii_mag)
+    push!(solution.orientation.h_pp_mag, intermediate_solution.h_pp_mag)
+
+    push!(solution.orientation.uD[1], intermediate_solution.uD[1])
+    push!(solution.orientation.uD[2], intermediate_solution.uD[2])
+    push!(solution.orientation.uD[3], intermediate_solution.uD[3])
+    push!(solution.orientation.uE[1], intermediate_solution.uE[1])
+    push!(solution.orientation.uE[2], intermediate_solution.uE[2])
+    push!(solution.orientation.uE[3], intermediate_solution.uE[3])
+    push!(solution.orientation.uN[1], intermediate_solution.uN[1])
+    push!(solution.orientation.uN[2], intermediate_solution.uN[2])
+    push!(solution.orientation.uN[3], intermediate_solution.uN[3])
+    push!(solution.orientation.vN, intermediate_solution.vN)
+    push!(solution.orientation.vE, intermediate_solution.vE)
+    push!(solution.orientation.azi_pp, intermediate_solution.azi_pp)
+
+    # Physical properties
+    push!(solution.physical_properties.ρ, intermediate_solution.ρ)
+    push!(solution.physical_properties.T, intermediate_solution.T)
+    push!(solution.physical_properties.p, intermediate_solution.p)
+    push!(solution.physical_properties.wind[1], intermediate_solution.wind[1])
+    push!(solution.physical_properties.wind[2], intermediate_solution.wind[2])
+    push!(solution.physical_properties.wind[3], intermediate_solution.wind[3])
+    push!(solution.physical_properties.cL, intermediate_solution.cL)
+    push!(solution.physical_properties.cD, intermediate_solution.cD)
+    push!(solution.physical_properties.S, intermediate_solution.S)
+
+    push!(solution.physical_properties.α_control, intermediate_solution.α_control)
+    push!(solution.physical_properties.inertia_tensor[1], intermediate_solution.inertia_tensor[1]) # inertia tensor components
+    push!(solution.physical_properties.inertia_tensor[2], intermediate_solution.inertia_tensor[2])
+    push!(solution.physical_properties.inertia_tensor[3], intermediate_solution.inertia_tensor[3])
+    push!(solution.physical_properties.inertia_tensor[4], intermediate_solution.inertia_tensor[4])
+    push!(solution.physical_properties.inertia_tensor[5], intermediate_solution.inertia_tensor[5])  
+    push!(solution.physical_properties.inertia_tensor[6], intermediate_solution.inertia_tensor[6])
+    push!(solution.physical_properties.inertia_tensor[7], intermediate_solution.inertia_tensor[7])
+    push!(solution.physical_properties.inertia_tensor[8], intermediate_solution.inertia_tensor[8])
+    push!(solution.physical_properties.inertia_tensor[9], intermediate_solution.inertia_tensor[9])
+    push!(solution.physical_properties.τ_rw[1], intermediate_solution.τ_rw[1]) # total reaction wheel torque τ_rw_x
+    push!(solution.physical_properties.τ_rw[2], intermediate_solution.τ_rw[2]) # total reaction wheel torque τ_rw_y
+    push!(solution.physical_properties.τ_rw[3], intermediate_solution.τ_rw[3]) # total reaction wheel torque τ_rw_z
+
+    # Initialize α and β if they are not already initialized
+    n_bodies = length(model.body.links)
+    if isempty(solution.physical_properties.α)
+        for i in 1:n_bodies
+            append!(solution.physical_properties.α, [Float64[]])
+            append!(solution.physical_properties.β, [Float64[]])
+            append!(solution.performance.heat_rate, [Float64[]])
+            append!(solution.performance.heat_load, [Float64[]])
+        end
+    end
+    # Append α and β for each link
+    for i in 1:n_bodies
+        push!(solution.physical_properties.α[i], intermediate_solution.α[i]) # α
+        push!(solution.physical_properties.β[i], intermediate_solution.β[i]) # β
+        push!(solution.performance.heat_rate[i], intermediate_solution.heat_rate[i]) # heat rate
+        push!(solution.performance.heat_load[i], intermediate_solution.heat_load[i]) # heat load
+    end
+
+    n_reaction_wheels = model.body.n_reaction_wheels
+    n_thrusters = model.body.n_thrusters
+    # Initialize the reaction wheel properties if they are not already initialized
+    if isempty(solution.physical_properties.rw_h)
+        for i in 1:n_reaction_wheels
+            append!(solution.physical_properties.rw_h, [Float64[]])
+            append!(solution.physical_properties.rw_τ, [Float64[]])
+        end
+    end
+    # Append reaction wheel properties for each reaction wheel
+    for i in 1:n_reaction_wheels
+        push!(solution.physical_properties.rw_h[i], intermediate_solution.rw_h[i])
+        push!(solution.physical_properties.rw_τ[i], intermediate_solution.rw_τ[i])
+    end
+
+
+    # Initialize thruster forces if they are not already initialized
+    if isempty(solution.physical_properties.thruster_forces)
+        for i in 1:n_thrusters
+            append!(solution.physical_properties.thruster_forces, [Float64[]])
+        end
+    end
+    # Append thruster forces for each thruster
+    for i in 1:n_thrusters
+        push!(solution.physical_properties.thruster_forces[i], intermediate_solution.thruster_forces[i])
+    end
+
+    # Performance
+    push!(solution.performance.mass, intermediate_solution.mass)
+    push!(solution.performance.T_r, intermediate_solution.T_r)
+    push!(solution.performance.q, intermediate_solution.dynamic_pressure)
+
+    # Forces
+    push!(solution.forces.gravity_ii[1], intermediate_solution.gravity_ii[1])
+    push!(solution.forces.gravity_ii[2], intermediate_solution.gravity_ii[2])
+    push!(solution.forces.gravity_ii[3], intermediate_solution.gravity_ii[3])
+    push!(solution.forces.drag_pp[1], intermediate_solution.drag_pp[1])
+    push!(solution.forces.drag_pp[2], intermediate_solution.drag_pp[2])
+    push!(solution.forces.drag_pp[3], intermediate_solution.drag_pp[3])
+    push!(solution.forces.drag_ii[1], intermediate_solution.drag_ii[1])
+    push!(solution.forces.drag_ii[2], intermediate_solution.drag_ii[2])
+    push!(solution.forces.drag_ii[3], intermediate_solution.drag_ii[3])
+    push!(solution.forces.lift_pp[1], intermediate_solution.lift_pp[1])
+    push!(solution.forces.lift_pp[2], intermediate_solution.lift_pp[2])
+    push!(solution.forces.lift_pp[3], intermediate_solution.lift_pp[3])
+    push!(solution.forces.lift_ii[1], intermediate_solution.lift_ii[1])
+    push!(solution.forces.lift_ii[2], intermediate_solution.lift_ii[2])
+    push!(solution.forces.lift_ii[3], intermediate_solution.lift_ii[3])
+    push!(solution.forces.force_ii[1], intermediate_solution.force_ii[1])
+    push!(solution.forces.force_ii[2], intermediate_solution.force_ii[2])
+    push!(solution.forces.force_ii[3], intermediate_solution.force_ii[3])
+    push!(solution.forces.τ_body[1], intermediate_solution.τ_body[1])
+    push!(solution.forces.τ_body[2], intermediate_solution.τ_body[2])
+    push!(solution.forces.τ_body[3], intermediate_solution.τ_body[3])
+    push!(solution.forces.energy, intermediate_solution.energy)
+
+    # Simulation
+    push!(solution.simulation.MC_seed, intermediate_solution.MC_index)
+    push!(solution.simulation.drag_passage, intermediate_solution.drag_state)
+
+    # return intermediate_solution.time[end]
 end
 
 function clean_results()

@@ -45,6 +45,19 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
 
     println("m.aero.alpha after deepcopying and running zero aoa case: ", m.aerodynamics.α)
 
+    pos_ii = SVector{3, Float64}(sol_min_dratio[1:3,end])   
+    vel_ii = SVector{3, Float64}(sol_min_dratio[4:6,end])
+
+    pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, config.cnf.et)
+
+    # pos_pp, vel_pp = r_intor_p!(SVector{3, Float64}(r0), SVector{3, Float64}(v0), m.planet, config.cnf.et)
+
+    LatLong = rtolatlong(pos_pp, m.planet, args[:topography_model] == "Spherical Harmonics" && norm(pos_ii) - m.planet.Rp_e < args[:EI] * 1e3)
+        
+    lat = LatLong[2]
+
+    println("Latitude at entry interface min drag ratio: ", rad2deg(lat))
+
     energy_target_max = norm(sol_min_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_min_dratio[1:3, end]) # Highest possible energy with minimum drag ratio, least negative
 
     pos_ii = SVector{3, Float64}(sol_max_dratio[1:3,end])   
@@ -56,7 +69,7 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
 
     LatLong = rtolatlong(pos_pp, m.planet, args[:topography_model] == "Spherical Harmonics" && norm(pos_ii) - m.planet.Rp_e < args[:EI] * 1e3)
         
-    lat = deg2rad(22) # LatLong[2]
+    lat =  LatLong[2]
 
     println("Latitude at entry interface: ", rad2deg(lat))
     

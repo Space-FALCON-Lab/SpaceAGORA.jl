@@ -84,7 +84,7 @@ args = Dict(# Misc Simulation
             :security_mode => 1,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
-            :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+            :flash2_through_integration => 0,                        # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             :struct_ctrl => 0,                                      # Structural Load Control True=1, False=0
             :targeting_ctrl => 1,                                   # Targeting Control True=1, False=0
             

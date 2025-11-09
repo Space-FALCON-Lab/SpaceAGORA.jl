@@ -675,7 +675,6 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         if lambdav_ii < lambda_switch
             aoa = 0.0
         else
-
             state = [T_p, ρ, S]
             index_ratio = [1,1]
             aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state) # m.aerodynamics.α 
@@ -738,7 +737,6 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         end
 
         if length(args[:n_bodies]) != 0
-
             for k = 1:length(args[:n_bodies])  
                 gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
             end

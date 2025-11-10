@@ -494,7 +494,7 @@ function aerobraking_campaign(args, state)
     end
 
     if args[:plot] == true
-        plots(state, m, name, args, arrow_filename)
+        plots(state, m, name, args, params, arrow_filename)
     end
 
     # rm(temp_name, recursive=true, force=true) # Remove the temporary directory used for plotting

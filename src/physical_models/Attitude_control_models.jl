@@ -5,11 +5,12 @@
 using OrdinaryDiffEq
 # using SimpleDiffEq
 using StaticArrays
-import .config
+using .SimulationModel
+# import .config
 # using BenchmarkTools
 
 function reaction_wheel_model!(
-    link::config.Link,
+    link::Link,
     τ::MVector{3, Float64},
     dt::Float64
 )

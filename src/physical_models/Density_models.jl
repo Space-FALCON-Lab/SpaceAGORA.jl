@@ -178,7 +178,7 @@ function density_gram(h::Float64, p::Planet, lat::Float64, lon::Float64, monteca
         if h > 2000.0e3
 
             rho = 0.0
-            T = temperature_linear(h, p)
+            T = p.T
             wind = [0.0, 0.0, 0.0]
         else
             rho, T, wind = density_polyfit(h, p)

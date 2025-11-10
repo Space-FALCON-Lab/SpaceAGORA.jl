@@ -1,15 +1,25 @@
+# include("../simulation_model/SimulationModel.jl")
+using Revise
+includet("../simulation_model/SimulationModel.jl")
 include("../simulation/Run.jl")
-include("../config.jl")
+# include("../jl")
 include("../utils/maneuver_plans.jl")
-include("../utils/attitude_control_plans.jl")
+# include("../utils/attitude_control_plans.jl")
 
-import .config 
-import .ref_sys                                                                                            
+# import .config 
+using .ref_sys
+using .SimulationModel
+
+# Define dynamic effectors
+gravEffector = InverseSquaredGravityModel()
+nBodyGravEffector = NBodyGravityModel(["Sun", "Moon"], "Earth")
+harmonicGravEffector = GravitationalHarmonicsModel(50, 50, "Gravity_harmonics_data/EarthGGM05C.csv", "Earth")
+dynamic_effectors = (gravEffector, nBodyGravEffector, harmonicGravEffector)
 
 # Define spacecraft model
-spacecraft = config.SpacecraftModel()
+spacecraft = SpacecraftModel()
 # Add bodies to the spacecraft model
-main_bus = config.Link(root=true, 
+main_bus = Link{0}(root=true, 
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), 
                         # q=SVector{4, Float64}([0, -0.6321683, -0.07370895, 0.7713171]), # true odyssey
                         q=SVector{4, Float64}([0, 0, 0, 1]),
@@ -18,43 +28,44 @@ main_bus = config.Link(root=true,
                         ṙ=SVector{3, Float64}([0,0,0]), 
                         dims=SVector{3, Float64}([2.2,2.6,1.7]), 
                         ref_area=2.6*1.7,
-                        m=391.0, 
-                        gyro=0,
+                        m=391.0)
+                        # gyro=0)
                         # max_torque=5.0,
                         # max_h=100.0,
-                        J_rw=MMatrix{3, 4, Float64}([1.0 0.0 0.0 0.57735; 0.0 1.0 0.0 0.57735; 0.0 0.0 1.0 0.57735]),#0.57735
-                        attitude_control_function=lqr_constant_α_β)
+                        # J_rw=SMatrix{3, 4, Float64}([1.0 0.0 0.0 0.57735; 0.0 1.0 0.0 0.57735; 0.0 0.0 1.0 0.57735]))#0.57735
+                        # attitude_control_function=lqr_constant_α_β)
 
-L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.6/2 - 3.89/4, 0.0), 
+L_panel = Link{0}(r=SVector{3, Float64}(0.0, -2.6/2 - 3.89/4, 0.0), 
                         # q=SVector{4, Float64}([0, 0.4617, 0, 0.8870]),
                         q=SVector{4, Float64}([0, 0, 0, 1]),
                         ṙ=SVector{3, Float64}([0,0,0]), 
                         dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
                         ref_area=3.89*1.7/2,
-                        m=10.0, 
-                        gyro=0)
-R_panel = config.Link(r=SVector{3, Float64}(0.0, 2.6/2 + 3.89/4, 0.0),
+                        m=10.0)
+                        # gyro=0)
+
+R_panel = Link{0}(r=SVector{3, Float64}(0.0, 2.6/2 + 3.89/4, 0.0),
                         # q=SVector{4, Float64}([0, 0.4617, 0, 0.8870]),
                         q=SVector{4, Float64}([0, 0, 0, 1]),
                         ṙ=SVector{3, Float64}([0,0,0]), 
                         dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
                         ref_area=3.89*1.7/2,
-                        m=10.0, 
-                        gyro=0)
+                        m=10.0)
+                        # gyro=0)
 
-config.add_body!(spacecraft, main_bus, prop_mass=50.0)
-config.add_body!(spacecraft, L_panel)
-config.add_body!(spacecraft, R_panel)
+add_body!(spacecraft, main_bus, prop_mass=50.0)
+add_body!(spacecraft, L_panel)
+add_body!(spacecraft, R_panel)
 
-L_panel_joint = config.Joint(main_bus, L_panel)
-R_panel_joint = config.Joint(R_panel, main_bus)
-config.add_joint!(spacecraft, L_panel_joint)
-config.add_joint!(spacecraft, R_panel_joint)
+L_panel_joint = Joint(main_bus, L_panel)
+R_panel_joint = Joint(R_panel, main_bus)
+add_joint!(spacecraft, L_panel_joint)
+add_joint!(spacecraft, R_panel_joint)
 
 println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
 # println("Spacecraft roots: $spacecraft.roots")
-println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
-println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
+println("Spacecraft COM: $(get_COM(spacecraft, main_bus))")
+println("Spacecraft MOI: $(get_inertia_tensor(spacecraft, main_bus))")
 
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
@@ -138,7 +149,7 @@ args = Dict(# Misc Simulation
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
-            :control_mode => 3,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
+            :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
             :security_mode => 1,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge

@@ -60,6 +60,10 @@ function orbitalelemtorv(oe::SVector{7, Float64}, planet)
 end
 
 function rvtoorbitalelement(r::SVector, v::SVector, m::Float64, planet::Planet)
+
+    # println("r: ", r)
+    # println("v: ", v)
+
     # From ECI (Planet Centered Inertial) to orbital element
     i_x = SVector{3, Int64}([1, 0, 0])
     i_y = SVector{3, Int64}([0, 1, 0])

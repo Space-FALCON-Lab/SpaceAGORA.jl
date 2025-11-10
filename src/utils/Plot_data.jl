@@ -1,12 +1,18 @@
 include("Misc.jl")
 
+using .SimulationModel
+
 using PlotlyJS
 using LaTeXStrings
 using Arrow
 
-function plots(state, m, name, args, temp_name)
+function plots(state, m, name, args, params, temp_name)
     data_table = DataFrame(Arrow.Table(temp_name))
     println("Data table loaded with $(nrow(data_table)) rows and $(ncol(data_table)) columns.")
+
+    cnf = params[1]
+    m = params[2]
+    solution = params[3]
 
     if args[:keplerian] == true
         traj_3D(state, m, name, args, data_table)
@@ -17,19 +23,19 @@ function plots(state, m, name, args, temp_name)
         performance_plots(state, m, name, args, data_table)
     end
 
-    ABM_periapsis(name)
-    ground_track(state, m, name, args, data_table)
-    
-    if args[:closed_form] == 1 && args[:closed_form] == 1 && args[:body_shape] == "Spacecraft" && !config.cnf.impact && args[:keplerian] == false
-        closed_form_solution_plot(name, m, data_table)
+    ABM_periapsis(name, cnf)
+    ground_track(state, cnf, solution, name, args, data_table)
+
+    if args[:closed_form] == 1 && args[:closed_form] == 1 && args[:body_shape] == "Spacecraft" && !cnf.impact && args[:keplerian] == false
+        closed_form_solution_plot(name, m, solution, data_table)
         angle_of_attack_plot(name, args, data_table)
-        drag_passage_plot(name, args, data_table)
-        lambda_plot(name, args)
+        drag_passage_plot(name, args, solution, data_table)
+        lambda_plot(name, cnf, args)
     end
 
     if args[:type_of_mission] == "Drag Passage"
-        drag_passage_plot(name, args, data_table)
-        lambda_plot(name, args)
+        drag_passage_plot(name, args, solution, data_table)
+        lambda_plot(name, cnf, args)
     end
 
     if args[:orientation_sim]
@@ -40,16 +46,16 @@ function plots(state, m, name, args, temp_name)
         torque_plot(name, data_table)
         inertia_plot(name, data_table)
         if m.body.n_reaction_wheels > 0
-            reaction_wheel_h_plot(name, data_table)
-            reaction_wheel_torque_plot(name, data_table)
+            reaction_wheel_h_plot(name, solution, data_table)
+            reaction_wheel_torque_plot(name, m, data_table)
             total_reaction_wheel_torque_plot(name, data_table)
         end
     end
 end
 
-function lambda_plot(name, args)
-    trace1 = scatter(x=config.cnf.time_switch_list, y=config.cnf.lambda_switch_list, name="λ_switch", mode="lines", line=attr(color="black"))
-    trace2 = scatter(x=config.cnf.time_list, y=config.cnf.lamv_list, mode="lines", name="λᵥ", line=attr(color="red"))
+function lambda_plot(name, cnf, args)
+    trace1 = scatter(x=cnf.time_switch_list, y=cnf.lambda_switch_list, name="λ_switch", mode="lines", line=attr(color="black"))
+    trace2 = scatter(x=cnf.time_list, y=cnf.lamv_list, mode="lines", name="λᵥ", line=attr(color="red"))
     layout = Layout(xaxis_title="Time [s]", yaxis_title="λᵥ", template="simple_white", showlegend=true)
     p = plot([trace1, trace2], layout)
 
@@ -57,25 +63,25 @@ function lambda_plot(name, args)
     savefig(p, name * "_lambda_v.pdf", format="pdf")
 end
 
-function drag_passage_plot(name, args, data_table)
-    alt_idx = findall(x -> x < args[:AE]*1e3, config.solution.orientation.alt)
+function drag_passage_plot(name, args, solution, data_table)
+    alt_idx = findall(x -> x < args[:AE]*1e3, solution.orientation.alt)
 
-    time = [config.solution.orientation.time[i] for i in alt_idx]
-    aoa = [rad2deg(config.solution.physical_properties.α[2][i]) for i in alt_idx]
+    time = [solution.orientation.time[i] for i in alt_idx]
+    aoa = [rad2deg(solution.physical_properties.α[2][i]) for i in alt_idx]
     trace1 = scatter(x=time, y=aoa, mode="lines", line=attr(color="black"))
     layout = Layout(yaxis_title="α [deg]")
     p_aoa = plot(trace1, layout)
 
-    index = findall(x -> x > 0, config.solution.performance.heat_rate[2])
+    index = findall(x -> x > 0, solution.performance.heat_rate[2])
     
-    time = [config.solution.orientation.time[i] for i in index]
-    heat_rate = config.solution.performance.heat_rate[2][index]
+    time = [solution.orientation.time[i] for i in index]
+    heat_rate = solution.performance.heat_rate[2][index]
     trace2 = scatter(x=time, y=heat_rate, mode="lines", line=attr(color="black"))
     layout = Layout(yaxis_title="Heat Rate [W/cm²]")
     p_heatrate = plot(trace2, layout)
 
-    time = [config.solution.orientation.time[i] for i in index]
-    heat_load = [config.solution.performance.heat_load[2][i] for i in index]
+    time = [solution.orientation.time[i] for i in index]
+    heat_load = [solution.performance.heat_load[2][i] for i in index]
     trace3 = scatter(x=time, y=heat_load, mode="lines", marker=attr(color="black"))
     layout = Layout(xaxis_title="Time [s]", yaxis_title="Heat Load [J/cm²]")
     p_heatload = plot(trace3, layout)
@@ -86,19 +92,19 @@ function drag_passage_plot(name, args, data_table)
     display(p)
     savefig(p, name * "_drag_passage_heat.pdf", format="pdf")
     
-    time = [config.solution.orientation.time[i] for i in index]
-    dyn_press = config.solution.performance.q[index]
+    time = [solution.orientation.time[i] for i in index]
+    dyn_press = solution.performance.q[index]
     trace2 = scatter(x=time, y=dyn_press, mode="lines", line=attr(color="black"))
     trace4 = scatter(x=time, y=args[:max_dyn_press]*ones(size(dyn_press)), mode="lines", line=attr(color="red"))
     layout = Layout(yaxis_title="Dynamic Pressure [N/m²]")
     p_dyn_press = plot([trace2, trace4], layout)
 
-    bodies, _ = config.traverse_bodies(args[:spacecraft_model], args[:spacecraft_model].roots[1])
-    Area_tot = config.get_SC_area(bodies) + config.get_SA_area(bodies)  
+    bodies, _ = traverse_bodies(args[:spacecraft_model], args[:spacecraft_model].roots[1])
+    Area_tot = get_SC_area(bodies) + get_SA_area(bodies)  
 
-    time = [config.solution.orientation.time[i] for i in index]
-    drag = dyn_press .* config.solution.physical_properties.cD[index] * Area_tot
-    drag_lim = args[:max_dyn_press] * config.solution.physical_properties.cD[1] * Area_tot * ones(size(drag))
+    time = [solution.orientation.time[i] for i in index]
+    drag = dyn_press .* solution.physical_properties.cD[index] * Area_tot
+    drag_lim = args[:max_dyn_press] * solution.physical_properties.cD[1] * Area_tot * ones(size(drag))
     trace3 = scatter(x=time, y=drag, mode="lines", marker=attr(color="black"))
     trace5 = scatter(x=time, y=drag_lim, mode="lines", marker=attr(color="red"))
     layout = Layout(xaxis_title="Time [s]", yaxis_title="Drag [N]")
@@ -110,8 +116,8 @@ function drag_passage_plot(name, args, data_table)
     display(p)
     savefig(p, name * "_drag_passage_struct.pdf", format="pdf")
 
-    time = [config.solution.orientation.time[i] for i in alt_idx]
-    alt = [config.solution.orientation.alt[i] for i in alt_idx]
+    time = [solution.orientation.time[i] for i in alt_idx]
+    alt = [solution.orientation.alt[i] for i in alt_idx]
     trace1 = scatter(x=time, y=alt, mode="lines", line=attr(color="black"))
     layout = Layout(xaxis_title="Time [s]", yaxis_title="Altitude [m]", template="simple_white", showlegend=false)
     p1 = plot(trace1, layout)
@@ -169,29 +175,29 @@ function angle_of_attack_plot(name, args, data_table)
     savefig(p, name * "_angle_of_attack_profile.pdf", format="pdf")
 end
 
-function closed_form_solution_plot(name, mission, data_table)
-    alt = [item - mission.planet.Rp_e for item in config.solution.orientation.pos_ii_mag]
+function closed_form_solution_plot(name, mission, solution, data_table)
+    alt = [item - mission.planet.Rp_e for item in solution.orientation.pos_ii_mag]
     alt_idx = findall(x -> x <= (args[:EI])*1e3, alt)
 
     index_orbit = [1]
-    time_0 = [config.solution.orientation.time[alt_idx[1]]]
+    time_0 = [solution.orientation.time[alt_idx[1]]]
 
     for i in range(start=2, step=1, stop=length(alt_idx))
         if alt_idx[i] - alt_idx[i - 1] > 50
             append!(index_orbit, i)
-            append!(time_0, config.solution.orientation.time[alt_idx[i]])
+            append!(time_0, solution.orientation.time[alt_idx[i]])
         end
     end
     append!(index_orbit, length(alt_idx))
 
-    alt_idx_cf = findall(x -> (x > 0) && (x <= args[:EI]*1e3), config.solution.closed_form.h_cf)
+    alt_idx_cf = findall(x -> (x > 0) && (x <= args[:EI]*1e3), solution.closed_form.h_cf)
     index_orbit_cf = [1]
-    time_0_cf = [config.solution.closed_form.t_cf[alt_idx_cf[1]]]
+    time_0_cf = [solution.closed_form.t_cf[alt_idx_cf[1]]]
     
     for i in range(start=2, step=1, stop=length(alt_idx_cf))
         if alt_idx_cf[i] - alt_idx_cf[i - 1] > 50
             append!(index_orbit_cf, i)
-            append!(time_0_cf, config.solution.closed_form.t_cf[alt_idx_cf[i]])
+            append!(time_0_cf, solution.closed_form.t_cf[alt_idx_cf[i]])
         end
     end
     append!(index_orbit_cf, length(alt_idx_cf))
@@ -207,15 +213,15 @@ function closed_form_solution_plot(name, mission, data_table)
     for i in range(start=1, step=1, stop=length(index_orbit)-1)
         time_end = 0
 
-        time = [config.solution.orientation.time[j] - time_0[i] + time_end for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
-        alt = [(config.solution.orientation.pos_ii_mag[j] - mission.planet.Rp_e)/1e3 for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
-        gamma = [rad2deg(config.solution.orientation.γ_ii[j]) for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
-        v = [config.solution.orientation.vel_ii_mag[j] for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
+        time = [solution.orientation.time[j] - time_0[i] + time_end for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
+        alt = [(solution.orientation.pos_ii_mag[j] - mission.planet.Rp_e)/1e3 for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
+        gamma = [rad2deg(solution.orientation.γ_ii[j]) for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
+        v = [solution.orientation.vel_ii_mag[j] for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
 
-        time_cf = [config.solution.closed_form.t_cf[j] - time_0_cf[i] + time_end for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
-        alt_cf = [config.solution.closed_form.h_cf[j]/1e3 for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
-        gamma_cf = [rad2deg(config.solution.closed_form.γ_cf[j]) for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
-        v_cf = [config.solution.closed_form.v_cf[j] for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
+        time_cf = [solution.closed_form.t_cf[j] - time_0_cf[i] + time_end for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
+        alt_cf = [solution.closed_form.h_cf[j]/1e3 for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
+        gamma_cf = [rad2deg(solution.closed_form.γ_cf[j]) for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
+        v_cf = [solution.closed_form.v_cf[j] for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
 
         push!(plot_traces_alt, scatter(x=time, y=alt, mode="lines", line=attr(color="black")))
         push!(plot_traces_gamma, scatter(x=time, y=gamma, mode="lines", line=attr(color="black")))
@@ -274,7 +280,7 @@ function performance_plots(state, m, name, args, data_table)
     plot_1 = plot([plot_traces_1], layout_1)
     colors = ["black", "red", "blue", "green", "orange", "purple"]
     plot_traces_heat_rate = []
-    for k in 1:length(config.model.body.links)
+    for k in 1:length(m.body.links)
         index = findall(x -> x > 0, data_table[!, Symbol("link_$(k)_heat_rate")])
         if isempty(index)
             index = 1:length(data_table[!, Symbol("link_$(k)_heat_rate")])
@@ -311,7 +317,7 @@ function performance_plots(state, m, name, args, data_table)
     plot_heat_rate = plot([plot_traces_heat_rate...], layout_heat_rate)
 
     plot_traces_heat_load = []
-    for k in 1:length(config.model.body.links)
+    for k in 1:length(m.body.links)
         if length(index_orbit) <= 2
             time = [data_table.time[i] for i in index]
             heat_load = [data_table[!, Symbol("link_$(k)_heat_load")][i] for i in index]
@@ -334,7 +340,7 @@ function performance_plots(state, m, name, args, data_table)
     plot_heat_load = plot([plot_traces_heat_load...], layout_heat_load)
 
     if args[:body_shape] == "Spacecraft"
-        plot_traces_4 = scatter(x=[item/(60*60*24) for item in data_table.time], y=[item - config.get_spacecraft_mass(m.body, m.body.roots[1], dry=true) for item in data_table.mass], mode="lines", line=attr(color="black"))
+        plot_traces_4 = scatter(x=[item/(60*60*24) for item in data_table.time], y=[item - get_spacecraft_mass(m.body, m.body.roots[1], dry=true) for item in data_table.mass], mode="lines", line=attr(color="black"))
         layout_4 = Layout(xaxis_title="Time [days]", yaxis_title="Mass [kg]")
     else
         index = findall(x -> x > 0, data_table.q)
@@ -477,31 +483,35 @@ function traj_3D(state, m, name, args, data_table)
     savefig(p, name * "_traj3D.pdf", format="pdf")
 end
 
-function ABM_periapsis(name)
-    orbit_number = config.cnf.orbit_number_list .- 1
-    periapsis_altitude = config.cnf.periapsis_list
+function ABM_periapsis(name, cnf)
+    """
+        Plot the periapsis altitude and the maneuvers to raise/lower it
+    """
+
+    orbit_number = cnf.orbit_number_list .- 1
+    periapsis_altitude = cnf.periapsis_list
     delta_v = [0.0]
 
     delta_v_raise = []
     delta_v_lower = []
 
-    for j in range(start=1, step=1, stop=length(config.cnf.Δv_list)-1)
-        append!(delta_v, config.cnf.Δv_list[j+1] - config.cnf.Δv_list[j])
+    for j in range(start=1, step=1, stop=length(cnf.Δv_list)-1)
+        append!(delta_v, cnf.Δv_list[j+1] - cnf.Δv_list[j])
     end
 
     for j in range(start=1, step=1, stop=length(delta_v))
-        if j in config.cnf.raise_man_orbit
+        if j in cnf.raise_man_orbit
             append!(delta_v_raise, delta_v[j])
-        elseif j in config.cnf.lower_man_orbit
+        elseif j in cnf.lower_man_orbit
             append!(delta_v_lower, delta_v[j])
         end
     end
 
     plot_traces_palt = scatter(x=orbit_number, y=periapsis_altitude, mode="markers", marker=attr(color="black"))
 
-    plot_traces_abm1 = scatter(x=[item for item in config.cnf.raise_man_orbit], y=delta_v_raise, mode="markers", marker=attr(color="blue", symbol="triangle"), yaxis="y2") # , label="ABM to raise periapsis")
-    plot_traces_abm2 = scatter(x=[item for item in config.cnf.lower_man_orbit], y=delta_v_lower, mode="markers", marker=attr(color="red", symbol="circle"), yaxis="y2") # , label="ABM to lower periapsis")
-    
+    plot_traces_abm1 = scatter(x=[item for item in cnf.raise_man_orbit], y=delta_v_raise, mode="markers", marker=attr(color="blue", symbol="triangle"), yaxis="y2") # , label="ABM to raise periapsis")
+    plot_traces_abm2 = scatter(x=[item for item in cnf.lower_man_orbit], y=delta_v_lower, mode="markers", marker=attr(color="red", symbol="circle"), yaxis="y2") # , label="ABM to lower periapsis")
+
     p = plot([plot_traces_palt, plot_traces_abm1, plot_traces_abm2], Layout(xaxis_title_text="Orbit", yaxis_title_text="Periapsis altitude [km]", yaxis2 = attr(title="ABM Magnitude [m/s]", overlaying="y", side="right"), template="simple_white", showlegend=false))
 
     display(p)
@@ -509,19 +519,19 @@ function ABM_periapsis(name)
 
 end
 
-function ground_track(state, m, name, args, data_table)
+function ground_track(state, cnf, solution, name, args, data_table)
     """
         Plot the ground track of the spacecraft during the drag passages
     """
     time = data_table.time
     xaxis_title = ""
-    if config.solution.orientation.number_of_passage[end] == 1 || args[:type_of_mission] == "Time"
+    if solution.orientation.number_of_passage[end] == 1 || args[:type_of_mission] == "Time"
         lats_traces = scatter(x=time, y=rad2deg.(data_table.lat), mode="lines", line=attr(color="black"))
         lons_traces = scatter(x=time, y=rad2deg.(data_table.lon), mode="lines", line=attr(color="black"))
         xaxis_title = "Time [s]"
     else
-        lats_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.latitude_periapsis, mode="lines", line=attr(color="black"))
-        lons_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.longitude_periapsis, mode="lines", line=attr(color="black"))
+        lats_traces = scatter(x=1:maximum(solution.orientation.number_of_passage), y=cnf.latitude_periapsis, mode="lines", line=attr(color="black"))
+        lons_traces = scatter(x=1:maximum(solution.orientation.number_of_passage), y=cnf.longitude_periapsis, mode="lines", line=attr(color="black"))
         xaxis_title = "Orbit number"
     end
 
@@ -599,7 +609,7 @@ function wind_relative_attitude_plot(name, args, data_table)
     time = data_table.time
     # α = []
     # β = []
-    # for i in 1:config.model.body.number_of_links
+    # for i in 1:m.body.number_of_links
     #     if !haskey(data_table, Symbol("link_$(i)_aoa")) || !haskey(data_table, Symbol("link_$(i)_sideslip"))
     #         error("Data table does not contain link $i angle of attack or sideslip data.")
     #     end
@@ -610,7 +620,7 @@ function wind_relative_attitude_plot(name, args, data_table)
     β_traces = []
     α_control_traces = []
     color_choices = ["red", "green", "blue", "orange", "purple", "cyan", "magenta", "yellow", "black"]
-    for i in eachindex(config.model.body.links)
+    for i in eachindex(m.body.links)
         push!(α_traces, scatter(x=time, y=rad2deg.(data_table[:, Symbol("link_$(i)_aoa")]), mode="lines", line=attr(color=color_choices[i%length(color_choices) + 1]), name="α$i"))
         push!(β_traces, scatter(x=time, y=rad2deg.(data_table[:, Symbol("link_$(i)_sideslip")]), mode="lines", line=attr(color=color_choices[i%length(color_choices) + 1], dash="dash"), name="β$i"))
     end
@@ -624,12 +634,12 @@ function wind_relative_attitude_plot(name, args, data_table)
     savefig(p, name * "_alpha_beta.pdf", format="pdf")
 end
 
-function reaction_wheel_h_plot(name, data_table)
+function reaction_wheel_h_plot(name, solution, data_table)
     """
         Plot the reaction wheel angular momentum
     """
-    time = config.solution.orientation.time
-    h = config.solution.physical_properties.rw_h
+    time = solution.orientation.time
+    h = solution.physical_properties.rw_h
     color_choices = ["red", "green", "blue", "orange", "purple", "cyan", "magenta", "yellow", "black"]
     h_traces = []
     
@@ -659,13 +669,13 @@ function total_reaction_wheel_torque_plot(name, data_table)
     savefig(p, name * "_reaction_wheel_torque.pdf", format="pdf")
 end
 
-function reaction_wheel_torque_plot(name, data_table)
+function reaction_wheel_torque_plot(name, m, data_table)
     """
         Plot the reaction wheel angular momentum
     """
     time = data_table.time
-    τ = zeros(config.model.body.n_reaction_wheels, length(time))
-    for i in 1:config.model.body.n_reaction_wheels
+    τ = zeros(m.body.n_reaction_wheels, length(time))
+    for i in 1:m.body.n_reaction_wheels
         # if !haskey(data_table, Symbol("rw_tau_ii_$(i)"))
         #     error("Data table does not contain rw_tau_ii_$(i) data.")
         # end

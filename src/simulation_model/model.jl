@@ -105,6 +105,38 @@ mutable struct Joint
         new(link1, link2, p1ᵇ, p2ᵇ, Kx, Kt, Cx, Ct,
             SVector{3, Float64}(0.0, 0.0, 0.0), SVector{4, Float64}(0.0, 0.0, 0.0, 1.0))
     end
+
+    function Joint(link1::Link, link2::Link; p1=link1.bᵇ, 
+                                 p2=link2.aᵇ, 
+                                 Kx=SMatrix{3,3, Float64}(0.0I), 
+                                 Kt=SMatrix{3,3, Float64}(0.0I), 
+                                 Cx=zeros(SMatrix{3,3, Float64}),
+                                 Ct=zeros(SMatrix{3,3, Float64}),
+                                 translational_displacement=SVector{3, Float64}(0.0, 0.0, 0.0),
+                                 rotational_displacement=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0))
+        
+        new(link1, link2, p1, p2, Kx, Kt, Cx, Ct, 
+            translational_displacement, rotational_displacement)
+    end
+
+    function Joint(;link1=Link(), link2=Link(), p1=link1.bᵇ, 
+        p2=link2.aᵇ, 
+        Kx=SMatrix{3,3, Float64}(1.0I), 
+        Kt=SMatrix{3,3, Float64}(1.0I), 
+        Cx=zeros(SMatrix{3,3, Float64}),
+        Ct=zeros(SMatrix{3,3, Float64}),
+        translational_displacement=SVector{3, Float64}(0.0, 0.0, 0.0),
+        rotational_displacement=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0))
+
+        new(link1, link2, p1, p2, Kx, Kt, Cx, Ct, 
+            translational_displacement, rotational_displacement)
+    end
+
+    function Joint(joint::Joint)
+        new(joint.link1, joint.link2, joint.p1ᵇ, joint.p2ᵇ, 
+            joint.Kx, joint.Kt, joint.Cx, joint.Ct,
+            joint.translational_displacement, joint.rotational_displacement)
+    end
 end
 
 # --- CRITICAL REFACTOR 2 ---

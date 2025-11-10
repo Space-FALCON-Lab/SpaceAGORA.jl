@@ -98,7 +98,11 @@ function aerobraking(ip, args, gram, gram_atmosphere, filename, temp_name, param
             else
                 continue_campaign = asim(ip, initial_state, numberofpassage, args, params)
             end
+            
+            cnf = params[1]
+            m = params[2]
             solution = params[3]
+
             r_a = solution.orientation.oe[1][end] * (1 + solution.orientation.oe[2][end])
             r_p = solution.orientation.oe[1][end] * (1 - solution.orientation.oe[2][end])
         end
@@ -115,7 +119,7 @@ function aerobraking(ip, args, gram, gram_atmosphere, filename, temp_name, param
         if (r_a <= args[:ra_fin_orbit] || config.cnf.targeting == 1) && args[:keplerian] == false
             FinalState = false
             println("Reached FinalState! R_a = " * string(r_a*1e-3) * " km")
-            println("Thermal Limit overcomed totally " * string(config.cnf.count_overcome_hr) * " times")
+            println("Thermal Limit overcomed totally " * string(cnf.count_overcome_hr) * " times")
         end
 
         if r_p - m.planet.Rp_e >= args[:EI]*1e3 && args[:keplerian] == false
@@ -128,7 +132,7 @@ function aerobraking(ip, args, gram, gram_atmosphere, filename, temp_name, param
         end
 
         if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
-            closed_form(args, m)
+            closed_form(args, m, params)
         else
             len_sol = length(solution.orientation.time)
             results(solution, zeros(len_sol), (args[:EI] - 10)*1e3*ones(len_sol), zeros(len_sol), zeros(len_sol))

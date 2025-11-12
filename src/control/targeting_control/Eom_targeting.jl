@@ -17,15 +17,15 @@ using DifferentialEquations
 using Dates
 using AstroTime
 using SPICE
-using PythonCall
-sys = pyimport("sys")
+# using PythonCall
+# sys = pyimport("sys")
 
 # import .config
 # import .ref_sys
 
 function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, k_cf, heat_rate_control, gram_atmosphere=nothing)
     sys.path.append(args[:directory_Gram])
-    gram = pyimport("gram")
+    # gram = pyimport("gram")
 
     wind_m = false
     if ip.wm == 1

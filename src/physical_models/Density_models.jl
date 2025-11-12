@@ -1,9 +1,16 @@
 include("../utils/Reference_system.jl")
 
-using PythonCall
+# using PythonCall
 using SatelliteToolbox
 SpaceIndices.init()
-sys = pyimport("sys")
+# sys = pyimport("sys")
+
+using Main.GRAMjl: Position, set_height!, set_latitude!, set_longitude!, set_elapsedTime!,
+              setPosition, update, getAtmosphereState, density, temperature,
+              perturbedEWWind, ewWind, perturbedNSWind, nsWind, verticalWind
+
+
+
 
 function interp(a, b, x)
     """
@@ -169,42 +176,74 @@ function density_polyfit(h, p, lat::Float64=0.0, lon::Float64=0.0, montecarlo::B
 end
 
 function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Bool, Wind::Bool, args::Dict, el_time::Float64, atmosphere=nothing, gram=nothing)
-    """
+    use_julia_gram = get(args, :gram_backend, :python) == :julia
+    if use_julia_gram
+        if config.cnf.drag_state == false && args[:keplerian] == false
+            if h > 2000.0e3
 
-    """
-    if config.cnf.drag_state == false && args[:keplerian] == false
-        if h > 2000.0e3
+                rho = 0.0
+                T = temperature_linear(h, p)
+                wind = [0.0, 0.0, 0.0]
+            else
+                rho, T, wind = density_polyfit(h, p)
+            end
+        elseif config.cnf.drag_state == true || args[:keplerian] == true
+            if h > 200.0e3
+                rho, T, wind = density_polyfit(h, p)
+            else
+                pos = Position()
+                set_height!(pos, h * 1e-3)
+                set_latitude!(pos, rad2deg(lat))
+                set_longitude!(pos, rad2deg(lon))
+                set_elapsedTime!(pos, el_time)
+                setPosition(atmosphere, pos)
+                update(atmosphere)
 
-            rho = 0.0
-            T = temperature_linear(h, p)
-            wind = [0.0, 0.0, 0.0]
-        else
-            rho, T, wind = density_polyfit(h, p)
+                state = getAtmosphereState(atmosphere)
+                rho = density(state)
+                T = temperature(state)
+                wind = [
+                    montecarlo ? perturbedEWWind(state) : ewWind(state),
+                    montecarlo ? perturbedNSWind(state) : nsWind(state),
+                    verticalWind(state)
+                ]
+            end
         end
-    elseif config.cnf.drag_state == true || args[:keplerian] == true
-        if h > 200.0e3
-            rho, T, wind = density_polyfit(h, p)
-        else
-            position = gram.Position()
-            position.height = h * 1e-3
-            lat = rad2deg(lat)
-            lon = rad2deg(lon)
-            position.latitude = lat
-            position.longitude = lon
-            
-            position.elapsedTime = el_time # Time since start in s
-            atmosphere.setPosition(position)
-            atmosphere.update()
-            atmos = atmosphere.getAtmosphereState()
-            rho = atmos.density
-            T = atmos.temperature
-            wind = [montecarlo ? atmos.perturbedEWWind : atmos.ewWind,
-                    montecarlo ? atmos.perturbedNSWind : atmos.nsWind,
-                    atmos.verticalWind]
+        return rho, T, wind
+    else
+        if config.cnf.drag_state == false && args[:keplerian] == false
+            if h > 2000.0e3
+
+                rho = 0.0
+                T = temperature_linear(h, p)
+                wind = [0.0, 0.0, 0.0]
+            else
+                rho, T, wind = density_polyfit(h, p)
+            end
+        elseif config.cnf.drag_state == true || args[:keplerian] == true
+            if h > 200.0e3
+                rho, T, wind = density_polyfit(h, p)
+            else
+                position = gram.Position()
+                position.height = h * 1e-3
+                lat = rad2deg(lat)
+                lon = rad2deg(lon)
+                position.latitude = lat
+                position.longitude = lon
+                
+                position.elapsedTime = el_time # Time since start in s
+                atmosphere.setPosition(position)
+                atmosphere.update()
+                atmos = atmosphere.getAtmosphereState()
+                rho = atmos.density
+                T = atmos.temperature
+                wind = [montecarlo ? atmos.perturbedEWWind : atmos.ewWind,
+                        montecarlo ? atmos.perturbedNSWind : atmos.nsWind,
+                        atmos.verticalWind]
+            end
         end
+        return rho, T, wind
     end
-
-    return rho, T, wind
 end
 
 function density_nrlmsise(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Bool, Wind::Bool, args::Dict, current_time::DateTime)

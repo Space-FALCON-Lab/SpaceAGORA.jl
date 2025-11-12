@@ -2,6 +2,9 @@ module config
 using StaticArrays
 using AstroTime
 export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model
+if !isdefined(Main, :pyconvert)
+    pyconvert(T, x) = convert(T, x)
+end
 
     @kwdef mutable struct Body
         mass::Float64 = 0.0

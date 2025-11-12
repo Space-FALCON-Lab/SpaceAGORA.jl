@@ -1,5 +1,5 @@
-using PythonCall
-sys = pyimport("sys")
+# using PythonCall
+# sys = pyimport("sys")
 
 function gravity_const(pos_ii_mag, pos_ii, p, mass=0, vel_ii=0)
     """
@@ -69,21 +69,41 @@ function gravity_GRAM(pos_ii, lat, lon, alt, p, mass, vel_ii, el_time, atmospher
     :param atmosphere: atmosphere of the planet
     :return: gravity of the planet
     """
-    if norm(pos_ii) - p.Rp_e > args[:EI] * 1e3
-        return gravity_invsquared_J2(norm(pos_ii), pos_ii, p, mass, vel_ii)
+    use_julia_gram = get(args, :gram_backend, :python) == :julia
+    if use_julia_gram
+        if norm(pos_ii) - p.Rp_e > args[:EI] * 1e3
+            return gravity_invsquared_J2(norm(pos_ii), pos_ii, p, mass, vel_ii)
+        end
+        pos = Position()
+        set_latitude!(pos, rad2deg(lat))
+        set_longitude!(pos, rad2deg(lon))
+        set_height!(pos, alt * 1e-3)   
+        set_elapsedTime!(pos, el_time)
+        setPosition(atmosphere, pos)
+
+        update(atmosphere)
+
+        updated_pos = getPosition(atmosphere)
+        g_mag = gravity(updated_pos)        
+        return -g_mag * pos_ii / norm(pos_ii)
+
+    else
+        if norm(pos_ii) - p.Rp_e > args[:EI] * 1e3
+            return gravity_invsquared_J2(norm(pos_ii), pos_ii, p, mass, vel_ii)
+        end
+
+        position = gram.Position()
+        position.lat = rad2deg(lat)
+        position.lon = rad2deg(lon)
+        position.height = alt*1e-3
+
+        position.elapsedTime = el_time
+        atmosphere.setPosition(position)
+        
+        atmosphere.update()
+        pos = atmosphere.getPosition()
+
+        gravity = pos.gravity
+        return -pyconvert(Any, gravity) * pos_ii / norm(pos_ii)
     end
-
-    position = gram.Position()
-    position.lat = rad2deg(lat)
-    position.lon = rad2deg(lon)
-    position.height = alt*1e-3
-
-    position.elapsedTime = el_time
-    atmosphere.setPosition(position)
-    
-    atmosphere.update()
-    pos = atmosphere.getPosition()
-
-    gravity = pos.gravity
-    return -pyconvert(Any, gravity) * pos_ii / norm(pos_ii)
 end

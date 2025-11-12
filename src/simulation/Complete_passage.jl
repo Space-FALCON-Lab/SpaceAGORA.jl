@@ -2,6 +2,8 @@ include("../utils/Reference_system.jl")
 include("../integrator/Integrators.jl")
 include("../integrator/Events.jl")
 include("../utils/Save_results.jl")
+include("../../Julia/GRAMjl/src/GRAMjl.jl")
+
 
 include("../physical_models/Gravity_models.jl")
 include("../physical_models/Density_models.jl")
@@ -21,9 +23,9 @@ using DifferentialEquations
 using Dates
 using AstroTime
 using SPICE
-using PythonCall
+# using PythonCall
 using StaticArrays
-sys = pyimport("sys")
+# sys = pyimport("sys")
 
 import .config
 import .ref_sys

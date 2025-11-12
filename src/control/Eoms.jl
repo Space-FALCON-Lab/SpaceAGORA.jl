@@ -14,13 +14,13 @@ using DifferentialEquations
 using Dates
 using AstroTime
 using SPICE
-using PythonCall
-sys = pyimport("sys")
+# using PythonCall
+# sys = pyimport("sys")
 
 
 function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval=false, gram_atmosphere=nothing, time_switch_2=0, reevaluation_mode=1)
     sys.path.append(args[:directory_Gram])
-    gram = pyimport("gram")
+    # gram = pyimport("gram")
 
     wind_m = false
     if ip.wm == 1

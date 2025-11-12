@@ -29,6 +29,8 @@ const M_HAT_ECEF = SVector{3, Float64}(
     sin(POLE_LAT_2020)
 )
 
+const eop_iau1980 = fetch_iers_eop()
+
 """
     get_magnetic_field_dipole(r_ecef::AbstractVector)
 
@@ -84,9 +86,11 @@ function get_magnetic_field(date::DateTime, lat_rad::Number, lon_rad::Number, al
     # println("Calculating magnetic field at lat: $lat_rad, lon: $lon_rad, alt: $alt_m, date: $date")
     # Calculate the magnetic field vector using the World Magnetic Model.
     # The result is in the NED frame and has units of nT.
-    B_ned = igrf(yeardecimal(date), alt_m, lat_rad, lon_rad, Val(:geodetic))
+    B_ned = igrf(yeardecimal(date), alt_m, lat_rad, lon_rad, Val(:geocentric))
     B_pp = ned_to_ecef(B_ned, lat_rad, lon_rad, alt_m)
-    B_ii = L_PI' * B_pp
+    r_PI = r_ecef_to_eci(ITRF(), J2000(), date_to_jd(date), eop_iau1980)
+    # B_ii = rECEFtoECI(B_ned * 1e-9, date) # Convert nT to T
+    B_ii = r_PI * B_pp
     return B_ii
 end
 

@@ -459,15 +459,24 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
 
         if args[:magnetic_field]
-            B_ii = get_magnetic_field_dipole(pos_pp, m.planet.L_PI) # Magnetic field vector in inertial frame, T
-            # B_ii = get_magnetic_field(time_real, lat, lon, alt, m.planet.L_PI) # Magnetic field vector in inertial frame, T
+            # B_ii = get_magnetic_field_dipole(pos_pp, m.planet.L_PI) # Magnetic field vector in inertial frame, T
+            B_ii = get_magnetic_field(time_real, lat, lon, pos_ii_mag, m.planet.L_PI) * 1e-9 # Magnetic field vector in inertial frame, T
+            B_body = rot_body_to_inertial' * B_ii # Magnetic field vector in body frame, T
+            # println("Magnetic Field at Time ", t0, " seconds: ", B_body)
             @inbounds for (i, b) in enumerate(bodies)
+                mag_torque = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize magnetic torque vector
                 if !isempty(b.magnets)
+                    # i = 1
+                    # println("Time: ", t0)
                     @inbounds for magnet in b.magnets
-                        b.net_torque .+= calculate_magnetic_torque(magnet.m, rot_body_to_inertial' * B_ii)
+                        # println("Magnet $i dipole moment: ", magnet.m)
+                        # i += 1
+                        mag_torque .+= calculate_magnetic_torque(magnet.m, B_body)
                         # break
                     end
                 end
+                b.net_torque .+= mag_torque
+                # println("Total Magnetic Torque at Time ", t0, " seconds: ", mag_torque)
             end
         end
         bank_angle = deg2rad(0.0)
@@ -626,6 +635,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     b.rw_τ .= τ # Save the reaction wheel torque in the body
                     τ_rw .+= τ # Sum the reaction wheel torques in the body frame
                     b.net_torque .-= τ # Update the torque on the spacecraft link. Subtract the reaction wheel torque because the reaction torque on the spacecraft is opposite to the reaction wheel torque
+                    # println("Reaction wheel torque: ", τ)
                 end
 
                 # Attitude control thruster torques and forces

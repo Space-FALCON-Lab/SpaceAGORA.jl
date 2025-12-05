@@ -165,8 +165,26 @@ function aerobraking_campaign(args, state)
             p_class.Clm_topo[l, m] = harmonics_data[i, 3]
             p_class.Slm_topo[l, m] = harmonics_data[i, 4]
         end
-
     end
+
+    # if args[:magnetic_model] == "WMM"
+    #     harmonics_data = CSV.read(args[:magnetic_harmonics_file], DataFrame)
+
+    #     # Pre-initialize the Clm and Slm arrays
+    #     total_data_size = size(harmonics_data, 1)
+    #     degree = maximum(harmonics_data[:, 1]) + 1
+    #     p_class.A_mag = zeros(degree+1, degree+1) # Preallocate the matrix for the Associated Legendre Polynomial evaluations
+    #     p_class.Clm_mag = zeros(degree, degree)
+    #     p_class.Slm_mag = zeros(degree, degree)
+
+    #     # Read in all the data from the DataFrame
+    #     for i=1:total_data_size
+    #         l = harmonics_data[i, 1] + 1 # Get the degree, l, from the data and convert to an index (subtract 1 because the data starts at 2nd degree coefficient)
+    #         m = harmonics_data[i, 2] + 1 # Get the order, m, from the data and convert to an index (add 1 because the data starts at 0th order coefficient)
+    #         p_class.Clm_mag[l, m] = harmonics_data[i, 1]
+    #         p_class.Slm_mag[l, m] = harmonics_data[i, 3]
+    #     end
+    # end
 
     if args[:gravity_model] == "Inverse Squared"
         p_class.Rp_p = p_class.Rp_e

@@ -244,7 +244,11 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
         # Get density, pressure , temperature and winds
         config.cnf.Gram_justrecalled = 0
-        if ip.dm == 0
+        if lowercase(args[:density_model]) == "none"
+            ρ = 0.0
+            T_p = m.planet.T
+            wind = SVector{3, Float64}(zeros(3))
+        elseif ip.dm == 0
             ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         elseif ip.dm == 1
             ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
@@ -458,9 +462,12 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             end
         end
 
+        torque_bar_dipoles = Float64[]
+        magnetic_field = SVector{3, Float64}(zeros(3))
         if args[:magnetic_field]
             # B_ii = get_magnetic_field_dipole(pos_pp, m.planet.L_PI) # Magnetic field vector in inertial frame, T
-            B_ii = get_magnetic_field(time_real, lat, lon, pos_ii_mag, m.planet.L_PI) * 1e-9 # Magnetic field vector in inertial frame, T
+            B_ii = get_magnetic_field(time_real, lat, lon, pos_ii_mag, m.planet.L_PI, t0) * 1e-9 # Magnetic field vector in inertial frame, T
+            magnetic_field = B_ii
             B_body = rot_body_to_inertial' * B_ii # Magnetic field vector in body frame, T
             # println("Magnetic Field at Time ", t0, " seconds: ", B_body)
             @inbounds for (i, b) in enumerate(bodies)
@@ -471,7 +478,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                     @inbounds for magnet in b.magnets
                         # println("Magnet $i dipole moment: ", magnet.m)
                         # i += 1
-                        mag_torque .+= calculate_magnetic_torque(magnet.m, B_body)
+                        dipole_moment = magnet.axis * magnet.magnitude
+                        mag_torque_i = calculate_magnetic_torque(dipole_moment, B_body)
+                        mag_torque .+= mag_torque_i
+                        push!(torque_bar_dipoles, magnet.magnitude)
                         # break
                     end
                 end
@@ -715,7 +725,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                             lat, lon, alt, γ_ii, γ_pp, h_ii..., h_pp..., h_ii_mag, h_pp_mag, uD..., uE..., uN..., vN, vE,
                             azi_pp, ρ, T_p, p, wind..., CL, CD, S, mass, T_r, 
                             q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., τ_body..., energy, config.cnf.index_MonteCarlo, Int64(config.cnf.drag_state),
-                            quaternion..., ω..., config.cnf.α, vec(inertia_tensor)..., τ_rw..., α..., β..., heat_rate..., heat_load..., rw_h..., rw_τ..., thruster_forces...]
+                            quaternion..., ω..., config.cnf.α, vec(inertia_tensor)..., τ_rw..., α..., β..., heat_rate..., heat_load..., rw_h..., rw_τ..., thruster_forces..., magnetic_field..., torque_bar_dipoles...]
                 if !isempty(config.cnf.solution_intermediate) && config.cnf.solution_intermediate[end][1] == t0
                     config.cnf.solution_intermediate[end][:] .= copy(param[19])
                 else
@@ -728,7 +738,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                             lat, lon, alt, γ_ii, γ_pp, h_ii..., h_pp..., h_ii_mag, h_pp_mag, uD..., uE..., uN..., vN, vE,
                             azi_pp, ρ, T_p, p, wind..., CL, CD, S, mass, T_r, 
                             q, gravity_ii..., drag_pp..., drag_ii..., lift_pp..., lift_ii..., force_ii..., τ_body..., energy, config.cnf.index_MonteCarlo, Int64(config.cnf.drag_state),
-                            quaternion..., ω..., config.cnf.α, vec(inertia_tensor)..., τ_rw..., α..., β..., heat_rate..., heat_load..., rw_h..., rw_τ..., thruster_forces...]
+                            quaternion..., ω..., config.cnf.α, vec(inertia_tensor)..., τ_rw..., α..., β..., heat_rate..., heat_load..., rw_h..., rw_τ..., thruster_forces..., magnetic_field..., torque_bar_dipoles...]
                 config.solution.simulation.solution_states = length(sol)
                 push!(config.cnf.solution_intermediate, sol)
             end
@@ -819,7 +829,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             bodies, root_index = config.traverse_bodies(m.body, m.body.roots[1])
             for b in bodies
                 if b.gyro != 0.0
-                    reaction_wheel_model!(b, b.rw_τ, integrator.dt*config.cnf.TU)
+                    reaction_wheel_model!(b, b.ω_wheel_derivatives, integrator.dt*config.cnf.TU)
                 end
             end
         end
@@ -864,9 +874,10 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             h_pp_hat = SVector{3, Float64}(integrator.p[14]) # Relative wind unit vector
             aerobraking_phase = 2 # Aerobraking phase
             bodies, root_index = config.traverse_bodies(m.body, m.body.roots[1])
+            state = integrator.u
             for b in bodies
                 if b.gyro != 0 || !isempty(b.thrusters)
-                    b.attitude_control_function(m, b, root_index, vel_pp_rw, h_pp_hat, aerobraking_phase, integrator.t * config.cnf.TU) # Calculate the reaction wheel torque
+                    b.attitude_control_function(state, m, b, root_index, vel_pp_rw, h_pp_hat, aerobraking_phase, integrator.t * config.cnf.TU) # Calculate the reaction wheel torque
                 end
             end
         end

@@ -260,6 +260,8 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         rw_τ::Vector{Vector{Float64}} = [] # torque magnitude applied by each reaction wheel
         thruster_forces::Vector{Vector{Float64}} = [] # forces applied by each thruster
         τ_rw::Vector{Vector{Float64}} = [[], [], []] # total torque applied by all reaction wheels
+        torque_bar_dipoles::Vector{Vector{Float64}} = []
+        magnetic_field::Vector{Vector{Float64}} = [[], [], []]
     end
 
     @kwdef mutable struct Performance

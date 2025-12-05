@@ -9,7 +9,7 @@ using StaticArrays
 
 function reaction_wheel_model!(
     link::config.Link,
-    τ::MVector{3, Float64},
+    ω_wheel_derivatives::AbstractVector{Float64},
     dt::Float64
 )
     """
@@ -25,12 +25,12 @@ function reaction_wheel_model!(
         # u: current angular velocity vector
         # p: parameters (link properties)
         # t: time (not used here)
-        du[:] .= p[1]*p[2]  # du = J_rw \ τ
+        du[:] .= p[1]  # du = ω_wheel_derivatives
 
         # println("du: $du")
     end
 
-    prob = ODEProblem(ω_dot!, link.rw, (0.0, dt), [pinv(link.J_rw), τ])
+    prob = ODEProblem(ω_dot!, link.rw, (0.0, dt), [ω_wheel_derivatives])
     # println("link.rw: $(link.rw)")
     link.rw .= solve(prob, Tsit5()).u[end]
     # println("Updated link.rw: $(link.rw)")

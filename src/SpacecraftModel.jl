@@ -30,9 +30,10 @@ end
     stop_firing_time::Float64 = 0.0 # Time at which the thruster should stop firing, s. This is used to determine how long to continue firing the thruster into the next timestep
 end
 
-@kwdef struct Magnet
-    m::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Magnetic dipole moment in the body frame, Am^2
-    location::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Location in the link frame, relative to the CoM of the link, m
+@kwdef mutable struct Magnet
+    axis::SVector{3, Float64} = SVector{3, Float64}(zeros(3)) # Magnetic dipole moment axis in the body frame
+    magnitude::Float64 = 0.0 # Magnitude of the dipole moment, Am^2
+    # location::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Location in the link frame, relative to the CoM of the link, m
 end
 
 mutable struct Link

@@ -15,99 +15,72 @@ using Arrow
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
 # Add bodies to the spacecraft model
-p = SVector{3, Float64}([0.1, 0.2, -0.3])
-q = 1/(1+norm(p)^2)*SVector{4, Float64}([2*p; 1-norm(p)^2])
-# skew = (ω) -> SMatrix{3, 3, Float64}([0 -ω[3] ω[2];
-#                                    ω[3] 0 -ω[1];
-#                                    -ω[2] ω[1] 0])
-# dcm = (q[4]^2 - norm(q[1:3])^2)*I(3) - 2*q[4]*skew(q[1:3]) + 2*q[1:3]*q[1:3]' # DCM from quaternion
-# ω_body = SVector{3, Float64}([0.001, -0.01, 0.03]) # Reference angular velocity
-# ω_ref = dcm'*ω_body
-# h = sqrt(30.0/7.0)
-# w = sqrt(6.0)
-# d = sqrt(66.0/7.0)
-
-torque_rod_test_data = DataFrame(Arrow.Table("torque_rod_test.feather"))
-println("Data timestep: $(abs(torque_rod_test_data[!, "TimeData"][1] - torque_rod_test_data[!, "TimeData"][2]))")
-println("RW torque data loaded from file, time range: $(minimum(torque_rod_test_data[!, 1])) to $(maximum(torque_rod_test_data[!, 1])) seconds.")
-time_range = range(torque_rod_test_data[!, "TimeData"][1], torque_rod_test_data[!, "TimeData"][end], length(torque_rod_test_data[!, "TimeData"]))
-rw_1_itp = cubic_spline_interpolation(time_range, torque_rod_test_data[!, "RWMotorTorque[0]"])
-rw_2_itp = cubic_spline_interpolation(time_range, torque_rod_test_data[!, "RWMotorTorque[1]"])
-rw_3_itp = cubic_spline_interpolation(time_range, torque_rod_test_data[!, "RWMotorTorque[2]"])
-rw_4_itp = cubic_spline_interpolation(time_range, torque_rod_test_data[!, "RWMotorTorque[3]"])
-rw_torque_itp = (t) -> SVector{4, Float64}([rw_1_itp(t), rw_2_itp(t), rw_3_itp(t), rw_4_itp(t)])
-println(rw_torque_itp(0.1))
-
-# torque_rod_test_data = DataFrame(Arrow.Table("torque_rod_test.feather"))
-println("Torque rod data loaded from file, time range: $(minimum(torque_rod_test_data[!, 1])) to $(maximum(torque_rod_test_data[!, 1])) seconds.")
-tr_x_itp = cubic_spline_interpolation(time_range, torque_rod_test_data[!, "MTBDipoleCmds[0]"])
-tr_y_itp = cubic_spline_interpolation(time_range, torque_rod_test_data[!, "MTBDipoleCmds[1]"])
-tr_z_itp = cubic_spline_interpolation(time_range, torque_rod_test_data[!, "MTBDipoleCmds[2]"])
-tr_trans_itp = cubic_spline_interpolation(time_range, torque_rod_test_data[!, "MTBDipoleCmds[3]"])
-tr_command_itp = (t) -> MVector{4, Float64}([tr_x_itp(t), tr_y_itp(t), tr_z_itp(t), tr_trans_itp(t)])
-println("dipole command at 2.0 seconds: ", tr_command_itp(2.0))
-
-function torque_rod_test_attitude_function(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
-    # Simple attitude control function for CYGNSS
-    # Here, we can define custom attitude control laws
-    # For now, we will just return zero torque
-    # axes = [MVector{3, Float64}(1.0,        0.0,        0.0),
-    #         MVector{3, Float64}(0.0,        1.0,        0.0),
-    #         MVector{3, Float64}(0.0,        0.0,        1.0),
-    #         MVector{3, Float64}(0.70710678, 0.70710678, 0.0)]
-    b.ω_wheel_derivatives .= rw_torque_itp(t)
-    if !isempty(b.magnets)
-        tr_cmd_mags = tr_command_itp(t)
-        for i in 1:4
-            b.magnets[i].magnitude = tr_cmd_mags[i]
-        end
-    end
-end
-
-beta = deg2rad(52.0)
-J_rw = SMatrix{3, 4, Float64}([0.0        0.0        cos(beta) -cos(beta);
-                               cos(beta)  sin(beta) -sin(beta) -sin(beta);
-                               sin(beta) -cos(beta)  0.0        0.0      ])
 main_bus = config.Link(root=true, 
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), # Body z-axis points down, origin is at bottom, CoM from engineering drawing 
-                        q=q,
+                        # q=SVector{4, Float64}(q),
+                        # q=SVector{4, Float64}([0.28047528 -0.17599893  0.9414761  -0.06309311]),
+                        # q=SVector{4, Float64}([ -0.000178090669, 0.000196625584, -0.000787386924,0.999990655]), # Initial quaternion, from slew data, LVLH
+                        # q=SVector{4, Float64}([-1.78090669e-04, 1.96625584e-04, -7.87386924e-04, 9.99999655e-01]), # Stating from ~900s, from slew data, assumes scalar first, LVLH
+                        # q=SVector{4, Float64}([-0.769326211835314, -0.0287409968395995, 0.368405744863056, 0.521141383921568]), # Initial quaternion, from slew data, ECI
+                        q=SVector{4, Float64}([-0.49694828, -0.27337817, 0.69593993, 0.44042526]), # Starting from ~900s, from slew data, ECI
                         ṙ=SVector{3, Float64}([0.0, 0.0, 0.0]), 
-                        ω=SVector{3, Float64}([0.001, -0.01, 0.03]), # Starting from ~900s, from slew data, ECI
+                        # ω=SVector{3, Float64}([0.00029976 -0.00091251  0.00051997]), # Initial angular velocity rad/s, from CYGNSS documentation
+                        # ω=SVector{3, Float64}([-9.789142632171234e-5, -8.82827330140926e-5, 0.00012436837964648057]), # Initial angular velocity rad/s, from slew data, LVLH
+                        # ω=SVector{3, Float64}([4.94494778455986e-07, -1.896896037665177e-05, -2.7264315784859147e-06]), # Starting from ~900s, from slew data, LVLH
+                        # ω=SVector{3, Float64}([-9.167855927546074e-05, -0.0011950697001943617, 0.0001295462530991909]), # Initial angular velocity rad/s, from slew data, ECI
+                        ω=SVector{3, Float64}([-1.249549492745143e-06, -0.0011257840337701133, -2.340685254945601e-06]), # Starting from ~900s, from slew data, ECI
                         dims=SVector{3, Float64}([20.222e-2, 52.12e-2, 64.09e-2]), 
                         ref_area=0.1129753, # m^2
                         # ref_area=0.0,
-                        m=10.0,
-                        gyro=4,
-                        attitude_control_rate=0.1, # seconds
+                        m=28.94,
+                        gyro=0)
+                        # attitude_control_rate=0.1, # seconds
                         # rw=SVector{3, Float64}(25.790585298785203/6000.0*18.0e-3, -11.830065546928386/6000.0*18.0e-3, -532.0841089980587/6000.0*18.0e-3), # Initial RW angular momentum Nms, from CYGNSS documentation
-                        rw=SVector{4, Float64}(0.0, 0.0, 0.0, 0.0), # Initial RW angular momentum starting from 900s, from slew data
-                        max_torque=10.0, # max torque from RW datasheet, Nm
-                        max_h=0.015, # max angular momentum from RW datasheet, Nms
-                        J_rw=J_rw,
+                        # rw=SVector{3, Float64}(-85.75349176655784/6000.0*18.0e-3, 571.8118011223758/6000.0*18.0e-3, -262.8650773012001/6000.0*18.0e-3), # Initial RW angular momentum starting from 900s, from slew data
+                        # max_torque=0.65536e-3, # max torque from RW datasheet, Nm
+                        # max_h=18.0e-3, # max angular momentum from RW datasheet, Nms
+                        # J_rw=SMatrix{3, 3, Float64}([ 0.8164  0.4083  -0.4083;
+                        #                              -0.5774  0.5773  -0.5773;
+                        #                               0.0000 -0.7071  -0.7071]),
                         # J_rw=SMatrix{3, 3, Float64}([ 0.81171104  0.41303245 -0.41295202;
                         #                               0.58395316 -0.56044371  0.5872832 ;
                         #                              -0.01113066  0.7178489   0.69610995]),
                         # attitude_control_function=(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64) -> (b.ω_wheel_derivatives .= pinv(b.J_rw) * rw_torque_itp_cloth(t+890.0017919540405))) # cloth attitude control
-                        attitude_control_function=torque_rod_test_attitude_function) # CYGNSS data attitude control
+                        # attitude_control_function=CYGNSS_attitude_function) # CYGNSS data attitude control
 
+# L_panel = config.Link(r=SVector{3, Float64}(0.0, 56.9e-2, -(20.222 - 13.1)*1.0e-2),
+#                       q=SVector{4, Float64}(0.0, sqrt(2.0)/2.0, 0.0, sqrt(2.0)/2.0),
+#                       dims=SVector{3, Float64}([49.71e-2, 0.05, 52.12e-2]),
+#                       ref_area=49.71e-4,
+#                       m=0.01)
+                      
+# R_panel = config.Link(r=SVector{3, Float64}(0.0, -56.9e-2, -(20.222 - 13.1)*1.0e-2),
+#                       q=SVector{4, Float64}(0.0, sqrt(2.0)/2.0, 0.0, sqrt(2.0)/2.0),
+#                       dims=SVector{3, Float64}([49.71e-2, 0.05, 52.12e-2]),
+#                       ref_area=49.71e-4,
+#                       m=0.01)
 config.add_body!(spacecraft, main_bus, prop_mass=0.0)
+# config.add_body!(spacecraft, L_panel)
+# config.add_body!(spacecraft, R_panel)
 
-inertia_tensor = [0.02/3.0 0.0 0.0;
-                  0.0 0.1256/3.0 0.0;
-                  0.0 0.0 0.1256/3.0]
-config.set_inertia_tensor!(spacecraft, main_bus, 
-                        SMatrix{3, 3, Float64}(inertia_tensor))
+# L_panel_joint = config.Joint(main_bus, L_panel)
+# R_panel_joint = config.Joint(R_panel, main_bus)
+# config.add_joint!(spacecraft, L_panel_joint)
+# config.add_joint!(spacecraft, R_panel_joint)
+# inertia_tensor = [1.4e6 -1.71e4 8.08e3;
+#                   -1.71e4 8.19e5 -5.35e3;
+#                   8.08e3 -5.35e3 1.95e6] * 1e-6
+# config.set_inertia_tensor!(spacecraft, main_bus, 
+#                         SMatrix{3, 3, Float64}(inertia_tensor))
 
 # Add torque rods
 # Dipole commands in Am^2, locations in m
-TRX = config.Magnet(axis=MVector{3, Float64}(1.0, 0.0, 0.0), magnitude=0.0)
-TRY = config.Magnet(axis=MVector{3, Float64}(0.0, 1.0, 0.0), magnitude=0.0)
-TRZ = config.Magnet(axis=MVector{3, Float64}(0.0, 0.0, 1.0), magnitude=0.0)
-TRT = config.Magnet(axis=MVector{3, Float64}(0.70710678, 0.70710678, 0.0), magnitude=0.0)
-config.add_magnet!(main_bus, TRX)
-config.add_magnet!(main_bus, TRY)
-config.add_magnet!(main_bus, TRZ)
-config.add_magnet!(main_bus, TRT)
+# TRX = config.Magnet(m=MVector{3, Float64}(0.0, 0.0, 0.0), location=MVector{3, Float64}([-128.3 -205.2 -173.7]*1e-3))
+# TRY = config.Magnet(m=MVector{3, Float64}(0.0, 0.0, 0.0), location=MVector{3, Float64}([-220.9 -211.9 -148.1]*1e-3))
+# TRZ = config.Magnet(m=MVector{3, Float64}(0.0, 0.0, 0.0), location=MVector{3, Float64}([-205.7 -78.8 -105.3]*1e-3))
+# config.add_magnet!(main_bus, TRX)
+# config.add_magnet!(main_bus, TRY)
+# config.add_magnet!(main_bus, TRZ)
 # Residual dipole moment
 # sc_dipole = config.Magnet(m=MVector{3, Float64}(-0.0101, -0.0417, 0.1697), location=MVector{3, Float64}(0.0,0.0,0.0))
 # config.add_magnet!(main_bus, sc_dipole)
@@ -116,17 +89,96 @@ println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
 # println("Spacecraft roots: $spacecraft.roots")
 println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
 println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
+# lenXHub = 52.12
+# lenYHub = 64.09
+# lenZHub = 29.21
+# lenYPanel = 49.71
+# faceArea = 1129.753 # Area of house-shaped face, cm^2
+# bus_facet_area_list = [faceArea, # Calculated from weirdly shaped face
+#                        faceArea,
+#                        25.55*lenXHub,
+#                        25.55*lenXHub,
+#                        9.388*lenXHub,
+#                        9.388*lenXHub,
+#                        lenYHub*lenXHub,
+#                        20.275*lenXHub] * 1e-4
+# panel_facet_area_list = [lenYPanel*lenXHub,
+#                          lenYPanel*lenXHub] * 1e-4
 
+# bus_facet_attitude_list = [q_from_phi(deg2rad(0.0) * [1.0, 0.0, 0.0]),
+#                            q_from_phi(deg2rad(180.0) * [0.0, 0.0, 1.0]),
+#                            q_from_phi(deg2rad(63.435) * [1.0, 0.0, 0.0]),
+#                            q_from_phi(deg2rad(-63.435) * [1.0, 0.0, 0.0]),
+#                            q_from_phi(deg2rad(0.0) * [1.0, 0.0, 0.0]),
+#                            q_from_phi(deg2rad(180.0) * [0.0, 0.0, 1.0]),
+#                            q_from_phi(deg2rad(180.0) * [1.0, 0.0, 0.0]),
+#                            q_from_phi(deg2rad(0.0) * [1.0, 0.0, 0.0])]
+# panel_facet_attitude_list = [q_from_phi(deg2rad(180.0) * [1.0, 0.0, 0.0]),
+#                              q_from_phi(deg2rad(0.0) * [1.0, 0.0, 0.0])]
+
+# bus_facet_normal_vectors = [SVector{3, Float64}([1.0, 0.0, 0.0]),
+#                             SVector{3, Float64}([1.0, 0.0, 0.0]),
+#                             SVector{3, Float64}([0.0, 1.0, 0.0]),
+#                             SVector{3, Float64}([0.0, 1.0, 0.0]),
+#                             SVector{3, Float64}([0.0, 1.0, 0.0]),
+#                             SVector{3, Float64}([0.0, 1.0, 0.0]),
+#                             SVector{3, Float64}([0.0, 0.0, 1.0]),
+#                             SVector{3, Float64}([0.0, 0.0, 1.0])]
+# panel_facet_normal_vectors = [SVector{3, Float64}([0.0, 0.0, 1.0]),
+#                               SVector{3, Float64}([0.0, 0.0, 1.0])]
+
+# bus_facet_locs = [SVector{3, Float64}([lenXHub*1e-2 * 0.5, 0.0, 0.0]),
+#                   SVector{3, Float64}([-lenXHub*1e-2 * 0.5, 0.0, 0.0]),
+#                   SVector{3, Float64}([0.0, 21.0915e-2, -(6.2592 - 13.1)*1.0e-2]),
+#                   SVector{3, Float64}([0.0, -21.0915e-2, -(6.2592 - 13.1)*1.0e-2]),
+#                   SVector{3, Float64}([0.0, 32.045e-2, -(12.519 + 9.388/2.0 - 13.1)*1.0e-2]),
+#                   SVector{3, Float64}([0.0, -32.045e-2, -(12.519 + 9.388/2.0 - 13.1)*1.0e-2]),
+#                   SVector{3, Float64}([0.0, 0.0, -(12.519 + 9.388 - 13.1)*1.0e-2]),
+#                   SVector{3, Float64}([0.0, 0.0, 13.1e-2])]
+# panel_facet_locs = [SVector{3, Float64}([0.0, 0.0, 0.0]),
+#                     SVector{3, Float64}([0.0, 0.0, 0.0])]
+
+# bus_specular_coeffs = [0.336, 0.336, 0.336, 0.336, 0.336, 0.336, 0.336, 0.336]
+# panel_specular_coeffs = [0.16, 0.0]
+# bus_diffuse_coeffs = [0.139, 0.139, 0.139, 0.139, 0.139, 0.139, 0.139, 0.139]
+# panel_diffuse_coeffs = [0.16, 0.56]
+# bus_facet_names = ["front_hub", "back_hub", "right_slant", "left_slant", "right_vert", "left_vert", "top_hub", "bot_hub"]
+# panel_facet_names_left = ["left_top_panel", "left_bot_panel"]
+# panel_facet_names_right = ["right_top_panel", "right_bot_panel"]
+# bus_facets = config.create_facet_list(bus_facet_area_list,
+#                                       bus_facet_attitude_list,
+#                                       bus_facet_normal_vectors,
+#                                       bus_facet_locs,
+#                                       bus_diffuse_coeffs,
+#                                       bus_specular_coeffs,
+#                                       bus_facet_names)
+# panel_facets_R = config.create_facet_list(panel_facet_area_list,
+#                                         panel_facet_attitude_list,
+#                                         panel_facet_normal_vectors,
+#                                         panel_facet_locs,
+#                                         panel_diffuse_coeffs,
+#                                         panel_specular_coeffs,
+#                                         panel_facet_names_right)
+# panel_facets_L = config.create_facet_list(panel_facet_area_list,
+#                                         panel_facet_attitude_list,
+#                                         panel_facet_normal_vectors,
+#                                         panel_facet_locs,
+#                                         panel_diffuse_coeffs,
+#                                         panel_specular_coeffs,
+#                                         panel_facet_names_left)
+# config.add_facet!(main_bus, bus_facets)
+# config.add_facet!(L_panel, panel_facets_L)
+# config.add_facet!(R_panel, panel_facets_R)
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => false,                                                                                  # Pass results as output True=1, False=0
             :print_res => true,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "output/torque_rod_test_comparison",                # Directory where to save the results
+            :directory_results => "output/gmat_two_body_comp",                # Directory where to save the results
             :directory_Gram => "GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "GRAM_Data/SPICE",                                          # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
-            :montecarlo_analysis => 0,                              # Generate csv file for Montecarlo results True=1, False=0
+            :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
             :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
             :filename => 0,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
@@ -136,18 +188,18 @@ args = Dict(# Misc Simulation
             :save_csv => false,
             # Type of Mission
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => true,                                        # Do not  include drag passage: True=1, False=0
+            :keplerian => true,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 10,                                 # Number of aerobraking passage
             # :mission_time => 3600.0,                                  # Mission time in seconds, used only for Time mission type
-            :mission_time => 120.0*60.0,                                  # Mission time in seconds, used only for Time mission type
-            :orientation_sim => true,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
+            :mission_time => 17485.549919638,                                  # Mission time in seconds, used only for Time mission type
+            :orientation_sim => false,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
             :num_steps_to_save => 10000,                            # Number of timesteps between saves
 
             # Physical Model
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
-            :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
-            :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
+            :gravity_model => "Inverse Squared",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
+            :density_model => "None",                               # choices=['Constant' , 'Exponential' , 'Gram']
             :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
             :topography_harmonics_file => "Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
@@ -161,11 +213,11 @@ args = Dict(# Misc Simulation
             :srp => false,                                             # Solar Radiation Pressure true/false
             :eclipse => false,                                         # Whether to include eclipse conditions in SRP calculation
             :gravity_gradient => false,                                   # Gravity Gradient true/false
-            :gravity_harmonics => 1,                                            # Gravity Spherical harmonics True=1, False=0
+            :gravity_harmonics => 0,                                            # Gravity Spherical harmonics True=1, False=0
             :gravity_harmonics_file => "Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
-            :magnetic_field => true,                                    # Magnetic field True=1, False=0
+            :magnetic_field => false,                                    # Magnetic field True=1, False=0
 
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
@@ -217,11 +269,18 @@ args = Dict(# Misc Simulation
             :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_step => 1000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :a_initial_a => 6778.14e3,                # Initial Semi-major axis for for-loop in m, starting from 0s
-            :a_initial_b => 6920.0e3,                               # Final Semi-major axis for for-loop in m
+            # :a_initial_a => 6815519.860683523,                # Initial Semi-major axis for for-loop in m, starting from 0s
+            :a_initial_a => 7000.0*1e3, # starting from 900s
+            # :a_initial_a => 6179921.801554798,
+            # :a_initial_a => 10000.0e3,
+            :a_initial_b => 7001.0e3,                               # Final Semi-major axis for for-loop in m
+            # :a_initial_b => 11000.0e3,
             :a_step => 5e10,                                       # Step Semi-major axis for for-loop in m
-            :e_initial_a => 0.0,                               # Initial Eccentricity for for-loop in m, starting from 0s
-            :e_initial_b => 0.01,                                   # Final Eccentricity for for-loop in m
+            # :e_initial_a => 0.001160182015198709,                                   # Initial Eccentricity for for-loop in m, starting from 0s
+            :e_initial_a => 0.02, # Starting from 900s
+            # :e_initial_a => 0.10332925554563428,
+            # :e_initial_a => 0.01,
+            :e_initial_b => 0.1,                                   # Final Eccentricity for for-loop in m
             :e_step => 0.1,                                       # Step Eccentricity for for-loop in m
             
             :orientation_type => 2,                                   # Initial Condition orientation = 0, Initial Condition orientation and velocity = 1
@@ -229,10 +288,13 @@ args = Dict(# Misc Simulation
             :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
             :γ_step => 100,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
             # :inclination => 35.006305312328244,                                   # Inclination Orbit, deg, starting from 0s
-            :inclination => 45.0, # Starting from 900s
-            :ω => 0.0,                               # AOP, deg, starting from 0s
+            :inclination => 28.5, # Starting from 900s
+            # :inclination => 35.60900229798397,
+            # :ω => 175.8048936813804,                                              # AOP, deg, starting from 0s
+            :ω => 0.0, # Starting from 900s
+            # :ω =>235.59080763543037,
             # :Ω => 143.51935099761045,                                              # RAAN, deg, starting from 0s
-            :Ω => 60.0, # Starting from 900s
+            :Ω => 0.0, # Starting from 900s
             # :Ω => 179.05921043028263,
             # :ν => 345.19661998242003,                                               # True Anomaly, deg, starting from 0s
             :ν => 0.0,# Starting from 900s
@@ -240,11 +302,11 @@ args = Dict(# Misc Simulation
             # :ν => 40.0,                                               # True Anomaly, deg
             :EI => 160.0,                                           # Entry Interface, km
             :AE => 160.0,                                           # Atmospheric Exit, km
-            :year => 2019,                                          # Mission year
-            :month => 6,                                           # Mission month
-            :day => 27,                                             # Mission day
-            :hours => 10,                                           # Mission hour
-            :minutes => 23,                                         # Mission minute
+            :year => 2025,                                          # Mission year
+            :month => 1,                                           # Mission month
+            :day => 1,                                             # Mission day
+            :hours => 0,                                           # Mission hour
+            :minutes => 0,                                         # Mission minute
             :secs => 0.0,                                          # Mission second
             
             # Final Conditions
@@ -295,13 +357,13 @@ args = Dict(# Misc Simulation
             :a_tol => 1e-5,                                         # Absolute tolerance for integration
             :r_tol => 1e-3,                                         # Relative tolerance for integration
             :a_tol_orbit => 1e-12,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
-            :r_tol_orbit => 1e-10,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :r_tol_orbit => 1e-9,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
             :a_tol_drag => 1e-10,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
             :r_tol_drag => 1e-8,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
             :a_tol_quaternion => 1e-11,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :r_tol_quaternion => 1e-9,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :dt_max => 1.0,                                         # Maximum time step for integration, s
-            :dt_max_orbit => 1.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
+            :dt_max_orbit => 120.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
             :dt_max_drag => 1.0,                                    # Maximum time step for drag passage
 
             :Odyssey_sim => 0                                      # Simulate Odyssey Mission

@@ -32,6 +32,8 @@ function mission_def(mission::Dict{Symbol, Any})
         p = 3
     elseif ((mission[:Planet] == 7 || (typeof(mission[:Planet]) == String && cmp(lowercase(mission[:Planet]), "titan") == 0))) # Titan
         p = 7
+    elseif ((mission[:Planet] == 4 || (typeof(mission[:Planet]) == String && cmp(lowercase(mission[:Planet]), "moon") == 0))) # Moon
+        p = 4
     else
         p = 1
     end

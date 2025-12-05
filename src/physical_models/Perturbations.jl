@@ -6,6 +6,7 @@ using SatelliteToolbox
 using SatelliteToolboxGeomagneticField
 using DateFormats
 using CSV
+using Arrow
 
 include("../utils/quaternion_utils.jl")
 # import .config
@@ -30,6 +31,12 @@ const M_HAT_ECEF = SVector{3, Float64}(
 )
 
 const eop_iau1980 = fetch_iers_eop()
+
+torque_rod_test_data = DataFrame(Arrow.Table("CYGNSS_inertial_magnetic_field.feather"))
+time_range = range(torque_rod_test_data[!, "time"][1], torque_rod_test_data[!, "time"][end], length(torque_rod_test_data[!, "time"]))
+b_ii_1_itp = cubic_spline_interpolation(time_range, torque_rod_test_data[!, "B_field_x"])
+b_ii_2_itp = cubic_spline_interpolation(time_range, torque_rod_test_data[!, "B_field_y"])
+b_ii_3_itp = cubic_spline_interpolation(time_range, torque_rod_test_data[!, "B_field_z"])
 
 """
     get_magnetic_field_dipole(r_ecef::AbstractVector)
@@ -82,15 +89,17 @@ The function automatically uses the correct WMM version based on the input `date
 - A 3-element `SVector` representing the magnetic field `[B_north, B_east, B_down]`
   in nanoTeslas [nT].
 """
-function get_magnetic_field(date::DateTime, lat_rad::Number, lon_rad::Number, alt_m::Number, L_PI::MMatrix{3, 3, Float64})
+function get_magnetic_field(date::DateTime, lat_rad::Number, lon_rad::Number, alt_m::Number, L_PI::MMatrix{3, 3, Float64}, t::Float64)
     # println("Calculating magnetic field at lat: $lat_rad, lon: $lon_rad, alt: $alt_m, date: $date")
     # Calculate the magnetic field vector using the World Magnetic Model.
     # The result is in the NED frame and has units of nT.
-    B_ned = igrf(yeardecimal(date), alt_m, lat_rad, lon_rad, Val(:geocentric))
-    B_pp = ned_to_ecef(B_ned, lat_rad, lon_rad, alt_m)
-    r_PI = r_ecef_to_eci(ITRF(), J2000(), date_to_jd(date), eop_iau1980)
-    # B_ii = rECEFtoECI(B_ned * 1e-9, date) # Convert nT to T
-    B_ii = r_PI * B_pp
+    # B_ned = igrf(yeardecimal(date), alt_m, lat_rad, lon_rad, Val(:geocentric))
+    # B_pp = ned_to_ecef(B_ned, lat_rad, lon_rad, alt_m)
+    # r_PI = r_ecef_to_eci(ITRF(), J2000(), date_to_jd(date), eop_iau1980)
+    # # B_ii = rECEFtoECI(B_ned * 1e-9, date) # Convert nT to T
+    # B_ii = r_PI * B_pp
+    B_ii = SVector{3, Float64}(b_ii_1_itp(t), b_ii_2_itp(t), b_ii_3_itp(t)) * 1e9
+    # B_ii = SVector{3, Float64}(file[!, ""][1:3]) * 1e-9 # Convert nT to T
     return B_ii
 end
 

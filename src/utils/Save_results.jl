@@ -172,6 +172,11 @@ function save_results(time, ratio)
 
     n_reaction_wheels = config.model.body.n_reaction_wheels
     n_thrusters = config.model.body.n_thrusters
+    n_magnets = 0
+    for b in config.model.body.links
+        n_magnets += length(b.magnets)
+    end
+    # n_magnets = length(config.model.body.magnets)
     # Initialize the reaction wheel properties if they are not already initialized
     if isempty(config.solution.physical_properties.rw_h)
         for i in 1:n_reaction_wheels
@@ -197,6 +202,21 @@ function save_results(time, ratio)
     for i in 1:n_thrusters
         append!(config.solution.physical_properties.thruster_forces[i], results[110 + 4*n_bodies + 2*n_reaction_wheels + i,:]) # thruster forces
     end
+
+    # Initialize torque bar dipoles
+    if isempty(config.solution.physical_properties.torque_bar_dipoles)
+        for i in 1:n_magnets
+            append!(config.solution.physical_properties.torque_bar_dipoles, [[]])
+        end
+    end
+    append!(config.solution.physical_properties.magnetic_field[1], results[110 + 4*n_bodies + 2*n_reaction_wheels + n_thrusters + 1, :])
+    append!(config.solution.physical_properties.magnetic_field[2], results[110 + 4*n_bodies + 2*n_reaction_wheels + n_thrusters + 2, :])
+    append!(config.solution.physical_properties.magnetic_field[3], results[110 + 4*n_bodies + 2*n_reaction_wheels + n_thrusters + 3, :])
+    
+    for i in 1:n_magnets
+        append!(config.solution.physical_properties.torque_bar_dipoles[i], results[110 + 4*n_bodies + 2*n_reaction_wheels + n_thrusters + 3 + i, :])
+    end
+
     
 
     # Performance

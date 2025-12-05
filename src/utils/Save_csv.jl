@@ -122,6 +122,9 @@ function save_csv(filename, args, arrow_filename)
                           rw_torque_ii_1 = config.solution.physical_properties.τ_rw[1],
                           rw_torque_ii_2 = config.solution.physical_properties.τ_rw[2],
                           rw_torque_ii_3 = config.solution.physical_properties.τ_rw[3],
+                          magnetic_field_1 = config.solution.physical_properties.magnetic_field[1],
+                          magnetic_field_2 = config.solution.physical_properties.magnetic_field[2],
+                          magnetic_field_3 = config.solution.physical_properties.magnetic_field[3],
                           t_cf = zeros(length(config.solution.orientation.time)),
                           h_cf = zeros(length(config.solution.orientation.time)),
                           gamma_cf = zeros(length(config.solution.orientation.time)),
@@ -145,7 +148,15 @@ function save_csv(filename, args, arrow_filename)
     for i in 1:config.model.body.n_thrusters
         data_push[!, Symbol("thruster_force_$(i)")] = config.solution.physical_properties.thruster_forces[i]
     end
-    
+
+    n_magnets = 0
+    for b in config.model.body.links
+        n_magnets += length(b.magnets)
+    end
+    for i in 1:n_magnets
+        data_push[!, Symbol("torque_bar_dipole_$i")] = config.solution.physical_properties.torque_bar_dipoles[i]
+    end
+
     if args[:closed_form] == 1
         data_push[!, :t_cf] = config.solution.closed_form.t_cf
         data_push[!, :h_cf] = config.solution.closed_form.h_cf

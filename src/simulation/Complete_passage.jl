@@ -74,7 +74,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                                     m.initial_condition.day, 
                                     m.initial_condition.hour, 
                                     m.initial_condition.minute, 
-                                    m.initial_condition.second))
+                                    round(m.initial_condition.second)))
 
     config.cnf.count_numberofpassage += 1
     t_prev = 0.0
@@ -801,6 +801,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         Event function to end the sim if the time condition is met.
         """
         config.cnf.time_termination = true
+        println("Time-based mission duration reached. Terminating simulation.")
         terminate!(integrator) # Terminate the integrator if the time condition is met
     end
 
@@ -1145,7 +1146,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
 
         if abs(cond) <= thr && length(config.cnf.initial_position_closed_form) == 0
-            println(h0)
+            # println(h0)
             config.controller.guidance_t_eval = collect(t*config.cnf.TU:1/args[:flash1_rate]:(t*config.cnf.TU)+1500)
 
             # State definition for control 2, 3 State used by closed-form solution
@@ -1172,6 +1173,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     end
     function apoapsispoint_affect!(integrator)
         config.cnf.count_apoapsispoint += 1
+        # println("Triggered apoapsis point")
         terminate!(integrator)
     end
     apoapsispoint = ContinuousCallback(apoapsispoint_condition, apoapsispoint_affect!, nothing)
@@ -1444,6 +1446,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         if args[:keplerian]
             aerobraking_phase = 3
         end
+        # println("Starting aerobraking phase: ", aerobraking_phase)
+        # println("index_steps_EOM: ", index_steps_EOM)
+        # println("args[:drag_passage]: ", args[:drag_passage])
         if (index_steps_EOM == 1 || Bool(args[:drag_passage])) && (aerobraking_phase == 1 || aerobraking_phase == 3 || aerobraking_phase == 0)
             continue
         elseif (lowercase(args[:type_of_mission]) == "orbits" || lowercase(args[:type_of_mission]) == "time") && args[:keplerian] == true && aerobraking_phase == 2

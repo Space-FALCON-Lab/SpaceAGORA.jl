@@ -52,25 +52,25 @@ println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => 1,                                                                                    # Print some lines True=1, False=0
+            :print_res => false,                                                                                    # Print some lines True=1, False=0
             :directory_results => "/workspaces/ABTS.jl/output/venus_express",            # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                   # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",           # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
-            :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
+            :plot => false,                                                                                         # Generate pdf plots of results True=1, False=0
+            :filename => false,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 0,                                        # Normalize during integration True=1, False=0
+            :normalize => true,                                        # Normalize during integration True=1, False=0
             :closed_form => 0,                                      # Closed form solution True=1, False=0
-            
+            :save_csv => false,
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 50,                                 # Number of aerobraking passage
-            :orientation_sim => true,                                 # Orientation simulation True=1, False=0
+            :keplerian => false,                                        # Do not include drag passage: True=1, False=0
+            :number_of_orbits => 20,                                 # Number of aerobraking passage
+            :orientation_sim => false,                                 # Orientation simulation True=1, False=0
 
             # Physical Model
             :planet => 2,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -88,16 +88,18 @@ args = Dict(# Misc Simulation
 
             # Perturbations
             :n_bodies => ["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
-            :srp => 1,                                             # Solar Radiation Pressure True=1, False=0
-            :gravity_harmonics => 1,                                # Gravity Harmonics True=1, False=0
+            :srp => false,                                             # Solar Radiation Pressure True=1, False=0
+            :eclipse => false,                                 # Eclipse True=1, False=0
+            :gravity_harmonics => true,                                # Gravity Harmonics True=1, False=0
             :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/MGNP180U.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
+            :magnetic_field => false,                                  # Planetary Magnetic Field True=1, False=0
 
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
-            :save_rate => 5.0,                                      # Rate at which the data trajectory are saved
+            :save_rate => 1.0,                                      # Rate at which the data trajectory are saved
         
             
             # Body
@@ -127,7 +129,7 @@ args = Dict(# Misc Simulation
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
-            :control_mode => 3,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
+            :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
             :security_mode => 0,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
@@ -176,6 +178,7 @@ args = Dict(# Misc Simulation
             
             # Monte Carlo Simulations
             :montecarlo => 0,                                       # Run Monte Carlo simulation True=1, False=0
+            :monte_carlo_run => 0,                                   # Current Monte Carlo sample number
             :initial_montecarlo_number => 1,                        # Initial Monte Carlo sample number
             :montecarlo_size => 1000,                               # number of Monte Carlo samples
             
@@ -210,13 +213,13 @@ args = Dict(# Misc Simulation
             :r_tol => 1e-3,                                         # Relative tolerance for integration
             :a_tol_orbit => 1e-8,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
             :r_tol_orbit => 1e-6,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
-            :a_tol_drag => 1e-10,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
-            :r_tol_drag => 1e-8,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
+            :a_tol_drag => 1e-8,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
+            :r_tol_drag => 1e-6,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
             :a_tol_quaternion => 1e-8,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :r_tol_quaternion => 1e-5,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :dt_max => 1.0,                                         # Maximum time step for integration, s
-            :dt_max_orbit => 10.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
-            :dt_max_drag => 0.1,                                    # Maximum time step for drag passage
+            :dt_max_orbit => 30.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
+            :dt_max_drag => 1.0,                                    # Maximum time step for drag passage
 
             :Odyssey_sim => 0                                       # Simulate Odyssey Mission
             )
@@ -233,13 +236,15 @@ args = Dict(# Misc Simulation
 # end
 
 # println("COMPUTATIONAL TIME = " * string(t) * " s")
-mc_runs = 1
-nominal_ra = args[:ra_initial_a]
-nominal_rp = args[:hp_initial_a]
-nominal_i = args[:inclination]
-nominal_Ω = args[:Ω]
-nominal_ω = args[:ω]
-for i in 1:mc_runs
+# mc_runs = 1
+# nominal_ra = args[:ra_initial_a]
+# nominal_rp = args[:hp_initial_a]
+# nominal_i = args[:inclination]
+# nominal_Ω = args[:Ω]
+# nominal_ω = args[:ω]
+# for i in 1:mc_runs
+degree_order = [1, 2, 5, 10, 40, 50, 75, 90, 100, 120, 150, 180]
+for degree_order in degree_order
     t = @elapsed begin
         # args[:directory_results] = "/workspaces/ABTS.jl/output/vex_MC_5p_disp/" * string(i)
         # args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3
@@ -247,9 +252,13 @@ for i in 1:mc_runs
         # args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])
         # args[:Ω] = nominal_Ω + randn()*sqrt(args[:Ω_dispersion])
         # args[:ω] = nominal_ω + randn()*sqrt(args[:ω_dispersion])
+        args[:directory_results] = "output/vex_mgnp180U_$(degree_order)_deg_order_test/"
+        args[:L] = Int(round(degree_order))
+        args[:M] = Int(round(degree_order))
+        println("Degree and Order: ", degree_order)
         println("ra_initial_a = " * string(args[:ra_initial_a] * 1e-3) * " km, hp_initial_a = " * string(args[:hp_initial_a] * 1e-3) * " km, inclination = " * string(args[:inclination]) * " deg, Ω = " * string(args[:Ω]) * " deg, ω = " * string(args[:ω]) * " deg")
         # Run the simulation
-        sol = run_analysis(args)
+        local sol = run_analysis(args)
 
         if Bool(args[:passresults])
             println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")

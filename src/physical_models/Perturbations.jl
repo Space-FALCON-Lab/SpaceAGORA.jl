@@ -30,7 +30,7 @@ const M_HAT_ECEF = SVector{3, Float64}(
     sin(POLE_LAT_2020)
 )
 
-const eop_iau1980 = fetch_iers_eop()
+# const eop_iau1980 = fetch_iers_eop()
 
 torque_rod_test_data = DataFrame(Arrow.Table("CYGNSS_inertial_magnetic_field.feather"))
 time_range = range(torque_rod_test_data[!, "time"][1], torque_rod_test_data[!, "time"][end], length(torque_rod_test_data[!, "time"]))

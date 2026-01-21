@@ -255,8 +255,9 @@ function density_nrlmsise(h::Float64, p, lat::Float64, lon::Float64, montecarlo:
         rho , T , wind = density_exp(h, p)
         rho = 0.0
     elseif config.cnf.drag_state == true || args[:keplerian] == true
+        # println("Altitude: ", h)
         jd = datetime2julian(current_time)
-        atmo = SatelliteToolbox.AtmosphericModels.nrlmsise00(jd, h, lat, lon, 150, 150, 3)
+        atmo = SatelliteToolbox.AtmosphericModels.jr1971(jd, lat, lon, h, 150, 150, 3)
         rho = atmo.total_density
         T = atmo.temperature
         wind = [0.0,0.0,0.0]

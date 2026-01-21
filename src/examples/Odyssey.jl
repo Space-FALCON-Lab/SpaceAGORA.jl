@@ -64,14 +64,14 @@ println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => true,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/odyssey_quat_test",                # Directory where to save the results
-            :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
-            :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
-            :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
+            :print_res => false,                                                                                    # Print some lines True=1, False=0
+            :directory_results => "output/odyssey_gmm3_50",                # Directory where to save the results
+            :directory_Gram => "GRAMpy",                                                    # Directory where Gram is
+            :directory_Gram_data => "GRAM_Data",                                            # Directory where Gram data is
+            :directory_Spice => "GRAM_Data/SPICE",                                          # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
+            :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
@@ -80,8 +80,8 @@ args = Dict(# Misc Simulation
             :save_csv => false,
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => true,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 5,                                 # Number of aerobraking passage
+            :keplerian => false,                                        # Do not include drag passage: True=1, False=0
+            :number_of_orbits => 20,                                 # Number of aerobraking passage
             :mission_time => 6000.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => false,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
 
@@ -91,7 +91,7 @@ args = Dict(# Misc Simulation
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
             :topography_model => "Spherical Harmonics",                             # choices=['None' , 'Spherical Harmonics']
-            :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/MOLA.csv", # File with the topography harmonics coefficients
+            :topography_harmonics_file => "Topography_harmonics_data/MOLA.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 90,                                      # Maximum order of the topography harmonics (Defined in the file)
             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
@@ -103,7 +103,7 @@ args = Dict(# Misc Simulation
             :srp => true,                                             # Solar Radiation Pressure True=1, False=0
             :eclipse => false,
             :gravity_harmonics => true,                                            # Gravity Spherical harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/Mars50c.csv", # File with the gravity harmonics coefficients
+            :gravity_harmonics_file => "Gravity_harmonics_data/GMM3.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
             :magnetic_field => false,
@@ -148,7 +148,7 @@ args = Dict(# Misc Simulation
             :solar_panel_control_rate => 1.0/3.0,                        # Rate at which the solar panel controller is called
 
             # Initial Conditions
-            :initial_condition_type => 2,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1, Initial Condition a, e = 2
+            :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1, Initial Condition a, e = 2
             :ra_initial_a => 28559.615e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
@@ -261,15 +261,21 @@ args = Dict(# Misc Simulation
 # #     for i in 1:Threads.nthreads() 
 
 # @profview run_analysis(args)
-t = @elapsed begin          
-        # Run the simulation
-        sol = run_analysis(args)
-        if Bool(args[:passresults])
-            println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+degree_order = [1, 2, 5, 10, 20, 30, 40, 50, 75, 90, 100, 120]
+for degree_order in degree_order
+        t = @elapsed begin          
+                args[:directory_results] = "output/odyssey_gmm3_$(degree_order)_deg_order_test/"
+                args[:L] = Int(round(degree_order))
+                args[:M] = Int(round(degree_order))
+                println("Degree and Order: ", degree_order)
+                # Run the simulation
+                sol = run_analysis(args)
+                if Bool(args[:passresults])
+                println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+                end
         end
-end
-
         println("COMPUTATIONAL TIME = " * string(t) * " s")
+end
 
 # end
         # end

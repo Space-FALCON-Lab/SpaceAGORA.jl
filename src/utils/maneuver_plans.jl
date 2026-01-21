@@ -218,11 +218,11 @@ function Earth_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, 
     # periapsis_velocity = sqrt(planet.μ *(2/rp - 2/(ra+rp)))
     # q = 0.5 * estimated_ρ * periapsis_velocity^3
     # println("Estimated q: ", q, " W/cm^2")
-    if rp < 120e3 + planet.Rp_e
+    if rp < 130e3 + planet.Rp_e
         # rp_new = -planet.H*log(2*min_q/(planet.ρ_ref*periapsis_velocity^3)) + 6378e3
         # println("Aerobraking at ", rp, " m")
         # println("New periapsis: ", rp_new, " m")
-        target_periapsis_altitude = 140e3 # Target periapsis altitude in meters
+        target_periapsis_altitude = 150e3 # Target periapsis altitude in meters
         a_i = (rp + ra) / 2 # Initial semi-major axis
         a_f = (target_periapsis_altitude + planet.Rp_e + ra) / 2 # Final semi-major axis
         v_i = sqrt(planet.μ * (2 / ra - 1 / a_i))

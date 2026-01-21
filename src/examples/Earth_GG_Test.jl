@@ -1,5 +1,5 @@
 include("../simulation/Run.jl")
-# include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
+include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 # include("SpacecraftModel.jl")
@@ -82,7 +82,7 @@ tau_3_itp = cubic_spline_interpolation(range(0.0, table.time[end], length(table.
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => 1,                                                                                    # Print some lines True=1, False=0
+            :print_res => true,                                                                                    # Print some lines True=1, False=0
             :directory_results => "/workspaces/ABTS.jl/output/basilisk_gg_comparison",                # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
@@ -95,12 +95,14 @@ args = Dict(# Misc Simulation
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
             :normalize => 0,                                       # Normalize the integration True=1, False=0
             :closed_form => 0,                                     # Closed form solution True=1, False=0
+            :save_csv => false,
             # Type of Mission
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
+            :keplerian => true,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 10,                                 # Number of aerobraking passage
-            :mission_time => 1000000.0,                                  # Mission time in seconds, used only for Time mission type
+            :mission_time => 100000.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => true,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
+            :num_steps_to_save => 10000,                            # Number of timesteps between saves
 
             # Physical Model
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -124,6 +126,7 @@ args = Dict(# Misc Simulation
             :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
+            :magnetic_field => false,                                    # Magnetic Field true/false
 
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4

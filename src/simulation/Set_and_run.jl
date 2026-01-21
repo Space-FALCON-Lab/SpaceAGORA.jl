@@ -278,7 +278,7 @@ function aerobraking_campaign(args, state)
         Ω = deg2rad(state[:Ω])
         ω = deg2rad(state[:ω])
         vi = state[:vi]
-        println("vi: ", vi)
+        # println("vi: ", vi)
         m0 = mass
         year = args[:year]
         month = args[:month]

@@ -117,8 +117,8 @@ function aerodynamic_coefficient_fM(body, T::Float64, S::Float64, args, montecar
     σT = σ
     cosα = cos(α)
     cosβ = cos(β)
-    sinβ = sin(β)
     sinα = sin(α)
+    sinβ = sin(β)
     # println("cosα: ", cosα)
     # println("cosβ: ", cosβ)
     # println("sinα: ", sinα)
@@ -163,14 +163,17 @@ function aerodynamic_coefficient_fM(body, T::Float64, S::Float64, args, montecar
     CL = -sinα*CA + cosα*CN
     CD = cosα*cosβ*CA + sinβ*CS + sinα*cosβ*CN
     CS = -cosα*sinβ*CA + cosβ*CS - sinα*sinβ*CN
-
+    
+    # println("CL: ", CL)
+    # println("CD: ", CD)
+    # println("CS: ", CS)
     # If doing Monte Carlo simulations, apply perturbations to the coefficients
     if montecarlo == true
         CL, CD = monte_carlo_aerodynamics(CL, CD, args)
     end
 
-    # return CL, CD, CS, 0.0, 0.0, 0.0#, Cl, Cm, Cn
-    return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    return CL, CD, CS, 0.0, 0.0, 0.0#, Cl, Cm, Cn
+    # return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 end
 
 function aerodynamic_coefficient_no_ballistic_flight(α, body, args, T=0, S=0, a=0, montecarlo=false)

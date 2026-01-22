@@ -177,11 +177,12 @@ function aerobraking(ip, m, args)
 
         if args[:number_of_orbits] == numberofpassage
             continue_campaign = false
-        end
+        end  
 
         if (r_a_AI <= args[:ra_fin_orbit] || config.cnf.targeting == 1) && args[:keplerian] == false
             FinalState = false
             println("Reached FinalState! R_a = " * string(r_a*1e-3) * " km")
+            println("Final Apoapsis Propagation = " * string(config.solution.orientation.pos_ii_mag[end]*1e-3) * " km")
             println("Thermal Limit overcomed totally " * string(config.cnf.count_overcome_hr) * " times")
         end
 

@@ -40,15 +40,15 @@ function aerobraking_campaign(args, state)
     if !isdir(args[:directory_Spice])
         throw(ArgumentError("SPICE directory does not exist: " * args[:directory_Spice]))
     end
-    furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-    if args[:directory_Gram] != ""
-        furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-        furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-    else
-        furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-        furnsh(args[:directory_Spice] * "/spk/satellites/sat441.bsp")
-    end
-    furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
+    # furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
+    # if args[:directory_Gram] != ""
+    #     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
+    #     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
+    # else
+    #     furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
+    #     furnsh(args[:directory_Spice] * "/spk/satellites/sat441.bsp")
+    # end
+    # furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
 
     # If using lat/lon initial conditions, correct the initial orbital elements
     if args[:orientation_type] == 1

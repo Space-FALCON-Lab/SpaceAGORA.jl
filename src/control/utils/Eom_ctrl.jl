@@ -20,7 +20,7 @@ sys = pyimport("sys")
  # import .config
  # import .ref_sys
 
-function asim_ctrl_plot(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing)
+function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing, reeval_mode = false, tswitch = 0.0, aero_forces=true, apoapsis_eval=true)
     sys.path.append(args[:directory_Gram])
     gram = pyimport("gram")
 
@@ -40,6 +40,9 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, g
 
     r0 = SVector{3, Float64}(r0)
     v0 = SVector{3, Float64}(v0)
+
+    # println("r0: ", (norm(r0)-m.planet.Rp_e)/1e3)
+    # println("v0: ", norm(v0))
 
     # Clock
     date_initial = from_utc(DateTime(m.initial_condition.year, 
@@ -104,6 +107,8 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, g
         lambdagamma_ii = in_cond[8]
         lambdah_ii = in_cond[9]
 
+        # println([pos_ii_mag, vel_ii_mag])
+
         # Assign Parameters
         ω_planet = m.planet.ω
         γ = m.planet.γ
@@ -117,12 +122,6 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, g
 
         # Orbital Elements
         OE = rvtoorbitalelement(pos_ii, vel_ii, mass, m.planet)
-
-        # Timing variables
-        el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))) # Elapsed time since the beginning of the simulation
-        current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
-        time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
-        et = utc2et(time_real_utc) # Current time in Ephemeris Time
 
         # Angular Momentum Calculations
         h_ii = cross(pos_ii, vel_ii)        # Inertial angular momentum vector[m ^ 2 / s]
@@ -150,536 +149,59 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, g
         # Derived Quantity Calculations
 
         # Compute Latitude and Longitude
-        LatLong = rtolatlong(pos_pp, m.planet)
+        LatLong = rtolatlong(pos_pp, m.planet, args[:topography_model] == "Spherical Harmonics" && norm(pos_ii) - m.planet.Rp_e < args[:EI] * 1e3)
         lat = LatLong[2]
         lon = LatLong[3]
         alt = LatLong[1]
 
         # Compute NED basis unit vectors
-        uDuNuE = latlongtoNED(LatLong)  # nd
-        uD = uDuNuE[1]
-        uE = uDuNuE[3]
-        uN = uDuNuE[2]
+        uD, uN, uE = latlongtoNED(LatLong)
+
+        # println("Altitude (km): ", alt*1e-3)
 
         # Get density, pressure , temperature and winds
-        if ip.dm == 0
-            ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 1
-            ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 2
-            ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 3
+        # if ip.dm == 0
+        #     ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 1
+        #     ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 2
+        #     ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 3
             ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
-            ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
-        end
-
-        # Mach Number
-        sound_velocity = sqrt(γ * m.planet.R * T_p)
-        Mach = vel_pp_mag / sound_velocity
-        S = sqrt(γ/2) * Mach   # molecular speed ratio
-
-        
-        # lambda_switch = (k_cf * 2.0 * m.body.mass * vel_ii_mag) / (area_tot * CD_slope * pi)
-        lambda_switch = (2.0 * m.body.mass * vel_ii_mag) / (area_tot * CD_slope * pi)
-
-        if lambdav_ii < lambda_switch
-            aoa = 0.0
-        else
-            aoa = m.aerodynamics.α
-        end
-
-        # Convert wind to pp(PCPF) frame
-        wE = wind[1] # positive to the east , m / s
-        wN = wind[2] # positive to the north , m / s
-        wU = wind[3] # positive up , m / s
-
-        wind_pp = wN * uN + wE * uE - wU * uD        # wind velocity in pp frame , m / s
-        vel_pp_rw = vel_pp + wind_pp                 # relative wind vector , m / s
-        vel_pp_rw_hat = vel_pp_rw / norm(vel_pp_rw)  # relative wind unit vector , nd
-
-        # Dynamic pressure, CHANGE THE VELOCITY WITH THE WIND VELOCITY
-        q = 0.5 * ρ * norm(vel_pp_rw)^2            # base on wind - relative velocity
-
-        # Heat Rate
-        heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
-
-        # Add the control for the heat rate if flash == 3
-        if heat_rate_control == true && heat_rate > args[:max_heat_rate]
-            state = [T_p, ρ, S]
-            index_ratio = [1]
-            aoa_hr = control_solarpanels_heatrate(ip, m, args, index_ratio, state)
-
-            if args[:struct_ctrl] == 1
-                α_struct = control_struct_load(ip, m, args, S, T_p, q, MonteCarlo)
-
-                aoa = min(aoa_hr, α_struct) # limit the angle of attack to the structural load control
-            end
-
-            if aoa != aoa_hr
-                heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
-            else
-                aoa = aoa_hr
-                heat_rate = args[:max_heat_rate]  
-            end
-
-            # heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
-        end
-
-        # Rotation Calculation
-        L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci'
-        # rot_angle = norm(ω_planet) * t0     # rad
-        # L_PI = [cos(rot_angle)  sin(rot_angle)  0.0;
-        #         -sin(rot_angle) cos(rot_angle)  0.0; 
-        #         0.0             0.0             1.0]    # rotation matrix
-        
-        if ip.gm == 0
-            gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 1
-            gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 2
-            gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 3
-            gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
-        end
-
-        if length(args[:n_bodies]) != 0
-
-            for k = 1:length(args[:n_bodies])  
-                gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
-            end
-        end
-
-        if args[:srp] == true
-            p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
-            srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, et)
-        end
-
-        bank_angle = 0.0
-        lift_pp_hat = cross(h_pp_hat,vel_pp_rw_hat)     # perpendicular vector to angular vector and velocity
-
-        # Vehicle Aerodynamic Forces
-        # CL and CD
-        CL, CD = aerodynamic_coefficient_fM(aoa, m.body, T_p, S, m.aerodynamics, 0)
-
-        # Force calculations
-        drag_pp_hat = -vel_pp_rw_hat                    # Planet relative drag force direction
-
-        drag_pp = q * CD * area_tot * drag_pp_hat                       # PLanet relative drag force vector
-        lift_pp = q * CL * area_tot * lift_pp_hat * cos(bank_angle)     # PLanet relative lift force vector
-
-        drag_ii = L_PI' * drag_pp                                       # Inertial drag force vector
-        lift_ii = L_PI' * lift_pp                                       # Inertial lift force vector
-
-        # Total Force
-        # Total inertial external force vector on body [N]
-        force_ii = drag_ii + lift_ii + gravity_ii
-
-        g_ii = norm(gravity_ii) / mass
-
-        # EOM
-        # lambdav_dot = -3 * k_cf * ρ * vel_ii_mag^2 * aoa / pi + 
-        #               lambdav_ii * (ρ* area_tot * CD * vel_ii_mag) / mass - 
-        #               lambdagamma_ii * ((ρ * area_tot * CL) / (2 * mass) + g_ii /  vel_ii_mag^2 + 1 / (pos_ii_mag)) - 
-        #               lambdah_ii * γ_ii
-        
-        # lambdag_dot = lambdav_ii * g_ii - lambdah_ii * vel_ii_mag
-        
-        # lambdah_dot = k_cf * ρ * vel_ii_mag^3 * aoa/ (pi * m.planet.H) - 
-        #               lambdav_ii * ((ρ * area_tot *CD * vel_ii_mag^2) / (2 * mass * m.planet.H) + 2 * g_ii * γ_ii/ (pos_ii_mag)) + 
-        #               lambdagamma_ii * (ρ * area_tot * CL * vel_ii_mag / (2 * mass * m.planet.H) - 2 * g_ii / (pos_ii_mag * vel_ii_mag) + vel_ii_mag / (pos_ii_mag)^2)
-
-        lambdav_dot = -3 * ρ * vel_ii_mag^2 * aoa / pi + 
-                      lambdav_ii * (ρ* area_tot * CD * vel_ii_mag) / mass - 
-                      lambdagamma_ii * ((ρ * area_tot * CL) / (2 * mass) + g_ii /  vel_ii_mag^2 + 1 / (pos_ii_mag)) - 
-                      lambdah_ii * γ_ii
-        
-        lambdag_dot = lambdav_ii * g_ii - lambdah_ii * vel_ii_mag
-        
-        lambdah_dot = ρ * vel_ii_mag^3 * aoa/ (pi * m.planet.H) - 
-                      lambdav_ii * ((ρ * area_tot *CD * vel_ii_mag^2) / (2 * mass * m.planet.H) + 2 * g_ii * γ_ii/ (pos_ii_mag)) + 
-                      lambdagamma_ii * (ρ * area_tot * CL * vel_ii_mag / (2 * mass * m.planet.H) - 2 * g_ii / (pos_ii_mag * vel_ii_mag) + vel_ii_mag / (pos_ii_mag)^2)
-
-        y_dot[1:3] = vel_ii
-        y_dot[4:6] = force_ii / mass
-        y_dot[7] = lambdav_dot
-        y_dot[8] = lambdag_dot
-        y_dot[9] = lambdah_dot
-        y_dot[10] = heat_rate
-
-        return y_dot
-    end
-
-    ## EVENTS
-    function out_drag_pass_condition(y, t, integrator)
-        m = integrator.p[1]
-        args = integrator.p[8]
-
-        norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
-    end
-    function out_drag_pass_affect!(integrator)
-        # println("entered out_drag_passage_affect! in Eoms.jl")
-        config.cnf.t_out_drag_passage = integrator.t
-        terminate!(integrator)
-    end
-    out_drag_pass = ContinuousCallback(out_drag_pass_condition, out_drag_pass_affect!, nothing)
-
-    function time_switch_func_condition(y, t, integrator)
-        m = integrator.p[1]
-        k_cf = integrator.p[12]
-
-        CL_90, CD_90 = aerodynamic_coefficient_fM(pi/2, m.body, T, S, m.aerodynamics, 0)
-        CL_0, CD_0 = aerodynamic_coefficient_fM(0, m.body, T, S, m.aerodynamics, 0)
-        CD_slope = (CD_90 - CD_0) / (pi/2)
-
-        # println("CD_slope inside event: ", CD_slope)
-        # println("k_cf inside event: ", k_cf)
-
-        vel_ii = y[4:6]
-        vel_ii_mag = norm(vel_ii)
-
-        lambda_switch = (k_cf * 2 * m.body.mass * vel_ii_mag) ./ (m.body.area_tot * CD_slope * pi)
-        lambda_switch - y[7]
-    end
-    function time_switch_func_affect!(integrator)
-        # println("entered time_switch_func_affect! in Eoms.jl")
-        append!(config.cnf.t_time_switch_func, integrator.t)
-        nothing
-
-        # if length(config.cnf.t_time_switch_func) == 2
-        #     terminate!(integrator)
-        # else
-        #     nothing
+            ρ, T_p, wind = pyconvert(Float64, ρ), pyconvert(Float32, T_p), SVector{3, Float32}([pyconvert(Float32, wind[1]), pyconvert(Float32, wind[2]), pyconvert(Float32, wind[3])])
+        # elseif ip.dm == 4
+        #     ρ, T_p, wind = density_nrlmsise(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, time_real)
         # end
-    end
-    time_switch_func = ContinuousCallback(time_switch_func_condition, time_switch_func_affect!)
-
-    # SOLVE EQUATIONS OF MOTIONS - 1 steps
-    # USE CLOSED FORM SOLUTION TO DEFINE lambda_zero:
-    T = m.planet.T  # fixed temperature
-
-    t_cf, h_cf, γ_cf, v_cf = closed_form(args, m, OE, T, true, m.aerodynamics.α)  # define closed-form solution
-
-    # println("h_cf: ", h_cf)
-    # println("v_cf: ", v_cf)
-
-    lambdav = v_E * 4180 # v_cf[end]
-    lambdag = 0.0
-    lambdah = v_E * m.planet.μ / (m.planet.Rp_e + args[:AE]*1e3)^2 # m.planet.μ / (m.planet.Rp_e + h_cf[end])^2
-
-    println("lambda init: ", [lambdav, lambdag, lambdah])
-
-    # lambdav = vf
-    # lambdag = 0.0
-    # lambdah = m.planet.μ / (rf)^2
-
-    # println("lambda init: ", [lambdav, lambdag, lambdah])
-
-    lambda_v_fin = 10000
-    lambda_γ_fin = 10000
-    lambda_h_fin = 10000
-
-    lambda_v_fin_actual = 0
-    lambda_γ_fin_actual = 0
-    lambda_h_fin_actual = 0
-
-    count = 0
-
-    index_phase_aerobraking = nothing
-    aerobraking_phase = nothing
-    initial_state = nothing
-
-    step = 5
-
-    while abs(lambda_v_fin_actual - lambda_v_fin) > 0.1 || abs(lambda_γ_fin_actual - lambda_γ_fin) > 0.1 || abs(lambda_h_fin_actual - lambda_h_fin) > 0.01
-        count += 1
-
-        in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], lambdav, lambdag, lambdah, 0.0]
-
-        # println("in_cond 1: ", in_cond)
-
-        # Time initialization
-        initial_time, final_time = time_0, time_0 + 1500
-
-        # Parameter Definition
-        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
-
-        method = Tsit5()
-        a_tol = 1e-7
-        r_tol = 1e-7
-
-        events = out_drag_pass
-
-        # Run simulation
-        prob = ODEProblem(f_ctrl!, in_cond, (initial_time, final_time), param)
-        sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
-
-        r_fin = norm(sol[1:3,end])
-        v_fin = norm(sol[4:6,end])
-        Q_fin = sol[end,end]
-        # lambda_v_fin = v_fin
-        # lambda_γ_fin = 0.0
-        # lambda_h_fin = m.planet.μ / r_fin^2
-        lambda_v_fin = v_E*v_fin
-        lambda_γ_fin = 0.0
-        lambda_h_fin = v_E*m.planet.μ / r_fin^2
-        lambda_v_fin_actual = sol[7,end]
-        lambda_γ_fin_actual = sol[8,end]
-        lambda_h_fin_actual = sol[9,end]
-
-        # println("lambda 2: ", [lambda_v_fin_actual, lambda_γ_fin_actual, lambda_h_fin_actual])
-
-        in_cond = [sol[1,end], sol[2,end], sol[3,end], sol[4,end], sol[5,end], sol[6,end], lambda_v_fin, lambda_γ_fin, lambda_h_fin, Q_fin]
-
-        # println("in_cond 2: ", in_cond)
-        
-        if (abs(lambda_v_fin_actual - lambda_v_fin) < 0.1 && abs(lambda_γ_fin_actual - lambda_γ_fin) < 0.1 && abs(lambda_h_fin_actual - lambda_h_fin) < 0.01) || count > 20
-            break
-        end
-
-        # println("time: ", config.cnf.t_out_drag_passage)
-
-        prob = ODEProblem(f_ctrl!, in_cond, (sol.t[end], -10), param)
-        sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
-
-        # println("time rev: ", sol.t[end])
-
-        lambdav = sol[7,end]
-        lambdag = sol[8,end]
-        lambdah = sol[9,end]
-
-        # println("lambda 3: ", [lambdav, lambdag, lambdah])
-    end
-
-    println("count: ", count)
-
-    println("lambda init conv: ", [lambdav, lambdag, lambdah])
-
-    # Rerun the simulation with smaller step-size and the right lambda zero
-    # Initial condition initialization
-    in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], lambdav, lambdag, lambdah, 0.0]
-
-    # println("in_cond: ", in_cond)
-
-    # Time initialization
-    initial_time, final_time = time_0, time_0 + 1500
-
-    # Parameter Definition
-    param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
-
-    method = Tsit5()
-    a_tol = 1e-9
-    r_tol = 1e-9
-
-    events = CallbackSet(out_drag_pass, time_switch_func)
-
-    # Run simulation
-    prob = ODEProblem(f_ctrl!, in_cond, (initial_time, final_time), param)
-    sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
-
-    v_ii_mag = [norm(sol[4:6,i]) for i in 1:length(sol.t)]
-
-    # println("v_ii_mag: ", v_ii_mag)
-
-    # lambda_switch_list = (k_cf * 2.0 * m.body.mass * v_ii_mag) ./ (m.body.area_tot * CD_slope * pi)
-    lambda_switch_list = (2.0 * m.body.mass * v_ii_mag) ./ (m.body.area_tot * CD_slope * pi)
-
-    # println("lambda_switch_list: ", lambda_switch_list)
-
-    push!(config.cnf.lambda_switch_list, lambda_switch_list...)
-    push!(config.cnf.time_switch_list, sol.t...)
-
-    # Initial condition initialization
-    in_cond = [sol[1,end], sol[2,end], sol[3,end], sol[4,end], sol[5,end], sol[6,end], sol[7,end], sol[8,end], sol[9,end], 0.0]
-
-    # println("in_cond: ", in_cond)
-
-    # Time initialization
-    initial_time, final_time = sol.t[end], 0
-
-    # Parameter Definition
-    param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
-
-    method = Tsit5()
-    a_tol = 1e-9
-    r_tol = 1e-9
-
-    events = CallbackSet(out_drag_pass, time_switch_func)
-
-    # Run simulation
-    prob = ODEProblem(f_ctrl!, in_cond, (initial_time, final_time), param)
-    sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
-
-    return sol
-end
-
-function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing)
-    sys.path.append(args[:directory_Gram])
-    gram = pyimport("gram")
-
-    wind_m = false
-    if ip.wm == 1
-        wind_m = true
-    end
-
-    MonteCarlo = false
-    if ip.mc == 1
-        MonteCarlo = true
-    end
-
-    version = args[:Gram_version]
-
-    r0, v0 = orbitalelemtorv(OE, m.planet)
-
-    r0 = SVector{3, Float64}(r0)
-    v0 = SVector{3, Float64}(v0)
-
-    println("r0: ", (norm(r0)-m.planet.Rp_e)/1e3)
-    println("v0: ", norm(v0))
-
-    # Clock
-    date_initial = from_utc(DateTime(m.initial_condition.year, 
-                                    m.initial_condition.month,
-                                    m.initial_condition.day, 
-                                    m.initial_condition.hour, 
-                                    m.initial_condition.minute, 
-                                    m.initial_condition.second))
-
-    if config.cnf.count_numberofpassage != 1
-        t_prev = config.solution.orientation.time[end]
-    else
-        t_prev = m.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # m.initialcondition.time_rot
-    end
-
-    r0_pp, v0_pp = r_intor_p!(r0, v0, m.planet, config.cnf.et)
-
-    T = m.planet.T    # fixed temperature
-    RT = T * m.planet.R
-
-    S = norm(v0_pp) / sqrt(2 * RT)
-
-    CL_90, CD_90 = aerodynamic_coefficient_fM(pi/2, m.body, T, S, m.aerodynamics, 0)
-    CL_0, CD_0 = aerodynamic_coefficient_fM(0, m.body, T, S, m.aerodynamics, 0)
-    CD_slope = (CD_90 - CD_0) / (pi/2)
-
-    # println("CD_slope outside integrator: ", CD_slope)
-    # println("k_cf outside integrator: ", k_cf)
-
-    function f_ctrl!(y_dot, in_cond, param, t0)
-        m = param[1]
-        index_phase_aerobraking = param[2]
-        ip = param[3]
-        aerobraking_phase = param[4]
-        t_prev = param[5]
-        date_initial = param[6]
-        time_0 = param[7]
-        args = param[8]
-        initial_state = param[9]
-        gram_atmosphere = param[10]
-        gram = param[11]
-        k_cf = param[12]
-
-        # Clock
-        current_epoch = date_initial + t0*seconds # Precompute the current epoch
-        time_real = DateTime(current_epoch) # date_initial + Second(t0)
-        timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
-
-        # Timing variables
-        el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation
-        current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
-        time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
-        et = utc2et(time_real_utc) # Current time in Ephemeris Time
-        m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
-        
-        pos_ii = SVector{3, Float64}(in_cond[1:3])       # Inertial position 
-        vel_ii = SVector{3, Float64}(in_cond[4:6])       # Inertial velocity
-        mass = m.body.mass                             # Mass kg
-        pos_ii_mag = norm(pos_ii)   # Magnitude of the inertial position
-        vel_ii_mag = norm(vel_ii)   # Magnitude of the inertial velocity
-        lambdav_ii = in_cond[7]
-        lambdagamma_ii = in_cond[8]
-        lambdah_ii = in_cond[9]
-
-        # Assign Parameters
-        ω_planet = m.planet.ω
-        γ = m.planet.γ
-        area_tot = m.body.area_tot
-
-        # TRANSFORM THE STATE
-        # Inertial to planet relative transformation
-        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, et) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
-        pos_pp_mag = norm(pos_pp) # Magnitude of the planet relative position
-        vel_pp_mag = norm(vel_pp)
-
-        # Orbital Elements
-        OE = rvtoorbitalelement(pos_ii, vel_ii, mass, m.planet)
-
-        # Angular Momentum Calculations
-        h_ii = cross(pos_ii, vel_ii)        # Inertial angular momentum vector[m ^ 2 / s]
-        h_ii_mag = norm(h_ii)               # Magnitude of the inertial angular momentum
-        h_pp = cross(pos_pp, vel_pp)        # Planet relative angular momentum vector
-        h_pp_mag = norm(h_pp)               # Magnitude of the planet relative angular momentum
-        h_pp_hat = h_pp / h_pp_mag          # Unit vector of the planet relative angular momentum
-
-        # Inertial flight path angle
-        arg = median([-1, 1, h_ii_mag / (pos_ii_mag * vel_ii_mag)])
-        γ_ii = acos(arg)
-
-        if dot(pos_ii, vel_ii) < 0
-            γ_ii = -γ_ii
-        end
-
-        # Relative flight path angle
-        arg = median([-1, 1, h_pp_mag / (pos_pp_mag * vel_pp_mag)])
-        γ_pp = acos(arg)
-
-        if dot(pos_pp, vel_pp) < 0
-            γ_pp = -γ_pp
-        end
-
-        # Derived Quantity Calculations
-
-        # Compute Latitude and Longitude
-        LatLong = rtolatlong(pos_pp, m.planet)
-        lat = LatLong[2]
-        lon = LatLong[3]
-        alt = LatLong[1]
-
-        # Compute NED basis unit vectors
-        uDuNuE = latlongtoNED(LatLong)  # nd
-        uD = uDuNuE[1]
-        uE = uDuNuE[3]
-        uN = uDuNuE[2]
-
-        # Get density, pressure , temperature and winds
-        if ip.dm == 0
-            ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 1
-            ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 2
-            ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 3
-            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
-            ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
-        end
 
         # Mach Number
         sound_velocity = sqrt(γ * m.planet.R * T_p)
         Mach = vel_pp_mag / sound_velocity
         S = sqrt(γ/2) * Mach   # molecular speed ratio
 
-        
-        lambda_switch = (k_cf * 2.0 * m.body.mass * vel_ii_mag) / (area_tot * CD_slope * pi)
+        lambda_switch = (2.0 * k_cf * m.body.mass * vel_ii_mag) / (area_tot * CD_slope * pi)
 
         # println("m.aero.alpha: ", m.aerodynamics.α)
     
-        if lambdav_ii < lambda_switch
-            aoa = 0.0
-        else
-            state = [T_p, ρ, S]
-            index_ratio = [1,1]
-            aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state) # m.aerodynamics.α 
+        if reeval_mode == false
+            if lambdav_ii < lambda_switch
+                aoa = 0.0
+            else
+                state = [T_p, ρ, S]
+                index_ratio = [1,1]
+                aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state) # m.aerodynamics.α 
 
-            # println("aoa: ", aoa)
+                # println("aoa: ", aoa)
+            end
+        else
+            if t0 > tswitch
+                aoa = 0.0
+            else
+                state = [T_p, ρ, S]
+                index_ratio = [1,1]
+                aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state) # m.aerodynamics.α 
+
+                # println("aoa: ", aoa)
+            end
         end
 
         # Convert wind to pp(PCPF) frame
@@ -718,6 +240,8 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
 
             # heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
         end
+
+        config.cnf.α_past = aoa
 
         # Rotation Calculation
         # L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci'
@@ -726,22 +250,22 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         #         -sin(rot_angle) cos(rot_angle)  0.0; 
         #         0.0             0.0             1.0]    # rotation matrix
         
-        if ip.gm == 0
-            gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 1
+        # if ip.gm == 0
+        #     gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+        # elseif ip.gm == 1
             gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 2
-            gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 3
-            gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
-        end
+        # elseif ip.gm == 2
+            # gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+        # elseif ip.gm == 3
+        #     gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
+        # end
 
         if length(args[:n_bodies]) != 0
-            for k = 1:length(args[:n_bodies])  
+            for k = 1:length(args[:n_bodies])
                 gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
             end
         end
-
+        srp_ii = zeros(3) # solar radiation pressure vector
         if args[:srp] == true
             p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
             srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, et)
@@ -752,7 +276,12 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
 
         # Vehicle Aerodynamic Forces
         # CL and CD
-        CL, CD = aerodynamic_coefficient_fM(aoa, m.body, T_p, S, m.aerodynamics, 0)
+        if aero_forces == true
+            CL, CD = aerodynamic_coefficient_fM(aoa, m.body, T_p, S, m.aerodynamics, 0)
+        else
+            # println("Aero forces set to false, no lift or drag applied")
+            CL, CD = 0.0, 0.0
+        end
 
         # Force calculations
         drag_pp_hat = -vel_pp_rw_hat                    # Planet relative drag force direction
@@ -766,7 +295,6 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         # Total Force
         # Total inertial external force vector on body [N]
         force_ii = drag_ii + lift_ii + gravity_ii
-
         g_ii = norm(gravity_ii) / mass
 
         # EOM
@@ -809,6 +337,7 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         y_dot[8] = lambdag_dot
         y_dot[9] = lambdah_dot
         y_dot[10] = heat_rate
+        y_dot[11] = dot(vel_ii, force_ii - mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)) / mass
 
         return y_dot
     end
@@ -826,6 +355,21 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         terminate!(integrator)
     end
     out_drag_pass = ContinuousCallback(out_drag_pass_condition, out_drag_pass_affect!, nothing)
+
+    function apoapsispoint_condition(y, t, integrator)
+        m = integrator.p[1]
+        pos_ii = SVector{3, Float64}([y[1], y[2], y[3]]) * config.cnf.DU  # Inertial position
+        vel_ii = SVector{3, Float64}([y[4], y[5], y[6]]) * config.cnf.DU / config.cnf.TU  # Inertial Velocity
+
+        vi = rvtoorbitalelement(pos_ii, vel_ii, y[7] * config.cnf.MU, m.planet)[6]
+        
+        rad2deg(vi) - 180 # upcrossing
+    end
+    function apoapsispoint_affect!(integrator)
+        config.cnf.count_apoapsispoint += 1
+        terminate!(integrator)
+    end
+    apoapsispoint = ContinuousCallback(apoapsispoint_condition, apoapsispoint_affect!, nothing)
 
     function time_switch_func_condition(y, t, integrator)
         m = integrator.p[1]
@@ -851,152 +395,281 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
     end
     time_switch_func = ContinuousCallback(time_switch_func_condition, time_switch_func_affect!)
 
-    # SOLVE EQUATIONS OF MOTIONS - 1 steps
-    # USE CLOSED FORM SOLUTION TO DEFINE lambda_zero:
-    T = m.planet.T  # fixed temperature
+    function residual!(F, z, r0, v0, param, out_drag_pass, v_E)
 
-    t_cf, h_cf, γ_cf, v_cf = closed_form(args, m, OE, T, true, m.aerodynamics.α)  # define closed-form solution
+        m = param[1]
+        time_0 = param[7]
 
-    # println("h_cf: ", h_cf)
-    # println("v_cf: ", v_cf)
+        initial_time, final_time = time_0, time_0 + 5000
 
-    lambdav = v_E * v_cf[end]
-    lambdag = 0.0
-    lambdah = v_E * m.planet.μ / (m.planet.Rp_e + args[:AE]*1e3)^2 # m.planet.μ / (m.planet.Rp_e + h_cf[end])^2
-
-    # lambdav = vf
-    # lambdag = 0.0
-    # lambdah = m.planet.μ / (rf)^2
-
-    # println("lambda init: ", [lambdav, lambdag, lambdah])
-
-    lambda_v_fin = 100000
-    lambda_γ_fin = 100000
-    lambda_h_fin = 100000
-
-    lambda_v_fin_actual = 0
-    lambda_γ_fin_actual = 0
-    lambda_h_fin_actual = 0
-
-    count = 0
-
-    index_phase_aerobraking = nothing
-    aerobraking_phase = nothing
-    initial_state = nothing
-
-    step = 5
-
-    while abs(lambda_v_fin_actual - lambda_v_fin) > 0.1 || abs(lambda_γ_fin_actual - lambda_γ_fin) > 0.1 || abs(lambda_h_fin_actual - lambda_h_fin) > 0.01
-        count += 1
-
-        in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], lambdav, lambdag, lambdah, 0.0]
-
-        # println("in_cond 1: ", in_cond)
-
-        # Time initialization
-        initial_time, final_time = time_0, time_0 + 1500
+        in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], z[1], z[2], z[3], 0.0, config.cnf.energy_start_dp]
 
         # Parameter Definition
-        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
+        # param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
 
         method = Tsit5()
         a_tol = 1e-7
         r_tol = 1e-7
 
+        step = 5
+
         events = out_drag_pass
+
+        # Run simulation
+        prob = ODEProblem(f_ctrl!, in_cond, (initial_time, final_time), param)
+        sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=out_drag_pass)
+
+        lambdav_fin = sol[7,end]
+        lambdag_fin = sol[8,end]
+        lambdah_fin = sol[9,end]
+
+        F[1] = v_E * norm(sol[4:6,end]) - lambdav_fin 
+        F[2] = 0.0 - lambdag_fin
+        F[3] = v_E * m.planet.μ / (m.planet.Rp_e + norm(sol[1:3,end]))^2 - lambdah_fin # m.planet.μ / (m.planet.Rp_e + h_cf[end])^2
+
+        # gf = gravity_invsquared_J2(norm(sol[1:3,end]), sol[1:3,end], m.planet)
+
+        # gf = norm(gf)
+
+        # # gamf = pi/2 - acos(dot(sol[1:3,end], sol[4:6,end]) / (norm(sol[1:3,end]) * norm(sol[4:6,end])))
+
+        # h = cross(sol[1:3,end], sol[4:6,end])
+        # vr = dot(sol[1:3,end], sol[4:6,end]) / norm(sol[1:3,end])
+        # vt = norm(h)/norm(sol[1:3,end])
+
+        # gamf = atan(vr,vt)
+
+        # v_ii_mag = norm(sol[4:6,end])
+
+        # rho = density_polyfit((norm(sol[1:3,end]) - m.planet.Rp_e)*1e-3, m.planet)[1]
+
+        # a = config.cnf.α_past
+
+        # F[4] =  rho*v_ii_mag^3*a/pi - sol[7,end]*(0.5*rho*m.body.area_tot/m.body.mass*(CD_0 + a*CD_slope)*v_ii_mag^2 + gf*gamf) + 
+        #         sol[8,end]*(0.5*rho*m.body.area_tot/m.body.mass*CL_0*v_ii_mag - gf/v_ii_mag + v_ii_mag/norm(sol[1:3,end])) + 
+        #         sol[9,end]*v_ii_mag*gamf
+    end
+
+    if reeval_mode == false
+        println("Starting lambda zero convergence...")
+        # SOLVE EQUATIONS OF MOTIONS - 1 steps
+        # USE CLOSED FORM SOLUTION TO DEFINE lambda_zero:
+        T = m.planet.T  # fixed temperature
+
+        t_cf, h_cf, γ_cf, v_cf = closed_form(args, m, OE, T, true, m.aerodynamics.α)  # define closed-form solution
+
+        # println("h_cf: ", h_cf[end])
+        # println("v_cf: ", v_cf[end])
+        # println("γ_cf: ", γ_cf[end])
+
+        lambdav = v_E * v_cf[end]
+        lambdag = 0.0
+        lambdah = v_E * m.planet.μ / (m.planet.Rp_e + args[:AE]*1e3)^2 # m.planet.μ / (m.planet.Rp_e + h_cf[end])^2
+
+        # lambdav = vf
+        # lambdag = 0.0
+        # lambdah = m.planet.μ / (rf)^2
+
+        # println("lambda init: ", [lambdav, lambdag, lambdah])
+
+        lambda_v_fin = 100000
+        lambda_γ_fin = 100000
+        lambda_h_fin = 100000
+
+        lambda_v_fin_actual = 0
+        lambda_γ_fin_actual = 0
+        lambda_h_fin_actual = 0
+
+        count = 0
+
+        index_phase_aerobraking = nothing
+        aerobraking_phase = nothing
+        initial_state = nothing
+
+        # Parameter Definition
+        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
+
+
+        step = 5
+
+        while abs(lambda_v_fin_actual - lambda_v_fin) > 0.1 || abs(lambda_γ_fin_actual - lambda_γ_fin) > 0.1 || abs(lambda_h_fin_actual - lambda_h_fin) > 0.01
+            count += 1
+
+            in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], lambdav, lambdag, lambdah, 0.0, config.cnf.energy_start_dp]
+
+            # println("in_cond 1: ", in_cond)
+
+            # Time initialization
+            initial_time, final_time = time_0, time_0 + 1e10
+
+            method = Tsit5()
+            a_tol = 1e-7
+            r_tol = 1e-7
+
+            events = out_drag_pass
+
+            # Run simulation
+            prob = ODEProblem(f_ctrl!, in_cond, (initial_time, final_time), param)
+            sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
+
+            # println("altitude at out of drag passage (km): ", (norm(sol[1:3,end]) - m.planet.Rp_e)/1e3)
+
+            r_fin = norm(sol[1:3,end])
+            v_fin = norm(sol[4:6,end])
+            Q_fin = sol[end-1,end]
+            energy_fin = sol[end,end]
+            # lambda_v_fin = v_fin
+            # lambda_γ_fin = 0.0
+            # lambda_h_fin = m.planet.μ / r_fin^2
+            lambda_v_fin = v_E*v_fin
+            lambda_γ_fin = 0.0
+            lambda_h_fin = v_E*m.planet.μ / r_fin^2
+            lambda_v_fin_actual = sol[7,end]
+            lambda_γ_fin_actual = sol[8,end]
+            lambda_h_fin_actual = sol[9,end]
+
+            # println("lambda 2: ", [lambda_v_fin_actual, lambda_γ_fin_actual, lambda_h_fin_actual])
+
+            in_cond = [sol[1,end], sol[2,end], sol[3,end], sol[4,end], sol[5,end], sol[6,end], lambda_v_fin, lambda_γ_fin, lambda_h_fin, Q_fin, energy_fin]
+
+            # println("in_cond 2: ", in_cond)
+
+            # println("diffs: ", [abs(lambda_v_fin_actual - lambda_v_fin), abs(lambda_γ_fin_actual - lambda_γ_fin), abs(lambda_h_fin_actual - lambda_h_fin)])
+            
+            if (abs(lambda_v_fin_actual - lambda_v_fin) < 0.1 && abs(lambda_γ_fin_actual - lambda_γ_fin) < 0.1 && abs(lambda_h_fin_actual - lambda_h_fin) < 0.01) || count > 50
+                break
+            end
+
+            # println("time: ", config.cnf.t_out_drag_passage)
+
+            prob = ODEProblem(f_ctrl!, in_cond, (sol.t[end], 0), param)
+            sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
+
+            # println("time rev: ", sol.t[end])
+
+            lambdav = sol[7,end]
+            lambdag = sol[8,end]
+            lambdah = sol[9,end]
+
+            # println("lambda 3: ", [lambdav, lambdag, lambdah])
+            # println("count: ", count)
+        end
+
+        # println("count: ", count)
+
+        # solNL = nlsolve((F, z) -> residual!(F, z, r0, v0, param, out_drag_pass, v_E), [lambdav, lambdag, lambdah])
+        
+        # println("")
+        # println(solNL)
+        # println("")
+        
+        # lambdav = solNL.zero[1]
+        # lambdag = solNL.zero[2]
+        # lambdah = solNL.zero[3]
+
+        # Rerun the simulation with smaller step-size and the right lambda zero
+        # Initial condition initialization
+        in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], lambdav, lambdag, lambdah, 0.0, config.cnf.energy_start_dp]
+
+        println("in_cond: ", in_cond)
+
+        # Time initialization
+        initial_time, final_time = time_0, time_0 + 1e10
+
+        # Parameter Definition
+        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
+
+        method = Tsit5()
+        a_tol = 1e-9
+        r_tol = 1e-9
+
+        # events = CallbackSet(apoapsispoint, time_switch_func)
+        events = CallbackSet(out_drag_pass, time_switch_func)
 
         # Run simulation
         prob = ODEProblem(f_ctrl!, in_cond, (initial_time, final_time), param)
         sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
 
-        r_fin = norm(sol[1:3,end])
-        v_fin = norm(sol[4:6,end])
-        Q_fin = sol[end,end]
-        # lambda_v_fin = v_fin
-        # lambda_γ_fin = 0.0
-        # lambda_h_fin = m.planet.μ / r_fin^2
-        lambda_v_fin = v_E*v_fin
-        lambda_γ_fin = 0.0
-        lambda_h_fin = v_E*m.planet.μ / r_fin^2
-        lambda_v_fin_actual = sol[7,end]
-        lambda_γ_fin_actual = sol[8,end]
-        lambda_h_fin_actual = sol[9,end]
+        gf = gravity_invsquared_J2(norm(sol[1:3,end]), sol[1:3,end], m.planet)
 
-        # println("lambda 2: ", [lambda_v_fin_actual, lambda_γ_fin_actual, lambda_h_fin_actual])
+        gf = norm(gf)
 
-        in_cond = [sol[1,end], sol[2,end], sol[3,end], sol[4,end], sol[5,end], sol[6,end], lambda_v_fin, lambda_γ_fin, lambda_h_fin, Q_fin]
+        h = cross(sol[1:3,end], sol[4:6,end])
+        vr = dot(sol[1:3,end], sol[4:6,end]) / norm(sol[1:3,end])
+        vt = norm(h)/norm(sol[1:3,end])
 
-        # println("in_cond 2: ", in_cond)
-        
-        if (abs(lambda_v_fin_actual - lambda_v_fin) < 0.1 && abs(lambda_γ_fin_actual - lambda_γ_fin) < 0.1 && abs(lambda_h_fin_actual - lambda_h_fin) < 0.01) || count > 20
-            break
+        gamf = atan(vr,vt)
+
+        v_ii_mag = [norm(sol[4:6,i]) for i in 1:length(sol.t)]
+
+        rho = density_polyfit(norm(sol[1:3,end])*1e-3, m.planet)[1]
+
+        a = config.cnf.α_past
+
+        println([gamf, gf, CD_0, CL_0, rho, a])
+
+        println("Hamiltoninan at final time: ", rho*v_ii_mag[end]^3*a/pi - sol[7,end]*(0.5*rho*m.body.area_tot/m.body.mass*(CD_0 + a*CD_slope)*v_ii_mag[end]^2 + gf*gamf) + 
+                                                sol[8,end]*(0.5*rho*m.body.area_tot/m.body.mass*CL_0*v_ii_mag[end] - gf/v_ii_mag[end] + v_ii_mag[end]/norm(sol[1:3,end])) + 
+                                                sol[9,end]*v_ii_mag[end]*gamf)
+
+        println("CD_slope: ", CD_slope)
+
+        lambda_switch_list = (k_cf * 2.0 * m.body.mass * v_ii_mag) ./ (m.body.area_tot * CD_slope * pi)
+
+        push!(config.cnf.lambda_switch_list, lambda_switch_list...)
+        push!(config.cnf.time_switch_list, sol.t...)
+
+        ## Time switch definition
+        time_switch = [0.0, 0.0]
+
+        temp = config.cnf.t_time_switch_targ
+
+        println("time switch targ: ", config.cnf.t_time_switch_targ)
+        println("temp: ", temp)
+
+        if length(temp) == 2
+            time_switch = temp
+            # time_switch[2] = temp[end]
+        elseif length(temp) == 1
+            time_switch[1] = temp[1]
+            time_switch[2] = Inf
         end
 
-        # println("time: ", config.cnf.t_out_drag_passage)
+        config.cnf.t_time_switch_targ = []
 
-        prob = ODEProblem(f_ctrl!, in_cond, (sol.t[end], -10), param)
+        println(time_switch)
+
+        return sol, time_switch
+    else
+        index_phase_aerobraking = nothing
+        aerobraking_phase = nothing
+        initial_state = nothing
+
+        # Initial condition initialization
+        in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], 0.0, 0.0, 0.0, config.cnf.heat_load_past, config.cnf.energy_start_dp]
+        
+        # Time initialization
+        initial_time, final_time = time_0, time_0 + 1e10
+
+        # Parameter Definition
+        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
+
+        method = Tsit5()
+        a_tol = 1e-9
+        r_tol = 1e-9
+
+        step = 1
+
+        if apoapsis_eval == true
+            events = apoapsispoint 
+        else
+            events = out_drag_pass
+        end
+
+        # Run simulation
+        prob = ODEProblem(f_ctrl!, in_cond, (initial_time, final_time), param)
         sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
 
-        # println("time rev: ", sol.t[end])
-
-        lambdav = sol[7,end]
-        lambdag = sol[8,end]
-        lambdah = sol[9,end]
-
-        # println("lambda 3: ", [lambdav, lambdag, lambdah])
+        return sol
     end
-
-
-    # Rerun the simulation with smaller step-size and the right lambda zero
-    # Initial condition initialization
-    in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], lambdav, lambdag, lambdah, 0.0]
-
-    println("in_cond: ", in_cond)
-
-    # Time initialization
-    initial_time, final_time = time_0, time_0 + 1500
-
-    # Parameter Definition
-    param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
-
-    method = Tsit5()
-    a_tol = 1e-9
-    r_tol = 1e-9
-
-    events = CallbackSet(out_drag_pass, time_switch_func)
-
-    # Run simulation
-    prob = ODEProblem(f_ctrl!, in_cond, (initial_time, final_time), param)
-    sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
-
-    v_ii_mag = [norm(sol[4:6,i]) for i in 1:length(sol.t)]
-
-    println("CD_slope: ", CD_slope)
-
-    lambda_switch_list = (k_cf * 2.0 * m.body.mass * v_ii_mag) ./ (m.body.area_tot * CD_slope * pi)
-
-    push!(config.cnf.lambda_switch_list, lambda_switch_list...)
-    push!(config.cnf.time_switch_list, sol.t...)
-
-    ## Time switch definition
-    time_switch = [0.0, 0.0]
-
-    temp = config.cnf.t_time_switch_targ
-
-    println("time switch targ: ", config.cnf.t_time_switch_targ)
-    println("temp: ", temp)
-
-    if length(temp) == 2
-        time_switch = temp
-        # time_switch[2] = temp[end]
-    elseif length(temp) == 1
-        time_switch[1] = temp[1]
-        time_switch[2] = Inf
-    end
-
-    config.cnf.t_time_switch_targ = []
-
-    println(time_switch)
-
-    return sol, time_switch
 end

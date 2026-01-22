@@ -173,7 +173,7 @@ function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Boo
 
     """
     if config.cnf.drag_state == false && args[:keplerian] == false
-        if h > 2000.0e3
+        if h > args[:EI]*1e3
 
             rho = 0.0
             T = temperature_linear(h, p)
@@ -182,7 +182,7 @@ function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Boo
             rho, T, wind = density_polyfit(h, p)
         end
     elseif config.cnf.drag_state == true || args[:keplerian] == true
-        if h > 200.0e3
+        if h > args[:EI]*1e3
             rho, T, wind = density_polyfit(h, p)
         else
             position = gram.Position()
@@ -196,7 +196,7 @@ function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Boo
             atmosphere.setPosition(position)
             atmosphere.update()
             atmos = atmosphere.getAtmosphereState()
-            rho = atmos.density
+            rho = atmos.density # atmos.perturbedDensity # atmos.density
             T = atmos.temperature
             wind = [montecarlo ? atmos.perturbedEWWind : atmos.ewWind,
                     montecarlo ? atmos.perturbedNSWind : atmos.nsWind,

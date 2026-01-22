@@ -5,14 +5,16 @@ include("../utils/Eom_ctrl.jl")
 
 using Roots
 
-function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a_tol, r_tol, method, events, in_cond)
+function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a_tol, r_tol, method, events, events_apoapsis_prop, in_cond)
 
     # OE = SVector{7, Float64}([initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m])
     r0, v0 = orbitalelemtorv(OE, m.planet)
 
-    # Run simulation
+    # Run simulation - Maximum drag ratio (with Control)
     prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
     sol_max_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+
+    println("alt init and final sol_max_dratio", [norm(sol_max_dratio[1:3,1])/1e3, norm(sol_max_dratio[1:3,end])/1e3])
 
     println("m.aero.alpha before deepcopying: ", m.aerodynamics.α)
 
@@ -39,11 +41,45 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     # param_temp[1] = m_temp
     # param_temp[3] = ip_temp
 
-    # Run simulation
+    # Run simulation - Minimum drag ratio
     prob = ODEProblem(f!, in_cond, (initial_time, final_time), param_temp)
     sol_min_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
 
+    println("alt init and final min dratio", [norm(sol_min_dratio[1:3,1])/1e3, norm(sol_min_dratio[1:3,end])/1e3])
+
+    # in_cond_new = sol_min_dratio[:,end]
+
+    # config.cnf.ascending_phase = true
+    # config.cnf.drag_state = false
+
+    # # Run simulation - (Apoapsis propagation with perturbations)
+    # prob = ODEProblem(f!, in_cond_new, (sol_min_dratio.t[end], sol_min_dratio.t[end] + 1e10), param_temp)
+    # sol_apoapsis = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events_apoapsis_prop)
+
+    # time_0 = initial_time
+    # gram_atmosphere = param[10]
+    # sol_min_dratio = asim_ctrl_rf(ip, m, time_0, OE, args, 0.0, 1.0, false, gram_atmosphere, true, 0.0)
+
     println("m.aero.alpha after deepcopying and running zero aoa case: ", m.aerodynamics.α)
+
+    time_0 = initial_time
+    gram_atmosphere = param[10]
+    sol_pert_dp = asim_ctrl_rf(ip, m, time_0, OE, args, 0.0, 1.0, false, gram_atmosphere, true, 0.0, false, false)
+
+    println("alt init and final", [norm(sol_pert_dp[1:3,1])/1e3, norm(sol_pert_dp[1:3,end])/1e3])
+
+    energy_del_pert_dp = sol_pert_dp[end,end] - sol_pert_dp[end,1]
+
+    println("Energy difference due to perturbations during drag passage (zero aoa case): ", energy_del_pert_dp)
+
+    # apoapsis propagation without aero forces
+    time_0 = initial_time
+    gram_atmosphere = param[10]
+    sol_apoapsis = asim_ctrl_rf(ip, m, time_0, OE, args, 0.0, 1.0, false, gram_atmosphere, true, 0.0, false, true)
+
+    OE_apoapsis = rvtoorbitalelement(SVector{3, Float64}(sol_apoapsis[1:3,end]), SVector{3, Float64}(sol_apoapsis[4:6,end]), sol_apoapsis[7,end], m.planet)
+
+    println("Apoapsis true anomaly: ", rad2deg(OE_apoapsis[6]))
 
     pos_ii = SVector{3, Float64}(sol_min_dratio[1:3,end])   
     vel_ii = SVector{3, Float64}(sol_min_dratio[4:6,end])
@@ -58,9 +94,12 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
 
     println("Latitude at entry interface min drag ratio: ", rad2deg(lat))
 
-    energy_target_max = norm(sol_min_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_min_dratio[1:3, end]) # Highest possible energy with minimum drag ratio, least negative
+    # energy_target_max = norm(sol_min_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_min_dratio[1:3, end]) # Highest possible energy with minimum drag ratio, least negative
+    energy_target_max = sol_min_dratio[end,end]
+    
+    ra_targ_max =  (-m.planet.μ/energy_target_max - minimum( [norm(sol_min_dratio[1:3,k]) for k=1:length(sol_min_dratio.t)] ))*1e-3
 
-    pos_ii = SVector{3, Float64}(sol_max_dratio[1:3,end])   
+    pos_ii = SVector{3, Float64}(sol_max_dratio[1:3,end])
     vel_ii = SVector{3, Float64}(sol_max_dratio[4:6,end])
 
     pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, config.cnf.et)
@@ -75,21 +114,51 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     
     target_energy_inc = 1 / 2 * m.planet.μ * m.planet.J2 * m.planet.Rp_e^2 / norm(pos_ii)^3 * (3*sin(lat)^2 - 1)
 
-    energy_target_min = norm(sol_max_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_max_dratio[1:3, end]) # Lowest possible energy with maximum drag ratio, most negative
+    # energy_target_min = norm(sol_max_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_max_dratio[1:3, end]) # Lowest possible energy with maximum drag ratio, most negative
+    energy_target_min = sol_max_dratio[end,end]
+    
+    ra_targ_min = (-m.planet.μ/energy_target_min - minimum( [norm(sol_max_dratio[1:3,k]) for k=1:length(sol_max_dratio.t)] ))*1e-3
 
+    println("")
+    println("Energy target min int: ", sol_max_dratio[end,end])
     println("Energy target min: ", energy_target_min)
+    println("Apoapsis target min: ", ra_targ_min)
+    println("")
+    println("Energy target min int: ", sol_min_dratio[end,end])
     println("Energy target max: ", energy_target_max)
+    println("Apoapsis  target max: ", ra_targ_max)
+    println("")
 
     h0 = norm(cross(r0, v0))
-    r_p = h0^2 / (m.planet.μ * (1 + OE[2]))
+    # r_p = h0^2 / (m.planet.μ * (1 + OE[2]))
+    r_p = (minimum( [norm(sol_max_dratio[1:3,k]) for k=1:length(sol_max_dratio.t)] ) + minimum( [norm(sol_min_dratio[1:3,k]) for k=1:length(sol_min_dratio.t)] ))/2
 
     # println("Current periapsis: ", r_p - m.planet.Rp_e)
 
+    # time_0 = initial_time
+    # gram_atmosphere = param[10]
+    # sol_apoapsis = asim_ctrl_rf(ip, m, time_0, OE, args, 0.0, 1.0, true, gram_atmosphere, true, 0.0)
+
+    println("drag pass energy diff min dratio: ", sol_min_dratio[end,end] - sol_min_dratio[end,1])
+    println("drag pass energy diff max dratio: ", sol_max_dratio[end,end] - sol_max_dratio[end,1])
+
+    energy_inc_pert = sol_apoapsis[end,end] - config.cnf.energy_start_dp # sol_pert_dp[end,end] # energy_target_max
+    # energy_inc_pert = norm(sol_apoapsis[4:6,end])^2/2 - m.planet.μ / norm(sol_apoapsis[1:3,end]) - energy_target_max
+
+    println("Energy at apoapsis propagation: ", sol_apoapsis[end,end])
+    println("Energy at apoapsis vis-viva: ", norm(sol_apoapsis[4:6, end])^2/2 - m.planet.μ / norm(sol_apoapsis[1:3, end]))
+    println("Energy increase due to perturbations: ", energy_inc_pert)
+    println("Energy increase due to J2 effect at apoapsis: ", target_energy_inc)
+
     target_energy = -m.planet.μ / (args[:ra_fin_orbit] + r_p) # change to current periapsis
 
-    target_energy -= target_energy_inc
+    # target_energy -= target_energy_inc
+    # target_energy -= energy_inc_pert
+    # target_energy -= energy_del_pert_dp
 
     println("Target energy: ", target_energy)
+    println("Apoapsis target: ", (-m.planet.μ/target_energy - r_p)*1e-3)
+    println("")
 
     if target_energy < energy_target_max && target_energy > energy_target_min
         config.cnf.targeting = 1
@@ -157,7 +226,45 @@ function control_solarpanels_targeting_heatload(energy_f, param, OE)
         args = param[8]
         gram_atmosphere = param[10]
 
-        sol, _ = asim_ctrl_rf(ip, m, time_0, OE, args, v_E, 1.0, false, gram_atmosphere)
+        sol, _ = asim_ctrl_rf(ip, m, time_0, OE, args, v_E, 1.0, true, gram_atmosphere, false)
+
+        # pos_ii = SVector{3, Float64}(sol[1:3,end])   
+        # vel_ii = SVector{3, Float64}(sol[4:6,end])
+
+        # pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, config.cnf.et)
+
+        # LatLong = rtolatlong(pos_pp, m.planet, args[:topography_model] == "Spherical Harmonics" && norm(pos_ii) - m.planet.Rp_e < args[:EI] * 1e3)
+            
+        # lat = LatLong[2]
+        
+        # target_energy_inc = 3 / 2 * m.planet.μ * m.planet.J2 * m.planet.Rp_e^2 / norm(pos_ii)^3 * (3*sin(lat)^2 - 1)
+
+        # energy_fin = norm(sol[4:6,end])^2/2 - m.planet.μ / norm(sol[1:3,end]) # + target_energy_inc
+
+        energy_fin = sol[end,end]
+
+        println("v_E: ", v_E, " energy_fin: ", energy_fin)
+        println("")
+
+        return (energy_fin - energy_f) / 1e6
+    end
+
+    v_E_fin = find_zero(v_E -> func_targeting_heatload(v_E), [1, 1000], Roots.Brent(), verbose=true, rtol=1e-8, atol=1e-8)
+
+    return v_E_fin
+end
+
+function reeval_targ(energy_f, param, OE_current)
+    time_0 = param[7]
+
+    function func_targeting_heatload(ts)
+        m = param[1]
+        ip = param[3]
+        time_0 = param[7]
+        args = param[8]
+        gram_atmosphere = param[10]
+
+        sol = asim_ctrl_rf(ip, m, time_0, OE_current, args, 0.0, 1.0, false, gram_atmosphere, true, ts)
 
         # pos_ii = SVector{3, Float64}(sol[1:3,end])   
         # vel_ii = SVector{3, Float64}(sol[4:6,end])
@@ -172,14 +279,16 @@ function control_solarpanels_targeting_heatload(energy_f, param, OE)
 
         energy_fin = norm(sol[4:6,end])^2/2 - m.planet.μ / norm(sol[1:3,end]) # + target_energy_inc
 
-        println("v_E: ", v_E, " energy_fin: ", energy_fin)
+        println("ts: ", ts, " energy_fin: ", energy_fin)
 
         return (energy_fin - energy_f) / 1e6
     end
 
-    v_E_fin = find_zero(v_E -> func_targeting_heatload(v_E), [1, 1000], Roots.Brent(), verbose=true, rtol=1e-8)
+    tswitch = find_zero(ts -> func_targeting_heatload(ts), [time_0, time_0 + 2000], Roots.Brent(), verbose=true, rtol=1e-8)
 
-    return v_E_fin
+    config.cnf.once_entered = true
+
+    return tswitch
 end
 
 # function control_solarpanels_targeting_closed_form(energy_f, param, initialcondition)

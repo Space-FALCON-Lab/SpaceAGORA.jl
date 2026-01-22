@@ -174,6 +174,18 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         Mach = vel_pp_mag / sound_velocity
         S = sqrt(γ/2) * Mach   # molecular speed ratio
 
+        # Convert wind to pp(PCPF) frame
+        wE = wind[1] # positive to the east , m / s
+        wN = wind[2] # positive to the north , m / s
+        wU = wind[3] # positive up , m / s
+
+        wind_pp = wN * uN + wE * uE - wU * uD        # wind velocity in pp frame , m / s
+        vel_pp_rw = vel_pp + wind_pp                 # relative wind vector , m / s
+        vel_pp_rw_hat = vel_pp_rw / norm(vel_pp_rw)  # relative wind unit vector , nd
+
+        # Dynamic pressure, CHANGE THE VELOCITY WITH THE WIND VELOCITY
+        q = 0.5 * ρ * norm(vel_pp_rw)^2            # base on wind - relative velocity
+
         if time_switch_eval == true
 
             lambda_switch = (k_cf * 2.0 * m.body.mass * vel_ii_mag) ./ (area_tot * CD_slope * pi)
@@ -185,6 +197,10 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
                     state = [T_p, ρ, S]
                     index_ratio = [1,1]
                     aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state)
+                    aoa_struct = control_struct_load(ip, m, args, S, T_p, q)
+
+                    aoa = min(aoa, aoa_struct)
+                    
                     # aoa = m.aerodynamics.α
                 end
             elseif args[:heat_load_sol] == 1
@@ -202,6 +218,9 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
                     state = [T_p, ρ, S]
                     index_ratio = [1,1]
                     aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state)
+                    aoa_struct = control_struct_load(ip, m, args, S, T_p, q)
+
+                    aoa = min(aoa, aoa_struct)
                     # aoa = m.aerodynamics.α
                 end
             elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 2
@@ -213,42 +232,30 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
             end
         end
 
-        # Convert wind to pp(PCPF) frame
-        wE = wind[1] # positive to the east , m / s
-        wN = wind[2] # positive to the north , m / s
-        wU = wind[3] # positive up , m / s
-
-        wind_pp = wN * uN + wE * uE - wU * uD        # wind velocity in pp frame , m / s
-        vel_pp_rw = vel_pp + wind_pp                 # relative wind vector , m / s
-        vel_pp_rw_hat = vel_pp_rw / norm(vel_pp_rw)  # relative wind unit vector , nd
-
-        # Dynamic pressure, CHANGE THE VELOCITY WITH THE WIND VELOCITY
-        q = 0.5 * ρ * norm(vel_pp_rw)^2            # base on wind - relative velocity
-
         # Heat Rate
         heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
 
-        # Add the control for the heat rate if flash == 3
-        if heat_rate_control == true && heat_rate > args[:max_heat_rate]
-            state = [T_p, ρ, S]
-            index_ratio = [1]
-            aoa_hr = control_solarpanels_heatrate(ip, m, args, index_ratio, state)
+        # # Add the control for the heat rate if flash == 3
+        # if heat_rate_control == true && heat_rate > args[:max_heat_rate]
+        #     state = [T_p, ρ, S]
+        #     index_ratio = [1]
+        #     aoa_hr = control_solarpanels_heatrate(ip, m, args, index_ratio, state)
 
-            if args[:struct_ctrl] == 1
-                α_struct = control_struct_load(ip, m, args, S, T_p, q, MonteCarlo)
+        #     if args[:struct_ctrl] == 1
+        #         α_struct = control_struct_load(ip, m, args, S, T_p, q, MonteCarlo)
 
-                aoa = min(aoa_hr, α_struct) # limit the angle of attack to the structural load control
-            end
+        #         aoa = min(aoa_hr, α_struct) # limit the angle of attack to the structural load control
+        #     end
 
-            if aoa != aoa_hr
-                heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
-            else
-                aoa = aoa_hr
-                heat_rate = args[:max_heat_rate]  
-            end
+        #     if aoa != aoa_hr
+        #         heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
+        #     else
+        #         aoa = aoa_hr
+        #         heat_rate = args[:max_heat_rate]  
+        #     end
 
-            # heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
-        end
+        #     # heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
+        # end
 
         # Rotation Calculation
         L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci'

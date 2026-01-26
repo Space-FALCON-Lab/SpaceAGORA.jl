@@ -218,31 +218,31 @@ args = Dict(# Misc Simulation
 # end
 
 # println("COMPUTATIONAL TIME = " * string(t) * " s")
-# mc_runs = 1
-# nominal_ra = args[:ra_initial_a]
-# nominal_rp = args[:hp_initial_a]
-# nominal_i = args[:inclination]
-# nominal_Ω = args[:Ω]
-# nominal_ω = args[:ω]
-# for i in 1:mc_runs
-degree_order = [1, 2, 5, 10, 50, 100, 150, 200, 250, 300, 360]
+mc_runs = 1
+nominal_ra = args[:ra_initial_a]
+nominal_rp = args[:hp_initial_a]
+nominal_i = args[:inclination]
+nominal_Ω = args[:Ω]
+nominal_ω = args[:ω]
+for i in 1:mc_runs
+# degree_order = [1, 2, 5, 10, 50, 100, 150, 200, 250, 300, 360]
 # degree_order = [360]
 # orbits = [1, 1, 2, 5, 10, 50, 100, 150, 200]
 # orbits = [1, 150, 200]
-for degree_order in degree_order
+# for degree_order in degree_order
 # for orbit in orbits
     # args[:number_of_orbits] = orbit
     t = @elapsed begin
-        # args[:directory_results] = "/workspaces/ABTS.jl/output/vex_MC_5p_disp/" * string(i)
-        # args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3
-        # args[:hp_initial_a] = nominal_rp + randn()*sqrt(args[:rp_dispersion]) * 1e3
-        # args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])
-        # args[:Ω] = nominal_Ω + randn()*sqrt(args[:Ω_dispersion])
-        # args[:ω] = nominal_ω + randn()*sqrt(args[:ω_dispersion])
-        args[:directory_results] = "output/earth_ggm05c_$(degree_order)_deg_order_test/"
-        args[:L] = Int(round(degree_order))
-        args[:M] = Int(round(degree_order))
-        println("Degree and Order: ", degree_order)
+        args[:directory_results] = "/workspaces/ABTS.jl/output/vex_MC_5p_disp/" * string(i)
+        args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3
+        args[:hp_initial_a] = nominal_rp + randn()*sqrt(args[:rp_dispersion]) * 1e3
+        args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])
+        args[:Ω] = nominal_Ω + randn()*sqrt(args[:Ω_dispersion])
+        args[:ω] = nominal_ω + randn()*sqrt(args[:ω_dispersion])
+        # args[:directory_results] = "output/earth_ggm05c_$(degree_order)_deg_order_test/"
+        # args[:L] = Int(round(degree_order))
+        # args[:M] = Int(round(degree_order))
+        # println("Degree and Order: ", degree_order)
         # println("ra_initial_a = " * string(args[:ra_initial_a] * 1e-3) * " km, hp_initial_a = " * string(args[:hp_initial_a] * 1e-3) * " km, inclination = " * string(args[:inclination]) * " deg, Ω = " * string(args[:Ω]) * " deg, ω = " * string(args[:ω]) * " deg")
         # Run the simulation
         local sol = run_analysis(args)

@@ -8,5 +8,5 @@ output/*
 GRAMpy/*
 *.pdf
 *.csv
-Manifest.toml
 */.CondaPkg/*
+Manifest.toml

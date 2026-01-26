@@ -20,7 +20,7 @@ args = Dict(# Misc Simulation
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
             :normalize => 0,                                        # Normalize the state during integration True=1, False=0
-
+            :closed_form => 1,                                     # Closed form solution for the drag passage True=1, False=0
             # Type of Mission
             :type_of_mission => "Drag Passage",                     # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0, NOTE: Can't be used with aerobraking campaign, must be 'Orbits' in type_of_mission
@@ -84,7 +84,8 @@ args = Dict(# Misc Simulation
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 1,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
-            
+            :struct_ctrl => 0,                                     # Structural control, True=1, False=0
+            :targeting_ctrl => 0,                                    # Targeting control True=1, False=0
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
             :ra_initial_a => 56378e3, # 56378e3,                    # Initial Apoapsis Radius for for-loop in m

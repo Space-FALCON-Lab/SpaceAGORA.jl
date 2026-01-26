@@ -1,4 +1,5 @@
 include("../simulation/Run.jl")
+<<<<<<<< HEAD:src/examples/Vex.jl
 # include("config.jl")
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
@@ -49,6 +50,10 @@ println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
 println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
 println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 
+========
+include("../config.jl")
+include("../utils/maneuver_plans.jl")
+>>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Vex.jl
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
@@ -63,9 +68,14 @@ args = Dict(# Misc Simulation
             :filename => false,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
+<<<<<<<< HEAD:src/examples/Vex.jl
             :normalize => true,                                        # Normalize during integration True=1, False=0
             :closed_form => 0,                                      # Closed form solution True=1, False=0
             :save_csv => false,
+========
+            :normalize => 0,                                         # Normalize during integration True=1, False=0
+            :closed_form => 0,                                      # Closed form solution for the drag passage True=1, False=0
+>>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Vex.jl
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => false,                                        # Do not include drag passage: True=1, False=0
@@ -134,8 +144,14 @@ args = Dict(# Misc Simulation
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 1,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+<<<<<<<< HEAD:src/examples/Vex.jl
             :solar_panel_control_rate => 1.0/3.0,                        # Rate at which the solar panel controller is called
 
+========
+            :struct_ctrl => 0,                                     # Structural thermal control, True=1, False=0
+            :targeting_ctrl => 0,                                   # Targeting control True=1, False=0
+            
+>>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Vex.jl
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
             :ra_initial_a => 66597e3 + 6.0518e6, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m

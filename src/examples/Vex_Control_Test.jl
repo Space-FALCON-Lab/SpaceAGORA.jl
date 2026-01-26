@@ -1,7 +1,12 @@
 include("../simulation/Run.jl")
+<<<<<<<< HEAD:src/examples/Vex_Control_Test.jl
 # include("config.jl")
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
+========
+include("../config.jl")
+include("../utils/maneuver_plans.jl")
+>>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Vex_Control_Test.jl
 
 import .config
 import .ref_sys
@@ -65,8 +70,13 @@ args = Dict(# Misc Simulation
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
+<<<<<<<< HEAD:src/examples/Vex_Control_Test.jl
             :normalize => 1,                                         # Normalize during integration True=1, False=0
             :closed_form => 0,                                     # Closed form solution True=1, False=0
+========
+            :normalize => 0,                                         # Normalize during integration True=1, False=0
+            :closed_form => 1,                                      # Closed form solution for the drag passage True=1, False=0
+>>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Vex_Control_Test.jl
 
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
@@ -108,7 +118,12 @@ args = Dict(# Misc Simulation
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
             :max_heat_rate => 0.29,                                 # Max heat rate the heat rate control will start to react to
             :max_heat_load => 40.0,                                 # Max heat load the heat load control will not be overcomed
+<<<<<<<< HEAD:src/examples/Vex_Control_Test.jl
             # :dry_mass => 640.0,                                     # Initial dry mass of body in kg
+========
+            :max_dyn_press => 0.4,                                  # Max dynamic pressure the control will not be overcomed
+            :dry_mass => 640.0,                                     # Initial dry mass of body in kg
+>>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Vex_Control_Test.jl
             :prop_mass => 10.0,                                     # Initial propellant mass of body in kg
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
@@ -136,7 +151,12 @@ args = Dict(# Misc Simulation
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+<<<<<<<< HEAD:src/examples/Vex_Control_Test.jl
             :solar_panel_control_rate => 0.3,                        # Rate at which the solar panel controller is called
+========
+            :struct_ctrl => 0,                                    # Structural thermal control, True=1, False=0
+            :targeting_ctrl => 0,                                   # Targeting control True=1, False=0
+>>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Vex_Control_Test.jl
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1

@@ -1,8 +1,13 @@
 include("../simulation/Run.jl")
+<<<<<<<< HEAD:src/examples/Earth_const_torque.jl
 include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 # include("SpacecraftModel.jl")
+========
+include("../config.jl")
+include("../utils/maneuver_plans.jl")
+>>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Odyssey.jl
 
 import .config
 import .ref_sys
@@ -80,7 +85,11 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
+<<<<<<<< HEAD:src/examples/Earth_const_torque.jl
             :directory_results => "/workspaces/ABTS.jl/output/basilisk_const_torque_comparison",                # Directory where to save the results
+========
+            :directory_results => "/workspaces/ABTS.jl/output/odyssey",                # Directory where to save the results
+>>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Odyssey.jl
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
@@ -91,7 +100,12 @@ args = Dict(# Misc Simulation
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
             :normalize => 1,                                       # Normalize the integration True=1, False=0
+<<<<<<<< HEAD:src/examples/Earth_const_torque.jl
             :closed_form => 0,                                     # Closed form solution True=1, False=0
+========
+            :closed_form => 0,                                    # Closed form solution for the aerobraking maneuver True=1, False=0
+
+>>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Odyssey.jl
             # Type of Mission
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
@@ -159,6 +173,8 @@ args = Dict(# Misc Simulation
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+            :struct_ctrl => 0,                                    # Structural thermal control, True=1, False=0 
+            :targeting_ctrl => 0,                                   # Targeting control True=1, False=0
             
             # Initial Conditions
             :initial_condition_type => 2,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
@@ -239,6 +255,7 @@ args = Dict(# Misc Simulation
             :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
+<<<<<<<< HEAD:src/examples/Earth_const_torque.jl
 
             :a_tol => 1e-14,                                         # Absolute tolerance for integration
             :r_tol => 1e-12,                                         # Relative tolerance for integration
@@ -259,6 +276,9 @@ args = Dict(# Misc Simulation
             :p2_itp => pos_2_itp,
             :p3_itp => pos_3_itp,
             :Odyssey_sim => 0                                      # Simulate Odyssey Mission
+========
+            :Odyssey_sim => 1                                      # Simulate Odyssey Mission
+>>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Odyssey.jl
             )
 
 # # Calculating time of simulation

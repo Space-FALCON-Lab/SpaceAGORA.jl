@@ -1,7 +1,7 @@
 include("../../physical_models/Aerodynamic_models.jl")
 include("Utils_timeswitch.jl")
 include("../../utils/Closed_form_solution.jl")
-include("../Eoms.jl")
+include("../utils/Eoms.jl")
 
 using Roots
 

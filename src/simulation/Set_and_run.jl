@@ -41,10 +41,8 @@ function aerobraking_campaign(args, state)
 
     # Load SPICE kernels if required
     furnsh(args[:directory_Spice] * "/pck/pck00010.tpc")
-    # furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-    # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-    furnsh(args[:directory_Spice] * "/spk/planets/de430.bsp")
+    furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
     furnsh(args[:directory_Spice] * "/spk/satellites/mar097_GRAM.bsp")
     
@@ -72,6 +70,7 @@ function aerobraking_campaign(args, state)
         state[:Ω] = OE[4]
         state[:ω] = OE[5]
     end
+
     # Set up n-body gravity
     if length(args[:n_bodies]) != 0
         for i=1:length(args[:n_bodies])
@@ -79,7 +78,7 @@ function aerobraking_campaign(args, state)
         end
     end
 
-    # Set up spherical harmonics coefficients
+    # Set up spherical harmonics coefficients to use Pines' method from GMAT
     if args[:gravity_harmonics] == true
         # Read in the gravity harmonics data
         harmonics_data = CSV.read(args[:gravity_harmonics_file], DataFrame)

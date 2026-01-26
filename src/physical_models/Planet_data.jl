@@ -37,8 +37,8 @@ function planet_data(ip)
         polyfit_coeffs = [-1.7539409645214832e-57, 2.735656076315809e-53, -1.8243490769488347e-49, 6.504765617793163e-46, -1.1637408657034938e-42, 8.044884138893168e-41, 4.264962263039017e-36, -7.651115834387683e-33, -3.188248308052816e-30, 3.8370830656820503e-26, -8.557502178008995e-23, 1.137879849173412e-19, -1.0408232216096158e-16, 6.834085016894604e-14, -3.2506596548183e-11, 1.1089006707870246e-08, -2.639423772958483e-06, 0.0004165844083994442, -0.03967261693733797, 1.8349343859319074, -38.14918904018883]
         name = "earth"
     elseif (ip == 1 || (typeof(ip) == String && cmp(lowercase(ip), "mars") == 0)) # Mars
-        Rp_e = 3.3962e6 #3.3962           # equatorial radius, m
-        Rp_p = 3.3762e6 #3.3762           # polar radius, m
+        Rp_e = 3.3962e6 #3.3962    # equatorial radius, m
+        Rp_p = 3.3762e6 #3.3762    # polar radius, m
         Rp_m = 3.3895e6            # volumetric mean radius, m
         mass = 6.4169e23           # mass, kg
         g_ref = 3.73               # acceleration due to gravity, m/s²
@@ -58,7 +58,7 @@ function planet_data(ip)
         Lz = -4.5/1e3              # vertical temperature gradient, K/m
         α = deg2rad(317.68143)     # Right ascension of the north pole of rotation, radians
         δ = deg2rad(52.88650)      # Declination of the north pole of rotation, radians
-        SF = 586.2                # Solar irradiance, W/m²
+        SF = 586.2                 # Solar irradiance, W/m²
         topography_function = Mars_elevation! # Mars topography function
         polyfit_coeffs = [-3.691310097181554e-58, 5.819173546214448e-54, -3.9285937578286423e-50, 1.4222601230188116e-46, -2.606951392190571e-43, 3.2943551967480965e-41, 9.394166176413728e-37, -1.7651753457891617e-33, -5.79069281873952e-31, 8.639557954110502e-27, -1.991207114225621e-23, 2.7207390647640917e-20, -2.5611296697872007e-17, 1.7386922029136165e-14, -8.619727907575625e-12, 3.1040218147963276e-09, -7.949080301839893e-07, 0.00013834108975291533, -0.014729001168514675, 0.6707044510751348, -19.414578139119545]
         name = "mars"
@@ -70,8 +70,8 @@ function planet_data(ip)
         g_ref = 8.87               # acceleration due to gravity, m/s²
         ρ_ref = 65.0               # density, kg/m³
         μ = 3.24858592e14          # gravitational parameter, m³/s²
-        h_ref = 0 * 1e3           # reference altitude, m
-        H = 15.9 * 1e3            # scale height, m
+        h_ref = 0 * 1e3            # reference altitude, m
+        H = 15.9 * 1e3             # scale height, m
         R = 188.92                 # specific gas constant, J/(kg·K)
         γ = 1.2857                 # specific heat ratio
         T = 100.0                  # temperature, K
@@ -79,8 +79,8 @@ function planet_data(ip)
         J2 = 4.458e-6              # Venus' dynamic form factor
         k = 1.896e-4               # Chapman heating coefficient, kg^0.5/m
         # k = 1.7623e-4            # Sutton - Graves heating coefficient, kg^0.5/m
-        ω = [0.0, 0.0, -2.99e-7]  # Venus' rotation rate, rad/s
-        μ_fluid = 2.0*10e-6      # kinematic viscosity, m²/s
+        ω = [0.0, 0.0, -2.99e-7]   # Venus' rotation rate, rad/s
+        μ_fluid = 2.0*10e-6        # kinematic viscosity, m²/s
         Lz = -10.7/1e3             # vertical temperature gradient, K/m
         α = deg2rad(272.76)        # Right ascension of the north pole of rotation, radians
         δ = deg2rad(67.16)         # Declination of the north pole of rotation, radians

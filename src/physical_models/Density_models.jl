@@ -39,37 +39,6 @@ function temperature_linear(h, p)
     return T
 end
 
-# function wind_def(model, indexes, x, table)
-#     """
-
-#     """
-
-#     # NEED TO FINISH
-
-#     # boundary 1
-#     index_b1 = indexes[0]
-#     index_b2 = indexes[1]
-
-#     if model[] == 1
-#         wE, wN = interp(table[][index_b1], table[][index_b2], x), interp(table[][index_b1], table[][index_b2], x)
-#         wind = [wE, wN, 0]
-#     elseif model[] == 2
-#         wE, wN, vN = interp(table[][index_b1], table[][index_b2], x), interp(table[][index_b1], table[][index_b2], x), interp(table[][index_b1], table[][index_b2], x)
-#         wind = [wE, wN, vN] 
-#     end
-
-#     return wind
-# end
-
-# function define_model_parameters(OE, p, t0, tf_prev, model, final_state_angle)
-#     """
-
-#     """
-
-
-# end
-
-
 function density_constant(h, p, OE=0, lat=0, lon=0, timereal=0, t0=0, tf_prev=0, montecarlo=0, Wind=0, args=0, version=[])
     """
 

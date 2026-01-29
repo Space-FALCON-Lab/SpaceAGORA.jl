@@ -102,7 +102,7 @@ args = Dict(# Misc Simulation
             :number_of_orbits => 10,                                 # Number of aerobraking passage
             :mission_time => 100000.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => true,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
-            :num_steps_to_save => 10000,                            # Number of timesteps between saves
+            :save_steps => 10000,                            # Number of timesteps between saves
 
             # Physical Model
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2

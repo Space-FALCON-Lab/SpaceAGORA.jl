@@ -1,5 +1,5 @@
 include("../simulation/Run.jl")
-# include("config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
+include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 # include("SpacecraftModel.jl")
@@ -29,7 +29,6 @@ main_bus = config.Link(root=true,
                         attitude_control_function=lqr_constant_α_β)
 
 L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.6/2 - 3.89/4, 0.0), 
-                        # q=SVector{4, Float64}([0, 0.4617, 0, 0.8870]),
                         q=SVector{4, Float64}([0, 0, 0, 1]),
                         ṙ=SVector{3, Float64}([0,0,0]), 
                         dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
@@ -37,7 +36,6 @@ L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.6/2 - 3.89/4, 0.0),
                         m=10.0, 
                         gyro=0)
 R_panel = config.Link(r=SVector{3, Float64}(0.0, 2.6/2 + 3.89/4, 0.0),
-                        # q=SVector{4, Float64}([0, 0.4617, 0, 0.8870]),
                         q=SVector{4, Float64}([0, 0, 0, 1]),
                         ṙ=SVector{3, Float64}([0,0,0]), 
                         dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
@@ -54,17 +52,10 @@ R_panel_joint = config.Joint(R_panel, main_bus)
 config.add_joint!(spacecraft, L_panel_joint)
 config.add_joint!(spacecraft, R_panel_joint)
 
-println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
-# println("Spacecraft roots: $spacecraft.roots")
-println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
-println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
-# config.model.body = spacecraft
-# println("Number of reaction wheels: ", config.model.body.n_reaction_wheels)
-# println("Number of reaction wheels true: $(spacecraft.n_reaction_wheels)")
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => false,                                                                                    # Print some lines True=1, False=0
+            :print_res => true,                                                                                    # Print some lines True=1, False=0
             :directory_results => "output/odyssey_gmm3_50",                # Directory where to save the results
             :directory_Gram => "GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "GRAM_Data",                                            # Directory where Gram data is
@@ -84,13 +75,14 @@ args = Dict(# Misc Simulation
             :number_of_orbits => 20,                                 # Number of aerobraking passage
             :mission_time => 6000.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => false,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
+            :save_steps => 10000,
 
             # Physical Model
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
-            :topography_model => "Spherical Harmonics",                             # choices=['None' , 'Spherical Harmonics']
+            :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
             :topography_harmonics_file => "Topography_harmonics_data/MOLA.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 90,                                      # Maximum order of the topography harmonics (Defined in the file)
@@ -102,6 +94,7 @@ args = Dict(# Misc Simulation
             :n_bodies => ["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :srp => true,                                             # Solar Radiation Pressure True=1, False=0
             :eclipse => false,
+            :gravity_gradient => false,                                 # Gravity Gradient True=1, False=0
             :gravity_harmonics => true,                                            # Gravity Spherical harmonics True=1, False=0
             :gravity_harmonics_file => "Gravity_harmonics_data/GMM3.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
@@ -261,13 +254,13 @@ args = Dict(# Misc Simulation
 # #     for i in 1:Threads.nthreads() 
 
 # @profview run_analysis(args)
-degree_order = [1, 2, 5, 10, 20, 30, 40, 50, 75, 90, 100, 120]
-for degree_order in degree_order
+# degree_order = [1, 2, 5, 10, 20, 30, 40, 50, 75, 90, 100, 120]
+# for degree_order in degree_order
         t = @elapsed begin          
-                args[:directory_results] = "output/odyssey_gmm3_$(degree_order)_deg_order_test/"
-                args[:L] = Int(round(degree_order))
-                args[:M] = Int(round(degree_order))
-                println("Degree and Order: ", degree_order)
+                # args[:directory_results] = "output/odyssey_gmm3_$(degree_order)_deg_order_test/"
+                # args[:L] = Int(round(degree_order))
+                # args[:M] = Int(round(degree_order))
+                # println("Degree and Order: ", degree_order)
                 # Run the simulation
                 sol = run_analysis(args)
                 if Bool(args[:passresults])
@@ -275,7 +268,7 @@ for degree_order in degree_order
                 end
         end
         println("COMPUTATIONAL TIME = " * string(t) * " s")
-end
+# end
 
 # end
         # end

@@ -158,6 +158,8 @@ function save_csv(filename, args, arrow_filename)
     end
 
     if args[:closed_form] == 1
+        println("Length of closed form solution: ", length(config.solution.closed_form.t_cf))
+        println("Length of data_push: ", size(data_push, 1))
         data_push[!, :t_cf] = config.solution.closed_form.t_cf
         data_push[!, :h_cf] = config.solution.closed_form.h_cf
         data_push[!, :gamma_cf] = config.solution.closed_form.γ_cf

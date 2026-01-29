@@ -141,7 +141,7 @@ args = Dict(# Misc Simulation
             # :mission_time => 3600.0,                                  # Mission time in seconds, used only for Time mission type
             :mission_time => 120.0*60.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => true,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
-            :num_steps_to_save => 10000,                            # Number of timesteps between saves
+            :save_steps => 10000,                            # Number of timesteps between saves
 
             # Physical Model
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2

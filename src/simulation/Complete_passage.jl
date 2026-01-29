@@ -320,43 +320,43 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             end
 
             if index_phase_aerobraking == 2
-                # if Bool(args[:control_in_loop])
-                #     config.cnf.state_flesh1 = [[T_p, ρ, S]]
-                #     if ip.cm == 3
-                #         config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
-                #     elseif ip.cm == 2
-                #         config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
-                #         # println("control_solarpanels_heatload: ", config.cnf.α)
-                #     elseif ip.cm == 1
-                #         config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
-                #     elseif ip.cm == 0
-                #         config.cnf.α = no_control(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
-                #     end
-                # elseif args[:control_in_loop] == false && args[:integrator] == "Julia"
-                    # if config.controller.count_controller != config.controller.count_prev_controller && config.controller.stored_state == 0 && t0 != config.controller.prev_time
-                    #     push!(config.cnf.state_flesh1, [T_p, ρ, S]) # might have to change to push!
+                if Bool(args[:control_in_loop])
+                    config.cnf.state_flesh1 = [[T_p, ρ, S]]
+                    if ip.cm == 3
+                        config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
+                    elseif ip.cm == 2
+                        config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
+                        # println("control_solarpanels_heatload: ", config.cnf.α)
+                    elseif ip.cm == 1
+                        config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+                    elseif ip.cm == 0
+                        config.cnf.α = no_control(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+                    end
+                elseif args[:control_in_loop] == false && args[:integrator] == "Julia"
+                    if config.controller.count_controller != config.controller.count_prev_controller && config.controller.stored_state == 0 && t0 != config.controller.prev_time
+                        push!(config.cnf.state_flesh1, [T_p, ρ, S]) # might have to change to push!
 
-                    #     if config.controller.count_controller == 2
-                    #         state = config.cnf.state_flesh1[end]
-                    #     else
-                    #         state = config.cnf.state_flesh1[end-1]
-                    #         deleteat!(config.cnf.state_flesh1, 1)
-                    #     end
+                        if config.controller.count_controller == 2
+                            state = config.cnf.state_flesh1[end]
+                        else
+                            state = config.cnf.state_flesh1[end-1]
+                            deleteat!(config.cnf.state_flesh1, 1)
+                        end
 
-                    #     config.controller.stored_state = 1
-                    #     config.controller.prev_time = time_0
+                        config.controller.stored_state = 1
+                        config.controller.prev_time = time_0
 
-                    #     if ip.cm == 3
-                    #         config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
-                    #     elseif ip.cm == 2
-                    #         config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
-                    #     elseif ip.cm == 1
-                    #         config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
-                    #     elseif ip.cm == 0
-                    #         config.cnf.α = no_control(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
-                    #     end
-                    # end
-                # end
+                        if ip.cm == 3
+                            config.cnf.α = control_solarpanels_openloop(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
+                        elseif ip.cm == 2
+                            config.cnf.α = control_solarpanels_heatload(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, gram_atmosphere)
+                        elseif ip.cm == 1
+                            config.cnf.α = control_solarpanels_heatrate(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+                        elseif ip.cm == 0
+                            config.cnf.α = no_control(ip, m, args, [1,1], state, t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
+                        end
+                    end
+                end
             end
 
             # Heat Rate 
@@ -787,9 +787,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     function save_steps_condition(y, t, integrator)
         """
-        Check the length of solution_intermediate to determine if it exceeds the :num_steps_to_save argument
+        Check the length of solution_intermediate to determine if it exceeds the :save_steps argument
         """
-        return length(config.cnf.solution_intermediate) >= args[:num_steps_to_save]
+        return length(config.cnf.solution_intermediate) >= args[:save_steps]
     end
 
     function save_steps_affect!(integrator)
@@ -913,7 +913,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
     end
 
-    solar_panel_controller = ip.cm != 0 ? PeriodicCallback(run_solar_panel_controller!, args[:solar_panel_control_rate] / config.cnf.TU) : nothing
+    # solar_panel_controller = ip.cm != 0 ? PeriodicCallback(run_solar_panel_controller!, args[:solar_panel_control_rate] / config.cnf.TU) : nothing
+    solar_panel_controller = nothing
 
     # attitude_controller_orbit = PeriodicCallback(run_attitude_controller!, m.body.roots[1].attitude_control_rate / config.cnf.TU)
     function quaternion_update_affect!(integrator)

@@ -82,7 +82,7 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name)
                 m.initial_condition.minute = round(config.solution.orientation.minute[end])
                 m.initial_condition.second = config.solution.orientation.second[end]
                 m.initial_condition.el_time = config.solution.orientation.time[end]
-                # println("Initial Date and Time of the Passage: " * string(m.initial_condition.year) * "-" * string(m.initial_condition.month) * "-" * string(m.initial_condition.day) * " " * string(m.initial_condition.hour) * ":" * string(m.initial_condition.minute) * ":" * string(round(m.initial_condition.second, digits=2)))
+                println("Initial Date and Time of the Passage: " * string(m.initial_condition.year) * "-" * string(m.initial_condition.month) * "-" * string(m.initial_condition.day) * " " * string(m.initial_condition.hour) * ":" * string(m.initial_condition.minute) * ":" * string(round(m.initial_condition.second, digits=2)))
                 if (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone") && continue_campaign
                     r = m.planet.Rp_e + args[:EI]*1e3
                     initial_state.vi = -acos(1 / initial_state.e * (initial_state.a * (1 - initial_state.e^2) / r - 1))
@@ -109,7 +109,7 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name)
             continue_campaign = false
         end
 
-        if r_a <= args[:final_apoapsis] && args[:keplerian] == false
+        if (r_a <= args[:ra_fin_orbit] || config.cnf.targeting == 1) && args[:keplerian] == false
             FinalState = false
             println("Reached FinalState! R_a = " * string(r_a*1e-3) * " km")
             println("Thermal Limit overcomed totally " * string(config.cnf.count_overcome_hr) * " times")
@@ -124,6 +124,13 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name)
             println(" ")
         end
 
+        if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
+            closed_form(args, m)
+        else
+            len_sol = length(config.solution.orientation.time)
+            results(zeros(len_sol), (args[:EI] - 10)*1e3*ones(len_sol), zeros(len_sol), zeros(len_sol))
+        end
+
         if args[:results] == 1
             # Save the current passage results
             save_csv(filename, args, temp_name)
@@ -132,11 +139,12 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name)
         end
     end
 
-    if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
-        closed_form(args, m)
-    else
-        len_sol = length(config.solution.orientation.time)
-        results(zeros(len_sol), (args[:EI] - 10)*1e3*ones(len_sol), zeros(len_sol), zeros(len_sol))
-    end
+    # if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
+    #     println("Computing Closed-Form Solution...")
+    #     closed_form(args, m)
+    # else
+    #     len_sol = length(config.solution.orientation.time)
+    #     results(zeros(len_sol), (args[:EI] - 10)*1e3*ones(len_sol), zeros(len_sol), zeros(len_sol))
+    # end
 
 end

@@ -319,35 +319,20 @@ end
 # q = SVector{4, Float64}([0.0, 0.0, sin(pi/4), cos(pi/4)]) # Quaternion for the main bus
 main_bus = config.Link(root=true, 
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), # Body z-axis points down, origin is at bottom, CoM from engineering drawing 
-                        # q=SVector{4, Float64}(q),
-                        # q=SVector{4, Float64}([0.28047528 -0.17599893  0.9414761  -0.06309311]),
-                        # q=SVector{4, Float64}([ -0.000178090669, 0.000196625584, -0.000787386924,0.999990655]), # Initial quaternion, from slew data, LVLH
-                        # q=SVector{4, Float64}([-1.78090669e-04, 1.96625584e-04, -7.87386924e-04, 9.99999655e-01]), # Stating from ~900s, from slew data, assumes scalar first, LVLH
                         q=SVector{4, Float64}([-0.769326211835314, -0.0287409968395995, 0.368405744863056, 0.521141383921568]), # Initial quaternion, from slew data, ECI
-                        # q=SVector{4, Float64}([-0.49694828, -0.27337817, 0.69593993, 0.44042526]), # Starting from ~900s, from slew data, ECI
                         ṙ=SVector{3, Float64}([0.0, 0.0, 0.0]), 
-                        # ω=SVector{3, Float64}([0.00029976 -0.00091251  0.00051997]), # Initial angular velocity rad/s, from CYGNSS documentation
-                        # ω=SVector{3, Float64}([-9.789142632171234e-5, -8.82827330140926e-5, 0.00012436837964648057]), # Initial angular velocity rad/s, from slew data, LVLH
-                        # ω=SVector{3, Float64}([4.94494778455986e-07, -1.896896037665177e-05, -2.7264315784859147e-06]), # Starting from ~900s, from slew data, LVLH
                         ω=SVector{3, Float64}([-9.167855927546074e-05, -0.0011950697001943617, 0.0001295462530991909]), # Initial angular velocity rad/s, from slew data, ECI
-                        # ω=SVector{3, Float64}([-1.249549492745143e-06, -0.0011257840337701133, -2.340685254945601e-06]), # Starting from ~900s, from slew data, ECI
                         dims=SVector{3, Float64}([20.222e-2, 52.12e-2, 64.09e-2]), 
                         ref_area=0.1129753, # m^2
-                        # ref_area=0.0,
                         m=28.94,
                         gyro=3,
                         attitude_control_rate=0.1, # seconds
                         rw=SVector{3, Float64}(25.790585298785203/6000.0*18.0e-3, -43.830065546928386/6000.0*18.0e-3, -528.0841089980587/6000.0*18.0e-3), # Initial RW angular momentum Nms, from CYGNSS documentation
-                        # rw=SVector{3, Float64}(-85.75349176655784/6000.0*18.0e-3, 571.8118011223758/6000.0*18.0e-3, -262.8650773012001/6000.0*18.0e-3), # Initial RW angular momentum starting from 900s, from slew data
                         max_torque=0.65536e-3, # max torque from RW datasheet, Nm
                         max_h=18.0e-3, # max angular momentum from RW datasheet, Nms
                         J_rw=SMatrix{3, 3, Float64}([ 0.8164  0.4083  -0.4083;
                                                      -0.5774  0.5773  -0.5773;
                                                       0.0000 -0.7071  -0.7071]),
-                        # J_rw=SMatrix{3, 3, Float64}([ 0.81171104  0.41303245 -0.41295202;
-                        #                               0.58395316 -0.56044371  0.5872832 ;
-                        #                              -0.01113066  0.7178489   0.69610995]),
-                        # attitude_control_function=(state, m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64) -> (b.ω_wheel_derivatives .= pinv(b.J_rw) * rw_torque_itp_cloth(t+0.5))) # cloth attitude control
                         attitude_control_function=CYGNSS_attitude_function) # CYGNSS data attitude control
 
 L_panel = config.Link(r=SVector{3, Float64}(0.0, 56.9e-2, -(20.222 - 13.1)*1.0e-2),
@@ -375,22 +360,6 @@ inertia_tensor = [1.4e6 -1.71e4 8.08e3;
 config.set_inertia_tensor!(spacecraft, main_bus, 
                         SMatrix{3, 3, Float64}(inertia_tensor))
 
-# Add torque rods
-# Dipole commands in Am^2, locations in m
-# TRX = config.Magnet(axis=MVector{3, Float64}(-1.0, 0.0, 0.0), magnitude=0.0)
-# TRY = config.Magnet(axis=MVector{3, Float64}(0.0, 1.0, 0.0), magnitude=0.0)
-# TRZ = config.Magnet(axis=MVector{3, Float64}(0.0, 0.0, -1.0), magnitude=0.0)
-# config.add_magnet!(main_bus, TRX)
-# config.add_magnet!(main_bus, TRY)
-# config.add_magnet!(main_bus, TRZ)
-# Residual dipole moment
-# sc_dipole = config.Magnet(axis=normalize(MVector{3, Float64}(-0.0101, -0.0417, 0.1697)), magnitude=norm(MVector{3, Float64}(-0.0101, -0.0417, 0.1697)))
-# config.add_magnet!(main_bus, sc_dipole)
-
-println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
-# println("Spacecraft roots: $spacecraft.roots")
-println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
-println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 lenXHub = 52.12
 lenYHub = 64.09
 lenZHub = 29.21
@@ -485,8 +454,8 @@ args = Dict(# Misc Simulation
             :filename => 0,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 1,                                       # Normalize the integration True=1, False=0
-            :closed_form => 0,                                     # Closed form solution True=1, False=0
+            :normalize => true,                                       # Normalize the integration True=1, False=0
+            :closed_form => false,                                     # Closed form solution True=1, False=0
             :save_csv => false,
             # Type of Mission
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
@@ -495,7 +464,7 @@ args = Dict(# Misc Simulation
             :mission_time => 3598.0,                                  # Mission time in seconds, used only for Time mission type
             # :mission_time => 1000.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => true,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
-            :num_steps_to_save => 10000,                            # Number of timesteps between saves
+            :save_steps => 10000,                            # Number of timesteps between saves
 
             # Physical Model
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2

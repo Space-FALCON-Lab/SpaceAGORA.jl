@@ -1,6 +1,5 @@
 include("../simulation/Run.jl")
-<<<<<<<< HEAD:src/examples/Vex.jl
-# include("config.jl")
+include("../config.jl")
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 import .config
@@ -50,14 +49,10 @@ println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
 println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
 println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 
-========
-include("../config.jl")
-include("../utils/maneuver_plans.jl")
->>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Vex.jl
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => false,                                                                                    # Print some lines True=1, False=0
+            :print_res => true,                                                                                    # Print some lines True=1, False=0
             :directory_results => "/workspaces/ABTS.jl/output/venus_express",            # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                   # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",           # Directory where Gram data is
@@ -68,14 +63,9 @@ args = Dict(# Misc Simulation
             :filename => false,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-<<<<<<<< HEAD:src/examples/Vex.jl
             :normalize => true,                                        # Normalize during integration True=1, False=0
             :closed_form => 0,                                      # Closed form solution True=1, False=0
             :save_csv => false,
-========
-            :normalize => 0,                                         # Normalize during integration True=1, False=0
-            :closed_form => 0,                                      # Closed form solution for the drag passage True=1, False=0
->>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Vex.jl
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => false,                                        # Do not include drag passage: True=1, False=0
@@ -144,14 +134,9 @@ args = Dict(# Misc Simulation
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 1,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
-<<<<<<<< HEAD:src/examples/Vex.jl
             :solar_panel_control_rate => 1.0/3.0,                        # Rate at which the solar panel controller is called
-
-========
             :struct_ctrl => 0,                                     # Structural thermal control, True=1, False=0
             :targeting_ctrl => 0,                                   # Targeting control True=1, False=0
-            
->>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Vex.jl
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
             :ra_initial_a => 66597e3 + 6.0518e6, # 28523.95e3,                # Initial Apoapsis Radius for for-loop in m
@@ -259,8 +244,8 @@ args = Dict(# Misc Simulation
 # nominal_Ω = args[:Ω]
 # nominal_ω = args[:ω]
 # for i in 1:mc_runs
-degree_order = [1, 2, 5, 10, 40, 50, 75, 90, 100, 120, 150, 180]
-for degree_order in degree_order
+# degree_order = [1, 2, 5, 10, 40, 50, 75, 90, 100, 120, 150, 180]
+# for degree_order in degree_order
     t = @elapsed begin
         # args[:directory_results] = "/workspaces/ABTS.jl/output/vex_MC_5p_disp/" * string(i)
         # args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3
@@ -268,10 +253,10 @@ for degree_order in degree_order
         # args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])
         # args[:Ω] = nominal_Ω + randn()*sqrt(args[:Ω_dispersion])
         # args[:ω] = nominal_ω + randn()*sqrt(args[:ω_dispersion])
-        args[:directory_results] = "output/vex_mgnp180U_$(degree_order)_deg_order_test/"
-        args[:L] = Int(round(degree_order))
-        args[:M] = Int(round(degree_order))
-        println("Degree and Order: ", degree_order)
+        # args[:directory_results] = "output/vex_mgnp180U_$(degree_order)_deg_order_test/"
+        # args[:L] = Int(round(degree_order))
+        # args[:M] = Int(round(degree_order))
+        # println("Degree and Order: ", degree_order)
         println("ra_initial_a = " * string(args[:ra_initial_a] * 1e-3) * " km, hp_initial_a = " * string(args[:hp_initial_a] * 1e-3) * " km, inclination = " * string(args[:inclination]) * " deg, Ω = " * string(args[:Ω]) * " deg, ω = " * string(args[:ω]) * " deg")
         # Run the simulation
         local sol = run_analysis(args)
@@ -282,4 +267,4 @@ for degree_order in degree_order
     end
 
     println("COMPUTATIONAL TIME = " * string(t) * " s")
-end
+# end

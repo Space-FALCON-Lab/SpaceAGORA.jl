@@ -355,12 +355,12 @@ function aerobraking_campaign(args, state)
                             "mars" => gram.MarsInputParameters(),
                             "venus" => gram.VenusInputParameters(),
                             "titan" => gram.TitanInputParameters())
-        
+
         namelistReaders = Dict("earth" => gram.EarthNamelistReader(),
                             "mars" => gram.MarsNamelistReader(),
                             "venus" => gram.VenusNamelistReader(),
                             "titan" => gram.TitanNamelistReader())
-            
+
         atmospheres = Dict("earth" => gram.EarthAtmosphere(),
                         "mars" => gram.MarsAtmosphere(),
                         "venus" => gram.VenusAtmosphere(),
@@ -391,7 +391,7 @@ function aerobraking_campaign(args, state)
 
         gram_atmosphere = atmospheres[planet_name]
         gram_atmosphere.setInputParameters(input_parameters)
-        
+
         if planet_name == "earth"
             gram_atmosphere.setMERRA2Parameters(0, -90.0, 90.0, 0.0, 359.99999)
         end
@@ -411,6 +411,7 @@ function aerobraking_campaign(args, state)
         ttime = gram.GramTime()
         ttime.setStartTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs], gram.UTC, gram.PET)
         gram_atmosphere.setStartTime(ttime)
+
     end
     # Initialization - Reset all the config index for new simulation
     config.cnf.count_aerobraking = 0

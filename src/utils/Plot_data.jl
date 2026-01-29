@@ -49,59 +49,59 @@ function drag_passage_plot(name, args, data_table)
 
     time = [config.solution.orientation.time[i] for i in alt_idx]
     aoa = [rad2deg(config.solution.physical_properties.α_control[i]) for i in alt_idx]
-    trace1 = scatter(x=time, y=aoa, mode="lines", line=attr(color="black"))
+    trace1 = PlotlyJS.scatter(x=time, y=aoa, mode="lines", line=attr(color="black"))
     layout = Layout(yaxis_title="α [deg]")
-    p_aoa = plot(trace1, layout)
+    p_aoa = PlotlyJS.plot(trace1, layout)
 
     index = findall(x -> x > 0, config.solution.performance.heat_rate)
     
     time = [config.solution.orientation.time[i] for i in index]
     heat_rate = config.solution.performance.heat_rate[index]
-    trace2 = scatter(x=time, y=heat_rate, mode="lines", line=attr(color="black"))
+    trace2 = PlotlyJS.scatter(x=time, y=heat_rate, mode="lines", line=attr(color="black"))
     layout = Layout(yaxis_title="Heat Rate [W/cm²]")
-    p_heatrate = plot(trace2, layout)
+    p_heatrate = PlotlyJS.plot(trace2, layout)
 
     time = [config.solution.orientation.time[i] for i in index]
     heat_load = [config.solution.performance.heat_load[i] for i in index]
-    trace3 = scatter(x=time, y=heat_load, mode="lines", marker=attr(color="black"))
+    trace3 = PlotlyJS.scatter(x=time, y=heat_load, mode="lines", marker=attr(color="black"))
     layout = Layout(xaxis_title="Time [s]", yaxis_title="Heat Load [J/cm²]")
-    p_heatload = plot(trace3, layout)
+    p_heatload = PlotlyJS.plot(trace3, layout)
 
     p = [p_aoa; p_heatrate; p_heatload]
     relayout!(p, width=2200, height=1000, template="simple_white", showlegend=false)
 
     display(p)
-    savefig(p, name * "_drag_passage_heat.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_drag_passage_heat.pdf", format="pdf")
     
     time = [config.solution.orientation.time[i] for i in index]
     dyn_press = config.solution.performance.q[index]
-    trace2 = scatter(x=time, y=dyn_press, mode="lines", line=attr(color="black"))
-    trace4 = scatter(x=time, y=args[:max_dyn_press]*ones(size(dyn_press)), mode="lines", line=attr(color="red"))
+    trace2 = PlotlyJS.scatter(x=time, y=dyn_press, mode="lines", line=attr(color="black"))
+    trace4 = PlotlyJS.scatter(x=time, y=args[:max_dyn_press]*ones(size(dyn_press)), mode="lines", line=attr(color="red"))
     layout = Layout(yaxis_title="Dynamic Pressure [N/m²]")
-    p_dyn_press = plot([trace2, trace4], layout)
+    p_dyn_press = PlotlyJS.plot([trace2, trace4], layout)
 
     time = [config.solution.orientation.time[i] for i in index]
     drag = dyn_press .* config.solution.physical_properties.cD[index] * m.body.area_tot
     drag_lim = args[:max_dyn_press] * config.solution.physical_properties.cD[1] * m.body.area_tot * ones(size(drag))
-    trace3 = scatter(x=time, y=drag, mode="lines", marker=attr(color="black"))
-    trace5 = scatter(x=time, y=drag_lim, mode="lines", marker=attr(color="red"))
+    trace3 = PlotlyJS.scatter(x=time, y=drag, mode="lines", marker=attr(color="black"))
+    trace5 = PlotlyJS.scatter(x=time, y=drag_lim, mode="lines", marker=attr(color="red"))
     layout = Layout(xaxis_title="Time [s]", yaxis_title="Drag [N]")
-    p_drag = plot([trace3, trace5], layout)
+    p_drag = PlotlyJS.plot([trace3, trace5], layout)
 
     p = [p_aoa; p_dyn_press; p_drag]
     relayout!(p, width=2200, height=1000, template="simple_white", showlegend=false)
 
     display(p)
-    savefig(p, name * "_drag_passage_struct.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_drag_passage_struct.pdf", format="pdf")
 
     time = [config.solution.orientation.time[i] for i in alt_idx]
     alt = [config.solution.orientation.alt[i] for i in alt_idx]
-    trace1 = scatter(x=time, y=alt, mode="lines", line=attr(color="black"))
+    trace1 = PlotlyJS.scatter(x=time, y=alt, mode="lines", line=attr(color="black"))
     layout = Layout(xaxis_title="Time [s]", yaxis_title="Altitude [m]", template="simple_white", showlegend=false)
-    p1 = plot(trace1, layout)
+    p1 = PlotlyJS.plot(trace1, layout)
 
     display(p1)
-    savefig(p1, name * "_altitude_profile.pdf", format="pdf")
+    PlotlyJS.savefig(p1, name * "_altitude_profile.pdf", format="pdf")
 
     
 end
@@ -124,9 +124,9 @@ function angle_of_attack_plot(name, args, data_table)
     if length(index_orbit) <= 2 # If onlly 1 orbit
         time = [data_table.time[i] for i in alt_idx]
         aoa = [rad2deg(data_table.aoa_control[i]) for i in alt_idx]
-        trace1 = scatter(x=time, y=aoa, mode="lines", line=attr(color="black"))
+        trace1 = PlotlyJS.scatter(x=time, y=aoa, mode="lines", line=attr(color="black"))
         layout = Layout(xaxis_title="Time [s]", yaxis_title="α [deg]", template="simple_white", showlegend=false)
-        p = plot(trace1, layout)
+        p = PlotlyJS.plot(trace1, layout)
     else
         time_end = 0
         x_labels = []
@@ -138,19 +138,19 @@ function angle_of_attack_plot(name, args, data_table)
             time = [data_table.time[j] for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
             aoa = [rad2deg(data_table.aoa_control[j]) for j in alt_idx[index_orbit[i]:index_orbit[i+1]-1]]
 
-            push!(plots_aoa_mark, scatter(x=[i], y=[aoa[end]], mode="markers", marker=attr(color="red")))
-            push!(plots_aoa_line, scatter(x=(time .- time[1])./(time[end] - time[1]) .+ (i-1), y=aoa, mode="lines", line=attr(color="black")))
+            push!(plots_aoa_mark, PlotlyJS.scatter(x=[i], y=[aoa[end]], mode="markers", marker=attr(color="red")))
+            push!(plots_aoa_line, PlotlyJS.scatter(x=(time .- time[1])./(time[end] - time[1]) .+ (i-1), y=aoa, mode="lines", line=attr(color="black")))
             time_end = time[end]
             append!(x_labels, i)
             append!(aoa_end, aoa[end])
         end
 
         layout = Layout(xaxis_title="Orbits", yaxis_title="α [deg]", template="simple_white", showlegend=false)
-        p = plot([plots_aoa_line..., plots_aoa_mark...], layout)
+        p = PlotlyJS.plot([plots_aoa_line..., plots_aoa_mark...], layout)
     end
 
     display(p)
-    savefig(p, name * "_angle_of_attack_profile.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_angle_of_attack_profile.pdf", format="pdf")
 end
 
 function closed_form_solution_plot(name, mission, data_table)
@@ -167,7 +167,6 @@ function closed_form_solution_plot(name, mission, data_table)
         end
     end
     append!(index_orbit, length(alt_idx))
-
     alt_idx_cf = findall(x -> (x > 0) && (x <= args[:EI]*1e3), config.solution.closed_form.h_cf)
     index_orbit_cf = [1]
     time_0_cf = [config.solution.closed_form.t_cf[alt_idx_cf[1]]]
@@ -201,37 +200,37 @@ function closed_form_solution_plot(name, mission, data_table)
         gamma_cf = [rad2deg(config.solution.closed_form.γ_cf[j]) for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
         v_cf = [config.solution.closed_form.v_cf[j] for j in alt_idx_cf[index_orbit_cf[i]:index_orbit_cf[i+1]-1]]
 
-        push!(plot_traces_alt, scatter(x=time, y=alt, mode="lines", line=attr(color="black")))
-        push!(plot_traces_gamma, scatter(x=time, y=gamma, mode="lines", line=attr(color="black")))
-        push!(plot_traces_v, scatter(x=time, y=v, mode="lines", line=attr(color="black")))
+        push!(plot_traces_alt, PlotlyJS.scatter(x=time, y=alt, mode="lines", line=attr(color="black")))
+        push!(plot_traces_gamma, PlotlyJS.scatter(x=time, y=gamma, mode="lines", line=attr(color="black")))
+        push!(plot_traces_v, PlotlyJS.scatter(x=time, y=v, mode="lines", line=attr(color="black")))
 
-        push!(plot_traces_alt_cf, scatter(x=time_cf, y=alt_cf, mode="lines", line=attr(color="gray")))
-        push!(plot_traces_gamma_cf, scatter(x=time_cf, y=gamma_cf, mode="lines", line=attr(color="gray")))
-        push!(plot_traces_v_cf, scatter(x=time_cf, y=v_cf, mode="lines", line=attr(color="gray")))
+        push!(plot_traces_alt_cf, PlotlyJS.scatter(x=time_cf, y=alt_cf, mode="lines", line=attr(color="gray")))
+        push!(plot_traces_gamma_cf, PlotlyJS.scatter(x=time_cf, y=gamma_cf, mode="lines", line=attr(color="gray")))
+        push!(plot_traces_v_cf, PlotlyJS.scatter(x=time_cf, y=v_cf, mode="lines", line=attr(color="gray")))
     end
 
     layout_alt = Layout(xaxis_title="Time [s]", yaxis_title="Altitude [km]")
     layout_gamma = Layout(xaxis_title="Time [s]", yaxis_title="γ [deg]")
     layout_v = Layout(xaxis_title="Time [s]", yaxis_title="Velocity [km/s]")
 
-    p_alt = plot([plot_traces_alt..., plot_traces_alt_cf...], layout_alt)
-    p_gamma = plot([plot_traces_gamma..., plot_traces_gamma_cf...], layout_gamma)
-    p_v = plot([plot_traces_v..., plot_traces_v_cf...], layout_v)
+    p_alt = PlotlyJS.plot([plot_traces_alt..., plot_traces_alt_cf...], layout_alt)
+    p_gamma = PlotlyJS.plot([plot_traces_gamma..., plot_traces_gamma_cf...], layout_gamma)
+    p_v = PlotlyJS.plot([plot_traces_v..., plot_traces_v_cf...], layout_v)
 
-    # p_alt = plot([plot_traces_alt...], layout_alt)
-    # p_gamma = plot([plot_traces_gamma...], layout_gamma)
-    # p_v = plot([plot_traces_v...], layout_v)
+    # p_alt = PlotlyJS.plot([plot_traces_alt...], layout_alt)
+    # p_gamma = PlotlyJS.plot([plot_traces_gamma...], layout_gamma)
+    # p_v = PlotlyJS.plot([plot_traces_v...], layout_v)
 
     p = [p_alt p_gamma p_v]
     relayout!(p, width=2200, height=1000, template="simple_white", showlegend=false)
 
     display(p)
-    savefig(p, name * "_closed_form_solution.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_closed_form_solution.pdf", format="pdf")
 end
 
 function performance_plots(state, m, name, args, data_table)
     if args[:body_shape] == "Spacecraft"
-        plot_traces_1 = scatter(x=[item/(60*60*24) for item in data_table.time], y=[item * 1e-6 for item in data_table.energy], mode="lines", line=attr(color="black"))
+        plot_traces_1 = PlotlyJS.scatter(x=[item/(60*60*24) for item in data_table.time], y=[item * 1e-6 for item in data_table.energy], mode="lines", line=attr(color="black"))
         layout_1 = Layout(xaxis_title="Time [days]", yaxis_title="Energy [MJ/kg]")
     else
         index = findall(x -> x < (args[:EI] + 100)*1e3, data_table.alt)
@@ -250,12 +249,12 @@ function performance_plots(state, m, name, args, data_table)
 
         if length(index_orbit) <= 2
             time = [data_table.time[i] for i in index]
-            plot_traces_1 = scatter(x=time/(60*60*24), y=alt, mode="markers", marker=attr(color="black"))
+            plot_traces_1 = PlotlyJS.scatter(x=time/(60*60*24), y=alt, mode="markers", marker=attr(color="black"))
             layout_1 = Layout(xaxis_title="Time [days]", yaxis_title="Altitude [km]")
         end
     end
 
-    plot_1 = plot([plot_traces_1], layout_1)
+    plot_1 = PlotlyJS.plot([plot_traces_1], layout_1)
     colors = ["black", "red", "blue", "green", "orange", "purple"]
     plot_traces_heat_rate = []
     for k in 1:length(config.model.body.links)
@@ -276,7 +275,7 @@ function performance_plots(state, m, name, args, data_table)
 
         if length(index_orbit) <= 2
             time = [data_table.time[i] for i in index]
-            push!(plot_traces_heat_rate, scatter(x=time, y=heat_rate, mode="lines", line=attr(color=colors[k])))
+            push!(plot_traces_heat_rate, PlotlyJS.scatter(x=time, y=heat_rate, mode="lines", line=attr(color=colors[k])))
         else
             time_end = 0
             for i in range(start=1, step=1, stop=length(index_orbit)-1)
@@ -285,21 +284,21 @@ function performance_plots(state, m, name, args, data_table)
                 max_value = maximum(heat_rate)
                 max_index = findfirst(x -> x == max_value, heat_rate)
 
-                push!(plot_traces_heat_rate, scatter(x=[i] , y=[heat_rate[max_index]], mode="markers", marker=attr(color=colors[k])))
+                push!(plot_traces_heat_rate, PlotlyJS.scatter(x=[i] , y=[heat_rate[max_index]], mode="markers", marker=attr(color=colors[k])))
 
                 time_end = time[end]
             end
         end
     end
     layout_heat_rate = Layout(xaxis_title="Orbits", yaxis_title="Heat rate [W/cm^2]")
-    plot_heat_rate = plot([plot_traces_heat_rate...], layout_heat_rate)
+    plot_heat_rate = PlotlyJS.plot([plot_traces_heat_rate...], layout_heat_rate)
 
     plot_traces_heat_load = []
     for k in 1:length(config.model.body.links)
         if length(index_orbit) <= 2
             time = [data_table.time[i] for i in index]
             heat_load = [data_table[!, Symbol("link_$(k)_heat_load")][i] for i in index]
-            push!(plot_traces_heat_load, scatter(x=time, y=heat_load, mode="markers", marker=attr(color=colors[k])))
+            push!(plot_traces_heat_load, PlotlyJS.scatter(x=time, y=heat_load, mode="markers", marker=attr(color=colors[k])))
         else
             time_end = 0
 
@@ -307,18 +306,18 @@ function performance_plots(state, m, name, args, data_table)
                 time = [data_table.time[j] - time_0[i] + time_end for j in index[index_orbit[i]:index_orbit[i+1]-1]]
                 heat_load = [data_table[!, Symbol("link_$(k)_heat_load")][j] for j in index[index_orbit[i]:index_orbit[i+1]-1]]
 
-                push!(plot_traces_heat_load, scatter(x=[i] , y=[heat_load[end]], mode="markers", marker=attr(color=colors[k])))
+                push!(plot_traces_heat_load, PlotlyJS.scatter(x=[i] , y=[heat_load[end]], mode="markers", marker=attr(color=colors[k])))
 
                 time_end = time[end]
             end
         end
     end
 
-    layout_heat_load = Layout(xaxis_title=xaxis_title, yaxis_title="Heat load [J/cm^2]")
-    plot_heat_load = plot([plot_traces_heat_load...], layout_heat_load)
+    layout_heat_load = Layout(xaxis_title="Orbits", yaxis_title="Heat load [J/cm^2]")
+    plot_heat_load = PlotlyJS.plot([plot_traces_heat_load...], layout_heat_load)
 
     if args[:body_shape] == "Spacecraft"
-        plot_traces_4 = scatter(x=[item/(60*60*24) for item in data_table.time], y=[item - config.get_spacecraft_mass(m.body, m.body.roots[1], dry=true) for item in data_table.mass], mode="lines", line=attr(color="black"))
+        plot_traces_4 = PlotlyJS.scatter(x=[item/(60*60*24) for item in data_table.time], y=[item - config.get_spacecraft_mass(m.body, m.body.roots[1], dry=true) for item in data_table.mass], mode="lines", line=attr(color="black"))
         layout_4 = Layout(xaxis_title="Time [days]", yaxis_title="Mass [kg]")
     else
         index = findall(x -> x > 0, data_table.q)
@@ -337,18 +336,18 @@ function performance_plots(state, m, name, args, data_table)
 
         if length(index_orbit) <= 2
             time = [data_table.time[i] for i in index]
-            plot_traces_4 = scatter(x=time/(60*60*24), y=q, mode="markers", marker=attr(color="black"))
+            plot_traces_4 = PlotlyJS.scatter(x=time/(60*60*24), y=q, mode="markers", marker=attr(color="black"))
             layout_4 = Layout(xaxis_title="Time [days]", yaxis_title="Dynamic pressure [Pa]")
         end
     end
 
-    plot_4 = plot([plot_traces_4], layout_4)
+    plot_4 = PlotlyJS.plot([plot_traces_4], layout_4)
 
     p = [plot_1 plot_heat_rate; plot_heat_load plot_4]
     relayout!(p, width=2100, height=1200, template="simple_white", showlegend=false)
 
     display(p)
-    savefig(p, name * "_performance.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_performance.pdf", format="pdf")
 end
 
 function traj_2D(state, m, name, args, data_table)
@@ -378,14 +377,14 @@ function traj_2D(state, m, name, args, data_table)
     x_labels = range(start=min, step=5000, stop=max)
     y_labels = range(start=min, step=5000, stop=max)
     
-    plot_traces = scatter(x=vector[1,:], y=vector[2,:], mode="lines", line=attr(color="black"))
+    plot_traces = PlotlyJS.scatter(x=vector[1,:], y=vector[2,:], mode="lines", line=attr(color="black"))
     layout = Layout(width=800, height=800, xaxis_title="x [km]", yaxis_title="y [km]", xaxis_range=[min, max], yaxis_range=[min, max], 
                     shapes=[circle(xref="x", yref="y", fillcolor="OrangeRed", x0=-m.planet.Rp_e*1e-3, y0=-m.planet.Rp_p*1e-3, x1=m.planet.Rp_e*1e-3, y1=m.planet.Rp_p*1e-3, line_color="OrangeRed"), 
                     circle(xref="x", yref="y", fillcolor="Yellow", opacity=0.2, x0=-m.planet.Rp_e*1e-3-args[:EI], y0=-m.planet.Rp_e*1e-3-args[:EI], x1=m.planet.Rp_e*1e-3+args[:EI], y1=m.planet.Rp_e*1e-3+args[:EI], line_color="Yellow")], 
                     template="simple_white", showlegend=false) # , xaxis_tickvals=x_labels, yaxis_tickvals=y_labels)
-    p = plot(plot_traces, layout)
+    p = PlotlyJS.plot(plot_traces, layout)
     display(p)
-    savefig(p, name * "_traj2D.pdf", width=800, height=800, format="pdf")
+    PlotlyJS.savefig(p, name * "_traj2D.pdf", width=800, height=800, format="pdf")
 end
 
 function traj_3D(state, m, name, args, data_table)
@@ -450,15 +449,15 @@ function traj_3D(state, m, name, args, data_table)
             z_s = z[index[i]:index[i+1]]
         end
 
-        push!(traj_3D_traces, scatter3d(x=x_s, y=y_s, z=z_s, mode="lines", line=attr(color="black"), row=1, col=1))
+        push!(traj_3D_traces, PlotlyJS.scatter3d(x=x_s, y=y_s, z=z_s, mode="lines", line=attr(color="black"), row=1, col=1))
     end
     if args[:type_of_mission] == "Entry"
-        push!(traj_3D_traces, scatter3d(x=[x[1]], y=[y[1]], z=[z[1]], mode="markers", marker=attr(color="black", marker="x"), row=1, col=1))
+        push!(traj_3D_traces, PlotlyJS.scatter3d(x=[x[1]], y=[y[1]], z=[z[1]], mode="markers", marker=attr(color="black", marker="x"), row=1, col=1))
     end
     layout = Layout(scene_aspectmode="cube", scene_xaxis_range=[axis_min, axis_max], scene_yaxis_range=[axis_min, axis_max], scene_zaxis_range=[axis_min, axis_max], xaxis_title="x [km]", yaxis_title="y [km]", zaxis_title="z [km]", template="simple_white", showlegend=false)
-    p = plot([sphere1, sphere2, traj_3D_traces...], layout)
+    p = PlotlyJS.plot([sphere1, sphere2, traj_3D_traces...], layout)
     display(p)
-    savefig(p, name * "_traj3D.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_traj3D.pdf", format="pdf")
 end
 
 function ABM_periapsis(name)
@@ -481,15 +480,15 @@ function ABM_periapsis(name)
         end
     end
 
-    plot_traces_palt = scatter(x=orbit_number, y=periapsis_altitude, mode="markers", marker=attr(color="black"))
+    plot_traces_palt = PlotlyJS.scatter(x=orbit_number, y=periapsis_altitude, mode="markers", marker=attr(color="black"))
 
-    plot_traces_abm1 = scatter(x=[item for item in config.cnf.raise_man_orbit], y=delta_v_raise, mode="markers", marker=attr(color="blue", symbol="triangle"), yaxis="y2") # , label="ABM to raise periapsis")
-    plot_traces_abm2 = scatter(x=[item for item in config.cnf.lower_man_orbit], y=delta_v_lower, mode="markers", marker=attr(color="red", symbol="circle"), yaxis="y2") # , label="ABM to lower periapsis")
+    plot_traces_abm1 = PlotlyJS.scatter(x=[item for item in config.cnf.raise_man_orbit], y=delta_v_raise, mode="markers", marker=attr(color="blue", symbol="triangle"), yaxis="y2") # , label="ABM to raise periapsis")
+    plot_traces_abm2 = PlotlyJS.scatter(x=[item for item in config.cnf.lower_man_orbit], y=delta_v_lower, mode="markers", marker=attr(color="red", symbol="circle"), yaxis="y2") # , label="ABM to lower periapsis")
     
-    p = plot([plot_traces_palt, plot_traces_abm1, plot_traces_abm2], Layout(xaxis_title_text="Orbit", yaxis_title_text="Periapsis altitude [km]", yaxis2 = attr(title="ABM Magnitude [m/s]", overlaying="y", side="right"), template="simple_white", showlegend=false))
+    p = PlotlyJS.plot([plot_traces_palt, plot_traces_abm1, plot_traces_abm2], Layout(xaxis_title_text="Orbit", yaxis_title_text="Periapsis altitude [km]", yaxis2 = attr(title="ABM Magnitude [m/s]", overlaying="y", side="right"), template="simple_white", showlegend=false))
 
     display(p)
-    savefig(p, name * "_Periapsis_alt_and_maneuvers.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_Periapsis_alt_and_maneuvers.pdf", format="pdf")
 
 end
 
@@ -500,22 +499,22 @@ function ground_track(state, m, name, args, data_table)
     time = data_table.time
     xaxis_title = ""
     if config.solution.orientation.number_of_passage[end] == 1 || args[:type_of_mission] == "Time"
-        lats_traces = scatter(x=time, y=rad2deg.(data_table.lat), mode="lines", line=attr(color="black"))
-        lons_traces = scatter(x=time, y=rad2deg.(data_table.lon), mode="lines", line=attr(color="black"))
+        lats_traces = PlotlyJS.scatter(x=time, y=rad2deg.(data_table.lat), mode="lines", line=attr(color="black"))
+        lons_traces = PlotlyJS.scatter(x=time, y=rad2deg.(data_table.lon), mode="lines", line=attr(color="black"))
         xaxis_title = "Time [s]"
     else
-        lats_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.latitude_periapsis, mode="lines", line=attr(color="black"))
-        lons_traces = scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.longitude_periapsis, mode="lines", line=attr(color="black"))
+        lats_traces = PlotlyJS.scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.latitude_periapsis, mode="lines", line=attr(color="black"))
+        lons_traces = PlotlyJS.scatter(x=1:maximum(config.solution.orientation.number_of_passage), y=config.cnf.longitude_periapsis, mode="lines", line=attr(color="black"))
         xaxis_title = "Orbit number"
     end
 
-    lats_plot = plot(lats_traces, Layout(xaxis_title=xaxis_title, yaxis_title="Latitude [deg]", template="simple_white", showlegend=false))
-    lons_plot = plot(lons_traces, Layout(xaxis_title=xaxis_title, yaxis_title="Longitude [deg]", template="simple_white", showlegend=false))
+    lats_plot = PlotlyJS.plot(lats_traces, Layout(xaxis_title=xaxis_title, yaxis_title="Latitude [deg]", template="simple_white", showlegend=false))
+    lons_plot = PlotlyJS.plot(lons_traces, Layout(xaxis_title=xaxis_title, yaxis_title="Longitude [deg]", template="simple_white", showlegend=false))
     p = [lats_plot lons_plot]
     relayout!(p, width=1200, height=600, template="simple_white", showlegend=false)
     
     display(p)
-    savefig(p, name * "_ground_track.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_ground_track.pdf", format="pdf")
 
 end
 
@@ -534,13 +533,13 @@ function attitude_plot(name, args, data_table)
         quaternion = [q1[i], q2[i], q3[i], q4[i]]
         euler_angles[:, i] = qToEulerAngles(quaternion)
     end
-    r_traces = scatter(x=time/60, y=rad2deg.(euler_angles[1,:]), mode="lines", line=attr(color="red"), name="Roll")
-    p_traces = scatter(x=time/60, y=rad2deg.(euler_angles[2,:]), mode="lines", line=attr(color="green"), name="Pitch")
-    y_traces = scatter(x=time/60, y=rad2deg.(euler_angles[3,:]), mode="lines", line=attr(color="blue"), name="Yaw")
+    r_traces = PlotlyJS.scatter(x=time/60, y=rad2deg.(euler_angles[1,:]), mode="lines", line=attr(color="red"), name="Roll")
+    p_traces = PlotlyJS.scatter(x=time/60, y=rad2deg.(euler_angles[2,:]), mode="lines", line=attr(color="green"), name="Pitch")
+    y_traces = PlotlyJS.scatter(x=time/60, y=rad2deg.(euler_angles[3,:]), mode="lines", line=attr(color="blue"), name="Yaw")
     layout = Layout(xaxis_title="Time [min]", yaxis_title="Angle (Degrees)", template="simple_white", showlegend=true)
-    p = plot([r_traces, p_traces, y_traces], layout)
+    p = PlotlyJS.plot([r_traces, p_traces, y_traces], layout)
     display(p)
-    savefig(p, name * "_attitude.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_attitude.pdf", format="pdf")
 end
 
 function quaternion_plot(name, data_table)
@@ -550,14 +549,14 @@ function quaternion_plot(name, data_table)
 
     time = data_table.time
     # quaternions = data_table.quaternion
-    q1_traces = scatter(x=time/60, y=data_table.q_1, mode="lines", line=attr(color="red"), name="q1")
-    q2_traces = scatter(x=time/60, y=data_table.q_2, mode="lines", line=attr(color="green"), name="q2")
-    q3_traces = scatter(x=time/60, y=data_table.q_3, mode="lines", line=attr(color="blue"), name="q3")
-    q4_traces = scatter(x=time/60, y=data_table.q_4, mode="lines", line=attr(color="orange"), name="q4")
+    q1_traces = PlotlyJS.scatter(x=time/60, y=data_table.q_1, mode="lines", line=attr(color="red"), name="q1")
+    q2_traces = PlotlyJS.scatter(x=time/60, y=data_table.q_2, mode="lines", line=attr(color="green"), name="q2")
+    q3_traces = PlotlyJS.scatter(x=time/60, y=data_table.q_3, mode="lines", line=attr(color="blue"), name="q3")
+    q4_traces = PlotlyJS.scatter(x=time/60, y=data_table.q_4, mode="lines", line=attr(color="orange"), name="q4")
     layout = Layout(xaxis_title="Time [min]", yaxis_title="Quaternion", template="simple_white", showlegend=true)
-    p = plot([q1_traces, q2_traces, q3_traces, q4_traces], layout)
+    p = PlotlyJS.plot([q1_traces, q2_traces, q3_traces, q4_traces], layout)
     display(p)
-    savefig(p, name * "_quaternion.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_quaternion.pdf", format="pdf")
 end
 
 function angular_velocity_plot(name, data_table)
@@ -567,13 +566,13 @@ function angular_velocity_plot(name, data_table)
 
     time = data_table.time
     # angular_velocity = data_table.ω
-    ω1_traces = scatter(x=time/60, y=rad2deg.(data_table.omega_1)*60, mode="lines", line=attr(color="red"), name="ω1")
-    ω2_traces = scatter(x=time/60, y=rad2deg.(data_table.omega_2)*60, mode="lines", line=attr(color="green"), name="ω2")
-    ω3_traces = scatter(x=time/60, y=rad2deg.(data_table.omega_3)*60, mode="lines", line=attr(color="blue"), name="ω3")
+    ω1_traces = PlotlyJS.scatter(x=time/60, y=rad2deg.(data_table.omega_1)*60, mode="lines", line=attr(color="red"), name="ω1")
+    ω2_traces = PlotlyJS.scatter(x=time/60, y=rad2deg.(data_table.omega_2)*60, mode="lines", line=attr(color="green"), name="ω2")
+    ω3_traces = PlotlyJS.scatter(x=time/60, y=rad2deg.(data_table.omega_3)*60, mode="lines", line=attr(color="blue"), name="ω3")
     layout = Layout(xaxis_title="Time [min]", yaxis_title="Angular Velocity (deg/min)", template="simple_white", showlegend=true)
-    p = plot([ω1_traces, ω2_traces, ω3_traces], layout)
+    p = PlotlyJS.plot([ω1_traces, ω2_traces, ω3_traces], layout)
     display(p)
-    savefig(p, name * "_angular_velocity.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_angular_velocity.pdf", format="pdf")
 end
 
 function wind_relative_attitude_plot(name, args, data_table)
@@ -595,17 +594,17 @@ function wind_relative_attitude_plot(name, args, data_table)
     α_control_traces = []
     color_choices = ["red", "green", "blue", "orange", "purple", "cyan", "magenta", "yellow", "black"]
     for i in eachindex(config.model.body.links)
-        push!(α_traces, scatter(x=time, y=rad2deg.(data_table[:, Symbol("link_$(i)_aoa")]), mode="lines", line=attr(color=color_choices[i%length(color_choices) + 1]), name="α$i"))
-        push!(β_traces, scatter(x=time, y=rad2deg.(data_table[:, Symbol("link_$(i)_sideslip")]), mode="lines", line=attr(color=color_choices[i%length(color_choices) + 1], dash="dash"), name="β$i"))
+        push!(α_traces, PlotlyJS.scatter(x=time, y=rad2deg.(data_table[:, Symbol("link_$(i)_aoa")]), mode="lines", line=attr(color=color_choices[i%length(color_choices) + 1]), name="α$i"))
+        push!(β_traces, PlotlyJS.scatter(x=time, y=rad2deg.(data_table[:, Symbol("link_$(i)_sideslip")]), mode="lines", line=attr(color=color_choices[i%length(color_choices) + 1], dash="dash"), name="β$i"))
     end
     
     if args[:control_mode] != 0
-        push!(α_control_traces, scatter(x=time, y=rad2deg.(data_table.aoa_control), mode="lines", line=attr(color="black", dash="dot"), name="α_control"))
+        push!(α_control_traces, PlotlyJS.scatter(x=time, y=rad2deg.(data_table.aoa_control), mode="lines", line=attr(color="black", dash="dot"), name="α_control"))
     end
     layout = Layout(xaxis_title="Time [sec]", yaxis_title="Angle (deg)", template="simple_white", showlegend=true)
-    p = plot([α_traces..., β_traces..., α_control_traces...], layout)
+    p = PlotlyJS.plot([α_traces..., β_traces..., α_control_traces...], layout)
     display(p)
-    savefig(p, name * "_alpha_beta.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_alpha_beta.pdf", format="pdf")
 end
 
 function reaction_wheel_h_plot(name, data_table)
@@ -618,12 +617,12 @@ function reaction_wheel_h_plot(name, data_table)
     h_traces = []
     
     for i in eachindex(h)
-        push!(h_traces, scatter(x=time, y=h[i], mode="lines", line=attr(color=color_choices[i%length(color_choices)]), name="h$i"))
+        push!(h_traces, PlotlyJS.scatter(x=time, y=h[i], mode="lines", line=attr(color=color_choices[i%length(color_choices)]), name="h$i"))
     end
     layout = Layout(xaxis_title="Time [sec]", yaxis_title="Angular Momentum (kg*m²/s)", template="simple_white", showlegend=true)
-    p = plot([h_traces...], layout)
+    p = PlotlyJS.plot([h_traces...], layout)
     display(p)
-    savefig(p, name * "_reaction_wheel_h.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_reaction_wheel_h.pdf", format="pdf")
 end
 
 function total_reaction_wheel_torque_plot(name, data_table)
@@ -635,12 +634,12 @@ function total_reaction_wheel_torque_plot(name, data_table)
     colors = ["red", "green", "blue"]
     τ_traces = []
     for (i, colvals) in enumerate(eachcol(τ))
-        push!(τ_traces, scatter(x=time, y=colvals, mode="lines", line=attr(color=colors[i]), name="τ$i"))
+        push!(τ_traces, PlotlyJS.scatter(x=time, y=colvals, mode="lines", line=attr(color=colors[i]), name="τ$i"))
     end
     layout = Layout(xaxis_title="Time [sec]", yaxis_title="Torque (N*m)", template="simple_white", showlegend=true)
-    p = plot([τ_traces...], layout)
+    p = PlotlyJS.plot([τ_traces...], layout)
     display(p)
-    savefig(p, name * "_reaction_wheel_torque.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_reaction_wheel_torque.pdf", format="pdf")
 end
 
 function reaction_wheel_torque_plot(name, data_table)
@@ -659,12 +658,12 @@ function reaction_wheel_torque_plot(name, data_table)
     τ_traces = []
     
     for (i, rowvals) in enumerate(eachrow(τ))
-        push!(τ_traces, scatter(x=time, y=rowvals, mode="lines", line=attr(color=color_choices[i%length(color_choices)]), name="τ$i"))
+        push!(τ_traces, PlotlyJS.scatter(x=time, y=rowvals, mode="lines", line=attr(color=color_choices[i%length(color_choices)]), name="τ$i"))
     end
     layout = Layout(xaxis_title="Time [sec]", yaxis_title="Torque (N⋅m)", template="simple_white", showlegend=true)
-    p = plot([τ_traces...], layout)
+    p = PlotlyJS.plot([τ_traces...], layout)
     display(p)
-    savefig(p, name * "_reaction_wheel_tau.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_reaction_wheel_tau.pdf", format="pdf")
 end
 
 function torque_plot(name, data_table)
@@ -679,12 +678,12 @@ function torque_plot(name, data_table)
     colors = ["red", "green", "blue"]
     τ_traces = []
     for i in eachindex(τ)
-        push!(τ_traces, scatter(x=time, y=τ[i], mode="lines", line=attr(color=colors[i]), name="τ$i"))
+        push!(τ_traces, PlotlyJS.scatter(x=time, y=τ[i], mode="lines", line=attr(color=colors[i]), name="τ$i"))
     end
     layout = Layout(xaxis_title="Time [sec]", yaxis_title="Torque (N⋅m)", template="simple_white", showlegend=true)
-    p = plot([τ_traces...], layout)
+    p = PlotlyJS.plot([τ_traces...], layout)
     display(p)
-    savefig(p, name * "_total_torque.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_total_torque.pdf", format="pdf")
 end
 
 function inertia_plot(name, data_table)
@@ -703,19 +702,19 @@ function inertia_plot(name, data_table)
     I9 = data_table.J_ii_9
 
     traces = [
-        scatter(x=time, y=I1, mode="lines", line=attr(color="red"), name="I1"),
-        scatter(x=time, y=I2, mode="lines", line=attr(color="green"), name="I2"),
-        scatter(x=time, y=I3, mode="lines", line=attr(color="blue"), name="I3"),
-        scatter(x=time, y=I4, mode="lines", line=attr(color="orange"), name="I4"),
-        scatter(x=time, y=I5, mode="lines", line=attr(color="purple"), name="I5"),
-        scatter(x=time, y=I6, mode="lines", line=attr(color="cyan"), name="I6"),
-        scatter(x=time, y=I7, mode="lines", line=attr(color="magenta"), name="I7"),
-        scatter(x=time, y=I8, mode="lines", line=attr(color="yellow"), name="I8"),
-        scatter(x=time, y=I9, mode="lines", line=attr(color="black"), name="I9")
+        PlotlyJS.scatter(x=time, y=I1, mode="lines", line=attr(color="red"), name="I1"),
+        PlotlyJS.scatter(x=time, y=I2, mode="lines", line=attr(color="green"), name="I2"),
+        PlotlyJS.scatter(x=time, y=I3, mode="lines", line=attr(color="blue"), name="I3"),
+        PlotlyJS.scatter(x=time, y=I4, mode="lines", line=attr(color="orange"), name="I4"),
+        PlotlyJS.scatter(x=time, y=I5, mode="lines", line=attr(color="purple"), name="I5"),
+        PlotlyJS.scatter(x=time, y=I6, mode="lines", line=attr(color="cyan"), name="I6"),
+        PlotlyJS.scatter(x=time, y=I7, mode="lines", line=attr(color="magenta"), name="I7"),
+        PlotlyJS.scatter(x=time, y=I8, mode="lines", line=attr(color="yellow"), name="I8"),
+        PlotlyJS.scatter(x=time, y=I9, mode="lines", line=attr(color="black"), name="I9")
     ]
 
     layout = Layout(xaxis_title="Time [sec]", yaxis_title="Inertia Tensor (kg⋅m²)", template="simple_white", showlegend=true)
-    p = plot(traces, layout)
+    p = PlotlyJS.plot(traces, layout)
     display(p)
-    savefig(p, name * "_inertia_tensor.pdf", format="pdf")
+    PlotlyJS.savefig(p, name * "_inertia_tensor.pdf", format="pdf")
 end

@@ -75,6 +75,7 @@ args = Dict(# Misc Simulation
             :keplerian => false,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 1,                                 # Number of aerobraking passage
             :orientation_sim => false,                                 # Orientation simulation True=1, False=0
+            :save_steps => 10000,                                   # Number of steps to save the data if type_of_mission is 'time'
 
             # Physical Model
             :planet => 2,                                           # Earth = 0, Mars = 1, Venus = 2

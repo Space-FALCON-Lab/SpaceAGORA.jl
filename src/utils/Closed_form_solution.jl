@@ -36,8 +36,8 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
             t, h, γ, v = zeros(length_solution), zeros(length_solution), zeros(length_solution), zeros(length_solution)
             cnt = 0
 
-            # println("Number of orbits: ", number_orbits)
-            for i in range(1,ceil(number_orbits))
+            println("Number of orbits: ", ceil(number_orbits))
+            # for i in range(1,ceil(number_orbits))
 
                 # idx_orbit = findall(val -> val == i, config.solution.orientation.number_of_passage)
                 # # idx_orbit = [idx for idx, val in enumerate(solution.orientation.numberofpassage) if val == i]
@@ -47,16 +47,19 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
 
                 # # TODO: CHANGE TO ARGS[:EI]
                 # alt_index = findall(val -> val <= 160*1e3, alt)
+                println("Orbit #: ", number_orbits)
 
-                idx_orbit = findall(x -> x == i, config.solution.orientation.number_of_passage) # [idx for (idx, val) in enumerate(config.solution.orientation.number_of_passage) if val == i]
+                idx_orbit = findall(x -> x == number_orbits, config.solution.orientation.number_of_passage) # [idx for (idx, val) in enumerate(config.solution.orientation.number_of_passage) if val == i]
+                
+                println("idx_orbit: ", idx_orbit)
 
                 alt = [config.solution.orientation.pos_ii_mag[item] - mission.planet.Rp_e for item in idx_orbit]
 
-                # println("Altitude: ", alt)
+                println("Altitude: ", alt)
 
                 alt_index = findall(x -> x < args[:EI]*1e3, alt) # [idx for (idx, val) in enumerate(alt) if val <= 160e3]
 
-                # println("alt_index: ", alt_index)
+                println("alt_index: ", alt_index)
 
                 if length(alt_index) == 0
                     len_sol = length(config.solution.orientation.time)
@@ -81,9 +84,9 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
                 h[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = h_cf
                 γ[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = γ_cf
                 v[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = v_cf
-            end
+            # end
             # For loop for the number of orbits
-
+            
             results(t, h, γ, v)
         end
     else # online for control

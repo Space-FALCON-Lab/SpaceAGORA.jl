@@ -167,6 +167,7 @@ function closed_form_solution_plot(name, mission, data_table)
         end
     end
     append!(index_orbit, length(alt_idx))
+    println(config.solution.closed_form.h_cf)
     alt_idx_cf = findall(x -> (x > 0) && (x <= args[:EI]*1e3), config.solution.closed_form.h_cf)
     index_orbit_cf = [1]
     time_0_cf = [config.solution.closed_form.t_cf[alt_idx_cf[1]]]
@@ -280,7 +281,7 @@ function performance_plots(state, m, name, args, data_table)
             time_end = 0
             for i in range(start=1, step=1, stop=length(index_orbit)-1)
                 time = [data_table.time[j] - time_0[i] + time_end for j in index[index_orbit[i]:index_orbit[i+1]-1]]
-                heat_rate = [data_table.heat_rate[j] for j in index[index_orbit[i]:index_orbit[i+1]-1]]
+                # heat_rate = [data_table.heat_rate[j] for j in index[index_orbit[i]:index_orbit[i+1]-1]]
                 max_value = maximum(heat_rate)
                 max_index = findfirst(x -> x == max_value, heat_rate)
 

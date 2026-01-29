@@ -125,8 +125,10 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name)
         end
 
         if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
+            println("Yes closed form...")
             closed_form(args, m)
         else
+            println("No closed form...")
             len_sol = length(config.solution.orientation.time)
             results(zeros(len_sol), (args[:EI] - 10)*1e3*ones(len_sol), zeros(len_sol), zeros(len_sol))
         end

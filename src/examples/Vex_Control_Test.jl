@@ -56,10 +56,10 @@ args = Dict(# Misc Simulation
             :results => true,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => true,                                                                                  # Pass results as output True=1, False=0
             :print_res => true,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/Vex_control",            # Directory where to save the results
-            :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                   # Directory where Gram is
-            :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",           # Directory where Gram data is
-            :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
+            :directory_results => "output/Vex_control",            # Directory where to save the results
+            :directory_Gram => "GRAMpy",                   # Directory where Gram is
+            :directory_Gram_data => "GRAM_Data",           # Directory where Gram data is
+            :directory_Spice => "GRAM_Data/SPICE",         # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
             :plot => true,                                                                                         # Generate pdf plots of results True=1, False=0
@@ -84,7 +84,7 @@ args = Dict(# Misc Simulation
             
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
             :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
-            :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/MGN-V-RDRS-5-TOPO-L2.csv", # File with the topography harmonics coefficients
+            :topography_harmonics_file => "Topography_harmonics_data/MGN-V-RDRS-5-TOPO-L2.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 90, 
             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
@@ -97,7 +97,7 @@ args = Dict(# Misc Simulation
             :srp => 1,                                             # Solar Radiation Pressure True=1, False=0
             :eclipse => false,
             :gravity_harmonics => 0,                               # Gravity Harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/MGNP180U.csv", # File with the gravity harmonics coefficients
+            :gravity_harmonics_file => "Gravity_harmonics_data/MGNP180U.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
             :magnetic_field => false,

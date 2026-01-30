@@ -9,7 +9,7 @@ using Statistics
 using AstroTime
 
 function closed_form(args, mission, initialcondition = 0, T = 0, online = false, α=0, α_profile = [])
-    date_initial = from_utc(DateTime(mission.initial_condition.year, mission.initial_condition.month, mission.initial_condition.day, mission.initial_condition.hour, mission.initial_condition.minute, mission.initial_condition.second))
+    date_initial = from_utc(DateTime(mission.initial_condition.year, mission.initial_condition.month, mission.initial_condition.day, mission.initial_condition.hour, mission.initial_condition.minute, round(mission.initial_condition.second)))
 
     if args[:body_shape] == "Blunted Cone"
         len_sol = length(config.solution.orientation.time)
@@ -36,56 +36,35 @@ function closed_form(args, mission, initialcondition = 0, T = 0, online = false,
             t, h, γ, v = zeros(length_solution), zeros(length_solution), zeros(length_solution), zeros(length_solution)
             cnt = 0
 
-            println("Number of orbits: ", ceil(number_orbits))
-            # for i in range(1,ceil(number_orbits))
+            idx_orbit = findall(x -> x == number_orbits, config.solution.orientation.number_of_passage) # [idx for (idx, val) in enumerate(config.solution.orientation.number_of_passage) if val == i]
+            
+            alt = [config.solution.orientation.pos_ii_mag[item] - mission.planet.Rp_e for item in idx_orbit]
 
-                # idx_orbit = findall(val -> val == i, config.solution.orientation.number_of_passage)
-                # # idx_orbit = [idx for idx, val in enumerate(solution.orientation.numberofpassage) if val == i]
+            alt_index = findall(x -> x < args[:EI]*1e3, alt) # [idx for (idx, val) in enumerate(alt) if val <= 160e3]
+
+            if length(alt_index) == 0
+                len_sol = length(config.solution.orientation.time)
+                results(zeros(len_sol), zeros(len_sol), zeros(len_sol), zeros(len_sol))
                 
-                # alt = [(config.solution.orientation.pos_ii_mag[item] - mission.planet.Rp_e) for item in idx_orbit]
-                # # alt_index = [idx for idx, val in enumerate(alt) if val <= 160*1e3]
+                return zeros(len_sol), zeros(len_sol), zeros(len_sol), zeros(len_sol)
+            end
 
-                # # TODO: CHANGE TO ARGS[:EI]
-                # alt_index = findall(val -> val <= 160*1e3, alt)
-                println("Orbit #: ", number_orbits)
+            index = alt_index[1] + idx_orbit[1]
+            step_time = length(alt_index)
 
-                idx_orbit = findall(x -> x == number_orbits, config.solution.orientation.number_of_passage) # [idx for (idx, val) in enumerate(config.solution.orientation.number_of_passage) if val == i]
-                
-                println("idx_orbit: ", idx_orbit)
+            initialcondition = SVector{7, Float64}([config.solution.orientation.oe[1][index], config.solution.orientation.oe[2][index], config.solution.orientation.oe[3][index], config.solution.orientation.oe[4][index], config.solution.orientation.oe[5][index], config.solution.orientation.oe[6][index], config.solution.performance.mass[index]])
 
-                alt = [config.solution.orientation.pos_ii_mag[item] - mission.planet.Rp_e for item in idx_orbit]
+            T = config.solution.physical_properties.T[index]
+            α = config.solution.physical_properties.α_control[index]
+            t0 = config.solution.orientation.time[index]
 
-                println("Altitude: ", alt)
+            t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time)
 
-                alt_index = findall(x -> x < args[:EI]*1e3, alt) # [idx for (idx, val) in enumerate(alt) if val <= 160e3]
-
-                println("alt_index: ", alt_index)
-
-                if length(alt_index) == 0
-                    len_sol = length(config.solution.orientation.time)
-                    results(zeros(len_sol), zeros(len_sol), zeros(len_sol), zeros(len_sol))
-                    
-                    return zeros(len_sol), zeros(len_sol), zeros(len_sol), zeros(len_sol)
-                end
-
-                index = alt_index[1] + idx_orbit[1]
-                step_time = length(alt_index)
-
-                initialcondition = SVector{7, Float64}([config.solution.orientation.oe[1][index], config.solution.orientation.oe[2][index], config.solution.orientation.oe[3][index], config.solution.orientation.oe[4][index], config.solution.orientation.oe[5][index], config.solution.orientation.oe[6][index], config.solution.performance.mass[index]])
-
-                T = config.solution.physical_properties.T[index]
-                α = config.solution.physical_properties.α_control[index]
-                t0 = config.solution.orientation.time[index]
-
-                t_cf, h_cf, γ_cf, v_cf = closed_form_calculation(args, t0, mission, initialcondition, α, T, date_initial, step_time)
-                # println("Length of interval: ", length(t[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])]))
-                step_time = step_time - 2 # -1 because we start from 0
-                t[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = t_cf
-                h[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = h_cf
-                γ[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = γ_cf
-                v[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = v_cf
-            # end
-            # For loop for the number of orbits
+            step_time = step_time - 2 # -1 because we start from 0
+            t[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = t_cf
+            h[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = h_cf
+            γ[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = γ_cf
+            v[(alt_index[1]+idx_orbit[1]):(alt_index[1]+step_time+idx_orbit[1])] = v_cf
             
             results(t, h, γ, v)
         end

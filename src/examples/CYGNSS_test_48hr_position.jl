@@ -74,20 +74,7 @@ inertia_tensor = [1.4e6 -1.71e4 8.08e3;
 config.set_inertia_tensor!(spacecraft, main_bus, 
                         SMatrix{3, 3, Float64}(inertia_tensor))
 
-# Add torque rods
-# Dipole commands in Am^2, locations in m
-# TRX = config.Magnet(axis=MVector{3, Float64}(-1.0, 0.0, 0.0), magnitude=0.0)
-# TRY = config.Magnet(axis=MVector{3, Float64}(0.0, 1.0, 0.0), magnitude=0.0)
-# TRZ = config.Magnet(axis=MVector{3, Float64}(0.0, 0.0, -1.0), magnitude=0.0)
-# config.add_magnet!(main_bus, TRX)
-# config.add_magnet!(main_bus, TRY)
-# config.add_magnet!(main_bus, TRZ)
-# Residual dipole moment
-# sc_dipole = config.Magnet(axis=normalize(MVector{3, Float64}(-0.0101, -0.0417, 0.1697)), magnitude=norm(MVector{3, Float64}(-0.0101, -0.0417, 0.1697)))
-# config.add_magnet!(main_bus, sc_dipole)
-
 println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
-# println("Spacecraft roots: $spacecraft.roots")
 println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
 println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 lenXHub = 52.12

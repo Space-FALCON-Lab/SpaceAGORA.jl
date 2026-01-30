@@ -102,8 +102,8 @@ mutable struct Link
                     thrusters=Thruster[],
                     thrust_calculation_function=()->0.0,
                     magnets=Magnet[])#SMatrix{3,Int(gyro)}(1.0I))
-                    println(length(rw))
-        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, gyro, max_torque, max_h, rw, J_rw, rw_τ, net_force, net_torque, attitude_control_function, actuation_function, attitude_control_rate, ω_wheel_derivatives, SRP_facets, J_thruster, thrusters, thrust_calculation_function, magnets)
+
+                    new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, gyro, max_torque, max_h, rw, J_rw, rw_τ, net_force, net_torque, attitude_control_function, actuation_function, attitude_control_rate, ω_wheel_derivatives, SRP_facets, J_thruster, thrusters, thrust_calculation_function, magnets)
     end
 
     function Link(link::Link)
@@ -292,23 +292,15 @@ function update_thrusters!(link::Link, torque::AbstractVector{Float64}, t::Float
     # Update the thruster Jacobian matrix to account for possible articulated joints
     link.J_thruster = MMatrix{3, length(link.thrusters), Float64}(zeros(3, length(link.thrusters))) # Reset the Jacobian matrix
     rot_to_body = rotate_to_body(link) # Get the rotation matrix to convert from inertial to body frame
-    # println("Rotation matrix: $rot_to_body")
     for (i, thruster) in enumerate(link.thrusters)
         normalize!(thruster.direction) # Ensure the thruster direction is a unit vector
         link.J_thruster[:, i] = cross(rot_to_body * thruster.location + link.r, rot_to_body * thruster.direction) # Update the Jacobian matrix with the r x F vector in the body frame
     end
     # Calculate the thrust vector from the torque vector
-    # println("J_thruster: $(link.J_thruster)")
-    # println("Torque req: $torque")
     thrust_vector = pinv(link.J_thruster) * torque # Solve for the thrust vector using the Jacobian matrix
     thrust_vector .-= minimum(thrust_vector) # Ensure no negative thrust values
-    # data = CSV.read("basilisk_thruster_force.csv", DataFrame)
-    # time = data[:, 1]
-    # idx = findmin(abs.(time .- t))[2]
-    # thrust_vector = data[idx, 2:end] # Get the thrust vector from the CSV file
-    # println("Thrust vector: $thrust_vector")
+
     for (i, thruster) in enumerate(link.thrusters)
-        # println("thruster $i: Requested thrust: $(thrust_vector[i]) N")
         thruster.thrust = thrust_vector[i] # Update the requested thrust in the thruster
         link.thrust_calculation_function(link, thruster, thrust_vector[i], t) # Call the function to calculate the average thrust over the control period
     end
@@ -327,18 +319,11 @@ function thrust_calculation_schmitt_trigger!(link::Link, thruster::Thruster, thr
     # Interate over each thrust value and determine the firing time
     ti = min(thrust / thruster.max_thrust * link.attitude_control_rate, link.attitude_control_rate) # Calculate the time interval for the thrust
     if ti < thruster.min_firing_time # If the time interval is less than the minimum firing time, set it to the minimum firing time or 0, based on schmitt trigger
-        # println("Schmitt triggering thrust time: $ti")
         ti = schmitt_trigger(ti, thruster.level_on, thruster.level_off) * thruster.min_firing_time # Use Schmitt trigger to determine if the thruster should fire
-        # println("Updated ti: $ti")
     end
-    # println("TI: $ti")
     # Integrate the thrust over the time interval to determine the total impulse, accounting for ramp-up/ramp-down
-    CSV.write("thruster_debug.csv", DataFrame(time=time, on_time_request=ti, thrust_req=thrust), append=true)   
     total_integrated_thrust = integrate_impulse!(link, thruster, ti, time) # Integrate the impulse over the time interval
-    # thruster.stop_firing_time = time + ti # Set the stop firing time to the current time plus the control period. This is used in the next timestep to determine how long to continue firing the thruster into the next timestep
     thruster.thrust = total_integrated_thrust / link.attitude_control_rate # Update the average thrust value in the thruster
-    # Update the thruster state with the integrated impulse
-    # thruster.thrust = thruster.max_thrust # Update the average thrust value in the thruster
 end
 #####################################
 #####################################
@@ -396,7 +381,6 @@ function get_COM(model::SpacecraftModel, body::Link)
     total_mass = 0.0
     # BFS starting from body to find all bodies attached to the current body
     bodies, root_index = traverse_bodies(model, body)
-    println("Bodies found: ", length(bodies))
     COM = sum([b.r * b.m for b in bodies]) # Sum the position vectors weighted by mass
     total_mass = sum([b.m for b in bodies]) # Sum the mass of all bodies
     return COM / total_mass # Return the center of mass
@@ -425,7 +409,6 @@ function update_inertia_tensor!(model::SpacecraftModel, body::Link)
     """
     # Initialize inertia tensor to zero
     inertia_tensor = SMatrix{3, 3, Float64}(zeros(3, 3))
-    # total_mass = 0.0
     # BFS starting from body to find all bodies attached to the current body
     bodies, root_index = traverse_bodies(model, body)
     for b in bodies
@@ -829,29 +812,12 @@ function integrate_impulse!(link::Link, thruster::Thruster, on_time_request::Flo
     ω = thruster.cutoff_frequency # Get the cutoff frequency of the thruster
     # Calculate the impulse using the first-order filter
     κ = thruster.κ # Get the current thrust factor
-    # carryover_time = max(0.0, thruster.stop_firing_time - time) # Calculate the carryover time from the previous timestep
-    # # if carryover_time > 0.0
-    # impulse = thruster.max_thrust * κ / ω * (1 - exp(-ω * 0.1)) # Initial non-firing time
-    # κ *= exp(-ω * 0.1) # Update the thrust factor after initial non-firing time
-
-    # on_time = min(on_time_request, link.attitude_control_rate) # Ensure the on-time does not exceed the control period
-    # on_time_request -= 0.001
-    # println("On-time request: $on_time_request s, κ: $κ")
     total_integrated_thrust = thruster.max_thrust * (on_time_request + (κ - 1)/ω * (1-exp(-ω * on_time_request))) # Calculate the total impulse
     κ = 1 + (κ - 1) * exp(-ω * on_time_request) # Calculate the final thrust factor
     if on_time_request < link.attitude_control_rate
         total_integrated_thrust += thruster.max_thrust * κ / ω * (1 - exp(-ω * (link.attitude_control_rate - on_time_request))) # Add the impulse from ramp-down if applicable
         κ *= exp(-ω * (link.attitude_control_rate - on_time_request)) # Update the final thrust factor after ramp-down
     end
-    # else
-    #     total_integrated_thrust = thruster.max_thrust * κ / ω * (1 - exp(-ω * (link.attitude_control_rate))) # If no on-time, just do ramp-down
-    #     κ *= exp(-ω * (link.attitude_control_rate)) # Update the final thrust factor after ramp-down
-    #     println("No on-time, ramping down")
-    # end
-    
-    # if κ < 1.0e-10
-    #     κ = 0.0 # Set to zero if below threshold
-    # end
     thruster.κ = κ # Update the thrust factor in the thruster
     return total_integrated_thrust # Return the total impulse integrated over the control period
 end

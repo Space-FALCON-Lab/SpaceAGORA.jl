@@ -33,26 +33,14 @@ box = config.Link(r=SVector{3, Float64}(0.0, 0.0, 0.0),
                         ref_area=2.6*1.7,
                         m=441.0, 
                         gyro=0)
-# R_panel = config.Link(r=SVector{3, Float64}(0.0, 2.6/2 + 3.89/4, 0.0),
-#                         # q=SVector{4, Float64}([0, 0.4617, 0, 0.8870]),
-#                         q=SVector{4, Float64}([0, 0, 0, 1]),
-#                         ṙ=SVector{3, Float64}([0,0,0]), 
-#                         dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
-#                         ref_area=3.89*1.7/2,
-#                         m=10.0, 
-#                         gyro=0)
 
 config.add_body!(spacecraft, main_bus, prop_mass=1.0)
 config.add_body!(spacecraft, box)
-# config.add_body!(spacecraft, R_panel)
 
 L_panel_joint = config.Joint(main_bus, box)
-# R_panel_joint = config.Joint(R_panel, main_bus)
-# config.add_joint!(spacecraft, L_panel_joint)
 config.add_joint!(spacecraft, L_panel_joint)
 
 println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
-# println("Spacecraft roots: $spacecraft.roots")
 println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
 println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 
@@ -222,12 +210,6 @@ args = Dict(# Misc Simulation
 # Calculating time of simulation
 t = @elapsed begin
 
-    # furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-    # furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-    # furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-    # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-    # furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-
     # Run the simulation
     sol = run_analysis(args)
 
@@ -235,74 +217,5 @@ t = @elapsed begin
         println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
     end
 end
-
-# t = @elapsed begin
-#     # furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-#     # furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-#     # furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-#     # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-#     # furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-            
-#     # Run the simulation
-#     for aoa in collect(range(1,90,step=1))
-#         args[:α] = aoa
-#         sol = run_analysis(args)
-#     end
-
-#     println(" ")
-
-#     # if Bool(args[:passresults])
-#     #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#     # end
-# end
-
-# t = @elapsed begin
-#     # furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-#     # furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-#     # furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-#     # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-#     # furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-            
-#     # Run the simulation
-#     for vel in collect(range(4300,4800,step=50))
-#         for gam in collect(range(7.5,3.0,step=-0.25))
-#             args[:v_initial_a] = vel
-#             args[:γ_initial_a] = gam
-#             sol = run_analysis(args)
-#         end
-#     end
-
-#     println(" ")
-
-#     # if Bool(args[:passresults])
-#     #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#     # end
-# end
-
-# t = @elapsed begin
-#     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-#     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-#     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-#     furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-#     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-            
-#     # Run the simulation
-#     # for alph in collect(range(0, 90, step=15))
-#     #     args[:α] = alph
-#     for ra in collect(range(5000,25000,step=5000))
-#         for hp in collect(range(90,115,step=5))
-#             args[:ra_initial_a] = ra*1e3 + 3.3895e6
-#             args[:hp_initial_a] = hp*1e3
-#             sol = run_analysis(args)
-#         end
-#     end
-#     # end
-
-#     println(" ")
-
-#     # if Bool(args[:passresults])
-#     #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#     # end
-# end
 
 println("COMPUTATIONAL TIME = " * string(t) * " s")

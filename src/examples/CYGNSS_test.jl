@@ -640,35 +640,13 @@ args = Dict(# Misc Simulation
             :Odyssey_sim => 0                                      # Simulate Odyssey Mission
             )
 
-# # Calculating time of simulation
-# @profview run_analysis(args)
-mc_runs = 1000
-mc_dispersion_pct = 0.001 # Should be roughly on the order of kms for position values
-mc_dispersion_deg = 0.1
-
-nominal_a = args[:a_initial_a]
-nominal_e = args[:e_initial_a]
-nominal_i = args[:inclination]
-nominal_ω = args[:ω]
-nominal_Ω = args[:Ω]
-nominal_ν = args[:ν]
-
-# for i in 92:mc_runs
-#     println("Starting MC $i/$mc_runs")
-    t = @elapsed begin          
-        # Run the simulation
-        # args[:monte_carlo_run] = i
-        # args[:a_initial_a] = nominal_a * (1 + rand((-1, 1))*rand()*mc_dispersion_pct)
-        # args[:e_initial_a] = nominal_e * (1 + rand((-1, 1))*rand()*mc_dispersion_pct)
-        # args[:i] = nominal_i + rand((-1, 1))*rand()*mc_dispersion_deg
-        # args[:ω] = nominal_ω + rand((-1, 1))*rand()*mc_dispersion_deg
-        # args[:Ω] = nominal_Ω + rand((-1, 1))*rand()*mc_dispersion_deg
-        # args[:ν] = nominal_ν * (1 + rand((-1, 1))*rand()*mc_dispersion)
-        sol = run_analysis(args)
-        if Bool(args[:passresults])
-            println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-        end
+t = @elapsed begin          
+    # Run the simulation
+    sol = run_analysis(args)
+    if Bool(args[:passresults])
+        println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
     end
+end
 
-    println("COMPUTATIONAL TIME = " * string(t) * " s")
+println("COMPUTATIONAL TIME = " * string(t) * " s")
 # end

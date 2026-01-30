@@ -229,48 +229,6 @@
 # end
 # display(p)
 
-# using Arrow
-# using DataFrames
-# using UUIDs # For generating unique filenames
-
-# # Create a temporary directory for the dataset.
-# # The `try...finally` block ensures the directory is always cleaned up.
-# temp_dir_path = mktempdir()
-# println("✅ Created temporary dataset directory at: $(temp_dir_path)")
-
-# try
-#     ## 1. WRITE THE FIRST FILE
-#     println("   Writing part 1...")
-#     df1 = DataFrame(id = 1:3, category = ["A", "B", "A"], value = rand(3))
-#     Arrow.write(joinpath(temp_dir_path, "part_1"), df1)
-
-#     ## 2. WRITE A SECOND FILE
-#     println("   Writing part 2...")
-#     df2 = DataFrame(id = 4:5, category = ["C", "B"], value = rand(2))
-#     # Using a UUID ensures the filename is always unique.
-#     unique_name = "data-1"
-#     Arrow.write(joinpath(temp_dir_path, unique_name), df2)
-
-#     println("Files in temporary directory:")
-#     # List all files in the temporary directory to confirm they were written.
-#     for file in readdir(temp_dir_path)
-#         println(" - $(file)")
-#     end
-#     ## 3. READ THE ENTIRE DIRECTORY AS A SINGLE TABLE
-#     println("\n✅ Reading the entire dataset back...")
-#     # Arrow.Table automatically finds and combines all .arrow files in the directory.
-#     full_table = Arrow.Table(temp_dir_path)
-#     full_df = DataFrame(full_table)
-
-#     println("Combined DataFrame:")
-#     println(full_df)
-
-# finally
-#     # This `finally` block guarantees that the temporary directory and all its
-#     # contents are removed, even if an error happened in the `try` block.
-#     println("\n✅ Cleaning up temporary directory...")
-#     rm(temp_dir_path; recursive=true)
-# end
 
 using SpecialFunctions
 using LinearAlgebra

@@ -3,7 +3,7 @@ include("../physical_models/Aerodynamic_models.jl")
 include("../physical_models/Gravity_models.jl")
 include("../physical_models/Thermal_models.jl")
 
-include("../utils/Reference_system.jl")
+# include("../utils/Reference_system.jl")
 include("../utils/Closed_form_solution.jl")
 
 # include("Control.jl")
@@ -58,9 +58,6 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
     CL_90, CD_90 = aerodynamic_coefficient_fM(pi/2, m.body, T, S, m.aerodynamics, 0)
     CL_0, CD_0 = aerodynamic_coefficient_fM(0, m.body, T, S, m.aerodynamics, 0)
     CD_slope = (CD_90 - CD_0) / (pi/2)
-
-    # println("CD_slope outside integrator: ", CD_slope)
-    # println("k_cf outside integrator: ", k_cf)
 
     function f_ctrl!(y_dot, in_cond, param, t0)
         m = param[1]
@@ -294,7 +291,6 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
         norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
     end
     function out_drag_pass_affect!(integrator)
-        # println("entered out_drag_passage_affect! in Eoms.jl")
         config.cnf.t_out_drag_passage = integrator.t
         terminate!(integrator)
     end
@@ -304,13 +300,6 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
         m = integrator.p[1]
         k_cf = integrator.p[12]
 
-        # CL_90, CD_90 = aerodynamic_coefficient_fM(pi/2, m.body, T, S, m.aerodynamics, 0)
-        # CL_0, CD_0 = aerodynamic_coefficient_fM(0, m.body, T, S, m.aerodynamics, 0)
-        # CD_slope = (CD_90 - CD_0) / (pi/2)
-
-        # println("CD_slope inside event: ", CD_slope)
-        # println("k_cf inside event: ", k_cf)
-
         vel_ii = y[4:6]
         vel_ii_mag = norm(vel_ii)
 
@@ -318,15 +307,8 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
         lambda_switch - y[7]
     end
     function time_switch_func_affect!(integrator)
-        # println("entered time_switch_func_affect! in Eoms.jl")
         append!(config.cnf.t_time_switch_func, integrator.t)
         nothing
-
-        # if length(config.cnf.t_time_switch_func) == 2
-        #     terminate!(integrator)
-        # else
-        #     nothing
-        # end
     end
     time_switch_func = ContinuousCallback(time_switch_func_condition, time_switch_func_affect!)
 
@@ -337,8 +319,6 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
     lambdav = vf
     lambdag = 0.0
     lambdah = m.planet.μ / (rf)^2
-
-    # println("lambda init: ", [lambdav, lambdag, lambdah])
 
     lambda_v_fin = 10000
     lambda_γ_fin = 10000
@@ -360,8 +340,6 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
         count += 1
 
         in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], lambdav, lambdag, lambdah, 0.0]
-
-        # println("in_cond 1: ", in_cond)
 
         # Time initialization
         initial_time, final_time = time_0, time_0 + 1500
@@ -389,35 +367,23 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
         lambda_γ_fin_actual = sol[8,end]
         lambda_h_fin_actual = sol[9,end]
 
-        # println("lambda 2: ", [lambda_v_fin_actual, lambda_γ_fin_actual, lambda_h_fin_actual])
-
         in_cond = [sol[1,end], sol[2,end], sol[3,end], sol[4,end], sol[5,end], sol[6,end], lambda_v_fin, lambda_γ_fin, lambda_h_fin, Q_fin]
-
-        # println("in_cond 2: ", in_cond)
         
         if (abs(lambda_v_fin_actual - lambda_v_fin) < 0.1 && abs(lambda_γ_fin_actual - lambda_γ_fin) < 0.1 && abs(lambda_h_fin_actual - lambda_h_fin) < 0.01) || count > 20
             break
         end
 
-        # println("time: ", config.cnf.t_out_drag_passage)
-
         prob = ODEProblem(f_ctrl!, in_cond, (sol.t[end], -10), param)
         sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
-
-        # println("time rev: ", sol.t[end])
 
         lambdav = sol[7,end]
         lambdag = sol[8,end]
         lambdah = sol[9,end]
-
-        # println("lambda 3: ", [lambdav, lambdag, lambdah])
     end
 
     # Rerun the simulation with smaller step-size and the right lambda zero
     # Initial condition initialization
     in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], lambdav, lambdag, lambdah, 0.0]
-
-    # println("in_cond: ", in_cond)
 
     # Time initialization
     initial_time, final_time = time_0, time_0 + 1500
@@ -437,19 +403,13 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
 
     v_ii_mag = [norm(sol[4:6,i]) for i in 1:length(sol.t)]
 
-    # println("v_ii_mag: ", v_ii_mag)
-
     lambda_switch_list = (k_cf * 2.0 * m.body.mass * v_ii_mag) ./ (m.body.area_tot * CD_slope * pi)
-
-    # println("lambda_switch_list: ", lambda_switch_list)
 
     push!(config.cnf.lambda_switch_list, lambda_switch_list)
     push!(config.cnf.time_list2, sol.t)
 
     # Initial condition initialization
     in_cond = [sol[1,end], sol[2,end], sol[3,end], sol[4,end], sol[5,end], sol[6,end], lambdav, lambdag, lambdah, 0.0]
-
-    # println("in_cond: ", in_cond)
 
     # Time initialization
     initial_time, final_time = sol.t[end], 0

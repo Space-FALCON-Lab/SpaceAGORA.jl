@@ -416,14 +416,14 @@ function traj_3D(state, m, name, args, data_table)
     ys = r * sin.(u) * sin.(v)'
     zs = r * ones(n) * cos.(v)'
 
-    sphere1 = surface(x=xs, y=ys, z=zs, opacity=0.9, showscale=false, surfacecolor=@. xs^2 + ys^2 + zs^2 + 100)
+    sphere1 = PlotlyJS.surface(x=xs, y=ys, z=zs, opacity=0.9, showscale=false, surfacecolor=@. xs^2 + ys^2 + zs^2 + 100)
 
     r += args[:EI]                       # AE alt 160 km    
     xs = r * cos.(u) * sin.(v)'
     ys = r * sin.(u) * sin.(v)'
     zs = r * ones(n) * cos.(v)'
 
-    sphere2 = surface(x=xs, y=ys, z=zs, opacity=0.2, showscale=false, surfacecolor=@. xs^2 + ys^2 + zs^2 - 100) # "rgba(255, 255, 0, 0.25)")
+    sphere2 = PlotlyJS.surface(x=xs, y=ys, z=zs, opacity=0.2, showscale=false, surfacecolor=@. xs^2 + ys^2 + zs^2 - 100) # "rgba(255, 255, 0, 0.25)")
 
     index = [1]
     for i in range(start=1, step=1, stop=length(data_table.number_of_passage)-1)
@@ -672,9 +672,9 @@ function torque_plot(name, data_table)
         Plot the total torque
     """
     time = data_table.time
-    τ1 = data_table.tau_ii_1
-    τ2 = data_table.tau_ii_2
-    τ3 = data_table.tau_ii_3
+    τ1 = data_table.tau_bb_1
+    τ2 = data_table.tau_bb_2
+    τ3 = data_table.tau_bb_3
     τ = [τ1, τ2, τ3]
     colors = ["red", "green", "blue"]
     τ_traces = []

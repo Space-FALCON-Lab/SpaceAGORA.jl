@@ -1,13 +1,8 @@
 include("../simulation/Run.jl")
-<<<<<<<< HEAD:src/examples/Earth_const_torque.jl
 include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 # include("SpacecraftModel.jl")
-========
-include("../config.jl")
-include("../utils/maneuver_plans.jl")
->>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Odyssey.jl
 
 import .config
 import .ref_sys
@@ -82,36 +77,30 @@ pos_3_itp = cubic_spline_interpolation(range(0.0, table.time[end], length(table.
 
 # println("Read arrow table, time=$t0")
 args = Dict(# Misc Simulation
-            :results => 1,                                                                                      # Generate csv file for results True=1, False=0
-            :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => 1,                                                                                    # Print some lines True=1, False=0
-<<<<<<<< HEAD:src/examples/Earth_const_torque.jl
-            :directory_results => "/workspaces/ABTS.jl/output/basilisk_const_torque_comparison",                # Directory where to save the results
-========
-            :directory_results => "/workspaces/ABTS.jl/output/odyssey",                # Directory where to save the results
->>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Odyssey.jl
-            :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
-            :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
-            :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
+            :results => true,                                                                                      # Generate csv file for results True=1, False=0
+            :passresults => true,                                                                                  # Pass results as output True=1, False=0
+            :print_res => true,                                                                                    # Print some lines True=1, False=0
+            :directory_results => "output/odyssey",                # Directory where to save the results
+            :directory_Gram => "GRAMpy",                                                    # Directory where Gram is
+            :directory_Gram_data => "GRAM_Data",                                            # Directory where Gram data is
+            :directory_Spice => "GRAM_Data/SPICE",                                          # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
-            :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
-            :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
+            :montecarlo_analysis => false,                                                                          # Generate csv file for Montecarlo results True=1, False=0
+            :plot => true,                                                                                         # Generate pdf plots of results True=1, False=0
+            :filename => true,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 1,                                       # Normalize the integration True=1, False=0
-<<<<<<<< HEAD:src/examples/Earth_const_torque.jl
-            :closed_form => 0,                                     # Closed form solution True=1, False=0
-========
-            :closed_form => 0,                                    # Closed form solution for the aerobraking maneuver True=1, False=0
+            :normalize => true,                                       # Normalize the integration True=1, False=0
+            :closed_form => false,                                    # Closed form solution for the aerobraking maneuver True=1, False=0
+            :save_csv => false,                                     # Save csv files of the results True=1, False=0
 
->>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Odyssey.jl
             # Type of Mission
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
+            :keplerian => true,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 10,                                 # Number of aerobraking passage
-            :mission_time => 1000000.0,                                  # Mission time in seconds, used only for Time mission type
+            :mission_time => 10000.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => true,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
+            :save_steps => 10000,                                       # Save every n steps during drag passage integration
 
             # Physical Model
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -119,7 +108,7 @@ args = Dict(# Misc Simulation
             :gravity_model => "Inverse Squared",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
             :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
-            :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
+            :topography_harmonics_file => "Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 90,                                      # Maximum order of the topography harmonics (Defined in the file)
             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
@@ -132,10 +121,10 @@ args = Dict(# Misc Simulation
             :eclipse => false,
             :gravity_gradient => false,                                   # Gravity Gradient true/false
             :gravity_harmonics => 0,                                            # Gravity Spherical harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
+            :gravity_harmonics_file => "Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
-
+            :magnetic_field => false,                                   # Magnetic field perturbation True=1, False=0
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
@@ -255,7 +244,6 @@ args = Dict(# Misc Simulation
             :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
-<<<<<<<< HEAD:src/examples/Earth_const_torque.jl
 
             :a_tol => 1e-14,                                         # Absolute tolerance for integration
             :r_tol => 1e-12,                                         # Relative tolerance for integration
@@ -276,9 +264,6 @@ args = Dict(# Misc Simulation
             :p2_itp => pos_2_itp,
             :p3_itp => pos_3_itp,
             :Odyssey_sim => 0                                      # Simulate Odyssey Mission
-========
-            :Odyssey_sim => 1                                      # Simulate Odyssey Mission
->>>>>>>> d3d2a12248d30669dabddd1810a14c9dc5ba5d48:src/examples/ABTS_Odyssey.jl
             )
 
 # # Calculating time of simulation

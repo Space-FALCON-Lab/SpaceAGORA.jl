@@ -125,25 +125,29 @@ bus_specular_coeffs = [0.336, 0.336, 0.336, 0.336, 0.336, 0.336]
 panel_specular_coeffs = [0.16, 0.0]
 bus_diffuse_coeffs = [0.139, 0.139, 0.139, 0.139, 0.139, 0.139]
 panel_diffuse_coeffs = [0.16, 0.56]
-
+bus_names = ["+X Face", "+Y Face", "-X Face", "-Y Face", "+Z Face", "-Z Face"]
+panel_names = ["Solar Panel", "Solar Panel"]
 bus_facets = config.create_facet_list(bus_facet_area_list,
                                       bus_facet_attitude_list,
                                       bus_facet_normal_vectors,
                                       bus_facet_locs,
                                       bus_diffuse_coeffs,
-                                      bus_specular_coeffs)
+                                      bus_specular_coeffs,
+                                      bus_names)
 panel_facets_R = config.create_facet_list(panel_facet_area_list,
                                         panel_facet_attitude_list,
                                         panel_facet_normal_vectors,
                                         panel_facet_locs,
                                         panel_diffuse_coeffs,
-                                        panel_specular_coeffs)
+                                        panel_specular_coeffs,
+                                        panel_names)
 panel_facets_L = config.create_facet_list(panel_facet_area_list,
                                         panel_facet_attitude_list,
                                         panel_facet_normal_vectors,
                                         panel_facet_locs,
                                         panel_diffuse_coeffs,
-                                        panel_specular_coeffs)
+                                        panel_specular_coeffs,
+                                        panel_names)
 # config.add_facet!(main_bus, bus_facets)
 # config.add_facet!(L_panel, panel_facets_L)
 # config.add_facet!(R_panel, panel_facets_R)
@@ -154,24 +158,25 @@ println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
 println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 
 args = Dict(# Misc Simulation
-            :results => 1,                                                                                      # Generate csv file for results True=1, False=0
-            :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => 1,                                                                                    # Print some lines True=1, False=0
+            :results => true,                                                                                      # Generate csv file for results True=1, False=0
+            :passresults => true,                                                                                  # Pass results as output True=1, False=0
+            :print_res => true,                                                                                    # Print some lines True=1, False=0
             :directory_results => "/workspaces/ABTS.jl/output/basilisk_rw_comparison",                # Directory where to save the results
             :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
-            :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
+            :plot => true,                                                                                         # Generate pdf plots of results True=1, False=0
+            :filename => true,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 1,                                       # Normalize the integration True=1, False=0
-            :closed_form => 0,                                     # Closed form solution True=1, False=0
+            :normalize => true,                                       # Normalize the integration True=1, False=0
+            :closed_form => false,                                     # Closed form solution True=1, False=0
+            :save_csv => true,                                        # Save csv files True=1, False=0
             # Type of Mission
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => 1,                                        # Do not include drag passage: True=1, False=0
+            :keplerian => true,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 10,                                 # Number of aerobraking passage
             :mission_time => 600.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => true,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
@@ -182,10 +187,10 @@ args = Dict(# Misc Simulation
             :gravity_model => "Inverse Squared",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
             :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
-            :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
+            :topography_harmonics_file => "Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 90,                                      # Maximum order of the topography harmonics (Defined in the file)
-            :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
+            :wind => true,                                             # Wind calculation only if density model is Gram True=1, False=0
             :aerodynamic_model => "Mach-dependent",                 # choices=['Cd and Cl Constant' , 'Mach-dependent' , 'No-Ballistic flight with axial coefficient']: "Mach-dependent" specific for spacecraft shape, "No-Ballistic flight" specific for blunted-cone shape
             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
             
@@ -195,9 +200,10 @@ args = Dict(# Misc Simulation
             :eclipse => false,                                         # Whether to include eclipse conditions in SRP calculation
             :gravity_gradient => false,                                   # Gravity Gradient true/false
             :gravity_harmonics => 0,                                            # Gravity Spherical harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
+            :gravity_harmonics_file => "Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
+            :magnetic_field => false,                                   # Magnetic field perturbation True=1, False=0
 
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4

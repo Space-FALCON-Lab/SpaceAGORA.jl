@@ -201,7 +201,7 @@ add_facet!(L_panel, panel_facets_L)
 add_facet!(R_panel, panel_facets_R)
 
 args = Dict(# Misc Simulation
-            :results => 1,                                                                                      # Generate csv file for results True=1, False=0
+            :results => true,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => false,                                                                                  # Pass results as output True=1, False=0
             :print_res => true,                                                                                    # Print some lines True=1, False=0
             :directory_results => "output/cygnss_comparison_slew_eci",                # Directory where to save the results
@@ -209,14 +209,14 @@ args = Dict(# Misc Simulation
             :directory_Gram_data => "GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "GRAM_Data/SPICE",                                          # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
-            :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
-            :filename => 0,                                         # Filename with specifics of simulation, True =1, False=0
+            :montecarlo_analysis => false,                                                                          # Generate csv file for Montecarlo results True=1, False=0
+            :plot => true,                                                                                         # Generate pdf plots of results True=1, False=0
+            :filename => false,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 1,                                       # Normalize the integration True=1, False=0
-            :closed_form => 0,                                     # Closed form solution True=1, False=0
-            :save_csv => false,
+            :normalize => true,                                       # Normalize the integration True=1, False=0
+            :closed_form => false,                                     # Closed form solution True=1, False=0
+            :save_csv => true,
             # Type of Mission
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => true,                                        # Do not include drag passage: True=1, False=0

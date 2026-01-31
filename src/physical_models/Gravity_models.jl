@@ -1,13 +1,15 @@
+
 using PythonCall
+
 sys = pyimport("sys")
 
-function gravity_const(pos_ii_mag, pos_ii, p, mass=0, vel_ii=0)
+function gravity_const(pos_ii_mag::Float64, pos_ii::SVector{3, Float64}, p)
     """
 
     """
 
     μ = p.μ
-    pos_ii_hat = pos_ii / pos_ii_mag
+    pos_ii_hat = normalize(pos_ii)
 
     if config.cnf.drag_state == false
         gravity_ii_mag = -μ / pos_ii_mag^2
@@ -15,26 +17,17 @@ function gravity_const(pos_ii_mag, pos_ii, p, mass=0, vel_ii=0)
         gravity_ii_mag = -p.g_ref
     end
 
-    g = gravity_ii_mag * pos_ii_hat
-
-    return g
+    return gravity_ii_mag * pos_ii_hat
 end
 
-function gravity_invsquared(pos_ii_mag, pos_ii, p, mass=0, vel_ii=0)
+function gravity_invsquared(pos_ii_mag::Float64, pos_ii::SVector{3, Float64}, p)
     """
 
     """
-
-    μ = p.μ
-    pos_ii_hat = pos_ii / pos_ii_mag
-
-    gravity_ii_mag_spherical = -μ / pos_ii_mag^2
-
-    g = gravity_ii_mag_spherical * pos_ii_hat
-    return g
+    return -p.μ / pos_ii_mag^2 * normalize(pos_ii)
 end
 
-function gravity_invsquared_J2(pos_ii_mag, pos_ii, p, mass, vel_ii=0)
+function gravity_invsquared_J2(r::Float64, pos_ii::SVector{3, Float64}, p)
     """
 
     """
@@ -42,20 +35,17 @@ function gravity_invsquared_J2(pos_ii_mag, pos_ii, p, mass, vel_ii=0)
     μ = p.μ
     J2 = p.J2
 
-    pos_ii_hat = pos_ii ./ pos_ii_mag
-    gravity_ii_mag_spherical = -μ / pos_ii_mag^2
+    pos_ii_hat = normalize(pos_ii)
+    r_squared = r^2
+    gravity_ii_mag_spherical = -μ / r_squared
 
-    x = pos_ii[1]
-    y = pos_ii[2]
-    z = pos_ii[3]
-    r = pos_ii_mag
+    x,y,z = pos_ii
 
-    gx = (-μ * x / pos_ii_mag^3) * (1 + 3/2 * J2 * (p.Rp_e/r)^2 * (1 - 5*(z/r)^2))
-    gy = (-μ * y / pos_ii_mag^3) * (1 + 3/2 * J2 * (p.Rp_e/r)^2 * (1 - 5*(z/r)^2))
-    gz = (-μ * z / pos_ii_mag^3) * (1 + 3/2 * J2 * (p.Rp_e/r)^2 * (3 - 5*(z/r)^2))
+    # gx = (-μ * x / r_cubed) * (1 + 3/2 * J2 * (p.Rp_e/r)^2 * (1 - 5*(z/r)^2))
+    # gy = (-μ * y / r_cubed) * (1 + 3/2 * J2 * (p.Rp_e/r)^2 * (1 - 5*(z/r)^2))
+    # gz = (-μ * z / r_cubed) * (1 + 3/2 * J2 * (p.Rp_e/r)^2 * (3 - 5*(z/r)^2))
 
-    g = gravity_ii_mag_spherical * pos_ii_hat + 3/2 * J2 * μ * p.Rp_m^2 / r^4 * [x/r*(5*z^2/r^2 - 1), y/r*(5*z^2/r^2 - 1), z/r*(5*z^2/r^2 - 3)] 
-    return g
+    return gravity_ii_mag_spherical * pos_ii_hat + 3/2 * J2 * μ * p.Rp_m^2 / r^4 * [x/r*(5*z^2/r_squared - 1), y/r*(5*z^2/r_squared - 1), z/r*(5*z^2/r_squared - 3)] 
 end
 
 function gravity_GRAM(pos_ii, lat, lon, alt, p, mass, vel_ii, el_time, atmosphere, args, gram)
@@ -70,7 +60,7 @@ function gravity_GRAM(pos_ii, lat, lon, alt, p, mass, vel_ii, el_time, atmospher
     :return: gravity of the planet
     """
     if norm(pos_ii) - p.Rp_e > args[:EI] * 1e3
-        return gravity_invsquared_J2(norm(pos_ii), pos_ii, p, mass, vel_ii)
+        return gravity_invsquared_J2(norm(pos_ii), pos_ii, p)
     end
 
     position = gram.Position()

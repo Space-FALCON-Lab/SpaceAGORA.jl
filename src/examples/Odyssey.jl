@@ -1,39 +1,89 @@
 include("../simulation/Run.jl")
-include("../config.jl")
+include("../config.jl") #TODO:Figure out how to run multiple times without having to comment this line out
 include("../utils/maneuver_plans.jl")
+include("../utils/attitude_control_plans.jl")
+# include("SpacecraftModel.jl")
 
 import .config
 import .ref_sys
+using Profile
+# import .SpacecraftModel
+# Define spacecraft model
+spacecraft = config.SpacecraftModel()
+# Add bodies to the spacecraft model
+main_bus = config.Link(root=true, 
+                        r=SVector{3, Float64}(0.0, 0.0, 0.0), 
+                        q=SVector{4, Float64}([0, -0.6321683, -0.07370895, 0.7713171]), # true odyssey
+                        # q=SVector{4, Float64}([0, 0, 0, 1]),
+                        # q=SVector{4, Float64}([0, 0, 0.6371, 0.7707]), # 0 inc
+                        # q=SVector{4, Float64}([0, -0.6358, -0.0338, 0.7711]), # 90 inc
+                        ṙ=SVector{3, Float64}([0,0,0]), 
+                        dims=SVector{3, Float64}([2.2,2.6,1.7]), 
+                        ref_area=2.6*1.7,
+                        m=391.0, 
+                        gyro=4,
+                        max_torque=2.0,
+                        max_h=200.0,
+                        attitude_control_rate=1.0/10.0, # 3 Hz
+                        J_rw=MMatrix{3, 4, Float64}([1.0 0.0 0.0 0.57735; 0.0 1.0 0.0 0.57735; 0.0 0.0 1.0 0.57735]),#0.57735
+                        attitude_control_function=lqr_constant_α_β)
+
+L_panel = config.Link(r=SVector{3, Float64}(0.0, -2.6/2 - 3.89/4, 0.0), 
+                        q=SVector{4, Float64}([0, 0, 0, 1]),
+                        ṙ=SVector{3, Float64}([0,0,0]), 
+                        dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
+                        ref_area=3.89*1.7/2,
+                        m=10.0, 
+                        gyro=0)
+R_panel = config.Link(r=SVector{3, Float64}(0.0, 2.6/2 + 3.89/4, 0.0),
+                        q=SVector{4, Float64}([0, 0, 0, 1]),
+                        ṙ=SVector{3, Float64}([0,0,0]), 
+                        dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
+                        ref_area=3.89*1.7/2,
+                        m=10.0, 
+                        gyro=0)
+
+config.add_body!(spacecraft, main_bus, prop_mass=50.0)
+config.add_body!(spacecraft, L_panel)
+config.add_body!(spacecraft, R_panel)
+
+L_panel_joint = config.Joint(main_bus, L_panel)
+R_panel_joint = config.Joint(R_panel, main_bus)
+config.add_joint!(spacecraft, L_panel_joint)
+config.add_joint!(spacecraft, R_panel_joint)
 
 args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
-            :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/odyssey",                # Directory where to save the results
-            :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
-            :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
-            :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
+            :print_res => true,                                                                                    # Print some lines True=1, False=0
+            :directory_results => "output/odyssey_gmm3_50",                # Directory where to save the results
+            :directory_Gram => "GRAMpy",                                                    # Directory where Gram is
+            :directory_Gram_data => "GRAM_Data",                                            # Directory where Gram data is
+            :directory_Spice => "GRAM_Data/SPICE",                                          # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
+            :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
             :normalize => 1,                                       # Normalize the integration True=1, False=0
-            :closed_form => 0,                                    # Closed form solution for the aerobraking maneuver True=1, False=0
-
+            :closed_form => 0,                                     # Closed form solution True=1, False=0
+            :save_csv => false,
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 35,                                 # Number of aerobraking passage
+            :keplerian => false,                                        # Do not include drag passage: True=1, False=0
+            :number_of_orbits => 20,                                 # Number of aerobraking passage
+            :mission_time => 6000.0,                                  # Mission time in seconds, used only for Time mission type
+            :orientation_sim => false,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
+            :save_steps => 10000,
 
             # Physical Model
             :planet => 1,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
-            :topography_model => "Spherical Harmonics",                             # choices=['None' , 'Spherical Harmonics']
-            :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/MOLA.csv", # File with the topography harmonics coefficients
+            :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
+            :topography_harmonics_file => "Topography_harmonics_data/MOLA.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 90,                                      # Maximum order of the topography harmonics (Defined in the file)
             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
@@ -41,39 +91,43 @@ args = Dict(# Misc Simulation
             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
             
             # Perturbations
-            :n_bodies => [],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
-            :srp => 0,                                             # Solar Radiation Pressure True=1, False=0
-            :gravity_harmonics => 1,                                            # Gravity Spherical harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/Mars50c.csv", # File with the gravity harmonics coefficients
+            :n_bodies => ["Sun"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
+            :srp => true,                                             # Solar Radiation Pressure True=1, False=0
+            :eclipse => false,
+            :gravity_gradient => false,                                 # Gravity Gradient True=1, False=0
+            :gravity_harmonics => true,                                            # Gravity Spherical harmonics True=1, False=0
+            :gravity_harmonics_file => "Gravity_harmonics_data/GMM3.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
+            :magnetic_field => false,
 
             # Rates
             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
-            :save_rate => 5.0,                                      # Rate at which the data trajectory are saved
+            :save_rate => 1.0,                                      # Rate at which the data trajectory are saved
             
             # Body
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
             :max_heat_rate => 0.15,                                 # Max heat rate the heat rate control will start to react to
             :max_heat_load => 30.0,                                 # Max heat load the heat load control will not be overcomed
-            :dry_mass => 411.0,                                     # Initial dry mass of body in kg
-            :prop_mass => 50.0,                                     # Initial propellant mass of body in kg
+            # :dry_mass => 411.0,                                     # Initial dry mass of body in kg
+            # :prop_mass => 50.0,                                     # Initial propellant mass of body in kg
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
             :α => 90.0,                                             # Max angle of attack of solar panels
 
-            # Fill for Spacecraft body shape only
-            :length_sat => 2.2,                                     # Length of the satellite in m
-            :height_sat => 1.7,                                     # Height of the satellite in m
-            :width_sat => 2.6,                                      # Width of the satellite in m
-            :length_sp => 3.76,                                     # Length of the solar panels in m
-            :height_sp => 1.93,                                     # Height of the solar panels in m
+            # # Fill for Spacecraft body shape only
+            # :length_sat => 2.2,                                     # Length of the satellite in m
+            # :height_sat => 1.7,                                     # Height of the satellite in m
+            # :width_sat => 2.6,                                      # Width of the satellite in m
+            # :length_sp => 3.76,                                     # Length of the solar panels in m
+            # :height_sp => 1.93,                                     # Height of the solar panels in m
 
-            # Fill for Blunted Cone body shape only
-            :cone_angle => 70.0,                                    # Cone angle of the blunted cone in deg
-            :base_radius => 2.65/2,                                 # Base radius of the blunted cone in m
-            :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
+            # # Fill for Blunted Cone body shape only
+            # :cone_angle => 70.0,                                    # Cone angle of the blunted cone in deg
+            # :base_radius => 2.65/2,                                 # Base radius of the blunted cone in m
+            # :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
+            :spacecraft_model => spacecraft,                            # Spacecraft model with bodies and joints
             
             # Engine
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
@@ -84,11 +138,10 @@ args = Dict(# Misc Simulation
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
             :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
-            :struct_ctrl => 0,                                    # Structural thermal control, True=1, False=0 
-            :targeting_ctrl => 0,                                   # Targeting control True=1, False=0
-            
+            :solar_panel_control_rate => 1.0/3.0,                        # Rate at which the solar panel controller is called
+
             # Initial Conditions
-            :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
+            :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1, Initial Condition a, e = 2
             :ra_initial_a => 28559.615e3,                # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
@@ -99,6 +152,12 @@ args = Dict(# Misc Simulation
             :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
             :v_step => 1000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
+            :a_initial_a => 16018.0e3,                               # Initial Semi-major axis (m) for for-loop if initial conditions are in a and e
+            :a_initial_b => 116000.0e3,                               # Final Semi-major axis (m) for for-loop if initial conditions are in a and e
+            :a_step => 1000.0e10,                                     # Step Semi-major axis (m) for for-loop if initial conditions are in a and e
+            :e_initial_a => 0.782935,                                       # Initial Eccentricity for for-loop if initial conditions are in a and e 
+            :e_initial_b => 0.79,                                       # Final Eccentricity for for-loop if initial conditions are in a and e
+            :e_step => 0.1,                                         # Step Eccentricity for for-loop if initial conditions are in a and e
             
             :orientation_type => 0,                                   # Initial Condition orientation = 0, Initial Condition orientation and velocity = 1
             :γ_initial_a => -2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
@@ -107,21 +166,22 @@ args = Dict(# Misc Simulation
             :inclination => 93.522,                                   # Inclination Orbit, deg
             :ω => 109.7454,                                              # AOP, deg
             :Ω => 28.1517,                                              # RAAN, deg
-            :EI => 160.0,                                           # Entry Interface, km
-            :AE => 160.0,                                           # Atmospheric Exit, km
+            :ν => 320.0,                                              # True Anomaly, deg, set to negative value to start at apoapsis if type_of_mission is "Time"
+            :EI => 250.0,                                           # Entry Interface, km
+            :AE => 250.0,                                           # Atmospheric Exit, km
             :year => 2001,                                          # Mission year
             :month => 11,                                           # Mission month
             :day => 6,                                             # Mission day
             :hours => 19,                                           # Mission hour
             :minutes => 0,                                         # Mission minute
-            :secs => 0.0,                                          # Mission second
+            :secs => 32.0,                                          # Mission second
             
             # Final Conditions
             :final_apoapsis => 3390.0e3+503e3, # 5088116.837416616, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
 
             # Do not change
             :heat_load_sol => 0,                                    # Heat load solution leave it to 0 and change it only for control mode = 2:  Max energy depletaion=0, Min energy depletion=1, One switch max-min=2, One switch min-max = 3
-            :thrust_control => "Aerobraking Maneuver",                              # choices=['None' , 'Aerobraking Maneuver' , 'Drag Passage Firing']
+            :thrust_control => "None",                              # choices=['None' , 'Aerobraking Maneuver' , 'Drag Passage Firing']
             :phi => 180.0,                                          # Thrust Angle, deg
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
@@ -159,7 +219,19 @@ args = Dict(# Misc Simulation
             :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
-            :Odyssey_sim => 1                                      # Simulate Odyssey Mission
+
+            :a_tol => 1e-5,                                         # Absolute tolerance for integration
+            :r_tol => 1e-3,                                         # Relative tolerance for integration
+            :a_tol_orbit => 1e-8,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :r_tol_orbit => 1e-6,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :a_tol_drag => 1e-8,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
+            :r_tol_drag => 1e-6,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
+            :a_tol_quaternion => 1e-9,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :r_tol_quaternion => 1e-7,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :dt_max => 1.0,                                         # Maximum time step for integration, s
+            :dt_max_orbit => 30.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
+            :dt_max_drag => 1.0,                                    # Maximum time step for drag passage
+            :Odyssey_sim => 0                                      # Simulate Odyssey Mission
             )
 
 # # Calculating time of simulation
@@ -181,15 +253,23 @@ args = Dict(# Misc Simulation
 
 # #     for i in 1:Threads.nthreads() 
 
-t = @elapsed begin          
-        # Run the simulation
-        sol = run_analysis(args)
-        if Bool(args[:passresults])
-            println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+# @profview run_analysis(args)
+# degree_order = [1, 2, 5, 10, 20, 30, 40, 50, 75, 90, 100, 120]
+# for degree_order in degree_order
+        t = @elapsed begin          
+                # args[:directory_results] = "output/odyssey_gmm3_$(degree_order)_deg_order_test/"
+                # args[:L] = Int(round(degree_order))
+                # args[:M] = Int(round(degree_order))
+                # println("Degree and Order: ", degree_order)
+                # Run the simulation
+                sol = run_analysis(args)
+                if Bool(args[:passresults])
+                println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+                end
         end
-end
+        println("COMPUTATIONAL TIME = " * string(t) * " s")
+# end
 
-        println("COPMUTATIONAL TIME = " * string(t) * " s")
 # end
         # end
     # end

@@ -1,208 +1,239 @@
-include("../physical_models/MonteCarlo_pertrubations.jl")
+# using LinearAlgebra
+# using Plots
+# using SpecialFunctions
+# plotly()
+
+# function CA(S, α, β, σ, T, Tw, lx, ly, lz)
+#     """
+#     Calculate the aerodynamic coefficient CA for a blunt body.
+#     # Arguments
+#     - 'S': Surface area, m²
+#     - 'α': Angle of attack, rad
+#     - 'β': Angle of sideslip, rad
+#     - 'σ': Reflection coefficient
+#     - 'T': Temperature, K
+#     - 'Tw': Wall temperature, K
+#     - 'lx': Length in x-direction, m
+#     - 'ly': Length in y-direction, m
+#     - 'lz': Length in z-direction, m
+#     # Returns
+#     - 'CA': Aerodynamic coefficient CA
+#     """
+#     σN = σ
+#     σT = σ
+
+#     cosα = cos(α)
+#     cosβ = cos(β)
+#     sinβ = sin(β)
+#     sinα = sin(α)
+#     CA = ((2-σN)/(S√(π))*cosα*cosβ+sign(cosα*cosβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*cosα^2*cosβ^2) +
+#             (2-σN)*(cosα^2*cosβ^2+1/(2*S^2)) * (sign(cosα*cosβ)+erf(S*cosα*cosβ)) + 
+#             (σN/(2*S)*cosα*cosβ*√(π*Tw/T)) * (1+sign(cosα*cosβ)*erf(S*cosα*cosβ)) +
+#             σT*cosα*cosβ*(lx/ly*(1/(S*√(π))*exp(-S^2*sinβ^2)+sinβ*(sign(sinβ)+erf(S*sinβ))) +
+#             lx/lz*(1/(S*√(π))*exp(-S^2*sinα^2*cosβ^2)+sinα*cosβ*(sign(sinα*cosβ)+erf(S*sinα*cosβ))))
+#     return CA
+# end
+
+# function CS(S, α, β, σ, T, Tw, lx, ly, lz)
+#     """
+#     Calculate the aerodynamic coefficient CN for a blunt body.
+#     # Arguments
+#     - 'S': Surface area, m²
+#     - 'α': Angle of attack, rad
+#     - 'β': Angle of sideslip, rad
+#     - 'σ': Reflection coefficient
+#     - 'T': Temperature, K
+#     - 'Tw': Wall temperature, K
+#     - 'lx': Length in x-direction, m
+#     - 'ly': Length in y-direction, m
+#     - 'lz': Length in z-direction, m
+#     # Returns
+#     - 'CN': Aerodynamic coefficient CN
+#     """
+#     σN = σ
+#     σT = σ
+
+#     cosα = cos(α)
+#     cosβ = cos(β)
+#     sinβ = sin(β)
+#     sinα = sin(α)
+    
+#     CS = lx/ly*(((2-σN)/(S*√(π))*sinβ+sign(sinβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*sinβ^2) +
+#             (2-σN)*(sinβ^2+1/(2*S^2)) * (sign(sinβ)+erf(S*sinβ)) + 
+#             (σN/(2*S)*sinβ*√(π*Tw/T)) * (1+sign(sinβ)*erf(S*sinβ))) +
+#             σT*sinβ*(1/(S*√(π))*exp(-S^2*cosα^2*cosβ^2) + cosα*cosβ*(sign(cosα*cosβ)+erf(S*cosα*cosβ)) + 
+#             lx/lz*(1/(S*√(π))*exp(-S^2*sinα^2*cosβ^2) + sinα*cosβ*(sign(sinα*cosβ)+erf(S*sinα*cosβ))))
+#     return CS
+# end
+
+# function CN(S, α, β, σ, T, Tw, lx, ly, lz)
+#     """
+#     Calculate the aerodynamic coefficient CN for a blunt body.
+#     # Arguments
+#     - 'S': Surface area, m²
+#     - 'α': Angle of attack, rad
+#     - 'β': Angle of sideslip, rad
+#     - 'σ': Reflection coefficient
+#     - 'T': Temperature, K
+#     - 'Tw': Wall temperature, K
+#     - 'lx': Length in x-direction, m
+#     - 'ly': Length in y-direction, m
+#     - 'lz': Length in z-direction, m
+#     # Returns
+#     - 'CN': Aerodynamic coefficient CN
+#     """
+#     σN = σ
+#     σT = σ
+
+#     cosα = cos(α)
+#     cosβ = cos(β)
+#     sinβ = sin(β)
+#     sinα = sin(α)
+
+#     CN = lx/lz*((((2-σN)/(S*√(π))*sinα*cosβ+sign(sinα*cosβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*sinα^2*cosβ^2) +
+#             (2-σN)*(sinα^2*cosβ^2+1/(2*S^2)) * (sign(sinα*cosβ)+erf(S*sinα*cosβ)) + 
+#             (σN/(2*S)*sinα*cosβ*√(π*Tw/T)) * (1+sign(sinα*cosβ)*erf(S*sinα*cosβ)))) +
+#             σT*sinα*cosβ*(lx/ly*(1/(S*√(π))*exp(-S^2*sinβ^2) + sinβ*(sign(sinβ)+erf(S*sinβ))) + 
+#             (1/(S*√(π))*exp(-S^2*cosα^2*cosβ^2) + cosα*cosβ*(sign(cosα*cosβ)+erf(S*cosα*cosβ))))
+#     return CN
+# end
+
+# function normalcoefficient(S, aoa, sigma)
+#         CN = 1 / (S^2) * ((((2 - sigma) / sqrt(pi)) * S * sin(aoa) + sigma / 2) * exp(-(S * sin(aoa))^2) + ((2 - sigma) * ((S * sin(aoa))^2 + 0.5) + sigma / 2 * sqrt(pi) * (S * sin(aoa))) * (1 + erf(S * sin(aoa))))
+#         return CN
+# end
+
+# function axialcoefficient(S, aoa, sigma)
+#     CA = ((sigma * cos(aoa)) / (sqrt(pi) * S)) * (exp(-(S * sin(aoa))^2) + sqrt(pi) * (S * sin(aoa)) * (1 + erf(S * sin(aoa))))
+#     return CA
+# end
+
+# T = 973
+# V = 7500
+# Tw = 300
+# α = deg2rad(0.0)
+# β = deg2rad(0.0)
+# # σ_list = [0, 0.2, 0.4, 0.6, 0.8, 1]
+# σ_list = [0.9]
+# lx = 0.0001
+# ly = 3.76/2
+# lz = 1.93
+# gas_constant = 287.05  # Specific gas constant for air, J/(kg·K)
+# S = V/√(2*gas_constant*T)
+
+# min_angle = -180
+# max_angle = 360
+# # min_angle = deg2rad(min_angle)
+# # max_angle = deg2rad(max_angle)
+# p = plot()
+# for σ in σ_list
+#     ca_list = Float64[]
+#     cn_list = Float64[]
+#     cs_list = Float64[]
+#     for β = min_angle:max_angle
+#         β_rad = deg2rad(β)
+#         ca = CA(S, α, β_rad, σ, T, Tw, lx, ly, lz)
+#         cn = CN(S, α, β_rad, σ, T, Tw, lx, ly, lz)
+#         cs = CS(S, α, β_rad, σ, T, Tw, lx, ly, lz)
+#         push!(ca_list, ca)
+#         push!(cn_list, cn)
+#         push!(cs_list, cs)
+#     end
+#     plot!(p, [min_angle:max_angle], ca_list, label=" CA", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
+#     plot!(p, [min_angle:max_angle], cn_list, label=" CN", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
+#     plot!(p, [min_angle:max_angle], cs_list, label=" CS", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
+# end
+# display(p)
+
+# p = plot()
+# for σ in σ_list
+#     ca_list = Float64[]
+#     cn_list = Float64[]
+#     cs_list = Float64[]
+#     ca_old_list = Float64[]
+#     cn_old_list = Float64[]
+#     for α = min_angle:max_angle
+#         α_rad = deg2rad(α)
+#         ca = CA(S, α_rad, β, σ, T, Tw, lx, ly, lz)
+#         cn = CN(S, α_rad, β, σ, T, Tw, lx, ly, lz)
+#         cs = CS(S, α_rad, β, σ, T, Tw, lx, ly, lz)
+#         ca_old = axialcoefficient(S, α_rad, σ)
+#         cn_old = normalcoefficient(S, α_rad, σ)
+#         push!(ca_list, ca)
+#         push!(cn_list, cn)
+#         push!(cs_list, cs)
+#         push!(ca_old_list, ca_old)
+#         push!(cn_old_list, cn_old)
+#     end
+#     plot!(p, [min_angle:max_angle], ca_old_list, linestyle=:dash, label=" CA (old)", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+#     plot!(p, [min_angle:max_angle], cn_old_list, linestyle=:dash, label=" CN (old)", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+#     plot!(p, [min_angle:max_angle], ca_list, label=" CA", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+#     plot!(p, [min_angle:max_angle], cn_list, label=" CN", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+#     # plot!(p, [min_angle:max_angle], cs_list, label=" CS", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+# end
+# display(p)
+
+# p = plot()
+# for σ in σ_list
+#     cd_list = Float64[]
+#     cl_list = Float64[]
+#     cs_list = Float64[]
+#     cd_old_list = Float64[]
+#     cl_old_list = Float64[]
+#     for α in min_angle:max_angle
+#         α_rad = deg2rad(α)
+#         ca = CA(S, α_rad, β, σ, T, Tw, lx, ly, lz)
+#         cn = CN(S, α_rad, β, σ, T, Tw, lx, ly, lz)
+#         cs = CS(S, α_rad, β, σ, T, Tw, lx, ly, lz)
+#         ca_old = axialcoefficient(S, α_rad, σ)
+#         cn_old = normalcoefficient(S, α_rad, σ)
+#         cd = cos(α_rad)*cos(β)*ca + sin(β)*cs + sin(α_rad)*cos(β)*cn
+#         cl = -sin(α_rad)*ca + cos(α_rad)*cn
+#         cs = cos(α_rad)*sin(β)*ca - cos(β)*cs - sin(α_rad)*sin(β)*cn
+#         cd_old = cos(α_rad)*ca_old + sin(α_rad)*cn_old
+#         cl_old = -sin(α_rad)*ca_old + cos(α_rad)*cn_old
+#         push!(cd_list, cd)
+#         push!(cl_list, cl)
+#         push!(cs_list, cs)
+#         push!(cd_old_list, cd_old)
+#         push!(cl_old_list, cl_old)
+#     end
+#     plot!(p, [min_angle:max_angle], cd_list, label=" CD", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+#     plot!(p, [min_angle:max_angle], cl_list, label=" CL", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+#     # plot!(p, [min_angle:max_angle], cs_list, label=" CS", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+#     plot!(p, [min_angle:max_angle], cd_old_list, linestyle=:dash, label=" CD (old)", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+#     plot!(p, [min_angle:max_angle], cl_old_list, linestyle=:dash, label=" CL (old)", xlabel="Angle of attack (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Attack")
+# end
+# display(p)
+
+# p = plot()
+# for σ in σ_list
+#     cd_list = Float64[]
+#     cl_list = Float64[]
+#     cs_list = Float64[]
+#     for β in min_angle:max_angle
+#         β_rad = deg2rad(β)
+#         ca = CA(S, α, β_rad, σ, T, Tw, lx, ly, lz)
+#         cn = CN(S, α, β_rad, σ, T, Tw, lx, ly, lz)
+#         cs = CS(S, α, β_rad, σ, T, Tw, lx, ly, lz)
+#         cd = cos(α)*cos(β_rad)*ca + sin(β_rad)*cs - sin(α)*cos(β_rad)*cn
+#         cl = sin(α)*ca + cos(α)*cn
+#         cs = cos(α)*sin(β_rad)*ca + cos(β_rad)*cs - sin(α)*sin(β_rad)*cn
+#         push!(cd_list, cd)
+#         push!(cl_list, cl)
+#         push!(cs_list, cs)
+#     end
+#     plot!(p, [min_angle:max_angle], cd_list, label=" CD", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
+#     plot!(p, [min_angle:max_angle], cl_list, label=" CL", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
+#     plot!(p, [min_angle:max_angle], cs_list, label=" CS", xlabel="Angle of sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="Aerodynamic Coefficient vs Angle of Sideslip")
+# end
+# display(p)
+
 
 using SpecialFunctions
-
+using LinearAlgebra
 const sqrt_π = sqrt(π)
-const inv_sqrt_π = 1 / sqrt(π)
-
-function aerodynamic_coefficient_constant(α, body, T, S, args, montecarlo=false)
-    """
-
-    """
-
-    CL_body = 0.0
-    CD_body = 2 * (2.2 - 0.8)/pi * args.α + 0.8
-
-    if montecarlo == true
-        CL_body, CD_body = monte_carlo_aerodynamics(CL_body, CD_body, args)
-    end
-
-    return CL_body, CD_body
-end
-
-function aerodynamic_coefficient_fM(α, body, T, S, args, montecarlo=false)
-    """
-
-    """
-
-    σ = args.reflection_coefficient
-    Tw = T
-
-    function pressure(S, α, ρ_inf, vel, σ)
-        """
-
-        """
-
-        p = (ρ_inf*vel^2) / (2*S^2) * ((((2 - σ) / sqrt(pi))*S*sin(α) + sqrt(T/Tw)*σ/2) * exp(-(S*sin(α))^2) + ((2-σ)*((S*sin(α))^2 + 0.5) + (σ/2)*sqrt(pi)*(S*sin(α))) * (1 + erf(S*sin(α))))
-
-        return p
-    end
-
-    function τ(S, α, ρ_inf, vel, σ)
-        """
-
-        """
-
-        t = ((σ*cos(α)*ρ_inf*vel^2) / (sqrt(pi)*2*S)) * (exp(-(S*sin(α))^2) + sqrt(pi)*(S*sin(α)) * (1 + erf(S*sin(α))))
-
-        return t
-    end
-
-    function normalcoefficient(S, aoa, sigma)
-        CN = 1 / (S^2) * ((((2 - sigma) / sqrt(pi)) * S * sin(aoa) + sigma / 2) * exp(-(S * sin(aoa))^2) + ((2 - sigma) * ((S * sin(aoa))^2 + 0.5) + sigma / 2 * sqrt(pi) * (S * sin(aoa))) * (1 + erf(S * sin(aoa))))
-        return CN
-    end
-
-    function axialcoefficient(S, aoa, sigma)
-        CA = ((sigma * cos(aoa)) / (sqrt(pi) * S)) * (exp(-(S * sin(aoa))^2) + sqrt(pi) * (S * sin(aoa)) * (1 + erf(S * sin(aoa))))
-        return CA
-    end
-
-    # println("α: ", α)
-
-    # Solar Panels
-    CN_sa = normalcoefficient(S, α, σ)
-    CA_sa = axialcoefficient(S, α, σ)
-    CL_sa = CN_sa*cos(α) - CA_sa*sin(α)
-    CD_sa = CA_sa*cos(α) + CN_sa*sin(α)
-    # println("CL_sa: ", CL_sa)
-    # println("CD_sa: ", CD_sa)
-    # Spacecraft
-    # CN_sc = normalcoefficient(S, pi*0.5, σ)
-    # CA_sc = axialcoefficient(S, pi*0.5, σ)
-    # CL_sc = CN_sc*cos(pi*0.5) - CA_sc*sin(pi*0.5)
-    # CD_sc = CA_sc*cos(pi*0.5) + CN_sc*sin(pi*0.5)
-
-    # area_SA = config.get_SA_area(body, body.roots[1])
-    # area_SC = config.get_SC_area(body, body.roots[1])
-    
-    # CD_body = (CD_sa*area_SA + CD_sc*area_SC) / (area_SA + area_SC)
-    # CL_body = (CL_sa*area_SA + CL_sc*area_SC) / (area_SA + area_SC)
-    if montecarlo == true
-        CL_body, CD_body = monte_carlo_aerodynamics(CL_body, CD_body, args)
-    end
-
-    return CL_sa, CD_sa
-end
-
-function aerodynamic_coefficient_fM(body, T::Float64, S::Float64, args, montecarlo::Bool=false)
-    """
-    Calculate the aerodynamic coefficients for a blunt body in ballistic flight using the F.M. model.
-        Angle of attack and side slip are calculated as angles between CA (normal to flat plate), and wind-relative velocity vector.
-    # Arguments
-    - `body`: Body object containing dimensions and properties
-    - `T`: Temperature, K
-    - `S`: Molecular speed ratio
-    - `args`: Dictionary containing additional parameters like reflection coefficient
-    - `montecarlo`: Boolean flag to apply Monte Carlo perturbations
-    # Returns
-    - `CL`: Lift coefficient
-    - `CD`: Drag coefficient
-    - `CS`: Sideslip coefficient
-    # Notes
-    - Equations are from Hart et al. (2017, https://doi.org/10.2514/1.A33606), for a rectangular prism. 
-    """
-
-    α = body.α
-    β = body.β
-    θ = body.θ
-    # Adjust angles to match model assumptions
-    α -= π/2
-    σ = args.reflection_coefficient
-    Tw = T
-    lx = body.dims[1]
-    ly = body.dims[2]
-    lz = body.dims[3]
-    σN = σ
-    σT = σ
-    cosα = cos(α)
-    cosβ = cos(β)
-    sinα = sin(α)
-    sinβ = sin(β)
-    # println("cosα: ", cosα)
-    # println("cosβ: ", cosβ)
-    # println("sinα: ", sinα)
-    # println("sinβ: ", sinβ)
-    # Calculate the aerodynamic coefficients in the body frame (flat plate)
-    # Axial
-    CA = ((2-σN)/(S*sqrt_π)*cosα*cosβ+sign(cosα*cosβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*cosα^2*cosβ^2) +
-            (2-σN)*(cosα^2*cosβ^2+1/(2*S^2)) * (sign(cosα*cosβ)+erf(S*cosα*cosβ)) + 
-            (σN/(2*S)*cosα*cosβ*√(π*Tw/T)) * (1+sign(cosα*cosβ)*erf(S*cosα*cosβ)) +
-            σT*cosα*cosβ*(lx/ly*(1/(S*sqrt_π)*exp(-S^2*sinβ^2)+sinβ*(sign(sinβ)+erf(S*sinβ))) +
-            lx/lz*(1/(S*sqrt_π)*exp(-S^2*sinα^2*cosβ^2)+sinα*cosβ*(sign(sinα*cosβ)+erf(S*sinα*cosβ))))
-    # Crossflow
-    CS = lx/ly*(((2-σN)/(S*sqrt_π)*sinβ+sign(sinβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*sinβ^2) +
-                (2-σN)*(sinβ^2+1/(2*S^2)) * (sign(sinβ)+erf(S*sinβ)) + 
-                (σN/(2*S)*sinβ*√(π*Tw/T)) * (1+sign(sinβ)*erf(S*sinβ))) +
-                σT*sinβ*(1/(S*sqrt_π)*exp(-S^2*cosα^2*cosβ^2) + cosα*cosβ*(sign(cosα*cosβ)+erf(S*cosα*cosβ)) + 
-                lx/lz*(1/(S*sqrt_π)*exp(-S^2*sinα^2*cosβ^2) + sinα*cosβ*(sign(sinα*cosβ)+erf(S*sinα*cosβ))))
-    # Normal
-    CN = lx/lz*((((2-σN)/(S*sqrt_π)*sinα*cosβ+sign(sinα*cosβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*sinα^2*cosβ^2) +
-                (2-σN)*(sinα^2*cosβ^2+1/(2*S^2)) * (sign(sinα*cosβ)+erf(S*sinα*cosβ)) + 
-                (σN/(2*S)*sinα*cosβ*√(π*Tw/T)) * (1+sign(sinα*cosβ)*erf(S*sinα*cosβ)))) +
-                σT*sinα*cosβ*(lx/ly*(1/(S*sqrt_π)*exp(-S^2*sinβ^2) + sinβ*(sign(sinβ)+erf(S*sinβ))) + 
-                (1/(S*sqrt_π)*exp(-S^2*cosα^2*cosβ^2) + cosα*cosβ*(sign(cosα*cosβ)+erf(S*cosα*cosβ))))
-
-    # println("CA: ", CA)
-    # println("CS: ", CS)
-    # println("CN: ", CN)
-    # Calculate the aerodynamic coefficients in the body frame (box)
-    # Axial
-    # CA = calculate_CA(lx, ly, lz, sinα, cosα, sinβ, cosβ, σT, σN, S, Tw, T, θ)
-    # # Crossflow
-    # CS = calculate_CS(lx, ly, lz, θ, sinα, cosα, sinβ, cosβ, σT, σN, S, Tw, T)
-    # # Normal
-    # CN = calculate_CN(lx, ly, lz, θ, sinα, cosα, sinβ, cosβ, σT, σN, S, Tw, T)
-
-    # # Calculate moment coefficients
-    # Cl = calculate_Cl(σT, S, sinα, cosα, sinβ, cosβ, θ)
-    # Cm = calculate_Cm(σT, S, sinα, cosα, sinβ, cosβ, θ)
-    # Cn = calculate_Cn(σT, S, sinα, cosα, sinβ, cosβ, θ)
-
-    # Calculate the aerodynamic coefficients in the wind frame
-    CL = -sinα*CA + cosα*CN
-    CD = cosα*cosβ*CA + sinβ*CS + sinα*cosβ*CN
-    CS = -cosα*sinβ*CA + cosβ*CS - sinα*sinβ*CN
-    
-    # println("CL: ", CL)
-    # println("CD: ", CD)
-    # println("CS: ", CS)
-    # If doing Monte Carlo simulations, apply perturbations to the coefficients
-    if montecarlo == true
-        CL, CD = monte_carlo_aerodynamics(CL, CD, args)
-    end
-
-    return CL, CD, CS, 0.0, 0.0, 0.0#, Cl, Cm, Cn
-    # return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-end
-
-function aerodynamic_coefficient_no_ballistic_flight(α, body, args, T=0, S=0, a=0, montecarlo=false)
-    """
-
-    """
-
-    # Newtonian flow
-    NoseRadius = body.nose_radius
-    BaseRadius = body.base_radius
-
-    k = NoseRadius / BaseRadius
-
-    Cp_max = 2
-    δ = body.δ
-
-    CA_body = (1 - sin(δ)^4)*k^2 + (2*sin(δ)^2*cos(α)^2 + cos(δ)^2*sin(α)^2) * (1 - (k*cos(δ))^2)
-    CN_body = (1 - (k*cos(δ))^2) * cos(δ^2) *sin(2*α)
-    
-    CD_body = CA_body*cos(α) + CN_body*sin(α) - 0.15
-    CL_body = CN_body*cos(α) - CA_body*sin(α)
-
-    if montecarlo == true
-        CL_body, CD_body = monte_carlo_aerodynamics(CL_body, CD_body, args)
-    end
-
-    return CL_body, CD_body
-end
-
+const sqrt_2 = sqrt(2)
 """
     calculate_CA(t1, t2, t3, sin_α, cos_α, sin_β, cos_β, σ_T, σ_N, s, Tw, T_inf, θ)
 
@@ -621,3 +652,49 @@ function calculate_Cn(σ_T, s, sin_α, cos_α, sin_β, cos_β, θ)
     
     return Cn_result
 end
+
+# Test cases
+using Plots 
+plotly()
+# Parameters for testing
+Tw = 300.0  # Wall temperature in K
+T_inf = 1100.0  # Temperature at infinity in K
+lx, ly, lz = 0.1, 0.1, 0.1  # Characteristic lengths in m
+S = lx * ly  # Reference area in m²
+V_inf = 7500.0  # Free-stream velocity in m/s
+α = deg2rad(10.0)  # Angle of attack in radians
+β = deg2rad.(0.0:1.0:90.0)   # Angle of sideslip in radians
+θ = deg2rad(90.0)  # Flow angle in radians
+σ_T = 0.0  # Tangential accommodation coefficient
+σ_N = 0.0  # Normal accommodation coefficient
+
+CA_list = zeros(length(β))
+CN_list = zeros(length(β))
+CS_list = zeros(length(β))
+Cl_list = zeros(length(β))
+Cm_list = zeros(length(β))
+Cn_list = zeros(length(β))
+R = 287.0  # Specific gas constant for air in J/(kg·K)
+s = V_inf / sqrt(2*R*T_inf)  # Speed ratio
+println("CA test: ", calculate_CA(lx, ly, lz, sin(α), cos(α), sin(β[1]), cos(β[1]), σ_T, σ_N, s, Tw, T_inf, θ))
+for (i, β_i) in enumerate(β)
+    sin_α = sin(α)
+    cos_α = cos(α)
+    sin_β = sin(β_i)
+    cos_β = cos(β_i)
+
+    CA_list[i] = calculate_CA(lx, ly, lz, sin_α, cos_α, sin_β, cos_β, σ_T, σ_N, s, Tw, T_inf, θ)
+    CN_list[i] = calculate_CN(lx, ly, lz, θ, sin_α, cos_α, sin_β, cos_β, σ_T, σ_N, s, Tw, T_inf)
+    CS_list[i] = calculate_CS(lx, ly, lz, θ, sin_α, cos_α, sin_β, cos_β, σ_T, σ_N, s, Tw, T_inf)
+    Cl_list[i] = calculate_Cl(σ_T, s, sin_α, cos_α, sin_β, cos_β, θ)
+    Cm_list[i] = calculate_Cm(σ_T, s, sin_α, cos_α, sin_β, cos_β, θ)
+    Cn_list[i] = calculate_Cn(σ_T, s, sin_α, cos_α, sin_β, cos_β, θ)
+end
+
+
+display(plot(rad2deg.(β), CA_list, label="C_A", xlabel="Angle of Sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="C_A vs Angle of Sideslip"))
+display(plot(rad2deg.(β), CN_list, label="C_N", xlabel="Angle of Sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="C_N vs Angle of Sideslip"))
+display(plot(rad2deg.(β), CS_list, label="C_S", xlabel="Angle of Sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="C_S vs Angle of Sideslip"))
+display(plot(rad2deg.(β), Cl_list, label="C_l", xlabel="Angle of Sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="C_L vs Angle of Sideslip"))
+display(plot(rad2deg.(β), Cm_list, label="C_m", xlabel="Angle of Sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="C_m vs Angle of Sideslip"))
+display(plot(rad2deg.(β), Cn_list, label="C_n", xlabel="Angle of Sideslip (degrees)", ylabel="Aerodynamic Coefficient", title="C_n vs Angle of Sideslip"))

@@ -3,14 +3,14 @@ include("../physical_models/Aerodynamic_models.jl")
 include("../physical_models/Gravity_models.jl")
 include("../physical_models/Thermal_models.jl")
 
-include("../utils/Reference_system.jl")
+# include("../utils/Reference_system.jl")
 include("../utils/Closed_form_solution.jl")
 
 # include("Control.jl")
 # include("heatload_control/Utils_timeswitch.jl")
 
 using LinearAlgebra
-using DifferentialEquations
+using OrdinaryDiffEq
 using Dates
 using AstroTime
 using SPICE
@@ -92,7 +92,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         
         pos_ii = SVector{3, Float64}(in_cond[1:3])       # Inertial position 
         vel_ii = SVector{3, Float64}(in_cond[4:6])       # Inertial velocity
-        mass = m.body.mass                             # Mass kg
+        mass = config.get_spacecraft_mass(m.body)                             # Mass kg
         pos_ii_mag = norm(pos_ii)   # Magnitude of the inertial position
         vel_ii_mag = norm(vel_ii)   # Magnitude of the inertial velocity
         lambdav_ii = in_cond[7]
@@ -102,7 +102,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         # Assign Parameters
         ω_planet = m.planet.ω
         γ = m.planet.γ
-        area_tot = m.body.area_tot
+        area_tot = config.get_spacecraft_reference_area(m.body) # Total area of the spacecraft, m²
 
         # TRANSFORM THE STATE
         # Inertial to planet relative transformation
@@ -175,7 +175,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
 
         if time_switch_eval == true
 
-            lambda_switch = (k_cf * 2.0 * m.body.mass * vel_ii_mag) ./ (area_tot * CD_slope * pi)
+            lambda_switch = (k_cf * 2.0 * mass * vel_ii_mag) ./ (area_tot * CD_slope * pi)
 
             if args[:heat_load_sol] == 0
                 if lambdav_ii < lambda_switch
@@ -237,11 +237,11 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         #         0.0             0.0             1.0]    # rotation matrix
         
         if ip.gm == 0
-            gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+            gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet)
         elseif ip.gm == 1
-            gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+            gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet)
         elseif ip.gm == 2
-            gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+            gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet)
         elseif ip.gm == 3
             gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
         end
@@ -256,7 +256,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
 
         if args[:srp] == true
             p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
-            srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, et)
+            srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, area_tot, mass, pos_ii, et)
         end
 
 
@@ -312,7 +312,6 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
     end
     function out_drag_pass_affect!(integrator)
-        # println("entered out_drag_passage_affect! in Eoms.jl")
         config.cnf.t_out_drag_passage = integrator.t
         terminate!(integrator)
     end
@@ -322,18 +321,14 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         m = integrator.p[1]
         k_cf = integrator.p[12]
 
-        # CL_90, CD_90 = aerodynamic_coefficient_fM(pi/2, m.body, T, S, m.aerodynamics, 0)
-        # CL_0, CD_0 = aerodynamic_coefficient_fM(0, m.body, T, S, m.aerodynamics, 0)
-        # CD_slope = (CD_90 - CD_0) / (pi/2)
-
         vel_ii = y[4:6]
         vel_ii_mag = norm(vel_ii)
-
-        lambda_switch = (k_cf * 2 * m.body.mass * vel_ii_mag) ./ (m.body.area_tot * CD_slope * pi)
+        mass = config.get_spacecraft_mass(m.body)  # Mass kg
+        area_tot = config.get_spacecraft_reference_area(m.body)  # Total area of the
+        lambda_switch = (k_cf * 2 * mass * vel_ii_mag) ./ (area_tot * CD_slope * pi)
         lambda_switch - y[7]
     end
     function time_switch_func_affect!(integrator)
-        # println("entered time_switch_func_affect! in Eoms.jl")
         append!(config.cnf.t_time_switch_func, integrator.t)
         nothing
     end
@@ -370,8 +365,6 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
 
             in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], lambdav, lambdag, lambdah, 0.0]
 
-            # println("in_cond 1: ", in_cond)
-
             # Time initialization
             initial_time, final_time = time_0, time_0 + 1500
 
@@ -398,35 +391,23 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
             lambda_γ_fin_actual = sol[8,end]
             lambda_h_fin_actual = sol[9,end]
 
-            # println("lambda 2: ", [lambda_v_fin_actual, lambda_γ_fin_actual, lambda_h_fin_actual])
-
             in_cond = [sol[1,end], sol[2,end], sol[3,end], sol[4,end], sol[5,end], sol[6,end], lambda_v_fin, lambda_γ_fin, lambda_h_fin, Q_fin]
-
-            # println("in_cond 2: ", in_cond)
             
             if (abs(lambda_v_fin_actual - lambda_v_fin) < 0.1 && abs(lambda_γ_fin_actual - lambda_γ_fin) < 0.1 && abs(lambda_h_fin_actual - lambda_h_fin) < 0.01) || count > 4
                 break
             end
 
-            # println("time: ", config.cnf.t_out_drag_passage)
-
             prob = ODEProblem(f_ctrl!, in_cond, (sol.t[end], -10), param)
             sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
-
-            # println("time rev: ", sol.t[end])
 
             lambdav = sol[7,end]
             lambdag = sol[8,end]
             lambdah = sol[9,end]
-
-            # println("lambda 3: ", [lambdav, lambdag, lambdah])
         end
 
         # Rerun the simulation with smaller step-size and the right lambda zero
         # Initial condition initialization
         in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], lambdav, lambdag, lambdah, 0.0]
-
-        # println("in_cond: ", in_cond)
 
         # Time initialization
         initial_time, final_time = time_0, time_0 + 1500
@@ -449,12 +430,8 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         ## Time switch definition
         time_switch = [0.0, 0.0]
 
-        # println("length of temp: ", temp)
-
         if length(temp) == 2
-            # time_switch = temp
             time_switch = temp
-            # time_switch[2] = temp[end]
         elseif length(temp) == 1
             time_switch[1] = temp[1]
             time_switch[2] = sol.t[end]
@@ -511,8 +488,6 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
 
         return sol
     end
-
-    # println("time_switch: ", time_switch)
 
     return sol, time_switch
 end

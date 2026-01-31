@@ -2,7 +2,7 @@ include("../utils/Reference_system.jl")
 
 using PythonCall
 using SatelliteToolbox
-SpaceIndices.init()
+# SpaceIndices.init()
 sys = pyimport("sys")
 
 function interp(a, b, x)
@@ -172,6 +172,13 @@ function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Boo
     """
 
     """
+    if lowercase(args[:density_model]) == "none"
+        rho = 0.0
+        T = temperature_linear(h, p)
+        wind = [0.0, 0.0, 0.0]
+        return rho, T, wind
+    end
+    
     if config.cnf.drag_state == false && args[:keplerian] == false
         if h > 2000.0e3
 
@@ -182,25 +189,26 @@ function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Boo
             rho, T, wind = density_polyfit(h, p)
         end
     elseif config.cnf.drag_state == true || args[:keplerian] == true
-        if h > 200.0e3
-            rho, T, wind = density_polyfit(h, p)
+        if h > 2000.0e3
+
+            rho = 0.0
+            T = temperature_linear(h, p)
+            wind = [0.0, 0.0, 0.0]
         else
             position = gram.Position()
             position.height = h * 1e-3
-            lat = rad2deg(lat)
-            lon = rad2deg(lon)
-            position.latitude = lat
-            position.longitude = lon
-            
+            position.latitude = rad2deg(lat)
+            position.longitude = rad2deg(lon)
+
             position.elapsedTime = el_time # Time since start in s
             atmosphere.setPosition(position)
             atmosphere.update()
             atmos = atmosphere.getAtmosphereState()
-            rho = atmos.density
-            T = atmos.temperature
-            wind = [montecarlo ? atmos.perturbedEWWind : atmos.ewWind,
-                    montecarlo ? atmos.perturbedNSWind : atmos.nsWind,
-                    atmos.verticalWind]
+            rho = pyconvert(Float64, montecarlo ? atmos.perturbedDensity : atmos.density)
+            T = pyconvert(Float64, atmos.temperature)
+            wind = SVector{3, Float64}([pyconvert(Float64, montecarlo ? atmos.perturbedEWWind : atmos.ewWind),
+                    pyconvert(Float64, montecarlo ? atmos.perturbedNSWind : atmos.nsWind),
+                    pyconvert(Float64, atmos.verticalWind)])
         end
     end
 
@@ -216,8 +224,9 @@ function density_nrlmsise(h::Float64, p, lat::Float64, lon::Float64, montecarlo:
         rho , T , wind = density_exp(h, p)
         rho = 0.0
     elseif config.cnf.drag_state == true || args[:keplerian] == true
+        # println("Altitude: ", h)
         jd = datetime2julian(current_time)
-        atmo = SatelliteToolbox.AtmosphericModels.nrlmsise00(jd, h, lat, lon, 150, 150, 3)
+        atmo = SatelliteToolbox.AtmosphericModels.jr1971(jd, lat, lon, h, 150, 150, 3)
         rho = atmo.total_density
         T = atmo.temperature
         wind = [0.0,0.0,0.0]

@@ -1,21 +1,11 @@
+
 module config
+include("SpacecraftModel.jl")
+import .SpacecraftModel
 using StaticArrays
 using AstroTime
+using OrdinaryDiffEq
 export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engines, Model
-
-    @kwdef mutable struct Body
-        mass::Float64 = 0.0
-        length_SA::Float64 = 0.0
-        height_SA::Float64 = 0.0
-        area_SA::Float64 = 0.0
-        length_SC::Float64 = 0.0
-        height_SC::Float64 = 0.0
-        area_SC::Float64 = 0.0
-        area_tot::Float64 = 0.0
-        δ::Float64 = 0.0
-        nose_radius::Float64 = 0.0
-        base_radius::Float64 = 0.0
-    end
 
     @kwdef mutable struct Planet
         Rp_e::Float64 = 0.0
@@ -90,12 +80,13 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         minute::Int64 = 0
         second::Float64 = 0.0
         time_rot::Float64 = 0.0
+        el_time::Float64 = 0.0 # Elapsed time in seconds
         DateTimeIC::Epoch = from_utc(2000, 1, 1, 12, 0, 0)
         DateTimeJ2000::Epoch = from_utc(2000, 1, 1, 12, 0, 0)
     end
 
     @kwdef mutable struct Model 
-        body::Body = Body()
+        body::SpacecraftModel = SpacecraftModel()
         planet::Planet = Planet()
         aerodynamics::Aerodynamics = Aerodynamics()
         engines::Engines = Engines()
@@ -110,7 +101,7 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         latitude_periapsis::Vector{Float64} = []
         longitude_periapsis::Vector{Float64} = []
         max_heatrate::Vector{Float64} = []
-        solution_intermediate::Vector{Any} = []
+        solution_intermediate::Vector{Vector{Number}} = []
         atmospheric_data::Dict{String,Float64} = Dict()
         previous_atmospheric_data::Dict{String,Float64} = Dict()
         drag_state::Bool = false
@@ -147,19 +138,21 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         periapsis_list::Vector{Float64} = []
         Δv_list::Vector{Float64} = []
         orbit_number_list::Vector{Int64} = []
-        heat_load_past::Float64 = 0.0
-        heat_load_ppast::Float64 = 0.0
+        heat_load_past::Vector{Float64} = []
+        heat_load_ppast::Vector{Float64} = []
         state_flesh1::Vector{Vector{Float64}} = [[]]
         α_list::Vector{Float64} = []
         initial_position_closed_form::Vector{Float64} = []
         continue_simulation::Bool = true
         timer_revaluation::Float64 = 0.0
         MarsGram_recall::Int64 = 0
-        heat_rate_prev::Float64 = 0.0
+        heat_rate_prev::Vector{Float64} = []
         sensible_loads::Bool = false
         counter_integrator::Int64 = 0
         prev_step_integrator::Float64 = 0.0
         initial_time_saved::Float64 = 0.0
+        prev_timestep::Float64 = 0.0
+        ω_wheel_derivatives::Vector{Vector{Float64}} = []
 
         # Extra variables missing in python version
         counter::Int64 = 0
@@ -188,8 +181,12 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         count_heat_rate_check::Int64 = 0
         count_heat_load_check_exit::Int64 = 0
         count_final_entry_altitude_reached::Int64 = 0
+        time_termination::Bool = false
         t_out_drag_passage::Float64 = 0.0
         t_time_switch_func::Vector{Float64} = []
+        prob::ODEProblem = ODEProblem((u, p, t) -> u, [0.0], (0.0, 1.0), [])
+        prob_set::Bool = false
+        P::Matrix{Float64} = zeros(3,3)
 
         n_bodies_list::Vector{Planet} = []
         DU::Float64 = 0.0
@@ -233,6 +230,8 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         vel_ii::Vector{Vector{Float64}} = [[], [], []]
         pos_ii_mag::Vector{Float64} = []
         vel_ii_mag::Vector{Float64} = []
+        quaternion::Vector{Vector{Float64}} = [[], [], [], []]
+        ω::Vector{Vector{Float64}} = [[], [], []]
         pos_pp::Vector{Vector{Float64}} = [[], [], []]
         pos_pp_mag::Vector{Float64} = []
         vel_pp::Vector{Vector{Float64}} = [[], [], []]
@@ -262,14 +261,23 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         wind::Vector{Vector{Float64}} = [[], [], []] 
         cL::Vector{Float64} = []
         cD::Vector{Float64} = []
-        α::Vector{Float64} = []
+        α::Vector{Vector{Float64}} = []
+        β::Vector{Vector{Float64}} = []
         S::Vector{Float64} = []
+        inertia_tensor::Vector{Vector{Float64}} = [[], [], [], [], [], [], [], [], []] # inertia tensor components
+        α_control::Vector{Float64} = []
+        rw_h::Vector{Vector{Float64}} = [] # angular momentum magnitudes of each reaction wheel
+        rw_τ::Vector{Vector{Float64}} = [] # torque magnitude applied by each reaction wheel
+        thruster_forces::Vector{Vector{Float64}} = [] # forces applied by each thruster
+        τ_rw::Vector{Vector{Float64}} = [[], [], []] # total torque applied by all reaction wheels
+        torque_bar_dipoles::Vector{Vector{Float64}} = []
+        magnetic_field::Vector{Vector{Float64}} = [[], [], []]
     end
 
     @kwdef mutable struct Performance
         mass::Vector{Float64} = []
-        heat_rate::Vector{Float64} = []
-        heat_load::Vector{Float64} = []
+        heat_rate::Vector{Vector{Float64}} = []
+        heat_load::Vector{Vector{Float64}} = []
         T_r::Vector{Float64} = []
         q::Vector{Float64} = []
     end
@@ -281,12 +289,14 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         lift_pp::Vector{Vector{Float64}} = [[], [], []]
         lift_ii::Vector{Vector{Float64}} = [[], [], []]
         force_ii::Vector{Vector{Float64}} = [[], [], []]
+        τ_bb::Vector{Vector{Float64}} = [[], [], []] # total torque applied by all forces
         energy::Vector{Float64} = []
     end
 
     @kwdef mutable struct Simulation
         MC_seed::Vector{Int64} = []
         drag_passage::Vector{Int64} = []
+        solution_states::Int64 = 0
     end
 
     @kwdef mutable struct Closed_form

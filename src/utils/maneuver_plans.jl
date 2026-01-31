@@ -2,7 +2,7 @@
 
 function Odyssey_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, args=nothing)
     if numberofpassage == 7
-        args[:delta_v] = 0.14
+        args[:delta_v] = 0.15
         args[:phi] = deg2rad(180)
     elseif numberofpassage == 14
         args[:delta_v] = 0.15
@@ -218,11 +218,11 @@ function Earth_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, 
     # periapsis_velocity = sqrt(planet.μ *(2/rp - 2/(ra+rp)))
     # q = 0.5 * estimated_ρ * periapsis_velocity^3
     # println("Estimated q: ", q, " W/cm^2")
-    if rp < 120e3 + planet.Rp_e
+    if rp < 130e3 + planet.Rp_e
         # rp_new = -planet.H*log(2*min_q/(planet.ρ_ref*periapsis_velocity^3)) + 6378e3
         # println("Aerobraking at ", rp, " m")
         # println("New periapsis: ", rp_new, " m")
-        target_periapsis_altitude = 140e3 # Target periapsis altitude in meters
+        target_periapsis_altitude = 150e3 # Target periapsis altitude in meters
         a_i = (rp + ra) / 2 # Initial semi-major axis
         a_f = (target_periapsis_altitude + planet.Rp_e + ra) / 2 # Final semi-major axis
         v_i = sqrt(planet.μ * (2 / ra - 1 / a_i))
@@ -309,13 +309,13 @@ function Venus_Express_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassa
     if numberofpassage == 6
         args[:delta_v] = 0.428
         args[:phi] = deg2rad(180)
-    elseif numberofpassage == 36
+    elseif numberofpassage == 37
         args[:delta_v] = 0.177
         args[:phi] = 0.0
-    elseif numberofpassage == 41
+    elseif numberofpassage == 42
         args[:delta_v] = 0.07
         args[:phi] = 0.0
-    elseif numberofpassage == 45
+    elseif numberofpassage == 46
         args[:delta_v] = 0.05
         args[:phi] = 0.0
     else

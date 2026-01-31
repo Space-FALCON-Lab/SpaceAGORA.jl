@@ -7,9 +7,9 @@ function def_miss(args)
     if args[:type_of_mission] == "Drag Passage" || args[:type_of_mission] == "Entry"
         args[:drag_passage] = 1
         args[:number_of_orbits] = 1
-    elseif args[:type_of_mission] == "Orbits"
+    elseif args[:type_of_mission] == "Orbits" || args[:type_of_mission] == "Time"
         args[:drag_passage] = 0
-        args[:number_of_orbits] = args[:number_of_orbits]
+        # args[:number_of_orbits] = args[:number_of_orbits]
     elseif args[:type_of_mission] == "Aerobraking Campaign"
         args[:drag_passage] = 0
         args[:number_of_orbits] = 1000
@@ -18,7 +18,7 @@ function def_miss(args)
     if args[:body_shape] == "Spacecraft"
         if args[:aerodynamic_model] == "No-Ballistic flight with axial coefficient"
             args[:aerodynamic_model] = "Mach-dependent"
-            println("--AERODYNAMIC MODEL CHANGED TO: MACH-dependent - Specific for a a flat-plate--")
+            println("--AERODYNAMIC MODEL CHANGED TO: MACH-dependent - Specific for a flat-plate--")
         end
 
         if args[:thermal_model] != "Maxwellian Heat Transfer"
@@ -69,21 +69,21 @@ function def_miss(args)
         args[:number_of_orbits] = 350
         args[:planet] = 1 # "Mars"
         args[:body_shape] = "Spacecraft"
-        args[:dry_mass] = 411.0
-        args[:prop_mass] = 50.0
+        # args[:dry_mass] = 411.0
+        # args[:prop_mass] = 50.0
         args[:α] = 90.0
         args[:inital_condition_type] = 0
         args[:thrust_control] = "Aerobraking Maneuver"
 
         ## For Mars Odyssey Starting at 2001-11-06
-        args[:ra_initial_a] = 28559.615e3
+        args[:ra_initial_a] = 28559.615e3 # 28814.747e3
         args[:ra_initial_b] = 30000.0e3
         args[:ra_step] = 1e12
 
         if args[:gravity_model] == "Inverse Squared"
             args[:hp_initial_a] = 87000 #108600
         else
-            args[:hp_initial_a] = 87000 # 70000 #84200 # 86000 # 100399 # 86000 works for spherical harmonic topography (a little low, but close enough for now), 95000 for regular
+            args[:hp_initial_a] = 87000 #88200 #88500 # 70000 #84200 # 86000 # 100399 # 86000 works for spherical harmonic topography (a little low, but close enough for now), 95000 for regular
         end
 
         args[:hp_initial_b] = 110000
@@ -91,6 +91,9 @@ function def_miss(args)
         args[:inclination] = 93.522
         args[:ω] = 109.7454
         args[:Ω] = 28.1517
+        # args[:inclination] = 93.50725189698
+        # args[:ω] = 109.926987321
+        # args[:Ω] = 28.123464191
         args[:year] = 2001
         args[:month] = 11
         args[:day] = 6

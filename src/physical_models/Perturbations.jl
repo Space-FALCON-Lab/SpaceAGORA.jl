@@ -2,20 +2,151 @@ using SPICE
 using LoopVectorization
 using AssociatedLegendrePolynomials
 using LinearAlgebra
+using SatelliteToolbox
+using SatelliteToolboxGeomagneticField
+using DateFormats
+using CSV
+using Arrow
 
+include("../utils/quaternion_utils.jl")
+# import .config
 # Define delta function
 δ(x,y) = ==(x,y)
 δ(x) = δ(x,0)
+
+# Constants for the Tilted Dipole Model (Epoch 2020.0)
+# Reference magnetic field strength at the equator on the Earth's surface.
+const B0_2020 = 3.12e-5  # Tesla
+# WGS84 Earth radius for the model.
+const R_EARTH_MODEL = 6371.2e3 # meters
+# North Magnetic Pole location (geocentric).
+const POLE_LAT_2020 = deg2rad(80.7)  # Radians
+const POLE_LON_2020 = deg2rad(-72.7) # Radians
+
+# Pre-calculate the magnetic pole axis vector in ECEF for efficiency.
+const M_HAT_ECEF = SVector{3, Float64}(
+    cos(POLE_LAT_2020) * cos(POLE_LON_2020),
+    cos(POLE_LAT_2020) * sin(POLE_LON_2020),
+    sin(POLE_LAT_2020)
+)
+
+# const eop_iau1980 = fetch_iers_eop()
+
+torque_rod_test_data = DataFrame(Arrow.Table("CYGNSS_inertial_magnetic_field.feather"))
+time_range = range(torque_rod_test_data[!, "time"][1], torque_rod_test_data[!, "time"][end], length(torque_rod_test_data[!, "time"]))
+b_ii_1_itp = cubic_spline_interpolation(time_range, torque_rod_test_data[!, "B_field_x"])
+b_ii_2_itp = cubic_spline_interpolation(time_range, torque_rod_test_data[!, "B_field_y"])
+b_ii_3_itp = cubic_spline_interpolation(time_range, torque_rod_test_data[!, "B_field_z"])
+
+"""
+    get_magnetic_field_dipole(r_ecef::AbstractVector)
+
+Calculates the Earth's magnetic field using a fast tilted dipole approximation.
+
+This model is significantly faster than the full WMM and is suitable for use
+inside performance-critical code like numerical integrators.
+
+# Args
+
+- `r_ecef`: The position vector of the spacecraft in an Earth-Centered,
+            Earth-Fixed (ECEF) frame [meters].
+
+# Returns
+
+- A 3-element `SVector` representing the magnetic field `[Bx, By, Bz]` in the
+  ECEF frame [Tesla].
+"""
+function get_magnetic_field_dipole(r_ecef::AbstractVector, L_PI::MMatrix{3, 3, Float64})
+    r_norm = norm(r_ecef)
+    r_hat = r_ecef / r_norm
+
+    # Cosine of the magnetic colatitude
+    cos_colat = dot(r_hat, M_HAT_ECEF)
+
+    # Dipole field equation. This is a standard formulation.
+    B_ecef = -B0_2020 * (R_EARTH_MODEL / r_norm)^3 * (M_HAT_ECEF - 3 * cos_colat * r_hat)
+
+    return L_PI' * B_ecef
+end
+
+"""
+    get_magnetic_field(date::DateTime, lat_deg::Number, lon_deg::Number, alt_m::Number)
+
+Computes the Earth's magnetic field vector in the local North-East-Down (NED)
+frame using the World Magnetic Model (WMM).
+
+The function automatically uses the correct WMM version based on the input `date`.
+
+# Args
+
+- `date`: The `DateTime` of the measurement.
+- `lat_deg`: The geodetic latitude of the observer [degrees].
+- `lon_deg`: The longitude of the observer [degrees].
+- `alt_m`: The altitude above the WGS84 ellipsoid [meters].
+
+# Returns
+
+- A 3-element `SVector` representing the magnetic field `[B_north, B_east, B_down]`
+  in nanoTeslas [nT].
+"""
+function get_magnetic_field(date::DateTime, lat_rad::Number, lon_rad::Number, alt_m::Number, L_PI::MMatrix{3, 3, Float64}, t::Float64)
+    # println("Calculating magnetic field at lat: $lat_rad, lon: $lon_rad, alt: $alt_m, date: $date")
+    # Calculate the magnetic field vector using the World Magnetic Model.
+    # The result is in the NED frame and has units of nT.
+    # B_ned = igrf(yeardecimal(date), alt_m, lat_rad, lon_rad, Val(:geocentric))
+    # B_pp = ned_to_ecef(B_ned, lat_rad, lon_rad, alt_m)
+    # r_PI = r_ecef_to_eci(ITRF(), J2000(), date_to_jd(date), eop_iau1980)
+    # # B_ii = rECEFtoECI(B_ned * 1e-9, date) # Convert nT to T
+    # B_ii = r_PI * B_pp
+    B_ii = SVector{3, Float64}(b_ii_1_itp(t), b_ii_2_itp(t), b_ii_3_itp(t)) * 1e9
+    # B_ii = SVector{3, Float64}(file[!, ""][1:3]) * 1e-9 # Convert nT to T
+    return B_ii
+end
+
+"""
+    calculate_magnetic_torque(m::AbstractVector, B::AbstractVector)
+
+Calculates the magnetic torque exerted on a magnetic dipole by an external
+magnetic field.
+
+**τ** = **m** × **B**
+
+The magnetic dipole moment `m` and the magnetic field `B` vectors **must** be
+expressed in the same reference frame. The resulting torque vector `τ` will be
+in that same frame.
+
+# Args
+
+- `m`: The magnetic dipole moment vector of the spacecraft [A·m²].
+- `B`: The external magnetic field vector [Tesla].
+
+# Returns
+
+- A 3-element `SVector` representing the magnetic torque `[τ_x, τ_y, τ_z]` [N·m].
+"""
+function calculate_magnetic_torque(m::AbstractVector, B::AbstractVector)
+    # Ensure inputs are StaticArrays for performance
+    m_svector = SVector{3, Float64}(m)
+    B_svector = SVector{3, Float64}(B)
+
+    # Calculate the torque using the cross product
+    # τ = m × B
+    τ = cross(m_svector, B_svector)
+
+    return τ
+end
+
+
 function gravity_n_bodies(et::Float64, pos_ii::SVector{3, Float64}, p, n_body)
 
     primary_body_name = p.name
     n_body_name = n_body.name
-
-    if cmp(lowercase(primary_body_name), "mars") == 0 || cmp(lowercase(primary_body_name), "jupiter") == 0 || cmp(lowercase(primary_body_name), "saturn") == 0 || cmp(lowercase(primary_body_name), "uranus") == 0 || cmp(lowercase(primary_body_name), "neptune") == 0 || cmp(lowercase(primary_body_name), "earth") == 0
+    barycenter_bodies = ["mars", "jupiter", "saturn", "uranus", "neptune", "earth"]
+    if !isnothing(findfirst(==(primary_body_name), barycenter_bodies))
         primary_body_name *= "_barycenter"
     end
 
-    if cmp(lowercase(n_body_name), "mars") == 0 || cmp(lowercase(n_body_name), "jupiter") == 0 || cmp(lowercase(n_body_name), "saturn") == 0 || cmp(lowercase(n_body_name), "uranus") == 0 || cmp(lowercase(n_body_name), "neptune") == 0 || cmp(lowercase(n_body_name), "earth") == 0
+    if !isnothing(findfirst(==(n_body_name), barycenter_bodies))
         n_body_name *= "_barycenter"
     end
 
@@ -27,9 +158,10 @@ function gravity_n_bodies(et::Float64, pos_ii::SVector{3, Float64}, p, n_body)
     return g
 end
 
-function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64}, A::Float64, rp::Float64)
+function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64}, rp::Float64)
     """
-    Calculate the exposed area of the satellite. Translated from Python to Julia.
+    Calculate the exposed area of the satellite. Translated from Python to Julia. 
+    See equations and diagrams in Basilisk documentation: https://avslab.github.io/basilisk/Documentation/simulation/environment/eclipse/eclipse.html
 
     Parameters 
     ----------
@@ -45,84 +177,187 @@ function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64
 
     Returns
     -------
-    A_exp : Float64
-        Exposed area of the satellite.
+    eclipse_ratio : Float64
+        Eclipse ratio of the satellite.
     
     """
-    shadow = "none"
-    rs = 6.9634e8 # Radius of the Sun in meters 
-    RP = norm(r_sun) # Distance from Sun to the planet 
-    alpha_umb = asin((rs - rp) / RP)  # Umbra angle
-    alpha_pen = asin((rs + rp) / RP)  # Penumbra angle
-
-    if dot(r_sun, r_sat) < 0 # if the angle is greater than 90 degrees, satellite is potentially in an eclipse
-        # Compute the satellite's horizontal and vertical distances
-        sigma = acos(dot(-r_sat, r_sun) / (norm(r_sat) * norm(r_sun)))
-        sat_horiz = norm(r_sat) * cos(sigma)
-        sat_vert = norm(r_sat) * sin(sigma)
-        # Determine the eclipse conditions
-        x = rp / sin(alpha_pen)
-        pen_vert = tan(alpha_pen) * (x + sat_horiz)
-
-        if sat_vert <= pen_vert # if true, the satellite is in partial shadow(penumbra)
-            shadow = "penumbra"
-            y = rp / sin(alpha_umb)
-            umb_vert = tan(alpha_umb) * (y - sat_horiz)
-            if sat_vert <= umb_vert
-                shadow = "umbra"
-            end
-        end
+    rs = 695000e3 # Radius of the Sun in meters
+    if dot(r_sun, r_sat) >= 0 # check the cos of the angle between the satellite and the Sun. If positive (angle less than 90 degrees), the satellite is not in eclipse
+        return 1.0 # If the satellite is not in eclipse, return 1.0
     end
-
-    if shadow == "none"
-        A_exp = A
-    elseif shadow == "penumbra"
-        A_exp = A * (1 - (1 - (sat_vert / pen_vert))^2)
-    else 
-        A_exp = 0
-    end
+    # Eclipse conditions
+    f1 = asin((rs + rp) / norm(r_sun)) # Penumbra angle
+    f2 = asin((rs - rp) / norm(r_sun)) # Umbra angle
+    s0 = -dot(r_sat, r_sun) / (norm(r_sun)) # Plane-axis intersection and planet center distance
+    c1 = s0 + rp * sin(f1) # Distance from fundamental plane to cone vertex V1
+    c2 = s0 - rp * sin(f2) # Distance from fundamental plane to cone vertex V2
+    l1 = c1*tan(f1) # Radius of penumbra cone in fundamental plane
+    l2 = c2*tan(f2) # Radius of umbra cone in fundamental plane
+    l = √(norm(r_sat)^2 - s0^2) # Distance from fundamental plane to satellite
     
-    return A_exp
+    # Apparent radii of sun, planet, and apparent separation of sun and planet, respectively
+    a = asin(rs / norm(r_sun)) # Apparent radius of the Sun
+    b = asin(rp / norm(r_sat)) # Apparent radius of the planet
+    c = acos(-dot(r_sun, r_sat) / (norm(r_sun) * norm(r_sat))) # Apparent separation of the Sun and planet
+    if c < b - a # Total eclipse condition
+        return 0.0 # If the satellite is in total eclipse, return 0.0
+    elseif c < a - b # Annular eclipse condition
+        A_sun = π * a^2 # Apparent area of the Sun
+        A_planet = π * b^2 # Apparent area of the planet
+        return b^2 / a^2 # Shadow fraction
+    elseif c < a + b # Partial eclipse condition
+        x = (c^2 + a^2 - b^2) / (2 * c)
+        y = √(a^2 - x^2)
+        A = a^2 * acos(x / a) + b^2 * acos((c - x) / b) - c * y
+        return 1 - A / (π * a^2) # Shadow fraction
+    else # No eclipse condition
+        return 1.0 # If the satellite is not in eclipse, return 1.0
+    end
+
+    # shadow = "none"
+    # rs = 6.9634e8 # Radius of the Sun in meters 
+    # RP = norm(r_sun) # Distance from Sun to the planet 
+    # alpha_umb = asin((rs - rp) / RP)  # Umbra angle
+    # alpha_pen = asin((rs + rp) / RP)  # Penumbra angle
+
+    # if dot(r_sun, r_sat) < 0 # if the angle is greater than 90 degrees, satellite is potentially in an eclipse
+    #     # Compute the satellite's horizontal and vertical distances
+    #     sigma = acos(dot(-r_sat, r_sun) / (norm(r_sat) * norm(r_sun)))
+    #     sat_horiz = norm(r_sat) * cos(sigma)
+    #     sat_vert = norm(r_sat) * sin(sigma)
+    #     # Determine the eclipse conditions
+    #     x = rp / sin(alpha_pen)
+    #     pen_vert = tan(alpha_pen) * (x + sat_horiz)
+
+    #     if sat_vert <= pen_vert # if true, the satellite is in partial shadow(penumbra)
+    #         shadow = "penumbra"
+    #         y = rp / sin(alpha_umb)
+    #         umb_vert = tan(alpha_umb) * (y - sat_horiz)
+    #         if sat_vert <= umb_vert
+    #             shadow = "umbra"
+    #         end
+    #     end
+    # end
+
+    # if shadow == "none"
+    #     eclipse_ratio = 1
+    # elseif shadow == "penumbra"
+    #     eclipse_ratio = (1 - (1 - (sat_vert / pen_vert))^2)
+    # else 
+    #     eclipse_ratio = 0
+    # end
+    
+    # return eclipse_ratio
 end
 
-function srp(p, p_srp_unscaled::Float64, cR::Float64, A_sat::Float64, m::Float64, r_sat::SVector{3, Float64}, time_et::Float64)
-    """
-    Calculate acceleration due to solar radiation pressure. 
+# function srp(p::config.Planet, facet::config.Facet, b::config.Body)
+#     """
+#     Calculate SRP force on a single facet, i.e., a single face of a rigid body.
 
-    Parameters 
+#     Parameters
+#     ----------
+#     p : Planet struct
+#         Contains planetary parameters, including equatorial radius.
+#     facet : Facet struct
+#         Contains information about the facet.
+#     b : Body struct
+#         Contains physical information about the entire rigid body.
+    
+#     Returns
+#     -------
+#     F_srp : SVector{3, Float64}
+#         Force on the facet in the inertial frame
+#     """
+
+# end
+
+function srp!(model, root_index::Int64, sun_dir_ii::SVector{3, Float64}, body, P_srp::Float64, eclipse_ratio::Float64, orientation::Bool)
+    """
+    Calculate force on a body due to solar radiation pressure.
+
+    Parameters
     ----------
-    p : Struct
-        Contains planetary parameters, including equatorial radius.
-    p_srp_unscaled : Float64
-        Solar radiation pressure at 1 AU.
-    cR : Float64 
-        Coefficient of reflectivity.
-    A_sat : Float64
-        Area of the satellite
-    m : Float64
-        Mass of the satellite
-    r_sat : Vector{Float64}
-        Position vector of the satellite relative to the planet.
-    time_et : String
-        Ephemeris time of the simulation, used for SPICE calculations.
+    pos_ii : SVector{3, Float64}
+        Position of the body in the inertial frame (J2000)
+    sun_dir_ii : SVector{3, Float64}
+        Unit vector in the direction of the Sun expressed in the inertial frame
+    body : Body struct
+        Struct containing physical information about the body
+    r_sun_norm : Float64
+        Magnitude of the spacecraft distance to the Sun
+    P_srp : Float64
+        Magnitude of the solar radiation pressure force at r_sun_norm meters from the Sun
     
     Returns
     -------
-    srp_accel : Vector{Float64}
-        Acceleration due to solar radiation pressure.
+    F_srp : SVector{3, Float64}
+        Force on the body in the inertial frame
     """
-    rp = p.Rp_e # Equatorial radius of the planet
-    r_sun = p.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", time_et, "J2000", "NONE", uppercase(p.name))[1])
-    r_sun = r_sun .* 1e3 # Convert from km to m
+    rot_inertial = config.rotate_to_inertial(model, body, root_index)
+    rot_body_to_inertial = rot(model.links[root_index].q)
+    @inbounds for facet in body.SRP_facets
+        rot_RF = rot_inertial * rot(facet.attitude)' # Rotation matrix from facet frame to inertial frame
+        n = normalize(rot_RF * facet.normal_vector) # Normal vector of the facet in the inertial frame
+        cos_α_srp = dot(n, sun_dir_ii) / norm(n) / norm(sun_dir_ii)
 
-    A_exp = eclipse_area_calc(r_sat, r_sun, A_sat, rp)
-    p_srp = p_srp_unscaled * norm(r_sun - r_sat) / (1.496e11) # Scale SRP for distance from Sun
-    r_sat_to_sun = r_sun - r_sat
-    r_sat_to_sun_mag = norm(r_sat_to_sun)
+        if cos_α_srp > 0 && eclipse_ratio != 0.0 # If the facet is illuminated by the Sun
+            F_SRP = -P_srp * facet.area * cos_α_srp * ((1 - facet.δ) * sun_dir_ii + 2 * (facet.ρ / 3 + facet.δ * cos_α_srp) * n) * eclipse_ratio
+            body.net_force += F_SRP # Rotate F_SRP from body frame to inertial frame
 
-    srp_accel = -p_srp * cR * A_exp / m * (r_sat_to_sun / r_sat_to_sun_mag)
-    return srp_accel
+            if orientation
+                R_facet = rot_inertial*facet.cp + rot_body_to_inertial'*body.r # Vector from CoM of spacecraft to facet Cp in inertial frame
+                # R_facet_body = config.rotate_to_body(body)*facet.cp + body.r
+                body.net_torque += rot_body_to_inertial * cross(R_facet, F_SRP) # Calculate body frame net torque
+            end
+        end
+    end
+    # CSV.write("facet_forces.csv", df)
+    # return F_SRP_tracker
+    # println("Total F_SRP: $F_SRP_tracker")
 end
+# function srp(p, p_srp_unscaled::Float64, cR::Float64, A_sat::Float64, m::Float64, r_sun::SVector{3, Float64}, r_sat::SVector{3, Float64}, time_et::Float64, α_srp::Float64)
+#     """
+#     Calculate acceleration due to solar radiation pressure. 
+
+#     Parameters 
+#     ----------
+#     p : Struct
+#         Contains planetary parameters, including equatorial radius.
+#     p_srp_unscaled : Float64
+#         Solar radiation pressure at 1 AU.
+#     cR : Float64 
+#         Coefficient of reflectivity.
+#     A_sat : Float64
+#         Area of the satellite
+#     m : Float64
+#         Mass of the satellite
+#     r_sat : Vector{Float64}
+#         Position vector of the satellite relative to the planet.
+#     time_et : String
+#         Ephemeris time of the simulation, used for SPICE calculations.
+    
+#     Returns
+#     -------
+#     srp_accel : Vector{Float64}
+#         Acceleration due to solar radiation pressure.
+#     """
+#     rp = p.Rp_e # Equatorial radius of the planet
+#     # # r_sun = p.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", time_et, "J2000", "NONE", uppercase(p.name))[1])
+#     # r_sun = r_sun .* 1e3 # Convert from km to m
+#     # G_SC = 1.361e3 # Solar constant, W/m^2
+#     # c = 3.0e8 # Speed of light, m/s
+#     # R0 = 1.49597871e8 # 1AU, km
+
+#     # A_exp = eclipse_area_calc(r_sat, r_sun, A_sat, rp)
+#     # p_srp = p_srp_unscaled * norm(r_sun - r_sat) / (1.496e11) # Scale SRP for distance from Sun
+#     # r_sat_to_sun = r_sun - r_sat
+#     # r_sat_to_sun_mag = norm(r_sat_to_sun)
+#     # F_srp = A_exp * G_SC / c * (R0/r_sat_to_sun_mag)^2*[(1+cR)*cos(α_srp)^2; (1-cR)*sin(α_srp)*cos(α_srp); 0]
+
+#     # srp_accel = -p_srp * cR * A_exp / m * (r_sat_to_sun / r_sat_to_sun_mag)
+#     # return srp_accel
+#     return F_srp / m
+# end
 
 """
     alf_IDR(x::Real, N::Integer, M::Integer)
@@ -308,11 +543,12 @@ function acc_gravity_pines!(rVec_cart::SVector{3, Float64}, Clm::Matrix{Float64}
         planet : config.Planet
             Planet object with the spherical harmonics and other parameters.
     """
-    x, y, z = rVec_cart
+    # x, y, z = rVec_cart
     r = norm(rVec_cart)
-    s = x/r
-    t = y/r
-    u = z/r
+    # s = x/r
+    # t = y/r
+    # u = z/r
+    s,t,u=normalize(rVec_cart)
     
 
     VR01 = planet.VR01
@@ -322,54 +558,61 @@ function acc_gravity_pines!(rVec_cart::SVector{3, Float64}, Clm::Matrix{Float64}
     A = planet.A
     R = planet.Re
     I = planet.Im
-    sqrt_2 = sqrt(2)
+    sqrt_2 = sqrt(2.0)
 
-    A[2, 1] = u*sqrt(3)
-    # Fill the off diagonal elements of A
-    @inbounds @simd for n = 1:L+1
-        i = n + 1
-        A[i+1, i] = u*sqrt(2*n+3)*A[i, i]
-    end
-    # Fill the rest of A
-    @inbounds for m = 0:M+1
-        j = m + 1
-        @inbounds for l = m+2:L+1
-            i = l + 1
-            A[i, j] = u*N1[i, j]*A[i-1, j] - N2[i, j]*A[i-2, j]
+    @fastmath begin
+        A[2, 1] = u*sqrt(3.0)
+        # Fill the off diagonal elements of A
+        @inbounds @simd for n = 1:L+1
+            i = n + 1
+            A[i+1, i] = u*sqrt(2.0*n+3.0)*A[i, i]
         end
-        R[j] = ifelse(m == 0, 1, s*R[j-1] - t*I[j-1])
-        I[j] = ifelse(m == 0, 0, s*I[j-1] + t*R[j-1])
-    end
-
-    ρ = RE/r
-    ρ_np1 = -μ/r * ρ
-    a1 = a2 = a3 = a4 = 0.0
-    @inbounds for l = 1:L
-        i = l + 1
-        ρ_np1 *= ρ
-        sum1 = 0
-        sum2 = 0
-        sum3 = 0
-        sum4 = 0
-        @inbounds @turbo for m = 0:min(l, M)
+        # Fill the rest of A
+        @inbounds for m = 0:M+1
             j = m + 1
-            C, S = Clm[i, j], Slm[i, j]
-            D =                   (C*R[j] + S*I[j])     * sqrt_2
-            E = ifelse(m == 0, 0, (C*R[j-1] + S*I[j-1]) * sqrt_2)
-            F = ifelse(m == 0, 0, (S*R[j-1] - C*I[j-1]) * sqrt_2)
-
-            Avv00, Avv01, Avv11 = A[i, j], VR01[i, j]*A[i, j+1], VR11[i, j]*A[i+1, j+1]
-
-            sum1 += m * Avv00 * E
-            sum2 += m * Avv00 * F
-            sum3 +=     Avv01 * D
-            sum4 +=     Avv11 * D
+            @inbounds for l = m+2:L+1
+                i = l + 1
+                A[i, j] = u*N1[i, j]*A[i-1, j] - N2[i, j]*A[i-2, j]
+            end
+            R_term = R[j-1]
+            I_term = I[j-1]
+            R[j] = ifelse(m == 0, 1, s*R_term - t*I_term)
+            I[j] = ifelse(m == 0, 0, s*I_term + t*R_term)
         end
-        rr = ρ_np1/RE
-        a1 += rr * sum1
-        a2 += rr * sum2
-        a3 += rr * sum3
-        a4 -= rr * sum4
+
+        ρ = RE/r
+        ρ_np1 = -μ/r * ρ
+        a1 = a2 = a3 = a4 = 0.0
+        @inbounds for l = 1:L
+            i = l + 1
+            ρ_np1 *= ρ
+            sum1 = 0.0
+            sum2 = 0.0
+            sum3 = 0.0
+            sum4 = 0.0
+            @inbounds for m = 0:min(l, M)
+                j = m + 1
+                C = Clm[i, j]
+                S = Slm[i, j]
+                R_term = R[j-1]
+                I_term = I[j-1]
+                D =                   (C*R[j] + S*I[j])     * sqrt_2
+                E = ifelse(m == 0, 0.0, (C*R_term + S*I_term) * sqrt_2)
+                F = ifelse(m == 0, 0.0, (S*R_term - C*I_term) * sqrt_2)
+
+                Avv00, Avv01, Avv11 = A[i, j], VR01[i, j]*A[i, j+1], VR11[i, j]*A[i+1, j+1]
+
+                sum1 += m * Avv00 * E
+                sum2 += m * Avv00 * F
+                sum3 +=     Avv01 * D
+                sum4 +=     Avv11 * D
+            end
+            rr = ρ_np1/RE
+            a1 += rr * sum1
+            a2 += rr * sum2
+            a3 += rr * sum3
+            a4 -= rr * sum4
+        end
     end
     
     return SVector(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4)

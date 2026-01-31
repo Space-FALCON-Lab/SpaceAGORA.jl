@@ -1,12 +1,15 @@
 using CSV
 using DataFrames
+using Arrow
 
-function save_csv(filename, args)
+function save_csv(filename, args, arrow_filename)
 
-    touch(filename)
+    if args[:save_csv]
+        touch(filename)
 
-    writer = open(filename, "w")
-    periapsis_alt = vcat(config.cnf.altitude_periapsis, zeros(length(config.solution.orientation.time) - length(config.cnf.altitude_periapsis)))
+        writer = open(filename, "a")
+    end
+    # periapsis_alt = vcat(config.cnf.altitude_periapsis, zeros(length(config.solution.orientation.time) - length(config.cnf.altitude_periapsis)))
 
     data_push = DataFrame(time = config.solution.orientation.time,
                           year = config.solution.orientation.year,
@@ -24,6 +27,13 @@ function save_csv(filename, args)
                           vel_ii_3 = config.solution.orientation.vel_ii[3],
                           pos_ii_mag = config.solution.orientation.pos_ii_mag,
                           vel_ii_mag = config.solution.orientation.vel_ii_mag,
+                          q_1 = config.solution.orientation.quaternion[1],
+                          q_2 = config.solution.orientation.quaternion[2],
+                          q_3 = config.solution.orientation.quaternion[3],
+                          q_4 = config.solution.orientation.quaternion[4],
+                          omega_1 = config.solution.orientation.ω[1],
+                          omega_2 = config.solution.orientation.ω[2],
+                          omega_3 = config.solution.orientation.ω[3],
                           pos_pp_1 = config.solution.orientation.pos_pp[1],
                           pos_pp_2 = config.solution.orientation.pos_pp[2],
                           pos_pp_3 = config.solution.orientation.pos_pp[3],
@@ -71,11 +81,11 @@ function save_csv(filename, args)
                           wind_3 = config.solution.physical_properties.wind[3],
                           cL = config.solution.physical_properties.cL,
                           cD = config.solution.physical_properties.cD,
-                          aoa = config.solution.physical_properties.α,
+                          aoa_control = config.solution.physical_properties.α_control,
                           S = config.solution.physical_properties.S,
                           mass = config.solution.performance.mass,
-                          heat_rate = config.solution.performance.heat_rate,
-                          heat_load = config.solution.performance.heat_load,
+                        #   heat_rate = config.solution.performance.heat_rate,
+                        #   heat_load = config.solution.performance.heat_load,
                           T_r = config.solution.performance.T_r,
                           q = config.solution.performance.q,
                           gravity_ii_1 = config.solution.forces.gravity_ii[1],
@@ -96,21 +106,79 @@ function save_csv(filename, args)
                           force_ii_1 = config.solution.forces.force_ii[1],
                           force_ii_2 = config.solution.forces.force_ii[2],
                           force_ii_3 = config.solution.forces.force_ii[3],
+                          tau_bb_1 = config.solution.forces.τ_bb[1],
+                          tau_bb_2 = config.solution.forces.τ_bb[2],
+                          tau_bb_3 = config.solution.forces.τ_bb[3],
+                          J_ii_1 = config.solution.physical_properties.inertia_tensor[1],
+                          J_ii_2 = config.solution.physical_properties.inertia_tensor[2],
+                          J_ii_3 = config.solution.physical_properties.inertia_tensor[3],
+                          J_ii_4 = config.solution.physical_properties.inertia_tensor[4],
+                          J_ii_5 = config.solution.physical_properties.inertia_tensor[5],
+                          J_ii_6 = config.solution.physical_properties.inertia_tensor[6],
+                          J_ii_7 = config.solution.physical_properties.inertia_tensor[7],
+                          J_ii_8 = config.solution.physical_properties.inertia_tensor[8],
+                          J_ii_9 = config.solution.physical_properties.inertia_tensor[9],
                           energy = config.solution.forces.energy,
+                          rw_torque_ii_1 = config.solution.physical_properties.τ_rw[1],
+                          rw_torque_ii_2 = config.solution.physical_properties.τ_rw[2],
+                          rw_torque_ii_3 = config.solution.physical_properties.τ_rw[3],
+                          magnetic_field_1 = config.solution.physical_properties.magnetic_field[1],
+                          magnetic_field_2 = config.solution.physical_properties.magnetic_field[2],
+                          magnetic_field_3 = config.solution.physical_properties.magnetic_field[3],
                           t_cf = zeros(length(config.solution.orientation.time)),
                           h_cf = zeros(length(config.solution.orientation.time)),
                           gamma_cf = zeros(length(config.solution.orientation.time)),
                           v_cf = zeros(length(config.solution.orientation.time)))
-                        #   h_cf = config.solution.closed_form.h_cf,
-                        #   gamma_cf = config.solution.closed_form.γ_cf,
-                        #   v_cf = config.solution.closed_form.v_cf)
     
+    # Save physical properties with varying length based on the number of bodies
+    n_bodies = length(config.model.body.links)
+    for i in 1:n_bodies
+        data_push[!, Symbol("link_$(i)_aoa")] = config.solution.physical_properties.α[i]
+        data_push[!, Symbol("link_$(i)_sideslip")] = config.solution.physical_properties.β[i]
+        data_push[!, Symbol("link_$(i)_heat_rate")] = config.solution.performance.heat_rate[i]
+        data_push[!, Symbol("link_$(i)_heat_load")] = config.solution.performance.heat_load[i]
+    end
+
+    # Save properties based on the number of reaction wheels
+    for i in 1:config.model.body.n_reaction_wheels
+        data_push[!, Symbol("rw_h_$(i)")] = config.solution.physical_properties.rw_h[i]
+        data_push[!, Symbol("rw_tau_$(i)")] = config.solution.physical_properties.rw_τ[i]
+    end
+
+    for i in 1:config.model.body.n_thrusters
+        data_push[!, Symbol("thruster_force_$(i)")] = config.solution.physical_properties.thruster_forces[i]
+    end
+
+    n_magnets = 0
+    for b in config.model.body.links
+        n_magnets += length(b.magnets)
+    end
+    for i in 1:n_magnets
+        data_push[!, Symbol("torque_bar_dipole_$i")] = config.solution.physical_properties.torque_bar_dipoles[i]
+    end
+
     if args[:closed_form] == 1
+        println("Length of closed form solution: ", length(config.solution.closed_form.t_cf))
+        println("Length of data_push: ", size(data_push, 1))
         data_push[!, :t_cf] = config.solution.closed_form.t_cf
         data_push[!, :h_cf] = config.solution.closed_form.h_cf
         data_push[!, :gamma_cf] = config.solution.closed_form.γ_cf
         data_push[!, :v_cf] = config.solution.closed_form.v_cf
     end
-    CSV.write(filename, data_push)
-
+    if filesize(filename) == 0.0 && args[:save_csv]
+        # Write header if file is empty
+        CSV.write(filename, data_push, writeheader=true)
+    elseif args[:save_csv]
+        CSV.write(filename, data_push, append=true)
+    end
+    # Write to Arrow file for plotting
+    if args[:print_res]
+        println("Writing data to Arrow file...")
+    end
+    # println(config.solution.orientation.number_of_passage[1])
+    # temp_file = joinpath(temp_name, "data$(uuid4()).arrow")
+    Arrow.append(arrow_filename, data_push)
+    if args[:print_res]
+        println("Data written to Arrow file.")
+    end
 end

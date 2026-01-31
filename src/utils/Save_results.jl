@@ -16,60 +16,38 @@ function save_results(time, ratio)
 
     n_variable_to_save = length(config.cnf.solution_intermediate[1]) - 1
     range_time = [item[1] for item in config.cnf.solution_intermediate]
-    # results = Array{Float64}(undef, (n_variable_to_save, 1))
-
-
-    # t = []
-    # i = 0
-
-    # index_prev = 1
-
-    # for true_time in time
-    #     if isapprox(i % ratio, 0, atol = 0.1) || true_time == time[end]
-    #         index = findfirst(x -> x == true_time, range_time[index_prev:end])
-    #         append!(t, range_time[index+index_prev] + initial_time)
-    #         range_solution = reshape(config.cnf.solution_intermediate[index+index_prev], (n_variable_to_save + 1, 1))
-
-    #         if length(t) == 1
-    #             results = range_solution[2:end]
-    #         else
-    #             results = hcat(results, range_solution[2:end])
-    #         end
-            
-    #         index_prev = index
-    #     end
-
-    #     i += 1
-    # end
-
-    # time_0 = time[end]
-    # config.cnf.prev_step_integrator = time_0
-    # config.cnf.solution_intermediate = []
-
+    unique!(time) # Remove duplicate time entries
     results = Matrix{Float64}(zeros(n_variable_to_save, Int(ceil(length(time)/ratio))))
 
 
     t = zeros(Float64, Int(ceil(length(time)/ratio)))
-    i = 0
 
     index_prev = 1
 
-    for true_time in time
-        if isapprox(i % ratio, 0, atol = 0.1) || true_time == time[end]
+    for (i, true_time) in enumerate(time)
+        # if isapprox(true_time, range_time[index_prev], atol = 1e-8) # Skip duplicate time entries
+        #     continue
+        # end
+        if isapprox((i-1) % ratio, 0, atol = 0.1) || i == length(time) # Save every 'ratio' time steps or the last time step
             index = findfirst(x -> x == true_time, range_time[index_prev:end])
-            t[Int(floor(i/ratio)+1)] = range_time[index+index_prev] + initial_time
+            t[Int(ceil(i/ratio))] = i == length(time) ? true_time : range_time[index+index_prev] + initial_time
             # range_solution = SVector{n_variable_to_save + 1, Float64}([config.cnf.solution_intermediate[index+index_prev], 0])
 
             if length(t) == 1
-                results[:, 1] .= config.cnf.solution_intermediate[index+index_prev][2:end]
+                if index + index_prev <= length(config.cnf.solution_intermediate)
+                    results[:, 1] .= config.cnf.solution_intermediate[index+index_prev][2:end]
+                else
+                    results[:, 1] .= config.cnf.solution_intermediate[end][2:end]
+                end
+            elseif true_time != time[end]
+                results[:, Int(ceil(i/ratio))] .= config.cnf.solution_intermediate[index+index_prev][2:end]
             else
-                results[:, Int(floor(i/ratio)+1)] .= config.cnf.solution_intermediate[index+index_prev][2:end]
+                results[:, Int(ceil(i/ratio))] .= config.cnf.solution_intermediate[end][2:end]
             end
-            
             index_prev = index
         end
 
-        i += 1
+        # i += 1
     end
 
     time_0 = time[end]
@@ -77,7 +55,6 @@ function save_results(time, ratio)
     config.cnf.solution_intermediate = Vector{Number}[]
 
     t = [i + config.cnf.initial_time_saved for i in t]
-
 
     ## SAVE RESULTS GLOBAL
     append!(config.solution.orientation.time, t)
@@ -96,6 +73,13 @@ function save_results(time, ratio)
     append!(config.solution.orientation.vel_ii[3], results[13,:])
     append!(config.solution.orientation.pos_ii_mag, results[14,:])
     append!(config.solution.orientation.vel_ii_mag, results[15,:])
+    append!(config.solution.orientation.quaternion[1], results[91,:])
+    append!(config.solution.orientation.quaternion[2], results[92,:])
+    append!(config.solution.orientation.quaternion[3], results[93,:])
+    append!(config.solution.orientation.quaternion[4], results[94,:])
+    append!(config.solution.orientation.ω[1], results[95,:])
+    append!(config.solution.orientation.ω[2], results[96,:])
+    append!(config.solution.orientation.ω[3], results[97,:])
 
     append!(config.solution.orientation.pos_pp[1], results[16,:])
     append!(config.solution.orientation.pos_pp[2], results[17,:])
@@ -150,35 +134,120 @@ function save_results(time, ratio)
     append!(config.solution.physical_properties.wind[3], results[60,:])
     append!(config.solution.physical_properties.cL, results[61,:])
     append!(config.solution.physical_properties.cD, results[62,:])
-    append!(config.solution.physical_properties.α, results[63,:])
-    append!(config.solution.physical_properties.S, results[64,:])
+    append!(config.solution.physical_properties.S, results[63,:])
+
+    append!(config.solution.physical_properties.α_control, results[98,:])
+    append!(config.solution.physical_properties.inertia_tensor[1], results[99,:]) # inertia tensor components
+    append!(config.solution.physical_properties.inertia_tensor[2], results[100,:])
+    append!(config.solution.physical_properties.inertia_tensor[3], results[101,:])
+    append!(config.solution.physical_properties.inertia_tensor[4], results[102,:])
+    append!(config.solution.physical_properties.inertia_tensor[5], results[103,:])  
+    append!(config.solution.physical_properties.inertia_tensor[6], results[104,:])
+    append!(config.solution.physical_properties.inertia_tensor[7], results[105,:])
+    append!(config.solution.physical_properties.inertia_tensor[8], results[106,:])
+    append!(config.solution.physical_properties.inertia_tensor[9], results[107,:])
+    append!(config.solution.physical_properties.τ_rw[1], results[108,:]) # total reaction wheel torque τ_rw_x
+    append!(config.solution.physical_properties.τ_rw[2], results[109,:]) # total reaction wheel torque τ_rw_y
+    append!(config.solution.physical_properties.τ_rw[3], results[110,:]) # total reaction wheel torque τ_rw_z
+
+    # Initialize α and β if they are not already initialized
+    n_bodies = length(config.model.body.links)
+    if isempty(config.solution.physical_properties.α)
+        for i in 1:n_bodies
+            append!(config.solution.physical_properties.α, [[]])
+            append!(config.solution.physical_properties.β, [[]])
+            append!(config.solution.performance.heat_rate, [[]])
+            append!(config.solution.performance.heat_load, [[]])
+        end
+    end
+
+    # Append α and β for each link
+    for i in 1:n_bodies
+        append!(config.solution.physical_properties.α[i], results[110 + i,:]) # α
+        append!(config.solution.physical_properties.β[i], results[110 + n_bodies + i,:]) # β
+        append!(config.solution.performance.heat_rate[i], results[110 + 2*n_bodies + i,:]) # heat rate
+        append!(config.solution.performance.heat_load[i], results[110 + 3*n_bodies + i,:]) # heat load
+    end
+
+
+    n_reaction_wheels = config.model.body.n_reaction_wheels
+    n_thrusters = config.model.body.n_thrusters
+    n_magnets = 0
+    for b in config.model.body.links
+        n_magnets += length(b.magnets)
+    end
+    # n_magnets = length(config.model.body.magnets)
+    # Initialize the reaction wheel properties if they are not already initialized
+    if isempty(config.solution.physical_properties.rw_h)
+        for i in 1:n_reaction_wheels
+            append!(config.solution.physical_properties.rw_h, [[]])
+            append!(config.solution.physical_properties.rw_τ, [[]])
+        end
+    end
+
+    # Append reaction wheel angular momentum and torque for each reaction wheel
+    for i in 1:n_reaction_wheels
+        append!(config.solution.physical_properties.rw_h[i], results[110 + 4*n_bodies + i,:])
+        append!(config.solution.physical_properties.rw_τ[i], results[110 + 4*n_bodies + n_reaction_wheels + i,:]) # rw_τ
+    end
+
+    # Initialize thruster forces if they are not already initialized
+    if isempty(config.solution.physical_properties.thruster_forces)
+        for i in 1:n_thrusters
+            append!(config.solution.physical_properties.thruster_forces, [[]])
+        end
+    end
+    
+    # Append thruster forces for each thruster
+    for i in 1:n_thrusters
+        append!(config.solution.physical_properties.thruster_forces[i], results[110 + 4*n_bodies + 2*n_reaction_wheels + i,:]) # thruster forces
+    end
+
+    # Initialize torque bar dipoles
+    if isempty(config.solution.physical_properties.torque_bar_dipoles)
+        for i in 1:n_magnets
+            append!(config.solution.physical_properties.torque_bar_dipoles, [[]])
+        end
+    end
+    append!(config.solution.physical_properties.magnetic_field[1], results[110 + 4*n_bodies + 2*n_reaction_wheels + n_thrusters + 1, :])
+    append!(config.solution.physical_properties.magnetic_field[2], results[110 + 4*n_bodies + 2*n_reaction_wheels + n_thrusters + 2, :])
+    append!(config.solution.physical_properties.magnetic_field[3], results[110 + 4*n_bodies + 2*n_reaction_wheels + n_thrusters + 3, :])
+    
+    for i in 1:n_magnets
+        append!(config.solution.physical_properties.torque_bar_dipoles[i], results[110 + 4*n_bodies + 2*n_reaction_wheels + n_thrusters + 3 + i, :])
+    end
+
+    
 
     # Performance
-    append!(config.solution.performance.mass, results[65,:])
-    append!(config.solution.performance.heat_rate, results[66,:])
-    append!(config.solution.performance.heat_load, results[67,:])
-    append!(config.solution.performance.T_r, results[68,:])
-    append!(config.solution.performance.q, results[69,:])
+    append!(config.solution.performance.mass, results[64,:])
+    # append!(config.solution.performance.heat_rate, results[65,:])
+    # append!(config.solution.performance.heat_load, results[66,:])
+    append!(config.solution.performance.T_r, results[65,:])
+    append!(config.solution.performance.q, results[66,:])
 
     # Forces
-    append!(config.solution.forces.gravity_ii[1], results[70,:])
-    append!(config.solution.forces.gravity_ii[2], results[71,:])
-    append!(config.solution.forces.gravity_ii[3], results[72,:])
-    append!(config.solution.forces.drag_pp[1], results[73,:])
-    append!(config.solution.forces.drag_pp[2], results[74,:])
-    append!(config.solution.forces.drag_pp[3], results[75,:])
-    append!(config.solution.forces.drag_ii[1], results[76,:])
-    append!(config.solution.forces.drag_ii[2], results[77,:])
-    append!(config.solution.forces.drag_ii[3], results[78,:])
-    append!(config.solution.forces.lift_pp[1], results[79,:])
-    append!(config.solution.forces.lift_pp[2], results[80,:])
-    append!(config.solution.forces.lift_pp[3], results[81,:])
-    append!(config.solution.forces.lift_ii[1], results[82,:])
-    append!(config.solution.forces.lift_ii[2], results[83,:])
-    append!(config.solution.forces.lift_ii[3], results[84,:])
-    append!(config.solution.forces.force_ii[1], results[85,:])
-    append!(config.solution.forces.force_ii[2], results[86,:])
-    append!(config.solution.forces.force_ii[3], results[87,:])
+    append!(config.solution.forces.gravity_ii[1], results[67,:])
+    append!(config.solution.forces.gravity_ii[2], results[68,:])
+    append!(config.solution.forces.gravity_ii[3], results[69,:])
+    append!(config.solution.forces.drag_pp[1], results[70,:])
+    append!(config.solution.forces.drag_pp[2], results[71,:])
+    append!(config.solution.forces.drag_pp[3], results[72,:])
+    append!(config.solution.forces.drag_ii[1], results[73,:])
+    append!(config.solution.forces.drag_ii[2], results[74,:])
+    append!(config.solution.forces.drag_ii[3], results[75,:])
+    append!(config.solution.forces.lift_pp[1], results[76,:])
+    append!(config.solution.forces.lift_pp[2], results[77,:])
+    append!(config.solution.forces.lift_pp[3], results[78,:])
+    append!(config.solution.forces.lift_ii[1], results[79,:])
+    append!(config.solution.forces.lift_ii[2], results[80,:])
+    append!(config.solution.forces.lift_ii[3], results[81,:])
+    append!(config.solution.forces.force_ii[1], results[82,:])
+    append!(config.solution.forces.force_ii[2], results[83,:])
+    append!(config.solution.forces.force_ii[3], results[84,:])
+    append!(config.solution.forces.τ_bb[1], results[85,:])
+    append!(config.solution.forces.τ_bb[2], results[86,:])
+    append!(config.solution.forces.τ_bb[3], results[87,:])
     append!(config.solution.forces.energy, results[88,:])
 
     # Simulation
@@ -189,116 +258,6 @@ function save_results(time, ratio)
 end
 
 function clean_results()
-    config.solution.orientation.time = []
-    config.solution.orientation.year = []
-    config.solution.orientation.month = []
-    config.solution.orientation.day = []
-    config.solution.orientation.hour = []
-    config.solution.orientation.minute = []
-    config.solution.orientation.second = []
-    config.solution.orientation.number_of_passage = []
-    config.solution.orientation.pos_ii[1] = []
-    config.solution.orientation.pos_ii[2] = []
-    config.solution.orientation.pos_ii[3] = []
-    config.solution.orientation.vel_ii[1] = []
-    config.solution.orientation.vel_ii[2] = []
-    config.solution.orientation.vel_ii[3] = []
-    config.solution.orientation.pos_ii_mag = []
-    config.solution.orientation.vel_ii_mag = []
-
-    config.solution.orientation.pos_pp[1] = []
-    config.solution.orientation.pos_pp[2] = []
-    config.solution.orientation.pos_pp[3] = []
-    config.solution.orientation.pos_pp_mag = []
-    config.solution.orientation.vel_pp[1] = []
-    config.solution.orientation.vel_pp[2] = []
-    config.solution.orientation.vel_pp[3] = []
-    config.solution.orientation.vel_pp_mag = []
-
-    config.solution.orientation.oe[1] = []
-    config.solution.orientation.oe[2] = []
-    config.solution.orientation.oe[3] = []
-    config.solution.orientation.oe[4] = []
-    config.solution.orientation.oe[5] = []
-    config.solution.orientation.oe[6] = []
-
-    config.solution.orientation.lat = []
-    config.solution.orientation.lon = []
-    config.solution.orientation.alt = []
-    config.solution.orientation.γ_ii = []
-    config.solution.orientation.γ_pp = []
-
-    config.solution.orientation.h_ii[1] = []
-    config.solution.orientation.h_ii[2] = []
-    config.solution.orientation.h_ii[3] = []
-    config.solution.orientation.h_pp[1] = []
-    config.solution.orientation.h_pp[2] = []
-    config.solution.orientation.h_pp[3] = []
-    config.solution.orientation.h_ii_mag = []
-    config.solution.orientation.h_pp_mag = []
-
-    config.solution.orientation.uD[1] = []
-    config.solution.orientation.uD[2] = []
-    config.solution.orientation.uD[3] = []
-    config.solution.orientation.uE[1] = []
-    config.solution.orientation.uE[2] = []
-    config.solution.orientation.uE[3] = []
-    config.solution.orientation.uN[1] = []
-    config.solution.orientation.uN[2] = []
-    config.solution.orientation.uN[3] = []
-    config.solution.orientation.vN = []
-    config.solution.orientation.vE = []
-    config.solution.orientation.azi_pp = []
-
-    # Physical properties
-    config.solution.physical_properties.ρ = []
-    config.solution.physical_properties.T = []
-    config.solution.physical_properties.p = []
-    config.solution.physical_properties.wind[1] = []
-    config.solution.physical_properties.wind[2] = []
-    config.solution.physical_properties.wind[3] = []
-    config.solution.physical_properties.cL = []
-    config.solution.physical_properties.cD = []
-    config.solution.physical_properties.α = []
-    config.solution.physical_properties.S = []
-
-    # Performance
-    config.solution.performance.mass = []
-    config.solution.performance.heat_rate = []
-    config.solution.performance.heat_load = []
-    config.solution.performance.T_r = []
-    config.solution.performance.q = []
-
-    # Forces
-    config.solution.forces.gravity_ii[1] = []
-    config.solution.forces.gravity_ii[2] = []
-    config.solution.forces.gravity_ii[3] = []
-    config.solution.forces.drag_pp[1] = []
-    config.solution.forces.drag_pp[2] = []
-    config.solution.forces.drag_pp[3] = []
-    config.solution.forces.drag_ii[1] = []
-    config.solution.forces.drag_ii[2] = []
-    config.solution.forces.drag_ii[3] = []
-    config.solution.forces.lift_pp[1] = []
-    config.solution.forces.lift_pp[2] = []
-    config.solution.forces.lift_pp[3] = []
-    config.solution.forces.lift_ii[1] = []
-    config.solution.forces.lift_ii[2] = []
-    config.solution.forces.lift_ii[3] = []
-    config.solution.forces.force_ii[1] = []
-    config.solution.forces.force_ii[2] = []
-    config.solution.forces.force_ii[3] = []
-    config.solution.forces.energy = []
-
-    # Simulation
-    config.solution.simulation.MC_seed = []
-    config.solution.simulation.drag_passage = []
-
-    # Closed form
-    config.solution.closed_form.t_cf = []
-    config.solution.closed_form.h_cf = []
-    config.solution.closed_form.γ_cf = []
-    config.solution.closed_form.v_cf = []
-
+    config.solution = config.Solution()
     return
 end

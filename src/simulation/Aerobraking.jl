@@ -1,14 +1,8 @@
 include("Complete_passage.jl")
 include("../utils/Ref_system_conf.jl")
 include("../utils/Closed_form_solution.jl")
-# include("../utils/Odyssey_maneuver_plan.jl")
-# include("../utils/VEx_maneuver_plan.jl")
-# include("../utils/Magellan_maneuver_plan.jl")
-# include("../utils/Earth_maneuver_plan.jl")
-# include("../utils/TSSM_maneuver_plan.jl")
 include("../utils/Save_results.jl")
 include("../physical_models/Propulsive_maneuvers.jl")
-
 
 using PythonCall
 
@@ -16,13 +10,7 @@ sys = pyimport("sys")
 
 os = pyimport("os")
 
-# sys.path.append(os.path.join(os.path.dirname(os.path.abspath(@__FILE__)), "GRAMpy"))
-
-function aerobraking(ip, m, args)
-    if !(args[:directory_Gram] in pyconvert(Vector{String}, sys.path))
-        sys.path.append(args[:directory_Gram])
-    end
-    gram = pyimport("gram")
+function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name)
 
     initial_state = m.initial_condition
     FinalState = true
@@ -34,79 +22,23 @@ function aerobraking(ip, m, args)
 
     config.cnf.time_OP = 1
     config.cnf.time_IP = 1
-
-    if args[:density_model] == "Gram" || args[:density_model] == "GRAM"
-        inputParameters = Dict("earth" => gram.EarthInputParameters(),
-                               "mars" => gram.MarsInputParameters(),
-                               "venus" => gram.VenusInputParameters(),
-                               "titan" => gram.TitanInputParameters())
-        
-        namelistReaders = Dict("earth" => gram.EarthNamelistReader(),
-                               "mars" => gram.MarsNamelistReader(),
-                               "venus" => gram.VenusNamelistReader(),
-                               "titan" => gram.TitanNamelistReader())
-            
-        atmospheres = Dict("earth" => gram.EarthAtmosphere(),
-                           "mars" => gram.MarsAtmosphere(),
-                           "venus" => gram.VenusAtmosphere(),
-                           "titan" => gram.TitanAtmosphere())
-
-        planet_name = m.planet.name
-        input_parameters = inputParameters[planet_name]
-
-        # Mars has some weird specific parameters, so this line is just to check to make sure the it doesn't do it for the other planets
-        if planet_name == "mars"
-            input_parameters.dataPath = args[:directory_Gram_data] * "/Mars/data/"
-            if !Bool(os.path.exists(input_parameters.dataPath))
-                throw(ArgumentError("GRAM data path not found: " * input_parameters.dataPath))
-            end
-        end
-
-        if planet_name == "earth"
-            input_parameters.dataPath = args[:directory_Gram_data] * "/Earth/data/"
-            if !Bool(os.path.exists(input_parameters.dataPath))
-                throw(ArgumentError("GRAM data path not found: " * input_parameters.dataPath))
-            end
-        end
-
-        reader = namelistReaders[planet_name]
-        reader.tryGetSpicePath(input_parameters)
-
-        gram_atmosphere = atmospheres[planet_name]
-        gram_atmosphere.setInputParameters(input_parameters)
-        
-        if planet_name == "earth"
-            gram_atmosphere.setMERRA2Parameters(0, -90.0, 90.0, 0.0, 359.99999)
-        end
-        gram_atmosphere.setPerturbationScales(1.5)
-        gram_atmosphere.setMinRelativeStepSize(0.5)
-        gram_atmosphere.setSeed(Int(round(rand()*10000)))
-        if planet_name == "mars"
-            gram_atmosphere.setMOLAHeights(false)
-        end
-
-        ttime = gram.GramTime()
-        ttime.setStartTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs], gram.UTC, gram.PET)
-        gram_atmosphere.setStartTime(ttime)
-    end
     
     # Aerobraking Campaign
     while continue_campaign && FinalState
         config.cnf.index_Mars_Gram_call = 0
         firing_orbit = 0
-        numberofpassage = 1 + numberofpassage
+        numberofpassage += 1
 
         if args[:print_res] == true
             println("--> Start Passage #" * string(numberofpassage))
         end 
 
         t_el_ab = @elapsed begin
-        
+            # Define maneuver
             if uppercase(args[:thrust_control]) == "AEROBRAKING MANEUVER" && numberofpassage != 1
                 r_a = config.solution.orientation.oe[1][end] * (1 + config.solution.orientation.oe[2][end])
                 r_p = config.solution.orientation.oe[1][end] * (1 - config.solution.orientation.oe[2][end])
                 args = args[:maneuver_plan](m.planet, r_a, r_p, numberofpassage, args)
-                # println(args[:delta_v])
             end
             
             if ip.tc == 1
@@ -148,14 +80,16 @@ function aerobraking(ip, m, args)
                 m.initial_condition.day = round(config.solution.orientation.day[end])
                 m.initial_condition.hour = round(config.solution.orientation.hour[end])
                 m.initial_condition.minute = round(config.solution.orientation.minute[end])
-                m.initial_condition.second = round(config.solution.orientation.second[end])
-
+                m.initial_condition.second = config.solution.orientation.second[end]
+                m.initial_condition.el_time = config.solution.orientation.time[end]
+                println("Initial Date and Time of the Passage: " * string(m.initial_condition.year) * "-" * string(m.initial_condition.month) * "-" * string(m.initial_condition.day) * " " * string(m.initial_condition.hour) * ":" * string(m.initial_condition.minute) * ":" * string(round(m.initial_condition.second, digits=2)))
                 if (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone") && continue_campaign
                     r = m.planet.Rp_e + args[:EI]*1e3
                     initial_state.vi = -acos(1 / initial_state.e * (initial_state.a * (1 - initial_state.e^2) / r - 1))
                 end
             end
 
+            clean_results()
             if uppercase(args[:density_model]) == "GRAM"
                 continue_campaign = asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere, gram)
             else
@@ -171,11 +105,11 @@ function aerobraking(ip, m, args)
             println("--> PASSAGE #" * string(numberofpassage) * " COMPLETE")
         end
 
-        if args[:number_of_orbits] == numberofpassage
+        if lowercase(args[:type_of_mission]) != "time" && args[:number_of_orbits] == numberofpassage
             continue_campaign = false
         end
 
-        if r_a <= args[:final_apoapsis] && args[:keplerian] == false
+        if (r_a <= args[:ra_fin_orbit] || config.cnf.targeting == 1) && args[:keplerian] == false
             FinalState = false
             println("Reached FinalState! R_a = " * string(r_a*1e-3) * " km")
             println("Thermal Limit overcomed totally " * string(config.cnf.count_overcome_hr) * " times")
@@ -189,13 +123,30 @@ function aerobraking(ip, m, args)
         if Bool(args[:print_res])
             println(" ")
         end
+
+        if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
+            println("Yes closed form...")
+            closed_form(args, m)
+        else
+            println("No closed form...")
+            len_sol = length(config.solution.orientation.time)
+            results(zeros(len_sol), (args[:EI] - 10)*1e3*ones(len_sol), zeros(len_sol), zeros(len_sol))
+        end
+
+        if args[:results] == 1
+            # Save the current passage results
+            save_csv(filename, args, temp_name)
+            # Clear the config data buffer
+            # clean_results()
+        end
     end
 
-    if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
-        closed_form(args, m)
-    else
-        len_sol = length(config.solution.orientation.time)
-        results(zeros(len_sol), (args[:EI] - 10)*1e3*ones(len_sol), zeros(len_sol), zeros(len_sol))
-    end
+    # if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
+    #     println("Computing Closed-Form Solution...")
+    #     closed_form(args, m)
+    # else
+    #     len_sol = length(config.solution.orientation.time)
+    #     results(zeros(len_sol), (args[:EI] - 10)*1e3*ones(len_sol), zeros(len_sol), zeros(len_sol))
+    # end
 
 end

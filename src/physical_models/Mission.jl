@@ -18,7 +18,7 @@ mutable struct InitalParameters
     mc::Int64
 end
 
-function mission_def(mission)
+function mission_def(mission::Dict{Symbol, Any})
 
     e, d, l, a = 0, 0, 0, 1     # e = Entry, d = Descent, l = Landing, a = Aerobraking : 0 - No, 1 - Yes
 
@@ -32,6 +32,8 @@ function mission_def(mission)
         p = 3
     elseif ((mission[:Planet] == 7 || (typeof(mission[:Planet]) == String && cmp(lowercase(mission[:Planet]), "titan") == 0))) # Titan
         p = 7
+    elseif ((mission[:Planet] == 4 || (typeof(mission[:Planet]) == String && cmp(lowercase(mission[:Planet]), "moon") == 0))) # Moon
+        p = 4
     else
         p = 1
     end

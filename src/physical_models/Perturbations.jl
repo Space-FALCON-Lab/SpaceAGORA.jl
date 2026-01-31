@@ -137,6 +137,8 @@ end
     calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
 """
 function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, param::ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    cnf = param.cnf
+    
     pos_ii = SVector{3, Float64}(x[1:3]) # Position in inertial frame, change to x.r if using StructArrays in Complete_passage
     mass = x[7]               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
     primary_body_name = model.primary_body_name
@@ -157,10 +159,15 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
 
         force_ii += mass * model.planet.μ * ((pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3))
     end
+
+    cnf.gravity_nbody_ii = force_ii # Store gravity in config for other uses
+
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
 function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    cnf = param.cnf
+    
     rVec_cart = SVector{3, Float64}(x[1:3])
     mass = x[7]               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
 
@@ -224,7 +231,12 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
             a4 -= rr * sum4
         end
     end
-    return mass * SVector{3, Float64}(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4), SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    force_ii = mass * SVector{3, Float64}(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4) # Store gravity in config for other uses
+
+    cnf.gravity_harmonics_ii = force_ii
+
+    return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 """
     get_magnetic_field_dipole(r_ecef::AbstractVector)

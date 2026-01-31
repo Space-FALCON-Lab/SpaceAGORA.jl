@@ -22,7 +22,8 @@ using Arrow
 gravEffector = InverseSquaredGravityModel()
 nBodyGravEffector = NBodyGravityModel(["Sun", "Moon"], "Earth")
 harmonicGravEffector = GravitationalHarmonicsModel(50, 50, "Gravity_harmonics_data/EarthGGM05C.csv", "Earth")
-dynamic_effectors = (gravEffector, nBodyGravEffector, harmonicGravEffector)
+aeroEffector = AerodynamicCoefficientfM()
+dynamic_effectors = (gravEffector, nBodyGravEffector, harmonicGravEffector, aeroEffector)
 
 spacecraft = SpacecraftModel(dynamic_effectors=dynamic_effectors)
 # Add bodies to the spacecraft model
@@ -216,12 +217,12 @@ args = Dict(# Misc Simulation
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
             :normalize => 1,                                       # Normalize the integration True=1, False=0
             :closed_form => 0,                                     # Closed form solution True=1, False=0
-            :save_csv => false,
+            :save_csv => true,
             # Type of Mission
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => true,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 10,                                 # Number of aerobraking passage
-            :mission_time => 3600.0,                                  # Mission time in seconds, used only for Time mission type
+            :mission_time => 10*3600.0,                                  # Mission time in seconds, used only for Time mission type
             # :mission_time => 1000.0,                                  # Mission time in seconds, used only for Time mission type
             :orientation_sim => false,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
             :num_steps_to_save => 10000,                            # Number of timesteps between saves
@@ -352,7 +353,7 @@ args = Dict(# Misc Simulation
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
             :ra_fin_orbit => 25000e3,                               # Target final apoapsis for the orbit, m
-            :maneuver_plan => Odyssey_firing_plan,                # Maneuver plan function
+            :maneuver_plan => Odyssey_firing_plan,                  # Maneuver plan function
             
             # Monte Carlo Simulations
             :montecarlo => 0,                                       # Run Monte Carlo simulation True=1, False=0

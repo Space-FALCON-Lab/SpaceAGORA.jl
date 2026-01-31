@@ -2,6 +2,8 @@
     Wrapper module  for all dynamic effector models (all forces/torques)
 """
 module DynamicEffectors
+    using ..Analysis
+
     using ..ConfigTypes: Planet, ODEParams # Get the Planet struct
     using ..AbstractTypes       # Assuming this is also in types.jl now
     using ..LinearAlgebra       # Get deps from parent
@@ -10,8 +12,11 @@ module DynamicEffectors
     # Public members to export
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel # Gravity models
     export NBodyGravityModel, GravitationalHarmonicsModel # N-body gravity model
+    export AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight # Aerodynamic models
     export calcForceTorque
-
+    
+    include("../utils/Reference_system.jl")
     include("../physical_models/Gravity_models.jl")
+    include("../physical_models/Aerodynamic_models.jl")
     include("../physical_models/Perturbations.jl")
 end

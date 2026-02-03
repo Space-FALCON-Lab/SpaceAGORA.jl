@@ -43,6 +43,7 @@ SimpleDiffEq = "05bca326-078c-5bf0-a5bf-ce7c7982d7fd"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+WamIPEDensity = "b4be18c8-5d09-4dc7-9320-34e8e308bc8c"
 
 [compat]
 julia = "1.10"

@@ -64,7 +64,7 @@ args = Dict(# Misc Simulation
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => true,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 20,                                 # Number of aerobraking passage
-            :mission_time => 10*24.0*3600.0,                          # Total mission time in seconds if type of mission is Time
+            :mission_time => 24.0*3600.0,                          # Total mission time in seconds if type of mission is Time
             :orientation_sim => false,                                 # Orientation simulation True=1, False=0
             :save_steps => 10000,
 
@@ -72,7 +72,7 @@ args = Dict(# Misc Simulation
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
             :planettime => 0.0,                                  # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
-            :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
+            :density_model => "wam-ipe",                               # choices=['Constant' , 'Exponential' , 'Gram']
             :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
             :topography_harmonics_file => "Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
@@ -152,8 +152,8 @@ args = Dict(# Misc Simulation
             :AE => 300.0,                                           # Atmospheric Exit, km
             :year => 2026,                                          # Mission year
             :month => 1,                                           # Mission month
-            :day => 20,                                             # Mission day
-            :hours => 7,                                           # Mission hour
+            :day => 21,                                             # Mission day
+            :hours => 9,                                           # Mission hour
             :minutes => 23,                                         # Mission minute
             :secs => 13.0,                                          # Mission second
             

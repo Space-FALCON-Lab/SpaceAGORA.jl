@@ -2,6 +2,7 @@ include("../utils/Reference_system.jl")
 
 using PythonCall
 using SatelliteToolbox
+using WamIPEDensity
 # SpaceIndices.init()
 sys = pyimport("sys")
 
@@ -230,6 +231,47 @@ function density_nrlmsise(h::Float64, p, lat::Float64, lon::Float64, montecarlo:
         rho = atmo.total_density
         T = atmo.temperature
         wind = [0.0,0.0,0.0]
+    end
+
+    return rho, T, wind
+end
+
+function density_wamipe(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Bool, Wind::Bool, args::Dict, current_time::DateTime)
+    """
+
+    """
+    if uppercase(p.name) != "EARTH"
+        error("WAM-IPE density model is only implemented for Earth.")
+    end
+
+    if lowercase(args[:density_model]) == "none"
+        rho = 0.0
+        T = temperature_linear(h, p)
+        wind = [0.0, 0.0, 0.0]
+        return rho, T, wind
+    end
+    
+    if config.cnf.drag_state == false && args[:keplerian] == false
+        if h > 2000.0e3
+
+            rho = 0.0
+            T = temperature_linear(h, p)
+            wind = [0.0, 0.0, 0.0]
+        else
+            rho, T, wind = density_polyfit(h, p)
+        end
+    elseif config.cnf.drag_state == true || args[:keplerian] == true
+        if h > 2000.0e3
+
+            rho = 0.0
+            T = temperature_linear(h, p)
+            wind = [0.0, 0.0, 0.0]
+        else
+            itp = WAMInterpolator()
+            rho = get_density_at_point(itp, current_time, lat, lon, h)
+            T = temperature_linear(h, p)
+            wind = [0.0, 0.0, 0.0]
+        end
     end
 
     return rho, T, wind

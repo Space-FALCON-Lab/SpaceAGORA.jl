@@ -64,6 +64,8 @@ function mission_def(mission::Dict{Symbol, Any})
         dm = 3
     elseif uppercase(mission[:Density_Model]) == "NRLMSISE"
         dm = 4
+    elseif uppercase(mission[:Density_Model]) == "WAM-IPE"
+        dm = 5
     else
         dm = 1
     end

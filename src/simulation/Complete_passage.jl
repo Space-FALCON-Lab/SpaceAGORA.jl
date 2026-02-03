@@ -256,6 +256,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
             ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
         elseif ip.dm == 4
             ρ, T_p, wind = density_nrlmsise(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, time_real)
+        elseif ip.dm == 5
+            ρ, T_p, wind = density_wamipe(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, time_real)
         end
 
         # Define output.txt containing density data

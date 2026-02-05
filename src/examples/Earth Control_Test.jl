@@ -109,23 +109,9 @@ args = Dict(# Misc Simulation
             :max_heat_rate => 0.29,                                 # Max heat rate the heat rate control will start to react to
             :max_heat_load => 40.0,                                 # Max heat load the heat load control will not be overcomed
             :max_dyn_press => 0.3,                                  # Max dynamic pressure the control will not be overcomed
-            # :dry_mass => 640.0,                                     # Initial dry mass of body in kg
-            # :prop_mass => 50.0,                                     # Initial propellant mass of body in kg
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
             :α => 90.0,                                             # Max angle of attack of solar panels
-
-            # Fill for Spacecraft body shape only
-            # :length_sat => 2.05,                                    # Length of the satellite in m
-            # :height_sat => 2.8,                                     # Height of the satellite in m
-            # :width_sat => 3.7,                                      # Width of the satellite in m
-            # :length_sp => 5.7,                                      # Length of the solar panels in m
-            # :height_sp => 1.0,                                      # Height of the solar panels in m
-
-            # Fill for Blunted Cone body shape only
-            # :cone_angle => 70.0,                                    # Cone angle of the blunted cone in deg
-            # :base_radius => 2.65/2,                                 # Base radius of the blunted cone in m
-            # :nose_radius => 0.6638,
             :spacecraft_model => spacecraft,                                 # Nose radius of the blunted cone in m
             
             # Engine
@@ -233,23 +219,7 @@ args = Dict(# Misc Simulation
             :magellan_sim => 0  
             )
 
-# Calculating time of simulation
-# for hour = 0:23
-#     args[:hours] = hour
-#     args[:directory_results] = "/home/space-falcon-1/Documents/ABTS.jl/output/venus_express_" * string(hour)
-#     t = @elapsed begin
-#         sol = run_analysis(args)
-#     end
-#     println("COMPUTATIONAL TIME = " * string(t) * " s")
-# end
-
 t = @elapsed begin
-
-    # furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-    # furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-    # furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-    # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-    # furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
             
     # Run the simulation
     sol = run_analysis(args)
@@ -258,80 +228,5 @@ t = @elapsed begin
         println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
     end
 end
-
-println("COMPUTATIONAL TIME = " * string(t) * " s")
-
-# t = @elapsed begin
-#     ra_initial_a = args[:ra_initial_a]
-
-#     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-#     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-#     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-#     furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-#     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-                
-#     # Run the simulation
-#     for i in collect(range(1,100,step=1))
-
-#         d = Uniform(-5,+5)
-#         args[:ra_initial_a] = ra_initial_a + rand(d)*1e3
-
-#         sol = run_analysis(args)
-#     end
-
-#     println(" ")
-
-#     # if Bool(args[:passresults])
-#     #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#     # end
-# end
-
-# t = @elapsed begin
-
-#     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-#     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-#     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-#     furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-#     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-            
-#     # Run the simulation
-#     for vel in collect(range(9550,9800,step=50))
-#         for gam in collect(range(9.0,3.0,step=-0.25))
-#             args[:v_initial_a] = vel
-#             args[:γ_initial_a] = gam
-#             sol = run_analysis(args)
-#         end
-#     end
-
-#     # if Bool(args[:passresults])
-#     #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#     # end
-# end
-
-# t = @elapsed begin
-#     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-#     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-#     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-#     furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-#     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-            
-#     # Run the simulation
-#     for alph in collect(range(0, 90, step=15))
-#         args[:α] = alph
-#         for ra in collect(range(5000,50000,step=10000))
-#             for hp in collect(range(100, 250,step=25))
-#                 args[:ra_initial_a] = ra*1e3 + 6.3710e6
-#                 args[:hp_initial_a] = hp*1e3
-#                 sol = run_analysis(args)
-#             end
-#         end
-#     end
-
-#     println(" ")
-
-#     # if Bool(args[:passresults])
-#     #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#     # end
-# end
 
 println("COMPUTATIONAL TIME = " * string(t) * " s")

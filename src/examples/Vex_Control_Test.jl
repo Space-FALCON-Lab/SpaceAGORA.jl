@@ -48,7 +48,6 @@ config.add_joint!(spacecraft, L_panel_joint)
 config.add_joint!(spacecraft, R_panel_joint)
 
 println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
-# println("Spacecraft roots: $spacecraft.roots")
 println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
 println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 
@@ -118,18 +117,6 @@ args = Dict(# Misc Simulation
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
             :α => 90.0,                                             # Max angle of attack of solar panels
-
-            # Fill for Spacecraft body shape only
-            # :length_sat => 2.05,                                     # Length of the satellite in m
-            # :height_sat => 2.8,                                     # Height of the satellite in m
-            # :width_sat => 3.7,                                      # Width of the satellite in m
-            # :length_sp => 5.7,                                     # Length of the solar panels in m
-            # :height_sp => 1.0,                                     # Height of the solar panels in m
-
-            # # Fill for Blunted Cone body shape only
-            # :cone_angle => 70.0,                                    # Cone angle of the blunted cone in deg
-            # :base_radius => 2.65/2,                                 # Base radius of the blunted cone in m
-            # :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
             :spacecraft_model => spacecraft,                     # Spacecraft model defined above
 
             # Engine
@@ -233,14 +220,7 @@ args = Dict(# Misc Simulation
             )
 
 # Calculating time of simulation
-t = @elapsed begin
-
-#     # furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-#     # furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-#     # furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-#     # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-#     # furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-            
+t = @elapsed begin            
 #     # Run the simulation
     sol = run_analysis(args)
 
@@ -248,53 +228,5 @@ t = @elapsed begin
         println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
     end
 end
-# @benchmark run_analysis(args)
-# t = @elapsed begin
-
-#     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-#     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-#     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-#     furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-#     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-            
-#     # Run the simulation
-#     for vel in collect(range(9600,9600,step=50))
-#         for gam in collect(range(6.5,3.0,step=-0.25))
-#             args[:v_initial_a] = vel
-#             args[:γ_initial_a] = gam
-#             sol = run_analysis(args)
-#         end
-#     end
-
-#     # if Bool(args[:passresults])
-#     #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#     # end
-# end
-
-# t = @elapsed begin
-#     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
-#     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
-#     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-#     furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
-#     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
-            
-#     # Run the simulation
-#     for alph in collect(range(0, 90, step=15))
-#         args[:α] = alph
-#         for ra in collect(range(5000,55000,step=10000))
-#             for hp in collect(range(120,170,step=10))
-#                 args[:ra_initial_a] = ra*1e3 + 6.0518e6
-#                 args[:hp_initial_a] = hp*1e3
-#                 sol = run_analysis(args)
-#             end
-#         end
-#     end
-
-#     println(" ")
-
-#     # if Bool(args[:passresults])
-#     #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#     # end
-# end
 
 println("COMPUTATIONAL TIME = " * string(t) * " s")

@@ -25,14 +25,14 @@ println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 args = Dict(# Misc Simulation
             :results => true,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => false,                                                                                  # Pass results as output True=1, False=0
-            :print_res => false,                                                                                    # Print some lines True=1, False=0
+            :print_res => true,                                                                                    # Print some lines True=1, False=0
             :directory_results => "output/earth_gmat_comp",            # Directory where to save the results
             :directory_Gram => "GRAMpy",                   # Directory where Gram is
             :directory_Gram_data => "GRAM_Data",           # Directory where Gram data is
             :directory_Spice => "GRAM_Data/SPICE",         # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => false,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => false,                                                                                         # Generate pdf plots of results True=1, False=0
+            :plot => true,                                                                                         # Generate pdf plots of results True=1, False=0
             :filename => false,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
@@ -44,7 +44,7 @@ args = Dict(# Misc Simulation
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => false,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 20,                                 # Number of aerobraking passage
-            :orientation_sim => false,                                 # Orientation simulation True=1, False=0
+            :orientation_sim => true,                                 # Orientation simulation True=1, False=0
 
             # Physical Model
             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
@@ -64,6 +64,7 @@ args = Dict(# Misc Simulation
             :n_bodies => ["Sun", "Moon"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :srp => false,                                             # Solar Radiation Pressure True=1, False=0
             :eclipse => false,
+            :gravity_gradient => true,                                # Gravity Gradient True=1, False=0
             :gravity_harmonics => true,                                # Gravity Harmonics True=1, False=0
             :gravity_harmonics_file => "Gravity_harmonics_data/EarthGGM05C_full.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
@@ -85,18 +86,6 @@ args = Dict(# Misc Simulation
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
             :α => 90.0,                                             # Max angle of attack of solar panels
-
-            # Fill for Spacecraft body shape only
-            # :length_sat => 2.05,                                     # Length of the satellite in m
-            # :height_sat => 2.8,                                     # Height of the satellite in m
-            # :width_sat => 3.7,                                      # Width of the satellite in m
-            # :length_sp => 5.7,                                     # Length of the solar panels in m
-            # :height_sp => 1.0,                                     # Height of the solar panels in m
-
-            # # Fill for Blunted Cone body shape only
-            # :cone_angle => 70.0,                                    # Cone angle of the blunted cone in deg
-            # :base_radius => 2.65/2,                                 # Base radius of the blunted cone in m
-            # :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
             :spacecraft_model => spacecraft,                            # Spacecraft model object
             
             # Engine
@@ -206,44 +195,7 @@ args = Dict(# Misc Simulation
             :Odyssey_sim => 0                                       # Simulate Odyssey Mission
             )
 
-# Calculating time of simulation
-# t = @elapsed begin
-            
-#     # Run the simulation
-#     sol = run_analysis(args)
-
-#     if Bool(args[:passresults])
-#         println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#     end
-# end
-
-# println("COMPUTATIONAL TIME = " * string(t) * " s")
-mc_runs = 1
-nominal_ra = args[:ra_initial_a]
-nominal_rp = args[:hp_initial_a]
-nominal_i = args[:inclination]
-nominal_Ω = args[:Ω]
-nominal_ω = args[:ω]
-for i in 1:mc_runs
-# degree_order = [1, 2, 5, 10, 50, 100, 150, 200, 250, 300, 360]
-# degree_order = [360]
-# orbits = [1, 1, 2, 5, 10, 50, 100, 150, 200]
-# orbits = [1, 150, 200]
-# for degree_order in degree_order
-# for orbit in orbits
-    # args[:number_of_orbits] = orbit
     t = @elapsed begin
-        args[:directory_results] = "/workspaces/ABTS.jl/output/vex_MC_5p_disp/" * string(i)
-        args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3
-        args[:hp_initial_a] = nominal_rp + randn()*sqrt(args[:rp_dispersion]) * 1e3
-        args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])
-        args[:Ω] = nominal_Ω + randn()*sqrt(args[:Ω_dispersion])
-        args[:ω] = nominal_ω + randn()*sqrt(args[:ω_dispersion])
-        # args[:directory_results] = "output/earth_ggm05c_$(degree_order)_deg_order_test/"
-        # args[:L] = Int(round(degree_order))
-        # args[:M] = Int(round(degree_order))
-        # println("Degree and Order: ", degree_order)
-        # println("ra_initial_a = " * string(args[:ra_initial_a] * 1e-3) * " km, hp_initial_a = " * string(args[:hp_initial_a] * 1e-3) * " km, inclination = " * string(args[:inclination]) * " deg, Ω = " * string(args[:Ω]) * " deg, ω = " * string(args[:ω]) * " deg")
         # Run the simulation
         local sol = run_analysis(args)
 
@@ -253,4 +205,3 @@ for i in 1:mc_runs
     end
 
     println("COMPUTATIONAL TIME = " * string(t) * " s")
-end

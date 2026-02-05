@@ -4,7 +4,7 @@ include("../utils/maneuver_plans.jl")
 include("../utils/attitude_control_plans.jl")
 import .config
 import .ref_sys
-# import .SpacecraftModel
+
 # Define spacecraft model
 spacecraft = config.SpacecraftModel()
 # Add bodies to the spacecraft model
@@ -45,7 +45,6 @@ config.add_joint!(spacecraft, L_panel_joint)
 config.add_joint!(spacecraft, R_panel_joint)
 
 println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
-# println("Spacecraft roots: $spacecraft.roots")
 println("Spacecraft COM: $(config.get_COM(spacecraft, main_bus))")
 println("Spacecraft MOI: $(config.get_inertia_tensor(spacecraft, main_bus))")
 
@@ -111,18 +110,6 @@ args = Dict(# Misc Simulation
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
             :α => 90.0,                                             # Max angle of attack of solar panels
-
-            # Fill for Spacecraft body shape only
-            # :length_sat => 2.05,                                     # Length of the satellite in m
-            # :height_sat => 2.8,                                     # Height of the satellite in m
-            # :width_sat => 3.7,                                      # Width of the satellite in m
-            # :length_sp => 5.7,                                     # Length of the solar panels in m
-            # :height_sp => 1.0,                                     # Height of the solar panels in m
-
-            # # Fill for Blunted Cone body shape only
-            # :cone_angle => 70.0,                                    # Cone angle of the blunted cone in deg
-            # :base_radius => 2.65/2,                                 # Base radius of the blunted cone in m
-            # :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
             :spacecraft_model => spacecraft,                            # Spacecraft model object
             
             # Engine
@@ -226,45 +213,15 @@ args = Dict(# Misc Simulation
             )
 
 # Calculating time of simulation
-# t = @elapsed begin
-            
-#     # Run the simulation
-#     sol = run_analysis(args)
+t = @elapsed begin
+    println("ra_initial_a = " * string(args[:ra_initial_a] * 1e-3) * " km, hp_initial_a = " * string(args[:hp_initial_a] * 1e-3) * " km, inclination = " * string(args[:inclination]) * " deg, Ω = " * string(args[:Ω]) * " deg, ω = " * string(args[:ω]) * " deg")
 
-#     if Bool(args[:passresults])
-#         println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#     end
-# end
+    # Run the simulation
+    local sol = run_analysis(args)
 
-# println("COMPUTATIONAL TIME = " * string(t) * " s")
-# mc_runs = 1
-# nominal_ra = args[:ra_initial_a]
-# nominal_rp = args[:hp_initial_a]
-# nominal_i = args[:inclination]
-# nominal_Ω = args[:Ω]
-# nominal_ω = args[:ω]
-# for i in 1:mc_runs
-# degree_order = [1, 2, 5, 10, 40, 50, 75, 90, 100, 120, 150, 180]
-# for degree_order in degree_order
-    t = @elapsed begin
-        # args[:directory_results] = "/workspaces/ABTS.jl/output/vex_MC_5p_disp/" * string(i)
-        # args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3
-        # args[:hp_initial_a] = nominal_rp + randn()*sqrt(args[:rp_dispersion]) * 1e3
-        # args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])
-        # args[:Ω] = nominal_Ω + randn()*sqrt(args[:Ω_dispersion])
-        # args[:ω] = nominal_ω + randn()*sqrt(args[:ω_dispersion])
-        # args[:directory_results] = "output/vex_mgnp180U_$(degree_order)_deg_order_test/"
-        # args[:L] = Int(round(degree_order))
-        # args[:M] = Int(round(degree_order))
-        # println("Degree and Order: ", degree_order)
-        println("ra_initial_a = " * string(args[:ra_initial_a] * 1e-3) * " km, hp_initial_a = " * string(args[:hp_initial_a] * 1e-3) * " km, inclination = " * string(args[:inclination]) * " deg, Ω = " * string(args[:Ω]) * " deg, ω = " * string(args[:ω]) * " deg")
-        # Run the simulation
-        local sol = run_analysis(args)
-
-        if Bool(args[:passresults])
-            println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-        end
+    if Bool(args[:passresults])
+        println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
     end
+end
 
-    println("COMPUTATIONAL TIME = " * string(t) * " s")
-# end
+println("COMPUTATIONAL TIME = " * string(t) * " s")

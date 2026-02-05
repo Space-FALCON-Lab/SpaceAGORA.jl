@@ -82,7 +82,9 @@ function aerobraking(ip, m, args, gram, gram_atmosphere, filename, temp_name)
                 m.initial_condition.minute = round(config.solution.orientation.minute[end])
                 m.initial_condition.second = config.solution.orientation.second[end]
                 m.initial_condition.el_time = config.solution.orientation.time[end]
-                println("Initial Date and Time of the Passage: " * string(m.initial_condition.year) * "-" * string(m.initial_condition.month) * "-" * string(m.initial_condition.day) * " " * string(m.initial_condition.hour) * ":" * string(m.initial_condition.minute) * ":" * string(round(m.initial_condition.second, digits=2)))
+                if args[:print_res]
+                    println("Initial Date and Time of the Passage: " * string(m.initial_condition.year) * "-" * string(m.initial_condition.month) * "-" * string(m.initial_condition.day) * " " * string(m.initial_condition.hour) * ":" * string(m.initial_condition.minute) * ":" * string(round(m.initial_condition.second, digits=2)))
+                end
                 if (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone") && continue_campaign
                     r = m.planet.Rp_e + args[:EI]*1e3
                     initial_state.vi = -acos(1 / initial_state.e * (initial_state.a * (1 - initial_state.e^2) / r - 1))

@@ -12,10 +12,7 @@ spacecraft = config.SpacecraftModel()
 # Add bodies to the spacecraft model
 main_bus = config.Link(root=true, 
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), 
-                        q=SVector{4, Float64}([0, -0.6321683, -0.07370895, 0.7713171]), # true odyssey
-                        # q=SVector{4, Float64}([0, 0, 0, 1]),
-                        # q=SVector{4, Float64}([0, 0, 0.6371, 0.7707]), # 0 inc
-                        # q=SVector{4, Float64}([0, -0.6358, -0.0338, 0.7711]), # 90 inc
+                        q=SVector{4, Float64}([0, -0.6321683, -0.07370895, 0.7713171]),
                         ṙ=SVector{3, Float64}([0,0,0]), 
                         dims=SVector{3, Float64}([2.2,2.6,1.7]), 
                         ref_area=2.6*1.7,
@@ -72,7 +69,7 @@ args = Dict(# Misc Simulation
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => false,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 50,                                 # Number of aerobraking passage
+            :number_of_orbits => 5,                                 # Number of aerobraking passage
             :orientation_sim => false,                              # Orientation simulation True=1, False=0
             :save_steps => 10000,                                   # Number of steps to store in memory before saving to file
 
@@ -118,19 +115,8 @@ args = Dict(# Misc Simulation
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
             :α => 90.0,                                             # Max angle of attack of solar panels
-
-            # Fill for Spacecraft body shape only
-            # :length_sat => 2.05,                                     # Length of the satellite in m
-            # :height_sat => 2.8,                                     # Height of the satellite in m
-            # :width_sat => 3.7,                                      # Width of the satellite in m
-            # :length_sp => 5.7,                                     # Length of the solar panels in m
-            # :height_sp => 1.0,                                     # Height of the solar panels in m
-
-            # Fill for Blunted Cone body shape only
-            # :cone_angle => 70.0,                                    # Cone angle of the blunted cone in deg
-            # :base_radius => 2.65/2,                                 # Base radius of the blunted cone in m
-            # :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
             :spacecraft_model => spacecraft,                         # Spacecraft model defined in SpacecraftModel.jl
+
             # Engine
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
@@ -225,98 +211,13 @@ args = Dict(# Misc Simulation
             :Odyssey_sim => 0                                       # Simulate Odyssey Mission
             )
 
-# nbodies = [[], ["Saturn"], ["Sun"], ["Sun", "Saturn"]]
-# nbodies_str = ["", "Sat", "Sun", "SunSat"]
-# gravity_model = ["Inverse Squared", "Inverse Squared and J2 effect", "Inverse Squared and J2 effect"]
-# gravity_model_str = ["I", "IJ2", "IJ2GH"]
+t = @elapsed begin
+    # Run the simulation
+    sol = run_analysis(args)
 
-# for i in 1:length(nbodies)
-#     for j in 1:length(gravity_model)
-#         args[:n_bodies] = nbodies[i]
-#         args[:gravity_model] = gravity_model[j]
-#         if j == 3
-#             args[:gravity_harmonics] = 1
-#             args[:gravity_harmonics_file] = "/workspaces/ABTS.jl/Gravity_harmonics_data/titan5.csv"
-#             args[:L] = 5
-#             args[:M] = 5
-#         else
-#             args[:gravity_harmonics] = 0
-#             args[:gravity_harmonics_file] = ""
-#             args[:L] = 0
-#             args[:M] = 0
-#         end
-#         args[:directory_results] = "/workspaces/ABTS.jl/output/titan/titan_" * nbodies_str[i] * gravity_model_str[j]
-        # Calculating time of simulation
-# max_peri_alt = 1500.0e3
-# min_peri_alt = 500.0e3
-# alt = (min_peri_alt + max_peri_alt) / 2
-# target_max_stag_temp = 1100 # K
-# while true
-#     global alt, max_peri_alt, min_peri_alt, target_max_stag_temp
-#     t = @elapsed begin
-#         args[:hp_initial_a] = alt
-#         # Run the simulation
-#         sol = run_analysis(args)
-
-#         if Bool(args[:passresults])
-#             println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#         end
-#     end
-
-#     println("COMPUTATIONAL TIME = " * string(t) * " s")
-#     peri_idx = argmin(sol.orientation.alt)
-#     periapsis_alt = sol.orientation.alt[peri_idx]
-#     periapsis_S = sol.physical_properties.S[peri_idx]
-#     periapsis_T = sol.physical_properties.T[peri_idx]
-#     γ = 1.3846
-#     periapsis_mach = periapsis_S/sqrt(γ/2)
-#     periapsis_T0 = periapsis_T*(1 + 0.5 * (γ - 1) * periapsis_mach^2)
-
-#     print("Max stagnation temp = " * string(periapsis_T0) * " K")
-#     println("Initial Periapsis Altitude = " * string(alt * 1e-3) * " km")
-#     if abs(periapsis_T0 - target_max_stag_temp) < 0.1
-#         println("Target max heat rate reached")
-#         println("Final periapsis altitude = " * string(alt * 1e-3) * " km")
-#         break
-#     end
-#     if periapsis_T0 > target_max_stag_temp || config.cnf.impact == true
-#         min_peri_alt = alt
-#         alt = (alt + max_peri_alt) / 2
-#     elseif periapsis_T0 < target_max_stag_temp
-#         max_peri_alt = alt
-#         alt = (alt + min_peri_alt) / 2
-#     end
-
-#     if abs(min_peri_alt - max_peri_alt) < 1
-#         println("Min and max periapsis altitude are too close")
-#         println("Target max heat rate reached")
-#         println("Final periapsis altitude = " * string(alt * 1e-3) * " km")
-#         break
-#     end
-# end
-
-# mc_runs = 50
-# nominal_ra = args[:ra_initial_a]
-# nominal_rp = args[:hp_initial_a]
-# nominal_i = args[:inclination]
-# nominal_Ω = args[:Ω]
-# nominal_ω = args[:ω]
-# for i in 1:mc_runs
-    t = @elapsed begin
-        # args[:directory_results] = "/workspaces/ABTS.jl/output/titan_MC_2/Nominal"# * string(i)
-#         args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3
-#         args[:hp_initial_a] = nominal_rp + randn()*sqrt(args[:rp_dispersion]) * 1e3
-#         args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])
-#         args[:Ω] = nominal_Ω + randn()*sqrt(args[:Ω_dispersion])
-#         args[:ω] = nominal_ω + randn()*sqrt(args[:ω_dispersion])
-
-        # Run the simulation
-        sol = run_analysis(args)
-
-        if Bool(args[:passresults])
-            println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-        end
+    if Bool(args[:passresults])
+        println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
     end
+end
 
-    println("COMPUTATIONAL TIME = " * string(t) * " s")
-# end
+println("COMPUTATIONAL TIME = " * string(t) * " s")

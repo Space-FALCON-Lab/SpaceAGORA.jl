@@ -108,7 +108,7 @@ end
 
 function angle_of_attack_plot(name, args, data_table)
     alt_idx = findall(x -> x < args[:AE]*1e3, data_table.alt)
-    # println(config.solution.orientation.alt)
+
     index_orbit = [1]
     time_0 = [data_table.time[alt_idx[1]]]
 
@@ -167,7 +167,6 @@ function closed_form_solution_plot(name, mission, data_table)
         end
     end
     append!(index_orbit, length(alt_idx))
-    println(config.solution.closed_form.h_cf)
     alt_idx_cf = findall(x -> (x > 0) && (x <= args[:EI]*1e3), config.solution.closed_form.h_cf)
     index_orbit_cf = [1]
     time_0_cf = [config.solution.closed_form.t_cf[alt_idx_cf[1]]]

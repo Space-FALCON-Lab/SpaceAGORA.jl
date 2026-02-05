@@ -53,21 +53,21 @@ config.add_joint!(spacecraft, L_panel_joint)
 config.add_joint!(spacecraft, R_panel_joint)
 
 args = Dict(# Misc Simulation
-            :results => 1,                                                                                      # Generate csv file for results True=1, False=0
-            :passresults => 1,                                                                                  # Pass results as output True=1, False=0
+            :results => true,                                                                                      # Generate csv file for results True=1, False=0
+            :passresults => true,                                                                                  # Pass results as output True=1, False=0
             :print_res => true,                                                                                    # Print some lines True=1, False=0
             :directory_results => "output/odyssey_gmm3_50",                # Directory where to save the results
             :directory_Gram => "GRAMpy",                                                    # Directory where Gram is
             :directory_Gram_data => "GRAM_Data",                                            # Directory where Gram data is
             :directory_Spice => "GRAM_Data/SPICE",                                          # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
-            :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
-            :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
+            :montecarlo_analysis => false,                                                                          # Generate csv file for Montecarlo results True=1, False=0
+            :plot => true,                                                                                         # Generate pdf plots of results True=1, False=0
+            :filename => true,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 1,                                       # Normalize the integration True=1, False=0
-            :closed_form => 0,                                     # Closed form solution True=1, False=0
+            :normalize => true,                                       # Normalize the integration True=1, False=0
+            :closed_form => false,                                     # Closed form solution True=1, False=0
             :save_csv => false,
             # Type of Mission
             :type_of_mission => "Orbits",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
@@ -110,23 +110,9 @@ args = Dict(# Misc Simulation
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
             :max_heat_rate => 0.15,                                 # Max heat rate the heat rate control will start to react to
             :max_heat_load => 30.0,                                 # Max heat load the heat load control will not be overcomed
-            # :dry_mass => 411.0,                                     # Initial dry mass of body in kg
-            # :prop_mass => 50.0,                                     # Initial propellant mass of body in kg
             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
             :α => 90.0,                                             # Max angle of attack of solar panels
-
-            # # Fill for Spacecraft body shape only
-            # :length_sat => 2.2,                                     # Length of the satellite in m
-            # :height_sat => 1.7,                                     # Height of the satellite in m
-            # :width_sat => 2.6,                                      # Width of the satellite in m
-            # :length_sp => 3.76,                                     # Length of the solar panels in m
-            # :height_sp => 1.93,                                     # Height of the solar panels in m
-
-            # # Fill for Blunted Cone body shape only
-            # :cone_angle => 70.0,                                    # Cone angle of the blunted cone in deg
-            # :base_radius => 2.65/2,                                 # Base radius of the blunted cone in m
-            # :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
             :spacecraft_model => spacecraft,                            # Spacecraft model with bodies and joints
             
             # Engine
@@ -235,80 +221,11 @@ args = Dict(# Misc Simulation
             )
 
 # # Calculating time of simulation
-# println("Threads: ", Threads.nthreads())
-# nbodies = [["Sun"], ["Sun", "Jupiter"], ["Jupiter"]]
-# for nbody in nbodies
-#     for hours in 0:23
-#         for minutes in 0:30:31
-#         args[:hours] = hours
-#         args[:minutes] = minutes
-#         args[:n_bodies] = nbody
-#         println("Hours: ", args[:hours], " Minutes: ", args[:minutes])
-#         args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey/" * string(args[:hours]) * "_" * string(args[:minutes]) * "_" * string(nbody) * "/"
-# orbits = 200 # 1, 5, 10, 20, 50, 100, 200
-# # for num_orbits in orbits
-# args[:number_of_orbits] = orbits
-# println("Number of Orbits: ", orbits)
-# args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey/" * string(orbits) * "/"
-
-# #     for i in 1:Threads.nthreads() 
-
-# @profview run_analysis(args)
-# degree_order = [1, 2, 5, 10, 20, 30, 40, 50, 75, 90, 100, 120]
-# for degree_order in degree_order
-        t = @elapsed begin          
-                # args[:directory_results] = "output/odyssey_gmm3_$(degree_order)_deg_order_test/"
-                # args[:L] = Int(round(degree_order))
-                # args[:M] = Int(round(degree_order))
-                # println("Degree and Order: ", degree_order)
-                # Run the simulation
-                sol = run_analysis(args)
-                if Bool(args[:passresults])
-                println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-                end
+t = @elapsed begin          
+        # Run the simulation
+        sol = run_analysis(args)
+        if Bool(args[:passresults])
+        println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
         end
-        println("COMPUTATIONAL TIME = " * string(t) * " s")
-# end
-
-# end
-        # end
-    # end
-# end
-
-# mc_runs = 50
-# nominal_ra = args[:ra_initial_a]
-# nominal_rp = args[:hp_initial_a]
-# nominal_i = args[:inclination]
-# nominal_Ω = args[:Ω]
-# nominal_ω = args[:ω]
-# for i in 24:mc_runs
-#     a = @allocated begin
-#         t = @elapsed begin
-#             args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey_MC_polyfit_atmo_orig_disp/" * string(i)
-#             println("Monte Carlo Run: ", i)
-#             if i == 1
-#                 args[:print_res] = 1
-#             else
-#                 args[:print_res] = 0
-#             end
-#             # args[:print_res] = 1
-#             # println(randn()*sqrt(args[:ra_dispersion]) * 1e3)
-#             args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3
-#             args[:hp_initial_a] = nominal_rp + randn()*sqrt(args[:rp_dispersion]) * 1e3
-#             args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])
-#             args[:Ω] = nominal_Ω + randn()*sqrt(args[:Ω_dispersion])
-#             args[:ω] = nominal_ω + randn()*sqrt(args[:ω_dispersion])
-
-#             # Run the simulation
-#             sol = run_analysis(args)
-
-#             if Bool(args[:passresults])
-#                 println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-#             end
-#         end
-
-#         println("COMPUTATIONAL TIME = " * string(t) * " s")
-#         config.reset_config()
-#     end
-#     println("Memory allocated = " * string(a / 1e6) * " MB")
-# end
+end
+println("COMPUTATIONAL TIME = " * string(t) * " s")

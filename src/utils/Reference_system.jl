@@ -5,7 +5,6 @@ using AstroTime
 using StaticArrays
 using SatelliteToolboxTransformations
 using SatelliteToolbox
-using .SimulationModel: Model, Planet
 # eop_iau2000a = fetch_iers_eop(Val(:IAU2000A))
 
 function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet, et)
@@ -59,7 +58,7 @@ function orbitalelemtorv(oe::SVector{7, Float64}, planet)
     return collect(R), collect(V)
 end
 
-function rvtoorbitalelement(r::SVector, v::SVector, m::Float64, planet::Planet)
+function rvtoorbitalelement(r::SVector, v::SVector, m::Float64, planet)
 
     # println("r: ", r)
     # println("v: ", v)

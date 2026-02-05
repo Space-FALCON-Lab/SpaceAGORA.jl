@@ -137,6 +137,8 @@ end
     calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
 """
 function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, param::ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    cnf = param.cnf
+    
     pos_ii = SVector{3, Float64}(x[1:3]) # Position in inertial frame, change to x.r if using StructArrays in Complete_passage
     mass = x[7]               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
     primary_body_name = model.primary_body_name
@@ -157,10 +159,15 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
 
         force_ii += mass * model.planet.μ * ((pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3))
     end
+
+    cnf.gravity_nbody_ii = force_ii # Store gravity in config for other uses
+
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
 function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    cnf = param.cnf
+    
     rVec_cart = SVector{3, Float64}(x[1:3])
     mass = x[7]               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
 
@@ -224,7 +231,36 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
             a4 -= rr * sum4
         end
     end
-    return mass * SVector{3, Float64}(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4), SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    force_ii = mass * SVector{3, Float64}(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4) # Store gravity in config for other uses
+
+    cnf.gravity_harmonics_ii = force_ii
+
+    if param.orientation_sim
+        tau_gg = gravity_gradient(param.inertia_matrix, rVec_cart, model.planet.μ)
+        return force_ii, tau_gg
+    else
+        return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+end
+
+"""
+    gravity_gradient(J::SMatrix{3,3,Float64}, rVec::SVector{3,Float64}, μ::Float64)
+
+Calculates the gravity gradient torque exerted on a spacecraft due to the size of the spacecraft
+
+# Args
+- `J`: The inertia matrix of the spacecraft in the inertial frame [kg·m²].
+- `rVec`: The position vector of the spacecraft in the inertial frame [meters].
+- `μ`: The gravitational parameter of the central body [m³/s²].
+
+# Returns
+- A 3-element `SVector` representing the gravity gradient torque in the body frame `[τ_x, τ_y, τ_z]` [N·m].
+"""
+function gravity_gradient(J::SMatrix{3,3,Float64}, rVec::SVector{3,Float64}, μ::Float64)
+    r = norm(rVec)
+    r_hat = rVec / r
+    return 3*μ/r^3 * cross(r_hat, J * r_hat)
 end
 """
     get_magnetic_field_dipole(r_ecef::AbstractVector)
@@ -375,63 +411,7 @@ function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64
     else # No eclipse condition
         return 1.0 # If the satellite is not in eclipse, return 1.0
     end
-
-    # shadow = "none"
-    # rs = 6.9634e8 # Radius of the Sun in meters 
-    # RP = norm(r_sun) # Distance from Sun to the planet 
-    # alpha_umb = asin((rs - rp) / RP)  # Umbra angle
-    # alpha_pen = asin((rs + rp) / RP)  # Penumbra angle
-
-    # if dot(r_sun, r_sat) < 0 # if the angle is greater than 90 degrees, satellite is potentially in an eclipse
-    #     # Compute the satellite's horizontal and vertical distances
-    #     sigma = acos(dot(-r_sat, r_sun) / (norm(r_sat) * norm(r_sun)))
-    #     sat_horiz = norm(r_sat) * cos(sigma)
-    #     sat_vert = norm(r_sat) * sin(sigma)
-    #     # Determine the eclipse conditions
-    #     x = rp / sin(alpha_pen)
-    #     pen_vert = tan(alpha_pen) * (x + sat_horiz)
-
-    #     if sat_vert <= pen_vert # if true, the satellite is in partial shadow(penumbra)
-    #         shadow = "penumbra"
-    #         y = rp / sin(alpha_umb)
-    #         umb_vert = tan(alpha_umb) * (y - sat_horiz)
-    #         if sat_vert <= umb_vert
-    #             shadow = "umbra"
-    #         end
-    #     end
-    # end
-
-    # if shadow == "none"
-    #     eclipse_ratio = 1
-    # elseif shadow == "penumbra"
-    #     eclipse_ratio = (1 - (1 - (sat_vert / pen_vert))^2)
-    # else 
-    #     eclipse_ratio = 0
-    # end
-    
-    # return eclipse_ratio
 end
-
-# function srp(p::config.Planet, facet::config.Facet, b::config.Body)
-#     """
-#     Calculate SRP force on a single facet, i.e., a single face of a rigid body.
-
-#     Parameters
-#     ----------
-#     p : Planet struct
-#         Contains planetary parameters, including equatorial radius.
-#     facet : Facet struct
-#         Contains information about the facet.
-#     b : Body struct
-#         Contains physical information about the entire rigid body.
-    
-#     Returns
-#     -------
-#     F_srp : SVector{3, Float64}
-#         Force on the facet in the inertial frame
-#     """
-
-# end
 
 function srp!(model, root_index::Int64, sun_dir_ii::SVector{3, Float64}, body, P_srp::Float64, eclipse_ratio::Float64, orientation::Bool)
     """

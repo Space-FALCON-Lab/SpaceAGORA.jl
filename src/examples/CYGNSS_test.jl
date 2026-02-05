@@ -22,7 +22,8 @@ using Arrow
 gravEffector = InverseSquaredGravityModel()
 nBodyGravEffector = NBodyGravityModel(["Sun", "Moon"], "Earth")
 harmonicGravEffector = GravitationalHarmonicsModel(50, 50, "Gravity_harmonics_data/EarthGGM05C.csv", "Earth")
-dynamic_effectors = (gravEffector, nBodyGravEffector, harmonicGravEffector)
+aeroEffector = AerodynamicCoefficientfM()
+dynamic_effectors = (gravEffector, nBodyGravEffector, harmonicGravEffector, aeroEffector)
 
 spacecraft = SpacecraftModel(dynamic_effectors=dynamic_effectors)
 # Add bodies to the spacecraft model
@@ -214,16 +215,16 @@ args = Dict(# Misc Simulation
             :filename => false,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => true,                                       # Normalize the integration True=1, False=0
+            :normalize => false,                                       # Normalize the integration True=1, False=0
             :closed_form => false,                                     # Closed form solution True=1, False=0
             :save_csv => true,
             # Type of Mission
             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => true,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 10,                                 # Number of aerobraking passage
-            :mission_time => 3600.0,                                  # Mission time in seconds, used only for Time mission type
+            :mission_time => 10*3600.0,                                  # Mission time in seconds, used only for Time mission type
             # :mission_time => 1000.0,                                  # Mission time in seconds, used only for Time mission type
-            :orientation_sim => false,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
+            :orientation_sim => true,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
             :num_steps_to_save => 10000,                            # Number of timesteps between saves
 
             # Physical Model
@@ -352,7 +353,7 @@ args = Dict(# Misc Simulation
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
             :ra_fin_orbit => 25000e3,                               # Target final apoapsis for the orbit, m
-            :maneuver_plan => Odyssey_firing_plan,                # Maneuver plan function
+            :maneuver_plan => Odyssey_firing_plan,                  # Maneuver plan function
             
             # Monte Carlo Simulations
             :montecarlo => 0,                                       # Run Monte Carlo simulation True=1, False=0
@@ -396,7 +397,7 @@ args = Dict(# Misc Simulation
             :a_tol_quaternion => 1e-11,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :r_tol_quaternion => 1e-9,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :dt_max => 1.0,                                         # Maximum time step for integration, s
-            :dt_max_orbit => 0.1,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
+            :dt_max_orbit => 10.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
             :dt_max_drag => 1.0,                                    # Maximum time step for drag passage
 
             :Odyssey_sim => 0                                      # Simulate Odyssey Mission

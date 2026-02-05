@@ -81,6 +81,8 @@ export Body, Planet, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solut
         heat_load_limit::Float64 = 0.0
     end
 
+    # Thermal
+
     @kwdef mutable struct Engines
         ϕ::Float64 = 0.0
         g_e::Float64 = 0.0
@@ -299,6 +301,27 @@ export Body, Planet, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solut
         lamv_list::Vector{Float64} = []
 
         t_switch_targeting::Float64 = 0.0
+
+        drag_pp::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        lift_pp::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        drag_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        lift_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        gravity_cent_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        gravity_nbody_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        gravity_harmonics_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+
+        CL_current::Float64 = 0.0
+        CD_current::Float64 = 0.0
+
+        vel_pp_rw_hat::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+
+        β_body::Vector{Float64} = []
+        α_body::Vector{Float64} = []
+
+        T_p::Float64 = 0.0
+        S::Float64 = 0.0
+        q::Float64 = 0.0
+        rot_body_to_inertial::Matrix{Float64} = zeros(3,3)
     end
 
     # cnf = Cnf()

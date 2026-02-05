@@ -236,32 +236,9 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
 
     cnf.gravity_harmonics_ii = force_ii
 
-    if param.orientation_sim
-        tau_gg = gravity_gradient(param.inertia_matrix, rVec_cart, model.planet.μ)
-        return force_ii, tau_gg
-    else
-        return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
-    end
+    return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-"""
-    gravity_gradient(J::SMatrix{3,3,Float64}, rVec::SVector{3,Float64}, μ::Float64)
-
-Calculates the gravity gradient torque exerted on a spacecraft due to the size of the spacecraft
-
-# Args
-- `J`: The inertia matrix of the spacecraft in the inertial frame [kg·m²].
-- `rVec`: The position vector of the spacecraft in the inertial frame [meters].
-- `μ`: The gravitational parameter of the central body [m³/s²].
-
-# Returns
-- A 3-element `SVector` representing the gravity gradient torque in the body frame `[τ_x, τ_y, τ_z]` [N·m].
-"""
-function gravity_gradient(J::SMatrix{3,3,Float64}, rVec::SVector{3,Float64}, μ::Float64)
-    r = norm(rVec)
-    r_hat = rVec / r
-    return 3*μ/r^3 * cross(r_hat, J * r_hat)
-end
 """
     get_magnetic_field_dipole(r_ecef::AbstractVector)
 

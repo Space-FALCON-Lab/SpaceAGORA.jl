@@ -8,7 +8,8 @@ module DynamicEffectors
     using ..AbstractTypes       # Assuming this is also in types.jl now
     using ..LinearAlgebra       # Get deps from parent
     using ..StaticArrays        # Get deps from parent
-    
+    using ..Kinematics
+
     # Public members to export
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel # Gravity models
     export NBodyGravityModel, GravitationalHarmonicsModel # N-body gravity model

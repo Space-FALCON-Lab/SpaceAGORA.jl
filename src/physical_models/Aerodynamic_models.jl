@@ -169,10 +169,10 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     h_pp_hat = normalize(h_pp) # Unit vector of the planet relative angular momentum
     
     bank_angle = deg2rad(0.0)
-        
-    lift_pp_hat = normalize(cross(h_pp_hat, cnf.vel_pp_rw_hat))
+    vel_pp_rw_hat = normalize(cnf.vel_pp_rw)   # relative wind unit vector
+    lift_pp_hat = normalize(cross(h_pp_hat, vel_pp_rw_hat))
     # lift_pp_hat /= norm(lift_pp_hat) # Normalize the lift vector in planet relative frame
-    drag_pp_hat = -cnf.vel_pp_rw_hat # Planet relative drag force direction
+    drag_pp_hat = -vel_pp_rw_hat # Planet relative drag force direction
     cross_pp_hat = cross(drag_pp_hat, lift_pp_hat) # Cross product of the drag and lift vectors in planet relative frame
 
     if orientation_sim
@@ -200,7 +200,7 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     @inbounds for (i, b) in enumerate(bodies)
         if orientation_sim
             R .= Rot[i] # Rotation matrix from the spacecraft link to the inertial frame
-            body_frame_velocity = R' * m.planet.L_PI' * vel_pp_rw # Velocity of the spacecraft link in inertial frame
+            body_frame_velocity = R' * m.planet.L_PI' * cnf.vel_pp_rw # Velocity of the spacecraft link in inertial frame
             
             α_body = atan(body_frame_velocity[1], body_frame_velocity[3]) # Angle of attack in radians
             β_body = atan(body_frame_velocity[2], norm([body_frame_velocity[1], body_frame_velocity[3]])) # Sideslip angle in radians
@@ -208,7 +208,7 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
             β[i] = β_body # Sideslip angle for the spacecraft link
             b.α = α_body
             b.β = β_body
-            b.θ = acos(clamp(vel_pp_rw[1]/norm(vel_pp_rw), -1.0, 1.0)) # Elevation angle for the spacecraft link
+            b.θ = acos(clamp(cnf.vel_pp_rw[1]/norm(cnf.vel_pp_rw), -1.0, 1.0)) # Elevation angle for the spacecraft link
         else
             # TODO: Change this so that it just uses above code even with orientation_sim = false
             if b.root

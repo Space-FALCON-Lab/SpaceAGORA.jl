@@ -313,7 +313,7 @@ export Body, Planet, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solut
         CL_current::Float64 = 0.0
         CD_current::Float64 = 0.0
 
-        vel_pp_rw_hat::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        vel_pp_rw::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
 
         β_body::Vector{Float64} = []
         α_body::Vector{Float64} = []

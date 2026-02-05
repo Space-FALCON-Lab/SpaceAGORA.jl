@@ -110,9 +110,9 @@ L_panel_joint = Joint(main_bus, SVector{3, Float64}(0.0, 32.045e-2, -(20.22 - 13
 R_panel_joint = Joint(R_panel, SVector{3, Float64}(-24.855, 0.0, 0.0), main_bus, SVector{3, Float64}(0.0, -32.045e-2, -(20.22 - 13.1)*1.0e-2))
 add_joint!(spacecraft, L_panel_joint)
 add_joint!(spacecraft, R_panel_joint)
-inertia_tensor = [1.4e6 -1.71e4 8.08e3;
+inertia_tensor = SMatrix{3, 3, Float64}([1.4e6 -1.71e4 8.08e3;
                   -1.71e4 8.19e5 -5.35e3;
-                  8.08e3 -5.35e3 1.95e6] * 1e-6
+                  8.08e3 -5.35e3 1.95e6]) * 1e-6
 set_inertia_tensor!(spacecraft, main_bus, 
                         SMatrix{3, 3, Float64}(inertia_tensor))
 
@@ -390,12 +390,12 @@ args = Dict(# Misc Simulation
 
             :a_tol => 1e-5,                                         # Absolute tolerance for integration
             :r_tol => 1e-3,                                         # Relative tolerance for integration
-            :a_tol_orbit => 1e-10,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
-            :r_tol_orbit => 1e-8,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
-            :a_tol_drag => 1e-10,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
-            :r_tol_drag => 1e-8,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
-            :a_tol_quaternion => 1e-11,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
-            :r_tol_quaternion => 1e-9,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :a_tol_orbit => 1e-7,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :r_tol_orbit => 1e-5,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+            :a_tol_drag => 1e-7,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
+            :r_tol_drag => 1e-5,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
+            :a_tol_quaternion => 1e-7,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+            :r_tol_quaternion => 1e-5,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
             :dt_max => 1.0,                                         # Maximum time step for integration, s
             :dt_max_orbit => 10.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
             :dt_max_drag => 1.0,                                    # Maximum time step for drag passage

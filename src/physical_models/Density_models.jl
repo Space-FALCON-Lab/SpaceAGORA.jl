@@ -3,6 +3,7 @@ include("../utils/Reference_system.jl")
 # using .SimulationModel
 using PythonCall
 using SatelliteToolbox
+using ..AbstractTypes: Planet
 # SpaceIndices.init()
 sys = pyimport("sys")
 

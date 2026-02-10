@@ -7,7 +7,7 @@ using LinearAlgebra
 # using ..AbstractTypes
 using ..Components
 
-export Link, Joint, SpacecraftModel
+export Link, Joint, SpacecraftModel, DynamicsModel
 
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 
@@ -35,7 +35,6 @@ mutable struct Link{N_RW}
     net_force::MVector{3, Float64} # Net force acting on the link, to be updated at each simulation step
     net_torque::MVector{3, Float64} # Net torque acting on the link, to be updated at each simulation step
     attitude_control_rate::Float64 # Rate at which the attitude control function is called, in seconds
-    ω_wheel_derivatives::MVector{N_RW, Float64} # Angular momentum derivatives of the reaction wheels, to be updated at each simulation step
     SRP_facets::Vector{Facet}
     J_thruster::Matrix{Float64} # Thruster Jacobian matrix
     thrusters::Vector{Thruster}
@@ -64,7 +63,6 @@ mutable struct Link{N_RW}
         net_force=MVector{3, Float64}(zeros(3)),
         net_torque=MVector{3, Float64}(zeros(3)),
         attitude_control_rate=0.1,
-        ω_wheel_derivatives=MVector{N_RW, Float64}(zeros(N_RW)),
         SRP_facets=Facet[],
         J_thruster=Matrix{Float64}(zeros(3, 1)),
         thrusters=Thruster[],
@@ -79,7 +77,7 @@ mutable struct Link{N_RW}
             tau_body_net=MVector{3, Float64}(zeros(3))      # tau_body_net
         )
         println(length(rw))
-        new{N_RW}(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, rw_assembly, net_force, net_torque, attitude_control_rate, ω_wheel_derivatives, SRP_facets, J_thruster, thrusters, magnets)
+        new{N_RW}(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, J_thruster, thrusters, magnets)
     end
 end
 
@@ -142,34 +140,47 @@ end
 # --- CRITICAL REFACTOR 2 ---
 # SpacecraftModel is now parametric on T_Effectors, a Tuple type.
 # This ensures the `dynamic_effectors` field is type-stable.
-mutable struct SpacecraftModel{T_Effectors<:Tuple}
+mutable struct SpacecraftModel
     joints::Vector{Joint} # List of joints
-    links::Vector{Link} # List of links (bodies)
-    roots::Vector{Link} # Vector of root links (main bus or core bodies)
+    children::Vector{Link} # List of links (bodies)
+    root::Link # Root link (main bus or core body)
     instant_actuation::Bool # Whether control inputs (e.g., solar panel angles) are applied instantly
     dry_mass::Float64 # Dry mass of the spacecraft
-    prop_mass::Vector{Float64} # Fuel mass available for maneuvers
-    inertia_tensors::Vector{SMatrix{3, 3, Float64}} # Inertia tensors of the spacecraft bodies in the body frame
+    prop_mass::Float64 # Fuel mass available for maneuvers
+    inertia_tensor::SMatrix{3, 3, Float64} # Inertia tensor of the spacecraft in the body frame
     n_reaction_wheels::Int64 # Number of reaction wheels in the spacecraft model
     n_thrusters::Int64 # Number of thrusters in the spacecraft model
-    dynamic_effectors::T_Effectors # List of dynamic effector models (gravity, drag, etc.)
+    # dynamic_effectors::T_Effectors # List of dynamic effector models (gravity, drag, etc.)
 
-    function SpacecraftModel(; joints=Joint[], links=Link[], roots=Link[],
+    function SpacecraftModel(; joints=Joint[], children=Link[], root=Link{0}(),
         instant_actuation=true,
-        prop_mass=Float64[],
-        inertia_tensors=SMatrix{3, 3, Float64}[],
+        prop_mass=0.0,
+        inertia_tensor=SMatrix{3, 3, Float64}(zeros(3, 3)),
         n_reaction_wheels=0,
-        n_thrusters=0,
-        dynamic_effectors::T_Effectors=()) where {T_Effectors<:Tuple} # Set default as empty tuple
+        n_thrusters=0) # Set default as empty tuple
         
-        # Calculate dry mass from links
-        dry_mass = 0.0
-        for link in links
-            dry_mass += link.m
+        # Calculate dry mass from children
+        dry_mass = root.m
+        for child in children
+            dry_mass += child.m
         end
 
-        new{T_Effectors}(joints, links, roots, instant_actuation, dry_mass, prop_mass, inertia_tensors, n_reaction_wheels, n_thrusters, dynamic_effectors)
+        new(joints, children, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters)
     end
 end
 
+"""
+Struct containing the information needed for the dynamics propagation of all spacecraft
+
+Roots: Vector of root links (main bus or core bodies). This is the vector over which the threads will be parallelized, so each thread will handle the dynamics propagation of one root link and its associated sub-links.
+DynamicEffectors: Tuple of dynamic effector models (gravity, drag, etc.) to be applied during the dynamics propagation.
+"""
+struct DynamicsModel{T_Effectors<:Tuple}
+    roots::Vector{SpacecraftModel} # Vector of root links (main bus or core bodies)
+    dynamic_effectors::T_Effectors # Tuple of dynamic effector models (gravity, drag, etc.)
+
+    function DynamicsModel(roots::Vector{SpacecraftModel}, dynamic_effectors::T_Effectors) where {T_Effectors<:Tuple}
+        new{T_Effectors}(roots, dynamic_effectors)
+    end
+end
 end # module Model

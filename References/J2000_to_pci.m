@@ -36,3 +36,4 @@ pci_rot = simplify([i_hat j_hat k_hat])' % Transpose to get orientation matrix f
 % the same term in the numerator everywhere it's used, and sigma_1 was
 % simplified by combining the cos(ra) and sin(ra) terms.
 
+subs(pci_rot, [ra, dec], [deg2rad(317.68143), deg2rad(52.88650)])

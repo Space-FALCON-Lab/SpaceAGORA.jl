@@ -1,5 +1,5 @@
 using .SimulationModel: ODEParams, IntermediateSolution, Solution
-function save_results(time, ratio, params::ODEParams)
+function save_results(time::Vector{Float64}, ratio::Float64, params::ODEParams)
     initial_time = 0
     solution = params.solution
     cnf = params.cnf

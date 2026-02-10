@@ -4,6 +4,7 @@ using Rotations, LinearAlgebra
 using ControlSystemsBase
 using MatrixEquations
 using CSV
+using .SimulationModel: Link
 
 # Function to compute the rotation quaternion between two vectors
 function rotation_between(v1::SVector{3, Float64}, v2::SVector{3, Float64})
@@ -28,7 +29,7 @@ function rotation_between(v1::SVector{3, Float64}, v2::SVector{3, Float64})
     end
 end
 
-function constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
+function constant_α_β(m, b::Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
 """
     Generate a constant attitude control plan with fixed angles α and β set to 0.
     
@@ -40,7 +41,7 @@ function constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3
     # Returns
     - A tuple containing the time vector, attitude vector, and angular velocity vector.
 """
-    # Rot = config.rotate_to_inertial(m.body, b, root_index)
+    # Rot = rotate_to_inertial(m.body, b, root_index)
 
     # Calculate the wind-relative velocity in the inertial frame
     wind_relative_velocity = m.planet.L_PI' * vel_pp_rw
@@ -49,8 +50,8 @@ function constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3
     error_quat = error_quaternion(SVector{4, Float64}(m.body.roots[root_index].q), orientation_quat)
     δq = error_quat[1:3]
     δω = b.ω
-    R = config.rotate_to_inertial(m.body, b, root_index)
-    inertia_tensor = R * config.get_inertia_tensor(m.body, b) * R'
+    R = rotate_to_inertial(m.body, b, root_index)
+    inertia_tensor = R * get_inertia_tensor(m.body, b) * R'
     kp = 0.5*100
     kd = 1.0*100
     b.rw_τ = R' * (cross(b.ω, inertia_tensor * b.ω) - kp*δq - kd*b.ω)
@@ -64,7 +65,7 @@ function constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3
     return ω_wheel_derivatives
 end
 
-function lqr_constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
+function lqr_constant_α_β(m, b::Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
     """
     Generate a constant attitude control plan using LQR with fixed angles α and β set to 0.
     
@@ -77,7 +78,7 @@ function lqr_constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVect
     - A tuple containing the time vector, attitude vector, and angular velocity vector.
     """ 
     # x_axis_inertial = rot(m.body.roots[root_index].q)' * SVector(1.0, 0.0, 0.0)
-        Rot = config.rotate_to_inertial(m.body, b, root_index)
+        Rot = rotate_to_inertial(m.body, b, root_index)
 
         # Calculate the wind-relative velocity in the inertial frame
         wind_relative_velocity = m.planet.L_PI' * vel_pp_rw
@@ -92,7 +93,7 @@ function lqr_constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVect
         n = b.gyro
         state = SVector{6+n, Float64}([error_quat[1:3]; b.ω; b.rw])
 
-        J = Rot * config.get_inertia_tensor(m.body, root_index) * Rot'
+        J = Rot * get_inertia_tensor(m.body, root_index) * Rot'
         A = SMatrix{length(state), length(state)}(Float64[zeros(3, 3) 0.5*I(3) zeros(3, n);
                                                     zeros(3+n, 6+n)]) - 1e-3*I 
 
@@ -105,19 +106,19 @@ function lqr_constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVect
         Q = Diagonal(SVector{6+n, Float64}([1.0e5*ones(3); 1.0*ones(3); 1.0e-6*ones(n)]))
 
         R = SMatrix{n, n, Float64}(0.1*I(n))
-        if config.cnf.P == zeros(3, 3) || acosd(error_quat[4])*2 > 0.5 # if the error is larger than 0.5 degrees, recalculate using full LQR method
+        if cnf.P == zeros(3, 3) || acosd(error_quat[4])*2 > 0.5 # if the error is larger than 0.5 degrees, recalculate using full LQR method
         #     # Use LQR to compute the gain matrix K
             K = SMatrix{n, length(state), Float64}(lqr(A, B, Q, R))
             # println(typeof(K))
-            config.cnf.P = pinv(B')*R*K
-            P = SMatrix{length(state), length(state), Float64}(config.cnf.P)
+            cnf.P = pinv(B')*R*K
+            P = SMatrix{length(state), length(state), Float64}(cnf.P)
         # elseif acosd(error_quat[4])*2 < 0.1 # 2 degrees
         #     # Use LQR to compute the gain matrix K
-        #     P = config.cnf.P
+        #     P = cnf.P
         else
-            P = solve_care_newton(A, B, Q, R; P0=config.cnf.P, max_iter=100, tol=1e-8)
-            config.cnf.P .= P
-            # config.cnf.K .= R \ B' * config.cnf.P
+            P = solve_care_newton(A, B, Q, R; P0=cnf.P, max_iter=100, tol=1e-8)
+            cnf.P .= P
+            # cnf.K .= R \ B' * cnf.P
         end
         # K = lqr(A, B, Q, R)
         # # Return the wheel momentum derivatives
@@ -125,7 +126,7 @@ function lqr_constant_α_β(m, b::config.Link, root_index::Int, vel_pp_rw::SVect
         # return -K * state
 end
 
-function lqr_constant_α_β_σ(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
+function lqr_constant_α_β_σ(m, b::Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int)
     """
     Generate a constant attitude control plan using LQR with fixed angles α and β set to 0.
     
@@ -138,7 +139,7 @@ function lqr_constant_α_β_σ(m, b::config.Link, root_index::Int, vel_pp_rw::SV
     - A tuple containing the time vector, attitude vector, and angular velocity vector.
     """
     # x_axis_inertial = rot(m.body.roots[root_index].q)' * SVector(1.0, 0.0, 0.0)
-    Rot = config.rotate_to_inertial(m.body, b, root_index)
+    Rot = rotate_to_inertial(m.body, b, root_index)
 
     # Calculate the wind-relative velocity in the inertial frame
     wind_relative_velocity = m.planet.L_PI' * vel_pp_rw
@@ -157,7 +158,7 @@ function lqr_constant_α_β_σ(m, b::config.Link, root_index::Int, vel_pp_rw::SV
     n = b.gyro
     state = SVector{6+n, Float64}([error_quat[1:3]; b.ω; b.rw])
 
-    J = Rot * config.get_inertia_tensor(m.body, root_index) * Rot'
+    J = Rot * get_inertia_tensor(m.body, root_index) * Rot'
     A = SMatrix{length(state), length(state)}(Float64[zeros(3, 3) 0.5*I(3) zeros(3, n);
                                                 zeros(3+n, 6+n)]) - 1e-3*I 
 
@@ -170,19 +171,19 @@ function lqr_constant_α_β_σ(m, b::config.Link, root_index::Int, vel_pp_rw::SV
     Q = Diagonal(SVector{6+n, Float64}([1.0e5*ones(3); 1.0*ones(3); 1.0e-6*ones(n)]))
 
     R = SMatrix{n, n, Float64}(0.1*I(n))
-    if config.cnf.P == zeros(3, 3)
+    if cnf.P == zeros(3, 3)
     #     # Use LQR to compute the gain matrix K
         K = SMatrix{n, length(state), Float64}(lqr(A, B, Q, R))
         # println(typeof(K))
-        config.cnf.P = pinv(B')*R*K
-        P = SMatrix{length(state), length(state), Float64}(config.cnf.P)
+        cnf.P = pinv(B')*R*K
+        P = SMatrix{length(state), length(state), Float64}(cnf.P)
     # elseif acosd(error_quat[4])*2 < 0.1 # 2 degrees
     #     # Use LQR to compute the gain matrix K
-    #     P = config.cnf.P
+    #     P = cnf.P
     else
-        P = solve_care_newton(A, B, Q, R; P0=config.cnf.P, max_iter=100, tol=1e-6)
-        config.cnf.P .= P
-        # config.cnf.K .= R \ B' * config.cnf.P
+        P = solve_care_newton(A, B, Q, R; P0=cnf.P, max_iter=100, tol=1e-6)
+        cnf.P .= P
+        # cnf.K .= R \ B' * cnf.P
     end
     # K = lqr(A, B, Q, R) #ControlSystemsBase.Discrete,
     # # Return the wheel momentum derivatives
@@ -243,13 +244,13 @@ function solve_care_newton(A::AbstractMatrix, B::AbstractMatrix, Q::AbstractMatr
     return SMatrix{n, n, Float64}(P_k)
 end
 
-function constant_thruster!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
+function constant_thruster!(m, b::Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     for thruster in b.thrusters
         thruster.thrust = 1.0
     end
 end
 
-function rw_mrp_feedback_control!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
+function rw_mrp_feedback_control!(m, b::Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     """
     MRP feedback control for comparison with Basilisk
     """
@@ -262,8 +263,8 @@ function rw_mrp_feedback_control!(m, b::config.Link, root_index::Int, vel_pp_rw:
     end
     
     # Determine the error rotation
-    R = config.rotate_to_inertial(m.body, b, root_index)
-    J = config.get_inertia_tensor(m.body, b)
+    R = rotate_to_inertial(m.body, b, root_index)
+    J = get_inertia_tensor(m.body, b)
     ω_body = R' * ω
     P = 30.0
     K = 3.5
@@ -271,7 +272,7 @@ function rw_mrp_feedback_control!(m, b::config.Link, root_index::Int, vel_pp_rw:
     b.ω_wheel_derivatives .= -pinv(b.J_rw)*Lr
 end
 
-function rw_polyfit_control!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
+function rw_polyfit_control!(m, b::Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     rw1 = [-5.60895312e-36,  2.67405595e-32, -5.75833882e-29,  7.39858321e-26,
        -6.30995548e-23,  3.75879226e-20, -1.60171291e-17,  4.91432034e-15,
        -1.07698378e-12,  1.64628922e-10, -1.67735734e-08,  1.04916101e-06,
@@ -297,7 +298,7 @@ function rw_polyfit_control!(m, b::config.Link, root_index::Int, vel_pp_rw::SVec
     b.ω_wheel_derivatives .= t < 375 ? [polyfit(rw1, t), polyfit(rw2, t), polyfit(rw3, t)] : [0.0, 0.0, 0.0]
 end
 
-function basilisk_rw_read_csv!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
+function basilisk_rw_read_csv!(m, b::Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     # Read the CSV file
     data = CSV.File("/workspaces/ABTS.jl/basilisk_rw_torque.csv", delim=',', header=true) |> DataFrame
     data = Matrix(data)
@@ -315,7 +316,7 @@ function basilisk_rw_read_csv!(m, b::config.Link, root_index::Int, vel_pp_rw::SV
     b.ω_wheel_derivatives .= rw_values[idx, :]
 end
 
-function basilisk_thruster_read_csv!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
+function basilisk_thruster_read_csv!(m, b::Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     # Read the CSV file
     data = CSV.File("/workspaces/ABTS.jl/basilisk_thruster_force.csv", delim=',', header=true) |> DataFrame
     data = Matrix(data)
@@ -345,7 +346,7 @@ function basilisk_thruster_read_csv!(m, b::config.Link, root_index::Int, vel_pp_
     end
 end
 
-function basilisk_thruster_torque_read_csv!(m, b::config.Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
+function basilisk_thruster_torque_read_csv!(m, b::Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     # Read the CSV file
     data = CSV.File("/workspaces/ABTS.jl/basilisk_thruster_torque.csv", delim=',', header=true) |> DataFrame
     data = Matrix(data)
@@ -356,11 +357,11 @@ function basilisk_thruster_torque_read_csv!(m, b::config.Link, root_index::Int, 
     if t < times[idx]
         idx -= 1
     end
-    config.update_thrusters!(b, thruster_torques[idx, :], t)
+    update_thrusters!(b, thruster_torques[idx, :], t)
     # Map torques onto Thrusters
     # torque = SVector{3, Float64}(thruster_torques[idx, :])
     # b.J_thruster = MMatrix{3, length(b.thrusters), Float64}(zeros(3, length(b.thrusters))) # Reset the Jacobian matrix
-    # rot_to_body = config.rotate_to_body(b) # Get the rotation matrix to convert from inertial to body frame
+    # rot_to_body = rotate_to_body(b) # Get the rotation matrix to convert from inertial to body frame
     # # println("Rotation matrix: $rot_to_body")
     # for (i, thruster) in enumerate(b.thrusters)
     #     normalize!(thruster.direction) # Ensure the thruster direction is a unit vector

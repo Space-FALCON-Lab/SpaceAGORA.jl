@@ -85,55 +85,55 @@ function run_vgamma(args)
     end
 end
 
-function run_orbitalelements_ae(args)
-    a, e, inclination, Ω, ω = collect(range(start=round(args[:a_initial_a]), stop=round(args[:a_initial_b]), step=round(args[:a_step]))), 
-                                                 collect(range(start=args[:e_initial_a], stop=args[:e_initial_b], step=args[:e_step])), 
-                                                 args[:inclination], args[:Ω], args[:ω]
+function run_orbitalelements_ae(args::SimulationConfiguration)
+    # a, e, inclination, Ω, ω = collect(range(start=round(args[:a_initial_a]), stop=round(args[:a_initial_b]), step=round(args[:a_step]))), 
+    #                                              collect(range(start=args[:e_initial_a], stop=args[:e_initial_b], step=args[:e_step])), 
+    #                                              args[:inclination], args[:Ω], args[:ω]
 
-    final_apoapsis = args[:final_apoapsis]
+    # final_apoapsis = args[:final_apoapsis]
+    aerobraking_campaign(args)
+    # planet = planet_data(args.planet)
+    # for e_item in e
+    #     for a_item in a
+    #         apoapsis_item, periapsis_item = ic_calculation_ae(planet, a_item, e_item, args)
+    #         if Bool(args[:print_res])
+    #             println("Apoapsis Radius: " * string(apoapsis_item/10^3) * " km, Periapsis Altitude: " * string(periapsis_item/10^3) * " km")  
+    #         end
 
-    planet = planet_data(args[:planet])
-    for e_item in e
-        for a_item in a
-            apoapsis_item, periapsis_item = ic_calculation_ae(planet, a_item, e_item, args)
-            if Bool(args[:print_res])
-                println("Apoapsis Radius: " * string(apoapsis_item/10^3) * " km, Periapsis Altitude: " * string(periapsis_item/10^3) * " km")  
-            end
+    #         state = Dict()
 
-            state = Dict()
+    #         MC, count, args = MonteCarlo_setting(args)
 
-            MC, count, args = MonteCarlo_setting(args)
+    #         for mc_index in range(args[:initial_montecarlo_number], args[:montecarlo_size], step=1)
+    #             state[:Apoapsis], state[:Periapsis], state[:Inclination], state[:Ω], state[:ω], state[:Final_sma] = apoapsis_item, Float64(periapsis_item*1e-3), inclination, Ω, ω, final_apoapsis
 
-            for mc_index in range(args[:initial_montecarlo_number], args[:montecarlo_size], step=1)
-                state[:Apoapsis], state[:Periapsis], state[:Inclination], state[:Ω], state[:ω], state[:Final_sma] = apoapsis_item, Float64(periapsis_item*1e-3), inclination, Ω, ω, final_apoapsis
+    #             args[:simulation_filename] = "Results_ctrl=" * string(args[:control_mode]) * "_ra=" * string(Int64(round(apoapsis_item/1e3))) * "_rp=" * string(Float64(periapsis_item/1e3)) * "_hl=" * string(args[:max_heat_rate])
 
-                args[:simulation_filename] = "Results_ctrl=" * string(args[:control_mode]) * "_ra=" * string(Int64(round(apoapsis_item/1e3))) * "_rp=" * string(Float64(periapsis_item/1e3)) * "_hl=" * string(args[:max_heat_rate])
+    #             if args[:montecarlo] == true
+    #                 args = MonteCarlo_setting_passage(mc_index, args)
+    #             end
+    #             println("State: ", state)
+    #             aerobraking_campaign(args, state)
+    #             # MonteCarlo_append(MC, args, count)
+    #         end
 
-                if args[:montecarlo] == true
-                    args = MonteCarlo_setting_passage(mc_index, args)
-                end
-                println("State: ", state)
-                aerobraking_campaign(args, state)
-                # MonteCarlo_append(MC, args, count)
-            end
-
-            if args[:montecarlo] == true
-                MonteCarlo_save(args, state, MC)
-            end
-        end
-    end
+    #         if args[:montecarlo] == true
+    #             MonteCarlo_save(args, state, MC)
+    #         end
+    #     end
+    # end
 end
 
-function run_analysis(args)
-    args = def_miss(args)
-
-    if args[:initial_condition_type] == 1 && (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone")
-        run_vgamma(args)
-    elseif args[:initial_condition_type] == 0
-        run_orbitalelements(args)
-    elseif args[:initial_condition_type] == 2
-        run_orbitalelements_ae(args)
-    end
+function run_analysis(args::SimulationConfiguration)
+    # args = def_miss(args)
+    run_orbitalelements_ae(args)
+    # if args[:initial_condition_type] == 1 && (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone")
+    #     run_vgamma(args)
+    # elseif args[:initial_condition_type] == 0
+    #     run_orbitalelements(args)
+    # elseif args[:initial_condition_type] == 2
+    #     run_orbitalelements_ae(args)
+    # end
 
     if Bool(args[:passresults])
         return config.solution

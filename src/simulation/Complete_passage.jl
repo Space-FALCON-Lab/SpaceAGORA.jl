@@ -165,15 +165,6 @@ function asim(ip, initial_state, numberofpassage, args, params, gram_atmosphere=
         cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
         m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
         
-
-        # Assign state
-        # println(in_cond)
-        # quaternion = SVector{4, Float64}(in_cond[1:4]) # Quaternion
-        # pos_ii = SVector{3, Float64}(in_cond[1:3] * cnf.DU)                      # Inertial position
-        # vel_ii = SVector{3, Float64}(in_cond[4:6] * cnf.DU / cnf.TU)      # Inertial velocity
-        # mass = in_cond[7] * cnf.MU                                          # Mass kg
-        # ω = SVector{3, Float64}(in_cond[9:11] / cnf.TU)                # Angular velocity vector [rad / s]
-        
         # quat_idx = 8 + length(m.body.links)
         if orientation_sim
             quaternion = SVector{4, Float64}(in_cond.q) # Quaternion
@@ -227,17 +218,15 @@ function asim(ip, initial_state, numberofpassage, args, params, gram_atmosphere=
         
         h_pp_mag = norm(h_pp)
         h_pp_hat = normalize(h_pp) # Unit vector of the planet relative angular momentum
-        # param[14][:] .= h_pp_hat # Update the angular momentum unit vector in the parameter array for later use
+
         # Inertial flight path angle 
-        γ_ii = acos(clamp(h_ii_mag / (pos_ii_mag * vel_ii_mag), -1.0, 1.0))     # limit to[-1, 1]
-        # γ_ii = acos(arg)    
+        γ_ii = acos(clamp(h_ii_mag / (pos_ii_mag * vel_ii_mag), -1.0, 1.0))     # limit to[-1, 1]   
         if dot(pos_ii, vel_ii) < 0.0
             γ_ii = -γ_ii
         end
 
         # Relative flight path angle
         γ_pp = acos(clamp(h_pp_mag / (pos_pp_mag * vel_pp_mag), -1.0, 1.0))     # limit to[-1, 1]
-        # γ_pp = acos(arg)
         if dot(pos_pp, vel_pp) < 0.0
             γ_pp = -γ_pp
         end
@@ -249,9 +238,9 @@ function asim(ip, initial_state, numberofpassage, args, params, gram_atmosphere=
         
         # alt,lat,lon = LatLong
         
-        println(" ")
-        println(" Altitude: ", alt)
-        println(" ")
+        # println(" ")
+        # println(" Altitude: ", alt)
+        # println(" ")
 
         if aerobraking_phase == 2 || aerobraking_phase == 0
             if (pos_ii_mag - m.planet.Rp_e - args[:EI] * 1.0e3) <= 0.0 && cnf.drag_state == false && cnf.ascending_phase == false
@@ -346,8 +335,6 @@ function asim(ip, initial_state, numberofpassage, args, params, gram_atmosphere=
         end
         cnf.heat_load_past .= heat_load
 
-        # println([cnf.drag_state, length(cnf.initial_position_closed_form)])
-
         # Heat rate and Control
         if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && cnf.drag_state && cnf.initial_position_closed_form[1] != 0
             # evaluates the closed form solution the first time at EI km
@@ -429,12 +416,8 @@ function asim(ip, initial_state, numberofpassage, args, params, gram_atmosphere=
 
         # Convert wind to pp(PCPF) frame
         wE, wN, wU = wind # positive to the east , m / s
-        # wN = wind[2] # positive to the north , m / s
-        # wU = wind[3] # positive up , m / s
-
         wind_pp = wN * uN + wE * uE - wU * uD         # wind velocity in pp frame, m / s 
         vel_pp_rw = vel_pp + wind_pp                  # relative wind vector, m / s
-        # param[15] .= vel_pp_rw # Update the relative wind vector in the parameter array for later use
         cnf.vel_pp_rw = vel_pp_rw   # relative wind velocity vector
 
 
@@ -455,7 +438,6 @@ function asim(ip, initial_state, numberofpassage, args, params, gram_atmosphere=
         end
 
         if cnf.targeting == 1
-            # if t0 >= cnf.t_switch_targeting
             if t0 >= cnf.ts_targ_1 && t0 <= cnf.ts_targ_2
                 cnf.α = 0
             else
@@ -507,7 +489,7 @@ function asim(ip, initial_state, numberofpassage, args, params, gram_atmosphere=
                 Rot[i] .= rotate_to_inertial(m.body, b, root_index) # Rotation matrix from the spacecraft link to the inertial frame
             end
         end
-        if args[:srp] == true
+        if args[:srp]
             r_sun_planet = m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", cnf.et, "J2000", "NONE", uppercase(m.planet.name))[1])*1e3 # Vector describing the position of the Sun wrt the planet in J2000 frame
             eclipse_ratio = args[:eclipse] ? eclipse_area_calc(pos_ii, r_sun_planet, m.planet.Rp_e) : 1.0
             numAU = AstU / norm(r_sun_planet - pos_ii) # 1 / Number of Astronomical Units from the Sun
@@ -537,6 +519,7 @@ function asim(ip, initial_state, numberofpassage, args, params, gram_atmosphere=
         # Update the force on each link on the spacecraft
         force_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize gravity vector
         tau = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize gravity torque vector
+        # for spacecraft in 
         for effector in m.body.dynamic_effectors
             force, torque = DynamicEffectors.calcForceTorque(effector, state_vector, param)
             force_ii .+= force

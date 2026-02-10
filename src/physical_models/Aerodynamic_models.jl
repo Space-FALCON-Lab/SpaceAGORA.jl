@@ -399,16 +399,16 @@ function calcForceTorque(model::AerodynamicCoefficientNoBallisticFlight, x::Abst
     end
     
     # Normalize the aerodynamic coefficients
-    CL = CL / total_area
-    CD = CD / total_area
+    # CL = CL / total_area
+    # CD = CD / total_area
 
     cnf.β = β
 
-    force_ii = sum([b.net_force for b in bodies])
+    # force_ii = sum([b.net_force for b in bodies])
 
-    torque_ii = sum([b.net_torque for b in bodies])
+    # torque_ii = sum([b.net_torque for b in bodies])
 
-    return force_ii, torque_ii
+    # return force_ii, torque_ii
 end
 
 

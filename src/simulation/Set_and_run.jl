@@ -14,32 +14,32 @@ using AstroTime
 using PythonCall
 using Arrow
 
-function aerobraking_campaign(args, state)
+function aerobraking_campaign(args)
     save_res = args.simulation_settings.results
 
-    mission = Dict(:Purpose => purpose,
-                   :Planet => args[:planet],
-                   :Gravity_Model => args[:gravity_model], 
-                   :Density_Model => args[:density_model], 
-                   :Wind => args[:wind],
-                   :Aerodynamic_Model => args[:aerodynamic_model],
-                   :Thermal_Model => args[:thermal_model],
-                   :Control => args[:control_mode],
-                   :Firings => args[:thrust_control],
-                   :Shape => args[:body_shape],
-                   :Monte_Carlo => args[:montecarlo])
+    # mission = Dict(:Purpose => purpose,
+    #                :Planet => args[:planet],
+    #                :Gravity_Model => args[:gravity_model], 
+    #                :Density_Model => args[:density_model], 
+    #                :Wind => args[:wind],
+    #                :Aerodynamic_Model => args[:aerodynamic_model],
+    #                :Thermal_Model => args[:thermal_model],
+    #                :Control => args[:control_mode],
+    #                :Firings => args[:thrust_control],
+    #                :Shape => args[:body_shape],
+    #                :Monte_Carlo => args[:montecarlo])
 
-    if args.simulation_settings.verbose
-        println("Mission is: ", mission)
-    end
+    # if args.simulation_settings.verbose
+    #     println("Mission is: ", mission)
+    # end
 
     # Create config parameters
-    m = Model()
-    cnf = Cnf()
-    solution = Solution()
+    # m = Model()
+    # cnf = Cnf()
+    # solution = Solution()
 
-    ip = mission_def(mission)
-    p_class = planet_data(ip.M.planet)
+    # ip = mission_def(mission)
+    # p_class = planet_data(ip.M.planet)
 
     # Load SPICE kernels if required
     furnsh(args.file_paths.SPICE * "/pck/pck00011.tpc")
@@ -76,277 +76,262 @@ function aerobraking_campaign(args, state)
     # end
 
     # Set up the planet shape (move all this initialization to planet initialization?)
-    if args.physical_models.topography
-        harmonics_data = CSV.read(args.file_paths.topography_harmonics*"/"*args.physical_models.harmonics_data, DataFrame)
+    # if args.physical_models.topography
+    #     harmonics_data = CSV.read(args.file_paths.topography_harmonics*"/"*args.physical_models.harmonics_data, DataFrame)
         
-        # Pre-initialize the Clm and Slm arrays
-        total_data_size = size(harmonics_data, 1)
-        degree = maximum(harmonics_data[:, 1]) + 1
+    #     # Pre-initialize the Clm and Slm arrays
+    #     total_data_size = size(harmonics_data, 1)
+    #     degree = maximum(harmonics_data[:, 1]) + 1
 
-        p_class.A_topo = zeros(degree+1, degree+1) # Preallocate the matrix for the Associated Legendre Polynomial evaluations
-        p_class.Clm_topo = zeros(degree, degree)
-        p_class.Slm_topo = zeros(degree, degree)
+    #     p_class.A_topo = zeros(degree+1, degree+1) # Preallocate the matrix for the Associated Legendre Polynomial evaluations
+    #     p_class.Clm_topo = zeros(degree, degree)
+    #     p_class.Slm_topo = zeros(degree, degree)
 
-        # Read in all the data from the DataFrame
-        for i=1:total_data_size
-            l = harmonics_data[i, 1] + 1 # Get the degree, l, from the data and convert to an index (subtract 1 because the data starts at 2nd degree coefficient)
-            m = harmonics_data[i, 2] + 1 # Get the order, m, from the data and convert to an index (add 1 because the data starts at 0th order coefficient)
-            p_class.Clm_topo[l, m] = harmonics_data[i, 3]
-            p_class.Slm_topo[l, m] = harmonics_data[i, 4]
-        end
+    #     # Read in all the data from the DataFrame
+    #     for i=1:total_data_size
+    #         l = harmonics_data[i, 1] + 1 # Get the degree, l, from the data and convert to an index (subtract 1 because the data starts at 2nd degree coefficient)
+    #         m = harmonics_data[i, 2] + 1 # Get the order, m, from the data and convert to an index (add 1 because the data starts at 0th order coefficient)
+    #         p_class.Clm_topo[l, m] = harmonics_data[i, 3]
+    #         p_class.Slm_topo[l, m] = harmonics_data[i, 4]
+    #     end
 
-    end
+    # end
 
-    if args[:gravity_model] == "Inverse Squared"
-        p_class.Rp_p = p_class.Rp_e
-    end
+    # if args[:gravity_model] == "Inverse Squared"
+    #     p_class.Rp_p = p_class.Rp_e
+    # end
 
     # Vehicle - calculation notebook page1
     # Mass
     # dry_mass = args[:spacecraft_model].dry_mass
     # prop_mass = args[:spacecraft_model].prop_mass 
     # mass = dry_mass + prop_mass
-    mass = get_spacecraft_mass(args[:spacecraft_model])
+    # mass = get_spacecraft_mass(args[:spacecraft_model])
 
-    apoapsis = state[:Apoapsis]
+    # apoapsis = state[:Apoapsis]
 
-    state[:Periapsis] = p_class.Rp_e + state[:Periapsis]*1e3
-    state[:vi] = (lowercase(args[:type_of_mission]) == "time" && args[:ν] >= 0.0) ? deg2rad(args[:ν]) : deg2rad(180.0001)
+    # state[:Periapsis] = p_class.Rp_e + state[:Periapsis]*1e3
+    # state[:vi] = (lowercase(args[:type_of_mission]) == "time" && args[:ν] >= 0.0) ? deg2rad(args[:ν]) : deg2rad(180.0001)
 
-    if args[:montecarlo] == true
-        state = monte_carlo_initial_condition(state, args)
-    end
+    # if args[:montecarlo] == true
+    #     state = monte_carlo_initial_condition(state, args)
+    # end
 
-    semimajoraxis_in = (state[:Apoapsis] + state[:Periapsis])/2
-    eccentricity_in = (state[:Apoapsis] - state[:Periapsis]) / (state[:Apoapsis] + state[:Periapsis])
-    apoapsis = state[:Apoapsis]
-    periapsis = state[:Periapsis]
+    # semimajoraxis_in = (state[:Apoapsis] + state[:Periapsis])/2
+    # eccentricity_in = (state[:Apoapsis] - state[:Periapsis]) / (state[:Apoapsis] + state[:Periapsis])
+    # apoapsis = state[:Apoapsis]
+    # periapsis = state[:Periapsis]
 
     # Initial Condition
-    if args[:drag_passage] == true
-        h_0 = args[:EI] * 1e3
-    elseif args[:body_shape] == "Blunted Cone"
-        h_0 = args[:EI] * 1e3
-        args[:AE] = h_0/1e3
-        args[:EI] = h_0/1e3
-    end
+    # if args[:drag_passage] == true
+    #     h_0 = args[:EI] * 1e3
+    # elseif args[:body_shape] == "Blunted Cone"
+    #     h_0 = args[:EI] * 1e3
+    #     args[:AE] = h_0/1e3
+    #     args[:EI] = h_0/1e3
+    # end
 
-    if Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone"
-        r = p_class.Rp_e + h_0
+    # TODO: Make this part of the initial condition definition in config file, e.g., constructor for drag passage/entry specifically to set initial true anomaly and radius
+    # if Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone"
+    #     r = p_class.Rp_e + h_0
         
-        state[:vi] = -acos(1 / eccentricity_in * (semimajoraxis_in * (1 - eccentricity_in^2) / r - 1))
+    #     state[:vi] = -acos(1 / eccentricity_in * (semimajoraxis_in * (1 - eccentricity_in^2) / r - 1))
         
-        if args[:montecarlo] == true
-            state = monte_carlo_true_anomaly(state, args)
-            apoapsis = state[:Apoapsis]
-            periapsis = state[:Periapsis]
-        end
-    end
+    #     if args[:montecarlo] == true
+    #         state = monte_carlo_true_anomaly(state, args)
+    #         apoapsis = state[:Apoapsis]
+    #         periapsis = state[:Periapsis]
+    #     end
+    # end
 
     # Initial Model Definition
     # Body
-    if args[:body_shape] == "Spacecraft"
-        b_class = args[:spacecraft_model]
-        if args[:print_res]
-            println("Area: " * string(get_spacecraft_reference_area(b_class)) * " m^2")
-        end
+    # if args[:body_shape] == "Spacecraft"
+    #     b_class = args[:spacecraft_model]
+    #     if args[:print_res]
+    #         println("Area: " * string(get_spacecraft_reference_area(b_class)) * " m^2")
+    #     end
 
-    elseif args[:body_shape] == "Blunted Cone" # TODO: Change this to new spacecraft model method
+    # elseif args[:body_shape] == "Blunted Cone" # TODO: Change this to new spacecraft model method
 
-        Mass = mass
-        Delta = δ
-        NoseRadius = nose_radius
-        BaseRadius = base_radius
-        Area_tot = pi * BaseRadius^2
+    #     Mass = mass
+    #     Delta = δ
+    #     NoseRadius = nose_radius
+    #     BaseRadius = base_radius
+    #     Area_tot = pi * BaseRadius^2
 
-        b_class = Body(Mass, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Area_tot, Delta, NoseRadius, BaseRadius)
+    #     b_class = Body(Mass, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Area_tot, Delta, NoseRadius, BaseRadius)
 
-    end
+    # end
 
-    function initialconditions()
-        a = semimajoraxis_in
-        e = eccentricity_in
-        i = deg2rad(state[:Inclination])
-        Ω = deg2rad(state[:Ω])
-        ω = deg2rad(state[:ω])
-        vi = state[:vi]
-        println("vi: ", vi)
-        m0 = mass
-        year = args[:year]
-        month = args[:month]
-        day = args[:day]
-        hour = args[:hours]
-        min = args[:minutes]
-        second = args[:secs]
-        time_rot = args[:planettime]
-        el_time = 0.0 # Elapsed time in seconds
-        DateTimeIC = from_utc(DateTime(year, month, day, hour, min, second))
-        DateTimeJ2000 = from_utc(DateTime(2000, 1, 1, 12, 0, 0))
-        ic = Initial_condition(a, e, i, Ω, ω, vi, m0, year, month, day, hour, min, second, time_rot, el_time, DateTimeIC, DateTimeJ2000)
+    # This is all defined in args already, just need to make sure it is all passed into 
+    # function initialconditions()
+    #     a = semimajoraxis_in
+    #     e = eccentricity_in
+    #     i = deg2rad(state[:Inclination])
+    #     Ω = deg2rad(state[:Ω])
+    #     ω = deg2rad(state[:ω])
+    #     vi = state[:vi]
+    #     println("vi: ", vi)
+    #     m0 = mass
+    #     year = args[:year]
+    #     month = args[:month]
+    #     day = args[:day]
+    #     hour = args[:hours]
+    #     min = args[:minutes]
+    #     second = args[:secs]
+    #     time_rot = args[:planettime]
+    #     el_time = 0.0 # Elapsed time in seconds
+    #     DateTimeIC = from_utc(DateTime(year, month, day, hour, min, second))
+    #     DateTimeJ2000 = from_utc(DateTime(2000, 1, 1, 12, 0, 0))
+    #     ic = Initial_condition(a, e, i, Ω, ω, vi, m0, year, month, day, hour, min, second, time_rot, el_time, DateTimeIC, DateTimeJ2000)
 
-        return ic
-    end
+    #     return ic
+    # end
 
-    ic_class = initialconditions()
+    # ic_class = initialconditions()
 
-    function aerodynamics()
-        δ = deg2rad(0)
-        α = deg2rad(args[:α])
-        thermal_accomodation_factor = args[:thermal_accomodation_factor]
-        reflection_coefficient = args[:reflection_coefficient]
-        thermal_contact = 0
-        heat_rate_limit = args[:max_heat_rate]
-        heat_load_limit = args[:max_heat_load]
+    # function aerodynamics()
+    #     δ = deg2rad(0)
+    #     α = deg2rad(args[:α])
+    #     thermal_accomodation_factor = args[:thermal_accomodation_factor]
+    #     reflection_coefficient = args[:reflection_coefficient]
+    #     thermal_contact = 0
+    #     heat_rate_limit = args[:max_heat_rate]
+    #     heat_load_limit = args[:max_heat_load]
 
-        a = Aerodynamics(δ, α, thermal_accomodation_factor, reflection_coefficient, thermal_contact, heat_rate_limit, heat_load_limit)
+    #     a = Aerodynamics(δ, α, thermal_accomodation_factor, reflection_coefficient, thermal_contact, heat_rate_limit, heat_load_limit)
 
-        return a        
-    end
+    #     return a        
+    # end
 
-    a_class = aerodynamics()
+    # a_class = aerodynamics()
 
     # Engine
-    args[:phi] = deg2rad(args[:phi])
-    function engine()
-        ϕ = args[:phi]
-        g_e = 9.81
-        T = args[:thrust]
-        Isp = 200
+    # args[:phi] = deg2rad(args[:phi])
+    # function engine()
+    #     ϕ = args[:phi]
+    #     g_e = 9.81
+    #     T = args[:thrust]
+    #     Isp = 200
 
-        e = Engines(ϕ, g_e, T, Isp)
+    #     e = Engines(ϕ, g_e, T, Isp)
 
-        return e
-    end
+    #     return e
+    # end
 
-    e_class = engine()
+    # e_class = engine()
 
-    function model()
-        body = b_class
-        planet = p_class
-        initialcondition = ic_class
-        aerodynamics = a_class
-        engine = e_class
+    # function model()
+    #     body = b_class
+    #     planet = p_class
+    #     initialcondition = ic_class
+    #     aerodynamics = a_class
+    #     engine = e_class
 
-        m = Model(body, planet, aerodynamics, engine, initialcondition)
+    #     # m = Model(body, planet, aerodynamics, engine, initialcondition)
 
-        return m
-    end
+    #     return m
+    # end
 
-    m = model()
+    # m = model()
 
     # Define gram atmosphere
-    gram = nothing
-    gram_atmosphere = nothing
-    if uppercase(args[:density_model]) == "GRAM"
-        sys = pyimport("sys")
-        os = pyimport("os")
-        if !(args[:directory_Gram] in pyconvert(Vector{String}, sys.path))
-            sys.path.append(args[:directory_Gram])
-        end
-        gram = pyimport("gram")
-        inputParameters = Dict("earth" => gram.EarthInputParameters(),
-                            "mars" => gram.MarsInputParameters(),
-                            "venus" => gram.VenusInputParameters(),
-                            "titan" => gram.TitanInputParameters())
+    # gram = nothing
+    # gram_atmosphere = nothing
+    # if uppercase(args[:density_model]) == "GRAM"
+    #     sys = pyimport("sys")
+    #     os = pyimport("os")
+    #     if !(args[:directory_Gram] in pyconvert(Vector{String}, sys.path))
+    #         sys.path.append(args[:directory_Gram])
+    #     end
+    #     gram = pyimport("gram")
+    #     inputParameters = Dict("earth" => gram.EarthInputParameters(),
+    #                         "mars" => gram.MarsInputParameters(),
+    #                         "venus" => gram.VenusInputParameters(),
+    #                         "titan" => gram.TitanInputParameters())
         
-        namelistReaders = Dict("earth" => gram.EarthNamelistReader(),
-                            "mars" => gram.MarsNamelistReader(),
-                            "venus" => gram.VenusNamelistReader(),
-                            "titan" => gram.TitanNamelistReader())
+    #     namelistReaders = Dict("earth" => gram.EarthNamelistReader(),
+    #                         "mars" => gram.MarsNamelistReader(),
+    #                         "venus" => gram.VenusNamelistReader(),
+    #                         "titan" => gram.TitanNamelistReader())
             
-        atmospheres = Dict("earth" => gram.EarthAtmosphere(),
-                        "mars" => gram.MarsAtmosphere(),
-                        "venus" => gram.VenusAtmosphere(),
-                        "titan" => gram.TitanAtmosphere())
+    #     atmospheres = Dict("earth" => gram.EarthAtmosphere(),
+    #                     "mars" => gram.MarsAtmosphere(),
+    #                     "venus" => gram.VenusAtmosphere(),
+    #                     "titan" => gram.TitanAtmosphere())
 
-        planet_name = m.planet.name
-        input_parameters = inputParameters[planet_name]
+    #     planet_name = m.planet.name
+    #     input_parameters = inputParameters[planet_name]
 
-        # Mars has some weird specific parameters, so this line is just to check to make sure the it doesn't do it for the other planets
-        if planet_name == "mars"
-            # input_parameters.dataPath = os.path.join(os.path.dirname(os.path.abspath(@__FILE__)),"..", "GRAM_Data", "Mars", "data", "")
-            input_parameters.dataPath = args[:directory_Gram_data] * "/Mars/data/"
-            if !Bool(os.path.exists(input_parameters.dataPath))
-                throw(ArgumentError("GRAM data path not found: " * input_parameters.dataPath))
-            end
-        end
+    #     # Mars has some weird specific parameters, so this line is just to check to make sure the it doesn't do it for the other planets
+    #     if planet_name == "mars"
+    #         # input_parameters.dataPath = os.path.join(os.path.dirname(os.path.abspath(@__FILE__)),"..", "GRAM_Data", "Mars", "data", "")
+    #         input_parameters.dataPath = args[:directory_Gram_data] * "/Mars/data/"
+    #         if !Bool(os.path.exists(input_parameters.dataPath))
+    #             throw(ArgumentError("GRAM data path not found: " * input_parameters.dataPath))
+    #         end
+    #     end
 
-        if planet_name == "earth"
-            # input_parameters.dataPath = os.path.join(os.path.dirname(os.path.abspath(@__FILE__)),"..", "GRAM_Data", "Mars", "data", "")
-            input_parameters.dataPath = args[:directory_Gram_data] * "/Earth/data/"
-            if !Bool(os.path.exists(input_parameters.dataPath))
-                throw(ArgumentError("GRAM data path not found: " * input_parameters.dataPath))
-            end
-        end
+    #     if planet_name == "earth"
+    #         # input_parameters.dataPath = os.path.join(os.path.dirname(os.path.abspath(@__FILE__)),"..", "GRAM_Data", "Mars", "data", "")
+    #         input_parameters.dataPath = args[:directory_Gram_data] * "/Earth/data/"
+    #         if !Bool(os.path.exists(input_parameters.dataPath))
+    #             throw(ArgumentError("GRAM data path not found: " * input_parameters.dataPath))
+    #         end
+    #     end
 
-        reader = namelistReaders[planet_name]
-        reader.tryGetSpicePath(input_parameters)
+    #     reader = namelistReaders[planet_name]
+    #     reader.tryGetSpicePath(input_parameters)
 
-        gram_atmosphere = atmospheres[planet_name]
-        gram_atmosphere.setInputParameters(input_parameters)
+    #     gram_atmosphere = atmospheres[planet_name]
+    #     gram_atmosphere.setInputParameters(input_parameters)
         
-        if planet_name == "earth"
-            gram_atmosphere.setMERRA2Parameters(0, -90.0, 90.0, 0.0, 359.99999)
-        end
-        gram_atmosphere.setPerturbationScales(1.5)
-        gram_atmosphere.setMinRelativeStepSize(0.5)
-        if args[:montecarlo] == 1
-            gram_atmosphere.setSeed(Int(round(rand()*10000)))
-        else
-            gram_atmosphere.setSeed(1001)
-            # gram_atmosphere.setSeed(Int(round(rand()*10000)))
-        end
+    #     if planet_name == "earth"
+    #         gram_atmosphere.setMERRA2Parameters(0, -90.0, 90.0, 0.0, 359.99999)
+    #     end
+    #     gram_atmosphere.setPerturbationScales(1.5)
+    #     gram_atmosphere.setMinRelativeStepSize(0.5)
+    #     if args[:montecarlo] == 1
+    #         gram_atmosphere.setSeed(Int(round(rand()*10000)))
+    #     else
+    #         gram_atmosphere.setSeed(1001)
+    #         # gram_atmosphere.setSeed(Int(round(rand()*10000)))
+    #     end
 
-        if planet_name == "mars"
-            gram_atmosphere.setMOLAHeights(false)
-        end
+    #     if planet_name == "mars"
+    #         gram_atmosphere.setMOLAHeights(false)
+    #     end
 
-        ttime = gram.GramTime()
-        ttime.setStartTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs], gram.UTC, gram.PET)
-        gram_atmosphere.setStartTime(ttime)
-    end
+    #     ttime = gram.GramTime()
+    #     ttime.setStartTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs], gram.UTC, gram.PET)
+    #     gram_atmosphere.setStartTime(ttime)
+    # end
     # Initialization - Reset all the config index for new simulation
-    cnf.count_aerobraking = 0
-    cnf.count_overcome_hr = 0
-    cnf.save_index_heat = 0
-    cnf.index_propellant_mass = 1
-    cnf.counter_random = 0
-    cnf.DU = Bool(args[:normalize]) ? semimajoraxis_in : 1
-    cnf.TU = Bool(args[:normalize]) ? sqrt(cnf.DU^3 / m.planet.μ) : 1
-    cnf.MU = Bool(args[:normalize]) ? mass : 1
+    # cnf.count_aerobraking = 0
+    # cnf.count_overcome_hr = 0
+    # cnf.save_index_heat = 0
+    # cnf.index_propellant_mass = 1
+    # cnf.counter_random = 0
+    # cnf.DU = args.simulation_settings.normalize ? args.initial_conditions.a : 1
+    # cnf.TU = args.simulation_settings.normalize ? sqrt(cnf.DU^3 / args.environment_model.planet.μ) : 1
+    # cnf.MU = args.simulation_settings.normalize ? args.dynamics_model.roots[1].dry_mass + args.dynamics_model.roots[1].prop_mass : 1
 
     # Save results
-    if save_res == 1
-        if args[:filename] == 1
-            if args[:montecarlo] == true
-                folder_name = args[:simulation_filename][1:findfirst!(args[:simulation_filename], "_nMC)")]
-            else
-                folder_name = args[:simulation_filename]
-            end
-            
-            name = args[:directory_results] * "/" * folder_name
+    if args.simulation_settings.results
+        name = args.simulation_settings.results_directory * "/results"
 
-            if !isdir(args[:directory_results])
-                mkpath(args[:directory_results])
-            end
-            
-            filename = name * ".csv"
-        else
-            name = args[:directory_results] * "/results"
-            if args[:monte_carlo_run] != 0
-                name = name * "_$(args[:monte_carlo_run])"
-            end
-
-            if !isdir(args[:directory_results])
-                mkpath(args[:directory_results])
-            end
-
-            filename = name * ".csv"
+        if !isdir(args.simulation_settings.results_directory)
+            mkpath(args.simulation_settings.results_directory)
         end
-        # if the file already exists, clear the current data
-        if filesize(filename) > 0 && args[:save_csv]
-            file = open(filename, "w")
-            truncate(file, 0)
+
+        if args.simulation_settings.save_csv
+            filename = name * ".csv"
+            # if the file already exists, clear the current data
+            if filesize(filename) > 0 
+                file = open(filename, "w")
+                truncate(file, 0)
+            end
         end
 
         # Initialize the arrow writer for plotting
@@ -354,9 +339,9 @@ function aerobraking_campaign(args, state)
         # temp_name = nothing
     # if args[:plot] == true
         arrow_filename = name * ".feather"
-        if args[:print_res]
-            println("Temporary directory created for plotting: " * arrow_filename)
-        end
+        # if args.simulation_settings.verbose
+        #     println("Temporary directory created for plotting: " * arrow_filename)
+        # end
         arrow_writer = open(Arrow.Writer, arrow_filename)
     # end
         # save_csv(filename, args)
@@ -366,20 +351,20 @@ function aerobraking_campaign(args, state)
 
     ##########################################################
     # RUN SIMULATION
-    cnf.heat_rate_limit = args[:max_heat_rate]
-    params = (cnf, m, solution)
+    # cnf.heat_rate_limit = args[:max_heat_rate]
+    # params = (cnf, m, solution)
     t_el = @elapsed begin
-        aerobraking(ip, args, gram, gram_atmosphere, filename, arrow_filename, params)
+        aerobraking(args, filename, arrow_filename)
     end
-    cnf = params[1]
-    m = params[2]
-    solution = params[3]
+    # cnf = params[1]
+    # m = params[2]
+    # solution = params[3]
     ##########################################################
 
     # Finalize the arrow writer if plotting is enabled
     # if args[:plot] == true
     close(arrow_writer)
-    if args[:print_res]
+    if args.simulation_settings.verbose
         println("Arrow writer closed. Data saved to: " * arrow_filename)
     end
     # end

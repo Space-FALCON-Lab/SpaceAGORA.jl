@@ -1,17 +1,8 @@
 module SimConfig
-    export SimulationConfiguration, InitialCondition, InitialTime, IntegrationTolerances, FilePaths, SimulationSettings, MissionConfiguration, PhysicalModels
-    using ..AbstractTypes: Planet
+    export SimulationConfiguration, InitialTime, IntegrationTolerances, FilePaths, SimulationSettings, MissionConfiguration, EnvironmentModel
+    using ..AbstractTypes: AbstractPlanet, AbstractDensityModel, AbstractThermalModel
     using ..PhysicalModel: DynamicsModel
     using ..Planets: Earth
-
-    @kwdef struct InitialCondition
-        a::Float64 = 0.0 # Semimajor axis (m)
-        e::Float64 = 0.0 # Eccentricity (nd)
-        i::Float64 = 0.0 # Inclination (deg)
-        ω::Float64 = 0.0 # Argument of periapsis (deg)
-        Ω::Float64 = 0.0 # RAAN (deg)
-        ν::Float64 = 0.0 # True anomaly (deg)
-    end # struct InitialCondition
 
     @kwdef struct InitialTime
         year::Int32 = 2000
@@ -38,8 +29,8 @@ module SimConfig
 
     @kwdef struct FilePaths
         results::String = "Results" # Directory to save results
-        GRAM::String = "GRAM_data" # Directory for GRAM atmospheric model data
-        SPICE::String = "GRAM_data/SPICE" # Directory for SPICE kernels
+        GRAM::String = "GRAM_Data" # Directory for GRAM atmospheric model data
+        SPICE::String = "GRAM_Data/SPICE" # Directory for SPICE kernels
         topography_harmonics::String = "Topography_harmonics_data" # Directory for topography harmonics data (move to planet?)
         gravity_harmonics::String = "Gravity_harmonics_data" # Directory for gravity harmonics data (move to planet?)
     end # struct FilePaths
@@ -55,6 +46,7 @@ module SimConfig
         save_csv::Bool = true # Whether to save results in CSV format in addition to feather
     end # struct SimulationSettings
 
+    # TODO: Convert mission_type to an abstract type and have terminal conditions be functions that take in the state vector and return a boolean for whether the simulation should terminate. This will allow for more flexible mission configurations without needing to add new fields to the struct every time we want to add a new type of mission.
     @kwdef struct MissionConfiguration
         # Mission setup
         mission_type::String = "Time" # Indicator of the termination condition type (Time, number of orbits, etc.)
@@ -65,34 +57,26 @@ module SimConfig
         num_steps_to_save::Int = 1000 # Number of time steps to store in memory during the simulation before writing to a file
     end # struct MissionConfiguration
 
-    @kwdef struct PhysicalModels
+    # TODO: Convert all the strings to abstract types to avoid needing if-else statements in complete passage and other functions. This will also make it easier to add new models in the future without needing to change the main code.
+    @kwdef struct EnvironmentModel{P <: AbstractPlanet, D <: AbstractDensityModel, T <: AbstractThermalModel}
         # Physical environment model
-        planet::Planet = Earth() # Planet for which to run the simulation (used for gravity model, atmospheric model, etc.)
-        gravity_model::String = "Inverse squared and J2 effect" # Gravity model to use in the simulation (Constant, Inverse squared, Inverse squared with J2 effect)
-        density_model::String = "GRAM" # Atmospheric model to use (Constant, Exponential, GRAM, NRLMSISE-00)
+        planet::P # Planet for which to run the simulation (used for gravity model, atmospheric model, etc.)
+        density_model::D # Atmospheric model to use (Constant, Exponential, GRAM, NRLMSISE-00)
         topography::Bool = false # Whether to include topography in the simulation for altitude calculation
         topo_degree::Int = 90 # Maximum degree of spherical harmonics for topography
         topo_order::Int = 90 # Maximum order of spherical harmonics for topography
-        wind::Bool = false # Whether to include wind in the simulation for atmospheric effects
-        aerodynamic_model::String = "Mach-dependent" # Aerodynamic model to use (Constant, Mach-dependent, No-Ballistic flight with axial coefficient)
-        thermal_model::String = "Maxwellian heat transfer" # Thermal model to use (Maxwellian heat transfer, Convective and Radiative)
-    end # struct PhysicalModels
+        wind::Bool = true # Whether to include wind in the simulation for atmospheric effects
+        thermal_model::T # Thermal model to use (Maxwellian heat transfer, Convective and Radiative)
+    end # struct EnvironmentModel
 
-    @kwdef struct SimulationConfiguration
+    @kwdef struct SimulationConfiguration{P <: AbstractPlanet, D <: AbstractDensityModel, T <: AbstractThermalModel, DM <: Tuple}
         file_paths::FilePaths = FilePaths() # File paths for data and results
         simulation_settings::SimulationSettings = SimulationSettings() # General simulation settings
         mission_configuration::MissionConfiguration = MissionConfiguration() # Mission-specific configuration
-        physical_models::PhysicalModels = PhysicalModels() # Physical environment models
-        dynamics_model::DynamicsModel = nothing # Dynamics models to use for the simulation
-        initial_conditions::InitialCondition = InitialCondition() # Initial orbital elements for the simulation
-        initial_time::InitialTime = InitialTime() # Initial time for the simulation
+        environment_model::EnvironmentModel{P, D, T} # Physical environment models
+        dynamics_model::DynamicsModel{DM} # Dynamics models to use for the simulation, e.g., drag, n-body gravity, gravity harmonics, etc. that calculate forces/torques on the spacecraft
+        initial_time::InitialTime # Initial time for the simulation
         integration_tolerances::IntegrationTolerances = IntegrationTolerances() # Tolerances for the numerical integrator
     end # struct SimulationConfiguration
     
-    # Convenience constructors
-    function InitialCondition(;ra::Float64, rp::Float64, i::Float64, ω::Float64, Ω::Float64, ν::Float64=180.0)
-        a = (ra + rp) / 2.0
-        e = (ra - rp) / (ra + rp)
-        return InitialCondition(a, e, i, ω, Ω, ν) # Set true anomaly to 180 degrees by default
-    end
 end # module SimConfig

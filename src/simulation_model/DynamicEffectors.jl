@@ -4,8 +4,8 @@
 module DynamicEffectors
     using ..Analysis
 
-    using ..ConfigTypes: Planet, ODEParams # Get the Planet struct
-    using ..AbstractTypes       # Assuming this is also in types.jl now
+    using ..ConfigTypes: ODEParams # Get the Planet struct
+    using ..AbstractTypes: AbstractPlanet, AbstractForceTorqueModel
     using ..LinearAlgebra       # Get deps from parent
     using ..StaticArrays        # Get deps from parent
     using ..Kinematics

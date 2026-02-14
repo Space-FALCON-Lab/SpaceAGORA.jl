@@ -7,7 +7,7 @@ using SatelliteToolboxGeomagneticField
 using DateFormats
 using CSV
 using DataFrames
-
+using ..AbstractTypes: AbstractPlanet
 include("../utils/quaternion_utils.jl")
 include("Planet_data.jl")
 # import .config
@@ -30,15 +30,17 @@ const M_HAT_ECEF = SVector{3, Float64}(
     cos(POLE_LAT_2020) * sin(POLE_LON_2020),
     sin(POLE_LAT_2020)
 )
+const sqrt_2 = sqrt(2.0)
+const sqrt_3 = sqrt(3.0)
 
 # N-body gravity perturbation model
-@kwdef struct NBodyGravityModel <: AbstractForceTorqueModel
-    body_names::Vector{String} = String[]  # Names of celestial bodies to include
-    primary_body_name::String = "Earth" # Name of the primary body
-    planet::Planet = Planet() # Planet data for primary body
+@kwdef struct NBodyGravityModel{P <: AbstractPlanet, NP <: Tuple{Vararg{AbstractPlanet}}} <: AbstractForceTorqueModel
+    body_names::NP  # Names of celestial bodies to include
+    # primary_body_name::String = "Earth" # Name of the primary body
+    planet::P = Earth() # Planet data for primary body
 end
 
-struct GravitationalHarmonicsModel <: AbstractForceTorqueModel
+struct GravitationalHarmonicsModel{P <: AbstractPlanet} <: AbstractForceTorqueModel
     L::Int64 # Degree
     M::Int64 # Order
     C::Matrix{Float64} # Cosine coefficients
@@ -50,7 +52,8 @@ struct GravitationalHarmonicsModel <: AbstractForceTorqueModel
     VR11::Matrix{Float64} # Preallocated VR11 array
     N1::Matrix{Float64} # Preallocated N1 array
     N2::Matrix{Float64} # Preallocated N2 array
-    planet::Planet # Planet data for primary body
+    sqrt_2n_plus_3::Vector{Float64} # Precalculated sqrt(2n+3) values
+    planet::P # Planet data for primary body
 end
 
 struct SolarRadiationPressureModel <: AbstractForceTorqueModel
@@ -64,58 +67,57 @@ function NBodyGravityModel(body_names::Vector{String}, primary_body_name::String
     return NBodyGravityModel(body_names=body_names, primary_body_name=primary_body_name, planet=planet)
 end
 
-function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::String, planet_name::String)
-    harmonics_data = CSV.read(coefficients_file, DataFrame)
+function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::String, planet::P) where P <: AbstractPlanet
+    harmonics_data = CSV.File(coefficients_file)
     total_data_size = size(harmonics_data, 1)
-    degree = maximum(harmonics_data[:, 1]) + 1
-    C = zeros(degree, degree)
-    S = zeros(degree, degree)
+    degree = harmonics_data.degree[end] + 1
+    C = zeros(Float64, degree, degree)
+    S = zeros(Float64, degree, degree)
     for i=1:total_data_size
-        l = harmonics_data[i, 1] + 1 # Get the degree, l, from the data and convert to an index (subtract 1 because the data starts at 2nd degree coefficient)
-        m = harmonics_data[i, 2] + 1 # Get the order, m, from the data and convert to an index (add 1 because the data starts at 0th order coefficient)
-        C[l, m] = harmonics_data[i, 3]
-        S[l, m] = harmonics_data[i, 4]
+        l = harmonics_data.degree[i] + 1 # Get the degree, l, from the data and convert to an index (subtract 1 because the data starts at 2nd degree coefficient)
+        m = harmonics_data.order[i] + 1 # Get the order, m, from the data and convert to an index (add 1 because the data starts at 0th order coefficient)
+        C[l, m] = harmonics_data.C[i]
+        S[l, m] = harmonics_data.S[i]
     end
 
-    N1 = MMatrix{L+4, L+4, Float64}(zeros(L+4, L+4))
-    N2 = MMatrix{L+4, L+4, Float64}(zeros(L+4, L+4))
-    VR01 = MMatrix{L+1, L+1, Float64}(zeros(L+1, L+1))
-    VR11 = MMatrix{L+1, L+1, Float64}(zeros(L+1, L+1))
-    sqrt_2 = sqrt(2.0)
-    for m = 0:M+2
+    N1 = zeros(Float64, L+4, L+4)
+    N2 = zeros(Float64, L+4, L+4)
+    VR01 = zeros(Float64, L+1, L+1)
+    VR11 = zeros(Float64, L+1, L+1)
+    @inbounds for m = 0:M+2
         j = m + 1
-        for l = m+2:L+2
+        @inbounds for l = m+2:L+2
             i = l + 1
             N1[i, j] = √((2*l+1)*(2*l-1)/(l+m)/(l-m))
             N2[i, j] = √((l+m-1)*(2*l+1)*(l-m-1)/(2*l-3)/(l+m)/(l-m))
         end
     end
-    N1 = SMatrix{L+4, L+4, Float64}(N1)
-    N2 = SMatrix{L+4, L+4, Float64}(N2)
-
-    for l = 0:L
+    
+    @inbounds for l = 0:L
         i = l + 1
-        for m = 0:min(M, l)
+        @inbounds for m = 0:min(M, l)
             j = m + 1
             divisor = m == 0 ? sqrt_2 : 1
             VR01[i, j] = sqrt((l-m)*(l+m+1)) / divisor
             VR11[i, j] = sqrt((2*l+1)*(l+m+2)*(l+m+1)/(2*l+3)) / divisor
         end
     end
-    VR01 = SMatrix{L+1, L+1, Float64}(VR01)
-    VR11 = SMatrix{L+1, L+1, Float64}(VR11)
 
-    A = MMatrix{L+4, L+4, Float64}(zeros(L+4, L+4))
-    R = MVector{L+4, Float64}(zeros(L+4))
-    I = MVector{L+4, Float64}(zeros(L+4))
+    A = Matrix{Float64}(zeros(L+4, L+4))
+    R = Vector{Float64}(zeros(L+4))
+    I = Vector{Float64}(zeros(L+4))
     A[1, 1] = 1
     # Fill the diagonal elements of A
-    for l = 1:L+2
+    @inbounds for l = 1:L+2
         i = l + 1
         A[i, i] = sqrt((2*l+1)/(2*l))*A[i-1, i-1]
     end
 
-    planet = planet_data(planet_name)
+    # Precalculate the values of √(2n+3)
+    sqrt_2n_plus_3 = Vector{Float64}(zeros(L+1))
+    @inbounds for n = 1:L+1
+        sqrt_2n_plus_3[n] = sqrt(2*n + 3)
+    end
 
     return GravitationalHarmonicsModel(
         L,
@@ -129,6 +131,7 @@ function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::Stri
         VR11,
         N1,
         N2,
+        sqrt_2n_plus_3,
         planet
     )
 end
@@ -176,13 +179,12 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
     s,t,u=normalize(rVec_cart)
     L = model.L
     M = model.M
-    sqrt_2 = sqrt(2.0)
     @fastmath begin
-        model.A[2, 1] = u*sqrt(3.0)
+        model.A[2, 1] = u*sqrt_3
         # Fill the off diagonal elements of A
         @inbounds @simd for n = 1:L+1
             i = n + 1
-            model.A[i+1, i] = u*sqrt(2.0*n+3.0)*model.A[i, i]
+            model.A[i+1, i] = u*model.sqrt_2n_plus_3[n]*model.A[i, i]
         end
         # Fill the rest of A
         @inbounds for m = 0:M+1
@@ -213,16 +215,16 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
                 S = model.S[i, j]
                 R_term = model.R[j-1]
                 I_term = model.I[j-1]
-                D =                   (C*model.R[j] + S*model.I[j])     * sqrt_2
+                D = (model.C[i, j]*model.R[j] + model.S[i, j]*model.I[j]) * sqrt_2
                 E = ifelse(m == 0, 0.0, (C*R_term + S*I_term) * sqrt_2)
                 F = ifelse(m == 0, 0.0, (S*R_term - C*I_term) * sqrt_2)
 
-                Avv00, Avv01, Avv11 = model.A[i, j], model.VR01[i, j]*model.A[i, j+1], model.VR11[i, j]*model.A[i+1, j+1]
+                # Avv00, Avv01, Avv11 = model.A[i, j], model.VR01[i, j]*model.A[i, j+1], model.VR11[i, j]*model.A[i+1, j+1]
 
-                sum1 += m * Avv00 * E
-                sum2 += m * Avv00 * F
-                sum3 +=     Avv01 * D
-                sum4 +=     Avv11 * D
+                sum1 += m * model.A[i, j] * E
+                sum2 += m * model.A[i, j] * F
+                sum3 +=     model.VR01[i, j]*model.A[i, j+1] * D
+                sum4 +=     model.VR11[i, j]*model.A[i+1, j+1] * D
             end
             rr = ρ_np1/RE
             a1 += rr * sum1
@@ -234,7 +236,7 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
 
     force_ii = mass * SVector{3, Float64}(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4) # Store gravity in config for other uses
 
-    cnf.gravity_harmonics_ii = force_ii
+    cnf.gravity_harmonics_ii .= force_ii
 
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end

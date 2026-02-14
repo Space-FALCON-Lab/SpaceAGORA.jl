@@ -6,7 +6,7 @@ include("../utils/Save_results.jl")
 include("../utils/quaternion_utils.jl")
 
 # include("../physical_models/Gravity_models.jl")
-include("../physical_models/Density_models.jl")
+# include("../physical_models/Density_models.jl")
 # include("../physical_models/Aerodynamic_models.jl")
 include("../physical_models/Thermal_models.jl")
 include("../physical_models/Attitude_control_models.jl")
@@ -47,46 +47,46 @@ const AstU = 149597870.7e3 # Astronomical Unit, m
 
 
 
-function asim(ip, initial_state, numberofpassage, args, params, gram_atmosphere=nothing, gram=nothing)
-    cnf, m, solution = params
-    wind_m = false
-    if ip.wm == 1
-        wind_m = true
-    end
+function asim(initial_state, numberofpassage, args, params)
+    # cnf, m, solution = params
+    # wind_m = false
+    # if ip.wm == 1
+    #     wind_m = true
+    # end
 
-    MonteCarlo = false
-    if ip.mc == 1
-        MonteCarlo = true
-    end
+    # MonteCarlo = false
+    # if ip.mc == 1
+    #     MonteCarlo = true
+    # end
 
-    OE = SVector{7, Float64}([initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m])
+    # OE = SVector{7, Float64}([initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m])
 
-    if (OE[1] > (m.planet.Rp_e*1e-3 + args[:EI])*1e3) && (args[:drag_passage] == false) && (args[:body_shape] == "Spacecraft")
-        index_steps_EOM = 3
-    else
-        index_steps_EOM = 1
-    end
+    # if (OE[1] > (m.planet.Rp_e*1e-3 + args[:EI])*1e3) && (args[:drag_passage] == false) && (args[:body_shape] == "Spacecraft")
+    #     index_steps_EOM = 3
+    # else
+    #     index_steps_EOM = 1
+    # end
 
-    i = OE[3]
-    Ω = OE[4]
-    ω = OE[5]
+    # i = OE[3]
+    # Ω = OE[4]
+    # ω = OE[5]
 
-    T_ijk = SMatrix{3, 3, Float64}([cos(Ω)*cos(ω)-sin(Ω)*sin(ω)*cos(i)   sin(Ω)*cos(ω)+cos(Ω)*sin(ω)*cos(i)    sin(ω)*sin(i);
-             -cos(Ω)*sin(ω)-sin(Ω)*cos(ω)*cos(i)  -sin(Ω)*sin(ω)+cos(Ω)*cos(ω)*cos(i)   cos(ω)*sin(i);
-             sin(Ω)*sin(i)                        -cos(Ω)*sin(i)                        cos(i)])
+    # T_ijk = SMatrix{3, 3, Float64}([cos(Ω)*cos(ω)-sin(Ω)*sin(ω)*cos(i)   sin(Ω)*cos(ω)+cos(Ω)*sin(ω)*cos(i)    sin(ω)*sin(i);
+    #          -cos(Ω)*sin(ω)-sin(Ω)*cos(ω)*cos(i)  -sin(Ω)*sin(ω)+cos(Ω)*cos(ω)*cos(i)   cos(ω)*sin(i);
+    #          sin(Ω)*sin(i)                        -cos(Ω)*sin(i)                        cos(i)])
 
 
-    r0, v0 = orbitalelemtorv(OE, m.planet)
+    # r0, v0 = orbitalelemtorv(OE, m.planet)
 
-    Mass = OE[end]
+    # Mass = OE[end]
 
     # Clock
-    date_initial = from_utc(DateTime(m.initial_condition.year, 
-                                    m.initial_condition.month,
-                                    m.initial_condition.day, 
-                                    m.initial_condition.hour, 
-                                    m.initial_condition.minute, 
-                                    m.initial_condition.second))
+    date_initial = from_utc(DateTime(args.initial_time.year, 
+                                    args.initial_time.month,
+                                    args.initial_time.day, 
+                                    args.initial_time.hour, 
+                                    args.initial_time.minute, 
+                                    args.initial_time.second))
 
     cnf.count_numberofpassage += 1
     t_prev = 0.0
@@ -198,17 +198,17 @@ function asim(ip, initial_state, numberofpassage, args, params, gram_atmosphere=
 
         vel_pp_mag = norm(vel_pp)
 
-        Mars_Gram_recalled_at_periapsis = false
+        # Mars_Gram_recalled_at_periapsis = false
 
-        if vi > 0 && vi < pi/2 && cnf.ascending_phase == false
-            cnf.ascending_phase = true
-        elseif vi >= pi/2 && vi <= pi && cnf.ascending_phase == true && args[:body_shape] == "Blunted Cone"
-            cnf.ascending_phase = false
-        end
+        # if vi > 0 && vi < pi/2 && cnf.ascending_phase == false
+        #     cnf.ascending_phase = true
+        # elseif vi >= pi/2 && vi <= pi && cnf.ascending_phase == true && args[:body_shape] == "Blunted Cone"
+        #     cnf.ascending_phase = false
+        # end
 
-        if cnf.ascending_phase == true && cnf.MarsGram_recall == false
-            cnf.atmospheric_data = Dict()
-        end
+        # if cnf.ascending_phase == true && cnf.MarsGram_recall == false
+        #     cnf.atmospheric_data = Dict()
+        # end
 
         # Angular Momentum Calculations 
         h_ii = cross(pos_ii, vel_ii)    # Inertial angular momentum vector [m ^ 2 / s]

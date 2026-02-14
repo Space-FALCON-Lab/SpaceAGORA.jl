@@ -1,6 +1,6 @@
 module Planets
     include("../physical_models/Planet_shapes.jl")
-    using ..AbstractTypes: Planet
+    using ..AbstractTypes: AbstractPlanet
     using StaticArrays
     using CSV
     export Earth, Mars
@@ -15,7 +15,7 @@ module Planets
         H::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
     end # struct HarmonicsWorkspace
 
-    @kwdef struct Earth <: Planet
+    @kwdef struct Earth <: AbstractPlanet
         name::String = "Earth" # Name of the planet
         Rp_e::Float64 = 6.3781e6 # Equatorial radius in meters
         Rp_p::Float64 = 6.3568e6 # Polar radius in meters
@@ -45,7 +45,7 @@ module Planets
         topography_function::Function = Earth_elevation! # Function to calculate elevation based on topography
     end # struct Earth
 
-    @kwdef struct Mars <: Planet
+    @kwdef struct Mars <: AbstractPlanet
         name::String = "Mars" # Name of the planet
         Rp_e::Float64 = 3.3962e6 # Equatorial radius in meters
         Rp_p::Float64 = 3.3762e6 # Polar radius in meters
@@ -88,7 +88,7 @@ module Planets
     end
 
     # Helper functions
-    function TopographyHarmonicsWorkspace!(topo_harmonics_file::String, planet::Planet)
+    function TopographyHarmonicsWorkspace!(topo_harmonics_file::String, planet::P) where P <: AbstractPlanet
         if topo_harmonics_file != ""
             Clm_topo, Slm_topo = read_topography_harmonics(topo_harmonics_file)
             # planet.topography_workspace = TopographyHarmonicsWorkspace()
@@ -152,7 +152,7 @@ module Planets
         return Clm_topo, Slm_topo
     end
 
-    calc_J2000_to_pci_rotation_matrix!(α::Float64, δ::Float64, planet::Planet) = begin
+    calc_J2000_to_pci_rotation_matrix!(α::Float64, δ::Float64, planet::P) where P <: AbstractPlanet = begin
         σ1 = sqrt(cos(δ)^4 + cos(δ)^2*sin(δ)^2)
         planet.J2000_to_pci = SMatrix{3, 3, Float64}([-sin(α) cos(α) 0;
                         -cos(δ)*cos(α)*sin(δ)/σ1 -cos(δ)*sin(α)*sin(δ)/σ1 cos(δ)^2/σ1;

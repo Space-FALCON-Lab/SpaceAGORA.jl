@@ -56,4 +56,9 @@ include("DynamicEffectors.jl")
 
 include("simulation_configuration.jl")
 @reexport using .SimConfig
+
+# --- Physical Models ---
+include("PhysicalModels.jl")
+@reexport using .EnvironmentModels
+
 end # module SimulationModel

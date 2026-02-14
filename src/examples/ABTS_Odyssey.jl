@@ -15,12 +15,12 @@ using .SimulationModel
 mars = Mars("Gravity_harmonics_data/Mars50c.csv")
 gravEffector = InverseSquaredGravityModel()
 # nBodyGravEffector = NBodyGravityModel(["Sun", "Moon"], "Earth")
-harmonicGravEffector = GravitationalHarmonicsModel(50, 50, "Gravity_harmonics_data/Mars50c.csv", "Mars")
+harmonicGravEffector = GravitationalHarmonicsModel(50, 50, "Gravity_harmonics_data/Mars50c.csv", mars)
 aeroEffector = AerodynamicCoefficientfM()
 
 dynamic_effectors = (gravEffector, harmonicGravEffector, aeroEffector)
 
-spacecraft = SpacecraftModel()
+
 # Add bodies to the spacecraft model
 main_bus = Link{0}(root=true, 
                         r=SVector{3, Float64}(0.0, 0.0, 0.0), 
@@ -37,7 +37,6 @@ main_bus = Link{0}(root=true,
                         # attitude_control_rate=1.0/10.0, # 3 Hz
                         # J_rw=MMatrix{3, 4, Float64}([1.0 0.0 0.0 0.57735; 0.0 1.0 0.0 0.57735; 0.0 0.0 1.0 0.57735]),#0.57735
                         # attitude_control_function=lqr_constant_α_β)
-
 L_panel = Link{0}(r=SVector{3, Float64}(0.0, -2.6/2 - 3.89/4, 0.0), 
                         # q=SVector{4, Float64}([0, 0.4617, 0, 0.8870]),
                         q=SVector{4, Float64}([0, 0, 0, 1]),
@@ -52,8 +51,10 @@ R_panel = Link{0}(r=SVector{3, Float64}(0.0, 2.6/2 + 3.89/4, 0.0),
                         dims=SVector{3, Float64}([0.01, 3.89/2, 1.7]), 
                         ref_area=3.89*1.7/2,
                         m=10.0)
-
-add_body!(spacecraft, main_bus, prop_mass=50.0)
+                        
+# add_body!(spacecraft, main_bus, prop_mass=50.0)
+ic = InitialCondition(ra=28559.615e3, rp=3390.0e3+87.0e3, i=93.522, ω=109.7454, Ω=28.1517)
+spacecraft = SpacecraftModel(root=main_bus, prop_mass=50.0, initial_condition=ic)
 add_body!(spacecraft, L_panel)
 add_body!(spacecraft, R_panel)
 
@@ -69,17 +70,19 @@ println("Spacecraft MOI: $(get_inertia_tensor(spacecraft))")
 
 roots = SpacecraftModel[spacecraft]
 dynamics_model = DynamicsModel(roots, dynamic_effectors)
-ic = InitialCondition(ra=28559.615e3, rp=3390.0e3+87.0e3, i=93.522, ω=109.7454, Ω=28.1517)
 time = InitialTime(year=2001, 
                    month=11, 
                    day=6, 
                    hour=19, 
                    minute=0, 
                    second=32.0)
+GRAM = GRAMAtmosphereModel(planet_name="mars", initial_time=time)
+maxwellianheat = MaxwellianHeat(thermal_accomodation_factor=1.0, planet=mars)
+em = EnvironmentModel(planet=mars, density_model=GRAM, thermal_model=maxwellianheat)
 
 args = SimulationConfiguration(dynamics_model=dynamics_model,
-                               initial_conditions=ic,
-                               initial_time=time)
+                               initial_time=time,
+                               environment_model=em)
 # config.model.body = spacecraft
 # println("Number of reaction wheels: ", config.model.body.n_reaction_wheels)
 # println("Number of reaction wheels true: $(spacecraft.n_reaction_wheels)")

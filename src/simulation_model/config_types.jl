@@ -3,7 +3,6 @@ module ConfigTypes
 # import .SpacecraftModel
 # include("simulation_model/SimulationModel.jl")
 using ..PhysicalModel: SpacecraftModel
-using ..AbstractTypes: Planet
 using StaticArrays
 using AstroTime
 using OrdinaryDiffEq
@@ -283,7 +282,6 @@ export Body, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODE
         prob_set::Bool = false
         P::Matrix{Float64} = zeros(3,3)
 
-        n_bodies_list::Vector{Planet} = []
         DU::Float64 = 0.0
         TU::Float64 = 0.0
         MU::Float64 = 0.0   

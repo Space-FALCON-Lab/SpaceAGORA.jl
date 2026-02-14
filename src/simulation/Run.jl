@@ -126,7 +126,7 @@ end
 
 function run_analysis(args::SimulationConfiguration)
     # args = def_miss(args)
-    run_orbitalelements_ae(args)
+    aerobraking_campaign(args)
     # if args[:initial_condition_type] == 1 && (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone")
     #     run_vgamma(args)
     # elseif args[:initial_condition_type] == 0

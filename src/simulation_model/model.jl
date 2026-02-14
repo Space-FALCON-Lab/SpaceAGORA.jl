@@ -7,9 +7,25 @@ using LinearAlgebra
 # using ..AbstractTypes
 using ..Components
 
-export Link, Joint, SpacecraftModel, DynamicsModel
+export Link, Joint, SpacecraftModel, DynamicsModel, InitialCondition
 
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
+
+@kwdef struct InitialCondition
+    a::Float64 = 0.0 # Semimajor axis (m)
+    e::Float64 = 0.0 # Eccentricity (nd)
+    i::Float64 = 0.0 # Inclination (deg)
+    ω::Float64 = 0.0 # Argument of periapsis (deg)
+    Ω::Float64 = 0.0 # RAAN (deg)
+    ν::Float64 = 0.0 # True anomaly (deg)
+end # struct InitialCondition
+
+ # Convenience constructors
+function InitialCondition(;ra::Float64, rp::Float64, i::Float64, ω::Float64, Ω::Float64, ν::Float64=180.0)
+    a = (ra + rp) / 2.0
+    e = (ra - rp) / (ra + rp)
+    return InitialCondition(a, e, i, ω, Ω, ν) # Set true anomaly to 180 degrees by default
+end
 
 # --- CRITICAL REFACTOR 1 ---
 # Link is now parametric on N_RW (number of reaction wheels).
@@ -150,23 +166,41 @@ mutable struct SpacecraftModel
     inertia_tensor::SMatrix{3, 3, Float64} # Inertia tensor of the spacecraft in the body frame
     n_reaction_wheels::Int64 # Number of reaction wheels in the spacecraft model
     n_thrusters::Int64 # Number of thrusters in the spacecraft model
+    initial_condition::InitialCondition # Initial conditions for the simulation (orbit, attitude, etc.)
     # dynamic_effectors::T_Effectors # List of dynamic effector models (gravity, drag, etc.)
 
-    function SpacecraftModel(; joints=Joint[], children=Link[], root=Link{0}(),
-        instant_actuation=true,
-        prop_mass=0.0,
-        inertia_tensor=SMatrix{3, 3, Float64}(zeros(3, 3)),
-        n_reaction_wheels=0,
-        n_thrusters=0) # Set default as empty tuple
+    # function SpacecraftModel(; joints=Joint[], children=Link[], root=Link{0}(),
+    #     instant_actuation=true,
+    #     prop_mass=0.0,
+    #     inertia_tensor=SMatrix{3, 3, Float64}(zeros(3, 3)),
+    #     n_reaction_wheels=0,
+    #     n_thrusters=0,
+    #     initial_condition) # Set default as empty tuple
         
-        # Calculate dry mass from children
-        dry_mass = root.m
-        for child in children
-            dry_mass += child.m
-        end
+    #     # Calculate dry mass from children
+    #     dry_mass = root.m
+    #     for child in children
+    #         dry_mass += child.m
+    #     end
 
-        new(joints, children, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters)
+    #     new(joints, children, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters)
+    # end
+end
+
+function SpacecraftModel(; joints::Vector{Joint}=Joint[], children::Vector{Link}=Link[], root::Link,
+                            instant_actuation::Bool=true,
+                            prop_mass::Float64=0.0,
+                            inertia_tensor::SMatrix{3,3,Float64}=SMatrix{3, 3, Float64}(zeros(3,3)),
+                            n_reaction_wheels::Int64=0,
+                            n_thrusters::Int64=0,
+                            initial_condition::InitialCondition=InitialCondition())
+    # Calculate dry mass from children
+    dry_mass = root.m
+    for child in children
+        dry_mass += child.m
     end
+
+    return SpacecraftModel(joints, children, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters, initial_condition)
 end
 
 """

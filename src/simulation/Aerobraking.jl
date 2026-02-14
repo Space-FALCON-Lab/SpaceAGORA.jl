@@ -5,23 +5,23 @@ include("../utils/Save_results.jl")
 include("../physical_models/Propulsive_maneuvers.jl")
 
 using .SimulationModel
-using PythonCall
+# using PythonCall
 
-sys = pyimport("sys")
+# sys = pyimport("sys")
 
-os = pyimport("os")
+# os = pyimport("os")
 
-function aerobraking(ip, args, gram, gram_atmosphere, filename, temp_name, params)
-    cnf, m, solution = params
-    initial_state = m.initial_condition
+function aerobraking(args::SimulationConfiguration, filename::String, temp_name::String)
+    # cnf, m, solution = params
+    # initial_state = args.initial_conditions
     FinalState = true
     continue_campaign = true
     numberofpassage = 0
-    cnf.count_numberofpassage = 0
+    # cnf.count_numberofpassage = 0
 
     # clean_results()
-    solution = Solution()
-    params = (cnf, m, solution)
+    # solution = Solution()
+    # params = (cnf, m, solution)
 
     cnf.time_OP = 1
     cnf.time_IP = 1
@@ -29,75 +29,71 @@ function aerobraking(ip, args, gram, gram_atmosphere, filename, temp_name, param
     # Aerobraking Campaign
     while continue_campaign && FinalState
         cnf.index_Mars_Gram_call = 0
-        firing_orbit = 0
         numberofpassage += 1
 
-        if args[:print_res] == true
+        if args.simulation_settings.verbose
             println("--> Start Passage #" * string(numberofpassage))
         end 
 
         t_el_ab = @elapsed begin
             # Define maneuver
-            if uppercase(args[:thrust_control]) == "AEROBRAKING MANEUVER" && numberofpassage != 1
-                r_a = solution.orientation.oe[1][end] * (1 + solution.orientation.oe[2][end])
-                r_p = solution.orientation.oe[1][end] * (1 - solution.orientation.oe[2][end])
-                args = args[:maneuver_plan](m.planet, r_a, r_p, numberofpassage, args)
-            end
+            # TODO: Move to separate control callback function
+            # if uppercase(args[:thrust_control]) == "AEROBRAKING MANEUVER" && numberofpassage != 1
+            #     r_a = solution.orientation.oe[1][end] * (1 + solution.orientation.oe[2][end])
+            #     r_p = solution.orientation.oe[1][end] * (1 - solution.orientation.oe[2][end])
+            #     args = args[:maneuver_plan](m.planet, r_a, r_p, numberofpassage, args)
+            # end
             
-            if ip.tc == 1
-                if numberofpassage == 1
-                    args[:delta_v] = 0.0
-                end
+            # if ip.tc == 1
+            #     if numberofpassage == 1
+            #         args[:delta_v] = 0.0
+            #     end
 
-                if args[:delta_v] != 0.0
-                    if round(rad2deg(args[:phi])) == 180
-                        append!(cnf.raise_man_orbit, numberofpassage)
-                    else
-                        append!(cnf.lower_man_orbit, numberofpassage)
-                    end
+            #     if args[:delta_v] != 0.0
+            #         if round(rad2deg(args[:phi])) == 180
+            #             append!(cnf.raise_man_orbit, numberofpassage)
+            #         else
+            #             append!(cnf.lower_man_orbit, numberofpassage)
+            #         end
 
-                    if ip.tc == 1
-                        initial_state = propulsion_ic_calcs(m, args, initial_state)
-                    end
-                end
-            elseif ip.tc == 2
-                if round(rad2deg(args[:phi])) == 180
-                    println("DECELERATE DRAG FIRING!!")
-                elseif round(rad2deg(args[:phi])) == 0
-                    println("ACCELERATE DRAG FIRING!!")
-                end
-            end
+            #         if ip.tc == 1
+            #             initial_state = propulsion_ic_calcs(m, args, initial_state)
+            #         end
+            #     end
+            # elseif ip.tc == 2
+            #     if round(rad2deg(args[:phi])) == 180
+            #         println("DECELERATE DRAG FIRING!!")
+            #     elseif round(rad2deg(args[:phi])) == 0
+            #         println("ACCELERATE DRAG FIRING!!")
+            #     end
+            # end
 
-            if numberofpassage != 1
-                # Orbtial Elements Results
-                initial_state.a = solution.orientation.oe[1][end]
-                initial_state.e = solution.orientation.oe[2][end]
-                initial_state.i = solution.orientation.oe[3][end]
-                initial_state.Ω = solution.orientation.oe[4][end]
-                initial_state.ω = solution.orientation.oe[5][end]
-                initial_state.m = solution.performance.mass[end]
-                initial_state.vi = solution.orientation.oe[6][end]
+            # if numberofpassage != 1
+            #     # Orbtial Elements Results
+            #     args.initial_conditions.a = solution.orientation.oe[1][end]
+            #     args.initial_conditions.e = solution.orientation.oe[2][end]
+            #     args.initial_conditions.i = solution.orientation.oe[3][end]
+            #     args.initial_conditions.Ω = solution.orientation.oe[4][end]
+            #     args.initial_conditions.ω = solution.orientation.oe[5][end]
+            #     args.initial_conditions.m = solution.performance.mass[end]
+            #     args.initial_conditions.vi = solution.orientation.oe[6][end]
 
-                m.initial_condition.year = round(solution.orientation.year[end])
-                m.initial_condition.month = round(solution.orientation.month[end])
-                m.initial_condition.day = round(solution.orientation.day[end])
-                m.initial_condition.hour = round(solution.orientation.hour[end])
-                m.initial_condition.minute = round(solution.orientation.minute[end])
-                m.initial_condition.second = solution.orientation.second[end]
-                m.initial_condition.el_time = solution.orientation.time[end]
-                println("Initial Date and Time of the Passage: " * string(m.initial_condition.year) * "-" * string(m.initial_condition.month) * "-" * string(m.initial_condition.day) * " " * string(m.initial_condition.hour) * ":" * string(m.initial_condition.minute) * ":" * string(round(m.initial_condition.second, digits=2)))
-                if (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone") && continue_campaign
-                    r = m.planet.Rp_e + args[:EI]*1e3
-                    initial_state.vi = -acos(1 / initial_state.e * (initial_state.a * (1 - initial_state.e^2) / r - 1))
-                end
-            end
+            #     m.initial_condition.year = round(solution.orientation.year[end])
+            #     m.initial_condition.month = round(solution.orientation.month[end])
+            #     m.initial_condition.day = round(solution.orientation.day[end])
+            #     m.initial_condition.hour = round(solution.orientation.hour[end])
+            #     m.initial_condition.minute = round(solution.orientation.minute[end])
+            #     m.initial_condition.second = solution.orientation.second[end]
+            #     m.initial_condition.el_time = solution.orientation.time[end]
+            #     println("Initial Date and Time of the Passage: " * string(m.initial_condition.year) * "-" * string(m.initial_condition.month) * "-" * string(m.initial_condition.day) * " " * string(m.initial_condition.hour) * ":" * string(m.initial_condition.minute) * ":" * string(round(m.initial_condition.second, digits=2)))
+            #     # if (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone") && continue_campaign
+            #     #     r = m.planet.Rp_e + args[:EI]*1e3
+            #     #     initial_state.vi = -acos(1 / initial_state.e * (initial_state.a * (1 - initial_state.e^2) / r - 1))
+            #     # end
+            # end
 
-            params = (cnf, m, Solution()) # Reset solution struct for new passage
-            if uppercase(args[:density_model]) == "GRAM"
-                continue_campaign = asim(ip, initial_state, numberofpassage, args, params, gram_atmosphere, gram)
-            else
-                continue_campaign = asim(ip, initial_state, numberofpassage, args, params)
-            end
+            # params = (cnf, m, Solution()) # Reset solution struct for new passage
+            continue_campaign = asim(initial_state, numberofpassage, args, params)
             
             cnf = params[1]
             m = params[2]

@@ -1,4 +1,5 @@
-include("Complete_passage.jl")
+# include("Complete_passage.jl")
+include("run_simulation.jl")
 include("../utils/Ref_system_conf.jl")
 include("../utils/Closed_form_solution.jl")
 include("../utils/Save_results.jl")
@@ -23,12 +24,12 @@ function aerobraking(args::SimulationConfiguration, filename::String, temp_name:
     # solution = Solution()
     # params = (cnf, m, solution)
 
-    cnf.time_OP = 1
-    cnf.time_IP = 1
+    # cnf.time_OP = 1
+    # cnf.time_IP = 1
     
     # Aerobraking Campaign
     while continue_campaign && FinalState
-        cnf.index_Mars_Gram_call = 0
+        # cnf.index_Mars_Gram_call = 0
         numberofpassage += 1
 
         if args.simulation_settings.verbose
@@ -93,14 +94,15 @@ function aerobraking(args::SimulationConfiguration, filename::String, temp_name:
             # end
 
             # params = (cnf, m, Solution()) # Reset solution struct for new passage
-            continue_campaign = asim(initial_state, numberofpassage, args, params)
+            # continue_campaign = asim(initial_state, numberofpassage, args, params)
+            run_simulation(args)
             
-            cnf = params[1]
-            m = params[2]
-            solution = params[3]
+            # cnf = params[1]
+            # m = params[2]
+            # solution = params[3]
 
-            r_a = solution.orientation.oe[1][end] * (1 + solution.orientation.oe[2][end])
-            r_p = solution.orientation.oe[1][end] * (1 - solution.orientation.oe[2][end])
+            # r_a = solution.orientation.oe[1][end] * (1 + solution.orientation.oe[2][end])
+            # r_p = solution.orientation.oe[1][end] * (1 - solution.orientation.oe[2][end])
         end
 
         if Bool(args[:print_res])

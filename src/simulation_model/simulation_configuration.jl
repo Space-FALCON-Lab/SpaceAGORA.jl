@@ -52,7 +52,7 @@ module SimConfig
         mission_type::String = "Time" # Indicator of the termination condition type (Time, number of orbits, etc.)
         keplerian::Bool = true # Whether to include step 2 (drag passage) as separate step or keep same integration parameters the whole time
         number_of_orbits::Int = 1 # Number of orbits to propagate for (if mission_type is "Orbits")
-        mission_time::Float64 = 90*60.0 # Total mission time in seconds (if mission_type is "Time")
+        mission_time::Float64 = 90.0*60.0*20.0 # Total mission time in seconds (if mission_type is "Time")
         orientation_sim::Bool = true # Whether to simulate orientation dynamics (if false, only position and velocity are simulated)
         num_steps_to_save::Int = 1000 # Number of time steps to store in memory during the simulation before writing to a file
     end # struct MissionConfiguration

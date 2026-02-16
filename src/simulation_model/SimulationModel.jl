@@ -47,6 +47,9 @@ include("analysis.jl")
 @reexport using .Analysis
 
 # --- Config types ---
+include("simulation_configuration.jl")
+@reexport using .SimConfig
+
 include("config_types.jl")
 @reexport using .ConfigTypes
 
@@ -54,8 +57,7 @@ include("config_types.jl")
 include("DynamicEffectors.jl")
 @reexport using .DynamicEffectors
 
-include("simulation_configuration.jl")
-@reexport using .SimConfig
+
 
 # --- Physical Models ---
 include("PhysicalModels.jl")

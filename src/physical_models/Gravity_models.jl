@@ -24,7 +24,7 @@ end
 
 # Calculate force/torque functions
 # Model is the gravity model struct and x is the state vector from Complete_passage
-function calcForceTorque(model::ConstantGravityModel, x::AbstractVector{Float64}, param::ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+function calcForceTorque!(model::ConstantGravityModel, x::AbstractVector{Float64}, param::ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     m = param.m
     cnf = param.cnf
 
@@ -41,14 +41,15 @@ function calcForceTorque(model::ConstantGravityModel, x::AbstractVector{Float64}
 end
 
 function calcForceTorque(model::InverseSquaredGravityModel, x::AbstractVector{Float64}, param::ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    m = param.m
-    cnf = param.cnf
+    # m = param.m
+    # cnf = param.cnf
+    planet = param.args.environment_model.planet
 
-    pos_ii = SVector{3, Float64}(x[1:3]) # Position in inertial frame, change to x.r if using StructArrays in Complete_passage
-    mass = x[7]               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
-    gravity_ii = -m.planet.μ / norm(pos_ii)^2 * normalize(pos_ii)
+    pos_ii = SVector{3, Float64}(x.pos) # Position in inertial frame, change to x.r if using StructArrays in Complete_passage
+    mass = x.mass               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
+    gravity_ii = -planet.μ / norm(pos_ii)^2 * normalize(pos_ii)
 
-    cnf.gravity_cent_ii = mass * gravity_ii # Store gravity in config for other uses
+    # cnf.gravity_cent_ii = mass * gravity_ii # Store gravity in config for other uses
 
     force_ii = mass * gravity_ii
     torque_ii = SVector{3, Float64}(zeros(3))
@@ -59,8 +60,8 @@ function calcForceTorque(model::InverseSquaredJ2GravityModel, x::AbstractVector{
     m = param.m
     cnf = param.cnf
 
-    pos_ii = SVector{3, Float64}(x[1:3]) # Position in inertial frame, change to x.r if using StructArrays in Complete_passage
-    mass = x[7]               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
+    pos_ii = SVector{3, Float64}(x.pos) # Position in inertial frame, change to x.r if using StructArrays in Complete_passage
+    mass = x.mass               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
     r = norm(pos_ii)
     μ = m.planet.μ
     J2 = m.planet.J2

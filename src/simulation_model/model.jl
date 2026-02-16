@@ -18,13 +18,15 @@ const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
     ω::Float64 = 0.0 # Argument of periapsis (deg)
     Ω::Float64 = 0.0 # RAAN (deg)
     ν::Float64 = 0.0 # True anomaly (deg)
+    q::SVector{4, Float64} = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0) # Initial orientation quaternion (x, y, z, w)
+    ang_vel::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 0.0) # Initial angular velocity (rad/s)
 end # struct InitialCondition
 
  # Convenience constructors
 function InitialCondition(;ra::Float64, rp::Float64, i::Float64, ω::Float64, Ω::Float64, ν::Float64=180.0)
     a = (ra + rp) / 2.0
     e = (ra - rp) / (ra + rp)
-    return InitialCondition(a, e, i, ω, Ω, ν) # Set true anomaly to 180 degrees by default
+    return InitialCondition(a, e, i, ω, Ω, ν, SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0)) # Set true anomaly to 180 degrees by default
 end
 
 # --- CRITICAL REFACTOR 1 ---
@@ -210,7 +212,7 @@ Roots: Vector of root links (main bus or core bodies). This is the vector over w
 DynamicEffectors: Tuple of dynamic effector models (gravity, drag, etc.) to be applied during the dynamics propagation.
 """
 struct DynamicsModel{T_Effectors<:Tuple}
-    roots::Vector{SpacecraftModel} # Vector of root links (main bus or core bodies)
+    spacecraft::Vector{SpacecraftModel} # Vector of root links (main bus or core bodies)
     dynamic_effectors::T_Effectors # Tuple of dynamic effector models (gravity, drag, etc.)
 
     function DynamicsModel(roots::Vector{SpacecraftModel}, dynamic_effectors::T_Effectors) where {T_Effectors<:Tuple}

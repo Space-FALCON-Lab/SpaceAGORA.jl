@@ -5,6 +5,7 @@ using AstroTime
 using StaticArrays
 using SatelliteToolboxTransformations
 using SatelliteToolbox
+
 # eop_iau2000a = fetch_iers_eop(Val(:IAU2000A))
 
 function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet, et)
@@ -56,6 +57,12 @@ function orbitalelemtorv(oe::SVector{7, Float64}, planet)
     V = Q' * v_x
 
     return collect(R), collect(V)
+end
+
+function orbitalelemtorv(oe, planet)
+    # Overload for InitialCondition struct
+    a, e, i, Ω, ω, ν = oe.a, oe.e, oe.i, oe.Ω, oe.ω, oe.ν
+    return orbitalelemtorv(SVector{7, Float64}([a, e, i, Ω, ω, ν, 0.0]), planet)
 end
 
 function rvtoorbitalelement(r::SVector, v::SVector, m::Float64, planet)

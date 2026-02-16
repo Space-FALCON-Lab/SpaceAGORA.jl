@@ -3,6 +3,7 @@ module ConfigTypes
 # import .SpacecraftModel
 # include("simulation_model/SimulationModel.jl")
 using ..PhysicalModel: SpacecraftModel
+using ..SimConfig: SimulationConfiguration
 using StaticArrays
 using AstroTime
 using OrdinaryDiffEq
@@ -430,22 +431,22 @@ export Body, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODE
     end
 
     @kwdef mutable struct ODEParams
-        m::Model = Model()                      # Model struct
-        cnf::Cnf = Cnf()            # Configuration parameters
-        solution::Solution = Solution() # Solution struct
-        index_phase_aerobraking::Float64 = 0.0  # Phase index for aerobraking control
-        ip::InitialParameters                     # Input parameters struct
-        aerobraking_phase::Int64 = 0          # Aerobraking phase
-        t_prev::Float64 = 0.0                 # Previous time for Gram calls
-        date_initial::Any          # Initial date time
-        time_0::Float64 = 0.0                  # Initial time
-        initial_state::Initial_condition         # Initial state struct
-        gram_atmosphere::Any = nothing   # GRAM atmosphere data
-        gram::Any = nothing              # GRAM object
-        numberofpassage::Int64 = 0       # Current passage number
-        orientation_sim::Bool = false    # Flag for orientation simulation
-        args::Dict{Symbol, Any} = Dict{Symbol, Any}() # Arguments dictionary
-        intermediate_solution::IntermediateSolution = IntermediateSolution() # Intermediate solution struct
+        # m::Model = Model()                      # Model struct
+        # cnf::Cnf = Cnf()            # Configuration parameters
+        # solution::Solution = Solution() # Solution struct
+        # index_phase_aerobraking::Float64 = 0.0  # Phase index for aerobraking control
+        # ip::InitialParameters                     # Input parameters struct
+        # aerobraking_phase::Int64 = 0          # Aerobraking phase
+        # t_prev::Float64 = 0.0                 # Previous time for Gram calls
+        # date_initial::Any          # Initial date time
+        # time_0::Float64 = 0.0                  # Initial time
+        # initial_state::Initial_condition         # Initial state struct
+        # gram_atmosphere::Any = nothing   # GRAM atmosphere data
+        # gram::Any = nothing              # GRAM object
+        # numberofpassage::Int64 = 0       # Current passage number
+        # orientation_sim::Bool = false    # Flag for orientation simulation
+        args::SimulationConfiguration = SimulationConfiguration() # Arguments dictionary
+        # intermediate_solution::IntermediateSolution = IntermediateSolution() # Intermediate solution struct
     end
     # solution = Solution()
 

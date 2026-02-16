@@ -15,10 +15,11 @@ using .SimulationModel
 mars = Mars("Gravity_harmonics_data/Mars50c.csv")
 gravEffector = InverseSquaredGravityModel()
 # nBodyGravEffector = NBodyGravityModel(["Sun", "Moon"], "Earth")
-harmonicGravEffector = GravitationalHarmonicsModel(50, 50, "Gravity_harmonics_data/Mars50c.csv", mars)
-aeroEffector = AerodynamicCoefficientfM()
+# harmonicGravEffector = GravitationalHarmonicsModel(50, 50, "Gravity_harmonics_data/Mars50c.csv", mars)
+# aeroEffector = AerodynamicCoefficientfM()
 
-dynamic_effectors = (gravEffector, harmonicGravEffector, aeroEffector)
+# dynamic_effectors = (gravEffector, harmonicGravEffector, aeroEffector)
+dynamic_effectors = (gravEffector,)
 
 
 # Add bodies to the spacecraft model
@@ -68,7 +69,13 @@ println("Spacecraft model initialized with $(length(spacecraft.children)+1) bodi
 println("Spacecraft COM: $(get_COM(spacecraft))")
 println("Spacecraft MOI: $(get_inertia_tensor(spacecraft))")
 
-roots = SpacecraftModel[spacecraft]
+sc2 = deepcopy(spacecraft)
+sc2_ic = InitialCondition(ra=28559.615e3, rp=3390.0e3+87.0e3, i=75.0, ω=109.7454, Ω=28.1517)
+sc2.initial_condition = sc2_ic
+sc3 = deepcopy(spacecraft)
+sc3_ic = InitialCondition(ra=28559.615e3, rp=3390.0e3+87.0e3, i=105.0, ω=109.7454, Ω=28.1517)
+sc3.initial_condition = sc3_ic
+roots = SpacecraftModel[spacecraft, sc2, sc3] # Create multiple instances of the spacecraft for multiple passages
 dynamics_model = DynamicsModel(roots, dynamic_effectors)
 time = InitialTime(year=2001, 
                    month=11, 

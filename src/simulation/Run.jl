@@ -1,8 +1,8 @@
 using .SimulationModel
 
-include("../utils/Define_mission.jl")
-include("../utils/MonteCarlo_set.jl")
-include("../utils/Initial_cond_calc.jl")
+# include("../utils/Define_mission.jl")
+# include("../utils/MonteCarlo_set.jl")
+# include("../utils/Initial_cond_calc.jl")
 include("Set_and_run.jl")
 
 function run_orbitalelements(args)
@@ -135,9 +135,9 @@ function run_analysis(args::SimulationConfiguration)
     #     run_orbitalelements_ae(args)
     # end
 
-    if Bool(args[:passresults])
-        return config.solution
-    else
-        return true
-    end
+    # if Bool(args[:passresults])
+    #     return config.solution
+    # else
+    #     return true
+    # end
 end

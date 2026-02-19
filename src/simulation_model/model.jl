@@ -49,6 +49,7 @@ mutable struct Link{N_RW}
     α::Float64 # Angle of attack, rad
     β::Float64 # Sideslip angle, rad
     θ::Float64 # Flow angle, rad
+    reflection_coefficient::Float64 # Reflection coefficient for aerodynamic calculations
     rw_assembly::ReactionWheelAssembly{N_RW} # Reaction wheel assembly
     net_force::MVector{3, Float64} # Net force acting on the link, to be updated at each simulation step
     net_torque::MVector{3, Float64} # Net torque acting on the link, to be updated at each simulation step
@@ -73,6 +74,7 @@ mutable struct Link{N_RW}
         α=pi / 2.0,
         β=0.0,
         θ=0.0,
+        reflection_coefficient=1.0,
         max_torque=0.25,
         max_h=70.0,
         rw=MVector{N_RW, Float64}(zeros(N_RW)),
@@ -95,7 +97,7 @@ mutable struct Link{N_RW}
             tau_body_net=MVector{3, Float64}(zeros(3))      # tau_body_net
         )
         println(length(rw))
-        new{N_RW}(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, J_thruster, thrusters, magnets)
+        new{N_RW}(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, J_thruster, thrusters, magnets)
     end
 end
 
@@ -160,7 +162,7 @@ end
 # This ensures the `dynamic_effectors` field is type-stable.
 mutable struct SpacecraftModel
     joints::Vector{Joint} # List of joints
-    children::Vector{Link} # List of links (bodies)
+    links::Vector{Link} # List of links (bodies)
     root::Link # Root link (main bus or core body)
     instant_actuation::Bool # Whether control inputs (e.g., solar panel angles) are applied instantly
     dry_mass::Float64 # Dry mass of the spacecraft
@@ -189,20 +191,20 @@ mutable struct SpacecraftModel
     # end
 end
 
-function SpacecraftModel(; joints::Vector{Joint}=Joint[], children::Vector{Link}=Link[], root::Link,
+function SpacecraftModel(; joints::Vector{Joint}=Joint[], links::Vector{Link}=Link[], root::Link,
                             instant_actuation::Bool=true,
                             prop_mass::Float64=0.0,
                             inertia_tensor::SMatrix{3,3,Float64}=SMatrix{3, 3, Float64}(zeros(3,3)),
                             n_reaction_wheels::Int64=0,
                             n_thrusters::Int64=0,
                             initial_condition::InitialCondition=InitialCondition())
-    # Calculate dry mass from children
-    dry_mass = root.m
-    for child in children
-        dry_mass += child.m
+    # Calculate dry mass from links
+    dry_mass = 0.0
+    for link in links
+        dry_mass += link.m
     end
 
-    return SpacecraftModel(joints, children, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters, initial_condition)
+    return SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters, initial_condition)
 end
 
 """

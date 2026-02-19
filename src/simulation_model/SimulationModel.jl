@@ -57,10 +57,11 @@ include("config_types.jl")
 include("DynamicEffectors.jl")
 @reexport using .DynamicEffectors
 
-
-
 # --- Physical Models ---
 include("PhysicalModels.jl")
 @reexport using .EnvironmentModels
 
+# --- Integrator Callbacks ---
+include("callbacks.jl")
+@reexport using .SimulationCallbacks
 end # module SimulationModel

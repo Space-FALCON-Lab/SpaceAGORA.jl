@@ -430,7 +430,14 @@ export Body, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODE
         closed_form::Closed_form = Closed_form()
     end
 
-    @kwdef mutable struct ODEParams
+    # A struct to hold the data shared between the callback and the integrator
+    @kwdef struct SharedBuffers{N_sats}
+        densities::Vector{Float64} = zeros(Float64, N_sats)
+        temperatures::Vector{Float64} = ones(Float64, N_sats)
+        winds::Vector{SVector{3,Float64}} = [SVector{3,Float64}(0.0, 0.0, 0.0) for _ in 1:N_sats]
+    end
+
+    @kwdef mutable struct ODEParams{N_sats}
         # m::Model = Model()                      # Model struct
         # cnf::Cnf = Cnf()            # Configuration parameters
         # solution::Solution = Solution() # Solution struct
@@ -446,6 +453,9 @@ export Body, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODE
         # numberofpassage::Int64 = 0       # Current passage number
         # orientation_sim::Bool = false    # Flag for orientation simulation
         args::SimulationConfiguration = SimulationConfiguration() # Arguments dictionary
+        shared_buffers::SharedBuffers = SharedBuffers{N_sats}() # Shared buffers for callback and integrator
+        is_active::Vector{Bool} = [true for _ in 1:N_sats] # Vector to track which satellites are still active in the simulation
+        orbit_counter::Int64 = 0 # Counter for the number of orbits completed
         # intermediate_solution::IntermediateSolution = IntermediateSolution() # Intermediate solution struct
     end
     # solution = Solution()

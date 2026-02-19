@@ -67,7 +67,7 @@ Returns the center of mass of the spacecraft assembly that the body is a part of
 """
 function get_COM(model::SpacecraftModel)
     # BFS starting from body to find all bodies attached to the current body
-    bodies = [model.root, model.children...] # Get all bodies in the model
+    bodies = model.links # Get all bodies in the model
     return get_COM(bodies) # Call the version for a list of bodies
 end
 
@@ -76,7 +76,7 @@ end
 
 Returns the center of mass of a collection of bodies.
 """
-function get_COM(bodies::Vector{Link{N}}) where N
+function get_COM(bodies::Vector{Link})
     COM = MVector{3, Float64}(0.0, 0.0, 0.0)
     total_mass = 0.0
     for body in bodies

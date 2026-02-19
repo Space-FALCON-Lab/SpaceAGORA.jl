@@ -1,12 +1,12 @@
 using .SimulationModel
 
-include("../physical_models/MonteCarlo_pertrubations.jl")
-include("../physical_models/Planet_data.jl")
-include("../physical_models/Mission.jl")
-include("../utils/Save_csv.jl")
-include("../utils/Plot_data.jl")
+# include("../physical_models/MonteCarlo_pertrubations.jl")
+# include("../physical_models/Planet_data.jl")
+# include("../physical_models/Mission.jl")
+# include("../utils/Save_csv.jl")
+# include("../utils/Plot_data.jl")
 include("Aerobraking.jl")
-include("../utils/Reference_system.jl")
+# include("../utils/Reference_system.jl")
 
 using SPICE
 using StaticArrays
@@ -42,13 +42,13 @@ function aerobraking_campaign(args)
     # p_class = planet_data(ip.M.planet)
 
     # Load SPICE kernels if required
-    furnsh(args.file_paths.SPICE * "/pck/pck00011.tpc")
-    # furnsh(args.file_paths.SPICE * "/spk/planets/de440_GRAM.bsp")
-    furnsh(args.file_paths.SPICE * "/lsk/naif0012.tls")
-    furnsh(args.file_paths.SPICE * "/spk/planets/de440s.bsp")
-    # furnsh(args.file_paths.SPICE * "/spk/planets/de430.bsp")
-    furnsh(args.file_paths.SPICE * "/spk/satellites/sat441_GRAM.bsp")
-    furnsh(args.file_paths.SPICE * "/spk/satellites/mar097_GRAM.bsp")
+    # furnsh(args.file_paths.SPICE * "/pck/pck00011.tpc")
+    # # furnsh(args.file_paths.SPICE * "/spk/planets/de440_GRAM.bsp")
+    # furnsh(args.file_paths.SPICE * "/lsk/naif0012.tls")
+    # furnsh(args.file_paths.SPICE * "/spk/planets/de440s.bsp")
+    # # furnsh(args.file_paths.SPICE * "/spk/planets/de430.bsp")
+    # furnsh(args.file_paths.SPICE * "/spk/satellites/sat441_GRAM.bsp")
+    # furnsh(args.file_paths.SPICE * "/spk/satellites/mar097_GRAM.bsp")
     
     # If using lat/lon initial conditions, correct the initial orbital elements
     # if args[:orientation_type] == 1
@@ -377,13 +377,13 @@ function aerobraking_campaign(args)
 
     
 
-    if Bool(args[:print_res])
-        println("Elapsed time: " * string(t_el) * " s")
-    end
+    # if Bool(args[:print_res])
+    #     println("Elapsed time: " * string(t_el) * " s")
+    # end
 
-    if args[:plot] == true
-        plots(state, m, name, args, params, arrow_filename)
-    end
+    # if args[:plot] == true
+    #     plots(state, m, name, args, params, arrow_filename)
+    # end
 
     # rm(temp_name, recursive=true, force=true) # Remove the temporary directory used for plotting
 end

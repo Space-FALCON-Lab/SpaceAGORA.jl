@@ -31,9 +31,10 @@ function add_body!(model::SpacecraftModel,
         # push!(model.roots, body) # Add the body to the roots vector
         model.root = body # Set the root field to the body
         model.prop_mass = prop_mass # Add propellant mass for root body
+        push!(model.links, body) # Add the body to the links vector
         # Initialize inertia tensor for the root body
     else
-        push!(model.children, body) # Add the body to the children vector
+        push!(model.links, body) # Add the body to the links vector
     end
     model.n_reaction_wheels += length(body.rw_assembly.h_wheels) # Increment the number of reaction wheels
     if body.root

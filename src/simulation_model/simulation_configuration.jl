@@ -23,8 +23,8 @@ module SimConfig
         reltol_quaternion::Float64 = 1e-9
         abstol_quaternion::Float64 = 1e-11
         dt_max::Float64 = 1.0
-        dt_max_orbit = 10.0
-        dt_max_atmosphere = 1.0
+        dt_max_orbit::Float64 = 30.0
+        dt_max_atmosphere::Float64 = 1.0
     end # struct IntegrationTolerances
 
     @kwdef struct FilePaths
@@ -52,8 +52,8 @@ module SimConfig
         mission_type::String = "Time" # Indicator of the termination condition type (Time, number of orbits, etc.)
         keplerian::Bool = true # Whether to include step 2 (drag passage) as separate step or keep same integration parameters the whole time
         number_of_orbits::Int = 1 # Number of orbits to propagate for (if mission_type is "Orbits")
-        mission_time::Float64 = 90.0*60.0*20.0 # Total mission time in seconds (if mission_type is "Time")
-        orientation_sim::Bool = true # Whether to simulate orientation dynamics (if false, only position and velocity are simulated)
+        mission_time::Float64 = 90.0*60.0*20.0*10.0 # Total mission time in seconds (if mission_type is "Time")
+        orientation_sim::Bool = false # Whether to simulate orientation dynamics (if false, only position and velocity are simulated)
         num_steps_to_save::Int = 1000 # Number of time steps to store in memory during the simulation before writing to a file
     end # struct MissionConfiguration
 
@@ -61,6 +61,7 @@ module SimConfig
     @kwdef struct EnvironmentModel{P <: AbstractPlanet, D <: AbstractDensityModel, T <: AbstractThermalModel}
         # Physical environment model
         planet::P # Planet for which to run the simulation (used for gravity model, atmospheric model, etc.)
+        EI::Float64 # Entry Interface altitude in km (used for determining when to start applying atmospheric effects)
         density_model::D # Atmospheric model to use (Constant, Exponential, GRAM, NRLMSISE-00)
         topography::Bool = false # Whether to include topography in the simulation for altitude calculation
         topo_degree::Int = 90 # Maximum degree of spherical harmonics for topography

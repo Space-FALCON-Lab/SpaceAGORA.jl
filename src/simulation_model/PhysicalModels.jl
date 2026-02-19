@@ -4,6 +4,7 @@ module EnvironmentModels
     using ..Kinematics
     using ..Effectors
     using ..SimConfig: InitialTime
+    using Reexport
 
     export NoAtmosphereModel, ExponentialAtmosphereModel, GRAMAtmosphereModel
     export getDensity
@@ -11,5 +12,6 @@ module EnvironmentModels
     export MaxwellianHeat, getHeatRate
 
     include("../physical_models/Density_models.jl")
+    # @reexport DensityModels
     include("../physical_models/Thermal_models.jl")
 end # module PhysicalModels

@@ -1,22 +1,31 @@
+include("../utils/Reference_system.jl")
 using LinearAlgebra
 using StaticArrays
 using LoopVectorization
 using ComponentArrays
 using DifferentialEquations
 using CSV
+using DataFrames
+using Polyester
 # using .SimulationModel: SimulationConfiguration
 
 function run_simulation(args::SimulationConfiguration)
     # Set up the model and initial conditions
     initial_conditions = build_initial_conditions(args)
-    println("Initial conditions:")
-    println(initial_conditions)
+    # println("Initial conditions:")
+    # println(initial_conditions)
 
     # Define the ODE problem
-    p = ODEParams(args=args)
-    prob = ODEProblem(spacecraft_dynamics!, initial_conditions, (0.0, args.mission_configuration.mission_time), p)
+    p = ODEParams{length(args.dynamics_model.spacecraft)}(args=args) # Define the parameters for the ODE problem, including the shared buffers for the callbacks
+    callbacks = get_callbacks(length(args.dynamics_model.spacecraft), args.dynamics_model.dynamic_effectors) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
+    # println("Initial conditions:")
+    # println(initial_conditions)
+    # println("ODE parameters:")
+    # println(p)
+    # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
+    prob = ODEProblem(spacecraft_dynamics!, initial_conditions, (0.0, args.mission_configuration.mission_time), p, callback=callbacks)
     # Solve the ODE problem
-    sol = solve(prob, Tsit5(); reltol=args.integration_tolerances.reltol_orbit, abstol=args.integration_tolerances.abstol_orbit, dtmax=args.integration_tolerances.dt_max_orbit)
+    sol = solve(prob, Tsit5(); reltol=args.integration_tolerances.reltol, abstol=args.integration_tolerances.abstol, dtmax=args.integration_tolerances.dt_max)
     flat_sol = Array(sol) # Convert to flat array for easier processing (optional, depends on how you want to handle the results)
     indices = CartesianIndices(initial_conditions)
     # println("Full solution:")
@@ -54,32 +63,39 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p::ODEPar
     dynamics_model = p.args.dynamics_model
     dynamic_effectors = dynamics_model.dynamic_effectors
     spacecraft = dynamics_model.spacecraft
+    minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores())) # Determine the batch size for LoopVectorization based on the number of spacecraft and available CPU cores
     # Loop over each spacecraft and compute its dynamics
-    for i in eachindex(sc_state)
-        sc_view = sc_state[i]
-        du_view = sc_du[i]
-
-        # Compute forces and torques using the dynamic effectors
-        forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-        torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-        @inbounds for effector in dynamic_effectors
-           force, torque = calcForceTorque(effector, sc_view, p)
-           forces .+= force
-           torques .+= torque
+    @batch minbatch=minbatch for i in eachindex(sc_state)
+        if !p.is_active[i]
+            sc_du[i] .= 0.0 # Set the derivatives to zero for inactive spacecraft
+            continue
         end
+        @views begin
+            sc_view = sc_state[i]
+            du_view = sc_du[i]
 
-        # Update the derivatives of position and velocity
-        du_view.pos .= sc_view.vel
-        du_view.vel .= forces / sc_view.mass
+            # Compute forces and torques using the dynamic effectors
+            forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+            torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+            @inbounds for effector in dynamic_effectors
+                force, torque = calcForceTorque(effector, sc_view, p, i)
+                forces .+= force
+                torques .+= torque
+            end
 
-        if p.args.mission_configuration.orientation_sim
-            # Update the derivatives of orientation (quaternion) and angular velocity
-            du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(sc_view.ω..., 0.0), sc_view.q)
-            du_view.ω .= torques / sc_view.mass # Simplified rotational dynamics (assuming unit inertia)
+            # Update the derivatives of position and velocity
+            du_view.pos .= sc_view.vel
+            du_view.vel .= forces / sc_view.mass
+
+            if p.args.mission_configuration.orientation_sim
+                # Update the derivatives of orientation (quaternion) and angular velocity
+                du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(sc_view.ω..., 0.0), sc_view.q)
+                du_view.ω .= torques / sc_view.mass # Simplified rotational dynamics (assuming unit inertia)
+            end
+
+            # Update heat loads based on current state and environment (placeholder logic)
+            du_view.heat_loads .= norm(forces) * 1e-6 # Example: heat load proportional to force magnitude
         end
-
-        # Update heat loads based on current state and environment (placeholder logic)
-        du_view.heat_loads .= norm(forces) * 1e-6 # Example: heat load proportional to force magnitude
     end
 end # function spacecraft_dynamics!
 
@@ -88,7 +104,7 @@ function build_initial_conditions(args::SimulationConfiguration)::ComponentVecto
     # This identifies exactly how many heat_load slots each SC needs
     sc_shapes = map(args.dynamics_model.spacecraft) do sc
         # Get the number of bodies for this specific spacecraft
-        n_bodies = length(sc.children) + 1 # +1 for the root body itself 
+        n_bodies = length(sc.links)
         mass = sc.dry_mass + sc.prop_mass
         # Create the initial state for this spacecraft with the correct size for heat_loads
         if args.mission_configuration.orientation_sim

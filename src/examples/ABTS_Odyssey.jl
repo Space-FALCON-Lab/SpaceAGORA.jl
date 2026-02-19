@@ -15,11 +15,11 @@ using .SimulationModel
 mars = Mars("Gravity_harmonics_data/Mars50c.csv")
 gravEffector = InverseSquaredGravityModel()
 # nBodyGravEffector = NBodyGravityModel(["Sun", "Moon"], "Earth")
-# harmonicGravEffector = GravitationalHarmonicsModel(50, 50, "Gravity_harmonics_data/Mars50c.csv", mars)
-# aeroEffector = AerodynamicCoefficientfM()
+harmonicGravEffector = GravitationalHarmonicsModel(50, 50, "Gravity_harmonics_data/Mars50c.csv", mars)
+aeroEffector = AerodynamicCoefficientfM()
 
-# dynamic_effectors = (gravEffector, harmonicGravEffector, aeroEffector)
-dynamic_effectors = (gravEffector,)
+dynamic_effectors = (gravEffector, harmonicGravEffector, aeroEffector) # Define the dynamic effectors to be used in the simulation, can be a tuple of any length with any combination of effectors, as long as they are defined in the DynamicEffectors module and implement the calcForceTorque function
+# dynamic_effectors = (gravEffector,)
 
 
 # Add bodies to the spacecraft model
@@ -54,7 +54,7 @@ R_panel = Link{0}(r=SVector{3, Float64}(0.0, 2.6/2 + 3.89/4, 0.0),
                         m=10.0)
                         
 # add_body!(spacecraft, main_bus, prop_mass=50.0)
-ic = InitialCondition(ra=28559.615e3, rp=3390.0e3+87.0e3, i=93.522, ω=109.7454, Ω=28.1517)
+ic = InitialCondition(ra=28559.615e3, rp=3390.0e3+100.0e3, i=93.522, ω=109.7454, Ω=28.1517)
 spacecraft = SpacecraftModel(root=main_bus, prop_mass=50.0, initial_condition=ic)
 add_body!(spacecraft, L_panel)
 add_body!(spacecraft, R_panel)
@@ -64,7 +64,7 @@ R_panel_joint = Joint(R_panel, main_bus)
 add_joint!(spacecraft, L_panel_joint)
 add_joint!(spacecraft, R_panel_joint)
 
-println("Spacecraft model initialized with $(length(spacecraft.children)+1) bodies.")
+println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
 # println("Spacecraft roots: $spacecraft.roots")
 println("Spacecraft COM: $(get_COM(spacecraft))")
 println("Spacecraft MOI: $(get_inertia_tensor(spacecraft))")
@@ -75,7 +75,8 @@ sc2.initial_condition = sc2_ic
 sc3 = deepcopy(spacecraft)
 sc3_ic = InitialCondition(ra=28559.615e3, rp=3390.0e3+87.0e3, i=105.0, ω=109.7454, Ω=28.1517)
 sc3.initial_condition = sc3_ic
-roots = SpacecraftModel[spacecraft, sc2, sc3] # Create multiple instances of the spacecraft for multiple passages
+# roots = repeat(SpacecraftModel[spacecraft, sc2, sc3], 1) # Create multiple instances of the spacecraft for multiple passages
+roots = [spacecraft]
 dynamics_model = DynamicsModel(roots, dynamic_effectors)
 time = InitialTime(year=2001, 
                    month=11, 
@@ -84,9 +85,10 @@ time = InitialTime(year=2001,
                    minute=0, 
                    second=32.0)
 GRAM = GRAMAtmosphereModel(planet_name="mars", initial_time=time)
+no_density = NoAtmosphereModel()
 maxwellianheat = MaxwellianHeat(thermal_accomodation_factor=1.0, planet=mars)
-em = EnvironmentModel(planet=mars, density_model=GRAM, thermal_model=maxwellianheat)
-
+em = EnvironmentModel(planet=mars, density_model=GRAM, thermal_model=maxwellianheat, EI=125.0)
+it = IntegrationTolerances()
 args = SimulationConfiguration(dynamics_model=dynamics_model,
                                initial_time=time,
                                environment_model=em)
@@ -295,9 +297,9 @@ args = SimulationConfiguration(dynamics_model=dynamics_model,
 t = @elapsed begin          
         # Run the simulation
         sol = run_analysis(args)
-        if Bool(args[:passresults])
-            println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
-        end
+        # if Bool(args[:passresults])
+        #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+        # end
 end
 
         println("COMPUTATIONAL TIME = " * string(t) * " s")

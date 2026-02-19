@@ -1,9 +1,9 @@
 # include("Complete_passage.jl")
 include("run_simulation.jl")
-include("../utils/Ref_system_conf.jl")
-include("../utils/Closed_form_solution.jl")
-include("../utils/Save_results.jl")
-include("../physical_models/Propulsive_maneuvers.jl")
+# include("../utils/Ref_system_conf.jl")
+# include("../utils/Closed_form_solution.jl")
+# include("../utils/Save_results.jl")
+# include("../physical_models/Propulsive_maneuvers.jl")
 
 using .SimulationModel
 # using PythonCall
@@ -28,7 +28,7 @@ function aerobraking(args::SimulationConfiguration, filename::String, temp_name:
     # cnf.time_IP = 1
     
     # Aerobraking Campaign
-    while continue_campaign && FinalState
+    # while continue_campaign && FinalState
         # cnf.index_Mars_Gram_call = 0
         numberofpassage += 1
 
@@ -105,44 +105,44 @@ function aerobraking(args::SimulationConfiguration, filename::String, temp_name:
             # r_p = solution.orientation.oe[1][end] * (1 - solution.orientation.oe[2][end])
         end
 
-        if Bool(args[:print_res])
-            println("Computational time: " * string(t_el_ab) * " seconds")
-            println("--> PASSAGE #" * string(numberofpassage) * " COMPLETE")
-        end
+        # if Bool(args[:print_res])
+        #     println("Computational time: " * string(t_el_ab) * " seconds")
+        #     println("--> PASSAGE #" * string(numberofpassage) * " COMPLETE")
+        # end
 
-        if lowercase(args[:type_of_mission]) != "time" && args[:number_of_orbits] == numberofpassage
-            continue_campaign = false
-        end
+        # if lowercase(args[:type_of_mission]) != "time" && args[:number_of_orbits] == numberofpassage
+        #     continue_campaign = false
+        # end
 
-        if (r_a <= args[:ra_fin_orbit] || config.cnf.targeting == 1) && args[:keplerian] == false
-            FinalState = false
-            println("Reached FinalState! R_a = " * string(r_a*1e-3) * " km")
-            println("Thermal Limit overcomed totally " * string(cnf.count_overcome_hr) * " times")
-        end
+        # if (r_a <= args[:ra_fin_orbit] || config.cnf.targeting == 1) && args[:keplerian] == false
+        #     FinalState = false
+        #     println("Reached FinalState! R_a = " * string(r_a*1e-3) * " km")
+        #     println("Thermal Limit overcomed totally " * string(cnf.count_overcome_hr) * " times")
+        # end
 
-        if r_p - m.planet.Rp_e >= args[:EI]*1e3 && args[:keplerian] == false
-            FinalState = false
-            println("Periapsis too high, final state unreachable! R_a = " * string(r_p*1e-3) * " km")
-        end
+        # if r_p - m.planet.Rp_e >= args[:EI]*1e3 && args[:keplerian] == false
+        #     FinalState = false
+        #     println("Periapsis too high, final state unreachable! R_a = " * string(r_p*1e-3) * " km")
+        # end
 
-        if Bool(args[:print_res])
-            println(" ")
-        end
+        # if Bool(args[:print_res])
+        #     println(" ")
+        # end
 
-        if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
-            closed_form(args, m, params)
-        else
-            len_sol = length(solution.orientation.time)
-            results(solution, zeros(len_sol), (args[:EI] - 10)*1e3*ones(len_sol), zeros(len_sol), zeros(len_sol))
-        end
+        # if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
+        #     closed_form(args, m, params)
+        # else
+        #     len_sol = length(solution.orientation.time)
+        #     results(solution, zeros(len_sol), (args[:EI] - 10)*1e3*ones(len_sol), zeros(len_sol), zeros(len_sol))
+        # end
 
-        if args[:results] == 1
-            # Save the current passage results
-            save_csv(filename, args, temp_name, params)
-            # Clear the config data buffer
-            # clean_results()
-        end
-    end
+        # if args[:results] == 1
+        #     # Save the current passage results
+        #     save_csv(filename, args, temp_name, params)
+        #     # Clear the config data buffer
+        #     # clean_results()
+        # end
+    # end
 
     # if args[:closed_form] == 1 && (m.planet.name == "mars" || m.planet.name == "venus" || m.planet.name == "earth" || m.planet.name == "titan")
     #     println("Computing Closed-Form Solution...")

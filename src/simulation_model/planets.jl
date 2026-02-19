@@ -3,6 +3,7 @@ module Planets
     using ..AbstractTypes: AbstractPlanet
     using StaticArrays
     using CSV
+    using SPICE
     export Earth, Mars
     δ(i, j) = ==(i, j)
 
@@ -75,19 +76,28 @@ module Planets
     end # struct Mars
 
     # Constructors
-    function Earth(topo_harmonics_file::String)
+    function Earth(topo_harmonics_file::String, spice_path::String="GRAM_Data/SPICE")
         earth = Earth()
         TopographyHarmonicsWorkspace!(topo_harmonics_file, earth)
+        furnsh(spice_path * "/pck/pck00011.tpc")
+        furnsh(spice_path * "/lsk/naif0012.tls")
+        furnsh(spice_path * "/spk/planets/de440s.bsp")
+        # calc_J2000_to_pci_rotation_matrix!(earth.α, earth.δ, earth)
         return earth
     end
 
-    function Mars(topo_harmonics_file::String)
+    function Mars(topo_harmonics_file::String, spice_path::String="GRAM_Data/SPICE")
         mars = Mars()
         TopographyHarmonicsWorkspace!(topo_harmonics_file, mars)
+        furnsh(spice_path * "/pck/pck00011.tpc")
+        furnsh(spice_path * "/lsk/naif0012.tls")
+        furnsh(spice_path * "/spk/planets/de440s.bsp")
+        # calc_J2000_to_pci_rotation_matrix!(mars.α, mars.δ, mars)
         return mars
     end
 
     # Helper functions
+    
     function TopographyHarmonicsWorkspace!(topo_harmonics_file::String, planet::P) where P <: AbstractPlanet
         if topo_harmonics_file != ""
             Clm_topo, Slm_topo = read_topography_harmonics(topo_harmonics_file)
@@ -154,7 +164,7 @@ module Planets
 
     calc_J2000_to_pci_rotation_matrix!(α::Float64, δ::Float64, planet::P) where P <: AbstractPlanet = begin
         σ1 = sqrt(cos(δ)^4 + cos(δ)^2*sin(δ)^2)
-        planet.J2000_to_pci = SMatrix{3, 3, Float64}([-sin(α) cos(α) 0;
+        planet.J2000_to_pci .= SMatrix{3, 3, Float64}([-sin(α) cos(α) 0;
                         -cos(δ)*cos(α)*sin(δ)/σ1 -cos(δ)*sin(α)*sin(δ)/σ1 cos(δ)^2/σ1;
                         cos(δ)*cos(α) cos(δ)*sin(α) sin(δ)])
     end

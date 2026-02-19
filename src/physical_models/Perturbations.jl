@@ -97,7 +97,7 @@ function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::Stri
         i = l + 1
         @inbounds for m = 0:min(M, l)
             j = m + 1
-            divisor = m == 0 ? sqrt_2 : 1
+            divisor = (m == 0 ? sqrt_2 : 1)
             VR01[i, j] = sqrt((l-m)*(l+m+1)) / divisor
             VR11[i, j] = sqrt((2*l+1)*(l+m+2)*(l+m+1)/(2*l+3)) / divisor
         end
@@ -118,7 +118,10 @@ function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::Stri
     @inbounds for n = 1:L+1
         sqrt_2n_plus_3[n] = sqrt(2*n + 3)
     end
-
+    println("C")
+    println(C[1:L, 1:L])
+    println("S:")
+    println(S[1:L, 1:L])
     return GravitationalHarmonicsModel(
         L,
         M,
@@ -137,9 +140,9 @@ function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::Stri
 end
 
 """
-    calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
 """
-function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, param::ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     cnf = param.cnf
     
     pos_ii = SVector{3, Float64}(x[1:3]) # Position in inertial frame, change to x.r if using StructArrays in Complete_passage
@@ -168,13 +171,13 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    cnf = param.cnf
+function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    # cnf = param.cnf
     
-    rVec_cart = SVector{3, Float64}(x[1:3])
-    mass = x[7]               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
+    rVec_cart = SVector{3, Float64}(x.pos)
+    mass = x.mass               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
 
-    RE = model.planet.Rp_e
+    RE = param.args.environment_model.planet.Rp_e
     r = norm(rVec_cart)
     s,t,u=normalize(rVec_cart)
     L = model.L
@@ -236,7 +239,7 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
 
     force_ii = mass * SVector{3, Float64}(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4) # Store gravity in config for other uses
 
-    cnf.gravity_harmonics_ii .= force_ii
+    # cnf.gravity_harmonics_ii .= force_ii
 
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end

@@ -2,6 +2,7 @@
 # using PythonCall
 using StaticArrays
 using LinearAlgebra
+using ComponentArrays
 # sys = pyimport("sys")
 
 # Gravity models
@@ -24,7 +25,7 @@ end
 
 # Calculate force/torque functions
 # Model is the gravity model struct and x is the state vector from Complete_passage
-function calcForceTorque!(model::ConstantGravityModel, x::AbstractVector{Float64}, param::ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+function calcForceTorque!(model::ConstantGravityModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     m = param.m
     cnf = param.cnf
 
@@ -40,14 +41,14 @@ function calcForceTorque!(model::ConstantGravityModel, x::AbstractVector{Float64
     end
 end
 
-function calcForceTorque(model::InverseSquaredGravityModel, x::AbstractVector{Float64}, param::ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+function calcForceTorque(model::InverseSquaredGravityModel, x::ComponentVector, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     # m = param.m
     # cnf = param.cnf
-    planet = param.args.environment_model.planet
+    # planet = param.args.environment_model.planet
 
     pos_ii = SVector{3, Float64}(x.pos) # Position in inertial frame, change to x.r if using StructArrays in Complete_passage
     mass = x.mass               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
-    gravity_ii = -planet.μ / norm(pos_ii)^2 * normalize(pos_ii)
+    gravity_ii = -param.args.environment_model.planet.μ / norm(pos_ii)^2 * normalize(pos_ii)
 
     # cnf.gravity_cent_ii = mass * gravity_ii # Store gravity in config for other uses
 
@@ -56,16 +57,16 @@ function calcForceTorque(model::InverseSquaredGravityModel, x::AbstractVector{Fl
     return force_ii, torque_ii
 end
 
-function calcForceTorque(model::InverseSquaredJ2GravityModel, x::AbstractVector{Float64}, param::ODEParams)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    m = param.m
-    cnf = param.cnf
+function calcForceTorque(model::InverseSquaredJ2GravityModel, x::ComponentVector, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+        # m = param.m
+        # cnf = param.cnf
 
     pos_ii = SVector{3, Float64}(x.pos) # Position in inertial frame, change to x.r if using StructArrays in Complete_passage
     mass = x.mass               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
     r = norm(pos_ii)
-    μ = m.planet.μ
-    J2 = m.planet.J2
-    Rp_m = m.planet.Rp_m
+    μ = param.args.environment_model.planet.μ
+    J2 = param.args.environment_model.planet.J2
+    Rp_m = param.args.environment_model.planet.Rp_m
 
     pos_ii_hat = normalize(pos_ii)
     r_squared = r^2
@@ -75,7 +76,7 @@ function calcForceTorque(model::InverseSquaredJ2GravityModel, x::AbstractVector{
 
     gravity_ii = gravity_ii_mag_spherical * pos_ii_hat + 3/2 * J2 * μ * Rp_m^2 / r^4 * [x/r*(5*z^2/r_squared - 1), y/r*(5*z^2/r_squared - 1), z/r*(5*z^2/r_squared - 3)]
 
-    cnf.gravity_cent_ii = mass * gravity_ii # Store gravity in config for other uses
+    # cnf.gravity_cent_ii = mass * gravity_ii # Store gravity in config for other uses
 
     force_ii = mass * gravity_ii
     torque_ii = SVector{3, Float64}(zeros(3))

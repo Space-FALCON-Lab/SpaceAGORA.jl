@@ -3,6 +3,10 @@
 # using .SimulationModel
 using PythonCall
 using SatelliteToolbox
+using StaticArrays
+using LinearAlgebra
+# export NoAtmosphereModel, ExponentialAtmosphereModel, GRAMAtmosphereModel, PolynomialFitAtmosphereModel, NRLMSISE00AtmosphereModel
+# export getDensity
 # using .AbstractTypes: AbstractPlanet, AbstractDensityModel
 
 struct NoAtmosphereModel <: AbstractDensityModel
@@ -124,38 +128,16 @@ function temperature_linear(h, p)
     #     T = p.T
     # end
 
-    return p.T
+    return p.T_ref
 end
 
-# function density_constant(h, p, OE=0, lat=0, lon=0, timereal=0, t0=0, tf_prev=0, montecarlo=0, Wind=0, args=0, version=[])
-#     """
-
-#     """
-
-#     if config.cnf.drag_state == false
-#         ρ = 0.0
-#     else
-#         ρ = p.ρ_ref
-#     end
-    
-#     T = temperature_linear(h, p)
-
-#     wind = [0, 0, 0]
-
-#     return ρ, T, wind
-# end
-
-# function density_no(h, p, OE=0, lat=0, lon=0, timereal=0, t0=0, tf_prev=0, montecarlo=0, Wind=0, args=0, version=[])
-#     """
-
-#     """
-
-#     T = temperature_linear(h, p)
-
-#     wind = [0, 0, 0]
-
-#     return 0.0, T, wind
-# end
+function getDensity(model::NoAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
+    # Return zero density and a default temperature for the no-atmosphere model
+    ρ = 0.0
+    T = p.args.environment_model.planet.T_ref
+    wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
+    return ρ, T, wind_vec
+end
 
 """
     Get the density using the Exponential atmosphere model.
@@ -218,7 +200,7 @@ function getDensity(model::PolynomialFitAtmosphereModel, h::Float64, lat::Float6
 
         # Calculate the density
         ρ = exp.(exponent)
-        T = temperature_linear(h, p)
+        T = p.args.environment_model.planet.T_ref
 
         wind_vec = SVector{3, Float64}(0, 0, 0)
 
@@ -236,7 +218,7 @@ function getDensity(model::PolynomialFitAtmosphereModel, h::Float64, lat::Float6
         exponent = sum(model.polyfit_coeffs .* power)
         # Calculate the density
         ρ = exp(exponent)
-        T = temperature_linear(h, p)
+        T = p.args.environment_model.planet.T_ref
 
         wind_vec = SVector{3, Float64}(0, 0, 0)
 
@@ -244,22 +226,29 @@ function getDensity(model::PolynomialFitAtmosphereModel, h::Float64, lat::Float6
     end
 end
 
-function getDensity(model::GRAMAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool)::Tuple{Float64, Float64, SVector{3, Float64}}
-    cnf = params.cnf
-    if cnf.drag_state == false && args[:keplerian] == false
+function getDensity(model::GRAMAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
+    # cnf = params.cnf
+    # println("In GRAM density model")
+    # Check atmospheric interface conditions
+    # planet_radius = p.args.environment_model.planet.Rp_e
+    EI = p.args.environment_model.EI * 1e3
+    drag_state = h - EI <= 0.0
+    if !drag_state && !p.args.mission_configuration.keplerian
         if h > 2000.0e3
             rho = 0.0
-            T = p.T
+            T = p.args.environment_model.planet.T_ref
             wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
         else
-            rho, T, wind_vec = density_polyfit(h, p)
+            rho, T, wind_vec = density_polyfit(h, p.args.environment_model.planet)
         end
     else
         if h > 2000.0e3
             rho = 0.0
-            T = temperature_linear(h, p)
+            T = p.args.environment_model.planet.T_ref
             wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
         else
+            # println("GRAM")
+            # println("Calling GRAM for density at height: ", h, " m, lat: ", rad2deg(lat), " deg, lon: ", rad2deg(lon), " deg, elapsed time: ", el_time, " s")
             position = model.gram.Position()
             position.height = h * 1e-3
             position.latitude = rad2deg(lat)
@@ -272,11 +261,12 @@ function getDensity(model::GRAMAtmosphereModel, h::Float64, lat::Float64, lon::F
             rho = pyconvert(Float64, atmos.density)
             T = pyconvert(Float64, atmos.temperature)
             wind_vec = SVector{3, Float64}([pyconvert(Float64, wind ? atmos.perturbedEWWind : atmos.ewWind),
-                    pyconvert(Float64, wind ? atmos.perturbedNSWind : atmos.nsWind),
-                    pyconvert(Float64, atmos.verticalWind)])
+            pyconvert(Float64, wind ? atmos.perturbedNSWind : atmos.nsWind),
+            pyconvert(Float64, atmos.verticalWind)])
         end
     end
-
+    # println("el_time: ", el_time, "h: ", h, " lat: ", rad2deg(lat), " lon: ", rad2deg(lon), " rho: ", rho, " T: ", T, " wind_vec: ", wind_vec)
+    # println("rho: ", rho)
     return rho, T, wind_vec
 end
 
@@ -295,3 +285,12 @@ function getDensity(model::NRLMSISE00AtmosphereModel, h::Float64, lat::Float64, 
 
     return rho, T, wind_vec
 end
+
+function density_polyfit(h::Float64, planet::AbstractPlanet)
+    # Load the polynomial coefficients for the planet
+    coeffs = planet.polyfit_coeffs
+    poly_model = PolynomialFitAtmosphereModel(vec(coeffs))
+    ρ, T, wind_vec = getDensity(poly_model, h, 0.0, 0.0, 0.0, false) # Latitude, longitude, elapsed time, and wind don't affect the density in this model
+    return ρ, T, wind_vec
+end
+# end # module

@@ -78,7 +78,7 @@ module Planets
     # Constructors
     function Earth(topo_harmonics_file::String, spice_path::String="GRAM_Data/SPICE")
         earth = Earth()
-        TopographyHarmonicsWorkspace!(topo_harmonics_file, earth)
+        # TopographyHarmonicsWorkspace!(topo_harmonics_file, earth)
         furnsh(spice_path * "/pck/pck00011.tpc")
         furnsh(spice_path * "/lsk/naif0012.tls")
         furnsh(spice_path * "/spk/planets/de440s.bsp")
@@ -88,7 +88,7 @@ module Planets
 
     function Mars(topo_harmonics_file::String, spice_path::String="GRAM_Data/SPICE")
         mars = Mars()
-        TopographyHarmonicsWorkspace!(topo_harmonics_file, mars)
+        # TopographyHarmonicsWorkspace!(topo_harmonics_file, mars)
         furnsh(spice_path * "/pck/pck00011.tpc")
         furnsh(spice_path * "/lsk/naif0012.tls")
         furnsh(spice_path * "/spk/planets/de440s.bsp")
@@ -119,7 +119,7 @@ module Planets
 
             @inbounds for j = 1:M+1
                 m = j - 1
-                for i = j+1:N+1
+                @inbounds for i = j+1:N+1
                     n = i - 1
                     
                     # Common denominator factor

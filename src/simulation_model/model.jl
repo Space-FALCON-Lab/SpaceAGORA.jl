@@ -14,12 +14,16 @@ const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 @kwdef struct InitialCondition
     a::Float64 = 0.0 # Semimajor axis (m)
     e::Float64 = 0.0 # Eccentricity (nd)
-    i::Float64 = 0.0 # Inclination (deg)
-    ω::Float64 = 0.0 # Argument of periapsis (deg)
-    Ω::Float64 = 0.0 # RAAN (deg)
-    ν::Float64 = 0.0 # True anomaly (deg)
+    i::Float64 = 0.0 # Inclination (rad)
+    ω::Float64 = 0.0 # Argument of periapsis (rad)
+    Ω::Float64 = 0.0 # RAAN (rad)
+    ν::Float64 = 0.0 # True anomaly (rad)
     q::SVector{4, Float64} = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0) # Initial orientation quaternion (x, y, z, w)
     ang_vel::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 0.0) # Initial angular velocity (rad/s)
+
+    function InitialCondition(a=0.0, e=0.0, i=0.0, ω=0.0, Ω=0.0, ν=0.0, q=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), ang_vel=SVector{3, Float64}(0.0, 0.0, 0.0))
+        new(a, e, deg2rad(i), deg2rad(ω), deg2rad(Ω), deg2rad(ν), q, ang_vel)
+    end
 end # struct InitialCondition
 
  # Convenience constructors

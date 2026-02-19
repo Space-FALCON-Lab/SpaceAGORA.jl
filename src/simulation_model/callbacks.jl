@@ -19,7 +19,7 @@ function get_callbacks(num_sats::Int, effectors::Tuple)
 end
 function update_planet_frame_callback()
     condition(u, t, integrator) = true
-    et_start = Ref{Float64}(NaN) # Store the start epoch in a Ref so it can be updated in the affect! function
+    et_start = Ref{Float64}(0.0) # Store the start epoch in a Ref so it can be updated in the affect! function
     function affect!(integrator)
         p = integrator.p
         planet = p.args.environment_model.planet

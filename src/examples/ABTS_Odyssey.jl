@@ -12,7 +12,7 @@ using Profile
 using .SimulationModel
 # import .SpacecraftModel
 # Define spacecraft model
-mars = Mars("Gravity_harmonics_data/Mars50c.csv")
+mars = Mars("")
 gravEffector = InverseSquaredGravityModel()
 # nBodyGravEffector = NBodyGravityModel(["Sun", "Moon"], "Earth")
 harmonicGravEffector = GravitationalHarmonicsModel(50, 50, "Gravity_harmonics_data/Mars50c.csv", mars)

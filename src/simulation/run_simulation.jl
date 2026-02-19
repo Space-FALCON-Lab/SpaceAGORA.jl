@@ -12,8 +12,8 @@ using Polyester
 function run_simulation(args::SimulationConfiguration)
     # Set up the model and initial conditions
     initial_conditions = build_initial_conditions(args)
-    # println("Initial conditions:")
-    # println(initial_conditions)
+    println("Initial conditions:")
+    println(initial_conditions)
 
     # Define the ODE problem
     p = ODEParams{length(args.dynamics_model.spacecraft)}(args=args) # Define the parameters for the ODE problem, including the shared buffers for the callbacks
@@ -134,7 +134,6 @@ function build_initial_conditions(args::SimulationConfiguration)::ComponentVecto
     for i in eachindex(args.dynamics_model.spacecraft)
         spacecraft = args.dynamics_model.spacecraft[i]
         sc_view = state.sc[i]
-        
         r0, v0 = orbitalelemtorv(spacecraft.initial_condition, args.environment_model.planet)
         sc_view.pos .= r0
         sc_view.vel .= v0

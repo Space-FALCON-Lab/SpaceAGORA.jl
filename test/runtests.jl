@@ -182,6 +182,46 @@ function build_config(;
     )
 end
 
+function build_config_multi(;
+    spacecraft::Vector{SpacecraftModel},
+    density_model,
+    orientation_sim::Bool,
+    mission_time::Float64,
+    EI_km::Float64,
+    dynamic_effectors::Tuple,
+    keplerian::Bool=true,
+    tolerances::IntegrationTolerances=IntegrationTolerances(),
+    initial_time::InitialTime=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
+)
+    environment_model = EnvironmentModel(
+        planet=EARTH,
+        EI=EI_km,
+        density_model=density_model,
+        thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=EARTH),
+        topography=false,
+        wind=false
+    )
+
+    return SimulationConfiguration(
+        simulation_settings=SimulationSettings(results=true, verbose=false, generate_plots=false),
+        mission_configuration=MissionConfiguration(
+            mission_type="Time",
+            keplerian=keplerian,
+            number_of_orbits=1,
+            mission_time=mission_time,
+            orientation_sim=orientation_sim,
+            num_steps_to_save=1000
+        ),
+        environment_model=environment_model,
+        dynamics_model=DynamicsModel(spacecraft, dynamic_effectors),
+        guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
+        navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
+        control_model=ControlModel(control_effectors=(), control_rates=Float64[]),
+        initial_time=initial_time,
+        integration_tolerances=tolerances
+    )
+end
+
 function interp_linear(times::AbstractVector{<:Real}, values::AbstractVector{<:Real}, t::Float64)
     idx = searchsortedlast(times, t)
     if idx <= 0
@@ -507,6 +547,28 @@ end
 end
 
 @testset "Thruster Edge Cases (AI Second-Pass)" begin
+    @testset "BaseThrusterModel Validation" begin
+        model_ok = BaseThrusterModel(
+            thrust=[1.0, 2.0],
+            direction=[0.0, π],
+            Δv=[10.0, 20.0],
+            start_burn_time=[0.0, 0.0],
+            stop_burn_time=[100.0, 120.0],
+            Isp=[300.0, 300.0]
+        )
+        @test length(model_ok.thrust) == 2
+        @test length(model_ok.direction) == 2
+
+        @test_throws ArgumentError BaseThrusterModel(
+            thrust=[1.0, 2.0],
+            direction=[0.0],
+            Δv=[10.0, 20.0],
+            start_burn_time=[0.0, 0.0],
+            stop_burn_time=[100.0, 120.0],
+            Isp=[300.0, 300.0]
+        )
+    end
+
     sc = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=120.0)
     args = build_config(
         spacecraft=sc,
@@ -585,6 +647,97 @@ end
         calcControlEffect!(model_zero_thrust, state, p, 100.0, 1)
         @test model_zero_thrust.start_burn_time[1] == 33.0
         @test model_zero_thrust.stop_burn_time[1] == 44.0
+
+        sc_edge_block = make_spacecraft(ra_alt_m=600e3, rp_alt_m=400e3, ν_deg=180.0)
+        r_edge_block, _ = orbitalelemtorv(sc_edge_block.initial_condition, EARTH)
+        ei_edge_block_km = (norm(SVector{3, Float64}(r_edge_block)) - EARTH.Rp_e) / 1e3
+        args_edge_block = build_config(
+            spacecraft=sc_edge_block,
+            density_model=NoAtmosphereModel(),
+            orientation_sim=false,
+            mission_time=600.0,
+            EI_km=ei_edge_block_km,
+            dynamic_effectors=(InverseSquaredGravityModel(),),
+            keplerian=true
+        )
+        p_edge_block = ODEParams{1}(args=args_edge_block)
+        state_edge_block = build_initial_conditions(args_edge_block)
+        model_edge_block = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=71.0, stop_burn_time=81.0)
+        calcControlEffect!(model_edge_block, state_edge_block, p_edge_block, 100.0, 1)
+        @test model_edge_block.start_burn_time[1] == 71.0
+        @test model_edge_block.stop_burn_time[1] == 81.0
+
+        sc_edge_allow = make_spacecraft(ra_alt_m=600e3, rp_alt_m=400e3, ν_deg=170.0)
+        r_edge_allow, _ = orbitalelemtorv(sc_edge_allow.initial_condition, EARTH)
+        ei_edge_allow_km = (norm(SVector{3, Float64}(r_edge_allow)) - EARTH.Rp_e) / 1e3
+        args_edge_allow = build_config(
+            spacecraft=sc_edge_allow,
+            density_model=NoAtmosphereModel(),
+            orientation_sim=false,
+            mission_time=600.0,
+            EI_km=ei_edge_allow_km,
+            dynamic_effectors=(InverseSquaredGravityModel(),),
+            keplerian=true
+        )
+        p_edge_allow = ODEParams{1}(args=args_edge_allow)
+        state_edge_allow = build_initial_conditions(args_edge_allow)
+        model_edge_allow = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=73.0, stop_burn_time=83.0)
+        calcControlEffect!(model_edge_allow, state_edge_allow, p_edge_allow, 100.0, 1)
+        @test model_edge_allow.start_burn_time[1] != 73.0
+        @test model_edge_allow.stop_burn_time[1] != 83.0
+
+        state_hyperbolic = build_initial_conditions(args)
+        rmag = norm(SVector{3, Float64}(state_hyperbolic.sc[1].pos))
+        escape_speed = sqrt(2.0 * EARTH.μ / rmag)
+        vhat = normalize(SVector{3, Float64}(state_hyperbolic.sc[1].vel))
+        state_hyperbolic.sc[1].vel .= (1.2 * escape_speed) .* vhat
+        model_hyperbolic = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=91.0, stop_burn_time=92.0)
+        @test_nowarn calcControlEffect!(model_hyperbolic, state_hyperbolic, p, 100.0, 1)
+        @test model_hyperbolic.start_burn_time[1] == 91.0
+        @test model_hyperbolic.stop_burn_time[1] == 92.0
+
+        state_singular = build_initial_conditions(args)
+        state_singular.sc[1].pos .= 0.0
+        state_singular.sc[1].vel .= 0.0
+        model_singular = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=93.0, stop_burn_time=94.0)
+        @test_nowarn calcControlEffect!(model_singular, state_singular, p, 100.0, 1)
+        @test model_singular.start_burn_time[1] == 93.0
+        @test model_singular.stop_burn_time[1] == 94.0
+
+        sc_multi_1 = make_spacecraft(ra_alt_m=650e3, rp_alt_m=450e3, ν_deg=120.0)
+        sc_multi_2 = make_spacecraft(ra_alt_m=700e3, rp_alt_m=500e3, ν_deg=150.0)
+        args_multi = build_config_multi(
+            spacecraft=[sc_multi_1, sc_multi_2],
+            density_model=NoAtmosphereModel(),
+            orientation_sim=false,
+            mission_time=600.0,
+            EI_km=120.0,
+            dynamic_effectors=(InverseSquaredGravityModel(),),
+            keplerian=true
+        )
+        p_multi = ODEParams{2}(args=args_multi)
+        state_multi = build_initial_conditions(args_multi)
+        model_multi = BaseThrusterModel(
+            thrust=[2.0, 3.0],
+            direction=[0.0, π],
+            Δv=[20.0, 10.0],
+            start_burn_time=[-1.0, -2.0],
+            stop_burn_time=[-3.0, -4.0],
+            Isp=[300.0, 300.0]
+        )
+        calcControlEffect!(model_multi, state_multi, p_multi, 100.0, 1)
+        @test model_multi.start_burn_time[1] != -1.0
+        @test model_multi.stop_burn_time[1] != -3.0
+        @test model_multi.start_burn_time[2] == -2.0
+        @test model_multi.stop_burn_time[2] == -4.0
+
+        s1 = model_multi.start_burn_time[1]
+        e1 = model_multi.stop_burn_time[1]
+        calcControlEffect!(model_multi, state_multi, p_multi, 100.0, 2)
+        @test model_multi.start_burn_time[1] == s1
+        @test model_multi.stop_burn_time[1] == e1
+        @test model_multi.start_burn_time[2] != -2.0
+        @test model_multi.stop_burn_time[2] != -4.0
     end
 
     @testset "schmitt_trigger" begin

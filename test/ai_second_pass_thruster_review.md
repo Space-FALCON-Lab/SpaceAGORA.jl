@@ -28,6 +28,15 @@ This note documents the edge-case tests added for thruster-related functions and
 - Test: zero-thrust input does not overwrite times.
   - Intended bug: divide-by-zero/Inf burn durations.
   - Non-vacuous: fails if invalid thrust still modifies timing.
+- Test: exact boundary behavior (`alt == EI*1000`, `ν == π`) does not arm burns, while `alt == EI*1000` and `ν < π` does arm.
+  - Intended bug: incorrect threshold logic at atmospheric and anomaly boundaries.
+  - Non-vacuous: fails if gating comparisons are wrong or numerically unstable.
+- Test: pathological states (hyperbolic `e > 1`, singular/invalid state vectors) do not throw and do not overwrite burn schedule.
+  - Intended bug: domain errors/NaNs in anomaly math from unsupported orbital states.
+  - Non-vacuous: fails if guards around orbital element conversion and anomaly formulas are missing.
+- Test: multi-spacecraft indexing updates only the targeted index (`i`) and leaves other schedule slots untouched.
+  - Intended bug: cross-index overwrite in vectorized control model arrays.
+  - Non-vacuous: fails if assignment logic ignores `i` or writes globally.
 
 ## `schmitt_trigger`
 
@@ -64,3 +73,9 @@ This note documents the edge-case tests added for thruster-related functions and
 - Test: solved thrust remains non-negative after shift step.
   - Intended bug: negative thrust commands passed through.
   - Non-vacuous: fails if non-negativity projection is removed/broken.
+
+## `BaseThrusterModel`
+
+- Test: constructor rejects mismatched vector lengths and accepts consistent lengths.
+  - Intended bug: silent index mismatches between per-spacecraft control arrays.
+  - Non-vacuous: fails if constructor does not validate shared length contract.

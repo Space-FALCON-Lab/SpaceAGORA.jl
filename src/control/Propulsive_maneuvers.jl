@@ -57,13 +57,21 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
     vel = SVector{3, Float64}(u.sc[i].vel)
     mass = u.sc[i].mass
     # Calculate the current orbital elements from the state vector
-    a,e,_,_,_,ν = rvtoorbitalelement(SVector{3, Float64}(pos), SVector{3, Float64}(vel), p.args.environment_model.planet)
+    oe = try
+        rvtoorbitalelement(pos, vel, p.args.environment_model.planet)
+    catch
+        return
+    end
+    a, e, _, _, _, ν = oe
+    if !isfinite(a) || !isfinite(e) || !isfinite(ν) || a <= 0.0 || e < 0.0 || e >= 1.0
+        return
+    end
     
-    # Don't start maneuver until spacecraft has exited the atmosphere and is past the periapsis
-    if norm(SVector{3, Float64}(pos)) - p.args.environment_model.planet.Rp_e >= p.args.environment_model.EI*1000 && ν < π
+    # Don't start maneuver until spacecraft has exited the atmosphere and is past periapsis.
+    alt = norm(pos) - p.args.environment_model.planet.Rp_e
+    if alt >= p.args.environment_model.EI * 1000 - 1e-6 && ν < π - 1e-12
         # Calculate the burn time required to achieve the desired Δv based on the current mass and thrust
         Δv = controlModel.Δv[i]
-        mass = mass
         thrust_mag = controlModel.thrust[i]
         # Calculate the burn duration for a constant-thrust impulsive approximation.
         if thrust_mag <= 0.0 || !isfinite(thrust_mag)
@@ -79,8 +87,14 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
 
         M = ψ - e*sin(ψ)
         n = sqrt(p.args.environment_model.planet.μ/a^3)
+        if !isfinite(M) || !isfinite(n) || n <= 0.0
+            return
+        end
         time_to_apoapsis = (π - M)/n
         apoapsis_time = t + time_to_apoapsis
+        if !isfinite(apoapsis_time)
+            return
+        end
         # Calculate start/end time as symmetric about the apoapsis time
         start_burn_time = apoapsis_time - burn_time/2
         stop_burn_time = apoapsis_time + burn_time/2

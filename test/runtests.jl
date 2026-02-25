@@ -383,6 +383,33 @@ module IncludeOrderSandbox
 end
 const INCLUDE_ORDER_SANDBOX = IncludeOrderSandbox
 
+module ExportImportSandbox
+end
+const EXPORT_IMPORT_SANDBOX = ExportImportSandbox
+
+@testset "SimulationModel Export Contract" begin
+    sandbox = EXPORT_IMPORT_SANDBOX
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+    @test_nowarn Core.eval(sandbox, :(using .SimulationModel))
+
+    required_public_names = [
+        :SimulationConfiguration,
+        :InitialCondition,
+        :InitialTime,
+        :MissionConfiguration,
+        :EnvironmentModel,
+        :IntegrationTolerances,
+        :ControlModel,
+        :GuidanceModel,
+        :NavigationModel,
+        :DynamicsModel
+    ]
+
+    for sym in required_public_names
+        @test Core.eval(sandbox, :(isdefined(@__MODULE__, $(QuoteNode(sym)))))
+    end
+end
+
 @testset "Include-Order + Name Ambiguity Smoke" begin
     sandbox = INCLUDE_ORDER_SANDBOX
 

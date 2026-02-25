@@ -126,3 +126,12 @@ This note documents the edge-case tests added for thruster-related functions and
     - no-control mass constancy,
     - monotonic mass decrease during burns,
     - stronger mass depletion for lower `Isp` (ratio check).
+
+## Revise / World-Age Operational Note
+
+- Preferred no-Revise path for control-effector API changes:
+  1. Restart Julia.
+  2. Re-instantiate/precompile with `.AGORA`.
+  3. Re-run a smoke example under depwarn-as-error:
+     - `julia --depwarn=error --project=.AGORA src/examples/Earth_Thruster_Test.jl`
+- CI now includes this depwarn smoke gate (Julia 1.12) to catch world-age/deprecation regressions early.

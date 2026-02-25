@@ -1179,6 +1179,46 @@ end
     @test Δepsr < -5e3
 end
 
+@testset "Control Callback Multi-Spacecraft Mapping" begin
+    sc1 = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=120.0)
+    sc2 = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=120.0)
+    shared_thruster = BaseThrusterModel(
+        thrust=[800.0, 800.0],
+        direction=[0.0, π],
+        Δv=[20.0, 20.0],
+        start_burn_time=[-1.0, -1.0],
+        stop_burn_time=[-1.0, -1.0],
+        Isp=[300.0, 300.0]
+    )
+    args = build_config_multi(
+        spacecraft=[sc1, sc2],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=1000.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        control_effectors=(shared_thruster,),
+        control_rates=[1.0],
+        keplerian=true,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=5.0)
+    )
+    df = run_case_silent(args)
+
+    @test shared_thruster.start_burn_time[1] != -1.0
+    @test shared_thruster.stop_burn_time[1] != -1.0
+    @test shared_thruster.start_burn_time[2] != -1.0
+    @test shared_thruster.stop_burn_time[2] != -1.0
+
+    eps1 = 0.5 .* (df.sc1_vel_1.^2 .+ df.sc1_vel_2.^2 .+ df.sc1_vel_3.^2) .-
+           EARTH.μ ./ sqrt.(df.sc1_pos_1.^2 .+ df.sc1_pos_2.^2 .+ df.sc1_pos_3.^2)
+    eps2 = 0.5 .* (df.sc2_vel_1.^2 .+ df.sc2_vel_2.^2 .+ df.sc2_vel_3.^2) .-
+           EARTH.μ ./ sqrt.(df.sc2_pos_1.^2 .+ df.sc2_pos_2.^2 .+ df.sc2_pos_3.^2)
+    Δeps1 = last(eps1) - first(eps1)
+    Δeps2 = last(eps2) - first(eps2)
+    @test Δeps1 > 2e3
+    @test Δeps2 < -2e3
+end
+
 @testset "JET Static Analysis" begin
     JET.@test_opt InitialCondition()
     JET.@test_opt Link()

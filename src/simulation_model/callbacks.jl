@@ -218,12 +218,13 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)::Ve
     for i in eachindex(control_models)
         control_model = control_models[i]
         control_rate = control_rates[i]
-        # Implement a callback for this control model that triggers at the specified control rate and calculates the control forces/torques based on the current state and the control model
-        # The calculated control forces/torques should be stored in the shared buffers for use in the dynamics calculations
+        # Each control effector callback runs at its own rate and updates
+        # all spacecraft states. The spacecraft index is passed explicitly
+        # to avoid conflating effector-index with spacecraft-index.
         control_func = (integrator) -> begin
-            # if integrator.sol.retcode == :Default
-                calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, i)
-            # end
+            @inbounds for sat_idx in 1:num_sats
+                calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
+            end
         end
         callbacks[i] = PeriodicCallback(control_func, control_rate)
     end

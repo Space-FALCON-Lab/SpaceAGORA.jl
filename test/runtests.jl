@@ -650,6 +650,25 @@ end
     end
 end
 
+@testset "Legacy Global State Guard (Remaining Modules)" begin
+    function strip_comments(src::String)
+        no_block = replace(src, r"#=.*?=#"s => "")
+        no_line = map(line -> first(split(line, '#'; limit=2)), split(no_block, '\n'; keepempty=true))
+        return join(no_line, "\n")
+    end
+
+    remaining_files = [
+        "src/utils/Save_results.jl",
+        "src/utils/MonteCarlo_set.jl",
+        "src/physical_models/Propulsive_maneuvers.jl"
+    ]
+
+    for relpath in remaining_files
+        src = strip_comments(read(joinpath(REPO_ROOT, relpath), String))
+        @test !occursin("config.", src)
+    end
+end
+
 @testset "Deterministic Smoke + No-Drag Energy Invariant" begin
     sc = make_spacecraft(ra_alt_m=500e3, rp_alt_m=400e3, ν_deg=175.0)
     args = build_config(

@@ -68,11 +68,13 @@ Date: 2026-02-25
   - Remaining active `config.solution` reads in legacy EOM control/targeting files were replaced with `_legacy_get_solution(...)` resolution (explicit `solution=` / `args[:solution]` with global fallback for compatibility).
   - `run_simulation(args; isolate_state=true)` now deep-copies per-run state by default to isolate mutable model/campaign fields (`planet.L_PI`, spacecraft mutable fields, control-effectors state) across repeated/concurrent runs.
   - Tests now cover both isolated mode (default) and explicit legacy in-place mode (`isolate_state=false`) for compatibility-sensitive callbacks.
+  - Former out-of-scope hotspots were now hardened:
+    - `src/utils/Save_results.jl`
+    - `src/utils/MonteCarlo_set.jl`
+    - `src/physical_models/Propulsive_maneuvers.jl`
+    These paths now resolve runtime state from explicit inputs/args instead of direct `config.*` field access.
 
 ## Remaining Work (Out of Task 3 Scope)
 
 - Full-repository reentrancy is still pending in legacy modules outside the hardened stack.
-- Remaining direct global state hotspots include:
-  - `src/utils/Save_results.jl` (`config.solution` writes),
-  - `src/utils/MonteCarlo_set.jl` (`config.cnf` / `config.solution` reads),
-  - `src/physical_models/Propulsive_maneuvers.jl` (heavy `config.solution` coupling).
+- Remaining direct global state hotspots include other legacy modules (e.g., `integrator/Integrators.jl`, `integrator/implicit_midpoint_jacobian.jl`, `physical_models/MonteCarlo_pertrubations.jl`, `utils/maneuver_plans.jl`, and selected control geometry helper paths still using `config.*` utility functions).

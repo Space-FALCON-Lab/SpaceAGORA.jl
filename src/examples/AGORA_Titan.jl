@@ -6,10 +6,10 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 0,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/titan_GHSat",            # Directory where to save the results
-            :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                   # Directory where Gram is
-            :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",           # Directory where Gram data is
-            :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
+            :directory_results => "/workspaces/SpaceAGORA.jl/output/titan_GHSat",            # Directory where to save the results
+            :directory_Gram => "/workspaces/SpaceAGORA.jl/GRAMpy",                   # Directory where Gram is
+            :directory_Gram_data => "/workspaces/SpaceAGORA.jl/GRAM_Data",           # Directory where Gram data is
+            :directory_Spice => "/workspaces/SpaceAGORA.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
             :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
@@ -30,7 +30,7 @@ args = Dict(# Misc Simulation
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
             :n_bodies => ["Saturn"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
-            :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/MOLA.csv", # File with the topography harmonics coefficients
+            :topography_harmonics_file => "/workspaces/SpaceAGORA.jl/Topography_harmonics_data/MOLA.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 90,  
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
@@ -39,7 +39,7 @@ args = Dict(# Misc Simulation
             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
             :srp => 0,                                             # Solar Radiation Pressure True=1, False=0
             :gravity_harmonics => 0,                                            # Gravity Spherical harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/titan5.csv", # File with the gravity harmonics coefficients
+            :gravity_harmonics_file => "/workspaces/SpaceAGORA.jl/Gravity_harmonics_data/titan5.csv", # File with the gravity harmonics coefficients
             :L => 5,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 5,                                              # Maximum order of the gravity harmonics (Defined in the file)
 
@@ -165,7 +165,7 @@ args = Dict(# Misc Simulation
 #         args[:gravity_model] = gravity_model[j]
 #         if j == 3
 #             args[:gravity_harmonics] = 1
-#             args[:gravity_harmonics_file] = "/workspaces/ABTS.jl/Gravity_harmonics_data/titan5.csv"
+#             args[:gravity_harmonics_file] = "/workspaces/SpaceAGORA.jl/Gravity_harmonics_data/titan5.csv"
 #             args[:L] = 5
 #             args[:M] = 5
 #         else
@@ -174,7 +174,7 @@ args = Dict(# Misc Simulation
 #             args[:L] = 0
 #             args[:M] = 0
 #         end
-#         args[:directory_results] = "/workspaces/ABTS.jl/output/titan/titan_" * nbodies_str[i] * gravity_model_str[j]
+#         args[:directory_results] = "/workspaces/SpaceAGORA.jl/output/titan/titan_" * nbodies_str[i] * gravity_model_str[j]
         # Calculating time of simulation
 # max_peri_alt = 1500.0e3
 # min_peri_alt = 500.0e3
@@ -232,7 +232,7 @@ args = Dict(# Misc Simulation
 # nominal_ω = args[:ω]
 # for i in 1:mc_runs
     t = @elapsed begin
-        args[:directory_results] = "/workspaces/ABTS.jl/output/titan_MC_2/Nominal"# * string(i)
+        args[:directory_results] = "/workspaces/SpaceAGORA.jl/output/titan_MC_2/Nominal"# * string(i)
 #         args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3
 #         args[:hp_initial_a] = nominal_rp + randn()*sqrt(args[:rp_dispersion]) * 1e3
 #         args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])

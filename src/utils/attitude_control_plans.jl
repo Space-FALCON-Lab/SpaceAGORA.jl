@@ -300,7 +300,7 @@ end
 
 function basilisk_rw_read_csv!(m, b::Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     # Read the CSV file
-    data = CSV.File("/workspaces/ABTS.jl/basilisk_rw_torque.csv", delim=',', header=true) |> DataFrame
+    data = CSV.File("/workspaces/SpaceAGORA.jl/basilisk_rw_torque.csv", delim=',', header=true) |> DataFrame
     data = Matrix(data)
     # Extract time and wheel values
     times = data[:, 1]
@@ -318,7 +318,7 @@ end
 
 function basilisk_thruster_read_csv!(m, b::Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     # Read the CSV file
-    data = CSV.File("/workspaces/ABTS.jl/basilisk_thruster_force.csv", delim=',', header=true) |> DataFrame
+    data = CSV.File("/workspaces/SpaceAGORA.jl/basilisk_thruster_force.csv", delim=',', header=true) |> DataFrame
     data = Matrix(data)
     # Extract time and thruster values
     times = data[:, 1]
@@ -348,7 +348,7 @@ end
 
 function basilisk_thruster_torque_read_csv!(m, b::Link, root_index::Int, vel_pp_rw::SVector{3, Float64}, h_pp_hat::SVector{3, Float64}, aerobraking_phase::Int, t::Float64)
     # Read the CSV file
-    data = CSV.File("/workspaces/ABTS.jl/basilisk_thruster_torque.csv", delim=',', header=true) |> DataFrame
+    data = CSV.File("/workspaces/SpaceAGORA.jl/basilisk_thruster_torque.csv", delim=',', header=true) |> DataFrame
     data = Matrix(data)
     # Extract time and thruster values
     times = data[:, 1]

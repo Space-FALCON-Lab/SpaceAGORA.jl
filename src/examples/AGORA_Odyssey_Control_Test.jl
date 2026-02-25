@@ -264,7 +264,7 @@ args = Dict(# Misc Simulation
 #         args[:r_tol_drag] = 10^rtol
 #         args[:a_tol_quaternion] = 1e-6
 #         args[:r_tol_quaternion] = 1e-4
-#         args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey_tolerance_test/atol_" * string(atol) * "_rtol_" * string(rtol)
+#         args[:directory_results] = "/workspaces/SpaceAGORA.jl/output/odyssey_tolerance_test/atol_" * string(atol) * "_rtol_" * string(rtol)
        
 # Calculating time of simulation
 t = @elapsed begin

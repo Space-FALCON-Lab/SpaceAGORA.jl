@@ -7,10 +7,10 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 0,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/earth_GHSM_low_hp",            # Directory where to save the results
-            :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                   # Directory where Gram is
-            :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",           # Directory where Gram data is
-            :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
+            :directory_results => "/workspaces/SpaceAGORA.jl/output/earth_GHSM_low_hp",            # Directory where to save the results
+            :directory_Gram => "/workspaces/SpaceAGORA.jl/GRAMpy",                   # Directory where Gram is
+            :directory_Gram_data => "/workspaces/SpaceAGORA.jl/GRAM_Data",           # Directory where Gram data is
+            :directory_Spice => "/workspaces/SpaceAGORA.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
             :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
@@ -31,7 +31,7 @@ args = Dict(# Misc Simulation
             :gravity_model => "Inverse Squared",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
             :density_model => "Gram",                               # choices=['No-Density', 'Constant' , 'Exponential' , 'nrlmsise', 'Gram']
             :topography_model => "Spherical Harmonics",                             # choices=['None' , 'Spherical Harmonics']
-            :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
+            :topography_harmonics_file => "/workspaces/SpaceAGORA.jl/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
             :topo_degree => 50,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 50,                                      # Maximum order of the topography harmonics (Defined in the file)
 
@@ -43,7 +43,7 @@ args = Dict(# Misc Simulation
             :n_bodies => ["Sun", "Moon"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
             :srp => 0,                                             # Solar Radiation Pressure True=1, False=0
             :gravity_harmonics => 1,                               # Gravity Harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/egm96.csv",                  # Gravity Harmonics file to use
+            :gravity_harmonics_file => "/workspaces/SpaceAGORA.jl/Gravity_harmonics_data/egm96.csv",                  # Gravity Harmonics file to use
             :L => 50,                                              # Maximum degree of gravity harmonics
             :M => 50,                                              # Maximum order of gravity harmonics
 
@@ -162,7 +162,7 @@ args = Dict(# Misc Simulation
 # Calculating time of simulation
 # for hour = 0:23
 #     args[:hours] = hour
-#     args[:directory_results] = "/home/space-falcon-1/Documents/ABTS.jl/output/venus_express_" * string(hour)
+#     args[:directory_results] = "/home/space-falcon-1/Documents/SpaceAGORA.jl/output/venus_express_" * string(hour)
 #     t = @elapsed begin
 #         sol = run_analysis(args)
 #     end
@@ -195,7 +195,7 @@ args = Dict(# Misc Simulation
 #             end
 #             # args[:density_model] = density_models[i]
 #             args[:n_bodies] = n_bodies[k]
-#             args[:directory_results] = "/workspaces/ABTS.jl/output/earth_G"*gravity_models_str[j]*n_bodies_str[k]
+#             args[:directory_results] = "/workspaces/SpaceAGORA.jl/output/earth_G"*gravity_models_str[j]*n_bodies_str[k]
 #             # args[:filename_results] = "Earth_Aerobraking_" * string(i) * "_" * string(j) * "_" * string(k)
 #             println("Running simulation with gravity model: " * gravity_models[j] * ", n_bodies: " * string(n_bodies[k]))
 #             t = @elapsed begin
@@ -220,7 +220,7 @@ for i in 1:mc_runs+1
             args[:inclination] = nominal_i
             args[:Ω] = nominal_Ω
             args[:ω] = nominal_ω
-            args[:directory_results] = "/workspaces/ABTS.jl/output/earth_MC_ab_campaign/Nominal"
+            args[:directory_results] = "/workspaces/SpaceAGORA.jl/output/earth_MC_ab_campaign/Nominal"
             args[:print_res] = 1
         else
             # Generate random values for the parameters
@@ -229,7 +229,7 @@ for i in 1:mc_runs+1
             args[:inclination] = nominal_i + randn()*sqrt(args[:i_dispersion])
             args[:Ω] = nominal_Ω + randn()*sqrt(args[:Ω_dispersion])
             args[:ω] = nominal_ω + randn()*sqrt(args[:ω_dispersion])
-            # args[:directory_results] = "/workspaces/ABTS.jl/output/earth_MC_ab_campaign/" * string(i-1)
+            # args[:directory_results] = "/workspaces/SpaceAGORA.jl/output/earth_MC_ab_campaign/" * string(i-1)
             args[:print_res] = 0
         end
         # args[:ra_initial_a] = nominal_ra + randn()*sqrt(args[:ra_dispersion]) * 1e3

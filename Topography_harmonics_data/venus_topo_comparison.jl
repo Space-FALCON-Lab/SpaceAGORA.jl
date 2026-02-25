@@ -59,8 +59,8 @@ function fnALF_IDR(x, N, M)
     return A
 end
 
-data = CSV.read("/workspaces/ABTS.jl/Topography_harmonics_data/MOLA.csv", DataFrame)
-data_true = CSV.read("/workspaces/ABTS.jl/Topography_harmonics_data/topogrd.csv", DataFrame, header=false)
+data = CSV.read("/workspaces/SpaceAGORA.jl/Topography_harmonics_data/MOLA.csv", DataFrame)
+data_true = CSV.read("/workspaces/SpaceAGORA.jl/Topography_harmonics_data/topogrd.csv", DataFrame, header=false)
 println(size(data_true))
 data_true = reshape(Matrix(data_true), (180, 360))
 data_true = circshift(circshift(data_true, (120, 0)), (-180, 0))

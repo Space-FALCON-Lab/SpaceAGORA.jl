@@ -167,7 +167,7 @@ args = Dict(# Misc Simulation
 # Calculating time of simulation
 # for hour = 0:23
 #     args[:hours] = hour
-#     args[:directory_results] = "/home/space-falcon-1/Documents/ABTS.jl/output/venus_express_" * string(hour)
+#     args[:directory_results] = "/home/space-falcon-1/Documents/SpaceAGORA.jl/output/venus_express_" * string(hour)
 #     t = @elapsed begin
 #         sol = run_analysis(args)
 #     end

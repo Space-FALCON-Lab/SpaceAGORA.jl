@@ -80,10 +80,10 @@ args = Dict(# Misc Simulation
             :results => 1,                                                                                      # Generate csv file for results True=1, False=0
             :passresults => 1,                                                                                  # Pass results as output True=1, False=0
             :print_res => 1,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "/workspaces/ABTS.jl/output/basilisk_const_torque_comparison",                # Directory where to save the results
-            :directory_Gram => "/workspaces/ABTS.jl/GRAMpy",                                                    # Directory where Gram is
-            :directory_Gram_data => "/workspaces/ABTS.jl/GRAM_Data",                                            # Directory where Gram data is
-            :directory_Spice => "/workspaces/ABTS.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
+            :directory_results => "/workspaces/SpaceAGORA.jl/output/basilisk_const_torque_comparison",                # Directory where to save the results
+            :directory_Gram => "/workspaces/SpaceAGORA.jl/GRAMpy",                                                    # Directory where Gram is
+            :directory_Gram_data => "/workspaces/SpaceAGORA.jl/GRAM_Data",                                            # Directory where Gram data is
+            :directory_Spice => "/workspaces/SpaceAGORA.jl/GRAM_Data/SPICE",                                          # Directory where SPICE files are located
             :Gram_version => 0,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
             :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
@@ -105,7 +105,7 @@ args = Dict(# Misc Simulation
             :gravity_model => "Inverse Squared",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
             :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
-            :topography_harmonics_file => "/workspaces/ABTS.jl/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
+            :topography_harmonics_file => "/workspaces/SpaceAGORA.jl/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 90,                                      # Maximum order of the topography harmonics (Defined in the file)
             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
@@ -118,7 +118,7 @@ args = Dict(# Misc Simulation
             :eclipse => false,
             :gravity_gradient => false,                                   # Gravity Gradient true/false
             :gravity_harmonics => 0,                                            # Gravity Spherical harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/ABTS.jl/Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
+            :gravity_harmonics_file => "/workspaces/SpaceAGORA.jl/Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
 
@@ -271,12 +271,12 @@ args = Dict(# Misc Simulation
 #         args[:minutes] = minutes
 #         args[:n_bodies] = nbody
 #         println("Hours: ", args[:hours], " Minutes: ", args[:minutes])
-#         args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey/" * string(args[:hours]) * "_" * string(args[:minutes]) * "_" * string(nbody) * "/"
+#         args[:directory_results] = "/workspaces/SpaceAGORA.jl/output/odyssey/" * string(args[:hours]) * "_" * string(args[:minutes]) * "_" * string(nbody) * "/"
 # orbits = 200 # 1, 5, 10, 20, 50, 100, 200
 # # for num_orbits in orbits
 # args[:number_of_orbits] = orbits
 # println("Number of Orbits: ", orbits)
-# args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey/" * string(orbits) * "/"
+# args[:directory_results] = "/workspaces/SpaceAGORA.jl/output/odyssey/" * string(orbits) * "/"
 
 # #     for i in 1:Threads.nthreads() 
 
@@ -304,7 +304,7 @@ end
 # for i in 24:mc_runs
 #     a = @allocated begin
 #         t = @elapsed begin
-#             args[:directory_results] = "/workspaces/ABTS.jl/output/odyssey_MC_polyfit_atmo_orig_disp/" * string(i)
+#             args[:directory_results] = "/workspaces/SpaceAGORA.jl/output/odyssey_MC_polyfit_atmo_orig_disp/" * string(i)
 #             println("Monte Carlo Run: ", i)
 #             if i == 1
 #                 args[:print_res] = 1

@@ -63,7 +63,7 @@ function calculate_topography_harmonics!(Clm::AbstractArray{Float64}, Slm::Abstr
         Parameters
         ----------
         args : Dict
-            Dictionary with the ABTS input arguments.
+            Dictionary with the AGORA input arguments.
         Clm : Array{Float64}
             Array with the cosine harmonics.
         Slm : Array{Float64}
@@ -120,7 +120,7 @@ function Mars_elevation!(args, Clm, Slm, latitude, longitude, A)
         Parameters
         ----------
         args : Dict
-            Dictionary with the ABTS input arguments.
+            Dictionary with the AGORA input arguments.
         Clm : Array{Float64}
             Array with the cosine harmonics.
         Slm : Array{Float64}
@@ -153,7 +153,7 @@ function Venus_elevation!(args, Clm::AbstractArray{Float64}, Slm::AbstractArray{
         Parameters
         ----------
         args : Dict
-            Dictionary with the ABTS input arguments.
+            Dictionary with the AGORA input arguments.
         Clm : Array{Float64}
             Array with the cosine harmonics.
         Slm : Array{Float64}
@@ -186,7 +186,7 @@ function Earth_elevation!(args, Clm::AbstractArray{Float64}, Slm::AbstractArray{
         Parameters
         ----------
         args : Dict
-            Dictionary with the ABTS input arguments.
+            Dictionary with the AGORA input arguments.
         Clm : Array{Float64}
             Array with the cosine harmonics.
         Slm : Array{Float64}

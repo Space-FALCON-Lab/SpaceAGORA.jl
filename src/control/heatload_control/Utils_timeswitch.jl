@@ -1,5 +1,11 @@
-include("../../physical_models/Density_models.jl")
-include("../../utils/Closed_form_solution.jl")
+if !isdefined(@__MODULE__, :__legacy_density_models_included__)
+    include("../../physical_models/Density_models.jl")
+    const __legacy_density_models_included__ = true
+end
+if !isdefined(@__MODULE__, :__legacy_closed_form_solution_included__)
+    include("../../utils/Closed_form_solution.jl")
+    const __legacy_closed_form_solution_included__ = true
+end
 
 function lambdas(m, aoa, k, t, h, γ, v, coeff, nu_E)
     CD_slope, CL_0, CD_0 = coeff

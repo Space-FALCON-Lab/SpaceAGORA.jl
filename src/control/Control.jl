@@ -1,10 +1,28 @@
-include("../utils/Closed_form_solution.jl")
-include("../physical_models/Density_models.jl")
+if !isdefined(@__MODULE__, :__legacy_closed_form_solution_included__)
+    include("../utils/Closed_form_solution.jl")
+    const __legacy_closed_form_solution_included__ = true
+end
+if !isdefined(@__MODULE__, :__legacy_density_models_included__)
+    include("../physical_models/Density_models.jl")
+    const __legacy_density_models_included__ = true
+end
 # include("../physical_models/Aerodynamic_models.jl")
-include("../physical_models/MonteCarlo_pertrubations.jl")
-include("heatload_control/Time_switch_calcs.jl")
-include("heatload_control/Second_tsw_calcs.jl")
-include("heatload_control/Security_mode.jl")
+if !isdefined(@__MODULE__, :__legacy_montecarlo_perturbations_included__)
+    include("../physical_models/MonteCarlo_pertrubations.jl")
+    const __legacy_montecarlo_perturbations_included__ = true
+end
+if !isdefined(@__MODULE__, :__legacy_time_switch_calcs_included__)
+    include("heatload_control/Time_switch_calcs.jl")
+    const __legacy_time_switch_calcs_included__ = true
+end
+if !isdefined(@__MODULE__, :__legacy_second_tsw_calcs_included__)
+    include("heatload_control/Second_tsw_calcs.jl")
+    const __legacy_second_tsw_calcs_included__ = true
+end
+if !isdefined(@__MODULE__, :__legacy_security_mode_included__)
+    include("heatload_control/Security_mode.jl")
+    const __legacy_security_mode_included__ = true
+end
 
 using SpecialFunctions
 using Roots

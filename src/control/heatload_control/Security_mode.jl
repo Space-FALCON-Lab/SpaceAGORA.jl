@@ -1,6 +1,15 @@
-include("../../physical_models/MonteCarlo_pertrubations.jl")
-include("../../physical_models/Density_models.jl")
-include("../../utils/Closed_form_solution.jl")
+if !isdefined(@__MODULE__, :__legacy_montecarlo_perturbations_included__)
+    include("../../physical_models/MonteCarlo_pertrubations.jl")
+    const __legacy_montecarlo_perturbations_included__ = true
+end
+if !isdefined(@__MODULE__, :__legacy_density_models_included__)
+    include("../../physical_models/Density_models.jl")
+    const __legacy_density_models_included__ = true
+end
+if !isdefined(@__MODULE__, :__legacy_closed_form_solution_included__)
+    include("../../utils/Closed_form_solution.jl")
+    const __legacy_closed_form_solution_included__ = true
+end
 
 function security_mode(ip, m, position, args, t, heat_rate_control=false)
     T = m.planet.T

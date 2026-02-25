@@ -1,10 +1,22 @@
-include("../../physical_models/Density_models.jl")
+if !isdefined(@__MODULE__, :__legacy_density_models_included__)
+    include("../../physical_models/Density_models.jl")
+    const __legacy_density_models_included__ = true
+end
 # include("../../physical_models/Aerodynamic_models.jl")
 # include("../../physical_models/Gravity_models.jl")
-include("../../physical_models/Thermal_models.jl")
+if !isdefined(@__MODULE__, :__legacy_thermal_models_included__)
+    include("../../physical_models/Thermal_models.jl")
+    const __legacy_thermal_models_included__ = true
+end
 
-include("../../utils/Reference_system.jl")
-include("../../utils/Closed_form_solution.jl")
+if !isdefined(@__MODULE__, :__legacy_reference_system_included__)
+    include("../../utils/Reference_system.jl")
+    const __legacy_reference_system_included__ = true
+end
+if !isdefined(@__MODULE__, :__legacy_closed_form_solution_included__)
+    include("../../utils/Closed_form_solution.jl")
+    const __legacy_closed_form_solution_included__ = true
+end
 
 # include("Control.jl")
 # include("heatload_control/Utils_timeswitch.jl")

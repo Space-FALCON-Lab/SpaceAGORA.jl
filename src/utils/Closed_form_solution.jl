@@ -1,8 +1,20 @@
-include("../physical_models/Density_models.jl")
+if !isdefined(@__MODULE__, :__legacy_density_models_included__)
+    include("../physical_models/Density_models.jl")
+    const __legacy_density_models_included__ = true
+end
 # include("../physical_models/Aerodynamic_models.jl")
-include("../physical_models/MonteCarlo_pertrubations.jl")
-include("../utils/Reference_system.jl")
-include("Misc.jl")
+if !isdefined(@__MODULE__, :__legacy_montecarlo_perturbations_included__)
+    include("../physical_models/MonteCarlo_pertrubations.jl")
+    const __legacy_montecarlo_perturbations_included__ = true
+end
+if !isdefined(@__MODULE__, :__legacy_reference_system_included__)
+    include("../utils/Reference_system.jl")
+    const __legacy_reference_system_included__ = true
+end
+if !isdefined(@__MODULE__, :__legacy_misc_utils_included__)
+    include("Misc.jl")
+    const __legacy_misc_utils_included__ = true
+end
 
 using LinearAlgebra
 using Statistics

@@ -1,7 +1,16 @@
 # include("../../physical_models/Aerodynamic_models.jl")
-include("Utils_timeswitch.jl")
-include("../../utils/Closed_form_solution.jl")
-include("../utils/Eoms.jl")
+if !isdefined(@__MODULE__, :__legacy_utils_timeswitch_included__)
+    include("Utils_timeswitch.jl")
+    const __legacy_utils_timeswitch_included__ = true
+end
+if !isdefined(@__MODULE__, :__legacy_closed_form_solution_included__)
+    include("../../utils/Closed_form_solution.jl")
+    const __legacy_closed_form_solution_included__ = true
+end
+if !isdefined(@__MODULE__, :__legacy_control_utils_eoms_included__)
+    include("../utils/Eoms.jl")
+    const __legacy_control_utils_eoms_included__ = true
+end
 
 using Roots
 

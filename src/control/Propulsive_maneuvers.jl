@@ -18,10 +18,14 @@ function calcControlForceTorque(controlModel::BaseThrusterModel, u::AbstractVect
     start_time = controlModel.start_burn_time[i]
     stop_time = controlModel.stop_burn_time[i]
     if t >= start_time && t <= stop_time
-        println("Thrusting at time $t for spacecraft index $i with start_time $start_time and stop_time $stop_time")
         thrust_mag = controlModel.thrust[i]
-        thrust_dir = normalize(SVector{3, Float64}(u.vel)) # Assuming thrust direction is in the orbital plane for simplicity (can be updated later to include out-of-plane thrust components)
-        println("Thrust magnitude: $thrust_mag, thrust direction: $thrust_dir")
+        vel_vec = SVector{3, Float64}(u.vel)
+        vel_mag = norm(vel_vec)
+        if vel_mag == 0.0 || !isfinite(vel_mag)
+            return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+        end
+        thrust_dir = normalize(vel_vec) # Prograde direction
+        thrust_dir *= cos(controlModel.direction[i]) >= 0.0 ? 1.0 : -1.0 # 0 -> prograde, π -> retrograde
         force = thrust_mag * thrust_dir
         # For simplicity, assume torque is zero for now (can be updated later to include offset thrusters, gimbaled thrusters, etc.)
         torque = SVector{3, Float64}(0.0, 0.0, 0.0)
@@ -61,20 +65,25 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
         Δv = controlModel.Δv[i]
         mass = mass
         thrust_mag = controlModel.thrust[i]
-        # Calculate the burn time required to achieve the desired Δv based on the current mass and thrust
+        # Calculate the burn duration for a constant-thrust impulsive approximation.
+        if thrust_mag <= 0.0 || !isfinite(thrust_mag)
+            return
+        end
         burn_time = mass * Δv / thrust_mag
+        if !isfinite(burn_time) || burn_time < 0.0
+            return
+        end
         # println("e: $e, a: $a, Δv: $Δv, burn_time: $burn_time")
         # Estimate the time of apoapsis and set the burn to be symmetric about that time
         ψ = 2*atan(sqrt((1-e)/(1+e))*tan(ν/2))
 
         M = ψ - e*sin(ψ)
         n = sqrt(p.args.environment_model.planet.μ/a^3)
-        current_time_since_periapsis = M/n
         time_to_apoapsis = (π - M)/n
         apoapsis_time = t + time_to_apoapsis
         # Calculate start/end time as symmetric about the apoapsis time
-        start_burn_time = apoapsis_time - burn_time[i]/2
-        stop_burn_time = apoapsis_time + burn_time[i]/2
+        start_burn_time = apoapsis_time - burn_time/2
+        stop_burn_time = apoapsis_time + burn_time/2
         
         # Update the start/end time fields in the control model for the current spacecraft
         controlModel.start_burn_time[i] = start_burn_time

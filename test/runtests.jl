@@ -3,6 +3,7 @@ using CSV
 using DataFrames
 using LinearAlgebra
 using StaticArrays
+using ComponentArrays
 using SPICE
 using JET
 using Aqua
@@ -120,6 +121,24 @@ function make_single_link_spacecraft(;
         0,
         ic,
         1
+    )
+end
+
+function make_base_thruster_model(;
+    thrust::Float64,
+    direction::Float64=0.0,
+    Δv::Float64=0.0,
+    start_burn_time::Float64=0.0,
+    stop_burn_time::Float64=0.0,
+    Isp::Float64=300.0
+)
+    return BaseThrusterModel(
+        thrust=[thrust],
+        direction=[direction],
+        Δv=[Δv],
+        start_burn_time=[start_burn_time],
+        stop_burn_time=[stop_burn_time],
+        Isp=[Isp]
     )
 end
 
@@ -485,6 +504,165 @@ end
     df = run_case(args)
     eps = specific_energy(df, EARTH.μ)
     @test last(eps) < first(eps) - 1e5
+end
+
+@testset "Thruster Edge Cases (AI Second-Pass)" begin
+    sc = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=120.0)
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=600.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    p = ODEParams{1}(args=args)
+    u = build_initial_conditions(args).sc[1]
+
+    @testset "calcControlForceTorque" begin
+        model = make_base_thruster_model(thrust=2.0, direction=0.0, start_burn_time=50.0, stop_burn_time=150.0)
+
+        force_pre, torque_pre = calcControlForceTorque(model, u, p, 1, 49.9)
+        @test force_pre == SVector{3, Float64}(0.0, 0.0, 0.0)
+        @test torque_pre == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+        expected_dir = normalize(SVector{3, Float64}(u.vel))
+        force_start, torque_start = calcControlForceTorque(model, u, p, 1, 50.0)
+        @test isapprox(force_start, 2.0 .* expected_dir; atol=1e-12, rtol=0.0)
+        @test torque_start == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+        force_stop, _ = calcControlForceTorque(model, u, p, 1, 150.0)
+        @test isapprox(force_stop, 2.0 .* expected_dir; atol=1e-12, rtol=0.0)
+
+        force_post, _ = calcControlForceTorque(model, u, p, 1, 150.1)
+        @test force_post == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+        model.direction[1] = π
+        force_retro, _ = calcControlForceTorque(model, u, p, 1, 100.0)
+        @test dot(force_retro, expected_dir) < 0.0
+
+        u_zero = ComponentVector(pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], mass=1.0, heat_loads=[0.0])
+        force_zero, torque_zero = calcControlForceTorque(model, u_zero, p, 1, 100.0)
+        @test force_zero == SVector{3, Float64}(0.0, 0.0, 0.0)
+        @test torque_zero == SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    @testset "calcControlEffect!" begin
+        model = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
+        state = build_initial_conditions(args)
+        calcControlEffect!(model, state, p, 100.0, 1)
+        @test isfinite(model.start_burn_time[1])
+        @test isfinite(model.stop_burn_time[1])
+        @test model.start_burn_time[1] < model.stop_burn_time[1]
+        expected_burn_duration = state.sc[1].mass * model.Δv[1] / model.thrust[1]
+        @test isapprox(
+            model.stop_burn_time[1] - model.start_burn_time[1],
+            expected_burn_duration;
+            atol=1e-9,
+            rtol=0.0
+        )
+
+        sc_ineligible = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=210.0)
+        args_ineligible = build_config(
+            spacecraft=sc_ineligible,
+            density_model=NoAtmosphereModel(),
+            orientation_sim=false,
+            mission_time=600.0,
+            EI_km=120.0,
+            dynamic_effectors=(InverseSquaredGravityModel(),),
+            keplerian=true
+        )
+        p_ineligible = ODEParams{1}(args=args_ineligible)
+        state_ineligible = build_initial_conditions(args_ineligible)
+        model_ineligible = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=11.0, stop_burn_time=22.0)
+        calcControlEffect!(model_ineligible, state_ineligible, p_ineligible, 100.0, 1)
+        @test model_ineligible.start_burn_time[1] == 11.0
+        @test model_ineligible.stop_burn_time[1] == 22.0
+
+        model_zero_thrust = make_base_thruster_model(thrust=0.0, Δv=20.0, start_burn_time=33.0, stop_burn_time=44.0)
+        calcControlEffect!(model_zero_thrust, state, p, 100.0, 1)
+        @test model_zero_thrust.start_burn_time[1] == 33.0
+        @test model_zero_thrust.stop_burn_time[1] == 44.0
+    end
+
+    @testset "schmitt_trigger" begin
+        @test schmitt_trigger(0.80, 0.75, 0.25) == 1.0
+        @test schmitt_trigger(0.20, 0.75, 0.25) == 0.0
+        @test schmitt_trigger(0.75, 0.75, 0.25) == 0.0
+        @test schmitt_trigger(0.50, 0.75, 0.25) == 0.0
+    end
+
+    @testset "integrate_impulse!" begin
+        link = Link{0}(root=true, attitude_control_rate=0.1)
+        ω = 20.0
+
+        thr_zero = Thruster(max_thrust=10.0, cutoff_frequency=ω, κ=0.0)
+        impulse_zero = integrate_impulse!(link, thr_zero, 0.0, 0.0)
+        @test impulse_zero == 0.0
+        @test thr_zero.κ == 0.0
+
+        thr_full = Thruster(max_thrust=10.0, cutoff_frequency=ω, κ=0.0)
+        dt = link.attitude_control_rate
+        expected_full = thr_full.max_thrust * (dt + (-1.0) / ω * (1 - exp(-ω * dt)))
+        impulse_full = integrate_impulse!(link, thr_full, dt, 0.0)
+        @test isapprox(impulse_full, expected_full; atol=1e-12, rtol=0.0)
+        @test isapprox(thr_full.κ, 1 - exp(-ω * dt); atol=1e-12, rtol=0.0)
+
+        thr_decay = Thruster(max_thrust=10.0, cutoff_frequency=ω, κ=1.0)
+        expected_decay = thr_decay.max_thrust / ω * (1 - exp(-ω * dt))
+        impulse_decay = integrate_impulse!(link, thr_decay, 0.0, 0.0)
+        @test isapprox(impulse_decay, expected_decay; atol=1e-12, rtol=0.0)
+        @test isapprox(thr_decay.κ, exp(-ω * dt); atol=1e-12, rtol=0.0)
+    end
+
+    @testset "thrust_calculation_schmitt_trigger!" begin
+        mktempdir() do tmp
+            cd(tmp) do
+                link = Link{0}(root=true, attitude_control_rate=0.1)
+                thr = Thruster(
+                    max_thrust=10.0,
+                    min_firing_time=0.05,
+                    level_on=0.75,
+                    level_off=0.25,
+                    cutoff_frequency=100.0,
+                    κ=0.0
+                )
+
+                thrust_calculation_schmitt_trigger!(link, thr, 1.0, 0.0)
+                @test thr.thrust == 0.0
+                @test isfile("thruster_debug.csv")
+
+                thrust_calculation_schmitt_trigger!(link, thr, 9.0, 0.1)
+                @test thr.thrust > 0.0
+                @test thr.thrust <= thr.max_thrust + 1e-9
+            end
+        end
+    end
+
+    @testset "update_thrusters!" begin
+        mktempdir() do tmp
+            cd(tmp) do
+                link = Link{0}(root=true, attitude_control_rate=0.1)
+                update_thrusters!(link, SVector{3, Float64}(0.0, 0.0, 0.0), 0.0)
+                @test isempty(link.thrusters)
+                @test size(link.J_thruster) == (3, 0)
+
+                thr = Thruster(
+                    max_thrust=1.0,
+                    cutoff_frequency=100.0,
+                    min_firing_time=0.0,
+                    location=MVector{3, Float64}(0.0, 1.0, 0.0),
+                    direction=MVector{3, Float64}(0.0, 0.0, 1.0)
+                )
+                push!(link.thrusters, thr)
+
+                update_thrusters!(link, SVector{3, Float64}(-1.0, 0.0, 0.0), 0.1)
+                @test link.thrusters[1].thrust >= 0.0
+            end
+        end
+    end
 end
 
 @testset "JET Static Analysis" begin

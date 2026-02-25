@@ -13,8 +13,13 @@ function update_thrusters!(link::Link, torque::AbstractVector{Float64}, t::Float
     - `link`: The Link whose thrusters are to be updated.
     - `torque`: The torque vector to apply to the thrusters.
     """
+    if isempty(link.thrusters)
+        link.J_thruster = Matrix{Float64}(undef, 3, 0)
+        return
+    end
+
     # Update the thruster Jacobian matrix to account for possible articulated joints
-    link.J_thruster = MMatrix{3, length(link.thrusters), Float64}(zeros(3, length(link.thrusters))) # Reset the Jacobian matrix
+    link.J_thruster = Matrix{Float64}(zeros(3, length(link.thrusters))) # Reset the Jacobian matrix
     rot_to_body = rotate_to_body(link) # Get the rotation matrix to convert from inertial to body frame
     
     for (i, thruster) in enumerate(link.thrusters)

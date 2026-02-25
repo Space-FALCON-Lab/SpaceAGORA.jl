@@ -356,11 +356,66 @@ function run_case_capture_stdout(args::SimulationConfiguration; expect_results_c
     end
 end
 
-function run_case_via_run_analysis(args::SimulationConfiguration; expect_results_csv::Bool=true)
+function run_case_via_run_analysis(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
             redirect_stdout(devnull) do
-                run_analysis(args)
+                run_analysis(args; isolate_state=isolate_state)
+            end
+            if expect_results_csv
+                @test isfile("simulation_results.csv")
+                return CSV.read("simulation_results.csv", DataFrame)
+            else
+                @test !isfile("simulation_results.csv")
+                return DataFrame()
+            end
+        end
+    end
+end
+
+function run_case_via_campaign(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true, state=nothing)
+    return mktempdir() do tmp
+        cd(tmp) do
+            redirect_stdout(devnull) do
+                if state === nothing
+                    aerobraking_campaign(args; isolate_state=isolate_state)
+                else
+                    aerobraking_campaign(args, state; isolate_state=isolate_state)
+                end
+            end
+            if expect_results_csv
+                @test isfile("simulation_results.csv")
+                return CSV.read("simulation_results.csv", DataFrame)
+            else
+                @test !isfile("simulation_results.csv")
+                return DataFrame()
+            end
+        end
+    end
+end
+
+function run_case_via_run_orbitalelements(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
+    return mktempdir() do tmp
+        cd(tmp) do
+            redirect_stdout(devnull) do
+                run_orbitalelements(args; isolate_state=isolate_state)
+            end
+            if expect_results_csv
+                @test isfile("simulation_results.csv")
+                return CSV.read("simulation_results.csv", DataFrame)
+            else
+                @test !isfile("simulation_results.csv")
+                return DataFrame()
+            end
+        end
+    end
+end
+
+function run_case_via_run_vgamma(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
+    return mktempdir() do tmp
+        cd(tmp) do
+            redirect_stdout(devnull) do
+                run_vgamma(args; isolate_state=isolate_state)
             end
             if expect_results_csv
                 @test isfile("simulation_results.csv")
@@ -822,6 +877,66 @@ end
         tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
     )
     _ = run_case_via_run_analysis(args_no_results; expect_results_csv=false)
+end
+
+@testset "Legacy Entry Dispatch Parity" begin
+    sc = make_spacecraft(ra_alt_m=540e3, rp_alt_m=430e3, ν_deg=168.0)
+    settings = SimulationSettings(
+        results=true,
+        verbose=false,
+        generate_plots=false,
+        results_directory="output",
+        save_csv=true
+    )
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=400.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=settings,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+
+    function assert_df_parity(df_ref::DataFrame, df_cmp::DataFrame)
+        @test nrow(df_ref) == nrow(df_cmp)
+        @test nrow(df_ref) > 10
+        sample_idxs = round.(Int, range(1, nrow(df_ref), length=8))
+        for idx in sample_idxs
+            t = Float64(df_ref.time[idx])
+            p_ref = SVector{3, Float64}(Float64(df_ref.sc1_pos_1[idx]), Float64(df_ref.sc1_pos_2[idx]), Float64(df_ref.sc1_pos_3[idx]))
+            v_ref = SVector{3, Float64}(Float64(df_ref.sc1_vel_1[idx]), Float64(df_ref.sc1_vel_2[idx]), Float64(df_ref.sc1_vel_3[idx]))
+            p_cmp = SVector{3, Float64}(
+                interp_linear(df_cmp.time, df_cmp.sc1_pos_1, t),
+                interp_linear(df_cmp.time, df_cmp.sc1_pos_2, t),
+                interp_linear(df_cmp.time, df_cmp.sc1_pos_3, t)
+            )
+            v_cmp = SVector{3, Float64}(
+                interp_linear(df_cmp.time, df_cmp.sc1_vel_1, t),
+                interp_linear(df_cmp.time, df_cmp.sc1_vel_2, t),
+                interp_linear(df_cmp.time, df_cmp.sc1_vel_3, t)
+            )
+            @test norm(p_ref - p_cmp) < 0.1
+            @test norm(v_ref - v_cmp) < 1e-4
+        end
+    end
+
+    df_direct = run_case_silent(args; isolate_state=false)
+    df_analysis = run_case_via_run_analysis(args; isolate_state=false)
+    df_campaign = run_case_via_campaign(args; isolate_state=false)
+    df_campaign_with_state = run_case_via_campaign(args; isolate_state=false, state=Dict(:legacy => true))
+    df_run_oe = run_case_via_run_orbitalelements(args; isolate_state=false)
+    df_run_vg = run_case_via_run_vgamma(args; isolate_state=false)
+
+    assert_df_parity(df_direct, df_analysis)
+    assert_df_parity(df_direct, df_campaign)
+    assert_df_parity(df_direct, df_campaign_with_state)
+    assert_df_parity(df_direct, df_run_oe)
+    assert_df_parity(df_direct, df_run_vg)
+
+    @test_throws ArgumentError aerobraking_campaign(Dict{Symbol, Any}(:foo => :bar))
 end
 
 @testset "Verbose Gating for Callback/Runtime Logs" begin

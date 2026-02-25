@@ -12,7 +12,7 @@ include("run_simulation.jl")
 
 # os = pyimport("os")
 
-function aerobraking(args::SimulationConfiguration, filename::String, temp_name::String)
+function aerobraking(args::SimulationConfiguration, filename::String, temp_name::String; isolate_state::Bool=true)
     # cnf, m, solution = params
     # initial_state = args.initial_conditions
     FinalState = true
@@ -95,7 +95,7 @@ function aerobraking(args::SimulationConfiguration, filename::String, temp_name:
 
             # params = (cnf, m, Solution()) # Reset solution struct for new passage
             # continue_campaign = asim(initial_state, numberofpassage, args, params)
-            run_simulation(args)
+            run_simulation(args; isolate_state=isolate_state)
             
             # cnf = params[1]
             # m = params[2]

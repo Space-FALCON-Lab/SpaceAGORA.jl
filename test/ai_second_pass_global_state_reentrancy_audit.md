@@ -72,7 +72,7 @@ Date: 2026-02-25
     - `src/utils/Save_results.jl`
     - `src/utils/MonteCarlo_set.jl`
     - `src/physical_models/Propulsive_maneuvers.jl`
-    These paths now resolve runtime state from explicit inputs/args instead of direct `config.*` field access.
+    These paths now resolve runtime state only from explicit inputs/args (no module `config` fallback).
 
 ## Remaining Work (Out of Task 3 Scope)
 

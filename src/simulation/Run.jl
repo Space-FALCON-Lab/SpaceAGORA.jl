@@ -5,6 +5,14 @@ using .SimulationModel
 # include("../utils/Initial_cond_calc.jl")
 include("Set_and_run.jl")
 
+function run_orbitalelements(args::SimulationConfiguration; isolate_state::Bool=true)
+    return aerobraking_campaign(args; isolate_state=isolate_state)
+end
+
+function run_vgamma(args::SimulationConfiguration; isolate_state::Bool=true)
+    return aerobraking_campaign(args; isolate_state=isolate_state)
+end
+
 function run_orbitalelements(args)
     apoapsis, periapsis_alt, inclination, Ω, ω = collect(range(start=round(args[:ra_initial_a]), stop=round(args[:ra_initial_b]), step=round(args[:ra_step]))), 
                                                  collect(range(start=round(args[:hp_initial_a]), stop=round(args[:hp_initial_b]), step=round(args[:hp_step]))), 
@@ -35,7 +43,7 @@ function run_orbitalelements(args)
                 end
 
                 aerobraking_campaign(args, state)
-                MonteCarlo_append(MC, args, count)
+                count = MonteCarlo_append(MC, args, count)
             end
 
             if args[:montecarlo] == true
@@ -75,7 +83,7 @@ function run_vgamma(args)
                 end
 
                 aerobraking_campaign(args, state)
-                MonteCarlo_append(MC, args, count)
+                count = MonteCarlo_append(MC, args, count)
             end
 
             if args[:montecarlo] == true
@@ -124,9 +132,9 @@ function run_orbitalelements_ae(args::SimulationConfiguration)
     # end
 end
 
-function run_analysis(args::SimulationConfiguration)
+function run_analysis(args::SimulationConfiguration; isolate_state::Bool=true)
     # args = def_miss(args)
-    aerobraking_campaign(args)
+    aerobraking_campaign(args; isolate_state=isolate_state)
     # if args[:initial_condition_type] == 1 && (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone")
     #     run_vgamma(args)
     # elseif args[:initial_condition_type] == 0

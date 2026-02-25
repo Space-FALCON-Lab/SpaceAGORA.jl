@@ -45,6 +45,13 @@ const solarRadFlux = 1368.0 # Solar radiation flux at 1 AU, W/m^2
 const speedLight = 299792458.0 # Speed of light, m/s
 const AstU = 149597870.7e3 # Astronomical Unit, m
 
+function asim(args::SimulationConfiguration; isolate_state::Bool=true)
+    if !isdefined(@__MODULE__, :run_simulation)
+        throw(ArgumentError("run_simulation is not loaded. Include simulation/run_simulation.jl before calling asim(args::SimulationConfiguration)."))
+    end
+    return run_simulation(args; isolate_state=isolate_state)
+end
+
 
 
 function asim(initial_state, numberofpassage, args, params)

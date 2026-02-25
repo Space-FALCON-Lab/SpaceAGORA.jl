@@ -839,6 +839,39 @@ end
         @test torque_oob == SVector{3, Float64}(0.0, 0.0, 0.0)
     end
 
+    @testset "calcControlMassFlowRate" begin
+        model = make_base_thruster_model(
+            thrust=2.0,
+            direction=0.0,
+            start_burn_time=50.0,
+            stop_burn_time=150.0,
+            Isp=300.0
+        )
+
+        mdot_pre = calcControlMassFlowRate(model, u, p, 1, 49.9)
+        @test mdot_pre == 0.0
+
+        mdot_on = calcControlMassFlowRate(model, u, p, 1, 100.0)
+        expected_mdot = -2.0 / (300.0 * 9.80665)
+        @test isapprox(mdot_on, expected_mdot; atol=1e-14, rtol=0.0)
+
+        mdot_post = calcControlMassFlowRate(model, u, p, 1, 150.1)
+        @test mdot_post == 0.0
+
+        model_bad_isp = make_base_thruster_model(
+            thrust=2.0,
+            direction=0.0,
+            start_burn_time=50.0,
+            stop_burn_time=150.0,
+            Isp=0.0
+        )
+        @test calcControlMassFlowRate(model_bad_isp, u, p, 1, 100.0) == 0.0
+
+        u_zero = ComponentVector(pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], mass=1.0, heat_loads=[0.0])
+        @test calcControlMassFlowRate(model, u_zero, p, 1, 100.0) == 0.0
+        @test calcControlMassFlowRate(model, u, p, 2, 100.0) == 0.0
+    end
+
     @testset "calcControlEffect!" begin
         model = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         state = build_initial_conditions(args)
@@ -1254,6 +1287,65 @@ end
     epsr = specific_energy(dfr, EARTH.μ)
     Δepsr = last(epsr) - first(epsr)
     @test Δepsr < -5e3
+end
+
+@testset "Control Mass Flow Coupling (End-to-End)" begin
+    sc_no_control = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=60.0)
+    args_no_control = build_config(
+        spacecraft=sc_no_control,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=180.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        control_effectors=(),
+        control_rates=Float64[],
+        keplerian=true,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=5.0)
+    )
+    df_no_control = run_case_silent(args_no_control)
+    @test "sc1_mass" in names(df_no_control)
+    mass_no_control = Vector{Float64}(df_no_control.sc1_mass)
+    @test maximum(abs.(mass_no_control .- first(mass_no_control))) < 1e-9
+
+    function run_burn_case(isp::Float64)
+        sc = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=60.0)
+        thruster = make_base_thruster_model(
+            thrust=600.0,
+            direction=0.0,
+            Δv=0.0,
+            start_burn_time=0.0,
+            stop_burn_time=80.0,
+            Isp=isp
+        )
+        args = build_config(
+            spacecraft=sc,
+            density_model=NoAtmosphereModel(),
+            orientation_sim=false,
+            mission_time=180.0,
+            EI_km=120.0,
+            dynamic_effectors=(InverseSquaredGravityModel(),),
+            control_effectors=(thruster,),
+            control_rates=[1.0],
+            keplerian=true,
+            tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=5.0)
+        )
+        return run_case_silent(args)
+    end
+
+    df_low_isp = run_burn_case(200.0)
+    df_high_isp = run_burn_case(400.0)
+
+    mass_low = Vector{Float64}(df_low_isp.sc1_mass)
+    mass_high = Vector{Float64}(df_high_isp.sc1_mass)
+    Δm_low = first(mass_low) - last(mass_low)
+    Δm_high = first(mass_high) - last(mass_high)
+
+    @test Δm_low > 5.0
+    @test Δm_high > 2.0
+    @test all(diff(mass_low) .<= 1e-7)
+    @test all(diff(mass_high) .<= 1e-7)
+    @test isapprox(Δm_low / Δm_high, 2.0; atol=0.08, rtol=0.0)
 end
 
 @testset "Control Callback Multi-Spacecraft Mapping" begin

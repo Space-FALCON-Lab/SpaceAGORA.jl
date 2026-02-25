@@ -110,19 +110,19 @@ This note documents the edge-case tests added for thruster-related functions and
 
 ### Resolved in this pass
 
-- `spacecraft_dynamics!` now explicitly assigns `du_view.mass = 0.0` and has regression coverage (`RHS Completeness: Mass Derivative`) for active/inactive paths.
+- `spacecraft_dynamics!` has explicit mass-derivative handling with regression coverage (`RHS Completeness: Mass Derivative`) for active/inactive paths.
 - Per-effector spacecraft slot semantics for `BaseThrusterModel` are now explicit: vector length must match `num_sats` in control callback setup, with a regression test that mismatched slots throw `ArgumentError`.
 - Near-circular maneuver gating surprise was addressed by allowing scheduling when `e <= 1e-8` (instead of relying only on `ν < π`), and a circular-orbit scheduling regression test was added.
 - Hot-path debug I/O side effects were gated behind environment flags:
   - `SPACEAGORA_DEBUG_CONTROL` for control-force `println` in dynamics loop.
   - `SPACEAGORA_DEBUG_THRUSTER` for `thruster_debug.csv` writes.
   - Tests now assert no debug file by default and file creation when debug flag is enabled.
-
-### Remaining Medium-Priority Finding
-
-- Finding: `Isp` is stored in `BaseThrusterModel` but currently unused in burn force/timing execution.
-  - Location: field definition in `src/physical_models/Thruster_models.jl`; control logic in `src/control/Propulsive_maneuvers.jl`.
-  - Why it matters: propulsion physics can diverge from user expectations (no propellant flow coupling to `Isp`).
-  - Recommended tests:
-    - If intentional: assert/document that `Isp` is metadata only.
-    - If not intentional: add mass-flow tests based on `mdot = T / (Isp*g0)` and verify monotonic mass decrease during burns.
+- `Isp` is now wired into propulsion mass flow:
+  - Added `calcControlMassFlowRate` with default `0.0` for generic control effectors.
+  - Added `BaseThrusterModel` mass-flow model: `mdot = -|F_control| / (Isp * g0)`.
+  - `spacecraft_dynamics!` now accumulates control mass flow and sets `du_view.mass` accordingly.
+  - CSV outputs now include per-spacecraft mass columns (`sc{i}_mass`).
+  - New tests verify:
+    - no-control mass constancy,
+    - monotonic mass decrease during burns,
+    - stronger mass depletion for lower `Isp` (ratio check).

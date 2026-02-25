@@ -84,6 +84,7 @@ function run_simulation(args::SimulationConfiguration)
             results_df[!, "sc$(i)_vel_1"] = [sol.u[t].sc[i].vel[1] for t in 1:length(sol.t)]
             results_df[!, "sc$(i)_vel_2"] = [sol.u[t].sc[i].vel[2] for t in 1:length(sol.t)]
             results_df[!, "sc$(i)_vel_3"] = [sol.u[t].sc[i].vel[3] for t in 1:length(sol.t)]
+            results_df[!, "sc$(i)_mass"] = [sol.u[t].sc[i].mass for t in 1:length(sol.t)]
             if args.mission_configuration.orientation_sim
                 results_df[!, "sc$(i)_q_1"] = [sol.u[t].sc[i].q[1] for t in 1:length(sol.t)]
                 results_df[!, "sc$(i)_q_2"] = [sol.u[t].sc[i].q[2] for t in 1:length(sol.t)]
@@ -121,6 +122,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p::ODEPar
             # Compute forces and torques using the dynamic effectors
             forces = MVector{3, Float64}(0.0, 0.0, 0.0)
             torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+            mass_rate = 0.0
             @inbounds for effector in dynamic_effectors
                 force, torque = calcForceTorque(effector, sc_view, p, i)
                 forces .+= force
@@ -130,6 +132,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p::ODEPar
             # Compute control forces and torques using the control effectors (if any)
                 @inbounds for control_effector in p.args.control_model.control_effectors
                     control_force, control_torque = calcControlForceTorque(control_effector, sc_view, p, i, t)
+                    control_mass_rate = calcControlMassFlowRate(control_effector, sc_view, p, i, t)
                     if debug_control && (norm(control_force) > 0.0 || norm(control_torque) > 0.0)
                         println("Applying control effect for spacecraft $i at time $t seconds:")
                         println("  Control force: $control_force")
@@ -138,12 +141,13 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p::ODEPar
                 # println("Control force for spacecraft $i at time $t seconds: $control_force")
                 forces .+= control_force
                 torques .+= control_torque
+                mass_rate += isfinite(control_mass_rate) ? control_mass_rate : 0.0
             end
 
             # Update the derivatives of position and velocity
             du_view.pos .= sc_view.vel
             du_view.vel .= forces / sc_view.mass
-            du_view.mass = 0.0 # No propellant flow model in this path; keep mass state constant.
+            du_view.mass = mass_rate
 
             if p.args.mission_configuration.orientation_sim
                 # Update the derivatives of orientation (quaternion) and angular velocity

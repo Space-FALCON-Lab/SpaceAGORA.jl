@@ -10,7 +10,7 @@ module ControlEffectors
     using ..GuidanceEffectors: AerobrakingCampaignPropulsiveManeuverGuidanceModel
 
     # Public members to export
-    export calcControlForceTorque, calcControlEffect!
+    export calcControlForceTorque, calcControlEffect!, calcControlMassFlowRate
 
     include("../control/Propulsive_maneuvers.jl")
 end

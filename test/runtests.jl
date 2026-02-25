@@ -588,6 +588,8 @@ end
     @test isdefined(sandbox, :_legacy_eom_ctrl_log_enabled)
     @test isdefined(sandbox, :_legacy_get_cnf)
     @test isdefined(sandbox, :_legacy_get_solution)
+    @test isdefined(sandbox, :_legacy_control_strict_exceptions)
+    @test isdefined(sandbox, :_legacy_control_exception_fallback)
 
     args_quiet = Dict{Symbol, Any}(:print_res => false, :verbose => false)
     args_print = Dict{Symbol, Any}(:print_res => true, :verbose => false)
@@ -643,6 +645,19 @@ end
     @test sandbox._legacy_get_cnf(Dict{Symbol, Any}(:cnf => local_cnf)).α == local_cnf.α
     local_solution = (orientation=(time=[1.0],),)
     @test sandbox._legacy_get_solution(Dict{Symbol, Any}(:solution => local_solution)).orientation.time[1] == 1.0
+    @test sandbox._legacy_control_strict_exceptions(args_quiet) == false
+    @test sandbox._legacy_control_strict_exceptions(Dict{Symbol, Any}(:strict_legacy_control_exceptions => true)) == true
+    withenv("SPACEAGORA_STRICT_LEGACY_CONTROL_EXCEPTIONS" => "1") do
+        @test sandbox._legacy_control_strict_exceptions(args_quiet) == true
+    end
+    err = ErrorException("legacy-control-fallback")
+    @test sandbox._legacy_control_exception_fallback(args_quiet, "unit-test", err, stacktrace(), 7.0) == 7.0
+    withenv("SPACEAGORA_DEBUG_LEGACY_CONTROL" => "1") do
+        @test_logs (:warn, r"Legacy control fallback in unit-test") sandbox._legacy_control_exception_fallback(args_quiet, "unit-test", err, stacktrace(), 8.0)
+    end
+    withenv("SPACEAGORA_STRICT_LEGACY_CONTROL_EXCEPTIONS" => "1") do
+        @test_throws ErrorException sandbox._legacy_control_exception_fallback(args_quiet, "unit-test", err, stacktrace(), 9.0)
+    end
     @test sandbox.control_solarpanels_heatrate(nothing, nothing, Dict{Symbol, Any}(), [0], nothing; cnf=local_cnf) == local_cnf.α
 end
 
@@ -1615,6 +1630,17 @@ end
         @test_nowarn calcControlEffect!(model_oob, state, p, 100.0, 2)
         @test model_oob.start_burn_time[1] == -1.0
         @test model_oob.stop_burn_time[1] == -1.0
+
+        helper = SimulationModel.ControlEffectors._control_effector_exception_fallback
+        p_dummy = (shared_buffers=(debug_control=Ref(false),),)
+        err_eff = ErrorException("control-effector-fallback")
+        @test helper(p_dummy, 1, err_eff, stacktrace()) === nothing
+        withenv("SPACEAGORA_DEBUG_CONTROL" => "1", "SPACEAGORA_STRICT_CONTROL_EXCEPTIONS" => "0") do
+            @test_logs (:warn, r"orbital-element conversion failed") helper(p_dummy, 1, err_eff, stacktrace())
+        end
+        withenv("SPACEAGORA_STRICT_CONTROL_EXCEPTIONS" => "1") do
+            @test_throws ErrorException helper(p_dummy, 1, err_eff, stacktrace())
+        end
     end
 
     @testset "schmitt_trigger" begin

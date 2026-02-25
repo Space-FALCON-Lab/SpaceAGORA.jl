@@ -1,5 +1,31 @@
 include("../utils/Reference_system.jl")
 using ComponentArrays
+using Logging
+
+@inline function _control_effector_log_enabled(p)::Bool
+    if get(ENV, "SPACEAGORA_DEBUG_CONTROL", "0") == "1"
+        return true
+    end
+    return try
+        hasproperty(p, :shared_buffers) &&
+        hasproperty(p.shared_buffers, :debug_control) &&
+        Bool(p.shared_buffers.debug_control[])
+    catch
+        false
+    end
+end
+
+@inline _control_effector_strict_exceptions() = get(ENV, "SPACEAGORA_STRICT_CONTROL_EXCEPTIONS", "0") == "1"
+
+@inline function _control_effector_exception_fallback(p, spacecraft_idx::Int, err, bt)
+    if _control_effector_log_enabled(p)
+        @warn "calcControlEffect! orbital-element conversion failed for spacecraft index $(spacecraft_idx); burn scheduling skipped." exception=(err, bt)
+    end
+    if _control_effector_strict_exceptions()
+        throw(err)
+    end
+    return nothing
+end
 
 """
 calcControlMassFlowRate(controlModel::AbstractControlEffectorModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
@@ -127,7 +153,8 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
     # Calculate the current orbital elements from the state vector
     oe = try
         rvtoorbitalelement(pos, vel, p.args.environment_model.planet)
-    catch
+    catch err
+        _control_effector_exception_fallback(p, i, err, catch_backtrace())
         return
     end
     a, e, _, _, _, ν = oe

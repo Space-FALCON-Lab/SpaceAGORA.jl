@@ -26,6 +26,7 @@ end
 
 using SpecialFunctions
 using Roots
+using Logging
 
 @inline function _legacy_control_log_enabled(args)::Bool
     if get(ENV, "SPACEAGORA_DEBUG_LEGACY_CONTROL", "0") == "1"
@@ -35,6 +36,26 @@ using Roots
         return Bool(get(args, :print_res, false)) || Bool(get(args, :verbose, false))
     end
     return false
+end
+
+@inline function _legacy_control_strict_exceptions(args)::Bool
+    if get(ENV, "SPACEAGORA_STRICT_LEGACY_CONTROL_EXCEPTIONS", "0") == "1"
+        return true
+    end
+    if args isa AbstractDict
+        return Bool(get(args, :strict_legacy_control_exceptions, false))
+    end
+    return false
+end
+
+@inline function _legacy_control_exception_fallback(args, location::AbstractString, err, bt, fallback)
+    if _legacy_control_log_enabled(args)
+        @warn "Legacy control fallback in $(location)." exception=(err, bt)
+    end
+    if _legacy_control_strict_exceptions(args)
+        throw(err)
+    end
+    return fallback
 end
 
 if !isdefined(@__MODULE__, :LEGACY_CONTROL_STATE_LOCK)
@@ -86,9 +107,8 @@ function control_struct_load(ip, m, args, S, T_p, q, MonteCarlo=false)
     elseif (drag_max >= drag_limit) && (drag_min <= drag_limit)
         try
             α = find_zero(f, (0, pi/2), Roots.Bisection())
-        catch
-            # println("Check - heat rate controller does not converge")
-            α = min_α
+        catch err
+            α = _legacy_control_exception_fallback(args, "control_struct_load.find_zero", err, catch_backtrace(), min_α)
         end
     else
         if _legacy_control_log_enabled(args)
@@ -171,7 +191,10 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
                     α = find_zero((f, df), 1e-1, Roots.Newton())
                 end
 
-            catch
+            catch err
+                if _legacy_control_log_enabled(args)
+                    @warn "Legacy control Newton solve failed; trying alternate initial guess." exception=(err, catch_backtrace())
+                end
 
             # if α < 0 || α > pi/2
                 try
@@ -181,10 +204,8 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
                         x_0 = 2 * max_α / 6
                         α = find_zero((f, df), x_0, Roots.Newton())
                     end
-                catch
-                # if α < 0 || α > pi/2
-                    # println("Check - heat rate controller does not converge")
-                    α = min_α
+                catch err_retry
+                    α = _legacy_control_exception_fallback(args, "control_solarpanels_heatrate.find_zero", err_retry, catch_backtrace(), min_α)
                 # end
                 end
             # end

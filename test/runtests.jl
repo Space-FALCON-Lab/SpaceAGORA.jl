@@ -333,6 +333,29 @@ function run_case_silent(args::SimulationConfiguration)
     end
 end
 
+function run_case_capture_stdout(args::SimulationConfiguration; expect_results_csv::Bool=true)
+    return mktempdir() do tmp
+        cd(tmp) do
+            output = ""
+            mktemp() do path, io
+                redirect_stdout(io) do
+                    run_simulation(args)
+                end
+                flush(io)
+                seekstart(io)
+                output = read(io, String)
+            end
+            if expect_results_csv
+                @test isfile("simulation_results.csv")
+                return CSV.read("simulation_results.csv", DataFrame), output
+            else
+                @test !isfile("simulation_results.csv")
+                return DataFrame(), output
+            end
+        end
+    end
+end
+
 function run_case_via_run_analysis(args::SimulationConfiguration; expect_results_csv::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
@@ -586,6 +609,97 @@ end
         tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
     )
     _ = run_case_via_run_analysis(args_no_results; expect_results_csv=false)
+end
+
+@testset "Verbose Gating for Callback/Runtime Logs" begin
+    settings_quiet = SimulationSettings(
+        results=true,
+        verbose=false,
+        generate_plots=false,
+        results_directory="output",
+        save_csv=true
+    )
+    settings_verbose = SimulationSettings(
+        results=true,
+        verbose=true,
+        generate_plots=false,
+        results_directory="output",
+        save_csv=true
+    )
+
+    args_orbit_quiet = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=400e3, ν_deg=175.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=400.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=settings_quiet,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    _, out_orbit_quiet = run_case_capture_stdout(args_orbit_quiet)
+    @test !occursin("Initial conditions:", out_orbit_quiet)
+    @test !occursin("Orbit ", out_orbit_quiet)
+
+    args_orbit_verbose = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=400e3, ν_deg=175.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=400.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=settings_verbose,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    _, out_orbit_verbose = run_case_capture_stdout(args_orbit_verbose)
+    @test occursin("Initial conditions:", out_orbit_verbose)
+    @test occursin("Orbit ", out_orbit_verbose)
+
+    args_drag_quiet = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=220e3, rp_alt_m=100e3, ν_deg=180.0),
+        density_model=ConstantDensityModel(1e-6, 240.0),
+        orientation_sim=false,
+        mission_time=700.0,
+        EI_km=140.0,
+        dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+        keplerian=false,
+        simulation_settings=settings_quiet,
+        tolerances=IntegrationTolerances(
+            reltol_orbit=1e-8,
+            abstol_orbit=1e-8,
+            reltol_atmosphere=1e-8,
+            abstol_atmosphere=1e-8,
+            dt_max_orbit=5.0,
+            dt_max_atmosphere=0.2
+        )
+    )
+    _, out_drag_quiet = run_case_capture_stdout(args_drag_quiet)
+    @test !occursin("Switching to atmosphere integration", out_drag_quiet)
+    @test !occursin("Impact detected", out_drag_quiet)
+
+    args_drag_verbose = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=220e3, rp_alt_m=100e3, ν_deg=180.0),
+        density_model=ConstantDensityModel(1e-6, 240.0),
+        orientation_sim=false,
+        mission_time=700.0,
+        EI_km=140.0,
+        dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+        keplerian=false,
+        simulation_settings=settings_verbose,
+        tolerances=IntegrationTolerances(
+            reltol_orbit=1e-8,
+            abstol_orbit=1e-8,
+            reltol_atmosphere=1e-8,
+            abstol_atmosphere=1e-8,
+            dt_max_orbit=5.0,
+            dt_max_atmosphere=0.2
+        )
+    )
+    _, out_drag_verbose = run_case_capture_stdout(args_drag_verbose)
+    @test occursin("Switching to atmosphere integration", out_drag_verbose)
+    @test occursin("Impact detected", out_drag_verbose)
 end
 
 @testset "Orbital Elements Round-Trip Invariant" begin

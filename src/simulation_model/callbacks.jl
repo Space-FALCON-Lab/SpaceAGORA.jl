@@ -14,6 +14,8 @@ using ..GuidanceEffectors: calcGuidanceEffect!
 using ..SimConfig: SimulationConfiguration
 export get_callbacks
 
+@inline callback_verbose(integrator) = integrator.p.args.simulation_settings.verbose
+
 function get_callbacks(num_sats::Int, effectors::Tuple, args::SimulationConfiguration)::CallbackSet
     
     callbacks = CallbackSet(get_impact_callback(num_sats),
@@ -103,10 +105,14 @@ function get_impact_callback(num_sats::Int)
         # Check for impacts and log them (placeholder logic)
         @inbounds for i in 1:num_sats
             if p.is_active[i] && abs(norm(u.sc[i].pos) - p.args.environment_model.planet.Rp_e) < 50e3 # Example condition for impact (e.g., altitude below 80 km)
-                println("Impact detected for satellite $i at time $(integrator.t) seconds!")
+                if callback_verbose(integrator)
+                    println("Impact detected for satellite $i at time $(integrator.t) seconds!")
+                end
                 p.is_active[i] = false # Mark the satellite as inactive after impact
                 if all(p.is_active .== false) # If all satellites are inactive, we can stop the simulation
-                    println("All satellites have impacted. Stopping simulation.")
+                    if callback_verbose(integrator)
+                        println("All satellites have impacted. Stopping simulation.")
+                    end
                     terminate!(integrator)
                 end
                 # Log impact details to a file or data structure as needed
@@ -136,7 +142,9 @@ function get_orbit_end_callback(num_sats::Int)
 
         p.orbit_counter[idx] += 1 # Increment the orbit counter in the shared buffers
         # Check for orbit completion and log it (placeholder logic)
-        println("Orbit $(p.orbit_counter[idx]) completed by Satellite $idx at time $(integrator.t) seconds!")
+        if callback_verbose(integrator)
+            println("Orbit $(p.orbit_counter[idx]) completed by Satellite $idx at time $(integrator.t) seconds!")
+        end
     end
 
     return VectorContinuousCallback(condition!, affect!, nothing, num_sats)
@@ -157,7 +165,9 @@ function get_drag_state_callback(num_sats::Int)
     function affect_upcrossing!(integrator, idx::Int64)
         p = integrator.p
         u = integrator.u
-        println("Switching to space integration at time $(integrator.t) seconds!")
+        if callback_verbose(integrator)
+            println("Switching to space integration at time $(integrator.t) seconds!")
+        end
         # sleep(3.0)
         integrator.opts.dtmax = p.args.integration_tolerances.dt_max_orbit # Increase the maximum timestep when exiting the atmosphere
         integrator.opts.reltol = p.args.integration_tolerances.reltol_orbit # Adjust the tolerances when exiting the atmosphere
@@ -167,7 +177,9 @@ function get_drag_state_callback(num_sats::Int)
     function affect_downcrossing!(integrator, idx::Int64)
         p = integrator.p
         u = integrator.u
-        println("Switching to atmosphere integration at time $(integrator.t) seconds!")
+        if callback_verbose(integrator)
+            println("Switching to atmosphere integration at time $(integrator.t) seconds!")
+        end
         # sleep(3.0)
         integrator.opts.dtmax = p.args.integration_tolerances.dt_max_atmosphere # Decrease the maximum timestep when entering the atmosphere
         integrator.opts.reltol = p.args.integration_tolerances.reltol_atmosphere # Adjust the tolerances when entering the atmosphere
@@ -254,7 +266,9 @@ function get_periapsis_save_callback(num_sats::Int)
         p = integrator.p
         u = integrator.u
 
-        println("Periapsis reached for Satellite $idx at time $(integrator.t) seconds!")
+        if callback_verbose(integrator)
+            println("Periapsis reached for Satellite $idx at time $(integrator.t) seconds!")
+        end
         # Save the state at periapsis to a file or data structure as needed
     end
 

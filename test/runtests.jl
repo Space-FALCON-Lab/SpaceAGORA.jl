@@ -813,7 +813,13 @@ end
             rtol=0.0
         )
 
-        # Regression: once auto-scheduled, callback should not keep shifting the same window.
+        # Pre-ignition tracking: a future scheduled window should be retimed.
+        model_track = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=10_000.0, stop_burn_time=11_000.0)
+        calcControlEffect!(model_track, state, p, 100.0, 1)
+        @test model_track.start_burn_time[1] != 10_000.0
+        @test model_track.stop_burn_time[1] != 11_000.0
+
+        # Post-ignition lock: once burn start time has been reached, keep fixed.
         s_sched = model.start_burn_time[1]
         e_sched = model.stop_burn_time[1]
         calcControlEffect!(model, state, p, 120.0, 1)

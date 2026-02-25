@@ -59,10 +59,11 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
     if i < 1 || i > length(controlModel.start_burn_time)
         return
     end
-    # If a valid burn window is already scheduled, keep it fixed.
+    # Default behavior: track/recenter the burn window until ignition,
+    # then lock it once the burn has started.
     start_time = controlModel.start_burn_time[i]
     stop_time = controlModel.stop_burn_time[i]
-    if isfinite(start_time) && isfinite(stop_time) && stop_time > start_time
+    if isfinite(start_time) && isfinite(stop_time) && stop_time > start_time && t >= start_time - 1e-9
         return
     end
     pos = SVector{3, Float64}(u.sc[i].pos)

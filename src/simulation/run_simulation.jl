@@ -12,8 +12,10 @@ using Polyester
 function run_simulation(args::SimulationConfiguration)
     # Set up the model and initial conditions
     initial_conditions = build_initial_conditions(args)
-    println("Initial conditions:")
-    println(initial_conditions)
+    if args.simulation_settings.verbose
+        println("Initial conditions:")
+        println(initial_conditions)
+    end
 
     # Define the ODE problem
     p = ODEParams{length(args.dynamics_model.spacecraft)}(args=args) # Define the parameters for the ODE problem, including the shared buffers for the callbacks

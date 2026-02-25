@@ -16,6 +16,9 @@ using Arrow
 
 function aerobraking_campaign(args)
     save_res = args.simulation_settings.results
+    filename = ""
+    arrow_filename = ""
+    arrow_writer = nothing
 
     # mission = Dict(:Purpose => purpose,
     #                :Planet => args[:planet],
@@ -328,9 +331,10 @@ function aerobraking_campaign(args)
         if args.simulation_settings.save_csv
             filename = name * ".csv"
             # if the file already exists, clear the current data
-            if filesize(filename) > 0 
-                file = open(filename, "w")
-                truncate(file, 0)
+            if isfile(filename) && filesize(filename) > 0
+                open(filename, "w") do file
+                    truncate(file, 0)
+                end
             end
         end
 
@@ -363,9 +367,11 @@ function aerobraking_campaign(args)
 
     # Finalize the arrow writer if plotting is enabled
     # if args[:plot] == true
-    close(arrow_writer)
-    if args.simulation_settings.verbose
-        println("Arrow writer closed. Data saved to: " * arrow_filename)
+    if arrow_writer !== nothing
+        close(arrow_writer)
+        if args.simulation_settings.verbose
+            println("Arrow writer closed. Data saved to: " * arrow_filename)
+        end
     end
     # end
     # Print final results

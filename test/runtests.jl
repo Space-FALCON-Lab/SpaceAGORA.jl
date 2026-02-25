@@ -16,6 +16,8 @@ using .SimulationModel
 # run_simulation.jl expects quat_mult in the including scope.
 const quat_mult = SimulationModel.quat_mult
 include(joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"))
+# Legacy wrappers (run_analysis/aerobraking_campaign).
+include(joinpath(REPO_ROOT, "src", "simulation", "Run.jl"))
 
 struct ConstantDensityModel <: SimulationModel.AbstractDensityModel
     rho::Float64
@@ -190,6 +192,7 @@ function build_config(;
     control_effectors::Tuple=(),
     control_rates::Vector{Float64}=Float64[],
     keplerian::Bool=true,
+    simulation_settings::SimulationSettings=SimulationSettings(results=true, verbose=false, generate_plots=false),
     tolerances::IntegrationTolerances=IntegrationTolerances(),
     initial_time::InitialTime=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
 )
@@ -203,7 +206,7 @@ function build_config(;
     )
 
     return SimulationConfiguration(
-        simulation_settings=SimulationSettings(results=true, verbose=false, generate_plots=false),
+        simulation_settings=simulation_settings,
         mission_configuration=MissionConfiguration(
             mission_type="Time",
             keplerian=keplerian,
@@ -232,6 +235,7 @@ function build_config_multi(;
     control_effectors::Tuple=(),
     control_rates::Vector{Float64}=Float64[],
     keplerian::Bool=true,
+    simulation_settings::SimulationSettings=SimulationSettings(results=true, verbose=false, generate_plots=false),
     tolerances::IntegrationTolerances=IntegrationTolerances(),
     initial_time::InitialTime=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
 )
@@ -245,7 +249,7 @@ function build_config_multi(;
     )
 
     return SimulationConfiguration(
-        simulation_settings=SimulationSettings(results=true, verbose=false, generate_plots=false),
+        simulation_settings=simulation_settings,
         mission_configuration=MissionConfiguration(
             mission_type="Time",
             keplerian=keplerian,
@@ -325,6 +329,23 @@ function run_case_silent(args::SimulationConfiguration)
             end
             @test isfile("simulation_results.csv")
             return CSV.read("simulation_results.csv", DataFrame)
+        end
+    end
+end
+
+function run_case_via_run_analysis(args::SimulationConfiguration; expect_results_csv::Bool=true)
+    return mktempdir() do tmp
+        cd(tmp) do
+            redirect_stdout(devnull) do
+                run_analysis(args)
+            end
+            if expect_results_csv
+                @test isfile("simulation_results.csv")
+                return CSV.read("simulation_results.csv", DataFrame)
+            else
+                @test !isfile("simulation_results.csv")
+                return DataFrame()
+            end
         end
     end
 end
@@ -471,6 +492,100 @@ end
         @test norm(p1 - p2) < 0.1
         @test norm(v1 - v2) < 1e-4
     end
+end
+
+@testset "Legacy Wrapper Parity + Robustness" begin
+    sc = make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0)
+    settings = SimulationSettings(
+        results=true,
+        verbose=false,
+        generate_plots=false,
+        results_directory="output",
+        save_csv=true
+    )
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=900.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=settings,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+
+    df_direct = run_case_silent(args)
+    df_wrapper = run_case_via_run_analysis(args)
+
+    @test nrow(df_direct) == nrow(df_wrapper)
+    @test nrow(df_wrapper) > 10
+    sample_idxs = round.(Int, range(1, nrow(df_direct), length=8))
+    for idx in sample_idxs
+        t = Float64(df_direct.time[idx])
+        p_direct = SVector{3, Float64}(Float64(df_direct.sc1_pos_1[idx]), Float64(df_direct.sc1_pos_2[idx]), Float64(df_direct.sc1_pos_3[idx]))
+        v_direct = SVector{3, Float64}(Float64(df_direct.sc1_vel_1[idx]), Float64(df_direct.sc1_vel_2[idx]), Float64(df_direct.sc1_vel_3[idx]))
+        p_wrapper = SVector{3, Float64}(
+            interp_linear(df_wrapper.time, df_wrapper.sc1_pos_1, t),
+            interp_linear(df_wrapper.time, df_wrapper.sc1_pos_2, t),
+            interp_linear(df_wrapper.time, df_wrapper.sc1_pos_3, t)
+        )
+        v_wrapper = SVector{3, Float64}(
+            interp_linear(df_wrapper.time, df_wrapper.sc1_vel_1, t),
+            interp_linear(df_wrapper.time, df_wrapper.sc1_vel_2, t),
+            interp_linear(df_wrapper.time, df_wrapper.sc1_vel_3, t)
+        )
+        @test norm(p_direct - p_wrapper) < 0.1
+        @test norm(v_direct - v_wrapper) < 1e-4
+    end
+
+    settings_no_csv = SimulationSettings(
+        results=true,
+        verbose=false,
+        generate_plots=false,
+        results_directory="output",
+        save_csv=false
+    )
+    args_no_csv = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=settings_no_csv,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    mktempdir() do tmp
+        cd(tmp) do
+            redirect_stdout(devnull) do
+                run_analysis(args_no_csv)
+            end
+            @test isfile("simulation_results.csv")
+            @test isfile(joinpath("output", "results.feather"))
+        end
+    end
+
+    settings_no_results = SimulationSettings(
+        results=false,
+        verbose=false,
+        generate_plots=false,
+        results_directory="output",
+        save_csv=false
+    )
+    args_no_results = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=settings_no_results,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    _ = run_case_via_run_analysis(args_no_results; expect_results_csv=false)
 end
 
 @testset "Orbital Elements Round-Trip Invariant" begin

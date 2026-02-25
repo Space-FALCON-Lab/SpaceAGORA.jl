@@ -1,98 +1,118 @@
+@inline _legacy_key(x) = lowercase(strip(replace(string(x), r"[_-]+" => " ")))
+
+@inline function _legacy_mission_planet_id(x)::Int
+    key = _legacy_key(x)
+    if x isa Integer
+        pid = Int(x)
+        if pid in (0, 1, 2, 3, 7)
+            return pid
+        end
+    elseif key == "earth"
+        return 0
+    elseif key == "mars"
+        return 1
+    elseif key == "venus"
+        return 2
+    elseif key == "sun"
+        return 3
+    elseif key == "titan"
+        return 7
+    end
+    return 1 # legacy default (Mars)
+end
+
 function mission_def(mission::Dict{Symbol, Any})
 
     e, d, l, a = 0, 0, 0, 1     # e = Entry, d = Descent, l = Landing, a = Aerobraking : 0 - No, 1 - Yes
+    planet_val = get(mission, :Planet, 1)
+    p = _legacy_mission_planet_id(planet_val)
 
-    if (mission[:Planet] == 0 || (typeof(mission[:Planet]) == String && cmp(lowercase(mission[:Planet]), "earth") == 0)) # Earth
-        p = 0
-    elseif (mission[:Planet] == 1 || (typeof(mission[:Planet]) == String && cmp(lowercase(mission[:Planet]), "mars") == 0)) # Mars
-        p = 1
-    elseif (mission[:Planet] == 2 || (typeof(mission[:Planet]) == String && cmp(lowercase(mission[:Planet]), "venus") == 0)) # Venus
-        p = 2
-    elseif (mission[:Planet] == 3 || (typeof(mission[:Planet]) == String && cmp(lowercase(mission[:Planet]), "sun") == 0)) # Sun
-        p = 3
-    elseif ((mission[:Planet] == 7 || (typeof(mission[:Planet]) == String && cmp(lowercase(mission[:Planet]), "titan") == 0))) # Titan
-        p = 7
-    else
-        p = 1
-    end
+    grav_key = _legacy_key(get(mission, :Gravity_Model, "Inverse Squared"))
+    dens_key = _legacy_key(get(mission, :Density_Model, "Exponential"))
+    aero_key = _legacy_key(get(mission, :Aerodynamic_Model, "Cd and Cl Constant"))
+    shape_key = _legacy_key(get(mission, :Shape, "Spacecraft"))
+    thermal_key = _legacy_key(get(mission, :Thermal_Model, "Convective and Radiative"))
+    firing_key = _legacy_key(get(mission, :Firings, "None"))
 
     M = Mission(e, d, l, a, p)
 
     # Gravity Model Selection
-    if uppercase(mission[:Gravity_Model]) == "CONSTANT"
+    if grav_key == "constant"
         gm = 0
-    elseif uppercase(mission[:Gravity_Model]) == "INVERSE SQUARED"
+    elseif grav_key == "inverse squared"
         gm = 1
-    elseif uppercase(mission[:Gravity_Model]) == "INVERSE SQUARED AND J2 EFFECT"
+    elseif grav_key == "inverse squared and j2 effect"
         gm = 2
-    elseif uppercase(mission[:Gravity_Model]) == "GRAM"
+    elseif grav_key == "gram"
         gm = 3
     else
         gm = 1
     end
 
     # Density Model Selection
-    if uppercase(mission[:Density_Model]) == "CONSTANT"
+    if dens_key == "constant"
         dm = 0
-    elseif uppercase(mission[:Density_Model]) == "EXPONENTIAL"
+    elseif dens_key == "exponential"
         dm = 1
-    elseif uppercase(mission[:Density_Model]) == "NO-DENSITY"
+    elseif dens_key == "no density"
         dm = 2
-    elseif uppercase(mission[:Density_Model]) == "GRAM"
+    elseif dens_key == "gram"
         dm = 3
-    elseif uppercase(mission[:Density_Model]) == "NRLMSISE"
+    elseif dens_key == "nrlmsise"
         dm = 4
     else
         dm = 1
     end
 
     # Wind
-    wm = Int64(mission[:Wind])
+    wm = Int64(get(mission, :Wind, 0))
 
     # Aerodynamic Model Selection
-    if mission[:Aerodynamic_Model] == "Cd and Cl Constant" || mission[:Aerodynamic_Model] == "Cd and Cl constant"
+    if aero_key in ("cd and cl constant",)
         am = 0
-    elseif mission[:Aerodynamic_Model] == "Diffusive" || mission[:Aerodynamic_Model] == "Mach-dependent" &&  mission[:Shape] == "Spacecraft"
+    elseif aero_key == "diffusive" || (aero_key == "mach dependent" && shape_key == "spacecraft")
         am = 1
-    elseif mission[:Aerodynamic_Model] == "No-Balistic flight with axial coefficent" || mission[:Aerodynamic_Model] == "No-ballistic flight with axial coefficient" && mission[:Shape] == "Blunted Cone"
+    elseif aero_key in ("no balistic flight with axial coefficent", "no ballistic flight with axial coefficient") &&
+           shape_key == "blunted cone"
         am = 2
     else
         am = 0
     end
     
     # Control Mode
-    if mission[:Control] == 3
+    control_val = get(mission, :Control, 0)
+    if control_val == 3
         cm = 3
-    elseif mission[:Control] == 2
+    elseif control_val == 2
         cm = 2
-    elseif mission[:Control] == 1
+    elseif control_val == 1
         cm = 1
     else
         cm = 0
     end
 
     # Thrust Control
-    if mission[:Firings] == "None"
+    if firing_key == "none"
         tc = 0
-    elseif mission[:Firings] == "Aerobraking Maneuver"
+    elseif firing_key == "aerobraking maneuver"
         tc = 1
-    elseif mission[:Firings] == "Drag Passage Firing"
+    elseif firing_key == "drag passage firing"
         tc = 2
     else
         tc = 0
     end
 
     # Thermal Model
-    if mission[:Thermal_Model] == "convective and radiative" || mission[:Thermal_Model] == "Convective and Radiative"
+    if thermal_key == "convective and radiative"
         tm = 1
-    elseif mission[:Thermal_Model] == "Maxwellian Heat Transfer" || mission[:Thermal_Model] == "Shaaf and Chambre"
+    elseif thermal_key in ("maxwellian heat transfer", "shaaf and chambre")
         tm = 2
     else
         tm = 1
     end
 
     # MonteCarlo
-    mc = Int64(mission[:Monte_Carlo])
+    mc = Int64(get(mission, :Monte_Carlo, 0))
 
 
     ip = InitialParameters(M, gm, dm, wm, am, tm, cm, tc, mc)

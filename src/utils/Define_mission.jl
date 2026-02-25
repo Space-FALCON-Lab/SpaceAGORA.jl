@@ -1,58 +1,82 @@
 
+@inline _legacy_token(x) = lowercase(strip(replace(string(x), r"[_-]+" => " ")))
+
+@inline function _legacy_mission_kind(x)::Symbol
+    key = _legacy_token(x)
+    if key in ("drag passage",)
+        return :drag_passage
+    elseif key in ("entry",)
+        return :entry
+    elseif key in ("orbits", "orbit", "missionorbits")
+        return :orbits
+    elseif key in ("time", "missiontime")
+        return :time
+    elseif key in ("aerobraking campaign",)
+        return :campaign
+    end
+    return :unknown
+end
+
 function def_miss(args)
     """
 
     """
 
-    if args[:type_of_mission] == "Drag Passage" || args[:type_of_mission] == "Entry"
+    mission_kind = _legacy_mission_kind(get(args, :type_of_mission, "Time"))
+    if mission_kind == :drag_passage || mission_kind == :entry
         args[:drag_passage] = 1
         args[:number_of_orbits] = 1
-    elseif args[:type_of_mission] == "Orbits" || args[:type_of_mission] == "Time"
+    elseif mission_kind == :orbits || mission_kind == :time
         args[:drag_passage] = 0
         # args[:number_of_orbits] = args[:number_of_orbits]
-    elseif args[:type_of_mission] == "Aerobraking Campaign"
+    elseif mission_kind == :campaign
         args[:drag_passage] = 0
         args[:number_of_orbits] = 1000
     end
 
-    if args[:body_shape] == "Spacecraft"
-        if args[:aerodynamic_model] == "No-Ballistic flight with axial coefficient"
+    body_shape = _legacy_token(get(args, :body_shape, "Spacecraft"))
+    aerodynamic_model = _legacy_token(get(args, :aerodynamic_model, "Mach-dependent"))
+    thermal_model = _legacy_token(get(args, :thermal_model, "Maxwellian Heat Transfer"))
+    thrust_control = _legacy_token(get(args, :thrust_control, "None"))
+
+    if body_shape == "spacecraft"
+        if aerodynamic_model in ("no ballistic flight with axial coefficient", "no balistic flight with axial coefficent")
             args[:aerodynamic_model] = "Mach-dependent"
             println("--AERODYNAMIC MODEL CHANGED TO: MACH-dependent - Specific for a flat-plate--")
         end
 
-        if args[:thermal_model] != "Maxwellian Heat Transfer"
+        if thermal_model != "maxwellian heat transfer"
             args[:thermal_model] = "Maxwellian Heat Transfer"
             println("--THERMAL MODEL CHANGED TO: Maxwellian Heat Transfer - Specific for a flat-plate--")
         end
-    elseif args[:body_shape] == "Blunted Cone"
-        if args[:aerodynamic_model] == "Mach-dependent"
+    elseif body_shape == "blunted cone"
+        if aerodynamic_model == "mach dependent"
             args[:aerodynamic_model] = "No-Ballistic flight with axial coefficient"
             println("--AERODYNAMIC MODEL CHANGED TO: No-Ballistic flight with axial coefficient - Specific for a blunted cone--")
         end
 
-        if args[:thermal_model] != "Convective and Radiative"
+        if thermal_model != "convective and radiative"
             args[:thermal_model] = "Convective and Radiative"
             println("--THERMAL MODEL CHANGED TO: Convective and Radiative - Specific for a blunted cone--")
         end
 
-        if args[:control_mode] != 0
+        if get(args, :control_mode, 0) != 0
             args[:control_mode] = 0
             println("--ARTICULATED SOLAR PANELS GUIDANCE NOT ALLOWED FOR BLUNTED CONE--")
         end
     end
 
-    if args[:thrust_control] == "None"
+    if thrust_control == "none"
         args[:thrust] = args[:thrust]
         args[:delta_v] = 0
-    elseif args[:thrust_control] == "Aerobraking Maneuver"
+    elseif thrust_control == "aerobraking maneuver"
         args[:thrust] = args[:thrust]
         args[:delta_v] = args[:delta_v]
 
-        if args[:type_of_mission] == "Drag Passage"
+        if mission_kind == :drag_passage
             args[:thrust_control] = "None"
         end
-    elseif args[:thrust_control] == "Drag Passage Firing"
+    elseif thrust_control == "drag passage firing"
         args[:thrust] = args[:thrust]
         args[:delta_v] = args[:delta_v]
 

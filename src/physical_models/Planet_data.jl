@@ -1,6 +1,33 @@
 include("../physical_models/Planet_shapes.jl")
+using StaticArrays
+
+@inline function _legacy_parse_planet_id(ip)::Int
+    if ip isa Integer
+        pid = Int(ip)
+        if 0 <= pid <= 7
+            return pid
+        end
+    elseif ip isa AbstractString || ip isa Symbol
+        key = lowercase(strip(String(ip)))
+        mapping = Dict(
+            "earth" => 0,
+            "mars" => 1,
+            "venus" => 2,
+            "sun" => 3,
+            "moon" => 4,
+            "jupiter" => 5,
+            "saturn" => 6,
+            "titan" => 7
+        )
+        if haskey(mapping, key)
+            return mapping[key]
+        end
+    end
+    throw(ArgumentError("Unsupported planet identifier $(repr(ip)); expected 0-7 or one of Earth/Mars/Venus/Sun/Moon/Jupiter/Saturn/Titan."))
+end
 
 function planet_data(ip)
+    planet_id = _legacy_parse_planet_id(ip)
 
     # try
     #     if haskey(ip, :planet)
@@ -10,7 +37,7 @@ function planet_data(ip)
     #     nothing
     # end
 
-    if (ip == 0 || (typeof(ip) == String && cmp(lowercase(ip), "earth") == 0)) # Earth
+    if planet_id == 0 # Earth
         Rp_e = 6.3781e6            # equatorial radius, m
         Rp_p = 6.3568e6            # polar radius, m
         Rp_m = 6.3710e6            # volumetric mean radius, m
@@ -36,7 +63,7 @@ function planet_data(ip)
         topography_function = Earth_elevation! # Earth topography function
         polyfit_coeffs = [-1.7539409645214832e-57, 2.735656076315809e-53, -1.8243490769488347e-49, 6.504765617793163e-46, -1.1637408657034938e-42, 8.044884138893168e-41, 4.264962263039017e-36, -7.651115834387683e-33, -3.188248308052816e-30, 3.8370830656820503e-26, -8.557502178008995e-23, 1.137879849173412e-19, -1.0408232216096158e-16, 6.834085016894604e-14, -3.2506596548183e-11, 1.1089006707870246e-08, -2.639423772958483e-06, 0.0004165844083994442, -0.03967261693733797, 1.8349343859319074, -38.14918904018883]
         name = "earth"
-    elseif (ip == 1 || (typeof(ip) == String && cmp(lowercase(ip), "mars") == 0)) # Mars
+    elseif planet_id == 1 # Mars
         Rp_e = 3.3962e6 #3.3962    # equatorial radius, m
         Rp_p = 3.3762e6 #3.3762    # polar radius, m
         Rp_m = 3.3895e6            # volumetric mean radius, m
@@ -62,7 +89,7 @@ function planet_data(ip)
         topography_function = Mars_elevation! # Mars topography function
         polyfit_coeffs = [-3.691310097181554e-58, 5.819173546214448e-54, -3.9285937578286423e-50, 1.4222601230188116e-46, -2.606951392190571e-43, 3.2943551967480965e-41, 9.394166176413728e-37, -1.7651753457891617e-33, -5.79069281873952e-31, 8.639557954110502e-27, -1.991207114225621e-23, 2.7207390647640917e-20, -2.5611296697872007e-17, 1.7386922029136165e-14, -8.619727907575625e-12, 3.1040218147963276e-09, -7.949080301839893e-07, 0.00013834108975291533, -0.014729001168514675, 0.6707044510751348, -19.414578139119545]
         name = "mars"
-    elseif (ip == 2 || (typeof(ip) == String && cmp(lowercase(ip), "venus") == 0)) # Venus
+    elseif planet_id == 2 # Venus
         Rp_e = 6.0518e6            # equatorial radius, m
         Rp_p = 6.0518e6            # polar radius, m
         Rp_m = 6.0518e6            # volumetric mean radius, m
@@ -88,7 +115,7 @@ function planet_data(ip)
         topography_function = Venus_elevation! # Venus topography function
         polyfit_coeffs = [1.295014716586507e-57, -1.920381283790201e-53, 1.2024671159968765e-49, -3.931503383921753e-46, 5.985870736864543e-43, 2.115956905107091e-40, -2.4659597875857534e-36, 3.0591710987549437e-33, 3.951465781537392e-30, -1.8949093746237393e-26, 3.123829612747949e-23, -2.928033666820754e-20, 1.5168683041510048e-17, -1.5135241597177884e-15, -3.865230229956326e-12, 3.1328117105612896e-09, -1.2501690556294552e-06, 0.00028978339946121796, -0.03741075092352375, 2.149847471180469, -43.08275565785116]
         name = "venus"
-    elseif (ip == 3 || (typeof(ip) == String && cmp(lowercase(ip), "sun") == 0)) # Sun
+    elseif planet_id == 3 # Sun
         Rp_e = 6.9634e8            # equatorial radius, m
         Rp_p = 6.9634e8            # polar radius, m
         Rp_m = 6.9634e8            # volumetric mean radius, m
@@ -113,7 +140,7 @@ function planet_data(ip)
         topography_function = (args, Clm, Slm, latitude, longitude) -> 0.0
         polyfit_coeffs = zeros(1)
         name = "sun"
-    elseif (ip == 4 || (typeof(ip) == String && cmp(lowercase(ip), "moon") == 0)) # Moon
+    elseif planet_id == 4 # Moon
         Rp_e = 1.7381e6            # equatorial radius, m
         Rp_p = 1.7360e6            # polar radius, m
         Rp_m = 1.7374e6            # volumetric mean radius, m
@@ -138,7 +165,7 @@ function planet_data(ip)
         topography_function = (args, Clm, Slm, latitude, longitude) -> 0.0
         polyfit_coeffs = zeros(1)
         name = "moon"
-    elseif (ip == 5 || (typeof(ip) == String && cmp(lowercase(ip), "jupiter") == 0))
+    elseif planet_id == 5 # Jupiter
         Rp_e = 7.1492e7
         Rp_p = 6.6854e7
         Rp_m = 6.9911e7
@@ -163,7 +190,7 @@ function planet_data(ip)
         topography_function = (args, Clm, Slm, latitude, longitude) -> 0.0 # Jupiter topography function
         polyfit_coeffs = zeros(1)
         name = "jupiter"
-    elseif (ip == 6 || (typeof(ip) == String && cmp(lowercase(ip), "saturn") == 0))
+    elseif planet_id == 6 # Saturn
         Rp_e = 6.0268e7
         Rp_p = 5.4364e7
         Rp_m = 5.8232e7
@@ -188,7 +215,7 @@ function planet_data(ip)
         topography_function = (args, Clm, Slm, latitude, longitude) -> 0.0 # Saturn topography function
         polyfit_coeffs = zeros(1)
         name = "saturn"
-    elseif (ip == 7 || (typeof(ip) == String && cmp(lowercase(ip), "titan") == 0))
+    elseif planet_id == 7 # Titan
         Rp_e = 2.575e6
         Rp_p = 2.575e6
         Rp_m = 2.575e6
@@ -228,6 +255,10 @@ function planet_data(ip)
                         -cos(δ)*cos(α)*sin(δ)/σ1 -cos(δ)*sin(α)*sin(δ)/σ1 cos(δ)^2/σ1;
                         cos(δ)*cos(α) cos(δ)*sin(α) sin(δ)])   
     end 
+    if !isdefined(@__MODULE__, :Planet)
+        throw(ArgumentError("Legacy planet_data requires a legacy Planet type in scope. Typed pipeline should use SimulationModel.Planets (Earth/Mars/Venus/Titan)."))
+    end
+
     planet = Planet(Rp_e, 
                             Rp_p, 
                             Rp_m, 

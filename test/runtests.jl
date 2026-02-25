@@ -434,6 +434,12 @@ using ..SimulationModel
 end
 const LEGACY_TARGETING_SANDBOX = LegacyTargetingSandbox
 
+const LEGACY_CONFIG_LOADED = Ref(false)
+module LegacyConfigSandbox
+using ..SimulationModel
+end
+const LEGACY_CONFIG_SANDBOX = LegacyConfigSandbox
+
 module IncludeOrderSandbox
 end
 const INCLUDE_ORDER_SANDBOX = IncludeOrderSandbox
@@ -492,6 +498,18 @@ function ensure_legacy_targeting_loaded!()
     Core.eval(LEGACY_TARGETING_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "control", "targeting_control", "Eom_targeting.jl"))))
 
     LEGACY_TARGETING_LOADED[] = true
+end
+
+function ensure_legacy_config_loaded!()
+    if LEGACY_CONFIG_LOADED[]
+        return
+    end
+
+    Core.eval(LEGACY_CONFIG_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "physical_models", "Mission.jl"))))
+    Core.eval(LEGACY_CONFIG_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "physical_models", "Planet_data.jl"))))
+    Core.eval(LEGACY_CONFIG_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "utils", "Define_mission.jl"))))
+
+    LEGACY_CONFIG_LOADED[] = true
 end
 
 @testset "API Convenience Constructors" begin
@@ -757,6 +775,88 @@ end
         @test !occursin("config.cnf", src)
         @test !occursin("config.solution", src)
     end
+end
+
+@testset "Legacy Config Parsing Cleanup" begin
+    ensure_legacy_config_loaded!()
+    sandbox = LEGACY_CONFIG_SANDBOX
+
+    @test isdefined(sandbox, :_legacy_parse_planet_id)
+    @test sandbox._legacy_parse_planet_id("earth") == 0
+    @test sandbox._legacy_parse_planet_id(:Mars) == 1
+    @test sandbox._legacy_parse_planet_id(7) == 7
+    @test_throws ArgumentError sandbox._legacy_parse_planet_id("pluto")
+    @test_throws ArgumentError sandbox.planet_data("earth")
+
+    @test isdefined(sandbox, :_legacy_mission_kind)
+    @test sandbox._legacy_mission_kind("Time") == :time
+    @test sandbox._legacy_mission_kind("Drag Passage") == :drag_passage
+    @test sandbox._legacy_mission_kind(MissionTime) == :time
+    @test sandbox._legacy_mission_kind(MissionOrbits) == :orbits
+
+    mission = Dict{Symbol, Any}(
+        :Planet => "Venus",
+        :Gravity_Model => "Inverse Squared and J2 Effect",
+        :Density_Model => "No-Density",
+        :Wind => true,
+        :Aerodynamic_Model => "Mach-dependent",
+        :Shape => "Spacecraft",
+        :Control => 2,
+        :Firings => "Drag Passage Firing",
+        :Thermal_Model => "Shaaf and Chambre",
+        :Monte_Carlo => 0
+    )
+    ip = sandbox.mission_def(mission)
+    @test ip.M.planet == 2
+    @test ip.gm == 2
+    @test ip.dm == 2
+    @test ip.wm == 1
+    @test ip.am == 1
+    @test ip.cm == 2
+    @test ip.tc == 2
+    @test ip.tm == 2
+    @test ip.mc == 0
+
+    mission_default = deepcopy(mission)
+    mission_default[:Planet] = "UnknownPlanet"
+    ip_default = sandbox.mission_def(mission_default)
+    @test ip_default.M.planet == 1
+
+    args_time = Dict{Symbol, Any}(
+        :type_of_mission => "time",
+        :drag_passage => 1,
+        :number_of_orbits => 3,
+        :body_shape => "Spacecraft",
+        :aerodynamic_model => "No-Ballistic flight with axial coefficient",
+        :thermal_model => "Convective and Radiative",
+        :control_mode => 1,
+        :thrust_control => "Aerobraking Maneuver",
+        :thrust => 0.0,
+        :delta_v => 5.0,
+        :Odyssey_sim => false
+    )
+    out_time = redirect_stdout(devnull) do
+        sandbox.def_miss(deepcopy(args_time))
+    end
+    @test out_time[:drag_passage] == 0
+    @test out_time[:aerodynamic_model] == "Mach-dependent"
+    @test out_time[:thermal_model] == "Maxwellian Heat Transfer"
+    @test out_time[:thrust] == 0.1
+
+    args_entry = deepcopy(args_time)
+    args_entry[:type_of_mission] = "Entry"
+    out_entry = redirect_stdout(devnull) do
+        sandbox.def_miss(args_entry)
+    end
+    @test out_entry[:drag_passage] == 1
+    @test out_entry[:number_of_orbits] == 1
+
+    args_typed = deepcopy(args_time)
+    args_typed[:type_of_mission] = MissionTime
+    out_typed = redirect_stdout(devnull) do
+        sandbox.def_miss(args_typed)
+    end
+    @test out_typed[:drag_passage] == 0
 end
 
 @testset "Run Simulation State Isolation" begin

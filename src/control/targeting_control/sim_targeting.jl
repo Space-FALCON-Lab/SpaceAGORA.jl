@@ -28,7 +28,7 @@ sys = pyimport("sys")
         return true
     end
     if args isa AbstractDict
-        return Bool(get(args, :print_res, get(args, :verbose, false)))
+        return Bool(get(args, :print_res, false)) || Bool(get(args, :verbose, false))
     end
     return false
 end

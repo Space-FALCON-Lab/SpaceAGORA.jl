@@ -373,6 +373,24 @@ function run_case_via_run_analysis(args::SimulationConfiguration; expect_results
     end
 end
 
+const LEGACY_TARGETING_LOADED = Ref(false)
+module LegacyTargetingSandbox
+using ..SimulationModel
+end
+const LEGACY_TARGETING_SANDBOX = LegacyTargetingSandbox
+
+function ensure_legacy_targeting_loaded!()
+    if LEGACY_TARGETING_LOADED[]
+        return
+    end
+
+    Core.eval(LEGACY_TARGETING_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "control", "Control.jl"))))
+    Core.eval(LEGACY_TARGETING_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "control", "targeting_control", "targeting.jl"))))
+    Core.eval(LEGACY_TARGETING_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "control", "targeting_control", "Eom_targeting.jl"))))
+
+    LEGACY_TARGETING_LOADED[] = true
+end
+
 @testset "API Convenience Constructors" begin
     ic = InitialCondition()
     @test ic isa InitialCondition
@@ -454,6 +472,67 @@ end
     p_inactive = ODEParams{1}(args=args, is_active=[false])
     spacecraft_dynamics!(du_inactive, u, p_inactive, 0.0)
     @test du_inactive.sc[1].mass == 0.0
+end
+
+@testset "Legacy Targeting Smoke" begin
+    ensure_legacy_targeting_loaded!()
+    sandbox = LEGACY_TARGETING_SANDBOX
+
+    @test isdefined(sandbox, :_legacy_control_log_enabled)
+    @test isdefined(sandbox, :_legacy_targeting_log_enabled)
+    @test isdefined(sandbox, :_legacy_sim_targeting_log_enabled)
+    @test isdefined(sandbox, :_legacy_eom_targeting_log_enabled)
+    @test isdefined(sandbox, :_legacy_eom_ctrl_log_enabled)
+
+    args_quiet = Dict{Symbol, Any}(:print_res => false, :verbose => false)
+    args_print = Dict{Symbol, Any}(:print_res => true, :verbose => false)
+    args_verbose = Dict{Symbol, Any}(:print_res => false, :verbose => true)
+
+    @test sandbox._legacy_control_log_enabled(args_quiet) == false
+    @test sandbox._legacy_control_log_enabled(args_print) == true
+    @test sandbox._legacy_control_log_enabled(args_verbose) == true
+
+    @test sandbox._legacy_targeting_log_enabled(args_quiet) == false
+    @test sandbox._legacy_targeting_log_enabled(args_print) == true
+    @test sandbox._legacy_targeting_log_enabled(args_verbose) == true
+
+    @test sandbox._legacy_sim_targeting_log_enabled(args_quiet) == false
+    @test sandbox._legacy_sim_targeting_log_enabled(args_print) == true
+    @test sandbox._legacy_sim_targeting_log_enabled(args_verbose) == true
+
+    @test sandbox._legacy_eom_targeting_log_enabled(args_quiet) == false
+    @test sandbox._legacy_eom_targeting_log_enabled(args_print) == true
+    @test sandbox._legacy_eom_targeting_log_enabled(args_verbose) == true
+
+    @test sandbox._legacy_eom_ctrl_log_enabled(args_quiet) == false
+    @test sandbox._legacy_eom_ctrl_log_enabled(args_print) == true
+    @test sandbox._legacy_eom_ctrl_log_enabled(args_verbose) == true
+
+    debug_key = "SPACEAGORA_DEBUG_LEGACY_CONTROL"
+    old_debug = get(ENV, debug_key, nothing)
+    try
+        ENV[debug_key] = "1"
+        @test sandbox._legacy_control_log_enabled(args_quiet) == true
+        @test sandbox._legacy_targeting_log_enabled(args_quiet) == true
+        @test sandbox._legacy_sim_targeting_log_enabled(args_quiet) == true
+        @test sandbox._legacy_eom_targeting_log_enabled(args_quiet) == true
+        @test sandbox._legacy_eom_ctrl_log_enabled(args_quiet) == true
+    finally
+        if old_debug === nothing
+            if haskey(ENV, debug_key)
+                delete!(ENV, debug_key)
+            end
+        else
+            ENV[debug_key] = old_debug
+        end
+    end
+
+    m_dummy = (aerodynamics=(α=1.234,),)
+    @test sandbox.no_control(nothing, m_dummy) == 1.234
+
+    heat_rate = sandbox.heat_rate_calc(1.0, 1e-6, 250.0, 250.0, 287.0, 1.4, 3.0, 0.3)
+    @test isfinite(heat_rate)
+    @test heat_rate >= 0.0
 end
 
 @testset "Deterministic Smoke + No-Drag Energy Invariant" begin

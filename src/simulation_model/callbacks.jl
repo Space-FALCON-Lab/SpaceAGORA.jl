@@ -215,7 +215,8 @@ function get_guidance_callbacks(num_sats::Int, args::SimulationConfiguration)::V
         # The calculated guidance commands should be stored in the shared buffers for use in the dynamics calculations
         guidance_func = (integrator) -> begin
             # if integrator.sol.retcode == :Default
-                calcGuidanceEffect!(guidance_model, integrator.u, integrator.p, integrator.t, i)
+                # Use invokelatest to keep Revise/hot-reload workflows free of world-age errors.
+                Base.invokelatest(calcGuidanceEffect!, guidance_model, integrator.u, integrator.p, integrator.t, i)
             # end
         end
         callbacks[i] = PeriodicCallback(guidance_func, guidance_rate)
@@ -245,7 +246,8 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)::Ve
         # to avoid conflating effector-index with spacecraft-index.
         control_func = (integrator) -> begin
             @inbounds for sat_idx in 1:num_sats
-                calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
+                # Use invokelatest to keep Revise/hot-reload workflows free of world-age errors.
+                Base.invokelatest(calcControlEffect!, control_model, integrator.u, integrator.p, integrator.t, sat_idx)
             end
         end
         callbacks[i] = PeriodicCallback(control_func, control_rate)

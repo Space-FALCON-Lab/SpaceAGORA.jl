@@ -82,6 +82,29 @@ jobs:
       - name: Threaded smoke
         run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_threaded_smoke.jl
 
+  revise-hot-reload-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      JULIA_NUM_THREADS: "2"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: Cache Julia artifacts
+        uses: julia-actions/cache@v2
+
+      - name: Instantiate
+        run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Revise hot-reload smoke
+        run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_revise_hot_reload_smoke.jl
+
   readme-command-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 60

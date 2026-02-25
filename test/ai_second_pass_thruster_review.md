@@ -129,9 +129,12 @@ This note documents the edge-case tests added for thruster-related functions and
 
 ## Revise / World-Age Operational Note
 
-- Preferred no-Revise path for control-effector API changes:
+- CI now includes dedicated Revise/hot-reload smoke:
+  - `test/ci_revise_hot_reload_smoke.jl` (runs under `--depwarn=error`, Julia 1.12).
+  - It edits control-effector methods in-session via `Revise.includet(...)` + `Revise.revise()` and verifies updated behavior is used.
+- To support this reliably, callback-dispatched control/guidance effects now use `Base.invokelatest(...)` in `src/simulation_model/callbacks.jl`, avoiding world-age errors during hot reload.
+- A no-Revise fallback remains valid for operational troubleshooting:
   1. Restart Julia.
   2. Re-instantiate/precompile with `.AGORA`.
-  3. Re-run a smoke example under depwarn-as-error:
+  3. Re-run smoke under depwarn-as-error:
      - `julia --depwarn=error --project=.AGORA src/examples/Earth_Thruster_Test.jl`
-- CI now includes this depwarn smoke gate (Julia 1.12) to catch world-age/deprecation regressions early.

@@ -170,6 +170,34 @@ function run_case(args::SimulationConfiguration)
     end
 end
 
+@testset "API Convenience Constructors" begin
+    ic = InitialCondition()
+    @test ic isa InitialCondition
+    @test ic.a == 0.0
+    @test ic.e == 0.0
+
+    link = Link()
+    @test link isa Link{0}
+
+    joint = Joint()
+    @test joint isa Joint
+
+    sc = SpacecraftModel()
+    @test sc isa SpacecraftModel
+    @test sc.root.root
+
+    custom_root = Link{0}(root=true, m=100.0)
+    sc_custom = SpacecraftModel(root=custom_root, id=42)
+    @test sc_custom.id == 42
+    @test sc_custom.root === custom_root
+    @test any(link -> link === custom_root, sc_custom.links)
+
+    nbody = NBodyGravityModel(["Sun"], "Earth", SPICE_PATH)
+    @test nbody isa NBodyGravityModel
+    @test nbody.primary_body_name == "Earth"
+    @test nbody.body_names == ("Sun",)
+end
+
 @testset "Deterministic Smoke + No-Drag Energy Invariant" begin
     sc = make_spacecraft(ra_alt_m=500e3, rp_alt_m=400e3, ν_deg=175.0)
     args = build_config(
@@ -313,6 +341,25 @@ end
     df = run_case(args)
     eps = specific_energy(df, EARTH.μ)
     @test last(eps) < first(eps) - 1e5
+end
+
+@testset "N-Body Gravity Typed API Smoke" begin
+    sc = make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0)
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(), NBodyGravityModel(["Sun"], "Earth", SPICE_PATH)),
+        keplerian=true,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+
+    df = run_case(args)
+    @test nrow(df) > 10
+    @test all(isfinite, df.sc1_pos_1)
+    @test all(isfinite, df.sc1_vel_1)
 end
 
 @testset "Single-Link Drag Dissipates Specific Orbital Energy" begin

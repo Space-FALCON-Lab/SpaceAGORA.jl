@@ -161,8 +161,10 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     planet = param.args.environment_model.planet
     orientation_sim = param.args.mission_configuration.orientation_sim
     # bodies, root_index = traverse_bodies(m.body, m.body.roots[1]) # Get all bodies in the simulation
-    bodies = param.args.dynamics_model.spacecraft[i].links # Include the root body of the spacecraft
-    root = param.args.dynamics_model.spacecraft[i].root
+    spacecraft = param.args.dynamics_model.spacecraft[i]
+    bodies = spacecraft.links # Include the root body of the spacecraft
+    root = spacecraft.root
+    root_index = 1
     ρ = param.shared_buffers.densities[i] # Atmospheric density at the current altitude from the shared buffer updated by the callback function
     T = param.shared_buffers.temperatures[i] # Atmospheric temperature at the current altitude from the shared buffer updated by the callback function
     wind = param.shared_buffers.winds[i] # Atmospheric wind vector at the current altitude from the shared buffer updated by the callback function
@@ -205,7 +207,7 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     if orientation_sim
         Rot = [MMatrix{3,3,Float64}(zeros(3, 3)) for i in eachindex(bodies)] # Rotation matrix from the root body to the spacecraft link
         @inbounds for (i, b) in enumerate(bodies)
-            Rot[i] .= rotate_to_inertial(root, b, root_index) # Rotation matrix from the spacecraft link to the inertial frame
+            Rot[i] .= rotate_to_inertial(spacecraft, b, root_index) # Rotation matrix from the spacecraft link to the inertial frame
         end
     end
     
@@ -318,9 +320,10 @@ function calcForceTorque(model::AerodynamicCoefficientNoBallisticFlight, x::Abst
     planet = param.args.environment_model.planet
     orientation_sim = param.args.mission_configuration.orientation_sim
     # bodies, root_index = traverse_bodies(m.body, m.body.roots[1]) # Get all bodies in the simulation
-    bodies = append(param.args.dynamics_model.spacecraft[i].children,  # Only consider the spacecraft links for the aerodynamic forces, not the full hierarchy of bodies
-                    [param.args.dynamics_model.spacecraft[i].root]) # Include the root body of the spacecraft
-    root = param.args.dynamics_model.spacecraft[i].root
+    spacecraft = param.args.dynamics_model.spacecraft[i]
+    bodies = spacecraft.links # Include the root body of the spacecraft
+    root = spacecraft.root
+    root_index = 1
     pos_ii = SVector{3, Float64}(x.pos)
     vel_ii = SVector{3, Float64}(x.vel)
 
@@ -349,7 +352,7 @@ function calcForceTorque(model::AerodynamicCoefficientNoBallisticFlight, x::Abst
     if orientation_sim
         Rot = [MMatrix{3,3,Float64}(zeros(3, 3)) for i in eachindex(bodies)] # Rotation matrix from the root body to the spacecraft link
         @inbounds for (i, b) in enumerate(bodies)
-            Rot[i] .= rotate_to_inertial(root, b, root_index) # Rotation matrix from the spacecraft link to the inertial frame
+            Rot[i] .= rotate_to_inertial(spacecraft, b, root_index) # Rotation matrix from the spacecraft link to the inertial frame
         end
     end
     

@@ -28,6 +28,7 @@ function run_simulation(args::SimulationConfiguration)
             initial_time.second
         ))
     et_start = utc2et(to_utc(start_epoch))
+    p.shared_buffers.et_start[] = et_start
     args.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_$(args.environment_model.planet.name)", et_start)) * args.environment_model.planet.J2000_to_pci' # Initialize the planet frame at the start of the simulation (will be updated in the callback)
     # println("Initial conditions:")
     # println(initial_conditions)
@@ -104,6 +105,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p::ODEPar
     dynamics_model = p.args.dynamics_model
     dynamic_effectors = dynamics_model.dynamic_effectors
     spacecraft = dynamics_model.spacecraft
+    p.shared_buffers.current_time[] = t
     minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores())) # Determine the batch size for LoopVectorization based on the number of spacecraft and available CPU cores
     # Loop over each spacecraft and compute its dynamics
     @batch minbatch=minbatch for i in eachindex(sc_state)

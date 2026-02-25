@@ -16,7 +16,7 @@ function rotate_to_inertial(model::SpacecraftModel, body::Link, root_index::Int)
     if body.root
         return rot(body.q)' # Rotation matrix from quaternion
     else
-        return rot(model.roots[root_index].q)' * rot(body.q)' # Rotation matrix from quaternion
+        return rot(model.root.q)' * rot(body.q)' # Rotation matrix from quaternion
     end
 end
 

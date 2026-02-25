@@ -8,6 +8,7 @@ using DateFormats
 using CSV
 using DataFrames
 using ..AbstractTypes: AbstractPlanet
+using ..Planets: Earth, Mars, Venus, Titan
 include("../utils/quaternion_utils.jl")
 include("Planet_data.jl")
 # import .config
@@ -34,10 +35,10 @@ const sqrt_2 = sqrt(2.0)
 const sqrt_3 = sqrt(3.0)
 
 # N-body gravity perturbation model
-@kwdef struct NBodyGravityModel{P <: AbstractPlanet, NP <: Tuple{Vararg{AbstractPlanet}}} <: AbstractForceTorqueModel
+@kwdef struct NBodyGravityModel{P <: AbstractPlanet, NP <: Tuple{Vararg{String}}} <: AbstractForceTorqueModel
     body_names::NP  # Names of celestial bodies to include
-    # primary_body_name::String = "Earth" # Name of the primary body
-    planet::P = Earth() # Planet data for primary body
+    primary_body_name::String = "Earth" # Name of the primary body
+    planet::P = Earth("") # Planet data for primary body
 end
 
 struct GravitationalHarmonicsModel{P <: AbstractPlanet} <: AbstractForceTorqueModel
@@ -62,9 +63,20 @@ struct SolarRadiationPressureModel <: AbstractForceTorqueModel
     AU_m::Float64 # Astronomical unit in meters
 end
 # Constructor to get planet data
-function NBodyGravityModel(body_names::Vector{String}, primary_body_name::String="Earth")
-    planet = planet_data(primary_body_name)
-    return NBodyGravityModel(body_names=body_names, primary_body_name=primary_body_name, planet=planet)
+function NBodyGravityModel(body_names::Vector{String}, primary_body_name::String="Earth", spice_path::String="GRAM_Data/SPICE")
+    pname = lowercase(primary_body_name)
+    planet = if pname == "earth"
+        Earth("", spice_path)
+    elseif pname == "mars"
+        Mars("", spice_path)
+    elseif pname == "venus"
+        Venus("", spice_path)
+    elseif pname == "titan"
+        Titan("", spice_path)
+    else
+        throw(ArgumentError("Unsupported primary body '$primary_body_name' for NBodyGravityModel"))
+    end
+    return NBodyGravityModel(body_names=Tuple(body_names), primary_body_name=primary_body_name, planet=planet)
 end
 
 function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::String, planet::P) where P <: AbstractPlanet
@@ -140,30 +152,27 @@ end
     calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
 """
 function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    cnf = param.cnf
-    
-    pos_ii = SVector{3, Float64}(x[1:3]) # Position in inertial frame, change to x.r if using StructArrays in Complete_passage
-    mass = x[7]               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
-    primary_body_name = model.primary_body_name
+    pos_ii = hasproperty(x, :pos) ? SVector{3, Float64}(x.pos) : SVector{3, Float64}(x[1:3])
+    mass = hasproperty(x, :mass) ? x.mass : x[7]
+    primary_body_name = lowercase(model.primary_body_name)
+    et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
     force_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize force vector
+    barycenter_bodies = Set(["mars", "jupiter", "saturn", "uranus", "neptune", "earth"])
+    if primary_body_name in barycenter_bodies
+        primary_body_name *= "_barycenter"
+    end
     for body_name in model.body_names
-        barycenter_bodies = ["mars", "jupiter", "saturn", "uranus", "neptune", "earth"]
-        if !isnothing(findfirst(==(primary_body_name), barycenter_bodies))
-            primary_body_name *= "_barycenter"
+        body_name_spice = lowercase(body_name)
+        if body_name_spice in barycenter_bodies
+            body_name_spice *= "_barycenter"
         end
 
-        if !isnothing(findfirst(==(body_name), barycenter_bodies))
-            body_name *= "_barycenter"
-        end
-
-        pos_primary_k = model.planet.J2000_to_pci*SVector{3, Float64}(spkpos(body_name, param.cnf.et, "J2000", "none", primary_body_name)[1]) * 1e3
+        pos_primary_k = model.planet.J2000_to_pci * SVector{3, Float64}(spkpos(body_name_spice, et, "J2000", "none", primary_body_name)[1]) * 1e3
         pos_spacecraft_k = pos_primary_k - pos_ii
         pos_spacecraft_k_mag = norm(pos_spacecraft_k)
 
         force_ii += mass * model.planet.μ * ((pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3))
     end
-
-    cnf.gravity_nbody_ii = force_ii # Store gravity in config for other uses
 
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
@@ -436,4 +445,3 @@ function srp!(model, root_index::Int64, sun_dir_ii::SVector{3, Float64}, body, P
     # return F_SRP_tracker
     # println("Total F_SRP: $F_SRP_tracker")
 end
-

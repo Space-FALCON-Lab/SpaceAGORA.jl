@@ -27,7 +27,11 @@ const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 end # struct InitialCondition
 
  # Convenience constructors
-function InitialCondition(;ra::Float64, rp::Float64, i::Float64, ω::Float64, Ω::Float64, ν::Float64=180.0)
+function InitialCondition(;ra::Float64=0.0, rp::Float64=0.0, i::Float64=0.0, ω::Float64=0.0, Ω::Float64=0.0, ν::Float64=180.0)
+    if ra == 0.0 && rp == 0.0
+        return InitialCondition(0.0, 0.0, i, ω, Ω, ν, SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0))
+    end
+
     a = (ra + rp) / 2.0
     e = (ra - rp) / (ra + rp)
     return InitialCondition(a, e, i, ω, Ω, ν, SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0)) # Set true anomaly to 180 degrees by default
@@ -100,10 +104,11 @@ mutable struct Link{N_RW}
             h_dot_wheels=MVector{N_RW, Float64}(zeros(N_RW)), # h_dot_wheels
             tau_body_net=MVector{3, Float64}(zeros(3))      # tau_body_net
         )
-        println(length(rw))
         new{N_RW}(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, J_thruster, thrusters, magnets)
     end
 end
+
+Link(; kwargs...) = Link{0}(; kwargs...)
 
 mutable struct Joint
     link1::Link
@@ -141,7 +146,7 @@ mutable struct Joint
             translational_displacement, rotational_displacement)
     end
 
-    function Joint(;link1=Link(), link2=Link(), p1=link1.bᵇ, 
+    function Joint(;link1=Link{0}(), link2=Link{0}(), p1=link1.bᵇ, 
         p2=link2.aᵇ, 
         Kx=SMatrix{3,3, Float64}(1.0I), 
         Kt=SMatrix{3,3, Float64}(1.0I), 
@@ -196,17 +201,17 @@ mutable struct SpacecraftModel
     # end
 end
 
-function SpacecraftModel(; joints::Vector{Joint}=Joint[], links::Vector{Link}=Link[], root::Link,
+function SpacecraftModel(; joints::Vector{Joint}=Joint[], links::Vector{Link}=Link[], root::Link=Link{0}(root=true),
                             instant_actuation::Bool=true,
                             prop_mass::Float64=0.0,
                             inertia_tensor::SMatrix{3,3,Float64}=SMatrix{3, 3, Float64}(zeros(3,3)),
                             n_reaction_wheels::Int64=0,
                             n_thrusters::Int64=0,
                             initial_condition::InitialCondition=InitialCondition(),
-                            id::Int64)
+                            id::Int64=1)
     # Calculate dry mass from links
     dry_mass = 0.0
-    if !any(link -> link.id == root.id, links)
+    if !any(link -> link === root, links)
         push!(links, root) # Include root in the links list for mass calculation
     end
     for link in links

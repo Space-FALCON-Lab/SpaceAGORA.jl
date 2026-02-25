@@ -436,6 +436,8 @@ export SaveCache, SaveData
         densities::Vector{Float64} = zeros(Float64, N_sats)
         temperatures::Vector{Float64} = ones(Float64, N_sats)
         winds::Vector{SVector{3,Float64}} = [SVector{3,Float64}(0.0, 0.0, 0.0) for _ in 1:N_sats]
+        current_time::Base.RefValue{Float64} = Ref(0.0)
+        et_start::Base.RefValue{Float64} = Ref(0.0)
     end
 
     @kwdef struct SaveData

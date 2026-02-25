@@ -1,7 +1,7 @@
 module SimConfig
     export SimulationConfiguration, InitialTime, IntegrationTolerances, FilePaths, SimulationSettings, MissionConfiguration, EnvironmentModel
     using ..AbstractTypes: AbstractPlanet, AbstractDensityModel, AbstractThermalModel
-    using ..PhysicalModel: DynamicsModel
+    using ..PhysicalModel: DynamicsModel, GuidanceModel, ControlModel, NavigationModel
     using ..Planets: Earth
 
     @kwdef struct InitialTime
@@ -16,10 +16,10 @@ module SimConfig
     @kwdef struct IntegrationTolerances
         reltol::Float64 = 1e-9
         abstol::Float64 = 1e-11
-        reltol_orbit::Float64 = 1e-9
-        abstol_orbit::Float64 = 1e-11
-        reltol_atmosphere::Float64 = 1e-9
-        abstol_atmosphere::Float64 = 1e-11
+        reltol_orbit::Float64 = 1e-6
+        abstol_orbit::Float64 = 1e-7
+        reltol_atmosphere::Float64 = 1e-7
+        abstol_atmosphere::Float64 = 1e-9
         reltol_quaternion::Float64 = 1e-9
         abstol_quaternion::Float64 = 1e-11
         dt_max::Float64 = 1.0
@@ -76,6 +76,9 @@ module SimConfig
         mission_configuration::MissionConfiguration = MissionConfiguration() # Mission-specific configuration
         environment_model::EnvironmentModel{P, D, T} # Physical environment models
         dynamics_model::DynamicsModel{DM} # Dynamics models to use for the simulation, e.g., drag, n-body gravity, gravity harmonics, etc. that calculate forces/torques on the spacecraft
+        guidance_model::GuidanceModel # Guidance models to use for the simulation, e.g., for calculating control inputs based on the state vector
+        navigation_model::NavigationModel # Navigation models to use for the simulation, e.g., for calculating state estimates based on sensor data
+        control_model::ControlModel # Control models to use for the simulation, e.g., for calculating control inputs based on the state vector
         initial_time::InitialTime # Initial time for the simulation
         integration_tolerances::IntegrationTolerances = IntegrationTolerances() # Tolerances for the numerical integrator
     end # struct SimulationConfiguration

@@ -118,10 +118,7 @@ function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::Stri
     @inbounds for n = 1:L+1
         sqrt_2n_plus_3[n] = sqrt(2*n + 3)
     end
-    println("C")
-    println(C[1:L, 1:L])
-    println("S:")
-    println(S[1:L, 1:L])
+
     return GravitationalHarmonicsModel(
         L,
         M,

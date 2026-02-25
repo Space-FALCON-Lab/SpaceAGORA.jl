@@ -10,6 +10,7 @@ using OrdinaryDiffEq
 using Reexport
 
 export Body, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters
+export SaveCache, SaveData
 
     @kwdef struct Mission
         e::Int64 = 0
@@ -437,7 +438,22 @@ export Body, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODE
         winds::Vector{SVector{3,Float64}} = [SVector{3,Float64}(0.0, 0.0, 0.0) for _ in 1:N_sats]
     end
 
-    @kwdef mutable struct ODEParams{N_sats}
+    @kwdef struct SaveData
+        position::Vector{SVector{3,Float64}} = []
+        velocity::Vector{SVector{3,Float64}} = []
+        drag::Vector{SVector{3,Float64}} = []
+        periapsis_altitude::Vector{Float64} = []
+        # Add more fields as needed to store the relevant data for saving results
+    end
+    struct SaveCache
+        # Define fields to store cached data for saving results during the simulation for expensive computations, e.g., drag, lift, density, etc.
+        ρ_cache::Vector{Float64}
+
+        # Add more fields as needed to store the relevant data for saving results
+    end
+
+    
+    @kwdef struct ODEParams{N_sats}
         # m::Model = Model()                      # Model struct
         # cnf::Cnf = Cnf()            # Configuration parameters
         # solution::Solution = Solution() # Solution struct
@@ -455,8 +471,8 @@ export Body, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODE
         args::SimulationConfiguration = SimulationConfiguration() # Arguments dictionary
         shared_buffers::SharedBuffers = SharedBuffers{N_sats}() # Shared buffers for callback and integrator
         is_active::Vector{Bool} = [true for _ in 1:N_sats] # Vector to track which satellites are still active in the simulation
-        orbit_counter::Int64 = 0 # Counter for the number of orbits completed
-        # intermediate_solution::IntermediateSolution = IntermediateSolution() # Intermediate solution struct
+        orbit_counter::Vector{Int64} = ones(Int64, N_sats) # Counter for the number of orbits completed
+        save_cache::SaveCache = SaveCache([]) # Cache for saving results
     end
     # solution = Solution()
 

@@ -180,9 +180,9 @@ function getDensity(model::ExponentialAtmosphereModel, h::Float64, lat::Float64,
     return ρ, T, wind_vec
 end
 
-function getDensity(model::PolynomialFitAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool)::Tuple{Float64, Float64, SVector{3, Float64}}
+function getDensity(model::PolynomialFitAtmosphereModel, h::Union{Float64, Vector{Float64}}, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
 
-    if typeof(h) != Float64
+    if typeof(h) != Float64 || length(h) != 1
         # polyfit = model.polyfit_coeffs
         power = zeros(length(model.polyfit_coeffs),length(h))
         # Convert height from meters to kilometers
@@ -207,7 +207,7 @@ function getDensity(model::PolynomialFitAtmosphereModel, h::Float64, lat::Float6
         return ρ, T, wind_vec
     else
         # polyfit = model.polyfit_coeffs
-        power = MVector(zeros(length(model.polyfit_coeffs)))
+        power = MVector{length(model.polyfit_coeffs)}(zeros(length(model.polyfit_coeffs)))
         # Convert height from meters to kilometers
         h *= 1e-3
         # Calculate the polynomial value at height h
@@ -239,7 +239,7 @@ function getDensity(model::GRAMAtmosphereModel, h::Float64, lat::Float64, lon::F
             T = p.args.environment_model.planet.T_ref
             wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
         else
-            rho, T, wind_vec = density_polyfit(h, p.args.environment_model.planet)
+            rho, T, wind_vec = density_polyfit(h, p)
         end
     else
         if h > 2000.0e3
@@ -286,11 +286,11 @@ function getDensity(model::NRLMSISE00AtmosphereModel, h::Float64, lat::Float64, 
     return rho, T, wind_vec
 end
 
-function density_polyfit(h::Float64, planet::AbstractPlanet)
+function density_polyfit(h::Float64, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
     # Load the polynomial coefficients for the planet
-    coeffs = planet.polyfit_coeffs
+    coeffs = p.args.environment_model.planet.polyfit_coeffs
     poly_model = PolynomialFitAtmosphereModel(vec(coeffs))
-    ρ, T, wind_vec = getDensity(poly_model, h, 0.0, 0.0, 0.0, false) # Latitude, longitude, elapsed time, and wind don't affect the density in this model
+    ρ, T, wind_vec = getDensity(poly_model, h, 0.0, 0.0, 0.0, false, p) # Latitude, longitude, elapsed time, and wind don't affect the density in this model
     return ρ, T, wind_vec
 end
 # end # module

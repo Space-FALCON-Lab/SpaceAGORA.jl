@@ -7,7 +7,7 @@ using LinearAlgebra
 # using ..AbstractTypes
 using ..Components
 
-export Link, Joint, SpacecraftModel, DynamicsModel, InitialCondition
+export Link, Joint, SpacecraftModel, DynamicsModel, InitialCondition, GuidanceModel, NavigationModel, ControlModel
 
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 
@@ -175,6 +175,7 @@ mutable struct SpacecraftModel
     n_reaction_wheels::Int64 # Number of reaction wheels in the spacecraft model
     n_thrusters::Int64 # Number of thrusters in the spacecraft model
     initial_condition::InitialCondition # Initial conditions for the simulation (orbit, attitude, etc.)
+    id::Int64 # Unique identifier for the spacecraft (useful for multi-spacecraft simulations)
     # dynamic_effectors::T_Effectors # List of dynamic effector models (gravity, drag, etc.)
 
     # function SpacecraftModel(; joints=Joint[], children=Link[], root=Link{0}(),
@@ -201,14 +202,18 @@ function SpacecraftModel(; joints::Vector{Joint}=Joint[], links::Vector{Link}=Li
                             inertia_tensor::SMatrix{3,3,Float64}=SMatrix{3, 3, Float64}(zeros(3,3)),
                             n_reaction_wheels::Int64=0,
                             n_thrusters::Int64=0,
-                            initial_condition::InitialCondition=InitialCondition())
+                            initial_condition::InitialCondition=InitialCondition(),
+                            id::Int64)
     # Calculate dry mass from links
     dry_mass = 0.0
+    if !any(link -> link.id == root.id, links)
+        push!(links, root) # Include root in the links list for mass calculation
+    end
     for link in links
         dry_mass += link.m
     end
 
-    return SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters, initial_condition)
+    return SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters, initial_condition, id)
 end
 
 """
@@ -223,6 +228,31 @@ struct DynamicsModel{T_Effectors<:Tuple}
 
     function DynamicsModel(roots::Vector{SpacecraftModel}, dynamic_effectors::T_Effectors) where {T_Effectors<:Tuple}
         new{T_Effectors}(roots, dynamic_effectors)
+    end
+end
+
+@kwdef struct GuidanceModel{T_Effectors<:Tuple}
+    guidance_effectors::T_Effectors # Tuple of guidance effector models (maneuver planning, etc.)
+    guidance_rates::Vector{Float64} # Rates at which to call each guidance effector, in seconds
+    function GuidanceModel(guidance_effectors::T_Effectors, guidance_rates::Vector{Float64}) where {T_Effectors<:Tuple}
+        new{T_Effectors}(guidance_effectors, guidance_rates)
+    end
+end
+
+@kwdef struct NavigationModel{T_Effectors<:Tuple}
+    navigation_effectors::T_Effectors # Tuple of navigation effector models (sensors, etc.)
+    navigation_rates::Vector{Float64} # Rates at which to call each navigation effector, in seconds
+    function NavigationModel(navigation_effectors::T_Effectors, navigation_rates::Vector{Float64}) where {T_Effectors<:Tuple}
+        new{T_Effectors}(navigation_effectors, navigation_rates)
+    end
+end
+
+@kwdef struct ControlModel{T_Effectors<:Tuple}
+    control_effectors::T_Effectors # Tuple of control effector models (reaction wheels, thrusters, etc.)
+    control_rates::Vector{Float64} # Control rates for each effector, in seconds
+
+     function ControlModel(control_effectors::T_Effectors, control_rates::Vector{Float64}) where {T_Effectors<:Tuple}
+        new{T_Effectors}(control_effectors, control_rates)
     end
 end
 end # module Model

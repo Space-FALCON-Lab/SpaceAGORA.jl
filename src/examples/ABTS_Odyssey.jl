@@ -1,4 +1,5 @@
 using Revise
+using CSV
 includet("../simulation_model/SimulationModel.jl")
 
 include("../simulation/Run.jl")
@@ -19,7 +20,7 @@ harmonicGravEffector = GravitationalHarmonicsModel(50, 50, "Gravity_harmonics_da
 aeroEffector = AerodynamicCoefficientfM()
 
 dynamic_effectors = (gravEffector, harmonicGravEffector, aeroEffector) # Define the dynamic effectors to be used in the simulation, can be a tuple of any length with any combination of effectors, as long as they are defined in the DynamicEffectors module and implement the calcForceTorque function
-# dynamic_effectors = (gravEffector,)
+# dynamic_effectors = (gravEffector, aeroEffector)
 
 
 # Add bodies to the spacecraft model
@@ -32,7 +33,7 @@ main_bus = Link{0}(root=true,
                         ṙ=SVector{3, Float64}([0,0,0]), 
                         dims=SVector{3, Float64}([2.2,2.6,1.7]), 
                         ref_area=2.6*1.7,
-                        m=391.0) 
+                        m=391.0)
                         # max_torque=2.0,
                         # max_h=200.0,
                         # attitude_control_rate=1.0/10.0, # 3 Hz
@@ -54,8 +55,8 @@ R_panel = Link{0}(r=SVector{3, Float64}(0.0, 2.6/2 + 3.89/4, 0.0),
                         m=10.0)
                         
 # add_body!(spacecraft, main_bus, prop_mass=50.0)
-ic = InitialCondition(ra=28559.615e3, rp=3390.0e3+100.0e3, i=93.522, ω=109.7454, Ω=28.1517)
-spacecraft = SpacecraftModel(root=main_bus, prop_mass=50.0, initial_condition=ic)
+ic = InitialCondition(ra=28559.615e3, rp=3396.0e3+87.0e3, i=93.522, ω=109.7454, Ω=28.1517)
+spacecraft = SpacecraftModel(root=main_bus, prop_mass=50.0, initial_condition=ic, id=100)
 add_body!(spacecraft, L_panel)
 add_body!(spacecraft, R_panel)
 
@@ -70,10 +71,12 @@ println("Spacecraft COM: $(get_COM(spacecraft))")
 println("Spacecraft MOI: $(get_inertia_tensor(spacecraft))")
 
 sc2 = deepcopy(spacecraft)
-sc2_ic = InitialCondition(ra=28559.615e3, rp=3390.0e3+87.0e3, i=75.0, ω=109.7454, Ω=28.1517)
+sc2.id = 200
+sc2_ic = InitialCondition(ra=28559.615e3, rp=3390.0e3+100.0e3, i=75.0, ω=109.7454, Ω=28.1517)
 sc2.initial_condition = sc2_ic
 sc3 = deepcopy(spacecraft)
-sc3_ic = InitialCondition(ra=28559.615e3, rp=3390.0e3+87.0e3, i=105.0, ω=109.7454, Ω=28.1517)
+sc3.id = 300
+sc3_ic = InitialCondition(ra=28559.615e3, rp=3390.0e3+100.0e3, i=105.0, ω=109.7454, Ω=28.1517)
 sc3.initial_condition = sc3_ic
 # roots = repeat(SpacecraftModel[spacecraft, sc2, sc3], 1) # Create multiple instances of the spacecraft for multiple passages
 roots = [spacecraft]
@@ -89,9 +92,20 @@ no_density = NoAtmosphereModel()
 maxwellianheat = MaxwellianHeat(thermal_accomodation_factor=1.0, planet=mars)
 em = EnvironmentModel(planet=mars, density_model=GRAM, thermal_model=maxwellianheat, EI=125.0)
 it = IntegrationTolerances()
+odyssey_thruster = BaseThrusterModel(thrust=[4.0], direction=[0.0], Δv=[10.0], start_burn_time=[-1.0], stop_burn_time=[-1.0], Isp=[200.0])
+control_model = ControlModel(control_effectors=(odyssey_thruster,), control_rates=[30.0])
+# Read in maneuver plan
+maneuver_plan = CSV.read("/workspaces/ABTS.jl/Maneuver_plans/odyssey.csv", DataFrame)
+thruster_model = AerobrakingCampaignPropulsiveManeuverGuidanceModel(maneuver_orbit_number=maneuver_plan.passage_number, maneuver_Δv=maneuver_plan.delta_v)
+guidance_model = GuidanceModel(guidance_effectors=(thruster_model,), guidance_rates=[30.0])
+mission_configuration = MissionConfiguration(mission_type="Time", keplerian=false, number_of_orbits=10, mission_time=90.0*60.0*20.0*10.0*5.0, orientation_sim=false, num_steps_to_save=1000)
 args = SimulationConfiguration(dynamics_model=dynamics_model,
                                initial_time=time,
-                               environment_model=em)
+                               environment_model=em,
+                               control_model=control_model,
+                               guidance_model=guidance_model,
+                               mission_configuration=mission_configuration,
+                               navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]))
 # config.model.body = spacecraft
 # println("Number of reaction wheels: ", config.model.body.n_reaction_wheels)
 # println("Number of reaction wheels true: $(spacecraft.n_reaction_wheels)")

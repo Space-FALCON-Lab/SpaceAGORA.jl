@@ -165,6 +165,8 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     h_ii_mag = norm(h_ii)           # Magnitude of the inertial angular momentum [m ^ 2 / s]
 
     # Inertial to planet relative transformation
+    # println("pos_ii: ", pos_ii, " vel_ii: ", vel_ii, " alt: ", norm(pos_ii) - planet.Rp_e, " m, vel_mag: ", norm(vel_ii), " m/s")
+    # println("planet.L_PI: ", planet.L_PI)
     pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, planet) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
     pos_pp_mag = norm(pos_pp) # Magnitude of the planet relative position
 
@@ -178,6 +180,7 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     
     bank_angle = deg2rad(0.0)
     alt,lat,lon = rtolatlong(pos_pp, planet, false) # Get the altitude, latitude, and longitude for the current position, used for density lookup and aerodynamic coefficient calculation
+
     uD, uN, uE = latlongtoNED([alt,lat,lon])
     wE, wN, wU = wind # positive to the east , m / s
     wind_pp = wN * uN + wE * uE - wU * uD         # wind velocity in pp frame, m / s 

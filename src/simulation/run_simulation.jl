@@ -17,7 +17,18 @@ function run_simulation(args::SimulationConfiguration)
 
     # Define the ODE problem
     p = ODEParams{length(args.dynamics_model.spacecraft)}(args=args) # Define the parameters for the ODE problem, including the shared buffers for the callbacks
-    callbacks = get_callbacks(length(args.dynamics_model.spacecraft), args.dynamics_model.dynamic_effectors) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
+    callbacks = get_callbacks(length(args.dynamics_model.spacecraft), args.dynamics_model.dynamic_effectors, args) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
+    initial_time = args.initial_time
+    start_epoch = from_utc(DateTime(
+            initial_time.year,
+            initial_time.month,
+            initial_time.day,
+            initial_time.hour,
+            initial_time.minute,
+            initial_time.second
+        ))
+    et_start = utc2et(to_utc(start_epoch))
+    args.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_$(args.environment_model.planet.name)", et_start)) * args.environment_model.planet.J2000_to_pci' # Initialize the planet frame at the start of the simulation (will be updated in the callback)
     # println("Initial conditions:")
     # println(initial_conditions)
     # println("ODE parameters:")
@@ -25,7 +36,37 @@ function run_simulation(args::SimulationConfiguration)
     # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
     prob = ODEProblem(spacecraft_dynamics!, initial_conditions, (0.0, args.mission_configuration.mission_time), p, callback=callbacks)
     # Solve the ODE problem
-    sol = solve(prob, Tsit5(); reltol=args.integration_tolerances.reltol, abstol=args.integration_tolerances.abstol, dtmax=args.integration_tolerances.dt_max)
+    # 1. Manually evaluate the derivative at the start
+    du_test = copy(prob.u0)
+    try
+        prob.f(du_test, prob.u0, prob.p, prob.tspan[1])
+    catch e
+        @error "The derivative function itself crashed!" exception=e
+    end
+
+    # 2. Check for NaNs and print exactly where they are
+    if any(isnan, du_test)
+        println("--- INITIAL NaN DETECTED ---")
+        
+        # Check global parameters in p
+        for field in fieldnames(typeof(prob.p))
+            val = getfield(prob.p, field)
+            if val isa Number && isnan(val)
+                println("NaN found in parameter: p.$field")
+            end
+        end
+
+        # Check the state vector (u)
+        # Assuming your u has a .sc field for satellites
+        for (i, sat) in enumerate(du_test.sc)
+            if any(isnan, sat.pos) || any(isnan, sat.vel)
+                println("NaN found in Satellite $i derivative!")
+                println("  Pos: $(sat.pos)")
+                println("  Vel: $(sat.vel)")
+            end
+        end
+    end
+    sol = solve(prob, Tsit5(); reltol=args.integration_tolerances.reltol_orbit, abstol=args.integration_tolerances.abstol_orbit, dtmax=args.integration_tolerances.dt_max_orbit)
     flat_sol = Array(sol) # Convert to flat array for easier processing (optional, depends on how you want to handle the results)
     indices = CartesianIndices(initial_conditions)
     # println("Full solution:")
@@ -73,7 +114,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p::ODEPar
         @views begin
             sc_view = sc_state[i]
             du_view = sc_du[i]
-
+            # println("Computing dynamics for spacecraft $i at time $t seconds...")
             # Compute forces and torques using the dynamic effectors
             forces = MVector{3, Float64}(0.0, 0.0, 0.0)
             torques = MVector{3, Float64}(0.0, 0.0, 0.0)
@@ -81,6 +122,19 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p::ODEPar
                 force, torque = calcForceTorque(effector, sc_view, p, i)
                 forces .+= force
                 torques .+= torque
+            end
+
+            # Compute control forces and torques using the control effectors (if any)
+            @inbounds for control_effector in p.args.control_model.control_effectors
+                control_force, control_torque = calcControlForceTorque(control_effector, sc_view, p, i, t)
+                if norm(control_force) > 0.0 || norm(control_torque) > 0.0
+                    println("Applying control effect for spacecraft $i at time $t seconds:")
+                    println("  Control force: $control_force")
+                    # println("  Control torque: $control_torque")
+                end
+                # println("Control force for spacecraft $i at time $t seconds: $control_force")
+                forces .+= control_force
+                torques .+= control_torque
             end
 
             # Update the derivatives of position and velocity

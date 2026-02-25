@@ -57,6 +57,13 @@ include("config_types.jl")
 include("DynamicEffectors.jl")
 @reexport using .DynamicEffectors
 
+# --- Guidance Effectors ---
+include("GuidanceEffectors.jl")
+@reexport using .GuidanceEffectors
+# --- Control Effectors ---
+include("ControlEffectors.jl")
+@reexport using .ControlEffectors
+
 # --- Physical Models ---
 include("PhysicalModels.jl")
 @reexport using .EnvironmentModels

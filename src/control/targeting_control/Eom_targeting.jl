@@ -53,7 +53,27 @@ function _legacy_ensure_gram_path!(args)
     end
 end
 
-function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing)
+if !isdefined(@__MODULE__, :LEGACY_CONTROL_STATE_LOCK)
+    const LEGACY_CONTROL_STATE_LOCK = ReentrantLock()
+end
+
+if !isdefined(@__MODULE__, :_legacy_get_cnf)
+    @inline function _legacy_get_cnf(args=nothing; cnf=nothing)
+        if cnf !== nothing
+            return cnf
+        end
+        if args isa AbstractDict && haskey(args, :cnf)
+            return args[:cnf]
+        end
+        if (@isdefined config) && isdefined(config, :cnf)
+            return getproperty(config, :cnf)
+        end
+        throw(ArgumentError("Legacy control state `cnf` not found. Pass `cnf=` or args[:cnf]."))
+    end
+end
+
+function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing; cnf=nothing)
+    cnf_state = _legacy_get_cnf(args; cnf=cnf)
     _legacy_ensure_gram_path!(args)
     gram = pyimport("gram")
 
@@ -82,13 +102,13 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
                                     m.initial_condition.minute, 
                                     m.initial_condition.second))
 
-    if config.cnf.count_numberofpassage != 1
+    if cnf_state.count_numberofpassage != 1
         t_prev = config.solution.orientation.time[end]
     else
         t_prev = m.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # m.initialcondition.time_rot
     end
 
-    r0_pp, v0_pp = r_intor_p!(r0, v0, m.planet, config.cnf.et)
+    r0_pp, v0_pp = r_intor_p!(r0, v0, m.planet, cnf_state.et)
 
     T = m.planet.T    # fixed temperature
     RT = T * m.planet.R
@@ -259,7 +279,7 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
         if heat_rate_control == true && heat_rate > args[:max_heat_rate]
             state = [T_p, ρ, S]
             index_ratio = [1]
-            aoa_hr = control_solarpanels_heatrate(ip, m, args, index_ratio, state)
+            aoa_hr = control_solarpanels_heatrate(ip, m, args, index_ratio, state; cnf=cnf_state)
 
             if args[:struct_ctrl] == 1
                 α_struct = control_struct_load(ip, m, args, S, T_p, q, MonteCarlo)
@@ -297,7 +317,7 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
         if length(args[:n_bodies]) != 0
 
             for k = 1:length(args[:n_bodies])  
-                gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
+                gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, cnf_state.n_bodies_list[k])
             end
         end
 
@@ -778,7 +798,7 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
     end
     function out_drag_pass_affect!(integrator)
         # println("entered out_drag_passage_affect! in Eoms.jl")
-        config.cnf.t_out_drag_passage = integrator.t
+        cnf_state.t_out_drag_passage = integrator.t
         terminate!(integrator)
     end
     out_drag_pass = ContinuousCallback(out_drag_pass_condition, out_drag_pass_affect!, nothing)
@@ -1103,8 +1123,8 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
 
     # println("lambda_switch_list: ", lambda_switch_list)
 
-    push!(config.cnf.lambda_switch_list, lambda_switch_list...)
-    push!(config.cnf.time_switch_list, sol.t...)
+    push!(cnf_state.lambda_switch_list, lambda_switch_list...)
+    push!(cnf_state.time_switch_list, sol.t...)
 
     return sol
 end

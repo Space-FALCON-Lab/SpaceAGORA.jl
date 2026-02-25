@@ -13,12 +13,28 @@ end
 
 using Roots
 
-function second_time_switch_recalc_with_integration(ip, m, position, args, t, heat_rate_control, reevaluation_mode, gram_atmosphere=nothing, current_position=0)
-    time_switch = config.cnf.time_switch_2
+if !isdefined(@__MODULE__, :_legacy_get_cnf)
+    @inline function _legacy_get_cnf(args=nothing; cnf=nothing)
+        if cnf !== nothing
+            return cnf
+        end
+        if args isa AbstractDict && haskey(args, :cnf)
+            return args[:cnf]
+        end
+        if (@isdefined config) && isdefined(config, :cnf)
+            return getproperty(config, :cnf)
+        end
+        throw(ArgumentError("Legacy control state `cnf` not found. Pass `cnf=` or args[:cnf]."))
+    end
+end
+
+function second_time_switch_recalc_with_integration(ip, m, position, args, t, heat_rate_control, reevaluation_mode, gram_atmosphere=nothing, current_position=0; cnf=nothing)
+    cnf_state = _legacy_get_cnf(args; cnf=cnf)
+    time_switch = cnf_state.time_switch_2
 
     function func(t_s)
         # y = asim(ip, m, t, current_position, args, 0, heat_rate_control, false, t_s, reevaluation_mode)
-        y = asim_ctrl(ip, m, t, current_position, args, 0, heat_rate_control, false, gram_atmosphere, t_s, reevaluation_mode)
+        y = asim_ctrl(ip, m, t, current_position, args, 0, heat_rate_control, false, gram_atmosphere, t_s, reevaluation_mode; cnf=cnf_state)
 
         Q = y[end,end]
 
@@ -33,13 +49,13 @@ function second_time_switch_recalc_with_integration(ip, m, position, args, t, he
 
     if abs(delta_Q_switch) <= 0.01
         if (args[:heat_load_sol] == 0 || args[:heat_load_sol] == 3) && !(delta_Q_with_current_time < 0.5 && abs(t - time_switch) > 20) && (delta_Q_switch < delta_Q_current_time)
-            return config.cnf.time_switch_1, config.cnf.time_switch_2
+            return cnf_state.time_switch_1, cnf_state.time_switch_2
         elseif (args[:heat_load_sol] == 1 || args[:heat_load_sol] == 2)
-            return config.cnf.time_switch_1, config.cnf.time_switch_2
+            return cnf_state.time_switch_1, cnf_state.time_switch_2
         end
     elseif delta_Q_current_time < 0
         if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 3
-            return config.cnf.time_switch_1, t
+            return cnf_state.time_switch_1, t
         end
     end
 
@@ -64,18 +80,19 @@ function second_time_switch_recalc_with_integration(ip, m, position, args, t, he
     end
 
     # println("time_switch: ", typeof(time_switch))
-    # println("config.cnf.time_switch_1: ", typeof(config.cnf.time_switch_1))
+    # println("cnf_state.time_switch_1: ", typeof(cnf_state.time_switch_1))
 
-    return config.cnf.time_switch_1, time_switch
+    return cnf_state.time_switch_1, time_switch
 end
 
-function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, current_position=0, reevaluation_mode=0)
+function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, current_position=0, reevaluation_mode=0; cnf=nothing)
+    cnf_state = _legacy_get_cnf(args; cnf=cnf)
     # Evaluates past heat load
-    aoa_past = config.cnf.α_list
-    time_switch_1 = config.cnf.time_switch_1
-    time_switch_2 = config.cnf.time_switch_2
+    aoa_past = cnf_state.α_list
+    time_switch_1 = cnf_state.time_switch_1
+    time_switch_2 = cnf_state.time_switch_2
 
-    Q_past = maximum(config.cnf.heat_load_past)
+    Q_past = maximum(cnf_state.heat_load_past)
 
     function func(time_switch)
         # predict the rest part of the passage heat load
@@ -153,9 +170,9 @@ function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, 
 
     delta_Q_current_time = abs(delta_Q_current_time - delta_Q_switch) # if the difference between the heat load at the current time and the switch is small but the time is too large, recheck
     if abs(delta_Q_switch) <= x_tol && !(delta_Q_current_time < 0.5 && abs(t - time_switch_2) > 20)
-        return config.cnf.time_switch_1, config.cnf.time_switch_2
+        return cnf_state.time_switch_1, cnf_state.time_switch_2
     elseif delta_Q_current_time < 0
-        return config.cnf.time_switch_1, t
+        return cnf_state.time_switch_1, t
     elseif delta_Q_switch > 0
         mult = 1
     elseif delta_Q_switch < 0
@@ -178,5 +195,5 @@ function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, 
 
     time_switch_2 -= time_switch_2*0.1
 
-    return config.cnf.time_switch_1, time_switch_2
+    return cnf_state.time_switch_1, time_switch_2
 end

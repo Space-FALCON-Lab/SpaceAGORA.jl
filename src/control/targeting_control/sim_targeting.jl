@@ -45,7 +45,27 @@ sys = pyimport("sys")
     return false
 end
 
-function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
+if !isdefined(@__MODULE__, :LEGACY_CONTROL_STATE_LOCK)
+    const LEGACY_CONTROL_STATE_LOCK = ReentrantLock()
+end
+
+if !isdefined(@__MODULE__, :_legacy_get_cnf)
+    @inline function _legacy_get_cnf(args=nothing; cnf=nothing)
+        if cnf !== nothing
+            return cnf
+        end
+        if args isa AbstractDict && haskey(args, :cnf)
+            return args[:cnf]
+        end
+        if (@isdefined config) && isdefined(config, :cnf)
+            return getproperty(config, :cnf)
+        end
+        throw(ArgumentError("Legacy control state `cnf` not found. Pass `cnf=` or args[:cnf]."))
+    end
+end
+
+function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
+    cnf_state = _legacy_get_cnf(param[8]; cnf=cnf)
     ip = param[3]
 
     wind_m = false
@@ -75,14 +95,14 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         
         ## Counters
         # Counter for all along the simulation of all passages
-        config.cnf.count_aerobraking = config.cnf.count_aerobraking + 1
-        passage_number = config.cnf.count_aerobraking
+        cnf_state.count_aerobraking = cnf_state.count_aerobraking + 1
+        passage_number = cnf_state.count_aerobraking
         # Counter for one entire passage
-        config.cnf.count_dori = config.cnf.count_dori + 1
+        cnf_state.count_dori = cnf_state.count_dori + 1
         # Counter for one phase
-        config.cnf.count_phase = config.cnf.count_phase + 1
+        cnf_state.count_phase = cnf_state.count_phase + 1
 
-        t0 = t0 * config.cnf.TU
+        t0 = t0 * cnf_state.TU
 
         # Clock
         current_epoch = date_initial + t0*seconds # Precompute the current epoch
@@ -93,14 +113,14 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation
         current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
         time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
-        config.cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
-        m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), config.cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+        cnf_state.et = utc2et(time_real_utc) # Current time in Ephemeris Time
+        m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), cnf_state.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
         
 
         # Assign state
-        pos_ii = SVector{3, Float64}(in_cond[1:3] * config.cnf.DU)                      # Inertial position 
-        vel_ii = SVector{3, Float64}(in_cond[4:6] * config.cnf.DU / config.cnf.TU)      # Inertial velocity
-        mass = in_cond[7] * config.cnf.MU                                          # Mass kg
+        pos_ii = SVector{3, Float64}(in_cond[1:3] * cnf_state.DU)                      # Inertial position 
+        vel_ii = SVector{3, Float64}(in_cond[4:6] * cnf_state.DU / cnf_state.TU)      # Inertial velocity
+        mass = in_cond[7] * cnf_state.MU                                          # Mass kg
         pos_ii_mag = norm(pos_ii)                                  # Magnitude of the inertial position
         vel_ii_mag = norm(vel_ii)                                  # Magnitude of the inertial velocity
 
@@ -112,7 +132,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
 
         # TRANSFORM THE STATE
         # Inertial to planet relative transformation
-        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, config.cnf.et) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
+        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, m.planet, cnf_state.et) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
         pos_pp_mag = norm(pos_pp) # Magnitude of the planet relative position
         pos_pp_hat = pos_pp / pos_pp_mag # Unit vector of the planet relative position
         pos_ii_hat = pos_ii / pos_ii_mag # Unit vector of the inertial position
@@ -124,14 +144,14 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         OE = rvtoorbitalelement(pos_ii, vel_ii, mass, m.planet)
         vi = OE[6]
 
-        # if vi > 0 && vi < pi/2 && config.cnf.ascending_phase == false
-        #     config.cnf.ascending_phase = true
-        # elseif vi >= pi/2 && vi <= pi && config.cnf.ascending_phase == true && args[:body_shape] == "Blunted Cone"
-        #     config.cnf.ascending_phase = false
+        # if vi > 0 && vi < pi/2 && cnf_state.ascending_phase == false
+        #     cnf_state.ascending_phase = true
+        # elseif vi >= pi/2 && vi <= pi && cnf_state.ascending_phase == true && args[:body_shape] == "Blunted Cone"
+        #     cnf_state.ascending_phase = false
         # end
 
-        if config.cnf.ascending_phase == true && config.cnf.MarsGram_recall == false
-            config.cnf.atmospheric_data = Dict()
+        if cnf_state.ascending_phase == true && cnf_state.MarsGram_recall == false
+            cnf_state.atmospheric_data = Dict()
         end
 
         # Angular Momentum Calculations 
@@ -167,12 +187,12 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         alt = LatLong[1]
 
         # if aerobraking_phase == 2 || aerobraking_phase == 0
-        #     if (pos_ii_mag - m.planet.Rp_e - args[:EI] * 1e3) <= 0 && config.cnf.drag_state == false && config.cnf.ascending_phase == false
-        #         config.cnf.drag_state = true
-        #         config.cnf.time_IEI = t0
-        #     elseif (pos_ii_mag - m.planet.Rp_e >= args[:EI] * 1e3) && config.cnf.drag_state == true && config.cnf.ascending_phase
-        #         config.cnf.drag_state = false
-        #         config.cnf.time_OEI = t0
+        #     if (pos_ii_mag - m.planet.Rp_e - args[:EI] * 1e3) <= 0 && cnf_state.drag_state == false && cnf_state.ascending_phase == false
+        #         cnf_state.drag_state = true
+        #         cnf_state.time_IEI = t0
+        #     elseif (pos_ii_mag - m.planet.Rp_e >= args[:EI] * 1e3) && cnf_state.drag_state == true && cnf_state.ascending_phase
+        #         cnf_state.drag_state = false
+        #         cnf_state.time_OEI = t0
         #     end
         # end
 
@@ -183,10 +203,10 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
                 x = 140
             end
 
-            if (config.cnf.heat_rate_prev > 0.005 || abs(pos_ii_mag - m.planet.Rp_e <= x*1e3)) && config.cnf.sensible_loads == false && config.cnf.ascending_phase == false
-                config.cnf.sensible_loads = true
-            elseif config.cnf.heat_rate_prev > 0.005 && config.cnf.sensible_loads == true && config.cnf.ascending_phase
-                config.cnf.sensible_loads = false
+            if (cnf_state.heat_rate_prev > 0.005 || abs(pos_ii_mag - m.planet.Rp_e <= x*1e3)) && cnf_state.sensible_loads == false && cnf_state.ascending_phase == false
+                cnf_state.sensible_loads = true
+            elseif cnf_state.heat_rate_prev > 0.005 && cnf_state.sensible_loads == true && cnf_state.ascending_phase
+                cnf_state.sensible_loads = false
             end
         end
 
@@ -199,7 +219,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         azi_pp = atan(vE, vN)
 
         # Get density, pressure , temperature and winds
-        config.cnf.Gram_justrecalled = 0
+        cnf_state.Gram_justrecalled = 0
         if ip.dm == 0
             ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         elseif ip.dm == 1
@@ -227,41 +247,41 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         sound_velocity = sqrt(γ * m.planet.R * T_p)
         Mach = vel_pp_mag / sound_velocity
         S = sqrt(γ/2) * Mach    # Molecular speed ratio
-        heat_load = in_cond[8] * config.cnf.MU / config.cnf.TU^2 # * 1e4
+        heat_load = in_cond[8] * cnf_state.MU / cnf_state.TU^2 # * 1e4
 
-        if config.cnf.drag_state == true
+        if cnf_state.drag_state == true
             ## Check type of fluid and check if this changes for different planets
             Kn = 1.26 * sqrt(γ) * Mach / (Re + 1e-5)
             if index_phase_aerobraking == 2
-                if (alt < 80000) && (config.cnf.index_warning_alt == 0)
+                if (alt < 80000) && (cnf_state.index_warning_alt == 0)
                     if _legacy_sim_targeting_log_enabled(args)
                         println("WARNING: Altitude < 80 km!")
                     end
                 end
 
-                config.cnf.index_warning_alt = 1
+                cnf_state.index_warning_alt = 1
             elseif alt > 100000
-                config.cnf.index_warning_alt = 0
+                cnf_state.index_warning_alt = 0
             end
 
-            if Kn < 0.1 && config.cnf.index_warning_flow == 0
+            if Kn < 0.1 && cnf_state.index_warning_flow == 0
                 if _legacy_sim_targeting_log_enabled(args)
                     println("WARNING: Transitional flow passage!")
                 end
                 
-                config.cnf.index_warning_flow = 1
+                cnf_state.index_warning_flow = 1
             elseif Kn >= 0.1
-                config.cnf.index_warning_flow = 0
+                cnf_state.index_warning_flow = 0
             end
         end
 
         # Heat rate
-        if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
+        if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && cnf_state.drag_state && length(cnf_state.initial_position_closed_form) != 0
             # Heat Rate 
             if ip.tm == 1
-                heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
+                heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, cnf_state.α)
             elseif ip.tm == 2
-                heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
+                heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, cnf_state.α)
             end
             
             cp = m.planet.γ / (m.planet.γ - 1) * m.planet.R
@@ -287,26 +307,26 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         if args[:struct_ctrl] == 1
             α_struct = control_struct_load(ip, m, args, S, T_p, q, MonteCarlo)
 
-            config.cnf.α = min(config.cnf.α, α_struct) # limit the angle of attack to the structural load control
+            cnf_state.α = min(cnf_state.α, α_struct) # limit the angle of attack to the structural load control
         end
 
         if t0 >= t_switch
-            config.cnf.α = 0
+            cnf_state.α = 0
         else
             state = [T_p, ρ, S]
             index_ratio = [1,1]
-            config.cnf.α = control_solarpanels_heatrate(ip, m, args, index_ratio, state, t0 - config.cnf.t_switch_targeting, config.cnf.initial_position_closed_form, OE)
+            cnf_state.α = control_solarpanels_heatrate(ip, m, args, index_ratio, state, t0 - cnf_state.t_switch_targeting, cnf_state.initial_position_closed_form, OE; cnf=cnf_state)
         end
 
-        α = config.cnf.α
+        α = cnf_state.α
 
         # Heat Rate 
-        if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
+        if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && cnf_state.drag_state && length(cnf_state.initial_position_closed_form) != 0
             
             if ip.tm == 1
-                heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
+                heat_rate = heatrate_convective_radiative(S, T_p, m, ρ, vel_pp_mag, cnf_state.α)
             elseif ip.tm == 2
-                heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, config.cnf.α)
+                heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, cnf_state.α)
             end
             
             cp = m.planet.γ / (m.planet.γ - 1) * m.planet.R
@@ -330,14 +350,14 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
 
         if length(args[:n_bodies]) != 0
             for k = 1:length(args[:n_bodies])  
-                gravity_ii += mass * gravity_n_bodies(config.cnf.et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
+                gravity_ii += mass * gravity_n_bodies(cnf_state.et, pos_ii, m.planet, cnf_state.n_bodies_list[k])
             end
         end
 
         srp_ii = zeros(3) # solar radiation pressure vector
         if args[:srp] == true
             p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
-            srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, config.cnf.et)
+            srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, cnf_state.et)
         end
 
         if args[:gravity_harmonics] == 1
@@ -370,9 +390,9 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         lift_ii = m.planet.L_PI' * lift_pp   # Inertial lift force vector
 
         # Check if propellant mass is greater than 0 kg
-        if config.cnf.index_propellant_mass == 1
+        if cnf_state.index_propellant_mass == 1
             if mass - args[:dry_mass] <= 0.5
-                config.cnf.index_propellant_mass = 0
+                cnf_state.index_propellant_mass = 0
                 m.engines.T = 0
 
                 if _legacy_sim_targeting_log_enabled(args)
@@ -389,7 +409,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         elseif ip.tc == 1
             thrust_pp_mag = abms(t0, m.engines.T, Δv, args, index_phase_aerobraking)
         elseif ip.tc == 2
-            thrust_pp_mag = deceleration_drag_passage(t0, m.engines.T, Δv, args, index_phase_aerobraking)
+            thrust_pp_mag = deceleration_drag_passage(t0, m.engines.T, Δv, args, index_phase_aerobraking; cnf=cnf_state)
         end
 
         # Rodrigues rotation formula to rotate thrust vector of angle phi around angular vector from D direction
@@ -403,10 +423,10 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         # Total inetrial external force vector on body [N]
         force_ii = drag_ii + lift_ii + gravity_ii + thrust_ii + srp_ii
         
-        y_dot[1:3] = vel_ii * (config.cnf.TU / config.cnf.DU)
-        y_dot[4:6] = force_ii / mass * (config.cnf.TU^2 / config.cnf.DU) 
-        y_dot[7] = -norm(thrust_ii) / (m.engines.g_e * m.engines.Isp) * config.cnf.TU / config.cnf.MU       # mass variation
-        y_dot[8] = heat_rate * config.cnf.TU^3 / config.cnf.MU # * 1e-4
+        y_dot[1:3] = vel_ii * (cnf_state.TU / cnf_state.DU)
+        y_dot[4:6] = force_ii / mass * (cnf_state.TU^2 / cnf_state.DU) 
+        y_dot[7] = -norm(thrust_ii) / (m.engines.g_e * m.engines.Isp) * cnf_state.TU / cnf_state.MU       # mass variation
+        y_dot[8] = heat_rate * cnf_state.TU^3 / cnf_state.MU # * 1e-4
         energy = (vel_ii_mag^2)/2 - (m.planet.μ / pos_ii_mag)
 
         return y_dot
@@ -417,15 +437,15 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         m = integrator.p[1]
         args = integrator.p[8]
 
-        if abs(norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:AE]*1e3) <= 1e-5 
+        if abs(norm(y[1:3]) * cnf_state.DU - m.planet.Rp_e - args[:AE]*1e3) <= 1e-5 
             if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 2
-                config.cnf.α = m.aerodynamics.α
+                cnf_state.α = m.aerodynamics.α
             elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 3
-                config.cnf.α = 0.0
+                cnf_state.α = 0.0
             end
         end
 
-        norm(y[1:3]) * config.cnf.DU - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
+        norm(y[1:3]) * cnf_state.DU - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
     end
     function out_drag_passage_affect!(integrator)
         terminate!(integrator)
@@ -433,7 +453,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
     out_drag_passage = ContinuousCallback(out_drag_passage_condition, out_drag_passage_affect!, nothing)
 
     # # Time initialization
-    initial_time, final_time = time_0 / config.cnf.TU, (time_0 + 1e8) / config.cnf.TU
+    initial_time, final_time = time_0 / cnf_state.TU, (time_0 + 1e8) / cnf_state.TU
 
     param = (param..., t_switch)
 

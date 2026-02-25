@@ -483,6 +483,7 @@ end
     @test isdefined(sandbox, :_legacy_sim_targeting_log_enabled)
     @test isdefined(sandbox, :_legacy_eom_targeting_log_enabled)
     @test isdefined(sandbox, :_legacy_eom_ctrl_log_enabled)
+    @test isdefined(sandbox, :_legacy_get_cnf)
 
     args_quiet = Dict{Symbol, Any}(:print_res => false, :verbose => false)
     args_print = Dict{Symbol, Any}(:print_res => true, :verbose => false)
@@ -533,6 +534,38 @@ end
     heat_rate = sandbox.heat_rate_calc(1.0, 1e-6, 250.0, 250.0, 287.0, 1.4, 3.0, 0.3)
     @test isfinite(heat_rate)
     @test heat_rate >= 0.0
+
+    local_cnf = (α=0.314, α_past=0.25)
+    @test sandbox._legacy_get_cnf(Dict{Symbol, Any}(:cnf => local_cnf)).α == local_cnf.α
+    @test sandbox.control_solarpanels_heatrate(nothing, nothing, Dict{Symbol, Any}(), [0], nothing; cnf=local_cnf) == local_cnf.α
+end
+
+@testset "Legacy CNF Threading Guard" begin
+    function strip_comments(src::String)
+        # Remove block comments first, then trim line comments (including trailing inline comments).
+        no_block = replace(src, r"#=.*?=#"s => "")
+        no_line = map(line -> first(split(line, '#'; limit=2)), split(no_block, '\n'; keepempty=true))
+        return join(no_line, "\n")
+    end
+
+    scoped_files = [
+        "src/control/Control.jl",
+        "src/control/targeting_control/targeting.jl",
+        "src/control/heatload_control/Time_switch_calcs.jl",
+        "src/control/heatload_control/Second_tsw_calcs.jl",
+        "src/control/heatload_control/Security_mode.jl",
+        "src/control/targeting_control/sim_targeting.jl",
+        "src/control/utils/Eoms.jl",
+        "src/control/utils/Eom_ctrl.jl",
+        "src/control/utils/Propulsive_maneuvers.jl",
+        "src/control/Eoms.jl",
+        "src/control/Eom_ctrl.jl",
+        "src/control/targeting_control/Eom_targeting.jl"
+    ]
+    for relpath in scoped_files
+        src = strip_comments(read(joinpath(REPO_ROOT, relpath), String))
+        @test !occursin("config.cnf", src)
+    end
 end
 
 @testset "Deterministic Smoke + No-Drag Energy Invariant" begin

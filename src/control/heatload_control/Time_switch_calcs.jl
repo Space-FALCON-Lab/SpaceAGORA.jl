@@ -14,7 +14,7 @@ end
 
 using Roots
 
-function switch_calculation_with_integration(ip, m, position, args, t, heat_rate_control, reevaluation_mode, gram_atmosphere, current_position=0)
+function switch_calculation_with_integration(ip, m, position, args, t, heat_rate_control, reevaluation_mode, gram_atmosphere, current_position=0; cnf=nothing)
     # println("time_switch 1: ", time_switch)
 
     function func(k_cf)
@@ -24,7 +24,7 @@ function switch_calculation_with_integration(ip, m, position, args, t, heat_rate
 
         # println("k: ", k)
 
-        y, time_switch = asim_ctrl(ip, m, t, position, args, k, heat_rate_control, true, gram_atmosphere)
+        y, time_switch = asim_ctrl(ip, m, t, position, args, k, heat_rate_control, true, gram_atmosphere; cnf=cnf)
 
         Q = y[end,end]
 
@@ -75,7 +75,7 @@ function switch_calculation_with_integration(ip, m, position, args, t, heat_rate
     return time_switch
 end
 
-function switch_calculation(ip, m, position, args, t, heat_rate_control, reevaluation_mode, current_position=0)
+function switch_calculation(ip, m, position, args, t, heat_rate_control, reevaluation_mode, current_position=0; cnf=nothing)
 
     # global t_cf, h_cf, γ_cf, v_cf
 

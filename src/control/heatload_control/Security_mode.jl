@@ -11,7 +11,23 @@ if !isdefined(@__MODULE__, :__legacy_closed_form_solution_included__)
     const __legacy_closed_form_solution_included__ = true
 end
 
-function security_mode(ip, m, position, args, t, heat_rate_control=false)
+if !isdefined(@__MODULE__, :_legacy_get_cnf)
+    @inline function _legacy_get_cnf(args=nothing; cnf=nothing)
+        if cnf !== nothing
+            return cnf
+        end
+        if args isa AbstractDict && haskey(args, :cnf)
+            return args[:cnf]
+        end
+        if (@isdefined config) && isdefined(config, :cnf)
+            return getproperty(config, :cnf)
+        end
+        throw(ArgumentError("Legacy control state `cnf` not found. Pass `cnf=` or args[:cnf]."))
+    end
+end
+
+function security_mode(ip, m, position, args, t, heat_rate_control=false; cnf=nothing)
+    cnf_state = _legacy_get_cnf(args; cnf=cnf)
     T = m.planet.T
 
     t_cf, h_cf, γ_cf, v_cf = closed_form(args, m, position, T, true, m.aerodynamics.α)
@@ -30,11 +46,11 @@ function security_mode(ip, m, position, args, t, heat_rate_control=false)
     heat_rate_min = heat_rate_min .* index_future
     traj_rate = t_cf[2] - t_cf[1]
 
-    if (sum(heat_rate_min) * traj_rate) + config.cnf.heat_load_past > m.aerodynamics.heat_load_limit
-        config.cnf.security_mode = true
+    if (sum(heat_rate_min) * traj_rate) + cnf_state.heat_load_past > m.aerodynamics.heat_load_limit
+        cnf_state.security_mode = true
 
         return [0, t_cf[end] + 10000] # switch angle of attack to 0 for the rest # security made on the check
     end
 
-    return [config.cnf.time_switch_1, config.cnf.time_switch_2]
+    return [cnf_state.time_switch_1, cnf_state.time_switch_2]
 end

@@ -17,8 +17,28 @@ using SPICE
 using PythonCall
 sys = pyimport("sys")
 
+if !isdefined(@__MODULE__, :LEGACY_CONTROL_STATE_LOCK)
+    const LEGACY_CONTROL_STATE_LOCK = ReentrantLock()
+end
 
-function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval=false, gram_atmosphere=nothing, time_switch_2=0, reevaluation_mode=1)
+if !isdefined(@__MODULE__, :_legacy_get_cnf)
+    @inline function _legacy_get_cnf(args=nothing; cnf=nothing)
+        if cnf !== nothing
+            return cnf
+        end
+        if args isa AbstractDict && haskey(args, :cnf)
+            return args[:cnf]
+        end
+        if (@isdefined config) && isdefined(config, :cnf)
+            return getproperty(config, :cnf)
+        end
+        throw(ArgumentError("Legacy control state `cnf` not found. Pass `cnf=` or args[:cnf]."))
+    end
+end
+
+
+function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval=false, gram_atmosphere=nothing, time_switch_2=0, reevaluation_mode=1; cnf=nothing)
+    cnf_state = _legacy_get_cnf(args; cnf=cnf)
     sys.path.append(args[:directory_Gram])
     gram = pyimport("gram")
 
@@ -49,13 +69,13 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
                                     m.initial_condition.minute, 
                                     m.initial_condition.second))
 
-    if config.cnf.count_numberofpassage != 1
+    if cnf_state.count_numberofpassage != 1
         t_prev = config.solution.orientation.time[end]
     else
         t_prev = m.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # m.initialcondition.time_rot
     end
 
-    r0_pp, v0_pp = r_intor_p!(r0, v0, m.planet, config.cnf.et)
+    r0_pp, v0_pp = r_intor_p!(r0, v0, m.planet, cnf_state.et)
 
     T = m.planet.T    # fixed temperature
     RT = T * m.planet.R
@@ -194,13 +214,13 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
             end
         else
             if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 3
-                if t0 >= config.cnf.time_switch_1 && t0 <= time_switch_2
+                if t0 >= cnf_state.time_switch_1 && t0 <= time_switch_2
                     aoa = 0.0001
                 else
                     aoa = m.aerodynamics.α
                 end
             elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 2
-                if t0 >= config.cnf.time_switch_1 && t0 <= time_switch_2
+                if t0 >= cnf_state.time_switch_1 && t0 <= time_switch_2
                     aoa = m.aerodynamics.α
                 else
                     aoa = 0.0001
@@ -215,7 +235,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         if heat_rate_control == true && heat_rate > args[:max_heat_rate]
             state = [T_p, ρ, S]
             index_ratio = [1]
-            aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state)
+            aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state; cnf=cnf_state)
             heat_rate = args[:max_heat_rate]
         end
 
@@ -251,7 +271,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         if length(args[:n_bodies]) != 0
 
             for k = 1:length(args[:n_bodies])  
-                gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
+                gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, cnf_state.n_bodies_list[k])
             end
         end
 
@@ -315,7 +335,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
     end
     function out_drag_pass_affect!(integrator)
         # println("entered out_drag_passage_affect! in Eoms.jl")
-        config.cnf.t_out_drag_passage = integrator.t
+        cnf_state.t_out_drag_passage = integrator.t
         terminate!(integrator)
     end
     out_drag_pass = ContinuousCallback(out_drag_pass_condition, out_drag_pass_affect!, nothing)
@@ -337,7 +357,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
     end
     function time_switch_func_affect!(integrator)
         # println("entered time_switch_func_affect! in Eoms.jl")
-        append!(config.cnf.t_time_switch_func, integrator.t)
+        append!(cnf_state.t_time_switch_func, integrator.t)
         nothing
     end
     time_switch_func = ContinuousCallback(time_switch_func_condition, time_switch_func_affect!)
@@ -411,7 +431,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
                 break
             end
 
-            # println("time: ", config.cnf.t_out_drag_passage)
+            # println("time: ", cnf_state.t_out_drag_passage)
 
             prob = ODEProblem(f_ctrl!, in_cond, (sol.t[end], -10), param)
             sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
@@ -447,7 +467,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         prob = ODEProblem(f_ctrl!, in_cond, (initial_time, final_time), param)
         sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
 
-        temp = config.cnf.t_time_switch_func
+        temp = cnf_state.t_time_switch_func
 
         ## Time switch definition
         time_switch = [0.0, 0.0]
@@ -463,7 +483,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
             time_switch[2] = sol.t[end]
         end
 
-        config.cnf.t_time_switch_func = []
+        cnf_state.t_time_switch_func = []
 
     else  # second time evaluation
         temp_0 = 0
@@ -474,7 +494,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         initial_state = nothing
 
         # Initial Condition Initialization
-        in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], 0.0, 0.0, 0.0, config.cnf.heat_load_past]
+        in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], 0.0, 0.0, 0.0, cnf_state.heat_load_past]
 
         step = 1
 

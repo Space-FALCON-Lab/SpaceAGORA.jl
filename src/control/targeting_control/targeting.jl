@@ -15,7 +15,44 @@ using Roots
     return false
 end
 
-function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a_tol, r_tol, method, events, in_cond)
+if !isdefined(@__MODULE__, :LEGACY_CONTROL_STATE_LOCK)
+    const LEGACY_CONTROL_STATE_LOCK = ReentrantLock()
+end
+
+if !isdefined(@__MODULE__, :_legacy_get_cnf)
+    @inline function _legacy_get_cnf(args=nothing; cnf=nothing)
+        if cnf !== nothing
+            return cnf
+        end
+        if args isa AbstractDict && haskey(args, :cnf)
+            return args[:cnf]
+        end
+        if (@isdefined config) && isdefined(config, :cnf)
+            return getproperty(config, :cnf)
+        end
+        throw(ArgumentError("Legacy control state `cnf` not found. Pass `cnf=` or args[:cnf]."))
+    end
+end
+
+function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a_tol, r_tol, method, events, in_cond; cnf=nothing)
+    lock(LEGACY_CONTROL_STATE_LOCK)
+    try
+        return _target_planning_impl(f!, ip, m, args, param, OE, initial_time, final_time, a_tol, r_tol, method, events, in_cond; cnf=cnf)
+    finally
+        unlock(LEGACY_CONTROL_STATE_LOCK)
+    end
+end
+
+function _target_planning_impl(f!, ip, m, args, param, OE, initial_time, final_time, a_tol, r_tol, method, events, in_cond; cnf=nothing)
+    if args isa AbstractDict
+        local_cnf = _legacy_get_cnf(args; cnf=cnf)
+        try
+            args[:cnf] = local_cnf
+        catch
+            nothing
+        end
+    end
+    cnf_state = _legacy_get_cnf(args; cnf=cnf)
 
     # OE = SVector{7, Float64}([initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m])
     r0, v0 = orbitalelemtorv(OE, m.planet)
@@ -39,8 +76,8 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
         println("m.aero.alpha after deepcopying: ", m.aerodynamics.α)
     end
 
-    config.cnf.ascending_phase = false
-    config.cnf.drag_state = true
+    cnf_state.ascending_phase = false
+    cnf_state.drag_state = true
 
     # param_temp = param
 
@@ -81,9 +118,9 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     end
 
     if target_energy < energy_target_max && target_energy > energy_target_min
-        config.cnf.targeting = 1
+        cnf_state.targeting = 1
     elseif target_energy < energy_target_min
-        config.cnf.targeting = 0
+        cnf_state.targeting = 0
     else
         if log_enabled
             println("Cannot target energy level that is larger than possible with minimum drag ratio")
@@ -122,7 +159,7 @@ function control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
 
     function func_targeting_num_int(t_switch)
 
-        sol = asim_ctrl_targeting(t_switch, param, time_0, in_cond)
+        sol = asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=_legacy_get_cnf(param[8]))
 
         m = param[1]
 
@@ -150,7 +187,7 @@ function control_solarpanels_targeting_heatload(energy_f, param, OE)
         args = param[8]
         gram_atmosphere = param[10]
 
-        sol, _ = asim_ctrl_rf(ip, m, time_0, OE, args, v_E, 1.0, false, gram_atmosphere)
+        sol, _ = asim_ctrl_rf(ip, m, time_0, OE, args, v_E, 1.0, false, gram_atmosphere; cnf=_legacy_get_cnf(args))
 
         energy_fin = norm(sol[4:6,end])^2/2 - m.planet.μ / norm(sol[1:3,end])
 

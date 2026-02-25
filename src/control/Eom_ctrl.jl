@@ -17,10 +17,30 @@ using SPICE
 using PythonCall
 sys = pyimport("sys")
 
+if !isdefined(@__MODULE__, :LEGACY_CONTROL_STATE_LOCK)
+    const LEGACY_CONTROL_STATE_LOCK = ReentrantLock()
+end
+
+if !isdefined(@__MODULE__, :_legacy_get_cnf)
+    @inline function _legacy_get_cnf(args=nothing; cnf=nothing)
+        if cnf !== nothing
+            return cnf
+        end
+        if args isa AbstractDict && haskey(args, :cnf)
+            return args[:cnf]
+        end
+        if (@isdefined config) && isdefined(config, :cnf)
+            return getproperty(config, :cnf)
+        end
+        throw(ArgumentError("Legacy control state `cnf` not found. Pass `cnf=` or args[:cnf]."))
+    end
+end
+
  # import .config
  # import .ref_sys
 
-function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_control, gram_atmosphere=nothing)
+function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_control, gram_atmosphere=nothing; cnf=nothing)
+    cnf_state = _legacy_get_cnf(args; cnf=cnf)
     sys.path.append(args[:directory_Gram])
     gram = pyimport("gram")
 
@@ -41,7 +61,7 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
     # Clock
     date_initial = from_utc(DateTime(m.initial_condition.year, m.initial_condition.month, m.initial_condition.day, m.initial_condition.hour, m.initial_condition.minute, m.initial_condition.second))
 
-    if config.cnf.count_numberofpassage != 1
+    if cnf_state.count_numberofpassage != 1
         t_prev = config.solution.orientation.time[end]
     else
         t_prev = m.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # m.initialcondition.time_rot
@@ -195,7 +215,7 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
         if heat_rate_control == true && heat_rate > args[:max_heat_rate]
             state = [T_p, ρ, S]
             index_ratio = [1]
-            aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state)
+            aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state; cnf=cnf_state)
             heat_rate = args[:max_heat_rate]
         end
 
@@ -231,7 +251,7 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
         if length(args[:n_bodies]) != 0
 
             for k = 1:length(args[:n_bodies])  
-                gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
+                gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, cnf_state.n_bodies_list[k])
             end
         end
 
@@ -295,7 +315,7 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
     end
     function out_drag_pass_affect!(integrator)
         # println("entered out_drag_passage_affect! in Eoms.jl")
-        config.cnf.t_out_drag_passage = integrator.t
+        cnf_state.t_out_drag_passage = integrator.t
         terminate!(integrator)
     end
     out_drag_pass = ContinuousCallback(out_drag_pass_condition, out_drag_pass_affect!, nothing)
@@ -319,10 +339,10 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
     end
     function time_switch_func_affect!(integrator)
         # println("entered time_switch_func_affect! in Eoms.jl")
-        append!(config.cnf.t_time_switch_func, integrator.t)
+        append!(cnf_state.t_time_switch_func, integrator.t)
         nothing
 
-        # if length(config.cnf.t_time_switch_func) == 2
+        # if length(cnf_state.t_time_switch_func) == 2
         #     terminate!(integrator)
         # else
         #     nothing
@@ -399,7 +419,7 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
             break
         end
 
-        # println("time: ", config.cnf.t_out_drag_passage)
+        # println("time: ", cnf_state.t_out_drag_passage)
 
         prob = ODEProblem(f_ctrl!, in_cond, (sol.t[end], -10), param)
         sol = solve(prob, method, abstol=a_tol, reltol=r_tol, dtmax=step, callback=events)
@@ -443,8 +463,8 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
 
     # println("lambda_switch_list: ", lambda_switch_list)
 
-    push!(config.cnf.lambda_switch_list, lambda_switch_list)
-    push!(config.cnf.time_list2, sol.t)
+    push!(cnf_state.lambda_switch_list, lambda_switch_list)
+    push!(cnf_state.time_list2, sol.t)
 
     # Initial condition initialization
     in_cond = [sol[1,end], sol[2,end], sol[3,end], sol[4,end], sol[5,end], sol[6,end], lambdav, lambdag, lambdah, 0.0]

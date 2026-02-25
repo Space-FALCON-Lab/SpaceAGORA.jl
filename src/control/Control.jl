@@ -37,6 +37,25 @@ using Roots
     return false
 end
 
+if !isdefined(@__MODULE__, :LEGACY_CONTROL_STATE_LOCK)
+    const LEGACY_CONTROL_STATE_LOCK = ReentrantLock()
+end
+
+if !isdefined(@__MODULE__, :_legacy_get_cnf)
+    @inline function _legacy_get_cnf(args=nothing; cnf=nothing)
+        if cnf !== nothing
+            return cnf
+        end
+        if args isa AbstractDict && haskey(args, :cnf)
+            return args[:cnf]
+        end
+        if (@isdefined config) && isdefined(config, :cnf)
+            return getproperty(config, :cnf)
+        end
+        throw(ArgumentError("Legacy control state `cnf` not found. Pass `cnf=` or args[:cnf]."))
+    end
+end
+
 function no_control(ip, m, args=0, index_ratio=0, state=0, t=0, position=0, current_position=0, heat_rate_control=true)
     α = m.aerodynamics.α
 
@@ -58,7 +77,7 @@ function control_struct_load(ip, m, args, S, T_p, q, MonteCarlo=false)
 
     f(x) = q * aerodynamic_coefficient_fM(x, m.body, T_p, S, m.aerodynamics, MonteCarlo)[2] * area_tot - drag_limit
 
-    # α = config.cnf.α # pi/2
+    # α = cnf_state.α # pi/2
 
     if (drag_max < drag_limit)
         α = max_α
@@ -97,7 +116,8 @@ function control_struct_load(ip, m, args, S, T_p, q, MonteCarlo=false)
 
 end
 
-function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, position=0, current_position=0)
+function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, position=0, current_position=0; cnf=nothing)
+    cnf_state = _legacy_get_cnf(args; cnf=cnf)
     # println(state)
     # α = nothing
     if index_ratio[1] == 1
@@ -132,14 +152,14 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
 
         f(x) = L .* ((S.^2 .+ (γ) / (γ - 1) - (γ + 1) / (2 * (γ - 1)) * (T_w ./ T_p)) * (exp.(-(S .* sin.(x)).^2) + (pi^0.5) * (S .* sin.(x)) * (1 + erf.(S .* sin.(x)))) - 0.5 * exp.(-(S .* sin.(x)).^2)) .- thermal_limit
 
-        α = config.cnf.α # pi/2
+        α = cnf_state.α # pi/2
 
         if (heat_rate_max < thermal_limit)
             α = max_α
         elseif (heat_rate_min > thermal_limit)
             α = min_α
         elseif (heat_rate_max >= thermal_limit) && (heat_rate_min <= thermal_limit)
-            x_0 = config.cnf.α_past
+            x_0 = cnf_state.α_past
 
             # println("try")
             try
@@ -194,7 +214,7 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
         # end
         return α
     else
-        return config.cnf.α
+        return cnf_state.α
     end
 
 end
@@ -209,7 +229,17 @@ function heat_rate_calc(taf, ρ, T_w, T_p, R, γ, S, angle)
     return (term_b .- 0.5 * exp.(-(S .* sin.(angle)).^2)) .* first_term
 end
 
-function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, position=0, current_position=0, gram_atmosphere=nothing, heat_rate_control=false)
+function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, position=0, current_position=0, gram_atmosphere=nothing, heat_rate_control=false; cnf=nothing)
+    lock(LEGACY_CONTROL_STATE_LOCK)
+    try
+        return _control_solarpanels_heatload_impl(ip, m, args, index_ratio, state, t, position, current_position, gram_atmosphere, heat_rate_control; cnf=cnf)
+    finally
+        unlock(LEGACY_CONTROL_STATE_LOCK)
+    end
+end
+
+function _control_solarpanels_heatload_impl(ip, m, args, index_ratio, state=0, t=0, position=0, current_position=0, gram_atmosphere=nothing, heat_rate_control=false; cnf=nothing)
+    cnf_state = _legacy_get_cnf(args; cnf=cnf)
     if args[:flash2_through_integration] == 1
         args[:security_mode] = false
     end
@@ -217,67 +247,67 @@ function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, po
     # IF increase too much the 50 sec, the solution becomes a bit unstable because of Mars Gram
     start_reevaluation = false
 
-    if config.cnf.ascending_phase || (config.cnf.ascending_phase == false && abs(config.cnf.time_switch_2 - t) < 0.2 * config.cnf.time_switch_2)  # in periapsis passed or the time switch is too close to the current time but periapsis not passed, start reevaluation
+    if cnf_state.ascending_phase || (cnf_state.ascending_phase == false && abs(cnf_state.time_switch_2 - t) < 0.2 * cnf_state.time_switch_2)  # in periapsis passed or the time switch is too close to the current time but periapsis not passed, start reevaluation
         start_reevaluation = true
     end
 
     # Calculate time switches
-    if (config.cnf.evaluate_switch_heat_load == false)
+    if (cnf_state.evaluate_switch_heat_load == false)
         if args[:flash2_through_integration] == 1
             if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 1
                 if _legacy_control_log_enabled(args)
                     println("entering first switch calculation with integration")
                 end
-                config.cnf.time_switch_1, config.cnf.time_switch_2 = switch_calculation_with_integration(ip, m, position, args, t, heat_rate_control, 1, gram_atmosphere, position)
+                cnf_state.time_switch_1, cnf_state.time_switch_2 = switch_calculation_with_integration(ip, m, position, args, t, heat_rate_control, 1, gram_atmosphere, position; cnf=cnf_state)
             end
             if args[:heat_load_sol] == 2 || args[:heat_load_sol] == 3
-                config.cnf.time_switch_1, config.cnf.time_switch_2 = second_time_switch_recalc_with_integration(ip, m, position, args, t, heat_rate_control, 1, gram_atmosphere, position)
+                cnf_state.time_switch_1, cnf_state.time_switch_2 = second_time_switch_recalc_with_integration(ip, m, position, args, t, heat_rate_control, 1, gram_atmosphere, position; cnf=cnf_state)
             end
         else
-            config.cnf.time_switch_1, config.cnf.time_switch_2 = switch_calculation(ip, m, position, args, t, heat_rate_control, 1, position)
+            cnf_state.time_switch_1, cnf_state.time_switch_2 = switch_calculation(ip, m, position, args, t, heat_rate_control, 1, position; cnf=cnf_state)
         end
         
-        config.cnf.evaluate_switch_heat_load = true
-    elseif config.cnf.evaluate_switch_heat_load == true && start_reevaluation && ((t - config.cnf.time_switch_1 > 1 && t - config.cnf.timer_revaluation > 10 && t - config.cnf.time_switch_2 < 0) || (3 < config.cnf.time_switch_2 - t < 50 && t - config.cnf.timer_revaluation > 3) || (0 < config.cnf.time_switch_2 - t < 3 && t - config.cnf.timer_revaluation > 0.8)) && config.cnf.security_mode == false
-        if (t - config.cnf.timer_revaluation) > 3
+        cnf_state.evaluate_switch_heat_load = true
+    elseif cnf_state.evaluate_switch_heat_load == true && start_reevaluation && ((t - cnf_state.time_switch_1 > 1 && t - cnf_state.timer_revaluation > 10 && t - cnf_state.time_switch_2 < 0) || (3 < cnf_state.time_switch_2 - t < 50 && t - cnf_state.timer_revaluation > 3) || (0 < cnf_state.time_switch_2 - t < 3 && t - cnf_state.timer_revaluation > 0.8)) && cnf_state.security_mode == false
+        if (t - cnf_state.timer_revaluation) > 3
             reevaluation_mode = 1
         else
             reevaluation_mode = 2
         end
 
-        config.cnf.timer_revaluation = t
+        cnf_state.timer_revaluation = t
 
         if args[:second_switch_reevaluation] == 1
             if args[:flash2_through_integration] == 1
-                config.cnf.time_switch_1, config.cnf.time_switch_2 = second_time_switch_recalc_with_integration(ip, m, position, args, t, heat_rate_control, reevaluation_mode, gram_atmosphere, current_position)
+                cnf_state.time_switch_1, cnf_state.time_switch_2 = second_time_switch_recalc_with_integration(ip, m, position, args, t, heat_rate_control, reevaluation_mode, gram_atmosphere, current_position; cnf=cnf_state)
             else
-                config.cnf.time_switch_1, config.cnf.time_switch_2 = second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, current_position, reevaluation_mode)
+                cnf_state.time_switch_1, cnf_state.time_switch_2 = second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, current_position, reevaluation_mode; cnf=cnf_state)
             end
         end
-    elseif maximum(config.cnf.heat_load_past) > 0.98*m.aerodynamics.heat_load_limit && any(i -> i > 2, config.cnf.heat_load_past - config.cnf.heat_load_ppast) && args[:security_mode] == 1 && config.cnf.security_mode == false && index_ratio[2] == 1
-        config.cnf.time_switch_1, config.cnf.time_switch_2 = security_mode(ip, m, position, args, t, false)
+    elseif maximum(cnf_state.heat_load_past) > 0.98*m.aerodynamics.heat_load_limit && any(i -> i > 2, cnf_state.heat_load_past - cnf_state.heat_load_ppast) && args[:security_mode] == 1 && cnf_state.security_mode == false && index_ratio[2] == 1
+        cnf_state.time_switch_1, cnf_state.time_switch_2 = security_mode(ip, m, position, args, t, false; cnf=cnf_state)
     end
 
-    # println("Time Switches: ", config.cnf.time_switch_1, " , ", config.cnf.time_switch_2)
+    # println("Time Switches: ", cnf_state.time_switch_1, " , ", cnf_state.time_switch_2)
 
     if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 3
-        if (t > config.cnf.time_switch_1) && (t < config.cnf.time_switch_2)
+        if (t > cnf_state.time_switch_1) && (t < cnf_state.time_switch_2)
             α = 0
         else
             α = m.aerodynamics.α
         end
     elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 2
-        if (t > config.cnf.time_switch_1) && (t < config.cnf.time_switch_2)
+        if (t > cnf_state.time_switch_1) && (t < cnf_state.time_switch_2)
             α = m.aerodynamics.α
         else
             α = 0
         end
     end
 
-    if isempty(config.cnf.heat_load_ppast)
-        config.cnf.heat_load_ppast = zeros(length(m.body.links))
+    if isempty(cnf_state.heat_load_ppast)
+        cnf_state.heat_load_ppast = zeros(length(m.body.links))
     end
-    config.cnf.heat_load_ppast .= config.cnf.heat_load_past
+    cnf_state.heat_load_ppast .= cnf_state.heat_load_past
 
     # Update solar panel angle
     # Assumes that the spacecraft is the standard 2 panels one bus
@@ -294,24 +324,34 @@ function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, po
     return α
 end
 
-function control_solarpanels_openloop(ip, m, args, index_ratio, state, t=0, position=0, current_position=0, heat_rate_control=true, gram_atmosphere=nothing)
-    control_solarpanels_heatload(ip, m, args, index_ratio, 0, t, position, current_position, gram_atmosphere, heat_rate_control)
+function control_solarpanels_openloop(ip, m, args, index_ratio, state, t=0, position=0, current_position=0, heat_rate_control=true, gram_atmosphere=nothing; cnf=nothing)
+    lock(LEGACY_CONTROL_STATE_LOCK)
+    try
+        return _control_solarpanels_openloop_impl(ip, m, args, index_ratio, state, t, position, current_position, heat_rate_control, gram_atmosphere; cnf=cnf)
+    finally
+        unlock(LEGACY_CONTROL_STATE_LOCK)
+    end
+end
+
+function _control_solarpanels_openloop_impl(ip, m, args, index_ratio, state, t=0, position=0, current_position=0, heat_rate_control=true, gram_atmosphere=nothing; cnf=nothing)
+    cnf_state = _legacy_get_cnf(args; cnf=cnf)
+    control_solarpanels_heatload(ip, m, args, index_ratio, 0, t, position, current_position, gram_atmosphere, heat_rate_control; cnf=cnf_state)
 
     if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 3
-        if t >= config.cnf.time_switch_1 && t <= config.cnf.time_switch_2
+        if t >= cnf_state.time_switch_1 && t <= cnf_state.time_switch_2
             α = 0
         else
-            α = control_solarpanels_heatrate(ip, m, args, index_ratio, state, t)
+            α = control_solarpanels_heatrate(ip, m, args, index_ratio, state, t; cnf=cnf_state)
         end
     elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 2
-        if t >= config.cnf.time_switch_1 && t <= config.cnf.time_switch_2
-            α = control_solarpanels_heatrate(ip, m, args, index_ratio, state, t)
+        if t >= cnf_state.time_switch_1 && t <= cnf_state.time_switch_2
+            α = control_solarpanels_heatrate(ip, m, args, index_ratio, state, t; cnf=cnf_state)
         else
             α = 0
         end
     end
 
-    # config.cnf.α_past = α
+    # cnf_state.α_past = α
     # # Update solar panel angle
     # # Assumes that the spacecraft is the standard 2 panels one bus
     # root = m.body.roots[1]
@@ -333,7 +373,7 @@ end
 #     if t > t_switch 
 
 #     else
-#         α = control_solarpanels_heatrate(ip, m, args, index_ratio, state, t)
+#         α = control_solarpanels_heatrate(ip, m, args, index_ratio, state, t; cnf=cnf_state)
 #     end
     
 # end

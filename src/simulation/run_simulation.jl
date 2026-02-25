@@ -105,6 +105,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p::ODEPar
     dynamics_model = p.args.dynamics_model
     dynamic_effectors = dynamics_model.dynamic_effectors
     spacecraft = dynamics_model.spacecraft
+    debug_control = get(ENV, "SPACEAGORA_DEBUG_CONTROL", "0") == "1"
     p.shared_buffers.current_time[] = t
     minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores())) # Determine the batch size for LoopVectorization based on the number of spacecraft and available CPU cores
     # Loop over each spacecraft and compute its dynamics
@@ -127,13 +128,13 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p::ODEPar
             end
 
             # Compute control forces and torques using the control effectors (if any)
-            @inbounds for control_effector in p.args.control_model.control_effectors
-                control_force, control_torque = calcControlForceTorque(control_effector, sc_view, p, i, t)
-                if norm(control_force) > 0.0 || norm(control_torque) > 0.0
-                    println("Applying control effect for spacecraft $i at time $t seconds:")
-                    println("  Control force: $control_force")
-                    # println("  Control torque: $control_torque")
-                end
+                @inbounds for control_effector in p.args.control_model.control_effectors
+                    control_force, control_torque = calcControlForceTorque(control_effector, sc_view, p, i, t)
+                    if debug_control && (norm(control_force) > 0.0 || norm(control_torque) > 0.0)
+                        println("Applying control effect for spacecraft $i at time $t seconds:")
+                        println("  Control force: $control_force")
+                        # println("  Control torque: $control_torque")
+                    end
                 # println("Control force for spacecraft $i at time $t seconds: $control_force")
                 forces .+= control_force
                 torques .+= control_torque
@@ -142,6 +143,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p::ODEPar
             # Update the derivatives of position and velocity
             du_view.pos .= sc_view.vel
             du_view.vel .= forces / sc_view.mass
+            du_view.mass = 0.0 # No propellant flow model in this path; keep mass state constant.
 
             if p.args.mission_configuration.orientation_sim
                 # Update the derivatives of orientation (quaternion) and angular velocity

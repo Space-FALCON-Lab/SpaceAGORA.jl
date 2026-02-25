@@ -83,9 +83,12 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
         return
     end
     
-    # Don't start maneuver until spacecraft has exited the atmosphere and is past periapsis.
+    # Don't start maneuver until spacecraft has exited the atmosphere and is pre-apoapsis.
+    # For near-circular orbits, ν from OE conversion can be arbitrary; allow scheduling.
     alt = norm(pos) - p.args.environment_model.planet.Rp_e
-    if alt >= p.args.environment_model.EI * 1000 - 1e-6 && ν < π - 1e-12
+    circular_e_tol = 1e-8
+    pre_apoapsis = e <= circular_e_tol || ν < π - 1e-12
+    if alt >= p.args.environment_model.EI * 1000 - 1e-6 && pre_apoapsis
         # Calculate the burn time required to achieve the desired Δv based on the current mass and thrust
         Δv = controlModel.Δv[i]
         thrust_mag = controlModel.thrust[i]

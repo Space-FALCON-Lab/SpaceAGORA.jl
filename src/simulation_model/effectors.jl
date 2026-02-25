@@ -7,6 +7,8 @@ using ..Kinematics # We'll need this for rotate_to_body
 
 export update_thrusters!, thrust_calculation_schmitt_trigger!, schmitt_trigger, integrate_impulse!
 
+@inline thruster_debug_enabled() = get(ENV, "SPACEAGORA_DEBUG_THRUSTER", "0") == "1"
+
 function update_thrusters!(link::Link, torque::AbstractVector{Float64}, t::Float64)
     """
     Updates the thrusters of the Link with the given torque vector.
@@ -63,7 +65,9 @@ function thrust_calculation_schmitt_trigger!(link::Link, thruster::Thruster, thr
         ti = schmitt_trigger(ti, thruster.level_on, thruster.level_off) * thruster.min_firing_time # Use Schmitt trigger to determine if the thruster should fire
     end
     
-    CSV.write("thruster_debug.csv", DataFrame(time=time, on_time_request=ti, thrust_req=thrust), append=true)
+    if thruster_debug_enabled()
+        CSV.write("thruster_debug.csv", DataFrame(time=time, on_time_request=ti, thrust_req=thrust), append=true)
+    end
     total_integrated_thrust = integrate_impulse!(link, thruster, ti, time) # Integrate the impulse over the time interval
     
     thruster.thrust = total_integrated_thrust / link.attitude_control_rate # Update the average thrust value in the thruster

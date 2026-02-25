@@ -6,6 +6,7 @@ using LinearAlgebra
 using SPICE
 using Dates
 using ..EnvironmentModels: getDensity
+using ..DynamicEffectors: BaseThrusterModel
 using ..AbstractTypes: AbstractPlanet
 using ..ConfigTypes: SaveData
 using ..ControlEffectors: calcControlEffect!
@@ -218,6 +219,15 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)::Ve
     for i in eachindex(control_models)
         control_model = control_models[i]
         control_rate = control_rates[i]
+        if control_model isa BaseThrusterModel
+            n_slots = length(control_model.thrust)
+            if n_slots != num_sats
+                throw(ArgumentError(
+                    "BaseThrusterModel vector length ($n_slots) must match number of spacecraft ($num_sats). " *
+                    "Use one shared model with per-spacecraft vectors."
+                ))
+            end
+        end
         # Each control effector callback runs at its own rate and updates
         # all spacecraft states. The spacecraft index is passed explicitly
         # to avoid conflating effector-index with spacecraft-index.

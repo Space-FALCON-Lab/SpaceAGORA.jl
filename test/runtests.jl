@@ -368,7 +368,48 @@ end
         @test_throws ArgumentError GuidanceModel((:g1,), [0.0])
         @test_throws ArgumentError NavigationModel((:n1,), [-1.0])
         @test_throws ArgumentError ControlModel((:c1,), [Inf])
+
+        sc1 = make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0)
+        sc2 = make_spacecraft(ra_alt_m=550e3, rp_alt_m=500e3, ν_deg=160.0)
+        args_bad_slots = build_config_multi(
+            spacecraft=[sc1, sc2],
+            density_model=NoAtmosphereModel(),
+            orientation_sim=false,
+            mission_time=60.0,
+            EI_km=120.0,
+            dynamic_effectors=(InverseSquaredGravityModel(),),
+            control_effectors=(make_base_thruster_model(thrust=1.0, Δv=1.0, start_burn_time=-1.0, stop_burn_time=-1.0),),
+            control_rates=[1.0],
+            keplerian=true
+        )
+        @test_throws ArgumentError run_case_silent(args_bad_slots)
     end
+end
+
+@testset "RHS Completeness: Mass Derivative" begin
+    sc = make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=120.0)
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true
+    )
+
+    u = build_initial_conditions(args)
+    du = copy(u)
+    du.sc[1].mass = 789.0
+    p = ODEParams{1}(args=args)
+    spacecraft_dynamics!(du, u, p, 0.0)
+    @test du.sc[1].mass == 0.0
+
+    du_inactive = copy(u)
+    du_inactive.sc[1].mass = 123.0
+    p_inactive = ODEParams{1}(args=args, is_active=[false])
+    spacecraft_dynamics!(du_inactive, u, p_inactive, 0.0)
+    @test du_inactive.sc[1].mass == 0.0
 end
 
 @testset "Deterministic Smoke + No-Drag Energy Invariant" begin
@@ -886,6 +927,23 @@ end
         @test model_edge_allow.start_burn_time[1] != -1.0
         @test model_edge_allow.stop_burn_time[1] != -1.0
 
+        sc_circular = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=330.0)
+        args_circular = build_config(
+            spacecraft=sc_circular,
+            density_model=NoAtmosphereModel(),
+            orientation_sim=false,
+            mission_time=600.0,
+            EI_km=120.0,
+            dynamic_effectors=(InverseSquaredGravityModel(),),
+            keplerian=true
+        )
+        p_circular = ODEParams{1}(args=args_circular)
+        state_circular = build_initial_conditions(args_circular)
+        model_circular = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
+        calcControlEffect!(model_circular, state_circular, p_circular, 100.0, 1)
+        @test model_circular.start_burn_time[1] != -1.0
+        @test model_circular.stop_burn_time[1] != -1.0
+
         state_hyperbolic = build_initial_conditions(args)
         rmag = norm(SVector{3, Float64}(state_hyperbolic.sc[1].pos))
         escape_speed = sqrt(2.0 * EARTH.μ / rmag)
@@ -1037,14 +1095,33 @@ end
                     cutoff_frequency=100.0,
                     κ=0.0
                 )
+                debug_key = "SPACEAGORA_DEBUG_THRUSTER"
+                old_debug = get(ENV, debug_key, nothing)
+                try
+                    if haskey(ENV, debug_key)
+                        delete!(ENV, debug_key)
+                    end
+                    thrust_calculation_schmitt_trigger!(link, thr, 1.0, 0.0)
+                    @test thr.thrust == 0.0
+                    @test !isfile("thruster_debug.csv")
 
-                thrust_calculation_schmitt_trigger!(link, thr, 1.0, 0.0)
-                @test thr.thrust == 0.0
-                @test isfile("thruster_debug.csv")
+                    thrust_calculation_schmitt_trigger!(link, thr, 9.0, 0.1)
+                    @test thr.thrust > 0.0
+                    @test thr.thrust <= thr.max_thrust + 1e-9
+                    @test !isfile("thruster_debug.csv")
 
-                thrust_calculation_schmitt_trigger!(link, thr, 9.0, 0.1)
-                @test thr.thrust > 0.0
-                @test thr.thrust <= thr.max_thrust + 1e-9
+                    ENV[debug_key] = "1"
+                    thrust_calculation_schmitt_trigger!(link, thr, 9.0, 0.2)
+                    @test isfile("thruster_debug.csv")
+                finally
+                    if old_debug === nothing
+                        if haskey(ENV, debug_key)
+                            delete!(ENV, debug_key)
+                        end
+                    else
+                        ENV[debug_key] = old_debug
+                    end
+                end
 
                 thr_zero_max = Thruster(max_thrust=0.0, cutoff_frequency=100.0, κ=0.0)
                 @test_nowarn thrust_calculation_schmitt_trigger!(link, thr_zero_max, 1.0, 0.2)

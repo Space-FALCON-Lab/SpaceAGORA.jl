@@ -100,3 +100,29 @@ This note documents the edge-case tests added for thruster-related functions and
 - Test: in gravity-only propagation, a timed prograde burn increases specific orbital energy while a timed retrograde burn decreases it.
   - Intended bug: control force not wired into dynamics or direction sign inversion ignored.
   - Non-vacuous: fails if control force is not applied, applied with wrong sign, or cancelled unexpectedly.
+
+## Fresh Audit (2026-02-25)
+
+### Confirmed since last pass
+
+- Control callback spacecraft mapping is now explicit (`sat_idx`) in `get_control_callbacks`, and regression coverage exists for multi-spacecraft scheduling/energy-sign behavior.
+- `calcControlEffect!` default behavior is now "track until ignition, then lock", with tests for both pre-ignition retiming and post-ignition locking.
+
+### Resolved in this pass
+
+- `spacecraft_dynamics!` now explicitly assigns `du_view.mass = 0.0` and has regression coverage (`RHS Completeness: Mass Derivative`) for active/inactive paths.
+- Per-effector spacecraft slot semantics for `BaseThrusterModel` are now explicit: vector length must match `num_sats` in control callback setup, with a regression test that mismatched slots throw `ArgumentError`.
+- Near-circular maneuver gating surprise was addressed by allowing scheduling when `e <= 1e-8` (instead of relying only on `ν < π`), and a circular-orbit scheduling regression test was added.
+- Hot-path debug I/O side effects were gated behind environment flags:
+  - `SPACEAGORA_DEBUG_CONTROL` for control-force `println` in dynamics loop.
+  - `SPACEAGORA_DEBUG_THRUSTER` for `thruster_debug.csv` writes.
+  - Tests now assert no debug file by default and file creation when debug flag is enabled.
+
+### Remaining Medium-Priority Finding
+
+- Finding: `Isp` is stored in `BaseThrusterModel` but currently unused in burn force/timing execution.
+  - Location: field definition in `src/physical_models/Thruster_models.jl`; control logic in `src/control/Propulsive_maneuvers.jl`.
+  - Why it matters: propulsion physics can diverge from user expectations (no propellant flow coupling to `Isp`).
+  - Recommended tests:
+    - If intentional: assert/document that `Isp` is metadata only.
+    - If not intentional: add mass-flow tests based on `mdot = T / (Isp*g0)` and verify monotonic mass decrease during burns.

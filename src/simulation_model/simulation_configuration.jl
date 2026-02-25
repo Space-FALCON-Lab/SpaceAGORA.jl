@@ -1,8 +1,43 @@
 module SimConfig
-    export SimulationConfiguration, InitialTime, IntegrationTolerances, FilePaths, SimulationSettings, MissionConfiguration, EnvironmentModel
+    export SimulationConfiguration, InitialTime, IntegrationTolerances, FilePaths, SimulationSettings, MissionConfiguration, EnvironmentModel, MissionType, MissionTime, MissionOrbits
     using ..AbstractTypes: AbstractPlanet, AbstractDensityModel, AbstractThermalModel
     using ..PhysicalModel: DynamicsModel, GuidanceModel, ControlModel, NavigationModel
     using ..Planets: Earth
+
+    @enum MissionType::UInt8 begin
+        MissionTime = 0x01
+        MissionOrbits = 0x02
+    end
+
+    @inline function _parse_mission_type(mission_type::MissionType)::MissionType
+        return mission_type
+    end
+
+    @inline function _parse_mission_type(mission_type::Symbol)::MissionType
+        return _parse_mission_type(String(mission_type))
+    end
+
+    @inline function _parse_mission_type(mission_type::AbstractString)::MissionType
+        key = lowercase(strip(mission_type))
+        if key == "time"
+            return MissionTime
+        elseif key == "orbits" || key == "orbit"
+            return MissionOrbits
+        end
+        throw(ArgumentError("Invalid mission_type=$(repr(mission_type)). Valid mission types: \"Time\", \"Orbits\"."))
+    end
+
+    # Backward-compatible comparisons for downstream code still using string/symbol checks.
+    @inline function Base.:(==)(lhs::MissionType, rhs::AbstractString)
+        try
+            return lhs == _parse_mission_type(rhs)
+        catch
+            return false
+        end
+    end
+    @inline Base.:(==)(lhs::AbstractString, rhs::MissionType) = rhs == lhs
+    @inline Base.:(==)(lhs::MissionType, rhs::Symbol) = lhs == String(rhs)
+    @inline Base.:(==)(lhs::Symbol, rhs::MissionType) = rhs == lhs
 
     @kwdef struct InitialTime
         year::Int32 = 2000
@@ -46,16 +81,55 @@ module SimConfig
         save_csv::Bool = true # Whether to save results in CSV format in addition to feather
     end # struct SimulationSettings
 
-    # TODO: Convert mission_type to an abstract type and have terminal conditions be functions that take in the state vector and return a boolean for whether the simulation should terminate. This will allow for more flexible mission configurations without needing to add new fields to the struct every time we want to add a new type of mission.
     @kwdef struct MissionConfiguration
         # Mission setup
-        mission_type::String = "Time" # Indicator of the termination condition type (Time, number of orbits, etc.)
+        mission_type::MissionType = MissionTime # Indicator of the termination condition type (Time, number of orbits, etc.)
         keplerian::Bool = true # Whether to include step 2 (drag passage) as separate step or keep same integration parameters the whole time
         number_of_orbits::Int = 1 # Number of orbits to propagate for (if mission_type is "Orbits")
         mission_time::Float64 = 90.0*60.0*20.0*10.0 # Total mission time in seconds (if mission_type is "Time")
         orientation_sim::Bool = false # Whether to simulate orientation dynamics (if false, only position and velocity are simulated)
         num_steps_to_save::Int = 1000 # Number of time steps to store in memory during the simulation before writing to a file
+
+        function MissionConfiguration(
+            mission_type::MissionType,
+            keplerian::Bool,
+            number_of_orbits::Integer,
+            mission_time::Real,
+            orientation_sim::Bool,
+            num_steps_to_save::Integer
+        )
+            number_of_orbits > 0 || throw(ArgumentError("MissionConfiguration.number_of_orbits must be > 0; got $number_of_orbits."))
+            mission_time > 0 || throw(ArgumentError("MissionConfiguration.mission_time must be > 0; got $mission_time."))
+            num_steps_to_save > 0 || throw(ArgumentError("MissionConfiguration.num_steps_to_save must be > 0; got $num_steps_to_save."))
+            return new(
+                mission_type,
+                keplerian,
+                Int(number_of_orbits),
+                Float64(mission_time),
+                orientation_sim,
+                Int(num_steps_to_save)
+            )
+        end
     end # struct MissionConfiguration
+
+    # Backward-compatible constructor for existing string/symbol call sites.
+    function MissionConfiguration(;
+        mission_type::Union{MissionType, AbstractString, Symbol}=MissionTime,
+        keplerian::Bool=true,
+        number_of_orbits::Integer=1,
+        mission_time::Real=90.0*60.0*20.0*10.0,
+        orientation_sim::Bool=false,
+        num_steps_to_save::Integer=1000
+    )
+        return MissionConfiguration(
+            _parse_mission_type(mission_type),
+            keplerian,
+            number_of_orbits,
+            mission_time,
+            orientation_sim,
+            num_steps_to_save
+        )
+    end
 
     # TODO: Convert all the strings to abstract types to avoid needing if-else statements in complete passage and other functions. This will also make it easier to add new models in the future without needing to change the main code.
     @kwdef struct EnvironmentModel{P <: AbstractPlanet, D <: AbstractDensityModel, T <: AbstractThermalModel}
@@ -68,6 +142,31 @@ module SimConfig
         topo_order::Int = 90 # Maximum order of spherical harmonics for topography
         wind::Bool = true # Whether to include wind in the simulation for atmospheric effects
         thermal_model::T # Thermal model to use (Maxwellian heat transfer, Convective and Radiative)
+
+        function EnvironmentModel(
+            planet::P,
+            EI::Real,
+            density_model::D,
+            topography::Bool,
+            topo_degree::Integer,
+            topo_order::Integer,
+            wind::Bool,
+            thermal_model::T
+        ) where {P <: AbstractPlanet, D <: AbstractDensityModel, T <: AbstractThermalModel}
+            EI >= 0 || throw(ArgumentError("EnvironmentModel.EI must be >= 0 km; got $EI."))
+            topo_degree >= 0 || throw(ArgumentError("EnvironmentModel.topo_degree must be >= 0; got $topo_degree."))
+            topo_order >= 0 || throw(ArgumentError("EnvironmentModel.topo_order must be >= 0; got $topo_order."))
+            return new{P, D, T}(
+                planet,
+                Float64(EI),
+                density_model,
+                topography,
+                Int(topo_degree),
+                Int(topo_order),
+                wind,
+                thermal_model
+            )
+        end
     end # struct EnvironmentModel
 
     @kwdef struct SimulationConfiguration{P <: AbstractPlanet, D <: AbstractDensityModel, T <: AbstractThermalModel, DM <: Tuple}

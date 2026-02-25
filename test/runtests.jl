@@ -495,6 +495,75 @@ function ensure_legacy_targeting_loaded!()
 end
 
 @testset "API Convenience Constructors" begin
+    @testset "Mission/Environment Config Validation" begin
+        mc_default = MissionConfiguration()
+        @test mc_default.mission_type == MissionTime
+
+        mc_str = MissionConfiguration(mission_type="Time", mission_time=600.0, number_of_orbits=1, num_steps_to_save=10)
+        @test mc_str.mission_type == MissionTime
+        @test mc_str.mission_type == "Time"
+        @test "Time" == mc_str.mission_type
+
+        mc_sym = MissionConfiguration(mission_type=:orbits, mission_time=600.0, number_of_orbits=2, num_steps_to_save=10)
+        @test mc_sym.mission_type == MissionOrbits
+        @test mc_sym.mission_type == :orbits
+        @test :orbits == mc_sym.mission_type
+
+        mc_enum = MissionConfiguration(mission_type=MissionOrbits, mission_time=600.0, number_of_orbits=3, num_steps_to_save=10)
+        @test mc_enum.mission_type == MissionOrbits
+        @test mc_enum.mission_type == "Orbits"
+
+        @test_throws ArgumentError MissionConfiguration(mission_type="invalid")
+        @test_throws ArgumentError MissionConfiguration(mission_time=0.0)
+        @test_throws ArgumentError MissionConfiguration(number_of_orbits=0)
+        @test_throws ArgumentError MissionConfiguration(num_steps_to_save=0)
+
+        env_ok = EnvironmentModel(
+            planet=EARTH,
+            EI=120.0,
+            density_model=NoAtmosphereModel(),
+            thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=EARTH),
+            topography=true,
+            topo_degree=8,
+            topo_order=8,
+            wind=false
+        )
+        @test env_ok.EI == 120.0
+
+        @test_throws ArgumentError EnvironmentModel(
+            planet=EARTH,
+            EI=-1.0,
+            density_model=NoAtmosphereModel(),
+            thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=EARTH),
+            topography=false,
+            topo_degree=8,
+            topo_order=8,
+            wind=false
+        )
+
+        @test_throws ArgumentError EnvironmentModel(
+            planet=EARTH,
+            EI=120.0,
+            density_model=NoAtmosphereModel(),
+            thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=EARTH),
+            topography=true,
+            topo_degree=-1,
+            topo_order=8,
+            wind=false
+        )
+
+        @test_throws ArgumentError EnvironmentModel(
+            planet=EARTH,
+            EI=120.0,
+            density_model=NoAtmosphereModel(),
+            thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=EARTH),
+            topography=true,
+            topo_degree=8,
+            topo_order=-1,
+            wind=false
+        )
+    end
+
     ic = InitialCondition()
     @test ic isa InitialCondition
     @test ic.a == 0.0

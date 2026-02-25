@@ -34,6 +34,10 @@ class RuleBasedIntentExtractor(IntentExtractor):
             planet = "Mars"
         elif "earth" in lower:
             planet = "Earth"
+        elif "venus" in lower:
+            planet = "Venus"
+        elif "titan" in lower:
+            planet = "Titan"
 
         mission_name = None
         replicate = False

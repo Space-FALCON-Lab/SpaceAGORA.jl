@@ -9,3 +9,5 @@ GRAMpy/*
 *.pdf
 *.csv
 .AGORA/.CondaPkg/env/lib/terminfo/e/eterm-color
+orchestrator/data/*
+!orchestrator/data/.gitkeep

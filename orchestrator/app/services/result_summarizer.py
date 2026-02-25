@@ -3,17 +3,17 @@ from __future__ import annotations
 import csv
 import math
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from orchestrator.app.models import ArtifactRef, ResultSummary, SimulationSpec, SourceCitation
 
 
 def summarize_result(
     spec: SimulationSpec,
-    result_csv: Path | None,
+    result_csv: Optional[Path],
     citations: list[SourceCitation],
     artifacts: list[ArtifactRef],
-    extra_caveats: list[str] | None = None,
+    extra_caveats: Optional[list[str]] = None,
 ) -> ResultSummary:
     caveats = list(extra_caveats or [])
     metrics: dict[str, Any] = {

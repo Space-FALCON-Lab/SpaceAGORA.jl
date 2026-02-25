@@ -6,7 +6,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 from orchestrator.app.models import MissionIntent, SourceCitation
 from orchestrator.app.services.mission_catalog import CuratedMissionCatalog
@@ -14,7 +14,7 @@ from orchestrator.app.services.mission_catalog import CuratedMissionCatalog
 
 @dataclass
 class RetrievedMission:
-    mission_id: str | None = None
+    mission_id: Optional[str] = None
     payload: dict[str, Any] = field(default_factory=dict)
     citations: list[SourceCitation] = field(default_factory=list)
     retrieval_notes: list[str] = field(default_factory=list)

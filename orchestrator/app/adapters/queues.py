@@ -4,7 +4,7 @@ import json
 import queue
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 
 @dataclass(frozen=True)
@@ -18,7 +18,7 @@ class JobQueue(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def dequeue(self, timeout_sec: float = 1.0) -> RunJob | None:
+    def dequeue(self, timeout_sec: float = 1.0) -> Optional[RunJob]:
         raise NotImplementedError
 
 
@@ -29,7 +29,7 @@ class InMemoryJobQueue(JobQueue):
     def enqueue(self, job: RunJob) -> None:
         self._queue.put(job)
 
-    def dequeue(self, timeout_sec: float = 1.0) -> RunJob | None:
+    def dequeue(self, timeout_sec: float = 1.0) -> Optional[RunJob]:
         try:
             return self._queue.get(timeout=timeout_sec)
         except queue.Empty:
@@ -52,7 +52,7 @@ class SqsJobQueue(JobQueue):
             MessageBody=json.dumps({"job_id": job.job_id}),
         )
 
-    def dequeue(self, timeout_sec: float = 1.0) -> RunJob | None:
+    def dequeue(self, timeout_sec: float = 1.0) -> Optional[RunJob]:
         wait_time = int(max(0.0, min(20.0, timeout_sec)))
         response = self._sqs.receive_message(
             QueueUrl=self._queue_url,

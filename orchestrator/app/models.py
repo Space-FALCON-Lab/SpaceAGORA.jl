@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
@@ -25,22 +25,22 @@ class SourceCitation(BaseModel):
 
     label: str
     url: str
-    retrieved_at: datetime | None = None
-    notes: str | None = None
+    retrieved_at: Optional[datetime] = None
+    notes: Optional[str] = None
 
 
 class MissionIntent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     objective: str
-    mission_name: str | None = None
-    planet: str | None = None
+    mission_name: Optional[str] = None
+    planet: Optional[str] = None
     replicate_mission: bool = False
     requested_constraints: dict[str, Any] = Field(default_factory=dict)
 
 
 class InitialConditions(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     ra_m: float
     rp_m: float
@@ -96,7 +96,7 @@ class SimulationSpec(BaseModel):
     spec_version: str = "1.0"
     run_name: str
     planet: str
-    mission_name: str | None = None
+    mission_name: Optional[str] = None
     mission_time_sec: float
     entry_interface_km: float = 125.0
     initial_conditions: InitialConditions
@@ -114,7 +114,7 @@ class CapabilityReport(BaseModel):
 
     supported: bool
     unsupported_reasons: list[str] = Field(default_factory=list)
-    nearest_supported_spec: SimulationSpec | None = None
+    nearest_supported_spec: Optional[SimulationSpec] = None
     forced_overrides: dict[str, Any] = Field(default_factory=dict)
     notes: list[str] = Field(default_factory=list)
     reroute_to_async: bool = False
@@ -127,7 +127,7 @@ class ArtifactRef(BaseModel):
     kind: str
     path: str
     content_type: str
-    size_bytes: int | None = None
+    size_bytes: Optional[int] = None
 
 
 class ResultSummary(BaseModel):
@@ -150,20 +150,21 @@ class RunRecord(BaseModel):
     prompt: str
     created_at: datetime
     updated_at: datetime
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
-    error_message: str | None = None
-    intent: MissionIntent | None = None
-    spec: SimulationSpec | None = None
-    capability_report: CapabilityReport | None = None
-    result: ResultSummary | None = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+    intent: Optional[MissionIntent] = None
+    spec: Optional[SimulationSpec] = None
+    capability_report: Optional[CapabilityReport] = None
+    citations: list[SourceCitation] = Field(default_factory=list)
+    result: Optional[ResultSummary] = None
 
 
 class CreateRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     prompt: str = Field(min_length=3)
-    mode: RunMode | None = None
+    mode: Optional[RunMode] = None
     mission_overrides: dict[str, Any] = Field(default_factory=dict)
     output_preferences: dict[str, Any] = Field(default_factory=dict)
 
@@ -186,9 +187,9 @@ class RunStatusResponse(BaseModel):
     status: RunState
     created_at: datetime
     updated_at: datetime
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
-    error_message: str | None = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    error_message: Optional[str] = None
 
 
 class RunResultResponse(BaseModel):

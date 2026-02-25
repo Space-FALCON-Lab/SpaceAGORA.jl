@@ -28,7 +28,7 @@ class FileRunStore(RunStore):
     def __init__(self, runs_dir: Path) -> None:
         self._runs_dir = runs_dir
         self._runs_dir.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def _path_for(self, job_id: str) -> Path:
         return self._runs_dir / f"{job_id}.json"

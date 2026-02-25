@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 from orchestrator.app.models import SourceCitation
 
@@ -138,10 +138,10 @@ class CuratedMissionCatalog:
             ),
         }
 
-    def get(self, mission_id: str) -> MissionTemplate | None:
+    def get(self, mission_id: str) -> Optional[MissionTemplate]:
         return self._templates.get(mission_id)
 
-    def resolve_id(self, mission_name: str | None, planet: str | None) -> str | None:
+    def resolve_id(self, mission_name: Optional[str], planet: Optional[str]) -> Optional[str]:
         if mission_name is None:
             if planet == "Mars":
                 return "generic_mars"

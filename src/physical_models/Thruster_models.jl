@@ -1,4 +1,4 @@
-@kwdef mutable struct BaseThrusterModel <: AbstractThrusterModel
+@kwdef struct BaseThrusterModel <: AbstractThrusterModel
     thrust::Vector{Float64}
     direction::Vector{Float64}
     Δv::Vector{Float64}

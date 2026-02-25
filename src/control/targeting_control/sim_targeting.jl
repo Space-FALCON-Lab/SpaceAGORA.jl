@@ -23,6 +23,16 @@ sys = pyimport("sys")
 # import .config
 # import .ref_sys
 
+@inline function _legacy_sim_targeting_log_enabled(args)::Bool
+    if get(ENV, "SPACEAGORA_DEBUG_LEGACY_CONTROL", "0") == "1"
+        return true
+    end
+    if args isa AbstractDict
+        return Bool(get(args, :print_res, get(args, :verbose, false)))
+    end
+    return false
+end
+
 function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
     ip = param[3]
 
@@ -212,7 +222,9 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
             Kn = 1.26 * sqrt(γ) * Mach / (Re + 1e-5)
             if index_phase_aerobraking == 2
                 if (alt < 80000) && (config.cnf.index_warning_alt == 0)
-                    println("WARNING: Altitude < 80 km!")
+                    if _legacy_sim_targeting_log_enabled(args)
+                        println("WARNING: Altitude < 80 km!")
+                    end
                 end
 
                 config.cnf.index_warning_alt = 1
@@ -221,7 +233,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
             end
 
             if Kn < 0.1 && config.cnf.index_warning_flow == 0
-                if Bool(args[:print_res])
+                if _legacy_sim_targeting_log_enabled(args)
                     println("WARNING: Transitional flow passage!")
                 end
                 
@@ -351,7 +363,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
                 config.cnf.index_propellant_mass = 0
                 m.engines.T = 0
 
-                if Bool(args[:print_res])
+                if _legacy_sim_targeting_log_enabled(args)
                     println("WARNING: No fuel left!")
                 end
             end

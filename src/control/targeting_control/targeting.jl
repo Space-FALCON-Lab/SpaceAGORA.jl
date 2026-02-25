@@ -5,6 +5,16 @@ include("../utils/Eom_ctrl.jl")
 
 using Roots
 
+@inline function _legacy_targeting_log_enabled(args)::Bool
+    if get(ENV, "SPACEAGORA_DEBUG_LEGACY_CONTROL", "0") == "1"
+        return true
+    end
+    if args isa AbstractDict
+        return Bool(get(args, :print_res, get(args, :verbose, false)))
+    end
+    return false
+end
+
 function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a_tol, r_tol, method, events, in_cond)
 
     # OE = SVector{7, Float64}([initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m])
@@ -13,8 +23,10 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     # Run simulation
     prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
     sol_max_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
-
-    println("m.aero.alpha before deepcopying: ", m.aerodynamics.α)
+    log_enabled = _legacy_targeting_log_enabled(args)
+    if log_enabled
+        println("m.aero.alpha before deepcopying: ", m.aerodynamics.α)
+    end
 
     # Minimum drag ratio Run
     ip_temp = deepcopy(ip)
@@ -23,7 +35,9 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     m_temp = deepcopy(m)
     m_temp.aerodynamics.α = 0.0
 
-    println("m.aero.alpha after deepcopying: ", m.aerodynamics.α)
+    if log_enabled
+        println("m.aero.alpha after deepcopying: ", m.aerodynamics.α)
+    end
 
     config.cnf.ascending_phase = false
     config.cnf.drag_state = true
@@ -43,13 +57,17 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     prob = ODEProblem(f!, in_cond, (initial_time, final_time), param_temp)
     sol_min_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
 
-    println("m.aero.alpha after deepcopying and running zero aoa case: ", m.aerodynamics.α)
+    if log_enabled
+        println("m.aero.alpha after deepcopying and running zero aoa case: ", m.aerodynamics.α)
+    end
 
     energy_target_min = norm(sol_max_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_max_dratio[1:3, end]) # Lowest possible energy with maximum drag ratio, most negative
     energy_target_max = norm(sol_min_dratio[4:6, end])^2/2 - m.planet.μ / norm(sol_min_dratio[1:3, end]) # Highest possible energy with minimum drag ratio, least negative
 
-    println("Energy target min: ", energy_target_min)
-    println("Energy target max: ", energy_target_max)
+    if log_enabled
+        println("Energy target min: ", energy_target_min)
+        println("Energy target max: ", energy_target_max)
+    end
 
     h0 = norm(cross(r0, v0))
     r_p = h0^2 / (m.planet.μ * (1 + OE[2]))
@@ -58,14 +76,18 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
 
     target_energy = -m.planet.μ / (args[:ra_fin_orbit] + r_p) # change to current periapsis
 
-    println("Target energy: ", target_energy)
+    if log_enabled
+        println("Target energy: ", target_energy)
+    end
 
     if target_energy < energy_target_max && target_energy > energy_target_min
         config.cnf.targeting = 1
     elseif target_energy < energy_target_min
         config.cnf.targeting = 0
     else
-        println("Cannot target energy level that is larger than possible with minimum drag ratio")
+        if log_enabled
+            println("Cannot target energy level that is larger than possible with minimum drag ratio")
+        end
     end
 
     # config.cnf.hf = args[:AE]*1e3
@@ -96,6 +118,7 @@ end
 
 # function control_solarpanels_targeting(f!, energy_f, ip, m, time_0, OE, args, gram_atmosphere)
 function control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
+    log_enabled = length(param) >= 8 ? _legacy_targeting_log_enabled(param[8]) : false
 
     function func_targeting_num_int(t_switch)
 
@@ -105,17 +128,20 @@ function control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
 
         energy_fin = norm(sol[4:6,end])^2/2 - m.planet.μ / norm(sol[1:3,end])
 
-        println("t_switch: ", t_switch, " energy_fin: ", energy_fin)
+        if log_enabled
+            println("t_switch: ", t_switch, " energy_fin: ", energy_fin)
+        end
 
         return (energy_fin - energy_f) / 1e6
     end
 
-    t_switch = find_zero(ts -> func_targeting_num_int(ts), [0, 600], Roots.Brent(), verbose=true, rtol=1e-5)
+    t_switch = find_zero(ts -> func_targeting_num_int(ts), [0, 600], Roots.Brent(), verbose=log_enabled, rtol=1e-5)
 
     return t_switch 
 end
 
 function control_solarpanels_targeting_heatload(energy_f, param, OE)
+    log_enabled = length(param) >= 8 ? _legacy_targeting_log_enabled(param[8]) : false
 
     function func_targeting_heatload(v_E)
         m = param[1]
@@ -128,12 +154,14 @@ function control_solarpanels_targeting_heatload(energy_f, param, OE)
 
         energy_fin = norm(sol[4:6,end])^2/2 - m.planet.μ / norm(sol[1:3,end])
 
-        println("v_E: ", v_E, " energy_fin: ", energy_fin)
+        if log_enabled
+            println("v_E: ", v_E, " energy_fin: ", energy_fin)
+        end
 
         return (energy_fin - energy_f) / 1e6
     end
 
-    v_E_fin = find_zero(v_E -> func_targeting_heatload(v_E), [1, 1000], Roots.Brent(), verbose=true, rtol=1e-8)
+    v_E_fin = find_zero(v_E -> func_targeting_heatload(v_E), [1, 1000], Roots.Brent(), verbose=log_enabled, rtol=1e-8)
 
     return v_E_fin
 end

@@ -20,6 +20,16 @@ sys = pyimport("sys")
  # import .config
  # import .ref_sys
 
+@inline function _legacy_eom_ctrl_log_enabled(args)::Bool
+    if get(ENV, "SPACEAGORA_DEBUG_LEGACY_CONTROL", "0") == "1"
+        return true
+    end
+    if args isa AbstractDict
+        return Bool(get(args, :print_res, get(args, :verbose, false)))
+    end
+    return false
+end
+
 function asim_ctrl_plot(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing)
     sys.path.append(args[:directory_Gram])
     gram = pyimport("gram")
@@ -366,7 +376,9 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, g
     lambdag = 0.0
     lambdah = v_E * m.planet.μ / (m.planet.Rp_e + args[:AE]*1e3)^2 # m.planet.μ / (m.planet.Rp_e + h_cf[end])^2
 
-    println("lambda init: ", [lambdav, lambdag, lambdah])
+    if _legacy_eom_ctrl_log_enabled(args)
+        println("lambda init: ", [lambdav, lambdag, lambdah])
+    end
 
     # lambdav = vf
     # lambdag = 0.0
@@ -450,9 +462,10 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, g
         # println("lambda 3: ", [lambdav, lambdag, lambdah])
     end
 
-    println("count: ", count)
-
-    println("lambda init conv: ", [lambdav, lambdag, lambdah])
+    if _legacy_eom_ctrl_log_enabled(args)
+        println("count: ", count)
+        println("lambda init conv: ", [lambdav, lambdag, lambdah])
+    end
 
     # Rerun the simulation with smaller step-size and the right lambda zero
     # Initial condition initialization
@@ -533,8 +546,10 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
     r0 = SVector{3, Float64}(r0)
     v0 = SVector{3, Float64}(v0)
 
-    println("r0: ", (norm(r0)-m.planet.Rp_e)/1e3)
-    println("v0: ", norm(v0))
+    if _legacy_eom_ctrl_log_enabled(args)
+        println("r0: ", (norm(r0)-m.planet.Rp_e)/1e3)
+        println("v0: ", norm(v0))
+    end
 
     # Clock
     date_initial = from_utc(DateTime(m.initial_condition.year, 
@@ -1080,7 +1095,9 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
     # Initial condition initialization
     in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], lambdav, lambdag, lambdah, 0.0]
 
-    println("in_cond: ", in_cond)
+    if _legacy_eom_ctrl_log_enabled(args)
+        println("in_cond: ", in_cond)
+    end
 
     # Time initialization
     initial_time, final_time = time_0, time_0 + 1500
@@ -1100,7 +1117,9 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
 
     v_ii_mag = [norm(sol[4:6,i]) for i in 1:length(sol.t)]
 
-    println("CD_slope: ", CD_slope)
+    if _legacy_eom_ctrl_log_enabled(args)
+        println("CD_slope: ", CD_slope)
+    end
 
     lambda_switch_list = (k_cf * 2.0 * mass * v_ii_mag) ./ (area_tot * CD_slope * pi)
 
@@ -1112,8 +1131,10 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
 
     temp = config.cnf.t_time_switch_targ
 
-    println("time switch targ: ", config.cnf.t_time_switch_targ)
-    println("temp: ", temp)
+    if _legacy_eom_ctrl_log_enabled(args)
+        println("time switch targ: ", config.cnf.t_time_switch_targ)
+        println("temp: ", temp)
+    end
 
     if length(temp) >= 2
         time_switch[1] = temp[1]
@@ -1125,7 +1146,9 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
 
     config.cnf.t_time_switch_targ = []
 
-    println(time_switch)
+    if _legacy_eom_ctrl_log_enabled(args)
+        println(time_switch)
+    end
 
     return sol, time_switch
 end

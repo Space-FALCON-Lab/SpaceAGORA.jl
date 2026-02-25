@@ -23,6 +23,16 @@ sys = pyimport("sys")
 # import .config
 # import .ref_sys
 
+@inline function _legacy_eom_targeting_log_enabled(args)::Bool
+    if get(ENV, "SPACEAGORA_DEBUG_LEGACY_CONTROL", "0") == "1"
+        return true
+    end
+    if args isa AbstractDict
+        return Bool(get(args, :print_res, get(args, :verbose, false)))
+    end
+    return false
+end
+
 function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing)
     sys.path.append(args[:directory_Gram])
     gram = pyimport("gram")
@@ -1038,9 +1048,12 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
     # prob = NonlinearProblem(shooting_residual!, z0, p)
     # sol_NL = solve(prob, NewtonRaphson())
 
-    sol_NL = nlsolve((residuals, z) -> shooting_residual!(residuals, z, p, param), z0, show_trace=true)
+    log_enabled = _legacy_eom_targeting_log_enabled(args)
+    sol_NL = nlsolve((residuals, z) -> shooting_residual!(residuals, z, p, param), z0, show_trace=log_enabled)
 
-    println(sol_NL)
+    if log_enabled
+        println(sol_NL)
+    end
 
     in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], sol_NL.zero[1], sol_NL.zero[2], sol_NL.zero[3], 0.0]
 

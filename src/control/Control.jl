@@ -9,6 +9,16 @@ include("heatload_control/Security_mode.jl")
 using SpecialFunctions
 using Roots
 
+@inline function _legacy_control_log_enabled(args)::Bool
+    if get(ENV, "SPACEAGORA_DEBUG_LEGACY_CONTROL", "0") == "1"
+        return true
+    end
+    if args isa AbstractDict
+        return Bool(get(args, :print_res, get(args, :verbose, false)))
+    end
+    return false
+end
+
 function no_control(ip, m, args=0, index_ratio=0, state=0, t=0, position=0, current_position=0, heat_rate_control=true)
     α = m.aerodynamics.α
 
@@ -44,7 +54,9 @@ function control_struct_load(ip, m, args, S, T_p, q, MonteCarlo=false)
             α = min_α
         end
     else
-        println("Check Controller - Second Check")
+        if _legacy_control_log_enabled(args)
+            println("Check Controller - Second Check")
+        end
     end
 
     if (α > max_α) || (α < 0)
@@ -141,7 +153,9 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
             end
 
         else
-            println("Check Controller - Second Check")
+            if _legacy_control_log_enabled(args)
+                println("Check Controller - Second Check")
+            end
         end
 
         if (α > max_α) || (α < 0)
@@ -193,7 +207,9 @@ function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, po
     if (config.cnf.evaluate_switch_heat_load == false)
         if args[:flash2_through_integration] == 1
             if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 1
-                println("entering first switch calculation with integration")
+                if _legacy_control_log_enabled(args)
+                    println("entering first switch calculation with integration")
+                end
                 config.cnf.time_switch_1, config.cnf.time_switch_2 = switch_calculation_with_integration(ip, m, position, args, t, heat_rate_control, 1, gram_atmosphere, position)
             end
             if args[:heat_load_sol] == 2 || args[:heat_load_sol] == 3

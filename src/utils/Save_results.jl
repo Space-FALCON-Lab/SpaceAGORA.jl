@@ -2,14 +2,10 @@ using .SimulationModel: ODEParams, IntermediateSolution, Solution
 
 if !isdefined(@__MODULE__, :_legacy_get_save_results_runtime_state)
     @inline function _legacy_get_save_results_runtime_state(args=nothing; cnf=nothing, solution=nothing, model=nothing)
-        module_runtime = isdefined(@__MODULE__, :config) ? getfield(@__MODULE__, :config) : nothing
-
         cnf_state = if cnf !== nothing
             cnf
         elseif args isa AbstractDict && haskey(args, :cnf)
             args[:cnf]
-        elseif module_runtime !== nothing && hasproperty(module_runtime, :cnf)
-            getproperty(module_runtime, :cnf)
         else
             nothing
         end
@@ -18,8 +14,6 @@ if !isdefined(@__MODULE__, :_legacy_get_save_results_runtime_state)
             solution
         elseif args isa AbstractDict && haskey(args, :solution)
             args[:solution]
-        elseif module_runtime !== nothing && hasproperty(module_runtime, :solution)
-            getproperty(module_runtime, :solution)
         else
             nothing
         end
@@ -28,8 +22,6 @@ if !isdefined(@__MODULE__, :_legacy_get_save_results_runtime_state)
             model
         elseif args isa AbstractDict && haskey(args, :model)
             args[:model]
-        elseif module_runtime !== nothing && hasproperty(module_runtime, :model)
-            getproperty(module_runtime, :model)
         else
             nothing
         end

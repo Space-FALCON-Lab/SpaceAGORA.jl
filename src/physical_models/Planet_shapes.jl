@@ -1,5 +1,5 @@
 using LoopVectorization
-δ(i, j) = ==(i, j)
+# δ(i, j) = ==(i, j)
 """
     alf_IDR(x::Real, N::Integer, M::Integer)
 
@@ -19,8 +19,9 @@ function fnALF_IDR!(A::AbstractArray{Float64}, x::Float64, N::Integer, M::Intege
     A[1,1] = 1.0
 
     # Sectorials
+    sectorial_limit = min(N, M)
     if M > 0
-        @inbounds for i=2:min(N+1,M+1)
+        @inbounds for i=2:sectorial_limit+1
             # For ease of notation
             n = i - 1
 
@@ -139,8 +140,8 @@ function Mars_elevation!(args, Clm, Slm, latitude, longitude, A)
     topo_order = args[:topo_order]
     harmonic = calculate_topography_harmonics!(Clm, Slm, latitude, longitude, A, topo_degree, topo_order)
     # mean_radius = 3389.5e3
-    elevation = harmonic
-    return elevation
+    # elevation = harmonic
+    return harmonic
 end
 
 function Venus_elevation!(args, Clm::AbstractArray{Float64}, Slm::AbstractArray{Float64}, latitude::Float64, longitude::Float64, A::AbstractArray{Float64})
@@ -204,6 +205,6 @@ function Earth_elevation!(args, Clm::AbstractArray{Float64}, Slm::AbstractArray{
     topo_degree = args[:topo_degree]
     topo_order = args[:topo_order]
     harmonic = calculate_topography_harmonics!(Clm, Slm, latitude, longitude, A, topo_degree, topo_order)
-    elevation = harmonic
-    return elevation
+    # elevation = harmonic
+    return harmonic
 end

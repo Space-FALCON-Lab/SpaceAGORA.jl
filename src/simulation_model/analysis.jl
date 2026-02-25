@@ -65,9 +65,9 @@ end
 
 Returns the center of mass of the spacecraft assembly that the body is a part of.
 """
-function get_COM(model::SpacecraftModel, body::Link)
+function get_COM(model::SpacecraftModel)
     # BFS starting from body to find all bodies attached to the current body
-    bodies, root_index = traverse_bodies(model, body)
+    bodies = model.links # Get all bodies in the model
     return get_COM(bodies) # Call the version for a list of bodies
 end
 
@@ -132,10 +132,10 @@ end
 
 Returns the pre-calculated inertia tensor for the assembly connected to `body`.
 """
-function get_inertia_tensor(model::SpacecraftModel, body::Link)
+function get_inertia_tensor(model::SpacecraftModel)
     # BFS starting from body to find all bodies attached to the current body
-    bodies, root_index = traverse_bodies(model, body)
-    return model.inertia_tensors[root_index] # Return the inertia tensor of the root body
+    # bodies, root_index = traverse_bodies(model, body)
+    return model.inertia_tensor # Return the inertia tensor of the root body
 end
 
 """

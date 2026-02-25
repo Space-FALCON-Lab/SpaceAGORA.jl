@@ -1,5 +1,12 @@
 using Interpolations
 using SpecialFunctions
+using ..AbstractTypes: AbstractThermalModel, AbstractPlanet
+
+@kwdef struct MaxwellianHeat{P <: AbstractPlanet} <: AbstractThermalModel
+    thermal_accomodation_factor::Float64
+    planet::P
+    thermal_contact::Bool = false
+end
 
 # Blunt body
 function heatrate_convective(S, T, m, ρ, v, α)
@@ -85,27 +92,19 @@ function heatrate_convective_radiative(S, T, m, ρ, v, α)
     return q_conv # + q_rad
 end
 
-function heatrate_convective_maxwellian(S, T, m, ρ, v, α)
-    """
-
-    """
-    
-    a = m.aerodynamics
-    p = m.planet
-    t_m = a.thermal_contact
-
-    if t_m != 1
+function getHeatRate(model::MaxwellianHeat, S::Float64, T::Float64, ρ::Float64, v::Float64, α::Float64)::Float64
+    if !model.thermal_contact
         r_prime  = (1 / S^2) * (2*S^2 + 1 - 1 / (1 + sqrt(pi) * S * sin(α) * erf(S * sin(α) * exp((S * sin(α))^2))))
         St_prime = (1 / (4 * sqrt(pi) * S)) * (exp(-(S * sin(α))^2) + (sqrt(pi)) * (S * sin(α)) * erf(S * sin(α)))
-    elseif t_m == 1
+    else
         r_prime  = (1 / S^2) * (2*S^2 + 1 - 1 / (1 + sqrt(pi) * S * sin(α) * (1 + erf(S * sin(α))) * exp((S * sin(α))^2)))
         St_prime = (1 / (4 * sqrt(pi) * S)) * (exp(-(S * sin(α))^2) + (sqrt(pi)) * (S * sin(α)) * (1 + erf(S * sin(α))))
     end
 
-    T_0 = T * (1 + ((p.γ - 1) / p.γ) * S^2)
-    T_r = T + (p.γ/(p.γ + 1)) * r_prime * (T_0 - T)
+    γ = model.planet.γ
+    T_0 = T * (1 + ((γ - 1) / γ) * S^2)
+    T_r = T + (γ/(γ + 1)) * r_prime * (T_0 - T)
     T_p = T
-    γ = p.γ
     T_w = T_p
 
     # heat_rate = (m.aerodynamics.thermal_accomodation_factor * ρ * m.planet.R * T_p) * 
@@ -114,8 +113,8 @@ function heatrate_convective_maxwellian(S, T, m, ρ, v, α)
     #             (exp(-(S * sin(α))^2) + sqrt(pi) * (S * sin(α)) * 
     #             (1 + erf(S * sin(α)))) - 0.5 * exp(-(S * sin(α))^2)) * 1e-4  # W/cm^2
     
-    heat_rate = (m.aerodynamics.thermal_accomodation_factor * ρ * m.planet.R * T_p) * 
-                (sqrt(m.planet.R * T_p / (2 * pi))) * (
+    heat_rate = (model.thermal_accomodation_factor * ρ * model.planet.R * T_p) * 
+                (sqrt(model.planet.R * T_p / (2 * pi))) * (
                 (S^2 + (γ) / (γ - 1) - (γ + 1) / (2 * (γ - 1)) * (T_w / T_p)) * 
                 (exp(-(S * sin(α))^2) + sqrt(pi) * (S * sin(α)) *
                 (1 + erf(S * sin(α)))) - 0.5 * exp(-(S * sin(α))^2)) * 1e-4  # W/cm^2

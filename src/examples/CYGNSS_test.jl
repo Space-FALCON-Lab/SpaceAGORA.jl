@@ -22,22 +22,11 @@ using Arrow
 gravEffector = InverseSquaredGravityModel()
 nBodyGravEffector = NBodyGravityModel(["Sun", "Moon"], "Earth")
 harmonicGravEffector = GravitationalHarmonicsModel(50, 50, "Gravity_harmonics_data/EarthGGM05C.csv", "Earth")
-dynamic_effectors = (gravEffector, nBodyGravEffector, harmonicGravEffector)
+aeroEffector = AerodynamicCoefficientfM()
+dynamic_effectors = (gravEffector, nBodyGravEffector, harmonicGravEffector, aeroEffector)
 
-spacecraft = SpacecraftModel(dynamic_effectors=dynamic_effectors)
+spacecraft = SpacecraftModel()
 # Add bodies to the spacecraft model
-# p = SVector{3, Float64}([0.1, 0.2, -0.3])
-# q = 1/(1+norm(p)^2)*SVector{4, Float64}([2*p; 1-norm(p)^2])
-# skew = (ω) -> SMatrix{3, 3, Float64}([0 -ω[3] ω[2];
-#                                    ω[3] 0 -ω[1];
-#                                    -ω[2] ω[1] 0])
-# dcm = (q[4]^2 - norm(q[1:3])^2)*I(3) - 2*q[4]*skew(q[1:3]) + 2*q[1:3]*q[1:3]' # DCM from quaternion
-# ω_body = SVector{3, Float64}([0.001, -0.01, 0.03]) # Reference angular velocity
-# ω_ref = dcm'*ω_body
-# h = sqrt(30.0/7.0)
-# w = sqrt(6.0)
-# d = sqrt(66.0/7.0)
-
 rw_torques_data = DataFrame(Arrow.Table("cygnss_rw_momentum_derivatives.feather"))
 # println(rw_torques_data[])
 # time_itp = LinearInterpolation(rw_torques_data.time_offset)
@@ -109,12 +98,14 @@ L_panel_joint = Joint(main_bus, SVector{3, Float64}(0.0, 32.045e-2, -(20.22 - 13
 R_panel_joint = Joint(R_panel, SVector{3, Float64}(-24.855, 0.0, 0.0), main_bus, SVector{3, Float64}(0.0, -32.045e-2, -(20.22 - 13.1)*1.0e-2))
 add_joint!(spacecraft, L_panel_joint)
 add_joint!(spacecraft, R_panel_joint)
-inertia_tensor = [1.4e6 -1.71e4 8.08e3;
+inertia_tensor = SMatrix{3, 3, Float64}([1.4e6 -1.71e4 8.08e3;
                   -1.71e4 8.19e5 -5.35e3;
-                  8.08e3 -5.35e3 1.95e6] * 1e-6
+                  8.08e3 -5.35e3 1.95e6]) * 1e-6
 set_inertia_tensor!(spacecraft, main_bus, 
                         SMatrix{3, 3, Float64}(inertia_tensor))
 
+roots = [spacecraft]
+dynamics_model = DynamicsModel(roots, dynamic_effectors)
 println("Spacecraft model initialized with $(length(spacecraft.links)) bodies.")
 # println("Spacecraft roots: $spacecraft.roots")
 println("Spacecraft COM: $(get_COM(spacecraft, main_bus))")
@@ -200,207 +191,225 @@ add_facet!(main_bus, bus_facets)
 add_facet!(L_panel, panel_facets_L)
 add_facet!(R_panel, panel_facets_R)
 
-args = Dict(# Misc Simulation
-            :results => 1,                                                                                      # Generate csv file for results True=1, False=0
-            :passresults => false,                                                                                  # Pass results as output True=1, False=0
-            :print_res => true,                                                                                    # Print some lines True=1, False=0
-            :directory_results => "output/cygnss_comparison_slew_eci",                # Directory where to save the results
-            :directory_Gram => "GRAMpy",                                                    # Directory where Gram is
-            :directory_Gram_data => "GRAM_Data",                                            # Directory where Gram data is
-            :directory_Spice => "GRAM_Data/SPICE",                                          # Directory where SPICE files are located
-            :Gram_version => 0,                                                                                 # MarsGram x file to use
-            :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
-            :filename => 0,                                         # Filename with specifics of simulation, True =1, False=0
-            :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
-            :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
-            :normalize => 1,                                       # Normalize the integration True=1, False=0
-            :closed_form => 0,                                     # Closed form solution True=1, False=0
-            :save_csv => false,
-            # Type of Mission
-            :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
-            :keplerian => true,                                        # Do not include drag passage: True=1, False=0
-            :number_of_orbits => 10,                                 # Number of aerobraking passage
-            :mission_time => 3600.0,                                  # Mission time in seconds, used only for Time mission type
-            # :mission_time => 1000.0,                                  # Mission time in seconds, used only for Time mission type
-            :orientation_sim => false,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
-            :num_steps_to_save => 10000,                            # Number of timesteps between saves
+ic = InitialCondition(a=6815519.860683523, 
+                      e=0.001160182015198709, 
+                      i=35.006305312328244, 
+                      Ω=143.51935099761045, 
+                      ω=175.8048936813804, 
+                      ν=345.19661998242003)
 
-            # Physical Model
-            :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
-            :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
-            :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
-            :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
-            :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
-            :topography_harmonics_file => "Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
-            :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
-            :topo_order => 90,                                      # Maximum order of the topography harmonics (Defined in the file)
-            :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
-            :aerodynamic_model => "Mach-dependent",                 # choices=['Cd and Cl Constant' , 'Mach-dependent' , 'No-Ballistic flight with axial coefficient']: "Mach-dependent" specific for spacecraft shape, "No-Ballistic flight" specific for blunted-cone shape
-            :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
-            
-            # Perturbations
-            :n_bodies => ["Sun", "Moon"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
-            :srp => false,                                             # Solar Radiation Pressure true/false
-            :eclipse => false,                                         # Whether to include eclipse conditions in SRP calculation
-            :gravity_gradient => false,                                   # Gravity Gradient true/false
-            :gravity_harmonics => 1,                                            # Gravity Spherical harmonics True=1, False=0
-            :gravity_harmonics_file => "Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
-            :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
-            :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
-            :magnetic_field => false,                                    # Magnetic field True=1, False=0
+time = InitialTime(year=2025, 
+                   month=10, 
+                   day=4, 
+                   hour=0, 
+                   minute=56, 
+                   second=59.0)
 
-            # Rates
-            :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
-            :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
-            :save_rate => 1.0,                                      # Rate at which the data trajectory are saved
-            
-            # Body
-            :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
-            :max_heat_rate => 0.15,                                 # Max heat rate the heat rate control will start to react to
-            :max_heat_load => 30.0,                                 # Max heat load the heat load control will not be overcomed
-            # :dry_mass => 411.0,                                     # Initial dry mass of body in kg
-            # :prop_mass => 50.0,                                     # Initial propellant mass of body in kg
-            :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
-            :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
-            :α => 90.0,                                             # Max angle of attack of solar panels
+args = SimulationConfiguration(dynamics_model=dynamics_model,
+                               initial_conditions=ic,
+                               initial_time=time)
+# args = Dict(# Misc Simulation
+#             :results => true,                                                                                      # Generate csv file for results True=1, False=0
+#             :passresults => false,                                                                                  # Pass results as output True=1, False=0
+#             :print_res => true,                                                                                    # Print some lines True=1, False=0
+#             :directory_results => "output/cygnss_comparison_slew_eci",                # Directory where to save the results
+#             :directory_Gram => "GRAMpy",                                                    # Directory where Gram is
+#             :directory_Gram_data => "GRAM_Data",                                            # Directory where Gram data is
+#             :directory_Spice => "GRAM_Data/SPICE",                                          # Directory where SPICE files are located
+#             :Gram_version => 0,                                                                                 # MarsGram x file to use
+#             :montecarlo_analysis => false,                                                                          # Generate csv file for Montecarlo results True=1, False=0
+#             :plot => true,                                                                                         # Generate pdf plots of results True=1, False=0
+#             :filename => false,                                         # Filename with specifics of simulation, True =1, False=0
+#             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
+#             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
+#             :normalize => false,                                       # Normalize the integration True=1, False=0
+#             :closed_form => false,                                     # Closed form solution True=1, False=0
+#             :save_csv => true,
+#             # Type of Mission
+#             :type_of_mission => "Time",                           # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
+#             :keplerian => true,                                        # Do not include drag passage: True=1, False=0
+#             :number_of_orbits => 10,                                 # Number of aerobraking passage
+#             :mission_time => 10*3600.0,                                  # Mission time in seconds, used only for Time mission type
+#             # :mission_time => 1000.0,                                  # Mission time in seconds, used only for Time mission type
+#             :orientation_sim => true,                                  # Orientation simulation True=1, False=0, if false, will only propagate position
+#             :num_steps_to_save => 10000,                            # Number of timesteps between saves
 
-            # # Fill for Spacecraft body shape only
-            # :length_sat => 2.2,                                     # Length of the satellite in m
-            # :height_sat => 1.7,                                     # Height of the satellite in m
-            # :width_sat => 2.6,                                      # Width of the satellite in m
-            # :length_sp => 3.76,                                     # Length of the solar panels in m
-            # :height_sp => 1.93,                                     # Height of the solar panels in m
+#             # Physical Model
+#             :planet => 0,                                           # Earth = 0, Mars = 1, Venus = 2
+#             :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
+#             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect', 'GRAM']
+#             :density_model => "Gram",                               # choices=['Constant' , 'Exponential' , 'Gram']
+#             :topography_model => "None",                             # choices=['None' , 'Spherical Harmonics']
+#             :topography_harmonics_file => "Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
+#             :topo_degree => 90,                                     # Maximum degree of the topography harmonics (Defined in the file)
+#             :topo_order => 90,                                      # Maximum order of the topography harmonics (Defined in the file)
+#             :wind => 1,                                             # Wind calculation only if density model is Gram True=1, False=0
+#             :aerodynamic_model => "Mach-dependent",                 # choices=['Cd and Cl Constant' , 'Mach-dependent' , 'No-Ballistic flight with axial coefficient']: "Mach-dependent" specific for spacecraft shape, "No-Ballistic flight" specific for blunted-cone shape
+#             :thermal_model => "Maxwellian Heat Transfer",           # choices=['Maxwellian Heat Transfer' , 'Convective and Radiative']: "Maxwellian Heat Transfer" specific for spacecraft shape, "Convective and Radiative" specific for blunted-cone shape
+            
+#             # Perturbations
+#             :n_bodies => ["Sun", "Moon"],                                        # Add names of bodies you want to simulate the gravity of to a list. Keep list empty if not required to simulate extra body gravity.
+#             :srp => false,                                             # Solar Radiation Pressure true/false
+#             :eclipse => false,                                         # Whether to include eclipse conditions in SRP calculation
+#             :gravity_gradient => false,                                   # Gravity Gradient true/false
+#             :gravity_harmonics => 1,                                            # Gravity Spherical harmonics True=1, False=0
+#             :gravity_harmonics_file => "Gravity_harmonics_data/EarthGGM05C.csv", # File with the gravity harmonics coefficients
+#             :L => 50,                                              # Maximum degree of the gravity harmonics (Defined in the file)
+#             :M => 50,                                              # Maximum order of the gravity harmonics (Defined in the file)
+#             :magnetic_field => false,                                    # Magnetic field True=1, False=0
 
-            # # Fill for Blunted Cone body shape only
-            # :cone_angle => 70.0,                                    # Cone angle of the blunted cone in deg
-            # :base_radius => 2.65/2,                                 # Base radius of the blunted cone in m
-            # :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
-            :spacecraft_model => spacecraft,                            # Spacecraft model with bodies and joints
+#             # Rates
+#             :trajectory_rate => 100.0,                              # Rate at which the trajectory in drag passage integrate using RK4
+#             :flash1_rate => 3.0,                                    # Rate at which Control Mode-1 is called
+#             :save_rate => 1.0,                                      # Rate at which the data trajectory are saved
             
-            # Engine
-            :thrust => 4.0,                                         # Maximum magnitude thrust in N
-            
-            # Control Mode
-            :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
-            :security_mode => 1,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
-            :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
-            :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
-            :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
-            :struct_ctrl => 0,                                      # Structural Load Control True=1, False=0
-            :targeting_ctrl => 0,                                   # Targeting Control True=1, False=0
-            
-            # Initial Conditions
-            :initial_condition_type => 2,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 15000.0e3,                # Initial Apoapsis Radius for for-loop in m
-            :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
-            :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 145.0e3,                                 # Initial Periapsis Altitude for for-loop in m
-            :hp_initial_b => 1590000.0e3,                              # Final Periapsis Altitude for for-loop in m
-            :hp_step => 1e12,                                 # Step Periapsis Radius for for-loop in m
-            :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :v_step => 1000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
-            :a_initial_a => 6815519.860683523,                # Initial Semi-major axis for for-loop in m, starting from 0s
-            # :a_initial_a => 6813679.740083234, # starting from 900s
-            # :a_initial_a => 6179921.801554798,
-            # :a_initial_a => 10000.0e3,
-            :a_initial_b => 6920.0e3,                               # Final Semi-major axis for for-loop in m
-            # :a_initial_b => 11000.0e3,
-            :a_step => 5e10,                                       # Step Semi-major axis for for-loop in m
-            :e_initial_a => 0.001160182015198709,                                   # Initial Eccentricity for for-loop in m, starting from 0s
-            # :e_initial_a => 0.0011523634328820804, # Starting from 900s
-            # :e_initial_a => 0.10332925554563428,
-            # :e_initial_a => 0.01,
-            :e_initial_b => 0.1,                                   # Final Eccentricity for for-loop in m
-            :e_step => 0.1,                                       # Step Eccentricity for for-loop in m
-            
-            :orientation_type => 2,                                   # Initial Condition orientation = 0, Initial Condition orientation and velocity = 1
-            :γ_initial_a => -2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :γ_step => 100,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
-            :inclination => 35.006305312328244,                                   # Inclination Orbit, deg, starting from 0s
-            # :inclination => 35.00691817898257, # Starting from 900s
-            # :inclination => 35.60900229798397,
-            :ω => 175.8048936813804,                                              # AOP, deg, starting from 0s
-            # :ω => 227.97599785070602, # Starting from 900s
-            # :ω =>235.59080763543037,
-            :Ω => 143.51935099761045,                                              # RAAN, deg, starting from 0s
-            # :Ω => 143.50901715025634, # Starting from 900s
-            # :Ω => 179.05921043028263,
-            :ν => 345.19661998242003,                                               # True Anomaly, deg, starting from 0s
-            # :ν => 350.3995039488173,# Starting from 900s
-            # :ν => 180.24980892300408,
-            # :ν => 40.0,                                               # True Anomaly, deg
-            :EI => 160.0,                                           # Entry Interface, km
-            :AE => 160.0,                                           # Atmospheric Exit, km
-            :year => 2025,                                          # Mission year
-            :month => 10,                                           # Mission month
-            :day => 4,                                             # Mission day
-            :hours => 0,                                           # Mission hour
-            :minutes => 56,                                         # Mission minute
-            :secs => 59.0,                                          # Mission second
-            
-            # Final Conditions
-            :final_apoapsis => 3390.0e3+503e3, # 5088116.837416616, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
+#             # Body
+#             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
+#             :max_heat_rate => 0.15,                                 # Max heat rate the heat rate control will start to react to
+#             :max_heat_load => 30.0,                                 # Max heat load the heat load control will not be overcomed
+#             # :dry_mass => 411.0,                                     # Initial dry mass of body in kg
+#             # :prop_mass => 50.0,                                     # Initial propellant mass of body in kg
+#             :reflection_coefficient => 0.9,                         # Diffuse reflection sigma =0, for specular reflection sigma = 1
+#             :thermal_accomodation_factor => 1.0,                    # Thermal accomodation factor, Shaaf and Chambre
+#             :α => 90.0,                                             # Max angle of attack of solar panels
 
-            # Do not change
-            :heat_load_sol => 0,                                    # Heat load solution leave it to 0 and change it only for control mode = 2:  Max energy depletaion=0, Min energy depletion=1, One switch max-min=2, One switch min-max = 3
-            :thrust_control => "None",                              # choices=['None' , 'Aerobraking Maneuver' , 'Drag Passage Firing']
-            :phi => 180.0,                                          # Thrust Angle, deg
-            :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
-            :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
-            :ra_fin_orbit => 25000e3,                               # Target final apoapsis for the orbit, m
-            :maneuver_plan => Odyssey_firing_plan,                # Maneuver plan function
-            
-            # Monte Carlo Simulations
-            :montecarlo => 0,                                       # Run Monte Carlo simulation True=1, False=0
-            :monte_carlo_run => 0,
-            :initial_montecarlo_number => 1,                        # Initial Monte Carlo sample number
-            :montecarlo_size => 1000,                               # number of Monte Carlo samples
-            
-            # Monte Carlo Perturbations
-            :CD_dispersion => 10.0,                                 # Max dispersion of CD for Uniform Distribution, %
-            :CL_dispersion => 10.0,                                 # Max dispersion of CL for Uniform Distribution, %
-            :rp_dispersion => 87.0*0.05/3,                                  # Max dispersion for initial vacuum periapsis radius following uniform distribution, km
-            :ra_dispersion => 28559.0*0.05/3,                                  # Max dispersion for initial apoapsis radius following uniform distribution, km
-            :i_dispersion => 0.25,                                  # Max dispersion for initial inclination following uniform distribution, deg
-            :Ω_dispersion => 0.25,                                  # Max dispersion for initial right ascension of the ascending node following uniform distribution, deg
-            :ω_dispersion => 0.25,                                  # Max dispersion for initial argument of periapsis following uniform distribution, deg
-            :vi_dispersion => 0.025,                                # Max dispersion for initial true anomaly following uniform distribution, deg
-            
-            # MonteCarlo Perturbation Guidance - Closed Form Solution (only for online)
-            :ra_dispersion_gnc => 0.25,                             # Max dispersion for initial apoapsis radius used by gnc following uniform distribution, km
-            :rp_dispersion_gnc => 0.25,                             # Max dispersion for initial periapsis radius used by gnc following uniform distribution, km
-            :i_dispersion_gnc => 0.025,                             # Max dispersion for initial inclination used by gnc following uniform distribution, deg
-            :Ω_dispersion_gnc => 0.025,                             # Max dispersion for initial right ascension of the ascending node used by gnc following uniform distribution, deg
-            :ω_dispersion_gnc => 0.0,                               # Max dispersion for initial argument of periapsis used by gnc following uniform distribution, deg
-            :vi_dispersion_gnc => 0.0,                              # Max dispersion for initial true anomaly used by gnc following uniform distribution, deg
-            
-            # Online trajectory control (heat rate)
-            :ρ_mudispersion_gnc => 0.0,                             # Mean dispersion of rho for Gaussian Distribution, %
-            :ρ_sigmadispersion_gnc => 1.0,                          # Std dispersion of rho for Gaussian Distribution, %
-            :T_mudispersion_gnc => 0.0,                             # Mean dispersion of T for Gaussian Distribution, %
-            :T_sigmadispersion_gnc => 1.0,                          # Std dispersion of T for Gaussian Distribution, %
-            :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
-            :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
-            :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
+#             # # Fill for Spacecraft body shape only
+#             # :length_sat => 2.2,                                     # Length of the satellite in m
+#             # :height_sat => 1.7,                                     # Height of the satellite in m
+#             # :width_sat => 2.6,                                      # Width of the satellite in m
+#             # :length_sp => 3.76,                                     # Length of the solar panels in m
+#             # :height_sp => 1.93,                                     # Height of the solar panels in m
 
-            :a_tol => 1e-5,                                         # Absolute tolerance for integration
-            :r_tol => 1e-3,                                         # Relative tolerance for integration
-            :a_tol_orbit => 1e-10,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
-            :r_tol_orbit => 1e-8,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
-            :a_tol_drag => 1e-10,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
-            :r_tol_drag => 1e-8,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
-            :a_tol_quaternion => 1e-11,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
-            :r_tol_quaternion => 1e-9,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
-            :dt_max => 1.0,                                         # Maximum time step for integration, s
-            :dt_max_orbit => 0.1,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
-            :dt_max_drag => 1.0,                                    # Maximum time step for drag passage
+#             # # Fill for Blunted Cone body shape only
+#             # :cone_angle => 70.0,                                    # Cone angle of the blunted cone in deg
+#             # :base_radius => 2.65/2,                                 # Base radius of the blunted cone in m
+#             # :nose_radius => 0.6638,                                 # Nose radius of the blunted cone in m
+#             # :spacecraft_model => spacecraft,                            # Spacecraft model with bodies and joints
+#             :dynamics_model => dynamics_model,                            # Dynamics model with effectors and root bodies
+            
+#             # Engine
+#             :thrust => 4.0,                                         # Maximum magnitude thrust in N
+            
+#             # Control Mode
+#             :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
+#             :security_mode => 1,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
+#             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
+#             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
+#             :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+#             :struct_ctrl => 0,                                      # Structural Load Control True=1, False=0
+#             :targeting_ctrl => 0,                                   # Targeting Control True=1, False=0
+            
+#             # Initial Conditions
+#             :initial_condition_type => 2,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
+#             :ra_initial_a => 15000.0e3,                # Initial Apoapsis Radius for for-loop in m
+#             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
+#             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
+#             :hp_initial_a => 145.0e3,                                 # Initial Periapsis Altitude for for-loop in m
+#             :hp_initial_b => 1590000.0e3,                              # Final Periapsis Altitude for for-loop in m
+#             :hp_step => 1e12,                                 # Step Periapsis Radius for for-loop in m
+#             :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
+#             :v_initial_a => 4500.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
+#             :v_initial_b => 5000.0,                                 # Final Velocity (m/s) for for-loop if initial conditions are in v and gamma
+#             :v_step => 1000.0,                                       # Step Velocity (m/s) for for-loop if initial conditions are in v and gamma
+#             :a_initial_a => 6815519.860683523,                # Initial Semi-major axis for for-loop in m, starting from 0s
+#             # :a_initial_a => 6813679.740083234, # starting from 900s
+#             # :a_initial_a => 6179921.801554798,
+#             # :a_initial_a => 10000.0e3,
+#             :a_initial_b => 6920.0e3,                               # Final Semi-major axis for for-loop in m
+#             # :a_initial_b => 11000.0e3,
+#             :a_step => 5e10,                                       # Step Semi-major axis for for-loop in m
+#             :e_initial_a => 0.001160182015198709,                                   # Initial Eccentricity for for-loop in m, starting from 0s
+#             # :e_initial_a => 0.0011523634328820804, # Starting from 900s
+#             # :e_initial_a => 0.10332925554563428,
+#             # :e_initial_a => 0.01,
+#             :e_initial_b => 0.1,                                   # Final Eccentricity for for-loop in m
+#             :e_step => 0.1,                                       # Step Eccentricity for for-loop in m
+            
+#             :orientation_type => 2,                                   # Initial Condition orientation = 0, Initial Condition orientation and velocity = 1
+#             :γ_initial_a => -2.5,                                    # Initial Gamma (deg) for for-loop if initial conditions are in v and gamma
+#             :γ_initial_b => 7.0,                                    # Final Gamma (deg) for for-loop if initial conditions are in v and gamma
+#             :γ_step => 100,                                         # Step Gamma (deg) for for-loop if initial conditions are in v and gamma
+#             :inclination => 35.006305312328244,                                   # Inclination Orbit, deg, starting from 0s
+#             # :inclination => 35.00691817898257, # Starting from 900s
+#             # :inclination => 35.60900229798397,
+#             :ω => 175.8048936813804,                                              # AOP, deg, starting from 0s
+#             # :ω => 227.97599785070602, # Starting from 900s
+#             # :ω =>235.59080763543037,
+#             :Ω => 143.51935099761045,                                              # RAAN, deg, starting from 0s
+#             # :Ω => 143.50901715025634, # Starting from 900s
+#             # :Ω => 179.05921043028263,
+#             :ν => 345.19661998242003,                                               # True Anomaly, deg, starting from 0s
+#             # :ν => 350.3995039488173,# Starting from 900s
+#             # :ν => 180.24980892300408,
+#             # :ν => 40.0,                                               # True Anomaly, deg
+#             :EI => 160.0,                                           # Entry Interface, km
+#             :AE => 160.0,                                           # Atmospheric Exit, km
+#             :year => 2025,                                          # Mission year
+#             :month => 10,                                           # Mission month
+#             :day => 4,                                             # Mission day
+#             :hours => 0,                                           # Mission hour
+#             :minutes => 56,                                         # Mission minute
+#             :secs => 59.0,                                          # Mission second
+            
+#             # Final Conditions
+#             :final_apoapsis => 3390.0e3+503e3, # 5088116.837416616, # 4905.974818462152e3                  # Final apoapsis radius if aerobraking campaign
 
-            :Odyssey_sim => 0                                      # Simulate Odyssey Mission
-            )
+#             # Do not change
+#             :heat_load_sol => 0,                                    # Heat load solution leave it to 0 and change it only for control mode = 2:  Max energy depletaion=0, Min energy depletion=1, One switch max-min=2, One switch min-max = 3
+#             :thrust_control => "None",                              # choices=['None' , 'Aerobraking Maneuver' , 'Drag Passage Firing']
+#             :phi => 180.0,                                          # Thrust Angle, deg
+#             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
+#             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
+#             :ra_fin_orbit => 25000e3,                               # Target final apoapsis for the orbit, m
+#             :maneuver_plan => Odyssey_firing_plan,                  # Maneuver plan function
+            
+#             # Monte Carlo Simulations
+#             :montecarlo => 0,                                       # Run Monte Carlo simulation True=1, False=0
+#             :monte_carlo_run => 0,
+#             :initial_montecarlo_number => 1,                        # Initial Monte Carlo sample number
+#             :montecarlo_size => 1000,                               # number of Monte Carlo samples
+            
+#             # Monte Carlo Perturbations
+#             :CD_dispersion => 10.0,                                 # Max dispersion of CD for Uniform Distribution, %
+#             :CL_dispersion => 10.0,                                 # Max dispersion of CL for Uniform Distribution, %
+#             :rp_dispersion => 87.0*0.05/3,                                  # Max dispersion for initial vacuum periapsis radius following uniform distribution, km
+#             :ra_dispersion => 28559.0*0.05/3,                                  # Max dispersion for initial apoapsis radius following uniform distribution, km
+#             :i_dispersion => 0.25,                                  # Max dispersion for initial inclination following uniform distribution, deg
+#             :Ω_dispersion => 0.25,                                  # Max dispersion for initial right ascension of the ascending node following uniform distribution, deg
+#             :ω_dispersion => 0.25,                                  # Max dispersion for initial argument of periapsis following uniform distribution, deg
+#             :vi_dispersion => 0.025,                                # Max dispersion for initial true anomaly following uniform distribution, deg
+            
+#             # MonteCarlo Perturbation Guidance - Closed Form Solution (only for online)
+#             :ra_dispersion_gnc => 0.25,                             # Max dispersion for initial apoapsis radius used by gnc following uniform distribution, km
+#             :rp_dispersion_gnc => 0.25,                             # Max dispersion for initial periapsis radius used by gnc following uniform distribution, km
+#             :i_dispersion_gnc => 0.025,                             # Max dispersion for initial inclination used by gnc following uniform distribution, deg
+#             :Ω_dispersion_gnc => 0.025,                             # Max dispersion for initial right ascension of the ascending node used by gnc following uniform distribution, deg
+#             :ω_dispersion_gnc => 0.0,                               # Max dispersion for initial argument of periapsis used by gnc following uniform distribution, deg
+#             :vi_dispersion_gnc => 0.0,                              # Max dispersion for initial true anomaly used by gnc following uniform distribution, deg
+            
+#             # Online trajectory control (heat rate)
+#             :ρ_mudispersion_gnc => 0.0,                             # Mean dispersion of rho for Gaussian Distribution, %
+#             :ρ_sigmadispersion_gnc => 1.0,                          # Std dispersion of rho for Gaussian Distribution, %
+#             :T_mudispersion_gnc => 0.0,                             # Mean dispersion of T for Gaussian Distribution, %
+#             :T_sigmadispersion_gnc => 1.0,                          # Std dispersion of T for Gaussian Distribution, %
+#             :S_mudispersion_gnc => 0.0,                             # Mean dispersion of S for Gaussian Distribution, %
+#             :S_sigmadispersion_gnc => 1.0,                          # Std dispersion of S for Gaussian Distribution, %
+#             :multiplicative_factor_heatload => 1.0,                 # Multiplicative factor for heat rate prediction when calculated heat load
+
+#             :a_tol => 1e-5,                                         # Absolute tolerance for integration
+#             :r_tol => 1e-3,                                         # Relative tolerance for integration
+#             :a_tol_orbit => 1e-7,                                    # Absolute tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+#             :r_tol_orbit => 1e-5,                                    # Relative tolerance for orbit integration (outside atmosphere, i.e., step 1 and step 3)
+#             :a_tol_drag => 1e-7,                                       # Absolute tolerance for drag passage integration (inside atmosphere, i.e., step 2)
+#             :r_tol_drag => 1e-5,                                       # Relative tolerance for drag passage integration (inside atmosphere, i.e., step 2)
+#             :a_tol_quaternion => 1e-7,                                  # Absolute tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+#             :r_tol_quaternion => 1e-5,                                  # Relative tolerance for quaternion integration (inside atmosphere, i.e., step 2)
+#             :dt_max => 1.0,                                         # Maximum time step for integration, s
+#             :dt_max_orbit => 10.0,                                   # Maximum time step for orbit integration (outside atmosphere, i.e., step 1 and step 3), s
+#             :dt_max_drag => 1.0,                                    # Maximum time step for drag passage
+
+#             :Odyssey_sim => 0                                      # Simulate Odyssey Mission
+#             )
 
 # # Calculating time of simulation
 # @profview run_analysis(args)

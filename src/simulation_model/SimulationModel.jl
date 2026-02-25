@@ -9,6 +9,7 @@ using Reexport
 
 # --- Utils ---
 include("../utils/quaternion_utils.jl")
+include("../physical_models/Planet_shapes.jl")
 
 # --- Submodules ---
 # We include the files, which define their own modules.
@@ -17,6 +18,9 @@ include("../utils/quaternion_utils.jl")
 # 1. Core abstract types
 include("abstract_types.jl")
 @reexport using .AbstractTypes
+
+include("planets.jl")
+@reexport using .Planets
 
 # 2. Simple hardware data structs
 include("components.jl")
@@ -43,6 +47,9 @@ include("analysis.jl")
 @reexport using .Analysis
 
 # --- Config types ---
+include("simulation_configuration.jl")
+@reexport using .SimConfig
+
 include("config_types.jl")
 @reexport using .ConfigTypes
 
@@ -50,4 +57,18 @@ include("config_types.jl")
 include("DynamicEffectors.jl")
 @reexport using .DynamicEffectors
 
+# --- Guidance Effectors ---
+include("GuidanceEffectors.jl")
+@reexport using .GuidanceEffectors
+# --- Control Effectors ---
+include("ControlEffectors.jl")
+@reexport using .ControlEffectors
+
+# --- Physical Models ---
+include("PhysicalModels.jl")
+@reexport using .EnvironmentModels
+
+# --- Integrator Callbacks ---
+include("callbacks.jl")
+@reexport using .SimulationCallbacks
 end # module SimulationModel

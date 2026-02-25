@@ -54,6 +54,9 @@ reaction wheel assembly with N wheels.
     "Maximum angular momentum (Nms) *each* wheel can store"
     max_wheel_h::Float64 = 0.1
 
+    "Attitude control algorithm associated with this RW assembly"
+    attitude_control_function::Function = (m, b, root_index, vel_pp_rw, h_pp_hat, aerobraking_phase, t) -> nothing
+
     # --- State (Mutable) ---
     "Angular momentum (h) of each wheel"
     h_wheels::MVector{N, Float64} = MVector{N, Float64}(zeros(N))

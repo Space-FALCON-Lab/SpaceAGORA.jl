@@ -5,10 +5,10 @@ using AstroTime
 using StaticArrays
 using SatelliteToolboxTransformations
 using SatelliteToolbox
-using .SimulationModel: Model, Planet
+
 # eop_iau2000a = fetch_iers_eop(Val(:IAU2000A))
 
-function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet, et)
+function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet::T)::Tuple{SVector{3, Float64}, SVector{3, Float64}} where T
     # From PCI (planet centered inertial) to PCPF (planet centered/planet fixed)
 
     # rot_angle = norm(planet.ω) * (t + t_prev)
@@ -21,7 +21,6 @@ function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet, 
     # L_pi = [cos(rot_angle) sin(rot_angle) 0; 
     #         -sin(rot_angle) cos(rot_angle) 0; 
     #         0 0 1]
-
     r_p = SVector{3, Float64}(planet.L_PI * r_i)
 
     v_p = SVector{3, Float64}(planet.L_PI * (v_i - cross(planet.ω, r_i)))
@@ -29,7 +28,7 @@ function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet, 
     return r_p, v_p
 end
 
-function r_pintor_i(r_p::SVector{3, Float64}, v_p::SVector{3, Float64}, planet)
+function r_pintor_i(r_p::SVector{3, Float64}, v_p::SVector{3, Float64}, planet::T)::Tuple{SVector{3, Float64}, SVector{3, Float64}} where T
     # From PCPF (planet centered/planet fixed) to PCI (planet centered inertial)
 
     r_i = planet.L_PI' * r_p
@@ -59,7 +58,13 @@ function orbitalelemtorv(oe::SVector{7, Float64}, planet)
     return collect(R), collect(V)
 end
 
-function rvtoorbitalelement(r::SVector, v::SVector, m::Float64, planet::Planet)
+function orbitalelemtorv(oe, planet)
+    # Overload for InitialCondition struct
+    a, e, i, Ω, ω, ν = oe.a, oe.e, oe.i, oe.Ω, oe.ω, oe.ν
+    return orbitalelemtorv(SVector{7, Float64}([a, e, i, Ω, ω, ν, 0.0]), planet)
+end
+
+function rvtoorbitalelement(r::SVector, v::SVector, m::Float64, planet)
 
     # println("r: ", r)
     # println("v: ", v)
@@ -134,6 +139,83 @@ function rvtoorbitalelement(r::SVector, v::SVector, m::Float64, planet::Planet)
     end
 
     return SVector{7, Float64}([a, e, i, Ω, ω, vi, m])
+end
+
+function rvtoorbitalelement(r::SVector, v::SVector, planet)
+
+    # println("r: ", r)
+    # println("v: ", v)
+
+    # From ECI (Planet Centered Inertial) to orbital element
+    i_x = SVector{3, Int64}([1, 0, 0])
+    i_y = SVector{3, Int64}([0, 1, 0])
+    i_z = SVector{3, Int64}([0, 0, 1])
+
+    Energy = dot(v,v)/2 - planet.μ/norm(r)
+    a = -planet.μ / (2 * Energy)
+    h = cross(r, v)
+    index = 0
+
+    r_ver = r/norm(r)
+    e = cross(v, h)/planet.μ - r_ver
+
+    i = acos(dot(i_z, h)/norm(h))
+    e_vers = e / norm(e)
+    if i == 0 || i == pi
+        if dot(e, i_y) >= 0
+            periapsis_longitude = acos(dot(i_x, e_vers))
+        elseif dot(e, i_y) < 0
+            periapsis_longitude = 2*pi - acos(dot(i_x, e_vers))
+        end
+        Ω = periapsis_longitude
+        ω = 0
+    else
+        n = cross(i_z, h)/norm(cross(i_z, h))
+        if dot(n, i_y) >= 0
+            Ω = acos(dot(i_x, n))
+        elseif dot(n, i_y) < 0
+            Ω = 2*pi - acos(dot(i_x, n))
+        end
+
+        if dot(e, i_z) >= 0
+            if dot(n, e_vers) > 1 && dot(n, e_vers) < 1 + 1e-4
+                ω = acos(1)
+            elseif dot(n, e_vers) < -1 && dot(n, e_vers) > -1 - 1e-4
+                ω = acos(-1)
+            else
+                ω = acos(dot(n, e_vers))
+            end
+        elseif dot(e, i_z) < 0
+            if dot(n, e_vers) > 1 && dot(n, e_vers) < 1 + 1e-4
+                ω = 2*pi - acos(1)
+            elseif dot(n, e_vers) < -1 && dot(n, e_vers) > -1 - 1e-4
+                ω = 2*pi - acos(-1)
+            else
+                ω = 2*pi - acos(dot(n, e_vers))
+            end
+        end
+    end
+
+    if dot(r, v) > 0
+        value = dot(e_vers, r_ver)
+        if abs(value) >= 1
+            value = round(value)
+        end
+        vi = acos(value)
+    elseif dot(r, v) <= 0
+        value = dot(e_vers, r_ver)
+        if abs(value) >= 1
+            value = round(value)
+        end
+        vi = 2*pi - acos(value)
+    end
+
+    e = norm(e)
+    if Ω == pi
+        Ω = 0
+    end
+
+    return SVector{6, Float64}([a, e, i, Ω, ω, vi])
 end
 
 function rtoalfadeltar(r)

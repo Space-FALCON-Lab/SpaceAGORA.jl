@@ -24,17 +24,21 @@ function add_body!(model::SpacecraftModel,
     - `body`: The rigid body to be added.
     """
 
-    push!(model.links, body) # Add the body to the links vector
+    
     if body.root
         # If the body is a root body, it should be added to the roots vector
         @assert prop_mass !== nothing "Propellant mass must be provided for root body"
-        push!(model.roots, body) # Add the body to the roots vector
-        push!(model.prop_mass, prop_mass) # Add propellant mass for root body
+        # push!(model.roots, body) # Add the body to the roots vector
+        model.root = body # Set the root field to the body
+        model.prop_mass = prop_mass # Add propellant mass for root body
+        push!(model.links, body) # Add the body to the links vector
         # Initialize inertia tensor for the root body
+    else
+        push!(model.links, body) # Add the body to the links vector
     end
     model.n_reaction_wheels += length(body.rw_assembly.h_wheels) # Increment the number of reaction wheels
     if body.root
-        append!(model.inertia_tensors, [SMatrix{3, 3, Float64}(I(3))]) # Add inertia tensor for root body
+        model.inertia_tensor = SMatrix{3, 3, Float64}(I(3)) # Add inertia tensor for root body
         # update_inertia_tensor!(model, body) # This function is in Analysis.jl, creates circular dependency
         # We should call this from a higher-level script after assembly.
     end

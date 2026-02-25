@@ -3,12 +3,14 @@ module ConfigTypes
 # import .SpacecraftModel
 # include("simulation_model/SimulationModel.jl")
 using ..PhysicalModel: SpacecraftModel
+using ..SimConfig: SimulationConfiguration
 using StaticArrays
 using AstroTime
 using OrdinaryDiffEq
 using Reexport
 
-export Body, Planet, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters
+export Body, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters
+export SaveCache, SaveData
 
     @kwdef struct Mission
         e::Int64 = 0
@@ -30,46 +32,46 @@ export Body, Planet, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solut
         mc::Int64 = 0
     end
 
-    @kwdef mutable struct Planet
-        Rp_e::Float64 = 0.0
-        Rp_p::Float64 = 0.0
-        Rp_m::Float64 = 0.0
-        mass::Float64  = 0.0
-        p::Float64 = 0.0
-        k::Float64 = 0.0
-        ω::Vector{Float64} = [0.0, 0.0, 0.0]
-        g_ref::Float64 = 0.0
-        ρ_ref::Float64 = 0.0
-        h_ref::Float64 = 0.0
-        H::Float64 = 0.0
-        R::Float64 = 0.0
-        γ::Float64 = 0.0
-        T::Float64 = 0.0
-        J2::Float64 = 0.0
-        μ::Float64 = 0.0
-        μ_fluid::Float64 = 0.0
-        Lz::Float64 = 0.0
-        α::Float64 = 0.0
-        δ::Float64 = 0.0
-        J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
-        L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
-        Clm::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
-        Slm::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
-        Clm_topo::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
-        Slm_topo::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
-        name::String = ""
-        A_grav::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
-        A_topo::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
-        VR01::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
-        VR11::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
-        N1::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
-        N2::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
-        A::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
-        Re::Vector{Float64} = [0.0, 0.0, 0.0]
-        Im::Vector{Float64} = [0.0, 0.0, 0.0]
-        polyfit_coeffs::Vector{Float64} = [0.0, 0.0, 0.0]
-        topography_function::Function = (args, Clm, Slm, latitude, longitude) -> 0.0
-    end
+    # @kwdef mutable struct Planet
+    #     Rp_e::Float64 = 0.0
+    #     Rp_p::Float64 = 0.0
+    #     Rp_m::Float64 = 0.0
+    #     mass::Float64  = 0.0
+    #     p::Float64 = 0.0
+    #     k::Float64 = 0.0
+    #     ω::Vector{Float64} = [0.0, 0.0, 0.0]
+    #     g_ref::Float64 = 0.0
+    #     ρ_ref::Float64 = 0.0
+    #     h_ref::Float64 = 0.0
+    #     H::Float64 = 0.0
+    #     R::Float64 = 0.0
+    #     γ::Float64 = 0.0
+    #     T::Float64 = 0.0
+    #     J2::Float64 = 0.0
+    #     μ::Float64 = 0.0
+    #     μ_fluid::Float64 = 0.0
+    #     Lz::Float64 = 0.0
+    #     α::Float64 = 0.0
+    #     δ::Float64 = 0.0
+    #     J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
+    #     L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
+    #     Clm::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+    #     Slm::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+    #     Clm_topo::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+    #     Slm_topo::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+    #     name::String = ""
+    #     A_grav::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+    #     A_topo::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+    #     VR01::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+    #     VR11::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+    #     N1::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+    #     N2::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+    #     A::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+    #     Re::Vector{Float64} = [0.0, 0.0, 0.0]
+    #     Im::Vector{Float64} = [0.0, 0.0, 0.0]
+    #     polyfit_coeffs::Vector{Float64} = [0.0, 0.0, 0.0]
+    #     topography_function::Function = (args, Clm, Slm, latitude, longitude) -> 0.0
+    # end
 
     @kwdef mutable struct Aerodynamics
         δ::Float64 = 0.0
@@ -81,6 +83,8 @@ export Body, Planet, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solut
         heat_load_limit::Float64 = 0.0
     end
 
+    # Thermal
+
     @kwdef mutable struct Engines
         ϕ::Float64 = 0.0
         g_e::Float64 = 0.0
@@ -88,7 +92,7 @@ export Body, Planet, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solut
         Isp::Float64 = 0.0
     end
 
-    @kwdef mutable struct Initial_condition
+    @kwdef struct Initial_condition
         a::Float64 = 0.0
         e::Float64 = 0.0
         i::Float64 = 0.0
@@ -108,15 +112,12 @@ export Body, Planet, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solut
         DateTimeJ2000::Epoch = from_utc(2000, 1, 1, 12, 0, 0)
     end
 
-    @kwdef mutable struct Model 
+    @kwdef struct Model 
         body::SpacecraftModel = SpacecraftModel()
-        planet::Planet = Planet()
         aerodynamics::Aerodynamics = Aerodynamics()
         engines::Engines = Engines()
         initial_condition::Initial_condition = Initial_condition()
     end
-
-    # model = Model()
 
     # Struct to store simulation results at each time step
     @kwdef struct IntermediateSolution
@@ -283,7 +284,6 @@ export Body, Planet, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solut
         prob_set::Bool = false
         P::Matrix{Float64} = zeros(3,3)
 
-        n_bodies_list::Vector{Planet} = []
         DU::Float64 = 0.0
         TU::Float64 = 0.0
         MU::Float64 = 0.0   
@@ -299,6 +299,27 @@ export Body, Planet, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solut
         lamv_list::Vector{Float64} = []
 
         t_switch_targeting::Float64 = 0.0
+
+        drag_pp::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        lift_pp::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        drag_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        lift_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        gravity_cent_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        gravity_nbody_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+        gravity_harmonics_ii::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+
+        CL_current::Float64 = 0.0
+        CD_current::Float64 = 0.0
+
+        vel_pp_rw::SVector{3,Float64} = SVector{3,Float64}(0.0, 0.0, 0.0)
+
+        β_body::Vector{Float64} = []
+        α_body::Vector{Float64} = []
+
+        T_p::Float64 = 0.0
+        S::Float64 = 0.0
+        q::Float64 = 0.0
+        rot_body_to_inertial::Matrix{Float64} = zeros(3,3)
     end
 
     # cnf = Cnf()
@@ -410,23 +431,48 @@ export Body, Planet, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solut
         closed_form::Closed_form = Closed_form()
     end
 
-    @kwdef mutable struct ODEParams
-        m::Model = Model()                      # Model struct
-        cnf::Cnf = Cnf()            # Configuration parameters
-        solution::Solution = Solution() # Solution struct
-        index_phase_aerobraking::Float64 = 0.0  # Phase index for aerobraking control
-        ip::InitialParameters                     # Input parameters struct
-        aerobraking_phase::Int64 = 0          # Aerobraking phase
-        t_prev::Float64 = 0.0                 # Previous time for Gram calls
-        date_initial::Any          # Initial date time
-        time_0::Float64 = 0.0                  # Initial time
-        initial_state::Initial_condition         # Initial state struct
-        gram_atmosphere::Any = nothing   # GRAM atmosphere data
-        gram::Any = nothing              # GRAM object
-        numberofpassage::Int64 = 0       # Current passage number
-        orientation_sim::Bool = false    # Flag for orientation simulation
-        args::Dict{Symbol, Any} = Dict{Symbol, Any}() # Arguments dictionary
-        intermediate_solution::IntermediateSolution = IntermediateSolution() # Intermediate solution struct
+    # A struct to hold the data shared between the callback and the integrator
+    @kwdef struct SharedBuffers{N_sats}
+        densities::Vector{Float64} = zeros(Float64, N_sats)
+        temperatures::Vector{Float64} = ones(Float64, N_sats)
+        winds::Vector{SVector{3,Float64}} = [SVector{3,Float64}(0.0, 0.0, 0.0) for _ in 1:N_sats]
+    end
+
+    @kwdef struct SaveData
+        position::Vector{SVector{3,Float64}} = []
+        velocity::Vector{SVector{3,Float64}} = []
+        drag::Vector{SVector{3,Float64}} = []
+        periapsis_altitude::Vector{Float64} = []
+        # Add more fields as needed to store the relevant data for saving results
+    end
+    struct SaveCache
+        # Define fields to store cached data for saving results during the simulation for expensive computations, e.g., drag, lift, density, etc.
+        ρ_cache::Vector{Float64}
+
+        # Add more fields as needed to store the relevant data for saving results
+    end
+
+    
+    @kwdef struct ODEParams{N_sats}
+        # m::Model = Model()                      # Model struct
+        # cnf::Cnf = Cnf()            # Configuration parameters
+        # solution::Solution = Solution() # Solution struct
+        # index_phase_aerobraking::Float64 = 0.0  # Phase index for aerobraking control
+        # ip::InitialParameters                     # Input parameters struct
+        # aerobraking_phase::Int64 = 0          # Aerobraking phase
+        # t_prev::Float64 = 0.0                 # Previous time for Gram calls
+        # date_initial::Any          # Initial date time
+        # time_0::Float64 = 0.0                  # Initial time
+        # initial_state::Initial_condition         # Initial state struct
+        # gram_atmosphere::Any = nothing   # GRAM atmosphere data
+        # gram::Any = nothing              # GRAM object
+        # numberofpassage::Int64 = 0       # Current passage number
+        # orientation_sim::Bool = false    # Flag for orientation simulation
+        args::SimulationConfiguration = SimulationConfiguration() # Arguments dictionary
+        shared_buffers::SharedBuffers = SharedBuffers{N_sats}() # Shared buffers for callback and integrator
+        is_active::Vector{Bool} = [true for _ in 1:N_sats] # Vector to track which satellites are still active in the simulation
+        orbit_counter::Vector{Int64} = ones(Int64, N_sats) # Counter for the number of orbits completed
+        save_cache::SaveCache = SaveCache([]) # Cache for saving results
     end
     # solution = Solution()
 

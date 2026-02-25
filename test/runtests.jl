@@ -180,6 +180,42 @@ end
     @test angle_distance(oe[6], ic.ν) < 1e-8
 end
 
+@testset "Circular Orbit Robustness" begin
+    ic_eq = InitialCondition(
+        ra=EARTH.Rp_e + 500e3,
+        rp=EARTH.Rp_e + 500e3,
+        i=0.0,
+        ω=0.0,
+        Ω=0.0,
+        ν=30.0
+    )
+    r, v = orbitalelemtorv(ic_eq, EARTH)
+    oe = rvtoorbitalelement(SVector{3, Float64}(r), SVector{3, Float64}(v), EARTH)
+    @test all(isfinite, oe)
+    @test abs(oe[2]) < 1e-10
+
+    sc = make_spacecraft(
+        ra_alt_m=500e3,
+        rp_alt_m=500e3,
+        i_deg=0.0,
+        ω_deg=0.0,
+        Ω_deg=0.0,
+        ν_deg=30.0
+    )
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=300.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    df = run_case(args)
+    @test nrow(df) > 10
+end
+
 @testset "Quaternion Norm Invariant" begin
     q0 = normalize(SVector{4, Float64}(0.1, -0.2, 0.3, 0.9))
     w0 = SVector{3, Float64}(0.01, -0.015, 0.02)

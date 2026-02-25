@@ -64,158 +64,89 @@ function orbitalelemtorv(oe, planet)
     return orbitalelemtorv(SVector{7, Float64}([a, e, i, Ω, ω, ν, 0.0]), planet)
 end
 
-function rvtoorbitalelement(r::SVector, v::SVector, m::Float64, planet)
+@inline function _wrap_2pi(θ::Float64)::Float64
+    θw = mod(θ, 2pi)
+    return θw < 0 ? θw + 2pi : θw
+end
 
-    # println("r: ", r)
-    # println("v: ", v)
+@inline function _safe_acos(x::Float64)::Float64
+    return acos(clamp(x, -1.0, 1.0))
+end
 
-    # From ECI (Planet Centered Inertial) to orbital element
-    i_x = SVector{3, Int64}([1, 0, 0])
-    i_y = SVector{3, Int64}([0, 1, 0])
-    i_z = SVector{3, Int64}([0, 0, 1])
+function _rvtoorbitalelement_core(r::SVector, v::SVector, planet)
+    # Robust conversion from inertial Cartesian state to classical orbital elements.
+    # Handles circular/equatorial singular cases by setting ω = 0 and using
+    # argument of latitude (or true longitude) as ν.
+    r64 = SVector{3, Float64}(r)
+    v64 = SVector{3, Float64}(v)
 
-    Energy = dot(v,v)/2 - planet.μ/norm(r)
-    a = -planet.μ / (2 * Energy)
-    h = cross(r, v)
-    index = 0
+    rmag = norm(r64)
+    h = cross(r64, v64)
+    hmag = norm(h)
+    k̂ = SVector{3, Float64}(0.0, 0.0, 1.0)
+    n = cross(k̂, h)
+    nmag = norm(n)
 
-    r_ver = r/norm(r)
-    e = cross(v, h)/planet.μ - r_ver
+    ϵ = dot(v64, v64) / 2 - planet.μ / rmag
+    a = -planet.μ / (2 * ϵ)
 
-    i = acos(dot(i_z, h)/norm(h))
-    e_vers = e / norm(e)
-    if i == 0 || i == pi
-        if dot(e, i_y) >= 0
-            periapsis_longitude = acos(dot(i_x, e_vers))
-        elseif dot(e, i_y) < 0
-            periapsis_longitude = 2*pi - acos(dot(i_x, e_vers))
-        end
-        Ω = periapsis_longitude
-        ω = 0
+    e_vec = cross(v64, h) / planet.μ - r64 / rmag
+    e = norm(e_vec)
+
+    i = _safe_acos(h[3] / hmag)
+
+    tol_e = 1e-12
+    tol_n = 1e-12
+    circular = e <= tol_e
+    equatorial = nmag <= tol_n
+
+    if equatorial
+        Ω = 0.0
     else
-        n = cross(i_z, h)/norm(cross(i_z, h))
-        if dot(n, i_y) >= 0
-            Ω = acos(dot(i_x, n))
-        elseif dot(n, i_y) < 0
-            Ω = 2*pi - acos(dot(i_x, n))
-        end
+        Ω = _wrap_2pi(atan(n[2], n[1]))
+    end
 
-        if dot(e, i_z) >= 0
-            if dot(n, e_vers) > 1 && dot(n, e_vers) < 1 + 1e-4
-                ω = acos(1)
-            elseif dot(n, e_vers) < -1 && dot(n, e_vers) > -1 - 1e-4
-                ω = acos(-1)
-            else
-                ω = acos(dot(n, e_vers))
+    if circular
+        ω = 0.0
+    elseif equatorial
+        # Equatorial elliptical: argument of periapsis from x-axis.
+        ω = _wrap_2pi(atan(e_vec[2], e_vec[1]))
+    else
+        ω = _safe_acos(dot(n, e_vec) / (nmag * e))
+        if e_vec[3] < 0
+            ω = 2pi - ω
+        end
+    end
+
+    if circular
+        if equatorial
+            # Circular equatorial: use true longitude.
+            ν = _wrap_2pi(atan(r64[2], r64[1]))
+        else
+            # Circular inclined: use argument of latitude.
+            ν = _safe_acos(dot(n, r64) / (nmag * rmag))
+            if r64[3] < 0
+                ν = 2pi - ν
             end
-        elseif dot(e, i_z) < 0
-            if dot(n, e_vers) > 1 && dot(n, e_vers) < 1 + 1e-4
-                ω = 2*pi - acos(1)
-            elseif dot(n, e_vers) < -1 && dot(n, e_vers) > -1 - 1e-4
-                ω = 2*pi - acos(-1)
-            else
-                ω = 2*pi - acos(dot(n, e_vers))
-            end
+        end
+    else
+        ν = _safe_acos(dot(e_vec, r64) / (e * rmag))
+        if dot(r64, v64) < 0
+            ν = 2pi - ν
         end
     end
 
-    if dot(r, v) > 0
-        value = dot(e_vers, r_ver)
-        if abs(value) >= 1
-            value = round(value)
-        end
-        vi = acos(value)
-    elseif dot(r, v) <= 0
-        value = dot(e_vers, r_ver)
-        if abs(value) >= 1
-            value = round(value)
-        end
-        vi = 2*pi - acos(value)
-    end
+    return a, e, i, Ω, ω, ν
+end
 
-    e = norm(e)
-    if Ω == pi
-        Ω = 0
-    end
-
-    return SVector{7, Float64}([a, e, i, Ω, ω, vi, m])
+function rvtoorbitalelement(r::SVector, v::SVector, m::Float64, planet)
+    a, e, i, Ω, ω, ν = _rvtoorbitalelement_core(r, v, planet)
+    return SVector{7, Float64}([a, e, i, Ω, ω, ν, m])
 end
 
 function rvtoorbitalelement(r::SVector, v::SVector, planet)
-
-    # println("r: ", r)
-    # println("v: ", v)
-
-    # From ECI (Planet Centered Inertial) to orbital element
-    i_x = SVector{3, Int64}([1, 0, 0])
-    i_y = SVector{3, Int64}([0, 1, 0])
-    i_z = SVector{3, Int64}([0, 0, 1])
-
-    Energy = dot(v,v)/2 - planet.μ/norm(r)
-    a = -planet.μ / (2 * Energy)
-    h = cross(r, v)
-    index = 0
-
-    r_ver = r/norm(r)
-    e = cross(v, h)/planet.μ - r_ver
-
-    i = acos(dot(i_z, h)/norm(h))
-    e_vers = e / norm(e)
-    if i == 0 || i == pi
-        if dot(e, i_y) >= 0
-            periapsis_longitude = acos(dot(i_x, e_vers))
-        elseif dot(e, i_y) < 0
-            periapsis_longitude = 2*pi - acos(dot(i_x, e_vers))
-        end
-        Ω = periapsis_longitude
-        ω = 0
-    else
-        n = cross(i_z, h)/norm(cross(i_z, h))
-        if dot(n, i_y) >= 0
-            Ω = acos(dot(i_x, n))
-        elseif dot(n, i_y) < 0
-            Ω = 2*pi - acos(dot(i_x, n))
-        end
-
-        if dot(e, i_z) >= 0
-            if dot(n, e_vers) > 1 && dot(n, e_vers) < 1 + 1e-4
-                ω = acos(1)
-            elseif dot(n, e_vers) < -1 && dot(n, e_vers) > -1 - 1e-4
-                ω = acos(-1)
-            else
-                ω = acos(dot(n, e_vers))
-            end
-        elseif dot(e, i_z) < 0
-            if dot(n, e_vers) > 1 && dot(n, e_vers) < 1 + 1e-4
-                ω = 2*pi - acos(1)
-            elseif dot(n, e_vers) < -1 && dot(n, e_vers) > -1 - 1e-4
-                ω = 2*pi - acos(-1)
-            else
-                ω = 2*pi - acos(dot(n, e_vers))
-            end
-        end
-    end
-
-    if dot(r, v) > 0
-        value = dot(e_vers, r_ver)
-        if abs(value) >= 1
-            value = round(value)
-        end
-        vi = acos(value)
-    elseif dot(r, v) <= 0
-        value = dot(e_vers, r_ver)
-        if abs(value) >= 1
-            value = round(value)
-        end
-        vi = 2*pi - acos(value)
-    end
-
-    e = norm(e)
-    if Ω == pi
-        Ω = 0
-    end
-
-    return SVector{6, Float64}([a, e, i, Ω, ω, vi])
+    a, e, i, Ω, ω, ν = _rvtoorbitalelement_core(r, v, planet)
+    return SVector{6, Float64}([a, e, i, Ω, ω, ν])
 end
 
 function rtoalfadeltar(r)

@@ -379,6 +379,27 @@ using ..SimulationModel
 end
 const LEGACY_TARGETING_SANDBOX = LegacyTargetingSandbox
 
+module IncludeOrderSandbox
+end
+const INCLUDE_ORDER_SANDBOX = IncludeOrderSandbox
+
+@testset "Include-Order + Name Ambiguity Smoke" begin
+    sandbox = INCLUDE_ORDER_SANDBOX
+
+    Base.include_string(sandbox, """
+    module ConflictingExports
+        export SimulationConfiguration
+        struct SimulationConfiguration end
+    end
+    using .ConflictingExports
+    """)
+
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+    Core.eval(sandbox, :(const quat_mult = SimulationModel.quat_mult))
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"))
+    @test isdefined(sandbox, :run_simulation)
+end
+
 function ensure_legacy_targeting_loaded!()
     if LEGACY_TARGETING_LOADED[]
         return
@@ -1211,6 +1232,9 @@ end
         u_zero = ComponentVector(pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], mass=1.0, heat_loads=[0.0])
         @test calcControlMassFlowRate(model, u_zero, p, 1, 100.0) == 0.0
         @test calcControlMassFlowRate(model, u, p, 2, 100.0) == 0.0
+
+        model_subtyped = TimedTangentialThrusterModel(1.0, +1.0, 10.0, 20.0)
+        @test calcControlMassFlowRate(model_subtyped, u, p, 1, 15.0) == 0.0
 
         struct UntypedControlEffector end
         @test calcControlMassFlowRate(UntypedControlEffector(), u, p, 1, 100.0) == 0.0

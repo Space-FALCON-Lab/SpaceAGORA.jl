@@ -438,6 +438,8 @@ export SaveCache, SaveData
         winds::Vector{SVector{3,Float64}} = [SVector{3,Float64}(0.0, 0.0, 0.0) for _ in 1:N_sats]
         current_time::Base.RefValue{Float64} = Ref(0.0)
         et_start::Base.RefValue{Float64} = Ref(0.0)
+        debug_control::Base.RefValue{Bool} = Ref(false)
+        debug_initial_derivative::Base.RefValue{Bool} = Ref(false)
     end
 
     @kwdef struct SaveData

@@ -45,8 +45,16 @@ sys = pyimport("sys")
     return false
 end
 
+function _legacy_ensure_gram_path!(args)
+    gram_dir = args[:directory_Gram]
+    # Avoid repeated global Python path mutation across targeting calls.
+    if !(gram_dir in pyconvert(Vector{String}, sys.path))
+        sys.path.append(gram_dir)
+    end
+end
+
 function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing)
-    sys.path.append(args[:directory_Gram])
+    _legacy_ensure_gram_path!(args)
     gram = pyimport("gram")
 
     wind_m = false

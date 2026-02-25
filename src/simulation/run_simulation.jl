@@ -19,6 +19,8 @@ function run_simulation(args::SimulationConfiguration)
 
     # Define the ODE problem
     p = ODEParams{length(args.dynamics_model.spacecraft)}(args=args) # Define the parameters for the ODE problem, including the shared buffers for the callbacks
+    p.shared_buffers.debug_control[] = get(ENV, "SPACEAGORA_DEBUG_CONTROL", "0") == "1"
+    p.shared_buffers.debug_initial_derivative[] = get(ENV, "SPACEAGORA_DEBUG_INITIAL_DERIVATIVE", "0") == "1"
     callbacks = get_callbacks(length(args.dynamics_model.spacecraft), args.dynamics_model.dynamic_effectors, args) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
     initial_time = args.initial_time
     start_epoch = from_utc(DateTime(
@@ -38,34 +40,35 @@ function run_simulation(args::SimulationConfiguration)
     # println(p)
     # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
     prob = ODEProblem(spacecraft_dynamics!, initial_conditions, (0.0, args.mission_configuration.mission_time), p, callback=callbacks)
-    # Solve the ODE problem
-    # 1. Manually evaluate the derivative at the start
-    du_test = copy(prob.u0)
-    try
-        prob.f(du_test, prob.u0, prob.p, prob.tspan[1])
-    catch e
-        @error "The derivative function itself crashed!" exception=e
-    end
-
-    # 2. Check for NaNs and print exactly where they are
-    if any(isnan, du_test)
-        println("--- INITIAL NaN DETECTED ---")
-        
-        # Check global parameters in p
-        for field in fieldnames(typeof(prob.p))
-            val = getfield(prob.p, field)
-            if val isa Number && isnan(val)
-                println("NaN found in parameter: p.$field")
-            end
+    if p.shared_buffers.debug_initial_derivative[]
+        # 1. Manually evaluate the derivative at the start
+        du_test = copy(prob.u0)
+        try
+            prob.f(du_test, prob.u0, prob.p, prob.tspan[1])
+        catch e
+            @error "The derivative function itself crashed!" exception=e
         end
 
-        # Check the state vector (u)
-        # Assuming your u has a .sc field for satellites
-        for (i, sat) in enumerate(du_test.sc)
-            if any(isnan, sat.pos) || any(isnan, sat.vel)
-                println("NaN found in Satellite $i derivative!")
-                println("  Pos: $(sat.pos)")
-                println("  Vel: $(sat.vel)")
+        # 2. Check for NaNs and print exactly where they are
+        if any(isnan, du_test)
+            println("--- INITIAL NaN DETECTED ---")
+
+            # Check global parameters in p
+            for field in fieldnames(typeof(prob.p))
+                val = getfield(prob.p, field)
+                if val isa Number && isnan(val)
+                    println("NaN found in parameter: p.$field")
+                end
+            end
+
+            # Check the state vector (u)
+            # Assuming your u has a .sc field for satellites
+            for (i, sat) in enumerate(du_test.sc)
+                if any(isnan, sat.pos) || any(isnan, sat.vel)
+                    println("NaN found in Satellite $i derivative!")
+                    println("  Pos: $(sat.pos)")
+                    println("  Vel: $(sat.vel)")
+                end
             end
         end
     end
@@ -108,7 +111,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p::ODEPar
     dynamics_model = p.args.dynamics_model
     dynamic_effectors = dynamics_model.dynamic_effectors
     spacecraft = dynamics_model.spacecraft
-    debug_control = get(ENV, "SPACEAGORA_DEBUG_CONTROL", "0") == "1"
+    debug_control = p.shared_buffers.debug_control[]
     p.shared_buffers.current_time[] = t
     minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores())) # Determine the batch size for LoopVectorization based on the number of spacecraft and available CPU cores
     # Loop over each spacecraft and compute its dynamics

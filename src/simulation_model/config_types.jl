@@ -9,7 +9,7 @@ using AstroTime
 using OrdinaryDiffEq
 using Reexport
 
-export Body, Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters
+export Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters
 export SaveCache, SaveData
 
     @kwdef struct Mission

@@ -4,6 +4,8 @@ using DataFrames
 using LinearAlgebra
 using StaticArrays
 using SPICE
+using JET
+using Aqua
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
@@ -129,7 +131,8 @@ function build_config(;
     EI_km::Float64,
     dynamic_effectors::Tuple,
     keplerian::Bool=true,
-    tolerances::IntegrationTolerances=IntegrationTolerances()
+    tolerances::IntegrationTolerances=IntegrationTolerances(),
+    initial_time::InitialTime=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
 )
     environment_model = EnvironmentModel(
         planet=EARTH,
@@ -155,8 +158,51 @@ function build_config(;
         guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
         navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
         control_model=ControlModel(control_effectors=(), control_rates=Float64[]),
-        initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+        initial_time=initial_time,
         integration_tolerances=tolerances
+    )
+end
+
+function interp_linear(times::AbstractVector{<:Real}, values::AbstractVector{<:Real}, t::Float64)
+    idx = searchsortedlast(times, t)
+    if idx <= 0
+        return Float64(values[1])
+    elseif idx >= length(times)
+        return Float64(values[end])
+    end
+    t1 = Float64(times[idx])
+    t2 = Float64(times[idx + 1])
+    y1 = Float64(values[idx])
+    y2 = Float64(values[idx + 1])
+    α = (t - t1) / (t2 - t1)
+    return (1.0 - α) * y1 + α * y2
+end
+
+function make_agora_earth_spacecraft()
+    main_bus = Link{0}(root=true, m=620.0, ref_area=2.05 * 2.8)
+    left_panel = Link{0}(root=false, m=10.0, ref_area=5.7 * 1.0 / 2.0, r=MVector{3, Float64}(0.0, -2.05 / 2.0 - 5.7 / 4.0, 0.0))
+    right_panel = Link{0}(root=false, m=10.0, ref_area=5.7 * 1.0 / 2.0, r=MVector{3, Float64}(0.0, 2.05 / 2.0 + 5.7 / 4.0, 0.0))
+    ic = InitialCondition(
+        ra=56_378.7978559e3,
+        rp=EARTH.Rp_e + 200_590.0,
+        i=89.876,
+        ω=75.505,
+        Ω=104.115,
+        ν=175.0
+    )
+
+    return SpacecraftModel(
+        Joint[],
+        [main_bus, left_panel, right_panel],
+        main_bus,
+        true,
+        main_bus.m + left_panel.m + right_panel.m,
+        200.0,
+        main_bus.inertia,
+        0,
+        0,
+        ic,
+        1
     )
 end
 
@@ -343,6 +389,53 @@ end
     @test last(eps) < first(eps) - 1e5
 end
 
+@testset "AGORA Earth Regression (Golden)" begin
+    golden_path = joinpath(@__DIR__, "golden", "agora_earth_regression.csv")
+    @test isfile(golden_path)
+    golden = CSV.read(golden_path, DataFrame)
+
+    sc = make_agora_earth_spacecraft()
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=6.0 * 3600.0,
+        EI_km=300.0,
+        dynamic_effectors=(InverseSquaredJ2GravityModel(),),
+        keplerian=true,
+        initial_time=InitialTime(year=2014, month=5, day=27, hour=5, minute=0, second=0.0),
+        tolerances=IntegrationTolerances(
+            reltol_orbit=1e-8,
+            abstol_orbit=1e-8,
+            dt_max_orbit=15.0
+        )
+    )
+
+    df = run_case(args)
+    @test nrow(df) > 1000
+    times = Vector{Float64}(df.time)
+
+    for row in eachrow(golden)
+        t = Float64(row.time)
+        pos_atol = Float64(row.pos_atol_m)
+        vel_atol = Float64(row.vel_atol_mps)
+
+        pos1 = interp_linear(times, df.sc1_pos_1, t)
+        pos2 = interp_linear(times, df.sc1_pos_2, t)
+        pos3 = interp_linear(times, df.sc1_pos_3, t)
+        vel1 = interp_linear(times, df.sc1_vel_1, t)
+        vel2 = interp_linear(times, df.sc1_vel_2, t)
+        vel3 = interp_linear(times, df.sc1_vel_3, t)
+
+        @test isapprox(pos1, Float64(row.pos1); atol=pos_atol, rtol=0.0)
+        @test isapprox(pos2, Float64(row.pos2); atol=pos_atol, rtol=0.0)
+        @test isapprox(pos3, Float64(row.pos3); atol=pos_atol, rtol=0.0)
+        @test isapprox(vel1, Float64(row.vel1); atol=vel_atol, rtol=0.0)
+        @test isapprox(vel2, Float64(row.vel2); atol=vel_atol, rtol=0.0)
+        @test isapprox(vel3, Float64(row.vel3); atol=vel_atol, rtol=0.0)
+    end
+end
+
 @testset "N-Body Gravity Typed API Smoke" begin
     sc = make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0)
     args = build_config(
@@ -392,4 +485,27 @@ end
     df = run_case(args)
     eps = specific_energy(df, EARTH.μ)
     @test last(eps) < first(eps) - 1e5
+end
+
+@testset "JET Static Analysis" begin
+    JET.@test_opt InitialCondition()
+    JET.@test_opt Link()
+    JET.@test_opt Joint()
+    JET.@test_opt SpacecraftModel()
+
+    sc = SpacecraftModel()
+    JET.@test_opt rotate_to_inertial(sc, sc.root, 1)
+end
+
+@testset "Aqua Package Quality" begin
+    Aqua.test_all(
+        SimulationModel;
+        ambiguities=false,
+        stale_deps=false,
+        deps_compat=false,
+        project_extras=false,
+        piracies=false,
+        persistent_tasks=false,
+        undocumented_names=false
+    )
 end

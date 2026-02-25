@@ -1211,6 +1211,9 @@ end
         u_zero = ComponentVector(pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], mass=1.0, heat_loads=[0.0])
         @test calcControlMassFlowRate(model, u_zero, p, 1, 100.0) == 0.0
         @test calcControlMassFlowRate(model, u, p, 2, 100.0) == 0.0
+
+        struct UntypedControlEffector end
+        @test calcControlMassFlowRate(UntypedControlEffector(), u, p, 1, 100.0) == 0.0
     end
 
     @testset "calcControlEffect!" begin

@@ -4,7 +4,6 @@ using AssociatedLegendrePolynomials
 using LinearAlgebra
 using SatelliteToolbox
 using SatelliteToolboxGeomagneticField
-using DateFormats
 using CSV
 using DataFrames
 using ..AbstractTypes: AbstractPlanet

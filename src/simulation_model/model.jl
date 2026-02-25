@@ -240,6 +240,15 @@ end
     guidance_effectors::T_Effectors # Tuple of guidance effector models (maneuver planning, etc.)
     guidance_rates::Vector{Float64} # Rates at which to call each guidance effector, in seconds
     function GuidanceModel(guidance_effectors::T_Effectors, guidance_rates::Vector{Float64}) where {T_Effectors<:Tuple}
+        n_effectors = length(guidance_effectors)
+        if length(guidance_rates) != n_effectors
+            throw(ArgumentError("GuidanceModel guidance_rates length ($(length(guidance_rates))) must match guidance_effectors length ($n_effectors)."))
+        end
+        @inbounds for (idx, rate) in pairs(guidance_rates)
+            if !isfinite(rate) || rate <= 0.0
+                throw(ArgumentError("GuidanceModel guidance_rate at index $idx must be finite and > 0.0, got $rate."))
+            end
+        end
         new{T_Effectors}(guidance_effectors, guidance_rates)
     end
 end
@@ -248,6 +257,15 @@ end
     navigation_effectors::T_Effectors # Tuple of navigation effector models (sensors, etc.)
     navigation_rates::Vector{Float64} # Rates at which to call each navigation effector, in seconds
     function NavigationModel(navigation_effectors::T_Effectors, navigation_rates::Vector{Float64}) where {T_Effectors<:Tuple}
+        n_effectors = length(navigation_effectors)
+        if length(navigation_rates) != n_effectors
+            throw(ArgumentError("NavigationModel navigation_rates length ($(length(navigation_rates))) must match navigation_effectors length ($n_effectors)."))
+        end
+        @inbounds for (idx, rate) in pairs(navigation_rates)
+            if !isfinite(rate) || rate <= 0.0
+                throw(ArgumentError("NavigationModel navigation_rate at index $idx must be finite and > 0.0, got $rate."))
+            end
+        end
         new{T_Effectors}(navigation_effectors, navigation_rates)
     end
 end
@@ -257,6 +275,15 @@ end
     control_rates::Vector{Float64} # Control rates for each effector, in seconds
 
      function ControlModel(control_effectors::T_Effectors, control_rates::Vector{Float64}) where {T_Effectors<:Tuple}
+        n_effectors = length(control_effectors)
+        if length(control_rates) != n_effectors
+            throw(ArgumentError("ControlModel control_rates length ($(length(control_rates))) must match control_effectors length ($n_effectors)."))
+        end
+        @inbounds for (idx, rate) in pairs(control_rates)
+            if !isfinite(rate) || rate <= 0.0
+                throw(ArgumentError("ControlModel control_rate at index $idx must be finite and > 0.0, got $rate."))
+            end
+        end
         new{T_Effectors}(control_effectors, control_rates)
     end
 end

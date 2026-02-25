@@ -15,6 +15,9 @@ Returns a tuple containing the total control force and torque as 3D vectors
 """
 function calcControlForceTorque(controlModel::BaseThrusterModel, u::AbstractVector{Float64}, p::ODEParams, i::Int64, t::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     # Calculate the control force and torque based on the thruster model and current state
+    if i < 1 || i > length(controlModel.start_burn_time)
+        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
     start_time = controlModel.start_burn_time[i]
     stop_time = controlModel.stop_burn_time[i]
     if t >= start_time && t <= stop_time
@@ -53,9 +56,21 @@ Returns
 """
 function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector, p::ODEParams, t::Float64, i::Int64)
     # Calculate the control effect (force and torque) based on the control model and current state, and store it in the shared buffers for use in the dynamics calculations
+    if i < 1 || i > length(controlModel.start_burn_time)
+        return
+    end
+    # If a valid burn window is already scheduled, keep it fixed.
+    start_time = controlModel.start_burn_time[i]
+    stop_time = controlModel.stop_burn_time[i]
+    if isfinite(start_time) && isfinite(stop_time) && stop_time > start_time
+        return
+    end
     pos = SVector{3, Float64}(u.sc[i].pos)
     vel = SVector{3, Float64}(u.sc[i].vel)
     mass = u.sc[i].mass
+    if !isfinite(mass) || mass <= 0.0
+        return
+    end
     # Calculate the current orbital elements from the state vector
     oe = try
         rvtoorbitalelement(pos, vel, p.args.environment_model.planet)

@@ -23,12 +23,25 @@ function update_thrusters!(link::Link, torque::AbstractVector{Float64}, t::Float
     rot_to_body = rotate_to_body(link) # Get the rotation matrix to convert from inertial to body frame
     
     for (i, thruster) in enumerate(link.thrusters)
-        normalize!(thruster.direction) # Ensure the thruster direction is a unit vector
+        direction_norm = norm(thruster.direction)
+        if !isfinite(direction_norm) || direction_norm == 0.0
+            link.J_thruster[:, i] .= 0.0
+            continue
+        end
+        thruster.direction ./= direction_norm # Ensure the thruster direction is a unit vector
         link.J_thruster[:, i] = cross(rot_to_body * thruster.location + link.r, rot_to_body * thruster.direction) # Update the Jacobian matrix with the r x F vector in the body frame
     end
     
     thrust_vector = pinv(link.J_thruster) * torque # Solve for the thrust vector using the Jacobian matrix
-    thrust_vector .-= minimum(thrust_vector) # Ensure no negative thrust values
+    if !all(isfinite, thrust_vector)
+        thrust_vector .= 0.0
+    else
+        min_thrust = minimum(thrust_vector)
+        if isfinite(min_thrust) && min_thrust < 0.0
+            thrust_vector .-= min_thrust # Shift only when needed to avoid negative thrust values.
+        end
+        thrust_vector .= max.(thrust_vector, 0.0)
+    end
     
     for (i, thruster) in enumerate(link.thrusters)
         thruster.thrust = thrust_vector[i] # Update the requested thrust in the thruster
@@ -41,6 +54,10 @@ function thrust_calculation_schmitt_trigger!(link::Link, thruster::Thruster, thr
     """
     Applies a Schmitt trigger to the thrusters of the Link.
     """
+    if !isfinite(thruster.max_thrust) || thruster.max_thrust <= 0.0
+        thruster.thrust = 0.0
+        return
+    end
     ti = min(thrust / thruster.max_thrust * link.attitude_control_rate, link.attitude_control_rate) # Calculate the time interval for the thrust
     if ti < thruster.min_firing_time # If the time interval is less than the minimum firing time, set it to the minimum firing time or 0, based on schmitt trigger
         ti = schmitt_trigger(ti, thruster.level_on, thruster.level_off) * thruster.min_firing_time # Use Schmitt trigger to determine if the thruster should fire

@@ -355,6 +355,20 @@ end
     @test nbody isa NBodyGravityModel
     @test nbody.primary_body_name == "Earth"
     @test nbody.body_names == ("Sun",)
+
+    @testset "Effector Rate Validation" begin
+        @test GuidanceModel((), Float64[]) isa GuidanceModel
+        @test NavigationModel((), Float64[]) isa NavigationModel
+        @test ControlModel((), Float64[]) isa ControlModel
+
+        @test_throws ArgumentError GuidanceModel((:g1,), Float64[])
+        @test_throws ArgumentError NavigationModel((:n1,), Float64[])
+        @test_throws ArgumentError ControlModel((:c1,), Float64[])
+
+        @test_throws ArgumentError GuidanceModel((:g1,), [0.0])
+        @test_throws ArgumentError NavigationModel((:n1,), [-1.0])
+        @test_throws ArgumentError ControlModel((:c1,), [Inf])
+    end
 end
 
 @testset "Deterministic Smoke + No-Drag Energy Invariant" begin
@@ -378,6 +392,44 @@ end
     eps = specific_energy(df, EARTH.μ)
     energy_drift = maximum(abs.(eps .- first(eps))) / abs(first(eps))
     @test energy_drift < 1e-8
+end
+
+@testset "Deterministic Replay (No-Drag)" begin
+    sc = make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0)
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=900.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+
+    df1 = run_case_silent(args)
+    df2 = run_case_silent(args)
+    @test nrow(df1) == nrow(df2)
+    @test nrow(df1) > 10
+
+    sample_idxs = round.(Int, range(1, nrow(df1), length=8))
+    for idx in sample_idxs
+        t = Float64(df1.time[idx])
+        p1 = SVector{3, Float64}(Float64(df1.sc1_pos_1[idx]), Float64(df1.sc1_pos_2[idx]), Float64(df1.sc1_pos_3[idx]))
+        v1 = SVector{3, Float64}(Float64(df1.sc1_vel_1[idx]), Float64(df1.sc1_vel_2[idx]), Float64(df1.sc1_vel_3[idx]))
+        p2 = SVector{3, Float64}(
+            interp_linear(df2.time, df2.sc1_pos_1, t),
+            interp_linear(df2.time, df2.sc1_pos_2, t),
+            interp_linear(df2.time, df2.sc1_pos_3, t)
+        )
+        v2 = SVector{3, Float64}(
+            interp_linear(df2.time, df2.sc1_vel_1, t),
+            interp_linear(df2.time, df2.sc1_vel_2, t),
+            interp_linear(df2.time, df2.sc1_vel_3, t)
+        )
+        @test norm(p1 - p2) < 0.1
+        @test norm(v1 - v2) < 1e-4
+    end
 end
 
 @testset "Orbital Elements Round-Trip Invariant" begin
@@ -568,6 +620,83 @@ end
     @test all(isfinite, df.sc1_vel_1)
 end
 
+@testset "Two-Spacecraft Isolation vs Single-Craft Baselines" begin
+    sc_a = make_spacecraft(ra_alt_m=520e3, rp_alt_m=430e3, ν_deg=150.0)
+    sc_b = make_spacecraft(ra_alt_m=700e3, rp_alt_m=650e3, ν_deg=110.0)
+
+    args_multi = build_config_multi(
+        spacecraft=[sc_a, sc_b],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=900.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    args_a = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=430e3, ν_deg=150.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=900.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    args_b = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=700e3, rp_alt_m=650e3, ν_deg=110.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=900.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+
+    df_multi = run_case_silent(args_multi)
+    df_a = run_case_silent(args_a)
+    df_b = run_case_silent(args_b)
+
+    @test nrow(df_multi) > 10
+    sample_idxs = round.(Int, range(1, nrow(df_multi), length=8))
+    for idx in sample_idxs
+        t = Float64(df_multi.time[idx])
+
+        pa_m = SVector{3, Float64}(Float64(df_multi.sc1_pos_1[idx]), Float64(df_multi.sc1_pos_2[idx]), Float64(df_multi.sc1_pos_3[idx]))
+        va_m = SVector{3, Float64}(Float64(df_multi.sc1_vel_1[idx]), Float64(df_multi.sc1_vel_2[idx]), Float64(df_multi.sc1_vel_3[idx]))
+        pa_s = SVector{3, Float64}(
+            interp_linear(df_a.time, df_a.sc1_pos_1, t),
+            interp_linear(df_a.time, df_a.sc1_pos_2, t),
+            interp_linear(df_a.time, df_a.sc1_pos_3, t)
+        )
+        va_s = SVector{3, Float64}(
+            interp_linear(df_a.time, df_a.sc1_vel_1, t),
+            interp_linear(df_a.time, df_a.sc1_vel_2, t),
+            interp_linear(df_a.time, df_a.sc1_vel_3, t)
+        )
+        # Multi-satellite adaptive stepping can introduce modest trajectory differences vs single-body runs.
+        @test norm(pa_m - pa_s) < 200.0
+        @test norm(va_m - va_s) < 0.2
+
+        pb_m = SVector{3, Float64}(Float64(df_multi.sc2_pos_1[idx]), Float64(df_multi.sc2_pos_2[idx]), Float64(df_multi.sc2_pos_3[idx]))
+        vb_m = SVector{3, Float64}(Float64(df_multi.sc2_vel_1[idx]), Float64(df_multi.sc2_vel_2[idx]), Float64(df_multi.sc2_vel_3[idx]))
+        pb_s = SVector{3, Float64}(
+            interp_linear(df_b.time, df_b.sc1_pos_1, t),
+            interp_linear(df_b.time, df_b.sc1_pos_2, t),
+            interp_linear(df_b.time, df_b.sc1_pos_3, t)
+        )
+        vb_s = SVector{3, Float64}(
+            interp_linear(df_b.time, df_b.sc1_vel_1, t),
+            interp_linear(df_b.time, df_b.sc1_vel_2, t),
+            interp_linear(df_b.time, df_b.sc1_vel_3, t)
+        )
+        @test norm(pb_m - pb_s) < 200.0
+        @test norm(vb_m - vb_s) < 0.2
+    end
+end
+
 @testset "Single-Link Drag Dissipates Specific Orbital Energy" begin
     sc = make_single_link_spacecraft(
         ra_alt_m=220e3,
@@ -663,6 +792,10 @@ end
         force_zero, torque_zero = calcControlForceTorque(model, u_zero, p, 1, 100.0)
         @test force_zero == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test torque_zero == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+        force_oob, torque_oob = calcControlForceTorque(model, u, p, 2, 100.0)
+        @test force_oob == SVector{3, Float64}(0.0, 0.0, 0.0)
+        @test torque_oob == SVector{3, Float64}(0.0, 0.0, 0.0)
     end
 
     @testset "calcControlEffect!" begin
@@ -679,6 +812,13 @@ end
             atol=1e-9,
             rtol=0.0
         )
+
+        # Regression: once auto-scheduled, callback should not keep shifting the same window.
+        s_sched = model.start_burn_time[1]
+        e_sched = model.stop_burn_time[1]
+        calcControlEffect!(model, state, p, 120.0, 1)
+        @test model.start_burn_time[1] == s_sched
+        @test model.stop_burn_time[1] == e_sched
 
         sc_ineligible = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=210.0)
         args_ineligible = build_config(
@@ -716,10 +856,10 @@ end
         )
         p_edge_block = ODEParams{1}(args=args_edge_block)
         state_edge_block = build_initial_conditions(args_edge_block)
-        model_edge_block = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=71.0, stop_burn_time=81.0)
+        model_edge_block = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         calcControlEffect!(model_edge_block, state_edge_block, p_edge_block, 100.0, 1)
-        @test model_edge_block.start_burn_time[1] == 71.0
-        @test model_edge_block.stop_burn_time[1] == 81.0
+        @test model_edge_block.start_burn_time[1] == -1.0
+        @test model_edge_block.stop_burn_time[1] == -1.0
 
         sc_edge_allow = make_spacecraft(ra_alt_m=600e3, rp_alt_m=400e3, ν_deg=170.0)
         r_edge_allow, _ = orbitalelemtorv(sc_edge_allow.initial_condition, EARTH)
@@ -735,10 +875,10 @@ end
         )
         p_edge_allow = ODEParams{1}(args=args_edge_allow)
         state_edge_allow = build_initial_conditions(args_edge_allow)
-        model_edge_allow = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=73.0, stop_burn_time=83.0)
+        model_edge_allow = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         calcControlEffect!(model_edge_allow, state_edge_allow, p_edge_allow, 100.0, 1)
-        @test model_edge_allow.start_burn_time[1] != 73.0
-        @test model_edge_allow.stop_burn_time[1] != 83.0
+        @test model_edge_allow.start_burn_time[1] != -1.0
+        @test model_edge_allow.stop_burn_time[1] != -1.0
 
         state_hyperbolic = build_initial_conditions(args)
         rmag = norm(SVector{3, Float64}(state_hyperbolic.sc[1].pos))
@@ -810,6 +950,11 @@ end
         @test model_multi.stop_burn_time[1] == e1
         @test model_multi.start_burn_time[2] != -2.0
         @test model_multi.stop_burn_time[2] != -4.0
+
+        model_oob = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
+        @test_nowarn calcControlEffect!(model_oob, state, p, 100.0, 2)
+        @test model_oob.start_burn_time[1] == -1.0
+        @test model_oob.stop_burn_time[1] == -1.0
     end
 
     @testset "schmitt_trigger" begin
@@ -894,6 +1039,10 @@ end
                 thrust_calculation_schmitt_trigger!(link, thr, 9.0, 0.1)
                 @test thr.thrust > 0.0
                 @test thr.thrust <= thr.max_thrust + 1e-9
+
+                thr_zero_max = Thruster(max_thrust=0.0, cutoff_frequency=100.0, κ=0.0)
+                @test_nowarn thrust_calculation_schmitt_trigger!(link, thr_zero_max, 1.0, 0.2)
+                @test thr_zero_max.thrust == 0.0
             end
         end
     end
@@ -922,19 +1071,45 @@ end
                 push!(link_full.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(0.0, 1.0, 0.0), direction=MVector{3, Float64}(0.0, 0.0, 1.0)))
                 push!(link_full.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(0.0, 0.0, 1.0), direction=MVector{3, Float64}(1.0, 0.0, 0.0)))
                 push!(link_full.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(1.0, 0.0, 0.0), direction=MVector{3, Float64}(0.0, 1.0, 0.0)))
-                update_thrusters!(link_full, SVector{3, Float64}(1.0, 2.0, 3.0), 0.2)
+                τ_req_full = SVector{3, Float64}(1.0, 2.0, 3.0)
+                update_thrusters!(link_full, τ_req_full, 0.2)
                 @test rank(link_full.J_thruster) == 3
                 @test all(isfinite, link_full.J_thruster)
                 @test all(thr_i -> isfinite(thr_i.thrust) && thr_i.thrust >= 0.0, link_full.thrusters)
                 @test any(thr_i -> thr_i.thrust > 0.0, link_full.thrusters)
+                thrust_full = [thr_i.thrust for thr_i in link_full.thrusters]
+                τ_ach_full = link_full.J_thruster * thrust_full
+                @test norm(τ_ach_full - τ_req_full) / norm(τ_req_full) < 1e-6
 
                 link_singular = Link{0}(root=true, attitude_control_rate=0.1)
                 push!(link_singular.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(0.0, 1.0, 0.0), direction=MVector{3, Float64}(0.0, 0.0, 1.0)))
                 push!(link_singular.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(0.0, 2.0, 0.0), direction=MVector{3, Float64}(0.0, 0.0, 1.0)))
-                update_thrusters!(link_singular, SVector{3, Float64}(0.0, 1.0, 0.0), 0.3)
+                τ_req_singular = SVector{3, Float64}(0.0, 1.0, 0.0)
+                update_thrusters!(link_singular, τ_req_singular, 0.3)
                 @test rank(link_singular.J_thruster) == 1
                 @test all(isfinite, link_singular.J_thruster)
                 @test all(thr_i -> isfinite(thr_i.thrust) && thr_i.thrust >= 0.0, link_singular.thrusters)
+                thrust_singular = [thr_i.thrust for thr_i in link_singular.thrusters]
+                τ_ach_singular = link_singular.J_thruster * thrust_singular
+                τ_lsq_singular = link_singular.J_thruster * (pinv(link_singular.J_thruster) * τ_req_singular)
+                @test norm(τ_ach_singular - τ_lsq_singular) < 1e-6
+
+                link_degenerate = Link{0}(root=true, attitude_control_rate=0.1)
+                push!(
+                    link_degenerate.thrusters,
+                    Thruster(
+                        max_thrust=50.0,
+                        cutoff_frequency=100.0,
+                        min_firing_time=0.0,
+                        location=MVector{3, Float64}(0.5, 0.0, 0.0),
+                        direction=MVector{3, Float64}(0.0, 0.0, 0.0)
+                    )
+                )
+                @test_nowarn update_thrusters!(link_degenerate, SVector{3, Float64}(0.5, 0.0, 0.0), 0.4)
+                @test all(isfinite, link_degenerate.J_thruster)
+                @test link_degenerate.J_thruster[:, 1] == zeros(3)
+                @test isfinite(link_degenerate.thrusters[1].thrust)
+                @test link_degenerate.thrusters[1].thrust >= 0.0
             end
         end
     end

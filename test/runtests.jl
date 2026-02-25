@@ -311,21 +311,21 @@ function make_agora_earth_spacecraft()
     )
 end
 
-function run_case(args::SimulationConfiguration)
+function run_case(args::SimulationConfiguration; isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
-            run_simulation(args)
+            run_simulation(args; isolate_state=isolate_state)
             @test isfile("simulation_results.csv")
             return CSV.read("simulation_results.csv", DataFrame)
         end
     end
 end
 
-function run_case_silent(args::SimulationConfiguration)
+function run_case_silent(args::SimulationConfiguration; isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
             redirect_stdout(devnull) do
-                run_simulation(args)
+                run_simulation(args; isolate_state=isolate_state)
             end
             @test isfile("simulation_results.csv")
             return CSV.read("simulation_results.csv", DataFrame)
@@ -333,13 +333,13 @@ function run_case_silent(args::SimulationConfiguration)
     end
 end
 
-function run_case_capture_stdout(args::SimulationConfiguration; expect_results_csv::Bool=true)
+function run_case_capture_stdout(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
             output = ""
             mktemp() do path, io
                 redirect_stdout(io) do
-                    run_simulation(args)
+                    run_simulation(args; isolate_state=isolate_state)
                 end
                 flush(io)
                 seekstart(io)
@@ -532,6 +532,7 @@ end
     @test isdefined(sandbox, :_legacy_eom_targeting_log_enabled)
     @test isdefined(sandbox, :_legacy_eom_ctrl_log_enabled)
     @test isdefined(sandbox, :_legacy_get_cnf)
+    @test isdefined(sandbox, :_legacy_get_solution)
 
     args_quiet = Dict{Symbol, Any}(:print_res => false, :verbose => false)
     args_print = Dict{Symbol, Any}(:print_res => true, :verbose => false)
@@ -585,6 +586,8 @@ end
 
     local_cnf = (α=0.314, α_past=0.25)
     @test sandbox._legacy_get_cnf(Dict{Symbol, Any}(:cnf => local_cnf)).α == local_cnf.α
+    local_solution = (orientation=(time=[1.0],),)
+    @test sandbox._legacy_get_solution(Dict{Symbol, Any}(:solution => local_solution)).orientation.time[1] == 1.0
     @test sandbox.control_solarpanels_heatrate(nothing, nothing, Dict{Symbol, Any}(), [0], nothing; cnf=local_cnf) == local_cnf.α
 end
 
@@ -613,6 +616,37 @@ end
     for relpath in scoped_files
         src = strip_comments(read(joinpath(REPO_ROOT, relpath), String))
         @test !occursin("config.cnf", src)
+        @test !occursin("config.solution", src)
+    end
+end
+
+@testset "Run Simulation State Isolation" begin
+    sc = make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0)
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=45.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+
+    l_pi_before = args.environment_model.planet.L_PI
+    @test_nowarn run_simulation(args)
+    @test args.environment_model.planet.L_PI == l_pi_before
+
+    args_no_isolation = deepcopy(args)
+    @test_nowarn run_simulation(args_no_isolation; isolate_state=false)
+
+    if Threads.nthreads() >= 2
+        args_parallel = deepcopy(args)
+        t1 = Threads.@spawn run_simulation(args_parallel)
+        t2 = Threads.@spawn run_simulation(args_parallel)
+        @test_nowarn fetch(t1)
+        @test_nowarn fetch(t2)
     end
 end
 
@@ -1766,7 +1800,7 @@ end
         keplerian=true,
         tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=5.0)
     )
-    df = run_case_silent(args)
+    df = run_case_silent(args; isolate_state=false)
 
     @test shared_thruster.start_burn_time[1] != -1.0
     @test shared_thruster.stop_burn_time[1] != -1.0

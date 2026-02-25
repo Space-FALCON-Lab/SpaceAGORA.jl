@@ -8,7 +8,11 @@ using CSV
 using DataFrames
 using Polyester
 
-function run_simulation(args)
+function run_simulation(args; isolate_state::Bool=true)
+    # Isolate mutable campaign/model state by default so repeated/concurrent runs
+    # do not alias shared in-memory objects.
+    args = isolate_state ? deepcopy(args) : args
+
     # Set up the model and initial conditions
     initial_conditions = build_initial_conditions(args)
     if args.simulation_settings.verbose

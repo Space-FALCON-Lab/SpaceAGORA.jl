@@ -64,8 +64,15 @@ Date: 2026-02-25
 - Scoped stack is migrated to explicit `cnf` context threading.
 - Top-level mutation entry points are serialized; deep helper paths use injected `cnf_state` instead of direct global `config.cnf`.
 - Guard + smoke/static tests pass on this branch.
+- Additional follow-up now completed:
+  - Remaining active `config.solution` reads in legacy EOM control/targeting files were replaced with `_legacy_get_solution(...)` resolution (explicit `solution=` / `args[:solution]` with global fallback for compatibility).
+  - `run_simulation(args; isolate_state=true)` now deep-copies per-run state by default to isolate mutable model/campaign fields (`planet.L_PI`, spacecraft mutable fields, control-effectors state) across repeated/concurrent runs.
+  - Tests now cover both isolated mode (default) and explicit legacy in-place mode (`isolate_state=false`) for compatibility-sensitive callbacks.
 
 ## Remaining Work (Out of Task 3 Scope)
 
-- Full-repository reentrancy is still pending in other modules outside the scoped control/targeting stack.
-- Broader follow-up includes isolating additional shared mutable state (`config.solution`, model-level mutable fields) for true concurrent multi-campaign execution.
+- Full-repository reentrancy is still pending in legacy modules outside the hardened stack.
+- Remaining direct global state hotspots include:
+  - `src/utils/Save_results.jl` (`config.solution` writes),
+  - `src/utils/MonteCarlo_set.jl` (`config.cnf` / `config.solution` reads),
+  - `src/physical_models/Propulsive_maneuvers.jl` (heavy `config.solution` coupling).

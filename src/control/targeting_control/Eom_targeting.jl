@@ -72,8 +72,27 @@ if !isdefined(@__MODULE__, :_legacy_get_cnf)
     end
 end
 
-function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing; cnf=nothing)
+if !isdefined(@__MODULE__, :_legacy_get_solution)
+    @inline function _legacy_get_solution(args=nothing; solution=nothing, cnf=nothing)
+        if solution !== nothing
+            return solution
+        end
+        if args isa AbstractDict && haskey(args, :solution)
+            return args[:solution]
+        end
+        if cnf !== nothing && hasproperty(cnf, :solution)
+            return getproperty(cnf, :solution)
+        end
+        if (@isdefined config) && isdefined(config, :solution)
+            return getproperty(config, :solution)
+        end
+        throw(ArgumentError("Legacy solution state `solution` not found. Pass `solution=` or args[:solution]."))
+    end
+end
+
+function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing; cnf=nothing, solution=nothing)
     cnf_state = _legacy_get_cnf(args; cnf=cnf)
+    solution_state = _legacy_get_solution(args; cnf=cnf_state, solution=solution)
     _legacy_ensure_gram_path!(args)
     gram = pyimport("gram")
 
@@ -102,8 +121,8 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
                                     m.initial_condition.minute, 
                                     m.initial_condition.second))
 
-    if cnf_state.count_numberofpassage != 1
-        t_prev = config.solution.orientation.time[end]
+    if cnf_state.count_numberofpassage != 1 && !isempty(solution_state.orientation.time)
+        t_prev = solution_state.orientation.time[end]
     else
         t_prev = m.initial_condition.time_rot # value(seconds(date_initial - from_utc(DateTime(2000, 1, 1, 12, 0, 0)))) # m.initialcondition.time_rot
     end

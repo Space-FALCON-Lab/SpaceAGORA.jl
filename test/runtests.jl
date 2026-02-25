@@ -517,19 +517,41 @@ end
         mc_default = MissionConfiguration()
         @test mc_default.mission_type == MissionTime
 
-        mc_str = MissionConfiguration(mission_type="Time", mission_time=600.0, number_of_orbits=1, num_steps_to_save=10)
-        @test mc_str.mission_type == MissionTime
-        @test mc_str.mission_type == "Time"
-        @test "Time" == mc_str.mission_type
+        withenv("SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0") do
+            SimulationModel.SimConfig._deprecated_mission_type_input_warned[] = false
+        end
 
-        mc_sym = MissionConfiguration(mission_type=:orbits, mission_time=600.0, number_of_orbits=2, num_steps_to_save=10)
-        @test mc_sym.mission_type == MissionOrbits
-        @test mc_sym.mission_type == :orbits
-        @test :orbits == mc_sym.mission_type
+        withenv("SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0") do
+            mc_str = MissionConfiguration(mission_type="Time", mission_time=600.0, number_of_orbits=1, num_steps_to_save=10)
+            @test mc_str.mission_type == MissionTime
+            @test mc_str.mission_type == "Time"
+            @test "Time" == mc_str.mission_type
+        end
 
-        mc_enum = MissionConfiguration(mission_type=MissionOrbits, mission_time=600.0, number_of_orbits=3, num_steps_to_save=10)
-        @test mc_enum.mission_type == MissionOrbits
-        @test mc_enum.mission_type == "Orbits"
+        withenv("SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0") do
+            mc_sym = MissionConfiguration(mission_type=:orbits, mission_time=600.0, number_of_orbits=2, num_steps_to_save=10)
+            @test mc_sym.mission_type == MissionOrbits
+            @test mc_sym.mission_type == :orbits
+            @test :orbits == mc_sym.mission_type
+        end
+
+        withenv("SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0") do
+            mc_enum = MissionConfiguration(mission_type=MissionOrbits, mission_time=600.0, number_of_orbits=3, num_steps_to_save=10)
+            @test mc_enum.mission_type == MissionOrbits
+            @test mc_enum.mission_type == "Orbits"
+        end
+
+        withenv("SPACEAGORA_WARN_DEPRECATED_CONFIG" => "1") do
+            SimulationModel.SimConfig._deprecated_mission_type_input_warned[] = false
+            @test_logs (:warn, r"mission_type=.*deprecated") MissionConfiguration(mission_type="Time")
+            @test SimulationModel.SimConfig._deprecated_mission_type_input_warned[] == true
+        end
+
+        withenv("SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0") do
+            SimulationModel.SimConfig._deprecated_mission_type_input_warned[] = false
+            @test_logs MissionConfiguration(mission_type="Time")
+            @test SimulationModel.SimConfig._deprecated_mission_type_input_warned[] == false
+        end
 
         @test_throws ArgumentError MissionConfiguration(mission_type="invalid")
         @test_throws ArgumentError MissionConfiguration(mission_time=0.0)
@@ -807,6 +829,11 @@ end
         :Monte_Carlo => 0
     )
     ip = sandbox.mission_def(mission)
+    @test ip.gm isa LegacyGravityModelCode
+    @test ip.dm isa LegacyDensityModelCode
+    @test ip.am isa LegacyAerodynamicModelCode
+    @test ip.tc isa LegacyThrustControlCode
+    @test ip.tm isa LegacyThermalModelCode
     @test ip.M.planet == 2
     @test ip.gm == 2
     @test ip.dm == 2
@@ -821,6 +848,27 @@ end
     mission_default[:Planet] = "UnknownPlanet"
     ip_default = sandbox.mission_def(mission_default)
     @test ip_default.M.planet == 1
+
+    ip_from_ints = InitialParameters(Mission(), 1, 3, 0, 2, 2, 0, 1, 0)
+    @test ip_from_ints.gm == LegacyGravityInverseSquared
+    @test ip_from_ints.dm == LegacyDensityGRAM
+    @test ip_from_ints.am == LegacyAeroNoBallisticAxial
+    @test ip_from_ints.tm == LegacyThermalMaxwellian
+    @test ip_from_ints.tc == LegacyThrustAerobrakingManeuver
+    @test ip_from_ints.gm == 1
+    @test ip_from_ints.dm == 3
+    @test_throws ArgumentError InitialParameters(Mission(), 99, 1, 0, 0, 1, 0, 0, 0)
+
+    @test _legacy_run_planet_id("earth") == 0
+    @test _legacy_run_planet_id(:Mars) == 1
+    @test _legacy_run_planet_id(7) == 7
+    @test_throws ArgumentError _legacy_run_planet_id("pluto")
+
+    planet_earth = _legacy_typed_planet("earth", Dict{Symbol, Any}())
+    @test getfield(planet_earth, :name) == "Earth"
+    planet_jupiter = _legacy_typed_planet("jupiter", Dict{Symbol, Any}())
+    @test isapprox(planet_jupiter.Rp_e, 7.1492e7; atol=0.0, rtol=0.0)
+    @test isapprox(planet_jupiter.μ, 1.26686534e17; atol=0.0, rtol=0.0)
 
     args_time = Dict{Symbol, Any}(
         :type_of_mission => "time",

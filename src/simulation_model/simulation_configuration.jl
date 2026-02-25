@@ -9,6 +9,17 @@ module SimConfig
         MissionOrbits = 0x02
     end
 
+    const _deprecated_mission_type_input_warned = Ref(false)
+    @inline _warn_deprecated_config_enabled() = get(ENV, "SPACEAGORA_WARN_DEPRECATED_CONFIG", "1") == "1"
+    @inline function _warn_deprecated_mission_type_input!(mission_type)
+        if !_warn_deprecated_config_enabled() || _deprecated_mission_type_input_warned[]
+            return nothing
+        end
+        _deprecated_mission_type_input_warned[] = true
+        @warn "Passing mission_type=$(repr(mission_type)) as String/Symbol is deprecated; pass MissionType (MissionTime/MissionOrbits) instead."
+        return nothing
+    end
+
     @inline function _parse_mission_type(mission_type::MissionType)::MissionType
         return mission_type
     end
@@ -20,8 +31,10 @@ module SimConfig
     @inline function _parse_mission_type(mission_type::AbstractString)::MissionType
         key = lowercase(strip(mission_type))
         if key == "time"
+            _warn_deprecated_mission_type_input!(mission_type)
             return MissionTime
         elseif key == "orbits" || key == "orbit"
+            _warn_deprecated_mission_type_input!(mission_type)
             return MissionOrbits
         end
         throw(ArgumentError("Invalid mission_type=$(repr(mission_type)). Valid mission types: \"Time\", \"Orbits\"."))

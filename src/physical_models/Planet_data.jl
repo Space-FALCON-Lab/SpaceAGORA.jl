@@ -8,7 +8,7 @@ using StaticArrays
             return pid
         end
     elseif ip isa AbstractString || ip isa Symbol
-        key = lowercase(strip(String(ip)))
+        key = lowercase(strip(string(ip)))
         mapping = Dict(
             "earth" => 0,
             "mars" => 1,

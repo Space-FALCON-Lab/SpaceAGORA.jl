@@ -38,30 +38,30 @@ function mission_def(mission::Dict{Symbol, Any})
 
     # Gravity Model Selection
     if grav_key == "constant"
-        gm = 0
+        gm = LegacyGravityConstant
     elseif grav_key == "inverse squared"
-        gm = 1
+        gm = LegacyGravityInverseSquared
     elseif grav_key == "inverse squared and j2 effect"
-        gm = 2
+        gm = LegacyGravityInverseSquaredJ2
     elseif grav_key == "gram"
-        gm = 3
+        gm = LegacyGravityGRAM
     else
-        gm = 1
+        gm = LegacyGravityInverseSquared
     end
 
     # Density Model Selection
     if dens_key == "constant"
-        dm = 0
+        dm = LegacyDensityConstant
     elseif dens_key == "exponential"
-        dm = 1
+        dm = LegacyDensityExponential
     elseif dens_key == "no density"
-        dm = 2
+        dm = LegacyDensityNoDensity
     elseif dens_key == "gram"
-        dm = 3
+        dm = LegacyDensityGRAM
     elseif dens_key == "nrlmsise"
-        dm = 4
+        dm = LegacyDensityNRLMSISE
     else
-        dm = 1
+        dm = LegacyDensityExponential
     end
 
     # Wind
@@ -69,14 +69,14 @@ function mission_def(mission::Dict{Symbol, Any})
 
     # Aerodynamic Model Selection
     if aero_key in ("cd and cl constant",)
-        am = 0
+        am = LegacyAeroCdClConstant
     elseif aero_key == "diffusive" || (aero_key == "mach dependent" && shape_key == "spacecraft")
-        am = 1
+        am = LegacyAeroDiffusive
     elseif aero_key in ("no balistic flight with axial coefficent", "no ballistic flight with axial coefficient") &&
            shape_key == "blunted cone"
-        am = 2
+        am = LegacyAeroNoBallisticAxial
     else
-        am = 0
+        am = LegacyAeroCdClConstant
     end
     
     # Control Mode
@@ -93,22 +93,22 @@ function mission_def(mission::Dict{Symbol, Any})
 
     # Thrust Control
     if firing_key == "none"
-        tc = 0
+        tc = LegacyThrustNone
     elseif firing_key == "aerobraking maneuver"
-        tc = 1
+        tc = LegacyThrustAerobrakingManeuver
     elseif firing_key == "drag passage firing"
-        tc = 2
+        tc = LegacyThrustDragPassageFiring
     else
-        tc = 0
+        tc = LegacyThrustNone
     end
 
     # Thermal Model
     if thermal_key == "convective and radiative"
-        tm = 1
+        tm = LegacyThermalConvectiveRadiative
     elseif thermal_key in ("maxwellian heat transfer", "shaaf and chambre")
-        tm = 2
+        tm = LegacyThermalMaxwellian
     else
-        tm = 1
+        tm = LegacyThermalConvectiveRadiative
     end
 
     # MonteCarlo

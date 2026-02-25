@@ -13,6 +13,38 @@ function run_vgamma(args::SimulationConfiguration; isolate_state::Bool=true)
     return aerobraking_campaign(args; isolate_state=isolate_state)
 end
 
+@inline function _legacy_run_planet_id(selector)::Int
+    if selector isa Integer
+        return Int(selector)
+    end
+    key = lowercase(strip(string(selector)))
+    key == "earth" && return 0
+    key == "mars" && return 1
+    key == "venus" && return 2
+    key == "sun" && return 3
+    key == "moon" && return 4
+    key == "jupiter" && return 5
+    key == "saturn" && return 6
+    key == "titan" && return 7
+    throw(ArgumentError("Unsupported legacy planet selector $(repr(selector))."))
+end
+
+function _legacy_typed_planet(selector, args)
+    spice_path = get(args, :directory_spice, get(args, :spice_path, "GRAM_Data/SPICE"))
+    pid = _legacy_run_planet_id(selector)
+    pid == 0 && return Earth("", spice_path)
+    pid == 1 && return Mars("", spice_path)
+    pid == 2 && return Venus("", spice_path)
+    pid == 7 && return Titan("", spice_path)
+    # Bodies without typed constructors in current API: return minimal fields needed
+    # by `ic_calculation_rptoae` / `ic_calculation_ae`.
+    pid == 3 && return (Rp_e=6.9634e8, μ=1.3271244002331e20)
+    pid == 4 && return (Rp_e=1.7381e6, μ=4.9028005821478e12)
+    pid == 5 && return (Rp_e=7.1492e7, μ=1.26686534e17)
+    pid == 6 && return (Rp_e=6.0268e7, μ=3.7931187e16)
+    throw(ArgumentError("Unsupported legacy planet selector $(repr(selector))."))
+end
+
 function run_orbitalelements(args)
     apoapsis, periapsis_alt, inclination, Ω, ω = collect(range(start=round(args[:ra_initial_a]), stop=round(args[:ra_initial_b]), step=round(args[:ra_step]))), 
                                                  collect(range(start=round(args[:hp_initial_a]), stop=round(args[:hp_initial_b]), step=round(args[:hp_step]))), 
@@ -64,7 +96,7 @@ function run_vgamma(args)
 
         for v in v_0
             state = Dict()
-            planet = planet_data(args[:planet])
+            planet = _legacy_typed_planet(args[:planet], args)
             apoapsis, periapsis_alt = ic_calculation_rptoae(planet, γ, v, args)
 
             if Bool(args[:print_res])

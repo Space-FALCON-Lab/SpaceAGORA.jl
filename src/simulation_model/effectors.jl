@@ -69,15 +69,22 @@ function integrate_impulse!(link::Link, thruster::Thruster, on_time_request::Flo
     """
     Integrates the impulse and thrust factor over the on-time request period.
     """
-    ω = thruster.cutoff_frequency # Get the cutoff frequency of the thruster
+    ti = clamp(on_time_request, 0.0, link.attitude_control_rate)
+    ω = abs(thruster.cutoff_frequency) # Get the cutoff frequency of the thruster
+    if !isfinite(ω) || ω < 1e-9
+        ω = 1e-9
+    end
     κ = thruster.κ # Get the current thrust factor
     
-    total_integrated_thrust = thruster.max_thrust * (on_time_request + (κ - 1) / ω * (1 - exp(-ω * on_time_request))) # Calculate the total impulse
-    κ = 1 + (κ - 1) * exp(-ω * on_time_request) # Calculate the final thrust factor
+    one_minus_exp_on = -expm1(-ω * ti)
+    total_integrated_thrust = thruster.max_thrust * (ti + (κ - 1) / ω * one_minus_exp_on) # Calculate the total impulse
+    κ = 1 + (κ - 1) * exp(-ω * ti) # Calculate the final thrust factor
     
-    if on_time_request < link.attitude_control_rate
-        total_integrated_thrust += thruster.max_thrust * κ / ω * (1 - exp(-ω * (link.attitude_control_rate - on_time_request))) # Add the impulse from ramp-down if applicable
-        κ *= exp(-ω * (link.attitude_control_rate - on_time_request)) # Update the final thrust factor after ramp-down
+    if ti < link.attitude_control_rate
+        ramp_down_dt = link.attitude_control_rate - ti
+        one_minus_exp_down = -expm1(-ω * ramp_down_dt)
+        total_integrated_thrust += thruster.max_thrust * κ / ω * one_minus_exp_down # Add the impulse from ramp-down if applicable
+        κ *= exp(-ω * ramp_down_dt) # Update the final thrust factor after ramp-down
     end
     
     thruster.κ = κ # Update the thrust factor in the thruster

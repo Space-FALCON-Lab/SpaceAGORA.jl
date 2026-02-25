@@ -55,6 +55,15 @@ This note documents the edge-case tests added for thruster-related functions and
 - Test: ramp-down case (`κ=1`, zero on-time) matches expected decay impulse/`κ`.
   - Intended bug: incorrect decay branch.
   - Non-vacuous: fails if post-burn decay logic is wrong.
+- Test: `cutoff_frequency≈0` remains finite and non-negative.
+  - Intended bug: divide-by-zero / numerical blow-up in `(1-exp(-ωt))/ω` terms.
+  - Non-vacuous: fails if low-ω stabilization/clamping is missing.
+- Test: negative `on_time_request` is clamped to zero behavior.
+  - Intended bug: negative impulse integration from invalid command durations.
+  - Non-vacuous: fails if request clamping is not applied.
+- Test: `on_time_request > attitude_control_rate` is clamped to full-period behavior.
+  - Intended bug: over-integration beyond control interval.
+  - Non-vacuous: fails if upper clamping is not applied.
 
 ## `thrust_calculation_schmitt_trigger!`
 
@@ -73,9 +82,21 @@ This note documents the edge-case tests added for thruster-related functions and
 - Test: solved thrust remains non-negative after shift step.
   - Intended bug: negative thrust commands passed through.
   - Non-vacuous: fails if non-negativity projection is removed/broken.
+- Test: 3-thruster full-rank Jacobian case (`rank(J)=3`) yields finite non-negative commanded thrusts.
+  - Intended bug: incorrect torque allocation for controllable geometry.
+  - Non-vacuous: fails if Jacobian assembly/allocation math is wrong.
+- Test: singular Jacobian case remains finite and non-negative (`rank(J)=1`).
+  - Intended bug: numerical instability in pseudoinverse path for rank-deficient geometry.
+  - Non-vacuous: fails if singular cases produce NaN/Inf or invalid thrust values.
 
 ## `BaseThrusterModel`
 
 - Test: constructor rejects mismatched vector lengths and accepts consistent lengths.
   - Intended bug: silent index mismatches between per-spacecraft control arrays.
   - Non-vacuous: fails if constructor does not validate shared length contract.
+
+## End-to-End Control Integration
+
+- Test: in gravity-only propagation, a timed prograde burn increases specific orbital energy while a timed retrograde burn decreases it.
+  - Intended bug: control force not wired into dynamics or direction sign inversion ignored.
+  - Non-vacuous: fails if control force is not applied, applied with wrong sign, or cancelled unexpectedly.

@@ -22,6 +22,13 @@ struct ConstantDensityModel <: SimulationModel.AbstractDensityModel
     temp::Float64
 end
 
+struct TimedTangentialThrusterModel <: SimulationModel.AbstractControlEffectorModel
+    thrust::Float64
+    direction_sign::Float64 # +1.0 prograde, -1.0 retrograde
+    start_time::Float64
+    stop_time::Float64
+end
+
 function SimulationModel.EnvironmentModels.getDensity(
     model::ConstantDensityModel,
     h::Float64,
@@ -32,6 +39,37 @@ function SimulationModel.EnvironmentModels.getDensity(
     p
 )
     return model.rho, model.temp, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+function SimulationModel.calcControlForceTorque(
+    model::TimedTangentialThrusterModel,
+    u::AbstractVector{Float64},
+    p::ODEParams,
+    i::Int64,
+    t::Float64
+)
+    if t < model.start_time || t > model.stop_time
+        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    v = SVector{3, Float64}(u.vel)
+    vm = norm(v)
+    if vm == 0.0 || !isfinite(vm)
+        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    force = model.thrust * model.direction_sign * (v / vm)
+    return force, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+function SimulationModel.calcControlEffect!(
+    model::TimedTangentialThrusterModel,
+    u::ComponentVector,
+    p::ODEParams,
+    t::Float64,
+    i::Int64
+)
+    return nothing
 end
 
 const SPICE_PATH = joinpath(REPO_ROOT, "GRAM_Data", "SPICE")
@@ -149,6 +187,8 @@ function build_config(;
     mission_time::Float64,
     EI_km::Float64,
     dynamic_effectors::Tuple,
+    control_effectors::Tuple=(),
+    control_rates::Vector{Float64}=Float64[],
     keplerian::Bool=true,
     tolerances::IntegrationTolerances=IntegrationTolerances(),
     initial_time::InitialTime=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
@@ -176,7 +216,7 @@ function build_config(;
         dynamics_model=DynamicsModel([spacecraft], dynamic_effectors),
         guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
         navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
-        control_model=ControlModel(control_effectors=(), control_rates=Float64[]),
+        control_model=ControlModel(control_effectors=control_effectors, control_rates=control_rates),
         initial_time=initial_time,
         integration_tolerances=tolerances
     )
@@ -189,6 +229,8 @@ function build_config_multi(;
     mission_time::Float64,
     EI_km::Float64,
     dynamic_effectors::Tuple,
+    control_effectors::Tuple=(),
+    control_rates::Vector{Float64}=Float64[],
     keplerian::Bool=true,
     tolerances::IntegrationTolerances=IntegrationTolerances(),
     initial_time::InitialTime=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
@@ -216,7 +258,7 @@ function build_config_multi(;
         dynamics_model=DynamicsModel(spacecraft, dynamic_effectors),
         guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
         navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
-        control_model=ControlModel(control_effectors=(), control_rates=Float64[]),
+        control_model=ControlModel(control_effectors=control_effectors, control_rates=control_rates),
         initial_time=initial_time,
         integration_tolerances=tolerances
     )
@@ -269,6 +311,18 @@ function run_case(args::SimulationConfiguration)
     return mktempdir() do tmp
         cd(tmp) do
             run_simulation(args)
+            @test isfile("simulation_results.csv")
+            return CSV.read("simulation_results.csv", DataFrame)
+        end
+    end
+end
+
+function run_case_silent(args::SimulationConfiguration)
+    return mktempdir() do tmp
+        cd(tmp) do
+            redirect_stdout(devnull) do
+                run_simulation(args)
+            end
             @test isfile("simulation_results.csv")
             return CSV.read("simulation_results.csv", DataFrame)
         end
@@ -696,6 +750,16 @@ end
         @test model_hyperbolic.start_burn_time[1] == 91.0
         @test model_hyperbolic.stop_burn_time[1] == 92.0
 
+        state_near_parabolic = build_initial_conditions(args)
+        rmag_parabolic = norm(SVector{3, Float64}(state_near_parabolic.sc[1].pos))
+        vhat_parabolic = normalize(SVector{3, Float64}(state_near_parabolic.sc[1].vel))
+        v_near_parabolic = 0.999999 * sqrt(2.0 * EARTH.μ / rmag_parabolic)
+        state_near_parabolic.sc[1].vel .= v_near_parabolic .* vhat_parabolic
+        model_near_parabolic = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=95.0, stop_burn_time=96.0)
+        @test_nowarn calcControlEffect!(model_near_parabolic, state_near_parabolic, p, 100.0, 1)
+        @test isfinite(model_near_parabolic.start_burn_time[1])
+        @test isfinite(model_near_parabolic.stop_burn_time[1])
+
         state_singular = build_initial_conditions(args)
         state_singular.sc[1].pos .= 0.0
         state_singular.sc[1].vel .= 0.0
@@ -703,6 +767,14 @@ end
         @test_nowarn calcControlEffect!(model_singular, state_singular, p, 100.0, 1)
         @test model_singular.start_burn_time[1] == 93.0
         @test model_singular.stop_burn_time[1] == 94.0
+
+        state_tiny_a = build_initial_conditions(args)
+        state_tiny_a.sc[1].pos .= SVector{3, Float64}(1.0, 0.0, 0.0)
+        state_tiny_a.sc[1].vel .= SVector{3, Float64}(0.0, 0.1, 0.0)
+        model_tiny_a = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=97.0, stop_burn_time=98.0)
+        @test_nowarn calcControlEffect!(model_tiny_a, state_tiny_a, p, 100.0, 1)
+        @test isfinite(model_tiny_a.start_burn_time[1])
+        @test isfinite(model_tiny_a.stop_burn_time[1])
 
         sc_multi_1 = make_spacecraft(ra_alt_m=650e3, rp_alt_m=450e3, ν_deg=120.0)
         sc_multi_2 = make_spacecraft(ra_alt_m=700e3, rp_alt_m=500e3, ν_deg=150.0)
@@ -745,6 +817,16 @@ end
         @test schmitt_trigger(0.20, 0.75, 0.25) == 0.0
         @test schmitt_trigger(0.75, 0.75, 0.25) == 0.0
         @test schmitt_trigger(0.50, 0.75, 0.25) == 0.0
+
+        # Sequential behavior check: current implementation is memoryless.
+        state_high = schmitt_trigger(0.80, 0.75, 0.25)
+        state_mid_after_high = schmitt_trigger(0.50, 0.75, 0.25)
+        _ = schmitt_trigger(0.20, 0.75, 0.25)
+        state_mid_after_low = schmitt_trigger(0.50, 0.75, 0.25)
+        @test state_high == 1.0
+        @test state_mid_after_high == 0.0
+        @test state_mid_after_low == 0.0
+        @test state_mid_after_high == state_mid_after_low
     end
 
     @testset "integrate_impulse!" begin
@@ -768,6 +850,28 @@ end
         impulse_decay = integrate_impulse!(link, thr_decay, 0.0, 0.0)
         @test isapprox(impulse_decay, expected_decay; atol=1e-12, rtol=0.0)
         @test isapprox(thr_decay.κ, exp(-ω * dt); atol=1e-12, rtol=0.0)
+
+        thr_small_ω = Thruster(max_thrust=10.0, cutoff_frequency=1e-12, κ=0.3)
+        impulse_small_ω = integrate_impulse!(link, thr_small_ω, 0.05, 0.0)
+        @test isfinite(impulse_small_ω)
+        @test impulse_small_ω >= 0.0
+        @test isfinite(thr_small_ω.κ)
+
+        thr_ref_neg = Thruster(max_thrust=10.0, cutoff_frequency=ω, κ=0.4)
+        thr_neg = deepcopy(thr_ref_neg)
+        thr_zero_ref = deepcopy(thr_ref_neg)
+        impulse_neg = integrate_impulse!(link, thr_neg, -0.01, 0.0)
+        impulse_zero_ref = integrate_impulse!(link, thr_zero_ref, 0.0, 0.0)
+        @test isapprox(impulse_neg, impulse_zero_ref; atol=1e-12, rtol=0.0)
+        @test isapprox(thr_neg.κ, thr_zero_ref.κ; atol=1e-12, rtol=0.0)
+
+        thr_ref_hi = Thruster(max_thrust=10.0, cutoff_frequency=ω, κ=0.4)
+        thr_hi = deepcopy(thr_ref_hi)
+        thr_dt_ref = deepcopy(thr_ref_hi)
+        impulse_hi = integrate_impulse!(link, thr_hi, 10.0 * link.attitude_control_rate, 0.0)
+        impulse_dt_ref = integrate_impulse!(link, thr_dt_ref, link.attitude_control_rate, 0.0)
+        @test isapprox(impulse_hi, impulse_dt_ref; atol=1e-12, rtol=0.0)
+        @test isapprox(thr_hi.κ, thr_dt_ref.κ; atol=1e-12, rtol=0.0)
     end
 
     @testset "thrust_calculation_schmitt_trigger!" begin
@@ -813,9 +917,85 @@ end
 
                 update_thrusters!(link, SVector{3, Float64}(-1.0, 0.0, 0.0), 0.1)
                 @test link.thrusters[1].thrust >= 0.0
+
+                link_full = Link{0}(root=true, attitude_control_rate=0.1)
+                push!(link_full.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(0.0, 1.0, 0.0), direction=MVector{3, Float64}(0.0, 0.0, 1.0)))
+                push!(link_full.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(0.0, 0.0, 1.0), direction=MVector{3, Float64}(1.0, 0.0, 0.0)))
+                push!(link_full.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(1.0, 0.0, 0.0), direction=MVector{3, Float64}(0.0, 1.0, 0.0)))
+                update_thrusters!(link_full, SVector{3, Float64}(1.0, 2.0, 3.0), 0.2)
+                @test rank(link_full.J_thruster) == 3
+                @test all(isfinite, link_full.J_thruster)
+                @test all(thr_i -> isfinite(thr_i.thrust) && thr_i.thrust >= 0.0, link_full.thrusters)
+                @test any(thr_i -> thr_i.thrust > 0.0, link_full.thrusters)
+
+                link_singular = Link{0}(root=true, attitude_control_rate=0.1)
+                push!(link_singular.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(0.0, 1.0, 0.0), direction=MVector{3, Float64}(0.0, 0.0, 1.0)))
+                push!(link_singular.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(0.0, 2.0, 0.0), direction=MVector{3, Float64}(0.0, 0.0, 1.0)))
+                update_thrusters!(link_singular, SVector{3, Float64}(0.0, 1.0, 0.0), 0.3)
+                @test rank(link_singular.J_thruster) == 1
+                @test all(isfinite, link_singular.J_thruster)
+                @test all(thr_i -> isfinite(thr_i.thrust) && thr_i.thrust >= 0.0, link_singular.thrusters)
             end
         end
     end
+end
+
+@testset "Control Burn Energy Sign (End-to-End)" begin
+    sc0 = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=60.0)
+    args0 = build_config(
+        spacecraft=sc0,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=250.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        control_effectors=(),
+        control_rates=Float64[],
+        keplerian=true,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=5.0)
+    )
+    df0 = run_case_silent(args0)
+    eps0 = specific_energy(df0, EARTH.μ)
+    Δeps0 = last(eps0) - first(eps0)
+    @test abs(Δeps0) < 2e3
+
+    scp = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=60.0)
+    thr_pro = TimedTangentialThrusterModel(800.0, +1.0, 100.0, 101.0)
+    argsp = build_config(
+        spacecraft=scp,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=250.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        control_effectors=(thr_pro,),
+        control_rates=[1.0],
+        keplerian=true,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=5.0)
+    )
+    dfp = run_case_silent(argsp)
+    epsp = specific_energy(dfp, EARTH.μ)
+    Δepsp = last(epsp) - first(epsp)
+    @test Δepsp > 5e3
+
+    scr = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=60.0)
+    thr_retro = TimedTangentialThrusterModel(800.0, -1.0, 100.0, 101.0)
+    argsr = build_config(
+        spacecraft=scr,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=250.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        control_effectors=(thr_retro,),
+        control_rates=[1.0],
+        keplerian=true,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=5.0)
+    )
+    dfr = run_case_silent(argsr)
+    epsr = specific_energy(dfr, EARTH.μ)
+    Δepsr = last(epsr) - first(epsr)
+    @test Δepsr < -5e3
 end
 
 @testset "JET Static Analysis" begin

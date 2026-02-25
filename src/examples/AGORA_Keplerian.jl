@@ -1,4 +1,6 @@
-include("../simulation_model/SimulationModel.jl")
+if !isdefined(@__MODULE__, :SimulationModel)
+    include("../simulation_model/SimulationModel.jl")
+end
 using .SimulationModel
 using CSV
 using DataFrames
@@ -7,7 +9,9 @@ using StaticArrays
 
 # run_simulation.jl expects quat_mult in including scope.
 const quat_mult = SimulationModel.quat_mult
-include("../simulation/run_simulation.jl")
+if !isdefined(@__MODULE__, :run_simulation)
+    include("../simulation/run_simulation.jl")
+end
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const SPICE_PATH = joinpath(REPO_ROOT, "GRAM_Data", "SPICE")

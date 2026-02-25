@@ -1,11 +1,17 @@
-include("../simulation_model/SimulationModel.jl")
+if !isdefined(@__MODULE__, :SimulationModel)
+    include("../simulation_model/SimulationModel.jl")
+end
 using .SimulationModel
 using SPICE
 
 # run_simulation.jl expects quat_mult in the including scope.
 const quat_mult = SimulationModel.quat_mult
-include("../simulation/run_simulation.jl")
-include("typed_example_utils.jl")
+if !isdefined(@__MODULE__, :run_simulation)
+    include("../simulation/run_simulation.jl")
+end
+if !isdefined(@__MODULE__, :make_example_config)
+    include("typed_example_utils.jl")
+end
 
 planet = Titan("", SPICE_PATH)
 

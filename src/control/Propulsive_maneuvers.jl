@@ -2,17 +2,26 @@ include("../utils/Reference_system.jl")
 using ComponentArrays
 
 """
-calcControlMassFlowRate(controlModel::AbstractControlEffectorModel, u::AbstractVector{Float64}, p::ODEParams, i::Int64, t::Float64)::Float64
+calcControlMassFlowRate(controlModel::AbstractControlEffectorModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
 
 Default control-induced mass-flow model. Control effectors that do not model
 propellant consumption return zero mass flow by default.
 """
-function calcControlMassFlowRate(controlModel::AbstractControlEffectorModel, u::AbstractVector{Float64}, p::ODEParams, i::Int64, t::Float64)::Float64
+function calcControlMassFlowRate(controlModel::AbstractControlEffectorModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
     return 0.0
 end
 
 """
-calcControlForceTorque(controlModel::BaseThrusterModel, x::AbstractVector{Float64}, p::ODEParams, i::Int64, t::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+Fallback mass-flow model for user-defined control effectors that do not subtype
+`AbstractControlEffectorModel`. This keeps legacy/custom examples working while
+defaulting to zero propellant consumption unless explicitly modeled.
+"""
+function calcControlMassFlowRate(controlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
+    return 0.0
+end
+
+"""
+calcControlForceTorque(controlModel::BaseThrusterModel, x::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
 
 Calculate the control force and torque based on the thruster model and current state, called in the dynamics loop to get the current thruster force
 - `controlModel`: The thruster model containing thrust magnitudes, directions, burn times, and specific impulses for each thruster
@@ -23,7 +32,7 @@ Calculate the control force and torque based on the thruster model and current s
 
 Returns a tuple containing the total control force and torque as 3D vectors
 """
-function calcControlForceTorque(controlModel::BaseThrusterModel, u::AbstractVector{Float64}, p::ODEParams, i::Int64, t::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+function calcControlForceTorque(controlModel::BaseThrusterModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     # Calculate the control force and torque based on the thruster model and current state
     if i < 1 || i > length(controlModel.start_burn_time)
         return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
@@ -51,13 +60,13 @@ function calcControlForceTorque(controlModel::BaseThrusterModel, u::AbstractVect
 end
 
 """
-calcControlMassFlowRate(controlModel::BaseThrusterModel, u::AbstractVector{Float64}, p::ODEParams, i::Int64, t::Float64)::Float64
+calcControlMassFlowRate(controlModel::BaseThrusterModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
 
 Return instantaneous propellant mass flow rate (kg/s) from the active burn.
 Uses the applied force magnitude and specific impulse relation:
 `mdot = -T / (Isp * g0)`.
 """
-function calcControlMassFlowRate(controlModel::BaseThrusterModel, u::AbstractVector{Float64}, p::ODEParams, i::Int64, t::Float64)::Float64
+function calcControlMassFlowRate(controlModel::BaseThrusterModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
     if i < 1 || i > length(controlModel.start_burn_time)
         return 0.0
     end

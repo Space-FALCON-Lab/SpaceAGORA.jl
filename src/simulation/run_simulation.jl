@@ -7,9 +7,8 @@ using DifferentialEquations
 using CSV
 using DataFrames
 using Polyester
-# using .SimulationModel: SimulationConfiguration
 
-function run_simulation(args::SimulationConfiguration)
+function run_simulation(args)
     # Set up the model and initial conditions
     initial_conditions = build_initial_conditions(args)
     if args.simulation_settings.verbose
@@ -18,10 +17,10 @@ function run_simulation(args::SimulationConfiguration)
     end
 
     # Define the ODE problem
-    p = ODEParams{length(args.dynamics_model.spacecraft)}(args=args) # Define the parameters for the ODE problem, including the shared buffers for the callbacks
+    p = SimulationModel.ODEParams{length(args.dynamics_model.spacecraft)}(args=args) # Define the parameters for the ODE problem, including the shared buffers for the callbacks
     p.shared_buffers.debug_control[] = get(ENV, "SPACEAGORA_DEBUG_CONTROL", "0") == "1"
     p.shared_buffers.debug_initial_derivative[] = get(ENV, "SPACEAGORA_DEBUG_INITIAL_DERIVATIVE", "0") == "1"
-    callbacks = get_callbacks(length(args.dynamics_model.spacecraft), args.dynamics_model.dynamic_effectors, args) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
+    callbacks = SimulationModel.get_callbacks(length(args.dynamics_model.spacecraft), args.dynamics_model.dynamic_effectors, args) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
     initial_time = args.initial_time
     start_epoch = from_utc(DateTime(
             initial_time.year,
@@ -104,7 +103,7 @@ function run_simulation(args::SimulationConfiguration)
     end
 end
 
-function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p::ODEParams, t::Float64)
+function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     # Unpack the state vector
     sc_state = u.sc
     sc_du = du.sc
@@ -129,15 +128,15 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p::ODEPar
             torques = MVector{3, Float64}(0.0, 0.0, 0.0)
             mass_rate = 0.0
             @inbounds for effector in dynamic_effectors
-                force, torque = calcForceTorque(effector, sc_view, p, i)
+                force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, i)
                 forces .+= force
                 torques .+= torque
             end
 
             # Compute control forces and torques using the control effectors (if any)
                 @inbounds for control_effector in p.args.control_model.control_effectors
-                    control_force, control_torque = calcControlForceTorque(control_effector, sc_view, p, i, t)
-                    control_mass_rate = calcControlMassFlowRate(control_effector, sc_view, p, i, t)
+                    control_force, control_torque = SimulationModel.calcControlForceTorque(control_effector, sc_view, p, i, t)
+                    control_mass_rate = SimulationModel.calcControlMassFlowRate(control_effector, sc_view, p, i, t)
                     if debug_control && (norm(control_force) > 0.0 || norm(control_torque) > 0.0)
                         println("Applying control effect for spacecraft $i at time $t seconds:")
                         println("  Control force: $control_force")
@@ -166,7 +165,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p::ODEPar
     end
 end # function spacecraft_dynamics!
 
-function build_initial_conditions(args::SimulationConfiguration)::ComponentVector
+function build_initial_conditions(args)::ComponentVector
     # 1. Build the structure (Axis) based on each spacecraft's unique body count
     # This identifies exactly how many heat_load slots each SC needs
     sc_shapes = map(args.dynamics_model.spacecraft) do sc

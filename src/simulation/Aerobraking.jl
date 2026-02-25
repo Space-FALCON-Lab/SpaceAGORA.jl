@@ -1,11 +1,11 @@
 # include("Complete_passage.jl")
-include("run_simulation.jl")
 # include("../utils/Ref_system_conf.jl")
 # include("../utils/Closed_form_solution.jl")
 # include("../utils/Save_results.jl")
 # include("../physical_models/Propulsive_maneuvers.jl")
 
 using .SimulationModel
+include("run_simulation.jl")
 # using PythonCall
 
 # sys = pyimport("sys")

@@ -42,7 +42,7 @@ module SimConfig
         results_directory::String = "output" # Directory to save results
         generate_plots::Bool = true # Whether to generate plots after simulation
         generate_filenames::Bool = false # Whether to generate filenames with specifics of simulation parameters
-        normalize::Bool = true # Whether to normalize the state vector for propagation
+        normalize::Bool = true # Legacy compatibility flag; typed run_simulation propagates SI-state directly
         save_csv::Bool = true # Whether to save results in CSV format in addition to feather
     end # struct SimulationSettings
 

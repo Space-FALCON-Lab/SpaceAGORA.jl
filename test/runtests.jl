@@ -954,6 +954,118 @@ end
     @test_throws ArgumentError aerobraking_campaign(Dict{Symbol, Any}(:foo => :bar))
 end
 
+@testset "Units/Normalization Consistency Audit" begin
+    function strip_comments(src::String)
+        no_block = replace(src, r"#=.*?=#"s => "")
+        no_line = map(line -> first(split(line, '#'; limit=2)), split(no_block, '\n'; keepempty=true))
+        return join(no_line, "\n")
+    end
+
+    run_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"), String))
+    complete_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "Complete_passage.jl"), String))
+
+    # Typed path should stay SI-native; legacy path still carries DU/TU/MU normalization.
+    @test !occursin("cnf.DU", run_src)
+    @test !occursin("cnf.TU", run_src)
+    @test !occursin("cnf.MU", run_src)
+    @test occursin("cnf.DU", complete_src)
+    @test occursin("cnf.TU", complete_src)
+    @test occursin("cnf.MU", complete_src)
+
+    sc = make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0)
+    settings_norm_true = SimulationSettings(
+        results=true,
+        verbose=false,
+        generate_plots=false,
+        normalize=true
+    )
+    settings_norm_false = SimulationSettings(
+        results=true,
+        verbose=false,
+        generate_plots=false,
+        normalize=false
+    )
+
+    args_norm_true = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=700.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=settings_norm_true,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    args_norm_false = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=700.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=settings_norm_false,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+
+    # Build-state sanity: typed initial conditions are SI-scale, not O(1) normalized values.
+    u0 = build_initial_conditions(args_norm_true)
+    @test norm(SVector{3, Float64}(u0.sc[1].pos)) > 1e6
+    @test norm(SVector{3, Float64}(u0.sc[1].vel)) > 1e3
+    @test u0.sc[1].mass > 1.0
+
+    df_norm_true = run_case_silent(args_norm_true)
+    df_norm_false = run_case_silent(args_norm_false)
+
+    @test nrow(df_norm_true) == nrow(df_norm_false)
+    @test nrow(df_norm_true) > 10
+    sample_idxs = round.(Int, range(1, nrow(df_norm_true), length=8))
+    for idx in sample_idxs
+        t = Float64(df_norm_true.time[idx])
+        p_true = SVector{3, Float64}(Float64(df_norm_true.sc1_pos_1[idx]), Float64(df_norm_true.sc1_pos_2[idx]), Float64(df_norm_true.sc1_pos_3[idx]))
+        v_true = SVector{3, Float64}(Float64(df_norm_true.sc1_vel_1[idx]), Float64(df_norm_true.sc1_vel_2[idx]), Float64(df_norm_true.sc1_vel_3[idx]))
+        p_false = SVector{3, Float64}(
+            interp_linear(df_norm_false.time, df_norm_false.sc1_pos_1, t),
+            interp_linear(df_norm_false.time, df_norm_false.sc1_pos_2, t),
+            interp_linear(df_norm_false.time, df_norm_false.sc1_pos_3, t)
+        )
+        v_false = SVector{3, Float64}(
+            interp_linear(df_norm_false.time, df_norm_false.sc1_vel_1, t),
+            interp_linear(df_norm_false.time, df_norm_false.sc1_vel_2, t),
+            interp_linear(df_norm_false.time, df_norm_false.sc1_vel_3, t)
+        )
+        @test norm(p_true - p_false) < 0.1
+        @test norm(v_true - v_false) < 1e-4
+    end
+end
+
+@testset "Normalize Flag Runtime Warning" begin
+    args_warn = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=true),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+
+    withenv("SPACEAGORA_WARN_NORMALIZE" => "1") do
+        _normalize_warning_emitted[] = false
+        @test_logs (:warn, r"normalize=true is legacy-only") run_simulation(args_warn)
+        @test _normalize_warning_emitted[] == true
+    end
+
+    withenv("SPACEAGORA_WARN_NORMALIZE" => "0") do
+        _normalize_warning_emitted[] = false
+        @test_logs run_simulation(args_warn)
+        @test _normalize_warning_emitted[] == false
+    end
+end
+
 @testset "Verbose Gating for Callback/Runtime Logs" begin
     settings_quiet = SimulationSettings(
         results=true,

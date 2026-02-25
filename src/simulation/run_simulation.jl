@@ -8,10 +8,30 @@ using CSV
 using DataFrames
 using Polyester
 
+const _normalize_warning_emitted = Ref(false)
+
+@inline _typed_normalize_warning_enabled() = get(ENV, "SPACEAGORA_WARN_NORMALIZE", "1") == "1"
+
+function _warn_legacy_normalize_flag!(args)
+    if !args.simulation_settings.normalize || !_typed_normalize_warning_enabled()
+        return nothing
+    end
+    if _normalize_warning_emitted[]
+        return nothing
+    end
+    _normalize_warning_emitted[] = true
+    @warn "SimulationSettings.normalize=true is legacy-only in typed run_simulation; propagation is always SI-native (m, s, kg). Set normalize=false to silence this warning."
+    return nothing
+end
+
 function run_simulation(args; isolate_state::Bool=true)
     # Isolate mutable campaign/model state by default so repeated/concurrent runs
     # do not alias shared in-memory objects.
     args = isolate_state ? deepcopy(args) : args
+
+    # Typed pipeline is SI-native (meters, seconds, kilograms). The
+    # `simulation_settings.normalize` field is retained for legacy compatibility.
+    _warn_legacy_normalize_flag!(args)
 
     # Set up the model and initial conditions
     initial_conditions = build_initial_conditions(args)

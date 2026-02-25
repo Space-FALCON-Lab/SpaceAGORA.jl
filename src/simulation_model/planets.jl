@@ -4,7 +4,7 @@ module Planets
     using StaticArrays
     using CSV
     using SPICE
-    export Earth, Mars
+    export Earth, Mars, Venus, Titan
     δ(i, j) = ==(i, j)
 
     @kwdef mutable struct TopographyHarmonicsWorkspace
@@ -75,6 +75,72 @@ module Planets
         polyfit_coeffs::SVector{21, Float64} = SVector{21, Float64}(-3.691310097181554e-58, 5.819173546214448e-54, -3.9285937578286423e-50, 1.4222601230188116e-46, -2.606951392190571e-43, 3.2943551967480965e-41, 9.394166176413728e-37, -1.7651753457891617e-33, -5.79069281873952e-31, 8.639557954110502e-27, -1.991207114225621e-23, 2.7207390647640917e-20, -2.5611296697872007e-17, 1.7386922029136165e-14, -8.619727907575625e-12, 3.1040218147963276e-09, -7.949080301839893e-07, 0.00013834108975291533, -0.014729001168514675, 0.6707044510751348, -19.414578139119545)
     end # struct Mars
 
+    @kwdef struct Venus <: AbstractPlanet
+        name::String = "Venus" # Name of the planet
+        Rp_e::Float64 = 6.0518e6 # Equatorial radius in meters
+        Rp_p::Float64 = 6.0518e6 # Polar radius in meters
+        Rp_m::Float64 = 6.0518e6 # Mean radius in meters
+        mass::Float64  = 4.8685e24 # Mass in kg
+        p::Float64 = 9.2e6 # Surface pressure in Pascals
+        k::Float64 = 1.896e-4 # Chapman heating coefficient, kg^0.5/m
+        ω::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, -2.99e-7) # Angular velocity vector in rad/s
+        μ::Float64 = 3.24858592e14 # Standard gravitational parameter in m^3/s^2
+        J2::Float64 = 4.458e-6 # J2 coefficient
+        g_ref::Float64 = 8.87 # Standard gravity in m/s^2
+        ρ_ref::Float64 = 65.0 # Sea level atmospheric density in kg/m^3
+        h_ref::Float64 = 0.0 # Reference altitude for exponential atmosphere in meters
+        H::Float64 = 15.9e3 # Scale height for exponential atmosphere in meters
+        R::Float64 = 188.92 # Specific gas constant in J/(kg*K)
+        T_ref::Float64 = 100.0 # Reference temperature in K
+        γ::Float64 = 1.2857 # Ratio of specific heats
+        T::Float64 = 100.0 # Surface temperature in K
+        μ_fluid::Float64 = 2.0e-6 # Dynamic viscosity in Pa*s
+        Lz::Float64 = -10.7e-3 # Vertical temperature gradient in K/m
+        α::Float64 = deg2rad(272.76) # Right-ascension of north pole
+        δ::Float64 = deg2rad(67.16) # Declination of north pole
+        J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}(
+            [0.9988399975 0.0481524597 0.0;
+             -0.0443769404 0.9205233406 0.3881590739;
+             0.0186908142 -0.3877088084 0.92159239]
+        )
+        L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
+        topography_workspace::TopographyHarmonicsWorkspace = TopographyHarmonicsWorkspace()
+        polyfit_coeffs::Vector{Float64} = [1.295014716586507e-57, -1.920381283790201e-53, 1.2024671159968765e-49, -3.931503383921753e-46, 5.985870736864543e-43, 2.115956905107091e-40, -2.4659597875857534e-36, 3.0591710987549437e-33, 3.951465781537392e-30, -1.8949093746237393e-26, 3.123829612747949e-23, -2.928033666820754e-20, 1.5168683041510048e-17, -1.5135241597177884e-15, -3.865230229956326e-12, 3.1328117105612896e-9, -1.2501690556294552e-6, 0.00028978339946121796, -0.03741075092352375, 2.149847471180469, -43.08275565785116]
+    end # struct Venus
+
+    @kwdef struct Titan <: AbstractPlanet
+        name::String = "Titan" # Name of the planet
+        Rp_e::Float64 = 2.575e6 # Equatorial radius in meters
+        Rp_p::Float64 = 2.575e6 # Polar radius in meters
+        Rp_m::Float64 = 2.575e6 # Mean radius in meters
+        mass::Float64  = 1.3452e23 # Mass in kg
+        p::Float64 = 146.7 # Surface pressure in Pascals
+        k::Float64 = 1.74e-4 # Chapman heating coefficient, kg^0.5/m
+        ω::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 7.37e-6) # Angular velocity vector in rad/s
+        μ::Float64 = 8.981e12 # Standard gravitational parameter in m^3/s^2
+        J2::Float64 = 3.15e-5 # J2 coefficient
+        g_ref::Float64 = 1.352 # Standard gravity in m/s^2
+        ρ_ref::Float64 = 5.3 # Sea level atmospheric density in kg/m^3
+        h_ref::Float64 = 0.0 # Reference altitude for exponential atmosphere in meters
+        H::Float64 = 21.0e3 # Scale height for exponential atmosphere in meters
+        R::Float64 = 290.0 # Specific gas constant in J/(kg*K)
+        T_ref::Float64 = 94.0 # Reference temperature in K
+        γ::Float64 = 1.3846 # Ratio of specific heats
+        T::Float64 = 94.0 # Surface temperature in K
+        μ_fluid::Float64 = 0.0 # Dynamic viscosity in Pa*s
+        Lz::Float64 = -1.352e-3 # Vertical temperature gradient in K/m
+        α::Float64 = deg2rad(39.4827) # Right-ascension of north pole
+        δ::Float64 = deg2rad(83.4279) # Declination of north pole
+        J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}(
+            [-0.6358452054 0.7718166069 0.0;
+             -0.7667447037 -0.6316668225 0.1144534171;
+             0.0883370481 0.0727746565 0.9934286161]
+        )
+        L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
+        topography_workspace::TopographyHarmonicsWorkspace = TopographyHarmonicsWorkspace()
+        polyfit_coeffs::Vector{Float64} = [1.7989756686197253e-58, -2.7298975030491325e-54, 1.7620522402686604e-50, -6.025021166267467e-47, 1.0056316643424087e-43, 9.494104496406468e-42, -3.8472088727076255e-37, 6.051435602297366e-34, 4.074478639170247e-31, -3.244699052533356e-27, 6.66877802035039e-24, -8.360025139024445e-21, 7.301165978344981e-18, -4.650857357165472e-15, 2.1978197729328097e-12, -7.705014392936314e-10, 1.9713879988437584e-7, -3.551889476633975e-5, 0.004248542489215875, -0.3277965440319509, 8.128293001726805]
+    end # struct Titan
+
     # Constructors
     function Earth(topo_harmonics_file::String, spice_path::String="GRAM_Data/SPICE")
         earth = Earth()
@@ -94,6 +160,27 @@ module Planets
         furnsh(spice_path * "/spk/planets/de440s.bsp")
         # calc_J2000_to_pci_rotation_matrix!(mars.α, mars.δ, mars)
         return mars
+    end
+
+    function Venus(topo_harmonics_file::String, spice_path::String="GRAM_Data/SPICE")
+        venus = Venus()
+        # TopographyHarmonicsWorkspace!(topo_harmonics_file, venus)
+        furnsh(spice_path * "/pck/pck00011.tpc")
+        furnsh(spice_path * "/lsk/naif0012.tls")
+        furnsh(spice_path * "/spk/planets/de440s.bsp")
+        # calc_J2000_to_pci_rotation_matrix!(venus.α, venus.δ, venus)
+        return venus
+    end
+
+    function Titan(topo_harmonics_file::String, spice_path::String="GRAM_Data/SPICE")
+        titan = Titan()
+        # TopographyHarmonicsWorkspace!(topo_harmonics_file, titan)
+        furnsh(spice_path * "/pck/pck00011.tpc")
+        furnsh(spice_path * "/lsk/naif0012.tls")
+        furnsh(spice_path * "/spk/planets/de440s.bsp")
+        furnsh(spice_path * "/spk/satellites/sat441.bsp")
+        # calc_J2000_to_pci_rotation_matrix!(titan.α, titan.δ, titan)
+        return titan
     end
 
     # Helper functions

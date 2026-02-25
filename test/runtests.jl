@@ -88,6 +88,39 @@ function make_spacecraft(;
     )
 end
 
+function make_single_link_spacecraft(;
+    ra_alt_m::Float64,
+    rp_alt_m::Float64,
+    i_deg::Float64=35.0,
+    ω_deg::Float64=40.0,
+    Ω_deg::Float64=10.0,
+    ν_deg::Float64=175.0
+)
+    root = Link{0}(root=true, m=500.0, ref_area=12.0)
+    ic = InitialCondition(
+        ra=EARTH.Rp_e + ra_alt_m,
+        rp=EARTH.Rp_e + rp_alt_m,
+        i=i_deg,
+        ω=ω_deg,
+        Ω=Ω_deg,
+        ν=ν_deg
+    )
+
+    return SpacecraftModel(
+        Joint[],
+        [root],
+        root,
+        true,
+        root.m,
+        0.0,
+        root.inertia,
+        0,
+        0,
+        ic,
+        1
+    )
+end
+
 function build_config(;
     spacecraft::SpacecraftModel,
     density_model,
@@ -252,6 +285,38 @@ end
 
 @testset "Drag Dissipates Specific Orbital Energy" begin
     sc = make_spacecraft(
+        ra_alt_m=220e3,
+        rp_alt_m=100e3,
+        i_deg=35.0,
+        ω_deg=40.0,
+        Ω_deg=10.0,
+        ν_deg=180.0
+    )
+    args = build_config(
+        spacecraft=sc,
+        density_model=ConstantDensityModel(1e-6, 240.0),
+        orientation_sim=false,
+        mission_time=900.0,
+        EI_km=140.0,
+        dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+        keplerian=false,
+        tolerances=IntegrationTolerances(
+            reltol_orbit=1e-8,
+            abstol_orbit=1e-8,
+            reltol_atmosphere=1e-8,
+            abstol_atmosphere=1e-8,
+            dt_max_orbit=5.0,
+            dt_max_atmosphere=0.2
+        )
+    )
+
+    df = run_case(args)
+    eps = specific_energy(df, EARTH.μ)
+    @test last(eps) < first(eps) - 1e5
+end
+
+@testset "Single-Link Drag Dissipates Specific Orbital Energy" begin
+    sc = make_single_link_spacecraft(
         ra_alt_m=220e3,
         rp_alt_m=100e3,
         i_deg=35.0,

@@ -19,6 +19,19 @@ end
 
 end
 
+function collect_and_reset_link_wrenches!(bodies)
+    # Collect into fresh vectors to avoid aliasing when there is only one link.
+    force_acc = MVector{3, Float64}(0.0, 0.0, 0.0)
+    torque_acc = MVector{3, Float64}(0.0, 0.0, 0.0)
+    @inbounds for b in bodies
+        force_acc .+= SVector{3, Float64}(b.net_force)
+        torque_acc .+= SVector{3, Float64}(b.net_torque)
+        b.net_force .= SVector{3, Float64}(0.0, 0.0, 0.0)
+        b.net_torque .= SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    return SVector{3, Float64}(force_acc), SVector{3, Float64}(torque_acc)
+end
+
 # Calculate force/torque functions
 function calcForceTorque(model::AerodynamicCoefficientConstant, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     m = param.m
@@ -136,9 +149,7 @@ function calcForceTorque(model::AerodynamicCoefficientConstant, x::AbstractVecto
     CL = CL / total_area
     CD = CD / total_area
 
-    force_ii = sum([b.net_force for b in bodies])
-
-    torque_ii = sum([b.net_torque for b in bodies])
+    force_ii, torque_ii = collect_and_reset_link_wrenches!(bodies)
 
     return force_ii, torque_ii
 end
@@ -295,14 +306,7 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     # cnf.β_body = β
     # cnf.α_body = α
 
-    force_ii = sum([b.net_force for b in bodies])
-
-    torque_ii = sum([b.net_torque for b in bodies])
-
-    for b in bodies
-        b.net_force .= SVector{3, Float64}(0.0, 0.0, 0.0) # Reset the net force on the spacecraft link for the next simulation step
-        b.net_torque .= SVector{3, Float64}(0.0, 0.0, 0.0) # Reset the net torque on the spacecraft link for the next simulation step
-    end
+    force_ii, torque_ii = collect_and_reset_link_wrenches!(bodies)
 
     return force_ii, torque_ii
 end
@@ -428,9 +432,7 @@ function calcForceTorque(model::AerodynamicCoefficientNoBallisticFlight, x::Abst
 
     # cnf.β = β
 
-    force_ii = sum([b.net_force for b in bodies])
-
-    torque_ii = sum([b.net_torque for b in bodies])
+    force_ii, torque_ii = collect_and_reset_link_wrenches!(bodies)
 
     return force_ii, torque_ii
 end

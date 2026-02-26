@@ -32,6 +32,8 @@ const P1_PATTERNS = [
     r"(?i)\bseverity\s*[:=]\s*P?1\b",
 ]
 
+const ALLOWLIST_ENTRY_RE = r"^(.*?)(?:\s+#\s*((?:owner|opened|expires)=[^\s#]+(?:\s+(?:owner|opened|expires)=[^\s#]+)*))?\s*$"
+
 struct P1Finding
     file::String
     line::Int
@@ -47,9 +49,11 @@ struct AllowlistEntry
     line::Int
 end
 
-function parse_allowlist_entry(line::String, line_no::Int)
-    parts = split(line, "#"; limit=2)
-    key = strip(parts[1])
+function parse_allowlist_entry(line::AbstractString, line_no::Int)
+    entry_match = match(ALLOWLIST_ENTRY_RE, line)
+    entry_match === nothing && error("Invalid allowlist metadata format at $ALLOWLIST_PATH:$line_no.")
+
+    key = strip(entry_match.captures[1])
     key_parts = split(key, "::"; limit=2)
     if length(key_parts) != 2 || isempty(strip(key_parts[1])) || isempty(strip(key_parts[2]))
         error("Invalid allowlist entry format at $ALLOWLIST_PATH:$line_no. Expected `path::exact_line`.")
@@ -59,11 +63,14 @@ function parse_allowlist_entry(line::String, line_no::Int)
     opened = nothing
     expires = nothing
 
-    if length(parts) == 2
-        metadata = strip(parts[2])
+    metadata = entry_match.captures[2]
+    if metadata !== nothing
+        seen_keys = Set{String}()
         for token in split(metadata)
             occursin("=", token) || continue
             k, v = split(token, "="; limit=2)
+            k in seen_keys && error("Duplicate allowlist metadata key at $ALLOWLIST_PATH:$line_no: $k")
+            push!(seen_keys, k)
             if k == "owner"
                 owner = v
             elseif k == "opened"

@@ -1,0 +1,245 @@
+ $INPUT
+  DataPath              = '../data'
+  SpicePath             = '../../SPICE'                                          
+  ListFileName          = 'mytraj_LIST'            
+  ColumnFileName        = 'mytraj_OUTPUT'          
+  EastLongitudePositive = 1   
+  IsPlanetoCentric = 1
+    
+  TimeFrame = 1
+  TimeScale = 1
+  Month     = 3
+  Day       = 25
+  Year      = 2020
+  Hour      = 12
+  Minute    = 30
+  Seconds   = 0.0
+
+  InitialRandomSeed        = 1001    
+  DensityPerturbationScale = 1.0   
+  EWWindPerturbationScale  = 1.0   
+  NSWindPerturbationScale  = 1.0   
+  MinimumRelativeStepSize  = 0.0
+
+  TrajectoryFileName = 'traj_data.txt' 
+  NumberOfPositions  = 0     
+  InitialHeight      = 0.0     
+  InitialLatitude    = 0.0   
+  InitialLongitude   = 0.0    
+  DeltaHeight        = 0.0    
+  DeltaLatitude      = 0.0     
+  DeltaLongitude     = 0.0     
+  DeltaTime          = 0.0
+
+  AuxiliaryAtmosphereFileName = 'null'
+  InnerRadius = 0.0
+  OuterRadius = 0.0
+
+  NumberOfMonteCarloRuns = 1    
+  MapYear            = 0
+  F107               = 68.0
+  HeightAboveSurface = 0.0
+  IsMolaHeights      = 1
+  ComputeMinMax      = 1
+  
+  PerturbationWaveLengthScale  = 1.0
+  MeanWindsScale               = 1.0
+  BoundaryLayerWindsScale      = 1.0
+  
+  OffsetModel          = 2
+  ConstantHeightOffset = 3.25
+  
+  ExosphericTemperatureOffset = 0.0 
+  ExosphericTemperatureFactor = 0.0 
+  
+  MGCMConstantDustLevel = 0.3
+  MGCMMinDustLevel      = 0.3
+  MGCMMaxDustLevel      = 1.0
+ 
+  DustNu       = 0.003
+  DustDiameter = 5.0
+  DustDensity  = 3000.0
+ 
+  StormLongitudeSun = 0.0
+  StormDuration     = 48.0
+  StormIntensity    = 0.0
+  StormMaxRadius    = 0.0
+  StormLatitude     = 0.0
+  StormLongitude    = 0.0
+ 
+  WaveDate        = 0.0
+  WaveMeanOffset  = 1.0
+  WaveAmplitude1  = 0.0
+  WavePhase1      = 0.0
+  WavePhase1Rate  = 0.0
+  WaveAmplitude2  = 0.0
+  WavePhase2      = 0.0
+  WavePhase2Rate  = 0.0
+  WaveAmplitude3  = 0.0
+  WavePhase3      = 0.0
+  WavePhase3Rate  = 0.0
+  WaveScale       = 20.0
+ 
+  FastModeOn        = 0
+  ExtraPrecision    = 0
+  UseLegacyOutputs  = 0 
+  DensityPrintScale = 0       
+
+ $END                
+
+ Explanation of variables:
+  DataPath       = Path to binary data for MGCM and TES models.
+  SpicePath      = Path to NAIF Spice data
+  SpiceLsk       = Optional override of the relative (to SpicePath) path to the Spice leapseconds LSK file.
+  SpicePck       = Optional override of the relative (to SpicePath) path to the Spice planetary constants PCK file.
+  SpiceMars      = Optional override of the relative (to SpicePath) path to the Spice Mars kernel.
+  ListFileName   = List file name
+  ColumnFileName = Output file name 
+  EastLongitudePositive = 0 for input and output West longitudes positive
+                          1 for East longitudes positive
+  IsPlanetoCentric      = 1 for Planeto-centric latitude and height input, 
+                          0 for Planeto-graphic latitude and height input
+
+  TimeFrame = 0 Planet event time (PET)
+              1 for time input as Earth-receive time (ERT)
+ 
+  TimeScale = 0 for Terrestrial (Dynamical) Time (TDT)
+              1 for time input as Coordinated Universal Time (UTC)
+              2 for Barycentric Dynamical Time (TDB)
+  Month     = month of year                         
+  Day       = day of month                    
+  Year      = year (4-digit, or 1970-2069 can be 2-digit)
+  Hour      = hour of day (meaning controlled by TimeFrame and TimeScale) 
+  Minute    = minute of hour (meaning controlled by TimeFrame and TimeScale)                                       
+  Seconds   = seconds of minute (meaning controlled by TimeFrame and TimeScale) 
+
+  InitialRandomSeed        = starting random number (0 - 2^24 = 16,777,216) 
+  DensityPerturbationScale = random perturbation scale factor for density (0 - 2)    
+  EWWindPerturbationScale  = random perturbation scale factor for east/west winds (0 - 2)    
+  NSWindPerturbationScale  = random perturbation scale factor for north/south winds (0 - 2)    
+  PerturbationScales       = sets all perturbation scale factors (0 - 2)    
+  MinimumRelativeStepSize  = Minimum relative step size for perturbations(0 - 1)
+                         0.0 means always update perturbations, 
+                         x.x means only update perturbations when relative step size > x.x
+
+  TrajectoryFileName = (Optional) Trajectory input file name 
+                       If present, then the values below are ignored 
+  NumberOfPositions  = number of positions to evaluate 
+  InitialHeight      = initial height (km)  
+  InitialLatitude    = initial latitude (N positive), degrees  
+  InitialLongitude   = initial longitude, degrees 
+                       (depends on EastLongitudePositive)
+  DeltaHeight        = height increment (km) between steps
+  DeltaLatitude      = latitude increment (deg) between steps        
+  DeltaLongitude     = longitude increment (deg) between steps
+                       (depends on EastLongitudePositive)      
+  DeltaTime          = time increment (seconds) between steps.
+                      
+
+  AuxiliaryAtmosphereFileName = (Optional) auxiliary profile input file name  
+  InnerRadius = Lat-lon radius within which weight for auxiliary profile is 1.0
+                (Use InnerRadius = 0.0 for no profile input)                   
+  OuterRadius = Lat-lon radius beyond which weight for auxiliary profile is 0.0       
+           
+  NumberOfMonteCarloRuns = the number of Monte Carlo runs             
+  
+  MapYear            =  1 or 2 for TES mapping year 1 or 2 GCM input data, or 0 for 
+                        Mars-GRAM 2001 GCM input data sets           
+  F107               =  10.7 cm solar flux (10**-22 W/cm**2 at 1 AU)
+  HeightAboveSurface =  height above surface (0-4500 m); use if InitialHeight <= -10. km
+  IsMolaHeights      =  1 for input heights relative to MOLA areoid,
+                        0 for input heights relative to reference ellipsoid
+  ComputeMinMax      =  1 for daily max/min data output; 0 for none
+
+  PerturbationWaveLengthScale  =  scale factor for perturbation wavelengths (0.1-10)
+  MeanWindsScale               =  scale factor for mean winds
+  BoundaryLayerWindsScale      =  scale factor for boundary layer slope winds (0 = none)
+
+  OffsetModel           =  0 for no Ls-dependent (Bougher) height offset term; 1
+                           means add Ls-dependent (Bougher) term, -A*Sin(Ls) (km),
+                           to constant term (ConstantHeightOffset) [offset  
+                           amplitude A = 2.5 for MapYear=0 or 0.5 for MapYear > 0]; 
+                           2 means use global mean height offset; 3 means use
+                           daily average height offset at local position; 4 means
+                           use height offset at current time and local position.
+                           Value of ConstantHeightOffset is ignored if ibougher = 2, 3, or 4.
+  ConstantHeightOffset  =  constant height offset (km) for MTGCM data or constant
+                           part of Ls-dependent (Bougher) height offset (0.0 means
+                           no constant offset).  Positive offset increases density,
+                           negative offset decreases density.
+  
+  ExosphericTemperatureOffset =  adjustment for exospheric temperature (K)
+  ExosphericTemperatureFactor =  adjustment factor for exospheric temperature
+
+  MGCMConstantDustLevel  =  Optical depth of background dust level (no time-developing
+                            dust storm, just uniformly mixed dust), 0.1 to 3.0, or use
+                            0 for assumed seasonal variation of background dust
+  MGCMMinDustLevel  =  Minimum seasonal dust level if input mgcmConstantDustLevel=0 (>=0.1)
+  MGCMMaxDustLevel  =  Maximum seasonal dust level if input mgcmConstantDustLevel=0 (<=1.0)
+
+  DustNu            =  Parameter for vertical distribution of dust density (Haberle
+                       et al., J. Geophys. Res., 104, 8957, 1999)
+  DustDiameter      =  Dust particle diameter (micrometers, assumed monodisperse)
+  DustDensity       =  Dust particle density (kg/m**3)
+
+  StormLongitudeSun =  starting Ls value (degrees) for dust storm (0 = none)
+  StormDuration     =  duration (in Ls degrees) for dust storm (default = 48)
+  StormIntensity    =  dust storm intensity (0.0 - 3.0)
+  StormMaxRadius    =  max. radius (km) of dust storm (0 or >10000 = global)
+  StormLatitude     =  Latitude (degrees) for center of dust storm
+  StormLongitude    =  Longitude (degrees) (West positive if EastLongitudePositive=0, or East
+                       positive if EastLongitudePositive=1) for center of dust storm
+
+  WaveFile        =  (Optional) file for time-dependent wave coefficient data.
+                     WaveFile contains time (sec) relative to start time, and
+                     wave model coefficients from the given time to the next time in the data file.
+                     Each line contains: WaveTime, WaveMeanOffset, WaveDate, WaveAmplitude1,
+                     WavePhase1, WavePhase1Rate, WaveAmplitude2, WavePhase2, WavePhase2Rate, 
+                     WaveAmplitude3, WavePhase3, WavePhase3Rate
+  WaveDate        =  Julian date for (primary) peak(s) of wave (0 for no traveling component) 
+  WaveMeanOffset  =  Mean term of longitude-dependent wave multiplier for density
+  WaveAmplitude1  =  Amplitude of wave-1 component of longitude-dependent wave
+                     multiplier for density
+  WavePhase1      =  Phase of wave-1 component of longitude-dependent wave
+                     multiplier (longitude, with West positive if EastLongitudePositive = 0,
+                     East positive if EastLongitudePositive = 1)
+  WavePhase1Rate  =  Rate of longitude movement (degrees per day) for wave-1 
+                     component (Westward positive if EastLongitudePositive = 0, Eastward 
+                     positive if EastLongitudePositive = 1)
+  WaveAmplitude2  =  Amplitude of wave-2 component of longitude-dependent wave
+                     multiplier for density
+  WavePhase2      =  Phase of wave-2 component of longitude-dependent wave
+                     multiplier (longitude, with West positive if EastLongitudePositive = 0,
+                     East positive if EastLongitudePositive = 1)
+  WavePhase2Rate  =  Rate of longitude movement (degrees per day) for wave-2 
+                     component (Westward positive if EastLongitudePositive = 0, Eastward 
+                     positive if EastLongitudePositive = 1)
+  WaveAmplitude3  =  Amplitude of wave-3 component of longitude-dependent wave
+                     multiplier for density
+  WavePhase3      =  Phase of wave-3 component of longitude-dependent wave
+                     multiplier (longitude, with West positive if EastLongitudePositive = 0,
+                     East positive if EastLongitudePositive = 1)
+  WavePhase3Rate  =  Rate of longitude movement (degrees per day) for wave-3 
+                     component (Westward positive if EastLongitudePositive = 0, Eastward 
+                     positive if EastLongitudePositive = 1)
+  WaveScale       =  Vertical scale (km) of longitude-dependent wave damping
+                     at altitudes below 100 km (10<=WaveScale<=10,000 km)
+
+  FastModeOn        = Flags use of faster ephemeris computations (less accurate)
+                      0 Most accurate ephemeris computations are used
+                      1 Faster computations with slight loss in accuracy
+  ExtraPrecision    = For the new column output format, this parameter 
+                      adds precision to all outputs.
+  UseLegacyOutputs  = Flags which outputs to generate.
+                      0 Use the new output formats.
+                      1 Use output formats closely matching those of the 
+					    legacy NeptuneGram.
+  DensityPrintScale = For legacy outputs only.
+                      0 regular SI units
+                      1 log-base-10 scale
+                      2 percentage deviations from Mean model
+                      3 SI units with density in kg/km**3 
+
+  EquatorialRadius   =  Equatorial radius (km) for reference ellipsoid
+  PolarRadius        =  Polar radius (km) for reference ellipsoid      
+  

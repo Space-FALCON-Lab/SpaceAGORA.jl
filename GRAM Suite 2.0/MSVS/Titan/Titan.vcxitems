@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <ItemsProjectGuid>{d5b43f21-80bc-449a-afbb-5b3e6edd2b07}</ItemsProjectGuid>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(MSBuildThisFileDirectory)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ProjectCapability Include="SourceItemsFromImports" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Titan\include\TitanAtmosphere.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Titan\include\TitanAtmosphere_C.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Titan\include\TitanCommon.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Titan\include\TitanGCM.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Titan\include\TitanGCMMid.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Titan\include\TitanGCMTerp.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Titan\include\TitanGCMThermos.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Titan\include\TitanInputParameters.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Titan\include\TitanNamelistReader.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Titan\include\TitanProfilePrinter.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Titan\include\Yelle.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\source\TitanAtmosphere.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\source\TitanAtmosphere_C.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\source\TitanCommon.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\source\TitanGCM.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\source\TitanGCMMid.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\source\TitanGCMTerp.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\source\TitanGCMTerpData.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\source\TitanGCMThermos.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\source\TitanInputParameters.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\source\TitanNamelistReader.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\source\TitanProfilePrinter.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\source\Yelle.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\source\YelleData.cpp" />
+  </ItemGroup>
+</Project>

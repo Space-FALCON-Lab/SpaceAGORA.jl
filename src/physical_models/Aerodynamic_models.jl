@@ -6,6 +6,80 @@ using SpecialFunctions
 const sqrt_π = sqrt(π)
 const inv_sqrt_π = 1 / sqrt(π)
 
+@inline function _parse_bool_env(name::String, default::Bool)::Bool
+    raw = lowercase(strip(get(ENV, name, default ? "1" : "0")))
+    if raw in ("1", "true", "yes", "on")
+        return true
+    elseif raw in ("0", "false", "no", "off")
+        return false
+    end
+    throw(ArgumentError("Invalid $name='$raw'. Use one of: 1/0, true/false, yes/no, on/off."))
+end
+
+@inline function _multibody_parallel_mode()::Symbol
+    mode = lowercase(strip(get(ENV, "SPACEAGORA_MULTIBODY_PARALLEL", "auto")))
+    if mode in ("off", "none", "serial", "0", "false", "no")
+        return :off
+    elseif mode in ("on", "thread", "threads", "1", "true", "yes")
+        return :on
+    elseif mode == "auto"
+        return :auto
+    end
+    throw(ArgumentError("Unsupported SPACEAGORA_MULTIBODY_PARALLEL='$mode'. Use one of: off, auto, on."))
+end
+
+@inline function _multibody_thread_threshold()::Int
+    raw = strip(get(ENV, "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD", "8"))
+    threshold = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_MULTIBODY_THREAD_THRESHOLD must be an integer, got '$raw'"))
+    end
+    return max(1, threshold)
+end
+
+@inline function _multibody_outer_parallel_hint()::Bool
+    # Explicit hint for disabling intra-satellite threading under outer parallel execution.
+    return _parse_bool_env("SPACEAGORA_OUTER_PARALLEL_ACTIVE", false)
+end
+
+@inline function _multibody_use_threads(num_items::Int; heavy_work::Bool=true)::Bool
+    if Threads.nthreads() <= 1 || num_items <= 1
+        return false
+    end
+    mode = _multibody_parallel_mode()
+    mode == :off && return false
+
+    if mode == :on
+        return true
+    end
+
+    if _multibody_outer_parallel_hint() &&
+       !_parse_bool_env("SPACEAGORA_MULTIBODY_PARALLEL_ALLOW_WITH_OUTER", false)
+        return false
+    end
+
+    if _parse_bool_env("SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY", true) && !heavy_work
+        return false
+    end
+
+    return num_items >= _multibody_thread_threshold()
+end
+
+@inline function _threadid_capacity()::Int
+    default_threads = try
+        Threads.nthreads(:default)
+    catch
+        Threads.nthreads()
+    end
+    interactive_threads = try
+        Threads.nthreads(:interactive)
+    catch
+        0
+    end
+    return max(Threads.maxthreadid(), default_threads + interactive_threads)
+end
+
 # Aerodynamic models
 @kwdef struct AerodynamicCoefficientConstant <: AbstractForceTorqueModel
 
@@ -214,29 +288,30 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     cross_pp_hat = cross(drag_pp_hat, lift_pp_hat) # Cross product of the drag and lift vectors in planet relative frame
     q = 0.5 * ρ * vel_pp_mag^2 # Dynamic pressure in planet relative frame, using the density from the shared buffer updated by the callback function
     vel_pi = orientation_sim ? planet.L_PI' * vel_pp_rw : SVector{3, Float64}(0.0, 0.0, 0.0)
-    
+
     CL, CD = 0.0, 0.0 # Initialize aerodynamic coefficients
     total_area = 0.0 # Initialize total area
+    θ_body = acos(clamp(vel_pp_rw[1] * vel_pp_rw_inv_mag, -1.0, 1.0))
+    use_threads = _multibody_use_threads(length(bodies); heavy_work=true)
 
     zero_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
-    # Determine angle of attack (α) and sideslip angle (β)
-    # Vehicle Aerodynamic Forces
-    # CL and CD
-    @inbounds for (i, b) in enumerate(bodies)
+
+    function compute_link_wrench!(idx::Int)
+        b = bodies[idx]
         if orientation_sim
             R = rotate_to_inertial(spacecraft, b, root_index) # Rotation matrix from the spacecraft link to the inertial frame
             body_frame_velocity = R' * vel_pi # Velocity of the spacecraft link in inertial frame
-            
+
             α_body = atan(body_frame_velocity[1], body_frame_velocity[3]) # Angle of attack in radians
             β_body = atan(body_frame_velocity[2], hypot(body_frame_velocity[1], body_frame_velocity[3])) # Sideslip angle in radians
             b.α = α_body
             b.β = β_body
-            b.θ = acos(clamp(vel_pp_rw[1] * vel_pp_rw_inv_mag, -1.0, 1.0)) # Elevation angle for the spacecraft link
+            b.θ = θ_body
         else
             # TODO: Change this so that it just uses above code even with orientation_sim = false
             if b.root
                 # if the body is the root body, then the angle of attack is 90 degrees
-                b.α = pi/2 # Angle of attack for the root body
+                b.α = pi / 2 # Angle of attack for the root body
             else
                 body_frame_velocity = rot(b.q) * SVector{3, Float64}(1.0, 0.0, 0.0) # Velocity of the spacecraft link in inertial frame
                 b.α = atan(body_frame_velocity[1], body_frame_velocity[3]) # Angle of attack for the spacecraft link
@@ -245,10 +320,8 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
         end
 
         # CL_body, CD_body = aerodynamic_coefficient_fM(α[i], m.body, T_p, S, m.aerodynamics, MonteCarlo)
-        CL_body, CD_body, CS_body, Cl_body, Cm_body, Cn_body = aerodynamic_coefficient_fM(b, T, S)
+        CL_body, CD_body, CS_body, _, _, _ = aerodynamic_coefficient_fM(b, T, S)
 
-        # println(" CL: ", CL_body, " CD: ", CD_body, " CS: ", CS_body, " α: ", rad2deg(α[i]), " β: ", rad2deg(β[i]))
-        
         drag_pp_body = q * CD_body * b.ref_area * drag_pp_hat                       # Planet relative drag force vector
         lift_pp_body = q * CL_body * b.ref_area * lift_pp_hat * cos(bank_angle)     # Planet relative lift force vector
 
@@ -262,18 +335,46 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
 
         drag_body = planet.L_PI' * drag_pp_body   # Inertial drag force vector
         lift_body = planet.L_PI' * lift_pp_body   # Inertial lift force vector
+        force_body = drag_body + lift_body + cross_body
 
-        # Update the force on the spacecraft link
-        b.net_force .+= drag_body + lift_body + cross_body # Update the force on the spacecraft link, inertial frame
-        # aero_torque = cnf.q * Cl_body * b.ref_area * b.dims[1] * SVector{3, Float64}(1.0, 0.0, 0.0) + # Aerodynamic roll torque, body frame
-        #               cnf.q * Cm_body * b.ref_area * b.dims[2] * SVector{3, Float64}(0.0, 1.0, 0.0) + # Aerodynamic pitch torque, body frame
-        #               cnf.q * Cn_body * b.ref_area * b.dims[3] * SVector{3, Float64}(0.0, 0.0, 1.0)   # Aerodynamic yaw torque, body frame
-        # b.net_torque .+= aero_torque # Update the torque on the spacecraft link, body frame
-        # b.net_torque .+= cross(b.r, rot_body_to_inertial' * (drag_body + lift_body + cross_body)) # Update the torque on the spacecraft link, body frame
-        # Update the total CL/CD
-        CL += CL_body * b.ref_area
-        CD += CD_body * b.ref_area
-        total_area += b.ref_area # Update the total area
+        return force_body, CL_body * b.ref_area, CD_body * b.ref_area, b.ref_area
+    end
+
+    force_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+
+    # Determine angle of attack (α) and sideslip angle (β)
+    # Vehicle Aerodynamic Forces
+    # CL and CD
+    if use_threads
+        n_threads = _threadid_capacity()
+        thread_force = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_threads]
+        thread_cl = zeros(Float64, n_threads)
+        thread_cd = zeros(Float64, n_threads)
+        thread_area = zeros(Float64, n_threads)
+
+        Threads.@threads for idx in eachindex(bodies)
+            tid = Threads.threadid()
+            force_body, cl_area, cd_area, area = compute_link_wrench!(idx)
+            thread_force[tid] .+= force_body
+            thread_cl[tid] += cl_area
+            thread_cd[tid] += cd_area
+            thread_area[tid] += area
+        end
+
+        @inbounds for tid in 1:n_threads
+            force_ii .+= thread_force[tid]
+            CL += thread_cl[tid]
+            CD += thread_cd[tid]
+            total_area += thread_area[tid]
+        end
+    else
+        @inbounds for idx in eachindex(bodies)
+            force_body, cl_area, cd_area, area = compute_link_wrench!(idx)
+            force_ii .+= force_body
+            CL += cl_area
+            CD += cd_area
+            total_area += area
+        end
     end
 
     # cnf.drag_pp = drag_pp
@@ -283,8 +384,10 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     # cnf.lift_ii = lift_ii
     
     # Normalize the aerodynamic coefficients
-    CL = CL / total_area
-    CD = CD / total_area
+    if total_area > 0.0
+        CL = CL / total_area
+        CD = CD / total_area
+    end
 
     # cnf.CL_current = CL
     # cnf.CD_current = CD
@@ -292,9 +395,7 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     # cnf.β_body = β
     # cnf.α_body = α
 
-    force_ii, torque_ii = collect_and_reset_link_wrenches!(bodies)
-
-    return force_ii, torque_ii
+    return SVector{3, Float64}(force_ii), SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
 function calcForceTorque(model::AerodynamicCoefficientNoBallisticFlight, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}

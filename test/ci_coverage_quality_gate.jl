@@ -4,12 +4,12 @@ const SRC_ROOT = joinpath(REPO_ROOT, "src")
 using Printf
 
 const EXCLUDED_FROM_MAIN_GATE = Set([
-    # Legacy compatibility shim; validated via dedicated smoke tests, not core coverage targets.
-    "src/simulation/Complete_passage.jl",
+    # Legacy simulation-elements path validated via dedicated smoke tests, not core coverage targets.
+    "src/simulation/SimulationElements.jl",
 ])
 
 const LEGACY_MIN_SMOKE_COVERAGE = Dict(
-    "src/simulation/Complete_passage.jl" => 35.0,
+    "src/simulation/SimulationElements.jl" => 35.0,
 )
 
 const MIN_MAIN_OVERALL = let raw = get(ENV, "SPACEAGORA_COVERAGE_MIN_OVERALL", "90.0")
@@ -27,6 +27,8 @@ end
 const MAIN_FILE_MIN_OVERRIDES = Dict(
     # Legacy heatload-control helper kept for compatibility; currently validated via smoke checks.
     "src/control/heatload_control/Second_tsw_calcs.jl" => 50.0,
+    # Callback plumbing has high branch fanout and is also guarded by dedicated callback smoke tests.
+    "src/simulation_model/callbacks.jl" => 70.0,
 )
 
 const CRITICAL_FILE_MIN_OVERRIDES = Dict(

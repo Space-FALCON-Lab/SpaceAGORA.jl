@@ -1,0 +1,72 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <ItemsProjectGuid>{98e32699-c622-48d3-b3f0-c124b5f6d294}</ItemsProjectGuid>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(MSBuildThisFileDirectory)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ProjectCapability Include="SourceItemsFromImports" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MarsAtmosphere.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MarsAtmosphereState.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MarsAtmosphere_C.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MarsCommon.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MarsDustModelBase.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MarsGCM.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MarsGCMBase.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MarsInputParameters.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MarsInterpolatorBase.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MarsNamelistReader.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MarsProfilePrinter.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MGCM.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MGCMDustModel.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MGCMInterpolator.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MGCMLowerInterpolator.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MGCMSurfaceInterpolator.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MGCMUpperInterpolator.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\MOLATopography.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\SlopeWindsModel.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\StewartModel.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\TesDustModel.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\TesGCM.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\TesInterpolator.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\TesLowerInterpolator.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\TesSurfaceInterpolator.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Mars\include\TesUpperInterpolator.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MarsAtmosphere.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MarsAtmosphereState.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MarsAtmosphere_C.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MarsCommon.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MarsDustModelBase.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MarsGCM.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MarsGCMBase.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MarsInputParameters.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MarsInterpolatorBase.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MarsNamelistReader.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MarsProfilePrinter.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MGCM.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MGCMDustModel.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MGCMInterpolator.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MGCMLowerInterpolator.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MGCMSurfaceInterpolator.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MGCMUpperInterpolator.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\MOLATopography.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\SlopeWindsModel.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\StewartModel.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\TesDustModel.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\TesGCM.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\TesInterpolator.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\TesLowerInterpolator.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\TesSurfaceInterpolator.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Mars\source\TesUpperInterpolator.cpp" />
+  </ItemGroup>
+</Project>

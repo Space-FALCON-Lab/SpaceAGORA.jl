@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <ItemsProjectGuid>{f861812b-48de-40e4-8ea6-e7cb986c972d}</ItemsProjectGuid>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(MSBuildThisFileDirectory)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ProjectCapability Include="SourceItemsFromImports" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Uranus\include\UranusAtmosphere.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Uranus\include\UranusAtmosphere_C.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Uranus\include\UranusCommon.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Uranus\include\UranusInputParameters.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Uranus\include\UranusModel.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Uranus\include\UranusNamelistReader.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Uranus\include\UranusProfilePrinter.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Uranus\source\UranusAtmosphere.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Uranus\source\UranusAtmosphere_C.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Uranus\source\UranusCommon.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Uranus\source\UranusInputParameters.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Uranus\source\UranusModel.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Uranus\source\UranusModelData.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Uranus\source\UranusNamelistReader.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Uranus\source\UranusProfilePrinter.cpp" />
+  </ItemGroup>
+</Project>

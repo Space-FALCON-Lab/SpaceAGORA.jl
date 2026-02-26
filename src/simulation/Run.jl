@@ -5,12 +5,12 @@ using .SimulationModel
 # include("../utils/Initial_cond_calc.jl")
 include("Set_and_run.jl")
 
-function run_orbitalelements(args::SimulationConfiguration; isolate_state::Bool=true)
-    return aerobraking_campaign(args; isolate_state=isolate_state)
+function execute_orbital_elements_campaign(args::SimulationConfiguration; isolate_state::Bool=true)
+    return execute_campaign(args; isolate_state=isolate_state)
 end
 
-function run_vgamma(args::SimulationConfiguration; isolate_state::Bool=true)
-    return aerobraking_campaign(args; isolate_state=isolate_state)
+function execute_vgamma_campaign(args::SimulationConfiguration; isolate_state::Bool=true)
+    return execute_campaign(args; isolate_state=isolate_state)
 end
 
 @inline function _legacy_run_planet_id(selector)::Int
@@ -45,7 +45,7 @@ function _legacy_typed_planet(selector, args)
     throw(ArgumentError("Unsupported legacy planet selector $(repr(selector))."))
 end
 
-function run_orbitalelements(args)
+function execute_orbital_elements_campaign(args)
     apoapsis, periapsis_alt, inclination, Ω, ω = collect(range(start=round(args[:ra_initial_a]), stop=round(args[:ra_initial_b]), step=round(args[:ra_step]))), 
                                                  collect(range(start=round(args[:hp_initial_a]), stop=round(args[:hp_initial_b]), step=round(args[:hp_step]))), 
                                                  args[:inclination], args[:Ω], args[:ω]
@@ -74,7 +74,7 @@ function run_orbitalelements(args)
                     args = MonteCarlo_setting_passage(mc_index, args)
                 end
 
-                aerobraking_campaign(args, state)
+                execute_campaign(args, state)
                 count = MonteCarlo_append(MC, args, count)
             end
 
@@ -85,7 +85,7 @@ function run_orbitalelements(args)
     end
 end
 
-function run_vgamma(args)
+function execute_vgamma_campaign(args)
     γ_0, v_0, inclination, Ω, ω = collect(range(start=round(args[:γ_initial_a]*100), stop=round(args[:γ_initial_a]*100), step=round(args[:γ_step]*100))), 
                                   collect(range(start=round(args[:v_initial_a]), stop=round(args[:v_initial_b]), step=round(args[:v_step]))),
                                   args[:inclination], args[:Ω], args[:ω]
@@ -114,7 +114,7 @@ function run_vgamma(args)
                     args = MonteCarlo_setting_passage(mc_index, args)
                 end
 
-                aerobraking_campaign(args, state)
+                execute_campaign(args, state)
                 count = MonteCarlo_append(MC, args, count)
             end
 
@@ -125,13 +125,13 @@ function run_vgamma(args)
     end
 end
 
-function run_orbitalelements_ae(args::SimulationConfiguration)
+function execute_ae_campaign(args::SimulationConfiguration)
     # a, e, inclination, Ω, ω = collect(range(start=round(args[:a_initial_a]), stop=round(args[:a_initial_b]), step=round(args[:a_step]))), 
     #                                              collect(range(start=args[:e_initial_a], stop=args[:e_initial_b], step=args[:e_step])), 
     #                                              args[:inclination], args[:Ω], args[:ω]
 
     # final_apoapsis = args[:final_apoapsis]
-    aerobraking_campaign(args)
+    execute_campaign(args)
     # planet = planet_data(args.planet)
     # for e_item in e
     #     for a_item in a
@@ -153,7 +153,7 @@ function run_orbitalelements_ae(args::SimulationConfiguration)
     #                 args = MonteCarlo_setting_passage(mc_index, args)
     #             end
     #             println("State: ", state)
-    #             aerobraking_campaign(args, state)
+    #             execute_campaign(args, state)
     #             # MonteCarlo_append(MC, args, count)
     #         end
 
@@ -164,15 +164,15 @@ function run_orbitalelements_ae(args::SimulationConfiguration)
     # end
 end
 
-function run_analysis(args::SimulationConfiguration; isolate_state::Bool=true)
+function execute_analysis(args::SimulationConfiguration; isolate_state::Bool=true)
     # args = def_miss(args)
-    aerobraking_campaign(args; isolate_state=isolate_state)
+    execute_campaign(args; isolate_state=isolate_state)
     # if args[:initial_condition_type] == 1 && (Bool(args[:drag_passage]) || args[:body_shape] == "Blunted Cone")
-    #     run_vgamma(args)
+    #     execute_vgamma_campaign(args)
     # elseif args[:initial_condition_type] == 0
-    #     run_orbitalelements(args)
+    #     execute_orbital_elements_campaign(args)
     # elseif args[:initial_condition_type] == 2
-    #     run_orbitalelements_ae(args)
+    #     execute_ae_campaign(args)
     # end
 
     # if Bool(args[:passresults])

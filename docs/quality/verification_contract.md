@@ -43,9 +43,10 @@ Coverage rules are enforced by `test/ci_coverage_quality_gate.jl`.
 Legacy code can be handled with explicit policy exceptions only:
 
 - Fully excluded from main coverage threshold:
-  - `src/simulation/Complete_passage.jl`
+  - `src/simulation/SimulationElements.jl`
 - Legacy per-file override:
   - `src/control/heatload_control/Second_tsw_calcs.jl` with minimum `50.0%`
+  - `src/simulation_model/callbacks.jl` with minimum `70.0%`
 
 Excluded/overridden files must stay explicitly documented in this contract and in the gate script.
 

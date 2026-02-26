@@ -1,0 +1,4 @@
+<map id="GRAM::Trajectory" name="GRAM::Trajectory">
+<area shape="rect" id="node1" title="Generate a trajectory profile." alt="" coords="5,81,131,109"/>
+<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_profile.html" title="An abstract base class for collecting GRAM inputs and outputs." alt="" coords="16,5,120,33"/>
+</map>

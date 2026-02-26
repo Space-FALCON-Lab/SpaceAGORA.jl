@@ -1,0 +1,6 @@
+<map id="GRAM::MinMaxModel" name="GRAM::MinMaxModel">
+<area shape="rect" id="node1" title="A three&#45;tiered height based atmosphere model base class." alt="" coords="88,81,237,109"/>
+<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_neptune_min_max.html" title="The min&#45;max data model of the Neptune atmosphere." alt="" coords="5,157,168,185"/>
+<area shape="rect" id="node4" href="$class_g_r_a_m_1_1_yelle.html" title="The Yelle model of a Titan Atmosphere." alt="" coords="191,157,289,185"/>
+<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_atmosphere.html" title="An abstract base class for all GRAM atmosphere models." alt="" coords="93,5,232,33"/>
+</map>

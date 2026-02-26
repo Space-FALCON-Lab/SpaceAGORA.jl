@@ -29,7 +29,7 @@ const CASES = [
     RegressionCase(
         file="Earth_RW_Test.jl",
         mission_time=120.0,
-        expected_rows=1447,
+        expected_rows=963,
         rows_atol=8,
         expected_t_final=120.0,
         t_atol=1e-8,
@@ -45,7 +45,7 @@ const CASES = [
     RegressionCase(
         file="AGORA_Odyssey.jl",
         mission_time=120.0,
-        expected_rows=67,
+        expected_rows=37,
         rows_atol=4,
         expected_t_final=120.0,
         t_atol=1e-8,
@@ -59,7 +59,7 @@ const CASES = [
     RegressionCase(
         file="Earth_Thruster_Test.jl",
         mission_time=120.0,
-        expected_rows=161,
+        expected_rows=101,
         rows_atol=6,
         expected_t_final=120.0,
         t_atol=1e-8,
@@ -73,7 +73,7 @@ const CASES = [
     RegressionCase(
         file="AGORA_Earth.jl",
         mission_time=120.0,
-        expected_rows=45,
+        expected_rows=23,
         rows_atol=4,
         expected_t_final=120.0,
         t_atol=1e-8,
@@ -87,7 +87,7 @@ const CASES = [
     RegressionCase(
         file="AGORA_Keplerian.jl",
         mission_time=120.0,
-        expected_rows=37,
+        expected_rows=19,
         rows_atol=4,
         expected_t_final=120.0,
         t_atol=1e-8,

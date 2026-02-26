@@ -1,0 +1,28 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <ItemsProjectGuid>{3219048a-47a4-4607-8c24-73bb009e5aec}</ItemsProjectGuid>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(MSBuildThisFileDirectory)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ProjectCapability Include="SourceItemsFromImports" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Earth\unittest\EarthAtmosphere_UnitTest.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Earth\unittest\EarthModel_UnitTest.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Earth\unittest\HWM_UnitTest.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Earth\unittest\JB2008_UnitTest.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Earth\unittest\MAP_UnitTest.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Earth\unittest\MERRA2_UnitTest.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Earth\unittest\MET_UnitTest.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Earth\unittest\MSIS_UnitTest.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Earth\unittest\NCEP_UnitTest.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Earth\unittest\RRA_UnitTest.cpp" />
+  </ItemGroup>
+</Project>

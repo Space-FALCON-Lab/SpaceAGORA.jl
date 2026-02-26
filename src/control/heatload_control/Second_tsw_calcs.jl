@@ -33,7 +33,7 @@ function second_time_switch_recalc_with_integration(ip, m, position, args, t, he
     time_switch = cnf_state.time_switch_2
 
     function func(t_s)
-        # y = asim(ip, m, t, current_position, args, 0, heat_rate_control, false, t_s, reevaluation_mode)
+        # y = execute_elements_case(ip, m, t, current_position, args, 0, heat_rate_control, false, t_s, reevaluation_mode)
         y = asim_ctrl(ip, m, t, current_position, args, 0, heat_rate_control, false, gram_atmosphere, t_s, reevaluation_mode; cnf=cnf_state)
 
         Q = y[end,end]

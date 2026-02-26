@@ -1,0 +1,47 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <ItemsProjectGuid>{29da259a-25b2-4b9e-ab36-77e968751342}</ItemsProjectGuid>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(MSBuildThisFileDirectory)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ProjectCapability Include="SourceItemsFromImports" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Venus\include\VenusAtmosphere.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Venus\include\VenusAtmosphere_C.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Venus\include\VenusCommon.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Venus\include\VenusInputParameters.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Venus\include\VenusIRA.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Venus\include\VenusIRAHigh.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Venus\include\VenusIRALow.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Venus\include\VenusIRAMid.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Venus\include\VenusIRAThermos.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Venus\include\VenusNamelistReader.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Venus\include\VenusProfilePrinter.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Venus\include\VenusTopography.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\source\VenusAtmosphere.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\source\VenusAtmosphere_C.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\source\VenusCommon.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\source\VenusInputParameters.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\source\VenusIRA.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\source\VenusIRAHigh.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\source\VenusIRAHighData.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\source\VenusIRALow.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\source\VenusIRALowData.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\source\VenusIRAMid.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\source\VenusIRAMidData.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\source\VenusIRAThermos.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\source\VenusNamelistReader.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\source\VenusProfilePrinter.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\source\VenusTopography.cpp" />
+  </ItemGroup>
+</Project>

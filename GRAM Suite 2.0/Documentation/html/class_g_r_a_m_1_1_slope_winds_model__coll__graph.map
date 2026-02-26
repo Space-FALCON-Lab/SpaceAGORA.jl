@@ -1,0 +1,4 @@
+<map id="GRAM::SlopeWindsModel" name="GRAM::SlopeWindsModel">
+<area shape="rect" id="node1" title="The Mars Slope Winds model." alt="" coords="5,97,179,125"/>
+<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_position.html" title="An input state for an Atmosphere model." alt="" coords="34,5,150,33"/>
+</map>

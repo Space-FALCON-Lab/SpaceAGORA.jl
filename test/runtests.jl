@@ -17,7 +17,7 @@ using .SimulationModel
 # run_simulation.jl expects quat_mult in the including scope.
 const quat_mult = SimulationModel.quat_mult
 include(joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"))
-# Legacy wrappers (run_analysis/aerobraking_campaign).
+# Simulation entry wrappers.
 include(joinpath(REPO_ROOT, "src", "simulation", "Run.jl"))
 
 struct ConstantDensityModel <: SimulationModel.AbstractDensityModel
@@ -438,11 +438,11 @@ function run_case_capture_stdout(args::SimulationConfiguration; expect_results_c
     end
 end
 
-function run_case_via_run_analysis(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
+function run_case_via_execute_analysis(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
             redirect_stdout(devnull) do
-                run_analysis(args; isolate_state=isolate_state)
+                execute_analysis(args; isolate_state=isolate_state)
             end
             if expect_results_csv
                 @test isfile("simulation_results.csv")
@@ -460,9 +460,9 @@ function run_case_via_campaign(args::SimulationConfiguration; expect_results_csv
         cd(tmp) do
             redirect_stdout(devnull) do
                 if state === nothing
-                    aerobraking_campaign(args; isolate_state=isolate_state)
+                    execute_campaign(args; isolate_state=isolate_state)
                 else
-                    aerobraking_campaign(args, state; isolate_state=isolate_state)
+                    execute_campaign(args, state; isolate_state=isolate_state)
                 end
             end
             if expect_results_csv
@@ -476,11 +476,15 @@ function run_case_via_campaign(args::SimulationConfiguration; expect_results_csv
     end
 end
 
-function run_case_via_run_orbitalelements(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
+function run_case_via_execute_campaign(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true, state=nothing)
     return mktempdir() do tmp
         cd(tmp) do
             redirect_stdout(devnull) do
-                run_orbitalelements(args; isolate_state=isolate_state)
+                if state === nothing
+                    execute_campaign(args; isolate_state=isolate_state)
+                else
+                    execute_campaign(args, state; isolate_state=isolate_state)
+                end
             end
             if expect_results_csv
                 @test isfile("simulation_results.csv")
@@ -493,11 +497,28 @@ function run_case_via_run_orbitalelements(args::SimulationConfiguration; expect_
     end
 end
 
-function run_case_via_run_vgamma(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
+function run_case_via_execute_orbital_elements_campaign(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
             redirect_stdout(devnull) do
-                run_vgamma(args; isolate_state=isolate_state)
+                execute_orbital_elements_campaign(args; isolate_state=isolate_state)
+            end
+            if expect_results_csv
+                @test isfile("simulation_results.csv")
+                return CSV.read("simulation_results.csv", DataFrame)
+            else
+                @test !isfile("simulation_results.csv")
+                return DataFrame()
+            end
+        end
+    end
+end
+
+function run_case_via_execute_vgamma_campaign(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
+    return mktempdir() do tmp
+        cd(tmp) do
+            redirect_stdout(devnull) do
+                execute_vgamma_campaign(args; isolate_state=isolate_state)
             end
             if expect_results_csv
                 @test isfile("simulation_results.csv")
@@ -692,6 +713,18 @@ end
     @test isdefined(sandbox, :run_simulation)
 end
 
+@testset "Simulation Filename Canonical Contract" begin
+    execution_path = joinpath(REPO_ROOT, "src", "simulation", "SimulationExecution.jl")
+    elements_path = joinpath(REPO_ROOT, "src", "simulation", "SimulationElements.jl")
+    legacy_execution_path = joinpath(REPO_ROOT, "src", "simulation", "Aerobraking.jl")
+    legacy_elements_path = joinpath(REPO_ROOT, "src", "simulation", "Complete_passage.jl")
+
+    @test isfile(execution_path)
+    @test isfile(elements_path)
+    @test !isfile(legacy_execution_path)
+    @test !isfile(legacy_elements_path)
+end
+
 @testset "Complete Passage Typed Entry Contract Smoke" begin
     module_name = gensym(:CompletePassageContractSandbox)
     Core.eval(Main, :(module $module_name end))
@@ -699,25 +732,25 @@ end
 
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
     Core.eval(sandbox, quote
-        const _asim_contract_isolate_state = Ref{Union{Nothing, Bool}}(nothing)
+        const _elements_contract_isolate_state = Ref{Union{Nothing, Bool}}(nothing)
         function run_simulation(args::SimulationModel.SimulationConfiguration; isolate_state::Bool=true)
-            _asim_contract_isolate_state[] = isolate_state
-            return :asim_forwarded
+            _elements_contract_isolate_state[] = isolate_state
+            return :elements_case_forwarded
         end
     end)
 
-    complete_src = read(joinpath(REPO_ROOT, "src", "simulation", "Complete_passage.jl"), String)
-    start_idx = findfirst("function asim(args::SimulationConfiguration; isolate_state::Bool=true)", complete_src)
-    next_idx = findfirst("function asim(initial_state, numberofpassage, args, params)", complete_src)
+    complete_src = read(joinpath(REPO_ROOT, "src", "simulation", "SimulationElements.jl"), String)
+    start_idx = findfirst("function execute_elements_case(args::SimulationConfiguration; isolate_state::Bool=true)", complete_src)
+    next_idx = findfirst("function execute_elements_case(initial_state, numberofpassage, args, params)", complete_src)
     @test start_idx !== nothing
     @test next_idx !== nothing
 
-    typed_asim_src = strip(complete_src[first(start_idx):(first(next_idx) - 1)])
-    @test occursin("return run_simulation(args; isolate_state=isolate_state)", typed_asim_src)
+    typed_elements_src = strip(complete_src[first(start_idx):(first(next_idx) - 1)])
+    @test occursin("return run_simulation(args; isolate_state=isolate_state)", typed_elements_src)
 
     Core.eval(sandbox, :(using .SimulationModel))
-    Base.include_string(sandbox, typed_asim_src)
-    @test isdefined(sandbox, :asim)
+    Base.include_string(sandbox, typed_elements_src)
+    @test isdefined(sandbox, :execute_elements_case)
 
     typed_args = Core.eval(sandbox, quote
         planet = SimulationModel.Earth("", joinpath(Main.REPO_ROOT, "GRAM_Data", "SPICE"))
@@ -752,9 +785,12 @@ end
         )
     end)
 
-    result = getfield(sandbox, :asim)(typed_args; isolate_state=false)
-    @test result == :asim_forwarded
-    @test Core.eval(sandbox, :(_asim_contract_isolate_state[])) == false
+    result = getfield(sandbox, :execute_elements_case)(typed_args; isolate_state=false)
+    @test result == :elements_case_forwarded
+    @test Core.eval(sandbox, :(_elements_contract_isolate_state[])) == false
+    result_execute = getfield(sandbox, :execute_elements_case)(typed_args; isolate_state=true)
+    @test result_execute == :elements_case_forwarded
+    @test Core.eval(sandbox, :(_elements_contract_isolate_state[])) == true
 end
 
 function ensure_legacy_targeting_loaded!()
@@ -795,11 +831,11 @@ function ensure_legacy_complete_passage_loaded!()
         return
     end
 
-    source = read(joinpath(REPO_ROOT, "src", "simulation", "Complete_passage.jl"), String)
-    typed_start = findfirst("function asim(args::SimulationConfiguration; isolate_state::Bool=true)", source)
-    legacy_start = findfirst("function asim(initial_state, numberofpassage, args, params)", source)
-    typed_start === nothing && throw(ArgumentError("Typed asim entrypoint missing in Complete_passage.jl"))
-    legacy_start === nothing && throw(ArgumentError("Legacy asim entrypoint missing in Complete_passage.jl"))
+    source = read(joinpath(REPO_ROOT, "src", "simulation", "SimulationElements.jl"), String)
+    typed_start = findfirst("function execute_elements_case(args::SimulationConfiguration; isolate_state::Bool=true)", source)
+    legacy_start = findfirst("function execute_elements_case(initial_state, numberofpassage, args, params)", source)
+    typed_start === nothing && throw(ArgumentError("Typed execute_elements_case entrypoint missing in SimulationElements.jl"))
+    legacy_start === nothing && throw(ArgumentError("Legacy execute_elements_case entrypoint missing in SimulationElements.jl"))
 
     typed_method = strip(source[first(typed_start):(first(legacy_start) - 1)])
     legacy_method = strip(source[first(legacy_start):end])
@@ -814,7 +850,7 @@ function ensure_legacy_complete_passage_full_loaded!()
         return
     end
 
-    Core.eval(LEGACY_COMPLETE_PASSAGE_FULL_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "simulation", "Complete_passage.jl"))))
+    Core.eval(LEGACY_COMPLETE_PASSAGE_FULL_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "simulation", "SimulationElements.jl"))))
     LEGACY_COMPLETE_PASSAGE_FULL_LOADED[] = true
 end
 
@@ -918,17 +954,17 @@ end
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
 
-    @test_throws ArgumentError sandbox.asim(args; isolate_state=true)
-    @test_throws UndefVarError sandbox.asim(nothing, 1, args, ())
+    @test_throws ArgumentError sandbox.execute_elements_case(args; isolate_state=true)
+    @test_throws UndefVarError sandbox.execute_elements_case(nothing, 1, args, ())
 end
 
 @testset "Complete Passage Full Include Smoke" begin
     ensure_legacy_complete_passage_full_loaded!()
     sandbox = LEGACY_COMPLETE_PASSAGE_FULL_SANDBOX
 
-    @test isdefined(sandbox, :asim)
-    @test hasmethod(sandbox.asim, Tuple{SimulationConfiguration})
-    @test hasmethod(sandbox.asim, Tuple{Any, Any, Any, Any})
+    @test isdefined(sandbox, :execute_elements_case)
+    @test hasmethod(sandbox.execute_elements_case, Tuple{SimulationConfiguration})
+    @test hasmethod(sandbox.execute_elements_case, Tuple{Any, Any, Any, Any})
 
     args = build_config(
         spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
@@ -940,14 +976,14 @@ end
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    @test_throws ArgumentError sandbox.asim(args; isolate_state=true)
-    @test_throws UndefVarError sandbox.asim(nothing, 1, args, ())
+    @test_throws ArgumentError sandbox.execute_elements_case(args; isolate_state=true)
+    @test_throws UndefVarError sandbox.execute_elements_case(nothing, 1, args, ())
 
     # Legacy entrypoint executes substantially deeper when `cnf` exists.
     # Keep this as a smoke-only assertion; it should still fail before integration
     # because typed SimulationConfiguration does not support Symbol indexing.
     Core.eval(sandbox, :(global cnf = Cnf()))
-    @test_throws MethodError sandbox.asim(nothing, 1, args, ())
+    @test_throws MethodError sandbox.execute_elements_case(nothing, 1, args, ())
 
     # Deeper legacy smoke path:
     # provide legacy-style globals + symbol-indexable args so execution moves
@@ -1003,7 +1039,7 @@ end
     end)
 
     err = try
-        sandbox.asim(nothing, 1, legacy_args, ())
+        sandbox.execute_elements_case(nothing, 1, legacy_args, ())
         nothing
     catch e
         e
@@ -1032,7 +1068,7 @@ end
         global solution = $legacy_solution
     end)
     ret_post = redirect_stdout(devnull) do
-        sandbox.asim(nothing, 1, merge(legacy_args, (print_res=true,)), ())
+        sandbox.execute_elements_case(nothing, 1, merge(legacy_args, (print_res=true,)), ())
     end
     @test ret_post == false
     @test Core.eval(sandbox, :(length(cnf.periapsis_list))) == 1
@@ -1085,7 +1121,7 @@ end
         global MonteCarlo = false
     end)
     err_phase = try
-        sandbox.asim(nothing, 1, legacy_args_phase, ())
+        sandbox.execute_elements_case(nothing, 1, legacy_args_phase, ())
         nothing
     catch e
         e
@@ -1623,7 +1659,7 @@ end
         end
     end)
 
-    # Cover typed asim dispatch wrapper in Complete_passage.jl.
+    # Cover typed execute_elements_case dispatch wrapper in SimulationElements.jl.
     typed_dispatch_ret = Core.eval(sandbox, quote
         run_simulation(args::SimulationConfiguration; isolate_state::Bool=true) = :legacy_complete_passage_typed_dispatch_ok
         planet = Earth("", joinpath(Main.REPO_ROOT, "GRAM_Data", "SPICE"))
@@ -1656,7 +1692,7 @@ end
             initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
             integration_tolerances=IntegrationTolerances(reltol_orbit=1e-8, abstol_orbit=1e-8)
         )
-        asim(args_typed)
+        execute_elements_case(args_typed)
     end)
     @test typed_dispatch_ret == :legacy_complete_passage_typed_dispatch_ok
 
@@ -1892,10 +1928,10 @@ end
 
         ret = try
             if cov_debug_output
-                Base.invokelatest(sandbox.asim, legacy_initial_state, 1, legacy_args, ())
+                Base.invokelatest(sandbox.execute_elements_case, legacy_initial_state, 1, legacy_args, ())
             else
                 redirect_stdout(devnull) do
-                    Base.invokelatest(sandbox.asim, legacy_initial_state, 1, legacy_args, ())
+                    Base.invokelatest(sandbox.execute_elements_case, legacy_initial_state, 1, legacy_args, ())
                 end
             end
         catch e
@@ -3934,6 +3970,344 @@ end
         control_cbs[1].affect!.affect!(integrator_control)
     end
     @test control_model.hits == [1, 1]
+
+    requires_density = SimulationModel.SimulationCallbacks._requires_density_callback
+    requires_orbit_end = SimulationModel.SimulationCallbacks._requires_orbit_end_callback
+    requires_drag_state = SimulationModel.SimulationCallbacks._requires_drag_state_callback
+    density_use_threads = SimulationModel.SimulationCallbacks._density_callback_use_threads
+    control_use_threads = SimulationModel.SimulationCallbacks._control_callback_use_threads
+
+    @test requires_density((InverseSquaredGravityModel(),), args_base) == false
+    @test requires_density((InverseSquaredGravityModel(), AerodynamicCoefficientfM()), args_base) == true
+    @test requires_density((InverseSquaredGravityModel(),), args_drag) == true
+    @test requires_orbit_end(args_base) == false
+    @test requires_orbit_end(args_orbits) == true
+    @test requires_drag_state((InverseSquaredGravityModel(),), args_base) == false
+    @test requires_drag_state((InverseSquaredGravityModel(), AerodynamicCoefficientfM()), args_drag) == true
+
+    has_worker_threads = Threads.nthreads() > 1
+    withenv(
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "off",
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1"
+    ) do
+        @test density_use_threads(args_control, 8) == false
+    end
+    withenv(
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1"
+    ) do
+        @test density_use_threads(args_control, 8) == has_worker_threads
+    end
+    withenv(
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "on",
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "64"
+    ) do
+        @test density_use_threads(args_control, 2) == has_worker_threads
+    end
+
+    control_thruster = BaseThrusterModel(
+        thrust=[0.5, 0.6],
+        direction=[0.0, π],
+        Δv=[0.0, 0.0],
+        start_burn_time=[0.0, 0.0],
+        stop_burn_time=[10.0, 10.0],
+        Isp=[300.0, 300.0]
+    )
+    withenv(
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "off",
+        "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "1"
+    ) do
+        @test control_use_threads(control_thruster, 8, false) == false
+    end
+    withenv(
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "1"
+    ) do
+        @test control_use_threads(control_thruster, 8, false) == has_worker_threads
+        @test control_use_threads(control_thruster, 8, true) == false
+    end
+
+    n_parallel_sats = 4
+    threaded_spacecraft = [
+        make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0 - 5.0 * (k - 1))
+        for k in 1:n_parallel_sats
+    ]
+    threaded_control = CountingControlModel(zeros(Int, n_parallel_sats))
+    args_control_parallel = build_config_multi(
+        spacecraft=threaded_spacecraft,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        control_effectors=(threaded_control,),
+        control_rates=[1.0],
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p_control_parallel = ODEParams{n_parallel_sats}(args=args_control_parallel)
+    u_control_parallel = build_initial_conditions(args_control_parallel)
+    integrator_control_parallel = MockCallbackIntegrator(
+        p_control_parallel,
+        u_control_parallel,
+        0.0,
+        MockCallbackOpts(1.0, 1e-8, 1e-8),
+        1,
+        Inf
+    )
+    withenv(
+        "SPACEAGORA_DEV_HOT_RELOAD" => "0",
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "on",
+        "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1"
+    ) do
+        control_cbs_parallel = SimulationModel.SimulationCallbacks.get_control_callbacks(
+            n_parallel_sats,
+            args_control_parallel
+        )
+        control_cbs_parallel[1].affect!.affect!(integrator_control_parallel)
+    end
+    @test threaded_control.hits == ones(Int, n_parallel_sats)
+
+    args_density_parallel = build_config_multi(
+        spacecraft=threaded_spacecraft,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p_density_parallel = ODEParams{n_parallel_sats}(args=args_density_parallel)
+    u_density_parallel = build_initial_conditions(args_density_parallel)
+    integrator_density_parallel = MockCallbackIntegrator(
+        p_density_parallel,
+        u_density_parallel,
+        0.0,
+        MockCallbackOpts(1.0, 1e-8, 1e-8),
+        1,
+        Inf
+    )
+    withenv(
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "on",
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1"
+    ) do
+        density_cb_parallel = SimulationModel.SimulationCallbacks.get_density_callback(
+            n_parallel_sats,
+            args_density_parallel
+        )
+        density_cb_parallel.affect!(integrator_density_parallel)
+    end
+    @test all(isfinite, p_density_parallel.shared_buffers.densities)
+    @test all(ρ -> ρ >= 0.0, p_density_parallel.shared_buffers.densities)
+end
+
+@testset "Callback Env Helper Branch Coverage" begin
+    callbacks = SimulationModel.SimulationCallbacks
+
+    @test callbacks._parse_bool_env("SPACEAGORA_CB_TEST_BOOL", false) == false
+    withenv("SPACEAGORA_CB_TEST_BOOL" => "yes") do
+        @test callbacks._parse_bool_env("SPACEAGORA_CB_TEST_BOOL", false) == true
+    end
+    withenv("SPACEAGORA_CB_TEST_BOOL" => "off") do
+        @test callbacks._parse_bool_env("SPACEAGORA_CB_TEST_BOOL", true) == false
+    end
+    withenv("SPACEAGORA_CB_TEST_BOOL" => "invalid") do
+        @test_throws ArgumentError callbacks._parse_bool_env("SPACEAGORA_CB_TEST_BOOL", false)
+    end
+
+    withenv("SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "off") do
+        @test callbacks._density_callback_parallel_mode() == :off
+    end
+    withenv("SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "on") do
+        @test callbacks._density_callback_parallel_mode() == :on
+    end
+    withenv("SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto") do
+        @test callbacks._density_callback_parallel_mode() == :auto
+    end
+    withenv("SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "invalid") do
+        @test_throws ArgumentError callbacks._density_callback_parallel_mode()
+    end
+
+    withenv("SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "4") do
+        @test callbacks._density_callback_thread_threshold() == 4
+    end
+    withenv("SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "0") do
+        @test callbacks._density_callback_thread_threshold() == 1
+    end
+    withenv("SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "oops") do
+        @test_throws ArgumentError callbacks._density_callback_thread_threshold()
+    end
+
+    withenv("SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "off") do
+        @test callbacks._control_callback_parallel_mode() == :off
+    end
+    withenv("SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "on") do
+        @test callbacks._control_callback_parallel_mode() == :on
+    end
+    withenv("SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto") do
+        @test callbacks._control_callback_parallel_mode() == :auto
+    end
+    withenv("SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "invalid") do
+        @test_throws ArgumentError callbacks._control_callback_parallel_mode()
+    end
+
+    withenv("SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "4") do
+        @test callbacks._control_callback_thread_threshold() == 4
+    end
+    withenv("SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "0") do
+        @test callbacks._control_callback_thread_threshold() == 1
+    end
+    withenv("SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "oops") do
+        @test_throws ArgumentError callbacks._control_callback_thread_threshold()
+    end
+
+    @test callbacks.density_model_threadsafe(NoAtmosphereModel()) == true
+    @test callbacks.density_model_threadsafe(ConstantDensityModel(1e-6, 220.0)) == false
+
+    thruster_model = make_base_thruster_model(thrust=0.1, Δv=0.0, start_burn_time=0.0, stop_burn_time=1.0)
+    @test callbacks.control_model_threadsafe(thruster_model) == true
+    @test callbacks.control_model_threadsafe(CountingControlModel([0])) == false
+end
+
+@testset "Coverage Threaded Probe Driver" begin
+    if Base.JLOptions().code_coverage == 0
+        @test true
+    else
+        probe_script = joinpath(REPO_ROOT, "test", "coverage_threaded_probes.jl")
+        cmd = `$(Base.julia_cmd()) --startup-file=no --depwarn=error --project=$(REPO_ROOT) --code-coverage=user --threads=2 $(probe_script)`
+        cmd = addenv(
+            cmd,
+            "SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0",
+            "SPACEAGORA_WARN_NORMALIZE" => "0"
+        )
+
+        output = IOBuffer()
+        proc = run(pipeline(ignorestatus(cmd), stdout=output, stderr=output))
+        text = String(take!(output))
+        if !success(proc)
+            println(text)
+        end
+
+        @test success(proc)
+        @test occursin("coverage_threaded_probes_ok", text)
+    end
+end
+
+@testset "Multibody Parallel Policy Gates" begin
+    use_threads = SimulationModel.DynamicEffectors._multibody_use_threads
+    has_worker_threads = Threads.nthreads() > 1
+
+    withenv(
+        "SPACEAGORA_MULTIBODY_PARALLEL" => "auto",
+        "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1"
+    ) do
+        @test use_threads(64) == false
+    end
+
+    withenv(
+        "SPACEAGORA_MULTIBODY_PARALLEL" => "auto",
+        "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "2",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0"
+    ) do
+        @test use_threads(64) == has_worker_threads
+    end
+
+    withenv(
+        "SPACEAGORA_MULTIBODY_PARALLEL" => "on",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1"
+    ) do
+        @test use_threads(64) == has_worker_threads
+    end
+end
+
+@testset "Aerodynamic Helper Branch Coverage" begin
+    dynamic_effectors = SimulationModel.DynamicEffectors
+
+    @test dynamic_effectors._parse_bool_env("SPACEAGORA_TEST_BOOL_PARSE", false) == false
+    withenv("SPACEAGORA_TEST_BOOL_PARSE" => "yes") do
+        @test dynamic_effectors._parse_bool_env("SPACEAGORA_TEST_BOOL_PARSE", false) == true
+    end
+    withenv("SPACEAGORA_TEST_BOOL_PARSE" => "off") do
+        @test dynamic_effectors._parse_bool_env("SPACEAGORA_TEST_BOOL_PARSE", true) == false
+    end
+    withenv("SPACEAGORA_TEST_BOOL_PARSE" => "invalid") do
+        @test_throws ArgumentError dynamic_effectors._parse_bool_env("SPACEAGORA_TEST_BOOL_PARSE", false)
+    end
+
+    withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "off") do
+        @test dynamic_effectors._multibody_parallel_mode() == :off
+    end
+    withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "on") do
+        @test dynamic_effectors._multibody_parallel_mode() == :on
+    end
+    withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "auto") do
+        @test dynamic_effectors._multibody_parallel_mode() == :auto
+    end
+    withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "invalid") do
+        @test_throws ArgumentError dynamic_effectors._multibody_parallel_mode()
+    end
+
+    withenv("SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "4") do
+        @test dynamic_effectors._multibody_thread_threshold() == 4
+    end
+    withenv("SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "0") do
+        @test dynamic_effectors._multibody_thread_threshold() == 1
+    end
+    withenv("SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "oops") do
+        @test_throws ArgumentError dynamic_effectors._multibody_thread_threshold()
+    end
+
+    withenv("SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1") do
+        @test dynamic_effectors._multibody_outer_parallel_hint() == true
+    end
+    withenv("SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0") do
+        @test dynamic_effectors._multibody_outer_parallel_hint() == false
+    end
+    withenv("SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "oops") do
+        @test_throws ArgumentError dynamic_effectors._multibody_outer_parallel_hint()
+    end
+
+    @test dynamic_effectors._multibody_use_threads(1) == false
+    if Threads.nthreads() > 1
+        withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "on") do
+            @test dynamic_effectors._multibody_use_threads(64) == true
+        end
+        withenv(
+            "SPACEAGORA_MULTIBODY_PARALLEL" => "auto",
+            "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "2",
+            "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+            "SPACEAGORA_MULTIBODY_PARALLEL_ALLOW_WITH_OUTER" => "0"
+        ) do
+            @test dynamic_effectors._multibody_use_threads(64) == false
+        end
+        withenv(
+            "SPACEAGORA_MULTIBODY_PARALLEL" => "auto",
+            "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "2",
+            "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
+            "SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY" => "1"
+        ) do
+            @test dynamic_effectors._multibody_use_threads(64; heavy_work=false) == false
+        end
+    end
+
+    @test dynamic_effectors._threadid_capacity() >= Threads.maxthreadid()
+
+    body_a = Link{0}(root=true)
+    body_b = Link{0}(root=false)
+    body_a.net_force .= SVector{3, Float64}(1.0, 2.0, 3.0)
+    body_a.net_torque .= SVector{3, Float64}(4.0, 5.0, 6.0)
+    body_b.net_force .= SVector{3, Float64}(-0.5, 0.0, 0.5)
+    body_b.net_torque .= SVector{3, Float64}(1.0, -1.0, 0.0)
+    force_sum, torque_sum = dynamic_effectors.collect_and_reset_link_wrenches!([body_a, body_b])
+
+    @test force_sum == SVector{3, Float64}(0.5, 2.0, 3.5)
+    @test torque_sum == SVector{3, Float64}(5.0, 4.0, 6.0)
+    @test body_a.net_force == SVector{3, Float64}(0.0, 0.0, 0.0)
+    @test body_a.net_torque == SVector{3, Float64}(0.0, 0.0, 0.0)
+    @test body_b.net_force == SVector{3, Float64}(0.0, 0.0, 0.0)
+    @test body_b.net_torque == SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
 @testset "Legacy Monte Carlo Helpers Smoke" begin
@@ -4516,7 +4890,7 @@ end
     )
 
     df_direct = run_case_silent(args)
-    df_wrapper = run_case_via_run_analysis(args)
+    df_wrapper = run_case_via_execute_analysis(args)
 
     @test nrow(df_direct) == nrow(df_wrapper)
     @test nrow(df_wrapper) > 10
@@ -4561,7 +4935,7 @@ end
     mktempdir() do tmp
         cd(tmp) do
             redirect_stdout(devnull) do
-                run_analysis(args_no_csv)
+                execute_analysis(args_no_csv)
             end
             @test isfile("simulation_results.csv")
             @test isfile(joinpath("output", "results.feather"))
@@ -4587,7 +4961,7 @@ end
         simulation_settings=settings_no_results,
         tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
     )
-    _ = run_case_via_run_analysis(args_no_results; expect_results_csv=false)
+    _ = run_case_via_execute_analysis(args_no_results; expect_results_csv=false)
 
     settings_verbose = SimulationSettings(
         results=true,
@@ -4616,7 +4990,7 @@ end
             output = ""
             mktemp() do path, io
                 redirect_stdout(io) do
-                    run_analysis(args_verbose)
+                    execute_analysis(args_verbose)
                 end
                 flush(io)
                 seekstart(io)
@@ -4677,19 +5051,24 @@ end
     end
 
     df_direct = run_case_silent(args; isolate_state=false)
-    df_analysis = run_case_via_run_analysis(args; isolate_state=false)
+    df_analysis = run_case_via_execute_analysis(args; isolate_state=false)
     df_campaign = run_case_via_campaign(args; isolate_state=false)
     df_campaign_with_state = run_case_via_campaign(args; isolate_state=false, state=Dict(:legacy => true))
-    df_run_oe = run_case_via_run_orbitalelements(args; isolate_state=false)
-    df_run_vg = run_case_via_run_vgamma(args; isolate_state=false)
+    df_execute_campaign = run_case_via_execute_campaign(args; isolate_state=false)
+    df_execute_campaign_with_state = run_case_via_execute_campaign(args; isolate_state=false, state=Dict(:legacy => true))
+    df_run_oe = run_case_via_execute_orbital_elements_campaign(args; isolate_state=false)
+    df_run_vg = run_case_via_execute_vgamma_campaign(args; isolate_state=false)
 
     assert_df_parity(df_direct, df_analysis)
     assert_df_parity(df_direct, df_campaign)
     assert_df_parity(df_direct, df_campaign_with_state)
+    assert_df_parity(df_direct, df_execute_campaign)
+    assert_df_parity(df_direct, df_execute_campaign_with_state)
     assert_df_parity(df_direct, df_run_oe)
     assert_df_parity(df_direct, df_run_vg)
 
-    @test_throws ArgumentError aerobraking_campaign(Dict{Symbol, Any}(:foo => :bar))
+    @test_throws ArgumentError execute_campaign(Dict{Symbol, Any}(:foo => :bar))
+    @test hasmethod(execute_case, Tuple{SimulationConfiguration, String, String})
 end
 
 @testset "Units/Normalization Consistency Audit" begin
@@ -4700,7 +5079,7 @@ end
     end
 
     run_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"), String))
-    complete_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "Complete_passage.jl"), String))
+    complete_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "SimulationElements.jl"), String))
 
     # Typed path should stay SI-native; legacy path still carries DU/TU/MU normalization.
     @test !occursin("cnf.DU", run_src)

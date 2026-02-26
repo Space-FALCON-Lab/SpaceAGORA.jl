@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <ItemsProjectGuid>{0c10eb03-a032-45e0-a9a6-8a2db15bc638}</ItemsProjectGuid>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(MSBuildThisFileDirectory)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ProjectCapability Include="SourceItemsFromImports" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\unittest\VenusAtmosphere_UnitTest.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\unittest\VenusIRA_UnitTest.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Venus\unittest\VenusTopography_UnitTest.cpp" />
+  </ItemGroup>
+</Project>

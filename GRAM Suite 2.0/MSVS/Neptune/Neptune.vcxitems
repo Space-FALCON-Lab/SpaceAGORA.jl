@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <ItemsProjectGuid>{dd091041-ba31-43c2-89ca-f5547698a000}</ItemsProjectGuid>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(MSBuildThisFileDirectory)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ProjectCapability Include="SourceItemsFromImports" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Neptune\source\NeptuneAtmosphere.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Neptune\source\NeptuneAtmosphere_C.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Neptune\source\NeptuneCommon.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Neptune\source\NeptuneInputParameters.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Neptune\source\NeptuneMinMax.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Neptune\source\NeptuneMinMaxData.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Neptune\source\NeptuneNamelistReader.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Neptune\source\NeptuneProfilePrinter.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Neptune\include\NeptuneAtmosphere.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Neptune\include\NeptuneAtmosphere_C.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Neptune\include\NeptuneCommon.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Neptune\include\NeptuneInputParameters.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Neptune\include\NeptuneMinMax.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Neptune\include\NeptuneNamelistReader.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Neptune\include\NeptuneProfilePrinter.h" />
+  </ItemGroup>
+</Project>

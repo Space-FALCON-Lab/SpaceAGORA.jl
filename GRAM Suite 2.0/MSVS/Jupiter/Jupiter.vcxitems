@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <ItemsProjectGuid>{fb294e1a-7615-4abe-a034-65e05c844769}</ItemsProjectGuid>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(MSBuildThisFileDirectory)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ProjectCapability Include="SourceItemsFromImports" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Jupiter\source\JupiterAtmosphere.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Jupiter\source\JupiterAtmosphere_C.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Jupiter\source\JupiterCommon.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Jupiter\source\JupiterInputParameters.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Jupiter\source\JupiterModel.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Jupiter\source\JupiterModelData.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Jupiter\source\JupiterNamelistReader.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Jupiter\source\JupiterProfilePrinter.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Jupiter\include\JupiterAtmosphere.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Jupiter\include\JupiterAtmosphere_C.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Jupiter\include\JupiterCommon.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Jupiter\include\JupiterInputParameters.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Jupiter\include\JupiterModel.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Jupiter\include\JupiterNamelistReader.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\..\Jupiter\include\JupiterProfilePrinter.h" />
+  </ItemGroup>
+</Project>

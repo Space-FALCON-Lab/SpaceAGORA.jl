@@ -1,0 +1,4 @@
+<map id="GRAM::EphemerisProfile" name="GRAM::EphemerisProfile">
+<area shape="rect" id="node1" title="Generate a profile using a sweep of ephemeris values." alt="" coords="5,81,172,109"/>
+<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_profile.html" title="An abstract base class for collecting GRAM inputs and outputs." alt="" coords="36,5,141,33"/>
+</map>

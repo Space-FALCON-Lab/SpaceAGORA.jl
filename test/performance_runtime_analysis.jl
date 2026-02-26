@@ -140,12 +140,145 @@ end
 
 @inline _threads_or_none_backend()::Symbol = perf_parallel_enabled() ? :threads : :none
 
-@inline function auto_backend_for_case(case::BenchmarkCase)::Symbol
+Base.@kwdef struct ParallelPriorityPlan
+    outer_route::Symbol = :none
+    density_mode::String = "off"
+    control_mode::String = "off"
+    multibody_mode::String = "off"
+end
+
+@inline function _parse_positive_int_env(name::String, default::Int)::Int
+    raw = strip(get(ENV, name, string(default)))
+    value = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("$name must be an integer, got '$raw'"))
+    end
+    return max(1, value)
+end
+
+@inline function _priority_inner_sat_threshold()::Int
+    return _parse_positive_int_env("SPACEAGORA_PERF_PRIORITY_INNER_SAT_THRESHOLD", 8)
+end
+
+@inline function _priority_inner_link_threshold()::Int
+    return _parse_positive_int_env("SPACEAGORA_PERF_PRIORITY_INNER_LINK_THRESHOLD", 12)
+end
+
+@inline function _machine_parallel_class()::Symbol
+    cpu_threads = Sys.CPU_THREADS
+    if cpu_threads >= 24
+        return :large
+    elseif cpu_threads >= 12
+        return :medium
+    end
+    return :small
+end
+
+@inline function _total_links(case::BenchmarkCase)::Int
+    total = 0
+    @inbounds for sc in case.args_template.dynamics_model.spacecraft
+        total += length(sc.links)
+    end
+    return total
+end
+
+@inline function _has_atmo_dynamic_effector(effectors::Tuple)::Bool
+    @inbounds for effector in effectors
+        if effector isa AerodynamicCoefficientConstant || effector isa AerodynamicCoefficientfM || effector isa AerodynamicCoefficientNoBallisticFlight
+            return true
+        end
+    end
+    return false
+end
+
+@inline function _has_nbody_dynamic_effector(effectors::Tuple)::Bool
+    @inbounds for effector in effectors
+        if effector isa NBodyGravityModel
+            return true
+        end
+    end
+    return false
+end
+
+@inline function _priority_outer_route(case::BenchmarkCase)::Symbol
+    if !perf_parallel_enabled()
+        return :none
+    end
+
     n_sats = length(case.args_template.dynamics_model.spacecraft)
+    n_links = _total_links(case)
+    sat_threshold = _priority_inner_sat_threshold()
+    link_threshold = _priority_inner_link_threshold()
+
+    # Keep one dominant layer: if the case is large enough for intra-sim parallelism,
+    # avoid also parallelizing the outer loop.
+    if n_sats >= sat_threshold || n_links >= link_threshold
+        return :none
+    end
+
+    machine = _machine_parallel_class()
+    if case.category == "montecarlo"
+        return machine in (:large, :medium) ? :process : _threads_or_none_backend()
+    end
     if case.category == "satellite_scaling" && n_sats >= 4
         return _threads_or_none_backend()
     end
-    return :process
+    if machine in (:large, :medium)
+        return :process
+    end
+    return _threads_or_none_backend()
+end
+
+@inline function parallel_priority_plan(case::BenchmarkCase, outer_route::Symbol)::ParallelPriorityPlan
+    resolved_outer = outer_route == :auto ? _priority_outer_route(case) : outer_route
+    n_sats = length(case.args_template.dynamics_model.spacecraft)
+    n_links = _total_links(case)
+    dynamic_effectors = case.args_template.dynamics_model.dynamic_effectors
+    has_atmo = _has_atmo_dynamic_effector(dynamic_effectors)
+    has_nbody = _has_nbody_dynamic_effector(dynamic_effectors)
+    has_density = has_atmo || !(case.args_template.environment_model.density_model isa NoAtmosphereModel)
+    has_control = !isempty(case.args_template.control_model.control_effectors)
+    sat_threshold = _priority_inner_sat_threshold()
+    link_threshold = _priority_inner_link_threshold()
+
+    if resolved_outer != :none
+        return ParallelPriorityPlan(
+            outer_route=resolved_outer,
+            density_mode="off",
+            control_mode="off",
+            multibody_mode="off"
+        )
+    end
+
+    density_mode = has_density && n_sats >= sat_threshold ? "auto" : "off"
+    control_mode = has_control && n_sats >= sat_threshold ? "auto" : "off"
+    multibody_mode = (has_atmo || has_nbody) && n_links >= link_threshold ? "auto" : "off"
+
+    return ParallelPriorityPlan(
+        outer_route=resolved_outer,
+        density_mode=density_mode,
+        control_mode=control_mode,
+        multibody_mode=multibody_mode
+    )
+end
+
+@inline function _existing_or_policy_env(name::String, value::String)::String
+    return haskey(ENV, name) ? ENV[name] : value
+end
+
+@inline function parallel_priority_env_pairs(plan::ParallelPriorityPlan)::Vector{Pair{String, String}}
+    outer_flag = plan.outer_route == :none ? "0" : "1"
+    return Pair{String, String}[
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => _existing_or_policy_env("SPACEAGORA_OUTER_PARALLEL_ACTIVE", outer_flag),
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => _existing_or_policy_env("SPACEAGORA_DENSITY_CALLBACK_PARALLEL", plan.density_mode),
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => _existing_or_policy_env("SPACEAGORA_CONTROL_CALLBACK_PARALLEL", plan.control_mode),
+        "SPACEAGORA_MULTIBODY_PARALLEL" => _existing_or_policy_env("SPACEAGORA_MULTIBODY_PARALLEL", plan.multibody_mode),
+    ]
+end
+
+@inline function auto_backend_for_case(case::BenchmarkCase)::Symbol
+    return _priority_outer_route(case)
 end
 
 @inline function perf_process_workers_target()::Int
@@ -597,30 +730,50 @@ function run_warmup(case::BenchmarkCase, warmup::Int)
     return nothing
 end
 
-function run_case_batch!(rows::Vector{NamedTuple}, case::BenchmarkCase, spec::ProfileSpec, idx::Int, total::Int)
-    println("[$idx/$total] $(case.name) :: warmup x$(spec.warmup), repeats x$(spec.repeats)")
-    run_warmup(case, spec.warmup)
-    for rep in 1:spec.repeats
-        last_row = nothing
-        for attempt in 1:spec.max_attempts
-            row = measure_case(case, spec.name, rep; attempt=attempt)
-            last_row = row
-            if row.solve_success
-                push!(rows, row)
-                println("  repeat $(rep)/$(spec.repeats): total=$(round(row.total_time_s; digits=3)) s, solve=$(round(row.solve_time_s; digits=3)) s")
-                break
+function run_case_batch!(
+    rows::Vector{NamedTuple},
+    case::BenchmarkCase,
+    spec::ProfileSpec,
+    idx::Int,
+    total::Int;
+    outer_route::Symbol=:none
+)
+    plan = parallel_priority_plan(case, outer_route)
+    env_pairs = parallel_priority_env_pairs(plan)
+    println(
+        "[$idx/$total] $(case.name) :: warmup x$(spec.warmup), repeats x$(spec.repeats), " *
+        "outer=$(plan.outer_route), density=$(plan.density_mode), control=$(plan.control_mode), multibody=$(plan.multibody_mode)"
+    )
+    withenv(env_pairs...) do
+        run_warmup(case, spec.warmup)
+        for rep in 1:spec.repeats
+            last_row = nothing
+            for attempt in 1:spec.max_attempts
+                row = measure_case(case, spec.name, rep; attempt=attempt)
+                last_row = row
+                if row.solve_success
+                    push!(rows, row)
+                    println("  repeat $(rep)/$(spec.repeats): total=$(round(row.total_time_s; digits=3)) s, solve=$(round(row.solve_time_s; digits=3)) s")
+                    break
+                end
+                println("  repeat $(rep)/$(spec.repeats) attempt $(attempt)/$(spec.max_attempts): failed retcode=$(row.solve_retcode), retrying")
             end
-            println("  repeat $(rep)/$(spec.repeats) attempt $(attempt)/$(spec.max_attempts): failed retcode=$(row.solve_retcode), retrying")
+            if !(last_row === nothing) && !last_row.solve_success
+                push!(rows, last_row)
+                println("  repeat $(rep)/$(spec.repeats): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)")
+            end
         end
-        if !(last_row === nothing) && !last_row.solve_success
-            push!(rows, last_row)
-            println("  repeat $(rep)/$(spec.repeats): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)")
-        end
+        return nothing
     end
-    return nothing
 end
 
-function measure_montecarlo_seed(spec::ProfileSpec, planet::Earth, mission_time_s::Float64, seed::Int)
+function measure_montecarlo_seed(
+    spec::ProfileSpec,
+    planet::Earth,
+    mission_time_s::Float64,
+    seed::Int;
+    outer_route::Symbol=:none
+)
     case = BenchmarkCase(
         name="montecarlo_randomized",
         category="montecarlo",
@@ -628,18 +781,27 @@ function measure_montecarlo_seed(spec::ProfileSpec, planet::Earth, mission_time_
         args_template=make_montecarlo_config(seed, planet, mission_time_s),
         run_in_quick=true
     )
-    last_row = nothing
-    for attempt in 1:spec.max_attempts
-        row = measure_case(case, spec.name, 1; seed=seed, attempt=attempt)
-        last_row = row
-        if row.solve_success
-            return row, nothing
+    plan = parallel_priority_plan(case, outer_route)
+    env_pairs = parallel_priority_env_pairs(plan)
+    return withenv(env_pairs...) do
+        last_row = nothing
+        for attempt in 1:spec.max_attempts
+            row = measure_case(case, spec.name, 1; seed=seed, attempt=attempt)
+            last_row = row
+            if row.solve_success
+                return row, nothing
+            end
         end
+        return last_row, last_row === nothing ? "failed without attempt data" : "failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)"
     end
-    return last_row, last_row === nothing ? "failed without attempt data" : "failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)"
 end
 
-function perf_worker_montecarlo_warmup(spec::ProfileSpec, mission_time_s::Float64, seed::Int)
+function perf_worker_montecarlo_warmup(
+    spec::ProfileSpec,
+    mission_time_s::Float64,
+    seed::Int,
+    outer_route::Symbol=:process
+)
     planet = perf_worker_planet()
     warmup_case = BenchmarkCase(
         name="montecarlo_randomized",
@@ -648,18 +810,33 @@ function perf_worker_montecarlo_warmup(spec::ProfileSpec, mission_time_s::Float6
         args_template=make_montecarlo_config(seed, planet, mission_time_s),
         run_in_quick=true
     )
-    run_warmup(warmup_case, spec.warmup)
+    plan = parallel_priority_plan(warmup_case, outer_route)
+    env_pairs = parallel_priority_env_pairs(plan)
+    withenv(env_pairs...) do
+        run_warmup(warmup_case, spec.warmup)
+    end
     return nothing
 end
 
-function perf_worker_measure_montecarlo_seed(spec::ProfileSpec, mission_time_s::Float64, seed::Int)
+function perf_worker_measure_montecarlo_seed(
+    spec::ProfileSpec,
+    mission_time_s::Float64,
+    seed::Int,
+    outer_route::Symbol=:process
+)
     planet = perf_worker_planet()
-    return measure_montecarlo_seed(spec, planet, mission_time_s, seed)
+    return measure_montecarlo_seed(spec, planet, mission_time_s, seed; outer_route=outer_route)
 end
 
-function perf_worker_run_case_batch(case::BenchmarkCase, spec::ProfileSpec, idx::Int, total::Int)
+function perf_worker_run_case_batch(
+    case::BenchmarkCase,
+    spec::ProfileSpec,
+    idx::Int,
+    total::Int,
+    outer_route::Symbol=:process
+)
     local_rows = NamedTuple[]
-    run_case_batch!(local_rows, case, spec, idx, total)
+    run_case_batch!(local_rows, case, spec, idx, total; outer_route=outer_route)
     return local_rows
 end
 
@@ -667,9 +844,10 @@ function perf_worker_measure_per_orbit_scenario(
     base_case::BenchmarkCase,
     spec::ProfileSpec,
     period_s::Float64,
-    orbit_counts::Vector{Int}
+    orbit_counts::Vector{Int},
+    outer_route::Symbol=:process
 )
-    return measure_per_orbit_scenario(base_case, spec, period_s, orbit_counts)
+    return measure_per_orbit_scenario(base_case, spec, period_s, orbit_counts; outer_route=outer_route)
 end
 
 function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, planet::Earth)
@@ -689,17 +867,21 @@ function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, plan
         ensure_perf_workers!()
         warmup_seed = first(seeds)
         for w in workers()
-            remotecall_wait(perf_worker_montecarlo_warmup, w, spec, spec.montecarlo_mission_s, warmup_seed)
+            remotecall_wait(perf_worker_montecarlo_warmup, w, spec, spec.montecarlo_mission_s, warmup_seed, :process)
         end
     else
-        run_warmup(warmup_case, spec.warmup)
+        plan = parallel_priority_plan(warmup_case, mc_backend)
+        env_pairs = parallel_priority_env_pairs(plan)
+        withenv(env_pairs...) do
+            run_warmup(warmup_case, spec.warmup)
+        end
     end
 
     seed_rows = Vector{NamedTuple}(undef, length(seeds))
     seed_msgs = Vector{String}(undef, length(seeds))
 
     if mc_backend == :process
-        seed_results = pmap(seed -> perf_worker_measure_montecarlo_seed(spec, spec.montecarlo_mission_s, seed), seeds)
+        seed_results = pmap(seed -> perf_worker_measure_montecarlo_seed(spec, spec.montecarlo_mission_s, seed, :process), seeds)
         for i in eachindex(seeds)
             seed = seeds[i]
             row, err = seed_results[i]
@@ -713,7 +895,7 @@ function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, plan
     elseif mc_backend == :threads
         Threads.@threads for i in eachindex(seeds)
             seed = seeds[i]
-            row, err = measure_montecarlo_seed(spec, planet, spec.montecarlo_mission_s, seed)
+            row, err = measure_montecarlo_seed(spec, planet, spec.montecarlo_mission_s, seed; outer_route=:threads)
             seed_rows[i] = row
             if row.solve_success
                 seed_msgs[i] = "  seed $(i)/$(length(seeds))=$(seed): total=$(round(row.total_time_s; digits=3)) s"
@@ -724,7 +906,7 @@ function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, plan
     else
         for i in eachindex(seeds)
             seed = seeds[i]
-            row, err = measure_montecarlo_seed(spec, planet, spec.montecarlo_mission_s, seed)
+            row, err = measure_montecarlo_seed(spec, planet, spec.montecarlo_mission_s, seed; outer_route=:none)
             seed_rows[i] = row
             if row.solve_success
                 seed_msgs[i] = "  seed $(i)/$(length(seeds))=$(seed): total=$(round(row.total_time_s; digits=3)) s"
@@ -746,7 +928,6 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
     rows = NamedTuple[]
     total = length(selected)
     backend = perf_parallel_backend()
-
     if backend == :auto
         case_rows = Vector{Vector{NamedTuple}}(undef, total)
         process_tasks = Tuple{Int, BenchmarkCase}[]
@@ -768,7 +949,7 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
             ensure_perf_workers!()
             process_rows = pmap(process_tasks) do task
                 idx, case = task
-                perf_worker_run_case_batch(case, spec, idx, total)
+                perf_worker_run_case_batch(case, spec, idx, total, :process)
             end
             for (k, task) in enumerate(process_tasks)
                 idx = task[1]
@@ -780,14 +961,14 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
             Threads.@threads for j in eachindex(thread_indices)
                 idx = thread_indices[j]
                 local_rows = NamedTuple[]
-                run_case_batch!(local_rows, selected[idx], spec, idx, total)
+                run_case_batch!(local_rows, selected[idx], spec, idx, total; outer_route=:threads)
                 case_rows[idx] = local_rows
             end
         end
 
         for idx in serial_indices
             local_rows = NamedTuple[]
-            run_case_batch!(local_rows, selected[idx], spec, idx, total)
+            run_case_batch!(local_rows, selected[idx], spec, idx, total; outer_route=:none)
             case_rows[idx] = local_rows
         end
 
@@ -799,7 +980,7 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
         tasks = collect(enumerate(selected))
         case_rows = pmap(tasks) do task
             idx, case = task
-            perf_worker_run_case_batch(case, spec, idx, total)
+            perf_worker_run_case_batch(case, spec, idx, total, :process)
         end
         for idx in eachindex(case_rows)
             append!(rows, case_rows[idx])
@@ -808,7 +989,7 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
         case_rows = Vector{Vector{NamedTuple}}(undef, total)
         Threads.@threads for idx in eachindex(selected)
             local_rows = NamedTuple[]
-            run_case_batch!(local_rows, selected[idx], spec, idx, total)
+            run_case_batch!(local_rows, selected[idx], spec, idx, total; outer_route=:threads)
             case_rows[idx] = local_rows
         end
         for idx in eachindex(case_rows)
@@ -816,7 +997,7 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
         end
     else
         for (idx, case) in enumerate(selected)
-            run_case_batch!(rows, case, spec, idx, total)
+            run_case_batch!(rows, case, spec, idx, total; outer_route=:none)
         end
     end
 
@@ -827,7 +1008,13 @@ end
     return spec.name == "full" ? cases : [c for c in cases if c.run_in_quick]
 end
 
-function measure_per_orbit_scenario(base_case::BenchmarkCase, spec::ProfileSpec, period_s::Float64, orbit_counts::Vector{Int})
+function measure_per_orbit_scenario(
+    base_case::BenchmarkCase,
+    spec::ProfileSpec,
+    period_s::Float64,
+    orbit_counts::Vector{Int};
+    outer_route::Symbol=:none
+)
     rows = NamedTuple[]
     logs = String[]
     for orbit_count in orbit_counts
@@ -861,28 +1048,32 @@ function measure_per_orbit_scenario(base_case::BenchmarkCase, spec::ProfileSpec,
             run_in_quick=base_case.run_in_quick
         )
 
-        run_warmup(case, spec.warmup)
-        for rep in 1:spec.repeats
-            last_row = nothing
-            for attempt in 1:spec.max_attempts
-                row = measure_case(case, spec.name, rep; attempt=attempt)
-                row_orbit = merge(
-                    row,
-                    (
-                        orbit_count=orbit_count,
-                        orbital_period_s=period_s
+        plan = parallel_priority_plan(case, outer_route)
+        env_pairs = parallel_priority_env_pairs(plan)
+        withenv(env_pairs...) do
+            run_warmup(case, spec.warmup)
+            for rep in 1:spec.repeats
+                last_row = nothing
+                for attempt in 1:spec.max_attempts
+                    row = measure_case(case, spec.name, rep; attempt=attempt)
+                    row_orbit = merge(
+                        row,
+                        (
+                            orbit_count=orbit_count,
+                            orbital_period_s=period_s
+                        )
                     )
-                )
-                last_row = row_orbit
-                if row_orbit.solve_success
-                    push!(rows, row_orbit)
-                    push!(logs, "    orbit=$(orbit_count) repeat $(rep)/$(spec.repeats): total=$(round(row_orbit.total_time_s; digits=3)) s")
-                    break
+                    last_row = row_orbit
+                    if row_orbit.solve_success
+                        push!(rows, row_orbit)
+                        push!(logs, "    orbit=$(orbit_count) repeat $(rep)/$(spec.repeats): total=$(round(row_orbit.total_time_s; digits=3)) s")
+                        break
+                    end
                 end
-            end
-            if !(last_row === nothing) && !last_row.solve_success
-                push!(rows, last_row)
-                push!(logs, "    orbit=$(orbit_count) repeat $(rep)/$(spec.repeats): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)")
+                if !(last_row === nothing) && !last_row.solve_success
+                    push!(rows, last_row)
+                    push!(logs, "    orbit=$(orbit_count) repeat $(rep)/$(spec.repeats): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)")
+                end
             end
         end
     end
@@ -912,7 +1103,7 @@ function run_montecarlo_per_orbit!(
         orbit_msgs = Vector{String}(undef, length(seeds))
 
         if mc_backend == :process
-            seed_results = pmap(seed -> perf_worker_measure_montecarlo_seed(spec, mission_time, seed), seeds)
+            seed_results = pmap(seed -> perf_worker_measure_montecarlo_seed(spec, mission_time, seed, :process), seeds)
             for i in eachindex(seeds)
                 seed = seeds[i]
                 row, err = seed_results[i]
@@ -927,7 +1118,7 @@ function run_montecarlo_per_orbit!(
         elseif mc_backend == :threads
             Threads.@threads for i in eachindex(seeds)
                 seed = seeds[i]
-                row, err = measure_montecarlo_seed(spec, planet, mission_time, seed)
+                row, err = measure_montecarlo_seed(spec, planet, mission_time, seed; outer_route=:threads)
                 row_orbit = merge(row, (orbit_count=orbit_count, orbital_period_s=period_s))
                 orbit_rows[i] = row_orbit
                 if row_orbit.solve_success
@@ -939,7 +1130,7 @@ function run_montecarlo_per_orbit!(
         else
             for i in eachindex(seeds)
                 seed = seeds[i]
-                row, err = measure_montecarlo_seed(spec, planet, mission_time, seed)
+                row, err = measure_montecarlo_seed(spec, planet, mission_time, seed; outer_route=:none)
                 row_orbit = merge(row, (orbit_count=orbit_count, orbital_period_s=period_s))
                 orbit_rows[i] = row_orbit
                 if row_orbit.solve_success
@@ -989,7 +1180,7 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
             ensure_perf_workers!()
             process_results = pmap(process_tasks) do task
                 idx, base_case = task
-                local_rows, local_logs = perf_worker_measure_per_orbit_scenario(base_case, spec, period_s, orbit_counts)
+                local_rows, local_logs = perf_worker_measure_per_orbit_scenario(base_case, spec, period_s, orbit_counts, :process)
                 return (rows=local_rows, logs=local_logs)
             end
             for (k, task) in enumerate(process_tasks)
@@ -1002,14 +1193,14 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
         if !isempty(thread_indices)
             Threads.@threads for j in eachindex(thread_indices)
                 idx = thread_indices[j]
-                local_rows, local_logs = measure_per_orbit_scenario(selected[idx], spec, period_s, orbit_counts)
+                local_rows, local_logs = measure_per_orbit_scenario(selected[idx], spec, period_s, orbit_counts; outer_route=:threads)
                 scenario_rows[idx] = local_rows
                 scenario_logs[idx] = local_logs
             end
         end
 
         for idx in serial_indices
-            local_rows, local_logs = measure_per_orbit_scenario(selected[idx], spec, period_s, orbit_counts)
+            local_rows, local_logs = measure_per_orbit_scenario(selected[idx], spec, period_s, orbit_counts; outer_route=:none)
             scenario_rows[idx] = local_rows
             scenario_logs[idx] = local_logs
         end
@@ -1026,7 +1217,7 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
         tasks = collect(enumerate(selected))
         scenario_results = pmap(tasks) do task
             idx, base_case = task
-            local_rows, local_logs = perf_worker_measure_per_orbit_scenario(base_case, spec, period_s, orbit_counts)
+            local_rows, local_logs = perf_worker_measure_per_orbit_scenario(base_case, spec, period_s, orbit_counts, :process)
             return (rows=local_rows, logs=local_logs)
         end
         for (idx, base_case) in enumerate(selected)
@@ -1040,7 +1231,7 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
         scenario_rows = Vector{Vector{NamedTuple}}(undef, length(selected))
         scenario_logs = Vector{Vector{String}}(undef, length(selected))
         Threads.@threads for idx in eachindex(selected)
-            local_rows, local_logs = measure_per_orbit_scenario(selected[idx], spec, period_s, orbit_counts)
+            local_rows, local_logs = measure_per_orbit_scenario(selected[idx], spec, period_s, orbit_counts; outer_route=:threads)
             scenario_rows[idx] = local_rows
             scenario_logs[idx] = local_logs
         end
@@ -1054,7 +1245,7 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
     else
         for (idx, base_case) in enumerate(selected)
             println("  scenario $(idx)/$(length(selected)) = $(base_case.name)")
-            local_rows, local_logs = measure_per_orbit_scenario(base_case, spec, period_s, orbit_counts)
+            local_rows, local_logs = measure_per_orbit_scenario(base_case, spec, period_s, orbit_counts; outer_route=:none)
             append!(rows, local_rows)
             for log_line in local_logs
                 println(log_line)
@@ -1063,7 +1254,6 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
     end
 
     run_montecarlo_per_orbit!(rows, spec, planet, period_s, orbit_counts)
-
     return DataFrame(rows)
 end
 function _safe_stat(values, op::Function)

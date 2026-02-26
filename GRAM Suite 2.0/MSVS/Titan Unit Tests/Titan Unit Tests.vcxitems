@@ -1,0 +1,24 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <ItemsProjectGuid>{ed413a57-d166-491f-a1b4-3bdb355d753f}</ItemsProjectGuid>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(MSBuildThisFileDirectory)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ProjectCapability Include="SourceItemsFromImports" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\unittest\TitanAtmosphere_UnitTest.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\unittest\TitanGCMMid_UnitTest.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\unittest\TitanGCMTerp_UnitTest.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\unittest\TitanGCMThermos_UnitTest.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\unittest\TitanGCM_UnitTest.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\Titan\unittest\Yelle_UnitTest.cpp" />
+  </ItemGroup>
+</Project>

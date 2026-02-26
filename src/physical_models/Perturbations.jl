@@ -161,7 +161,9 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
     if primary_body_name in barycenter_bodies
         primary_body_name *= "_barycenter"
     end
-    for body_name in model.body_names
+    n_bodies = length(model.body_names)
+    pos_primary_k_all = Vector{SVector{3, Float64}}(undef, n_bodies)
+    for (k, body_name) in pairs(model.body_names)
         body_name_spice = lowercase(body_name)
         if body_name_spice in barycenter_bodies
             body_name_spice *= "_barycenter"
@@ -170,11 +172,33 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
         pos_primary_body = lock(SPICE_LOCK) do
             SVector{3, Float64}(spkpos(body_name_spice, et, "J2000", "none", primary_body_name)[1])
         end
-        pos_primary_k = model.planet.J2000_to_pci * pos_primary_body * 1e3
-        pos_spacecraft_k = pos_primary_k - pos_ii
-        pos_spacecraft_k_mag = norm(pos_spacecraft_k)
+        pos_primary_k_all[k] = model.planet.J2000_to_pci * pos_primary_body * 1e3
+    end
 
-        force_ii += mass * model.planet.μ * ((pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3))
+    use_threads = _multibody_use_threads(n_bodies; heavy_work=true)
+    if use_threads
+        n_threads = _threadid_capacity()
+        thread_force = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_threads]
+        Threads.@threads for k in eachindex(pos_primary_k_all)
+            tid = Threads.threadid()
+            pos_primary_k = pos_primary_k_all[k]
+            pos_spacecraft_k = pos_primary_k - pos_ii
+            pos_spacecraft_k_mag = norm(pos_spacecraft_k)
+            thread_force[tid] .+= mass * model.planet.μ * (
+                (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
+            )
+        end
+        @inbounds for tid in 1:n_threads
+            force_ii .+= thread_force[tid]
+        end
+    else
+        @inbounds for pos_primary_k in pos_primary_k_all
+            pos_spacecraft_k = pos_primary_k - pos_ii
+            pos_spacecraft_k_mag = norm(pos_spacecraft_k)
+            force_ii += mass * model.planet.μ * (
+                (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
+            )
+        end
     end
 
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)

@@ -5,7 +5,7 @@ using .SimulationModel
 # include("../physical_models/Mission.jl")
 # include("../utils/Save_csv.jl")
 # include("../utils/Plot_data.jl")
-include("Aerobraking.jl")
+include("SimulationExecution.jl")
 # include("../utils/Reference_system.jl")
 
 using SPICE
@@ -14,11 +14,11 @@ using AstroTime
 using PythonCall
 using Arrow
 
-function aerobraking_campaign(args; isolate_state::Bool=true, state=nothing)
-    throw(ArgumentError("aerobraking_campaign expects SimulationConfiguration; got $(typeof(args))."))
+function execute_campaign(args; isolate_state::Bool=true, state=nothing)
+    throw(ArgumentError("execute_campaign expects SimulationConfiguration; got $(typeof(args))."))
 end
 
-function aerobraking_campaign(args::SimulationConfiguration; isolate_state::Bool=true, state=nothing)
+function execute_campaign(args::SimulationConfiguration; isolate_state::Bool=true, state=nothing)
     save_res = args.simulation_settings.results
     filename = ""
     arrow_filename = ""
@@ -362,7 +362,7 @@ function aerobraking_campaign(args::SimulationConfiguration; isolate_state::Bool
     # cnf.heat_rate_limit = args[:max_heat_rate]
     # params = (cnf, m, solution)
     t_el = @elapsed begin
-        aerobraking(args, filename, arrow_filename; isolate_state=isolate_state)
+        execute_case(args, filename, arrow_filename; isolate_state=isolate_state)
     end
     # cnf = params[1]
     # m = params[2]
@@ -398,6 +398,6 @@ function aerobraking_campaign(args::SimulationConfiguration; isolate_state::Bool
     # rm(temp_name, recursive=true, force=true) # Remove the temporary directory used for plotting
 end
 
-function aerobraking_campaign(args::SimulationConfiguration, state; isolate_state::Bool=true)
-    return aerobraking_campaign(args; isolate_state=isolate_state, state=state)
+function execute_campaign(args::SimulationConfiguration, state; isolate_state::Bool=true)
+    return execute_campaign(args; isolate_state=isolate_state, state=state)
 end

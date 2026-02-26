@@ -1,0 +1,4 @@
+<map id="GRAM::MGCMSurfaceInterpolator" name="GRAM::MGCMSurfaceInterpolator">
+<area shape="rect" id="node1" title="The MGCM surface (boundary layer) model (0 to 0.03 km)." alt="" coords="5,81,223,109"/>
+<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_m_g_c_m_lower_interpolator.html" title="The MGCM lower atmosphere model (0 to 80 km)." alt="" coords="10,5,218,33"/>
+</map>

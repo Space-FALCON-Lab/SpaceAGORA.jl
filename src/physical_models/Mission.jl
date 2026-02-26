@@ -1,5 +1,29 @@
 @inline _legacy_key(x) = lowercase(strip(replace(string(x), r"[_-]+" => " ")))
 
+if !isdefined(@__MODULE__, :_deprecated_mission_dict_input_warned)
+    const _deprecated_mission_dict_input_warned = Ref(Set{Symbol}())
+end
+
+@inline _warn_deprecated_legacy_dict_enabled() = get(ENV, "SPACEAGORA_WARN_DEPRECATED_CONFIG", "1") == "1"
+
+function _warn_deprecated_mission_dict_value!(key::Symbol, value)
+    if !_warn_deprecated_legacy_dict_enabled() || (key in _deprecated_mission_dict_input_warned[])
+        return nothing
+    end
+    push!(_deprecated_mission_dict_input_warned[], key)
+    @warn "mission_def: legacy string/symbol value for :$key ($(repr(value))) is deprecated; migrate to typed config API."
+    return nothing
+end
+
+@inline function _legacy_norm_mission_value(mission::Dict{Symbol, Any}, key::Symbol, default)
+    has_user_value = haskey(mission, key)
+    value = has_user_value ? mission[key] : default
+    if has_user_value && (value isa AbstractString || value isa Symbol)
+        _warn_deprecated_mission_dict_value!(key, value)
+    end
+    return _legacy_key(value)
+end
+
 @inline function _legacy_mission_planet_id(x)::Int
     key = _legacy_key(x)
     if x isa Integer
@@ -25,14 +49,17 @@ function mission_def(mission::Dict{Symbol, Any})
 
     e, d, l, a = 0, 0, 0, 1     # e = Entry, d = Descent, l = Landing, a = Aerobraking : 0 - No, 1 - Yes
     planet_val = get(mission, :Planet, 1)
+    if haskey(mission, :Planet) && (planet_val isa AbstractString || planet_val isa Symbol)
+        _warn_deprecated_mission_dict_value!(:Planet, planet_val)
+    end
     p = _legacy_mission_planet_id(planet_val)
 
-    grav_key = _legacy_key(get(mission, :Gravity_Model, "Inverse Squared"))
-    dens_key = _legacy_key(get(mission, :Density_Model, "Exponential"))
-    aero_key = _legacy_key(get(mission, :Aerodynamic_Model, "Cd and Cl Constant"))
-    shape_key = _legacy_key(get(mission, :Shape, "Spacecraft"))
-    thermal_key = _legacy_key(get(mission, :Thermal_Model, "Convective and Radiative"))
-    firing_key = _legacy_key(get(mission, :Firings, "None"))
+    grav_key = _legacy_norm_mission_value(mission, :Gravity_Model, "Inverse Squared")
+    dens_key = _legacy_norm_mission_value(mission, :Density_Model, "Exponential")
+    aero_key = _legacy_norm_mission_value(mission, :Aerodynamic_Model, "Cd and Cl Constant")
+    shape_key = _legacy_norm_mission_value(mission, :Shape, "Spacecraft")
+    thermal_key = _legacy_norm_mission_value(mission, :Thermal_Model, "Convective and Radiative")
+    firing_key = _legacy_norm_mission_value(mission, :Firings, "None")
 
     M = Mission(e, d, l, a, p)
 

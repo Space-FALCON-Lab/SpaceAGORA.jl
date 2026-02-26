@@ -84,10 +84,11 @@ function run_once()::DataFrame
             verbose=false,
             generate_plots=false,
             results_directory="output",
-            save_csv=true
+            save_csv=true,
+            normalize=false
         ),
         mission_configuration=MissionConfiguration(
-            mission_type="Time",
+            mission_type=MissionTime,
             keplerian=true,
             number_of_orbits=1,
             mission_time=40.0,

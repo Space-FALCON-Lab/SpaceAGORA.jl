@@ -55,10 +55,11 @@ function make_example_config(;
             results=true,
             verbose=verbose,
             generate_plots=false,
-            results_directory=joinpath(REPO_ROOT, "output")
+            results_directory=joinpath(REPO_ROOT, "output"),
+            normalize=false
         ),
         mission_configuration=SM.MissionConfiguration(
-            mission_type="Time",
+            mission_type=SM.MissionTime,
             keplerian=keplerian,
             number_of_orbits=1,
             mission_time=mission_time,

@@ -192,7 +192,7 @@ function build_config(;
     control_effectors::Tuple=(),
     control_rates::Vector{Float64}=Float64[],
     keplerian::Bool=true,
-    simulation_settings::SimulationSettings=SimulationSettings(results=true, verbose=false, generate_plots=false),
+    simulation_settings::SimulationSettings=SimulationSettings(results=true, verbose=false, generate_plots=false, normalize=false),
     tolerances::IntegrationTolerances=IntegrationTolerances(),
     initial_time::InitialTime=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
 )
@@ -208,7 +208,7 @@ function build_config(;
     return SimulationConfiguration(
         simulation_settings=simulation_settings,
         mission_configuration=MissionConfiguration(
-            mission_type="Time",
+            mission_type=MissionTime,
             keplerian=keplerian,
             number_of_orbits=1,
             mission_time=mission_time,
@@ -235,7 +235,7 @@ function build_config_multi(;
     control_effectors::Tuple=(),
     control_rates::Vector{Float64}=Float64[],
     keplerian::Bool=true,
-    simulation_settings::SimulationSettings=SimulationSettings(results=true, verbose=false, generate_plots=false),
+    simulation_settings::SimulationSettings=SimulationSettings(results=true, verbose=false, generate_plots=false, normalize=false),
     tolerances::IntegrationTolerances=IntegrationTolerances(),
     initial_time::InitialTime=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
 )
@@ -251,7 +251,7 @@ function build_config_multi(;
     return SimulationConfiguration(
         simulation_settings=simulation_settings,
         mission_configuration=MissionConfiguration(
-            mission_type="Time",
+            mission_type=MissionTime,
             keplerian=keplerian,
             number_of_orbits=1,
             mission_time=mission_time,
@@ -828,7 +828,9 @@ end
         :Thermal_Model => "Shaaf and Chambre",
         :Monte_Carlo => 0
     )
-    ip = sandbox.mission_def(mission)
+    ip = withenv("SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0") do
+        sandbox.mission_def(mission)
+    end
     @test ip.gm isa LegacyGravityModelCode
     @test ip.dm isa LegacyDensityModelCode
     @test ip.am isa LegacyAerodynamicModelCode
@@ -846,8 +848,21 @@ end
 
     mission_default = deepcopy(mission)
     mission_default[:Planet] = "UnknownPlanet"
-    ip_default = sandbox.mission_def(mission_default)
+    ip_default = withenv("SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0") do
+        sandbox.mission_def(mission_default)
+    end
     @test ip_default.M.planet == 1
+
+    @test isdefined(sandbox, :_deprecated_mission_dict_input_warned)
+    empty!(sandbox._deprecated_mission_dict_input_warned[])
+    withenv("SPACEAGORA_WARN_DEPRECATED_CONFIG" => "1") do
+        @test_logs (:warn, r"mission_def: legacy string/symbol value for :Gravity_Model") sandbox.mission_def(Dict{Symbol, Any}(:Gravity_Model => "Constant"))
+        @test_logs sandbox.mission_def(Dict{Symbol, Any}(:Gravity_Model => "Inverse Squared"))
+    end
+    empty!(sandbox._deprecated_mission_dict_input_warned[])
+    withenv("SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0") do
+        @test_logs sandbox.mission_def(Dict{Symbol, Any}(:Density_Model => "Exponential"))
+    end
 
     ip_from_ints = InitialParameters(Mission(), 1, 3, 0, 2, 2, 0, 1, 0)
     @test ip_from_ints.gm == LegacyGravityInverseSquared
@@ -917,7 +932,7 @@ end
         EI_km=120.0,
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=true,
-        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false),
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
         tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
     )
 
@@ -1024,7 +1039,8 @@ end
         verbose=false,
         generate_plots=false,
         results_directory="output",
-        save_csv=true
+        save_csv=true,
+        normalize=false
     )
     args = build_config(
         spacecraft=sc,
@@ -1067,7 +1083,8 @@ end
         verbose=false,
         generate_plots=false,
         results_directory="output",
-        save_csv=false
+        save_csv=false,
+        normalize=false
     )
     args_no_csv = build_config(
         spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
@@ -1095,7 +1112,8 @@ end
         verbose=false,
         generate_plots=false,
         results_directory="output",
-        save_csv=false
+        save_csv=false,
+        normalize=false
     )
     args_no_results = build_config(
         spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
@@ -1118,7 +1136,8 @@ end
         verbose=false,
         generate_plots=false,
         results_directory="output",
-        save_csv=true
+        save_csv=true,
+        normalize=false
     )
     args = build_config(
         spacecraft=sc,
@@ -1232,7 +1251,9 @@ end
     @test norm(SVector{3, Float64}(u0.sc[1].vel)) > 1e3
     @test u0.sc[1].mass > 1.0
 
-    df_norm_true = run_case_silent(args_norm_true)
+    df_norm_true = withenv("SPACEAGORA_WARN_NORMALIZE" => "0") do
+        run_case_silent(args_norm_true)
+    end
     df_norm_false = run_case_silent(args_norm_false)
 
     @test nrow(df_norm_true) == nrow(df_norm_false)
@@ -1289,14 +1310,16 @@ end
         verbose=false,
         generate_plots=false,
         results_directory="output",
-        save_csv=true
+        save_csv=true,
+        normalize=false
     )
     settings_verbose = SimulationSettings(
         results=true,
         verbose=true,
         generate_plots=false,
         results_directory="output",
-        save_csv=true
+        save_csv=true,
+        normalize=false
     )
 
     args_orbit_quiet = build_config(

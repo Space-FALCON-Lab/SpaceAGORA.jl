@@ -50,10 +50,11 @@ args = SimulationConfiguration(
         results=true,
         verbose=true,
         generate_plots=false,
-        results_directory=joinpath(REPO_ROOT, "output")
+        results_directory=joinpath(REPO_ROOT, "output"),
+        normalize=false
     ),
     mission_configuration=MissionConfiguration(
-        mission_type="Time",
+        mission_type=MissionTime,
         keplerian=true,
         number_of_orbits=1,
         mission_time=8.0 * 3600.0,

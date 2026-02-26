@@ -58,10 +58,11 @@ args = SimulationConfiguration(
     simulation_settings=SimulationSettings(
         results=true,
         verbose=false,
-        generate_plots=false
+        generate_plots=false,
+        normalize=false
     ),
     mission_configuration=MissionConfiguration(
-        mission_type="Time",
+        mission_type=MissionTime,
         keplerian=true,
         number_of_orbits=1,
         mission_time=60.0,

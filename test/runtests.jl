@@ -918,6 +918,68 @@ end
     # because typed SimulationConfiguration does not support Symbol indexing.
     Core.eval(sandbox, :(global cnf = Cnf()))
     @test_throws MethodError sandbox.asim(nothing, 1, args, ())
+
+    # Deeper legacy smoke path:
+    # provide legacy-style globals + symbol-indexable args so execution moves
+    # beyond callback/config setup into post-loop bookkeeping.
+    legacy_args = (
+        initial_time=(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+        orientation_sim=false,
+        heat_load_sol=0,
+        EI=120.0,
+        AE=120.0,
+        thrust_control="None",
+        keplerian=true,
+        drag_passage=false,
+        type_of_mission="time",
+        body_shape="Spacecraft",
+        print_res=false
+    )
+    legacy_body = (
+        roots=[(
+            q=SVector{4, Float64}(1.0, 0.0, 0.0, 0.0),
+            ω=SVector{3, Float64}(0.0, 0.0, 0.0),
+            attitude_control_rate=1.0
+        )],
+        links=[1],
+        n_reaction_wheels=0,
+        n_thrusters=0
+    )
+    legacy_model = (
+        initial_condition=(el_time=0.0,),
+        aerodynamics=(α=0.0,),
+        planet=EARTH,
+        body=legacy_body,
+        engines=(Isp=300.0, T=0.0)
+    )
+    legacy_r0 = SVector{3, Float64}(EARTH.Rp_e + 500e3, 0.0, 0.0)
+    legacy_v0 = SVector{3, Float64}(0.0, 7600.0, 0.0)
+    legacy_mass = 1000.0
+    legacy_oe = SVector{7, Float64}(EARTH.Rp_e + 500e3, 0.02, deg2rad(35.0), 0.0, 0.0, 0.0, legacy_mass)
+
+    Core.eval(sandbox, quote
+        global cnf = Cnf()
+        cnf.DU = 1.0
+        cnf.TU = 1.0
+        cnf.MU = 1.0
+        cnf.time_OP = 0.0
+
+        global m = $legacy_model
+        global r0 = $legacy_r0
+        global v0 = $legacy_v0
+        global Mass = $legacy_mass
+        global OE = $legacy_oe
+        global index_steps_EOM = 1
+    end)
+
+    err = try
+        sandbox.asim(nothing, 1, legacy_args, ())
+        nothing
+    catch e
+        e
+    end
+    @test err isa UndefVarError
+    @test getfield(err, :var) == :solution
 end
 
 @testset "Legacy Remaining Module Smoke Coverage" begin

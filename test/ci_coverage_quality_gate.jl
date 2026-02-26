@@ -9,7 +9,7 @@ const EXCLUDED_FROM_MAIN_GATE = Set([
 ])
 
 const LEGACY_MIN_SMOKE_COVERAGE = Dict(
-    "src/simulation/Complete_passage.jl" => 4.0,
+    "src/simulation/Complete_passage.jl" => 20.0,
 )
 
 const MIN_MAIN_OVERALL = let raw = get(ENV, "SPACEAGORA_COVERAGE_MIN_OVERALL", "90.0")

@@ -7,6 +7,14 @@ on:
   pull_request:
 
 jobs:
+  non-main-push-noop:
+    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Non-main push noop
+        run: echo "Skipping full CI on non-main push."
+
   tests-matrix:
     runs-on: ubuntu-latest
     timeout-minutes: 60

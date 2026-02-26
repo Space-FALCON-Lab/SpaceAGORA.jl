@@ -7,7 +7,7 @@ using SPICE
 using Dates
 using ..SimulationModel: SPICE_LOCK
 using ..EnvironmentModels
-using ..EnvironmentModels: getDensity, NoAtmosphereModel
+using ..EnvironmentModels: getDensity, getHeatRate, NoAtmosphereModel
 using ..DynamicEffectors: BaseThrusterModel, AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
 using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
 using ..ConfigTypes: SaveData
@@ -18,6 +18,7 @@ export get_callbacks
 
 @inline callback_verbose(integrator) = integrator.p.args.simulation_settings.verbose
 @inline callback_use_invokelatest() = get(ENV, "SPACEAGORA_DEV_HOT_RELOAD", "0") == "1"
+const _gram_segment_cache_warning_emitted = Ref(false)
 
 @inline function _parse_bool_env(name::String, default::Bool)::Bool
     raw = lowercase(strip(get(ENV, name, default ? "1" : "0")))
@@ -79,6 +80,7 @@ end
 @inline density_model_threadsafe(::NoAtmosphereModel)::Bool = true
 @inline density_model_threadsafe(::EnvironmentModels.ExponentialAtmosphereModel)::Bool = true
 @inline density_model_threadsafe(::EnvironmentModels.PolynomialFitAtmosphereModel)::Bool = true
+# GRAM C-wrapper calls are serialized inside getDensity via SimulationModel.GRAM_LOCK.
 @inline density_model_threadsafe(::EnvironmentModels.GRAMAtmosphereModel)::Bool = true
 
 @inline function _density_callback_use_threads(args::SimulationConfiguration, num_sats::Int)::Bool
@@ -121,6 +123,141 @@ end
     return num_sats >= _control_callback_thread_threshold()
 end
 
+@inline function _density_model_for_sat(p, sat_idx::Int)
+    density_models = p.shared_buffers.density_models
+    if sat_idx <= length(density_models)
+        return density_models[sat_idx]
+    end
+    return p.args.environment_model.density_model
+end
+
+mutable struct GramSegmentCache
+    valid::Bool
+    t0::Float64
+    t1::Float64
+    alt0::Float64
+    lat0::Float64
+    lon0::Float64
+    alt1::Float64
+    lat1::Float64
+    lon1::Float64
+    rho0::Float64
+    T0::Float64
+    wind0::SVector{3, Float64}
+    rho1::Float64
+    T1::Float64
+    wind1::SVector{3, Float64}
+end
+
+@inline GramSegmentCache() = GramSegmentCache(
+    false,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    SVector{3, Float64}(0.0, 0.0, 0.0),
+    0.0,
+    0.0,
+    SVector{3, Float64}(0.0, 0.0, 0.0)
+)
+
+@inline function _parse_float_env(name::String, default::Float64)::Float64
+    raw = strip(get(ENV, name, string(default)))
+    parsed = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("$name must be a floating-point value, got '$raw'"))
+    end
+    return parsed
+end
+
+@inline _lerp(a::Float64, b::Float64, x::Float64) = a + x * (b - a)
+@inline _angdiff_rad(a::Float64, b::Float64) = abs(atan(sin(a - b), cos(a - b)))
+@inline function _lerp_angle_rad(a::Float64, b::Float64, x::Float64)
+    δ = atan(sin(b - a), cos(b - a))
+    return atan(sin(a + x * δ), cos(a + x * δ))
+end
+
+@inline function _gram_segment_cache_ready(
+    cache::GramSegmentCache,
+    t::Float64,
+    alt::Float64,
+    lat::Float64,
+    lon::Float64,
+    alt_tol_m::Float64,
+    ang_tol_rad::Float64
+)::Bool
+    if !cache.valid || cache.t1 <= cache.t0 || t < cache.t0 || t > cache.t1
+        return false
+    end
+    x = (t - cache.t0) / (cache.t1 - cache.t0)
+    alt_interp = _lerp(cache.alt0, cache.alt1, x)
+    lat_interp = _lerp_angle_rad(cache.lat0, cache.lat1, x)
+    lon_interp = _lerp_angle_rad(cache.lon0, cache.lon1, x)
+    return abs(alt - alt_interp) <= alt_tol_m &&
+           _angdiff_rad(lat, lat_interp) <= ang_tol_rad &&
+           _angdiff_rad(lon, lon_interp) <= ang_tol_rad
+end
+
+@inline function _gram_segment_cache_eval(cache::GramSegmentCache, t::Float64)
+    x = (t - cache.t0) / (cache.t1 - cache.t0)
+    ρ = _lerp(cache.rho0, cache.rho1, x)
+    T = _lerp(cache.T0, cache.T1, x)
+    wind = cache.wind0 + x * (cache.wind1 - cache.wind0)
+    return ρ, T, wind
+end
+
+function _gram_segment_cache_refresh!(
+    cache::GramSegmentCache,
+    density_model,
+    p,
+    pos::SVector{3, Float64},
+    vel::SVector{3, Float64},
+    alt::Float64,
+    lat::Float64,
+    lon::Float64,
+    t::Float64,
+    horizon_s::Float64
+)
+    ρ0, T0, wind0 = getDensity(density_model, alt, lat, lon, t, true, p)
+    planet = p.args.environment_model.planet
+    dt = max(1e-3, horizon_s)
+    pos_next = pos + vel * dt
+    rp_next, _ = r_intor_p!(pos_next, vel, planet)
+    alt1, lat1, lon1 = rtolatlong(rp_next, planet)
+    try
+        ρ1, T1, wind1 = getDensity(density_model, alt1, lat1, lon1, t + dt, true, p)
+        cache.valid = true
+        cache.t0 = t
+        cache.t1 = t + dt
+        cache.alt0 = alt
+        cache.lat0 = lat
+        cache.lon0 = lon
+        cache.alt1 = alt1
+        cache.lat1 = lat1
+        cache.lon1 = lon1
+        cache.rho0 = ρ0
+        cache.T0 = T0
+        cache.wind0 = wind0
+        cache.rho1 = ρ1
+        cache.T1 = T1
+        cache.wind1 = wind1
+    catch err
+        cache.valid = false
+        if !_gram_segment_cache_warning_emitted[]
+            _gram_segment_cache_warning_emitted[] = true
+            @warn "GRAM segment cache refresh fallback to direct samples due to GRAM update error near predicted point." exception=err
+        end
+    end
+    return ρ0, T0, wind0
+end
+
 @inline function _uses_atmospheric_dynamic_effector(effectors::Tuple)::Bool
     @inbounds for effector in effectors
         if effector isa AerodynamicCoefficientConstant || effector isa AerodynamicCoefficientfM || effector isa AerodynamicCoefficientNoBallisticFlight
@@ -148,6 +285,11 @@ end
            tol.abstol_atmosphere != tol.abstol_orbit
 end
 
+@inline function _requires_thermal_callback(effectors::Tuple, args::SimulationConfiguration)::Bool
+    # Thermal-rate evaluation requires atmospheric state (ρ, T, wind), populated by density callback.
+    return _requires_density_callback(effectors, args)
+end
+
 function get_callbacks(num_sats::Int, effectors::Tuple, args::SimulationConfiguration)::CallbackSet
     callbacks = Any[
         get_impact_callback(num_sats),
@@ -156,6 +298,10 @@ function get_callbacks(num_sats::Int, effectors::Tuple, args::SimulationConfigur
 
     if _requires_density_callback(effectors, args)
         push!(callbacks, get_density_callback(num_sats, args))
+    end
+
+    if _requires_thermal_callback(effectors, args)
+        push!(callbacks, get_thermal_callback(num_sats, args))
     end
 
     if _requires_orbit_end_callback(args)
@@ -205,12 +351,35 @@ end
 # Factory function to build the callback
 function get_density_callback(num_sats::Int, args::SimulationConfiguration)
     use_threads = _density_callback_use_threads(args, num_sats)
+    use_gram_segment_cache = _parse_bool_env("SPACEAGORA_GRAM_SEGMENT_CACHE", false)
+    cache_horizon_s = max(1e-3, _parse_float_env("SPACEAGORA_GRAM_SEGMENT_CACHE_HORIZON_S", 5.0))
+    cache_alt_tol_m = max(0.0, _parse_float_env("SPACEAGORA_GRAM_SEGMENT_CACHE_ALT_TOL_M", 1500.0))
+    cache_ang_tol_rad = deg2rad(max(0.0, _parse_float_env("SPACEAGORA_GRAM_SEGMENT_CACHE_ANG_TOL_DEG", 2.0)))
     function update_density_sat!(i::Int, p, u, t)
         pos = SVector{3, Float64}(u.sc[i].pos)
         vel = SVector{3, Float64}(u.sc[i].vel)
         rp, _ = r_intor_p!(pos, vel, p.args.environment_model.planet)
         alt, lat, lon = rtolatlong(rp, p.args.environment_model.planet)
-        ρ, T, wind_vec = getDensity(p.args.environment_model.density_model, alt, lat, lon, t, true, p)
+        density_model = _density_model_for_sat(p, i)
+        ρ, T, wind_vec = if use_gram_segment_cache && density_model isa EnvironmentModels.GRAMAtmosphereModel
+            caches = p.shared_buffers.gram_density_cache
+            cache = if i <= length(caches) && caches[i] isa GramSegmentCache
+                caches[i]::GramSegmentCache
+            else
+                c = GramSegmentCache()
+                if i <= length(caches)
+                    caches[i] = c
+                end
+                c
+            end
+            if _gram_segment_cache_ready(cache, t, alt, lat, lon, cache_alt_tol_m, cache_ang_tol_rad)
+                _gram_segment_cache_eval(cache, t)
+            else
+                _gram_segment_cache_refresh!(cache, density_model, p, pos, vel, alt, lat, lon, t, cache_horizon_s)
+            end
+        else
+            getDensity(density_model, alt, lat, lon, t, true, p)
+        end
         p.shared_buffers.densities[i] = ρ
         p.shared_buffers.temperatures[i] = T
         p.shared_buffers.winds[i] = wind_vec
@@ -233,6 +402,72 @@ function get_density_callback(num_sats::Int, args::SimulationConfiguration)
         else
             @inbounds for i in 1:num_sats
                 update_density_sat!(i, p, u, integrator.t)
+            end
+        end
+    end
+
+    return DiscreteCallback(condition, affect!, initialize=(cb, u, t, integrator) -> affect!(integrator))
+end
+
+function get_thermal_callback(num_sats::Int, args::SimulationConfiguration)
+    use_threads = _density_callback_use_threads(args, num_sats)
+
+    function update_thermal_sat!(i::Int, p, u)
+        links = p.args.dynamics_model.spacecraft[i].links
+        n_links = length(links)
+        heat_rates = p.shared_buffers.heat_rates[i]
+        if length(heat_rates) != n_links
+            resize!(heat_rates, n_links)
+        end
+        fill!(heat_rates, 0.0)
+
+        ρ = p.shared_buffers.densities[i]
+        T = p.shared_buffers.temperatures[i]
+        wind = p.shared_buffers.winds[i]
+        if !isfinite(ρ) || !isfinite(T) || ρ <= 0.0 || T <= 0.0
+            return nothing
+        end
+
+        planet = p.args.environment_model.planet
+        thermal_model = p.args.environment_model.thermal_model
+        pos_ii = SVector{3, Float64}(u.sc[i].pos)
+        vel_ii = SVector{3, Float64}(u.sc[i].vel)
+        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, planet)
+        alt_lat_lon = rtolatlong(pos_pp, planet)
+        uD, uN, uE = latlongtoNED(alt_lat_lon)
+        wE, wN, wU = wind
+        wind_pp = wN * uN + wE * uE - wU * uD
+        vel_pp_rw = vel_pp + wind_pp
+        v = norm(vel_pp_rw)
+        sound_velocity = sqrt(planet.γ * planet.R * T)
+        if !isfinite(v) || !isfinite(sound_velocity) || v <= 0.0 || sound_velocity <= 0.0
+            return nothing
+        end
+        mach = v / sound_velocity
+        S = sqrt(planet.γ * 0.5) * mach
+        @inbounds for j in eachindex(links)
+            α = links[j].α
+            if !isfinite(α)
+                continue
+            end
+            qdot = getHeatRate(thermal_model, S, T, ρ, v, α)
+            heat_rates[j] = (isfinite(qdot) && qdot > 0.0) ? qdot : 0.0
+        end
+        return nothing
+    end
+
+    condition(u, t, integrator) = true
+
+    function affect!(integrator)
+        p = integrator.p
+        u = integrator.u
+        if use_threads
+            Threads.@threads for i in 1:num_sats
+                @inbounds update_thermal_sat!(i, p, u)
+            end
+        else
+            @inbounds for i in 1:num_sats
+                update_thermal_sat!(i, p, u)
             end
         end
     end

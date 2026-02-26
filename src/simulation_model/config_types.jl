@@ -547,6 +547,9 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         densities::Vector{Float64} = zeros(Float64, N_sats)
         temperatures::Vector{Float64} = ones(Float64, N_sats)
         winds::Vector{SVector{3,Float64}} = [SVector{3,Float64}(0.0, 0.0, 0.0) for _ in 1:N_sats]
+        heat_rates::Vector{Vector{Float64}} = [Float64[] for _ in 1:N_sats]
+        density_models::Vector{Any} = Any[]
+        gram_density_cache::Vector{Any} = Any[]
         current_time::Base.RefValue{Float64} = Ref(0.0)
         et_start::Base.RefValue{Float64} = Ref(0.0)
         debug_control::Base.RefValue{Bool} = Ref(false)

@@ -54,6 +54,10 @@ struct ConstantTorqueModel <: SimulationModel.AbstractForceTorqueModel
     torque::SVector{3, Float64}
 end
 
+struct ConstantForceModel <: SimulationModel.AbstractForceTorqueModel
+    force::SVector{3, Float64}
+end
+
 struct ThrowingOrbitPlanet <: SimulationModel.AbstractPlanet
     Rp_e::Float64
 end
@@ -158,6 +162,15 @@ function SimulationModel.calcForceTorque(
     i::Int64
 )
     return SVector{3, Float64}(0.0, 0.0, 0.0), model.torque
+end
+
+function SimulationModel.calcForceTorque(
+    model::ConstantForceModel,
+    x::AbstractVector{Float64},
+    p::ODEParams,
+    i::Int64
+)
+    return model.force, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
 function SimulationModel.ControlEffectors.rvtoorbitalelement(
@@ -5386,7 +5399,12 @@ end
     @test norm(SVector{3, Float64}(u0.sc[1].vel)) > 1e3
     @test u0.sc[1].mass > 1.0
 
-    df_norm_true = withenv("SPACEAGORA_WARN_NORMALIZE" => "0") do
+    @test_throws ArgumentError run_case_silent(args_norm_true)
+
+    df_norm_true = withenv(
+        "SPACEAGORA_ALLOW_TYPED_NORMALIZE" => "1",
+        "SPACEAGORA_WARN_NORMALIZE" => "0"
+    ) do
         run_case_silent(args_norm_true)
     end
     df_norm_false = run_case_silent(args_norm_false)
@@ -5413,7 +5431,7 @@ end
     end
 end
 
-@testset "Normalize Flag Runtime Warning" begin
+@testset "Normalize Flag Runtime Policy" begin
     args_warn = build_config(
         spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
         density_model=NoAtmosphereModel(),
@@ -5426,14 +5444,24 @@ end
         tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
     )
 
-    withenv("SPACEAGORA_WARN_NORMALIZE" => "1") do
+    withenv("SPACEAGORA_ALLOW_TYPED_NORMALIZE" => "0") do
+        @test_throws ArgumentError run_simulation(args_warn)
+    end
+
+    withenv(
+        "SPACEAGORA_ALLOW_TYPED_NORMALIZE" => "1",
+        "SPACEAGORA_WARN_NORMALIZE" => "1"
+    ) do
         _normalize_warning_emitted[] = false
         @test_logs (:warn, r"normalize=true is legacy-only") run_simulation(args_warn)
         @test _normalize_warning_emitted[] == true
         @test_logs run_simulation(args_warn)
     end
 
-    withenv("SPACEAGORA_WARN_NORMALIZE" => "0") do
+    withenv(
+        "SPACEAGORA_ALLOW_TYPED_NORMALIZE" => "1",
+        "SPACEAGORA_WARN_NORMALIZE" => "0"
+    ) do
         _normalize_warning_emitted[] = false
         @test_logs run_simulation(args_warn)
         @test _normalize_warning_emitted[] == false
@@ -5790,6 +5818,121 @@ end
     @test maximum(abs.(qnorm .- 1.0)) < 1e-6
 end
 
+@testset "Solver Tolerances Apply Quaternion Overrides" begin
+    q0 = normalize(SVector{4, Float64}(0.1, -0.2, 0.3, 0.9))
+    w0 = SVector{3, Float64}(0.01, -0.015, 0.02)
+    sc = make_spacecraft(
+        ra_alt_m=500e3,
+        rp_alt_m=420e3,
+        i_deg=40.0,
+        ω_deg=10.0,
+        Ω_deg=20.0,
+        ν_deg=175.0,
+        orientation_state=(q0, w0)
+    )
+    tols = IntegrationTolerances(
+        reltol_orbit=1e-5,
+        abstol_orbit=2e-6,
+        reltol_quaternion=3e-7,
+        abstol_quaternion=4e-8,
+        reltol_mass=5e-7,
+        abstol_mass=6e-8,
+        reltol_heat_load=7e-7,
+        abstol_heat_load=8e-8,
+        reltol_angular_rate=9e-7,
+        abstol_angular_rate=1e-7,
+        dt_max_orbit=5.0
+    )
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=true,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        tolerances=tols
+    )
+
+    u0 = build_initial_conditions(args)
+    reltol_vec, abstol_vec = _build_solver_tolerances(u0, args)
+    @test all(isapprox.(reltol_vec.sc[1].pos, tols.reltol_orbit; atol=0.0, rtol=0.0))
+    @test all(isapprox.(abstol_vec.sc[1].pos, tols.abstol_orbit; atol=0.0, rtol=0.0))
+    @test all(isapprox.(reltol_vec.sc[1].q, tols.reltol_quaternion; atol=0.0, rtol=0.0))
+    @test all(isapprox.(abstol_vec.sc[1].q, tols.abstol_quaternion; atol=0.0, rtol=0.0))
+    @test all(isapprox.(reltol_vec.sc[1].ω, tols.reltol_angular_rate; atol=0.0, rtol=0.0))
+    @test all(isapprox.(abstol_vec.sc[1].ω, tols.abstol_angular_rate; atol=0.0, rtol=0.0))
+    @test isapprox(reltol_vec.sc[1].mass, tols.reltol_mass; atol=0.0, rtol=0.0)
+    @test isapprox(abstol_vec.sc[1].mass, tols.abstol_mass; atol=0.0, rtol=0.0)
+    @test all(isapprox.(reltol_vec.sc[1].heat_loads, tols.reltol_heat_load; atol=0.0, rtol=0.0))
+    @test all(isapprox.(abstol_vec.sc[1].heat_loads, tols.abstol_heat_load; atol=0.0, rtol=0.0))
+
+    tols_no_orient = IntegrationTolerances(
+        reltol_orbit=1e-5,
+        abstol_orbit=2e-6,
+        dt_max_orbit=5.0
+    )
+    args_no_orient = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        tolerances=tols_no_orient
+    )
+    u0_no_orient = build_initial_conditions(args_no_orient)
+    reltol_scalar, abstol_scalar = _build_solver_tolerances(u0_no_orient, args_no_orient)
+    @test reltol_scalar == tols_no_orient.reltol_orbit
+    @test abstol_scalar == tols_no_orient.abstol_orbit
+
+    tols_no_orient_component = IntegrationTolerances(
+        reltol_orbit=1e-5,
+        abstol_orbit=2e-6,
+        reltol_mass=3e-7,
+        abstol_mass=4e-8,
+        reltol_heat_load=5e-7,
+        abstol_heat_load=6e-8,
+        dt_max_orbit=5.0
+    )
+    args_no_orient_component = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        tolerances=tols_no_orient_component
+    )
+    u0_no_orient_component = build_initial_conditions(args_no_orient_component)
+    reltol_vec_no_orient, abstol_vec_no_orient = _build_solver_tolerances(u0_no_orient_component, args_no_orient_component)
+    @test isapprox(reltol_vec_no_orient.sc[1].mass, tols_no_orient_component.reltol_mass; atol=0.0, rtol=0.0)
+    @test isapprox(abstol_vec_no_orient.sc[1].mass, tols_no_orient_component.abstol_mass; atol=0.0, rtol=0.0)
+    @test all(isapprox.(reltol_vec_no_orient.sc[1].heat_loads, tols_no_orient_component.reltol_heat_load; atol=0.0, rtol=0.0))
+    @test all(isapprox.(abstol_vec_no_orient.sc[1].heat_loads, tols_no_orient_component.abstol_heat_load; atol=0.0, rtol=0.0))
+
+    tols_bad_ω = IntegrationTolerances(
+        reltol_orbit=1e-5,
+        abstol_orbit=2e-6,
+        reltol_angular_rate=3e-7,
+        dt_max_orbit=5.0
+    )
+    args_bad_ω = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        tolerances=tols_bad_ω
+    )
+    u0_bad_ω = build_initial_conditions(args_bad_ω)
+    @test_throws ArgumentError _build_solver_tolerances(u0_bad_ω, args_bad_ω)
+end
+
 @testset "Rigid-Body Angular Dynamics Uses Inertia Tensor" begin
     q0 = normalize(SVector{4, Float64}(0.1, -0.2, 0.3, 0.9))
     w0 = SVector{3, Float64}(0.02, -0.03, 0.015)
@@ -5852,6 +5995,74 @@ end
     )
 
     @test_throws ArgumentError run_simulation(args)
+end
+
+@testset "Heat Loads Are Not Coupled To Force Magnitude" begin
+    sc = make_single_link_spacecraft(
+        ra_alt_m=500e3,
+        rp_alt_m=500e3,
+        i_deg=35.0,
+        ω_deg=40.0,
+        Ω_deg=10.0,
+        ν_deg=175.0
+    )
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=10.0,
+        EI_km=120.0,
+        dynamic_effectors=(ConstantForceModel(SVector{3, Float64}(1.0e5, -2.0e5, 3.0e5)),),
+        keplerian=true
+    )
+    args.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(I(3))
+
+    u0 = build_initial_conditions(args)
+    du0 = copy(u0)
+    du0 .= 0.0
+    p = ODEParams{1}(args=args)
+    spacecraft_dynamics!(du0, u0, p, 0.0)
+
+    @test norm(SVector{3, Float64}(du0.sc[1].vel)) > 0.0
+    @test all(==(0.0), du0.sc[1].heat_loads)
+end
+
+@testset "Heat Load Derivative Uses Thermal Model" begin
+    sc = make_single_link_spacecraft(
+        ra_alt_m=500e3,
+        rp_alt_m=500e3,
+        i_deg=35.0,
+        ω_deg=40.0,
+        Ω_deg=10.0,
+        ν_deg=175.0
+    )
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=10.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true
+    )
+    args.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(I(3))
+
+    u0 = build_initial_conditions(args)
+    du0 = copy(u0)
+    du0 .= 0.0
+    p = ODEParams{1}(args=args)
+    _initialize_heat_rate_buffers!(p)
+    p.shared_buffers.densities[1] = 1.0e-6
+    p.shared_buffers.temperatures[1] = 250.0
+    p.shared_buffers.winds[1] = SVector{3, Float64}(0.0, 0.0, 0.0)
+    thermal_cb = SimulationModel.SimulationCallbacks.get_thermal_callback(1, args)
+    thermal_cb.affect!((p=p, u=u0, t=0.0))
+    spacecraft_dynamics!(du0, u0, p, 0.0)
+
+    @test all(isfinite, p.shared_buffers.heat_rates[1])
+    @test any(>(0.0), p.shared_buffers.heat_rates[1])
+    @test all(isfinite, du0.sc[1].heat_loads)
+    @test any(>(0.0), du0.sc[1].heat_loads)
 end
 
 @testset "Drag Dissipates Specific Orbital Energy" begin

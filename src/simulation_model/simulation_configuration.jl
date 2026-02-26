@@ -70,6 +70,12 @@ module SimConfig
         abstol_atmosphere::Float64 = 1e-9
         reltol_quaternion::Float64 = 1e-9
         abstol_quaternion::Float64 = 1e-11
+        reltol_mass::Float64 = 0.0
+        abstol_mass::Float64 = 0.0
+        reltol_heat_load::Float64 = 0.0
+        abstol_heat_load::Float64 = 0.0
+        reltol_angular_rate::Float64 = 0.0
+        abstol_angular_rate::Float64 = 0.0
         dt_max::Float64 = 1.0
         dt_max_orbit::Float64 = 30.0
         dt_max_atmosphere::Float64 = 1.0
@@ -90,7 +96,7 @@ module SimConfig
         results_directory::String = "output" # Directory to save results
         generate_plots::Bool = true # Whether to generate plots after simulation
         generate_filenames::Bool = false # Whether to generate filenames with specifics of simulation parameters
-        normalize::Bool = true # Legacy compatibility flag; typed run_simulation propagates SI-state directly
+        normalize::Bool = false # Legacy compatibility flag; typed run_simulation propagates SI-state directly
         save_csv::Bool = true # Whether to save results in CSV format in addition to feather
         checkpoint_enabled::Bool = false # Periodically checkpoint state for restart safety
         checkpoint_interval_s::Float64 = 300.0 # Checkpoint cadence in seconds of simulated time

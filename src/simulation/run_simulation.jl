@@ -18,6 +18,7 @@ const RESULTS_BUNDLE_SCHEMA_VERSION = "1"
 const CHECKPOINT_SCHEMA_VERSION = "1"
 
 @inline _typed_normalize_warning_enabled() = get(ENV, "SPACEAGORA_WARN_NORMALIZE", "1") == "1"
+@inline _typed_allow_legacy_normalize() = get(ENV, "SPACEAGORA_ALLOW_TYPED_NORMALIZE", "0") == "1"
 @inline _typed_save_bundle_enabled() = get(ENV, "SPACEAGORA_SAVE_BUNDLE", "1") == "1"
 @inline _typed_checkpoint_enabled(args) = args.simulation_settings.checkpoint_enabled || args.simulation_settings.resume_from_checkpoint
 
@@ -41,6 +42,136 @@ function _validate_orientation_inertia!(args)
     return nothing
 end
 
+function _validate_thermal_model_support!(args)
+    thermal_model = args.environment_model.thermal_model
+    if !hasmethod(SimulationModel.getHeatRate, Tuple{typeof(thermal_model), Float64, Float64, Float64, Float64, Float64})
+        throw(ArgumentError(
+            "Thermal model $(nameof(typeof(thermal_model))) must implement " *
+            "getHeatRate(model, S, T, ρ, v, α)::Float64."
+        ))
+    end
+    return nothing
+end
+
+function _initialize_heat_rate_buffers!(p)
+    n_sats = length(p.args.dynamics_model.spacecraft)
+    if length(p.shared_buffers.heat_rates) != n_sats
+        resize!(p.shared_buffers.heat_rates, n_sats)
+    end
+    @inbounds for i in 1:n_sats
+        n_links = length(p.args.dynamics_model.spacecraft[i].links)
+        rates = p.shared_buffers.heat_rates[i]
+        if !(rates isa Vector{Float64})
+            rates = Float64[]
+            p.shared_buffers.heat_rates[i] = rates
+        end
+        if length(rates) != n_links
+            resize!(rates, n_links)
+        end
+        fill!(rates, 0.0)
+    end
+    return nothing
+end
+
+@inline function _gram_per_sat_instances_enabled()::Bool
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_GRAM_PER_SAT_INSTANCES", "0")))
+    if raw in ("1", "true", "yes", "on")
+        return true
+    elseif raw in ("0", "false", "no", "off")
+        return false
+    end
+    throw(ArgumentError(
+        "Invalid SPACEAGORA_GRAM_PER_SAT_INSTANCES='$raw'. Use one of: 1/0, true/false, yes/no, on/off."
+    ))
+end
+
+function _initialize_density_model_instances!(p)
+    instances = p.shared_buffers.density_models
+    empty!(instances)
+
+    density_model = p.args.environment_model.density_model
+    if !_gram_per_sat_instances_enabled() || !(density_model isa SimulationModel.EnvironmentModels.GRAMAtmosphereModel)
+        return nothing
+    end
+
+    n_sats = length(p.args.dynamics_model.spacecraft)
+    sizehint!(instances, n_sats)
+    @inbounds for _ in 1:n_sats
+        # One GRAM handle per satellite avoids sharing mutable native model state.
+        push!(instances, deepcopy(density_model))
+    end
+    return nothing
+end
+
+function _initialize_density_cache_buffers!(p)
+    n_sats = length(p.args.dynamics_model.spacecraft)
+    caches = p.shared_buffers.gram_density_cache
+    if length(caches) != n_sats
+        resize!(caches, n_sats)
+    end
+    fill!(caches, nothing)
+    return nothing
+end
+
+@inline function _resolve_component_tolerance(component_tol::Float64, fallback_tol::Float64, name::String)::Float64
+    if component_tol < 0.0
+        throw(ArgumentError("$name must be >= 0.0, got $component_tol"))
+    end
+    return component_tol == 0.0 ? fallback_tol : component_tol
+end
+
+@inline function _requires_componentwise_tolerances(args)::Bool
+    tol = args.integration_tolerances
+    return args.mission_configuration.orientation_sim ||
+           tol.reltol_mass != 0.0 || tol.abstol_mass != 0.0 ||
+           tol.reltol_heat_load != 0.0 || tol.abstol_heat_load != 0.0 ||
+           tol.reltol_angular_rate != 0.0 || tol.abstol_angular_rate != 0.0
+end
+
+function _build_solver_tolerances(u_state::ComponentVector, args)
+    tol = args.integration_tolerances
+    if !_requires_componentwise_tolerances(args)
+        return tol.reltol_orbit, tol.abstol_orbit
+    end
+
+    reltol_mass = _resolve_component_tolerance(tol.reltol_mass, tol.reltol_orbit, "reltol_mass")
+    abstol_mass = _resolve_component_tolerance(tol.abstol_mass, tol.abstol_orbit, "abstol_mass")
+    reltol_heat = _resolve_component_tolerance(tol.reltol_heat_load, tol.reltol_orbit, "reltol_heat_load")
+    abstol_heat = _resolve_component_tolerance(tol.abstol_heat_load, tol.abstol_orbit, "abstol_heat_load")
+    reltol_ω = _resolve_component_tolerance(tol.reltol_angular_rate, tol.reltol_orbit, "reltol_angular_rate")
+    abstol_ω = _resolve_component_tolerance(tol.abstol_angular_rate, tol.abstol_orbit, "abstol_angular_rate")
+
+    reltol_state = copy(u_state)
+    abstol_state = copy(u_state)
+    reltol_state .= tol.reltol_orbit
+    abstol_state .= tol.abstol_orbit
+    @inbounds for i in eachindex(reltol_state.sc)
+        reltol_state.sc[i].mass = reltol_mass
+        abstol_state.sc[i].mass = abstol_mass
+        reltol_state.sc[i].heat_loads .= reltol_heat
+        abstol_state.sc[i].heat_loads .= abstol_heat
+    end
+
+    if args.mission_configuration.orientation_sim
+        @inbounds for i in eachindex(reltol_state.sc)
+            reltol_state.sc[i].ω .= reltol_ω
+            abstol_state.sc[i].ω .= abstol_ω
+        end
+    elseif tol.reltol_angular_rate != 0.0 || tol.abstol_angular_rate != 0.0
+        throw(ArgumentError(
+            "reltol_angular_rate/abstol_angular_rate require mission_configuration.orientation_sim=true."
+        ))
+    end
+
+    if args.mission_configuration.orientation_sim
+        @inbounds for i in eachindex(reltol_state.sc)
+        reltol_state.sc[i].q .= tol.reltol_quaternion
+        abstol_state.sc[i].q .= tol.abstol_quaternion
+        end
+    end
+    return reltol_state, abstol_state
+end
+
 @inline function _solver_policy_mode()::Symbol
     mode = lowercase(strip(get(ENV, "SPACEAGORA_SOLVER_MODE", "tsit5")))
     if mode in ("tsit5", "default")
@@ -60,20 +191,20 @@ end
     return rc in ("Unstable", "DtLessThanMin", "MaxIters", "InitialFailure")
 end
 
-@inline function _solve_with_explicit_solver(prob, args, alg)
+@inline function _solve_with_explicit_solver(prob, args, alg, reltol_tol, abstol_tol)
     return solve(
         prob,
         alg;
-        reltol=args.integration_tolerances.reltol_orbit,
-        abstol=args.integration_tolerances.abstol_orbit,
+        reltol=reltol_tol,
+        abstol=abstol_tol,
         dtmax=args.integration_tolerances.dt_max_orbit
     )
 end
 
-function _solve_with_solver_policy(prob, args)
+function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
     mode = _solver_policy_mode()
     if mode == :rodas5p
-        sol = _solve_with_explicit_solver(prob, args, Rodas5P(autodiff=false))
+        sol = _solve_with_explicit_solver(prob, args, Rodas5P(autodiff=false), reltol_tol, abstol_tol)
         return sol, (
             solver="Rodas5P",
             initial_solver="Rodas5P",
@@ -82,11 +213,11 @@ function _solve_with_solver_policy(prob, args)
         )
     end
 
-    tsit_sol = _solve_with_explicit_solver(prob, args, Tsit5())
+    tsit_sol = _solve_with_explicit_solver(prob, args, Tsit5(), reltol_tol, abstol_tol)
     if mode == :auto_stiff &&
        !SciMLBase.successful_retcode(tsit_sol.retcode) &&
        _retcode_is_stiff_symptom(tsit_sol.retcode)
-        stiff_sol = _solve_with_explicit_solver(prob, args, Rodas5P(autodiff=false))
+        stiff_sol = _solve_with_explicit_solver(prob, args, Rodas5P(autodiff=false), reltol_tol, abstol_tol)
         return stiff_sol, (
             solver="Rodas5P",
             initial_solver="Tsit5",
@@ -112,6 +243,21 @@ function _warn_legacy_normalize_flag!(args)
     _normalize_warning_emitted[] = true
     @warn "SimulationSettings.normalize=true is legacy-only in typed run_simulation; propagation is always SI-native (m, s, kg). Set normalize=false to silence this warning."
     return nothing
+end
+
+function _enforce_typed_normalize_policy!(args)
+    if !args.simulation_settings.normalize
+        return nothing
+    end
+    if _typed_allow_legacy_normalize()
+        _warn_legacy_normalize_flag!(args)
+        return nothing
+    end
+    throw(ArgumentError(
+        "SimulationSettings.normalize=true is unsupported in typed run_simulation. " *
+        "Typed propagation is SI-native (m, s, kg). Set normalize=false, or set " *
+        "SPACEAGORA_ALLOW_TYPED_NORMALIZE=1 only for legacy transition checks."
+    ))
 end
 
 function _debug_print_nan_parameter_paths!(x, path::AbstractString="p")
@@ -330,9 +476,10 @@ function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=fa
     args = isolate_state ? deepcopy(args) : args
 
     # Typed pipeline is SI-native (meters, seconds, kilograms). The
-    # `simulation_settings.normalize` field is retained for legacy compatibility.
-    _warn_legacy_normalize_flag!(args)
+    # `simulation_settings.normalize` field is legacy-only and rejected by default.
+    _enforce_typed_normalize_policy!(args)
     _validate_orientation_inertia!(args)
+    _validate_thermal_model_support!(args)
 
     # Set up the model and initial conditions
     initial_conditions = build_initial_conditions(args)
@@ -343,6 +490,9 @@ function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=fa
 
     # Define the ODE parameters and callbacks
     p = SimulationModel.ODEParams{length(args.dynamics_model.spacecraft)}(args=args) # Define the parameters for the ODE problem, including the shared buffers for the callbacks
+    _initialize_heat_rate_buffers!(p)
+    _initialize_density_model_instances!(p)
+    _initialize_density_cache_buffers!(p)
     p.shared_buffers.debug_control[] = get(ENV, "SPACEAGORA_DEBUG_CONTROL", "0") == "1"
     p.shared_buffers.debug_initial_derivative[] = get(ENV, "SPACEAGORA_DEBUG_INITIAL_DERIVATIVE", "0") == "1"
     callbacks = SimulationModel.get_callbacks(length(args.dynamics_model.spacecraft), args.dynamics_model.dynamic_effectors, args) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
@@ -421,6 +571,7 @@ function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=fa
     end
 
     state_type = typeof(u_start)
+    reltol_tol, abstol_tol = _build_solver_tolerances(u_start, args)
     all_times = Float64[]
     all_states = state_type[]
     last_sol = nothing
@@ -437,7 +588,7 @@ function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=fa
         while t_cursor < mission_end
             t_next = min(t_cursor + interval, mission_end)
             prob = ODEProblem(spacecraft_dynamics!, u_cursor, (t_cursor, t_next), p, callback=callbacks)
-            seg_sol, solve_meta = _solve_with_solver_policy(prob, args)
+            seg_sol, solve_meta = _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
             push!(solver_trace, solve_meta)
             if !SciMLBase.successful_retcode(seg_sol.retcode)
                 throw(ErrorException("Checkpointed solve failed with retcode=$(seg_sol.retcode)."))
@@ -451,7 +602,7 @@ function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=fa
 
     else
         prob = ODEProblem(spacecraft_dynamics!, u_start, (t_start, mission_end), p, callback=callbacks)
-        sol, solve_meta = _solve_with_solver_policy(prob, args)
+        sol, solve_meta = _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
         push!(solver_trace, solve_meta)
         if !SciMLBase.successful_retcode(sol.retcode)
             throw(ErrorException("Solve failed with retcode=$(sol.retcode)."))
@@ -546,8 +697,17 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                 du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
             end
 
-            # Update heat loads based on current state and environment (placeholder logic)
-            du_view.heat_loads .= norm(forces) * 1e-6 # Example: heat load proportional to force magnitude
+            # Thermal callback precomputes per-link heat-rate derivatives once per step.
+            heat_rates = p.shared_buffers.heat_rates[i]
+            if length(heat_rates) == length(du_view.heat_loads)
+                du_view.heat_loads .= heat_rates
+            else
+                du_view.heat_loads .= 0.0
+                n_copy = min(length(heat_rates), length(du_view.heat_loads))
+                @inbounds for j in 1:n_copy
+                    du_view.heat_loads[j] = heat_rates[j]
+                end
+            end
         end
     end
 end # function spacecraft_dynamics!

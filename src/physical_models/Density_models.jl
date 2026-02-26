@@ -41,9 +41,26 @@ const _GRAM_WRAPPER = Ref{Any}(nothing)
 const _GRAM_WRAPPER_FILE = Ref{String}("")
 const _GRAM_SEED_WARNING_EMITTED = Ref(false)
 const _GRAM_WIND_WARNING_EMITTED = Ref(false)
+const _GRAM_LOCK_OFF_WARNING_EMITTED = Ref(false)
 
 @inline _spaceagora_repo_root() = normpath(joinpath(@__DIR__, "..", ".."))
 @inline _gram_lib_extension() = Sys.iswindows() ? "dll" : (Sys.isapple() ? "dylib" : "so")
+@inline function _gram_use_global_lock()::Bool
+    mode = lowercase(strip(get(ENV, "SPACEAGORA_GRAM_GLOBAL_LOCK", "on")))
+    if mode in ("on", "true", "1", "yes")
+        return true
+    elseif mode in ("off", "false", "0", "no")
+        if Threads.nthreads() > 1
+            if !_GRAM_LOCK_OFF_WARNING_EMITTED[]
+                _GRAM_LOCK_OFF_WARNING_EMITTED[] = true
+                @warn "SPACEAGORA_GRAM_GLOBAL_LOCK=off is unsafe with Threads.nthreads()>1. Keeping GRAM global lock enabled."
+            end
+            return true
+        end
+        return false
+    end
+    throw(ArgumentError("Unsupported SPACEAGORA_GRAM_GLOBAL_LOCK='$mode'. Use one of: on, off."))
+end
 
 function _as_abspath(path::AbstractString)::String
     if isempty(path)
@@ -368,6 +385,53 @@ function getDensity(model::PolynomialFitAtmosphereModel, h::Union{Float64, Vecto
     end
 end
 
+@inline function _gram_density_state(
+    model::GRAMAtmosphereModel,
+    h::Float64,
+    lat::Float64,
+    lon::Float64,
+    el_time::Float64,
+    wind::Bool
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    model.gram.set_position!(
+        model.gram_atmosphere;
+        height=h * 1e-3,
+        latitude=rad2deg(lat),
+        longitude=rad2deg(lon),
+        elapsed_time=el_time
+    )
+
+    err = model.gram.update!(model.gram_atmosphere)
+    err == 0 || throw(ErrorException("GRAM update failed (code=$err): $(model.gram.get_error_message())"))
+
+    atmos = model.gram.get_dynamics_state(model.gram_atmosphere)
+    rho_local = Float64(atmos.density)
+    T_local = Float64(atmos.temperature)
+    if isdefined(model.gram, :get_winds_state)
+        winds = model.gram.get_winds_state(model.gram_atmosphere)
+        wind_vec_local = if wind
+            SVector{3, Float64}(
+                Float64(winds.perturbedEWWind),
+                Float64(winds.perturbedNSWind),
+                Float64(winds.perturbedVerticalWind)
+            )
+        else
+            SVector{3, Float64}(
+                Float64(winds.ewWind),
+                Float64(winds.nsWind),
+                Float64(winds.verticalWind)
+            )
+        end
+        return rho_local, T_local, wind_vec_local
+    end
+
+    if !_GRAM_WIND_WARNING_EMITTED[]
+        _GRAM_WIND_WARNING_EMITTED[] = true
+        @warn "Loaded GRAM wrapper does not expose wind state. Returning zero wind."
+    end
+    return rho_local, T_local, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
 function getDensity(model::GRAMAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
     # cnf = params.cnf
     # println("In GRAM density model")
@@ -389,44 +453,12 @@ function getDensity(model::GRAMAtmosphereModel, h::Float64, lat::Float64, lon::F
             T = p.args.environment_model.planet.T_ref
             wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
         else
-            rho, T, wind_vec = lock(GRAM_LOCK) do
-                model.gram.set_position!(
-                    model.gram_atmosphere;
-                    height=h * 1e-3,
-                    latitude=rad2deg(lat),
-                    longitude=rad2deg(lon),
-                    elapsed_time=el_time
-                )
-
-                err = model.gram.update!(model.gram_atmosphere)
-                err == 0 || throw(ErrorException("GRAM update failed (code=$err): $(model.gram.get_error_message())"))
-
-                atmos = model.gram.get_dynamics_state(model.gram_atmosphere)
-                rho_local = Float64(atmos.density)
-                T_local = Float64(atmos.temperature)
-                if isdefined(model.gram, :get_winds_state)
-                    winds = model.gram.get_winds_state(model.gram_atmosphere)
-                    wind_vec_local = if wind
-                        SVector{3, Float64}(
-                            Float64(winds.perturbedEWWind),
-                            Float64(winds.perturbedNSWind),
-                            Float64(winds.perturbedVerticalWind)
-                        )
-                    else
-                        SVector{3, Float64}(
-                            Float64(winds.ewWind),
-                            Float64(winds.nsWind),
-                            Float64(winds.verticalWind)
-                        )
-                    end
-                    return rho_local, T_local, wind_vec_local
+            rho, T, wind_vec = if _gram_use_global_lock()
+                lock(GRAM_LOCK) do
+                    _gram_density_state(model, h, lat, lon, el_time, wind)
                 end
-
-                if !_GRAM_WIND_WARNING_EMITTED[]
-                    _GRAM_WIND_WARNING_EMITTED[] = true
-                    @warn "Loaded GRAM wrapper does not expose wind state. Returning zero wind."
-                end
-                return rho_local, T_local, SVector{3, Float64}(0.0, 0.0, 0.0)
+            else
+                _gram_density_state(model, h, lat, lon, el_time, wind)
             end
         end
     end

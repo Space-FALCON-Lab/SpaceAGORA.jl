@@ -391,7 +391,7 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         ts_targ_1::Float64 = 0.0
         ts_targ_2::Float64 = 0.0
         
-        prob::ODEProblem = ODEProblem((u, p, t) -> u, [0.0], (0.0, 1.0), [])
+        prob::ODEProblem = ODEProblem((u, p, t) -> u, [0.0], (0.0, 1.0))
         prob_set::Bool = false
         P::Matrix{Float64} = zeros(3,3)
 

@@ -1,9 +1,15 @@
-include("../utils/Reference_system.jl")
+if !isdefined(@__MODULE__, :__legacy_reference_system_included__)
+    include("../utils/Reference_system.jl")
+    const __legacy_reference_system_included__ = true
+end
 include("../integrator/Integrators.jl")
 include("../integrator/Events.jl")
 # include("../integrator/implicit_midpoint_jacobian.jl")
 include("../utils/Save_results.jl")
-include("../utils/quaternion_utils.jl")
+if !isdefined(@__MODULE__, :__legacy_quaternion_utils_included__)
+    include("../utils/quaternion_utils.jl")
+    const __legacy_quaternion_utils_included__ = true
+end
 
 # include("../physical_models/Gravity_models.jl")
 # include("../physical_models/Density_models.jl")
@@ -36,7 +42,6 @@ sys = pyimport("sys")
 
 using .SimulationModel
 import .ref_sys
-import .quaternion_utils
 
 
 const R0 = 149597870.7e3 # 1AU, m

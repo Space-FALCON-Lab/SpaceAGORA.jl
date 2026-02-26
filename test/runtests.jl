@@ -32,6 +32,15 @@ struct TimedTangentialThrusterModel <: SimulationModel.AbstractControlEffectorMo
     stop_time::Float64
 end
 
+struct ThrowingForceModel <: SimulationModel.AbstractForceTorqueModel
+end
+
+struct NaNForceModel <: SimulationModel.AbstractForceTorqueModel
+end
+
+struct NaNParamForceModel <: SimulationModel.AbstractForceTorqueModel
+end
+
 function SimulationModel.EnvironmentModels.getDensity(
     model::ConstantDensityModel,
     h::Float64,
@@ -73,6 +82,34 @@ function SimulationModel.calcControlEffect!(
     i::Int64
 )
     return nothing
+end
+
+function SimulationModel.calcForceTorque(
+    model::ThrowingForceModel,
+    x::AbstractVector{Float64},
+    p::ODEParams,
+    i::Int64
+)
+    error("intentional derivative failure")
+end
+
+function SimulationModel.calcForceTorque(
+    model::NaNForceModel,
+    x::AbstractVector{Float64},
+    p::ODEParams,
+    i::Int64
+)
+    return SVector{3, Float64}(NaN, NaN, NaN), SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+function SimulationModel.calcForceTorque(
+    model::NaNParamForceModel,
+    x::AbstractVector{Float64},
+    p::ODEParams,
+    i::Int64
+)
+    p.shared_buffers.current_time[] = NaN
+    return SVector{3, Float64}(NaN, NaN, NaN), SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
 const SPICE_PATH = joinpath(REPO_ROOT, "GRAM_Data", "SPICE")
@@ -480,6 +517,12 @@ using ..SimulationModel
 end
 const LEGACY_TARGETING_SANDBOX = LegacyTargetingSandbox
 
+const LEGACY_EOMS_UTILS_LOADED = Ref(false)
+module LegacyEomsUtilsSandbox
+using ..SimulationModel
+end
+const LEGACY_EOMS_UTILS_SANDBOX = LegacyEomsUtilsSandbox
+
 const LEGACY_CONFIG_LOADED = Ref(false)
 module LegacyConfigSandbox
 using ..SimulationModel
@@ -497,6 +540,36 @@ using ..SimulationModel
 end
 const LEGACY_COMPLETE_PASSAGE_SANDBOX = LegacyCompletePassageSandbox
 
+const LEGACY_COMPLETE_PASSAGE_FULL_LOADED = Ref(false)
+module LegacyCompletePassageFullSandbox
+using ..SimulationModel
+end
+const LEGACY_COMPLETE_PASSAGE_FULL_SANDBOX = LegacyCompletePassageFullSandbox
+
+const LEGACY_CONTROL_EOMS_LOADED = Ref(false)
+module LegacyControlEomsSandbox
+using ..SimulationModel
+end
+const LEGACY_CONTROL_EOMS_SANDBOX = LegacyControlEomsSandbox
+
+const LEGACY_CONTROL_EOM_CTRL_LOADED = Ref(false)
+module LegacyControlEomCtrlSandbox
+using ..SimulationModel
+end
+const LEGACY_CONTROL_EOM_CTRL_SANDBOX = LegacyControlEomCtrlSandbox
+
+const LEGACY_PHYSICAL_PROPULSIVE_LOADED = Ref(false)
+module LegacyPhysicalPropulsiveSandbox
+using ..SimulationModel
+end
+const LEGACY_PHYSICAL_PROPULSIVE_SANDBOX = LegacyPhysicalPropulsiveSandbox
+
+const LEGACY_HEATLOAD_SECOND_TSW_LOADED = Ref(false)
+module LegacyHeatloadSecondTswSandbox
+using ..SimulationModel
+end
+const LEGACY_HEATLOAD_SECOND_TSW_SANDBOX = LegacyHeatloadSecondTswSandbox
+
 const GUIDANCE_SANDBOX_LOADED = Ref(false)
 module GuidanceSandbox
 using ..SimulationModel
@@ -513,6 +586,13 @@ using DataFrames
 using Statistics
 end
 const LEGACY_MONTE_CARLO_SANDBOX = LegacyMonteCarloSandbox
+
+const LEGACY_MONTE_CARLO_PERTURB_SANDBOX_LOADED = Ref(false)
+module LegacyMonteCarloPerturbSandbox
+using ..SimulationModel
+using Random
+end
+const LEGACY_MONTE_CARLO_PERTURB_SANDBOX = LegacyMonteCarloPerturbSandbox
 
 const LEGACY_CLOSED_FORM_SANDBOX_LOADED = Ref(false)
 module LegacyClosedFormSandbox
@@ -645,6 +725,15 @@ function ensure_legacy_targeting_loaded!()
     LEGACY_TARGETING_LOADED[] = true
 end
 
+function ensure_legacy_eoms_utils_loaded!()
+    if LEGACY_EOMS_UTILS_LOADED[]
+        return
+    end
+
+    Core.eval(LEGACY_EOMS_UTILS_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "control", "utils", "Eoms.jl"))))
+    LEGACY_EOMS_UTILS_LOADED[] = true
+end
+
 function ensure_legacy_config_loaded!()
     if LEGACY_CONFIG_LOADED[]
         return
@@ -676,6 +765,57 @@ function ensure_legacy_complete_passage_loaded!()
     LEGACY_COMPLETE_PASSAGE_LOADED[] = true
 end
 
+function ensure_legacy_complete_passage_full_loaded!()
+    if LEGACY_COMPLETE_PASSAGE_FULL_LOADED[]
+        return
+    end
+
+    Core.eval(LEGACY_COMPLETE_PASSAGE_FULL_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "simulation", "Complete_passage.jl"))))
+    LEGACY_COMPLETE_PASSAGE_FULL_LOADED[] = true
+end
+
+function ensure_legacy_control_eoms_loaded!()
+    if LEGACY_CONTROL_EOMS_LOADED[]
+        return
+    end
+
+    with_logger(NullLogger()) do
+        Core.eval(LEGACY_CONTROL_EOMS_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "control", "Eoms.jl"))))
+    end
+    LEGACY_CONTROL_EOMS_LOADED[] = true
+end
+
+function ensure_legacy_control_eom_ctrl_loaded!()
+    if LEGACY_CONTROL_EOM_CTRL_LOADED[]
+        return
+    end
+
+    with_logger(NullLogger()) do
+        Core.eval(LEGACY_CONTROL_EOM_CTRL_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "control", "Eom_ctrl.jl"))))
+    end
+    LEGACY_CONTROL_EOM_CTRL_LOADED[] = true
+end
+
+function ensure_legacy_physical_propulsive_loaded!()
+    if LEGACY_PHYSICAL_PROPULSIVE_LOADED[]
+        return
+    end
+
+    Core.eval(LEGACY_PHYSICAL_PROPULSIVE_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "physical_models", "Propulsive_maneuvers.jl"))))
+    LEGACY_PHYSICAL_PROPULSIVE_LOADED[] = true
+end
+
+function ensure_legacy_heatload_second_tsw_loaded!()
+    if LEGACY_HEATLOAD_SECOND_TSW_LOADED[]
+        return
+    end
+
+    with_logger(NullLogger()) do
+        Core.eval(LEGACY_HEATLOAD_SECOND_TSW_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "control", "heatload_control", "Second_tsw_calcs.jl"))))
+    end
+    LEGACY_HEATLOAD_SECOND_TSW_LOADED[] = true
+end
+
 function ensure_guidance_sandbox_loaded!()
     if GUIDANCE_SANDBOX_LOADED[]
         return
@@ -693,6 +833,21 @@ function ensure_legacy_monte_carlo_loaded!()
 
     Core.eval(LEGACY_MONTE_CARLO_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "utils", "MonteCarlo_set.jl"))))
     LEGACY_MONTE_CARLO_SANDBOX_LOADED[] = true
+end
+
+function ensure_legacy_monte_carlo_perturb_loaded!()
+    if LEGACY_MONTE_CARLO_PERTURB_SANDBOX_LOADED[]
+        return
+    end
+
+    Base.include_string(LEGACY_MONTE_CARLO_PERTURB_SANDBOX, """
+    module config
+        using ..SimulationModel
+        const cnf = Cnf()
+    end
+    """)
+    Core.eval(LEGACY_MONTE_CARLO_PERTURB_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "physical_models", "MonteCarlo_pertrubations.jl"))))
+    LEGACY_MONTE_CARLO_PERTURB_SANDBOX_LOADED[] = true
 end
 
 function ensure_legacy_closed_form_loaded!()
@@ -721,6 +876,95 @@ end
 
     @test_throws ArgumentError sandbox.asim(args; isolate_state=true)
     @test_throws UndefVarError sandbox.asim(nothing, 1, args, ())
+end
+
+@testset "Complete Passage Full Include Smoke" begin
+    ensure_legacy_complete_passage_full_loaded!()
+    sandbox = LEGACY_COMPLETE_PASSAGE_FULL_SANDBOX
+
+    @test isdefined(sandbox, :asim)
+    @test hasmethod(sandbox.asim, Tuple{SimulationConfiguration})
+    @test hasmethod(sandbox.asim, Tuple{Any, Any, Any, Any})
+
+    args = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    @test_throws ArgumentError sandbox.asim(args; isolate_state=true)
+    @test_throws UndefVarError sandbox.asim(nothing, 1, args, ())
+end
+
+@testset "Legacy Remaining Module Smoke Coverage" begin
+    ensure_legacy_control_eoms_loaded!()
+    eoms_sandbox = LEGACY_CONTROL_EOMS_SANDBOX
+    @test isdefined(eoms_sandbox, :asim_ctrl)
+    @test_throws ArgumentError eoms_sandbox._legacy_get_cnf(Dict{Symbol, Any}())
+    @test_throws ArgumentError eoms_sandbox._legacy_get_solution(Dict{Symbol, Any}())
+    @test eoms_sandbox._legacy_get_cnf(Dict{Symbol, Any}(:cnf => :cnf_state)) == :cnf_state
+    @test eoms_sandbox._legacy_get_solution(Dict{Symbol, Any}(:solution => :solution_state)) == :solution_state
+
+    ensure_legacy_control_eom_ctrl_loaded!()
+    eom_ctrl_sandbox = LEGACY_CONTROL_EOM_CTRL_SANDBOX
+    @test isdefined(eom_ctrl_sandbox, :asim_ctrl_plot)
+    @test_throws ArgumentError eom_ctrl_sandbox._legacy_get_cnf(Dict{Symbol, Any}())
+    @test_throws ArgumentError eom_ctrl_sandbox._legacy_get_solution(Dict{Symbol, Any}())
+    @test eom_ctrl_sandbox._legacy_get_cnf(Dict{Symbol, Any}(:cnf => :cnf_state)) == :cnf_state
+    @test eom_ctrl_sandbox._legacy_get_solution(Dict{Symbol, Any}(:solution => :solution_state)) == :solution_state
+
+    ensure_legacy_physical_propulsive_loaded!()
+    propulsive_sandbox = LEGACY_PHYSICAL_PROPULSIVE_SANDBOX
+    @test isdefined(propulsive_sandbox, :propulsion_ic_calcs)
+    @test_throws ArgumentError propulsive_sandbox._legacy_get_propulsive_runtime_state(Dict{Symbol, Any}())
+    runtime_state = propulsive_sandbox._legacy_get_propulsive_runtime_state(
+        Dict{Symbol, Any}(:cnf => :cnf_state, :solution => :solution_state, :model => :model_state)
+    )
+    @test runtime_state.cnf == :cnf_state
+    @test runtime_state.solution == :solution_state
+    @test runtime_state.model == :model_state
+
+    ensure_legacy_heatload_second_tsw_loaded!()
+    tsw_sandbox = LEGACY_HEATLOAD_SECOND_TSW_SANDBOX
+    @test isdefined(tsw_sandbox, :second_time_switch_recalc)
+    @test_throws ArgumentError tsw_sandbox._legacy_get_cnf(Dict{Symbol, Any}())
+    @test tsw_sandbox._legacy_get_cnf(Dict{Symbol, Any}(:cnf => :cnf_state)) == :cnf_state
+
+    Core.eval(tsw_sandbox, quote
+        function asim_ctrl(
+            ip,
+            m::NamedTuple,
+            time_0,
+            OE,
+            args,
+            k_cf,
+            heat_rate_control,
+            time_switch_eval=false,
+            gram_atmosphere=nothing,
+            time_switch_2=0,
+            reevaluation_mode=1;
+            cnf=nothing,
+            solution=nothing
+        )
+            return reshape([m.aerodynamics.heat_load_limit], 1, 1)
+        end
+    end)
+
+    cnf_tsw = (time_switch_1=12.0, time_switch_2=25.0)
+    m_tsw = (
+        aerodynamics=(heat_load_limit=123.0, α=0.0, thermal_accomodation_factor=1.0),
+        planet=(T=200.0, R=190.0, γ=1.3)
+    )
+    args_tsw = Dict{Symbol, Any}(:heat_load_sol => 1, :cnf => cnf_tsw)
+    ts1, ts2 = tsw_sandbox.second_time_switch_recalc_with_integration(
+        nothing, m_tsw, nothing, args_tsw, 10.0, true, 1, nothing, 0; cnf=cnf_tsw
+    )
+    @test ts1 == 12.0
+    @test ts2 == 25.0
 end
 
 @testset "API Convenience Constructors" begin
@@ -934,6 +1178,7 @@ end
     @test sandbox._legacy_eom_ctrl_log_enabled(args_quiet) == false
     @test sandbox._legacy_eom_ctrl_log_enabled(args_print) == true
     @test sandbox._legacy_eom_ctrl_log_enabled(args_verbose) == true
+    @test sandbox._legacy_control_log_enabled(0) == false
 
     debug_key = "SPACEAGORA_DEBUG_LEGACY_CONTROL"
     old_debug = get(ENV, debug_key, nothing)
@@ -966,6 +1211,7 @@ end
     local_solution = (orientation=(time=[1.0],),)
     @test sandbox._legacy_get_solution(Dict{Symbol, Any}(:solution => local_solution)).orientation.time[1] == 1.0
     @test sandbox._legacy_control_strict_exceptions(args_quiet) == false
+    @test sandbox._legacy_control_strict_exceptions(0) == false
     @test sandbox._legacy_control_strict_exceptions(Dict{Symbol, Any}(:strict_legacy_control_exceptions => true)) == true
     withenv("SPACEAGORA_STRICT_LEGACY_CONTROL_EXCEPTIONS" => "1") do
         @test sandbox._legacy_control_strict_exceptions(args_quiet) == true
@@ -1008,6 +1254,82 @@ end
     m_heat_mid = (aerodynamics=(thermal_accomodation_factor=1.0, α=1.2, heat_rate_limit=heat_limit_mid), planet=(R=287.0, γ=1.4))
     α_heat_mid = sandbox.control_solarpanels_heatrate(nothing, m_heat_mid, args_heat, [1], [250.0, 1e-6, 3.0], 0.0, 0.0, 0.0; cnf=local_cnf)
     @test 0.0001 < α_heat_mid < 1.2
+
+    # Force control_struct_load root-solve failure to exercise fallback behavior.
+    Core.eval(sandbox, quote
+        aerodynamic_coefficient_fM(ang, body, T_p, S, aero, MonteCarlo=false) = begin
+            if isapprox(ang, aero.α; atol=1e-12, rtol=0.0)
+                return (0.1, 2.0)
+            elseif isapprox(ang, 0.0001; atol=1e-12, rtol=0.0)
+                return (0.1, 0.5)
+            elseif isapprox(ang, pi / 2; atol=1e-12, rtol=0.0)
+                return (0.1, 1.0)
+            else
+                throw(DomainError(ang, "intentional branch test"))
+            end
+        end
+    end)
+    m_struct_fallback = (aerodynamics=(α=1.2,), body=(dummy=1,))
+    α_drag_fallback = sandbox.control_struct_load(
+        nothing,
+        m_struct_fallback,
+        Dict{Symbol, Any}(:max_dyn_press => 1.0, :print_res => false, :verbose => false),
+        3.0,
+        250.0,
+        1.0,
+        false
+    )
+    @test α_drag_fallback == 0.0001
+
+    # Ensure MonteCarlo guidance environment branch is invoked when enabled.
+    Core.eval(sandbox, quote
+        const _legacy_mc_env_called = Ref(false)
+        function monte_carlo_guidance_environment(ρ, T, S, args)
+            _legacy_mc_env_called[] = true
+            return ρ, T, S
+        end
+    end)
+    args_heat_mc = Dict{Symbol, Any}(:montecarlo => true)
+    _ = sandbox.control_solarpanels_heatrate(nothing, m_heat_hi, args_heat_mc, [1], [250.0, 1e-6, 3.0], 0.0, 0.0, 0.0; cnf=local_cnf)
+    @test Core.eval(sandbox, :(_legacy_mc_env_called[])) == true
+end
+
+@testset "Legacy Eoms Utils State Accessors" begin
+    ensure_legacy_eoms_utils_loaded!()
+    sandbox = LEGACY_EOMS_UTILS_SANDBOX
+
+    @test isdefined(sandbox, :_legacy_get_cnf)
+    @test isdefined(sandbox, :_legacy_get_solution)
+
+    cnf_state = (token=:cnf,)
+    solution_state = (token=:solution,)
+
+    @test sandbox._legacy_get_cnf(Dict{Symbol, Any}(:cnf => cnf_state)) == cnf_state
+    @test sandbox._legacy_get_cnf(nothing; cnf=cnf_state) == cnf_state
+
+    @test sandbox._legacy_get_solution(Dict{Symbol, Any}(:solution => solution_state)) == solution_state
+    @test sandbox._legacy_get_solution(nothing; solution=solution_state) == solution_state
+
+    cnf_with_solution = (solution=solution_state,)
+    @test sandbox._legacy_get_solution(nothing; cnf=cnf_with_solution) == solution_state
+
+    Base.include_string(sandbox, """
+    module config
+        const cnf = (origin=:config_cnf,)
+        const solution = (origin=:config_solution,)
+    end
+    """)
+    @test sandbox._legacy_get_cnf() == (origin=:config_cnf,)
+    @test sandbox._legacy_get_solution() == (origin=:config_solution,)
+
+    throw_module_name = gensym(:LegacyEomsUtilsThrowSandbox)
+    Core.eval(Main, :(module $throw_module_name
+        using ..SimulationModel
+    end))
+    throw_sandbox = getfield(Main, throw_module_name)
+    Core.eval(throw_sandbox, :(include(joinpath(Main.REPO_ROOT, "src", "control", "utils", "Eoms.jl"))))
+    @test_throws ArgumentError throw_sandbox._legacy_get_cnf(Dict{Symbol, Any}())
+    @test_throws ArgumentError throw_sandbox._legacy_get_solution(Dict{Symbol, Any}())
 end
 
 @testset "Legacy CNF Threading Guard" begin
@@ -1092,6 +1414,75 @@ end
         sandbox.mission_def(mission_default)
     end
     @test ip_default.M.planet == 1
+
+    # Cover remaining mission_def branch matrix (planet ids, gravity/density/aero/control/thrust/thermal fallbacks).
+    @test sandbox._legacy_mission_planet_id("sun") == 3
+    @test sandbox._legacy_mission_planet_id(:titan) == 7
+
+    mission_branch = Dict{Symbol, Any}(
+        :Planet => "Sun",
+        :Gravity_Model => "GRAM",
+        :Density_Model => "GRAM",
+        :Wind => false,
+        :Aerodynamic_Model => "No ballistic flight with axial coefficient",
+        :Shape => "Blunted Cone",
+        :Control => 3,
+        :Firings => "None",
+        :Thermal_Model => "Maxwellian Heat Transfer",
+        :Monte_Carlo => 1
+    )
+    ip_branch = withenv("SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0") do
+        sandbox.mission_def(mission_branch)
+    end
+    @test ip_branch.M.planet == 3
+    @test ip_branch.gm == LegacyGravityGRAM
+    @test ip_branch.dm == LegacyDensityGRAM
+    @test ip_branch.am == LegacyAeroNoBallisticAxial
+    @test ip_branch.cm == 3
+    @test ip_branch.tc == LegacyThrustNone
+    @test ip_branch.tm == LegacyThermalMaxwellian
+    @test ip_branch.mc == 1
+
+    mission_nrl = Dict{Symbol, Any}(
+        :Planet => "Titan",
+        :Gravity_Model => "Unmodeled",
+        :Density_Model => "NRLMSISE",
+        :Wind => true,
+        :Aerodynamic_Model => "Unknown",
+        :Shape => "Spacecraft",
+        :Control => 1,
+        :Firings => "Aerobraking Maneuver",
+        :Thermal_Model => "Unknown",
+        :Monte_Carlo => 0
+    )
+    ip_nrl = withenv("SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0") do
+        sandbox.mission_def(mission_nrl)
+    end
+    @test ip_nrl.M.planet == 7
+    @test ip_nrl.gm == LegacyGravityInverseSquared
+    @test ip_nrl.dm == LegacyDensityNRLMSISE
+    @test ip_nrl.am == LegacyAeroCdClConstant
+    @test ip_nrl.cm == 1
+    @test ip_nrl.tc == LegacyThrustAerobrakingManeuver
+    @test ip_nrl.tm == LegacyThermalConvectiveRadiative
+
+    mission_constant = Dict{Symbol, Any}(
+        :Planet => "Earth",
+        :Gravity_Model => "Inverse Squared",
+        :Density_Model => "Constant",
+        :Wind => false,
+        :Aerodynamic_Model => "Cd and Cl Constant",
+        :Shape => "Spacecraft",
+        :Control => 0,
+        :Firings => "Drag Passage Firing",
+        :Thermal_Model => "Convective and Radiative",
+        :Monte_Carlo => 0
+    )
+    ip_constant = withenv("SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0") do
+        sandbox.mission_def(mission_constant)
+    end
+    @test ip_constant.dm == LegacyDensityConstant
+    @test ip_constant.tc == LegacyThrustDragPassageFiring
 
     @test isdefined(sandbox, :_deprecated_mission_dict_input_warned)
     empty!(sandbox._deprecated_mission_dict_input_warned[])
@@ -1458,6 +1849,84 @@ end
     end
 end
 
+@testset "Legacy Monte Carlo Perturbation Helpers" begin
+    ensure_legacy_monte_carlo_perturb_loaded!()
+    sandbox = LEGACY_MONTE_CARLO_PERTURB_SANDBOX
+
+    cnf = Core.eval(sandbox, :(config.cnf))
+    cnf.index_MonteCarlo = 42
+    cnf.counter = 0
+    cnf.counter_random = 11
+
+    u1 = sandbox.unifrom_distribution(10.0, 5)
+    u2 = sandbox.unifrom_distribution(10.0, 5)
+    @test u1 == u2
+    @test -10.0 <= u1 <= 10.0
+
+    g1 = sandbox.gaussian_distribution(1.0, 0.2, 16)
+    g2 = sandbox.gaussian_distribution(1.0, 0.2, 16)
+    @test g1 == g2
+    @test cnf.counter == 2
+
+    args_aero = Dict{Symbol, Any}(:CD_dispersion => 10.0, :CL_dispersion => 20.0)
+    cl_out, cd_out = sandbox.monte_carlo_aerodynamics(0.3, 2.0, args_aero)
+    @test isfinite(cl_out)
+    @test isfinite(cd_out)
+    @test 1.8 <= cd_out <= 2.2
+    @test 0.24 <= cl_out <= 0.36
+
+    dens_out = sandbox.monte_carlo_density(1e-4, Dict{Symbol, Any}())
+    @test 0.5e-4 <= dens_out <= 2e-4
+
+    state_ic = Dict{Symbol, Any}(
+        :Apoapsis => 10_000.0,
+        :Periapsis => 100.0,
+        :Inclination => 0.1,
+        :Ω => 0.2,
+        :ω => 0.3,
+        :vi => 0.4
+    )
+    args_ic = Dict{Symbol, Any}(
+        :ra_dispersion => 100.0,
+        :rp_dispersion => 10.0,
+        :i_dispersion => 0.01,
+        :Ω_dispersion => 0.01,
+        :ω_dispersion => 0.01,
+        :vi_dispersion => 0.01
+    )
+    state_ic_out = sandbox.monte_carlo_initial_condition(deepcopy(state_ic), args_ic)
+    @test state_ic_out[:Apoapsis] != state_ic[:Apoapsis]
+    @test state_ic_out[:Periapsis] != state_ic[:Periapsis]
+    state_ta_out = sandbox.monte_carlo_true_anomaly(deepcopy(state_ic), args_ic)
+    @test state_ta_out[:vi] != state_ic[:vi]
+
+    state_gnc = Dict{Symbol, Any}(:ra => 10_000.0, :rp => 100.0, :i => 0.1, :Ω => 0.2, :ω => 0.3, :vi => 0.4)
+    args_gnc = Dict{Symbol, Any}(
+        :ra_dispersion_gnc => 100.0,
+        :rp_dispersion_gnc => 10.0,
+        :i_dispersion_gnc => 0.01,
+        :Ω_dispersion_gnc => 0.01,
+        :ω_dispersion_gnc => 0.01,
+        :vi_dispersion_gnc => 0.01
+    )
+    state_gnc_out = sandbox.monte_carlo_guidance_closedform(deepcopy(state_gnc), args_gnc)
+    @test state_gnc_out[:ra] != state_gnc[:ra]
+    @test state_gnc_out[:vi] != state_gnc[:vi]
+
+    args_env = Dict{Symbol, Any}(
+        Symbol("ρ_mudispersion_gnc") => 5.0,
+        :T_mudispersion_gnc => 5.0,
+        :S_mudispersion_gnc => 5.0,
+        Symbol("ρ_sigmadispersion_gnc") => 1.0,
+        :T_sigmadispersion_gnc => 1.0,
+        :S_sigmadispersion_gnc => 1.0
+    )
+    ρ_out, T_out, S_out = sandbox.monte_carlo_guidance_environment(1e-4, 250.0, 3.0, args_env)
+    @test isfinite(ρ_out)
+    @test isfinite(T_out)
+    @test isfinite(S_out)
+end
+
 @testset "Legacy Closed-Form Helper Smoke" begin
     ensure_legacy_closed_form_loaded!()
     sandbox = LEGACY_CLOSED_FORM_SANDBOX
@@ -1487,6 +1956,206 @@ end
     @test solution_blunted.closed_form.h_cf == zeros(3)
     @test solution_blunted.closed_form.γ_cf == zeros(3)
     @test solution_blunted.closed_form.v_cf == zeros(3)
+
+    # Stub closed_form_calculation for Dict-based calls to exercise closed_form control flow deterministically.
+    Core.eval(sandbox, quote
+        const _closed_form_stub_calls = Ref(0)
+        function closed_form_calculation(
+            args::Dict{Symbol, Any},
+            t0,
+            mission,
+            params,
+            initialcondition,
+            α,
+            T,
+            date_initial,
+            step_time::Integer,
+            α_profile=[]
+        )
+            _closed_form_stub_calls[] += 1
+            n = max(step_time - 1, 1)
+            t_cf = collect(range(start=t0, step=1.0, length=n))
+            h_cf = fill(10.0 * _closed_form_stub_calls[], n)
+            γ_cf = fill(0.1 * _closed_form_stub_calls[], n)
+            v_cf = fill(100.0 + _closed_form_stub_calls[], n)
+            return t_cf, h_cf, γ_cf, v_cf
+        end
+    end)
+
+    mission_stub_cf = (
+        initial_condition=(year=2020, month=1, day=1, hour=0, minute=0, second=0.0, time_rot=0.0),
+        planet=(Rp_e=EARTH.Rp_e,)
+    )
+
+    solution_drag = Solution()
+    solution_drag.orientation.time = [10.0, 20.0, 30.0]
+    solution_drag.orientation.oe = [[EARTH.Rp_e + 500e3], [0.05], [deg2rad(35.0)], [deg2rad(10.0)], [deg2rad(40.0)], [deg2rad(170.0)]]
+    solution_drag.performance.mass = [520.0]
+    solution_drag.physical_properties.T = [250.0]
+    solution_drag.physical_properties.α_control = [0.2]
+    cnf_drag = with_logger(Logging.NullLogger()) do
+        Cnf()
+    end
+    params_drag = (cnf_drag, nothing, solution_drag)
+    args_drag = Dict{Symbol, Any}(
+        :body_shape => "Spacecraft",
+        :type_of_mission => "Drag Passage",
+        :EI => 120.0,
+        :trajectory_rate => 10.0,
+        :montecarlo => false
+    )
+    t_drag, h_drag, γ_drag, v_drag = sandbox.closed_form(args_drag, mission_stub_cf, params_drag)
+    @test length(t_drag) == 2
+    @test length(h_drag) == 2
+    @test solution_drag.closed_form.t_cf == t_drag
+    @test solution_drag.closed_form.h_cf == h_drag
+    @test solution_drag.closed_form.γ_cf == γ_drag
+    @test solution_drag.closed_form.v_cf == v_drag
+
+    solution_orbits = Solution()
+    solution_orbits.orientation.time = [1.0, 2.0, 3.0, 4.0]
+    solution_orbits.orientation.number_of_passage = [1, 1, 2, 2]
+    solution_orbits.orientation.pos_ii_mag = [EARTH.Rp_e + 100e3, EARTH.Rp_e + 110e3, EARTH.Rp_e + 100e3, EARTH.Rp_e + 110e3]
+    solution_orbits.orientation.oe = [
+        fill(EARTH.Rp_e + 500e3, 4),
+        fill(0.02, 4),
+        fill(deg2rad(30.0), 4),
+        fill(deg2rad(5.0), 4),
+        fill(deg2rad(25.0), 4),
+        fill(deg2rad(160.0), 4)
+    ]
+    solution_orbits.performance.mass = fill(520.0, 4)
+    solution_orbits.physical_properties.T = fill(250.0, 4)
+    solution_orbits.physical_properties.α_control = fill(0.2, 4)
+    cnf_orbits = with_logger(Logging.NullLogger()) do
+        Cnf()
+    end
+    params_orbits = (cnf_orbits, nothing, solution_orbits)
+    args_orbits = Dict{Symbol, Any}(
+        :body_shape => "Spacecraft",
+        :type_of_mission => "Time",
+        :EI => 120.0,
+        :trajectory_rate => 10.0,
+        :montecarlo => false
+    )
+    t_orbits, h_orbits, γ_orbits, v_orbits = sandbox.closed_form(args_orbits, mission_stub_cf, params_orbits)
+    # closed_form currently returns the last segment, while full stitched vectors are saved in solution.closed_form.
+    @test length(t_orbits) == 1
+    @test length(h_orbits) == 1
+    @test length(solution_orbits.closed_form.t_cf) == 4
+    @test solution_orbits.closed_form.t_cf[2] == solution_orbits.orientation.time[2]
+    @test solution_orbits.closed_form.t_cf[4] == solution_orbits.orientation.time[4]
+    @test count(!iszero, solution_orbits.closed_form.h_cf) == 2
+    @test count(!iszero, solution_orbits.closed_form.γ_cf) == 2
+    @test count(!iszero, solution_orbits.closed_form.v_cf) == 2
+
+    # Legacy online MonteCarlo branch currently fails due Dict{Symbol,Int} type instability.
+    cnf_online = with_logger(Logging.NullLogger()) do
+        Cnf(closed_form_solution_off=1)
+    end
+    params_online = (cnf_online, nothing, Solution())
+    ic_online = MVector{7, Float64}(EARTH.Rp_e + 500e3, 0.01, deg2rad(25.0), deg2rad(5.0), deg2rad(15.0), deg2rad(170.0), 520.0)
+    args_online_bug = Dict{Symbol, Any}(
+        :body_shape => "Spacecraft",
+        :type_of_mission => "Time",
+        :EI => 120.0,
+        :trajectory_rate => 10.0,
+        :montecarlo => true
+    )
+    @test_throws InexactError sandbox.closed_form(args_online_bug, mission_stub_cf, params_online, ic_online, 250.0, true, 0.0, Float64[])
+
+    cnf_online_ok = with_logger(Logging.NullLogger()) do
+        Cnf(closed_form_solution_off=0)
+    end
+    args_online_ok = Dict{Symbol, Any}(
+        :body_shape => "Spacecraft",
+        :type_of_mission => "Time",
+        :EI => 120.0,
+        :trajectory_rate => 10.0,
+        :montecarlo => false
+    )
+    t_online, h_online, γ_online, v_online = sandbox.closed_form(args_online_ok, mission_stub_cf, (cnf_online_ok, nothing, Solution()), ic_online, 250.0, true, 0.0, Float64[])
+    @test length(t_online) >= 1
+    @test length(h_online) == length(t_online)
+    @test length(γ_online) == length(t_online)
+    @test length(v_online) == length(t_online)
+
+    # Exercise original closed_form_calculation branch logic with lightweight local stubs.
+    Core.eval(sandbox, quote
+        struct _CFPlanet
+            μ::Float64
+            Rp_e::Float64
+            Rp_p::Float64
+            R::Float64
+            g_ref::Float64
+            ω::Main.SVector{3, Float64}
+            L_PI::Main.SMatrix{3, 3, Float64}
+            name::String
+        end
+        struct _CFBody
+            roots::Vector{Int}
+        end
+        struct _CFLink
+            root::Bool
+        end
+        traverse_bodies(body::_CFBody, root::Int) = ([_CFLink(true), _CFLink(false)], 1)
+        get_SC_area(bodies::Vector{_CFLink}) = 0.0
+        get_SA_area(bodies::Vector{_CFLink}) = 1.0
+        aerodynamic_coefficient_fM(ang, body::_CFBody, T, S, aerodynamics) = (0.1, 1.0)
+        density_polyfit(h::AbstractVector, planet::_CFPlanet) = (fill(1e-12, length(h)), 0.0, Main.SVector{3, Float64}(0.0, 0.0, 0.0))
+        r_intor_p!(r_i::Main.SVector{3, Float64}, v_i::Main.SVector{3, Float64}, planet::_CFPlanet) = (r_i, v_i)
+        r_intor_p!(r_i::Main.SVector{3, Float64}, v_i::Main.SVector{3, Float64}, planet::_CFPlanet, et::Float64) = (r_i, v_i)
+        rtolatlong(r_p::Main.SVector{3, Float64}, planet::_CFPlanet) = Main.SVector{3, Float64}(norm(r_p) - planet.Rp_e, 0.0, 0.0)
+    end)
+
+    cf_body = sandbox._CFBody([1])
+    cf_aero = (α=0.0,)
+    cf_ic = SVector{7, Float64}(1.0e9, 0.01, deg2rad(30.0), deg2rad(5.0), deg2rad(20.0), deg2rad(170.0), 520.0)
+    names_and_mu = [
+        ("earth", 3.986004418e14, 9.80665),
+        ("mars", 4.2828314e13, 3.72076),
+        ("venus", 3.24858592e14, 8.87),
+        ("titan", 8.981e12, 1.352)
+    ]
+    for (planet_name, μ, g_ref) in names_and_mu
+        cf_planet = sandbox._CFPlanet(μ, EARTH.Rp_e, EARTH.Rp_p, 287.1, g_ref, SVector{3, Float64}(0.0, 0.0, 0.0), SMatrix{3, 3, Float64}(1.0I), planet_name)
+        cf_mission = (
+            initial_condition=Initial_condition(time_rot=0.0),
+            planet=cf_planet,
+            body=cf_body,
+            aerodynamics=cf_aero
+        )
+        cnf_calc = with_logger(Logging.NullLogger()) do
+            Cnf(count_numberofpassage=1, heat_rate_list=[1.0, 2.0, 3.0], et=0.0)
+        end
+        params_calc = (cnf_calc, nothing, Solution())
+        args_calc = (EI=120.0, trajectory_rate=0.01)
+        t_calc, h_calc, γ_calc, v_calc = sandbox.closed_form_calculation(args_calc, 0.0, cf_mission, params_calc, cf_ic, 0.0, 250.0, nothing, 4, Float64[])
+        @test length(t_calc) == 3
+        @test length(h_calc) == 3
+        @test all(isfinite, h_calc)
+        @test length(γ_calc) == 3
+        @test length(v_calc) == 3
+    end
+
+    cnf_auto = with_logger(Logging.NullLogger()) do
+        Cnf(count_numberofpassage=2, heat_rate_list=[1.0, 2.0, 3.0], et=0.0)
+    end
+    solution_hist = Solution()
+    solution_hist.orientation.time = [5.0]
+    cf_planet_auto = sandbox._CFPlanet(3.986004418e14, EARTH.Rp_e, EARTH.Rp_p, 287.1, 9.80665, SVector{3, Float64}(0.0, 0.0, 0.0), SMatrix{3, 3, Float64}(1.0I), "earth")
+    cf_mission_auto = (
+        initial_condition=Initial_condition(time_rot=0.0),
+        planet=cf_planet_auto,
+        body=cf_body,
+        aerodynamics=cf_aero
+    )
+    args_calc_auto = (EI=120.0, trajectory_rate=0.01)
+    t_auto, h_auto, γ_auto, v_auto = sandbox.closed_form_calculation(args_calc_auto, 0.0, cf_mission_auto, (cnf_auto, nothing, solution_hist), cf_ic, 0.0, 250.0, nothing, 0, Float64[])
+    @test length(t_auto) >= 1
+    @test length(h_auto) == length(t_auto)
+    @test length(γ_auto) == length(t_auto)
+    @test length(v_auto) == length(t_auto)
 end
 
 @testset "Typed Planet Constructors + Topography Workspace" begin
@@ -1886,6 +2555,7 @@ end
         _normalize_warning_emitted[] = false
         @test_logs (:warn, r"normalize=true is legacy-only") run_simulation(args_warn)
         @test _normalize_warning_emitted[] == true
+        @test_logs run_simulation(args_warn)
     end
 
     withenv("SPACEAGORA_WARN_NORMALIZE" => "0") do
@@ -1893,6 +2563,109 @@ end
         @test_logs run_simulation(args_warn)
         @test _normalize_warning_emitted[] == false
     end
+end
+
+@testset "Run Simulation Debug Branches" begin
+    debug_thruster = TimedTangentialThrusterModel(5.0, 1.0, 0.0, 120.0)
+    args_debug_control = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        control_effectors=(debug_thruster,),
+        control_rates=[1.0],
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=true, verbose=false, generate_plots=false, normalize=false),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    withenv("SPACEAGORA_DEBUG_CONTROL" => "1") do
+        _, output = run_case_capture_stdout(args_debug_control)
+        @test occursin("Applying control effect for spacecraft 1", output)
+        @test occursin("Control force:", output)
+    end
+
+    args_debug_throw = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=20.0,
+        EI_km=120.0,
+        dynamic_effectors=(ThrowingForceModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    withenv("SPACEAGORA_DEBUG_INITIAL_DERIVATIVE" => "1") do
+        @test_logs (:error, r"The derivative function itself crashed!") begin
+            @test_throws ErrorException run_simulation(args_debug_throw)
+        end
+    end
+
+    args_debug_nan = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=20.0,
+        EI_km=120.0,
+        dynamic_effectors=(NaNForceModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    nan_output = ""
+    withenv("SPACEAGORA_DEBUG_INITIAL_DERIVATIVE" => "1") do
+        mktemp() do path, io
+            redirect_stdout(io) do
+                @test_throws ErrorException run_simulation(args_debug_nan)
+            end
+            flush(io)
+            seekstart(io)
+            nan_output = read(io, String)
+        end
+    end
+    @test occursin("--- INITIAL NaN DETECTED ---", nan_output)
+    @test occursin("NaN found in Satellite 1 derivative!", nan_output)
+    @test occursin("Pos:", nan_output)
+    @test occursin("Vel:", nan_output)
+
+    args_debug_nan_param = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=20.0,
+        EI_km=120.0,
+        dynamic_effectors=(NaNParamForceModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    nan_param_output = ""
+    withenv("SPACEAGORA_DEBUG_INITIAL_DERIVATIVE" => "1") do
+        mktemp() do path, io
+            redirect_stdout(io) do
+                @test_throws ErrorException run_simulation(args_debug_nan_param)
+            end
+            flush(io)
+            seekstart(io)
+            nan_param_output = read(io, String)
+        end
+    end
+    @test occursin("NaN found in parameter: p.shared_buffers.current_time[]", nan_param_output)
+
+    nan_scan_output = ""
+    mktemp() do path, io
+        redirect_stdout(io) do
+            _debug_print_nan_parameter_paths!(NaN, "p.scalar_test")
+            _debug_print_nan_parameter_paths!([1.0, NaN], "p.array_test")
+        end
+        flush(io)
+        seekstart(io)
+        nan_scan_output = read(io, String)
+    end
+    @test occursin("NaN found in parameter: p.scalar_test", nan_scan_output)
+    @test occursin("NaN found in parameter: p.array_test[2]", nan_scan_output)
 end
 
 @testset "Verbose Gating for Callback/Runtime Logs" begin

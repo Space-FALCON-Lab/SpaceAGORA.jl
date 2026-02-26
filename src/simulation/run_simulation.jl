@@ -24,6 +24,46 @@ function _warn_legacy_normalize_flag!(args)
     return nothing
 end
 
+function _debug_print_nan_parameter_paths!(x, path::AbstractString="p")
+    if x isa Number
+        if isnan(x)
+            println("NaN found in parameter: $path")
+        end
+        return nothing
+    end
+
+    if x isa Base.RefValue{<:Number}
+        xv = x[]
+        if isnan(xv)
+            println("NaN found in parameter: $path[]")
+        end
+        return nothing
+    end
+
+    if x isa AbstractArray{<:Number}
+        for (idx, xv) in pairs(x)
+            if isnan(xv)
+                println("NaN found in parameter: $path[$idx]")
+            end
+        end
+        return nothing
+    end
+
+    # Skip generic arrays of non-numeric types to keep debug scans bounded.
+    if x isa AbstractArray
+        return nothing
+    end
+
+    T = typeof(x)
+    if isstructtype(T)
+        for field in fieldnames(T)
+            val = getfield(x, field)
+            _debug_print_nan_parameter_paths!(val, string(path, ".", field))
+        end
+    end
+    return nothing
+end
+
 function run_simulation(args; isolate_state::Bool=true)
     # Isolate mutable campaign/model state by default so repeated/concurrent runs
     # do not alias shared in-memory objects.
@@ -70,6 +110,7 @@ function run_simulation(args; isolate_state::Bool=true)
             prob.f(du_test, prob.u0, prob.p, prob.tspan[1])
         catch e
             @error "The derivative function itself crashed!" exception=e
+            throw(ErrorException("Initial derivative evaluation failed; aborting solve in debug mode."))
         end
 
         # 2. Check for NaNs and print exactly where they are
@@ -77,12 +118,7 @@ function run_simulation(args; isolate_state::Bool=true)
             println("--- INITIAL NaN DETECTED ---")
 
             # Check global parameters in p
-            for field in fieldnames(typeof(prob.p))
-                val = getfield(prob.p, field)
-                if val isa Number && isnan(val)
-                    println("NaN found in parameter: p.$field")
-                end
-            end
+            _debug_print_nan_parameter_paths!(prob.p)
 
             # Check the state vector (u)
             # Assuming your u has a .sc field for satellites
@@ -93,6 +129,8 @@ function run_simulation(args; isolate_state::Bool=true)
                     println("  Vel: $(sat.vel)")
                 end
             end
+
+            throw(ErrorException("Initial derivative contains NaN; aborting solve in debug mode."))
         end
     end
     sol = solve(prob, Tsit5(); reltol=args.integration_tolerances.reltol_orbit, abstol=args.integration_tolerances.abstol_orbit, dtmax=args.integration_tolerances.dt_max_orbit)

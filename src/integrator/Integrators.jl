@@ -1,5 +1,11 @@
-include("../utils/Reference_system.jl")
-include("../utils/Ref_system_conf.jl")
+if !isdefined(@__MODULE__, :__legacy_reference_system_included__)
+    include("../utils/Reference_system.jl")
+    const __legacy_reference_system_included__ = true
+end
+if !isdefined(@__MODULE__, :__legacy_ref_system_conf_included__)
+    include("../utils/Ref_system_conf.jl")
+    const __legacy_ref_system_conf_included__ = true
+end
 
 
 function impact(t, y, m, solution, args)

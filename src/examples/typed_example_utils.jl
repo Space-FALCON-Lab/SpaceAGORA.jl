@@ -16,6 +16,7 @@ if !isdefined(@__MODULE__, :SM)
 end
 
 @inline _example_smoke_enabled() = get(ENV, "SPACEAGORA_EXAMPLE_SMOKE", "0") == "1"
+@inline _example_smoke_results_enabled() = get(ENV, "SPACEAGORA_EXAMPLE_SMOKE_RESULTS", "0") == "1"
 
 @inline function _example_smoke_mission_time(default_time::Float64)
     raw = get(ENV, "SPACEAGORA_EXAMPLE_SMOKE_MISSION_TIME", "120.0")
@@ -33,6 +34,7 @@ function _example_smoke_args(args::SM.SimulationConfiguration)
 
     mc = args.mission_configuration
     ss = args.simulation_settings
+    keep_results = _example_smoke_results_enabled()
     mc_smoke = SM.MissionConfiguration(
         mission_type=mc.mission_type,
         keplerian=mc.keplerian,
@@ -42,13 +44,13 @@ function _example_smoke_args(args::SM.SimulationConfiguration)
         num_steps_to_save=max(50, min(mc.num_steps_to_save, 200))
     )
     ss_smoke = SM.SimulationSettings(
-        results=false,
+        results=keep_results,
         verbose=false,
         results_directory=ss.results_directory,
         generate_plots=false,
         generate_filenames=ss.generate_filenames,
         normalize=false,
-        save_csv=false
+        save_csv=keep_results
     )
 
     return SM.SimulationConfiguration(

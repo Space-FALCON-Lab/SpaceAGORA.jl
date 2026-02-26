@@ -491,6 +491,35 @@ using ..SimulationModel
 end
 const LEGACY_RUNTIME_SANDBOX = LegacyRuntimeSandbox
 
+const LEGACY_COMPLETE_PASSAGE_LOADED = Ref(false)
+module LegacyCompletePassageSandbox
+using ..SimulationModel
+end
+const LEGACY_COMPLETE_PASSAGE_SANDBOX = LegacyCompletePassageSandbox
+
+const GUIDANCE_SANDBOX_LOADED = Ref(false)
+module GuidanceSandbox
+using ..SimulationModel
+using ..SimulationModel.AbstractTypes: AbstractGuidanceModel
+using ComponentArrays
+end
+const GUIDANCE_SANDBOX = GuidanceSandbox
+
+const LEGACY_MONTE_CARLO_SANDBOX_LOADED = Ref(false)
+module LegacyMonteCarloSandbox
+using ..SimulationModel
+using CSV
+using DataFrames
+using Statistics
+end
+const LEGACY_MONTE_CARLO_SANDBOX = LegacyMonteCarloSandbox
+
+const LEGACY_CLOSED_FORM_SANDBOX_LOADED = Ref(false)
+module LegacyClosedFormSandbox
+using ..SimulationModel
+end
+const LEGACY_CLOSED_FORM_SANDBOX = LegacyClosedFormSandbox
+
 module IncludeOrderSandbox
 end
 const INCLUDE_ORDER_SANDBOX = IncludeOrderSandbox
@@ -626,6 +655,72 @@ function ensure_legacy_config_loaded!()
     Core.eval(LEGACY_CONFIG_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "utils", "Define_mission.jl"))))
 
     LEGACY_CONFIG_LOADED[] = true
+end
+
+function ensure_legacy_complete_passage_loaded!()
+    if LEGACY_COMPLETE_PASSAGE_LOADED[]
+        return
+    end
+
+    source = read(joinpath(REPO_ROOT, "src", "simulation", "Complete_passage.jl"), String)
+    typed_start = findfirst("function asim(args::SimulationConfiguration; isolate_state::Bool=true)", source)
+    legacy_start = findfirst("function asim(initial_state, numberofpassage, args, params)", source)
+    typed_start === nothing && throw(ArgumentError("Typed asim entrypoint missing in Complete_passage.jl"))
+    legacy_start === nothing && throw(ArgumentError("Legacy asim entrypoint missing in Complete_passage.jl"))
+
+    typed_method = strip(source[first(typed_start):(first(legacy_start) - 1)])
+    legacy_method = strip(source[first(legacy_start):end])
+
+    Core.eval(LEGACY_COMPLETE_PASSAGE_SANDBOX, :(using .SimulationModel))
+    Base.include_string(LEGACY_COMPLETE_PASSAGE_SANDBOX, typed_method * "\n\n" * legacy_method)
+    LEGACY_COMPLETE_PASSAGE_LOADED[] = true
+end
+
+function ensure_guidance_sandbox_loaded!()
+    if GUIDANCE_SANDBOX_LOADED[]
+        return
+    end
+
+    Core.eval(GUIDANCE_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "guidance", "Thruster_guidance_models.jl"))))
+    Core.eval(GUIDANCE_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "guidance", "Thruster_guidance_functions.jl"))))
+    GUIDANCE_SANDBOX_LOADED[] = true
+end
+
+function ensure_legacy_monte_carlo_loaded!()
+    if LEGACY_MONTE_CARLO_SANDBOX_LOADED[]
+        return
+    end
+
+    Core.eval(LEGACY_MONTE_CARLO_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "utils", "MonteCarlo_set.jl"))))
+    LEGACY_MONTE_CARLO_SANDBOX_LOADED[] = true
+end
+
+function ensure_legacy_closed_form_loaded!()
+    if LEGACY_CLOSED_FORM_SANDBOX_LOADED[]
+        return
+    end
+
+    Core.eval(LEGACY_CLOSED_FORM_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "utils", "Closed_form_solution.jl"))))
+    LEGACY_CLOSED_FORM_SANDBOX_LOADED[] = true
+end
+
+@testset "Complete Passage Legacy Entrypoint Smoke" begin
+    ensure_legacy_complete_passage_loaded!()
+    sandbox = LEGACY_COMPLETE_PASSAGE_SANDBOX
+
+    args = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+
+    @test_throws ArgumentError sandbox.asim(args; isolate_state=true)
+    @test_throws UndefVarError sandbox.asim(nothing, 1, args, ())
 end
 
 @testset "API Convenience Constructors" begin
@@ -1066,6 +1161,58 @@ end
     end
     @test out_typed[:drag_passage] == 0
 
+    args_campaign = deepcopy(args_time)
+    args_campaign[:type_of_mission] = "Aerobraking Campaign"
+    args_campaign[:number_of_orbits] = 12
+    out_campaign = redirect_stdout(devnull) do
+        sandbox.def_miss(args_campaign)
+    end
+    @test out_campaign[:drag_passage] == 0
+    @test out_campaign[:number_of_orbits] == 1000
+
+    args_blunted = deepcopy(args_time)
+    args_blunted[:body_shape] = "Blunted Cone"
+    args_blunted[:aerodynamic_model] = "Mach-dependent"
+    args_blunted[:thermal_model] = "Maxwellian Heat Transfer"
+    args_blunted[:control_mode] = 2
+    args_blunted[:thrust_control] = "Aerobraking Maneuver"
+    args_blunted[:thrust] = 0.0
+    args_blunted[:delta_v] = 7.5
+    out_blunted = redirect_stdout(devnull) do
+        sandbox.def_miss(args_blunted)
+    end
+    @test out_blunted[:aerodynamic_model] == "No-Ballistic flight with axial coefficient"
+    @test out_blunted[:thermal_model] == "Convective and Radiative"
+    @test out_blunted[:control_mode] == 0
+    @test out_blunted[:thrust] == 0.1
+    @test out_blunted[:delta_v] == 7.5
+
+    args_drag_passage_maneuver = deepcopy(args_time)
+    args_drag_passage_maneuver[:type_of_mission] = "Drag Passage"
+    args_drag_passage_maneuver[:thrust_control] = "Aerobraking Maneuver"
+    out_drag_passage_maneuver = redirect_stdout(devnull) do
+        sandbox.def_miss(args_drag_passage_maneuver)
+    end
+    @test out_drag_passage_maneuver[:drag_passage] == 1
+    @test out_drag_passage_maneuver[:thrust_control] == "None"
+
+    args_odyssey = deepcopy(args_time)
+    args_odyssey[:Odyssey_sim] = true
+    args_odyssey[:gravity_model] = "Inverse Squared"
+    out_odyssey = redirect_stdout(devnull) do
+        sandbox.def_miss(args_odyssey)
+    end
+    @test out_odyssey[:type_of_mission] == "Aerobraking Campaign"
+    @test out_odyssey[:number_of_orbits] == 350
+    @test out_odyssey[:planet] == 1
+    @test out_odyssey[:control_mode] == 0
+    @test out_odyssey[:thrust_control] == "Aerobraking Maneuver"
+    @test out_odyssey[:drag_passage] == 0
+    @test out_odyssey[:hp_initial_a] == 87000
+    @test out_odyssey[:final_apoapsis] == 3390.0e3 + 503e3
+    @test haskey(out_odyssey, :inital_condition_type)
+    @test out_odyssey[:inital_condition_type] == 0
+
     # When a legacy Planet constructor is provided, cover all legacy planet branches.
     Core.eval(sandbox, :(Planet(args...) = (Rp_e=args[1], μ=args[16], name=args[27], topography_function=args[end])))
     legacy_planet_expected = Dict(
@@ -1192,6 +1339,154 @@ end
         @test isapprox(Float64(df_second.gamma_cf[end]), 32.0; atol=0.0, rtol=0.0)
         @test isapprox(Float64(df_second.v_cf[end]), 42.0; atol=0.0, rtol=0.0)
     end
+end
+
+@testset "Guidance Thruster Campaign Helpers" begin
+    ensure_guidance_sandbox_loaded!()
+    sandbox = GUIDANCE_SANDBOX
+
+    guidance_model = sandbox.AerobrakingCampaignPropulsiveManeuverGuidanceModel(
+        maneuver_orbit_number=[2, 3],
+        maneuver_Δv=[-5.0, 20.0]
+    )
+
+    thruster = BaseThrusterModel(
+        thrust=[500.0],
+        direction=[0.0],
+        Δv=[0.0],
+        start_burn_time=[-1.0],
+        stop_burn_time=[-1.0],
+        Isp=[300.0]
+    )
+    args = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        control_effectors=(thruster,),
+        control_rates=[1.0],
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p = ODEParams{1}(args=args)
+    u = ComponentVector(pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], mass=1.0, heat_loads=[0.0])
+
+    p.orbit_counter[1] = 3
+    sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
+    @test thruster.Δv[1] == 20.0
+    @test isapprox(thruster.direction[1], π; atol=1e-12, rtol=0.0)
+
+    p.orbit_counter[1] = 2
+    sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
+    @test thruster.Δv[1] == 5.0
+    @test isapprox(thruster.direction[1], 0.0; atol=1e-12, rtol=0.0)
+
+    p.orbit_counter[1] = 1
+    sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
+    @test thruster.Δv[1] == 0.0
+end
+
+@testset "Legacy Monte Carlo Helpers Smoke" begin
+    ensure_legacy_monte_carlo_loaded!()
+    sandbox = LEGACY_MONTE_CARLO_SANDBOX
+
+    cnf = with_logger(Logging.NullLogger()) do
+        Cnf()
+    end
+    solution = Solution()
+
+    runtime = sandbox._legacy_get_mc_runtime_state(Dict{Symbol, Any}(:cnf => cnf, :solution => solution))
+    @test runtime.cnf === cnf
+    @test runtime.solution === solution
+    @test_throws ArgumentError sandbox._legacy_get_mc_runtime_state(Dict{Symbol, Any}(:cnf => cnf))
+
+    mc_dict, count, args_mc = sandbox.MonteCarlo_setting(Dict{Symbol, Any}(:montecarlo => false))
+    @test count == 0
+    @test args_mc[:montecarlo_size] == 1
+    @test args_mc[:intial_montecarlo_number] == 1
+    @test all(k -> haskey(mc_dict, k), (:N_passages, :Duration, :Median_heat, :Periapsis_min, :Periapsis_max))
+
+    args_passage = Dict{Symbol, Any}(
+        :cnf => cnf,
+        :solution => solution,
+        :print_res => false,
+        :simulation_filename => "campaign"
+    )
+    cnf.altitude_periapsis = [1.0]
+    cnf.max_heatrate = [2.0]
+    sandbox.MonteCarlo_setting_passage(3, args_passage)
+    @test cnf.counter_random == 3
+    @test cnf.index_MonteCarlo == 3
+    @test isempty(cnf.altitude_periapsis)
+    @test isempty(cnf.max_heatrate)
+    @test endswith(args_passage[:simulation_filename], "_nMC=3")
+
+    solution.orientation.number_of_passage = [7]
+    solution.orientation.time = [123.0]
+    solution.performance.heat_rate = [[10.0, 12.0], [1.0]]
+    cnf.max_heatrate = [4.0, 16.0]
+    cnf.altitude_periapsis = [80.0, 100.0]
+    args_append = Dict{Symbol, Any}(
+        :cnf => cnf,
+        :solution => solution,
+        :type_of_mission => "Time",
+        :max_heat_rate => 11.0,
+        :print_res => false
+    )
+    count_after = sandbox.MonteCarlo_append(mc_dict, args_append, 0)
+    @test count_after == 1
+    @test mc_dict[:N_passages][1] == 7
+    @test isapprox(mc_dict[:Duration][1], 123.0; atol=0.0, rtol=0.0)
+    @test isapprox(mc_dict[:Median_heat][1], 10.0; atol=0.0, rtol=0.0)
+    @test mc_dict[:Periapsis_min][1] == 80.0
+    @test mc_dict[:Periapsis_max][1] == 100.0
+
+    mktempdir() do tmp
+        args_save = Dict{Symbol, Any}(
+            :save_results => false,
+            :simulation_filename => "campaign_nMC=1",
+            :directory_results => tmp * "/",
+            :control_mode => 1,
+            :max_heat_rate => 100.0,
+            :montecarlo_size => 1
+        )
+        state = Dict{Symbol, Any}(:Apoapsis => 7000e3, :Periapsis => 120.0)
+        @test_nowarn sandbox.MonteCarlo_save(args_save, state, mc_dict)
+        @test isempty(readdir(tmp))
+    end
+end
+
+@testset "Legacy Closed-Form Helper Smoke" begin
+    ensure_legacy_closed_form_loaded!()
+    sandbox = LEGACY_CLOSED_FORM_SANDBOX
+
+    solution = Solution()
+    sandbox.results(solution, [1.0], [2.0], [3.0], [4.0])
+    @test solution.closed_form.t_cf == [1.0]
+    @test solution.closed_form.h_cf == [2.0]
+    @test solution.closed_form.γ_cf == [3.0]
+    @test solution.closed_form.v_cf == [4.0]
+
+    solution_blunted = Solution()
+    solution_blunted.orientation.time = [0.0, 1.0, 2.0]
+    cnf_blunted = with_logger(Logging.NullLogger()) do
+        Cnf()
+    end
+    params = (cnf_blunted, nothing, solution_blunted)
+    mission_stub = (initial_condition=(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),)
+    args_blunted = Dict{Symbol, Any}(:body_shape => "Blunted Cone")
+
+    t_cf, h_cf, γ_cf, v_cf = sandbox.closed_form(args_blunted, mission_stub, params)
+    @test t_cf == zeros(3)
+    @test h_cf == zeros(3)
+    @test γ_cf == zeros(3)
+    @test v_cf == zeros(3)
+    @test solution_blunted.closed_form.t_cf == zeros(3)
+    @test solution_blunted.closed_form.h_cf == zeros(3)
+    @test solution_blunted.closed_form.γ_cf == zeros(3)
+    @test solution_blunted.closed_form.v_cf == zeros(3)
 end
 
 @testset "Typed Planet Constructors + Topography Workspace" begin

@@ -55,6 +55,20 @@ const CASES = [
         vel_rtol=1e-6,
         expected_mass=461.0,
         mass_rtol=1e-10
+    ),
+    RegressionCase(
+        file="Earth_Thruster_Test.jl",
+        mission_time=120.0,
+        expected_rows=161,
+        rows_atol=6,
+        expected_t_final=120.0,
+        t_atol=1e-8,
+        expected_pos_norm=7.577967476969582e6,
+        pos_rtol=1e-6,
+        expected_vel_norm=7047.677110799444,
+        vel_rtol=1e-6,
+        expected_mass=256.0,
+        mass_rtol=1e-10
     )
 ]
 

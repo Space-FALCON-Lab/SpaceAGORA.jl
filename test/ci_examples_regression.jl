@@ -69,6 +69,34 @@ const CASES = [
         vel_rtol=1e-6,
         expected_mass=256.0,
         mass_rtol=1e-10
+    ),
+    RegressionCase(
+        file="AGORA_Earth.jl",
+        mission_time=120.0,
+        expected_rows=45,
+        rows_atol=4,
+        expected_t_final=120.0,
+        t_atol=1e-8,
+        expected_pos_norm=5.562569550831575e7,
+        pos_rtol=1e-6,
+        expected_vel_norm=1291.895935189122,
+        vel_rtol=1e-6,
+        expected_mass=840.0,
+        mass_rtol=1e-10
+    ),
+    RegressionCase(
+        file="AGORA_Keplerian.jl",
+        mission_time=120.0,
+        expected_rows=37,
+        rows_atol=4,
+        expected_t_final=120.0,
+        t_atol=1e-8,
+        expected_pos_norm=2.8031394182401214e7,
+        pos_rtol=1e-6,
+        expected_vel_norm=1195.1827610460061,
+        vel_rtol=1e-6,
+        expected_mass=511.0,
+        mass_rtol=1e-10
     )
 ]
 

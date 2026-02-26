@@ -41,6 +41,10 @@ end
 struct NaNParamForceModel <: SimulationModel.AbstractForceTorqueModel
 end
 
+struct ThrowingOrbitPlanet <: SimulationModel.AbstractPlanet
+    Rp_e::Float64
+end
+
 function SimulationModel.EnvironmentModels.getDensity(
     model::ConstantDensityModel,
     h::Float64,
@@ -110,6 +114,14 @@ function SimulationModel.calcForceTorque(
 )
     p.shared_buffers.current_time[] = NaN
     return SVector{3, Float64}(NaN, NaN, NaN), SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+function SimulationModel.ControlEffectors.rvtoorbitalelement(
+    pos::SVector{3, Float64},
+    vel::SVector{3, Float64},
+    planet::ThrowingOrbitPlanet
+)
+    throw(ErrorException("forced-orbital-element-conversion-failure"))
 end
 
 const SPICE_PATH = joinpath(REPO_ROOT, "GRAM_Data", "SPICE")
@@ -232,13 +244,14 @@ function build_config(;
     keplerian::Bool=true,
     simulation_settings::SimulationSettings=SimulationSettings(results=true, verbose=false, generate_plots=false, normalize=false),
     tolerances::IntegrationTolerances=IntegrationTolerances(),
-    initial_time::InitialTime=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
+    initial_time::InitialTime=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+    planet=EARTH
 )
     environment_model = EnvironmentModel(
-        planet=EARTH,
+        planet=planet,
         EI=EI_km,
         density_model=density_model,
-        thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=EARTH),
+        thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
         topography=false,
         wind=false
     )
@@ -275,13 +288,14 @@ function build_config_multi(;
     keplerian::Bool=true,
     simulation_settings::SimulationSettings=SimulationSettings(results=true, verbose=false, generate_plots=false, normalize=false),
     tolerances::IntegrationTolerances=IntegrationTolerances(),
-    initial_time::InitialTime=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
+    initial_time::InitialTime=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+    planet=EARTH
 )
     environment_model = EnvironmentModel(
-        planet=EARTH,
+        planet=planet,
         EI=EI_km,
         density_model=density_model,
-        thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=EARTH),
+        thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
         topography=false,
         wind=false
     )
@@ -1292,6 +1306,42 @@ end
     args_heat_mc = Dict{Symbol, Any}(:montecarlo => true)
     _ = sandbox.control_solarpanels_heatrate(nothing, m_heat_hi, args_heat_mc, [1], [250.0, 1e-6, 3.0], 0.0, 0.0, 0.0; cnf=local_cnf)
     @test Core.eval(sandbox, :(_legacy_mc_env_called[])) == true
+
+    # Force Newton solve + retry failure path in control_solarpanels_heatrate.
+    heat_limit_retry = heat_rate_min + 0.05 * (heat_rate_max - heat_rate_min)
+    m_heat_retry = (aerodynamics=(thermal_accomodation_factor=1.0, α=1.2, heat_rate_limit=heat_limit_retry), planet=(R=287.0, γ=1.4))
+    Core.eval(sandbox, quote
+        find_zero(args...) = throw(ErrorException("forced-find-zero-failure"))
+    end)
+    withenv("SPACEAGORA_DEBUG_LEGACY_CONTROL" => "1", "SPACEAGORA_STRICT_LEGACY_CONTROL_EXCEPTIONS" => "0") do
+        @test_logs (:warn, r"Legacy control Newton solve failed; trying alternate initial guess.") (:warn, r"Legacy control fallback in control_solarpanels_heatrate.find_zero.") begin
+            α_heat_fallback = sandbox.control_solarpanels_heatrate(
+                nothing,
+                m_heat_retry,
+                Dict{Symbol, Any}(:print_res => false, :verbose => false, :montecarlo => false),
+                [1],
+                [250.0, 1e-6, 3.0],
+                0.0,
+                0.0,
+                0.0;
+                cnf=local_cnf
+            )
+            @test α_heat_fallback == 0.0001
+        end
+    end
+    withenv("SPACEAGORA_STRICT_LEGACY_CONTROL_EXCEPTIONS" => "1") do
+        @test_throws ErrorException sandbox.control_solarpanels_heatrate(
+            nothing,
+            m_heat_retry,
+            Dict{Symbol, Any}(:print_res => false, :verbose => false, :montecarlo => false),
+            [1],
+            [250.0, 1e-6, 3.0],
+            0.0,
+            0.0,
+            0.0;
+            cnf=local_cnf
+        )
+    end
 end
 
 @testset "Legacy Eoms Utils State Accessors" begin
@@ -1503,6 +1553,11 @@ end
     @test ip_from_ints.tc == LegacyThrustAerobrakingManeuver
     @test ip_from_ints.gm == 1
     @test ip_from_ints.dm == 3
+    @test_throws ArgumentError SimulationModel.ConfigTypes._legacy_enum_parse(LegacyGravityModelCode, -1)
+    @test_throws ArgumentError SimulationModel.ConfigTypes._legacy_enum_parse(LegacyDensityModelCode, -1)
+    @test_throws ArgumentError SimulationModel.ConfigTypes._legacy_enum_parse(LegacyAerodynamicModelCode, -1)
+    @test_throws ArgumentError SimulationModel.ConfigTypes._legacy_enum_parse(LegacyThermalModelCode, -1)
+    @test_throws ArgumentError SimulationModel.ConfigTypes._legacy_enum_parse(LegacyThrustControlCode, -1)
     @test_throws ArgumentError InitialParameters(Mission(), 99, 1, 0, 0, 1, 0, 0, 0)
 
     @test _legacy_run_planet_id("earth") == 0
@@ -1847,6 +1902,36 @@ end
         @test_nowarn sandbox.MonteCarlo_save(args_save, state, mc_dict)
         @test isempty(readdir(tmp))
     end
+
+    mktempdir() do tmp
+        args_save_tagged = Dict{Symbol, Any}(
+            :save_results => true,
+            :simulation_filename => "campaign_nMC=1",
+            :directory_results => tmp * "/",
+            :control_mode => 1,
+            :max_heat_rate => 100.0,
+            :montecarlo_size => 1
+        )
+        state = Dict{Symbol, Any}(:Apoapsis => 7000e3, :Periapsis => 120.0)
+        @test_nowarn sandbox.MonteCarlo_save(args_save_tagged, state, mc_dict)
+        csv_files = filter(f -> endswith(f, ".csv"), readdir(joinpath(tmp, "campaign")))
+        @test length(csv_files) == 1
+    end
+
+    mktempdir() do tmp
+        args_save_plain = Dict{Symbol, Any}(
+            :save_results => true,
+            :simulation_filename => "campaign",
+            :directory_results => tmp * "/",
+            :control_mode => 1,
+            :max_heat_rate => 100.0,
+            :montecarlo_size => 1
+        )
+        state = Dict{Symbol, Any}(:Apoapsis => 7000e3, :Periapsis => 120.0)
+        @test_nowarn sandbox.MonteCarlo_save(args_save_plain, state, mc_dict)
+        csv_files = filter(f -> endswith(f, ".csv"), readdir(joinpath(tmp, "campaign")))
+        @test length(csv_files) == 1
+    end
 end
 
 @testset "Legacy Monte Carlo Perturbation Helpers" begin
@@ -2136,6 +2221,20 @@ end
         @test all(isfinite, h_calc)
         @test length(γ_calc) == 3
         @test length(v_calc) == 3
+
+        # Regression: α_profile length mismatch should not throw.
+        α_short = [0.2]
+        α_long = fill(0.2, 10)
+        t_short, h_short, γ_short, v_short = sandbox.closed_form_calculation(args_calc, 0.0, cf_mission, params_calc, cf_ic, 0.0, 250.0, nothing, 4, α_short)
+        t_long, h_long, γ_long, v_long = sandbox.closed_form_calculation(args_calc, 0.0, cf_mission, params_calc, cf_ic, 0.0, 250.0, nothing, 4, α_long)
+        @test length(t_short) == 3
+        @test length(h_short) == 3
+        @test length(γ_short) == 3
+        @test length(v_short) == 3
+        @test length(t_long) == 3
+        @test length(h_long) == 3
+        @test length(γ_long) == 3
+        @test length(v_long) == 3
     end
 
     cnf_auto = with_logger(Logging.NullLogger()) do
@@ -3346,6 +3445,28 @@ end
         @test_nowarn calcControlEffect!(model_oob, state, p, 100.0, 2)
         @test model_oob.start_burn_time[1] == -1.0
         @test model_oob.stop_burn_time[1] == -1.0
+
+        throw_planet = ThrowingOrbitPlanet(EARTH.Rp_e)
+        args_throw = build_config(
+            spacecraft=sc,
+            density_model=NoAtmosphereModel(),
+            orientation_sim=false,
+            mission_time=600.0,
+            EI_km=120.0,
+            dynamic_effectors=(InverseSquaredGravityModel(),),
+            keplerian=true,
+            planet=throw_planet
+        )
+        p_throw = ODEParams{1}(args=args_throw)
+        model_throw = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=123.0, stop_burn_time=124.0)
+        withenv("SPACEAGORA_DEBUG_CONTROL" => "1", "SPACEAGORA_STRICT_CONTROL_EXCEPTIONS" => "0") do
+            @test_logs (:warn, r"orbital-element conversion failed") calcControlEffect!(model_throw, state, p_throw, 100.0, 1)
+        end
+        @test model_throw.start_burn_time[1] == 123.0
+        @test model_throw.stop_burn_time[1] == 124.0
+        withenv("SPACEAGORA_STRICT_CONTROL_EXCEPTIONS" => "1") do
+            @test_throws ErrorException calcControlEffect!(model_throw, state, p_throw, 100.0, 1)
+        end
 
         helper = SimulationModel.ControlEffectors._control_effector_exception_fallback
         p_dummy = (shared_buffers=(debug_control=Ref(false),),)

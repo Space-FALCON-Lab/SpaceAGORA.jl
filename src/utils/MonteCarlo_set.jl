@@ -88,20 +88,16 @@ end
 
 function MonteCarlo_save(args, state, MC)
     if Bool(args[:save_results])
-        folder_name = args[:simulation_filename][1:indexin("_nMC", args[:simulation_filename])]
+        simulation_filename = String(args[:simulation_filename])
+        mc_tag = findfirst("_nMC", simulation_filename)
+        folder_name = mc_tag === nothing ? simulation_filename : simulation_filename[1:(first(mc_tag) - 1)]
 
         name = args[:directory_results] * folder_name * "/MC_results_control=" * string(args[:control_mode]) * "_ra=" * string(Int64(state[:Apoapsis]/1e3)) * "_rp=" * string(state[:Periapsis]) * "_hl=" * string(args[:max_heat_rate])
         filename = name * ".csv"
 
-        if !isdir(args[:directory_results])
-            mkpath(args[:directory_results])
-        end
+        mkpath(dirname(filename))
 
-        touch(filename)
-
-        writer = open(filename, "w")
-
-        data_push = DataFrame(MC_size = range(args[:montecarlo_size]),
+        data_push = DataFrame(MC_size = collect(1:args[:montecarlo_size]),
                               N_passages = MC[:N_passages],
                               Duration = MC[:Duration],
                               Median_heat = MC[:Median_heat],

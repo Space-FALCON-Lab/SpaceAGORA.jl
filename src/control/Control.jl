@@ -146,7 +146,7 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
         S = state[3]
 
         if length(args) != 0
-            if args[:montecarlo] == true
+            if Bool(get(args, :montecarlo, false))
                 ρ, T_p, S = monte_carlo_guidance_environment(ρ, T_p, S, args)
             end
         end
@@ -180,10 +180,10 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
             α = min_α
         elseif (heat_rate_max >= thermal_limit) && (heat_rate_min <= thermal_limit)
             x_0 = cnf_state.α_past
+            df(x) = L .* S * cos.(x) * ((pi^0.5) * (S.^2 .+ γ / (γ - 1) + (γ + 1) / (2 * (γ - 1)) .* T_w ./ T_p) .* (1 + erf.(S .* sin.(x))) .+ S .* sin.(x) * exp.(-(S .* sin.(x)).^2))
 
             # println("try")
             try
-                df(x) = L .* S * cos.(x) * ((pi^0.5) * (S.^2 .+ γ / (γ - 1) + (γ + 1) / (2 * (γ - 1)) .* T_w ./ T_p) .* (1 + erf.(S .* sin.(x))) .+ S .* sin.(x) * exp.(-(S .* sin.(x)).^2))
                 α = find_zero((f, df), x_0, Roots.Newton())
                 # println(find_zero((f, df), x_0, Roots.Newton()))
 

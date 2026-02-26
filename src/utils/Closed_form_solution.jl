@@ -223,7 +223,7 @@ function closed_form_calculation(args, t0, mission, params, initialcondition, α
             α_profile = α_profile[1:length(t_cf)]
         elseif length(α_profile) < length(t_cf)
             last_α = α_profile[end]
-            α_profile = α_profile .+ last_α * ones(length(t_cf) - length(α_profile))
+            α_profile = vcat(α_profile, fill(last_α, length(t_cf) - length(α_profile)))
         end
     end
 

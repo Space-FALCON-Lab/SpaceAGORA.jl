@@ -170,3 +170,32 @@ jobs:
 
       - name: Example regression
         run: julia --startup-file=no --project=.AGORA test/ci_examples_regression.jl
+
+  coverage-quality-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      JULIA_NUM_THREADS: "2"
+      SPACEAGORA_COVERAGE_MIN_OVERALL: "85.0"
+      SPACEAGORA_COVERAGE_MIN_FILE: "70.0"
+      SPACEAGORA_COVERAGE_WINDOW_SECONDS: "1200"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: Cache Julia artifacts
+        uses: julia-actions/cache@v2
+
+      - name: Instantiate
+        run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Run tests with coverage
+        run: julia --startup-file=no --project=.AGORA --code-coverage=user test/runtests.jl
+
+      - name: Coverage quality gate (legacy Complete_passage excluded)
+        run: julia --startup-file=no --project=.AGORA test/ci_coverage_quality_gate.jl

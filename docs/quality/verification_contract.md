@@ -14,6 +14,20 @@ The following checks are required for pull requests:
 
 Nightly checks are required for release readiness and are defined in `.github/workflows/nightly-stress.yml`.
 
+## Branch Protection Rollout
+Branch protection on `main` must require these checks:
+
+1. `tests`
+2. `coverage-quality-gate`
+3. `p1-findings-gate`
+4. `ai-review-artifact-gate`
+
+Nightly rollout policy:
+
+1. `nightly-stress` is informational from March 2, 2026 through March 8, 2026.
+2. Starting March 9, 2026, release tagging requires a recent successful nightly run.
+3. Release-tag enforcement is implemented in `.github/workflows/release-tag-gate.yml`.
+
 ## Coverage Policy
 Coverage rules are enforced by `test/ci_coverage_quality_gate.jl`.
 

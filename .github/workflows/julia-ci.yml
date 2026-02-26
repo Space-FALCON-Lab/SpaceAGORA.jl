@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  tests:
+  tests-matrix:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -37,6 +37,21 @@ jobs:
       - name: Depwarn smoke (Earth thruster example)
         if: matrix.julia-version == '1.12'
         run: julia --depwarn=error --project=.AGORA src/examples/Earth_Thruster_Test.jl
+
+  tests:
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs:
+      - tests-matrix
+    steps:
+      - name: Enforce test matrix success
+        run: |
+          echo "tests-matrix result=${{ needs.tests-matrix.result }}"
+          if [ "${{ needs.tests-matrix.result }}" != "success" ]; then
+            echo "Test matrix failed or was cancelled."
+            exit 1
+          fi
 
   clean-depot-smoke:
     runs-on: ubuntu-latest

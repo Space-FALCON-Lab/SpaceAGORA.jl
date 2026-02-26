@@ -113,6 +113,22 @@ function parse_cli()
     return _profile_from_name(profile_name), abspath(outdir)
 end
 
+@inline function perf_parallel_enabled()::Bool
+    mode = lowercase(strip(get(ENV, "SPACEAGORA_PERF_PARALLEL", "auto")))
+    if mode in ("0", "false", "off", "no")
+        return false
+    end
+    return Threads.nthreads() > 1
+end
+
+@inline function orbital_period_seconds(spacecraft::SpacecraftModel, planet::AbstractPlanet)::Float64
+    a = spacecraft.initial_condition.a
+    if !isfinite(a) || a <= 0.0
+        throw(ArgumentError("Invalid semimajor axis for orbital period calculation: $a"))
+    end
+    return 2π * sqrt(a^3 / planet.μ)
+end
+
 function make_spacecraft(
     planet::AbstractPlanet;
     id::Int=1,
@@ -533,6 +549,25 @@ function run_case_batch!(rows::Vector{NamedTuple}, case::BenchmarkCase, spec::Pr
     return nothing
 end
 
+function measure_montecarlo_seed(spec::ProfileSpec, planet::Earth, mission_time_s::Float64, seed::Int)
+    case = BenchmarkCase(
+        name="montecarlo_randomized",
+        category="montecarlo",
+        description="Randomized initial conditions + thruster, one run per seed",
+        args_template=make_montecarlo_config(seed, planet, mission_time_s),
+        run_in_quick=true
+    )
+    last_row = nothing
+    for attempt in 1:spec.max_attempts
+        row = measure_case(case, spec.name, 1; seed=seed, attempt=attempt)
+        last_row = row
+        if row.solve_success
+            return row, nothing
+        end
+    end
+    return last_row, last_row === nothing ? "failed without attempt data" : "failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)"
+end
+
 function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, planet::Earth)
     seeds = collect(1001:(1000 + spec.montecarlo_samples))
     warmup_case = BenchmarkCase(
@@ -545,29 +580,35 @@ function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, plan
     println("[montecarlo] warmup x$(spec.warmup), seeds=$(length(seeds))")
     run_warmup(warmup_case, spec.warmup)
 
-    for (i, seed) in enumerate(seeds)
-        case = BenchmarkCase(
-            name="montecarlo_randomized",
-            category="montecarlo",
-            description="Randomized initial conditions + thruster, one run per seed",
-            args_template=make_montecarlo_config(seed, planet, spec.montecarlo_mission_s),
-            run_in_quick=true
-        )
-        last_row = nothing
-        for attempt in 1:spec.max_attempts
-            row = measure_case(case, spec.name, 1; seed=seed, attempt=attempt)
-            last_row = row
+    seed_rows = Vector{NamedTuple}(undef, length(seeds))
+    seed_msgs = Vector{String}(undef, length(seeds))
+    if perf_parallel_enabled()
+        Threads.@threads for i in eachindex(seeds)
+            seed = seeds[i]
+            row, err = measure_montecarlo_seed(spec, planet, spec.montecarlo_mission_s, seed)
+            seed_rows[i] = row
             if row.solve_success
-                push!(rows, row)
-                println("  seed $(i)/$(length(seeds))=$(seed): total=$(round(row.total_time_s; digits=3)) s")
-                break
+                seed_msgs[i] = "  seed $(i)/$(length(seeds))=$(seed): total=$(round(row.total_time_s; digits=3)) s"
+            else
+                seed_msgs[i] = "  seed $(i)/$(length(seeds))=$(seed): $(err)"
             end
-            println("  seed $(i)/$(length(seeds))=$(seed) attempt $(attempt)/$(spec.max_attempts): failed retcode=$(row.solve_retcode), retrying")
         end
-        if !(last_row === nothing) && !last_row.solve_success
-            push!(rows, last_row)
-            println("  seed $(i)/$(length(seeds))=$(seed): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)")
+    else
+        for i in eachindex(seeds)
+            seed = seeds[i]
+            row, err = measure_montecarlo_seed(spec, planet, spec.montecarlo_mission_s, seed)
+            seed_rows[i] = row
+            if row.solve_success
+                seed_msgs[i] = "  seed $(i)/$(length(seeds))=$(seed): total=$(round(row.total_time_s; digits=3)) s"
+            else
+                seed_msgs[i] = "  seed $(i)/$(length(seeds))=$(seed): $(err)"
+            end
         end
+    end
+
+    for i in eachindex(seeds)
+        push!(rows, seed_rows[i])
+        println(seed_msgs[i])
     end
     return nothing
 end
@@ -577,11 +618,176 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
     rows = NamedTuple[]
     total = length(selected)
 
-    for (idx, case) in enumerate(selected)
-        run_case_batch!(rows, case, spec, idx, total)
+    if perf_parallel_enabled()
+        case_rows = Vector{Vector{NamedTuple}}(undef, total)
+        Threads.@threads for idx in eachindex(selected)
+            local_rows = NamedTuple[]
+            run_case_batch!(local_rows, selected[idx], spec, idx, total)
+            case_rows[idx] = local_rows
+        end
+        for idx in eachindex(case_rows)
+            append!(rows, case_rows[idx])
+        end
+    else
+        for (idx, case) in enumerate(selected)
+            run_case_batch!(rows, case, spec, idx, total)
+        end
     end
 
     run_montecarlo_batch!(rows, spec, planet)
+    return DataFrame(rows)
+end
+
+@inline function selected_cases(spec::ProfileSpec, cases::Vector{BenchmarkCase})::Vector{BenchmarkCase}
+    return spec.name == "full" ? cases : [c for c in cases if c.run_in_quick]
+end
+
+function measure_per_orbit_scenario(base_case::BenchmarkCase, spec::ProfileSpec, period_s::Float64, orbit_counts::Vector{Int})
+    rows = NamedTuple[]
+    logs = String[]
+    for orbit_count in orbit_counts
+        mission_time = orbit_count * period_s
+        args_template = deepcopy(base_case.args_template)
+        args_template = SimulationConfiguration(
+            file_paths=args_template.file_paths,
+            simulation_settings=args_template.simulation_settings,
+            mission_configuration=MissionConfiguration(
+                mission_type=args_template.mission_configuration.mission_type,
+                keplerian=args_template.mission_configuration.keplerian,
+                number_of_orbits=args_template.mission_configuration.number_of_orbits,
+                mission_time=mission_time,
+                orientation_sim=args_template.mission_configuration.orientation_sim,
+                num_steps_to_save=args_template.mission_configuration.num_steps_to_save
+            ),
+            environment_model=args_template.environment_model,
+            dynamics_model=args_template.dynamics_model,
+            guidance_model=args_template.guidance_model,
+            navigation_model=args_template.navigation_model,
+            control_model=args_template.control_model,
+            initial_time=args_template.initial_time,
+            integration_tolerances=args_template.integration_tolerances
+        )
+
+        case = BenchmarkCase(
+            name=base_case.name,
+            category=base_case.category,
+            description=base_case.description,
+            args_template=args_template,
+            run_in_quick=base_case.run_in_quick
+        )
+
+        run_warmup(case, spec.warmup)
+        for rep in 1:spec.repeats
+            last_row = nothing
+            for attempt in 1:spec.max_attempts
+                row = measure_case(case, spec.name, rep; attempt=attempt)
+                row_orbit = merge(
+                    row,
+                    (
+                        orbit_count=orbit_count,
+                        orbital_period_s=period_s
+                    )
+                )
+                last_row = row_orbit
+                if row_orbit.solve_success
+                    push!(rows, row_orbit)
+                    push!(logs, "    orbit=$(orbit_count) repeat $(rep)/$(spec.repeats): total=$(round(row_orbit.total_time_s; digits=3)) s")
+                    break
+                end
+            end
+            if !(last_row === nothing) && !last_row.solve_success
+                push!(rows, last_row)
+                push!(logs, "    orbit=$(orbit_count) repeat $(rep)/$(spec.repeats): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)")
+            end
+        end
+    end
+    return rows, logs
+end
+
+function run_montecarlo_per_orbit!(
+    rows::Vector{NamedTuple},
+    spec::ProfileSpec,
+    planet::Earth,
+    period_s::Float64,
+    orbit_counts::Vector{Int}
+)
+    seeds = collect(1:spec.montecarlo_samples)
+    println("  scenario montecarlo_randomized (per-orbit, seeds=$(length(seeds)))")
+    for orbit_count in orbit_counts
+        mission_time = orbit_count * period_s
+        println("    orbit=$(orbit_count)")
+        orbit_rows = Vector{NamedTuple}(undef, length(seeds))
+        orbit_msgs = Vector{String}(undef, length(seeds))
+        if perf_parallel_enabled()
+            Threads.@threads for i in eachindex(seeds)
+                seed = seeds[i]
+                row, err = measure_montecarlo_seed(spec, planet, mission_time, seed)
+                row_orbit = merge(row, (orbit_count=orbit_count, orbital_period_s=period_s))
+                orbit_rows[i] = row_orbit
+                if row_orbit.solve_success
+                    orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): total=$(round(row_orbit.total_time_s; digits=3)) s"
+                else
+                    orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): $(err)"
+                end
+            end
+        else
+            for i in eachindex(seeds)
+                seed = seeds[i]
+                row, err = measure_montecarlo_seed(spec, planet, mission_time, seed)
+                row_orbit = merge(row, (orbit_count=orbit_count, orbital_period_s=period_s))
+                orbit_rows[i] = row_orbit
+                if row_orbit.solve_success
+                    orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): total=$(round(row_orbit.total_time_s; digits=3)) s"
+                else
+                    orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): $(err)"
+                end
+            end
+        end
+        for i in eachindex(seeds)
+            push!(rows, orbit_rows[i])
+            println(orbit_msgs[i])
+        end
+    end
+    return nothing
+end
+
+function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet::Earth)::DataFrame
+    baseline_sc = make_spacecraft(planet; id=1, with_panel=false)
+    period_s = orbital_period_seconds(baseline_sc, planet)
+    orbit_counts = spec.name == "full" ? collect(1:5) : collect(1:3)
+    selected = selected_cases(spec, cases)
+
+    println("[per-orbit] scenarios=$(length(selected)), baseline period=$(round(period_s; digits=3)) s, orbit counts=$(first(orbit_counts)):$(last(orbit_counts))")
+    rows = NamedTuple[]
+
+    if perf_parallel_enabled()
+        scenario_rows = Vector{Vector{NamedTuple}}(undef, length(selected))
+        scenario_logs = Vector{Vector{String}}(undef, length(selected))
+        Threads.@threads for idx in eachindex(selected)
+            local_rows, local_logs = measure_per_orbit_scenario(selected[idx], spec, period_s, orbit_counts)
+            scenario_rows[idx] = local_rows
+            scenario_logs[idx] = local_logs
+        end
+        for (idx, base_case) in enumerate(selected)
+            println("  scenario $(idx)/$(length(selected)) = $(base_case.name)")
+            append!(rows, scenario_rows[idx])
+            for log_line in scenario_logs[idx]
+                println(log_line)
+            end
+        end
+    else
+        for (idx, base_case) in enumerate(selected)
+            println("  scenario $(idx)/$(length(selected)) = $(base_case.name)")
+            local_rows, local_logs = measure_per_orbit_scenario(base_case, spec, period_s, orbit_counts)
+            append!(rows, local_rows)
+            for log_line in local_logs
+                println(log_line)
+            end
+        end
+    end
+
+    run_montecarlo_per_orbit!(rows, spec, planet, period_s, orbit_counts)
+
     return DataFrame(rows)
 end
 
@@ -589,6 +795,53 @@ function _safe_stat(values, op::Function)
     vec = collect(skipmissing(values))
     isempty(vec) && return missing
     return op(vec)
+end
+
+function summarize_per_orbit_results(orbit_raw_df::DataFrame)::DataFrame
+    keys = [:category, :scenario, :description, :orbit_count, :orbital_period_s]
+    counts = combine(
+        groupby(orbit_raw_df, keys),
+        nrow => :samples_total,
+        :solve_success => (v -> count(identity, v)) => :samples_success
+    )
+    counts[!, :samples_failed] = counts.samples_total .- counts.samples_success
+    counts[!, :success_rate] = Float64.(counts.samples_success) ./ Float64.(counts.samples_total)
+
+    success_df = orbit_raw_df[orbit_raw_df.solve_success .== true, :]
+    summary = counts
+    if nrow(success_df) > 0
+        success_summary = combine(
+            groupby(success_df, keys),
+            nrow => :samples,
+            :mission_time_s => (v -> _safe_stat(v, mean)) => :mission_time_mean_s,
+            :total_time_s => (v -> _safe_stat(v, mean)) => :total_time_mean_s,
+            :total_time_s => (v -> _safe_stat(v, x -> quantile(x, 0.9))) => :total_time_p90_s,
+            :solve_time_s => (v -> _safe_stat(v, mean)) => :solve_time_mean_s,
+            :total_bytes_mb => (v -> _safe_stat(v, mean)) => :total_bytes_mean_mb,
+            :sim_seconds_per_wall_second => (v -> _safe_stat(v, mean)) => :sim_seconds_per_wall_second_mean
+        )
+        summary = leftjoin(counts, success_summary, on=keys)
+    else
+        summary[!, :samples] = fill(missing, nrow(summary))
+        summary[!, :mission_time_mean_s] = fill(missing, nrow(summary))
+        summary[!, :total_time_mean_s] = fill(missing, nrow(summary))
+        summary[!, :total_time_p90_s] = fill(missing, nrow(summary))
+        summary[!, :solve_time_mean_s] = fill(missing, nrow(summary))
+        summary[!, :total_bytes_mean_mb] = fill(missing, nrow(summary))
+        summary[!, :sim_seconds_per_wall_second_mean] = fill(missing, nrow(summary))
+    end
+
+    summary[!, :time_per_orbit_mean_s] = [
+        (ismissing(tt) || orbit <= 0) ? missing : tt / orbit
+        for (tt, orbit) in zip(summary.total_time_mean_s, summary.orbit_count)
+    ]
+    summary[!, :orbits_per_wall_second_mean] = [
+        (ismissing(tt) || tt <= 0.0) ? missing : orbit / tt
+        for (tt, orbit) in zip(summary.total_time_mean_s, summary.orbit_count)
+    ]
+
+    sort!(summary, [:scenario, :orbit_count])
+    return summary
 end
 
 function summarize_results(raw_df::DataFrame)::DataFrame
@@ -689,7 +942,7 @@ function _scenario_metric(summary_df::DataFrame, scenario::String, metric::Symbo
     return summary_df[idx, metric]
 end
 
-function write_report(path::String, spec::ProfileSpec, raw_df::DataFrame, summary_df::DataFrame)
+function write_report(path::String, spec::ProfileSpec, raw_df::DataFrame, summary_df::DataFrame, orbit_summary_df::DataFrame)
     generated = string(now(UTC))
     julia_ver = string(VERSION)
     nthreads = Threads.nthreads()
@@ -760,6 +1013,17 @@ function write_report(path::String, spec::ProfileSpec, raw_df::DataFrame, summar
                 "| $(row.scenario) | $(row.category) | $(row.samples_success)/$(row.samples_total) | $(_fmt(row.total_time_mean_s)) | $(_fmt(row.total_time_p90_s)) | $(_fmt(row.solve_time_mean_s)) | $(_fmt(row.copy_time_mean_s)) | $(_fmt(row.sim_seconds_per_wall_second_mean)) | $(_fmt(row.relative_to_baseline)) |"
             )
         end
+        println(io)
+        println(io, "## Per-Orbit Results (All Scenarios)")
+        println(io)
+        println(io, "| Scenario | Category | Orbit Count | Success/Total | Mission Time (s) | Mean Total (s) | P90 (s) | Time / Orbit (s) | Orbits / Wall-sec |")
+        println(io, "|---|---|---:|---:|---:|---:|---:|---:|---:|")
+        for row in eachrow(orbit_summary_df)
+            println(
+                io,
+                "| $(row.scenario) | $(row.category) | $(row.orbit_count) | $(row.samples_success)/$(row.samples_total) | $(_fmt(row.mission_time_mean_s)) | $(_fmt(row.total_time_mean_s)) | $(_fmt(row.total_time_p90_s)) | $(_fmt(row.time_per_orbit_mean_s)) | $(_fmt(row.orbits_per_wall_second_mean)) |"
+            )
+        end
     end
 end
 
@@ -774,19 +1038,27 @@ function main()
     cases = build_cases(spec, planet)
     raw_df = run_benchmarks(spec, cases, planet)
     summary_df = summarize_results(raw_df)
+    orbit_raw_df = run_per_orbit_for_scenarios(spec, cases, planet)
+    orbit_summary_df = summarize_per_orbit_results(orbit_raw_df)
 
     stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
     raw_path = joinpath(outdir, "runtime_raw_$(spec.name)_$(stamp).csv")
     summary_path = joinpath(outdir, "runtime_summary_$(spec.name)_$(stamp).csv")
+    orbit_raw_path = joinpath(outdir, "runtime_per_orbit_raw_$(spec.name)_$(stamp).csv")
+    orbit_summary_path = joinpath(outdir, "runtime_per_orbit_summary_$(spec.name)_$(stamp).csv")
     report_path = joinpath(outdir, "runtime_report_$(spec.name)_$(stamp).md")
 
     CSV.write(raw_path, raw_df)
     CSV.write(summary_path, summary_df)
-    write_report(report_path, spec, raw_df, summary_df)
+    CSV.write(orbit_raw_path, orbit_raw_df)
+    CSV.write(orbit_summary_path, orbit_summary_df)
+    write_report(report_path, spec, raw_df, summary_df, orbit_summary_df)
 
     println("Analysis complete.")
     println("Raw results: $raw_path")
     println("Summary: $summary_path")
+    println("Per-orbit raw: $orbit_raw_path")
+    println("Per-orbit summary: $orbit_summary_path")
     println("Report: $report_path")
 end
 

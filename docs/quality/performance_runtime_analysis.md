@@ -34,6 +34,8 @@ The script writes timestamped artifacts in `output/performance` by default:
 
 - `runtime_raw_<profile>_<timestamp>.csv`: one row per measured run
 - `runtime_summary_<profile>_<timestamp>.csv`: aggregated scenario statistics
+- `runtime_per_orbit_raw_<profile>_<timestamp>.csv`: per-orbit raw timings across all scenarios (including Monte Carlo seeds)
+- `runtime_per_orbit_summary_<profile>_<timestamp>.csv`: per-orbit aggregates across all scenarios
 - `runtime_report_<profile>_<timestamp>.md`: human-readable findings and comparison table
 
 ## Notes

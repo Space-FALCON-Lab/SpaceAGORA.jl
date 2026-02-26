@@ -5,28 +5,67 @@ using DifferentialEquations
 using LinearAlgebra
 using SPICE
 using Dates
-using ..EnvironmentModels: getDensity
-using ..DynamicEffectors: BaseThrusterModel
+using ..EnvironmentModels: getDensity, NoAtmosphereModel
+using ..DynamicEffectors: BaseThrusterModel, AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
 using ..AbstractTypes: AbstractPlanet
 using ..ConfigTypes: SaveData
 using ..ControlEffectors: calcControlEffect!
 using ..GuidanceEffectors: calcGuidanceEffect!
-using ..SimConfig: SimulationConfiguration
+using ..SimConfig: SimulationConfiguration, MissionOrbits
 export get_callbacks
 
 @inline callback_verbose(integrator) = integrator.p.args.simulation_settings.verbose
+@inline callback_use_invokelatest() = get(ENV, "SPACEAGORA_DEV_HOT_RELOAD", "0") == "1"
+
+@inline function _uses_atmospheric_dynamic_effector(effectors::Tuple)::Bool
+    @inbounds for effector in effectors
+        if effector isa AerodynamicCoefficientConstant || effector isa AerodynamicCoefficientfM || effector isa AerodynamicCoefficientNoBallisticFlight
+            return true
+        end
+    end
+    return false
+end
+
+@inline function _requires_density_callback(effectors::Tuple, args::SimulationConfiguration)::Bool
+    return _uses_atmospheric_dynamic_effector(effectors) || !(args.environment_model.density_model isa NoAtmosphereModel)
+end
+
+@inline function _requires_orbit_end_callback(args::SimulationConfiguration)::Bool
+    return args.mission_configuration.mission_type == MissionOrbits
+end
+
+@inline function _requires_drag_state_callback(effectors::Tuple, args::SimulationConfiguration)::Bool
+    if !_requires_density_callback(effectors, args)
+        return false
+    end
+    tol = args.integration_tolerances
+    return tol.dt_max_atmosphere != tol.dt_max_orbit ||
+           tol.reltol_atmosphere != tol.reltol_orbit ||
+           tol.abstol_atmosphere != tol.abstol_orbit
+end
 
 function get_callbacks(num_sats::Int, effectors::Tuple, args::SimulationConfiguration)::CallbackSet
-    
-    callbacks = CallbackSet(get_impact_callback(num_sats),
-                            update_planet_frame_callback(), 
-                            get_density_callback(num_sats), 
-                            get_orbit_end_callback(num_sats),
-                            get_drag_state_callback(num_sats),
-                            get_control_callbacks(num_sats, args)...,
-                            get_guidance_callbacks(num_sats, args)...)
-     
-    return callbacks
+    callbacks = Any[
+        get_impact_callback(num_sats),
+        update_planet_frame_callback()
+    ]
+
+    if _requires_density_callback(effectors, args)
+        push!(callbacks, get_density_callback(num_sats))
+    end
+
+    if _requires_orbit_end_callback(args)
+        push!(callbacks, get_orbit_end_callback(num_sats))
+    end
+
+    if _requires_drag_state_callback(effectors, args)
+        push!(callbacks, get_drag_state_callback(num_sats))
+    end
+
+    append!(callbacks, get_control_callbacks(num_sats, args))
+    append!(callbacks, get_guidance_callbacks(num_sats, args))
+
+    return CallbackSet(callbacks...)
 end
 function update_planet_frame_callback()
     condition(u, t, integrator) = true
@@ -207,6 +246,7 @@ function get_guidance_callbacks(num_sats::Int, args::SimulationConfiguration)::V
     # Implement a callback to calculate guidance commands at each time step based on the current state and the guidance model defined in the simulation configuration
     guidance_models = args.guidance_model.guidance_effectors
     guidance_rates = args.guidance_model.guidance_rates
+    use_invokelatest = callback_use_invokelatest()
     callbacks = Vector{DiscreteCallback}(undef, length(guidance_models))
     for i in eachindex(guidance_models)
         guidance_model = guidance_models[i]
@@ -214,10 +254,13 @@ function get_guidance_callbacks(num_sats::Int, args::SimulationConfiguration)::V
         # Implement a callback for this guidance model that triggers at the specified guidance rate and calculates the guidance commands based on the current state and the guidance model
         # The calculated guidance commands should be stored in the shared buffers for use in the dynamics calculations
         guidance_func = (integrator) -> begin
-            # if integrator.sol.retcode == :Default
-                # Use invokelatest to keep Revise/hot-reload workflows free of world-age errors.
+            if use_invokelatest
+                # Dev mode: keep Revise/hot-reload workflows free of world-age errors.
                 Base.invokelatest(calcGuidanceEffect!, guidance_model, integrator.u, integrator.p, integrator.t, i)
-            # end
+            else
+                # Production mode: direct dispatch avoids invokelatest overhead.
+                calcGuidanceEffect!(guidance_model, integrator.u, integrator.p, integrator.t, i)
+            end
         end
         callbacks[i] = PeriodicCallback(guidance_func, guidance_rate)
     end
@@ -228,6 +271,7 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)::Ve
     # Perform the control effects' calculations at specific rates given by the control_rates field in the ControlModel
     control_models = args.control_model.control_effectors
     control_rates = args.control_model.control_rates
+    use_invokelatest = callback_use_invokelatest()
     callbacks = Vector{DiscreteCallback}(undef, length(control_models))
     for i in eachindex(control_models)
         control_model = control_models[i]
@@ -246,8 +290,13 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)::Ve
         # to avoid conflating effector-index with spacecraft-index.
         control_func = (integrator) -> begin
             @inbounds for sat_idx in 1:num_sats
-                # Use invokelatest to keep Revise/hot-reload workflows free of world-age errors.
-                Base.invokelatest(calcControlEffect!, control_model, integrator.u, integrator.p, integrator.t, sat_idx)
+                if use_invokelatest
+                    # Dev mode: keep Revise/hot-reload workflows free of world-age errors.
+                    Base.invokelatest(calcControlEffect!, control_model, integrator.u, integrator.p, integrator.t, sat_idx)
+                else
+                    # Production mode: direct dispatch avoids invokelatest overhead.
+                    calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
+                end
             end
         end
         callbacks[i] = PeriodicCallback(control_func, control_rate)

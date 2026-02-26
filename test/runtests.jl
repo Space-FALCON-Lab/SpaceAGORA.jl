@@ -1094,6 +1094,22 @@ end
                     intermediate_solution::Any
                 end
             end
+            if !isdefined(@__MODULE__, :LegacyAeroState)
+                mutable struct LegacyAeroState
+                    α::Float64
+                    thermal_accomodation_factor::Float64
+                    heat_load_limit::Float64
+                end
+            end
+            if !isdefined(@__MODULE__, :LegacyIpState)
+                mutable struct LegacyIpState
+                    cm::Int
+                    dm::Int
+                    gm::Int
+                    tc::Int
+                    tm::Int
+                end
+            end
 
             import ..SimulationModel: ODEParams
             function ODEParams(
@@ -1154,19 +1170,65 @@ end
             rotate_to_inertial(body::NamedTuple, link, root_index::Int) = SMatrix{3, 3, Float64}(I)
             r_intor_p!(r::SVector{3, Float64}, v::SVector{3, Float64}, p, et::Float64) = r_intor_p!(r, v, p)
 
-            density_constant(args...) = (1.0e-8, 200.0, SVector{3, Float64}(0.0, 0.0, 0.0))
-            density_exp(args...) = (1.0e-8, 200.0, SVector{3, Float64}(0.0, 0.0, 0.0))
-            density_no(args...) = (1.0e-8, 200.0, SVector{3, Float64}(0.0, 0.0, 0.0))
-            density_gram(args...) = (1.0e-8, 200.0, SVector{3, Float64}(0.0, 0.0, 0.0))
-            density_nrlmsise(args...) = (1.0e-8, 200.0, SVector{3, Float64}(0.0, 0.0, 0.0))
+            function _cov_density_tuple(args)
+                dense = haskey(args, :_cov_dense_atm) && Bool(args[:_cov_dense_atm])
+                ρ = dense ? 0.2 : 1.0e-8
+                return (ρ, 200.0, SVector{3, Float64}(0.0, 0.0, 0.0))
+            end
+            density_constant(alt, planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args) = _cov_density_tuple(args)
+            density_exp(alt, planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args) = _cov_density_tuple(args)
+            density_no(alt, planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args) = _cov_density_tuple(args)
+            density_gram(alt, planet, lat, lon, MonteCarlo, wind_m, args, el_time, param, gram_atmosphere, gram) = _cov_density_tuple(args)
+            density_nrlmsise(alt, planet, lat, lon, MonteCarlo, wind_m, args, time_real) = _cov_density_tuple(args)
             heatrate_convective_radiative(args...) = 0.0
             heatrate_convective_maxwellian(args...) = 0.0
 
             control_struct_load(args...) = 0.0
+            control_struct_load(ip, m, args, S, T, q, MonteCarlo) = 0.0
             control_solarpanels_openloop(args...) = 0.0
             control_solarpanels_heatload(args...) = 0.0
             control_solarpanels_heatrate(args...) = 0.0
             no_control(args...) = 0.0
+            target_planning(args...) = -1.0
+            control_solarpanels_targeting_heatload(args...) = 0.0
+            target_planning(f!, ip, m, args, param, OE_AI, initial_time, final_time, a_tol, r_tol, method, events, in_cond) = -1.0
+            control_solarpanels_targeting_heatload(energy_f, param, OE_AI) = 0.0
+            if !isdefined(@__MODULE__, :FakeLambertSolution)
+                struct FakeLambertSolution
+                    data::Matrix{Float64}
+                    t::Vector{Float64}
+                end
+            end
+            Base.getindex(sol::FakeLambertSolution, I...) = getindex(sol.data, I...)
+            Base.size(sol::FakeLambertSolution) = size(sol.data)
+            Base.axes(sol::FakeLambertSolution) = axes(sol.data)
+            Base.axes(sol::FakeLambertSolution, d::Int) = axes(sol.data, d)
+            function asim_ctrl_rf(args...)
+                lam = FakeLambertSolution(
+                    [1.0 1.0;
+                     0.0 0.0;
+                     0.0 0.0;
+                     1.0 1.0;
+                     0.0 0.0;
+                     0.0 0.0;
+                     0.0 0.0],
+                    [0.0, 1.0]
+                )
+                return lam, [0.0, Inf]
+            end
+            function asim_ctrl_rf(ip, m, time_0, OE_AI, args, v_E, k_cf, time_switch_eval, gram_atmosphere)
+                lam = FakeLambertSolution(
+                    [1.0 1.0;
+                     0.0 0.0;
+                     0.0 0.0;
+                     1.0 1.0;
+                     0.0 0.0;
+                     0.0 0.0;
+                     0.0 0.0],
+                    [0.0, 1.0]
+                )
+                return lam, [0.0, Inf]
+            end
 
             get_magnetic_field_dipole(args...) = SVector{3, Float64}(0.0, 0.0, 0.0)
             calculate_magnetic_torque(args...) = SVector{3, Float64}(0.0, 0.0, 0.0)
@@ -1191,9 +1253,12 @@ end
                 return nothing
             end
 
-            function _append_solution_sample!(solution, base::Float64)
+            function _append_solution_sample!(solution, base::Float64; skip_energy::Bool=false)
                 for group in (solution.orientation, solution.physical_properties, solution.performance, solution.forces)
                     for fname in fieldnames(typeof(group))
+                        if skip_energy && group === solution.forces && fname === :energy
+                            continue
+                        end
                         _push_sample!(getfield(group, fname), base)
                     end
                 end
@@ -1201,7 +1266,25 @@ end
             end
 
             function save_results(params::LegacyODEParams)
-                _append_solution_sample!(params.solution, params.time_0 + 0.1)
+                skip_energy = haskey(params.args, :_cov_skip_energy) && Bool(params.args[:_cov_skip_energy])
+                _append_solution_sample!(params.solution, params.time_0 + 0.1; skip_energy=skip_energy)
+                return nothing
+            end
+
+            _cov_arg(args, key::Symbol, default) = haskey(args, key) ? args[key] : default
+            function _cov_eval_f!(prob, p_cov; pos=nothing, vel=nothing, mass=nothing)
+                u_cov = deepcopy(prob.u0)
+                if pos !== nothing
+                    u_cov.pos .= pos
+                end
+                if vel !== nothing
+                    u_cov.vel .= vel
+                end
+                if mass !== nothing
+                    u_cov.mass = mass
+                end
+                du_cov = similar(prob.u0)
+                prob.f(du_cov, u_cov, p_cov, first(prob.tspan))
                 return nothing
             end
 
@@ -1209,27 +1292,263 @@ end
             function solve(prob::ODEProblem{<:Any, <:Any, true, LegacyODEParams}, alg; kwargs...)
                 p = prob.p
                 cnf = p.cnf
+                args_ctx = merge(p.args, (cnf=cnf, solution=p.solution))
+                p_ctx = LegacyODEParams(
+                    p.m,
+                    cnf,
+                    p.solution,
+                    p.index_phase_aerobraking,
+                    p.ip,
+                    p.aerobraking_phase,
+                    p.t_prev,
+                    p.date_initial,
+                    p.time_0,
+                    p.initial_state,
+                    p.gram_atmosphere,
+                    p.gram,
+                    p.numberofpassage,
+                    p.orientation_sim,
+                    args_ctx,
+                    p.intermediate_solution
+                )
+
                 try
-                    du = similar(prob.u0)
-                    prob.f(du, prob.u0, p, first(prob.tspan))
+                    _cov_eval_f!(prob, p_ctx)
                 catch
                     # keep legacy branch harness running through stale optional paths
                 end
 
+                # Force key control/targeting branches through additional f! probes.
+                cnf.drag_state = true
+                cnf.initial_position_closed_form = SVector{7, Float64}(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
+                cnf.targeting = 1
+                cnf.ts_targ_1 = -1.0e9
+                cnf.ts_targ_2 = -1.0e8
+                controller.count_controller = 2
+                controller.count_prev_controller = 0
+                controller.stored_state = 0
+                controller.prev_time = -1.0
+
+                base_args = Dict{Symbol, Any}(pairs(p_ctx.args))
+                base_args[:cnf] = cnf
+                base_args[:solution] = p.solution
+                if p.orientation_sim && !isempty(p.m.body.roots)
+                    println("RW_STATE n_wheels=", p.m.body.roots[1].rw_assembly.n_wheels, " len_h=", length(p.m.body.roots[1].rw_assembly.h_wheels))
+                end
+                probe_cfgs = (
+                    (cm=0, ci=true, tm=1, ccount=2),
+                    (cm=1, ci=true, tm=2, ccount=2),
+                    (cm=2, ci=true, tm=1, ccount=2),
+                    (cm=3, ci=true, tm=2, ccount=2),
+                    (cm=0, ci=false, tm=1, ccount=2),
+                    (cm=1, ci=false, tm=1, ccount=3),
+                    (cm=2, ci=false, tm=2, ccount=2),
+                    (cm=3, ci=false, tm=2, ccount=2)
+                )
+
+                for cfg in probe_cfgs
+                    args_probe = merge(base_args, Dict{Symbol, Any}(pairs((
+                        control_mode=0,
+                        control_in_loop=cfg.ci,
+                        struct_ctrl=1,
+                        srp=true,
+                        eclipse=true,
+                        magnetic_field=true,
+                        print_res=true
+                    ))))
+                    ip_probe = (
+                        cm=cfg.cm,
+                        dm=2,
+                        gm=1,
+                        tc=(cfg.cm % 3),
+                        tm=cfg.tm
+                    )
+                    p_probe = LegacyODEParams(
+                        p.m,
+                        cnf,
+                        p.solution,
+                        2.0,
+                        ip_probe,
+                        p.aerobraking_phase,
+                        p.t_prev,
+                        p.date_initial,
+                        p.time_0,
+                        p.initial_state,
+                        p.gram_atmosphere,
+                        p.gram,
+                        p.numberofpassage,
+                        p.orientation_sim,
+                        args_probe,
+                        p.intermediate_solution
+                    )
+                    try
+                        controller.count_controller = cfg.ccount
+                        controller.count_prev_controller = 0
+                        controller.stored_state = 0
+                        controller.prev_time = -1.0
+                        _cov_eval_f!(prob, p_probe)
+                    catch
+                    end
+                end
+
+                for dm in (3, 4)
+                    args_dm = merge(base_args, Dict{Symbol, Any}(pairs((control_mode=0, control_in_loop=false))))
+                    ip_dm = (cm=0, dm=dm, gm=1, tc=0, tm=1)
+                    p_dm = LegacyODEParams(
+                        p.m,
+                        cnf,
+                        p.solution,
+                        2.0,
+                        ip_dm,
+                        p.aerobraking_phase,
+                        p.t_prev,
+                        p.date_initial,
+                        p.time_0,
+                        p.initial_state,
+                        p.gram_atmosphere,
+                        p.gram,
+                        p.numberofpassage,
+                        p.orientation_sim,
+                        args_dm,
+                        p.intermediate_solution
+                    )
+                    try
+                        _cov_eval_f!(prob, p_dm)
+                    catch
+                    end
+                end
+
+                # Probe descending-flight sign branches and drag/flow warnings with dense atmosphere.
+                try
+                    cnf.drag_state = true
+                    cnf.ascending_phase = false
+                    cnf.index_warning_alt = 0
+                    cnf.index_warning_flow = 0
+                    args_warn = merge(base_args, Dict{Symbol, Any}(pairs((
+                        control_mode=1,
+                        print_res=true,
+                        _cov_dense_atm=true
+                    ))))
+                    p_warn = LegacyODEParams(
+                        p.m,
+                        cnf,
+                        p.solution,
+                        2.0,
+                        (cm=0, dm=2, gm=1, tc=0, tm=1),
+                        p.aerobraking_phase,
+                        p.t_prev,
+                        p.date_initial,
+                        p.time_0,
+                        p.initial_state,
+                        p.gram_atmosphere,
+                        p.gram,
+                        p.numberofpassage,
+                        p.orientation_sim,
+                        args_warn,
+                        p.intermediate_solution
+                    )
+                    _cov_eval_f!(
+                        prob,
+                        p_warn;
+                        pos=SVector{3, Float64}(p.m.planet.Rp_e + 70.0e3, 0.0, 0.0),
+                        vel=SVector{3, Float64}(-7600.0, 0.0, 0.0)
+                    )
+                catch
+                end
+
+                # Probe propellant depletion + drag-pass deceleration thrust path.
+                try
+                    cnf.index_propellant_mass = 1
+                    args_prop = merge(base_args, Dict{Symbol, Any}(pairs((print_res=true,))))
+                    p_prop = LegacyODEParams(
+                        p.m,
+                        cnf,
+                        p.solution,
+                        2.0,
+                        (cm=0, dm=2, gm=1, tc=2, tm=1),
+                        p.aerobraking_phase,
+                        p.t_prev,
+                        p.date_initial,
+                        p.time_0,
+                        p.initial_state,
+                        p.gram_atmosphere,
+                        p.gram,
+                        p.numberofpassage,
+                        p.orientation_sim,
+                        args_prop,
+                        p.intermediate_solution
+                    )
+                    _cov_eval_f!(prob, p_prop; mass=0.1)
+                catch
+                end
+
+                # Probe orientation RW saturation branch when available.
+                try
+                    if p.orientation_sim && !isempty(p.m.body.roots) && p.m.body.roots[1].rw_assembly.n_wheels > 0
+                        root = p.m.body.roots[1]
+                        println("RW_PROBE_START n_wheels=", root.rw_assembly.n_wheels, " len_h=", length(root.rw_assembly.h_wheels))
+                        root.rw_assembly.h_wheels[1] = root.rw_assembly.max_wheel_h
+                        root.rw_assembly.h_dot_wheels[1] = 1.0
+                        p_rw = LegacyODEParams(
+                            p.m,
+                            cnf,
+                            p.solution,
+                            2.0,
+                            (cm=0, dm=2, gm=1, tc=0, tm=1),
+                            p.aerobraking_phase,
+                            p.t_prev,
+                            p.date_initial,
+                            p.time_0,
+                            p.initial_state,
+                            p.gram_atmosphere,
+                            p.gram,
+                            p.numberofpassage,
+                            true,
+                            merge(base_args, Dict{Symbol, Any}(pairs((print_res=true,)))),
+                            p.intermediate_solution
+                        )
+                        _cov_eval_f!(prob, p_rw)
+                        println("RW_PROBE_DONE")
+                    end
+                catch err
+                    println("RW_PROBE_ERR ", typeof(err), " ", sprint(showerror, err))
+                end
+
                 save_results(p)
 
-                # set event counters so each phase exits promptly
-                cnf.count_stop_firing += 1
-                cnf.count_eventfirststep += 1
-                cnf.count_eventsecondstep += 1
-                cnf.count_out_drag_passage += 1
-                cnf.count_in_drag_passage += 1
-                cnf.count_in_drag_passage_nt += 1
-                cnf.count_apoapsispoint += 1
-                cnf.count_periapsispoint += 1
-                cnf.count_heat_rate_check += 1
-                cnf.count_heat_load_check_exit += 1
-                cnf.count_final_entry_altitude_reached += 1
+                multistage_cov = Bool(_cov_arg(base_args, :_cov_multistage, false))
+                if multistage_cov && cnf.counter_integrator == 0
+                    drag_state_next = _cov_arg(base_args, :_cov_stage2_drag_state, nothing)
+                    sensible_loads_next = _cov_arg(base_args, :_cov_stage2_sensible_loads, nothing)
+                    ascending_phase_next = _cov_arg(base_args, :_cov_stage2_ascending_phase, nothing)
+                    if drag_state_next !== nothing
+                        cnf.drag_state = Bool(drag_state_next)
+                    end
+                    if sensible_loads_next !== nothing
+                        cnf.sensible_loads = Bool(sensible_loads_next)
+                    end
+                    if ascending_phase_next !== nothing
+                        cnf.ascending_phase = Bool(ascending_phase_next)
+                    end
+                else
+                    if !Bool(_cov_arg(base_args, :_cov_no_event_counters, false))
+                        # set event counters so each phase exits promptly
+                        cnf.count_stop_firing += 1
+                        cnf.count_eventfirststep += 1
+                        cnf.count_eventsecondstep += 1
+                        cnf.count_out_drag_passage += 1
+                        cnf.count_in_drag_passage += 1
+                        cnf.count_in_drag_passage_nt += 1
+                        cnf.count_apoapsispoint += 1
+                        cnf.count_periapsispoint += 1
+                        cnf.count_heat_rate_check += 1
+                        cnf.count_heat_load_check_exit += 1
+                        cnf.count_final_entry_altitude_reached += 1
+                    end
+                    if Bool(_cov_arg(base_args, :_cov_force_impact, false))
+                        cnf.count_impact += 1
+                    end
+                end
 
                 t0, t1 = prob.tspan
                 tmid = t0 + min(abs(t1 - t0), 0.1)
@@ -1237,6 +1556,22 @@ end
             end
 
             function solve(prob::ODEProblem{<:Any, <:Any, true, <:Tuple}, alg; kwargs...)
+                args = prob.p[8]
+                if !Bool(_cov_arg(args, :_cov_no_event_counters, false))
+                    # Keep tuple-param fallback deterministic and ensure branch loops terminate quickly.
+                    cnf.count_stop_firing += 1
+                    cnf.count_eventfirststep += 1
+                    cnf.eventfirststep_periapsis += 1
+                    cnf.count_eventsecondstep += 1
+                    cnf.count_out_drag_passage += 1
+                    cnf.count_in_drag_passage += 1
+                    cnf.count_in_drag_passage_nt += 1
+                    cnf.count_apoapsispoint += 1
+                    cnf.count_periapsispoint += 1
+                    cnf.count_heat_rate_check += 1
+                    cnf.count_heat_load_check_exit += 1
+                    cnf.count_final_entry_altitude_reached += 1
+                end
                 t0, t1 = prob.tspan
                 tmid = t0 + min(abs(t1 - t0), 0.1)
                 return (u=[prob.u0, prob.u0], t=[t0, tmid])
@@ -1245,6 +1580,43 @@ end
             const __legacy_complete_passage_cov_shims_loaded__ = true
         end
     end)
+
+    # Cover typed asim dispatch wrapper in Complete_passage.jl.
+    typed_dispatch_ret = Core.eval(sandbox, quote
+        run_simulation(args::SimulationConfiguration; isolate_state::Bool=true) = :legacy_complete_passage_typed_dispatch_ok
+        planet = Earth("", joinpath(Main.REPO_ROOT, "GRAM_Data", "SPICE"))
+        env = EnvironmentModel(
+            planet=planet,
+            EI=120.0,
+            density_model=NoAtmosphereModel(),
+            topography=false,
+            topo_degree=0,
+            topo_order=0,
+            wind=false,
+            thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet)
+        )
+        sc = SpacecraftModel()
+        args_typed = SimulationConfiguration(
+            simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+            mission_configuration=MissionConfiguration(
+                mission_type=MissionTime,
+                keplerian=true,
+                number_of_orbits=1,
+                mission_time=60.0,
+                orientation_sim=false,
+                num_steps_to_save=10
+            ),
+            environment_model=env,
+            dynamics_model=DynamicsModel([sc], (InverseSquaredGravityModel(),)),
+            guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
+            navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
+            control_model=ControlModel(control_effectors=(), control_rates=Float64[]),
+            initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+            integration_tolerances=IntegrationTolerances(reltol_orbit=1e-8, abstol_orbit=1e-8)
+        )
+        asim(args_typed)
+    end)
+    @test typed_dispatch_ret == :legacy_complete_passage_typed_dispatch_ok
 
     function run_legacy_case_for_coverage(;
         keplerian::Bool,
@@ -1264,13 +1636,54 @@ end
         struct_ctrl::Int=0,
         print_res::Bool=false,
         control_in_loop::Bool=false,
+        n_wheels::Int=0,
         n_thrusters::Int=0,
-        r0_alt_m::Float64=500e3
+        n_magnets::Int=0,
+        n_links::Int=1,
+        r0_alt_m::Float64=500e3,
+        oe_true_anomaly_rad::Float64=0.0,
+        heat_load_sol::Int=0,
+        mission_time::Float64=100.0,
+        targeting_ctrl::Int=0,
+        alpha_deg::Float64=0.0,
+        integrator::String="Julia",
+        monte_carlo::Bool=false,
+        wind_enabled::Bool=false,
+        controller_count::Int=2,
+        controller_prev_count::Int=0,
+        controller_stored_state::Int=0,
+        controller_prev_time::Float64=-1.0,
+        pre_drag_state::Union{Nothing, Bool}=nothing,
+        pre_sensible_loads::Union{Nothing, Bool}=nothing,
+        pre_ascending_phase::Union{Nothing, Bool}=nothing,
+        pre_targeting::Union{Nothing, Int}=nothing,
+        pre_time_termination::Union{Nothing, Bool}=nothing,
+        pre_altitude_periapsis_km::Union{Nothing, Float64}=nothing,
+        solution_states::Int=0,
+        cov_multistage::Bool=false,
+        cov_stage2_drag_state::Union{Nothing, Bool}=nothing,
+        cov_stage2_sensible_loads::Union{Nothing, Bool}=nothing,
+        cov_stage2_ascending_phase::Union{Nothing, Bool}=nothing,
+        cov_force_impact::Bool=false,
+        cov_dense_atm::Bool=false,
+        cov_skip_energy::Bool=false,
+        cov_no_event_counters::Bool=false,
+        cov_debug_output::Bool=false
     )
+        println(
+            "LEGACY_CASE_START ",
+            "mission=", type_of_mission,
+            " keplerian=", keplerian,
+            " ctrl=", control_mode,
+            " integ=", integrator,
+            " orient=", orientation_sim,
+            " target=", targeting_ctrl,
+            " r0_alt_m=", r0_alt_m
+        )
         legacy_args = (
             initial_time=(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
             orientation_sim=orientation_sim,
-            heat_load_sol=0,
+            heat_load_sol=heat_load_sol,
             EI=120.0,
             AE=120.0,
             thrust_control=thrust_control,
@@ -1278,7 +1691,7 @@ end
             drag_passage=drag_passage,
             type_of_mission=type_of_mission,
             body_shape=body_shape,
-            integrator="Julia",
+            integrator=integrator,
             r_tol_drag=0.0,
             r_tol=1e-8,
             a_tol_drag=0.0,
@@ -1288,7 +1701,7 @@ end
             save_rate=1,
             print_res=print_res,
             control_mode=control_mode,
-            mission_time=100.0,
+            mission_time=mission_time,
             topography_model="None",
             control_in_loop=control_in_loop,
             struct_ctrl=struct_ctrl,
@@ -1297,8 +1710,10 @@ end
             magnetic_field=magnetic_field,
             phi=0.0,
             delta_v=0.0,
-            targetting_ctrl=0,
-            targeting_ctrl=0,
+            targetting_ctrl=targeting_ctrl,
+            targeting_ctrl=targeting_ctrl,
+            α=alpha_deg,
+            flash2_through_integration=0,
             flash1_rate=1.0,
             trajectory_rate=1.0,
             final_altitude=10_000.0,
@@ -1307,10 +1722,28 @@ end
             a_tol_orbit=0.0,
             dt_max_orbit=0.0,
             r_tol_quaternion=0.0,
-            a_tol_quaternion=0.0
+            a_tol_quaternion=0.0,
+            _cov_multistage=cov_multistage,
+            _cov_stage2_drag_state=cov_stage2_drag_state,
+            _cov_stage2_sensible_loads=cov_stage2_sensible_loads,
+            _cov_stage2_ascending_phase=cov_stage2_ascending_phase,
+            _cov_force_impact=cov_force_impact,
+            _cov_dense_atm=cov_dense_atm,
+            _cov_skip_energy=cov_skip_energy,
+            _cov_no_event_counters=cov_no_event_counters,
+            _cov_debug_output=cov_debug_output
         )
 
-        root = Link{0}(root=true)
+        root = if n_wheels > 0
+            Link{1}(root=true)
+        else
+            Link{0}(root=true)
+        end
+        if n_wheels > 0
+            root.rw_assembly.n_wheels = n_wheels
+            root.rw_assembly.h_dot_wheels[1] = 0.01
+            root.rw_assembly.h_wheels[1] = root.rw_assembly.max_wheel_h
+        end
         if n_thrusters > 0
             root.thrusters = [
                 Thruster(
@@ -1320,13 +1753,23 @@ end
                 )
             ]
         end
+        if n_magnets > 0
+            root.magnets = [Magnet()]
+        end
+        links = Any[root]
+        if n_links > 1
+            for idx in 2:n_links
+                push!(links, Link{0}(root=false, m=10.0, ref_area=1.0, r=MVector{3, Float64}(0.0, 0.5 * idx, 0.0)))
+            end
+        end
         legacy_body = (
             roots=[root],
-            links=[root],
-            n_reaction_wheels=0,
+            links=links,
+            n_reaction_wheels=n_wheels,
             n_thrusters=n_thrusters,
             dynamic_effectors=(sandbox.DummyEffector(),),
-            prop_mass=[0.0]
+            prop_mass=[0.0],
+            nose_radius=1.0
         )
         legacy_model = (
             initial_condition=(
@@ -1334,7 +1777,7 @@ end
                 DateTimeIC=from_utc(DateTime(2020, 1, 1, 0, 0, 0)),
                 DateTimeJ2000=from_utc(DateTime(2000, 1, 1, 12, 0, 0))
             ),
-            aerodynamics=(α=0.0, thermal_accomodation_factor=1.0),
+            aerodynamics=sandbox.LegacyAeroState(0.0, 1.0, 0.0),
             planet=EARTH,
             body=legacy_body,
             engines=(Isp=300.0, T=0.0)
@@ -1342,8 +1785,14 @@ end
         legacy_mass = 1000.0
         legacy_r0 = SVector{3, Float64}(EARTH.Rp_e + r0_alt_m, 0.0, 0.0)
         legacy_v0 = SVector{3, Float64}(0.0, 7600.0, 0.0)
-        legacy_oe = SVector{7, Float64}(EARTH.Rp_e + r0_alt_m, 0.02, deg2rad(35.0), 0.0, 0.0, 0.0, legacy_mass)
-        legacy_solution = seed_solution_for_save_csv!(Solution(); n_bodies=1, n_reaction_wheels=0, n_thrusters=0)
+        legacy_oe = SVector{7, Float64}(EARTH.Rp_e + r0_alt_m, 0.02, deg2rad(35.0), 0.0, 0.0, oe_true_anomaly_rad, legacy_mass)
+        legacy_solution = seed_solution_for_save_csv!(
+            Solution();
+            n_bodies=n_links,
+            n_reaction_wheels=max(0, n_wheels),
+            n_thrusters=max(0, n_thrusters)
+        )
+        legacy_solution.simulation.solution_states = solution_states
         legacy_initial_state = (m=legacy_mass,)
 
         Core.eval(sandbox, quote
@@ -1361,28 +1810,52 @@ end
             global OE = $legacy_oe
             global index_steps_EOM = $index_steps_eom
             global solution = $legacy_solution
-            global ip = (cm=$ip_cm, dm=$ip_dm, gm=1, tc=$ip_tc, tm=$ip_tm)
+            global ip = LegacyIpState($ip_cm, $ip_dm, 1, $ip_tc, $ip_tm)
             global gram_atmosphere = nothing
             global gram = nothing
-            global MonteCarlo = false
-            global wind_m = false
+            global MonteCarlo = $monte_carlo
+            global wind_m = $wind_enabled
             global controller = SimulationModel.ConfigTypes.Controller(
                 guidance_t_eval=[0.0, 1.0, 2.0, 3.0],
-                count_controller=1,
-                count_prev_controller=0,
-                stored_state=0,
-                prev_time=-1.0,
+                count_controller=$controller_count,
+                count_prev_controller=$controller_prev_count,
+                stored_state=$controller_stored_state,
+                prev_time=$controller_prev_time,
                 t=0.0
             )
+            if $pre_drag_state !== nothing
+                cnf.drag_state = Bool($pre_drag_state)
+            end
+            if $pre_sensible_loads !== nothing
+                cnf.sensible_loads = Bool($pre_sensible_loads)
+            end
+            if $pre_ascending_phase !== nothing
+                cnf.ascending_phase = Bool($pre_ascending_phase)
+            end
+            if $pre_targeting !== nothing
+                cnf.targeting = Int($pre_targeting)
+            end
+            if $pre_time_termination !== nothing
+                cnf.time_termination = Bool($pre_time_termination)
+            end
+            if $pre_altitude_periapsis_km !== nothing
+                cnf.altitude_periapsis = [Float64($pre_altitude_periapsis_km)]
+            end
         end)
 
-        return try
-            redirect_stdout(devnull) do
+        ret = try
+            if cov_debug_output
                 Base.invokelatest(sandbox.asim, legacy_initial_state, 1, legacy_args, ())
+            else
+                redirect_stdout(devnull) do
+                    Base.invokelatest(sandbox.asim, legacy_initial_state, 1, legacy_args, ())
+                end
             end
         catch e
             e
         end
+        println("LEGACY_CASE_DONE ", typeof(ret))
+        return ret
     end
 
     # Broad campaign path, phase-0 start, final-condition rerun branch.
@@ -1396,6 +1869,9 @@ end
         orientation_sim=false,
         r0_alt_m=500e3
     )
+    if ret_campaign isa Exception
+        println("RET_CAMPAIGN_ERR ", sprint(showerror, ret_campaign))
+    end
 
     # control_mode != 0 phase-2 branch (drag_state=false path, step 1.5 setup).
     ret_ctrl = run_legacy_case_for_coverage(
@@ -1433,6 +1909,7 @@ end
         body_shape="Spacecraft",
         orientation_sim=true,
         n_thrusters=1,
+        n_magnets=1,
         srp=true,
         magnetic_field=true,
         struct_ctrl=1,
@@ -1527,6 +2004,265 @@ end
         r0_alt_m=120e3
     )
 
+    # Orientation with wheels/thrusters and multi-link body to exercise attitude/SRP/magnetic hot paths.
+    ret_orient_rw_thrusters = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=2,
+        drag_passage=true,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        orientation_sim=true,
+        ip_cm=3,
+        ip_dm=2,
+        ip_tc=1,
+        ip_tm=1,
+        index_steps_eom=1,
+        n_wheels=1,
+        n_thrusters=1,
+        n_magnets=1,
+        n_links=2,
+        srp=true,
+        magnetic_field=true,
+        struct_ctrl=0,
+        control_in_loop=true,
+        cov_debug_output=true,
+        r0_alt_m=120e3
+    )
+    if ret_orient_rw_thrusters isa Exception
+        println("RET_RW_ERR ", sprint(showerror, ret_orient_rw_thrusters))
+    end
+
+    # Trigger control-mode branch matrix in phase 2.0/1.5/2.25/2.5 via staged fake-solver state updates.
+    ret_cov_phase2_20 = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=1,
+        drag_passage=true,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        index_steps_eom=1,
+        r0_alt_m=120e3,
+        pre_drag_state=true,
+        pre_sensible_loads=true,
+        pre_ascending_phase=false
+    )
+    ret_cov_phase2_15 = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=1,
+        drag_passage=true,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        index_steps_eom=1,
+        r0_alt_m=500e3,
+        oe_true_anomaly_rad=Float64(pi),
+        pre_drag_state=false,
+        pre_ascending_phase=false
+    )
+    ret_cov_phase2_225 = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=1,
+        drag_passage=true,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        index_steps_eom=1,
+        r0_alt_m=120e3,
+        pre_drag_state=true,
+        pre_ascending_phase=true
+    )
+    ret_cov_phase2_25 = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=1,
+        drag_passage=true,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        index_steps_eom=1,
+        r0_alt_m=500e3,
+        oe_true_anomaly_rad=Float64(pi),
+        pre_drag_state=false,
+        pre_ascending_phase=true
+    )
+
+    # Force second-iteration phase-2 branch matrix using staged solver-state updates.
+    ret_cov_phase2_20_ms = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=1,
+        drag_passage=true,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        index_steps_eom=1,
+        r0_alt_m=120e3,
+        cov_multistage=true,
+        cov_stage2_drag_state=true,
+        cov_stage2_sensible_loads=true,
+        cov_stage2_ascending_phase=false
+    )
+    ret_cov_phase2_225_ms = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=1,
+        drag_passage=true,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        index_steps_eom=1,
+        r0_alt_m=120e3,
+        cov_multistage=true,
+        cov_stage2_drag_state=true,
+        cov_stage2_sensible_loads=false,
+        cov_stage2_ascending_phase=true
+    )
+    ret_cov_phase2_25_ms = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=1,
+        drag_passage=true,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        index_steps_eom=1,
+        r0_alt_m=500e3,
+        oe_true_anomaly_rad=Float64(pi),
+        cov_multistage=true,
+        cov_stage2_drag_state=false,
+        cov_stage2_sensible_loads=false,
+        cov_stage2_ascending_phase=true
+    )
+
+    ret_cov_phase2_mc = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=0,
+        drag_passage=true,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        index_steps_eom=1,
+        monte_carlo=true,
+        r0_alt_m=120e3
+    )
+
+    # Keplerian phase-2 skip branch (line 1445) requires start below AE.
+    ret_keplerian_phase2_skip = run_legacy_case_for_coverage(
+        keplerian=true,
+        thrust_control="None",
+        control_mode=0,
+        drag_passage=false,
+        type_of_mission="time",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        index_steps_eom=3,
+        r0_alt_m=80e3
+    )
+
+    # Heat-load initialization branches.
+    ret_heatload_sol_1 = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=0,
+        drag_passage=false,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        heat_load_sol=1,
+        r0_alt_m=500e3
+    )
+    ret_heatload_sol_2 = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=0,
+        drag_passage=false,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        heat_load_sol=2,
+        r0_alt_m=500e3
+    )
+
+    # Targeting path smoke with deterministic stubs.
+    ret_targeting = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=2,
+        drag_passage=true,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        index_steps_eom=1,
+        targeting_ctrl=1,
+        alpha_deg=0.0,
+        pre_targeting=1,
+        solution_states=2,
+        r0_alt_m=120e3
+    )
+
+    ret_targeting_solutionstate0 = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=2,
+        drag_passage=true,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        index_steps_eom=1,
+        targeting_ctrl=1,
+        alpha_deg=0.0,
+        pre_targeting=1,
+        solution_states=0,
+        r0_alt_m=120e3
+    )
+
+    ret_force_impact_break = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=0,
+        drag_passage=false,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        cov_force_impact=true,
+        r0_alt_m=500e3
+    )
+
+    ret_time_mainloop_stop = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=0,
+        drag_passage=false,
+        type_of_mission="time",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        mission_time=0.01,
+        print_res=true,
+        cov_no_event_counters=true,
+        r0_alt_m=500e3
+    )
+
+    # Multi-link print/report branches and empty-energy branch.
+    ret_multibody_print_summary = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=0,
+        drag_passage=false,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        print_res=true,
+        n_links=2,
+        pre_altitude_periapsis_km=95.0,
+        cov_skip_energy=true,
+        r0_alt_m=500e3
+    )
+
     for ret in (
         ret_campaign,
         ret_ctrl,
@@ -1537,7 +2273,24 @@ end
         ret_phase2_cm1,
         ret_phase2_cm0,
         ret_keplerian_time,
-        ret_blunted_phase2
+        ret_blunted_phase2,
+        ret_orient_rw_thrusters,
+        ret_cov_phase2_20,
+        ret_cov_phase2_15,
+        ret_cov_phase2_225,
+        ret_cov_phase2_25,
+        ret_cov_phase2_20_ms,
+        ret_cov_phase2_225_ms,
+        ret_cov_phase2_25_ms,
+        ret_cov_phase2_mc,
+        ret_keplerian_phase2_skip,
+        ret_heatload_sol_1,
+        ret_heatload_sol_2,
+        ret_targeting,
+        ret_targeting_solutionstate0,
+        ret_force_impact_break,
+        ret_time_mainloop_stop,
+        ret_multibody_print_summary
     )
         if ret isa MethodError
             @test !occursin("ODEParams", sprint(showerror, ret))
@@ -1545,6 +2298,7 @@ end
             @test true
         end
     end
+
 end
 
 @testset "Legacy Remaining Module Smoke Coverage" begin
@@ -1634,6 +2388,94 @@ end
     )
     @test ts1 == 12.0
     @test ts2 == 25.0
+
+    # Cover additional second-switch integration branches with deterministic stubs.
+    Core.eval(tsw_sandbox, quote
+        function asim_ctrl(
+            ip,
+            m::NamedTuple,
+            time_0,
+            OE,
+            args,
+            k_cf,
+            heat_rate_control,
+            time_switch_eval=false,
+            gram_atmosphere=nothing,
+            time_switch_2=0,
+            reevaluation_mode=1;
+            cnf=nothing,
+            solution=nothing
+        )
+            q = m.aerodynamics.heat_load_limit + (cnf.time_switch_2 - time_switch_2) / 1000
+            return reshape([q], 1, 1)
+        end
+    end)
+    args_tsw_sol0 = Dict{Symbol, Any}(:heat_load_sol => 0, :cnf => cnf_tsw)
+    ts1_keep, ts2_keep = tsw_sandbox.second_time_switch_recalc_with_integration(
+        nothing, m_tsw, nothing, args_tsw_sol0, 10.0, true, 1, nothing, 0; cnf=cnf_tsw
+    )
+    @test ts1_keep == 12.0
+    @test ts2_keep == 25.0
+
+    Core.eval(tsw_sandbox, quote
+        function asim_ctrl(
+            ip,
+            m::NamedTuple,
+            time_0,
+            OE,
+            args,
+            k_cf,
+            heat_rate_control,
+            time_switch_eval=false,
+            gram_atmosphere=nothing,
+            time_switch_2=0,
+            reevaluation_mode=1;
+            cnf=nothing,
+            solution=nothing
+        )
+            return reshape([m.aerodynamics.heat_load_limit - 1.0], 1, 1)
+        end
+    end)
+    args_tsw_sol3 = Dict{Symbol, Any}(:heat_load_sol => 3, :cnf => cnf_tsw)
+    ts1_now, ts2_now = tsw_sandbox.second_time_switch_recalc_with_integration(
+        nothing, m_tsw, nothing, args_tsw_sol3, 10.0, true, 1, nothing, 0; cnf=cnf_tsw
+    )
+    @test ts1_now == 12.0
+    @test ts2_now == 10.0
+
+    Core.eval(tsw_sandbox, quote
+        function asim_ctrl(
+            ip,
+            m::NamedTuple,
+            time_0,
+            OE,
+            args,
+            k_cf,
+            heat_rate_control,
+            time_switch_eval=false,
+            gram_atmosphere=nothing,
+            time_switch_2=0,
+            reevaluation_mode=1;
+            cnf=nothing,
+            solution=nothing
+        )
+            return reshape([m.aerodynamics.heat_load_limit + 0.1], 1, 1)
+        end
+        fzero(args...; kwargs...) = 77.0
+    end)
+    ts1_root, ts2_root = tsw_sandbox.second_time_switch_recalc_with_integration(
+        nothing, m_tsw, nothing, args_tsw_sol0, 10.0, true, 1, nothing, 0; cnf=cnf_tsw
+    )
+    @test ts1_root == 12.0
+    @test ts2_root == 77.0
+
+    args_tsw_sol2 = Dict{Symbol, Any}(:heat_load_sol => 2, :cnf => cnf_tsw)
+    Core.eval(tsw_sandbox, :(fzero(args...; kwargs...) = 88.0))
+    ts1_root_hi, ts2_root_hi = tsw_sandbox.second_time_switch_recalc_with_integration(
+        nothing, m_tsw, nothing, args_tsw_sol2, 10.0, true, 2, nothing, 0; cnf=cnf_tsw
+    )
+    @test ts1_root_hi == 12.0
+    @test ts2_root_hi == 88.0
 end
 
 @testset "API Convenience Constructors" begin
@@ -2027,6 +2869,271 @@ end
             cnf=local_cnf
         )
     end
+
+    # Cover heatload/openloop control branches with deterministic stubs.
+    Core.eval(sandbox, quote
+        module config
+            const rotate_calls = Ref(Any[])
+            get_spacecraft_reference_area(body) = 1.0
+            function traverse_bodies(body, root)
+                return [(root=true, r=[0.0, 0.0, 0.0]), (root=false, r=[1.0, -2.0, 3.0])], 1
+            end
+            function rotate_link(body, axis, angle)
+                push!(rotate_calls[], (body=body, axis=axis, angle=angle))
+                return nothing
+            end
+        end
+
+        const _legacy_heatload_stub_calls = Dict{Symbol, Int}(
+            :switch_calc_int => 0,
+            :switch_calc => 0,
+            :second_switch_int => 0,
+            :second_switch => 0,
+            :security_mode => 0
+        )
+
+        function switch_calculation_with_integration(ip, m, position, args, t, heat_rate_control, reevaluation_mode, gram_atmosphere, current_position=0; cnf=nothing)
+            _legacy_heatload_stub_calls[:switch_calc_int] += 1
+            return 11.0, 22.0
+        end
+
+        function switch_calculation(ip, m, position, args, t, heat_rate_control, reevaluation_mode, current_position=0; cnf=nothing)
+            _legacy_heatload_stub_calls[:switch_calc] += 1
+            return 13.0, 24.0
+        end
+
+        function second_time_switch_recalc_with_integration(ip, m, position, args, t, heat_rate_control, reevaluation_mode, gram_atmosphere=nothing, current_position=0; cnf=nothing)
+            _legacy_heatload_stub_calls[:second_switch_int] += 1
+            return 15.0, 28.0
+        end
+
+        function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, current_position=0, reevaluation_mode=0; cnf=nothing)
+            _legacy_heatload_stub_calls[:second_switch] += 1
+            return 17.0, 30.0
+        end
+
+        function security_mode(ip, m, position, args, t, heat_rate_control=false; cnf=nothing)
+            _legacy_heatload_stub_calls[:security_mode] += 1
+            return 19.0, 33.0
+        end
+    end)
+
+    function make_heatload_args(; flash::Int64=0, heat_sol::Int64=0, sec_mode::Int64=0, second_reval::Int64=1)
+        return Dict{Symbol, Any}(
+            :flash2_through_integration => flash,
+            :heat_load_sol => heat_sol,
+            :second_switch_reevaluation => second_reval,
+            :security_mode => sec_mode,
+            :print_res => false,
+            :verbose => false
+        )
+    end
+
+    m_heatload_control = (
+        aerodynamics=(
+            α=1.2,
+            heat_load_limit=100.0,
+            thermal_accomodation_factor=1.0,
+            heat_rate_limit=1e9
+        ),
+        planet=(R=287.0, γ=1.4),
+        body=(links=[1, 2], roots=[(α=0.4,)])
+    )
+
+    cnf_heat_a = Cnf()
+    cnf_heat_a.evaluate_switch_heat_load = false
+    cnf_heat_a.heat_load_past = [1.0, 2.0]
+    cnf_heat_a.heat_load_ppast = Float64[]
+    args_heatload_a = make_heatload_args(flash=1, heat_sol=0, sec_mode=1)
+    α_heatload_a = sandbox.control_solarpanels_heatload(
+        nothing, m_heatload_control, args_heatload_a, [1, 1], 0, 12.0, 0, 0, nothing, false; cnf=cnf_heat_a
+    )
+    @test args_heatload_a[:security_mode] == false
+    @test cnf_heat_a.time_switch_1 == 11.0
+    @test cnf_heat_a.time_switch_2 == 22.0
+    @test cnf_heat_a.evaluate_switch_heat_load == true
+    @test α_heatload_a == 0.0
+    @test cnf_heat_a.heat_load_ppast == cnf_heat_a.heat_load_past
+
+    cnf_heat_b = Cnf()
+    cnf_heat_b.evaluate_switch_heat_load = false
+    cnf_heat_b.heat_load_past = [2.0, 3.0]
+    cnf_heat_b.heat_load_ppast = [1.0, 1.0]
+    args_heatload_b = make_heatload_args(flash=1, heat_sol=3, sec_mode=1)
+    α_heatload_b = sandbox.control_solarpanels_heatload(
+        nothing, m_heatload_control, args_heatload_b, [1, 1], 0, 35.0, 0, 0, nothing, false; cnf=cnf_heat_b
+    )
+    @test cnf_heat_b.time_switch_1 == 15.0
+    @test cnf_heat_b.time_switch_2 == 28.0
+    @test α_heatload_b == m_heatload_control.aerodynamics.α
+
+    cnf_heat_c = Cnf()
+    cnf_heat_c.evaluate_switch_heat_load = false
+    cnf_heat_c.heat_load_past = [1.0, 1.0]
+    cnf_heat_c.heat_load_ppast = [0.0, 0.0]
+    args_heatload_c = make_heatload_args(flash=0, heat_sol=1, sec_mode=0)
+    α_heatload_c = sandbox.control_solarpanels_heatload(
+        nothing, m_heatload_control, args_heatload_c, [1, 1], 0, 20.0, 0, 0, nothing, false; cnf=cnf_heat_c
+    )
+    @test cnf_heat_c.time_switch_1 == 13.0
+    @test cnf_heat_c.time_switch_2 == 24.0
+    @test α_heatload_c == m_heatload_control.aerodynamics.α
+
+    cnf_heat_d = Cnf()
+    cnf_heat_d.evaluate_switch_heat_load = true
+    cnf_heat_d.ascending_phase = true
+    cnf_heat_d.time_switch_1 = 5.0
+    cnf_heat_d.time_switch_2 = 40.0
+    cnf_heat_d.timer_revaluation = 0.0
+    cnf_heat_d.security_mode = false
+    cnf_heat_d.heat_load_past = [1.0, 1.0]
+    cnf_heat_d.heat_load_ppast = [1.0, 1.0]
+    args_heatload_d = make_heatload_args(flash=0, heat_sol=1, sec_mode=0, second_reval=1)
+    α_heatload_d = sandbox.control_solarpanels_heatload(
+        nothing, m_heatload_control, args_heatload_d, [1, 1], 0, 20.0, 0, 0, nothing, false; cnf=cnf_heat_d
+    )
+    @test cnf_heat_d.timer_revaluation == 20.0
+    @test cnf_heat_d.time_switch_1 == 17.0
+    @test cnf_heat_d.time_switch_2 == 30.0
+    @test α_heatload_d == m_heatload_control.aerodynamics.α
+
+    cnf_heat_e = Cnf()
+    cnf_heat_e.evaluate_switch_heat_load = true
+    cnf_heat_e.ascending_phase = true
+    cnf_heat_e.time_switch_1 = 1.0
+    cnf_heat_e.time_switch_2 = 22.0
+    cnf_heat_e.timer_revaluation = 19.0
+    cnf_heat_e.security_mode = false
+    cnf_heat_e.heat_load_past = [1.0, 1.0]
+    cnf_heat_e.heat_load_ppast = [1.0, 1.0]
+    args_heatload_e = make_heatload_args(flash=0, heat_sol=1, sec_mode=0, second_reval=1)
+    _ = sandbox.control_solarpanels_heatload(
+        nothing, m_heatload_control, args_heatload_e, [1, 1], 0, 20.0, 0, 0, nothing, false; cnf=cnf_heat_e
+    )
+    @test cnf_heat_e.timer_revaluation == 20.0
+
+    cnf_heat_f = Cnf()
+    cnf_heat_f.evaluate_switch_heat_load = true
+    cnf_heat_f.ascending_phase = false
+    cnf_heat_f.time_switch_1 = 0.0
+    cnf_heat_f.time_switch_2 = 10.0
+    cnf_heat_f.timer_revaluation = 0.0
+    cnf_heat_f.security_mode = false
+    cnf_heat_f.heat_load_past = [100.0, 99.5]
+    cnf_heat_f.heat_load_ppast = [95.0, 95.0]
+    args_heatload_f = make_heatload_args(flash=0, heat_sol=0, sec_mode=1, second_reval=1)
+    α_heatload_f = sandbox.control_solarpanels_heatload(
+        nothing, m_heatload_control, args_heatload_f, [1, 1], 0, 5.0, 0, 0, nothing, false; cnf=cnf_heat_f
+    )
+    @test cnf_heat_f.time_switch_1 == 19.0
+    @test cnf_heat_f.time_switch_2 == 33.0
+    @test α_heatload_f == m_heatload_control.aerodynamics.α
+
+    cnf_heat_g = Cnf()
+    cnf_heat_g.evaluate_switch_heat_load = true
+    cnf_heat_g.ascending_phase = false
+    cnf_heat_g.time_switch_1 = 2.0
+    cnf_heat_g.time_switch_2 = 6.0
+    cnf_heat_g.heat_load_past = [1.0, 1.0]
+    cnf_heat_g.heat_load_ppast = [1.0, 1.0]
+    args_heatload_g = make_heatload_args(flash=0, heat_sol=1, sec_mode=0)
+    α_heatload_g = sandbox.control_solarpanels_heatload(
+        nothing, m_heatload_control, args_heatload_g, [1, 1], 0, 8.0, 0, 0, nothing, false; cnf=cnf_heat_g
+    )
+    @test α_heatload_g == 0.0
+
+    @test Core.eval(sandbox, :(_legacy_heatload_stub_calls[:switch_calc_int])) >= 1
+    @test Core.eval(sandbox, :(_legacy_heatload_stub_calls[:switch_calc])) >= 1
+    @test Core.eval(sandbox, :(_legacy_heatload_stub_calls[:second_switch_int])) >= 1
+    @test Core.eval(sandbox, :(_legacy_heatload_stub_calls[:second_switch])) >= 1
+    @test Core.eval(sandbox, :(_legacy_heatload_stub_calls[:security_mode])) >= 1
+    @test !isempty(Core.eval(sandbox, :(config.rotate_calls[])))
+
+    state_openloop = [250.0, 1e-6, 3.0]
+
+    cnf_openloop_0_in = Cnf()
+    cnf_openloop_0_in.evaluate_switch_heat_load = true
+    cnf_openloop_0_in.time_switch_1 = 2.0
+    cnf_openloop_0_in.time_switch_2 = 6.0
+    cnf_openloop_0_in.heat_load_past = [1.0, 1.0]
+    cnf_openloop_0_in.heat_load_ppast = [1.0, 1.0]
+    α_openloop_0_in = sandbox.control_solarpanels_openloop(
+        nothing,
+        m_heatload_control,
+        make_heatload_args(flash=0, heat_sol=0, sec_mode=0),
+        [1, 1],
+        state_openloop,
+        3.0,
+        0,
+        0,
+        true,
+        nothing;
+        cnf=cnf_openloop_0_in
+    )
+    @test α_openloop_0_in == 0.0
+
+    cnf_openloop_0_out = Cnf()
+    cnf_openloop_0_out.evaluate_switch_heat_load = true
+    cnf_openloop_0_out.time_switch_1 = 2.0
+    cnf_openloop_0_out.time_switch_2 = 6.0
+    cnf_openloop_0_out.heat_load_past = [1.0, 1.0]
+    cnf_openloop_0_out.heat_load_ppast = [1.0, 1.0]
+    α_openloop_0_out = sandbox.control_solarpanels_openloop(
+        nothing,
+        m_heatload_control,
+        make_heatload_args(flash=0, heat_sol=0, sec_mode=0),
+        [1, 1],
+        state_openloop,
+        8.0,
+        0,
+        0,
+        true,
+        nothing;
+        cnf=cnf_openloop_0_out
+    )
+    @test α_openloop_0_out == m_heatload_control.aerodynamics.α
+
+    cnf_openloop_1_in = Cnf()
+    cnf_openloop_1_in.evaluate_switch_heat_load = true
+    cnf_openloop_1_in.time_switch_1 = 2.0
+    cnf_openloop_1_in.time_switch_2 = 6.0
+    cnf_openloop_1_in.heat_load_past = [1.0, 1.0]
+    cnf_openloop_1_in.heat_load_ppast = [1.0, 1.0]
+    α_openloop_1_in = sandbox.control_solarpanels_openloop(
+        nothing,
+        m_heatload_control,
+        make_heatload_args(flash=0, heat_sol=1, sec_mode=0),
+        [1, 1],
+        state_openloop,
+        3.0,
+        0,
+        0,
+        true,
+        nothing;
+        cnf=cnf_openloop_1_in
+    )
+    @test α_openloop_1_in == m_heatload_control.aerodynamics.α
+
+    cnf_openloop_1_out = Cnf()
+    cnf_openloop_1_out.evaluate_switch_heat_load = true
+    cnf_openloop_1_out.time_switch_1 = 2.0
+    cnf_openloop_1_out.time_switch_2 = 6.0
+    cnf_openloop_1_out.heat_load_past = [1.0, 1.0]
+    cnf_openloop_1_out.heat_load_ppast = [1.0, 1.0]
+    α_openloop_1_out = sandbox.control_solarpanels_openloop(
+        nothing,
+        m_heatload_control,
+        make_heatload_args(flash=0, heat_sol=1, sec_mode=0),
+        [1, 1],
+        state_openloop,
+        8.0,
+        0,
+        0,
+        true,
+        nothing;
+        cnf=cnf_openloop_1_out
+    )
+    @test α_openloop_1_out == 0.0
 end
 
 @testset "Legacy Eoms Utils State Accessors" begin

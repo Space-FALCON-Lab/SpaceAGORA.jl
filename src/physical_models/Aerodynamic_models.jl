@@ -163,7 +163,6 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     # bodies, root_index = traverse_bodies(m.body, m.body.roots[1]) # Get all bodies in the simulation
     spacecraft = param.args.dynamics_model.spacecraft[i]
     bodies = spacecraft.links # Include the root body of the spacecraft
-    root = spacecraft.root
     root_index = 1
     ρ = param.shared_buffers.densities[i] # Atmospheric density at the current altitude from the shared buffer updated by the callback function
     T = param.shared_buffers.temperatures[i] # Atmospheric temperature at the current altitude from the shared buffer updated by the callback function
@@ -199,70 +198,54 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     bank_angle = deg2rad(0.0)
     alt,lat,lon = rtolatlong(pos_pp, planet, false) # Get the altitude, latitude, and longitude for the current position, used for density lookup and aerodynamic coefficient calculation
 
-    uD, uN, uE = latlongtoNED([alt,lat,lon])
+    uD, uN, uE = latlongtoNED((alt, lat, lon))
     wE, wN, wU = wind # positive to the east , m / s
     wind_pp = wN * uN + wE * uE - wU * uD         # wind velocity in pp frame, m / s 
     vel_pp_rw = vel_pp + wind_pp                  # relative wind vector, m / s
-    vel_pp_rw_hat = normalize(vel_pp_rw)   # relative wind unit vector
+    vel_pp_rw_mag = norm(vel_pp_rw)
+    if vel_pp_rw_mag <= eps(Float64)
+        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    vel_pp_rw_hat = vel_pp_rw / vel_pp_rw_mag     # relative wind unit vector
+    vel_pp_rw_inv_mag = inv(vel_pp_rw_mag)
     lift_pp_hat = normalize(cross(h_pp_hat, vel_pp_rw_hat))
     # lift_pp_hat /= norm(lift_pp_hat) # Normalize the lift vector in planet relative frame
     drag_pp_hat = -vel_pp_rw_hat # Planet relative drag force direction
     cross_pp_hat = cross(drag_pp_hat, lift_pp_hat) # Cross product of the drag and lift vectors in planet relative frame
     q = 0.5 * ρ * vel_pp_mag^2 # Dynamic pressure in planet relative frame, using the density from the shared buffer updated by the callback function
-    if orientation_sim
-        Rot = [MMatrix{3,3,Float64}(zeros(3, 3)) for i in eachindex(bodies)] # Rotation matrix from the root body to the spacecraft link
-        @inbounds for (i, b) in enumerate(bodies)
-            Rot[i] .= rotate_to_inertial(spacecraft, b, root_index) # Rotation matrix from the spacecraft link to the inertial frame
-        end
-    end
+    vel_pi = orientation_sim ? planet.L_PI' * vel_pp_rw : SVector{3, Float64}(0.0, 0.0, 0.0)
     
     CL, CD = 0.0, 0.0 # Initialize aerodynamic coefficients
     total_area = 0.0 # Initialize total area
 
-    drag_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
-    lift_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
-
-    drag_pp = MVector{3, Float64}(0.0, 0.0, 0.0)
-    lift_pp = MVector{3, Float64}(0.0, 0.0, 0.0)
-
-    α = MVector{length(bodies), Float64}(zeros(length(bodies))) # Initialize angle of attack vector
-    β = MVector{length(bodies), Float64}(zeros(length(bodies))) # Initialize sideslip angle vector
-    R = MMatrix{3, 3, Float64}(zeros(3, 3)) # Rotation matrix from the root body to the spacecraft link
+    zero_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
     # Determine angle of attack (α) and sideslip angle (β)
     # Vehicle Aerodynamic Forces
     # CL and CD
     @inbounds for (i, b) in enumerate(bodies)
         if orientation_sim
-            R .= Rot[i] # Rotation matrix from the spacecraft link to the inertial frame
-            body_frame_velocity = R' * planet.L_PI' * vel_pp_rw # Velocity of the spacecraft link in inertial frame
+            R = rotate_to_inertial(spacecraft, b, root_index) # Rotation matrix from the spacecraft link to the inertial frame
+            body_frame_velocity = R' * vel_pi # Velocity of the spacecraft link in inertial frame
             
             α_body = atan(body_frame_velocity[1], body_frame_velocity[3]) # Angle of attack in radians
-            β_body = atan(body_frame_velocity[2], norm([body_frame_velocity[1], body_frame_velocity[3]])) # Sideslip angle in radians
-            α[i] = α_body # Angle of attack for the spacecraft link
-            β[i] = β_body # Sideslip angle for the spacecraft link
+            β_body = atan(body_frame_velocity[2], hypot(body_frame_velocity[1], body_frame_velocity[3])) # Sideslip angle in radians
             b.α = α_body
             b.β = β_body
-            b.θ = acos(clamp(vel_pp_rw[1]/norm(vel_pp_rw), -1.0, 1.0)) # Elevation angle for the spacecraft link
+            b.θ = acos(clamp(vel_pp_rw[1] * vel_pp_rw_inv_mag, -1.0, 1.0)) # Elevation angle for the spacecraft link
         else
             # TODO: Change this so that it just uses above code even with orientation_sim = false
             if b.root
                 # if the body is the root body, then the angle of attack is 90 degrees
-                α[i] = pi/2
                 b.α = pi/2 # Angle of attack for the root body
             else
                 body_frame_velocity = rot(b.q) * SVector{3, Float64}(1.0, 0.0, 0.0) # Velocity of the spacecraft link in inertial frame
-                α[i] = atan(body_frame_velocity[1], body_frame_velocity[3]) # Angle of attack for the spacecraft link
-                # α[i] = pi/2 # Angle of attack for the spacecraft link, temporary hard code for testing
-                b.α = α[i] # Angle of attack for the spacecraft link
+                b.α = atan(body_frame_velocity[1], body_frame_velocity[3]) # Angle of attack for the spacecraft link
+                # b.α = pi/2 # Angle of attack for the spacecraft link, temporary hard code for testing
             end
         end
 
-        if orientation_sim
-            CL_body, CD_body, CS_body, Cl_body, Cm_body, Cn_body = aerodynamic_coefficient_fM(b, T, S)
-        else
-            # CL_body, CD_body = aerodynamic_coefficient_fM(α[i], m.body, T_p, S, m.aerodynamics, MonteCarlo)
-            CL_body, CD_body, CS_body, Cl_body, Cm_body, Cn_body = aerodynamic_coefficient_fM(b, T, S)
-        end
+        # CL_body, CD_body = aerodynamic_coefficient_fM(α[i], m.body, T_p, S, m.aerodynamics, MonteCarlo)
+        CL_body, CD_body, CS_body, Cl_body, Cm_body, Cn_body = aerodynamic_coefficient_fM(b, T, S)
 
         # println(" CL: ", CL_body, " CD: ", CD_body, " CS: ", CS_body, " α: ", rad2deg(α[i]), " β: ", rad2deg(β[i]))
         
@@ -273,8 +256,8 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
             cross_pp_body = q * CS_body * b.ref_area * cross_pp_hat # Planet relative cross force vector
             cross_body = planet.L_PI' * cross_pp_body # Inertial cross force vector
         else
-            cross_pp_body = SVector{3, Float64}(0.0, 0.0, 0.0) # Planet relative cross force vector
-            cross_body = SVector{3, Float64}(0.0, 0.0, 0.0) # Inertial cross force vector
+            cross_pp_body = zero_vec # Planet relative cross force vector
+            cross_body = zero_vec # Inertial cross force vector
         end
 
         drag_body = planet.L_PI' * drag_pp_body   # Inertial drag force vector
@@ -291,10 +274,6 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
         CL += CL_body * b.ref_area
         CD += CD_body * b.ref_area
         total_area += b.ref_area # Update the total area
-        drag_ii += drag_body # Update the total drag force
-        lift_ii += lift_body # Update the total lift force
-        drag_pp += drag_pp_body # Update the total drag force in planet relative frame
-        lift_pp += lift_pp_body # Update the total lift force in planet relative frame
     end
 
     # cnf.drag_pp = drag_pp

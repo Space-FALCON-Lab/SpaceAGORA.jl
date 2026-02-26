@@ -331,9 +331,9 @@ function latlongtoNED(H_LAN_LON)
     lat = H_LAN_LON[2]
 
     # Compute first in xyz coordinates(z: north pole, x - z plane: contains r, y: completes right - handed set)
-    uDxyz = SVector{3, Float64}([-cos(lat), 0.0, -sin(lat)])
-    uNxyz = SVector{3, Float64}([-sin(lat), 0.0, cos(lat)])
-    uExyz = SVector{3, Float64}([0.0, 1.0, 0.0])
+    uDxyz = SVector{3, Float64}(-cos(lat), 0.0, -sin(lat))
+    uNxyz = SVector{3, Float64}(-sin(lat), 0.0, cos(lat))
+    uExyz = SVector{3, Float64}(0.0, 1.0, 0.0)
 
     # Rotate by longitude to change to PCPF frame
     L3 = SMatrix{3, 3, Float64}([cos(lon) -sin(lon) 0.0;
@@ -344,7 +344,7 @@ function latlongtoNED(H_LAN_LON)
     uE = L3 * uExyz
     uD = L3 * uDxyz
 
-    return SVector{3, SVector{3, Float64}}([uD, uN, uE])
+    return SVector{3, SVector{3, Float64}}(uD, uN, uE)
 end
 
 # function inertialToLVLHFromOE(a::Float64, e::Float64, i::Float64, ω::Float64, Ω::Float64, ν::Float64)::SVector{4, Float64}

@@ -980,6 +980,88 @@ end
     end
     @test err isa UndefVarError
     @test getfield(err, :var) == :solution
+
+    # Complete the late post-processing path with a seeded legacy `solution`.
+    legacy_solution = seed_solution_for_save_csv!(Solution(); n_bodies=1, n_reaction_wheels=0, n_thrusters=0)
+    Core.eval(sandbox, quote
+        get_spacecraft_mass(body::NamedTuple, root; dry::Bool=false) = 1000.0
+        get_spacecraft_mass(body::NamedTuple; dry::Bool=false) = 1000.0
+
+        global cnf = Cnf()
+        cnf.DU = 1.0
+        cnf.TU = 1.0
+        cnf.MU = 1.0
+        cnf.time_OP = 0.0
+
+        global m = $legacy_model
+        global r0 = $legacy_r0
+        global v0 = $legacy_v0
+        global Mass = $legacy_mass
+        global OE = $legacy_oe
+        global index_steps_EOM = 1
+        global solution = $legacy_solution
+    end)
+    ret_post = redirect_stdout(devnull) do
+        sandbox.asim(nothing, 1, merge(legacy_args, (print_res=true,)), ())
+    end
+    @test ret_post == false
+    @test Core.eval(sandbox, :(length(cnf.periapsis_list))) == 1
+    @test Core.eval(sandbox, :(length(cnf.orbit_number_list))) == 1
+    @test Core.eval(sandbox, :(length(cnf.Δv_list))) == 1
+
+    # Enter deeper aerobraking-phase setup and stop at legacy ODEParams constructor mismatch.
+    legacy_args_phase = (
+        initial_time=(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+        orientation_sim=false,
+        heat_load_sol=0,
+        EI=120.0,
+        AE=120.0,
+        thrust_control="None",
+        keplerian=false,
+        drag_passage=false,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        integrator="Julia",
+        r_tol_drag=0.0,
+        r_tol=1e-8,
+        a_tol_drag=0.0,
+        a_tol=1e-8,
+        dt_max_drag=0.0,
+        dt_max=1.0,
+        save_rate=1,
+        print_res=false,
+        control_mode=0,
+        mission_time=10.0
+    )
+    legacy_r0_phase = SVector{3, Float64}(EARTH.Rp_e + 100e3, 0.0, 0.0)
+    legacy_oe_phase = SVector{7, Float64}(EARTH.Rp_e + 100e3, 0.02, deg2rad(35.0), 0.0, 0.0, 0.0, legacy_mass)
+    Core.eval(sandbox, quote
+        global cnf = Cnf()
+        cnf.DU = 1.0
+        cnf.TU = 1.0
+        cnf.MU = 1.0
+        cnf.time_OP = 0.0
+
+        global m = $legacy_model
+        global r0 = $legacy_r0_phase
+        global v0 = $legacy_v0
+        global Mass = $legacy_mass
+        global OE = $legacy_oe_phase
+        global index_steps_EOM = 1
+        global solution = Solution()
+        global ip = (cm=0,)
+        global gram_atmosphere = nothing
+        global gram = nothing
+        global MonteCarlo = false
+    end)
+    err_phase = try
+        sandbox.asim(nothing, 1, legacy_args_phase, ())
+        nothing
+    catch e
+        e
+    end
+    @test err_phase isa MethodError
+    @test occursin("ODEParams", sprint(showerror, err_phase))
 end
 
 @testset "Legacy Remaining Module Smoke Coverage" begin

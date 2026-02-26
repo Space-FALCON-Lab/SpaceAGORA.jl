@@ -12,6 +12,9 @@ const quat_mult = SimulationModel.quat_mult
 if !isdefined(@__MODULE__, :run_simulation)
     include("../simulation/run_simulation.jl")
 end
+if !isdefined(@__MODULE__, :make_example_config)
+    include("typed_example_utils.jl")
+end
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const SPICE_PATH = joinpath(REPO_ROOT, "GRAM_Data", "SPICE")
@@ -88,11 +91,4 @@ args = SimulationConfiguration(
     )
 )
 
-t = @elapsed run_simulation(args)
-
-if isfile("simulation_results.csv")
-    df = CSV.read("simulation_results.csv", DataFrame)
-    println("Saved $(nrow(df)) samples to $(abspath("simulation_results.csv"))")
-end
-
-println("COMPUTATIONAL TIME = $(t) s")
+run_and_report(args)

@@ -2,12 +2,68 @@ using CSV
 using DataFrames
 using StaticArrays
 
-const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const SPICE_PATH = joinpath(REPO_ROOT, "GRAM_Data", "SPICE")
+if !isdefined(@__MODULE__, :REPO_ROOT)
+    const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
+end
+if !isdefined(@__MODULE__, :SPICE_PATH)
+    const SPICE_PATH = joinpath(REPO_ROOT, "GRAM_Data", "SPICE")
+end
 if !isdefined(@__MODULE__, :SimulationModel)
     include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
 end
-const SM = SimulationModel
+if !isdefined(@__MODULE__, :SM)
+    const SM = SimulationModel
+end
+
+@inline _example_smoke_enabled() = get(ENV, "SPACEAGORA_EXAMPLE_SMOKE", "0") == "1"
+
+@inline function _example_smoke_mission_time(default_time::Float64)
+    raw = get(ENV, "SPACEAGORA_EXAMPLE_SMOKE_MISSION_TIME", "120.0")
+    parsed = tryparse(Float64, raw)
+    if parsed === nothing || !(parsed > 0.0)
+        return min(default_time, 120.0)
+    end
+    return min(default_time, parsed)
+end
+
+function _example_smoke_args(args::SM.SimulationConfiguration)
+    if !_example_smoke_enabled()
+        return args
+    end
+
+    mc = args.mission_configuration
+    ss = args.simulation_settings
+    mc_smoke = SM.MissionConfiguration(
+        mission_type=mc.mission_type,
+        keplerian=mc.keplerian,
+        number_of_orbits=max(1, min(mc.number_of_orbits, 1)),
+        mission_time=_example_smoke_mission_time(mc.mission_time),
+        orientation_sim=mc.orientation_sim,
+        num_steps_to_save=max(50, min(mc.num_steps_to_save, 200))
+    )
+    ss_smoke = SM.SimulationSettings(
+        results=false,
+        verbose=false,
+        results_directory=ss.results_directory,
+        generate_plots=false,
+        generate_filenames=ss.generate_filenames,
+        normalize=false,
+        save_csv=false
+    )
+
+    return SM.SimulationConfiguration(
+        file_paths=args.file_paths,
+        simulation_settings=ss_smoke,
+        mission_configuration=mc_smoke,
+        environment_model=args.environment_model,
+        dynamics_model=args.dynamics_model,
+        guidance_model=args.guidance_model,
+        navigation_model=args.navigation_model,
+        control_model=args.control_model,
+        initial_time=args.initial_time,
+        integration_tolerances=args.integration_tolerances
+    )
+end
 
 function make_three_body_spacecraft(;
     bus_dims::NTuple{3, Float64},
@@ -91,8 +147,9 @@ function make_example_config(;
 end
 
 function run_and_report(args::SM.SimulationConfiguration)
-    t = @elapsed run_simulation(args)
-    if isfile("simulation_results.csv")
+    args_eff = _example_smoke_args(args)
+    t = @elapsed run_simulation(args_eff)
+    if args_eff.simulation_settings.results && isfile("simulation_results.csv")
         df = CSV.read("simulation_results.csv", DataFrame)
         println("Saved $(nrow(df)) samples to $(abspath("simulation_results.csv"))")
     end

@@ -70,6 +70,7 @@ function SimulationModel.calcControlEffect!(
 end
 
 planet = Mars("", SPICE_PATH)
+smoke_mode = get(ENV, "SPACEAGORA_EXAMPLE_SMOKE", "0") == "1"
 
 ic = InitialCondition(
     ra=28_559.615e3,
@@ -92,19 +93,21 @@ spacecraft = make_three_body_spacecraft(
 )
 
 mars_harmonics_file = joinpath(REPO_ROOT, "Gravity_harmonics_data", "Mars50c.csv")
+dynamic_effectors = smoke_mode ? (InverseSquaredGravityModel(),) : (
+    InverseSquaredGravityModel(),
+    GravitationalHarmonicsModel(20, 20, mars_harmonics_file, planet),
+    AerodynamicCoefficientfM()
+)
+density_model = smoke_mode ? NoAtmosphereModel() : ConstantDensityModel(2e-8, 180.0)
 base_args = make_example_config(
     planet=planet,
     spacecraft=spacecraft,
     mission_time=3_600.0,
     initial_time=InitialTime(year=2001, month=11, day=6, hour=19, minute=0, second=32.0),
-    dynamic_effectors=(
-        InverseSquaredGravityModel(),
-        GravitationalHarmonicsModel(20, 20, mars_harmonics_file, planet),
-        AerodynamicCoefficientfM()
-    ),
-    density_model=ConstantDensityModel(2e-8, 180.0),
+    dynamic_effectors=dynamic_effectors,
+    density_model=density_model,
     orientation_sim=false,
-    keplerian=false,
+    keplerian=smoke_mode,
     EI_km=125.0
 )
 

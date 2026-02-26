@@ -35,6 +35,7 @@ void setPerturbationAction_C(PerturbedAtmosphere* atmos, int action);
 void setEphemerisState_C(PerturbedAtmosphere* atmos, const EphemerisState_C* state);
 void setEphemerisFastModeOn_C(PerturbedAtmosphere* atmos, int flag);
 void setSubsolarUpdateTime_C(PerturbedAtmosphere* atmos, greal utime);
+int generateTrajectory_C(PerturbedAtmosphere* atmos, const Position_C* initial, const Position_C* delta, int numberOfPoints, int updateInitialPerturbations, TrajectoryPoint_C* trajectory);
 
 void getStartTime_C(PerturbedAtmosphere* atmos, GramTime_C* time);
 void getPosition_C(PerturbedAtmosphere* atmos, Position_C* position);
@@ -49,4 +50,3 @@ void getPerturbationState_C(PerturbedAtmosphere* atmos, PerturbationState_C* sta
 extern std::string errorMessage;
 }
 #endif
-

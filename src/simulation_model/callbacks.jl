@@ -18,7 +18,7 @@ export get_callbacks
 
 @inline callback_verbose(integrator) = integrator.p.args.simulation_settings.verbose
 @inline callback_use_invokelatest() = get(ENV, "SPACEAGORA_DEV_HOT_RELOAD", "0") == "1"
-const _gram_segment_cache_warning_emitted = Ref(false)
+const _gram_track_cache_warning_emitted = Ref(false)
 
 @inline function _parse_bool_env(name::String, default::Bool)::Bool
     raw = lowercase(strip(get(ENV, name, default ? "1" : "0")))
@@ -131,40 +131,32 @@ end
     return p.args.environment_model.density_model
 end
 
-mutable struct GramSegmentCache
+mutable struct GramTrackCache
     valid::Bool
     t0::Float64
     t1::Float64
-    alt0::Float64
-    lat0::Float64
-    lon0::Float64
-    alt1::Float64
-    lat1::Float64
-    lon1::Float64
-    rho0::Float64
-    T0::Float64
-    wind0::SVector{3, Float64}
-    rho1::Float64
-    T1::Float64
-    wind1::SVector{3, Float64}
+    index_hint::Int
+    times::Vector{Float64}
+    alts::Vector{Float64}
+    lats::Vector{Float64}
+    lons::Vector{Float64}
+    rhos::Vector{Float64}
+    Ts::Vector{Float64}
+    winds::Vector{SVector{3, Float64}}
 end
 
-@inline GramSegmentCache() = GramSegmentCache(
+@inline GramTrackCache() = GramTrackCache(
     false,
     0.0,
     0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    SVector{3, Float64}(0.0, 0.0, 0.0),
-    0.0,
-    0.0,
-    SVector{3, Float64}(0.0, 0.0, 0.0)
+    1,
+    Float64[],
+    Float64[],
+    Float64[],
+    Float64[],
+    Float64[],
+    Float64[],
+    SVector{3, Float64}[]
 )
 
 @inline function _parse_float_env(name::String, default::Float64)::Float64
@@ -177,6 +169,171 @@ end
     return parsed
 end
 
+@inline function _parse_float_env_optional(name::String)::Union{Nothing, Float64}
+    haskey(ENV, name) || return nothing
+    raw = strip(ENV[name])
+    parsed = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("$name must be a floating-point value, got '$raw'"))
+    end
+    return parsed
+end
+
+@inline function _parse_int_env_optional(name::String)::Union{Nothing, Int}
+    haskey(ENV, name) || return nothing
+    raw = strip(ENV[name])
+    parsed = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("$name must be an integer value, got '$raw'"))
+    end
+    return parsed
+end
+
+struct GramTrackCacheConfig
+    mode::Symbol
+    entry_horizon_s::Float64
+    entry_alt_tol_m::Float64
+    entry_ang_tol_rad::Float64
+    entry_points::Int
+    orbit_horizon_s::Float64
+    orbit_alt_tol_m::Float64
+    orbit_ang_tol_rad::Float64
+    orbit_points::Int
+    transition_band_m::Float64
+end
+
+@inline function _gram_track_cache_mode()::Symbol
+    raw = haskey(ENV, "SPACEAGORA_GRAM_TRACK_CACHE") ?
+        ENV["SPACEAGORA_GRAM_TRACK_CACHE"] :
+        get(ENV, "SPACEAGORA_GRAM_SEGMENT_CACHE", "auto")
+    mode = lowercase(strip(raw))
+    if mode in ("off", "none", "0", "false", "no")
+        return :off
+    elseif mode in ("on", "1", "true", "yes")
+        return :on
+    elseif mode == "auto"
+        return :auto
+    end
+    throw(ArgumentError("Unsupported GRAM track-cache mode '$mode'. Use one of: off, auto, on."))
+end
+
+function _gram_track_cache_config()::GramTrackCacheConfig
+    mode = _gram_track_cache_mode()
+
+    # Backward-compatible global knobs still apply unless regime-specific values are provided.
+    legacy_horizon = _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_HORIZON_S")
+    legacy_alt_tol = _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ALT_TOL_M")
+    legacy_ang_tol_deg = _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ANG_TOL_DEG")
+    legacy_points = _parse_int_env_optional("SPACEAGORA_GRAM_TRACK_CACHE_NPOS")
+    if legacy_points === nothing
+        legacy_points = _parse_int_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_POINTS")
+    end
+
+    entry_horizon_s = max(
+        1e-3,
+        something(
+            _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ENTRY_HORIZON_S"),
+            something(legacy_horizon, 1.0)
+        )
+    )
+    orbit_horizon_s = max(
+        1e-3,
+        something(
+            _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ORBIT_HORIZON_S"),
+            something(legacy_horizon, 8.0)
+        )
+    )
+    entry_points = max(
+        2,
+        something(
+            _parse_int_env_optional("SPACEAGORA_GRAM_TRACK_CACHE_ENTRY_NPOS"),
+            something(
+                _parse_int_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ENTRY_POINTS"),
+                something(legacy_points, 16)
+            )
+        )
+    )
+    orbit_points = max(
+        2,
+        something(
+            _parse_int_env_optional("SPACEAGORA_GRAM_TRACK_CACHE_ORBIT_NPOS"),
+            something(
+                _parse_int_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ORBIT_POINTS"),
+                something(legacy_points, 48)
+            )
+        )
+    )
+    entry_alt_tol_m = max(
+        0.0,
+        something(
+            _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ENTRY_ALT_TOL_M"),
+            something(legacy_alt_tol, 500.0)
+        )
+    )
+    orbit_alt_tol_m = max(
+        0.0,
+        something(
+            _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ORBIT_ALT_TOL_M"),
+            something(legacy_alt_tol, 3000.0)
+        )
+    )
+    entry_ang_tol_rad = deg2rad(max(
+        0.0,
+        something(
+            _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ENTRY_ANG_TOL_DEG"),
+            something(legacy_ang_tol_deg, 0.6)
+        )
+    ))
+    orbit_ang_tol_rad = deg2rad(max(
+        0.0,
+        something(
+            _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ORBIT_ANG_TOL_DEG"),
+            something(legacy_ang_tol_deg, 4.0)
+        )
+    ))
+    transition_band_m = max(0.0, _parse_float_env("SPACEAGORA_GRAM_SEGMENT_CACHE_TRANSITION_BAND_M", 20e3))
+
+    return GramTrackCacheConfig(
+        mode,
+        entry_horizon_s,
+        entry_alt_tol_m,
+        entry_ang_tol_rad,
+        entry_points,
+        orbit_horizon_s,
+        orbit_alt_tol_m,
+        orbit_ang_tol_rad,
+        orbit_points,
+        transition_band_m
+    )
+end
+
+# Backward-compatibility shims for older cached method bodies/tests that still
+# reference the previous "segment cache" helper names.
+@inline _gram_segment_cache_mode() = _gram_track_cache_mode()
+@inline _gram_segment_cache_config() = _gram_track_cache_config()
+@inline _gram_segment_cache_enabled(cfg::GramTrackCacheConfig, density_model) = _gram_track_cache_enabled(cfg, density_model)
+@inline _gram_segment_cache_profile(cfg::GramTrackCacheConfig, p, alt::Float64) = _gram_track_cache_profile(cfg, p, alt)
+@inline _gram_segment_cache_ready(cache::GramTrackCache, t::Float64, alt::Float64, lat::Float64, lon::Float64, alt_tol_m::Float64, ang_tol_rad::Float64) =
+    _gram_track_cache_ready(cache, t, alt, lat, lon, alt_tol_m, ang_tol_rad)
+@inline _gram_segment_cache_eval(cache::GramTrackCache, idx::Int, x::Float64) = _gram_track_cache_eval(cache, idx, x)
+@inline _gram_segment_cache_refresh!(cache::GramTrackCache, density_model, p, pos::SVector{3, Float64}, vel::SVector{3, Float64}, alt::Float64, lat::Float64, lon::Float64, t::Float64, horizon_s::Float64, n_points::Int) =
+    _gram_track_cache_refresh!(cache, density_model, p, pos, vel, alt, lat, lon, t, horizon_s, n_points)
+
+@inline function _gram_track_cache_enabled(cfg::GramTrackCacheConfig, density_model)::Bool
+    cfg.mode == :off && return false
+    return density_model isa EnvironmentModels.GRAMAtmosphereModel
+end
+
+@inline function _gram_track_cache_profile(cfg::GramTrackCacheConfig, p, alt::Float64)
+    EI_m = p.args.environment_model.EI * 1e3
+    if alt <= EI_m + cfg.transition_band_m
+        return cfg.entry_horizon_s, cfg.entry_alt_tol_m, cfg.entry_ang_tol_rad, cfg.entry_points
+    end
+    return cfg.orbit_horizon_s, cfg.orbit_alt_tol_m, cfg.orbit_ang_tol_rad, cfg.orbit_points
+end
+
 @inline _lerp(a::Float64, b::Float64, x::Float64) = a + x * (b - a)
 @inline _angdiff_rad(a::Float64, b::Float64) = abs(atan(sin(a - b), cos(a - b)))
 @inline function _lerp_angle_rad(a::Float64, b::Float64, x::Float64)
@@ -184,37 +341,60 @@ end
     return atan(sin(a + x * δ), cos(a + x * δ))
 end
 
-@inline function _gram_segment_cache_ready(
-    cache::GramSegmentCache,
+@inline function _gram_track_cache_segment(
+    cache::GramTrackCache,
+    t::Float64
+)::Union{Nothing, Tuple{Int, Float64}}
+    n = length(cache.times)
+    if !cache.valid || n < 2 || t < cache.t0 || t > cache.t1
+        return nothing
+    end
+    idx = clamp(cache.index_hint, 1, n - 1)
+    if t < cache.times[idx] || t > cache.times[idx + 1]
+        idx = clamp(searchsortedlast(cache.times, t), 1, n - 1)
+    end
+    t_lo = cache.times[idx]
+    t_hi = cache.times[idx + 1]
+    if t < t_lo || t > t_hi
+        return nothing
+    end
+    x = t_hi == t_lo ? 0.0 : (t - t_lo) / (t_hi - t_lo)
+    cache.index_hint = idx
+    return idx, x
+end
+
+@inline function _gram_track_cache_ready(
+    cache::GramTrackCache,
     t::Float64,
     alt::Float64,
     lat::Float64,
     lon::Float64,
     alt_tol_m::Float64,
     ang_tol_rad::Float64
-)::Bool
-    if !cache.valid || cache.t1 <= cache.t0 || t < cache.t0 || t > cache.t1
-        return false
+)::Union{Nothing, Tuple{Int, Float64}}
+    seg = _gram_track_cache_segment(cache, t)
+    seg === nothing && return nothing
+    idx, x = seg
+    alt_interp = _lerp(cache.alts[idx], cache.alts[idx + 1], x)
+    lat_interp = _lerp_angle_rad(cache.lats[idx], cache.lats[idx + 1], x)
+    lon_interp = _lerp_angle_rad(cache.lons[idx], cache.lons[idx + 1], x)
+    if abs(alt - alt_interp) <= alt_tol_m &&
+       _angdiff_rad(lat, lat_interp) <= ang_tol_rad &&
+       _angdiff_rad(lon, lon_interp) <= ang_tol_rad
+        return idx, x
     end
-    x = (t - cache.t0) / (cache.t1 - cache.t0)
-    alt_interp = _lerp(cache.alt0, cache.alt1, x)
-    lat_interp = _lerp_angle_rad(cache.lat0, cache.lat1, x)
-    lon_interp = _lerp_angle_rad(cache.lon0, cache.lon1, x)
-    return abs(alt - alt_interp) <= alt_tol_m &&
-           _angdiff_rad(lat, lat_interp) <= ang_tol_rad &&
-           _angdiff_rad(lon, lon_interp) <= ang_tol_rad
+    return nothing
 end
 
-@inline function _gram_segment_cache_eval(cache::GramSegmentCache, t::Float64)
-    x = (t - cache.t0) / (cache.t1 - cache.t0)
-    ρ = _lerp(cache.rho0, cache.rho1, x)
-    T = _lerp(cache.T0, cache.T1, x)
-    wind = cache.wind0 + x * (cache.wind1 - cache.wind0)
+@inline function _gram_track_cache_eval(cache::GramTrackCache, idx::Int, x::Float64)
+    ρ = _lerp(cache.rhos[idx], cache.rhos[idx + 1], x)
+    T = _lerp(cache.Ts[idx], cache.Ts[idx + 1], x)
+    wind = cache.winds[idx] + x * (cache.winds[idx + 1] - cache.winds[idx])
     return ρ, T, wind
 end
 
-function _gram_segment_cache_refresh!(
-    cache::GramSegmentCache,
+function _gram_track_cache_refresh!(
+    cache::GramTrackCache,
     density_model,
     p,
     pos::SVector{3, Float64},
@@ -223,39 +403,50 @@ function _gram_segment_cache_refresh!(
     lat::Float64,
     lon::Float64,
     t::Float64,
-    horizon_s::Float64
+    horizon_s::Float64,
+    n_points::Int
 )
-    ρ0, T0, wind0 = getDensity(density_model, alt, lat, lon, t, true, p)
-    planet = p.args.environment_model.planet
-    dt = max(1e-3, horizon_s)
-    pos_next = pos + vel * dt
-    rp_next, _ = r_intor_p!(pos_next, vel, planet)
-    alt1, lat1, lon1 = rtolatlong(rp_next, planet)
     try
-        ρ1, T1, wind1 = getDensity(density_model, alt1, lat1, lon1, t + dt, true, p)
+        planet = p.args.environment_model.planet
+        n = max(2, n_points)
+        if length(cache.times) != n
+            resize!(cache.times, n)
+            resize!(cache.alts, n)
+            resize!(cache.lats, n)
+            resize!(cache.lons, n)
+            resize!(cache.rhos, n)
+            resize!(cache.Ts, n)
+            resize!(cache.winds, n)
+        end
+        dt = max(1e-3, horizon_s)
+        @inbounds for k in 1:n
+            x = (k - 1) / (n - 1)
+            t_k = t + x * dt
+            pos_k = pos + vel * (t_k - t)
+            rp_k, _ = r_intor_p!(pos_k, vel, planet)
+            alt_k, lat_k, lon_k = rtolatlong(rp_k, planet)
+            ρ_k, T_k, wind_k = getDensity(density_model, alt_k, lat_k, lon_k, t_k, true, p)
+            cache.times[k] = t_k
+            cache.alts[k] = alt_k
+            cache.lats[k] = lat_k
+            cache.lons[k] = lon_k
+            cache.rhos[k] = ρ_k
+            cache.Ts[k] = T_k
+            cache.winds[k] = wind_k
+        end
         cache.valid = true
-        cache.t0 = t
-        cache.t1 = t + dt
-        cache.alt0 = alt
-        cache.lat0 = lat
-        cache.lon0 = lon
-        cache.alt1 = alt1
-        cache.lat1 = lat1
-        cache.lon1 = lon1
-        cache.rho0 = ρ0
-        cache.T0 = T0
-        cache.wind0 = wind0
-        cache.rho1 = ρ1
-        cache.T1 = T1
-        cache.wind1 = wind1
+        cache.t0 = cache.times[1]
+        cache.t1 = cache.times[end]
+        cache.index_hint = 1
+        return cache.rhos[1], cache.Ts[1], cache.winds[1]
     catch err
         cache.valid = false
-        if !_gram_segment_cache_warning_emitted[]
-            _gram_segment_cache_warning_emitted[] = true
-            @warn "GRAM segment cache refresh fallback to direct samples due to GRAM update error near predicted point." exception=err
+        if !_gram_track_cache_warning_emitted[]
+            _gram_track_cache_warning_emitted[] = true
+            @warn "GRAM track cache refresh failed; falling back to direct GRAM sampling." exception=err
         end
+        return getDensity(density_model, alt, lat, lon, t, true, p)
     end
-    return ρ0, T0, wind0
 end
 
 @inline function _uses_atmospheric_dynamic_effector(effectors::Tuple)::Bool
@@ -288,6 +479,47 @@ end
 @inline function _requires_thermal_callback(effectors::Tuple, args::SimulationConfiguration)::Bool
     # Thermal-rate evaluation requires atmospheric state (ρ, T, wind), populated by density callback.
     return _requires_density_callback(effectors, args)
+end
+
+@inline function _resolved_component_tolerance(component_tol::Float64, baseline_tol::Float64)::Float64
+    return component_tol == 0.0 ? baseline_tol : component_tol
+end
+
+function _callback_tolerances_for_phase(template_reltol, template_abstol, args::SimulationConfiguration, in_atmosphere::Bool)
+    tol = args.integration_tolerances
+    baseline_reltol = in_atmosphere ? tol.reltol_atmosphere : tol.reltol_orbit
+    baseline_abstol = in_atmosphere ? tol.abstol_atmosphere : tol.abstol_orbit
+    if template_reltol isa Number && template_abstol isa Number
+        return baseline_reltol, baseline_abstol
+    end
+
+    reltol_mass = _resolved_component_tolerance(tol.reltol_mass, baseline_reltol)
+    abstol_mass = _resolved_component_tolerance(tol.abstol_mass, baseline_abstol)
+    reltol_heat = _resolved_component_tolerance(tol.reltol_heat_load, baseline_reltol)
+    abstol_heat = _resolved_component_tolerance(tol.abstol_heat_load, baseline_abstol)
+    reltol_ω = _resolved_component_tolerance(tol.reltol_angular_rate, baseline_reltol)
+    abstol_ω = _resolved_component_tolerance(tol.abstol_angular_rate, baseline_abstol)
+
+    reltol_new = copy(template_reltol)
+    abstol_new = copy(template_abstol)
+    reltol_new .= baseline_reltol
+    abstol_new .= baseline_abstol
+
+    @inbounds for i in eachindex(reltol_new.sc)
+        reltol_new.sc[i].mass = reltol_mass
+        abstol_new.sc[i].mass = abstol_mass
+        reltol_new.sc[i].heat_loads .= reltol_heat
+        abstol_new.sc[i].heat_loads .= abstol_heat
+        if hasproperty(reltol_new.sc[i], :q)
+            reltol_new.sc[i].q .= tol.reltol_quaternion
+            abstol_new.sc[i].q .= tol.abstol_quaternion
+        end
+        if hasproperty(reltol_new.sc[i], :ω)
+            reltol_new.sc[i].ω .= reltol_ω
+            abstol_new.sc[i].ω .= abstol_ω
+        end
+    end
+    return reltol_new, abstol_new
 end
 
 function get_callbacks(num_sats::Int, effectors::Tuple, args::SimulationConfiguration)::CallbackSet
@@ -351,31 +583,31 @@ end
 # Factory function to build the callback
 function get_density_callback(num_sats::Int, args::SimulationConfiguration)
     use_threads = _density_callback_use_threads(args, num_sats)
-    use_gram_segment_cache = _parse_bool_env("SPACEAGORA_GRAM_SEGMENT_CACHE", false)
-    cache_horizon_s = max(1e-3, _parse_float_env("SPACEAGORA_GRAM_SEGMENT_CACHE_HORIZON_S", 5.0))
-    cache_alt_tol_m = max(0.0, _parse_float_env("SPACEAGORA_GRAM_SEGMENT_CACHE_ALT_TOL_M", 1500.0))
-    cache_ang_tol_rad = deg2rad(max(0.0, _parse_float_env("SPACEAGORA_GRAM_SEGMENT_CACHE_ANG_TOL_DEG", 2.0)))
+    cache_cfg = _gram_track_cache_config()
     function update_density_sat!(i::Int, p, u, t)
         pos = SVector{3, Float64}(u.sc[i].pos)
         vel = SVector{3, Float64}(u.sc[i].vel)
         rp, _ = r_intor_p!(pos, vel, p.args.environment_model.planet)
         alt, lat, lon = rtolatlong(rp, p.args.environment_model.planet)
         density_model = _density_model_for_sat(p, i)
-        ρ, T, wind_vec = if use_gram_segment_cache && density_model isa EnvironmentModels.GRAMAtmosphereModel
+        ρ, T, wind_vec = if _gram_track_cache_enabled(cache_cfg, density_model)
+            cache_horizon_s, cache_alt_tol_m, cache_ang_tol_rad, cache_points = _gram_track_cache_profile(cache_cfg, p, alt)
             caches = p.shared_buffers.gram_density_cache
-            cache = if i <= length(caches) && caches[i] isa GramSegmentCache
-                caches[i]::GramSegmentCache
+            cache = if i <= length(caches) && caches[i] isa GramTrackCache
+                caches[i]::GramTrackCache
             else
-                c = GramSegmentCache()
+                c = GramTrackCache()
                 if i <= length(caches)
                     caches[i] = c
                 end
                 c
             end
-            if _gram_segment_cache_ready(cache, t, alt, lat, lon, cache_alt_tol_m, cache_ang_tol_rad)
-                _gram_segment_cache_eval(cache, t)
+            seg = _gram_track_cache_ready(cache, t, alt, lat, lon, cache_alt_tol_m, cache_ang_tol_rad)
+            if seg !== nothing
+                idx, x = seg
+                _gram_track_cache_eval(cache, idx, x)
             else
-                _gram_segment_cache_refresh!(cache, density_model, p, pos, vel, alt, lat, lon, t, cache_horizon_s)
+                _gram_track_cache_refresh!(cache, density_model, p, pos, vel, alt, lat, lon, t, cache_horizon_s, cache_points)
             end
         else
             getDensity(density_model, alt, lat, lon, t, true, p)
@@ -515,13 +747,13 @@ end
 # Only call if simulating a single satellite
 function get_orbit_end_callback(num_sats::Int)
     function condition!(out, u, t, integrator)
-        # if integrator.sol.retcode != :Default
-        #     return false
-        # end
-        # Implement logic to determine if the satellite has completed an orbit (defined as reaching apoapsis again after passing periapsis)
+        # Use radial-velocity root events for orbit bookkeeping.
+        # At apoapsis, dot(r,v) crosses + -> -, so -dot(r,v) crosses - -> + (upcrossing),
+        # which matches the single affect! handler below.
         @inbounds for i in 1:num_sats
-            OE = rvtoorbitalelement(SVector{3, Float64}(u.sc[i].pos), SVector{3, Float64}(u.sc[i].vel), integrator.p.args.environment_model.planet)
-            out[i] = OE[6] - pi # Return the angle of periapsis minus pi (i.e., when the satellite is at apoapsis)
+            pos = SVector{3, Float64}(u.sc[i].pos)
+            vel = SVector{3, Float64}(u.sc[i].vel)
+            out[i] = -dot(pos, vel)
         end
     end
 
@@ -559,8 +791,14 @@ function get_drag_state_callback(num_sats::Int)
         end
         # sleep(3.0)
         integrator.opts.dtmax = p.args.integration_tolerances.dt_max_orbit # Increase the maximum timestep when exiting the atmosphere
-        integrator.opts.reltol = p.args.integration_tolerances.reltol_orbit # Adjust the tolerances when exiting the atmosphere
-        integrator.opts.abstol = p.args.integration_tolerances.abstol_orbit
+        reltol_new, abstol_new = _callback_tolerances_for_phase(
+            integrator.opts.reltol,
+            integrator.opts.abstol,
+            p.args,
+            false
+        )
+        integrator.opts.reltol = reltol_new # Adjust tolerances when exiting the atmosphere
+        integrator.opts.abstol = abstol_new
     end
 
     function affect_downcrossing!(integrator, idx::Int64)
@@ -571,8 +809,14 @@ function get_drag_state_callback(num_sats::Int)
         end
         # sleep(3.0)
         integrator.opts.dtmax = p.args.integration_tolerances.dt_max_atmosphere # Decrease the maximum timestep when entering the atmosphere
-        integrator.opts.reltol = p.args.integration_tolerances.reltol_atmosphere # Adjust the tolerances when entering the atmosphere
-        integrator.opts.abstol = p.args.integration_tolerances.abstol_atmosphere
+        reltol_new, abstol_new = _callback_tolerances_for_phase(
+            integrator.opts.reltol,
+            integrator.opts.abstol,
+            p.args,
+            true
+        )
+        integrator.opts.reltol = reltol_new # Adjust tolerances when entering the atmosphere
+        integrator.opts.abstol = abstol_new
     end
 
     return VectorContinuousCallback(condition!, affect_upcrossing!, affect_downcrossing!, num_sats)

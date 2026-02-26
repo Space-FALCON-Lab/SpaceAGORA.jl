@@ -10,6 +10,7 @@
 #include <map>
 #include <string>
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include "Gram_C.h"
 #include "SpiceLoader.h"
@@ -442,6 +443,104 @@ void getStartTime_C(PerturbedAtmosphere* atmos, GramTime_C* time)
   }
 }
 
+//! \brief Generate a trajectory track and return sampled atmosphere states.
+//!
+//! This function mirrors the Trajectory profile behavior for generated deltas
+//! (initial + step * delta), including pole crossing handling.
+//! \param atmos An atmosphere handle.
+//! \param initial Initial position.
+//! \param delta Per-step delta position.
+//! \param numberOfPoints Number of points to generate.
+//! \param updateInitialPerturbations Set to 0 to keep initial perturbations at the first step.
+//! \param[out] trajectory Output array of size numberOfPoints.
+//! \retval 0 on success, non-zero on error.
+int generateTrajectory_C(PerturbedAtmosphere* atmos, const Position_C* initial, const Position_C* delta, int numberOfPoints, int updateInitialPerturbations, TrajectoryPoint_C* trajectory)
+{
+  if (atmos == nullptr || initial == nullptr || delta == nullptr || trajectory == nullptr) {
+    errorMessage = "Invalid arguments to generateTrajectory_C (null pointer).";
+    return 1;
+  }
+  if (numberOfPoints < 1) {
+    errorMessage = "Invalid numberOfPoints in generateTrajectory_C (must be >= 1).";
+    return 1;
+  }
+
+  errorMessage.clear();
+  try {
+    const bool isPlanetoCentric = (initial->isPlanetoCentric != 0);
+
+    Position position;
+    position.height = initial->height;
+    position.latitude = initial->latitude;
+    position.longitude = initial->longitude;
+    position.elapsedTime = initial->elapsedTime;
+    position.isPlanetoCentric = isPlanetoCentric;
+
+    Position deltaPosition;
+    deltaPosition.height = delta->height;
+    deltaPosition.latitude = delta->latitude;
+    deltaPosition.longitude = delta->longitude;
+    deltaPosition.elapsedTime = delta->elapsedTime;
+    deltaPosition.isPlanetoCentric = true;
+
+    // Keep perturbation stepping tied to elapsed time, matching Trajectory::generate().
+    Position deltaForPerts;
+    deltaForPerts.height = 0.0;
+    deltaForPerts.latitude = 0.0;
+    deltaForPerts.longitude = 0.0;
+    deltaForPerts.elapsedTime = deltaPosition.elapsedTime;
+    deltaForPerts.isPlanetoCentric = true;
+    atmos->setDelta(deltaForPerts);
+
+    for (int step = 0; step < numberOfPoints; ++step) {
+      if (step > 0) {
+        position.longitude = wrapDegrees(position.longitude + deltaPosition.longitude);
+        position.latitude += deltaPosition.latitude;
+        position.height += deltaPosition.height;
+        position.elapsedTime += deltaPosition.elapsedTime;
+
+        if (std::abs(position.latitude) > 90.0_deg) {
+          position.latitude = copysign(180.0_deg, position.latitude) - position.latitude;
+          position.longitude = wrapDegrees(position.longitude + 180.0_deg);
+          deltaPosition.latitude *= -1.0;
+        }
+      }
+
+      position.isPlanetoCentric = isPlanetoCentric;
+
+      if (updateInitialPerturbations == 0 && step == 0) {
+        atmos->setPerturbationAction(DO_NOT_UPDATE_PERTS);
+      }
+      else {
+        atmos->setPerturbationAction(UPDATE_PERTS);
+      }
+
+      atmos->setPosition(position);
+      atmos->update();
+
+      TrajectoryPoint_C& point = trajectory[step];
+      getPosition_C(atmos, &point.position);
+      getDynamicsState_C(atmos, &point.dynamics);
+      getWindsState_C(atmos, &point.winds);
+      getEphemerisState_C(atmos, &point.ephemeris);
+    }
+  }
+  catch (const std::string& msg) {
+    errorMessage = msg;
+    return 1;
+  }
+  catch (const std::exception& err) {
+    errorMessage = err.what();
+    return 1;
+  }
+  catch (...) {
+    errorMessage = "Unknown error in generateTrajectory_C.";
+    return 1;
+  }
+
+  return 0;
+}
+
 
 }
 
@@ -732,6 +831,20 @@ void setEphemerisFastModeOn_C(void* atmos, int flag)
 void setSubsolarUpdateTime_C(void* atmos, greal utime)
 {
   GRAM::setSubsolarUpdateTime_C(static_cast<PerturbedAtmosphere*>(atmos), utime);
+}
+
+//! \brief Generate a trajectory track and sampled atmosphere states.
+//!
+//! \param atmos An atmosphere handle.
+//! \param initial Initial position.
+//! \param delta Per-step delta position.
+//! \param numberOfPoints Number of output points.
+//! \param updateInitialPerturbations Set to 0 to keep first-step perturbations fixed.
+//! \param[out] trajectory Output array with numberOfPoints elements.
+//! \returns Zero on success, non-zero on error.
+int generateTrajectory_C(void* atmos, const Position_C* initial, const Position_C* delta, int numberOfPoints, int updateInitialPerturbations, TrajectoryPoint_C* trajectory)
+{
+  return GRAM::generateTrajectory_C(static_cast<PerturbedAtmosphere*>(atmos), initial, delta, numberOfPoints, updateInitialPerturbations, trajectory);
 }
 
 

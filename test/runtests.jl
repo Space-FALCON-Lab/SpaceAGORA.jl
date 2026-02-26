@@ -5870,6 +5870,12 @@ end
     tols_no_orient = IntegrationTolerances(
         reltol_orbit=1e-5,
         abstol_orbit=2e-6,
+        reltol_mass=0.0,
+        abstol_mass=0.0,
+        reltol_heat_load=0.0,
+        abstol_heat_load=0.0,
+        reltol_angular_rate=0.0,
+        abstol_angular_rate=0.0,
         dt_max_orbit=5.0
     )
     args_no_orient = build_config(
@@ -5913,13 +5919,17 @@ end
     @test all(isapprox.(reltol_vec_no_orient.sc[1].heat_loads, tols_no_orient_component.reltol_heat_load; atol=0.0, rtol=0.0))
     @test all(isapprox.(abstol_vec_no_orient.sc[1].heat_loads, tols_no_orient_component.abstol_heat_load; atol=0.0, rtol=0.0))
 
-    tols_bad_ω = IntegrationTolerances(
+    tols_ω_no_orient = IntegrationTolerances(
         reltol_orbit=1e-5,
         abstol_orbit=2e-6,
+        reltol_mass=0.0,
+        abstol_mass=0.0,
+        reltol_heat_load=0.0,
+        abstol_heat_load=0.0,
         reltol_angular_rate=3e-7,
         dt_max_orbit=5.0
     )
-    args_bad_ω = build_config(
+    args_ω_no_orient = build_config(
         spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
         density_model=NoAtmosphereModel(),
         orientation_sim=false,
@@ -5927,10 +5937,12 @@ end
         EI_km=120.0,
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=true,
-        tolerances=tols_bad_ω
+        tolerances=tols_ω_no_orient
     )
-    u0_bad_ω = build_initial_conditions(args_bad_ω)
-    @test_throws ArgumentError _build_solver_tolerances(u0_bad_ω, args_bad_ω)
+    u0_ω_no_orient = build_initial_conditions(args_ω_no_orient)
+    reltol_ω_no_orient, abstol_ω_no_orient = _build_solver_tolerances(u0_ω_no_orient, args_ω_no_orient)
+    @test reltol_ω_no_orient == tols_ω_no_orient.reltol_orbit
+    @test abstol_ω_no_orient == tols_ω_no_orient.abstol_orbit
 end
 
 @testset "Rigid-Body Angular Dynamics Uses Inertia Tensor" begin

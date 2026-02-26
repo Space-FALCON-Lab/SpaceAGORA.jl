@@ -134,6 +134,15 @@ struct PerturbationState_C
 };
 typedef struct PerturbationState_C PerturbationState_C;
 
+struct TrajectoryPoint_C
+{
+  Position_C position;            //!< The output position at this sample.
+  DynamicsState_C dynamics;       //!< The dynamics output at this sample.
+  WindsState_C winds;             //!< The wind output at this sample.
+  EphemerisState_C ephemeris;     //!< The ephemeris output at this sample.
+};
+typedef struct TrajectoryPoint_C TrajectoryPoint_C;
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -178,6 +187,7 @@ extern "C" {
   void setEphemerisState_C(void* atmos, const EphemerisState_C* state);
   void setEphemerisFastModeOn_C(void* atmos, int flag);
   void setSubsolarUpdateTime_C(void* atmos, greal utime);
+  int generateTrajectory_C(void* atmos, const Position_C* initial, const Position_C* delta, int numberOfPoints, int updateInitialPerturbations, TrajectoryPoint_C* trajectory);
 
   int update_C(void* atmos);
   size_t getErrorMessage_C(char *message, size_t bufferSize);

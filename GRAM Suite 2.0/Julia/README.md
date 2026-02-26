@@ -45,10 +45,57 @@ state = get_dynamics_state(atmos)
 println("Temperature: ", state.temperature)
 println("Density: ", state.density)
 
+# Optional: generate a full trajectory track in one C call
+track = generate_trajectory(
+    atmos;
+    initial_height=50.0,
+    initial_latitude=22.0,
+    initial_longitude=48.0,
+    initial_elapsed_time=0.0,
+    delta_height=0.5,
+    delta_latitude=0.02,
+    delta_longitude=0.05,
+    delta_elapsed_time=10.0,
+    n_points=16
+)
+println("track points: ", length(track))
+println("first density: ", track[1].dynamics.density)
+
+# Monte Carlo trajectories (different seeds)
+tracks_mc = generate_monte_carlo_trajectories(
+    atmos;
+    initial_height=50.0,
+    initial_latitude=22.0,
+    initial_longitude=48.0,
+    delta_height=0.5,
+    delta_latitude=0.02,
+    delta_longitude=0.05,
+    delta_elapsed_time=10.0,
+    n_points=16,
+    n_runs=5,
+    initial_seed=1001
+)
+println("mc runs: ", length(tracks_mc))
+
+# Mars-specific controls
+set_map_year!(atmos, 2)
+set_mgcm_dust_levels!(atmos; constant_level=2.0, min_level=0.0, max_level=0.0)
+set_dust_storm!(atmos;
+    longitude_sun=250.0,
+    duration=30.0,
+    intensity=1.0,
+    max_radius=20.0,
+    latitude=10.0,
+    longitude=120.0
+)
+
 close!(atmos)
 ```
 
 ## Notes
 
 - The wrapper is intentionally small and covers the common generic API surface.
-- You can extend it by adding more structs/functions from `common/include/Gram_C.h` and the planet-specific `*_Atmosphere_C.h` headers.
+- Exposed advanced APIs include:
+  - Generic C controls/state: `set_delta!`, `set_ephemeris_state!`, `get_density_state`, `get_gases_state`, `get_constituent_gas`, `get_ephemeris_state`, `get_perturbation_state`
+  - Trajectory batch + Monte Carlo: `generate_trajectory`, `generate_monte_carlo_trajectories`
+  - Mars controls/state: `set_map_year!`, `set_mgcm_dust_levels!`, `set_dust_storm!`, `set_dust_density!`, `set_f107!`, `set_wind_scales!`, `set_mola_heights!`, `set_min_max!`, `get_daily_dynamics_state`, `get_mars_state`, `get_mars_gases_state`

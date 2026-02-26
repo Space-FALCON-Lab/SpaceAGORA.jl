@@ -2,6 +2,16 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 const DEFAULT_OUTPUT_DIR = joinpath(REPO_ROOT, "output", "performance")
 const SPICE_PATH = joinpath(REPO_ROOT, "GRAM_Data", "SPICE")
 const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "Gravity_harmonics_data", "EarthGGM05C.csv")
+const _PERF_POLICY_ENV_NAMES = (
+    "SPACEAGORA_OUTER_PARALLEL_ACTIVE",
+    "SPACEAGORA_DENSITY_CALLBACK_PARALLEL",
+    "SPACEAGORA_CONTROL_CALLBACK_PARALLEL",
+    "SPACEAGORA_MULTIBODY_PARALLEL",
+)
+const _PERF_POLICY_ENV_BASELINE = Dict{String, Union{Nothing, String}}(
+    name => (haskey(ENV, name) ? String(ENV[name]) : nothing)
+    for name in _PERF_POLICY_ENV_NAMES
+)
 
 using CSV
 using DataFrames
@@ -74,6 +84,35 @@ end
     vec = collect(skipmissing(values))
     isempty(vec) && return missing
     return join(sort(unique(string.(vec))), delimiter)
+end
+
+@inline _perf_error_text(err) = sprint(showerror, err)
+
+@inline function _perf_strict_errors()::Bool
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_PERF_STRICT_ERRORS", "0")))
+    return raw in ("1", "true", "yes", "on")
+end
+
+@inline function _perf_stack_head(bt)::String
+    bt === nothing && return "stack=unavailable"
+    st = stacktrace(bt)
+    if isempty(st)
+        return "stack=empty"
+    end
+    for frame in st
+        file = String(frame.file)
+        if !(occursin("/julia/", file) || occursin("boot.jl", file) || occursin("task.jl", file))
+            return string(file, ":", frame.line, " in ", frame.func)
+        end
+    end
+    frame = st[1]
+    return string(String(frame.file), ":", frame.line, " in ", frame.func)
+end
+
+@inline function _solve_retcode_from_error(err)::Union{Missing, String}
+    msg = _perf_error_text(err)
+    m = match(r"retcode=([A-Za-z0-9_]+)", msg)
+    return m === nothing ? missing : String(m.captures[1])
 end
 
 @inline function _profile_from_name(name::String)::ProfileSpec
@@ -323,7 +362,10 @@ end
 end
 
 @inline function _existing_or_policy_env(name::String, value::String)::String
-    return haskey(ENV, name) ? ENV[name] : value
+    # Only respect user-provided baseline overrides captured at startup.
+    # This avoids inheriting transient values left by other benchmark phases.
+    baseline = get(_PERF_POLICY_ENV_BASELINE, name, nothing)
+    return baseline === nothing ? value : baseline
 end
 
 @inline function parallel_priority_env_pairs(plan::ParallelPriorityPlan)::Vector{Pair{String, String}}
@@ -729,23 +771,25 @@ function measure_case(case::BenchmarkCase, profile_name::String, repeat_idx::Int
     args_run = copy_timed.value
 
     GC.gc()
-    solve_timed = @timed run_simulation(
-        args_run;
-        isolate_state=false,
-        return_solution=true,
-        return_solver_metadata=true
-    )
-    solve_result = solve_timed.value
-    sol = solve_result.solution
-    solver_mode = solve_result.solver_mode
-    solver_trace = solve_result.solver_trace
-    solver_sequence = isempty(solver_trace) ? missing : join([meta.solver for meta in solver_trace], "->")
-    solver_fallback_count = count(meta -> meta.fallback_used, solver_trace)
-    solver_fallback_used = solver_fallback_count > 0
-    fallback_triggers = [meta.trigger_retcode for meta in solver_trace if !(meta.trigger_retcode isa Missing)]
-    solver_fallback_trigger = isempty(fallback_triggers) ? missing : _safe_unique_join(fallback_triggers; delimiter="|")
-    solve_retcode = string(sol.retcode)
-    solve_success = _solve_success(sol)
+    solve_timed = @timed begin
+        try
+            result = run_simulation(
+                args_run;
+                isolate_state=false,
+                return_solution=true,
+                return_solver_metadata=true
+            )
+            (ok=true, result=result, err=nothing, bt=nothing)
+        catch err
+            if err isa InterruptException
+                rethrow()
+            end
+            if _perf_strict_errors()
+                rethrow(err)
+            end
+            (ok=false, result=nothing, err=err, bt=catch_backtrace())
+        end
+    end
 
     copy_time_s = copy_timed.time
     solve_time_s = solve_timed.time
@@ -757,6 +801,47 @@ function measure_case(case::BenchmarkCase, profile_name::String, repeat_idx::Int
 
     copy_alloc_calls = _alloc_calls(copy_timed.gcstats)
     solve_alloc_calls = _alloc_calls(solve_timed.gcstats)
+
+    solver_mode = missing
+    solver_sequence = missing
+    solver_fallback_used = missing
+    solver_fallback_count = missing
+    solver_fallback_trigger = missing
+    solve_retcode = missing
+    solve_success = false
+    saved_points = missing
+    accepted_steps = missing
+    rejected_steps = missing
+    sim_seconds_per_wall_second = missing
+    satellite_sim_seconds_per_wall_second = missing
+
+    solve_payload = solve_timed.value
+    if solve_payload.ok
+        solve_result = solve_payload.result
+        sol = solve_result.solution
+        solver_mode = solve_result.solver_mode
+        solver_trace = solve_result.solver_trace
+        solver_sequence = isempty(solver_trace) ? missing : join([meta.solver for meta in solver_trace], "->")
+        solver_fallback_count = count(meta -> meta.fallback_used, solver_trace)
+        solver_fallback_used = solver_fallback_count > 0
+        fallback_triggers = [meta.trigger_retcode for meta in solver_trace if !(meta.trigger_retcode isa Missing)]
+        solver_fallback_trigger = isempty(fallback_triggers) ? missing : _safe_unique_join(fallback_triggers; delimiter="|")
+        solve_retcode = string(sol.retcode)
+        solve_success = _solve_success(sol)
+        saved_points = length(sol.t)
+        accepted_steps = _destat_int(sol, :naccept)
+        rejected_steps = _destat_int(sol, :nreject)
+        sim_seconds_per_wall_second = _safe_div(mission_time_s, total_time_s)
+        satellite_sim_seconds_per_wall_second = _safe_div(mission_time_s * n_sats, total_time_s)
+    else
+        solve_err = solve_payload.err
+        solve_bt = solve_payload.bt
+        solve_retcode = _solve_retcode_from_error(solve_err)
+        if ismissing(solve_retcode)
+            solve_retcode = "Exception"
+            @warn "[perf] case=$(case.name) repeat=$(repeat_idx) attempt=$(attempt) threw $(typeof(solve_err)): $(_perf_error_text(solve_err)) @ $(_perf_stack_head(solve_bt))"
+        end
+    end
 
     return (
         profile=profile_name,
@@ -790,19 +875,35 @@ function measure_case(case::BenchmarkCase, profile_name::String, repeat_idx::Int
         total_bytes_mb=total_bytes_mb,
         copy_alloc_calls=copy_alloc_calls,
         solve_alloc_calls=solve_alloc_calls,
-        saved_points=length(sol.t),
-        accepted_steps=_destat_int(sol, :naccept),
-        rejected_steps=_destat_int(sol, :nreject),
-        sim_seconds_per_wall_second=_safe_div(mission_time_s, total_time_s),
-        satellite_sim_seconds_per_wall_second=_safe_div(mission_time_s * n_sats, total_time_s),
+        saved_points=saved_points,
+        accepted_steps=accepted_steps,
+        rejected_steps=rejected_steps,
+        sim_seconds_per_wall_second=sim_seconds_per_wall_second,
+        satellite_sim_seconds_per_wall_second=satellite_sim_seconds_per_wall_second,
         timestamp_utc=timestamp_utc
     )
 end
 
 function run_warmup(case::BenchmarkCase, warmup::Int)
-    for _ in 1:warmup
+    for i in 1:warmup
         args_run = deepcopy(case.args_template)
-        run_simulation(args_run; isolate_state=false, return_solution=false)
+        try
+            run_simulation(args_run; isolate_state=false, return_solution=false)
+        catch err
+            if err isa InterruptException
+                rethrow()
+            end
+            if _perf_strict_errors()
+                rethrow(err)
+            end
+            err_bt = catch_backtrace()
+            solve_retcode = _solve_retcode_from_error(err)
+            if ismissing(solve_retcode)
+                @warn "[warmup] $(case.name) $(i)/$(warmup) threw $(typeof(err)): $(_perf_error_text(err)) @ $(_perf_stack_head(err_bt)); continuing"
+            else
+                println("  warmup $(i)/$(warmup): failed retcode=$(solve_retcode), continuing")
+            end
+        end
     end
     return nothing
 end

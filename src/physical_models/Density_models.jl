@@ -178,7 +178,16 @@ function GRAMAtmosphereModel(;
     spice_directory::String="",
     planet_name::String="earth",
     seed::Int=1001,
-    initial_time::InitialTime=InitialTime()
+    initial_time::InitialTime=InitialTime(),
+    gram_min_relative_step_size::Union{Nothing, Real}=nothing,
+    gram_perturbation_scales::Union{Nothing, Real, NTuple{4, Real}}=nothing,
+    mars_map_year::Union{Nothing, Integer}=nothing,
+    mars_mgcm_dust_levels::Union{Nothing, NTuple{3, Real}}=nothing,
+    mars_dust_storm::Union{Nothing, NTuple{6, Real}}=nothing,
+    mars_f107::Union{Nothing, Real}=nothing,
+    mars_wind_scales::Union{Nothing, NTuple{2, Real}}=nothing,
+    mars_mola_heights::Union{Nothing, Bool}=nothing,
+    mars_min_max::Union{Nothing, Integer}=nothing
 )
     gram_root = _resolve_gram_root(gram_root_directory, gram_directory)
     gram, loaded_now = _load_gram_wrapper!(gram_root)
@@ -192,7 +201,16 @@ function GRAMAtmosphereModel(;
             spice_directory=spice_directory,
             planet_name=planet_name,
             seed=seed,
-            initial_time=initial_time
+            initial_time=initial_time,
+            gram_min_relative_step_size=gram_min_relative_step_size,
+            gram_perturbation_scales=gram_perturbation_scales,
+            mars_map_year=mars_map_year,
+            mars_mgcm_dust_levels=mars_mgcm_dust_levels,
+            mars_dust_storm=mars_dust_storm,
+            mars_f107=mars_f107,
+            mars_wind_scales=mars_wind_scales,
+            mars_mola_heights=mars_mola_heights,
+            mars_min_max=mars_min_max
         )
     end
 
@@ -209,8 +227,9 @@ function GRAMAtmosphereModel(;
     gram.initialize!(spice_root)
 
     gram_data_root = _resolve_gram_data_root(gram_root, gram_data_directory)
-    body = _gram_body(gram, planet_name)
-    data_path = _gram_data_path(gram_data_root, planet_name)
+    planet_key = lowercase(strip(planet_name))
+    body = _gram_body(gram, planet_key)
+    data_path = _gram_data_path(gram_data_root, planet_key)
     gram_atmosphere = data_path === nothing ? gram.create_atmosphere(body) : gram.create_atmosphere(body; data_path=data_path)
 
     gram.set_start_time!(
@@ -225,9 +244,79 @@ function GRAMAtmosphereModel(;
         frame=1
     )
 
-    if seed != 1001 && !_GRAM_SEED_WARNING_EMITTED[]
+    if isdefined(gram, :set_seed!)
+        gram.set_seed!(gram_atmosphere, seed)
+    elseif seed != 1001 && !_GRAM_SEED_WARNING_EMITTED[]
         _GRAM_SEED_WARNING_EMITTED[] = true
         @warn "GRAMAtmosphereModel seed is ignored by the current Julia GRAM wrapper."
+    end
+
+    if gram_min_relative_step_size !== nothing && isdefined(gram, :set_min_relative_step_size!)
+        gram.set_min_relative_step_size!(gram_atmosphere, Float64(gram_min_relative_step_size))
+    end
+
+    if gram_perturbation_scales !== nothing && isdefined(gram, :set_perturbation_scales!)
+        if gram_perturbation_scales isa Real
+            scale = Float64(gram_perturbation_scales)
+            gram.set_perturbation_scales!(
+                gram_atmosphere;
+                density_scale=scale,
+                ew_wind_scale=scale,
+                ns_wind_scale=scale,
+                vertical_wind_scale=scale
+            )
+        else
+            s = gram_perturbation_scales
+            gram.set_perturbation_scales!(
+                gram_atmosphere;
+                density_scale=Float64(s[1]),
+                ew_wind_scale=Float64(s[2]),
+                ns_wind_scale=Float64(s[3]),
+                vertical_wind_scale=Float64(s[4])
+            )
+        end
+    end
+
+    if planet_key == "mars"
+        if mars_map_year !== nothing && isdefined(gram, :set_map_year!)
+            gram.set_map_year!(gram_atmosphere, Int(mars_map_year))
+        end
+        if mars_mgcm_dust_levels !== nothing && isdefined(gram, :set_mgcm_dust_levels!)
+            gram.set_mgcm_dust_levels!(
+                gram_atmosphere;
+                constant_level=Float64(mars_mgcm_dust_levels[1]),
+                min_level=Float64(mars_mgcm_dust_levels[2]),
+                max_level=Float64(mars_mgcm_dust_levels[3])
+            )
+        end
+        if mars_dust_storm !== nothing && isdefined(gram, :set_dust_storm!)
+            ds = mars_dust_storm
+            gram.set_dust_storm!(
+                gram_atmosphere;
+                longitude_sun=Float64(ds[1]),
+                duration=Float64(ds[2]),
+                intensity=Float64(ds[3]),
+                max_radius=Float64(ds[4]),
+                latitude=Float64(ds[5]),
+                longitude=Float64(ds[6])
+            )
+        end
+        if mars_f107 !== nothing && isdefined(gram, :set_f107!)
+            gram.set_f107!(gram_atmosphere, Float64(mars_f107))
+        end
+        if mars_wind_scales !== nothing && isdefined(gram, :set_wind_scales!)
+            gram.set_wind_scales!(
+                gram_atmosphere;
+                mean_winds=Float64(mars_wind_scales[1]),
+                boundary_layer_winds=Float64(mars_wind_scales[2])
+            )
+        end
+        if mars_mola_heights !== nothing && isdefined(gram, :set_mola_heights!)
+            gram.set_mola_heights!(gram_atmosphere, mars_mola_heights)
+        end
+        if mars_min_max !== nothing && isdefined(gram, :set_min_max!)
+            gram.set_min_max!(gram_atmosphere, Int(mars_min_max))
+        end
     end
 
     return GRAMAtmosphereModel(
@@ -236,7 +325,7 @@ function GRAMAtmosphereModel(;
         gram_root,
         gram_data_root,
         spice_root,
-        lowercase(strip(planet_name)),
+        planet_key,
         initial_time
     )
 end

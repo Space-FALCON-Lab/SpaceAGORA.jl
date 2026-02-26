@@ -124,8 +124,7 @@ end
     tol = args.integration_tolerances
     return args.mission_configuration.orientation_sim ||
            tol.reltol_mass != 0.0 || tol.abstol_mass != 0.0 ||
-           tol.reltol_heat_load != 0.0 || tol.abstol_heat_load != 0.0 ||
-           tol.reltol_angular_rate != 0.0 || tol.abstol_angular_rate != 0.0
+           tol.reltol_heat_load != 0.0 || tol.abstol_heat_load != 0.0
 end
 
 function _build_solver_tolerances(u_state::ComponentVector, args)
@@ -157,10 +156,6 @@ function _build_solver_tolerances(u_state::ComponentVector, args)
             reltol_state.sc[i].ω .= reltol_ω
             abstol_state.sc[i].ω .= abstol_ω
         end
-    elseif tol.reltol_angular_rate != 0.0 || tol.abstol_angular_rate != 0.0
-        throw(ArgumentError(
-            "reltol_angular_rate/abstol_angular_rate require mission_configuration.orientation_sim=true."
-        ))
     end
 
     if args.mission_configuration.orientation_sim

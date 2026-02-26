@@ -1,4 +1,4 @@
 # Allowlisted P1 findings for CI gate.
-# Format: <relative/path>::<exact line contents>
+# Format: <relative/path>::<exact line contents> [# owner=<name> opened=<YYYY-MM-DD> expires=<YYYY-MM-DD>]
 #
 # Keep this file empty unless a P1 finding is explicitly accepted temporarily.

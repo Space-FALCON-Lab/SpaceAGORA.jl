@@ -3,20 +3,23 @@ name: Nightly Stress
 on:
   schedule:
     - cron: "0 7 * * *"
+  pull_request:
   workflow_dispatch:
 
 jobs:
   nightly-stress:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 240
     env:
       JULIA_NUM_THREADS: "8"
-      SPACEAGORA_COVERAGE_MIN_OVERALL: "85.0"
-      SPACEAGORA_COVERAGE_MIN_FILE: "70.0"
+      SPACEAGORA_COVERAGE_MIN_OVERALL: "90.0"
+      SPACEAGORA_COVERAGE_MIN_FILE: "80.0"
       SPACEAGORA_COVERAGE_WINDOW_SECONDS: "1200"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -29,6 +32,10 @@ jobs:
       - name: Instantiate
         run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
 
+      - name: Fetch base ref (PR only)
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}
+
       - name: Full test suite with coverage
         run: julia --startup-file=no --project=.AGORA --code-coverage=user test/runtests.jl
 
@@ -38,8 +45,21 @@ jobs:
       - name: P1 findings gate
         run: julia --startup-file=no --project=.AGORA test/ci_p1_findings_gate.jl
 
+      - name: AI review artifact gate (PR only)
+        if: github.event_name == 'pull_request'
+        env:
+          SPACEAGORA_PR_NUMBER: ${{ github.event.pull_request.number }}
+          SPACEAGORA_BASE_REF: ${{ github.base_ref }}
+        run: julia --startup-file=no --project=.AGORA test/ci_ai_review_artifact_gate.jl
+
       - name: Threaded smoke stress
         run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_threaded_smoke.jl
 
       - name: Example regression stress
         run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_examples_regression.jl
+
+      - name: Nightly Monte Carlo stress
+        run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_nightly_montecarlo_stress.jl
+
+      - name: Flake guard
+        run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_flake_guard.jl

@@ -912,6 +912,12 @@ end
     )
     @test_throws ArgumentError sandbox.asim(args; isolate_state=true)
     @test_throws UndefVarError sandbox.asim(nothing, 1, args, ())
+
+    # Legacy entrypoint executes substantially deeper when `cnf` exists.
+    # Keep this as a smoke-only assertion; it should still fail before integration
+    # because typed SimulationConfiguration does not support Symbol indexing.
+    Core.eval(sandbox, :(global cnf = Cnf()))
+    @test_throws MethodError sandbox.asim(nothing, 1, args, ())
 end
 
 @testset "Legacy Remaining Module Smoke Coverage" begin

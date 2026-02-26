@@ -176,8 +176,8 @@ jobs:
     timeout-minutes: 90
     env:
       JULIA_NUM_THREADS: "2"
-      SPACEAGORA_COVERAGE_MIN_OVERALL: "85.0"
-      SPACEAGORA_COVERAGE_MIN_FILE: "70.0"
+      SPACEAGORA_COVERAGE_MIN_OVERALL: "90.0"
+      SPACEAGORA_COVERAGE_MIN_FILE: "80.0"
       SPACEAGORA_COVERAGE_WINDOW_SECONDS: "1200"
     steps:
       - name: Checkout
@@ -214,3 +214,27 @@ jobs:
 
       - name: P1 findings gate
         run: julia --startup-file=no --project=.AGORA test/ci_p1_findings_gate.jl
+
+  ai-review-artifact-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base ref
+        run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: AI review artifact gate
+        env:
+          SPACEAGORA_PR_NUMBER: ${{ github.event.pull_request.number }}
+          SPACEAGORA_BASE_REF: ${{ github.base_ref }}
+        run: julia --startup-file=no --project=.AGORA test/ci_ai_review_artifact_gate.jl

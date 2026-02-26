@@ -12,13 +12,13 @@ const LEGACY_MIN_SMOKE_COVERAGE = Dict(
     "src/simulation/Complete_passage.jl" => 1.0,
 )
 
-const MIN_MAIN_OVERALL = let raw = get(ENV, "SPACEAGORA_COVERAGE_MIN_OVERALL", "85.0")
+const MIN_MAIN_OVERALL = let raw = get(ENV, "SPACEAGORA_COVERAGE_MIN_OVERALL", "90.0")
     parsed = tryparse(Float64, raw)
     parsed === nothing && error("Invalid SPACEAGORA_COVERAGE_MIN_OVERALL=$raw")
     parsed
 end
 
-const MIN_MAIN_FILE = let raw = get(ENV, "SPACEAGORA_COVERAGE_MIN_FILE", "70.0")
+const MIN_MAIN_FILE = let raw = get(ENV, "SPACEAGORA_COVERAGE_MIN_FILE", "80.0")
     parsed = tryparse(Float64, raw)
     parsed === nothing && error("Invalid SPACEAGORA_COVERAGE_MIN_FILE=$raw")
     parsed
@@ -27,6 +27,13 @@ end
 const MAIN_FILE_MIN_OVERRIDES = Dict(
     # Legacy heatload-control helper kept for compatibility; currently validated via smoke checks.
     "src/control/heatload_control/Second_tsw_calcs.jl" => 50.0,
+)
+
+const CRITICAL_FILE_MIN_OVERRIDES = Dict(
+    "src/simulation/run_simulation.jl" => 90.0,
+    "src/control/Propulsive_maneuvers.jl" => 90.0,
+    "src/utils/Closed_form_solution.jl" => 90.0,
+    "src/utils/Save_results.jl" => 90.0,
 )
 
 const COVERAGE_WINDOW_SECONDS = let raw = get(ENV, "SPACEAGORA_COVERAGE_WINDOW_SECONDS", "900")
@@ -138,6 +145,18 @@ function print_summary(summaries::Vector{CoverageSummary})
             println(@sprintf("  %.2f%% (%d/%d)  %s", s.percent, s.covered, s.executable, s.path))
         end
     end
+
+    summary_by_path = Dict(s.path => s for s in summaries)
+    println("critical_files:")
+    for path in sort(collect(keys(CRITICAL_FILE_MIN_OVERRIDES)))
+        threshold = CRITICAL_FILE_MIN_OVERRIDES[path]
+        summary = get(summary_by_path, path, nothing)
+        if summary === nothing
+            println(@sprintf("  MISSING (threshold %.2f%%)  %s", threshold, path))
+        else
+            println(@sprintf("  %.2f%% (threshold %.2f%%)  %s", summary.percent, threshold, path))
+        end
+    end
 end
 
 function enforce_gate(summaries::Vector{CoverageSummary})
@@ -160,6 +179,17 @@ function enforce_gate(summaries::Vector{CoverageSummary})
     end
 
     summary_by_path = Dict(s.path => s for s in summaries)
+    for (critical_path, critical_min) in CRITICAL_FILE_MIN_OVERRIDES
+        summary = get(summary_by_path, critical_path, nothing)
+        if summary === nothing
+            push!(failures, "Critical file has no coverage artifact: $critical_path")
+            continue
+        end
+        if summary.percent < critical_min
+            push!(failures, @sprintf("Critical file coverage %.2f%% is below %.2f%% for %s", summary.percent, critical_min, critical_path))
+        end
+    end
+
     for (legacy_path, min_pct) in LEGACY_MIN_SMOKE_COVERAGE
         summary = get(summary_by_path, legacy_path, nothing)
         if summary === nothing

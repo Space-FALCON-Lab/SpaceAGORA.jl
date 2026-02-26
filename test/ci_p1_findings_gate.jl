@@ -1,6 +1,8 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 const ALLOWLIST_PATH = joinpath(REPO_ROOT, "test", "p1_findings_allowlist.txt")
 
+using Dates
+
 const SCAN_ROOTS = [
     joinpath(REPO_ROOT, "src"),
     joinpath(REPO_ROOT, "test"),
@@ -26,7 +28,6 @@ const EXCLUDED_RELATIVE_FILES = Set([
 
 const P1_PATTERNS = [
     r"\[P1\]",
-    r"\bP1\b",
     r"(?i)\bpriority\s*=\s*1\b",
     r"(?i)\bseverity\s*[:=]\s*P?1\b",
 ]
@@ -38,18 +39,66 @@ struct P1Finding
     key::String
 end
 
+struct AllowlistEntry
+    key::String
+    owner::Union{Nothing, String}
+    opened::Union{Nothing, Date}
+    expires::Union{Nothing, Date}
+    line::Int
+end
+
+function parse_allowlist_entry(line::String, line_no::Int)
+    parts = split(line, "#"; limit=2)
+    key = strip(parts[1])
+    key_parts = split(key, "::"; limit=2)
+    if length(key_parts) != 2 || isempty(strip(key_parts[1])) || isempty(strip(key_parts[2]))
+        error("Invalid allowlist entry format at $ALLOWLIST_PATH:$line_no. Expected `path::exact_line`.")
+    end
+
+    owner = nothing
+    opened = nothing
+    expires = nothing
+
+    if length(parts) == 2
+        metadata = strip(parts[2])
+        for token in split(metadata)
+            occursin("=", token) || continue
+            k, v = split(token, "="; limit=2)
+            if k == "owner"
+                owner = v
+            elseif k == "opened"
+                parsed = tryparse(Date, v)
+                parsed === nothing && error("Invalid opened date at $ALLOWLIST_PATH:$line_no: $v (expected YYYY-MM-DD)")
+                opened = parsed
+            elseif k == "expires"
+                parsed = tryparse(Date, v)
+                parsed === nothing && error("Invalid expires date at $ALLOWLIST_PATH:$line_no: $v (expected YYYY-MM-DD)")
+                expires = parsed
+            else
+                error("Unknown allowlist metadata key at $ALLOWLIST_PATH:$line_no: $k")
+            end
+        end
+    end
+
+    return AllowlistEntry(key, owner, opened, expires, line_no)
+end
+
 function load_allowlist(path::String)
-    entries = Set{String}()
+    entries = Dict{String, AllowlistEntry}()
     if !isfile(path)
         return entries
     end
 
-    for raw in eachline(path)
+    for (line_no, raw) in enumerate(eachline(path))
         line = strip(raw)
         if isempty(line) || startswith(line, "#")
             continue
         end
-        push!(entries, line)
+        entry = parse_allowlist_entry(line, line_no)
+        if haskey(entries, entry.key)
+            error("Duplicate allowlist entry at $ALLOWLIST_PATH:$line_no for key: $(entry.key)")
+        end
+        entries[entry.key] = entry
     end
 
     return entries
@@ -103,8 +152,12 @@ function main()
     files = iter_scan_files()
     findings = collect_findings(files)
 
-    new_findings = [f for f in findings if !(f.key in allowlist)]
-    stale_allowlist = sort([k for k in allowlist if all(f -> f.key != k, findings)])
+    allowlist_keys = Set(keys(allowlist))
+    new_findings = [f for f in findings if !(f.key in allowlist_keys)]
+    stale_allowlist = sort([k for k in allowlist_keys if all(f -> f.key != k, findings)])
+    expired_allowlist = sort([
+        v for v in values(allowlist) if v.expires !== nothing && v.expires < today()
+    ]; by=v -> v.line)
 
     println("p1_scan_files=$(length(files)) findings=$(length(findings)) allowlisted=$(length(allowlist))")
 
@@ -115,12 +168,23 @@ function main()
         end
     end
 
+    if !isempty(expired_allowlist)
+        println("expired_allowlist_entries=$(length(expired_allowlist))")
+        for entry in expired_allowlist
+            println("  - $(entry.key) (line $(entry.line), expires=$(entry.expires))")
+        end
+    end
+
     if !isempty(new_findings)
         println("new_p1_findings=$(length(new_findings))")
         for f in new_findings
             println("  - $(f.file):$(f.line): $(f.snippet)")
         end
         error("P1 findings gate failed: unallowlisted P1 markers found.")
+    end
+
+    if !isempty(expired_allowlist)
+        error("P1 findings gate failed: expired allowlist entries found.")
     end
 
     println("p1_findings_gate_ok")

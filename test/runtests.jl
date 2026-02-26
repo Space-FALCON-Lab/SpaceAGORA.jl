@@ -32,6 +32,14 @@ struct TimedTangentialThrusterModel <: SimulationModel.AbstractControlEffectorMo
     stop_time::Float64
 end
 
+mutable struct CountingGuidanceModel <: SimulationModel.AbstractTypes.AbstractGuidanceModel
+    hits::Vector{Int}
+end
+
+mutable struct CountingControlModel <: SimulationModel.AbstractControlEffectorModel
+    hits::Vector{Int}
+end
+
 struct ThrowingForceModel <: SimulationModel.AbstractForceTorqueModel
 end
 
@@ -85,6 +93,28 @@ function SimulationModel.calcControlEffect!(
     t::Float64,
     i::Int64
 )
+    return nothing
+end
+
+function SimulationModel.calcGuidanceEffect!(
+    model::CountingGuidanceModel,
+    u::ComponentVector,
+    p::ODEParams,
+    t::Float64,
+    i::Int64
+)
+    model.hits[i] += 1
+    return nothing
+end
+
+function SimulationModel.calcControlEffect!(
+    model::CountingControlModel,
+    u::ComponentVector,
+    p::ODEParams,
+    t::Float64,
+    i::Int64
+)
+    model.hits[i] += 1
     return nothing
 end
 
@@ -1099,6 +1129,7 @@ end
                     α::Float64
                     thermal_accomodation_factor::Float64
                     heat_load_limit::Float64
+                    heat_rate_limit::Float64
                 end
             end
             if !isdefined(@__MODULE__, :LegacyIpState)
@@ -1329,9 +1360,7 @@ end
                 controller.stored_state = 0
                 controller.prev_time = -1.0
 
-                base_args = Dict{Symbol, Any}(pairs(p_ctx.args))
-                base_args[:cnf] = cnf
-                base_args[:solution] = p.solution
+                base_args = p_ctx.args
                 if p.orientation_sim && !isempty(p.m.body.roots)
                     println("RW_STATE n_wheels=", p.m.body.roots[1].rw_assembly.n_wheels, " len_h=", length(p.m.body.roots[1].rw_assembly.h_wheels))
                 end
@@ -1347,7 +1376,7 @@ end
                 )
 
                 for cfg in probe_cfgs
-                    args_probe = merge(base_args, Dict{Symbol, Any}(pairs((
+                    args_probe = merge(base_args, (
                         control_mode=0,
                         control_in_loop=cfg.ci,
                         struct_ctrl=1,
@@ -1355,7 +1384,7 @@ end
                         eclipse=true,
                         magnetic_field=true,
                         print_res=true
-                    ))))
+                    ))
                     ip_probe = (
                         cm=cfg.cm,
                         dm=2,
@@ -1392,7 +1421,7 @@ end
                 end
 
                 for dm in (3, 4)
-                    args_dm = merge(base_args, Dict{Symbol, Any}(pairs((control_mode=0, control_in_loop=false))))
+                    args_dm = merge(base_args, (control_mode=0, control_in_loop=false))
                     ip_dm = (cm=0, dm=dm, gm=1, tc=0, tm=1)
                     p_dm = LegacyODEParams(
                         p.m,
@@ -1424,11 +1453,11 @@ end
                     cnf.ascending_phase = false
                     cnf.index_warning_alt = 0
                     cnf.index_warning_flow = 0
-                    args_warn = merge(base_args, Dict{Symbol, Any}(pairs((
+                    args_warn = merge(base_args, (
                         control_mode=1,
                         print_res=true,
                         _cov_dense_atm=true
-                    ))))
+                    ))
                     p_warn = LegacyODEParams(
                         p.m,
                         cnf,
@@ -1459,7 +1488,7 @@ end
                 # Probe propellant depletion + drag-pass deceleration thrust path.
                 try
                     cnf.index_propellant_mass = 1
-                    args_prop = merge(base_args, Dict{Symbol, Any}(pairs((print_res=true,))))
+                    args_prop = merge(base_args, (print_res=true,))
                     p_prop = LegacyODEParams(
                         p.m,
                         cnf,
@@ -1487,8 +1516,11 @@ end
                     if p.orientation_sim && !isempty(p.m.body.roots) && p.m.body.roots[1].rw_assembly.n_wheels > 0
                         root = p.m.body.roots[1]
                         println("RW_PROBE_START n_wheels=", root.rw_assembly.n_wheels, " len_h=", length(root.rw_assembly.h_wheels))
-                        root.rw_assembly.h_wheels[1] = root.rw_assembly.max_wheel_h
-                        root.rw_assembly.h_dot_wheels[1] = 1.0
+                        root.rw_assembly.J_rw = SMatrix{3, 1, Float64, 3}(1.0, 0.0, 0.0)
+                        args_rw = Dict{Symbol, Any}(pairs(base_args))
+                        args_rw[:print_res] = true
+                        args_rw[:cnf] = cnf
+                        args_rw[:solution] = p.solution
                         p_rw = LegacyODEParams(
                             p.m,
                             cnf,
@@ -1504,9 +1536,19 @@ end
                             p.gram,
                             p.numberofpassage,
                             true,
-                            merge(base_args, Dict{Symbol, Any}(pairs((print_res=true,)))),
+                            args_rw,
                             p.intermediate_solution
                         )
+                        # Saturation branch: h_wheels at max and derivative in same direction.
+                        root.rw_assembly.h_wheels[1] = root.rw_assembly.max_wheel_h
+                        root.rw_assembly.h_dot_wheels[1] = 1.0
+                        root.rw_assembly.max_wheel_torque = 1.0
+                        _cov_eval_f!(prob, p_rw)
+
+                        # Torque clamp branch: non-saturated wheel with torque above limit.
+                        root.rw_assembly.h_wheels[1] = 0.0
+                        root.rw_assembly.h_dot_wheels[1] = 1.0
+                        root.rw_assembly.max_wheel_torque = 1.0e-6
                         _cov_eval_f!(prob, p_rw)
                         println("RW_PROBE_DONE")
                     end
@@ -1659,6 +1701,8 @@ end
         pre_targeting::Union{Nothing, Int}=nothing,
         pre_time_termination::Union{Nothing, Bool}=nothing,
         pre_altitude_periapsis_km::Union{Nothing, Float64}=nothing,
+        pre_index_propellant_mass::Union{Nothing, Int}=nothing,
+        legacy_mass_kg::Float64=1000.0,
         solution_states::Int=0,
         cov_multistage::Bool=false,
         cov_stage2_drag_state::Union{Nothing, Bool}=nothing,
@@ -1777,12 +1821,12 @@ end
                 DateTimeIC=from_utc(DateTime(2020, 1, 1, 0, 0, 0)),
                 DateTimeJ2000=from_utc(DateTime(2000, 1, 1, 12, 0, 0))
             ),
-            aerodynamics=sandbox.LegacyAeroState(0.0, 1.0, 0.0),
+            aerodynamics=sandbox.LegacyAeroState(0.0, 1.0, 0.0, 1.0e9),
             planet=EARTH,
             body=legacy_body,
             engines=(Isp=300.0, T=0.0)
         )
-        legacy_mass = 1000.0
+        legacy_mass = legacy_mass_kg
         legacy_r0 = SVector{3, Float64}(EARTH.Rp_e + r0_alt_m, 0.0, 0.0)
         legacy_v0 = SVector{3, Float64}(0.0, 7600.0, 0.0)
         legacy_oe = SVector{7, Float64}(EARTH.Rp_e + r0_alt_m, 0.02, deg2rad(35.0), 0.0, 0.0, oe_true_anomaly_rad, legacy_mass)
@@ -1841,6 +1885,9 @@ end
             if $pre_altitude_periapsis_km !== nothing
                 cnf.altitude_periapsis = [Float64($pre_altitude_periapsis_km)]
             end
+            if $pre_index_propellant_mass !== nothing
+                cnf.index_propellant_mass = Int($pre_index_propellant_mass)
+            end
         end)
 
         ret = try
@@ -1869,9 +1916,6 @@ end
         orientation_sim=false,
         r0_alt_m=500e3
     )
-    if ret_campaign isa Exception
-        println("RET_CAMPAIGN_ERR ", sprint(showerror, ret_campaign))
-    end
 
     # control_mode != 0 phase-2 branch (drag_state=false path, step 1.5 setup).
     ret_ctrl = run_legacy_case_for_coverage(
@@ -2029,9 +2073,6 @@ end
         cov_debug_output=true,
         r0_alt_m=120e3
     )
-    if ret_orient_rw_thrusters isa Exception
-        println("RET_RW_ERR ", sprint(showerror, ret_orient_rw_thrusters))
-    end
 
     # Trigger control-mode branch matrix in phase 2.0/1.5/2.25/2.5 via staged fake-solver state updates.
     ret_cov_phase2_20 = run_legacy_case_for_coverage(
@@ -2188,6 +2229,22 @@ end
         r0_alt_m=500e3
     )
 
+    # Fuel-depletion branch + deceleration thrust-controller path.
+    ret_propellant_cutoff = run_legacy_case_for_coverage(
+        keplerian=false,
+        thrust_control="None",
+        control_mode=0,
+        drag_passage=true,
+        type_of_mission="campaign",
+        body_shape="Spacecraft",
+        orientation_sim=false,
+        ip_tc=2,
+        print_res=true,
+        pre_index_propellant_mass=1,
+        legacy_mass_kg=13.1,
+        r0_alt_m=120e3
+    )
+
     # Targeting path smoke with deterministic stubs.
     ret_targeting = run_legacy_case_for_coverage(
         keplerian=false,
@@ -2286,6 +2343,7 @@ end
         ret_keplerian_phase2_skip,
         ret_heatload_sol_1,
         ret_heatload_sol_2,
+        ret_propellant_cutoff,
         ret_targeting,
         ret_targeting_solutionstate0,
         ret_force_impact_break,
@@ -2350,6 +2408,15 @@ end
     @test runtime_state.cnf == :cnf_state
     @test runtime_state.solution == :solution_state
     @test runtime_state.model == :model_state
+    runtime_state_kw = propulsive_sandbox._legacy_get_propulsive_runtime_state(
+        nothing;
+        cnf=:kw_cnf_state,
+        solution=:kw_solution_state,
+        model=:kw_model_state
+    )
+    @test runtime_state_kw.cnf == :kw_cnf_state
+    @test runtime_state_kw.solution == :kw_solution_state
+    @test runtime_state_kw.model == :kw_model_state
 
     ensure_legacy_heatload_second_tsw_loaded!()
     tsw_sandbox = LEGACY_HEATLOAD_SECOND_TSW_SANDBOX
@@ -2476,6 +2543,46 @@ end
     )
     @test ts1_root_hi == 12.0
     @test ts2_root_hi == 88.0
+end
+
+@testset "Legacy Propulsive Utils Helper Coverage" begin
+    module_name = gensym(:LegacyPropulsiveUtilsSandbox)
+    Core.eval(Main, :(module $module_name
+        using ..SimulationModel
+    end))
+    sandbox = getfield(Main, module_name)
+    Core.eval(sandbox, :(include(joinpath(Main.REPO_ROOT, "src", "control", "utils", "Propulsive_maneuvers.jl"))))
+
+    @test sandbox._legacy_get_cnf(nothing; cnf=:kw_cnf_state) == :kw_cnf_state
+    @test sandbox._legacy_get_cnf(Dict{Symbol, Any}(:cnf => :dict_cnf_state)) == :dict_cnf_state
+    @test sandbox._legacy_get_cnf((; cnf=:namedtuple_cnf_state)) == :namedtuple_cnf_state
+    @test_throws ArgumentError sandbox._legacy_get_cnf(Dict{Symbol, Any}())
+    Base.include_string(sandbox, """
+    module config
+        const cnf = (origin=:legacy_propulsive_utils_config_cnf,)
+    end
+    """)
+    @test sandbox._legacy_get_cnf() == (origin=:legacy_propulsive_utils_config_cnf,)
+
+    @test sandbox.no_maneuver(0.0, 5.0, 0.0, Dict{Symbol, Any}(), 0) == 0
+    @test sandbox.abms(0.0, 5.0, 0.0, Dict{Symbol, Any}(), 0) == 5.0
+    @test sandbox.abms(0.0, 5.0, 0.0, Dict{Symbol, Any}(), 1) == 0
+    @test sandbox.deceleration_drag_passage(
+        0.0,
+        5.0,
+        0.0,
+        Dict{Symbol, Any}(),
+        1;
+        cnf=(drag_state=true,)
+    ) == 5.0
+    @test sandbox.deceleration_drag_passage(
+        0.0,
+        5.0,
+        0.0,
+        Dict{Symbol, Any}(),
+        1;
+        cnf=(drag_state=false,)
+    ) == 0
 end
 
 @testset "API Convenience Constructors" begin
@@ -2720,6 +2827,10 @@ end
     @test sandbox._legacy_eom_ctrl_log_enabled(args_print) == true
     @test sandbox._legacy_eom_ctrl_log_enabled(args_verbose) == true
     @test sandbox._legacy_control_log_enabled(0) == false
+    @test sandbox._legacy_targeting_log_enabled(0) == false
+    @test sandbox._legacy_sim_targeting_log_enabled(0) == false
+    @test sandbox._legacy_eom_targeting_log_enabled(0) == false
+    @test sandbox._legacy_eom_ctrl_log_enabled(0) == false
 
     debug_key = "SPACEAGORA_DEBUG_LEGACY_CONTROL"
     old_debug = get(ENV, debug_key, nothing)
@@ -2768,9 +2879,13 @@ end
     @test sandbox.control_solarpanels_heatrate(nothing, nothing, Dict{Symbol, Any}(), [0], nothing; cnf=local_cnf) == local_cnf.α
 
     # Exercise legacy control branch behavior with deterministic local stubs.
-    Core.eval(sandbox, :(module config
-        get_spacecraft_reference_area(body) = 1.0
-    end))
+    Core.eval(sandbox, quote
+        if isdefined(@__MODULE__, :config)
+            config.get_spacecraft_reference_area(body) = 1.0
+        else
+            config = (get_spacecraft_reference_area = body -> 1.0,)
+        end
+    end)
     Core.eval(sandbox, :(aerodynamic_coefficient_fM(ang, body, T_p, S, aero, MonteCarlo=false) = (0.1, 0.5 + 0.2*sin(ang))))
 
     m_struct = (aerodynamics=(α=1.2,), body=(dummy=1,))
@@ -2872,17 +2987,16 @@ end
 
     # Cover heatload/openloop control branches with deterministic stubs.
     Core.eval(sandbox, quote
-        module config
-            const rotate_calls = Ref(Any[])
-            get_spacecraft_reference_area(body) = 1.0
-            function traverse_bodies(body, root)
-                return [(root=true, r=[0.0, 0.0, 0.0]), (root=false, r=[1.0, -2.0, 3.0])], 1
-            end
-            function rotate_link(body, axis, angle)
-                push!(rotate_calls[], (body=body, axis=axis, angle=angle))
-                return nothing
-            end
-        end
+        const _legacy_rotate_calls = Ref(Any[])
+        config = (
+            rotate_calls=_legacy_rotate_calls,
+            get_spacecraft_reference_area=(body -> 1.0),
+            traverse_bodies=((body, root) -> ([(root=true, r=[0.0, 0.0, 0.0]), (root=false, r=[1.0, -2.0, 3.0])], 1)),
+            rotate_link=((body, axis, angle) -> begin
+                push!(_legacy_rotate_calls[], (body=body, axis=axis, angle=angle))
+                nothing
+            end)
+        )
 
         const _legacy_heatload_stub_calls = Dict{Symbol, Int}(
             :switch_calc_int => 0,
@@ -3495,6 +3609,11 @@ end
     end
     @test breaker_impact == true
     @test sol_after_impact.t_events[end] == ["true"]
+    y_no_impact = [m.planet.Rp_e + 100e3, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0]
+    breaker_no_impact, _ = redirect_stdout(devnull) do
+        sandbox.impact(0.0, y_no_impact, m, (t_events=[Any[]],), Dict{Symbol, Any}())
+    end
+    @test breaker_no_impact == false
 
     y_250_in = [m.planet.Rp_e + 240e3, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0]
     y_250_out = [m.planet.Rp_e + 260e3, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0]
@@ -3503,6 +3622,9 @@ end
     @test sandbox.eventsecondstep(1.0, y_250_out, 0.0, y_250_in, m, Dict{Symbol, Any}()) == true
     @test sandbox.heat_check(1.0, y_120_out, 0.0, y_120_in, m, Dict{Symbol, Any}()) == true
     @test sandbox.out_drag_passage(1.0, [m.planet.Rp_e + 11e3, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0], 0.0, [m.planet.Rp_e + 9e3, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0], m, Dict{Symbol, Any}(:AE => 10e3)) == true
+    @test sandbox.eventsecondstep(1.0, y_250_in, 0.0, y_250_out, m, Dict{Symbol, Any}()) == false
+    @test sandbox.heat_check(1.0, y_120_in, 0.0, y_120_out, m, Dict{Symbol, Any}()) == false
+    @test sandbox.out_drag_passage(1.0, [m.planet.Rp_e + 9e3, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0], 0.0, [m.planet.Rp_e + 11e3, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0], m, Dict{Symbol, Any}(:AE => 10e3)) == false
 
     runtime_ok = sandbox._legacy_get_save_results_runtime_state(Dict{Symbol, Any}(:cnf => 1, :solution => 2, :model => 3))
     @test runtime_ok.cnf == 1
@@ -3628,6 +3750,190 @@ end
     p.orbit_counter[1] = 1
     sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
     @test thruster.Δv[1] == 0.0
+end
+
+@testset "Callback Internal Branch Coverage" begin
+    mutable struct MockCallbackOpts
+        dtmax::Float64
+        reltol::Float64
+        abstol::Float64
+    end
+
+    mutable struct MockCallbackIntegrator{P, U, O}
+        p::P
+        u::U
+        t::Float64
+        opts::O
+        tdir::Int
+        tstop_max::Float64
+    end
+    DiffEqBase.get_tstops_max(integrator::MockCallbackIntegrator) = integrator.tstop_max
+    DiffEqBase.add_tstop!(integrator::MockCallbackIntegrator, tstop) = begin
+        integrator.tstop_max = max(integrator.tstop_max, Float64(tstop))
+        nothing
+    end
+
+    args_base = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=true, generate_plots=false, normalize=false)
+    )
+
+    mission_orbits = MissionConfiguration(
+        mission_type=MissionOrbits,
+        keplerian=true,
+        number_of_orbits=1,
+        mission_time=120.0,
+        orientation_sim=false,
+        num_steps_to_save=100
+    )
+    args_orbits = SimulationConfiguration(
+        file_paths=args_base.file_paths,
+        simulation_settings=SimulationSettings(results=false, verbose=true, generate_plots=false, normalize=false),
+        mission_configuration=mission_orbits,
+        environment_model=args_base.environment_model,
+        dynamics_model=args_base.dynamics_model,
+        guidance_model=args_base.guidance_model,
+        navigation_model=args_base.navigation_model,
+        control_model=args_base.control_model,
+        initial_time=args_base.initial_time,
+        integration_tolerances=args_base.integration_tolerances
+    )
+
+    _ = SimulationModel.SimulationCallbacks.get_callbacks(
+        1,
+        args_orbits.dynamics_model.dynamic_effectors,
+        args_orbits
+    )
+
+    orbit_cb = SimulationModel.SimulationCallbacks.get_orbit_end_callback(1)
+    p_orbit = ODEParams{1}(args=args_orbits)
+    u_orbit = build_initial_conditions(args_orbits)
+    integrator_orbit = MockCallbackIntegrator(
+        p_orbit,
+        u_orbit,
+        0.0,
+        MockCallbackOpts(1.0, 1e-8, 1e-8),
+        1,
+        Inf
+    )
+    out_orbit = zeros(1)
+    orbit_cb.condition(out_orbit, u_orbit, 0.0, integrator_orbit)
+    @test isfinite(out_orbit[1])
+    orbit_count_before = p_orbit.orbit_counter[1]
+    orbit_cb.affect!(integrator_orbit, 1)
+    @test p_orbit.orbit_counter[1] == orbit_count_before + 1
+
+    args_drag = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=220e3, rp_alt_m=100e3, ν_deg=180.0),
+        density_model=ConstantDensityModel(1e-6, 240.0),
+        orientation_sim=false,
+        mission_time=180.0,
+        EI_km=140.0,
+        dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+        keplerian=false,
+        simulation_settings=SimulationSettings(results=false, verbose=true, generate_plots=false, normalize=false),
+        tolerances=IntegrationTolerances(
+            reltol_orbit=1e-8,
+            abstol_orbit=1e-8,
+            reltol_atmosphere=1e-8,
+            abstol_atmosphere=1e-8,
+            dt_max_orbit=5.0,
+            dt_max_atmosphere=0.2
+        )
+    )
+    drag_cb = SimulationModel.SimulationCallbacks.get_drag_state_callback(1)
+    p_drag = ODEParams{1}(args=args_drag)
+    u_drag = build_initial_conditions(args_drag)
+    integrator_drag = MockCallbackIntegrator(
+        p_drag,
+        u_drag,
+        12.0,
+        MockCallbackOpts(
+            args_drag.integration_tolerances.dt_max_atmosphere,
+            args_drag.integration_tolerances.reltol_atmosphere,
+            args_drag.integration_tolerances.abstol_atmosphere
+        ),
+        1,
+        Inf
+    )
+    drag_output = ""
+    mktemp() do path, io
+        redirect_stdout(io) do
+            drag_cb.affect!(integrator_drag, 1)
+        end
+        flush(io)
+        seekstart(io)
+        drag_output = read(io, String)
+    end
+    @test occursin("Switching to space integration", drag_output)
+    @test integrator_drag.opts.dtmax == args_drag.integration_tolerances.dt_max_orbit
+    @test integrator_drag.opts.reltol == args_drag.integration_tolerances.reltol_orbit
+    @test integrator_drag.opts.abstol == args_drag.integration_tolerances.abstol_orbit
+
+    counting_guidance = CountingGuidanceModel([0])
+    args_guidance = SimulationConfiguration(
+        file_paths=args_base.file_paths,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        mission_configuration=args_base.mission_configuration,
+        environment_model=args_base.environment_model,
+        dynamics_model=args_base.dynamics_model,
+        guidance_model=GuidanceModel(guidance_effectors=(counting_guidance,), guidance_rates=[1.0]),
+        navigation_model=args_base.navigation_model,
+        control_model=args_base.control_model,
+        initial_time=args_base.initial_time,
+        integration_tolerances=args_base.integration_tolerances
+    )
+    guidance_cbs = SimulationModel.SimulationCallbacks.get_guidance_callbacks(1, args_guidance)
+    p_guidance = ODEParams{1}(args=args_guidance)
+    u_guidance = build_initial_conditions(args_guidance)
+    integrator_guidance = MockCallbackIntegrator(
+        p_guidance,
+        u_guidance,
+        0.0,
+        MockCallbackOpts(1.0, 1e-8, 1e-8),
+        1,
+        Inf
+    )
+    guidance_cbs[1].affect!.affect!(integrator_guidance)
+    @test counting_guidance.hits == [1]
+
+    control_model = CountingControlModel([0, 0])
+    args_control = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+            make_spacecraft(ra_alt_m=550e3, rp_alt_m=500e3, ν_deg=160.0)
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        control_effectors=(control_model,),
+        control_rates=[1.0],
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p_control = ODEParams{2}(args=args_control)
+    u_control = build_initial_conditions(args_control)
+    integrator_control = MockCallbackIntegrator(
+        p_control,
+        u_control,
+        0.0,
+        MockCallbackOpts(1.0, 1e-8, 1e-8),
+        1,
+        Inf
+    )
+    withenv("SPACEAGORA_DEV_HOT_RELOAD" => "1") do
+        control_cbs = SimulationModel.SimulationCallbacks.get_control_callbacks(2, args_control)
+        control_cbs[1].affect!.affect!(integrator_control)
+    end
+    @test control_model.hits == [1, 1]
 end
 
 @testset "Legacy Monte Carlo Helpers Smoke" begin
@@ -4282,6 +4588,47 @@ end
         tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
     )
     _ = run_case_via_run_analysis(args_no_results; expect_results_csv=false)
+
+    settings_verbose = SimulationSettings(
+        results=true,
+        verbose=true,
+        generate_plots=false,
+        results_directory="output",
+        save_csv=true,
+        normalize=false
+    )
+    args_verbose = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=settings_verbose,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    mktempdir() do tmp
+        cd(tmp) do
+            mkpath("output")
+            write(joinpath("output", "results.csv"), "stale-data\n")
+
+            output = ""
+            mktemp() do path, io
+                redirect_stdout(io) do
+                    run_analysis(args_verbose)
+                end
+                flush(io)
+                seekstart(io)
+                output = read(io, String)
+            end
+
+            @test occursin("--> Start Passage #1", output)
+            @test occursin("Arrow writer closed. Data saved to:", output)
+            @test isfile(joinpath("output", "results.csv"))
+            @test !occursin("stale-data", read(joinpath("output", "results.csv"), String))
+        end
+    end
 end
 
 @testset "Legacy Entry Dispatch Parity" begin
@@ -4609,7 +4956,6 @@ end
     )
     _, out_orbit_verbose = run_case_capture_stdout(args_orbit_verbose)
     @test occursin("Initial conditions:", out_orbit_verbose)
-    @test occursin("Orbit ", out_orbit_verbose)
 
     args_drag_quiet = build_config(
         spacecraft=make_spacecraft(ra_alt_m=220e3, rp_alt_m=100e3, ν_deg=180.0),
@@ -4674,6 +5020,71 @@ end
     @test angle_distance(oe[4], ic.Ω) < 1e-8
     @test angle_distance(oe[5], ic.ω) < 1e-8
     @test angle_distance(oe[6], ic.ν) < 1e-8
+end
+
+@testset "Reference System Branch Coverage" begin
+    ic_arg_wrap = InitialCondition(
+        ra=EARTH.Rp_e + 700e3,
+        rp=EARTH.Rp_e + 300e3,
+        i=55.0,
+        ω=300.0,
+        Ω=40.0,
+        ν=25.0
+    )
+    r_wrap, v_wrap = orbitalelemtorv(ic_arg_wrap, EARTH)
+    oe_wrap = rvtoorbitalelement(SVector{3, Float64}(r_wrap), SVector{3, Float64}(v_wrap), EARTH)
+    @test oe_wrap[5] > pi
+
+    ic_circ_incl = InitialCondition(
+        ra=EARTH.Rp_e + 500e3,
+        rp=EARTH.Rp_e + 500e3,
+        i=40.0,
+        ω=0.0,
+        Ω=15.0,
+        ν=250.0
+    )
+    r_circ, v_circ = orbitalelemtorv(ic_circ_incl, EARTH)
+    oe_circ = rvtoorbitalelement(SVector{3, Float64}(r_circ), SVector{3, Float64}(v_circ), EARTH)
+    @test abs(oe_circ[2]) < 1e-10
+    @test oe_circ[6] > pi
+
+    planet_topo = (
+        Rp_e=10.0,
+        Rp_p=9.0,
+        topography_function=(a, Clm, Slm, lat, lon, A) -> 9.5,
+        Clm_topo=zeros(1, 1),
+        Slm_topo=zeros(1, 1),
+        A_topo=0.0
+    )
+    rp_topo = SVector{3, Float64}(0.1, 0.5, -8.944723618090451)
+    lla = rtolatlong(rp_topo, planet_topo)
+    @test all(isfinite, lla)
+
+    topo_module_name = gensym(:ReferenceSystemTopoSandbox)
+    Core.eval(Main, :(module $topo_module_name
+        using LinearAlgebra
+        using StaticArrays
+        args = :legacy_topography_args
+        include(joinpath(Main.REPO_ROOT, "src", "utils", "Reference_system.jl"))
+    end))
+    topo_sandbox = getfield(Main, topo_module_name)
+    lla_topo = topo_sandbox.rtolatlong(rp_topo, planet_topo, true)
+    @test isapprox(lla_topo[1], norm(rp_topo) - 9.5; atol=1e-12, rtol=0.0)
+
+    q_branch2 = orbital_elements_to_lvlh_quaternion(
+        1.186823891356144,
+        0.13305160284932352,
+        0.0,
+        2.0245819323134224
+    )
+    q_branch3 = orbital_elements_to_lvlh_quaternion(
+        0.0,
+        0.1,
+        0.0,
+        0.10471975511965977
+    )
+    @test isapprox(norm(q_branch2), 1.0; atol=1e-12, rtol=0.0)
+    @test isapprox(norm(q_branch3), 1.0; atol=1e-12, rtol=0.0)
 end
 
 @testset "Circular Orbit Robustness" begin

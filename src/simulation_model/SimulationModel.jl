@@ -7,6 +7,8 @@ using CSV
 using DataFrames
 using Reexport
 
+const SPICE_LOCK = ReentrantLock()
+
 # --- Utils ---
 include("../utils/quaternion_utils.jl")
 include("../physical_models/Planet_shapes.jl")

@@ -5,9 +5,11 @@ using DifferentialEquations
 using LinearAlgebra
 using SPICE
 using Dates
+using ..SimulationModel: SPICE_LOCK
+using ..EnvironmentModels
 using ..EnvironmentModels: getDensity, NoAtmosphereModel
 using ..DynamicEffectors: BaseThrusterModel, AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
-using ..AbstractTypes: AbstractPlanet
+using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
 using ..ConfigTypes: SaveData
 using ..ControlEffectors: calcControlEffect!
 using ..GuidanceEffectors: calcGuidanceEffect!
@@ -16,6 +18,107 @@ export get_callbacks
 
 @inline callback_verbose(integrator) = integrator.p.args.simulation_settings.verbose
 @inline callback_use_invokelatest() = get(ENV, "SPACEAGORA_DEV_HOT_RELOAD", "0") == "1"
+
+@inline function _parse_bool_env(name::String, default::Bool)::Bool
+    raw = lowercase(strip(get(ENV, name, default ? "1" : "0")))
+    if raw in ("1", "true", "yes", "on")
+        return true
+    elseif raw in ("0", "false", "no", "off")
+        return false
+    end
+    throw(ArgumentError("Invalid $name='$raw'. Use one of: 1/0, true/false, yes/no, on/off."))
+end
+
+@inline function _density_callback_parallel_mode()::Symbol
+    mode = lowercase(strip(get(ENV, "SPACEAGORA_DENSITY_CALLBACK_PARALLEL", "auto")))
+    if mode in ("off", "none", "serial", "0", "false", "no")
+        return :off
+    elseif mode in ("on", "thread", "threads", "1", "true", "yes")
+        return :on
+    elseif mode == "auto"
+        return :auto
+    end
+    throw(ArgumentError("Unsupported SPACEAGORA_DENSITY_CALLBACK_PARALLEL='$mode'. Use one of: off, auto, on."))
+end
+
+@inline function _density_callback_thread_threshold()::Int
+    raw = strip(get(ENV, "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD", "8"))
+    threshold = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD must be an integer, got '$raw'"))
+    end
+    return max(1, threshold)
+end
+
+@inline function _control_callback_parallel_mode()::Symbol
+    mode = lowercase(strip(get(ENV, "SPACEAGORA_CONTROL_CALLBACK_PARALLEL", "auto")))
+    if mode in ("off", "none", "serial", "0", "false", "no")
+        return :off
+    elseif mode in ("on", "thread", "threads", "1", "true", "yes")
+        return :on
+    elseif mode == "auto"
+        return :auto
+    end
+    throw(ArgumentError("Unsupported SPACEAGORA_CONTROL_CALLBACK_PARALLEL='$mode'. Use one of: off, auto, on."))
+end
+
+@inline function _control_callback_thread_threshold()::Int
+    raw = strip(get(ENV, "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD", "8"))
+    threshold = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD must be an integer, got '$raw'"))
+    end
+    return max(1, threshold)
+end
+
+# Extend this for custom user density models as needed:
+# SimulationModel.SimulationCallbacks.density_model_threadsafe(::MyDensityModel) = true
+@inline density_model_threadsafe(::AbstractDensityModel)::Bool = false
+@inline density_model_threadsafe(::NoAtmosphereModel)::Bool = true
+@inline density_model_threadsafe(::EnvironmentModels.ExponentialAtmosphereModel)::Bool = true
+@inline density_model_threadsafe(::EnvironmentModels.PolynomialFitAtmosphereModel)::Bool = true
+
+@inline function _density_callback_use_threads(args::SimulationConfiguration, num_sats::Int)::Bool
+    if Threads.nthreads() <= 1 || num_sats <= 1
+        return false
+    end
+    mode = _density_callback_parallel_mode()
+    mode == :off && return false
+
+    model = args.environment_model.density_model
+    model_threadsafe = density_model_threadsafe(model)
+    if !model_threadsafe && !_parse_bool_env("SPACEAGORA_DENSITY_CALLBACK_ASSUME_THREADSAFE", false)
+        return false
+    end
+    if mode == :on
+        return true
+    end
+    return num_sats >= _density_callback_thread_threshold()
+end
+
+# Extend this for custom user control models as needed:
+# SimulationModel.SimulationCallbacks.control_model_threadsafe(::MyControlModel) = true
+@inline control_model_threadsafe(::Any)::Bool = false
+@inline control_model_threadsafe(::BaseThrusterModel)::Bool = true
+
+@inline function _control_callback_use_threads(control_model, num_sats::Int, use_invokelatest::Bool)::Bool
+    if use_invokelatest || Threads.nthreads() <= 1 || num_sats <= 1
+        return false
+    end
+    mode = _control_callback_parallel_mode()
+    mode == :off && return false
+
+    model_threadsafe = control_model_threadsafe(control_model)
+    if !model_threadsafe && !_parse_bool_env("SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE", false)
+        return false
+    end
+    if mode == :on
+        return true
+    end
+    return num_sats >= _control_callback_thread_threshold()
+end
 
 @inline function _uses_atmospheric_dynamic_effector(effectors::Tuple)::Bool
     @inbounds for effector in effectors
@@ -51,7 +154,7 @@ function get_callbacks(num_sats::Int, effectors::Tuple, args::SimulationConfigur
     ]
 
     if _requires_density_callback(effectors, args)
-        push!(callbacks, get_density_callback(num_sats))
+        push!(callbacks, get_density_callback(num_sats, args))
     end
 
     if _requires_orbit_end_callback(args)
@@ -74,7 +177,9 @@ function update_planet_frame_callback()
         p = integrator.p
         planet = p.args.environment_model.planet
         et = et_start[] + integrator.t
-        planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_$(planet.name)", et)) * planet.J2000_to_pci'
+        lock(SPICE_LOCK) do
+            planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_$(planet.name)", et)) * planet.J2000_to_pci'
+        end
     end
 
     function init_affect!(cb, u, t, integrator)
@@ -88,14 +193,28 @@ function update_planet_frame_callback()
             initial_time.minute,
             initial_time.second
         ))
-        et_start[] = utc2et(to_utc(start_epoch))
+        lock(SPICE_LOCK) do
+            et_start[] = utc2et(to_utc(start_epoch))
+        end
         affect!(integrator) # Call the affect! function at the start of the simulation to initialize the planet frame
     end
 
     return DiscreteCallback(condition, affect!, initialize=init_affect!)
 end
 # Factory function to build the callback
-function get_density_callback(num_sats::Int)
+function get_density_callback(num_sats::Int, args::SimulationConfiguration)
+    use_threads = _density_callback_use_threads(args, num_sats)
+    function update_density_sat!(i::Int, p, u, t)
+        pos = SVector{3, Float64}(u.sc[i].pos)
+        vel = SVector{3, Float64}(u.sc[i].vel)
+        rp, _ = r_intor_p!(pos, vel, p.args.environment_model.planet)
+        alt, lat, lon = rtolatlong(rp, p.args.environment_model.planet)
+        ρ, T, wind_vec = getDensity(p.args.environment_model.density_model, alt, lat, lon, t, true, p)
+        p.shared_buffers.densities[i] = ρ
+        p.shared_buffers.temperatures[i] = T
+        p.shared_buffers.winds[i] = wind_vec
+        return nothing
+    end
     
     # Logic for when the callback should trigger
     # Returning true means it runs at every integration step
@@ -105,19 +224,14 @@ function get_density_callback(num_sats::Int)
     function affect!(integrator)
         p = integrator.p
         u = integrator.u
-        
-        # Update shared buffers in the parameters
-        @inbounds for i in 1:num_sats
-            # Your density math here
-            @views begin
-                pos = SVector{3, Float64}(u.sc[i].pos) # Example of how to get the position of the satellite from the state vector (change to u.sc[i].r if using StructArrays in Complete_passage)
-                rp, _ = r_intor_p!(pos, SVector{3, Float64}(u.sc[i].vel), p.args.environment_model.planet) # Convert position to planet-fixed frame for density lookup, also convert velocity if needed for density model
-                alt,lat,lon = rtolatlong(rp, p.args.environment_model.planet) # Convert position to altitude, latitude, and longitude for density lookup
-                ρ, T, wind_vec = getDensity(p.args.environment_model.density_model, alt, lat, lon, integrator.t, true, p) # Get the density from the density model and store in the shared buffer for this satellite
-                p.shared_buffers.densities[i] = ρ
-                p.shared_buffers.temperatures[i] = T
-                p.shared_buffers.winds[i] = wind_vec
-                # p.shared_buffers.densities[i], p.shared_buffers.temperatures[i], p.shared_buffers.winds[i] = getDensity(p.args.environment_model.density_model, alt, lat, lon, integrator.t, true, p) # Example of how to update the density buffer for each satellite
+
+        if use_threads
+            Threads.@threads for i in 1:num_sats
+                @inbounds update_density_sat!(i, p, u, integrator.t)
+            end
+        else
+            @inbounds for i in 1:num_sats
+                update_density_sat!(i, p, u, integrator.t)
             end
         end
     end
@@ -276,6 +390,7 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)::Ve
     for i in eachindex(control_models)
         control_model = control_models[i]
         control_rate = control_rates[i]
+        use_threads = _control_callback_use_threads(control_model, num_sats, use_invokelatest)
         if control_model isa BaseThrusterModel
             n_slots = length(control_model.thrust)
             if n_slots != num_sats
@@ -288,14 +403,21 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)::Ve
         # Each control effector callback runs at its own rate and updates
         # all spacecraft states. The spacecraft index is passed explicitly
         # to avoid conflating effector-index with spacecraft-index.
+        apply_control! = if use_invokelatest
+            # Dev mode: keep Revise/hot-reload workflows free of world-age errors.
+            (integrator, sat_idx) -> Base.invokelatest(calcControlEffect!, control_model, integrator.u, integrator.p, integrator.t, sat_idx)
+        else
+            # Production mode: direct dispatch avoids invokelatest overhead.
+            (integrator, sat_idx) -> calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
+        end
         control_func = (integrator) -> begin
-            @inbounds for sat_idx in 1:num_sats
-                if use_invokelatest
-                    # Dev mode: keep Revise/hot-reload workflows free of world-age errors.
-                    Base.invokelatest(calcControlEffect!, control_model, integrator.u, integrator.p, integrator.t, sat_idx)
-                else
-                    # Production mode: direct dispatch avoids invokelatest overhead.
-                    calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
+            if use_threads
+                Threads.@threads for sat_idx in 1:num_sats
+                    @inbounds apply_control!(integrator, sat_idx)
+                end
+            else
+                @inbounds for sat_idx in 1:num_sats
+                    apply_control!(integrator, sat_idx)
                 end
             end
         end

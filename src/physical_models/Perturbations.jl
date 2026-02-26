@@ -6,6 +6,7 @@ using SatelliteToolbox
 using SatelliteToolboxGeomagneticField
 using CSV
 using DataFrames
+using ..SimulationModel: SPICE_LOCK
 using ..AbstractTypes: AbstractPlanet
 using ..Planets: Earth, Mars, Venus, Titan
 include("../utils/quaternion_utils.jl")
@@ -166,7 +167,10 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
             body_name_spice *= "_barycenter"
         end
 
-        pos_primary_k = model.planet.J2000_to_pci * SVector{3, Float64}(spkpos(body_name_spice, et, "J2000", "none", primary_body_name)[1]) * 1e3
+        pos_primary_body = lock(SPICE_LOCK) do
+            SVector{3, Float64}(spkpos(body_name_spice, et, "J2000", "none", primary_body_name)[1])
+        end
+        pos_primary_k = model.planet.J2000_to_pci * pos_primary_body * 1e3
         pos_spacecraft_k = pos_primary_k - pos_ii
         pos_spacecraft_k_mag = norm(pos_spacecraft_k)
 

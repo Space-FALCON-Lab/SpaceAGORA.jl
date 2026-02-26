@@ -94,9 +94,13 @@ function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=fa
             initial_time.minute,
             initial_time.second
         ))
-    et_start = utc2et(to_utc(start_epoch))
+    et_start = lock(SimulationModel.SPICE_LOCK) do
+        utc2et(to_utc(start_epoch))
+    end
     p.shared_buffers.et_start[] = et_start
-    args.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_$(args.environment_model.planet.name)", et_start)) * args.environment_model.planet.J2000_to_pci' # Initialize the planet frame at the start of the simulation (will be updated in the callback)
+    lock(SimulationModel.SPICE_LOCK) do
+        args.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_$(args.environment_model.planet.name)", et_start)) * args.environment_model.planet.J2000_to_pci' # Initialize the planet frame at the start of the simulation (will be updated in the callback)
+    end
     # println("Initial conditions:")
     # println(initial_conditions)
     # println("ODE parameters:")

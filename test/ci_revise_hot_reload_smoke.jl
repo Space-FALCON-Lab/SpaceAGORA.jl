@@ -8,6 +8,9 @@ using Revise
 include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
 using .SimulationModel
 
+# Revise-based hot-swap workflows require callback invokelatest dispatch.
+ENV["SPACEAGORA_DEV_HOT_RELOAD"] = "1"
+
 # run_simulation.jl expects quat_mult in the including scope.
 const quat_mult = SimulationModel.quat_mult
 include(joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"))

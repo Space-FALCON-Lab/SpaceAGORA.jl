@@ -603,17 +603,17 @@ function asim(initial_state, numberofpassage, args, params)
                     τ = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize reaction wheel torque vector
                     clamp!(b.rw_assembly.h_wheels, -b.rw_assembly.max_wheel_h, b.rw_assembly.max_wheel_h) # Clamp the reaction wheel angular momentum to the maximum angular momentum
                     @inbounds for j in 1:n_wheels
-                        if abs(b.rw_assembly.h_wheels[j] - b.rw_assembly.max_wheel_h) == 0.0 && sign(b.ω_wheel_derivatives[j]) == sign(b.rw_assembly.h_wheels[j]) # If the reaction wheel angular momentum is at its maximum and the derivative is in the same direction
-                            b.ω_wheel_derivatives[j] = 0.0 # Set the angular momentum derivative to zero if the maximum angular momentum is reached
+                        if abs(b.rw_assembly.h_wheels[j] - b.rw_assembly.max_wheel_h) == 0.0 && sign(b.rw_assembly.h_dot_wheels[j]) == sign(b.rw_assembly.h_wheels[j]) # If the reaction wheel angular momentum is at its maximum and the derivative is in the same direction
+                            b.rw_assembly.h_dot_wheels[j] = 0.0 # Set the angular momentum derivative to zero if the maximum angular momentum is reached
                         end
-                        rw_torque = b.rw_assembly.J_rw[:, j] * b.ω_wheel_derivatives[j] # Update the reaction wheel torque
+                        rw_torque = b.rw_assembly.J_rw[:, j] * b.rw_assembly.h_dot_wheels[j] # Update the reaction wheel torque
                         if norm(rw_torque) > b.rw_assembly.max_wheel_torque
                             rw_torque = normalize(rw_torque) * b.rw_assembly.max_wheel_torque # Limit the reaction wheel torque to the maximum torque
                         end
                         τ .+= rw_torque # Sum the reaction wheel torques
                         total_rw_h .+= b.rw_assembly.J_rw[:, j] * b.rw_assembly.h_wheels[j] # Update the total reaction wheel angular momentum
                         rw_h[counter] = b.rw_assembly.h_wheels[j] # Update the reaction wheel angular momentum vector
-                        rw_τ[counter] = clamp(b.ω_wheel_derivatives[j], -b.rw_assembly.max_wheel_torque, b.rw_assembly.max_wheel_torque) # Update the reaction wheel torque vector
+                        rw_τ[counter] = clamp(b.rw_assembly.h_dot_wheels[j], -b.rw_assembly.max_wheel_torque, b.rw_assembly.max_wheel_torque) # Update the reaction wheel torque vector
                         counter += 1 # Increment the counter for the reaction wheel angular momentum vector
                     end
                     b.rw_assembly.tau_body_net .= τ # Save the reaction wheel torque in the body

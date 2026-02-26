@@ -7,6 +7,9 @@ if !isdefined(@__MODULE__, :_legacy_get_cnf)
         if args isa AbstractDict && haskey(args, :cnf)
             return args[:cnf]
         end
+        if args isa NamedTuple && hasproperty(args, :cnf)
+            return getproperty(args, :cnf)
+        end
         if (@isdefined config) && isdefined(config, :cnf)
             return getproperty(config, :cnf)
         end

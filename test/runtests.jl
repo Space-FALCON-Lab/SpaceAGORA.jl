@@ -2,6 +2,7 @@ using Test
 using CSV
 using DataFrames
 using LinearAlgebra
+using Logging
 using StaticArrays
 using ComponentArrays
 using SPICE
@@ -428,6 +429,51 @@ function run_case_via_run_vgamma(args::SimulationConfiguration; expect_results_c
     end
 end
 
+function seed_solution_for_save_csv!(
+    solution::Solution;
+    n_bodies::Int,
+    n_reaction_wheels::Int,
+    n_thrusters::Int,
+    base::Float64=1.0,
+    closed_form::Bool=false
+)
+    solution.physical_properties.α = [Float64[] for _ in 1:n_bodies]
+    solution.physical_properties.β = [Float64[] for _ in 1:n_bodies]
+    solution.performance.heat_rate = [Float64[] for _ in 1:n_bodies]
+    solution.performance.heat_load = [Float64[] for _ in 1:n_bodies]
+    solution.physical_properties.rw_h = [Float64[] for _ in 1:n_reaction_wheels]
+    solution.physical_properties.rw_τ = [Float64[] for _ in 1:n_reaction_wheels]
+    solution.physical_properties.thruster_forces = [Float64[] for _ in 1:n_thrusters]
+
+    function _push_sample!(field)
+        if field isa Vector{Float64}
+            push!(field, base)
+        elseif field isa Vector{Int64}
+            push!(field, 1)
+        elseif field isa Vector{Vector{Float64}}
+            for subfield in field
+                push!(subfield, base)
+            end
+        end
+        return nothing
+    end
+
+    for group in (solution.orientation, solution.physical_properties, solution.performance, solution.forces)
+        for fname in fieldnames(typeof(group))
+            _push_sample!(getfield(group, fname))
+        end
+    end
+
+    if closed_form
+        solution.closed_form.t_cf = [base + 10.0]
+        solution.closed_form.h_cf = [base + 20.0]
+        solution.closed_form.γ_cf = [base + 30.0]
+        solution.closed_form.v_cf = [base + 40.0]
+    end
+
+    return solution
+end
+
 const LEGACY_TARGETING_LOADED = Ref(false)
 module LegacyTargetingSandbox
 using ..SimulationModel
@@ -439,6 +485,11 @@ module LegacyConfigSandbox
 using ..SimulationModel
 end
 const LEGACY_CONFIG_SANDBOX = LegacyConfigSandbox
+
+module LegacyRuntimeSandbox
+using ..SimulationModel
+end
+const LEGACY_RUNTIME_SANDBOX = LegacyRuntimeSandbox
 
 module IncludeOrderSandbox
 end
@@ -486,6 +537,71 @@ end
     Core.eval(sandbox, :(const quat_mult = SimulationModel.quat_mult))
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"))
     @test isdefined(sandbox, :run_simulation)
+end
+
+@testset "Complete Passage Typed Entry Contract Smoke" begin
+    module_name = gensym(:CompletePassageContractSandbox)
+    Core.eval(Main, :(module $module_name end))
+    sandbox = getfield(Main, module_name)
+
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+    Core.eval(sandbox, quote
+        const _asim_contract_isolate_state = Ref{Union{Nothing, Bool}}(nothing)
+        function run_simulation(args::SimulationModel.SimulationConfiguration; isolate_state::Bool=true)
+            _asim_contract_isolate_state[] = isolate_state
+            return :asim_forwarded
+        end
+    end)
+
+    complete_src = read(joinpath(REPO_ROOT, "src", "simulation", "Complete_passage.jl"), String)
+    start_idx = findfirst("function asim(args::SimulationConfiguration; isolate_state::Bool=true)", complete_src)
+    next_idx = findfirst("function asim(initial_state, numberofpassage, args, params)", complete_src)
+    @test start_idx !== nothing
+    @test next_idx !== nothing
+
+    typed_asim_src = strip(complete_src[first(start_idx):(first(next_idx) - 1)])
+    @test occursin("return run_simulation(args; isolate_state=isolate_state)", typed_asim_src)
+
+    Core.eval(sandbox, :(using .SimulationModel))
+    Base.include_string(sandbox, typed_asim_src)
+    @test isdefined(sandbox, :asim)
+
+    typed_args = Core.eval(sandbox, quote
+        planet = SimulationModel.Earth("", joinpath(Main.REPO_ROOT, "GRAM_Data", "SPICE"))
+        env = SimulationModel.EnvironmentModel(
+            planet=planet,
+            EI=120.0,
+            density_model=SimulationModel.NoAtmosphereModel(),
+            topography=false,
+            topo_degree=0,
+            topo_order=0,
+            wind=false,
+            thermal_model=SimulationModel.MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet)
+        )
+        sc = SimulationModel.SpacecraftModel()
+        SimulationModel.SimulationConfiguration(
+            simulation_settings=SimulationModel.SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+            mission_configuration=SimulationModel.MissionConfiguration(
+                mission_type=SimulationModel.MissionTime,
+                keplerian=true,
+                number_of_orbits=1,
+                mission_time=60.0,
+                orientation_sim=false,
+                num_steps_to_save=10
+            ),
+            environment_model=env,
+            dynamics_model=SimulationModel.DynamicsModel([sc], (SimulationModel.InverseSquaredGravityModel(),)),
+            guidance_model=SimulationModel.GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
+            navigation_model=SimulationModel.NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
+            control_model=SimulationModel.ControlModel(control_effectors=(), control_rates=Float64[]),
+            initial_time=SimulationModel.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+            integration_tolerances=SimulationModel.IntegrationTolerances(reltol_orbit=1e-8, abstol_orbit=1e-8)
+        )
+    end)
+
+    result = getfield(sandbox, :asim)(typed_args; isolate_state=false)
+    @test result == :asim_forwarded
+    @test Core.eval(sandbox, :(_asim_contract_isolate_state[])) == false
 end
 
 function ensure_legacy_targeting_loaded!()
@@ -768,6 +884,35 @@ end
         @test_throws ErrorException sandbox._legacy_control_exception_fallback(args_quiet, "unit-test", err, stacktrace(), 9.0)
     end
     @test sandbox.control_solarpanels_heatrate(nothing, nothing, Dict{Symbol, Any}(), [0], nothing; cnf=local_cnf) == local_cnf.α
+
+    # Exercise legacy control branch behavior with deterministic local stubs.
+    Core.eval(sandbox, :(module config
+        get_spacecraft_reference_area(body) = 1.0
+    end))
+    Core.eval(sandbox, :(aerodynamic_coefficient_fM(ang, body, T_p, S, aero, MonteCarlo=false) = (0.1, 0.5 + 0.2*sin(ang))))
+
+    m_struct = (aerodynamics=(α=1.2,), body=(dummy=1,))
+    α_drag_max = sandbox.control_struct_load(nothing, m_struct, Dict{Symbol, Any}(:max_dyn_press => 100.0), 3.0, 250.0, 1.0, false)
+    α_drag_min = sandbox.control_struct_load(nothing, m_struct, Dict{Symbol, Any}(:max_dyn_press => 0.0), 3.0, 250.0, 1.0, false)
+    α_drag_mid = sandbox.control_struct_load(nothing, m_struct, Dict{Symbol, Any}(:max_dyn_press => 0.8), 3.0, 250.0, 1.0, false)
+    @test α_drag_max == 1.2
+    @test α_drag_min == 0.0001
+    @test 0.0001 < α_drag_mid < 1.2
+
+    m_heat_hi = (aerodynamics=(thermal_accomodation_factor=1.0, α=1.2, heat_rate_limit=1e9), planet=(R=287.0, γ=1.4))
+    m_heat_lo = (aerodynamics=(thermal_accomodation_factor=1.0, α=1.2, heat_rate_limit=-1.0), planet=(R=287.0, γ=1.4))
+    args_heat = Dict{Symbol, Any}()
+    α_heat_hi = sandbox.control_solarpanels_heatrate(nothing, m_heat_hi, args_heat, [1], [250.0, 1e-6, 3.0], 0.0, 0.0, 0.0; cnf=local_cnf)
+    α_heat_lo = sandbox.control_solarpanels_heatrate(nothing, m_heat_lo, args_heat, [1], [250.0, 1e-6, 3.0], 0.0, 0.0, 0.0; cnf=local_cnf)
+    @test α_heat_hi == 1.2
+    @test α_heat_lo == 0.0001
+
+    heat_rate_max = sandbox.heat_rate_calc(1.0, 1e-6, 250.0, 250.0, 287.0, 1.4, 3.0, 1.2)
+    heat_rate_min = sandbox.heat_rate_calc(1.0, 1e-6, 250.0, 250.0, 287.0, 1.4, 3.0, 0.0001)
+    heat_limit_mid = (heat_rate_max + heat_rate_min) / 2 + 1e-5
+    m_heat_mid = (aerodynamics=(thermal_accomodation_factor=1.0, α=1.2, heat_rate_limit=heat_limit_mid), planet=(R=287.0, γ=1.4))
+    α_heat_mid = sandbox.control_solarpanels_heatrate(nothing, m_heat_mid, args_heat, [1], [250.0, 1e-6, 3.0], 0.0, 0.0, 0.0; cnf=local_cnf)
+    @test 0.0001 < α_heat_mid < 1.2
 end
 
 @testset "Legacy CNF Threading Guard" begin
@@ -920,6 +1065,157 @@ end
         sandbox.def_miss(args_typed)
     end
     @test out_typed[:drag_passage] == 0
+
+    # When a legacy Planet constructor is provided, cover all legacy planet branches.
+    Core.eval(sandbox, :(Planet(args...) = (Rp_e=args[1], μ=args[16], name=args[27], topography_function=args[end])))
+    legacy_planet_expected = Dict(
+        0 => (6.3781e6, 3.98600436000000e14, "earth"),
+        1 => (3.3962e6, 4.28283140000000e13, "mars"),
+        2 => (6.0518e6, 3.24858592e14, "venus"),
+        3 => (6.9634e8, 1.3271244002331e20, "sun"),
+        4 => (1.7381e6, 4.9028005821478e12, "moon"),
+        5 => (7.1492e7, 1.26686534e17, "jupiter"),
+        6 => (6.0268e7, 3.7931187e16, "saturn"),
+        7 => (2.575e6, 8.981e12, "titan")
+    )
+    for pid in 0:7
+        pdat = sandbox.planet_data(pid)
+        rp_ref, mu_ref, name_ref = legacy_planet_expected[pid]
+        @test isapprox(pdat.Rp_e, rp_ref; atol=0.0, rtol=0.0)
+        @test isapprox(pdat.μ, mu_ref; atol=0.0, rtol=0.0)
+        @test lowercase(String(pdat.name)) == name_ref
+    end
+end
+
+@testset "Legacy Integrator/Event/Output Smoke" begin
+    sandbox = LEGACY_RUNTIME_SANDBOX
+
+    Core.eval(sandbox, :(include(joinpath(Main.REPO_ROOT, "src", "integrator", "Events.jl"))))
+    Core.eval(sandbox, :(include(joinpath(Main.REPO_ROOT, "src", "integrator", "Integrators.jl"))))
+    Core.eval(sandbox, :(include(joinpath(Main.REPO_ROOT, "src", "utils", "Save_results.jl"))))
+
+    @test sandbox.event(0, 0) == true
+    @test redirect_stdout(devnull) do
+        sandbox.event(1, 0)
+    end == false
+    @test redirect_stdout(devnull) do
+        sandbox.event(0, 1)
+    end == false
+
+    m = (planet=(Rp_e=6.3781e6, μ=3.986004418e14),)
+    solution_state = (t_events=[Any[]],)
+    y_impact = [m.planet.Rp_e + 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0]
+    breaker_impact, sol_after_impact = redirect_stdout(devnull) do
+        sandbox.impact(0.0, y_impact, m, solution_state, Dict{Symbol, Any}())
+    end
+    @test breaker_impact == true
+    @test sol_after_impact.t_events[end] == ["true"]
+
+    y_250_in = [m.planet.Rp_e + 240e3, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0]
+    y_250_out = [m.planet.Rp_e + 260e3, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0]
+    y_120_in = [m.planet.Rp_e + 110e3, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0]
+    y_120_out = [m.planet.Rp_e + 130e3, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0]
+    @test sandbox.eventsecondstep(1.0, y_250_out, 0.0, y_250_in, m, Dict{Symbol, Any}()) == true
+    @test sandbox.heat_check(1.0, y_120_out, 0.0, y_120_in, m, Dict{Symbol, Any}()) == true
+    @test sandbox.out_drag_passage(1.0, [m.planet.Rp_e + 11e3, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0], 0.0, [m.planet.Rp_e + 9e3, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0], m, Dict{Symbol, Any}(:AE => 10e3)) == true
+
+    runtime_ok = sandbox._legacy_get_save_results_runtime_state(Dict{Symbol, Any}(:cnf => 1, :solution => 2, :model => 3))
+    @test runtime_ok.cnf == 1
+    @test runtime_ok.solution == 2
+    @test runtime_ok.model == 3
+    @test_throws ArgumentError sandbox._legacy_get_save_results_runtime_state(Dict{Symbol, Any}(:cnf => 1))
+end
+
+@testset "Legacy Save_csv Direct Smoke" begin
+    sandbox = LEGACY_RUNTIME_SANDBOX
+    if !isdefined(sandbox, :save_csv)
+        Core.eval(sandbox, :(include(joinpath(Main.REPO_ROOT, "src", "utils", "Save_csv.jl"))))
+    end
+
+    body = make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, i_deg=35.0, ω_deg=20.0, Ω_deg=15.0, ν_deg=120.0)
+    body.n_reaction_wheels = 2
+    body.n_thrusters = 2
+    model = Model(body=body)
+    cnf = with_logger(Logging.NullLogger()) do
+        Cnf()
+    end
+
+    mktempdir() do tmp
+        csv_path = joinpath(tmp, "legacy_save_csv.csv")
+        arrow_path = joinpath(tmp, "legacy_save_csv.arrow")
+
+        args_no_cf = Dict{Symbol, Any}(:save_csv => true, :closed_form => 0, :print_res => false)
+        solution_no_cf = seed_solution_for_save_csv!(
+            Solution();
+            n_bodies=length(model.body.links),
+            n_reaction_wheels=model.body.n_reaction_wheels,
+            n_thrusters=model.body.n_thrusters,
+            base=1.0,
+            closed_form=false
+        )
+        redirect_stdout(devnull) do
+            sandbox.save_csv(csv_path, args_no_cf, arrow_path, (cnf, model, solution_no_cf))
+        end
+
+        @test isfile(csv_path)
+        @test isfile(arrow_path)
+        @test filesize(csv_path) > 0
+        @test filesize(arrow_path) > 0
+        df_first = CSV.read(csv_path, DataFrame)
+        @test nrow(df_first) == 1
+        @test "link_1_aoa" in names(df_first)
+        @test "link_2_aoa" in names(df_first)
+        @test "rw_h_1" in names(df_first)
+        @test "rw_h_2" in names(df_first)
+        @test "thruster_force_1" in names(df_first)
+        @test "thruster_force_2" in names(df_first)
+
+        arrow_size_before = filesize(arrow_path)
+        args_with_cf = Dict{Symbol, Any}(:save_csv => true, :closed_form => 1, :print_res => false)
+        solution_with_cf = seed_solution_for_save_csv!(
+            Solution();
+            n_bodies=length(model.body.links),
+            n_reaction_wheels=model.body.n_reaction_wheels,
+            n_thrusters=model.body.n_thrusters,
+            base=2.0,
+            closed_form=true
+        )
+        redirect_stdout(devnull) do
+            sandbox.save_csv(csv_path, args_with_cf, arrow_path, (cnf, model, solution_with_cf))
+        end
+
+        @test filesize(arrow_path) > arrow_size_before
+        df_second = CSV.read(csv_path, DataFrame)
+        @test nrow(df_second) == 2
+        @test isapprox(Float64(df_second.t_cf[end]), 12.0; atol=0.0, rtol=0.0)
+        @test isapprox(Float64(df_second.h_cf[end]), 22.0; atol=0.0, rtol=0.0)
+        @test isapprox(Float64(df_second.gamma_cf[end]), 32.0; atol=0.0, rtol=0.0)
+        @test isapprox(Float64(df_second.v_cf[end]), 42.0; atol=0.0, rtol=0.0)
+    end
+end
+
+@testset "Typed Planet Constructors + Topography Workspace" begin
+    mars = Mars("", SPICE_PATH)
+    venus = Venus("", SPICE_PATH)
+    titan = Titan("", SPICE_PATH)
+
+    @test mars.name == "Mars"
+    @test venus.name == "Venus"
+    @test titan.name == "Titan"
+    @test mars.μ > 0.0
+    @test venus.μ > 0.0
+    @test titan.μ > 0.0
+
+    mktempdir() do tmp
+        topo_file = joinpath(tmp, "topo_harmonics.csv")
+        write(topo_file, "degree,order,C,S\n0,0,1.0,0.0\n1,0,0.1,0.0\n1,1,0.05,0.02\n")
+        earth = Earth("", SPICE_PATH)
+        SimulationModel.Planets.TopographyHarmonicsWorkspace!(topo_file, earth)
+        @test size(earth.topography_workspace.Clm) == (2, 2)
+        @test size(earth.topography_workspace.Slm) == (2, 2)
+        @test isapprox(earth.topography_workspace.Clm[2, 2], 0.05; atol=0.0, rtol=0.0)
+        @test isapprox(earth.topography_workspace.Slm[2, 2], 0.02; atol=0.0, rtol=0.0)
+    end
 end
 
 @testset "Run Simulation State Isolation" begin

@@ -1,0 +1,45 @@
+name: Nightly Stress
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+jobs:
+  nightly-stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      JULIA_NUM_THREADS: "8"
+      SPACEAGORA_COVERAGE_MIN_OVERALL: "85.0"
+      SPACEAGORA_COVERAGE_MIN_FILE: "70.0"
+      SPACEAGORA_COVERAGE_WINDOW_SECONDS: "1200"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: Cache Julia artifacts
+        uses: julia-actions/cache@v2
+
+      - name: Instantiate
+        run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Full test suite with coverage
+        run: julia --startup-file=no --project=.AGORA --code-coverage=user test/runtests.jl
+
+      - name: Coverage quality gate
+        run: julia --startup-file=no --project=.AGORA test/ci_coverage_quality_gate.jl
+
+      - name: P1 findings gate
+        run: julia --startup-file=no --project=.AGORA test/ci_p1_findings_gate.jl
+
+      - name: Threaded smoke stress
+        run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_threaded_smoke.jl
+
+      - name: Example regression stress
+        run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_examples_regression.jl

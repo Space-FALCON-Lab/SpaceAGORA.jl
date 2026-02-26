@@ -199,3 +199,18 @@ jobs:
 
       - name: Coverage quality gate (legacy Complete_passage excluded)
         run: julia --startup-file=no --project=.AGORA test/ci_coverage_quality_gate.jl
+
+  p1-findings-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: P1 findings gate
+        run: julia --startup-file=no --project=.AGORA test/ci_p1_findings_gate.jl

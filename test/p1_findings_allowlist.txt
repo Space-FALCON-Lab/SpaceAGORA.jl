@@ -1,0 +1,4 @@
+# Allowlisted P1 findings for CI gate.
+# Format: <relative/path>::<exact line contents>
+#
+# Keep this file empty unless a P1 finding is explicitly accepted temporarily.

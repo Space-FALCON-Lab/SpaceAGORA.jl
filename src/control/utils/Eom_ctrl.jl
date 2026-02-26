@@ -26,8 +26,6 @@ using DifferentialEquations
 using Dates
 using AstroTime
 using SPICE
-using PythonCall
-sys = pyimport("sys")
 
  # import .config
  # import .ref_sys
@@ -82,8 +80,7 @@ end
 function asim_ctrl_plot(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing; cnf=nothing, solution=nothing)
     cnf_state = _legacy_get_cnf(args; cnf=cnf)
     solution_state = _legacy_get_solution(args; cnf=cnf_state, solution=solution)
-    sys.path.append(args[:directory_Gram])
-    gram = pyimport("gram")
+    gram = nothing
 
     wind_m = false
     if ip.wm == 1
@@ -579,8 +576,7 @@ end
 function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing; cnf=nothing, solution=nothing)
     cnf_state = _legacy_get_cnf(args; cnf=cnf)
     solution_state = _legacy_get_solution(args; cnf=cnf_state, solution=solution)
-    sys.path.append(args[:directory_Gram])
-    gram = pyimport("gram")
+    gram = nothing
 
     wind_m = false
     if ip.wm == 1

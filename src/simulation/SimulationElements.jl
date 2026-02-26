@@ -35,12 +35,10 @@ using DiffEqCallbacks
 using Dates
 using AstroTime
 using SPICE
-using PythonCall
 using StaticArrays
 using Quaternions
 using Arrow
 using ComponentArrays
-sys = pyimport("sys")
 
 using .SimulationModel
 import .ref_sys

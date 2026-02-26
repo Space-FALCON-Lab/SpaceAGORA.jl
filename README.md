@@ -11,9 +11,9 @@ To ensure that all the package versions are consistent, a Docker environment has
 6. Now, you should be able to run any existing scenario or create and run a new scenario
 
 # GRAM access
-If part of the Space-FALCON Lab, access through the lab's Drive in SpaceAGORA/GRAM. Download GRAM_Data.zip and GRAMpy.zip and extract them to the root folder of your local repository (i.e., you should have two new folders: SpaceAGORA.jl/GRAM_Data/ and SpaceAGORA.jl/GRAMpy/).
+If part of the Space-FALCON Lab, access through the lab's Drive in SpaceAGORA/GRAM. Use the `GRAM Suite 2.0` folder at the repository root and build the shared library with the scripts in `GRAM Suite 2.0/simulation/GRAM/`.
 
-If not part of Space-FALCON lab, GRAM may be requested [here](https://software.nasa.gov/software/MFS-33888-1). Follow the instructions to build the Python version and follow the same steps as above to get all the data.
+If not part of Space-FALCON lab, GRAM may be requested [here](https://software.nasa.gov/software/MFS-33888-1). Build the suite and keep the full GRAM root available locally (including `Build/`, `SPICE/`, and planetary data folders).
 
 # Getting Started
 Start by cloning this repository:
@@ -41,9 +41,9 @@ If GRAM is installed properly and the included Docker environment is being used,
 The following describes necessary modifications to the example code in several cases:
 > GRAM is not installed properly
 * Change the ```density_model``` argument to ```Constant``` or ```Exponential```. This will change the model used to calculate the atmospheric density at each step from GRAM to either an exponential model or a constant density model.
-* Change the ```directory_GRAM``` argument to ```""```.
+* Change the `GRAMAtmosphereModel(...)` setup to use local fallback models only.
 > Docker is not properly set up
-* Change the file path arguments (```directory_Gram```, ```directory_Spice```, etc.) to match your system. Curently they are configured for the Docker environment assuming all GRAM and SPICE files are present in the correct locations.
+* Change the GRAM root/data/SPICE paths to match your system. They should point to your local `GRAM Suite 2.0` installation.
 
 # Usage Guide
 This section provides a brief overview of the structure and usage of this simulator. Generally, user interaction with the simulator is through a program similar to those given in the ```AGORA_*.jl``` files. This is where simulation settings and variables are defined and where the run function is called. The user may use this format to easily modify settings or perform a Monte Carlo analysis.

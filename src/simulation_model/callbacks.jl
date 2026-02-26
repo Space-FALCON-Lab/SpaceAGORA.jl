@@ -79,6 +79,7 @@ end
 @inline density_model_threadsafe(::NoAtmosphereModel)::Bool = true
 @inline density_model_threadsafe(::EnvironmentModels.ExponentialAtmosphereModel)::Bool = true
 @inline density_model_threadsafe(::EnvironmentModels.PolynomialFitAtmosphereModel)::Bool = true
+@inline density_model_threadsafe(::EnvironmentModels.GRAMAtmosphereModel)::Bool = true
 
 @inline function _density_callback_use_threads(args::SimulationConfiguration, num_sats::Int)::Bool
     if Threads.nthreads() <= 1 || num_sats <= 1

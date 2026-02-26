@@ -26,8 +26,6 @@ using DifferentialEquations
 using Dates
 using AstroTime
 using SPICE
-using PythonCall
-sys = pyimport("sys")
 
 if !isdefined(@__MODULE__, :LEGACY_CONTROL_STATE_LOCK)
     const LEGACY_CONTROL_STATE_LOCK = ReentrantLock()
@@ -71,8 +69,7 @@ end
     cnf_state = _legacy_get_cnf(args; cnf=cnf)
     solution_state = _legacy_get_solution(args; cnf=cnf_state, solution=solution)
     heat_rate_control = false
-    sys.path.append(args[:directory_Gram])
-    gram = pyimport("gram")
+    gram = nothing
 
     wind_m = false
     if ip.wm == 1

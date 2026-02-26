@@ -29,8 +29,6 @@ using DifferentialEquations
 using Dates
 using AstroTime
 using SPICE
-using PythonCall
-sys = pyimport("sys")
 
 # import .config
 # import .ref_sys

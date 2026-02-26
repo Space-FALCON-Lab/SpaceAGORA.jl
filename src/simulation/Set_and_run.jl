@@ -11,7 +11,6 @@ include("SimulationExecution.jl")
 using SPICE
 using StaticArrays
 using AstroTime
-using PythonCall
 using Arrow
 
 function execute_campaign(args; isolate_state::Bool=true, state=nothing)

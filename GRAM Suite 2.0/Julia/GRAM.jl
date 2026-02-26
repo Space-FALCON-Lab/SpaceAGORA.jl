@@ -1,8 +1,8 @@
 module GRAM
 
 export BODY_NO, BODY_VENUS, BODY_EARTH, BODY_MARS, BODY_JUPITER, BODY_SATURN, BODY_URANUS, BODY_NEPTUNE, BODY_TITAN
-export Atmosphere, PositionC, DynamicsStateC
-export set_library!, initialize!, create_atmosphere, set_start_time!, set_position!, update!, get_position, get_dynamics_state
+export Atmosphere, PositionC, DynamicsStateC, WindsStateC
+export set_library!, initialize!, create_atmosphere, set_start_time!, set_position!, update!, get_position, get_dynamics_state, get_winds_state
 export get_error_message, close!
 
 const BODY_NO = 0
@@ -51,6 +51,21 @@ struct DynamicsStateC
     sigmaLevel::Cdouble
     pressureAtSurface::Cdouble
     pressureAltitude::Cdouble
+end
+
+struct WindsStateC
+    ewWind::Cdouble
+    nsWind::Cdouble
+    verticalWind::Cdouble
+    ewWindPerturbation::Cdouble
+    nsWindPerturbation::Cdouble
+    verticalWindPerturbation::Cdouble
+    perturbedEWWind::Cdouble
+    perturbedNSWind::Cdouble
+    perturbedVerticalWind::Cdouble
+    ewStandardDeviation::Cdouble
+    nsStandardDeviation::Cdouble
+    verticalStandardDeviation::Cdouble
 end
 
 mutable struct Atmosphere
@@ -195,6 +210,12 @@ function get_dynamics_state(atmos::Atmosphere)
     s = Ref(DynamicsStateC(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
     ccall((:getDynamicsState_C, _libgram()), Cvoid, (Ptr{Cvoid}, Ref{DynamicsStateC}), atmos.ptr, s)
     return s[]
+end
+
+function get_winds_state(atmos::Atmosphere)
+    w = Ref(WindsStateC(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+    ccall((:getWindsState_C, _libgram()), Cvoid, (Ptr{Cvoid}, Ref{WindsStateC}), atmos.ptr, w)
+    return w[]
 end
 
 function get_error_message(buffer_size::Integer = 2048)

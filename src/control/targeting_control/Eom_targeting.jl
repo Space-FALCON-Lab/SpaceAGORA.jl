@@ -29,8 +29,6 @@ using DifferentialEquations
 using Dates
 using AstroTime
 using SPICE
-using PythonCall
-sys = pyimport("sys")
 
 # import .config
 # import .ref_sys
@@ -43,14 +41,6 @@ sys = pyimport("sys")
         return Bool(get(args, :print_res, false)) || Bool(get(args, :verbose, false))
     end
     return false
-end
-
-function _legacy_ensure_gram_path!(args)
-    gram_dir = args[:directory_Gram]
-    # Avoid repeated global Python path mutation across targeting calls.
-    if !(gram_dir in pyconvert(Vector{String}, sys.path))
-        sys.path.append(gram_dir)
-    end
 end
 
 if !isdefined(@__MODULE__, :LEGACY_CONTROL_STATE_LOCK)
@@ -93,8 +83,7 @@ end
 function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing; cnf=nothing, solution=nothing)
     cnf_state = _legacy_get_cnf(args; cnf=cnf)
     solution_state = _legacy_get_solution(args; cnf=cnf_state, solution=solution)
-    _legacy_ensure_gram_path!(args)
-    gram = pyimport("gram")
+    gram = nothing
 
     wind_m = false
     if ip.wm == 1

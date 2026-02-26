@@ -59,12 +59,21 @@ end
 
 @inline function _solve_success(sol)::Bool
     retcode = string(sol.retcode)
-    return retcode == "Success" || retcode == "Terminated"
+    # For paper/runtime benchmarking, only full mission completion is valid.
+    # "Terminated" usually means an early-stop callback path (e.g., impact),
+    # which makes timing samples non-comparable.
+    return retcode == "Success"
 end
 
 @inline function _effector_signature(effectors::Tuple)
     isempty(effectors) && return "none"
     return join([string(nameof(typeof(e))) for e in effectors], "+")
+end
+
+@inline function _safe_unique_join(values; delimiter::String=",")
+    vec = collect(skipmissing(values))
+    isempty(vec) && return missing
+    return join(sort(unique(string.(vec))), delimiter)
 end
 
 @inline function _profile_from_name(name::String)::ProfileSpec
@@ -157,12 +166,34 @@ end
     return max(1, value)
 end
 
+@inline function _parse_nonnegative_float_env(name::String, default::Float64)::Float64
+    raw = strip(get(ENV, name, string(default)))
+    value = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("$name must be a number, got '$raw'"))
+    end
+    return max(0.0, value)
+end
+
 @inline function _priority_inner_sat_threshold()::Int
     return _parse_positive_int_env("SPACEAGORA_PERF_PRIORITY_INNER_SAT_THRESHOLD", 8)
 end
 
 @inline function _priority_inner_link_threshold()::Int
     return _parse_positive_int_env("SPACEAGORA_PERF_PRIORITY_INNER_LINK_THRESHOLD", 12)
+end
+
+@inline function _priority_outer_light_sat_threshold()::Int
+    return _parse_positive_int_env("SPACEAGORA_PERF_PRIORITY_OUTER_LIGHT_SAT_THRESHOLD", 2)
+end
+
+@inline function _priority_outer_light_link_threshold()::Int
+    return _parse_positive_int_env("SPACEAGORA_PERF_PRIORITY_OUTER_LIGHT_LINK_THRESHOLD", 4)
+end
+
+@inline function _priority_outer_light_mission_threshold_s()::Float64
+    return _parse_nonnegative_float_env("SPACEAGORA_PERF_PRIORITY_OUTER_LIGHT_MISSION_THRESHOLD_S", 14_400.0)
 end
 
 @inline function _machine_parallel_class()::Symbol
@@ -201,6 +232,16 @@ end
     return false
 end
 
+@inline function _max_harmonics_degree(effectors::Tuple)::Int
+    degree = 0
+    @inbounds for effector in effectors
+        if effector isa GravitationalHarmonicsModel
+            degree = max(degree, effector.L)
+        end
+    end
+    return degree
+end
+
 @inline function _priority_outer_route(case::BenchmarkCase)::Symbol
     if !perf_parallel_enabled()
         return :none
@@ -208,6 +249,25 @@ end
 
     n_sats = length(case.args_template.dynamics_model.spacecraft)
     n_links = _total_links(case)
+    mission_time_s = case.args_template.mission_configuration.mission_time
+    dynamic_effectors = case.args_template.dynamics_model.dynamic_effectors
+    has_nbody = _has_nbody_dynamic_effector(dynamic_effectors)
+    harmonics_degree = _max_harmonics_degree(dynamic_effectors)
+
+    machine = _machine_parallel_class()
+    if case.category == "montecarlo"
+        return machine in (:large, :medium) ? :process : _threads_or_none_backend()
+    end
+
+    # Lightweight scenarios are usually overhead-bound, so keep them serial.
+    if n_sats <= _priority_outer_light_sat_threshold() &&
+       n_links <= _priority_outer_light_link_threshold() &&
+       mission_time_s <= _priority_outer_light_mission_threshold_s() &&
+       !has_nbody &&
+       harmonics_degree == 0
+        return :none
+    end
+
     sat_threshold = _priority_inner_sat_threshold()
     link_threshold = _priority_inner_link_threshold()
 
@@ -217,12 +277,11 @@ end
         return :none
     end
 
-    machine = _machine_parallel_class()
-    if case.category == "montecarlo"
-        return machine in (:large, :medium) ? :process : _threads_or_none_backend()
-    end
     if case.category == "satellite_scaling" && n_sats >= 4
         return _threads_or_none_backend()
+    end
+    if has_nbody || harmonics_degree >= 20
+        return machine in (:large, :medium) ? :process : _threads_or_none_backend()
     end
     if machine in (:large, :medium)
         return :process
@@ -670,8 +729,21 @@ function measure_case(case::BenchmarkCase, profile_name::String, repeat_idx::Int
     args_run = copy_timed.value
 
     GC.gc()
-    solve_timed = @timed run_simulation(args_run; isolate_state=false, return_solution=true)
-    sol = solve_timed.value
+    solve_timed = @timed run_simulation(
+        args_run;
+        isolate_state=false,
+        return_solution=true,
+        return_solver_metadata=true
+    )
+    solve_result = solve_timed.value
+    sol = solve_result.solution
+    solver_mode = solve_result.solver_mode
+    solver_trace = solve_result.solver_trace
+    solver_sequence = isempty(solver_trace) ? missing : join([meta.solver for meta in solver_trace], "->")
+    solver_fallback_count = count(meta -> meta.fallback_used, solver_trace)
+    solver_fallback_used = solver_fallback_count > 0
+    fallback_triggers = [meta.trigger_retcode for meta in solver_trace if !(meta.trigger_retcode isa Missing)]
+    solver_fallback_trigger = isempty(fallback_triggers) ? missing : _safe_unique_join(fallback_triggers; delimiter="|")
     solve_retcode = string(sol.retcode)
     solve_success = _solve_success(sol)
 
@@ -706,6 +778,11 @@ function measure_case(case::BenchmarkCase, profile_name::String, repeat_idx::Int
         solve_compile_time_s=solve_timed.compile_time,
         copy_gctime_s=copy_timed.gctime,
         solve_gctime_s=solve_timed.gctime,
+        solver_mode=solver_mode,
+        solver_sequence=solver_sequence,
+        solver_fallback_used=solver_fallback_used,
+        solver_fallback_count=solver_fallback_count,
+        solver_fallback_trigger=solver_fallback_trigger,
         solve_retcode=solve_retcode,
         solve_success=solve_success,
         copy_bytes_mb=copy_bytes_mb,
@@ -1336,6 +1413,11 @@ function summarize_results(raw_df::DataFrame)::DataFrame
         :saved_points_mean,
         :accepted_steps_mean,
         :rejected_steps_mean,
+        :solver_modes,
+        :solver_sequences,
+        :solver_fallback_any,
+        :solver_fallback_count_mean,
+        :solver_fallback_triggers,
         :sim_seconds_per_wall_second_mean,
         :satellite_sim_seconds_per_wall_second_mean
     ]
@@ -1359,6 +1441,11 @@ function summarize_results(raw_df::DataFrame)::DataFrame
             :saved_points => (v -> _safe_stat(v, mean)) => :saved_points_mean,
             :accepted_steps => (v -> _safe_stat(v, mean)) => :accepted_steps_mean,
             :rejected_steps => (v -> _safe_stat(v, mean)) => :rejected_steps_mean,
+            :solver_mode => (v -> _safe_unique_join(v)) => :solver_modes,
+            :solver_sequence => (v -> _safe_unique_join(v)) => :solver_sequences,
+            :solver_fallback_used => (v -> any(skipmissing(v))) => :solver_fallback_any,
+            :solver_fallback_count => (v -> _safe_stat(v, mean)) => :solver_fallback_count_mean,
+            :solver_fallback_trigger => (v -> _safe_unique_join(v; delimiter="|")) => :solver_fallback_triggers,
             :sim_seconds_per_wall_second => (v -> _safe_stat(v, mean)) => :sim_seconds_per_wall_second_mean,
             :satellite_sim_seconds_per_wall_second => (v -> _safe_stat(v, mean)) => :satellite_sim_seconds_per_wall_second_mean
         )
@@ -1432,6 +1519,8 @@ function write_report(path::String, spec::ProfileSpec, raw_df::DataFrame, summar
     mc_mean = nrow(mc_rows) > 0 ? mean(mc_rows.total_time_s) : missing
     mc_p90 = nrow(mc_rows) > 0 ? quantile(mc_rows.total_time_s, 0.9) : missing
     mc_std = nrow(mc_rows) > 0 ? std(mc_rows.total_time_s; corrected=false) : missing
+    fallback_rows = raw_df[(raw_df.solve_success .== true) .& (raw_df.solver_fallback_used .== true), :]
+    solver_modes = _safe_unique_join(raw_df.solver_mode)
 
     open(path, "w") do io
         println(io, "# SpaceAGORA Computational Time Analysis (`$(spec.name)` profile)")
@@ -1442,6 +1531,7 @@ function write_report(path::String, spec::ProfileSpec, raw_df::DataFrame, summar
         println(io, "- Repeats per deterministic scenario: `$(spec.repeats)`")
         println(io, "- Warmup runs per scenario: `$(spec.warmup)`")
         println(io, "- Monte Carlo seeds: `$(spec.montecarlo_samples)`")
+        println(io, "- Solver mode(s) observed: `$(_fmt(solver_modes))`")
         println(io)
         println(io, "## Key Findings")
         println(io)
@@ -1463,6 +1553,7 @@ function write_report(path::String, spec::ProfileSpec, raw_df::DataFrame, summar
         if !(mc_mean isa Missing)
             println(io, "- Monte Carlo runtime spread: mean `$(round(mc_mean; digits=3)) s`, p90 `$(round(mc_p90; digits=3)) s`, std `$(round(mc_std; digits=3)) s`.")
         end
+        println(io, "- Auto-stiff fallback activations (successful runs): `$(nrow(fallback_rows))`.")
         failed_groups = summary_df[summary_df.samples_failed .> 0, :]
         if nrow(failed_groups) > 0
             println(io, "- Solver failures detected in `$(nrow(failed_groups))` scenario groups; timings only use successful runs.")
@@ -1470,12 +1561,12 @@ function write_report(path::String, spec::ProfileSpec, raw_df::DataFrame, summar
         println(io)
         println(io, "## Scenario Summary")
         println(io)
-        println(io, "| Scenario | Category | Success/Total | Mean Total (s) | P90 (s) | Mean Solve (s) | Mean Copy (s) | Sim sec / wall sec | Rel. Baseline |")
-        println(io, "|---|---|---:|---:|---:|---:|---:|---:|---:|")
+        println(io, "| Scenario | Category | Success/Total | Solver(s) | Fallback Any | Mean Total (s) | P90 (s) | Mean Solve (s) | Mean Copy (s) | Sim sec / wall sec | Rel. Baseline |")
+        println(io, "|---|---|---:|---|---|---:|---:|---:|---:|---:|---:|")
         for row in eachrow(summary_df)
             println(
                 io,
-                "| $(row.scenario) | $(row.category) | $(row.samples_success)/$(row.samples_total) | $(_fmt(row.total_time_mean_s)) | $(_fmt(row.total_time_p90_s)) | $(_fmt(row.solve_time_mean_s)) | $(_fmt(row.copy_time_mean_s)) | $(_fmt(row.sim_seconds_per_wall_second_mean)) | $(_fmt(row.relative_to_baseline)) |"
+                "| $(row.scenario) | $(row.category) | $(row.samples_success)/$(row.samples_total) | $(_fmt(row.solver_sequences)) | $(_fmt(row.solver_fallback_any)) | $(_fmt(row.total_time_mean_s)) | $(_fmt(row.total_time_p90_s)) | $(_fmt(row.solve_time_mean_s)) | $(_fmt(row.copy_time_mean_s)) | $(_fmt(row.sim_seconds_per_wall_second_mean)) | $(_fmt(row.relative_to_baseline)) |"
             )
         end
         println(io)

@@ -20,7 +20,7 @@ def _make_settings(root: Path) -> Settings:
         worker_tmp_dir=root / "tmp",
         spice_path=root / "GRAM_Data" / "SPICE",
         gram_data_path=root / "GRAM_Data",
-        gram_py_path=root / "GRAMpy",
+        gram_py_path=root / "GRAM Suite 2.0",
         max_mission_time_sec=604800.0,
         sync_max_mission_time_sec=21600.0,
         max_sync_job_wall_sec=180.0,

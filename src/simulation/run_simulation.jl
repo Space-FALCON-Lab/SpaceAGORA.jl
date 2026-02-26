@@ -7,10 +7,100 @@ using DifferentialEquations
 using CSV
 using DataFrames
 using Polyester
+using Arrow
+using Dates
+using Serialization
+using SHA
+using TOML
 
 const _normalize_warning_emitted = Ref(false)
+const RESULTS_BUNDLE_SCHEMA_VERSION = "1"
+const CHECKPOINT_SCHEMA_VERSION = "1"
 
 @inline _typed_normalize_warning_enabled() = get(ENV, "SPACEAGORA_WARN_NORMALIZE", "1") == "1"
+@inline _typed_save_bundle_enabled() = get(ENV, "SPACEAGORA_SAVE_BUNDLE", "1") == "1"
+@inline _typed_checkpoint_enabled(args) = args.simulation_settings.checkpoint_enabled || args.simulation_settings.resume_from_checkpoint
+
+function _validate_orientation_inertia!(args)
+    if !args.mission_configuration.orientation_sim
+        return nothing
+    end
+    for (i, sc) in enumerate(args.dynamics_model.spacecraft)
+        inertia_tensor = sc.inertia_tensor
+        inertia_matrix = Matrix(inertia_tensor)
+        if !all(isfinite, inertia_matrix)
+            throw(ArgumentError("Spacecraft index $i has non-finite inertia tensor entries, required for orientation_sim=true."))
+        end
+        if !issymmetric(inertia_matrix)
+            throw(ArgumentError("Spacecraft index $i has non-symmetric inertia tensor, required for orientation_sim=true."))
+        end
+        if !isposdef(Symmetric(inertia_matrix))
+            throw(ArgumentError("Spacecraft index $i has non-positive-definite inertia tensor, required for orientation_sim=true."))
+        end
+    end
+    return nothing
+end
+
+@inline function _solver_policy_mode()::Symbol
+    mode = lowercase(strip(get(ENV, "SPACEAGORA_SOLVER_MODE", "tsit5")))
+    if mode in ("tsit5", "default")
+        return :tsit5
+    elseif mode in ("auto_stiff", "auto-stiff", "autostiff", "auto")
+        return :auto_stiff
+    elseif mode in ("rodas5p", "rodas", "stiff")
+        return :rodas5p
+    end
+    throw(ArgumentError(
+        "Unsupported SPACEAGORA_SOLVER_MODE='$mode'. Use one of: tsit5, auto_stiff, rodas5p."
+    ))
+end
+
+@inline function _retcode_is_stiff_symptom(retcode)::Bool
+    rc = string(retcode)
+    return rc in ("Unstable", "DtLessThanMin", "MaxIters", "InitialFailure")
+end
+
+@inline function _solve_with_explicit_solver(prob, args, alg)
+    return solve(
+        prob,
+        alg;
+        reltol=args.integration_tolerances.reltol_orbit,
+        abstol=args.integration_tolerances.abstol_orbit,
+        dtmax=args.integration_tolerances.dt_max_orbit
+    )
+end
+
+function _solve_with_solver_policy(prob, args)
+    mode = _solver_policy_mode()
+    if mode == :rodas5p
+        sol = _solve_with_explicit_solver(prob, args, Rodas5P(autodiff=false))
+        return sol, (
+            solver="Rodas5P",
+            initial_solver="Rodas5P",
+            fallback_used=false,
+            trigger_retcode=missing
+        )
+    end
+
+    tsit_sol = _solve_with_explicit_solver(prob, args, Tsit5())
+    if mode == :auto_stiff &&
+       !SciMLBase.successful_retcode(tsit_sol.retcode) &&
+       _retcode_is_stiff_symptom(tsit_sol.retcode)
+        stiff_sol = _solve_with_explicit_solver(prob, args, Rodas5P(autodiff=false))
+        return stiff_sol, (
+            solver="Rodas5P",
+            initial_solver="Tsit5",
+            fallback_used=true,
+            trigger_retcode=string(tsit_sol.retcode)
+        )
+    end
+    return tsit_sol, (
+        solver="Tsit5",
+        initial_solver="Tsit5",
+        fallback_used=false,
+        trigger_retcode=missing
+    )
+end
 
 function _warn_legacy_normalize_flag!(args)
     if !args.simulation_settings.normalize || !_typed_normalize_warning_enabled()
@@ -64,7 +154,177 @@ function _debug_print_nan_parameter_paths!(x, path::AbstractString="p")
     return nothing
 end
 
-function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=false)
+@inline function _results_bundle_prefix(args)::String
+    return joinpath(args.simulation_settings.results_directory, "simulation_results")
+end
+
+function _atomic_write_file(path::String, writer::Function)
+    dir = dirname(path)
+    mkpath(dir)
+    tmp = joinpath(
+        dir,
+        string(".", basename(path), ".tmp.", getpid(), ".", Threads.threadid(), ".", rand(UInt))
+    )
+    try
+        writer(tmp)
+        mv(tmp, path; force=true)
+    finally
+        if isfile(tmp)
+            rm(tmp; force=true)
+        end
+    end
+    return path
+end
+
+function _sha256_hex(path::String)::String
+    open(path, "r") do io
+        return bytes2hex(SHA.sha256(read(io)))
+    end
+end
+
+@inline function _checkpoint_directory(args)::String
+    if isempty(args.simulation_settings.checkpoint_directory)
+        return joinpath(args.simulation_settings.results_directory, "checkpoints")
+    end
+    return args.simulation_settings.checkpoint_directory
+end
+
+@inline function _checkpoint_paths(args)
+    ckpt_dir = _checkpoint_directory(args)
+    return (
+        data=joinpath(ckpt_dir, "simulation_checkpoint.bin"),
+        manifest=joinpath(ckpt_dir, "simulation_checkpoint.manifest.toml")
+    )
+end
+
+function _write_checkpoint!(args, t::Float64, u_state)
+    paths = _checkpoint_paths(args)
+    payload = (
+        schema_version=CHECKPOINT_SCHEMA_VERSION,
+        created_utc=string(now(UTC)),
+        t=t,
+        u=deepcopy(u_state)
+    )
+    _atomic_write_file(paths.data, tmp -> open(tmp, "w") do io
+        serialize(io, payload)
+    end)
+
+    manifest = Dict{String, Any}(
+        "schema_version" => CHECKPOINT_SCHEMA_VERSION,
+        "created_utc" => string(now(UTC)),
+        "time_s" => t,
+        "data_path" => paths.data,
+        "data_size_bytes" => filesize(paths.data),
+        "data_sha256" => _sha256_hex(paths.data)
+    )
+    _atomic_write_file(paths.manifest, tmp -> open(tmp, "w") do io
+        TOML.print(io, manifest)
+    end)
+    return nothing
+end
+
+function _load_checkpoint(args)
+    paths = _checkpoint_paths(args)
+    if !isfile(paths.data)
+        return nothing
+    end
+    payload = open(paths.data, "r") do io
+        deserialize(io)
+    end
+    if !haskey(payload, :t) || !haskey(payload, :u)
+        throw(ArgumentError("Checkpoint payload missing required keys (:t, :u)."))
+    end
+    return (t=Float64(payload[:t]), u=payload[:u], data_path=paths.data, manifest_path=paths.manifest)
+end
+
+function _clear_checkpoint!(args)
+    paths = _checkpoint_paths(args)
+    isfile(paths.data) && rm(paths.data; force=true)
+    isfile(paths.manifest) && rm(paths.manifest; force=true)
+    return nothing
+end
+
+function _append_segment_results!(
+    times::Vector{Float64},
+    states::Vector,
+    segment_times::AbstractVector,
+    segment_states::AbstractVector
+)
+    start_idx = isempty(times) ? 1 : 2
+    for idx in start_idx:length(segment_times)
+        push!(times, Float64(segment_times[idx]))
+        push!(states, deepcopy(segment_states[idx]))
+    end
+    return nothing
+end
+
+function _build_results_dataframe(times::Vector{Float64}, states::Vector, args)::DataFrame
+    results_df = DataFrame(time=times)
+    for i in eachindex(args.dynamics_model.spacecraft)
+        results_df[!, "sc$(i)_pos_1"] = [states[t].sc[i].pos[1] for t in 1:length(times)]
+        results_df[!, "sc$(i)_pos_2"] = [states[t].sc[i].pos[2] for t in 1:length(times)]
+        results_df[!, "sc$(i)_pos_3"] = [states[t].sc[i].pos[3] for t in 1:length(times)]
+        results_df[!, "sc$(i)_vel_1"] = [states[t].sc[i].vel[1] for t in 1:length(times)]
+        results_df[!, "sc$(i)_vel_2"] = [states[t].sc[i].vel[2] for t in 1:length(times)]
+        results_df[!, "sc$(i)_vel_3"] = [states[t].sc[i].vel[3] for t in 1:length(times)]
+        results_df[!, "sc$(i)_mass"] = [states[t].sc[i].mass for t in 1:length(times)]
+        if args.mission_configuration.orientation_sim
+            results_df[!, "sc$(i)_q_1"] = [states[t].sc[i].q[1] for t in 1:length(times)]
+            results_df[!, "sc$(i)_q_2"] = [states[t].sc[i].q[2] for t in 1:length(times)]
+            results_df[!, "sc$(i)_q_3"] = [states[t].sc[i].q[3] for t in 1:length(times)]
+            results_df[!, "sc$(i)_q_4"] = [states[t].sc[i].q[4] for t in 1:length(times)]
+            results_df[!, "sc$(i)_ω_1"] = [states[t].sc[i].ω[1] for t in 1:length(times)]
+            results_df[!, "sc$(i)_ω_2"] = [states[t].sc[i].ω[2] for t in 1:length(times)]
+            results_df[!, "sc$(i)_ω_3"] = [states[t].sc[i].ω[3] for t in 1:length(times)]
+        end
+    end
+    return results_df
+end
+
+function _write_results_bundle!(results_df::DataFrame, times::Vector{Float64}, args)
+    prefix = _results_bundle_prefix(args)
+    feather_path = prefix * ".feather"
+    manifest_path = prefix * ".manifest.toml"
+
+    _atomic_write_file(feather_path, tmp -> Arrow.write(tmp, results_df))
+
+    files = Dict{String, Any}()
+    files["feather"] = Dict(
+        "path" => feather_path,
+        "size_bytes" => filesize(feather_path),
+        "sha256" => _sha256_hex(feather_path)
+    )
+
+    if args.simulation_settings.save_csv
+        csv_path = prefix * ".csv"
+        _atomic_write_file(csv_path, tmp -> CSV.write(tmp, results_df))
+        files["csv"] = Dict(
+            "path" => csv_path,
+            "size_bytes" => filesize(csv_path),
+            "sha256" => _sha256_hex(csv_path)
+        )
+    end
+
+    manifest = Dict{String, Any}(
+        "schema_version" => RESULTS_BUNDLE_SCHEMA_VERSION,
+        "created_utc" => string(now(UTC)),
+        "mission_time_s" => args.mission_configuration.mission_time,
+        "steps" => length(times),
+        "spacecraft_count" => length(args.dynamics_model.spacecraft),
+        "orientation_sim" => args.mission_configuration.orientation_sim,
+        "files" => files
+    )
+
+    _atomic_write_file(manifest_path, tmp -> begin
+        open(tmp, "w") do io
+            TOML.print(io, manifest)
+        end
+    end)
+
+    return nothing
+end
+
+function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=false, return_solver_metadata::Bool=false)
     # Isolate mutable campaign/model state by default so repeated/concurrent runs
     # do not alias shared in-memory objects.
     args = isolate_state ? deepcopy(args) : args
@@ -72,6 +332,7 @@ function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=fa
     # Typed pipeline is SI-native (meters, seconds, kilograms). The
     # `simulation_settings.normalize` field is retained for legacy compatibility.
     _warn_legacy_normalize_flag!(args)
+    _validate_orientation_inertia!(args)
 
     # Set up the model and initial conditions
     initial_conditions = build_initial_conditions(args)
@@ -80,7 +341,7 @@ function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=fa
         println(initial_conditions)
     end
 
-    # Define the ODE problem
+    # Define the ODE parameters and callbacks
     p = SimulationModel.ODEParams{length(args.dynamics_model.spacecraft)}(args=args) # Define the parameters for the ODE problem, including the shared buffers for the callbacks
     p.shared_buffers.debug_control[] = get(ENV, "SPACEAGORA_DEBUG_CONTROL", "0") == "1"
     p.shared_buffers.debug_initial_derivative[] = get(ENV, "SPACEAGORA_DEBUG_INITIAL_DERIVATIVE", "0") == "1"
@@ -101,17 +362,38 @@ function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=fa
     lock(SimulationModel.SPICE_LOCK) do
         args.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_$(args.environment_model.planet.name)", et_start)) * args.environment_model.planet.J2000_to_pci' # Initialize the planet frame at the start of the simulation (will be updated in the callback)
     end
+    mission_end = args.mission_configuration.mission_time
+    checkpoint_active = _typed_checkpoint_enabled(args)
+    if checkpoint_active && args.simulation_settings.checkpoint_interval_s <= 0.0
+        throw(ArgumentError("SimulationSettings.checkpoint_interval_s must be > 0 when checkpointing is enabled."))
+    end
+
+    t_start = 0.0
+    u_start = initial_conditions
+    if args.simulation_settings.resume_from_checkpoint
+        ckpt = _load_checkpoint(args)
+        if ckpt === nothing
+            @warn "resume_from_checkpoint=true but no checkpoint file was found; starting from initial conditions."
+        else
+            t_start = ckpt.t
+            u_start = ckpt.u
+            if args.simulation_settings.verbose
+                println("Resuming simulation from checkpoint at t=$(round(t_start, digits=6)) s")
+            end
+        end
+    end
+
     # println("Initial conditions:")
     # println(initial_conditions)
     # println("ODE parameters:")
     # println(p)
     # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
-    prob = ODEProblem(spacecraft_dynamics!, initial_conditions, (0.0, args.mission_configuration.mission_time), p, callback=callbacks)
+    prob_debug = ODEProblem(spacecraft_dynamics!, u_start, (t_start, mission_end), p, callback=callbacks)
     if p.shared_buffers.debug_initial_derivative[]
         # 1. Manually evaluate the derivative at the start
-        du_test = copy(prob.u0)
+        du_test = copy(prob_debug.u0)
         try
-            prob.f(du_test, prob.u0, prob.p, prob.tspan[1])
+            prob_debug.f(du_test, prob_debug.u0, prob_debug.p, prob_debug.tspan[1])
         catch e
             @error "The derivative function itself crashed!" exception=e
             throw(ErrorException("Initial derivative evaluation failed; aborting solve in debug mode."))
@@ -122,7 +404,7 @@ function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=fa
             println("--- INITIAL NaN DETECTED ---")
 
             # Check global parameters in p
-            _debug_print_nan_parameter_paths!(prob.p)
+            _debug_print_nan_parameter_paths!(prob_debug.p)
 
             # Check the state vector (u)
             # Assuming your u has a .sc field for satellites
@@ -137,39 +419,69 @@ function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=fa
             throw(ErrorException("Initial derivative contains NaN; aborting solve in debug mode."))
         end
     end
-    sol = solve(prob, Tsit5(); reltol=args.integration_tolerances.reltol_orbit, abstol=args.integration_tolerances.abstol_orbit, dtmax=args.integration_tolerances.dt_max_orbit)
-    flat_sol = Array(sol) # Convert to flat array for easier processing (optional, depends on how you want to handle the results)
-    indices = CartesianIndices(initial_conditions)
-    # println("Full solution:")
-    # println(sol.u)
-    # Process and save results
-    # For now, just write to csv file, but eventually want to save in a more efficient format and generate plots
-    
-    if args.simulation_settings.results
-        results_df = DataFrame(time=sol.t)
-        for i in eachindex(args.dynamics_model.spacecraft)
-            results_df[!, "sc$(i)_pos_1"] = [sol.u[t].sc[i].pos[1] for t in 1:length(sol.t)]
-            results_df[!, "sc$(i)_pos_2"] = [sol.u[t].sc[i].pos[2] for t in 1:length(sol.t)]
-            results_df[!, "sc$(i)_pos_3"] = [sol.u[t].sc[i].pos[3] for t in 1:length(sol.t)]
-            results_df[!, "sc$(i)_vel_1"] = [sol.u[t].sc[i].vel[1] for t in 1:length(sol.t)]
-            results_df[!, "sc$(i)_vel_2"] = [sol.u[t].sc[i].vel[2] for t in 1:length(sol.t)]
-            results_df[!, "sc$(i)_vel_3"] = [sol.u[t].sc[i].vel[3] for t in 1:length(sol.t)]
-            results_df[!, "sc$(i)_mass"] = [sol.u[t].sc[i].mass for t in 1:length(sol.t)]
-            if args.mission_configuration.orientation_sim
-                results_df[!, "sc$(i)_q_1"] = [sol.u[t].sc[i].q[1] for t in 1:length(sol.t)]
-                results_df[!, "sc$(i)_q_2"] = [sol.u[t].sc[i].q[2] for t in 1:length(sol.t)]
-                results_df[!, "sc$(i)_q_3"] = [sol.u[t].sc[i].q[3] for t in 1:length(sol.t)]
-                results_df[!, "sc$(i)_q_4"] = [sol.u[t].sc[i].q[4] for t in 1:length(sol.t)]
-                results_df[!, "sc$(i)_ω_1"] = [sol.u[t].sc[i].ω[1] for t in 1:length(sol.t)]
-                results_df[!, "sc$(i)_ω_2"] = [sol.u[t].sc[i].ω[2] for t in 1:length(sol.t)]
-                results_df[!, "sc$(i)_ω_3"] = [sol.u[t].sc[i].ω[3] for t in 1:length(sol.t)]
+
+    state_type = typeof(u_start)
+    all_times = Float64[]
+    all_states = state_type[]
+    last_sol = nothing
+    solver_trace = NamedTuple[]
+
+    if t_start >= mission_end
+        push!(all_times, t_start)
+        push!(all_states, deepcopy(u_start))
+    elseif checkpoint_active
+        interval = args.simulation_settings.checkpoint_interval_s
+        t_cursor = t_start
+        u_cursor = deepcopy(u_start)
+
+        while t_cursor < mission_end
+            t_next = min(t_cursor + interval, mission_end)
+            prob = ODEProblem(spacecraft_dynamics!, u_cursor, (t_cursor, t_next), p, callback=callbacks)
+            seg_sol, solve_meta = _solve_with_solver_policy(prob, args)
+            push!(solver_trace, solve_meta)
+            if !SciMLBase.successful_retcode(seg_sol.retcode)
+                throw(ErrorException("Checkpointed solve failed with retcode=$(seg_sol.retcode)."))
             end
+            _append_segment_results!(all_times, all_states, seg_sol.t, seg_sol.u)
+            last_sol = seg_sol
+            t_cursor = Float64(seg_sol.t[end])
+            u_cursor = deepcopy(seg_sol.u[end])
+            _write_checkpoint!(args, t_cursor, u_cursor)
         end
+
+    else
+        prob = ODEProblem(spacecraft_dynamics!, u_start, (t_start, mission_end), p, callback=callbacks)
+        sol, solve_meta = _solve_with_solver_policy(prob, args)
+        push!(solver_trace, solve_meta)
+        if !SciMLBase.successful_retcode(sol.retcode)
+            throw(ErrorException("Solve failed with retcode=$(sol.retcode)."))
+        end
+        _append_segment_results!(all_times, all_states, sol.t, sol.u)
+        last_sol = sol
+    end
+
+    # Process and save results
+    if args.simulation_settings.results
+        results_df = _build_results_dataframe(all_times, all_states, args)
+        # Keep backwards-compatible CSV contract used by existing scripts/tests.
         CSV.write("simulation_results.csv", results_df)
+        if _typed_save_bundle_enabled()
+            _write_results_bundle!(results_df, all_times, args)
+        end
     end
 
     if return_solution
-        return sol
+        if checkpoint_active && args.simulation_settings.checkpoint_interval_s < mission_end
+            @warn "return_solution=true with checkpointed integration returns the final segment ODESolution, not a stitched full-history ODESolution."
+        end
+        if return_solver_metadata
+            return (
+                solution=last_sol,
+                solver_mode=string(_solver_policy_mode()),
+                solver_trace=solver_trace
+            )
+        end
+        return last_sol
     end
     return nothing
 end
@@ -226,8 +538,12 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
 
             if p.args.mission_configuration.orientation_sim
                 # Update the derivatives of orientation (quaternion) and angular velocity
-                du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(sc_view.ω..., 0.0), sc_view.q)
-                du_view.ω .= torques / sc_view.mass # Simplified rotational dynamics (assuming unit inertia)
+                ω_body = SVector{3, Float64}(sc_view.ω)
+                inertia_tensor = spacecraft[i].inertia_tensor
+                τ_body = SVector{3, Float64}(torques)
+
+                du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
+                du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
             end
 
             # Update heat loads based on current state and environment (placeholder logic)

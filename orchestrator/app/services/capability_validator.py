@@ -49,7 +49,7 @@ class CapabilityValidator:
         self._validate_required_path(Path(spec.file_paths.spice), "SPICE path", unsupported_reasons)
         if spec.models.density_model == "gram":
             self._validate_required_path(Path(spec.file_paths.gram_data), "GRAM data path", unsupported_reasons)
-            self._validate_required_path(Path(spec.file_paths.gram_py), "GRAM python path", unsupported_reasons)
+            self._validate_required_path(Path(spec.file_paths.gram_py), "GRAM root path", unsupported_reasons)
 
         required_spice_files = [
             "pck/pck00011.tpc",

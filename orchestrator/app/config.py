@@ -29,6 +29,13 @@ def _bool_env(key: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _first_existing_path(*paths: Path) -> Path:
+    for path in paths:
+        if path.exists():
+            return path
+    return paths[0]
+
+
 def load_settings() -> Settings:
     # This file sits at orchestrator/app/config.py
     repo_root = Path(__file__).resolve().parents[2]
@@ -37,9 +44,14 @@ def load_settings() -> Settings:
     artifacts_dir = Path(os.getenv("ORCH_ARTIFACTS_DIR", str(storage_dir / "artifacts")))
     worker_tmp_dir = Path(os.getenv("ORCH_WORKER_TMP_DIR", "/tmp/spaceagora_orchestrator"))
 
-    spice_path = Path(os.getenv("ORCH_SPICE_PATH", str(repo_root / "GRAM_Data" / "SPICE")))
-    gram_data_path = Path(os.getenv("ORCH_GRAM_DATA_PATH", str(repo_root / "GRAM_Data")))
-    gram_py_path = Path(os.getenv("ORCH_GRAMPY_PATH", str(repo_root / "GRAMpy")))
+    default_spice = _first_existing_path(repo_root / "GRAM_Data" / "SPICE", repo_root / "GRAM Suite 2.0" / "SPICE")
+    default_gram_data = _first_existing_path(repo_root / "GRAM Suite 2.0", repo_root / "GRAM_Data")
+    default_gram_root = _first_existing_path(repo_root / "GRAM Suite 2.0", repo_root / "GRAMpy")
+
+    spice_path = Path(os.getenv("ORCH_SPICE_PATH", str(default_spice)))
+    gram_data_path = Path(os.getenv("ORCH_GRAM_DATA_PATH", str(default_gram_data)))
+    gram_root_env = os.getenv("ORCH_GRAM_ROOT_PATH")
+    gram_py_path = Path(os.getenv("ORCH_GRAMPY_PATH", gram_root_env if gram_root_env is not None else str(default_gram_root)))
 
     max_mission_time_sec = float(os.getenv("ORCH_MAX_MISSION_TIME_SEC", "604800"))
     sync_max_mission_time_sec = float(os.getenv("ORCH_SYNC_MAX_MISSION_TIME_SEC", "21600"))

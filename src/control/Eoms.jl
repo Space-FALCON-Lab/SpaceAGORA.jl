@@ -14,8 +14,6 @@ using OrdinaryDiffEq
 using Dates
 using AstroTime
 using SPICE
-using PythonCall
-sys = pyimport("sys")
 
 if !isdefined(@__MODULE__, :LEGACY_CONTROL_STATE_LOCK)
     const LEGACY_CONTROL_STATE_LOCK = ReentrantLock()
@@ -58,8 +56,7 @@ end
 function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval=false, gram_atmosphere=nothing, time_switch_2=0, reevaluation_mode=1; cnf=nothing, solution=nothing)
     cnf_state = _legacy_get_cnf(args; cnf=cnf)
     solution_state = _legacy_get_solution(args; cnf=cnf_state, solution=solution)
-    sys.path.append(args[:directory_Gram])
-    gram = pyimport("gram")
+    gram = nothing
 
     wind_m = false
     if ip.wm == 1

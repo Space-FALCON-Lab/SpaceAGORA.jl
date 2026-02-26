@@ -8,6 +8,7 @@ using DataFrames
 using Reexport
 
 const SPICE_LOCK = ReentrantLock()
+const GRAM_LOCK = ReentrantLock()
 
 # --- Utils ---
 include("../utils/quaternion_utils.jl")

@@ -6,6 +6,7 @@ using Logging
 using StaticArrays
 using ComponentArrays
 using SPICE
+using TOML
 using JET
 using Aqua
 
@@ -47,6 +48,10 @@ struct NaNForceModel <: SimulationModel.AbstractForceTorqueModel
 end
 
 struct NaNParamForceModel <: SimulationModel.AbstractForceTorqueModel
+end
+
+struct ConstantTorqueModel <: SimulationModel.AbstractForceTorqueModel
+    torque::SVector{3, Float64}
 end
 
 struct ThrowingOrbitPlanet <: SimulationModel.AbstractPlanet
@@ -144,6 +149,15 @@ function SimulationModel.calcForceTorque(
 )
     p.shared_buffers.current_time[] = NaN
     return SVector{3, Float64}(NaN, NaN, NaN), SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+function SimulationModel.calcForceTorque(
+    model::ConstantTorqueModel,
+    x::AbstractVector{Float64},
+    p::ODEParams,
+    i::Int64
+)
+    return SVector{3, Float64}(0.0, 0.0, 0.0), model.torque
 end
 
 function SimulationModel.ControlEffectors.rvtoorbitalelement(
@@ -5005,6 +5019,246 @@ end
     end
 end
 
+@testset "Typed Results Bundle Persistence" begin
+    sc = make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0)
+    settings = SimulationSettings(
+        results=true,
+        verbose=false,
+        generate_plots=false,
+        results_directory="output",
+        save_csv=true,
+        normalize=false
+    )
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=settings,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+
+    mktempdir() do tmp
+        cd(tmp) do
+            run_simulation(args)
+            @test isfile("simulation_results.csv")
+
+            bundle_prefix = joinpath("output", "simulation_results")
+            feather_path = bundle_prefix * ".feather"
+            bundle_csv_path = bundle_prefix * ".csv"
+            manifest_path = bundle_prefix * ".manifest.toml"
+
+            @test isfile(feather_path)
+            @test isfile(bundle_csv_path)
+            @test isfile(manifest_path)
+
+            manifest = TOML.parsefile(manifest_path)
+            @test get(manifest, "schema_version", "") == "1"
+            @test get(manifest, "steps", 0) > 10
+            @test haskey(manifest, "files")
+
+            files = manifest["files"]
+            @test haskey(files, "feather")
+            @test haskey(files, "csv")
+            @test get(files["feather"], "size_bytes", 0) > 0
+            @test length(get(files["feather"], "sha256", "")) == 64
+        end
+    end
+end
+
+@testset "Checkpoint Resume Parity" begin
+    sc = make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0)
+    baseline_settings = SimulationSettings(
+        results=true,
+        verbose=false,
+        generate_plots=false,
+        results_directory="output",
+        save_csv=true,
+        normalize=false
+    )
+    baseline_args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=240.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=baseline_settings,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    df_full = run_case_silent(baseline_args)
+
+    checkpoint_dir = joinpath("output", "checkpoints")
+    checkpoint_data_path = joinpath(checkpoint_dir, "simulation_checkpoint.bin")
+    checkpoint_manifest_path = joinpath(checkpoint_dir, "simulation_checkpoint.manifest.toml")
+
+    phase1_settings = SimulationSettings(
+        results=true,
+        verbose=false,
+        generate_plots=false,
+        results_directory="output",
+        save_csv=true,
+        normalize=false,
+        checkpoint_enabled=true,
+        checkpoint_interval_s=40.0,
+        checkpoint_directory=checkpoint_dir,
+        resume_from_checkpoint=false
+    )
+    phase1_args = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=phase1_settings,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+
+    resume_settings = SimulationSettings(
+        results=true,
+        verbose=false,
+        generate_plots=false,
+        results_directory="output",
+        save_csv=true,
+        normalize=false,
+        checkpoint_enabled=true,
+        checkpoint_interval_s=40.0,
+        checkpoint_directory=checkpoint_dir,
+        resume_from_checkpoint=true
+    )
+    resume_args = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=240.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=resume_settings,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+
+    mktempdir() do tmp
+        cd(tmp) do
+            run_simulation(phase1_args)
+            @test isfile(checkpoint_data_path)
+            @test isfile(checkpoint_manifest_path)
+
+            run_simulation(resume_args)
+            @test isfile(checkpoint_data_path)
+            @test isfile(checkpoint_manifest_path)
+            @test isfile("simulation_results.csv")
+
+            df_resume = CSV.read("simulation_results.csv", DataFrame)
+            @test nrow(df_resume) > 10
+            @test abs(Float64(df_resume.time[end]) - Float64(df_full.time[end])) < 1e-8
+
+            p_full = SVector{3, Float64}(Float64(df_full.sc1_pos_1[end]), Float64(df_full.sc1_pos_2[end]), Float64(df_full.sc1_pos_3[end]))
+            v_full = SVector{3, Float64}(Float64(df_full.sc1_vel_1[end]), Float64(df_full.sc1_vel_2[end]), Float64(df_full.sc1_vel_3[end]))
+            p_resume = SVector{3, Float64}(Float64(df_resume.sc1_pos_1[end]), Float64(df_resume.sc1_pos_2[end]), Float64(df_resume.sc1_pos_3[end]))
+            v_resume = SVector{3, Float64}(Float64(df_resume.sc1_vel_1[end]), Float64(df_resume.sc1_vel_2[end]), Float64(df_resume.sc1_vel_3[end]))
+
+            @test norm(p_resume - p_full) < 1.0
+            @test norm(v_resume - v_full) < 1e-3
+            @test abs(Float64(df_resume.sc1_mass[end]) - Float64(df_full.sc1_mass[end])) < 1e-8
+        end
+    end
+end
+
+@testset "Checkpoint Guards + Missing Resume + Bundle Toggle" begin
+    base_spacecraft() = make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0)
+    base_settings(; kwargs...) = SimulationSettings(
+        results=true,
+        verbose=false,
+        generate_plots=false,
+        results_directory="output",
+        save_csv=true,
+        normalize=false;
+        kwargs...
+    )
+
+    args_bad_interval = build_config(
+        spacecraft=base_spacecraft(),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=base_settings(
+            checkpoint_enabled=true,
+            checkpoint_interval_s=0.0,
+            checkpoint_directory=joinpath("output", "checkpoints")
+        ),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    @test_throws ArgumentError run_simulation(args_bad_interval)
+
+    args_resume_missing = build_config(
+        spacecraft=base_spacecraft(),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=base_settings(
+            checkpoint_enabled=true,
+            checkpoint_interval_s=20.0,
+            checkpoint_directory=joinpath("output", "checkpoints"),
+            resume_from_checkpoint=true
+        ),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    mktempdir() do tmp
+        cd(tmp) do
+            @test_logs (:warn, r"resume_from_checkpoint=true but no checkpoint file was found") run_simulation(args_resume_missing)
+            @test isfile("simulation_results.csv")
+
+            df = CSV.read("simulation_results.csv", DataFrame)
+            @test nrow(df) > 10
+            @test abs(Float64(df.time[end]) - 60.0) < 1e-8
+
+            ckpt_manifest_path = joinpath("output", "checkpoints", "simulation_checkpoint.manifest.toml")
+            @test isfile(ckpt_manifest_path)
+            ckpt_manifest = TOML.parsefile(ckpt_manifest_path)
+            @test get(ckpt_manifest, "schema_version", "") == "1"
+            @test get(ckpt_manifest, "time_s", 0.0) > 0.0
+            @test get(ckpt_manifest, "data_size_bytes", 0) > 0
+            @test length(get(ckpt_manifest, "data_sha256", "")) == 64
+        end
+    end
+
+    args_bundle_disabled = build_config(
+        spacecraft=base_spacecraft(),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=base_settings(),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
+    )
+    mktempdir() do tmp
+        cd(tmp) do
+            withenv("SPACEAGORA_SAVE_BUNDLE" => "0") do
+                run_simulation(args_bundle_disabled)
+            end
+            @test isfile("simulation_results.csv")
+            @test !isfile(joinpath("output", "simulation_results.feather"))
+            @test !isfile(joinpath("output", "simulation_results.manifest.toml"))
+            @test !isfile(joinpath("output", "simulation_results.csv"))
+        end
+    end
+end
+
 @testset "Legacy Entry Dispatch Parity" begin
     sc = make_spacecraft(ra_alt_m=540e3, rp_alt_m=430e3, ν_deg=168.0)
     settings = SimulationSettings(
@@ -5534,6 +5788,70 @@ end
     df = run_case(args)
     qnorm = sqrt.(df.sc1_q_1.^2 .+ df.sc1_q_2.^2 .+ df.sc1_q_3.^2 .+ df.sc1_q_4.^2)
     @test maximum(abs.(qnorm .- 1.0)) < 1e-6
+end
+
+@testset "Rigid-Body Angular Dynamics Uses Inertia Tensor" begin
+    q0 = normalize(SVector{4, Float64}(0.1, -0.2, 0.3, 0.9))
+    w0 = SVector{3, Float64}(0.02, -0.03, 0.015)
+    sc = make_spacecraft(
+        ra_alt_m=500e3,
+        rp_alt_m=500e3,
+        i_deg=35.0,
+        ω_deg=40.0,
+        Ω_deg=10.0,
+        ν_deg=175.0,
+        orientation_state=(q0, w0)
+    )
+    inertia_tensor = SMatrix{3, 3, Float64}(2.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 4.0)
+    sc.inertia_tensor = inertia_tensor
+    applied_torque = SVector{3, Float64}(0.12, -0.08, 0.05)
+
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=true,
+        mission_time=10.0,
+        EI_km=120.0,
+        dynamic_effectors=(ConstantTorqueModel(applied_torque),),
+        keplerian=true
+    )
+
+    u0 = build_initial_conditions(args)
+    du0 = copy(u0)
+    du0 .= 0.0
+    p = ODEParams{1}(args=args)
+    spacecraft_dynamics!(du0, u0, p, 0.0)
+
+    ω = SVector{3, Float64}(u0.sc[1].ω)
+    ωdot_expected = inertia_tensor \ (applied_torque - cross(ω, inertia_tensor * ω))
+    @test isapprox(SVector{3, Float64}(du0.sc[1].ω), ωdot_expected; atol=1e-12, rtol=1e-10)
+end
+
+@testset "Orientation Simulation Rejects Invalid Inertia Tensor" begin
+    q0 = normalize(SVector{4, Float64}(0.1, -0.2, 0.3, 0.9))
+    w0 = SVector{3, Float64}(0.01, -0.015, 0.02)
+    sc = make_spacecraft(
+        ra_alt_m=500e3,
+        rp_alt_m=500e3,
+        i_deg=35.0,
+        ω_deg=40.0,
+        Ω_deg=10.0,
+        ν_deg=175.0,
+        orientation_state=(q0, w0)
+    )
+    sc.inertia_tensor = SMatrix{3, 3, Float64}(zeros(3, 3))
+
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=true,
+        mission_time=30.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true
+    )
+
+    @test_throws ArgumentError run_simulation(args)
 end
 
 @testset "Drag Dissipates Specific Orbital Energy" begin

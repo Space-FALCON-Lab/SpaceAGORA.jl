@@ -115,7 +115,7 @@ class JuliaSimulationRunner:
         elif spec.models.density_model == "gram":
             density_ctor = (
                 f'GRAMAtmosphereModel(planet_name="{spec.planet.lower()}", '
-                f'gram_directory="{gram_py}", gram_data_directory="{gram_data}", initial_time=time)'
+                f'gram_root_directory="{gram_py}", gram_data_directory="{gram_data}", spice_directory="{spice}", initial_time=time)'
             )
         else:
             raise ExecutionError(f"Unsupported density model in script renderer: {spec.models.density_model}")

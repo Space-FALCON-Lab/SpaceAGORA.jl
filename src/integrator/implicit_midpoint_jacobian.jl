@@ -16,7 +16,6 @@ using StaticArrays
 using SPICE
 using Dates
 using AstroTime
-using PythonCall
 using FiniteDiff
 
 
@@ -466,4 +465,3 @@ function f_jac(J, u, param, t0)
         J[13:15, :] .= fd_jac_block[5:7, :]
     end
 end
-

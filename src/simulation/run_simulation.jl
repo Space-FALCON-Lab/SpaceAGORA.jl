@@ -64,7 +64,7 @@ function _debug_print_nan_parameter_paths!(x, path::AbstractString="p")
     return nothing
 end
 
-function run_simulation(args; isolate_state::Bool=true)
+function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=false)
     # Isolate mutable campaign/model state by default so repeated/concurrent runs
     # do not alias shared in-memory objects.
     args = isolate_state ? deepcopy(args) : args
@@ -163,6 +163,11 @@ function run_simulation(args; isolate_state::Bool=true)
         end
         CSV.write("simulation_results.csv", results_df)
     end
+
+    if return_solution
+        return sol
+    end
+    return nothing
 end
 
 function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Float64)

@@ -169,6 +169,11 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     T = param.shared_buffers.temperatures[i] # Atmospheric temperature at the current altitude from the shared buffer updated by the callback function
     wind = param.shared_buffers.winds[i] # Atmospheric wind vector at the current altitude from the shared buffer updated by the callback function
 
+    # Skip expensive aerodynamic geometry when the flow is effectively vacuum.
+    if !isfinite(ρ) || ρ <= eps(Float64)
+        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
     sound_velocity = sqrt(planet.γ * planet.R * T) # Speed of sound at the current altitude based on the temperature from the shared buffer updated by the callback function
     pos_ii = SVector{3, Float64}(x.pos)
     vel_ii = SVector{3, Float64}(x.vel)

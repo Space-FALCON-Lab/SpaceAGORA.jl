@@ -201,10 +201,15 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
                 i = l + 1
                 model.A[i, j] = u*model.N1[i, j]*model.A[i-1, j] - model.N2[i, j]*model.A[i-2, j]
             end
-            R_term = model.R[j-1]
-            I_term = model.I[j-1]
-            model.R[j] = ifelse(m == 0, 1, s*R_term - t*I_term)
-            model.I[j] = ifelse(m == 0, 0, s*I_term + t*R_term)
+            if m == 0
+                model.R[j] = 1.0
+                model.I[j] = 0.0
+            else
+                R_term = model.R[j-1]
+                I_term = model.I[j-1]
+                model.R[j] = s*R_term - t*I_term
+                model.I[j] = s*I_term + t*R_term
+            end
         end
 
         ρ = RE/r
@@ -221,8 +226,13 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
                 j = m + 1
                 C = model.C[i, j]
                 S = model.S[i, j]
-                R_term = model.R[j-1]
-                I_term = model.I[j-1]
+                if m == 0
+                    R_term = 0.0
+                    I_term = 0.0
+                else
+                    R_term = model.R[j-1]
+                    I_term = model.I[j-1]
+                end
                 D = (model.C[i, j]*model.R[j] + model.S[i, j]*model.I[j]) * sqrt_2
                 E = ifelse(m == 0, 0.0, (C*R_term + S*I_term) * sqrt_2)
                 F = ifelse(m == 0, 0.0, (S*R_term - C*I_term) * sqrt_2)

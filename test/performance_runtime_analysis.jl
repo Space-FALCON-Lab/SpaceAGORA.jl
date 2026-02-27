@@ -1,6 +1,6 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 const DEFAULT_OUTPUT_DIR = joinpath(REPO_ROOT, "output", "performance")
-const SPICE_PATH = joinpath(REPO_ROOT, "GRAM_Data", "SPICE")
+const SPICE_PATH = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
 const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "Gravity_harmonics_data", "EarthGGM05C.csv")
 const _PERF_POLICY_ENV_NAMES = (
     "SPACEAGORA_OUTER_PARALLEL_ACTIVE",

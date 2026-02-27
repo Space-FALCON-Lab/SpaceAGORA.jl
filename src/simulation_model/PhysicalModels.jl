@@ -7,7 +7,7 @@ module EnvironmentModels
     using Reexport
 
     export NoAtmosphereModel, ExponentialAtmosphereModel, GRAMAtmosphereModel
-    export getDensity
+    export getDensity, precompute_gram_static_grids!, clear_gram_static_grid_cache!
     
     export MaxwellianHeat, getHeatRate
 

@@ -61,7 +61,7 @@ const CASES = [
 ]
 
 function build_case(case::FlakeCase)
-    spice_path = joinpath(REPO_ROOT, "GRAM_Data", "SPICE")
+    spice_path = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
     planet = Earth("", spice_path)
 
     root = Link{0}(root=true, m=150.0, ref_area=1.4)

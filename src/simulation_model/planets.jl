@@ -141,13 +141,31 @@ module Planets
         polyfit_coeffs::Vector{Float64} = [1.7989756686197253e-58, -2.7298975030491325e-54, 1.7620522402686604e-50, -6.025021166267467e-47, 1.0056316643424087e-43, 9.494104496406468e-42, -3.8472088727076255e-37, 6.051435602297366e-34, 4.074478639170247e-31, -3.244699052533356e-27, 6.66877802035039e-24, -8.360025139024445e-21, 7.301165978344981e-18, -4.650857357165472e-15, 2.1978197729328097e-12, -7.705014392936314e-10, 1.9713879988437584e-7, -3.551889476633975e-5, 0.004248542489215875, -0.3277965440319509, 8.128293001726805]
     end # struct Titan
 
+    @inline function _furnsh_required(spice_path::String, relpath::String)
+        kernel_path = joinpath(spice_path, relpath)
+        isfile(kernel_path) || throw(ArgumentError("Required SPICE kernel not found: $kernel_path"))
+        furnsh(kernel_path)
+        return kernel_path
+    end
+
+    function _furnsh_first_existing(spice_path::String, relpaths::NTuple{N, String}) where {N}
+        for relpath in relpaths
+            kernel_path = joinpath(spice_path, relpath)
+            if isfile(kernel_path)
+                furnsh(kernel_path)
+                return kernel_path
+            end
+        end
+        throw(ArgumentError("Unable to find required SPICE kernel in $(spice_path). Tried: $(join(relpaths, ", "))"))
+    end
+
     # Constructors
     function Earth(topo_harmonics_file::String, spice_path::String="GRAM Suite 2.0/SPICE")
         earth = Earth()
         # TopographyHarmonicsWorkspace!(topo_harmonics_file, earth)
-        furnsh(spice_path * "/pck/pck00011.tpc")
-        furnsh(spice_path * "/lsk/naif0012.tls")
-        furnsh(spice_path * "/spk/planets/de440s.bsp")
+        _furnsh_required(spice_path, "pck/pck00011.tpc")
+        _furnsh_required(spice_path, "lsk/naif0012.tls")
+        _furnsh_first_existing(spice_path, ("spk/planets/de440s.bsp", "spk/planets/de440_GRAM.bsp"))
         # calc_J2000_to_pci_rotation_matrix!(earth.α, earth.δ, earth)
         return earth
     end
@@ -155,9 +173,9 @@ module Planets
     function Mars(topo_harmonics_file::String, spice_path::String="GRAM Suite 2.0/SPICE")
         mars = Mars()
         # TopographyHarmonicsWorkspace!(topo_harmonics_file, mars)
-        furnsh(spice_path * "/pck/pck00011.tpc")
-        furnsh(spice_path * "/lsk/naif0012.tls")
-        furnsh(spice_path * "/spk/planets/de440s.bsp")
+        _furnsh_required(spice_path, "pck/pck00011.tpc")
+        _furnsh_required(spice_path, "lsk/naif0012.tls")
+        _furnsh_first_existing(spice_path, ("spk/planets/de440s.bsp", "spk/planets/de440_GRAM.bsp"))
         # calc_J2000_to_pci_rotation_matrix!(mars.α, mars.δ, mars)
         return mars
     end
@@ -165,9 +183,9 @@ module Planets
     function Venus(topo_harmonics_file::String, spice_path::String="GRAM Suite 2.0/SPICE")
         venus = Venus()
         # TopographyHarmonicsWorkspace!(topo_harmonics_file, venus)
-        furnsh(spice_path * "/pck/pck00011.tpc")
-        furnsh(spice_path * "/lsk/naif0012.tls")
-        furnsh(spice_path * "/spk/planets/de440s.bsp")
+        _furnsh_required(spice_path, "pck/pck00011.tpc")
+        _furnsh_required(spice_path, "lsk/naif0012.tls")
+        _furnsh_first_existing(spice_path, ("spk/planets/de440s.bsp", "spk/planets/de440_GRAM.bsp"))
         # calc_J2000_to_pci_rotation_matrix!(venus.α, venus.δ, venus)
         return venus
     end
@@ -175,10 +193,10 @@ module Planets
     function Titan(topo_harmonics_file::String, spice_path::String="GRAM Suite 2.0/SPICE")
         titan = Titan()
         # TopographyHarmonicsWorkspace!(topo_harmonics_file, titan)
-        furnsh(spice_path * "/pck/pck00011.tpc")
-        furnsh(spice_path * "/lsk/naif0012.tls")
-        furnsh(spice_path * "/spk/planets/de440s.bsp")
-        furnsh(spice_path * "/spk/satellites/sat441.bsp")
+        _furnsh_required(spice_path, "pck/pck00011.tpc")
+        _furnsh_required(spice_path, "lsk/naif0012.tls")
+        _furnsh_first_existing(spice_path, ("spk/planets/de440s.bsp", "spk/planets/de440_GRAM.bsp"))
+        _furnsh_first_existing(spice_path, ("spk/satellites/sat441.bsp", "spk/satellites/sat441_GRAM.bsp"))
         # calc_J2000_to_pci_rotation_matrix!(titan.α, titan.δ, titan)
         return titan
     end

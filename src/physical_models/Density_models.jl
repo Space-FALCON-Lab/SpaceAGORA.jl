@@ -45,6 +45,8 @@ const _GRAM_LOCK_OFF_WARNING_EMITTED = Ref(false)
 const _GRAM_STATIC_GRID_LOGGED = Ref(false)
 const _GRAM_STATIC_GRID_CACHE = Dict{Any, Any}()
 const _GRAM_STATIC_GRID_LOCK = ReentrantLock()
+const _GRAM_STATIC_GRID_PREBUILD_IN_PROGRESS = Ref(false)
+const _GRAM_SUPPORTED_PLANETS = ("earth", "mars", "venus", "titan", "jupiter", "uranus", "neptune")
 
 struct GRAMStaticGridKey
     planet_name::String
@@ -100,6 +102,8 @@ end
 end
 
 @inline _gram_static_grid_enabled() = _parse_bool_env("SPACEAGORA_GRAM_STATIC_GRID", false)
+@inline _gram_static_grid_prebuild_all_planets_enabled() = _parse_bool_env("SPACEAGORA_GRAM_STATIC_GRID_PREBUILD_ALL_PLANETS", false)
+@inline _gram_static_grid_prebuild_strict() = _parse_bool_env("SPACEAGORA_GRAM_STATIC_GRID_PREBUILD_STRICT", false)
 
 @inline _spaceagora_repo_root() = normpath(joinpath(@__DIR__, "..", ".."))
 @inline _gram_lib_extension() = Sys.iswindows() ? "dll" : (Sys.isapple() ? "dylib" : "so")
@@ -120,11 +124,34 @@ end
     throw(ArgumentError("Unsupported SPACEAGORA_GRAM_GLOBAL_LOCK='$mode'. Use one of: on, off."))
 end
 
-@inline function _gram_static_grid_key(model::GRAMAtmosphereModel, p, wind::Bool)::GRAMStaticGridKey
-    planet = p.args.environment_model.planet
-    EI_m = p.args.environment_model.EI * 1e3
-    alt_min_default = max(0.0, planet.h_ref - 2.0 * planet.H)
-    alt_max_default = max(EI_m + 200e3, planet.h_ref + 25.0 * planet.H)
+@inline function _gram_normalize_planet_name(planet::AbstractString)::String
+    key = lowercase(strip(String(planet)))
+    key in _GRAM_SUPPORTED_PLANETS || throw(ArgumentError("Unsupported planet '$planet'. Supported planets: $(_GRAM_SUPPORTED_PLANETS)"))
+    return key
+end
+
+@inline function _gram_parse_static_grid_planets(raw::AbstractString)::Vector{String}
+    v = lowercase(strip(String(raw)))
+    if isempty(v) || v in ("all", "*")
+        return collect(_GRAM_SUPPORTED_PLANETS)
+    end
+    planets = String[]
+    for token in split(v, ",")
+        name = _gram_normalize_planet_name(token)
+        name in planets || push!(planets, name)
+    end
+    isempty(planets) && throw(ArgumentError("No valid planets provided for static-grid prebuild."))
+    return planets
+end
+
+@inline function _gram_static_grid_planets_from_env()::Vector{String}
+    raw = get(ENV, "SPACEAGORA_GRAM_STATIC_GRID_PLANETS", "all")
+    return _gram_parse_static_grid_planets(raw)
+end
+
+@inline function _gram_static_grid_key(model::GRAMAtmosphereModel, wind::Bool)::GRAMStaticGridKey
+    alt_min_default = 0.0
+    alt_max_default = 2_000_000.0
     alt_min_m = _parse_float_env("SPACEAGORA_GRAM_STATIC_GRID_ALT_MIN_M", alt_min_default)
     alt_max_m = _parse_float_env("SPACEAGORA_GRAM_STATIC_GRID_ALT_MAX_M", alt_max_default)
     if alt_max_m <= alt_min_m
@@ -236,8 +263,8 @@ function _gram_static_grid_build(model::GRAMAtmosphereModel, key::GRAMStaticGrid
     return GRAMStaticGrid(key, alt_nodes, lat_nodes, lon_nodes, rho, T, wind_e, wind_n, wind_u)
 end
 
-function _gram_static_grid_get_or_build!(model::GRAMAtmosphereModel, p, wind::Bool)::GRAMStaticGrid
-    key = _gram_static_grid_key(model, p, wind)
+function _gram_static_grid_get_or_build!(model::GRAMAtmosphereModel, wind::Bool)::GRAMStaticGrid
+    key = _gram_static_grid_key(model, wind)
     lock(_GRAM_STATIC_GRID_LOCK) do
         if haskey(_GRAM_STATIC_GRID_CACHE, key)
             return _GRAM_STATIC_GRID_CACHE[key]::GRAMStaticGrid
@@ -246,6 +273,64 @@ function _gram_static_grid_get_or_build!(model::GRAMAtmosphereModel, p, wind::Bo
         _GRAM_STATIC_GRID_CACHE[key] = grid
         return grid
     end
+end
+
+function clear_gram_static_grid_cache!()
+    lock(_GRAM_STATIC_GRID_LOCK) do
+        empty!(_GRAM_STATIC_GRID_CACHE)
+        _GRAM_STATIC_GRID_LOGGED[] = false
+    end
+    return nothing
+end
+
+function _gram_model_for_planet(base_model::GRAMAtmosphereModel, planet::String)::GRAMAtmosphereModel
+    if planet == base_model.planet_name
+        return base_model
+    end
+    return GRAMAtmosphereModel(
+        gram_root_directory=base_model.gram_root,
+        gram_data_directory=base_model.gram_data_root,
+        spice_directory=base_model.spice_root,
+        planet_name=planet,
+        initial_time=base_model.initial_time
+    )
+end
+
+function precompute_gram_static_grids!(
+    base_model::GRAMAtmosphereModel;
+    planets::Union{Nothing, AbstractVector{<:AbstractString}}=nothing,
+    wind::Bool=true
+)
+    planet_list = planets === nothing ?
+        _gram_static_grid_planets_from_env() :
+        _gram_parse_static_grid_planets(join(planets, ","))
+
+    if _GRAM_STATIC_GRID_PREBUILD_IN_PROGRESS[]
+        return nothing
+    end
+
+    _GRAM_STATIC_GRID_PREBUILD_IN_PROGRESS[] = true
+    try
+        @info "Precomputing GRAM static grids." planets=planet_list
+        strict = _gram_static_grid_prebuild_strict()
+        failed = String[]
+        for planet in planet_list
+            try
+                model = _gram_model_for_planet(base_model, planet)
+                _gram_static_grid_get_or_build!(model, wind)
+            catch err
+                if strict
+                    rethrow(err)
+                end
+                push!(failed, planet)
+                @warn "Skipping GRAM static-grid prebuild for planet." planet error=sprint(showerror, err)
+            end
+        end
+        isempty(failed) || @warn "GRAM static-grid prebuild completed with skipped planets." skipped=failed
+    finally
+        _GRAM_STATIC_GRID_PREBUILD_IN_PROGRESS[] = false
+    end
+    return nothing
 end
 
 @inline function _gram_static_grid_eval(grid::GRAMStaticGrid, h::Float64, lat::Float64, lon::Float64)::Tuple{Float64, Float64, SVector{3, Float64}}
@@ -551,7 +636,7 @@ function GRAMAtmosphereModel(;
         end
     end
 
-    return GRAMAtmosphereModel(
+    model = GRAMAtmosphereModel(
         gram,
         gram_atmosphere,
         gram_root,
@@ -560,6 +645,11 @@ function GRAMAtmosphereModel(;
         planet_key,
         initial_time
     )
+    if _gram_static_grid_enabled() && _gram_static_grid_prebuild_all_planets_enabled() && !_GRAM_STATIC_GRID_PREBUILD_IN_PROGRESS[]
+        wind_enabled = _parse_bool_env("SPACEAGORA_GRAM_STATIC_GRID_WIND", true)
+        precompute_gram_static_grids!(model; wind=wind_enabled)
+    end
+    return model
 end
 
 function Base.deepcopy_internal(model::GRAMAtmosphereModel, stackdict::IdDict)
@@ -714,6 +804,7 @@ end
     el_time::Float64,
     wind::Bool
 )::Tuple{Float64, Float64, SVector{3, Float64}}
+    # Resolve GRAM callables in latest world to avoid Julia 1.12 world-age binding warnings under hot reload.
     set_position! = Base.invokelatest(getfield, model.gram, Symbol("set_position!"))
     Base.invokelatest(
         set_position!,
@@ -775,7 +866,7 @@ function getDensity(model::GRAMAtmosphereModel, h::Float64, lat::Float64, lon::F
     elseif _gram_static_grid_enabled()
         # Static piecewise-linear interpolation on a precomputed (alt, lat, lon) grid.
         # This mode intentionally ignores elapsed time to trade fidelity for throughput.
-        grid = _gram_static_grid_get_or_build!(model, p, wind)
+        grid = _gram_static_grid_get_or_build!(model, wind)
         rho, T, wind_vec = _gram_static_grid_eval(grid, h, lat, lon)
     elseif !drag_state && !p.args.mission_configuration.keplerian
         rho, T, wind_vec = density_polyfit(h, p)

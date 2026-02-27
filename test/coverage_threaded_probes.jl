@@ -10,7 +10,7 @@ using .SimulationModel
 const quat_mult = SimulationModel.quat_mult
 include(joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"))
 
-const SPICE_PATH = joinpath(REPO_ROOT, "GRAM_Data", "SPICE")
+const SPICE_PATH = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
 const EARTH = Earth("", SPICE_PATH)
 
 struct ProbeDensityModel <: SimulationModel.AbstractDensityModel

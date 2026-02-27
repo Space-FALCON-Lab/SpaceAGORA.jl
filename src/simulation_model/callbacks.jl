@@ -8,7 +8,7 @@ using Dates
 using ..SimulationModel: SPICE_LOCK, GRAM_LOCK
 using ..EnvironmentModels
 using ..EnvironmentModels: getDensity, getHeatRate, NoAtmosphereModel
-using ..DynamicEffectors: BaseThrusterModel, AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
+using ..DynamicEffectors: BaseThrusterModel, AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight, InverseSquaredJ2GravityModel
 using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
 using ..ConfigTypes: SaveData
 using ..ControlEffectors: calcControlEffect!
@@ -20,6 +20,74 @@ export get_callbacks
 @inline callback_use_invokelatest() = get(ENV, "SPACEAGORA_DEV_HOT_RELOAD", "0") == "1"
 const _gram_track_cache_warning_emitted = Ref(false)
 
+Base.@kwdef mutable struct GramRuntimeStats
+    density_calls::Int64 = 0
+    cache_enabled_calls::Int64 = 0
+    cache_hits::Int64 = 0
+    cache_misses::Int64 = 0
+    miss_time_window::Int64 = 0
+    miss_state_tolerance::Int64 = 0
+    direct_calls::Int64 = 0
+    refresh_calls::Int64 = 0
+    refresh_points_total::Int64 = 0
+    refresh_points_max::Int64 = 0
+    refresh_failures::Int64 = 0
+    refresh_elapsed_s::Float64 = 0.0
+    state_error_samples::Int64 = 0
+    alt_err_abs_max_m::Float64 = 0.0
+    lat_err_abs_max_deg::Float64 = 0.0
+    lon_err_abs_max_deg::Float64 = 0.0
+    alt_err_abs_sum_m::Float64 = 0.0
+    lat_err_abs_sum_deg::Float64 = 0.0
+    lon_err_abs_sum_deg::Float64 = 0.0
+end
+
+const _gram_runtime_stats = Ref{GramRuntimeStats}(GramRuntimeStats())
+const _gram_runtime_stats_lock = ReentrantLock()
+
+@inline _gram_runtime_stats_enabled() = _parse_bool_env("SPACEAGORA_GRAM_PROFILE", false)
+
+function _gram_runtime_stats_reset!()
+    lock(_gram_runtime_stats_lock) do
+        _gram_runtime_stats[] = GramRuntimeStats()
+    end
+    return nothing
+end
+
+function _gram_runtime_stats_update!(f::Function)
+    lock(_gram_runtime_stats_lock) do
+        f(_gram_runtime_stats[])
+    end
+    return nothing
+end
+
+function _gram_runtime_stats_snapshot()
+    lock(_gram_runtime_stats_lock) do
+        s = _gram_runtime_stats[]
+        return (
+            density_calls=s.density_calls,
+            cache_enabled_calls=s.cache_enabled_calls,
+            cache_hits=s.cache_hits,
+            cache_misses=s.cache_misses,
+            miss_time_window=s.miss_time_window,
+            miss_state_tolerance=s.miss_state_tolerance,
+            direct_calls=s.direct_calls,
+            refresh_calls=s.refresh_calls,
+            refresh_points_total=s.refresh_points_total,
+            refresh_points_max=s.refresh_points_max,
+            refresh_failures=s.refresh_failures,
+            refresh_elapsed_s=s.refresh_elapsed_s,
+            state_error_samples=s.state_error_samples,
+            alt_err_abs_max_m=s.alt_err_abs_max_m,
+            lat_err_abs_max_deg=s.lat_err_abs_max_deg,
+            lon_err_abs_max_deg=s.lon_err_abs_max_deg,
+            alt_err_abs_sum_m=s.alt_err_abs_sum_m,
+            lat_err_abs_sum_deg=s.lat_err_abs_sum_deg,
+            lon_err_abs_sum_deg=s.lon_err_abs_sum_deg
+        )
+    end
+end
+
 @inline function _parse_bool_env(name::String, default::Bool)::Bool
     raw = lowercase(strip(get(ENV, name, default ? "1" : "0")))
     if raw in ("1", "true", "yes", "on")
@@ -28,6 +96,31 @@ const _gram_track_cache_warning_emitted = Ref(false)
         return false
     end
     throw(ArgumentError("Invalid $name='$raw'. Use one of: 1/0, true/false, yes/no, on/off."))
+end
+
+@inline _gram_track_cache_ignore_time_window() = _parse_bool_env("SPACEAGORA_GRAM_TRACK_CACHE_IGNORE_TIME_WINDOW", true)
+@inline _gram_track_cache_target_use_j2() = _parse_bool_env("SPACEAGORA_GRAM_TRACK_CACHE_TARGET_USE_J2", true)
+
+@inline function _gram_entry_target_mode()::Symbol
+    mode = lowercase(strip(get(ENV, "SPACEAGORA_GRAM_ENTRY_TARGET_MODE", "allen_eggers")))
+    if mode in ("off", "none", "0", "false", "no")
+        return :off
+    elseif mode in ("allen_eggers", "allen-eggers", "allen", "ae", "on", "1", "true", "yes", "auto")
+        return :allen_eggers
+    end
+    throw(ArgumentError("Unsupported SPACEAGORA_GRAM_ENTRY_TARGET_MODE='$mode'. Use one of: off, allen_eggers."))
+end
+
+@inline _gram_entry_target_cd() = max(0.05, _parse_float_env("SPACEAGORA_GRAM_ENTRY_TARGET_CD", 1.5))
+@inline _gram_entry_target_dt() = max(0.05, _parse_float_env("SPACEAGORA_GRAM_ENTRY_TARGET_DT_S", 0.5))
+@inline function _gram_entry_target_max_steps()::Int
+    raw = strip(get(ENV, "SPACEAGORA_GRAM_ENTRY_TARGET_MAX_STEPS", "400"))
+    parsed = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_GRAM_ENTRY_TARGET_MAX_STEPS must be an integer value, got '$raw'"))
+    end
+    return max(8, parsed)
 end
 
 @inline function _density_callback_parallel_mode()::Symbol
@@ -205,9 +298,13 @@ struct GramTrackCacheConfig
 end
 
 @inline function _gram_track_cache_mode()::Symbol
+    # Benchmark note (2026-02-27):
+    # Track-cache refresh can dominate runtime due frequent large GRAM trajectory builds.
+    # Example entry case: point-to-point ~0.45 s vs cache+Allen-Eggers ~42.8 s.
+    # Keep point-to-point as primary default; enable cache explicitly via env.
     raw = haskey(ENV, "SPACEAGORA_GRAM_TRACK_CACHE") ?
         ENV["SPACEAGORA_GRAM_TRACK_CACHE"] :
-        get(ENV, "SPACEAGORA_GRAM_SEGMENT_CACHE", "auto")
+        get(ENV, "SPACEAGORA_GRAM_SEGMENT_CACHE", "off")
     mode = lowercase(strip(raw))
     if mode in ("off", "none", "0", "false", "no")
         return :off
@@ -346,19 +443,24 @@ end
     t::Float64
 )::Union{Nothing, Tuple{Int, Float64}}
     n = length(cache.times)
-    if !cache.valid || n < 2 || t < cache.t0 || t > cache.t1
+    if !cache.valid || n < 2
         return nothing
     end
+    ignore_time_window = _gram_track_cache_ignore_time_window()
+    if !ignore_time_window && (t < cache.t0 || t > cache.t1)
+        return nothing
+    end
+    tq = ignore_time_window ? clamp(t, cache.t0, cache.t1) : t
     idx = clamp(cache.index_hint, 1, n - 1)
-    if t < cache.times[idx] || t > cache.times[idx + 1]
-        idx = clamp(searchsortedlast(cache.times, t), 1, n - 1)
+    if tq < cache.times[idx] || tq > cache.times[idx + 1]
+        idx = clamp(searchsortedlast(cache.times, tq), 1, n - 1)
     end
     t_lo = cache.times[idx]
     t_hi = cache.times[idx + 1]
-    if t < t_lo || t > t_hi
+    if tq < t_lo || tq > t_hi
         return nothing
     end
-    x = t_hi == t_lo ? 0.0 : (t - t_lo) / (t_hi - t_lo)
+    x = t_hi == t_lo ? 0.0 : (tq - t_lo) / (t_hi - t_lo)
     cache.index_hint = idx
     return idx, x
 end
@@ -440,39 +542,270 @@ end
     return max(1.0, 0.5 * tol_scale_m)
 end
 
-function _gram_descending_periapsis_target(
+@inline function _solve_kepler_elliptic(M::Float64, e::Float64)::Float64
+    M2π = mod(M, 2pi)
+    E = e < 0.8 ? M2π : pi
+    @inbounds for _ in 1:20
+        f = E - e * sin(E) - M2π
+        fp = 1.0 - e * cos(E)
+        abs(fp) < 1e-14 && break
+        dE = f / fp
+        E -= dE
+        abs(dE) <= 1e-12 && break
+    end
+    return E
+end
+
+@inline function _true_to_eccentric_anomaly(ν::Float64, e::Float64)::Float64
+    E = atan(sqrt(max(0.0, 1.0 - e^2)) * sin(ν), e + cos(ν))
+    return mod(E, 2pi)
+end
+
+@inline function _eccentric_to_true_anomaly(E::Float64, e::Float64)::Float64
+    ν = atan(sqrt(max(0.0, 1.0 - e^2)) * sin(E), cos(E) - e)
+    return mod(ν, 2pi)
+end
+
+@inline function _gram_j2_rates(a::Float64, e::Float64, i::Float64, n::Float64, planet)::Tuple{Float64, Float64}
+    if !isfinite(planet.J2) || planet.J2 == 0.0
+        return 0.0, 0.0
+    end
+    p = a * (1.0 - e^2)
+    if !isfinite(p) || p <= 0.0
+        return 0.0, 0.0
+    end
+    scale = planet.J2 * (planet.Rp_e / p)^2
+    Ωdot = -1.5 * n * scale * cos(i)
+    ωdot = 0.75 * n * scale * (5.0 * cos(i)^2 - 1.0)
+    return Ωdot, ωdot
+end
+
+function _gram_kepler_target(
     pos::SVector{3, Float64},
     vel::SVector{3, Float64},
-    planet
-)::Union{Nothing, Tuple{Float64, Float64, Float64, Float64}}
+    planet,
+    dt::Float64;
+    include_j2::Bool = true
+)::Union{Nothing, Tuple{Float64, Float64, Float64}}
     try
         oe = rvtoorbitalelement(pos, vel, planet)
         a, e, i, Ω, ω, ν = Float64(oe[1]), Float64(oe[2]), Float64(oe[3]), Float64(oe[4]), Float64(oe[5]), Float64(oe[6])
-        if !isfinite(a) || !isfinite(e) || !isfinite(ν) || a <= 0.0 || e < 0.0 || e >= 1.0
+        if !isfinite(dt) || dt <= 1e-6 || !isfinite(a) || !isfinite(e) || !isfinite(ν) || a <= 0.0 || e < 0.0 || e >= 1.0
             return nothing
         end
         n = sqrt(planet.μ / a^3)
         if !isfinite(n) || n <= 0.0
             return nothing
         end
-        E = atan(sqrt(max(0.0, 1.0 - e^2)) * sin(ν), e + cos(ν))
-        E = mod(E, 2pi)
+        E0 = _true_to_eccentric_anomaly(ν, e)
+        M0 = E0 - e * sin(E0)
+        E1 = _solve_kepler_elliptic(M0 + n * dt, e)
+        ν1 = _eccentric_to_true_anomaly(E1, e)
+
+        Ω1 = Ω
+        ω1 = ω
+        if include_j2
+            Ωdot, ωdot = _gram_j2_rates(a, e, i, n, planet)
+            Ω1 += Ωdot * dt
+            ω1 += ωdot * dt
+        end
+
+        oe_target = SVector{7, Float64}(a, e, i, Ω1, ω1, ν1, 0.0)
+        r_target_vec, v_target_vec = orbitalelemtorv(oe_target, planet)
+        r_target_i = SVector{3, Float64}(Float64.(r_target_vec))
+        v_target_i = SVector{3, Float64}(Float64.(v_target_vec))
+        r_target_p, _ = r_intor_p!(r_target_i, v_target_i, planet)
+        alt_target, lat_target, lon_target = rtolatlong(r_target_p, planet)
+        return alt_target, lat_target, lon_target
+    catch
+        return nothing
+    end
+end
+
+function _gram_periapsis_target(
+    pos::SVector{3, Float64},
+    vel::SVector{3, Float64},
+    planet;
+    include_j2::Bool = true
+)::Union{Nothing, Tuple{Float64, Float64, Float64, Float64}}
+    try
+        oe = rvtoorbitalelement(pos, vel, planet)
+        a, e, ν = Float64(oe[1]), Float64(oe[2]), Float64(oe[6])
+        if !isfinite(a) || !isfinite(e) || !isfinite(ν) || a <= 0.0 || e < 0.0 || e >= 1.0
+            return nothing
+        end
+
+        n = sqrt(planet.μ / a^3)
+        if !isfinite(n) || n <= 0.0
+            return nothing
+        end
+        E = _true_to_eccentric_anomaly(ν, e)
         M = mod(E - e * sin(E), 2pi)
         dt_peri = (2pi - M) / n
         if !isfinite(dt_peri) || dt_peri <= 1e-6
             return nothing
         end
-
-        oe_peri = SVector{7, Float64}(a, e, i, Ω, ω, 0.0, 0.0)
-        r_peri_vec, v_peri_vec = orbitalelemtorv(oe_peri, planet)
-        r_peri_i = SVector{3, Float64}(Float64.(r_peri_vec))
-        v_peri_i = SVector{3, Float64}(Float64.(v_peri_vec))
-        r_peri_p, _ = r_intor_p!(r_peri_i, v_peri_i, planet)
-        alt_peri, lat_peri, lon_peri = rtolatlong(r_peri_p, planet)
+        target = _gram_kepler_target(pos, vel, planet, dt_peri; include_j2=include_j2)
+        target === nothing && return nothing
+        alt_peri, lat_peri, lon_peri = target
         return dt_peri, alt_peri, lat_peri, lon_peri
     catch
         return nothing
     end
+end
+
+@inline _gram_descending_periapsis_target(pos::SVector{3, Float64}, vel::SVector{3, Float64}, planet; include_j2::Bool = true) =
+    _gram_periapsis_target(pos, vel, planet; include_j2=include_j2)
+
+function _gram_orbit_period_target(
+    pos::SVector{3, Float64},
+    vel::SVector{3, Float64},
+    planet;
+    include_j2::Bool = true
+)::Union{Nothing, Tuple{Float64, Float64, Float64, Float64}}
+    try
+        oe = rvtoorbitalelement(pos, vel, planet)
+        a, e = Float64(oe[1]), Float64(oe[2])
+        if !isfinite(a) || !isfinite(e) || a <= 0.0 || e < 0.0 || e >= 1.0
+            return nothing
+        end
+        n = sqrt(planet.μ / a^3)
+        if !isfinite(n) || n <= 0.0
+            return nothing
+        end
+        dt_orbit = 2pi / n
+        if !isfinite(dt_orbit) || dt_orbit <= 1e-6
+            return nothing
+        end
+        target = _gram_kepler_target(pos, vel, planet, dt_orbit; include_j2=include_j2)
+        target === nothing && return nothing
+        alt_end, lat_end, lon_end = target
+        return dt_orbit, alt_end, lat_end, lon_end
+    catch
+        return nothing
+    end
+end
+
+@inline function _gram_linear_target(
+    pos::SVector{3, Float64},
+    vel::SVector{3, Float64},
+    planet,
+    dt::Float64
+)::Tuple{Float64, Float64, Float64}
+    pos_target = pos + vel * dt
+    rp_target, _ = r_intor_p!(pos_target, vel, planet)
+    target_alt, target_lat, target_lon = rtolatlong(rp_target, planet)
+    return target_alt, target_lat, target_lon
+end
+
+@inline function _gram_entry_reference_area_m2(p, sat_index::Int)::Float64
+    try
+        spacecraft = p.args.dynamics_model.spacecraft[sat_index]
+        area = 0.0
+        @inbounds for link in spacecraft.links
+            a = Float64(link.ref_area)
+            if isfinite(a) && a > 0.0
+                area += a
+            end
+        end
+        if area > 0.0
+            return area
+        end
+        a0 = Float64(spacecraft.root.ref_area)
+        return (isfinite(a0) && a0 > 0.0) ? a0 : 1.0
+    catch
+        return 1.0
+    end
+end
+
+@inline function _gram_entry_mass_kg(p, sat_index::Int, current_mass_kg::Float64)::Float64
+    if isfinite(current_mass_kg) && current_mass_kg > 0.0
+        return current_mass_kg
+    end
+    try
+        spacecraft = p.args.dynamics_model.spacecraft[sat_index]
+        m = Float64(spacecraft.dry_mass + spacecraft.prop_mass)
+        return (isfinite(m) && m > 0.0) ? m : 100.0
+    catch
+        return 100.0
+    end
+end
+
+@inline function _gram_entry_reference_density(planet, h::Float64)::Float64
+    H = max(1.0, planet.H)
+    ρ = planet.ρ_ref * exp((planet.h_ref - h) / H)
+    return (isfinite(ρ) && ρ > 0.0) ? ρ : 0.0
+end
+
+function _gram_entry_target_allen_eggers(
+    pos::SVector{3, Float64},
+    vel::SVector{3, Float64},
+    planet,
+    dt::Float64,
+    mass_kg::Float64,
+    ref_area_m2::Float64;
+    cd::Float64 = _gram_entry_target_cd()
+)::Union{Nothing, Tuple{Float64, Float64, Float64}}
+    if !isfinite(dt) || dt <= 1e-6 || !isfinite(mass_kg) || mass_kg <= 0.0 || !isfinite(ref_area_m2) || ref_area_m2 <= 0.0
+        return nothing
+    end
+    if !isfinite(planet.ρ_ref) || planet.ρ_ref <= 0.0
+        return nothing
+    end
+
+    rp, vp = r_intor_p!(pos, vel, planet)
+    alt0, lat0, lon0 = rtolatlong(rp, planet)
+    uD, uN, uE = latlongtoNED(SVector{3, Float64}(alt0, lat0, lon0))
+
+    vN0 = dot(vp, uN)
+    vE0 = dot(vp, uE)
+    vU0 = -dot(vp, uD)
+    vh0 = hypot(vN0, vE0)
+    v = norm(vp)
+    if !isfinite(v) || v <= 1e-3
+        return nothing
+    end
+
+    γ = atan(vU0, max(vh0, 1e-9))
+    χ = atan(vE0, vN0)
+    h = alt0
+    lat = lat0
+    lon = lon0
+    β = mass_kg / max(1e-6, cd * ref_area_m2)
+
+    n_steps = Int(ceil(dt / _gram_entry_target_dt()))
+    n_steps = clamp(n_steps, 2, _gram_entry_target_max_steps())
+    Δτ = dt / n_steps
+
+    @inbounds for _ in 1:n_steps
+        r = max(1.0, planet.Rp_e + h)
+        cosγ = cos(γ)
+        sinγ = sin(γ)
+        cosχ = cos(χ)
+        sinχ = sin(χ)
+        coslat = max(1e-6, abs(cos(lat)))
+        tanlat = clamp(tan(lat), -100.0, 100.0)
+
+        ρ = _gram_entry_reference_density(planet, h)
+        g = planet.μ / (r * r)
+        drag_acc = 0.5 * ρ * v * v / β
+
+        v_dot = -drag_acc - g * sinγ
+        γ_dot = (v / r - g / max(v, 1e-3)) * cosγ
+        χ_dot = v * cosγ * sinχ * tanlat / r
+        h_dot = v * sinγ
+        lat_dot = v * cosγ * cosχ / r
+        lon_dot = v * cosγ * sinχ / (r * coslat) - planet.ω[3]
+
+        v = max(1e-3, v + v_dot * Δτ)
+        γ = clamp(γ + γ_dot * Δτ, -deg2rad(89.0), deg2rad(89.0))
+        χ = atan(sin(χ + χ_dot * Δτ), cos(χ + χ_dot * Δτ))
+        h += h_dot * Δτ
+        lat = clamp(lat + lat_dot * Δτ, -deg2rad(89.9), deg2rad(89.9))
+        lon = atan(sin(lon + lon_dot * Δτ), cos(lon + lon_dot * Δτ))
+    end
+
+    return h, lat, lon
 end
 
 function _gram_track_cache_fill_from_trajectory!(
@@ -527,22 +860,95 @@ function _gram_track_cache_refresh!(
     n_points::Int,
     alt_tol_m::Float64 = 500.0,
     ang_tol_rad::Float64 = deg2rad(1.0),
-    transition_band_m::Float64 = 0.0
+    transition_band_m::Float64 = 0.0,
+    segment_end_t::Float64 = NaN,
+    target_include_j2::Bool = true,
+    sat_index::Int = 1,
+    current_mass_kg::Float64 = NaN
 )
+    stats_enabled = _gram_runtime_stats_enabled()
+    refresh_t0_ns = stats_enabled ? time_ns() : 0
     try
         planet = p.args.environment_model.planet
         base_horizon_s = max(1e-3, horizon_s)
-        dt_segment = base_horizon_s
-        pos_target = pos + vel * dt_segment
-        rp_target, _ = r_intor_p!(pos_target, vel, planet)
-        target_alt, target_lat, target_lon = rtolatlong(rp_target, planet)
+        include_j2 = target_include_j2
+        EI_m = p.args.environment_model.EI * 1e3
+        in_atm_band = alt <= EI_m + max(0.0, transition_band_m)
+        mission_is_orbit = p.args.mission_configuration.mission_type == MissionOrbits
 
-        if _gram_track_cache_periapsis_split_enabled() &&
-           alt <= p.args.environment_model.EI * 1e3 + max(0.0, transition_band_m) &&
-           dot(pos, vel) < 0.0
-            peri_target = _gram_descending_periapsis_target(pos, vel, planet)
+        target_for_dt = function (dt::Float64)
+            target = _gram_kepler_target(pos, vel, planet, dt; include_j2=include_j2)
+            return target === nothing ? _gram_linear_target(pos, vel, planet, dt) : target
+        end
+
+        dt_segment = base_horizon_s
+        target_alt, target_lat, target_lon = target_for_dt(dt_segment)
+
+        if _gram_track_cache_periapsis_split_enabled() && in_atm_band
+            # Drag passage: build the cache segment to periapsis when possible.
+            peri_target = _gram_periapsis_target(pos, vel, planet; include_j2=include_j2)
             if peri_target !== nothing
                 dt_segment, target_alt, target_lat, target_lon = peri_target
+            else
+                # Entry-like/open trajectories: use Allen-Eggers-type endpoint targeting.
+                used_entry_model = false
+                if _gram_entry_target_mode() == :allen_eggers
+                    dt_entry = if isfinite(segment_end_t)
+                        max(1e-3, segment_end_t - t)
+                    else
+                        base_horizon_s
+                    end
+                    if isfinite(dt_entry) && dt_entry > 1e-6
+                        mass_kg = _gram_entry_mass_kg(p, sat_index, current_mass_kg)
+                        area_m2 = _gram_entry_reference_area_m2(p, sat_index)
+                        entry_target = _gram_entry_target_allen_eggers(
+                            pos,
+                            vel,
+                            planet,
+                            dt_entry,
+                            mass_kg,
+                            area_m2;
+                            cd=_gram_entry_target_cd()
+                        )
+                        if entry_target !== nothing
+                            dt_segment = dt_entry
+                            target_alt, target_lat, target_lon = entry_target
+                            used_entry_model = true
+                        end
+                    end
+                end
+
+                # If entry model is disabled/unavailable, use solver endpoint propagation.
+                if !used_entry_model && isfinite(segment_end_t)
+                    dt_to_end = segment_end_t - t
+                    if dt_to_end > 1e-6
+                        dt_segment = max(1e-3, dt_to_end)
+                        target_alt, target_lat, target_lon = target_for_dt(dt_segment)
+                    end
+                end
+            end
+        elseif mission_is_orbit
+            # Orbit mission: build one segment over a full orbital period.
+            orbit_target = _gram_orbit_period_target(pos, vel, planet; include_j2=include_j2)
+            if orbit_target !== nothing
+                dt_segment, target_alt, target_lat, target_lon = orbit_target
+            end
+        else
+            # Time mission: propagate to the remaining solver time span.
+            used_tspan_endpoint = false
+            if isfinite(segment_end_t)
+                dt_to_end = segment_end_t - t
+                if dt_to_end > 1e-6
+                    dt_segment = max(1e-3, dt_to_end)
+                    target_alt, target_lat, target_lon = target_for_dt(dt_segment)
+                    used_tspan_endpoint = true
+                end
+            end
+            if !used_tspan_endpoint
+                orbit_target = _gram_orbit_period_target(pos, vel, planet; include_j2=include_j2)
+                if orbit_target !== nothing
+                    dt_segment, target_alt, target_lat, target_lon = orbit_target
+                end
             end
         end
 
@@ -563,6 +969,14 @@ function _gram_track_cache_refresh!(
         n = max(base_n, n_from_time, n_from_length)
         n = min(n, _gram_track_cache_max_npos())
 
+        if stats_enabled
+            _gram_runtime_stats_update!(s -> begin
+                s.refresh_calls += 1
+                s.refresh_points_total += n
+                s.refresh_points_max = max(s.refresh_points_max, n)
+            end)
+        end
+
         if length(cache.times) != n
             resize!(cache.times, n)
             resize!(cache.alts, n)
@@ -582,7 +996,8 @@ function _gram_track_cache_refresh!(
             Δlon_deg = rad2deg(_angle_delta_rad(lon, target_lon)) / denom
             Δt = dt_segment / denom
 
-            gen_track = () -> density_model.gram.generate_trajectory(
+            gen_track = () -> Base.invokelatest(
+                density_model.gram.generate_trajectory,
                 density_model.gram_atmosphere;
                 initial_height=alt * 1e-3,
                 initial_latitude=rad2deg(lat),
@@ -628,9 +1043,20 @@ function _gram_track_cache_refresh!(
         cache.t0 = cache.times[1]
         cache.t1 = cache.times[end]
         cache.index_hint = 1
+        if stats_enabled
+            _gram_runtime_stats_update!(s -> begin
+                s.refresh_elapsed_s += (time_ns() - refresh_t0_ns) * 1e-9
+            end)
+        end
         return cache.rhos[1], cache.Ts[1], cache.winds[1]
     catch err
         cache.valid = false
+        if stats_enabled
+            _gram_runtime_stats_update!(s -> begin
+                s.refresh_failures += 1
+                s.refresh_elapsed_s += (time_ns() - refresh_t0_ns) * 1e-9
+            end)
+        end
         if !_gram_track_cache_warning_emitted[]
             _gram_track_cache_warning_emitted[] = true
             @warn "GRAM track cache refresh failed; falling back to direct GRAM sampling." exception=err
@@ -642,6 +1068,15 @@ end
 @inline function _uses_atmospheric_dynamic_effector(effectors::Tuple)::Bool
     @inbounds for effector in effectors
         if effector isa AerodynamicCoefficientConstant || effector isa AerodynamicCoefficientfM || effector isa AerodynamicCoefficientNoBallisticFlight
+            return true
+        end
+    end
+    return false
+end
+
+@inline function _uses_j2_gravity_effector(effectors::Tuple)::Bool
+    @inbounds for effector in effectors
+        if effector isa InverseSquaredJ2GravityModel
             return true
         end
     end
@@ -719,7 +1154,7 @@ function get_callbacks(num_sats::Int, effectors::Tuple, args::SimulationConfigur
     ]
 
     if _requires_density_callback(effectors, args)
-        push!(callbacks, get_density_callback(num_sats, args))
+        push!(callbacks, get_density_callback(num_sats, effectors, args))
     end
 
     if _requires_thermal_callback(effectors, args)
@@ -771,16 +1206,28 @@ function update_planet_frame_callback()
     return DiscreteCallback(condition, affect!, initialize=init_affect!)
 end
 # Factory function to build the callback
-function get_density_callback(num_sats::Int, args::SimulationConfiguration)
+function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationConfiguration)
     use_threads = _density_callback_use_threads(args, num_sats)
     cache_cfg = _gram_track_cache_config()
-    function update_density_sat!(i::Int, p, u, t)
+    stats_enabled = _gram_runtime_stats_enabled()
+    target_include_j2 = _gram_track_cache_target_use_j2() && _uses_j2_gravity_effector(effectors)
+    function update_density_sat!(i::Int, p, u, t, segment_end_t::Float64)
+        if stats_enabled
+            _gram_runtime_stats_update!(s -> begin
+                s.density_calls += 1
+            end)
+        end
         pos = SVector{3, Float64}(u.sc[i].pos)
         vel = SVector{3, Float64}(u.sc[i].vel)
         rp, _ = r_intor_p!(pos, vel, p.args.environment_model.planet)
         alt, lat, lon = rtolatlong(rp, p.args.environment_model.planet)
         density_model = _density_model_for_sat(p, i)
         ρ, T, wind_vec = if _gram_track_cache_enabled(cache_cfg, density_model)
+            if stats_enabled
+                _gram_runtime_stats_update!(s -> begin
+                    s.cache_enabled_calls += 1
+                end)
+            end
             cache_horizon_s, cache_alt_tol_m, cache_ang_tol_rad, cache_points = _gram_track_cache_profile(cache_cfg, p, alt)
             caches = p.shared_buffers.gram_density_cache
             cache = if i <= length(caches) && caches[i] isa GramTrackCache
@@ -792,7 +1239,49 @@ function get_density_callback(num_sats::Int, args::SimulationConfiguration)
                 end
                 c
             end
-            seg = _gram_track_cache_ready(cache, t, alt, lat, lon, cache_alt_tol_m, cache_ang_tol_rad)
+            seg = if stats_enabled
+                seg0 = _gram_track_cache_segment(cache, t)
+                if seg0 === nothing
+                    _gram_runtime_stats_update!(s -> begin
+                        s.cache_misses += 1
+                        s.miss_time_window += 1
+                    end)
+                    nothing
+                else
+                    idx0, x0 = seg0
+                    alt_interp = _lerp(cache.alts[idx0], cache.alts[idx0 + 1], x0)
+                    lat_interp = _lerp_angle_rad(cache.lats[idx0], cache.lats[idx0 + 1], x0)
+                    lon_interp = _lerp_angle_rad(cache.lons[idx0], cache.lons[idx0 + 1], x0)
+                    alt_err = abs(alt - alt_interp)
+                    lat_err = _angdiff_rad(lat, lat_interp)
+                    lon_err = _angdiff_rad(lon, lon_interp)
+                    _gram_runtime_stats_update!(s -> begin
+                        s.state_error_samples += 1
+                        s.alt_err_abs_max_m = max(s.alt_err_abs_max_m, alt_err)
+                        s.lat_err_abs_max_deg = max(s.lat_err_abs_max_deg, rad2deg(lat_err))
+                        s.lon_err_abs_max_deg = max(s.lon_err_abs_max_deg, rad2deg(lon_err))
+                        s.alt_err_abs_sum_m += alt_err
+                        s.lat_err_abs_sum_deg += rad2deg(lat_err)
+                        s.lon_err_abs_sum_deg += rad2deg(lon_err)
+                    end)
+                    if abs(alt - alt_interp) <= cache_alt_tol_m &&
+                       _angdiff_rad(lat, lat_interp) <= cache_ang_tol_rad &&
+                       _angdiff_rad(lon, lon_interp) <= cache_ang_tol_rad
+                        _gram_runtime_stats_update!(s -> begin
+                            s.cache_hits += 1
+                        end)
+                        seg0
+                    else
+                        _gram_runtime_stats_update!(s -> begin
+                            s.cache_misses += 1
+                            s.miss_state_tolerance += 1
+                        end)
+                        nothing
+                    end
+                end
+            else
+                _gram_track_cache_ready(cache, t, alt, lat, lon, cache_alt_tol_m, cache_ang_tol_rad)
+            end
             if seg !== nothing
                 idx, x = seg
                 _gram_track_cache_eval(cache, idx, x)
@@ -811,10 +1300,19 @@ function get_density_callback(num_sats::Int, args::SimulationConfiguration)
                     cache_points,
                     cache_alt_tol_m,
                     cache_ang_tol_rad,
-                    cache_cfg.transition_band_m
+                    cache_cfg.transition_band_m,
+                    segment_end_t,
+                    target_include_j2,
+                    i,
+                    Float64(u.sc[i].mass)
                 )
             end
         else
+            if stats_enabled
+                _gram_runtime_stats_update!(s -> begin
+                    s.direct_calls += 1
+                end)
+            end
             getDensity(density_model, alt, lat, lon, t, true, p)
         end
         p.shared_buffers.densities[i] = ρ
@@ -831,14 +1329,19 @@ function get_density_callback(num_sats::Int, args::SimulationConfiguration)
     function affect!(integrator)
         p = integrator.p
         u = integrator.u
+        segment_end_t = try
+            Float64(integrator.sol.prob.tspan[2])
+        catch
+            integrator.t + cache_cfg.orbit_horizon_s
+        end
 
         if use_threads
             Threads.@threads for i in 1:num_sats
-                @inbounds update_density_sat!(i, p, u, integrator.t)
+                @inbounds update_density_sat!(i, p, u, integrator.t, segment_end_t)
             end
         else
             @inbounds for i in 1:num_sats
-                update_density_sat!(i, p, u, integrator.t)
+                update_density_sat!(i, p, u, integrator.t, segment_end_t)
             end
         end
     end

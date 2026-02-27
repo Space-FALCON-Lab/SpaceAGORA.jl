@@ -482,7 +482,8 @@ end
     el_time::Float64,
     wind::Bool
 )::Tuple{Float64, Float64, SVector{3, Float64}}
-    model.gram.set_position!(
+    Base.invokelatest(
+        model.gram.set_position!,
         model.gram_atmosphere;
         height=h * 1e-3,
         latitude=rad2deg(lat),
@@ -490,14 +491,14 @@ end
         elapsed_time=el_time
     )
 
-    err = model.gram.update!(model.gram_atmosphere)
+    err = Base.invokelatest(model.gram.update!, model.gram_atmosphere)
     err == 0 || throw(ErrorException("GRAM update failed (code=$err): $(model.gram.get_error_message())"))
 
-    atmos = model.gram.get_dynamics_state(model.gram_atmosphere)
+    atmos = Base.invokelatest(model.gram.get_dynamics_state, model.gram_atmosphere)
     rho_local = Float64(atmos.density)
     T_local = Float64(atmos.temperature)
     if isdefined(model.gram, :get_winds_state)
-        winds = model.gram.get_winds_state(model.gram_atmosphere)
+        winds = Base.invokelatest(model.gram.get_winds_state, model.gram_atmosphere)
         wind_vec_local = if wind
             SVector{3, Float64}(
                 Float64(winds.perturbedEWWind),

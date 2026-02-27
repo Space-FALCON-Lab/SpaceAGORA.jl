@@ -98,11 +98,13 @@ dynamic_effectors = smoke_mode ? (InverseSquaredGravityModel(),) : (
     GravitationalHarmonicsModel(20, 20, mars_harmonics_file, planet),
     AerodynamicCoefficientfM()
 )
-density_model = smoke_mode ? NoAtmosphereModel() : ConstantDensityModel(2e-8, 180.0)
+# density_model = smoke_mode ? NoAtmosphereModel() : ConstantDensityModel(2e-8, 180.0)
+density_model = NoAtmosphereModel()
+# density_model = GRAMAtmosphereModel(planet_name="mars")
 base_args = make_example_config(
     planet=planet,
     spacecraft=spacecraft,
-    mission_time=3_600.0,
+    mission_time=3_600.0*100.0,
     initial_time=InitialTime(year=2001, month=11, day=6, hour=19, minute=0, second=32.0),
     dynamic_effectors=dynamic_effectors,
     density_model=density_model,
@@ -125,7 +127,7 @@ args = SimulationConfiguration(
     integration_tolerances=IntegrationTolerances(
         reltol_orbit=1e-8,
         abstol_orbit=1e-8,
-        dt_max_orbit=10.0,
+        dt_max_orbit=20.0,
         reltol_atmosphere=1e-8,
         abstol_atmosphere=1e-8,
         dt_max_atmosphere=0.2

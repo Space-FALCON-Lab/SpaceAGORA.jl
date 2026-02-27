@@ -120,6 +120,178 @@ end
     throw(ArgumentError("Unsupported SPACEAGORA_GRAM_GLOBAL_LOCK='$mode'. Use one of: on, off."))
 end
 
+@inline function _gram_static_grid_key(model::GRAMAtmosphereModel, p, wind::Bool)::GRAMStaticGridKey
+    planet = p.args.environment_model.planet
+    EI_m = p.args.environment_model.EI * 1e3
+    alt_min_default = max(0.0, planet.h_ref - 2.0 * planet.H)
+    alt_max_default = max(EI_m + 200e3, planet.h_ref + 25.0 * planet.H)
+    alt_min_m = _parse_float_env("SPACEAGORA_GRAM_STATIC_GRID_ALT_MIN_M", alt_min_default)
+    alt_max_m = _parse_float_env("SPACEAGORA_GRAM_STATIC_GRID_ALT_MAX_M", alt_max_default)
+    if alt_max_m <= alt_min_m
+        throw(ArgumentError("SPACEAGORA_GRAM_STATIC_GRID_ALT_MAX_M must be > ALT_MIN_M; got $alt_max_m <= $alt_min_m"))
+    end
+
+    n_alt = max(3, _parse_int_env("SPACEAGORA_GRAM_STATIC_GRID_NALT", 31))
+    n_lat = max(3, _parse_int_env("SPACEAGORA_GRAM_STATIC_GRID_NLAT", 37))
+    n_lon = max(8, _parse_int_env("SPACEAGORA_GRAM_STATIC_GRID_NLON", 73))
+    elapsed_time_s = _parse_float_env("SPACEAGORA_GRAM_STATIC_GRID_ELAPSED_TIME_S", 0.0)
+    include_wind = _parse_bool_env("SPACEAGORA_GRAM_STATIC_GRID_WIND", wind)
+
+    return GRAMStaticGridKey(
+        lowercase(strip(model.planet_name)),
+        alt_min_m,
+        alt_max_m,
+        n_alt,
+        n_lat,
+        n_lon,
+        elapsed_time_s,
+        include_wind
+    )
+end
+
+@inline function _gram_lerp(a::Float64, b::Float64, w::Float64)::Float64
+    return a + w * (b - a)
+end
+
+@inline function _gram_trilerp(c000::Float64, c100::Float64, c010::Float64, c110::Float64, c001::Float64, c101::Float64, c011::Float64, c111::Float64, wa::Float64, wb::Float64, wc::Float64)::Float64
+    c00 = _gram_lerp(c000, c100, wa)
+    c10 = _gram_lerp(c010, c110, wa)
+    c01 = _gram_lerp(c001, c101, wa)
+    c11 = _gram_lerp(c011, c111, wa)
+    c0 = _gram_lerp(c00, c10, wb)
+    c1 = _gram_lerp(c01, c11, wb)
+    return _gram_lerp(c0, c1, wc)
+end
+
+@inline function _gram_axis_segment(nodes::Vector{Float64}, x::Float64)::Tuple{Int, Int, Float64}
+    n = length(nodes)
+    n >= 2 || throw(ArgumentError("Grid axis must have at least 2 nodes."))
+    xq = clamp(x, nodes[1], nodes[end])
+    i0 = clamp(searchsortedlast(nodes, xq), 1, n - 1)
+    i1 = i0 + 1
+    x0 = nodes[i0]
+    x1 = nodes[i1]
+    w = x1 == x0 ? 0.0 : (xq - x0) / (x1 - x0)
+    return i0, i1, clamp(w, 0.0, 1.0)
+end
+
+@inline function _gram_lon_segment(lon_nodes::Vector{Float64}, lon::Float64)::Tuple{Int, Int, Float64}
+    n = length(lon_nodes)
+    n >= 2 || throw(ArgumentError("Longitude grid must have at least 2 nodes."))
+    period = 2pi
+    lonq = mod(lon, period)
+    lonq < 0 && (lonq += period)
+    i0 = searchsortedlast(lon_nodes, lonq)
+    i0 = i0 == 0 ? n : clamp(i0, 1, n)
+    i1 = i0 == n ? 1 : i0 + 1
+    lon0 = lon_nodes[i0]
+    lon1 = i1 == 1 ? lon_nodes[1] + period : lon_nodes[i1]
+    lonq_adj = i1 == 1 && lonq < lon0 ? lonq + period : lonq
+    w = lon1 == lon0 ? 0.0 : (lonq_adj - lon0) / (lon1 - lon0)
+    return i0, i1, clamp(w, 0.0, 1.0)
+end
+
+function _gram_static_grid_build(model::GRAMAtmosphereModel, key::GRAMStaticGridKey)::GRAMStaticGrid
+    alt_nodes = collect(range(key.alt_min_m, key.alt_max_m, length=key.n_alt))
+    lat_nodes = collect(range(-0.5pi, 0.5pi, length=key.n_lat))
+    lon_nodes = collect(range(0.0, 2pi, length=key.n_lon + 1))[1:end-1]
+
+    dims = (key.n_alt, key.n_lat, key.n_lon)
+    rho = Array{Float64, 3}(undef, dims...)
+    T = Array{Float64, 3}(undef, dims...)
+    wind_e = Array{Float64, 3}(undef, dims...)
+    wind_n = Array{Float64, 3}(undef, dims...)
+    wind_u = Array{Float64, 3}(undef, dims...)
+
+    t0_ns = time_ns()
+    if !_GRAM_STATIC_GRID_LOGGED[]
+        _GRAM_STATIC_GRID_LOGGED[] = true
+        @warn "GRAM static grid interpolation enabled. Initial grid build can be expensive but avoids time-dependent GRAM calls afterwards."
+    end
+
+    @inbounds for ia in eachindex(alt_nodes)
+        h = alt_nodes[ia]
+        for ilat in eachindex(lat_nodes)
+            lat = lat_nodes[ilat]
+            for ilon in eachindex(lon_nodes)
+                lon = lon_nodes[ilon]
+                ρ, Ti, wv = if _gram_use_global_lock()
+                    lock(GRAM_LOCK) do
+                        _gram_density_state(model, h, lat, lon, key.elapsed_time_s, key.include_wind)
+                    end
+                else
+                    _gram_density_state(model, h, lat, lon, key.elapsed_time_s, key.include_wind)
+                end
+                rho[ia, ilat, ilon] = ρ
+                T[ia, ilat, ilon] = Ti
+                wind_e[ia, ilat, ilon] = wv[1]
+                wind_n[ia, ilat, ilon] = wv[2]
+                wind_u[ia, ilat, ilon] = wv[3]
+            end
+        end
+    end
+
+    @info "Built GRAM static grid." planet=key.planet_name n_alt=key.n_alt n_lat=key.n_lat n_lon=key.n_lon elapsed_s=(time_ns() - t0_ns) * 1e-9
+
+    return GRAMStaticGrid(key, alt_nodes, lat_nodes, lon_nodes, rho, T, wind_e, wind_n, wind_u)
+end
+
+function _gram_static_grid_get_or_build!(model::GRAMAtmosphereModel, p, wind::Bool)::GRAMStaticGrid
+    key = _gram_static_grid_key(model, p, wind)
+    lock(_GRAM_STATIC_GRID_LOCK) do
+        if haskey(_GRAM_STATIC_GRID_CACHE, key)
+            return _GRAM_STATIC_GRID_CACHE[key]::GRAMStaticGrid
+        end
+        grid = _gram_static_grid_build(model, key)
+        _GRAM_STATIC_GRID_CACHE[key] = grid
+        return grid
+    end
+end
+
+@inline function _gram_static_grid_eval(grid::GRAMStaticGrid, h::Float64, lat::Float64, lon::Float64)::Tuple{Float64, Float64, SVector{3, Float64}}
+    ia0, ia1, wa = _gram_axis_segment(grid.alt_nodes, h)
+    ilat0, ilat1, wb = _gram_axis_segment(grid.lat_nodes, lat)
+    ilon0, ilon1, wc = _gram_lon_segment(grid.lon_nodes, lon)
+
+    ρ = _gram_trilerp(
+        grid.rho[ia0, ilat0, ilon0], grid.rho[ia1, ilat0, ilon0],
+        grid.rho[ia0, ilat1, ilon0], grid.rho[ia1, ilat1, ilon0],
+        grid.rho[ia0, ilat0, ilon1], grid.rho[ia1, ilat0, ilon1],
+        grid.rho[ia0, ilat1, ilon1], grid.rho[ia1, ilat1, ilon1],
+        wa, wb, wc
+    )
+    Ti = _gram_trilerp(
+        grid.T[ia0, ilat0, ilon0], grid.T[ia1, ilat0, ilon0],
+        grid.T[ia0, ilat1, ilon0], grid.T[ia1, ilat1, ilon0],
+        grid.T[ia0, ilat0, ilon1], grid.T[ia1, ilat0, ilon1],
+        grid.T[ia0, ilat1, ilon1], grid.T[ia1, ilat1, ilon1],
+        wa, wb, wc
+    )
+    wE = _gram_trilerp(
+        grid.wind_e[ia0, ilat0, ilon0], grid.wind_e[ia1, ilat0, ilon0],
+        grid.wind_e[ia0, ilat1, ilon0], grid.wind_e[ia1, ilat1, ilon0],
+        grid.wind_e[ia0, ilat0, ilon1], grid.wind_e[ia1, ilat0, ilon1],
+        grid.wind_e[ia0, ilat1, ilon1], grid.wind_e[ia1, ilat1, ilon1],
+        wa, wb, wc
+    )
+    wN = _gram_trilerp(
+        grid.wind_n[ia0, ilat0, ilon0], grid.wind_n[ia1, ilat0, ilon0],
+        grid.wind_n[ia0, ilat1, ilon0], grid.wind_n[ia1, ilat1, ilon0],
+        grid.wind_n[ia0, ilat0, ilon1], grid.wind_n[ia1, ilat0, ilon1],
+        grid.wind_n[ia0, ilat1, ilon1], grid.wind_n[ia1, ilat1, ilon1],
+        wa, wb, wc
+    )
+    wU = _gram_trilerp(
+        grid.wind_u[ia0, ilat0, ilon0], grid.wind_u[ia1, ilat0, ilon0],
+        grid.wind_u[ia0, ilat1, ilon0], grid.wind_u[ia1, ilat1, ilon0],
+        grid.wind_u[ia0, ilat0, ilon1], grid.wind_u[ia1, ilat0, ilon1],
+        grid.wind_u[ia0, ilat1, ilon1], grid.wind_u[ia1, ilat1, ilon1],
+        wa, wb, wc
+    )
+
+    return ρ, Ti, SVector{3, Float64}(wE, wN, wU)
+end
+
 function _as_abspath(path::AbstractString)::String
     if isempty(path)
         return ""
@@ -587,27 +759,24 @@ function getDensity(model::GRAMAtmosphereModel, h::Float64, lat::Float64, lon::F
     # planet_radius = p.args.environment_model.planet.Rp_e
     EI = p.args.environment_model.EI * 1e3
     drag_state = h - EI <= 0.0
-    if !drag_state && !p.args.mission_configuration.keplerian
-        if h > 2000.0e3
-            rho = 0.0
-            T = p.args.environment_model.planet.T_ref
-            wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
-        else
-            rho, T, wind_vec = density_polyfit(h, p)
-        end
+    if h > 2000.0e3
+        rho = 0.0
+        T = p.args.environment_model.planet.T_ref
+        wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
+    elseif _gram_static_grid_enabled()
+        # Static piecewise-linear interpolation on a precomputed (alt, lat, lon) grid.
+        # This mode intentionally ignores elapsed time to trade fidelity for throughput.
+        grid = _gram_static_grid_get_or_build!(model, p, wind)
+        rho, T, wind_vec = _gram_static_grid_eval(grid, h, lat, lon)
+    elseif !drag_state && !p.args.mission_configuration.keplerian
+        rho, T, wind_vec = density_polyfit(h, p)
     else
-        if h > 2000.0e3
-            rho = 0.0
-            T = p.args.environment_model.planet.T_ref
-            wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
-        else
-            rho, T, wind_vec = if _gram_use_global_lock()
-                lock(GRAM_LOCK) do
-                    _gram_density_state(model, h, lat, lon, el_time, wind)
-                end
-            else
+        rho, T, wind_vec = if _gram_use_global_lock()
+            lock(GRAM_LOCK) do
                 _gram_density_state(model, h, lat, lon, el_time, wind)
             end
+        else
+            _gram_density_state(model, h, lat, lon, el_time, wind)
         end
     end
     # println("el_time: ", el_time, "h: ", h, " lat: ", rad2deg(lat), " lon: ", rad2deg(lon), " rho: ", rho, " T: ", T, " wind_vec: ", wind_vec)

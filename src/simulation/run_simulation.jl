@@ -385,39 +385,85 @@ function _clear_checkpoint!(args)
     return nothing
 end
 
-function _append_segment_results!(
-    times::Vector{Float64},
-    states::Vector,
-    segment_times::AbstractVector,
-    segment_states::AbstractVector
-)
-    start_idx = isempty(times) ? 1 : 2
-    for idx in start_idx:length(segment_times)
-        push!(times, Float64(segment_times[idx]))
-        push!(states, deepcopy(segment_states[idx]))
+function _drop_duplicate_saved_boundary!(saved_values, start_len::Int)
+    if start_len == 0 || length(saved_values.t) <= start_len
+        return nothing
+    end
+    prev_t = saved_values.t[start_len]
+    next_t = saved_values.t[start_len + 1]
+    if isapprox(prev_t, next_t; atol=0.0, rtol=0.0)
+        deleteat!(saved_values.t, start_len + 1)
+        deleteat!(saved_values.saveval, start_len + 1)
     end
     return nothing
 end
 
-function _build_results_dataframe(times::Vector{Float64}, states::Vector, args)::DataFrame
-    results_df = DataFrame(time=times)
-    for i in eachindex(args.dynamics_model.spacecraft)
-        results_df[!, "sc$(i)_pos_1"] = [states[t].sc[i].pos[1] for t in 1:length(times)]
-        results_df[!, "sc$(i)_pos_2"] = [states[t].sc[i].pos[2] for t in 1:length(times)]
-        results_df[!, "sc$(i)_pos_3"] = [states[t].sc[i].pos[3] for t in 1:length(times)]
-        results_df[!, "sc$(i)_vel_1"] = [states[t].sc[i].vel[1] for t in 1:length(times)]
-        results_df[!, "sc$(i)_vel_2"] = [states[t].sc[i].vel[2] for t in 1:length(times)]
-        results_df[!, "sc$(i)_vel_3"] = [states[t].sc[i].vel[3] for t in 1:length(times)]
-        results_df[!, "sc$(i)_mass"] = [states[t].sc[i].mass for t in 1:length(times)]
-        if args.mission_configuration.orientation_sim
-            results_df[!, "sc$(i)_q_1"] = [states[t].sc[i].q[1] for t in 1:length(times)]
-            results_df[!, "sc$(i)_q_2"] = [states[t].sc[i].q[2] for t in 1:length(times)]
-            results_df[!, "sc$(i)_q_3"] = [states[t].sc[i].q[3] for t in 1:length(times)]
-            results_df[!, "sc$(i)_q_4"] = [states[t].sc[i].q[4] for t in 1:length(times)]
-            results_df[!, "sc$(i)_ω_1"] = [states[t].sc[i].ω[1] for t in 1:length(times)]
-            results_df[!, "sc$(i)_ω_2"] = [states[t].sc[i].ω[2] for t in 1:length(times)]
-            results_df[!, "sc$(i)_ω_3"] = [states[t].sc[i].ω[3] for t in 1:length(times)]
+@inline function _is_flat_scalar(value)::Bool
+    return value === missing || value === nothing || value isa Number || value isa AbstractString || value isa Symbol || value isa Bool
+end
+
+function _find_sample_value(series)
+    for value in series
+        if value !== nothing
+            return value
         end
+    end
+    return nothing
+end
+
+function _append_series_columns!(results_df::DataFrame, prefix::String, series)
+    sample = _find_sample_value(series)
+    if sample === nothing || _is_flat_scalar(sample)
+        results_df[!, prefix] = collect(series)
+        return nothing
+    end
+
+    if sample isa NamedTuple
+        for key in keys(sample)
+            child_series = [value === nothing ? nothing : getproperty(value, key) for value in series]
+            _append_series_columns!(results_df, string(prefix, "_", key), child_series)
+        end
+        return nothing
+    end
+
+    if sample isa AbstractDict
+        for key in sort!(collect(keys(sample)); by=string)
+            child_series = [value === nothing ? nothing : value[key] for value in series]
+            _append_series_columns!(results_df, string(prefix, "_", key), child_series)
+        end
+        return nothing
+    end
+
+    if sample isa Tuple || sample isa AbstractArray
+        for idx in eachindex(sample)
+            child_series = [value === nothing ? nothing : value[idx] for value in series]
+            _append_series_columns!(results_df, string(prefix, "_", idx), child_series)
+        end
+        return nothing
+    end
+
+    results_df[!, prefix] = collect(series)
+    return nothing
+end
+
+function _append_save_field_columns!(results_df::DataFrame, field, saved_data::Vector, num_sats::Int)
+    field_series = [snapshot[field.name] for snapshot in saved_data]
+    if field.per_satellite
+        for sat_idx in 1:num_sats
+            sat_series = [value[sat_idx] for value in field_series]
+            _append_series_columns!(results_df, "sc$(sat_idx)_$(field.column_prefix)", sat_series)
+        end
+        return nothing
+    end
+    _append_series_columns!(results_df, field.column_prefix, field_series)
+    return nothing
+end
+
+function _build_results_dataframe(times::Vector{Float64}, saved_data::Vector, save_fields, args)::DataFrame
+    results_df = DataFrame(time=times)
+    num_sats = length(args.dynamics_model.spacecraft)
+    for field in save_fields
+        _append_save_field_columns!(results_df, field, saved_data, num_sats)
     end
     return results_df
 end
@@ -465,7 +511,13 @@ function _write_results_bundle!(results_df::DataFrame, times::Vector{Float64}, a
     return nothing
 end
 
-function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=false, return_solver_metadata::Bool=false)
+function run_simulation(
+    args;
+    isolate_state::Bool=true,
+    return_solution::Bool=false,
+    return_solver_metadata::Bool=false,
+    save_fields=nothing
+)
     # Isolate mutable campaign/model state by default so repeated/concurrent runs
     # do not alias shared in-memory objects.
     args = isolate_state ? deepcopy(args) : args
@@ -490,7 +542,17 @@ function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=fa
     _initialize_density_cache_buffers!(p)
     p.shared_buffers.debug_control[] = get(ENV, "SPACEAGORA_DEBUG_CONTROL", "0") == "1"
     p.shared_buffers.debug_initial_derivative[] = get(ENV, "SPACEAGORA_DEBUG_INITIAL_DERIVATIVE", "0") == "1"
-    callbacks = SimulationModel.get_callbacks(length(args.dynamics_model.spacecraft), args.dynamics_model.dynamic_effectors, args) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
+    save_fields_resolved = isnothing(save_fields) ? SimulationModel.default_save_fields(args) : collect(save_fields)
+    save_field_names = Symbol[field.name for field in save_fields_resolved]
+    length(unique(save_field_names)) == length(save_field_names) || throw(ArgumentError("save_fields names must be unique. Got $(save_field_names)."))
+    saved_values = SavedValues(Float64, SimulationModel.SaveData)
+    callbacks = SimulationModel.get_callbacks(
+        length(args.dynamics_model.spacecraft),
+        args.dynamics_model.dynamic_effectors,
+        args;
+        saved_values=saved_values,
+        save_fields=save_fields_resolved
+    ) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
     initial_time = args.initial_time
     start_epoch = from_utc(DateTime(
             initial_time.year,
@@ -565,54 +627,48 @@ function run_simulation(args; isolate_state::Bool=true, return_solution::Bool=fa
         end
     end
 
-    state_type = typeof(u_start)
     reltol_tol, abstol_tol = _build_solver_tolerances(u_start, args)
-    all_times = Float64[]
-    all_states = state_type[]
     last_sol = nothing
     solver_trace = NamedTuple[]
 
-    if t_start >= mission_end
-        push!(all_times, t_start)
-        push!(all_states, deepcopy(u_start))
-    elseif checkpoint_active
+    if t_start < mission_end && checkpoint_active
         interval = args.simulation_settings.checkpoint_interval_s
         t_cursor = t_start
         u_cursor = deepcopy(u_start)
 
         while t_cursor < mission_end
             t_next = min(t_cursor + interval, mission_end)
+            saved_len_before = length(saved_values.t)
             prob = ODEProblem(spacecraft_dynamics!, u_cursor, (t_cursor, t_next), p, callback=callbacks)
             seg_sol, solve_meta = _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
             push!(solver_trace, solve_meta)
             if !SciMLBase.successful_retcode(seg_sol.retcode)
                 throw(ErrorException("Checkpointed solve failed with retcode=$(seg_sol.retcode)."))
             end
-            _append_segment_results!(all_times, all_states, seg_sol.t, seg_sol.u)
+            _drop_duplicate_saved_boundary!(saved_values, saved_len_before)
             last_sol = seg_sol
             t_cursor = Float64(seg_sol.t[end])
             u_cursor = deepcopy(seg_sol.u[end])
             _write_checkpoint!(args, t_cursor, u_cursor)
         end
 
-    else
+    elseif t_start < mission_end
         prob = ODEProblem(spacecraft_dynamics!, u_start, (t_start, mission_end), p, callback=callbacks)
         sol, solve_meta = _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
         push!(solver_trace, solve_meta)
         if !SciMLBase.successful_retcode(sol.retcode)
             throw(ErrorException("Solve failed with retcode=$(sol.retcode)."))
         end
-        _append_segment_results!(all_times, all_states, sol.t, sol.u)
         last_sol = sol
     end
 
     # Process and save results
     if args.simulation_settings.results
-        results_df = _build_results_dataframe(all_times, all_states, args)
+        results_df = _build_results_dataframe(saved_values.t, saved_values.saveval, save_fields_resolved, args)
         # Keep backwards-compatible CSV contract used by existing scripts/tests.
         CSV.write("simulation_results.csv", results_df)
         if _typed_save_bundle_enabled()
-            _write_results_bundle!(results_df, all_times, args)
+            _write_results_bundle!(results_df, saved_values.t, args)
         end
     end
 

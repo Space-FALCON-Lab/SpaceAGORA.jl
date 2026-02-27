@@ -14,7 +14,7 @@ using ..ConfigTypes: SaveData
 using ..ControlEffectors: calcControlEffect!
 using ..GuidanceEffectors: calcGuidanceEffect!
 using ..SimConfig: SimulationConfiguration, MissionOrbits
-export get_callbacks
+export SaveField, default_save_fields, get_callbacks
 
 @inline callback_verbose(integrator) = integrator.p.args.simulation_settings.verbose
 @inline callback_use_invokelatest() = get(ENV, "SPACEAGORA_DEV_HOT_RELOAD", "0") == "1"
@@ -86,6 +86,104 @@ function _gram_runtime_stats_snapshot()
             lon_err_abs_sum_deg=s.lon_err_abs_sum_deg
         )
     end
+end
+
+struct SaveField{F}
+    name::Symbol
+    getter::F
+    per_satellite::Bool
+    column_prefix::String
+end
+
+function SaveField(
+    name::Symbol,
+    getter::F;
+    per_satellite::Bool=false,
+    column_prefix::AbstractString=String(name)
+) where {F}
+    return SaveField{F}(name, getter, per_satellite, String(column_prefix))
+end
+
+@inline function _save_positions(num_sats::Int, u, t, integrator)
+    positions = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        positions[i] = SVector{3, Float64}(u.sc[i].pos)
+    end
+    return positions
+end
+
+@inline function _save_velocities(num_sats::Int, u, t, integrator)
+    velocities = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        velocities[i] = SVector{3, Float64}(u.sc[i].vel)
+    end
+    return velocities
+end
+
+@inline function _save_drag(num_sats::Int, u, t, integrator)
+    p = integrator.p
+    drag_cache = p.save_cache.drag_cache
+    drags = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        drags[i] = i <= length(drag_cache) ? drag_cache[i] : SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    return drags
+end
+
+@inline function _save_periapsis_altitude(num_sats::Int, u, t, integrator)
+    planet = integrator.p.args.environment_model.planet
+    periapsis_altitudes = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        pos = SVector{3, Float64}(u.sc[i].pos)
+        vel = SVector{3, Float64}(u.sc[i].vel)
+        oe = rvtoorbitalelement(pos, vel, planet)
+        periapsis_altitudes[i] = oe[1] * (1.0 - oe[2]) - planet.Rp_e
+    end
+    return periapsis_altitudes
+end
+
+@inline function _save_heat_rate(num_sats::Int, u, t, integrator)
+    heat_rates = Vector{Float64}(undef, num_sats)
+    shared_heat_rates = integrator.p.shared_buffers.heat_rates
+    @inbounds for i in 1:num_sats
+        heat_rates[i] = i <= length(shared_heat_rates) ? sum(shared_heat_rates[i]) : 0.0
+    end
+    return heat_rates
+end
+
+@inline function _save_heat_load(num_sats::Int, u, t, integrator)
+    heat_loads = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        heat_loads[i] = sum(u.sc[i].heat_loads)
+    end
+    return heat_loads
+end
+
+function default_save_fields(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    return SaveField[
+        SaveField(:position, (u, t, integrator) -> _save_positions(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:velocity, (u, t, integrator) -> _save_velocities(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:drag, (u, t, integrator) -> _save_drag(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:periapsis_altitude, (u, t, integrator) -> _save_periapsis_altitude(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:heat_rate, (u, t, integrator) -> _save_heat_rate(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:heat_load, (u, t, integrator) -> _save_heat_load(num_sats, u, t, integrator); per_satellite=true)
+    ]
+end
+
+@inline function _resolve_save_fields(save_fields, args::SimulationConfiguration)
+    resolved = isnothing(save_fields) ? default_save_fields(args) : collect(save_fields)
+    names = Symbol[field.name for field in resolved]
+    length(unique(names)) == length(names) || throw(ArgumentError("save_fields names must be unique. Got $(names)."))
+    return resolved
+end
+
+function _save_snapshot(save_fields, u, t, integrator)::SaveData
+    snapshot = SaveData()
+    for field in save_fields
+        snapshot[field.name] = field.getter(u, t, integrator)
+    end
+    return snapshot
 end
 
 @inline function _parse_bool_env(name::String, default::Bool)::Bool
@@ -1147,7 +1245,14 @@ function _callback_tolerances_for_phase(template_reltol, template_abstol, args::
     return reltol_new, abstol_new
 end
 
-function get_callbacks(num_sats::Int, effectors::Tuple, args::SimulationConfiguration)::CallbackSet
+function get_callbacks(
+    num_sats::Int,
+    effectors::Tuple,
+    args::SimulationConfiguration;
+    saved_values=nothing,
+    save_fields=nothing
+)::CallbackSet
+    save_fields_resolved = _resolve_save_fields(save_fields, args)
     callbacks = Any[
         get_impact_callback(num_sats),
         update_planet_frame_callback()
@@ -1171,6 +1276,7 @@ function get_callbacks(num_sats::Int, effectors::Tuple, args::SimulationConfigur
 
     append!(callbacks, get_control_callbacks(num_sats, args))
     append!(callbacks, get_guidance_callbacks(num_sats, args))
+    push!(callbacks, get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values))
 
     return CallbackSet(callbacks...)
 end
@@ -1551,18 +1657,17 @@ function get_drag_state_callback(num_sats::Int)
     return VectorContinuousCallback(condition!, affect_upcrossing!, affect_downcrossing!, num_sats)
 end
 
-function get_data_saving_callback(num_sats::Int)
-    # Implement a callback to save the state of the simulation at regular intervals defined by num_steps_to_save in the mission configuration
-    # This will involve storing the state in the shared buffers and writing to a file when the buffer is full, then clearing the buffer for the next set of data
-    # The condition can be based on the number of steps taken or the simulation time, depending on how you want to structure it
-    saved_values = SaveValues(Float64, SaveData)
+function get_data_saving_callback(
+    num_sats::Int,
+    args::SimulationConfiguration,
+    save_fields,
+    saved_values=nothing
+)
+    saved_values = isnothing(saved_values) ? SavedValues(Float64, SaveData) : saved_values
     function save_func(u, t, integrator)
-        p = integrator.p
-
-        # Save the current state to the SaveData struct
-
+        return _save_snapshot(save_fields, u, t, integrator)
     end
-    return SavingCallback(save_func, saved_values) # Placeholder, implement the actual logic for the data saving callback
+    return SavingCallback(save_func, saved_values; save_everystep=true)
 end
 
 function get_guidance_callbacks(num_sats::Int, args::SimulationConfiguration)::Vector{DiscreteCallback}

@@ -556,17 +556,14 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         debug_initial_derivative::Base.RefValue{Bool} = Ref(false)
     end
 
-    @kwdef struct SaveData
-        position::Vector{SVector{3,Float64}} = []
-        velocity::Vector{SVector{3,Float64}} = []
-        drag::Vector{SVector{3,Float64}} = []
-        periapsis_altitude::Vector{Float64} = []
-        # Add more fields as needed to store the relevant data for saving results
-    end
-    struct SaveCache
+    const SaveData = Dict{Symbol, Any}
+    @kwdef struct SaveCache
         # Define fields to store cached data for saving results during the simulation for expensive computations, e.g., drag, lift, density, etc.
-        ρ_cache::Vector{Float64}
-
+        # Vector stores the values for each satellite if simulating multiple satellites in parallel, at a given time step, then passes to the SaveData struct at the end of the time step for saving results
+        ρ_cache::Vector{Float64} = []
+        heat_rate_cache::Vector{Float64} = []
+        drag_cache::Vector{SVector{3,Float64}} = []
+        lift_cache::Vector{SVector{3,Float64}} = []
         # Add more fields as needed to store the relevant data for saving results
     end
 
@@ -590,7 +587,7 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         shared_buffers::SharedBuffers = SharedBuffers{N_sats}() # Shared buffers for callback and integrator
         is_active::Vector{Bool} = [true for _ in 1:N_sats] # Vector to track which satellites are still active in the simulation
         orbit_counter::Vector{Int64} = ones(Int64, N_sats) # Counter for the number of orbits completed
-        save_cache::SaveCache = SaveCache([]) # Cache for saving results
+        save_cache::SaveCache = SaveCache() # Cache for saving results
     end
     # solution = Solution()
 

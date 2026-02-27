@@ -2790,6 +2790,12 @@ end
     @test all(isfinite, force_nbody)
     @test torque_nbody == SVector{3, Float64}(0.0, 0.0, 0.0)
 
+    harmonics_file = joinpath(REPO_ROOT, "Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_l20 = GravitationalHarmonicsModel(20, 20, harmonics_file, EARTH)
+    @test size(harmonics_l20.C) == (21, 21)
+    @test size(harmonics_l20.S) == (21, 21)
+    @test_throws ArgumentError GravitationalHarmonicsModel(10, 11, harmonics_file, EARTH)
+
     child_link = Link(root=false, q=MVector{4, Float64}(sin(pi / 4), 0.0, 0.0, cos(pi / 4)))
     rot_child = rotate_to_body(child_link)
     @test size(rot_child) == (3, 3)
@@ -5943,6 +5949,34 @@ end
     reltol_ω_no_orient, abstol_ω_no_orient = _build_solver_tolerances(u0_ω_no_orient, args_ω_no_orient)
     @test reltol_ω_no_orient == tols_ω_no_orient.reltol_orbit
     @test abstol_ω_no_orient == tols_ω_no_orient.abstol_orbit
+end
+
+@testset "Solver/Env Helper Parsing Coverage" begin
+    withenv("SPACEAGORA_SOLVER_MODE" => "auto") do
+        @test _solver_policy_mode() == :auto_stiff
+    end
+    withenv("SPACEAGORA_SOLVER_MODE" => "rodas") do
+        @test _solver_policy_mode() == :rodas5p
+    end
+    withenv("SPACEAGORA_SOLVER_MODE" => "unsupported-mode") do
+        @test_throws ArgumentError _solver_policy_mode()
+    end
+
+    withenv("SPACEAGORA_GRAM_PER_SAT_INSTANCES" => "on") do
+        @test _gram_per_sat_instances_enabled() == true
+    end
+    withenv("SPACEAGORA_GRAM_PER_SAT_INSTANCES" => "off") do
+        @test _gram_per_sat_instances_enabled() == false
+    end
+    withenv("SPACEAGORA_GRAM_PER_SAT_INSTANCES" => "maybe") do
+        @test_throws ArgumentError _gram_per_sat_instances_enabled()
+    end
+
+    @test _retcode_is_stiff_symptom(:Unstable)
+    @test _retcode_is_stiff_symptom("DtLessThanMin")
+    @test !_retcode_is_stiff_symptom(:Success)
+
+    @test_throws ArgumentError _resolve_component_tolerance(-1.0, 1.0, "unit_test_tol")
 end
 
 @testset "Rigid-Body Angular Dynamics Uses Inertia Tensor" begin

@@ -5,7 +5,7 @@ using DifferentialEquations
 using LinearAlgebra
 using SPICE
 using Dates
-using ..SimulationModel: SPICE_LOCK
+using ..SimulationModel: SPICE_LOCK, GRAM_LOCK
 using ..EnvironmentModels
 using ..EnvironmentModels: getDensity, getHeatRate, NoAtmosphereModel
 using ..DynamicEffectors: BaseThrusterModel, AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
@@ -393,6 +393,93 @@ end
     return ρ, T, wind
 end
 
+@inline _gram_track_cache_periapsis_split_enabled() = _parse_bool_env("SPACEAGORA_GRAM_TRACK_CACHE_PERIAPSIS_SPLIT", true)
+
+@inline function _gram_track_cache_max_npos()::Int
+    raw = strip(get(ENV, "SPACEAGORA_GRAM_TRACK_CACHE_MAX_NPOS", "512"))
+    parsed = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_GRAM_TRACK_CACHE_MAX_NPOS must be an integer value, got '$raw'"))
+    end
+    return max(2, parsed)
+end
+
+@inline _angle_delta_rad(a::Float64, b::Float64) = atan(sin(b - a), cos(b - a))
+
+function _gram_descending_periapsis_target(
+    pos::SVector{3, Float64},
+    vel::SVector{3, Float64},
+    planet
+)::Union{Nothing, Tuple{Float64, Float64, Float64, Float64}}
+    try
+        oe = rvtoorbitalelement(pos, vel, planet)
+        a, e, i, Ω, ω, ν = Float64(oe[1]), Float64(oe[2]), Float64(oe[3]), Float64(oe[4]), Float64(oe[5]), Float64(oe[6])
+        if !isfinite(a) || !isfinite(e) || !isfinite(ν) || a <= 0.0 || e < 0.0 || e >= 1.0
+            return nothing
+        end
+        n = sqrt(planet.μ / a^3)
+        if !isfinite(n) || n <= 0.0
+            return nothing
+        end
+        E = atan(sqrt(max(0.0, 1.0 - e^2)) * sin(ν), e + cos(ν))
+        E = mod(E, 2pi)
+        M = mod(E - e * sin(E), 2pi)
+        dt_peri = (2pi - M) / n
+        if !isfinite(dt_peri) || dt_peri <= 1e-6
+            return nothing
+        end
+
+        oe_peri = SVector{7, Float64}(a, e, i, Ω, ω, 0.0, 0.0)
+        r_peri_vec, v_peri_vec = orbitalelemtorv(oe_peri, planet)
+        r_peri_i = SVector{3, Float64}(Float64.(r_peri_vec))
+        v_peri_i = SVector{3, Float64}(Float64.(v_peri_vec))
+        r_peri_p, _ = r_intor_p!(r_peri_i, v_peri_i, planet)
+        alt_peri, lat_peri, lon_peri = rtolatlong(r_peri_p, planet)
+        return dt_peri, alt_peri, lat_peri, lon_peri
+    catch
+        return nothing
+    end
+end
+
+function _gram_track_cache_fill_from_trajectory!(
+    cache::GramTrackCache,
+    trajectory
+)
+    n = length(trajectory)
+    n >= 2 || throw(ArgumentError("GRAM trajectory must contain at least 2 points, got $n."))
+    if length(cache.times) != n
+        resize!(cache.times, n)
+        resize!(cache.alts, n)
+        resize!(cache.lats, n)
+        resize!(cache.lons, n)
+        resize!(cache.rhos, n)
+        resize!(cache.Ts, n)
+        resize!(cache.winds, n)
+    end
+
+    @inbounds for k in 1:n
+        pt = trajectory[k]
+        pos = pt.position
+        dyn = pt.dynamics
+        wnd = pt.winds
+
+        cache.times[k] = Float64(pos.elapsedTime)
+        cache.alts[k] = Float64(pos.height) * 1e3
+        cache.lats[k] = deg2rad(Float64(pos.latitude))
+        cache.lons[k] = atan(sin(deg2rad(Float64(pos.longitude))), cos(deg2rad(Float64(pos.longitude))))
+        cache.rhos[k] = Float64(dyn.density)
+        cache.Ts[k] = Float64(dyn.temperature)
+        cache.winds[k] = SVector{3, Float64}(
+            Float64(wnd.perturbedEWWind),
+            Float64(wnd.perturbedNSWind),
+            Float64(wnd.perturbedVerticalWind)
+        )
+    end
+
+    return nothing
+end
+
 function _gram_track_cache_refresh!(
     cache::GramTrackCache,
     density_model,
@@ -404,11 +491,31 @@ function _gram_track_cache_refresh!(
     lon::Float64,
     t::Float64,
     horizon_s::Float64,
-    n_points::Int
+    n_points::Int,
+    transition_band_m::Float64 = 0.0
 )
     try
         planet = p.args.environment_model.planet
-        n = max(2, n_points)
+        base_horizon_s = max(1e-3, horizon_s)
+        dt_segment = base_horizon_s
+        target_alt = alt
+        target_lat = lat
+        target_lon = lon
+
+        if _gram_track_cache_periapsis_split_enabled() &&
+           alt <= p.args.environment_model.EI * 1e3 + max(0.0, transition_band_m) &&
+           dot(pos, vel) < 0.0
+            peri_target = _gram_descending_periapsis_target(pos, vel, planet)
+            if peri_target !== nothing
+                dt_segment, target_alt, target_lat, target_lon = peri_target
+            end
+        end
+
+        base_n = max(2, n_points)
+        dt_per_sample = max(1e-3, base_horizon_s / max(1, base_n - 1))
+        n = max(base_n, Int(ceil(dt_segment / dt_per_sample)) + 1)
+        n = min(n, _gram_track_cache_max_npos())
+
         if length(cache.times) != n
             resize!(cache.times, n)
             resize!(cache.alts, n)
@@ -418,21 +525,57 @@ function _gram_track_cache_refresh!(
             resize!(cache.Ts, n)
             resize!(cache.winds, n)
         end
-        dt = max(1e-3, horizon_s)
-        @inbounds for k in 1:n
-            x = (k - 1) / (n - 1)
-            t_k = t + x * dt
-            pos_k = pos + vel * (t_k - t)
-            rp_k, _ = r_intor_p!(pos_k, vel, planet)
-            alt_k, lat_k, lon_k = rtolatlong(rp_k, planet)
-            ρ_k, T_k, wind_k = getDensity(density_model, alt_k, lat_k, lon_k, t_k, true, p)
-            cache.times[k] = t_k
-            cache.alts[k] = alt_k
-            cache.lats[k] = lat_k
-            cache.lons[k] = lon_k
-            cache.rhos[k] = ρ_k
-            cache.Ts[k] = T_k
-            cache.winds[k] = wind_k
+
+        gram_traj_built = false
+        if density_model isa EnvironmentModels.GRAMAtmosphereModel &&
+           isdefined(density_model.gram, :generate_trajectory)
+            denom = max(1, n - 1)
+            Δalt_km = (target_alt - alt) * 1e-3 / denom
+            Δlat_deg = rad2deg(_angle_delta_rad(lat, target_lat)) / denom
+            Δlon_deg = rad2deg(_angle_delta_rad(lon, target_lon)) / denom
+            Δt = dt_segment / denom
+
+            gen_track = () -> density_model.gram.generate_trajectory(
+                density_model.gram_atmosphere;
+                initial_height=alt * 1e-3,
+                initial_latitude=rad2deg(lat),
+                initial_longitude=rad2deg(lon),
+                initial_elapsed_time=t,
+                delta_height=Δalt_km,
+                delta_latitude=Δlat_deg,
+                delta_longitude=Δlon_deg,
+                delta_elapsed_time=Δt,
+                n_points=n,
+                update_initial_perturbations=true
+            )
+
+            trajectory = if EnvironmentModels._gram_use_global_lock()
+                lock(GRAM_LOCK) do
+                    gen_track()
+                end
+            else
+                gen_track()
+            end
+            _gram_track_cache_fill_from_trajectory!(cache, trajectory)
+            gram_traj_built = true
+        end
+
+        if !gram_traj_built
+            @inbounds for k in 1:n
+                x = (k - 1) / (n - 1)
+                t_k = t + x * dt_segment
+                pos_k = pos + vel * (t_k - t)
+                rp_k, _ = r_intor_p!(pos_k, vel, planet)
+                alt_k, lat_k, lon_k = rtolatlong(rp_k, planet)
+                ρ_k, T_k, wind_k = getDensity(density_model, alt_k, lat_k, lon_k, t_k, true, p)
+                cache.times[k] = t_k
+                cache.alts[k] = alt_k
+                cache.lats[k] = lat_k
+                cache.lons[k] = lon_k
+                cache.rhos[k] = ρ_k
+                cache.Ts[k] = T_k
+                cache.winds[k] = wind_k
+            end
         end
         cache.valid = true
         cache.t0 = cache.times[1]
@@ -607,7 +750,20 @@ function get_density_callback(num_sats::Int, args::SimulationConfiguration)
                 idx, x = seg
                 _gram_track_cache_eval(cache, idx, x)
             else
-                _gram_track_cache_refresh!(cache, density_model, p, pos, vel, alt, lat, lon, t, cache_horizon_s, cache_points)
+                _gram_track_cache_refresh!(
+                    cache,
+                    density_model,
+                    p,
+                    pos,
+                    vel,
+                    alt,
+                    lat,
+                    lon,
+                    t,
+                    cache_horizon_s,
+                    cache_points,
+                    cache_cfg.transition_band_m
+                )
             end
         else
             getDensity(density_model, alt, lat, lon, t, true, p)
@@ -759,12 +915,33 @@ function get_orbit_end_callback(num_sats::Int)
 
     function affect!(integrator, idx::Int64)
         p = integrator.p
-        u = integrator.u
 
         p.orbit_counter[idx] += 1 # Increment the orbit counter in the shared buffers
+        completed_orbits = p.orbit_counter[idx] - 1
+        target_orbits = p.args.mission_configuration.number_of_orbits
         # Check for orbit completion and log it (placeholder logic)
         if callback_verbose(integrator)
-            println("Orbit $(p.orbit_counter[idx]) completed by Satellite $idx at time $(integrator.t) seconds!")
+            println("Orbit $(completed_orbits) completed by Satellite $idx at time $(integrator.t) seconds!")
+        end
+
+        # MissionOrbits should end when every active satellite reaches the requested
+        # number of completed orbits, analogous to drag-passage event termination.
+        if completed_orbits >= target_orbits
+            all_active_reached_target = true
+            @inbounds for sat_idx in eachindex(p.orbit_counter)
+                if p.is_active[sat_idx] && (p.orbit_counter[sat_idx] - 1) < target_orbits
+                    all_active_reached_target = false
+                    break
+                end
+            end
+            if all_active_reached_target
+                if callback_verbose(integrator)
+                    println("Target orbit count reached for all active satellites. Stopping simulation.")
+                end
+                if applicable(terminate!, integrator)
+                    terminate!(integrator)
+                end
+            end
         end
     end
 

@@ -80,9 +80,27 @@ function NBodyGravityModel(body_names::Vector{String}, primary_body_name::String
 end
 
 function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::String, planet::P) where P <: AbstractPlanet
+    if L < 0 || M < 0
+        throw(ArgumentError("Gravitational harmonics degree/order must be non-negative, got L=$L, M=$M."))
+    end
+    if M > L
+        throw(ArgumentError("Gravitational harmonics order must satisfy M <= L, got L=$L, M=$M."))
+    end
+
     harmonics_data = CSV.File(coefficients_file)
     total_data_size = size(harmonics_data, 1)
     degree = harmonics_data.degree[end] + 1
+    if L + 1 > degree
+        throw(ArgumentError(
+            "Requested harmonics degree L=$L exceeds coefficients file support (max degree=$(degree - 1))."
+        ))
+    end
+    if M + 1 > degree
+        throw(ArgumentError(
+            "Requested harmonics order M=$M exceeds coefficients file support (max order=$(degree - 1))."
+        ))
+    end
+
     C = zeros(Float64, degree, degree)
     S = zeros(Float64, degree, degree)
     for i=1:total_data_size
@@ -134,8 +152,8 @@ function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::Stri
     return GravitationalHarmonicsModel(
         L,
         M,
-        C[1:L, 1:L],
-        S[1:L, 1:L],
+        C[1:(L + 1), 1:(M + 1)],
+        S[1:(L + 1), 1:(M + 1)],
         A,
         R,
         I,

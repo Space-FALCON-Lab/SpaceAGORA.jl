@@ -33,12 +33,41 @@ const M_HAT_ECEF = SVector{3, Float64}(
 )
 const sqrt_2 = sqrt(2.0)
 const sqrt_3 = sqrt(3.0)
+const _SPICE_BARYCENTER_BODIES = ("mercury", "venus", "earth", "mars", "jupiter", "saturn", "uranus", "neptune", "pluto")
+const _THIRD_BODY_MU = Dict{String, Float64}(
+    "sun" => 1.3271244002331e20,
+    "mercury" => 2.2032e13,
+    "venus" => 3.24858592e14,
+    "earth" => 3.986004418e14,
+    "moon" => 4.9028005821478e12,
+    "mars" => 4.2828314e13,
+    "jupiter" => 1.26686534e17,
+    "saturn" => 3.7931187e16,
+    "uranus" => 5.793939e15,
+    "neptune" => 6.836529e15,
+    "pluto" => 8.71e11,
+    "titan" => 8.981e12
+)
+
+@inline _canonical_spice_name(name::String) = replace(lowercase(strip(name)), ' ' => '_')
+@inline _mu_lookup_name(name::String) = replace(_canonical_spice_name(name), "_barycenter" => "")
+@inline function _spice_query_name(name::String)
+    key = _canonical_spice_name(name)
+    return (endswith(key, "_barycenter") || !(key in _SPICE_BARYCENTER_BODIES)) ? key : key * "_barycenter"
+end
+@inline function _resolve_third_body_mu(name::String)::Float64
+    key = _mu_lookup_name(name)
+    μ = get(_THIRD_BODY_MU, key, NaN)
+    isfinite(μ) || throw(ArgumentError("Unsupported third body '$name' for NBodyGravityModel. Add its GM to _THIRD_BODY_MU in Perturbations.jl."))
+    return μ
+end
 
 # N-body gravity perturbation model
-@kwdef struct NBodyGravityModel{P <: AbstractPlanet, NP <: Tuple{Vararg{String}}} <: AbstractForceTorqueModel
+struct NBodyGravityModel{P <: AbstractPlanet, NP <: Tuple{Vararg{String}}, NM <: Tuple{Vararg{Float64}}} <: AbstractForceTorqueModel
     body_names::NP  # Names of celestial bodies to include
-    primary_body_name::String = "Earth" # Name of the primary body
-    planet::P = Earth("") # Planet data for primary body
+    body_mus::NM    # Gravitational parameters [m^3/s^2] for each third body
+    primary_body_name::String # Name of the primary body
+    planet::P # Planet data for primary body
 end
 
 struct GravitationalHarmonicsModel{P <: AbstractPlanet} <: AbstractForceTorqueModel
@@ -62,6 +91,28 @@ struct SolarRadiationPressureModel <: AbstractForceTorqueModel
     A::Float64  # Cross-sectional area in m^2
     AU_m::Float64 # Astronomical unit in meters
 end
+
+function SolarRadiationPressureModel(Cr::Real, A::Real, AU_m::Real=149_597_870_700.0)
+    Cr_f = Float64(Cr)
+    A_f = Float64(A)
+    AU_f = Float64(AU_m)
+    Cr_f >= 0.0 || throw(ArgumentError("SolarRadiationPressureModel.Cr must be >= 0, got $Cr_f."))
+    A_f >= 0.0 || throw(ArgumentError("SolarRadiationPressureModel.A must be >= 0 m^2, got $A_f."))
+    AU_f > 0.0 || throw(ArgumentError("SolarRadiationPressureModel.AU_m must be > 0 m, got $AU_f."))
+    return SolarRadiationPressureModel(Cr_f, A_f, AU_f)
+end
+
+function NBodyGravityModel(;
+    body_names::Tuple{Vararg{String}},
+    primary_body_name::String="Earth",
+    planet::P=Earth(""),
+    body_mus::Union{Nothing, Tuple{Vararg{Float64}}}=nothing
+) where {P <: AbstractPlanet}
+    mus = body_mus === nothing ? Tuple(_resolve_third_body_mu(name) for name in body_names) : body_mus
+    length(mus) == length(body_names) || throw(ArgumentError("NBodyGravityModel.body_mus length ($(length(mus))) must match body_names length ($(length(body_names)))."))
+    return NBodyGravityModel{P, typeof(body_names), typeof(mus)}(body_names, mus, primary_body_name, planet)
+end
+
 # Constructor to get planet data
 function NBodyGravityModel(body_names::Vector{String}, primary_body_name::String="Earth", spice_path::String="GRAM Suite 2.0/SPICE")
     pname = lowercase(primary_body_name)
@@ -172,20 +223,13 @@ end
 function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     pos_ii = hasproperty(x, :pos) ? SVector{3, Float64}(x.pos) : SVector{3, Float64}(x[1:3])
     mass = hasproperty(x, :mass) ? x.mass : x[7]
-    primary_body_name = lowercase(model.primary_body_name)
+    primary_body_name = _spice_query_name(model.primary_body_name)
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
     force_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize force vector
-    barycenter_bodies = Set(["mars", "jupiter", "saturn", "uranus", "neptune", "earth"])
-    if primary_body_name in barycenter_bodies
-        primary_body_name *= "_barycenter"
-    end
     n_bodies = length(model.body_names)
     pos_primary_k_all = Vector{SVector{3, Float64}}(undef, n_bodies)
     for (k, body_name) in pairs(model.body_names)
-        body_name_spice = lowercase(body_name)
-        if body_name_spice in barycenter_bodies
-            body_name_spice *= "_barycenter"
-        end
+        body_name_spice = _spice_query_name(body_name)
 
         pos_primary_body = lock(SPICE_LOCK) do
             SVector{3, Float64}(spkpos(body_name_spice, et, "J2000", "none", primary_body_name)[1])
@@ -202,7 +246,7 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
             pos_primary_k = pos_primary_k_all[k]
             pos_spacecraft_k = pos_primary_k - pos_ii
             pos_spacecraft_k_mag = norm(pos_spacecraft_k)
-            thread_force[tid] .+= mass * model.planet.μ * (
+            thread_force[tid] .+= mass * model.body_mus[k] * (
                 (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
             )
         end
@@ -210,14 +254,44 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
             force_ii .+= thread_force[tid]
         end
     else
-        @inbounds for pos_primary_k in pos_primary_k_all
+        @inbounds for k in eachindex(pos_primary_k_all)
+            pos_primary_k = pos_primary_k_all[k]
             pos_spacecraft_k = pos_primary_k - pos_ii
             pos_spacecraft_k_mag = norm(pos_spacecraft_k)
-            force_ii += mass * model.planet.μ * (
+            force_ii += mass * model.body_mus[k] * (
                 (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
             )
         end
     end
+
+    return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    if model.A == 0.0
+        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    planet = param.args.environment_model.planet
+    pos_ii = hasproperty(x, :pos) ? SVector{3, Float64}(x.pos) : SVector{3, Float64}(x[1:3])
+    et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
+    primary_body_name = _spice_query_name(planet.name)
+
+    pos_primary_sun_j2000 = lock(SPICE_LOCK) do
+        SVector{3, Float64}(spkpos("sun", et, "J2000", "none", primary_body_name)[1])
+    end
+    pos_primary_sun = planet.J2000_to_pci * pos_primary_sun_j2000 * 1e3
+    r_sun_to_sc = pos_ii - pos_primary_sun
+    r_sun_to_sc_mag = norm(r_sun_to_sc)
+    if r_sun_to_sc_mag <= 0.0
+        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    eclipse_ratio = eclipse_area_calc(pos_ii, pos_primary_sun, planet.Rp_e)
+    # Solar radiation pressure at 1 AU [N/m^2]
+    P_1AU = 4.56e-6
+    P_srp = P_1AU * (model.AU_m / r_sun_to_sc_mag)^2
+    force_ii = model.Cr * model.A * P_srp * eclipse_ratio * normalize(r_sun_to_sc)
 
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end

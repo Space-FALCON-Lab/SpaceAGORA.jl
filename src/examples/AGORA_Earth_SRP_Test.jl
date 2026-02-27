@@ -15,24 +15,6 @@ if !isdefined(@__MODULE__, :make_example_config)
     include("typed_example_utils.jl")
 end
 
-struct SimpleSRPModel <: AbstractForceTorqueModel
-    pressure::Float64
-    area::Float64
-    cr::Float64
-    sun_dir_ii::SVector{3, Float64}
-end
-
-function SimulationModel.calcForceTorque(
-    model::SimpleSRPModel,
-    x,
-    p::ODEParams,
-    i::Int64
-)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    sun_hat = normalize(model.sun_dir_ii)
-    force = model.pressure * model.area * model.cr * sun_hat
-    return force, SVector{3, Float64}(0.0, 0.0, 0.0)
-end
-
 planet = Earth("", SPICE_PATH)
 
 q0 = normalize(SVector{4, Float64}(0.0, 0.0, 0.3, 0.9539392))
@@ -62,7 +44,7 @@ args = make_example_config(
     initial_time=InitialTime(year=2022, month=1, day=1, hour=0, minute=0, second=0.0),
     dynamic_effectors=(
         InverseSquaredGravityModel(),
-        SimpleSRPModel(4.56e-6, spacecraft.root.ref_area, 1.2, SVector{3, Float64}(1.0, 0.1, 0.0))
+        SolarRadiationPressureModel(1.2, spacecraft.root.ref_area)
     ),
     density_model=NoAtmosphereModel(),
     orientation_sim=true,

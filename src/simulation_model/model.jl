@@ -201,7 +201,7 @@ mutable struct SpacecraftModel
     # end
 end
 
-function SpacecraftModel(; joints::Vector{Joint}=Joint[], links::Vector{Link}=Link[], root::Link=Link{0}(root=true),
+function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::AbstractVector{<:Link}=Link[], root::Link=Link{0}(root=true),
                             instant_actuation::Bool=true,
                             prop_mass::Float64=0.0,
                             inertia_tensor::SMatrix{3,3,Float64}=SMatrix{3, 3, Float64}(zeros(3,3)),
@@ -209,16 +209,19 @@ function SpacecraftModel(; joints::Vector{Joint}=Joint[], links::Vector{Link}=Li
                             n_thrusters::Int64=0,
                             initial_condition::InitialCondition=InitialCondition(),
                             id::Int64=1)
+    joints_vec = Vector{Joint}(joints)
+    links_vec = Vector{Link}(links)
+
     # Calculate dry mass from links
     dry_mass = 0.0
-    if !any(link -> link === root, links)
-        push!(links, root) # Include root in the links list for mass calculation
+    if !any(link -> link === root, links_vec)
+        push!(links_vec, root) # Include root in the links list for mass calculation
     end
-    for link in links
+    for link in links_vec
         dry_mass += link.m
     end
 
-    return SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters, initial_condition, id)
+    return SpacecraftModel(joints_vec, links_vec, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters, initial_condition, id)
 end
 
 """

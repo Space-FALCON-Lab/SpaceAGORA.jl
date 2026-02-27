@@ -12,7 +12,7 @@ module DynamicEffectors
 
     # Public members to export
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel # Gravity models
-    export NBodyGravityModel, GravitationalHarmonicsModel # N-body gravity model
+    export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel # N-body gravity + SRP models
     export AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight # Aerodynamic models
     export calcForceTorque
     

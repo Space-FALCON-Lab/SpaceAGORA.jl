@@ -1621,9 +1621,9 @@ function get_drag_state_callback(num_sats::Int)
     function affect_upcrossing!(integrator, idx::Int64)
         p = integrator.p
         u = integrator.u
-        if callback_verbose(integrator)
-            println("Switching to space integration at time $(integrator.t) seconds!")
-        end
+        # if callback_verbose(integrator)
+        #     println("Switching to space integration at time $(integrator.t) seconds!")
+        # end
         # sleep(3.0)
         integrator.opts.dtmax = p.args.integration_tolerances.dt_max_orbit # Increase the maximum timestep when exiting the atmosphere
         reltol_new, abstol_new = _callback_tolerances_for_phase(
@@ -1639,9 +1639,9 @@ function get_drag_state_callback(num_sats::Int)
     function affect_downcrossing!(integrator, idx::Int64)
         p = integrator.p
         u = integrator.u
-        if callback_verbose(integrator)
-            println("Switching to atmosphere integration at time $(integrator.t) seconds!")
-        end
+        # if callback_verbose(integrator)
+        #     println("Switching to atmosphere integration at time $(integrator.t) seconds!")
+        # end
         # sleep(3.0)
         integrator.opts.dtmax = p.args.integration_tolerances.dt_max_atmosphere # Decrease the maximum timestep when entering the atmosphere
         reltol_new, abstol_new = _callback_tolerances_for_phase(

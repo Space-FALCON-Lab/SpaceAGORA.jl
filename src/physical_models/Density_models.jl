@@ -351,6 +351,7 @@ function _resolve_spice_directory(gram_root::String, spice_directory::String, gr
     !isempty(spice_directory) && push!(candidates, spice_directory)
     push!(candidates, joinpath(gram_root, "SPICE"))
     !isempty(gram_data_directory) && push!(candidates, joinpath(gram_data_directory, "SPICE"))
+    push!(candidates, "GRAM Suite 2.0/SPICE")
     push!(candidates, "GRAM_Data/SPICE")
 
     for candidate in candidates
@@ -365,6 +366,7 @@ function _resolve_gram_data_root(gram_root::String, gram_data_directory::String)
     candidates = String[]
     push!(candidates, gram_root)
     !isempty(gram_data_directory) && push!(candidates, gram_data_directory)
+    push!(candidates, "GRAM Suite 2.0")
     push!(candidates, "GRAM_Data")
 
     for candidate in candidates
@@ -402,7 +404,7 @@ end
 
 function GRAMAtmosphereModel(;
     gram_directory::String="GRAM Suite 2.0",
-    gram_data_directory::String="GRAM_Data",
+    gram_data_directory::String="GRAM Suite 2.0",
     gram_root_directory::String="",
     gram_library_path::String="",
     spice_directory::String="",
@@ -712,8 +714,9 @@ end
     el_time::Float64,
     wind::Bool
 )::Tuple{Float64, Float64, SVector{3, Float64}}
+    set_position! = Base.invokelatest(getfield, model.gram, Symbol("set_position!"))
     Base.invokelatest(
-        model.gram.set_position!,
+        set_position!,
         model.gram_atmosphere;
         height=h * 1e-3,
         latitude=rad2deg(lat),
@@ -721,14 +724,20 @@ end
         elapsed_time=el_time
     )
 
-    err = Base.invokelatest(model.gram.update!, model.gram_atmosphere)
-    err == 0 || throw(ErrorException("GRAM update failed (code=$err): $(model.gram.get_error_message())"))
+    update! = Base.invokelatest(getfield, model.gram, Symbol("update!"))
+    err = Base.invokelatest(update!, model.gram_atmosphere)
+    if err != 0
+        get_error_message = Base.invokelatest(getfield, model.gram, :get_error_message)
+        throw(ErrorException("GRAM update failed (code=$err): $(Base.invokelatest(get_error_message))"))
+    end
 
-    atmos = Base.invokelatest(model.gram.get_dynamics_state, model.gram_atmosphere)
+    get_dynamics_state = Base.invokelatest(getfield, model.gram, :get_dynamics_state)
+    atmos = Base.invokelatest(get_dynamics_state, model.gram_atmosphere)
     rho_local = Float64(atmos.density)
     T_local = Float64(atmos.temperature)
     if isdefined(model.gram, :get_winds_state)
-        winds = Base.invokelatest(model.gram.get_winds_state, model.gram_atmosphere)
+        get_winds_state = Base.invokelatest(getfield, model.gram, :get_winds_state)
+        winds = Base.invokelatest(get_winds_state, model.gram_atmosphere)
         wind_vec_local = if wind
             SVector{3, Float64}(
                 Float64(winds.perturbedEWWind),

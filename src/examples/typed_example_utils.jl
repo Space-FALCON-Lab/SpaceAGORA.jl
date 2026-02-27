@@ -6,7 +6,7 @@ if !isdefined(@__MODULE__, :REPO_ROOT)
     const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 end
 if !isdefined(@__MODULE__, :SPICE_PATH)
-    const SPICE_PATH = joinpath(REPO_ROOT, "GRAM_Data", "SPICE")
+    const SPICE_PATH = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
 end
 if !isdefined(@__MODULE__, :SimulationModel)
     include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))

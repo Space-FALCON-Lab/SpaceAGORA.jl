@@ -142,7 +142,7 @@ module Planets
     end # struct Titan
 
     # Constructors
-    function Earth(topo_harmonics_file::String, spice_path::String="GRAM_Data/SPICE")
+    function Earth(topo_harmonics_file::String, spice_path::String="GRAM Suite 2.0/SPICE")
         earth = Earth()
         # TopographyHarmonicsWorkspace!(topo_harmonics_file, earth)
         furnsh(spice_path * "/pck/pck00011.tpc")
@@ -152,7 +152,7 @@ module Planets
         return earth
     end
 
-    function Mars(topo_harmonics_file::String, spice_path::String="GRAM_Data/SPICE")
+    function Mars(topo_harmonics_file::String, spice_path::String="GRAM Suite 2.0/SPICE")
         mars = Mars()
         # TopographyHarmonicsWorkspace!(topo_harmonics_file, mars)
         furnsh(spice_path * "/pck/pck00011.tpc")
@@ -162,7 +162,7 @@ module Planets
         return mars
     end
 
-    function Venus(topo_harmonics_file::String, spice_path::String="GRAM_Data/SPICE")
+    function Venus(topo_harmonics_file::String, spice_path::String="GRAM Suite 2.0/SPICE")
         venus = Venus()
         # TopographyHarmonicsWorkspace!(topo_harmonics_file, venus)
         furnsh(spice_path * "/pck/pck00011.tpc")
@@ -172,7 +172,7 @@ module Planets
         return venus
     end
 
-    function Titan(topo_harmonics_file::String, spice_path::String="GRAM_Data/SPICE")
+    function Titan(topo_harmonics_file::String, spice_path::String="GRAM Suite 2.0/SPICE")
         titan = Titan()
         # TopographyHarmonicsWorkspace!(topo_harmonics_file, titan)
         furnsh(spice_path * "/pck/pck00011.tpc")

@@ -44,7 +44,7 @@ def load_settings() -> Settings:
     artifacts_dir = Path(os.getenv("ORCH_ARTIFACTS_DIR", str(storage_dir / "artifacts")))
     worker_tmp_dir = Path(os.getenv("ORCH_WORKER_TMP_DIR", "/tmp/spaceagora_orchestrator"))
 
-    default_spice = _first_existing_path(repo_root / "GRAM_Data" / "SPICE", repo_root / "GRAM Suite 2.0" / "SPICE")
+    default_spice = _first_existing_path(repo_root / "GRAM Suite 2.0" / "SPICE", repo_root / "GRAM_Data" / "SPICE")
     default_gram_data = _first_existing_path(repo_root / "GRAM Suite 2.0", repo_root / "GRAM_Data")
     default_gram_root = _first_existing_path(repo_root / "GRAM Suite 2.0", repo_root / "GRAMpy")
 

@@ -42,6 +42,64 @@ const _GRAM_WRAPPER_FILE = Ref{String}("")
 const _GRAM_SEED_WARNING_EMITTED = Ref(false)
 const _GRAM_WIND_WARNING_EMITTED = Ref(false)
 const _GRAM_LOCK_OFF_WARNING_EMITTED = Ref(false)
+const _GRAM_STATIC_GRID_LOGGED = Ref(false)
+const _GRAM_STATIC_GRID_CACHE = Dict{Any, Any}()
+const _GRAM_STATIC_GRID_LOCK = ReentrantLock()
+
+struct GRAMStaticGridKey
+    planet_name::String
+    alt_min_m::Float64
+    alt_max_m::Float64
+    n_alt::Int
+    n_lat::Int
+    n_lon::Int
+    elapsed_time_s::Float64
+    include_wind::Bool
+end
+
+struct GRAMStaticGrid
+    key::GRAMStaticGridKey
+    alt_nodes::Vector{Float64}
+    lat_nodes::Vector{Float64}
+    lon_nodes::Vector{Float64}
+    rho::Array{Float64, 3}
+    T::Array{Float64, 3}
+    wind_e::Array{Float64, 3}
+    wind_n::Array{Float64, 3}
+    wind_u::Array{Float64, 3}
+end
+
+@inline function _parse_bool_env(name::String, default::Bool)::Bool
+    raw = lowercase(strip(get(ENV, name, default ? "1" : "0")))
+    if raw in ("1", "true", "yes", "on")
+        return true
+    elseif raw in ("0", "false", "no", "off")
+        return false
+    end
+    throw(ArgumentError("Invalid $name='$raw'. Use one of: 1/0, true/false, yes/no, on/off."))
+end
+
+@inline function _parse_float_env(name::String, default::Float64)::Float64
+    raw = strip(get(ENV, name, string(default)))
+    parsed = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("$name must be a floating-point value, got '$raw'"))
+    end
+    return parsed
+end
+
+@inline function _parse_int_env(name::String, default::Int)::Int
+    raw = strip(get(ENV, name, string(default)))
+    parsed = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("$name must be an integer value, got '$raw'"))
+    end
+    return parsed
+end
+
+@inline _gram_static_grid_enabled() = _parse_bool_env("SPACEAGORA_GRAM_STATIC_GRID", false)
 
 @inline _spaceagora_repo_root() = normpath(joinpath(@__DIR__, "..", ".."))
 @inline _gram_lib_extension() = Sys.iswindows() ? "dll" : (Sys.isapple() ? "dylib" : "so")

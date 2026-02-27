@@ -407,6 +407,39 @@ end
 
 @inline _angle_delta_rad(a::Float64, b::Float64) = atan(sin(b - a), cos(b - a))
 
+@inline function _gram_expected_track_length_m(
+    planet,
+    alt0::Float64,
+    lat0::Float64,
+    lon0::Float64,
+    alt1::Float64,
+    lat1::Float64,
+    lon1::Float64
+)::Tuple{Float64, Float64}
+    radius_m = max(1.0, planet.Rp_m + 0.5 * (alt0 + alt1))
+    cos_angle = clamp(
+        sin(lat0) * sin(lat1) + cos(lat0) * cos(lat1) * cos(_angle_delta_rad(lon0, lon1)),
+        -1.0,
+        1.0
+    )
+    central_angle = acos(cos_angle)
+    horizontal_m = radius_m * central_angle
+    vertical_m = alt1 - alt0
+    length_m = hypot(horizontal_m, vertical_m)
+    return max(length_m, 1.0), radius_m
+end
+
+@inline function _gram_track_cache_target_spacing_m(
+    alt_tol_m::Float64,
+    ang_tol_rad::Float64,
+    radius_m::Float64
+)::Float64
+    # Keep interpolation spacing tighter than cache acceptance tolerances.
+    ang_tol_m = max(1.0, radius_m * max(ang_tol_rad, 1e-9))
+    tol_scale_m = min(max(1.0, alt_tol_m), ang_tol_m)
+    return max(1.0, 0.5 * tol_scale_m)
+end
+
 function _gram_descending_periapsis_target(
     pos::SVector{3, Float64},
     vel::SVector{3, Float64},
@@ -492,15 +525,17 @@ function _gram_track_cache_refresh!(
     t::Float64,
     horizon_s::Float64,
     n_points::Int,
+    alt_tol_m::Float64 = 500.0,
+    ang_tol_rad::Float64 = deg2rad(1.0),
     transition_band_m::Float64 = 0.0
 )
     try
         planet = p.args.environment_model.planet
         base_horizon_s = max(1e-3, horizon_s)
         dt_segment = base_horizon_s
-        target_alt = alt
-        target_lat = lat
-        target_lon = lon
+        pos_target = pos + vel * dt_segment
+        rp_target, _ = r_intor_p!(pos_target, vel, planet)
+        target_alt, target_lat, target_lon = rtolatlong(rp_target, planet)
 
         if _gram_track_cache_periapsis_split_enabled() &&
            alt <= p.args.environment_model.EI * 1e3 + max(0.0, transition_band_m) &&
@@ -513,7 +548,19 @@ function _gram_track_cache_refresh!(
 
         base_n = max(2, n_points)
         dt_per_sample = max(1e-3, base_horizon_s / max(1, base_n - 1))
-        n = max(base_n, Int(ceil(dt_segment / dt_per_sample)) + 1)
+        n_from_time = Int(ceil(dt_segment / dt_per_sample)) + 1
+        expected_length_m, radius_m = _gram_expected_track_length_m(
+            planet,
+            alt,
+            lat,
+            lon,
+            target_alt,
+            target_lat,
+            target_lon
+        )
+        target_spacing_m = _gram_track_cache_target_spacing_m(alt_tol_m, ang_tol_rad, radius_m)
+        n_from_length = Int(ceil(expected_length_m / target_spacing_m)) + 1
+        n = max(base_n, n_from_time, n_from_length)
         n = min(n, _gram_track_cache_max_npos())
 
         if length(cache.times) != n
@@ -762,6 +809,8 @@ function get_density_callback(num_sats::Int, args::SimulationConfiguration)
                     t,
                     cache_horizon_s,
                     cache_points,
+                    cache_alt_tol_m,
+                    cache_ang_tol_rad,
                     cache_cfg.transition_band_m
                 )
             end

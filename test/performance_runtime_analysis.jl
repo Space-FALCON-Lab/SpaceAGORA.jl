@@ -52,6 +52,7 @@ Base.@kwdef struct BenchmarkCase
     description::String
     args_template::SimulationConfiguration
     run_in_quick::Bool = true
+    solver_mode_override::Union{Nothing, String} = nothing
 end
 
 @inline _safe_div(num::Float64, den::Float64) = den > 0.0 ? num / den : NaN
@@ -96,6 +97,54 @@ end
 @inline function _perf_strict_errors()::Bool
     raw = lowercase(strip(get(ENV, "SPACEAGORA_PERF_STRICT_ERRORS", "0")))
     return raw in ("1", "true", "yes", "on")
+end
+
+@inline function _perf_solver_mode_env()::String
+    return _perf_solver_mode_env("quick")
+end
+
+@inline function _perf_default_solver_mode(profile_name::String)::String
+    normalized = lowercase(strip(profile_name))
+    if normalized == "full"
+        # Keep full-profile benchmarks conservative/stable by default.
+        return "rodas5p"
+    end
+    # Quick profile is used for threshold tuning and should stay near production defaults.
+    return "auto_stiff"
+end
+
+@inline function _perf_solver_mode_env(profile_name::String)::String
+    mode = strip(get(ENV, "SPACEAGORA_PERF_SOLVER_MODE", ""))
+    if isempty(mode)
+        mode = strip(get(ENV, "SPACEAGORA_SOLVER_MODE", ""))
+    end
+    if isempty(mode)
+        mode = _perf_default_solver_mode(profile_name)
+    end
+    return mode
+end
+
+@inline function _perf_stream_orbit_logs()::Bool
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_PERF_STREAM_ORBIT_LOGS", "1")))
+    return raw in ("1", "true", "yes", "on")
+end
+
+function _run_perf_simulation(
+    args_run;
+    return_solution::Bool,
+    return_solver_metadata::Bool=false,
+    profile_name::String="quick",
+    solver_mode_override::Union{Nothing, String}=nothing
+)
+    solver_mode = isnothing(solver_mode_override) ? _perf_solver_mode_env(profile_name) : solver_mode_override
+    return withenv("SPACEAGORA_SOLVER_MODE" => solver_mode) do
+        run_simulation(
+            args_run;
+            isolate_state=false,
+            return_solution=return_solution,
+            return_solver_metadata=return_solver_metadata
+        )
+    end
 end
 
 @inline function _perf_stack_head(bt)::String
@@ -735,14 +784,16 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
         BenchmarkCase(
             name="single_nbody_sun_moon",
             category="dynamics_fidelity",
-            description="1 spacecraft, inverse-square gravity + N-body Sun/Moon perturbations",
+            description="1 spacecraft, inverse-square gravity + N-body Sun/Moon perturbations (auto-stiff solver override)",
             args_template=build_config(
                 planet=planet,
                 spacecraft=sc_baseline,
                 mission_time_s=spec.mission_short_s,
                 orientation_sim=false,
-                dynamic_effectors=(InverseSquaredGravityModel(), nbody_sun_moon)
-            )
+                dynamic_effectors=(InverseSquaredGravityModel(), nbody_sun_moon),
+                dt_max_orbit=10.0
+            ),
+            solver_mode_override="auto_stiff"
         ),
         BenchmarkCase(
             name="single_harmonics_l20",
@@ -787,16 +838,20 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
         BenchmarkCase(
             name="super_constellation_8sat_l20_control",
             category="control_stress",
-            description="8 spacecraft, L20 harmonics + BaseThrusterModel control callback stress case",
+            description="8 spacecraft, L20 harmonics + BaseThrusterModel control callback stress case (mission capped for benchmark stability; Tsit5 override)",
             args_template=build_config(
                 planet=planet,
                 spacecraft=sc_super_constellation,
-                mission_time_s=spec.mission_short_s,
+                mission_time_s=min(spec.mission_short_s, 60.0),
                 orientation_sim=false,
                 dynamic_effectors=(InverseSquaredGravityModel(), harmonics20),
                 control_effectors=(super_constellation_thruster,),
-                control_rates=[1.0]
-            )
+                control_rates=[1.0],
+                dt_max_orbit=45.0,
+                reltol_orbit=1e-5,
+                abstol_orbit=1e-5
+            ),
+            solver_mode_override="tsit5"
         ),
         BenchmarkCase(
             name="single_baseline_long_mission",
@@ -828,11 +883,12 @@ function measure_case(case::BenchmarkCase, profile_name::String, repeat_idx::Int
     GC.gc()
     solve_timed = @timed begin
         try
-            result = run_simulation(
+            result = _run_perf_simulation(
                 args_run;
-                isolate_state=false,
                 return_solution=true,
-                return_solver_metadata=true
+                return_solver_metadata=true,
+                profile_name=profile_name,
+                solver_mode_override=case.solver_mode_override
             )
             (ok=true, result=result, err=nothing, bt=nothing)
         catch err
@@ -939,11 +995,22 @@ function measure_case(case::BenchmarkCase, profile_name::String, repeat_idx::Int
     )
 end
 
-function run_warmup(case::BenchmarkCase, warmup::Int)
+function run_warmup(case::BenchmarkCase, warmup::Int, profile_name::String)
     for i in 1:warmup
         args_run = deepcopy(case.args_template)
+        println("  warmup $(i)/$(warmup): start")
+        flush(stdout)
+        warmup_started_ns = time_ns()
         try
-            run_simulation(args_run; isolate_state=false, return_solution=false)
+            _run_perf_simulation(
+                args_run;
+                return_solution=false,
+                profile_name=profile_name,
+                solver_mode_override=case.solver_mode_override
+            )
+            warmup_elapsed_s = (time_ns() - warmup_started_ns) / 1e9
+            println("  warmup $(i)/$(warmup): done total=$(round(warmup_elapsed_s; digits=3)) s")
+            flush(stdout)
         catch err
             if err isa InterruptException
                 rethrow()
@@ -953,14 +1020,31 @@ function run_warmup(case::BenchmarkCase, warmup::Int)
             end
             err_bt = catch_backtrace()
             solve_retcode = _solve_retcode_from_error(err)
+            warmup_elapsed_s = (time_ns() - warmup_started_ns) / 1e9
             if ismissing(solve_retcode)
-                @warn "[warmup] $(case.name) $(i)/$(warmup) threw $(typeof(err)): $(_perf_error_text(err)) @ $(_perf_stack_head(err_bt)); continuing"
+                @warn "[warmup] $(case.name) $(i)/$(warmup) threw $(typeof(err)): $(_perf_error_text(err)) @ $(_perf_stack_head(err_bt)); continuing (elapsed=$(round(warmup_elapsed_s; digits=3)) s)"
             else
-                println("  warmup $(i)/$(warmup): failed retcode=$(solve_retcode), continuing")
+                println("  warmup $(i)/$(warmup): failed retcode=$(solve_retcode), continuing (elapsed=$(round(warmup_elapsed_s; digits=3)) s)")
+                flush(stdout)
             end
         end
     end
     return nothing
+end
+
+@inline function _case_sample_schedule(case::BenchmarkCase, spec::ProfileSpec)::Tuple{Int, Int}
+    warmup = spec.warmup
+    repeats = spec.repeats
+    if case.category == "control_stress"
+        if spec.name == "full"
+            warmup = 0
+            repeats = 1
+        else
+            warmup = min(warmup, 1)
+            repeats = min(repeats, 2)
+        end
+    end
+    return warmup, repeats
 end
 
 function _run_case_batch_core!(
@@ -971,26 +1055,33 @@ function _run_case_batch_core!(
     total::Int,
     plan::ParallelPriorityPlan
 )
+    warmup_count, repeat_count = _case_sample_schedule(case, spec)
     println(
-        "[$idx/$total] $(case.name) :: warmup x$(spec.warmup), repeats x$(spec.repeats), " *
-        "outer=$(plan.outer_route), density=$(plan.density_mode), control=$(plan.control_mode), multibody=$(plan.multibody_mode)"
+        "[$idx/$total] $(case.name) :: warmup x$(warmup_count), repeats x$(repeat_count), " *
+        "outer=$(plan.outer_route), density=$(plan.density_mode), control=$(plan.control_mode), multibody=$(plan.multibody_mode), " *
+        "solver_override=$(isnothing(case.solver_mode_override) ? "none" : case.solver_mode_override)"
     )
-    run_warmup(case, spec.warmup)
-    for rep in 1:spec.repeats
+    run_warmup(case, warmup_count, spec.name)
+    for rep in 1:repeat_count
         last_row = nothing
         for attempt in 1:spec.max_attempts
+            println("  repeat $(rep)/$(repeat_count) attempt $(attempt)/$(spec.max_attempts): start")
+            flush(stdout)
             row = measure_case(case, spec.name, rep; attempt=attempt)
             last_row = row
             if row.solve_success
                 push!(rows, row)
-                println("  repeat $(rep)/$(spec.repeats): total=$(round(row.total_time_s; digits=3)) s, solve=$(round(row.solve_time_s; digits=3)) s")
+                println("  repeat $(rep)/$(repeat_count) attempt $(attempt)/$(spec.max_attempts): total=$(round(row.total_time_s; digits=3)) s, solve=$(round(row.solve_time_s; digits=3)) s")
+                flush(stdout)
                 break
             end
-            println("  repeat $(rep)/$(spec.repeats) attempt $(attempt)/$(spec.max_attempts): failed retcode=$(row.solve_retcode), retrying")
+            println("  repeat $(rep)/$(repeat_count) attempt $(attempt)/$(spec.max_attempts): failed retcode=$(row.solve_retcode), retrying")
+            flush(stdout)
         end
         if !(last_row === nothing) && !last_row.solve_success
             push!(rows, last_row)
-            println("  repeat $(rep)/$(spec.repeats): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)")
+            println("  repeat $(rep)/$(repeat_count): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)")
+            flush(stdout)
         end
     end
     return nothing
@@ -1070,7 +1161,7 @@ function perf_worker_montecarlo_warmup(
     plan = parallel_priority_plan(warmup_case, outer_route)
     env_pairs = parallel_priority_env_pairs(plan)
     withenv(env_pairs...) do
-        run_warmup(warmup_case, spec.warmup)
+        run_warmup(warmup_case, spec.warmup, spec.name)
     end
     return nothing
 end
@@ -1130,7 +1221,7 @@ function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, plan
         plan = parallel_priority_plan(warmup_case, mc_backend)
         env_pairs = parallel_priority_env_pairs(plan)
         withenv(env_pairs...) do
-            run_warmup(warmup_case, spec.warmup)
+            run_warmup(warmup_case, spec.warmup, spec.name)
         end
     end
 
@@ -1315,6 +1406,7 @@ function measure_per_orbit_scenario(
 )
     rows = NamedTuple[]
     logs = String[]
+    stream_logs = _perf_stream_orbit_logs()
     for orbit_count in orbit_counts
         mission_time = orbit_count * period_s
         args_template = deepcopy(base_case.args_template)
@@ -1343,12 +1435,17 @@ function measure_per_orbit_scenario(
             category=base_case.category,
             description=base_case.description,
             args_template=args_template,
-            run_in_quick=base_case.run_in_quick
+            run_in_quick=base_case.run_in_quick,
+            solver_mode_override=base_case.solver_mode_override
         )
 
         plan = parallel_priority_plan(case, outer_route)
         run_case = () -> begin
-            run_warmup(case, spec.warmup)
+            if stream_logs
+                println("    orbit=$(orbit_count): warmup x$(spec.warmup), repeats x$(spec.repeats)")
+                flush(stdout)
+            end
+            run_warmup(case, spec.warmup, spec.name)
             for rep in 1:spec.repeats
                 last_row = nothing
                 for attempt in 1:spec.max_attempts
@@ -1363,13 +1460,23 @@ function measure_per_orbit_scenario(
                     last_row = row_orbit
                     if row_orbit.solve_success
                         push!(rows, row_orbit)
-                        push!(logs, "    orbit=$(orbit_count) repeat $(rep)/$(spec.repeats): total=$(round(row_orbit.total_time_s; digits=3)) s")
+                        line = "    orbit=$(orbit_count) repeat $(rep)/$(spec.repeats): total=$(round(row_orbit.total_time_s; digits=3)) s"
+                        push!(logs, line)
+                        if stream_logs
+                            println(line)
+                            flush(stdout)
+                        end
                         break
                     end
                 end
                 if !(last_row === nothing) && !last_row.solve_success
                     push!(rows, last_row)
-                    push!(logs, "    orbit=$(orbit_count) repeat $(rep)/$(spec.repeats): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)")
+                    line = "    orbit=$(orbit_count) repeat $(rep)/$(spec.repeats): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)"
+                    push!(logs, line)
+                    if stream_logs
+                        println(line)
+                        flush(stdout)
+                    end
                 end
             end
         end
@@ -1476,7 +1583,7 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
     baseline_sc = make_spacecraft(planet; id=1, with_panel=false)
     period_s = orbital_period_seconds(baseline_sc, planet)
     orbit_counts = spec.name == "full" ? collect(1:5) : collect(1:3)
-    selected = selected_cases(spec, cases)
+    selected = [c for c in selected_cases(spec, cases) if c.category != "control_stress"]
 
     println("[per-orbit] scenarios=$(length(selected)), baseline period=$(round(period_s; digits=3)) s, orbit counts=$(first(orbit_counts)):$(last(orbit_counts))")
     rows = NamedTuple[]
@@ -2395,6 +2502,8 @@ function write_report(
     generated = string(now(UTC))
     julia_ver = string(VERSION)
     nthreads = Threads.nthreads()
+    solver_mode_default = _perf_default_solver_mode(spec.name)
+    solver_mode_effective = _perf_solver_mode_env(spec.name)
 
     valid_rows = findall(x -> !ismissing(x), summary_df.total_time_mean_s)
     fastest = nothing
@@ -2428,6 +2537,8 @@ function write_report(
         println(io, "- Repeats per deterministic scenario: `$(spec.repeats)`")
         println(io, "- Warmup runs per scenario: `$(spec.warmup)`")
         println(io, "- Monte Carlo seeds: `$(spec.montecarlo_samples)`")
+        println(io, "- Solver mode default for profile: `$(solver_mode_default)`")
+        println(io, "- Solver mode effective (after env overrides): `$(solver_mode_effective)`")
         println(io, "- Solver mode(s) observed: `$(_fmt(solver_modes))`")
         println(io)
         println(io, "## Key Findings")
@@ -2494,8 +2605,23 @@ function main()
     spec, outdir = parse_cli()
     mkpath(outdir)
 
+    solver_mode_default = _perf_default_solver_mode(spec.name)
+    solver_mode_effective = _perf_solver_mode_env(spec.name)
+    sat_threshold = _priority_inner_sat_threshold()
+    link_threshold = _priority_inner_link_threshold()
+    outer_light_sat = _priority_outer_light_sat_threshold()
+    outer_light_link = _priority_outer_light_link_threshold()
+    outer_light_mission_s = _priority_outer_light_mission_threshold_s()
+
     println("Performance runtime analysis profile: $(spec.name)")
     println("Output directory: $outdir")
+    println("Solver mode default: $(solver_mode_default)")
+    println("Solver mode effective: $(solver_mode_effective)")
+    println(
+        "Priority thresholds: inner_sat=$(sat_threshold), inner_link=$(link_threshold), " *
+        "outer_light_sat=$(outer_light_sat), outer_light_link=$(outer_light_link), " *
+        "outer_light_mission_s=$(round(outer_light_mission_s; digits=3))"
+    )
 
     planet = Earth("", SPICE_PATH)
     cases = build_cases(spec, planet)

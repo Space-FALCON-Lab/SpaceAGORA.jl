@@ -6,6 +6,7 @@ Use `test/performance_runtime_analysis.jl` to measure computational time across:
 - position-only vs orientation + aerodynamic dynamics
 - dynamics fidelity levels (`InverseSquared`, `J2`, `NBody`, spherical harmonics)
 - control callback overhead (`BaseThrusterModel`)
+- control-stress supercase (`super_constellation_8sat_l20_control`: 8 sats, L20 + control callback)
 - Monte Carlo runtime distribution (randomized seeds)
 
 ## Run
@@ -54,6 +55,7 @@ The script writes timestamped artifacts in `output/performance` by default:
 - `runtime_summary_<profile>_<timestamp>.csv`: aggregated scenario statistics
 - `runtime_per_orbit_raw_<profile>_<timestamp>.csv`: per-orbit raw timings across all scenarios (including Monte Carlo seeds)
 - `runtime_per_orbit_summary_<profile>_<timestamp>.csv`: per-orbit aggregates across all scenarios
+- `runtime_plot_<kind>_<profile>_<timestamp>.png`: plot artifacts (up to 14 files, including totals, speedup, breakdown, memory/alloc, throughput, Monte Carlo, and per-orbit views)
 - `runtime_report_<profile>_<timestamp>.md`: human-readable findings and comparison table
 
 ## Notes

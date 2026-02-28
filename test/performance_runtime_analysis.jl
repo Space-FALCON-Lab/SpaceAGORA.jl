@@ -23,6 +23,11 @@ using SPICE
 using StaticArrays
 using Statistics
 
+if myid() == 1
+    ENV["GKSwstype"] = get(ENV, "GKSwstype", "100")
+    using Plots
+end
+
 include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
 using .SimulationModel
 
@@ -378,6 +383,33 @@ end
     ]
 end
 
+@inline function _env_pairs_key(env_pairs::Vector{Pair{String, String}})::String
+    isempty(env_pairs) && return ""
+    return join([string(first(p), "=", last(p)) for p in env_pairs], ";")
+end
+
+function _thread_plan_groups(
+    cases::Vector{BenchmarkCase},
+    indices::Vector{Int},
+    outer_route::Symbol
+)::Vector{Tuple{Vector{Pair{String, String}}, Vector{Tuple{Int, ParallelPriorityPlan}}}}
+    grouped_pairs = Dict{String, Vector{Pair{String, String}}}()
+    grouped_payload = Dict{String, Vector{Tuple{Int, ParallelPriorityPlan}}}()
+    ordered_keys = String[]
+    for idx in indices
+        plan = parallel_priority_plan(cases[idx], outer_route)
+        env_pairs = parallel_priority_env_pairs(plan)
+        key = _env_pairs_key(env_pairs)
+        if !haskey(grouped_payload, key)
+            grouped_pairs[key] = env_pairs
+            grouped_payload[key] = Tuple{Int, ParallelPriorityPlan}[]
+            push!(ordered_keys, key)
+        end
+        push!(grouped_payload[key], (idx, plan))
+    end
+    return [(grouped_pairs[key], grouped_payload[key]) for key in ordered_keys]
+end
+
 @inline function auto_backend_for_case(case::BenchmarkCase)::Symbol
     return _priority_outer_route(case)
 end
@@ -608,6 +640,7 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
     sc_baseline = [make_spacecraft(planet; id=1, with_panel=false)]
     sc_orientation = [make_spacecraft(planet; id=1, with_panel=true, orientation_state=(q0, w0))]
     sc_thruster = [make_spacecraft(planet; id=1, with_panel=false, prop_mass=30.0)]
+    sc_super_constellation = make_constellation(planet, 8; with_panel=false)
     thruster = BaseThrusterModel(
         thrust=[0.8],
         direction=[0.0],
@@ -615,6 +648,14 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
         start_burn_time=[-1.0],
         stop_burn_time=[-1.0],
         Isp=[300.0]
+    )
+    super_constellation_thruster = BaseThrusterModel(
+        thrust=fill(0.18, 8),
+        direction=fill(0.0, 8),
+        Δv=fill(4.0, 8),
+        start_burn_time=fill(-1.0, 8),
+        stop_burn_time=fill(-1.0, 8),
+        Isp=fill(300.0, 8)
     )
 
     cases = BenchmarkCase[
@@ -740,6 +781,20 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 orientation_sim=false,
                 dynamic_effectors=(InverseSquaredGravityModel(),),
                 control_effectors=(thruster,),
+                control_rates=[1.0]
+            )
+        ),
+        BenchmarkCase(
+            name="super_constellation_8sat_l20_control",
+            category="control_stress",
+            description="8 spacecraft, L20 harmonics + BaseThrusterModel control callback stress case",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_super_constellation,
+                mission_time_s=spec.mission_short_s,
+                orientation_sim=false,
+                dynamic_effectors=(InverseSquaredGravityModel(), harmonics20),
+                control_effectors=(super_constellation_thruster,),
                 control_rates=[1.0]
             )
         ),
@@ -908,41 +963,57 @@ function run_warmup(case::BenchmarkCase, warmup::Int)
     return nothing
 end
 
+function _run_case_batch_core!(
+    rows::Vector{NamedTuple},
+    case::BenchmarkCase,
+    spec::ProfileSpec,
+    idx::Int,
+    total::Int,
+    plan::ParallelPriorityPlan
+)
+    println(
+        "[$idx/$total] $(case.name) :: warmup x$(spec.warmup), repeats x$(spec.repeats), " *
+        "outer=$(plan.outer_route), density=$(plan.density_mode), control=$(plan.control_mode), multibody=$(plan.multibody_mode)"
+    )
+    run_warmup(case, spec.warmup)
+    for rep in 1:spec.repeats
+        last_row = nothing
+        for attempt in 1:spec.max_attempts
+            row = measure_case(case, spec.name, rep; attempt=attempt)
+            last_row = row
+            if row.solve_success
+                push!(rows, row)
+                println("  repeat $(rep)/$(spec.repeats): total=$(round(row.total_time_s; digits=3)) s, solve=$(round(row.solve_time_s; digits=3)) s")
+                break
+            end
+            println("  repeat $(rep)/$(spec.repeats) attempt $(attempt)/$(spec.max_attempts): failed retcode=$(row.solve_retcode), retrying")
+        end
+        if !(last_row === nothing) && !last_row.solve_success
+            push!(rows, last_row)
+            println("  repeat $(rep)/$(spec.repeats): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)")
+        end
+    end
+    return nothing
+end
+
 function run_case_batch!(
     rows::Vector{NamedTuple},
     case::BenchmarkCase,
     spec::ProfileSpec,
     idx::Int,
     total::Int;
-    outer_route::Symbol=:none
+    outer_route::Symbol=:none,
+    plan::Union{Nothing, ParallelPriorityPlan}=nothing,
+    apply_env::Bool=true
 )
-    plan = parallel_priority_plan(case, outer_route)
-    env_pairs = parallel_priority_env_pairs(plan)
-    println(
-        "[$idx/$total] $(case.name) :: warmup x$(spec.warmup), repeats x$(spec.repeats), " *
-        "outer=$(plan.outer_route), density=$(plan.density_mode), control=$(plan.control_mode), multibody=$(plan.multibody_mode)"
-    )
-    withenv(env_pairs...) do
-        run_warmup(case, spec.warmup)
-        for rep in 1:spec.repeats
-            last_row = nothing
-            for attempt in 1:spec.max_attempts
-                row = measure_case(case, spec.name, rep; attempt=attempt)
-                last_row = row
-                if row.solve_success
-                    push!(rows, row)
-                    println("  repeat $(rep)/$(spec.repeats): total=$(round(row.total_time_s; digits=3)) s, solve=$(round(row.solve_time_s; digits=3)) s")
-                    break
-                end
-                println("  repeat $(rep)/$(spec.repeats) attempt $(attempt)/$(spec.max_attempts): failed retcode=$(row.solve_retcode), retrying")
-            end
-            if !(last_row === nothing) && !last_row.solve_success
-                push!(rows, last_row)
-                println("  repeat $(rep)/$(spec.repeats): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)")
-            end
+    resolved_plan = isnothing(plan) ? parallel_priority_plan(case, outer_route) : plan
+    if apply_env
+        env_pairs = parallel_priority_env_pairs(resolved_plan)
+        return withenv(env_pairs...) do
+            _run_case_batch_core!(rows, case, spec, idx, total, resolved_plan)
         end
-        return nothing
     end
+    return _run_case_batch_core!(rows, case, spec, idx, total, resolved_plan)
 end
 
 function measure_montecarlo_seed(
@@ -950,7 +1021,9 @@ function measure_montecarlo_seed(
     planet::Earth,
     mission_time_s::Float64,
     seed::Int;
-    outer_route::Symbol=:none
+    outer_route::Symbol=:none,
+    plan::Union{Nothing, ParallelPriorityPlan}=nothing,
+    apply_env::Bool=true
 )
     case = BenchmarkCase(
         name="montecarlo_randomized",
@@ -959,9 +1032,8 @@ function measure_montecarlo_seed(
         args_template=make_montecarlo_config(seed, planet, mission_time_s),
         run_in_quick=true
     )
-    plan = parallel_priority_plan(case, outer_route)
-    env_pairs = parallel_priority_env_pairs(plan)
-    return withenv(env_pairs...) do
+    resolved_plan = isnothing(plan) ? parallel_priority_plan(case, outer_route) : plan
+    run_seed = () -> begin
         last_row = nothing
         for attempt in 1:spec.max_attempts
             row = measure_case(case, spec.name, 1; seed=seed, attempt=attempt)
@@ -972,6 +1044,13 @@ function measure_montecarlo_seed(
         end
         return last_row, last_row === nothing ? "failed without attempt data" : "failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)"
     end
+    if apply_env
+        env_pairs = parallel_priority_env_pairs(resolved_plan)
+        return withenv(env_pairs...) do
+            run_seed()
+        end
+    end
+    return run_seed()
 end
 
 function perf_worker_montecarlo_warmup(
@@ -1071,14 +1150,26 @@ function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, plan
             end
         end
     elseif mc_backend == :threads
-        Threads.@threads for i in eachindex(seeds)
-            seed = seeds[i]
-            row, err = measure_montecarlo_seed(spec, planet, spec.montecarlo_mission_s, seed; outer_route=:threads)
-            seed_rows[i] = row
-            if row.solve_success
-                seed_msgs[i] = "  seed $(i)/$(length(seeds))=$(seed): total=$(round(row.total_time_s; digits=3)) s"
-            else
-                seed_msgs[i] = "  seed $(i)/$(length(seeds))=$(seed): $(err)"
+        threaded_plan = parallel_priority_plan(warmup_case, :threads)
+        threaded_env = parallel_priority_env_pairs(threaded_plan)
+        withenv(threaded_env...) do
+            Threads.@threads for i in eachindex(seeds)
+                seed = seeds[i]
+                row, err = measure_montecarlo_seed(
+                    spec,
+                    planet,
+                    spec.montecarlo_mission_s,
+                    seed;
+                    outer_route=:threads,
+                    plan=threaded_plan,
+                    apply_env=false
+                )
+                seed_rows[i] = row
+                if row.solve_success
+                    seed_msgs[i] = "  seed $(i)/$(length(seeds))=$(seed): total=$(round(row.total_time_s; digits=3)) s"
+                else
+                    seed_msgs[i] = "  seed $(i)/$(length(seeds))=$(seed): $(err)"
+                end
             end
         end
     else
@@ -1136,11 +1227,24 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
         end
 
         if !isempty(thread_indices)
-            Threads.@threads for j in eachindex(thread_indices)
-                idx = thread_indices[j]
-                local_rows = NamedTuple[]
-                run_case_batch!(local_rows, selected[idx], spec, idx, total; outer_route=:threads)
-                case_rows[idx] = local_rows
+            for (env_pairs, payload) in _thread_plan_groups(selected, thread_indices, :threads)
+                withenv(env_pairs...) do
+                    Threads.@threads for j in eachindex(payload)
+                        idx, plan = payload[j]
+                        local_rows = NamedTuple[]
+                        run_case_batch!(
+                            local_rows,
+                            selected[idx],
+                            spec,
+                            idx,
+                            total;
+                            outer_route=:threads,
+                            plan=plan,
+                            apply_env=false
+                        )
+                        case_rows[idx] = local_rows
+                    end
+                end
             end
         end
 
@@ -1165,10 +1269,25 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
         end
     elseif backend == :threads
         case_rows = Vector{Vector{NamedTuple}}(undef, total)
-        Threads.@threads for idx in eachindex(selected)
-            local_rows = NamedTuple[]
-            run_case_batch!(local_rows, selected[idx], spec, idx, total; outer_route=:threads)
-            case_rows[idx] = local_rows
+        thread_indices = collect(eachindex(selected))
+        for (env_pairs, payload) in _thread_plan_groups(selected, thread_indices, :threads)
+            withenv(env_pairs...) do
+                Threads.@threads for j in eachindex(payload)
+                    idx, plan = payload[j]
+                    local_rows = NamedTuple[]
+                    run_case_batch!(
+                        local_rows,
+                        selected[idx],
+                        spec,
+                        idx,
+                        total;
+                        outer_route=:threads,
+                        plan=plan,
+                        apply_env=false
+                    )
+                    case_rows[idx] = local_rows
+                end
+            end
         end
         for idx in eachindex(case_rows)
             append!(rows, case_rows[idx])
@@ -1191,7 +1310,8 @@ function measure_per_orbit_scenario(
     spec::ProfileSpec,
     period_s::Float64,
     orbit_counts::Vector{Int};
-    outer_route::Symbol=:none
+    outer_route::Symbol=:none,
+    apply_env::Bool=true
 )
     rows = NamedTuple[]
     logs = String[]
@@ -1227,8 +1347,7 @@ function measure_per_orbit_scenario(
         )
 
         plan = parallel_priority_plan(case, outer_route)
-        env_pairs = parallel_priority_env_pairs(plan)
-        withenv(env_pairs...) do
+        run_case = () -> begin
             run_warmup(case, spec.warmup)
             for rep in 1:spec.repeats
                 last_row = nothing
@@ -1253,6 +1372,14 @@ function measure_per_orbit_scenario(
                     push!(logs, "    orbit=$(orbit_count) repeat $(rep)/$(spec.repeats): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)")
                 end
             end
+        end
+        if apply_env
+            env_pairs = parallel_priority_env_pairs(plan)
+            withenv(env_pairs...) do
+                run_case()
+            end
+        else
+            run_case()
         end
     end
     return rows, logs
@@ -1294,15 +1421,34 @@ function run_montecarlo_per_orbit!(
                 end
             end
         elseif mc_backend == :threads
-            Threads.@threads for i in eachindex(seeds)
-                seed = seeds[i]
-                row, err = measure_montecarlo_seed(spec, planet, mission_time, seed; outer_route=:threads)
-                row_orbit = merge(row, (orbit_count=orbit_count, orbital_period_s=period_s))
-                orbit_rows[i] = row_orbit
-                if row_orbit.solve_success
-                    orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): total=$(round(row_orbit.total_time_s; digits=3)) s"
-                else
-                    orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): $(err)"
+            warmup_case = BenchmarkCase(
+                name="montecarlo_randomized",
+                category="montecarlo",
+                description="Randomized initial conditions + thruster, one run per seed",
+                args_template=make_montecarlo_config(first(seeds), planet, mission_time),
+                run_in_quick=true
+            )
+            threaded_plan = parallel_priority_plan(warmup_case, :threads)
+            threaded_env = parallel_priority_env_pairs(threaded_plan)
+            withenv(threaded_env...) do
+                Threads.@threads for i in eachindex(seeds)
+                    seed = seeds[i]
+                    row, err = measure_montecarlo_seed(
+                        spec,
+                        planet,
+                        mission_time,
+                        seed;
+                        outer_route=:threads,
+                        plan=threaded_plan,
+                        apply_env=false
+                    )
+                    row_orbit = merge(row, (orbit_count=orbit_count, orbital_period_s=period_s))
+                    orbit_rows[i] = row_orbit
+                    if row_orbit.solve_success
+                        orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): total=$(round(row_orbit.total_time_s; digits=3)) s"
+                    else
+                        orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): $(err)"
+                    end
                 end
             end
         else
@@ -1369,11 +1515,22 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
         end
 
         if !isempty(thread_indices)
-            Threads.@threads for j in eachindex(thread_indices)
-                idx = thread_indices[j]
-                local_rows, local_logs = measure_per_orbit_scenario(selected[idx], spec, period_s, orbit_counts; outer_route=:threads)
-                scenario_rows[idx] = local_rows
-                scenario_logs[idx] = local_logs
+            for (env_pairs, payload) in _thread_plan_groups(selected, thread_indices, :threads)
+                withenv(env_pairs...) do
+                    Threads.@threads for j in eachindex(payload)
+                        idx, _ = payload[j]
+                        local_rows, local_logs = measure_per_orbit_scenario(
+                            selected[idx],
+                            spec,
+                            period_s,
+                            orbit_counts;
+                            outer_route=:threads,
+                            apply_env=false
+                        )
+                        scenario_rows[idx] = local_rows
+                        scenario_logs[idx] = local_logs
+                    end
+                end
             end
         end
 
@@ -1408,10 +1565,23 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
     elseif backend == :threads
         scenario_rows = Vector{Vector{NamedTuple}}(undef, length(selected))
         scenario_logs = Vector{Vector{String}}(undef, length(selected))
-        Threads.@threads for idx in eachindex(selected)
-            local_rows, local_logs = measure_per_orbit_scenario(selected[idx], spec, period_s, orbit_counts; outer_route=:threads)
-            scenario_rows[idx] = local_rows
-            scenario_logs[idx] = local_logs
+        thread_indices = collect(eachindex(selected))
+        for (env_pairs, payload) in _thread_plan_groups(selected, thread_indices, :threads)
+            withenv(env_pairs...) do
+                Threads.@threads for j in eachindex(payload)
+                    idx, _ = payload[j]
+                    local_rows, local_logs = measure_per_orbit_scenario(
+                        selected[idx],
+                        spec,
+                        period_s,
+                        orbit_counts;
+                        outer_route=:threads,
+                        apply_env=false
+                    )
+                    scenario_rows[idx] = local_rows
+                    scenario_logs[idx] = local_logs
+                end
+            end
         end
         for (idx, base_case) in enumerate(selected)
             println("  scenario $(idx)/$(length(selected)) = $(base_case.name)")
@@ -1579,6 +1749,373 @@ function summarize_results(raw_df::DataFrame)::DataFrame
     return summary
 end
 
+@inline _plot_label(name::AbstractString) = replace(name, "_" => " ")
+
+@inline function _plot_ready()::Bool
+    return myid() == 1 && isdefined(Main, :Plots)
+end
+
+function _plot_metric_pairs(df::DataFrame, label_col::Symbol, metric_col::Symbol)
+    labels = String[]
+    values = Float64[]
+    for row in eachrow(df)
+        value = row[metric_col]
+        if !(value isa Missing)
+            f = Float64(value)
+            if isfinite(f)
+                push!(labels, _plot_label(string(row[label_col])))
+                push!(values, f)
+            end
+        end
+    end
+    return labels, values
+end
+
+@inline function _has_row_fields(row, fields::Vector{Symbol})::Bool
+    for field in fields
+        if row[field] isa Missing
+            return false
+        end
+    end
+    return true
+end
+
+function _save_runtime_plot!(
+    artifacts::Vector{String},
+    plt,
+    outdir::String,
+    basename::String,
+    spec::ProfileSpec,
+    stamp::String
+)
+    path = joinpath(outdir, "$(basename)_$(spec.name)_$(stamp).png")
+    try
+        Plots.savefig(plt, path)
+        push!(artifacts, path)
+    catch err
+        @warn "[perf] failed to save plot $basename: $(_perf_error_text(err))"
+    end
+    return nothing
+end
+
+function generate_runtime_plots(
+    outdir::String,
+    spec::ProfileSpec,
+    stamp::String,
+    raw_df::DataFrame,
+    summary_df::DataFrame,
+    orbit_summary_df::DataFrame
+)::Vector{String}
+    !_plot_ready() && return String[]
+
+    plot_artifacts = String[]
+    default_size = (1280, 720)
+    success_summary = summary_df[summary_df.samples_success .> 0, :]
+
+    # 1) Mean total runtime per scenario.
+    labels_totals, values_totals = _plot_metric_pairs(success_summary, :scenario, :total_time_mean_s)
+    if !isempty(values_totals)
+        plt = Plots.bar(
+            labels_totals,
+            values_totals;
+            legend=false,
+            title="Mean Total Runtime by Scenario",
+            xlabel="Scenario",
+            ylabel="Seconds",
+            xrotation=30,
+            size=default_size
+        )
+        _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_totals", spec, stamp)
+    end
+
+    # 2) Speedup against single_baseline_gravity.
+    labels_speedup, values_speedup = _plot_metric_pairs(success_summary, :scenario, :speedup_vs_baseline)
+    if !isempty(values_speedup)
+        plt = Plots.bar(
+            labels_speedup,
+            values_speedup;
+            legend=false,
+            title="Speedup vs single_baseline_gravity",
+            xlabel="Scenario",
+            ylabel="Speedup (x)",
+            xrotation=30,
+            size=default_size
+        )
+        _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_speedup", spec, stamp)
+    end
+
+    # 3) Runtime mean/std variability map.
+    variability_df = success_summary[
+        .!ismissing.(success_summary.total_time_mean_s) .&
+        .!ismissing.(success_summary.total_time_std_s), :
+    ]
+    if nrow(variability_df) > 0
+        x = Float64.(variability_df.total_time_mean_s)
+        y = Float64.(variability_df.total_time_std_s)
+        plt = Plots.scatter(
+            x,
+            y;
+            legend=false,
+            title="Runtime Variability Map",
+            xlabel="Mean total time (s)",
+            ylabel="Std total time (s)",
+            size=default_size
+        )
+        _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_variability", spec, stamp)
+    end
+
+    # 4) Copy vs solve breakdown.
+    labels_breakdown = String[]
+    copy_vals = Float64[]
+    solve_vals = Float64[]
+    for row in eachrow(success_summary)
+        if _has_row_fields(row, [:copy_time_mean_s, :solve_time_mean_s])
+            push!(labels_breakdown, _plot_label(row.scenario))
+            push!(copy_vals, Float64(row.copy_time_mean_s))
+            push!(solve_vals, Float64(row.solve_time_mean_s))
+        end
+    end
+    if !isempty(labels_breakdown)
+        plt = Plots.bar(
+            labels_breakdown,
+            hcat(copy_vals, solve_vals);
+            label=["copy" "solve"],
+            title="Copy vs Solve Runtime Breakdown",
+            xlabel="Scenario",
+            ylabel="Seconds",
+            xrotation=30,
+            size=default_size
+        )
+        _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_breakdown_copy_solve", spec, stamp)
+    end
+
+    # 5) Memory and allocations proxies.
+    mem_df = success_summary[
+        .!ismissing.(success_summary.total_bytes_mean_mb) .&
+        .!ismissing.(success_summary.solve_alloc_mean), :
+    ]
+    if nrow(mem_df) > 0
+        x = Float64.(mem_df.total_bytes_mean_mb)
+        y = Float64.(mem_df.solve_alloc_mean)
+        plt = Plots.scatter(
+            x,
+            y;
+            legend=false,
+            title="Memory vs Allocation Calls",
+            xlabel="Mean allocated bytes (MB)",
+            ylabel="Mean solve allocation calls",
+            size=default_size
+        )
+        _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_memory_alloc", spec, stamp)
+    end
+
+    # 6) Solver accepted/rejected steps.
+    labels_solver = String[]
+    accepted_vals = Float64[]
+    rejected_vals = Float64[]
+    for row in eachrow(success_summary)
+        if _has_row_fields(row, [:accepted_steps_mean, :rejected_steps_mean])
+            push!(labels_solver, _plot_label(row.scenario))
+            push!(accepted_vals, Float64(row.accepted_steps_mean))
+            push!(rejected_vals, Float64(row.rejected_steps_mean))
+        end
+    end
+    if !isempty(labels_solver)
+        plt = Plots.bar(
+            labels_solver,
+            hcat(accepted_vals, rejected_vals);
+            label=["accepted" "rejected"],
+            title="Solver Workload (Accepted/Rejected Steps)",
+            xlabel="Scenario",
+            ylabel="Step count",
+            xrotation=30,
+            size=default_size
+        )
+        _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_solver_workload", spec, stamp)
+    end
+
+    # 7) Throughput by scenario.
+    labels_throughput, values_throughput = _plot_metric_pairs(success_summary, :scenario, :sim_seconds_per_wall_second_mean)
+    if !isempty(values_throughput)
+        plt = Plots.bar(
+            labels_throughput,
+            values_throughput;
+            legend=false,
+            title="Throughput by Scenario",
+            xlabel="Scenario",
+            ylabel="Sim seconds / wall second",
+            xrotation=30,
+            size=default_size
+        )
+        _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_throughput", spec, stamp)
+    end
+
+    # 8) Satellite scaling curve.
+    sat_df = success_summary[
+        (success_summary.category .== "satellite_scaling") .&
+        .!ismissing.(success_summary.satellites) .&
+        .!ismissing.(success_summary.total_time_mean_s), :
+    ]
+    if nrow(sat_df) > 0
+        sort!(sat_df, :satellites)
+        x = Int.(sat_df.satellites)
+        y = Float64.(sat_df.total_time_mean_s)
+        plt = Plots.plot(
+            x,
+            y;
+            marker=:circle,
+            legend=false,
+            title="Satellite Scaling",
+            xlabel="Satellites",
+            ylabel="Mean total time (s)",
+            size=default_size
+        )
+        _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_satellite_scaling", spec, stamp)
+    end
+
+    # 9) Dynamics fidelity ladder.
+    fidelity_order = [
+        "single_baseline_gravity",
+        "single_j2",
+        "single_nbody_sun_moon",
+        "single_harmonics_l20",
+        "single_harmonics_l50",
+    ]
+    fidelity_labels = String[]
+    fidelity_values = Float64[]
+    for scenario in fidelity_order
+        idx = findfirst(==(scenario), success_summary.scenario)
+        if idx !== nothing
+            value = success_summary.total_time_mean_s[idx]
+            if !(value isa Missing)
+                push!(fidelity_labels, _plot_label(scenario))
+                push!(fidelity_values, Float64(value))
+            end
+        end
+    end
+    if length(fidelity_values) >= 2
+        plt = Plots.plot(
+            fidelity_labels,
+            fidelity_values;
+            marker=:circle,
+            legend=false,
+            title="Dynamics Fidelity Ladder",
+            xlabel="Scenario",
+            ylabel="Mean total time (s)",
+            xrotation=20,
+            size=default_size
+        )
+        _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_fidelity_ladder", spec, stamp)
+    end
+
+    # 10) Monte Carlo runtime histogram.
+    mc_df = raw_df[(raw_df.category .== "montecarlo") .& (raw_df.solve_success .== true), :]
+    mc_times = [Float64(v) for v in mc_df.total_time_s if !(v isa Missing)]
+    if !isempty(mc_times)
+        plt = Plots.histogram(
+            mc_times;
+            bins=min(20, max(5, round(Int, sqrt(length(mc_times))))),
+            legend=false,
+            title="Monte Carlo Runtime Distribution",
+            xlabel="Total time (s)",
+            ylabel="Count",
+            size=default_size
+        )
+        _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_montecarlo_hist", spec, stamp)
+    end
+
+    # 11) Monte Carlo seed trace.
+    mc_seed_df = mc_df[.!ismissing.(mc_df.seed), :]
+    if nrow(mc_seed_df) > 0
+        sort!(mc_seed_df, :seed)
+        seeds = Int.(mc_seed_df.seed)
+        totals = Float64.(mc_seed_df.total_time_s)
+        plt = Plots.plot(
+            seeds,
+            totals;
+            marker=:circle,
+            legend=false,
+            title="Monte Carlo Runtime by Seed",
+            xlabel="Seed",
+            ylabel="Total time (s)",
+            size=default_size
+        )
+        _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_montecarlo_seed_trace", spec, stamp)
+    end
+
+    orbit_valid = orbit_summary_df[
+        (orbit_summary_df.samples_success .> 0) .&
+        .!ismissing.(orbit_summary_df.orbit_count), :
+    ]
+
+    # 12) Per-orbit total scaling curves by scenario.
+    orbit_scaling_df = orbit_valid[.!ismissing.(orbit_valid.total_time_mean_s), :]
+    if nrow(orbit_scaling_df) > 0
+        plt = Plots.plot(
+            title="Per-Orbit Total Runtime Scaling",
+            xlabel="Orbit count",
+            ylabel="Mean total time (s)",
+            size=default_size
+        )
+        for grp in groupby(orbit_scaling_df, :scenario)
+            local_df = DataFrame(grp)
+            sort!(local_df, :orbit_count)
+            x = Int.(local_df.orbit_count)
+            y = Float64.(local_df.total_time_mean_s)
+            Plots.plot!(plt, x, y; marker=:circle, label=_plot_label(local_df.scenario[1]))
+        end
+        _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_per_orbit_scaling", spec, stamp)
+    end
+
+    # 13) Per-orbit efficiency curves by scenario.
+    orbit_eff_df = orbit_valid[.!ismissing.(orbit_valid.orbits_per_wall_second_mean), :]
+    if nrow(orbit_eff_df) > 0
+        plt = Plots.plot(
+            title="Per-Orbit Efficiency",
+            xlabel="Orbit count",
+            ylabel="Orbits per wall second",
+            size=default_size
+        )
+        for grp in groupby(orbit_eff_df, :scenario)
+            local_df = DataFrame(grp)
+            sort!(local_df, :orbit_count)
+            x = Int.(local_df.orbit_count)
+            y = Float64.(local_df.orbits_per_wall_second_mean)
+            Plots.plot!(plt, x, y; marker=:circle, label=_plot_label(local_df.scenario[1]))
+        end
+        _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_per_orbit_efficiency", spec, stamp)
+    end
+
+    # 14) Per-orbit time-per-orbit heatmap.
+    heat_df = orbit_valid[.!ismissing.(orbit_valid.time_per_orbit_mean_s), :]
+    if nrow(heat_df) > 0
+        scenarios = sort(unique(String.(heat_df.scenario)))
+        orbits = sort(unique(Int.(heat_df.orbit_count)))
+        z = fill(NaN, length(scenarios), length(orbits))
+        for row in eachrow(heat_df)
+            si = findfirst(==(String(row.scenario)), scenarios)
+            oi = findfirst(==(Int(row.orbit_count)), orbits)
+            if si !== nothing && oi !== nothing
+                z[si, oi] = Float64(row.time_per_orbit_mean_s)
+            end
+        end
+        plt = Plots.heatmap(
+            orbits,
+            1:length(scenarios),
+            z;
+            colorbar_title="s/orbit",
+            yticks=(1:length(scenarios), _plot_label.(scenarios)),
+            xlabel="Orbit count",
+            ylabel="Scenario",
+            title="Per-Orbit Time Heatmap",
+            size=default_size
+        )
+        _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_per_orbit_heatmap", spec, stamp)
+    end
+
+    return plot_artifacts
+end
+
 @inline function _fmt(v; digits::Int=3)
     if v isa Missing
         return "n/a"
@@ -1595,7 +2132,14 @@ function _scenario_metric(summary_df::DataFrame, scenario::String, metric::Symbo
     return summary_df[idx, metric]
 end
 
-function write_report(path::String, spec::ProfileSpec, raw_df::DataFrame, summary_df::DataFrame, orbit_summary_df::DataFrame)
+function write_report(
+    path::String,
+    spec::ProfileSpec,
+    raw_df::DataFrame,
+    summary_df::DataFrame,
+    orbit_summary_df::DataFrame;
+    plot_paths::Vector{String}=String[]
+)
     generated = string(now(UTC))
     julia_ver = string(VERSION)
     nthreads = Threads.nthreads()
@@ -1655,9 +2199,19 @@ function write_report(path::String, spec::ProfileSpec, raw_df::DataFrame, summar
             println(io, "- Monte Carlo runtime spread: mean `$(round(mc_mean; digits=3)) s`, p90 `$(round(mc_p90; digits=3)) s`, std `$(round(mc_std; digits=3)) s`.")
         end
         println(io, "- Auto-stiff fallback activations (successful runs): `$(nrow(fallback_rows))`.")
+        println(io, "- Plot artifacts generated: `$(length(plot_paths))`.")
         failed_groups = summary_df[summary_df.samples_failed .> 0, :]
         if nrow(failed_groups) > 0
             println(io, "- Solver failures detected in `$(nrow(failed_groups))` scenario groups; timings only use successful runs.")
+        end
+        if !isempty(plot_paths)
+            println(io)
+            println(io, "## Plot Artifacts")
+            println(io)
+            for plot_path in plot_paths
+                println(io, "- `$(plot_path)`")
+            end
+            println(io)
         end
         println(io)
         println(io, "## Scenario Summary")
@@ -1704,18 +2258,20 @@ function main()
     orbit_raw_path = joinpath(outdir, "runtime_per_orbit_raw_$(spec.name)_$(stamp).csv")
     orbit_summary_path = joinpath(outdir, "runtime_per_orbit_summary_$(spec.name)_$(stamp).csv")
     report_path = joinpath(outdir, "runtime_report_$(spec.name)_$(stamp).md")
+    plot_paths = generate_runtime_plots(outdir, spec, stamp, raw_df, summary_df, orbit_summary_df)
 
     CSV.write(raw_path, raw_df)
     CSV.write(summary_path, summary_df)
     CSV.write(orbit_raw_path, orbit_raw_df)
     CSV.write(orbit_summary_path, orbit_summary_df)
-    write_report(report_path, spec, raw_df, summary_df, orbit_summary_df)
+    write_report(report_path, spec, raw_df, summary_df, orbit_summary_df; plot_paths=plot_paths)
 
     println("Analysis complete.")
     println("Raw results: $raw_path")
     println("Summary: $summary_path")
     println("Per-orbit raw: $orbit_raw_path")
     println("Per-orbit summary: $orbit_summary_path")
+    println("Plots generated: $(length(plot_paths))")
     println("Report: $report_path")
 end
 

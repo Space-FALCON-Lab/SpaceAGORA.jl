@@ -127,14 +127,16 @@ function run_mode(
     orbit_raw_path = joinpath(mode_outdir, "runtime_per_orbit_raw_$(config.profile.name)_$(mode)_$(stamp).csv")
     orbit_summary_path = joinpath(mode_outdir, "runtime_per_orbit_summary_$(config.profile.name)_$(mode)_$(stamp).csv")
     report_path = joinpath(mode_outdir, "runtime_report_$(config.profile.name)_$(mode)_$(stamp).md")
+    plot_stamp = "$(mode)_$(stamp)"
+    plot_paths = generate_runtime_plots(mode_outdir, config.profile, plot_stamp, raw_df, summary_df, orbit_summary_df)
 
     CSV.write(raw_path, raw_df)
     CSV.write(summary_path, summary_df)
     CSV.write(orbit_raw_path, orbit_raw_df)
     CSV.write(orbit_summary_path, orbit_summary_df)
-    write_report(report_path, config.profile, raw_df, summary_df, orbit_summary_df)
+    write_report(report_path, config.profile, raw_df, summary_df, orbit_summary_df; plot_paths=plot_paths)
 
-    println("[paper-pipeline] mode=$(mode) completed in $(round(elapsed_s; digits=3)) s")
+    println("[paper-pipeline] mode=$(mode) completed in $(round(elapsed_s; digits=3)) s (plots=$(length(plot_paths)))")
 
     return ModeRunArtifacts(
         mode=mode,
@@ -248,12 +250,187 @@ function build_mode_overview(artifacts::Vector{ModeRunArtifacts})::DataFrame
     return DataFrame(rows)
 end
 
+@inline function _pipeline_plot_ready()::Bool
+    return myid() == 1 && isdefined(Main, :Plots)
+end
+
+@inline function _has_column(df::DataFrame, col::Symbol)::Bool
+    return col in Symbol.(names(df))
+end
+
+function _save_pipeline_plot!(
+    paths::Vector{String},
+    plt,
+    outdir::String,
+    basename::String,
+    profile::ProfileSpec,
+    stamp::String
+)
+    path = joinpath(outdir, "$(basename)_$(profile.name)_$(stamp).png")
+    try
+        Plots.savefig(plt, path)
+        push!(paths, path)
+    catch err
+        @warn "[paper-pipeline] failed to save plot $basename: $(_perf_error_text(err))"
+    end
+    return nothing
+end
+
+function _pipeline_top_scenarios(comparison_df::DataFrame; limit::Int=12)::DataFrame
+    if !_has_column(comparison_df, :serial_total_time_mean_s)
+        return first(comparison_df, min(limit, nrow(comparison_df)))
+    end
+    df = comparison_df[.!ismissing.(comparison_df.serial_total_time_mean_s), :]
+    nrow(df) == 0 && return first(comparison_df, min(limit, nrow(comparison_df)))
+    sort!(df, :serial_total_time_mean_s, rev=true)
+    return first(df, min(limit, nrow(df)))
+end
+
+function generate_pipeline_comparison_plots(
+    outdir::String,
+    profile::ProfileSpec,
+    stamp::String,
+    overview_df::DataFrame,
+    comparison_df::DataFrame
+)::Vector{String}
+    !_pipeline_plot_ready() && return String[]
+    mkpath(outdir)
+
+    plot_paths = String[]
+    default_size = (1280, 720)
+
+    mode_labels = String.(overview_df.mode)
+
+    # 1) Wall-clock elapsed by mode.
+    if nrow(overview_df) > 0 && _has_column(overview_df, :elapsed_s)
+        elapsed = Float64.(overview_df.elapsed_s)
+        plt = Plots.bar(
+            mode_labels,
+            elapsed;
+            legend=false,
+            title="Pipeline Wall Time by Mode",
+            xlabel="Mode",
+            ylabel="Elapsed (s)",
+            size=default_size
+        )
+        _save_pipeline_plot!(plot_paths, plt, outdir, "paper_plot_mode_elapsed", profile, stamp)
+    end
+
+    # 2) Baseline scenario mean runtime by mode.
+    if nrow(overview_df) > 0 && _has_column(overview_df, :baseline_mean_s)
+        baseline_vals = Float64[]
+        labels = String[]
+        for row in eachrow(overview_df)
+            val = row.baseline_mean_s
+            if !(val isa Missing)
+                push!(labels, string(row.mode))
+                push!(baseline_vals, Float64(val))
+            end
+        end
+        if !isempty(baseline_vals)
+            plt = Plots.bar(
+                labels,
+                baseline_vals;
+                legend=false,
+                title="Baseline Runtime by Mode (single_baseline_gravity)",
+                xlabel="Mode",
+                ylabel="Mean total time (s)",
+                size=default_size
+            )
+            _save_pipeline_plot!(plot_paths, plt, outdir, "paper_plot_mode_baseline", profile, stamp)
+        end
+    end
+
+    # 3) Monte Carlo p90 runtime by mode.
+    if nrow(overview_df) > 0 && _has_column(overview_df, :montecarlo_p90_s)
+        mc_vals = Float64[]
+        labels = String[]
+        for row in eachrow(overview_df)
+            val = row.montecarlo_p90_s
+            if !(val isa Missing)
+                push!(labels, string(row.mode))
+                push!(mc_vals, Float64(val))
+            end
+        end
+        if !isempty(mc_vals)
+            plt = Plots.bar(
+                labels,
+                mc_vals;
+                legend=false,
+                title="Monte Carlo p90 Runtime by Mode",
+                xlabel="Mode",
+                ylabel="p90 total time (s)",
+                size=default_size
+            )
+            _save_pipeline_plot!(plot_paths, plt, outdir, "paper_plot_mode_montecarlo_p90", profile, stamp)
+        end
+    end
+
+    top_df = _pipeline_top_scenarios(comparison_df; limit=12)
+    scenario_labels = [_plot_label(String(s)) for s in top_df.scenario]
+
+    # 4) Speedup vs serial by scenario (for each non-serial mode).
+    speedup_cols = [name for name in names(top_df) if startswith(String(name), "speedup_vs_serial_") && name != :speedup_vs_serial_serial]
+    if !isempty(speedup_cols) && !isempty(scenario_labels)
+        values = Matrix{Float64}(undef, nrow(top_df), length(speedup_cols))
+        for (j, col) in enumerate(speedup_cols)
+            values[:, j] = [
+                (v isa Missing || !isfinite(Float64(v))) ? NaN : Float64(v)
+                for v in top_df[!, col]
+            ]
+        end
+        series_labels = [replace(String(c), "speedup_vs_serial_" => "") for c in speedup_cols]
+        plt = Plots.bar(
+            scenario_labels,
+            values;
+            label=series_labels,
+            title="Speedup vs Serial (Top Scenarios by Serial Cost)",
+            xlabel="Scenario",
+            ylabel="Speedup (x)",
+            xrotation=25,
+            size=(1400, 800)
+        )
+        _save_pipeline_plot!(plot_paths, plt, outdir, "paper_plot_speedup_vs_serial", profile, stamp)
+    end
+
+    # 5) Scenario runtime heatmap across modes.
+    runtime_cols = [name for name in names(top_df) if endswith(String(name), "_total_time_mean_s")]
+    if !isempty(runtime_cols) && !isempty(scenario_labels)
+        mode_order = [replace(String(c), "_total_time_mean_s" => "") for c in runtime_cols]
+        z = fill(NaN, length(scenario_labels), length(runtime_cols))
+        for i in 1:nrow(top_df)
+            for (j, col) in enumerate(runtime_cols)
+                v = top_df[i, col]
+                if !(v isa Missing)
+                    z[i, j] = Float64(v)
+                end
+            end
+        end
+        plt = Plots.heatmap(
+            1:length(runtime_cols),
+            1:length(scenario_labels),
+            z;
+            xticks=(1:length(runtime_cols), mode_order),
+            yticks=(1:length(scenario_labels), scenario_labels),
+            colorbar_title="mean total (s)",
+            xlabel="Mode",
+            ylabel="Scenario",
+            title="Scenario Runtime Matrix (Top Serial-Cost Scenarios)",
+            size=(1400, 900)
+        )
+        _save_pipeline_plot!(plot_paths, plt, outdir, "paper_plot_runtime_matrix", profile, stamp)
+    end
+
+    return plot_paths
+end
+
 function write_pipeline_report(
     path::String,
     config::PipelineConfig,
     overview_df::DataFrame,
     comparison_df::DataFrame,
-    artifacts::Vector{ModeRunArtifacts}
+    artifacts::Vector{ModeRunArtifacts};
+    comparison_plot_paths::Vector{String}=String[]
 )
     generated = string(now(UTC))
     nthreads = Threads.nthreads()
@@ -279,6 +456,16 @@ function write_pipeline_report(
         println(io, "## Scenario Comparison (Means)")
         println(io)
         _write_markdown_table(io, comparison_df)
+        println(io)
+
+        println(io, "## Comparison Plots")
+        println(io)
+        println(io, "- Plot artifacts generated: `$(length(comparison_plot_paths))`")
+        if !isempty(comparison_plot_paths)
+            for plot_path in comparison_plot_paths
+                println(io, "- `$(plot_path)`")
+            end
+        end
         println(io)
 
         if :serial in config.modes
@@ -365,15 +552,24 @@ function main()
     comparison_path = joinpath(config.outdir, "paper_compare_summary_$(config.profile.name)_$(stamp).csv")
     overview_path = joinpath(config.outdir, "paper_mode_overview_$(config.profile.name)_$(stamp).csv")
     report_path = joinpath(config.outdir, "paper_pipeline_report_$(config.profile.name)_$(stamp).md")
+    comparison_plot_paths = generate_pipeline_comparison_plots(config.outdir, config.profile, stamp, overview_df, comparison_df)
 
     CSV.write(comparison_path, comparison_df)
     CSV.write(overview_path, overview_df)
-    write_pipeline_report(report_path, config, overview_df, comparison_df, artifacts)
+    write_pipeline_report(
+        report_path,
+        config,
+        overview_df,
+        comparison_df,
+        artifacts;
+        comparison_plot_paths=comparison_plot_paths
+    )
 
     println()
     println("Pipeline complete.")
     println("Comparison summary: $comparison_path")
     println("Mode overview: $overview_path")
+    println("Comparison plots: $(length(comparison_plot_paths))")
     println("Pipeline report: $report_path")
 end
 

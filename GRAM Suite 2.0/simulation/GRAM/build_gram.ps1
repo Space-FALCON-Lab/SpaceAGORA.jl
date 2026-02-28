@@ -6,6 +6,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$BuildManifest = Join-Path $ScriptDir ".gram-build-manifest"
 
 function Resolve-GramRoot {
     param(
@@ -48,6 +49,29 @@ function Get-MakeBin {
     throw "Could not find mingw32-make or make on PATH. Install MSYS2 MinGW toolchain."
 }
 
+function Get-HostTag {
+    $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+    if ($IsMacOS) { return "macos-$arch" }
+    if ($IsLinux) { return "linux-$arch" }
+    return "windows-$arch"
+}
+
+function Read-BuildManifest {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        return @{}
+    }
+
+    $data = @{}
+    foreach ($line in Get-Content $Path) {
+        if ($line -match '^\s*([A-Z_]+)="?(.*?)"?\s*$') {
+            $data[$matches[1]] = $matches[2]
+        }
+    }
+    return $data
+}
+
 $GramRoot = Resolve-GramRoot -InputRoot $GramRoot -ScriptDirPath $ScriptDir
 $BuildDir = Join-Path $GramRoot "Build"
 if (-not (Test-Path $BuildDir)) {
@@ -55,8 +79,10 @@ if (-not (Test-Path $BuildDir)) {
 }
 
 $MakeBin = Get-MakeBin
+$HostTag = Get-HostTag
 Write-Host "GRAM_ROOT: $GramRoot"
 Write-Host "MAKE_BIN:  $MakeBin"
+Write-Host "HOST_TAG:  $HostTag"
 
 $SetupScript = Join-Path $BuildDir "setup_cspice.sh"
 $BashBin = Get-Command bash -ErrorAction SilentlyContinue
@@ -78,6 +104,26 @@ if ($Clean) {
     & $MakeBin -C $BuildDir clean
     if ($LASTEXITCODE -ne 0) {
         throw "Clean failed with exit code $LASTEXITCODE"
+    }
+}
+
+$GramLib = Join-Path $GramRoot "Build\lib\libGRAM.dll"
+if (-not $Clean) {
+    $manifest = Read-BuildManifest -Path $BuildManifest
+    $manifestRoot = $manifest["GRAM_ROOT"]
+    $manifestHost = $manifest["GRAM_HOST"]
+    if (($manifestHost -and $manifestHost -ne $HostTag) -or ($manifestRoot -and $manifestRoot -ne $GramRoot)) {
+        Write-Host "Detected stale build artifacts for host '$manifestHost'. Rebuilding for $HostTag."
+        & $MakeBin -C $BuildDir clean
+        if ($LASTEXITCODE -ne 0) {
+            throw "Clean failed with exit code $LASTEXITCODE"
+        }
+    } elseif ((Test-Path (Join-Path $GramRoot "Build\lib")) -and -not (Test-Path $GramLib)) {
+        Write-Host "Detected existing build outputs without a native libGRAM.dll. Rebuilding clean."
+        & $MakeBin -C $BuildDir clean
+        if ($LASTEXITCODE -ne 0) {
+            throw "Clean failed with exit code $LASTEXITCODE"
+        }
     }
 }
 
@@ -105,6 +151,13 @@ $EnvFile = Join-Path $ScriptDir "gram.env.ps1"
 `$env:GRAM_LIB = "$GramLib"
 "@ | Set-Content -Encoding UTF8 $EnvFile
 
+@"
+GRAM_ROOT="$GramRoot"
+GRAM_LIB="$GramLib"
+GRAM_HOST="$HostTag"
+"@ | Set-Content -Encoding UTF8 $BuildManifest
+
 Write-Host "Build complete."
 Write-Host "GRAM_LIB: $GramLib"
 Write-Host "Wrote:    $EnvFile"
+Write-Host "Wrote:    $BuildManifest"

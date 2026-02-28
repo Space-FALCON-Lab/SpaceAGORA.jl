@@ -42,6 +42,41 @@ is_windows_like() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLEAN_BUILD=0
 GRAM_ROOT_ARG=""
+BUILD_MANIFEST_NAME=".gram-build-manifest"
+
+host_tag() {
+  local os="$1"
+  local arch
+  arch="$(uname -m)"
+  case "$os" in
+    Darwin) echo "macos-${arch}" ;;
+    Linux) echo "linux-${arch}" ;;
+    *) echo "windows-${arch}" ;;
+  esac
+}
+
+expected_lib_ext() {
+  local os="$1"
+  if [[ "$os" == "Darwin" ]]; then
+    echo "dylib"
+  elif is_windows_like "$os"; then
+    echo "dll"
+  else
+    echo "so"
+  fi
+}
+
+write_build_manifest() {
+  local manifest_path="$1"
+  local root="$2"
+  local lib="$3"
+  local host="$4"
+  cat > "${manifest_path}" <<EOF
+GRAM_ROOT="${root}"
+GRAM_LIB="${lib}"
+GRAM_HOST="${host}"
+EOF
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -93,6 +128,7 @@ if [[ ! -d "${GRAM_ROOT}/Build" ]]; then
 fi
 
 OS="$(uname -s)"
+HOST_TAG="$(host_tag "${OS}")"
 if [[ "${OS}" == "Darwin" ]]; then
   if command -v gmake >/dev/null 2>&1; then
     MAKE_BIN="$(command -v gmake)"
@@ -122,6 +158,25 @@ fi
 echo "GRAM_ROOT: ${GRAM_ROOT}"
 echo "MAKE_BIN:  ${MAKE_BIN}"
 echo "OS:        ${OS}"
+echo "HOST_TAG:  ${HOST_TAG}"
+
+BUILD_MANIFEST="${SCRIPT_DIR}/${BUILD_MANIFEST_NAME}"
+GRAM_LIB="${GRAM_ROOT}/Build/lib/libGRAM.$(expected_lib_ext "${OS}")"
+REQUESTED_GRAM_ROOT="${GRAM_ROOT}"
+if [[ "${CLEAN_BUILD}" -eq 0 ]]; then
+  if [[ -f "${BUILD_MANIFEST}" ]]; then
+    # shellcheck disable=SC1090
+    source "${BUILD_MANIFEST}"
+    if [[ "${GRAM_HOST:-}" != "${HOST_TAG}" || "${GRAM_ROOT:-}" != "${REQUESTED_GRAM_ROOT}" ]]; then
+      CLEAN_BUILD=1
+      echo "Detected stale build artifacts for host '${GRAM_HOST:-unknown}'. Rebuilding for ${HOST_TAG}."
+    fi
+    GRAM_ROOT="${REQUESTED_GRAM_ROOT}"
+  elif [[ -d "${GRAM_ROOT}/Build/lib" && ! -f "${GRAM_LIB}" ]]; then
+    CLEAN_BUILD=1
+    echo "Detected existing build outputs without a native ${GRAM_LIB##*/}. Rebuilding clean."
+  fi
+fi
 
 pushd "${GRAM_ROOT}/Build" >/dev/null
 ./setup_cspice.sh
@@ -131,13 +186,6 @@ fi
 "${MAKE_BIN}" shared -j"$(cpu_count)"
 popd >/dev/null
 
-LIB_EXT="so"
-if [[ "${OS}" == "Darwin" ]]; then
-  LIB_EXT="dylib"
-elif is_windows_like "${OS}"; then
-  LIB_EXT="dll"
-fi
-GRAM_LIB="${GRAM_ROOT}/Build/lib/libGRAM.${LIB_EXT}"
 if [[ ! -f "${GRAM_LIB}" ]]; then
   echo "Build finished but shared library not found: ${GRAM_LIB}" >&2
   exit 1
@@ -148,7 +196,9 @@ cat > "${ENV_FILE}" <<EOF
 export GRAM_ROOT="${GRAM_ROOT}"
 export GRAM_LIB="${GRAM_LIB}"
 EOF
+write_build_manifest "${BUILD_MANIFEST}" "${GRAM_ROOT}" "${GRAM_LIB}" "${HOST_TAG}"
 
 echo "Build complete."
 echo "GRAM_LIB: ${GRAM_LIB}"
 echo "Wrote:    ${ENV_FILE}"
+echo "Wrote:    ${BUILD_MANIFEST}"

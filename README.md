@@ -11,7 +11,7 @@ To ensure that all the package versions are consistent, a Docker environment has
 6. Now, you should be able to run any existing scenario or create and run a new scenario
 
 # GRAM access
-If part of the Space-FALCON Lab, access through the lab's Drive in SpaceAGORA/GRAM. Use the `GRAM Suite 2.0` folder at the repository root and build the shared library with the scripts in `GRAM Suite 2.0/simulation/GRAM/`.
+If part of the Space-FALCON Lab, access through the lab's Drive in SpaceAGORA/GRAM. Use the `GRAM Suite 2.0` folder at the repository root and build the shared library with the scripts in `GRAM Suite 2.0/simulation/GRAM/`. Treat `GRAM Suite 2.0/Build/` as generated, host-specific output and rebuild it natively on each machine.
 
 If not part of Space-FALCON lab, GRAM may be requested [here](https://software.nasa.gov/software/MFS-33888-1). Build the suite and keep the full GRAM root available locally (including `Build/`, `SPICE/`, and planetary data folders).
 

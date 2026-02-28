@@ -6,6 +6,8 @@
 4. Executables are in Build/bin.  Libraries are in Build/lib.
 5. Edit and copy spice.txt into Build/bin before running the examples.
 
+`Build/` is a generated output tree, not a portable artifact bundle. Do not commit or reuse `Build/bin`, `Build/lib`, `Build/mod`, or per-target object directories across macOS, Linux, and Windows; rebuild them natively on each host.
+
 To build for a specific body (such as Neptune) issue the command "make Neptune -j".
 To build a shared GRAM library for FFI workflows (Julia/Python/etc.), issue the command "make shared -j".
 
@@ -42,6 +44,7 @@ Notes:
 - On Linux x86_64, the bundled `cspice_gcc85.a` is auto-normalized to `cspice_linux_x86_64.a`.
 - On Linux arm64/aarch64, provide a native CSPICE archive or set `SPICE_LIB=/absolute/path/to/cspice.a`.
 - On Windows MinGW, bundled `common/cspice/lib/cspice_mingw64.a` is used by default.
+- If you switch operating systems in the same working tree, run `make clean` first or use the wrapper scripts in `simulation/GRAM/`, which record the host platform and force a clean rebuild when needed.
 
 Files and Subfolders:
 - googletest: Builds the googletest library used to run unit tests.

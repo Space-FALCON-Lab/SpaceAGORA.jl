@@ -11,6 +11,7 @@ This folder is a portable bridge for using GRAM from a simulation project.
 - `build_gram.cmd` and `run_julia_smoke_test.cmd`: Windows CMD wrappers.
 - `julia_smoke_test.jl`: the actual Julia smoke test.
 - `gram.env` / `gram.env.ps1`: generated env files with `GRAM_ROOT` and `GRAM_LIB`.
+- `.gram-build-manifest`: generated host stamp used to detect stale cross-platform build artifacts.
 
 ## Quick start
 
@@ -35,6 +36,8 @@ Windows CMD:
 - Windows uses `mingw32-make` (or `make`) from MSYS2/MinGW.
 - Scripts call `Build/setup_cspice.sh` automatically.
 - On Windows, bundled `common/cspice/lib/cspice_mingw64.a` is used.
+- Treat `GRAM Suite 2.0/Build` as generated host-specific output. Do not reuse or commit `Build/bin`, `Build/lib`, `Build/mod`, or `Build/*/obj` across operating systems.
+- The wrapper scripts trigger a clean rebuild automatically when they detect artifacts from another host platform.
 
 ## Offline Atmosphere Products
 

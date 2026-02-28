@@ -200,12 +200,19 @@ end
 
 @inline function _gram_default_surrogate_file(planet::String)::String
     planet_dir = _gram_planet_dir_name(planet)
-    preferred = joinpath(_spaceagora_repo_root(), "GRAM Suite 2.0", planet_dir, "$(planet)_surrogate.jls")
+    preferred = joinpath(
+        _spaceagora_repo_root(),
+        "GRAM Suite 2.0",
+        "simulation",
+        "GRAM",
+        "static_grids",
+        "$(planet)_surrogate.jls"
+    )
     if isfile(preferred)
         return preferred
     end
-    # Backward-compatible fallback in shared static-grid folder.
-    return joinpath(_spaceagora_repo_root(), "GRAM Suite 2.0", "simulation", "GRAM", "static_grids", "$(planet)_surrogate.jls")
+    # Compatibility fallback for per-planet copies.
+    return joinpath(_spaceagora_repo_root(), "GRAM Suite 2.0", planet_dir, "$(planet)_surrogate.jls")
 end
 
 @inline function _gram_offline_surrogate_file(model::GRAMAtmosphereModelSurrugate)::String

@@ -281,6 +281,11 @@ end
 @inline density_model_threadsafe(::EnvironmentModels.PolynomialFitAtmosphereModel)::Bool = true
 # GRAM C-wrapper calls are serialized inside getDensity via SimulationModel.GRAM_LOCK.
 @inline density_model_threadsafe(::EnvironmentModels.GRAMAtmosphereModel)::Bool = true
+@inline density_model_threadsafe(::EnvironmentModels.GRAMAtmosphereModelSurrugate)::Bool = true
+
+@inline _is_gram_density_model(model)::Bool =
+    model isa EnvironmentModels.GRAMAtmosphereModel ||
+    model isa EnvironmentModels.GRAMAtmosphereModelSurrugate
 
 @inline function _density_callback_thread_decision(args::SimulationConfiguration, num_sats::Int)
     mode = _density_callback_parallel_mode()
@@ -546,7 +551,7 @@ end
 
 @inline function _gram_track_cache_enabled(cfg::GramTrackCacheConfig, density_model)::Bool
     cfg.mode == :off && return false
-    return density_model isa EnvironmentModels.GRAMAtmosphereModel
+    return _is_gram_density_model(density_model)
 end
 
 @inline function _gram_track_cache_profile(cfg::GramTrackCacheConfig, p, alt::Float64)
@@ -1114,7 +1119,7 @@ function _gram_track_cache_refresh!(
         end
 
         gram_traj_built = false
-        if density_model isa EnvironmentModels.GRAMAtmosphereModel &&
+        if _is_gram_density_model(density_model) &&
            isdefined(density_model.gram, :generate_trajectory)
             denom = max(1, n - 1)
             Δalt_km = (target_alt - alt) * 1e-3 / denom

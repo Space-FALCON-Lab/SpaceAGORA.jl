@@ -483,6 +483,130 @@ end
     return ρ, Ti, SVector{3, Float64}(wE, wN, wU)
 end
 
+@inline function _gram_offline_surrogate_key(model::GRAMAtmosphereModelSurrugate)::NamedTuple{(:planet, :file), Tuple{String, String}}
+    return (planet=lowercase(strip(model.planet_name)), file=_gram_offline_surrogate_file(model))
+end
+
+function _gram_load_offline_surrogate(file::String, planet::String)::GRAMOfflineSurrogate
+    payload = open(file, "r") do io
+        deserialize(io)
+    end
+    payload isa Dict || throw(ArgumentError("Expected Dict payload in '$file'."))
+    dict = Dict{String, Any}(payload)
+
+    get(dict, "status", "error") == "ok" || throw(ArgumentError("Payload status is not ok in '$file'."))
+    get(dict, "type", "") == "surrogate_trilinear" || throw(ArgumentError("Unsupported payload type in '$file'."))
+
+    payload_planet = lowercase(strip(String(get(dict, "planet", ""))))
+    payload_planet == planet || throw(ArgumentError("Payload planet '$payload_planet' does not match expected '$planet' in '$file'."))
+
+    grid = dict["grid"]
+    fields = dict["fields"]
+    alt_nodes_m = Float64.(Vector{Float64}(grid["alt_km"])) .* 1e3
+    lat_nodes_rad = deg2rad.(Float64.(Vector{Float64}(grid["lat_deg"])))
+    lon_nodes_rad = deg2rad.(Float64.(Vector{Float64}(grid["lon_deg"])))
+
+    rho = Float64.(fields["density_kgm3"])
+    T = Float64.(fields["temperature_K"])
+    wind_e = Float64.(fields["wind_ew_ms"])
+    wind_n = Float64.(fields["wind_ns_ms"])
+    wind_u = Float64.(fields["wind_up_ms"])
+
+    dims = size(rho)
+    size(T) == dims || throw(ArgumentError("Temperature grid dimensions do not match density in '$file'."))
+    size(wind_e) == dims || throw(ArgumentError("EW wind grid dimensions do not match density in '$file'."))
+    size(wind_n) == dims || throw(ArgumentError("NS wind grid dimensions do not match density in '$file'."))
+    size(wind_u) == dims || throw(ArgumentError("Vertical wind grid dimensions do not match density in '$file'."))
+    length(alt_nodes_m) == dims[1] || throw(ArgumentError("Altitude axis size does not match fields in '$file'."))
+    length(lat_nodes_rad) == dims[2] || throw(ArgumentError("Latitude axis size does not match fields in '$file'."))
+    length(lon_nodes_rad) == dims[3] || throw(ArgumentError("Longitude axis size does not match fields in '$file'."))
+
+    return GRAMOfflineSurrogate(payload_planet, file, alt_nodes_m, lat_nodes_rad, lon_nodes_rad, rho, T, wind_e, wind_n, wind_u)
+end
+
+function _gram_offline_surrogate_get_or_load!(model::GRAMAtmosphereModelSurrugate)::GRAMOfflineSurrogate
+    key = _gram_offline_surrogate_key(model)
+    if !isfile(key.file)
+        throw(ArgumentError(
+            "GRAM surrogate payload not found for planet='$(key.planet)': $(key.file). " *
+            "Create/copy the file or pass `surrogate_file=...` to GRAMAtmosphereModelSurrugate."
+        ))
+    end
+
+    lock(_GRAM_OFFLINE_SURROGATE_LOCK) do
+        if haskey(_GRAM_OFFLINE_SURROGATE_CACHE, key)
+            return _GRAM_OFFLINE_SURROGATE_CACHE[key]::GRAMOfflineSurrogate
+        end
+        surrogate = _gram_load_offline_surrogate(key.file, key.planet)
+        _GRAM_OFFLINE_SURROGATE_CACHE[key] = surrogate
+        @info "Loaded GRAM surrogate payload." planet=surrogate.planet_name file=surrogate.source_file
+        return surrogate
+    end
+end
+
+function _gram_offline_surrogate_eval(
+    surrogate::GRAMOfflineSurrogate,
+    h::Float64,
+    lat::Float64,
+    lon::Float64
+)::Union{Nothing, Tuple{Float64, Float64, SVector{3, Float64}}}
+    ia = _gram_axis_segment_checked(surrogate.alt_nodes_m, h)
+    ia === nothing && return nothing
+    ilat = _gram_axis_segment_checked(surrogate.lat_nodes_rad, lat)
+    ilat === nothing && return nothing
+    ilon0, ilon1, wc = _gram_lon_segment(surrogate.lon_nodes_rad, lon)
+
+    ia0, ia1, wa = ia
+    ilat0, ilat1, wb = ilat
+
+    ρ = _gram_trilerp(
+        surrogate.rho[ia0, ilat0, ilon0], surrogate.rho[ia1, ilat0, ilon0],
+        surrogate.rho[ia0, ilat1, ilon0], surrogate.rho[ia1, ilat1, ilon0],
+        surrogate.rho[ia0, ilat0, ilon1], surrogate.rho[ia1, ilat0, ilon1],
+        surrogate.rho[ia0, ilat1, ilon1], surrogate.rho[ia1, ilat1, ilon1],
+        wa, wb, wc
+    )
+    Ti = _gram_trilerp(
+        surrogate.T[ia0, ilat0, ilon0], surrogate.T[ia1, ilat0, ilon0],
+        surrogate.T[ia0, ilat1, ilon0], surrogate.T[ia1, ilat1, ilon0],
+        surrogate.T[ia0, ilat0, ilon1], surrogate.T[ia1, ilat0, ilon1],
+        surrogate.T[ia0, ilat1, ilon1], surrogate.T[ia1, ilat1, ilon1],
+        wa, wb, wc
+    )
+    wE = _gram_trilerp(
+        surrogate.wind_e[ia0, ilat0, ilon0], surrogate.wind_e[ia1, ilat0, ilon0],
+        surrogate.wind_e[ia0, ilat1, ilon0], surrogate.wind_e[ia1, ilat1, ilon0],
+        surrogate.wind_e[ia0, ilat0, ilon1], surrogate.wind_e[ia1, ilat0, ilon1],
+        surrogate.wind_e[ia0, ilat1, ilon1], surrogate.wind_e[ia1, ilat1, ilon1],
+        wa, wb, wc
+    )
+    wN = _gram_trilerp(
+        surrogate.wind_n[ia0, ilat0, ilon0], surrogate.wind_n[ia1, ilat0, ilon0],
+        surrogate.wind_n[ia0, ilat1, ilon0], surrogate.wind_n[ia1, ilat1, ilon0],
+        surrogate.wind_n[ia0, ilat0, ilon1], surrogate.wind_n[ia1, ilat0, ilon1],
+        surrogate.wind_n[ia0, ilat1, ilon1], surrogate.wind_n[ia1, ilat1, ilon1],
+        wa, wb, wc
+    )
+    wU = _gram_trilerp(
+        surrogate.wind_u[ia0, ilat0, ilon0], surrogate.wind_u[ia1, ilat0, ilon0],
+        surrogate.wind_u[ia0, ilat1, ilon0], surrogate.wind_u[ia1, ilat1, ilon0],
+        surrogate.wind_u[ia0, ilat0, ilon1], surrogate.wind_u[ia1, ilat0, ilon1],
+        surrogate.wind_u[ia0, ilat1, ilon1], surrogate.wind_u[ia1, ilat1, ilon1],
+        wa, wb, wc
+    )
+    return ρ, Ti, SVector{3, Float64}(wE, wN, wU)
+end
+
+function clear_gram_offline_surrogate_cache!()
+    lock(_GRAM_OFFLINE_SURROGATE_LOCK) do
+        empty!(_GRAM_OFFLINE_SURROGATE_CACHE)
+    end
+    lock(_GRAM_OFFLINE_SURROGATE_WARNED_LOCK) do
+        empty!(_GRAM_OFFLINE_SURROGATE_WARNED)
+    end
+    return nothing
+end
+
 function _as_abspath(path::AbstractString)::String
     if isempty(path)
         return ""
@@ -764,12 +888,6 @@ function GRAMAtmosphereModelSurrugate(;
     kwargs...
 )
     base_model = GRAMAtmosphereModel(; kwargs...)
-    if !base_model.offline_surrogate_supported
-        throw(ArgumentError(
-            "GRAMAtmosphereModelSurrugate does not support this GRAM configuration. " *
-            "Unsupported feature(s): $(base_model.offline_surrogate_unsupported_reason)"
-        ))
-    end
 
     file = isempty(strip(surrogate_file)) ?
         _gram_default_surrogate_file(base_model.planet_name) :

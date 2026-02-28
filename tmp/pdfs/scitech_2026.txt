@@ -1,0 +1,3292 @@
+A Comparative Analysis of Aerobraking Dynamics Across
+Celestial Bodies Using SpaceAGORA.jl
+Evan D. Yu∗ , Nihal Simha∗ , and Giusy Falcone†
+University of Michigan, Ann Arbor, MI, 48109
+Aerobraking has been extensively studied and flight-tested at Mars and Venus, yet comparatively little analysis exists for other targets of interest, most notably Earth-return trajectories
+and Saturn’s moon, Titan. This work addresses this gap with a systematic perturbation
+analysis of the aerobraking environment performed using SpaceAGORA.jl. SpaceAGORA.jl
+is a high-fidelity tool that couples the Global Reference Atmospheric Model Suite with highdegree gravitational harmonics, third-body gravitational effects, and solar-radiation pressure.
+Simulator outputs are validated against periapsis and apoapsis altitude histories from Mars
+Odyssey and Venus Express, and with propagations from the General Mission Analysis Tool
+for Earth-return cases. This work presents a comparative analysis summarizing the relative
+influence of each perturbation across the aerobraking environments of Mars, Venus, Earth,
+and Titan. Results show that the lunisolar gravitational effects lower Earth periapsis altitudes
+by an average of more than 2 km per orbit for high-apoapsis Earth orbit, but are minor for
+low-altitude orbits. Titan aerobraking campaigns exhibit the largest variability in terms of
+periapsis fluctuations, experiencing drops of more than 60 km in periapsis altitude in one orbit
+caused by Saturn’s third-body gravitational perturbations. Due to Titan’s dense atmosphere
+and the observed periapsis altitude fluctuations, thermal constraints due to unexpectedly low
+periapsis altitudes are a major concern. Finally, a set of dimensionless perturbation parameters
+is introduced that provides a framework for quantitatively evaluating the relative contributions
+of drag, oblateness, higher-order gravity, and third-body tides along an aerobraking trajectory.
+
+I. Nomenclature
+𝐴⊙
+𝑎
+𝑐𝑅
+𝐶𝐻
+𝐶¯𝑙
+ℎ
+𝐽2
+𝐾
+ℓ
+𝑚
+N
+𝑝 𝑆𝑅𝑃
+𝑅𝑃
+[𝑅]
+r
+𝑟
+𝑟¥
+𝑉
+
+=
+=
+=
+=
+=
+=
+=
+=
+=
+=
+=
+=
+=
+=
+=
+=
+=
+=
+
+Sunlit spacecraft surface area, m2
+semi-major axis, m
+Reflectivity coefficient
+Spacecraft heating coefficient, nd
+Spherical harmonic scaling factor, nd
+Altitude, km
+𝐽2 coefficient, nd
+Kaula parameter, nd
+Spherical harmonic degree, nd
+Spacecraft mass, kg
+Unit vector North Pole of Rotation, nd
+Solar radiation pressure magnitude, N/m2
+Mean radius of the central body, m
+Rotation matrix, nd
+Position vector, m
+Magnitude, m
+Spacecraft acceleration, m/s2
+Velocity, m/s
+
+∗ Ph.D. Candidate, Department of Aerospace Engineering, François-Xavier Bagnoud Building, 1320 Beal Ave, Ann Arbor, MI 48109, AIAA
+Student Member.
+† Assistant Professor, Department of Aerospace Engineering, François-Xavier Bagnoud Aerospace Building, 1320 Beal Avenue, Ann Arbor, MI
+48109, AIAA Member.
+
+1
+
+𝛼
+𝛽
+𝛿
+𝜇
+𝜙
+𝜆
+𝜌
+
+=
+=
+=
+=
+=
+=
+=
+
+Right ascension, rad
+Ballistic coefficient, kg/m2
+Declination, rad
+Gravitational parameter, m3 /s2
+Latitude
+Longitude
+Atmospheric density, kg/m3
+
+Subscripts
+𝑎
+|𝐹
+𝑝𝑐
+𝐽2000
+𝑘
+𝑃
+𝑝
+𝑆𝐶
+𝑣
+𝑋/𝑌
+
+=
+=
+=
+=
+=
+=
+=
+=
+=
+=
+
+Apoapsis
+Vector resolved in frame 𝐹
+Planetocentric
+Earth-centered inertial frame defined at the J2000 epoch
+𝑘-th third-body
+Central body
+Periapsis
+Spacecraft
+Vacuum altitude
+X relative to Y
+
+II. Introduction
+erobraking is a technique that reduces the orbital energy of a spacecraft through a sequence of controlled
+atmospheric passages, potentially decreasing the propellant needs for orbit insertion compared to a fully propulsive
+insertion approach. The technique was first demonstrated during a 1991 perigee pass of Japan’s Hiten orbiter [1] and
+later matured by NASA’s Magellan experiment at Venus, followed by Mars Global Surveyor, Mars Odyssey, Mars
+Reconnaissance Orbiter (MRO), MAVEN, and the European Space Agency’s (ESA) ExoMars Trace Gas Orbiter
+(TGO) missions [2–5]. ESA’s Venus Express mission further expanded our understanding of aerobraking at Venus [6].
+Although these campaigns established core operational principles, each celestial body presents distinct challenges, from
+gravity-field harmonics and third-body perturbations to highly variable upper-atmospheric density.
+Previous investigations have extensively characterized perturbations at Mars and Venus [2–8]. For other targets,
+coverage is patchy; an initial study on Titan aerobraking was conducted for the Titan Saturn System Mission (TSSM), in
+particular demonstrating the periodic nature of Saturn’s third-body effects [9]. Earth-return aerobraking studies, on the
+other hand, have focused on flight-mechanics constraints [10] or geocentric orbit transfer of small satellites [11], but no
+studies have performed a comprehensive analysis of the perturbations affecting a general aerobraking campaign at Earth.
+A complicating factor in studying aerobraking is the lack of high-fidelity, fast, and openly-available simulators for
+both aeroassist passages and multi-body astrodynamics. Commercial suites such as Ansys STK [12] or a.i. solutions
+FreeFlyer [13] often lack high-fidelity atmospheric models and require costly licenses. Government tools such as the
+General Mission Analysis Tool (GMAT) [14], Genesis [15], Trick [16], and the Jet Propulsion Laboratory’s (JPL)
+Dynamics Algorithms for Real-Time Simulation (DARTS) [17] offer high fidelity but are often export-controlled or lack
+aeroassist or aerothermal modeling capabilities. Open-source frameworks give community access, but trade capabilities:
+OreKit [18] only provides basic atmospheric models such as the Naval Research Laboratory Mass Spectrometer and
+Incoherent Scatter radar Exosphere (NRLMSISE00), Basilisk [19] provides 6-DOF dynamics but, to the authors’
+knowledge, does not support analysis of aeroheating metrics, and the original Aerobraking Trajectory Simulator (ABTS)
+[20] is Mars-centric and too slow for large Monte Carlo studies.
+To address this gap, we introduce SpaceAGORA.jl, an evolution of the Python-based ABTS [20] that natively
+incorporates the Global Reference Atmospheric Model (GRAM) Suite that achieves run times an order of magnitude
+faster than its predecessor while maintaining high-fidelity gravitational effects and 𝑛-body perturbations. This tool
+has been validated against periapsis and apoapsis histories from Mars Odyssey and Venus Express, as well as GMAT
+propagation when flight data are unavailable. Using SpaceAGORA.jl, this work presents three key contributions to the
+literature: (i) quantifying the impact of major perturbations on aerobraking trajectories at Mars, Venus, Earth and Titan;
+(ii) defining high-resolution surveys for Earth-return and Titan insertion trajectories; and (iii) distilling cross-planet
+
+A
+
+2
+
+trends into a set of dimensionless perturbation parameters that inform future aerobraking campaign design. Taken
+together, these cases span a wide range of aerobraking environments, from gravity-harmonic-dominated campaigns at
+Mars to lunisolar-tide-driven evolution for high-apoapsis Earth-return orbits and strongly Saturn-perturbed trajectories
+at Titan. By comparing them within a single simulation framework, we highlight how the dominant perturbations
+shift with both destination and orbit geometry. This information is critical to the advancement of more advanced or
+autonomous aerobraking operations [21–23].
+The remainder of this paper is organized as follows. Section III discusses the design and implementation of
+SpaceAGORA.jl, including the models and datasets used to determine the forces acting upon the spacecraft, reference
+frames, and perturbations. Validation against flight data from Mars Odyssey and Venus Express, as well as against
+simulation data from GMAT, is presented in Sec. IV. Section V presents the Monte Carlo dispersions used as well as the
+test matrix used for the perturbation analysis. Section VI presents an analysis and discussion of simulated aerobraking
+trajectories at Mars, Venus, Earth, and Titan, and Sec. VII provides a comparative analysis of the environment at each
+destination and how it affects the trajectory, and introduces the dimensionless perturbation parameters used to quantify
+the relative effect of individual perturbations. Section VIII summarizes the analyses, comparison, and conclusions.
+
+III. Simulation Architecture
+SpaceAGORA.jl has been developed as a general-purpose 6-DOF trajectory and aerothermal simulation engine,
+evolving from the Python-based ABTS [20]. Whereas ABTS was tailored primarily to Mars aerobraking in a point-mass
+formulation, SpaceAGORA.jl is designed to support end-to-end analysis from in-orbit propagation through atmospheric
+entry, with interfaces and run-time performance intended for autonomy and deep reinforcement learning studies as well
+as classical trajectory design. The dynamics engine generalizes the original force model to include third-body gravitation,
+solar radiation pressure (SRP), and high-degree gravitational harmonics that capture local mass concentrations for
+each central body. Atmospheric environments are modeled using the GRAM Suite, with the option to ingest daily and
+historical National Oceanic and Atmospheric Administration (NOAA) data for Earth cases, while planetary ephemerides
+and orientations are provided by Navigation and Ancillary Information Facility’s (NAIF) SPICE system. SpaceAGORA.jl
+also includes engineering-level aerothermal evaluations and 6-DOF attitude dynamics that are validated in separate
+work [24]. In this study, we employ the point-mass (3-DOF) configuration of SpaceAGORA.jl to simulate aerobraking
+campaigns at Mars, Venus, Earth, and Titan. Validation of this configuration is conducted through comparison with
+periapsis and apoapsis altitude histories from previously flown aerobraking missions, as well as with GMAT propagations
+when flight data are unavailable.
+A. Software Structure
+SpaceAGORA.jl is written in Julia, a high-performance scientific computing language, which offers performance
+advantages through just-in-time compilation over other high-level languages such as Python and MATLAB while
+retaining a clear and expressive syntax that facilitates development and readability. The codebase for SpaceAGORA.jl is
+publicly accessible on GitHub at https://github.com/Space-FALCON-Lab/SpaceAGORA.jl. A flowchart of the
+architecture of SpaceAGORA.jl is given in Fig. 1. The arrows show the flow of information, and double-headed arrows
+indicate two-way information flow. For example, during the propagation of the dynamics, information about the state is
+passed into the physical models to calculate forces and torques due to the relevant physical effects. These forces and
+torques are then passed back into the propagation.
+A key design principle of SpaceAGORA.jl is its modular and extensible architecture. The simulator is organized
+around a set of interoperable modules that handle distinct aspects of orbital and atmospheric flight, including trajectory
+propagation, atmospheric modeling, gravity field computation, attitude dynamics, and aerothermal assessment. This
+modular structure allows users to easily swap out or upgrade components without requiring significant changes to the
+overall codebase. For example, one can test different atmospheric models or gravity-field representations by modifying
+only a few lines of configuration code.
+In addition, celestial bodies can be added or modified with minimal effort through centralized data and configuration
+files, which store relevant physical constants, atmospheric parameters, and planetary ephemerides. This framework
+enables users to rapidly adapt the tool for mission analysis at new destinations by simply extending the existing
+configuration templates. This modularity allows SpaceAGORA.jl to serve both as a flexible, high-fidelity dynamics
+engine for mission analysis and as a platform to prototype and test novel guidance and autonomy algorithms.
+
+3
+
+Fig. 1
+
+SpaceAGORA.jl trajectory propagation architecture
+
+B. Reference Frames
+The primary reference frames used to describe the motion of a spacecraft in SpaceAGORA.jl are planet-centered
+inertial frames, analogous to the J2000 Earth-Centered Inertial (ECI) Equatorial reference frame. To properly interface
+with SPICE, which provides only the J2000 ECI Equatorial frame and an analogous Mars-centered inertial frame, a
+conversion between planetary inertial reference frames, herein referred to as PCI frames, and the J2000 ECI Equatorial
+frame is required. These PCI frames are defined using the North Pole of Rotation of the celestial body of interest at the
+reference epoch (J2000) and the North Pole of Rotation of the Earth at the same reference epoch:
+0
+cos(𝛼) cos(𝛿) 
+ 
+
+
+ 
+
+
+N𝐸𝑎𝑟𝑡 ℎ = 0 , N 𝑃 =  sin(𝛼) cos(𝛿) 
+ 
+
+
+1
+
+
+sin(𝛿)
+ 
+
+
+and with
+î 𝑃𝐶 𝐼 =
+
+N𝐸 𝑎𝑟𝑡 ℎ × N 𝑃
+, k̂ 𝑃𝐶 𝐼 = N 𝑃 , ĵ 𝑃𝐶 𝐼 = k̂ × î
+||N𝐸 𝑎𝑟𝑡 ℎ × N 𝑃 ||
+
+The rotation from J2000 to a PCI frame is:
+
+− sin(𝛼)
+
+ cos( 𝛼) cos( 𝛿 ) sin( 𝛿 )
+[𝑅] 𝑃𝐶 𝐼/𝐽2000 = −
+𝜎1
+
+ cos(𝛼) cos(𝛿)
+
+
+cos(𝛼)
+𝛿 ) sin( 𝛿 )
+− sin( 𝛼) cos(
+𝜎1
+sin(𝛼) cos(𝛿)
+
+0
+
+
+√︃
+
+
+ , 𝜎1 = cos4 (𝛿) + cos2 (𝛿) sin2 (𝛿)
+𝜎1 
+sin(𝛿) 
+
+cos2 ( 𝛿 )
+
+(1)
+
+Position vectors convert via:
+r| 𝑃𝐶 𝐼 = [𝑅] 𝑃𝐶 𝐼/𝐽2000 r| 𝐽2000
+
+(2)
+
+Equation (2) is used in SpaceAGORA.jl to convert celestial position vectors from the J2000 ECI Equatorial frame to the
+local inertial equatorial frame of an arbitrary planet at which an aerobraking campaign is performed.
+Additionally, [𝑅] 𝐽2000/𝑃𝐶 𝐼 = [𝑅] 𝑇𝑃𝐶 𝐼/𝐽2000 is used to convert from PCI frames to the J2000 frame available with
+SPICE. Since SPICE contains information about the PCPF frames and the J2000 ECI Equatorial frame, with the rotation
+expressed as [𝑅] 𝑃𝐶 𝑃𝐹/𝐽2000 , the rotation from the PCI to PCPF frame is given in Eq. (3):
+[𝑅] 𝑃𝐶 𝑃𝐹/𝑃𝐶 𝐼 = [𝑅] 𝑃𝐶 𝑃𝐹/𝐽2000 [𝑅] 𝐽2000/𝑃𝐶 𝐼
+4
+
+(3)
+
+and is used in an analogous manner to [𝑅] 𝑃𝐶 𝐼/𝐽2000 . The inverse rotation can be performed using the transpose of
+either matrix. Figure 2 illustrates the frame geometry, where the red frame depicts the ECI frame and the green frame
+depicts Mars’s PCI frame.
+𝑘$!"#$%
+𝑘$&"#'
+Earth Equatorial Plane
+
+δ
+
+𝚤̂!"#$%
+𝚤̂!"#$%
+𝚥̂!"#$%
+
+𝚥̂&"#'
+
+α
+𝚤̂&"#'
+
+Fig. 2
+
+Reference frame illustration.
+
+C. Models
+The perturbations considered in SpaceAGORA.jl are 𝑛-body gravitational effects, solar radiation pressure, gravitational harmonics due to non-spherical bodies, and atmospheric density variations. According to Vallado [25], these are
+the most significant, non-atmospheric perturbing forces, and others, such as planetary deformation due to solar tides, are
+generally negligible.
+1. Atmospheric Density
+SpaceAGORA.jl employs the GRAM Suite [26], the most accurate atmospheric model currently available for
+bodies beyond Earth, to supply nominal and dispersed density profiles for all four targets considered in this study. The
+GRAM Suite is used to provide realistic atmospheric conditions, accounting for seasonal density variations, wind, and
+thermal effects, as well as spatial atmospheric variations. This is particularly important for modeling the atmosphere
+of planets with highly variable atmospheres, such as Venus or Mars. On Venus, due to the extremely slow rotation
+rate, the difference in density between the day and night side of the planet can vary up to several orders of magnitude.
+This affects aerobraking dynamics in terms of both the thermal and structural loads that the spacecraft will face
+[27]. Data from SPICE about the orientation of a celestial body is used to determine the planetocentric latitude and
+longitude of the spacecraft for use with GRAM [28], as well as within GRAM itself. On Mars, GRAM provides dust
+storm simulation, enabling analysis of the effects of the violent and unpredictable dust storms. GRAM is also more
+accurate and generally applicable than exponential or other non-forecast models. SpaceAGORA.jl includes the Whole
+Atmosphere Model-Ionosphere Plasmasphere Electrodynamics (WAM-IPE) Forecast/Real Time System (WFS/WRS)
+to query historical, real-time, and forecast data for Earth’s atmosphere. Figure 3(a) shows a comparison between
+EarthGRAM, NRLMSISE-00 [29], an atmospheric model developed specifically for Earth, and WAM-IPE [30]. Because
+the WAM-IPE data does not extend lower than 100km, there is significant error between EarthGRAM/NRLMSISE00
+and WAM-IPE where forecast data is unavailable. EarthGRAM and NRLMSISE00, however, match very closely at
+these altitudes. In addition, the error of the logarithm base 10 of the density is quite small for altitudes above 100km,
+demonstrating agreement in the order of magnitude of the density models compared to WAM-IPE data, as shown in Fig.
+3(b). Based on past and planned missions, aerobraking periapsis altitudes at Earth can range from 125km [1] to nearly
+200km [11].
+2. Gravitational Harmonics
+The fluctuations in the gravity potential field, and the associated fluctuations in the gravitational acceleration,
+can be modeled using spherical harmonic representations. SpaceAGORA.jl uses publicly available 𝐶𝑙,𝑚 and 𝑆𝑙,𝑚
+normalized coefficients with fully-normalized Associated Legendre basis functions. This combination enables a
+continuous, high-fidelity mapping from spacecraft position to deviations in the gravitational potential relative to an
+ideal inverse-square law. While the second-degree oblateness term (𝐽2 effect) dominates due to planetary rotation,
+higher-degree and order harmonics can introduce substantial deviations in a spacecraft trajectory when compared to
+models considering only 𝐽2 . For example, Mars has pronounced high- and lowlands, as well as large mountains, that
+
+5
+
+500
+
+EarthGRAM (MERRA2)
+NRLMSISE00
+NOAA
+
+500
+450
+400
+
+300
+
+Altitude, km
+
+Altitude, km
+
+400
+
+200
+
+350
+EarthGRAM (MERRA2)
+NRLMSISE00
+
+300
+250
+200
+
+100
+
+150
+
+0
+
+100
+
+10 12 10 10 10 8 10 6 10 4 10 2 100 102
+(a)
+
+Fig. 3
+
+Density, kg/m^3
+
+0.0
+(b)
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+
+Log Density Error, %
+
+3.0
+
+3.5
+
+EarthGRAM and NRLMSISE-00 relative to WAM-IPE (a) absolute density and (b) log density error.
+
+can significantly affect a spacecraft trajectory during an aerobraking campaign. This was seen in the Mars Odyssey
+mission, when multiple passes over Olympus Mons and neighboring mass anomalies lowered the periapsis altitude by
+approximately 1 km per orbit and caused a slight change in orbital inclination [3].
+The potential field of a nonspherical planet, given fully-normalized Associated Legendre Polynomials of degree 𝑙
+and order 𝑚, 𝑃𝑙,𝑚 , and the fully-normalized spherical harmonic coefficients of degree 𝑙 and order 𝑚, 𝐶𝑙,𝑚 and 𝑆𝑙,𝑚 , is
+[25]:
+"
+#
+𝑙
+𝑙 
+∞ ∑︁
+∑︁
+
+
+𝑅𝑃
+𝜇
+1+
+(4)
+𝑃𝑙,𝑚 sin(𝜙 𝑝𝑐𝑆𝐶 ) 𝐶𝑙,𝑚 cos(𝑚𝜆 𝑝𝑐𝑆𝐶 ) + 𝑆𝑙,𝑚 sin(𝑚𝜆 𝑝𝑐𝑆𝐶 )
+𝑈=
+𝑟 𝑆𝐶/𝑃
+𝑟 𝑆𝐶/𝑃
+𝑙=2 𝑚=0
+The gravitational acceleration vector is the gradient of Eq. (4). While it is useful for analytical perturbation
+analysis as seen in Sec. VII, it diverges at 𝜙 = ± 𝜋2 . Pines proposed an alternative four-parameter formulation to avoid
+this numerical instability [31], which yielded better results for highly-inclined orbits like Mars Odyssey aerobraking
+campaign. Due to computational constraints, the model is truncated at degree 50, with higher degrees causing minimal
+trajectory differences, as shown for Odyssey, Venus Express, and a hypothetical Earth orbit in Fig. 4. In this plot, the
+solid lines represent the RMSE, and the dashed lines represent the runtime. Future improvements may include GPU
+parallelization of the spherical harmonic calculations [32]. Titan was not included in this analysis because coefficients
+are only available up to fifth degree and order, so all coefficients are used for the perturbation analysis.
+The spherical harmonic coefficients, 𝐶𝑙,𝑚 and 𝑆𝑙,𝑚 , used in the calculation of the higher-order gravitational harmonics
+come from a variety of sources, primarily NASA datasets: GMM3 for Mars [33], MGNP180U for Venus [34], GGM05C
+for Earth [35], and Cassini-derived coefficients for Titan [36]. High-resolution topography harmonics are also included
+to refine altitude calculations. Additional bodies may be easily added to SpaceAGORA.jl by providing the appropriate
+additional coefficients.
+3. 𝑁-body Gravitational Effects
+The primary third-body effects experienced in planetary aerobraking are from the Sun, large moons, and, in Titan’s
+case, Saturn. This effect can cause significant changes in the periapsis altitude over time, as well as in precession of the
+orbit in extreme cases. The gravitational effect of massive third bodies is described as [25]:
+"
+#
+𝑛
+∑︁
+r 𝑘/𝑆𝐶 r 𝑘/𝑃
+− 3
+(5)
+r¥ 𝑆𝐶/𝑃 =
+𝜇𝑘 3
+𝑟 𝑘/𝑆𝐶 𝑟 𝑘/𝑃
+𝑘=1
+6
+
+Odyssey
+VEx
+Earth
+
+104
+103
+
+50
+
+40
+
+Runtime (s)
+
+RMSE (km)
+
+102
+101
+
+30
+
+100
+10 1
+
+20
+
+10 2
+101
+
+100
+
+Fig. 4
+
+102
+
+Degree/Order
+
+RMSE relative to reference trajectory for different gravitational harmonic degrees and orders.
+
+SpaceAGORA.jl uses NAIF’s SPICE observation geometry information system for accurate, precise information about
+the relative location and orientation of planets to calculate the gravitational effects of massive third bodies.
+4. Solar Radiation Pressure
+Over long timelines, SRP can perturb high-altitude orbits, especially for planets close to the Sun. From Ref. [25],
+the acceleration of the spacecraft due to SRP, in the primary body’s PCI frame, is:
+r¥ 𝑆𝑅𝑃 = −
+
+𝑝 𝑠𝑟 𝑝 𝑐 𝑅 𝐴 ⊙ r𝑆𝑢𝑛/𝑆𝐶
+𝑚
+|r𝑆𝑢𝑛/𝑆𝐶 |
+
+(6)
+
+where 𝑝 𝑆𝑅𝑃 is a function of the distance from the Sun, scaled according to 4.56×10−6 𝑚𝑁2 at 1 AU. 𝐴 ⊙ changes over
+an orbit due to eclipse effects and, in a 6-DOF simulation, spacecraft attitude.
+D. Computational Performance
+Python/Julia
+1:1
+
+15
+10
+
+101
+
+5
+0
+
+(a)
+
+Time (s)
+
+Python/Julia Speed Up
+
+20
+
+Total Time
+Average Time per Orbit
+
+102
+
+100
+0
+
+25
+
+50
+
+75 100 125 150 175 200
+
+Number of Orbits
+
+100
+(b)
+
+101
+
+Number of Orbits
+
+102
+
+Fig. 5 Performance analysis in terms of (a) Python/Julia comparison, and (b) absolute Julia performance for a
+generic Earth orbit.
+
+7
+
+The migration from Python to Julia speeds up long aerobraking campaign by over 20 times in some cases. Figure 5
+provides some metrics for evaluating the performance of SpaceAGORA.jl on a relative and absolute scale. Figure 5(a)
+shows that the speed-up varies with the numbers of orbits: Julia is slower for short simulations due to precompilation;
+however, for long simulations often required for aerobraking, the compilation overhead in Julia is quickly outweighed by
+its speed. Figure 5(b) shows linear scaling of runtime with orbit number. Furthermore, the average runtime per orbit
+remains fairly constant. Current bottlenecks are in GRAM and SPICE calls. In the 200 orbit case, the total runtime is
+184.75 seconds and an average orbit simulation time of 0.92375 seconds. Currently, SpaceAGORA.jl uses GRAM’s
+Python interface via PythonCall, causing some overhead in conversion between Python and Julia. Future development
+will add an equivalent Julia-native wrapper for the GRAM suite that may further improve performance.
+
+IV. Validation
+SpaceAGORA.jl is validated in the point-mass configuration using the three cases introduced in Sec. III: the Mars
+Odyssey and Venus Express aerobraking campaigns, and a GMAT-based Earth-return propagation in the absence of
+flight data. Titan is excluded from direct validation because no aerobraking flight data currently exist and GMAT does
+not provide a Titan atmospheric model. For all validation cases, solar radiation pressure was found to be negligible over
+the aerobraking duration and is therefore omitted from the analysis.
+Table 1
+
+Vehicle and Planetary Specifications
+
+Bus Length, m
+Bus Width, m
+Bus Height, m
+Solar Panel Length, m
+Solar Panel Width, m
+Total Mass, kg
+Heating Coefficient, nd
+Atmospheric Interface, km
+
+Mars
+2.2
+2.6
+1.7
+3.76
+1.93
+461
+1.0
+250.0
+
+Venus
+2.05
+3.7
+2.8
+5.7
+1.0
+650
+1.0
+250.0
+
+Earth
+2.05
+3.7
+2.8
+5.7
+1.0
+840
+1.0
+300.0
+
+Titan
+2.05
+3.7
+2.8
+5.7
+1.0
+2900
+1.0
+1200.0
+
+Table 1 shows the spacecraft geometries used for the four celestial bodies. The design features a central main bus,
+shaped like a cuboid, with two lateral solar panels approximated as flat plates. Because there are no flown missions,
+Earth and Titan use the same spacecraft geometry as the Venus Express mission, with masses adjusted to meet their
+specific propellant needs. For Earth, this was determined empirically through simulation, and for Titan, it was provided
+in Ref. [37].
+A. Mars
+Validation at Mars is conducted by replicating the trajectory of the 2001 Mars Odyssey mission. The initial orbital
+elements are from Ref. [3] and are reported in Table 2. Atmospheric conditions are calculated using MarsGRAM.
+Vacuum periapsis altitudes refer to the altitude assuming a spherical planet with radius equal to the equatorial radius; true
+periapsis altitudes refer to the altitude above the oblate spheroid used for GRAM-based density calculations. Propulsive
+aerobraking maneuvers match those used in the Odyssey mission [3].
+Table 2
+Date (MM/DD/YY)
+11/06/2001
+
+𝑎 [km]
+16032.208
+
+Mars Odyssey Initial Orbital Elements and Date
+𝑒
+0.7814
+
+𝑖 [deg]
+93.552
+
+Ω [deg]
+28.1517
+
+𝜔 [deg]
+109.7454
+
+𝑟 𝑎 [km]
+28559.615
+
+ℎ 𝑝,𝑣 [km]
+87.0
+
+ℎ 𝑝 [km]
+108.6
+
+Figure 6 compares SpaceAGORA.jl predictions with 2001 Mars Odyssey flight data, while Table 3 presents the
+RMSE values and percentage error with respect to the initial values of the evaluated variable. Periapsis altitude is
+well-reproduced, with only 1.715 km RMSE, or 1.6% of its initial value (Table 3). The slightly larger departures after
+8
+
+orbit 250 occur when the periapsis has been raised to higher altitudes, where the atmosphere is more rarefied and its
+uncertainty increases [38], and a larger fraction of each orbit is spent in the atmosphere, so any density mismatch has
+more opportunity to accumulate. This is expected as most of the early periapsis variation comes from physical effects
+with low uncertainty. In particular, periapsis changes primarily come from gravitational harmonics and propulsive
+maneuvers. Later in the campaign, the atmosphere plays a larger role and leads to larger variations. The apoapsis RMSE
+is significantly larger, with a value of 653.06 km, which is 2.6% of its initial value. Here, since changes are primarily
+due to atmospheric effects, the difference is expected to be significantly larger. These variations due to atmospheric
+effects are particularly pronounced on Mars due to the highly-variable atmosphere.
+
+SpaceAGORA.jl
+Odyssey Data
+
+20000
+15000
+10000
+5000
+0
+
+SpaceAGORA.jl
+Odyssey Data
+
+120
+
+Periapsis Altitude, km
+
+Apoapsis Altitude, km
+
+25000
+
+115
+110
+105
+100
+95
+
+0
+
+(a)
+
+50
+
+100
+
+150
+
+200
+
+Passage Number
+
+250
+
+0
+
+300
+
+50
+
+(b)
+
+100
+
+150
+
+200
+
+Passage Number
+
+250
+
+300
+
+Fig. 6 Comparison of Mars Odyssey (a) apoapsis and (b) periapsis altitudes from flight data with SpaceAGORA.jl
+results.
+
+Table 3
+
+SpaceAGORA.jl Validation RMSE (2001 Mars Odyssey)
+RMSE, km
+653.057
+1.715
+
+Apoapsis
+Periapsis
+
+Percent Error
+2.6%
+1.59%
+
+Max Error, km
+1109.86
+8.40
+
+B. Venus
+Validation at Venus reproduces the Venus Express aerobraking campaign. Initial orbital elements follow Ref. [27],
+and are reported here in Table 4. The atmospheric conditions are determined using VenusGRAM. The initial and
+final latitudes and longitudes are calculated to match those reported in Ref. [27]. Figure 7 compares simulated and
+flight periapsis and apoapsis histories; visual inspection shows agreement in the trajectories. The RMSE values for
+the periapsis and apoapsis altitudes are given in Table 5. Quantitatively, apoapsis error is on the order of 0.1%, while
+periapsis error is approximately 1%.
+Table 4
+Date
+5/19/2014
+
+𝑎 [km]
+39444
+
+Venus Express Initial Orbital Elements and Date
+
+𝑒
+0.8418
+
+𝑖 [deg]
+89.876
+
+Ω [deg]
+104.115
+
+9
+
+𝜔 [deg]
+75.505
+
+𝑟 𝑎 [km]
+72648.8
+
+ℎ 𝑝,𝑣 [km]
+186.6
+
+ℎ 𝑝 [km]
+186.6
+
+SpaceAGORA.jl
+VEx Data
+
+66500
+
+180
+
+Periapsis Altitude, km
+
+66000
+
+Apoapsis Altitude, km
+
+SpaceAGORA.jl
+VEx Data
+
+65500
+65000
+64500
+64000
+
+170
+160
+150
+140
+
+63500
+63000
+
+130
+0
+
+(a)
+
+10
+
+20
+
+30
+
+40
+
+Passage Number
+
+0
+
+50
+(b)
+
+10
+
+20
+
+30
+
+40
+
+Passage Number
+
+50
+
+Fig. 7 Comparison of Venus Express (a) apoapsis and (b) periapsis altitudes from flight data with SpaceAGORA.jl
+results.
+The periapsis altitude reports 3.368 km RMSE, likely due to a time misalignment because the periapsis “plateau”
+seen in the Venus Express mission is highly dependent on the timing of the mission, even within one day. The
+gravitational effect of the Sun on the Venus Express mission is the primary cause of the steep drop in periapsis altitude
+over the first ≈30 orbits. However, as Venus moved along its orbit, the orbit plane shifted to become normal to the
+Sun. This mitigated the gravitational effect on the periapsis, causing the altitude to temporarily stagnate. The date of
+the beginning of the campaign is well-documented, but the authors were unable to find a reference to the exact time.
+Through trial-and-error, the case shown in Fig. 7 was found to match the flight data the closest in terms of both periapsis
+and apoapsis, with an initial time of 0400 UTC on May 19, 2014.
+Table 5
+
+SpaceAGORA.jl Validation RMSE (Venus Express)
+
+Apoapsis
+Periapsis
+
+RMSE, km
+47.248
+3.368
+
+Percent Error
+0.07%
+1.8%
+
+Max Error, km
+152.81
+4.58
+
+C. Earth
+Because of the lack of available aerobraking campaign data at Earth, SpaceAGORA.jl is validated against GMAT
+with lunisolar gravitational effects and the EGM96 gravity model up to degree and order 50 [35]. The initial orbital
+elements used for this case are given in Table 6. Figure 8 compares the apoapsis and periapsis trajectories, and the
+RMSE values for the apoapsis and periapsis are given in Table 7. The comparison shows agreement between GMAT and
+SpaceAGORA.jl. The Jacchia-Roberts atmospheric model was used to ensure agreement in the atmospheric conditions
+during each simulation.
+Table 6
+Date
+5/27/14
+
+𝑎 [km]
+31449.795
+
+Earth Validation Initial Orbital Elements and Date
+
+𝑒
+0.7836
+
+𝑖 [deg]
+89.876
+
+Ω [deg]
+104.115
+
+10
+
+𝜔 [deg]
+75.505
+
+𝑟 𝑎 [km]
+56094.797
+
+ℎ 𝑝,𝑣 [km]
+432.992
+
+ℎ 𝑝 [km]
+452.047
+
+SpaceAGORA.jl
+GMAT
+
+SpaceAGORA.jl
+GMAT
+
+160
+
+49000
+
+Periapsis Altitude, km
+
+Apoapsis Altitude, km
+
+50000
+
+48000
+47000
+46000
+
+150
+140
+130
+120
+110
+100
+
+0
+
+5
+
+10
+
+15
+
+20
+
+Passage Number
+
+(a)
+
+25
+
+0
+
+30
+
+5
+
+(b)
+
+10
+
+15
+
+20
+
+Passage Number
+
+25
+
+30
+
+35
+
+Fig. 8 Comparison of (a) apoapsis altitudes and (b) periapsis altitudes from GMAT compared to SpaceAGORA.jl
+results
+
+Table 7
+
+Apoapsis
+Periapsis
+
+SpaceAGORA.jl Validation RMSE
+
+RMSE, km
+92.728
+1.173
+
+Percent Error
+0.190%
+0.893%
+
+Max Error, km
+184.562
+2.794
+
+V. Trajectory Setup and Perturbation Cases
+This section presents the baseline simulation parameters used in Sec. VI, as well as the dispersions used in the
+Monte Carlo analysis. In addition, this section discusses the perturbation test matrix, which describes the different
+combinations of perturbations used to quantitatively assess the impact of the perturbations in aerobraking for the four
+target bodies.
+A. Monte Carlo Dispersions
+Table 8
+
+Monte Carlo Parameters and Dispersions
+
+Parameter
+Apoapsis radius, km
+Periapsis altitude, km
+Inclination, deg
+AOP, deg
+RAAN, deg
+Atmosphere
+
+Mars
+1427.95
+4.35
+
+Planet
+Venus Earth Titan
+3600
+2800
+850
+9.33
+7.125
+36
+0.25
+0.25
+0.25
+GRAM dispersions
+
+Distribution
+3𝜎-Normal
+3𝜎-Normal
+3𝜎-Normal
+3𝜎-Normal
+3𝜎-Normal
+N/A
+
+Table 8 lists the state-vector dispersions applied to the simulation at each celestial body. Radial quantities, specifically
+apoapsis radius and periapsis altitude, are perturbed by ±5% (3𝜎); angular elements, specifically, inclination, right
+ascension of the ascending node (RAAN), and argument of periapsis (AOP) are varied by ±0.25 deg 3𝜎 [39]. Each
+Monte Carlo sample draws normally distributed deviations about the nominal value. Atmospheric variability is achieved
+11
+
+by seeding GRAM with a uniformly distributed random number between 0 and 10000 at simulation start and using the
+standard GRAM dispersions. Each Monte Carlo study was conducted with 50 realizations of the respective aerobraking
+campaigns.
+B. Perturbation Test Matrix
+To assess the influence of individual perturbative forces, missions for the four target bodies were conducted by
+incrementally adding perturbations into the simulation and evaluating the difference in the resulting trajectory. Four
+representative combinations are summarized in Table 9. These were chosen to demonstrate the effects of the most
+significant perturbing forces, in particular to demonstrate that certain effects are significantly more important. These
+cases form the common basis for all Mars, Venus, Earth, and Titan simulations reported in Sec. VI. All cases with
+higher-order harmonics also include 𝐽2 perturbations.
+Table 9
+Mars
+Inverse square gravity
+J2 effect
+Higher-order harmonics (HOH)
+-
+
+Perturbation Test Matrix
+
+Venus
+Inverse square gravity
+J2 effect
+HOH
+HOH/solar gravity
+
+Earth
+Inverse square gravity
+J2 effect
+HOH
+HOH/lunisolar gravity
+
+Titan
+J2 effect
+HOH
+J2 /Saturnian gravity
+HOH/Saturnian gravity
+
+VI. Numerical Simulations: Effect of Perturbations on Aerobraking Campaigns
+This section quantifies how individual perturbations modify aerobraking trajectory and performance at each target
+body and relates those changes to the underlying physics. Starting from the perturbation matrix in Table 9, we show that
+each body has a unique set of dominant perturbations: high-order gravity harmonics at Mars; solar third-body gravity at
+Venus; the combined influence of gravitational harmonics and lunisolar tides at Earth; and Saturnian third-body gravity
+at Titan.
+A. Mars
+
+Inverse square
+J2 effect
+Higher-order effects
+
+20000
+15000
+10000
+5000
+0
+
+(a)
+
+Fig. 9
+
+Inverse square
+J2 effect
+Higher-order effects
+
+140
+
+Periapsis Altitude, km
+
+Apoapsis Altitude, km
+
+25000
+
+130
+120
+110
+100
+
+0
+
+50
+
+100
+
+150
+
+Passage Number
+
+200
+
+0
+
+250
+(b)
+
+50
+
+100
+
+150
+
+Passage Number
+
+200
+
+250
+
+Comparison of (a) apoapsis and (b) periapsis altitudes for Mars aerobraking with different perturbations.
+
+Figures 9 and 10 illustrate the effects of different perturbation models on aerobraking trajectories at Mars, showing
+altitude evolution as well as variations in AOP and RAAN. Each scenario replicates the initial orbital conditions and the
+
+12
+
+36
+
+Inverse square
+J2 effect
+Higher-order effects
+
+100
+
+Inverse square
+J2 effect
+Higher-order effects
+
+35
+34
+
+90
+
+RAAN, degrees
+
+Argument of Periapsis, degrees
+
+110
+
+80
+70
+
+33
+32
+31
+30
+
+60
+
+29
+50
+
+28
+0
+
+1
+
+(a)
+
+2
+
+3
+
+4
+
+5
+
+Elapsed Time, seconds
+
+6
+
+7
+
+0
+
+1e6
+
+(b)
+
+1
+
+2
+
+3
+
+4
+
+5
+
+Elapsed Time, seconds
+
+6
+
+7
+
+1e6
+
+Fig. 10 Comparison of (a) argument of periapsis and (b) RAAN for Mars aerobraking with different perturbations.
+Δ𝑣 maneuver sequence of the 2001 Mars Odyssey aerobraking campaign, as detailed in Table 2 [3]. The total Δ𝑣 budget
+for Odyssey during the simulated time is approximately 8.5 m/s. Simulations continue until the spacecraft reaches a
+predefined apoapsis altitude target or completes 250 orbital passes.
+The inclusion of higher-order gravitational harmonics significantly influences periapsis behavior, consistent with Mars
+Odyssey flight data. As shown between passages 50 and 75 in Fig. 9(b), gravitational harmonics up to degree and order 50
+drive kilometer-scale reductions in periapsis altitude, reflecting observed flight behaviors when Mars Odyssey traversed
+Olympus Mons and nearby mass concentrations. This gravitational complexity uniquely characterizes the Martian
+aerobraking environment; at the altitudes and mission durations considered here, solar gravitational perturbations are
+negligible compared to Mars’ gravitational harmonics, making the latter the predominant non-aerodynamic perturbation
+source.
+180
+
+95% bounds
+Nominal
+Mean
+Median
+
+20000
+
+Periapsis Altitude, km
+
+Apoapsis Altitude, km
+
+25000
+
+15000
+10000
+5000
+
+95% bounds
+Nominal
+Mean
+Median
+
+160
+140
+120
+100
+
+0
+0
+(a)
+
+Fig. 11
+
+50
+
+100
+
+150
+
+200
+
+Passage Number
+
+250
+
+0
+
+300
+(b)
+
+50
+
+100
+
+150
+
+200
+
+Passage Number
+
+250
+
+300
+
+Monte Carlo analysis of (a) apoapsis and (b) periapsis altitudes for aerobraking at Mars.
+
+Figures 11 and 12 present a Monte Carlo analysis using the dispersions listed in Table 8. Figure 11 shows how even
+small deviations in the initial conditions significantly alter the aerobraking trajectory. The 2001 Mars Odyssey mission,
+in particular, relied on repeated passes over Olympus Mons between approximately orbit 50 and 75 to effectively lower
+its periapsis altitude and, consequently, its apoapsis altitude. Small initial condition variations can shift ground tracks
+13
+
+relative to major gravitational anomalies, reducing the spacecraft ability to consistently leverage these gravitational
+perturbations, thus diminishing the effectiveness of the aerobraking campaign.
+
+100
+
+Nominal
+Mean
+Median
+95% bounds
+
+42.5
+
+90
+
+40.0
+
+RAAN, degrees
+
+Argument of Periapsis, degrees
+
+45.0
+
+Nominal
+Mean
+Median
+95% bounds
+
+110
+
+80
+70
+60
+50
+
+37.5
+35.0
+32.5
+30.0
+
+40
+
+27.5
+
+30
+0
+
+50
+
+(a)
+
+Fig. 12
+
+100
+
+150
+
+200
+
+Elapsed Time, seconds
+
+250
+
+300
+
+0
+
+50
+
+(b)
+
+100
+
+150
+
+200
+
+Elapsed Time, seconds
+
+250
+
+300
+
+Monte Carlo analysis of (a) argument of periapsis and (b) RAAN for aerobraking at Mars.
+
+B. Venus
+Figures 13 and 14 present simulation results for aerobraking at Venus. The initial conditions and aerobraking
+maneuver sequence replicate the Venus Express aerobraking campaign used for validation [27]. As with Mars,
+simulations ran until either the target apoapsis altitude is achieved or after completing 55 orbits, matching the duration
+of the Venus Express mission.
+
+66500
+
+190
+
+65500
+65000
+64500
+64000
+Inverse square
+J2 effect
+Higher-order effects
+Higher-order/solar effects
+
+63500
+63000
+0
+(a)
+
+Periapsis Altitude, km
+
+Apoapsis Altitude, km
+
+66000
+
+10
+
+20
+
+30
+
+180
+170
+
+Inverse square
+J2 effect
+Higher-order effects
+Higher-order/solar effects
+
+160
+150
+140
+130
+
+40
+
+Passage Number
+
+0
+
+50
+(b)
+
+10
+
+20
+
+30
+
+40
+
+Passage Number
+
+50
+
+Fig. 13 Comparison of (a) apoapsis and (b) periapsis altitudes for Venus aerobraking with different perturbations.
+The trajectories distinctly separate into two primary groups: those with and without solar third-body gravitational
+effects. Within each group, trajectories closely overlap, indicating secondary perturbations (𝐽2 and higher-order gravity
+harmonics) have minimal influence. Venus’ slow rotation rate leads to reduced oblateness, resulting in a much weaker
+
+14
+
+𝐽2 effect compared to Mars. Consequently, higher-order gravitational harmonics cause only minor deviations relative to
+the 𝐽2 -only scenario, leaving solar gravitational effects as the dominant perturbation. This slow precession rate enabled
+Venus Express to maintain an orbital plane nearly perpendicular to the Sun for approximately two weeks, stabilizing the
+periapsis altitude and minimizing decay risks between orbits 35 and 50. Leveraging such alignment reduced propellant
+requirements for periapsis raise maneuvers, highlighting the importance of mission-epoch selection for fuel-efficient
+aerobraking at Venus. The total Δ𝑣 used for the simulated portion of the mission is 0.725 m/s.
+
+104.10
+
+75.45
+
+104.05
+
+75.40
+
+RAAN, degrees
+
+Argument of Periapsis, degrees
+
+75.50
+
+75.35
+75.30
+75.25
+
+75.15
+0
+
+1
+
+2
+
+103.90
+
+103.80
+
+3
+
+Elapsed Time, seconds
+
+(a)
+
+Inverse square
+J2 effect
+Higher-order effects
+Higher-order/solar effects
+
+103.95
+
+103.85
+
+Inverse square
+J2 effect
+Higher-order effects
+Higher-order/solar effects
+
+75.20
+
+104.00
+
+4
+
+1e6
+
+0
+(b)
+
+1
+
+2
+
+3
+
+Elapsed Time, seconds
+
+4
+
+1e6
+
+Fig. 14 Comparison of (a) argument of periapsis and (b) RAAN for Venus aerobraking with different
+perturbations.
+Figures 15 and 16 summarize the Monte Carlo analysis outcomes. Compared to Mars, Venus trajectories exhibit
+significantly greater stability. Mean and median Monte Carlo trajectories closely track the nominal scenario, with
+narrow 95% confidence intervals, reflecting the predominance of predictable solar gravitational perturbations. These
+perturbations, dictated primarily by Venus’s orbital position relative to the Sun, reduce sensitivity to small variations in
+initial orbital conditions. This contrasts sharply with Mars Odyssey, whose reliance on repeated alignment with surface
+gravity anomalies made initial-condition sensitivity higher, amplifying trajectory deviations from small initial errors.
+
+190
+180
+
+Periapsis Altitude, km
+
+Apoapsis Altitude, km
+
+66000
+
+65000
+
+64000
+95% bounds
+Nominal
+Mean
+Median
+
+63000
+0
+(a)
+
+Fig. 15
+
+95% bounds
+Nominal
+Mean
+Median
+
+10
+
+170
+160
+150
+140
+130
+
+20
+
+30
+
+Passage Number
+
+40
+
+0
+
+50
+(b)
+
+10
+
+20
+
+30
+
+Passage Number
+
+40
+
+50
+
+Monte Carlo analysis of (a) apoapsis and (b) periapsis altitudes for aerobraking at Venus.
+
+15
+
+Nominal
+Mean
+Median
+95% bounds
+
+76.0
+75.8
+
+104.50
+104.25
+
+RAAN, degrees
+
+Argument of Periapsis, degrees
+
+76.2
+
+75.6
+75.4
+75.2
+
+104.00
+103.75
+103.50
+
+75.0
+
+103.25
+
+74.8
+
+103.00
+
+74.6
+(a)
+
+Fig. 16
+
+0
+
+10
+
+20
+
+30
+
+40
+
+Elapsed Time, seconds
+
+50
+
+Nominal
+Mean
+Median
+95% bounds
+0
+
+(b)
+
+10
+
+20
+
+30
+
+40
+
+Elapsed Time, seconds
+
+50
+
+Monte Carlo analysis of (a) argument of periapsis and (b) RAAN for aerobraking at Venus.
+
+C. Earth
+Aerobraking at Earth involves the most complex perturbation environment among the celestial bodies considered in
+this study, due to concurrent influences from third-body gravitational effects and Earth gravity harmonics. EarthGRAM
+with MERRA2 data is used for atmospheric conditions in this analysis. Figures 17 and 18 show simulation results
+employing the initial orbit parameters from Table 6, except with a periapsis altitude set to 250 km and the inclusion of
+discrete periapsis-raise maneuvers enforced by a maximum heat-rate constraint. This constraint helps avoid flying in
+higher atmospheric density regions where heating constraints may be violated. The maximum heat rate is approximated
+as [40]:
+1
+𝑞¤ 𝑚𝑎𝑥 = 𝜌𝑉 𝑝3 𝐶 𝐻
+(7)
+2
+where the atmospheric density at periapsis is derived from exponential atmospheric model. If this calculated heat rate
+exceeded a predefined limit of 0.3 W/cm2 , approximately matching that of Mars Odyssey [3], propulsive maneuvers are
+executed to raise periapsis altitude and reduce heating. The heating coefficients, given in Table 1, are conservatively
+assumed to be 1.0, matching the assumption of the heat rate indicator function in [3].
+High-Apoapsis Earth-Orbit: For high-apoapsis Earth aerobraking trajectories, gravitational perturbations from the
+Sun and Moon dominate trajectory evolution, as shown in Figs. 17 and 18(b). The presence or absence of lunisolar
+gravitational perturbations creates two distinct trajectory families. When including lunisolar effects, periapsis altitude
+decreases substantially, by more than 100 km, necessitating multiple raise maneuvers. The Δ𝑣 required for the cases that
+include lunisolar perturbations is 41.78 m/s. Conversely, when these third-body effects are omitted, periapsis altitude
+remains stable with minimal decay. This difference in periapsis behavior significantly accelerates apoapsis decay in
+trajectories experiencing lunisolar tides, due to greater atmospheric drag at lower periapsis altitudes.
+The RAAN behavior (Fig. 18(b)) further highlights the complexity of lunisolar effects. Without lunisolar
+perturbations, RAAN remains nearly constant or decrease gradually due to the gravity harmonics of Earth. However,
+the introduction of lunisolar perturbations produces distinct mixed-mode oscillations: the Moon gravity generates
+short-period RAAN oscillations, while the Sun gravity introduces slower, long-period oscillations. These long-period
+oscillations, driven by the slower Earth orbital motion around the Sun, are not immediately obvious during the relative
+brief aerobraking campaign time frame. However, this effect becomes increasingly significant over longer timescales.
+The combination of these two frequencies results in complex RAAN evolution, clearly distinguishing trajectories
+influenced by lunisolar gravitational effects from those affected primarily by Earth gravity harmonics.
+
+16
+
+50000
+
+280
+
+45000
+
+Periapsis Altitude, km
+
+Apoapsis Altitude, km
+
+260
+
+Inverse square
+J2 effect
+Higher-order effects
+Higher-order/lunisolar effects
+
+40000
+
+35000
+
+240
+220
+
+Inverse square
+J2 effect
+Higher-order effects
+Higher-order/lunisolar effects
+
+200
+180
+160
+140
+
+30000
+0
+
+200
+
+(a)
+
+400
+
+600
+
+800
+
+Passage Number
+
+0
+
+1000
+
+200
+
+(b)
+
+400
+
+600
+
+Passage Number
+
+800
+
+1000
+
+Fig. 17 Comparison of (a) apoapsis and (b) periapsis altitudes for Earth aerobraking with different perturbations.
+
+60
+
+RAAN, degrees
+
+Argument of Periapsis, degrees
+
+105.5
+
+40
+
+20
+
+0
+(a)
+
+1
+
+2
+
+3
+
+Inverse square
+J2 effect
+Higher-order effects
+Higher-order/lunisolar effects
+
+104.5
+104.0
+
+Inverse square
+J2 effect
+Higher-order effects
+Higher-order/lunisolar effects
+
+0
+
+105.0
+
+103.5
+
+4
+
+Elapsed Time, seconds
+
+5
+
+1e7
+
+0
+(b)
+
+1
+
+2
+
+3
+
+4
+
+Elapsed Time, seconds
+
+5
+
+1e7
+
+Fig. 18 Comparison of (a) argument of periapsis and (b) RAAN for Earth aerobraking with different
+perturbations.
+Figure 19 illustrates the underlying physical mechanism driving these dynamics. Periapsis altitude variations arise
+primarily because the relative gravitational acceleration from the Moon reaches its maximum near the spacecraft
+apoapsis. At this distance, the spacecraft experiences a lunar gravitational force that differs markedly in both magnitude
+and direction from that acting on Earth, resulting in significant tidal perturbations. These tidal perturbations directly
+affect the spacecraft orbital energy, leading to pronounced changes in periapsis altitude. In contrast, when the spacecraft
+is near periapsis, the gravitational influence of the Moon is nearly identical for both Earth and spacecraft due to their
+proximity, resulting in minimal differential acceleration and leaving the apoapsis altitude largely unaffected.
+Low-Apoapsis Earth-Orbit A significant shift in the dominant perturbations emerges when considering trajectories
+with a smaller semimajor axis. Figures 20 and 21 show the results for an orbit initialized with a reduced apoapsis
+
+17
+
+𝐹⃗!""#
+
+𝐹⃗$%#
+
+Fig. 19
+
+Earth-Sun-Moon system forces.
+
+radius of 16000 km, compared to the high-apoapsis scenario of 56000 km. This change substantially alters the relative
+importance of each perturbation, notably reducing the impact of third-body gravitational effects from the Sun and the
+Moon.
+In this lower-apoapsis regime, the spacecraft periapsis and apoapsis altitudes display significantly less natural decay.
+Inclusion of lunisolar gravitational effects induces only minor periapsis variations, nearly indistinguishable from cases
+considering solely Earth gravitational perturbations. As such, no propulsive aerobraking maneuvers are required for this
+case because the heating constraints defined previously are never predicted to be violated. Similarly, RAAN evolution
+(Fig. 21(b)) exhibits minimal sensitivity to lunisolar gravity. Unlike the high-apoapsis scenario, the spacecraft remains
+relatively close to Earth throughout its orbit. Consequently, the difference in gravitational acceleration experienced
+by Earth and the spacecraft due to the Sun and Moon is considerably smaller, reducing the differential acceleration
+and subsequent orbit perturbations. In this orbit regime, Earth oblateness (𝐽2 effect) dominates the evolution of the
+AOP, whereas RAAN precession results primarily from combined influences of Earth 𝐽2 and higher-order gravitational
+harmonics.
+Inverse square
+J2 effect
+Higher-order effects
+Higher-order/lunisolar effects
+
+9600
+
+Inverse square
+J2 effect
+Higher-order effects
+Higher-order/lunisolar effects
+
+295
+290
+
+Periapsis Altitude, km
+
+Apoapsis Altitude, km
+
+9700
+
+9500
+9400
+
+285
+280
+275
+270
+265
+260
+
+9300
+
+255
+0
+(a)
+
+200
+
+400
+
+600
+
+Passage Number
+
+800
+
+0
+
+1000
+(b)
+
+200
+
+400
+
+600
+
+Passage Number
+
+800
+
+1000
+
+Fig. 20 Comparison of (a) apoapsis and (b) periapsis altitudes for Earth aerobraking with different perturbations.
+
+18
+
+60
+
+104.0
+
+40
+
+RAAN, degrees
+
+Argument of Periapsis, degrees
+
+80
+
+20
+0
+20
+Inverse square
+J2 effect
+Higher-order effects
+Higher-order/lunisolar effects
+
+40
+60
+0.0
+
+(a)
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+103.8
+103.6
+103.4
+Inverse square
+J2 effect
+Higher-order effects
+Higher-order/lunisolar effects
+
+103.2
+
+Elapsed Time, seconds
+
+1.0
+
+1.2
+1e7
+
+0.0
+(b)
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Elapsed Time, seconds
+
+1.0
+
+1.2
+1e7
+
+Fig. 21 Comparison of (a) argument of periapsis and (b) RAAN for Earth aerobraking with different
+perturbations.
+Finally, Figs. 22 and 23 present Monte Carlo analyses of this scenario. Similar to the Venus case, the mean
+and median trajectories closely track the nominal trajectory, with narrow dispersion bounds. The primary source
+of uncertainty in periapsis altitude at lower altitudes is the variation in the timing and execution of periapsis-raise
+maneuvers.
+
+95% bounds
+Nominal
+Mean
+Median
+
+40000
+
+95% bounds
+Nominal
+Mean
+Median
+
+220
+
+Periapsis Altitude, km
+
+Apoapsis Altitude, km
+
+50000
+
+30000
+
+20000
+
+200
+180
+160
+140
+
+10000
+0
+(a)
+
+Fig. 22
+
+200
+
+400
+
+600
+
+Passage Number
+
+800
+
+120
+
+1000
+(b)
+
+0
+
+200
+
+400
+
+600
+
+Passage Number
+
+800
+
+1000
+
+Monte Carlo analysis of (a) apoapsis and (b) periapsis altitudes for aerobraking at Earth.
+
+19
+
+110
+
+Nominal
+Mean
+Median
+95% bounds
+
+60
+
+Nominal
+Mean
+Median
+95% bounds
+
+109
+108
+
+40
+
+RAAN, degrees
+
+Argument of Periapsis, degrees
+
+80
+
+20
+0
+
+107
+106
+105
+104
+
+20
+
+103
+0
+
+200
+
+600
+
+800
+
+Elapsed Time, seconds
+
+(a)
+
+Fig. 23
+
+400
+
+0
+
+1000
+
+200
+
+400
+
+600
+
+800
+
+Elapsed Time, seconds
+
+(b)
+
+1000
+
+Monte Carlo analysis of (a) argument of periapsis and (b) RAAN for aerobraking at Earth.
+
+D. Titan
+Figures 25 and 26 present the results for Titan aerobraking simulations, initialized with the 85-degree inclination
+baseline orbit from the Titan Saturn System Mission [9]. Additional initial orbital elements are detailed in Table 10.
+Periapsis-raise maneuvers were included whenever the periapsis altitude dropped below 550 km, ensuring the spacecraft
+remained above denser atmospheric regions. To better display the natural evolution of the periapsis altitude, this
+threshold is set 50 km below the minimum altitude originally proposed for the Titan Saturn System Mission [37]. As
+can be seen in Fig. 25(b), the periapsis altitude exhibits both steep drops and small stagnations just below 600km that
+would not be seen if the minimum periapsis threshold had been set to 600km.
+
+Date
+10/15/31
+
+𝑎 [km]
+10435.5
+
+Table 10
+
+Titan Initial Orbital Elements and Date
+
+𝑒
+0.7532
+
+𝑖 [deg]
+85.0
+
+Ω [deg]
+64.495
+
+𝜔 [deg]
+90.0
+
+𝑟 𝑎 [km]
+17575.5
+
+𝐹⃗!"#$%&
+
+𝐹⃗!"#$%&
+𝐹⃗!"#$%&
+
+𝐹⃗!"#$%&
+
+Fig. 24
+
+Titan-Saturn forces.
+
+20
+
+ℎ 𝑝,𝑣 [km]
+720.0
+
+ℎ 𝑝 [km]
+825.42
+
+Saturnian third-body gravitational effects dominate the Titan aerobraking environment. Given Titan’s orbital period
+of approximately 16 days around Saturn, gravitational influences exhibit a periodic pattern during the roughly 24-day
+simulated aerobraking campaign. As shown in Fig. 24, the direction of Titan’s gravitational force on the spacecraft
+varies significantly over the course of Titan’s orbit, both in direction and magnitude. Similar to lunar effects on Earth
+aerobraking trajectories, Saturn’s gravitational influence induces significant periodic variations in spacecraft orbit
+altitude and orientation relative to Titan. The periapsis altitude (Fig. 25(b)) and RAAN (Fig. 26(b)) reflect these periodic
+dynamics. Unlike Earth, Titan’s higher periapsis altitude (necessitated by its dense atmosphere) causes noticeable
+short-period RAAN oscillations due to the orbital motion of the spacecraft around Titan even near periapsis, with
+longer-period oscillations driven by Titan’s orbital motion around Saturn.
+J2 effect
+Higher-order effects
+J2 + Saturn
+Higher-order effects + Saturn
+
+800
+
+14000
+
+Periapsis Altitude, km
+
+Apoapsis Altitude, km
+
+15000
+
+13000
+12000
+11000
+
+J2
+Higher-order effects
+J2 + Saturn
+Higher-order effects + Saturn
+
+10000
+0
+
+5
+
+(a)
+
+10
+
+15
+
+20
+
+25
+
+Passage Number
+
+750
+700
+650
+600
+550
+
+30
+
+35
+
+0
+
+40
+
+5
+
+10
+
+(b)
+
+15
+
+20
+
+25
+
+Passage Number
+
+30
+
+35
+
+40
+
+Fig. 25 Altitudes of (a) apoapsis and (b) periapsis altitudes for Titan aerobraking with different perturbations.
+
+63
+
+80
+J2
+Higher-order effects
+J2 + Saturn
+Higher-order effects + Saturn
+
+75
+70
+65
+
+62
+61
+60
+
+60
+55
+
+(a)
+
+64
+
+85
+
+RAAN, degrees
+
+Argument of Periapsis, degrees
+
+90
+
+J2
+Higher-order effects
+J2 + Saturn
+Higher-order + Saturn
+
+59
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+Elapsed Time, seconds
+
+2.5
+
+1e6
+
+0.0
+(b)
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+Elapsed Time, seconds
+
+2.5
+
+1e6
+
+Fig. 26 Comparison of (a) argument of periapsis and (b) RAAN for Titan aerobraking with different perturbations.
+Due to the substantial distance from the Sun, solar gravitational perturbations at Titan are negligible. Similarly,
+Titan’s slow rotation and relatively small oblateness result in minor 𝐽2 and higher-order gravitational harmonic effects
+[36]. However, the pronounced and frequent periapsis altitude variations induced by Saturnian gravity require regular
+21
+
+orbit-maintenance maneuvers to prevent excessive aerodynamic heating. The total Δ𝑣 used in the mission simulated
+with all perturbations enabled is 88.58 m/s. Simulations yielded peak heating rates of approximately 0.36 W/cm2 ,
+comfortably below thermal limits set by previous aerobraking missions, including Magellan [37]. Nonetheless, due to
+Titan’s dynamic gravitational environment, the heating rates can fluctuate significantly from orbit to orbit, especially
+when periapsis altitude decreases just prior to atmospheric entry. This variability necessitates conservative safety
+margins and precise periapsis predictions.
+Figures 27 and 28 present results from the Monte Carlo analysis. Similar to Earth, uncertainties accumulate primarily
+from variability in the timing and execution of periapsis-raise maneuvers. However, at Titan, the apoapsis altitude also
+exhibits pronounced sensitivity to these variations. This increased sensitivity occurs because even slight changes in
+periapsis altitude significantly influence how Saturn’s gravitational effects shape the orbit of the spacecraft, more so
+than observed for third-body effects in other bodies analyzed.
+
+800
+
+Periapsis Altitude, km
+
+14000
+
+Apoapsis Altitude, km
+
+850
+
+95% bounds
+Nominal
+Mean
+Median
+
+15000
+
+13000
+12000
+11000
+10000
+
+0
+
+10
+
+20
+
+30
+
+40
+
+Passage Number
+
+600
+95% bounds
+Nominal
+Mean
+Median
+0
+
+50
+
+10
+
+(b)
+
+20
+
+30
+
+40
+
+Passage Number
+
+50
+
+Monte Carlo analysis of (a) apoapsis and (b) periapsis altitudes for aerobraking at Titan.
+
+66
+
+Nominal
+Mean
+Median
+95% bounds
+
+90
+85
+
+Nominal
+Mean
+Median
+95% bounds
+
+64
+
+80
+
+RAAN, degrees
+
+Argument of Periapsis, degrees
+
+650
+
+500
+
+(a)
+
+Fig. 27
+
+700
+
+550
+
+9000
+8000
+
+750
+
+75
+70
+65
+
+62
+60
+
+60
+58
+
+55
+50
+0
+
+(a)
+
+Fig. 28
+
+10
+
+20
+
+30
+
+Elapsed Time, seconds
+
+40
+
+50
+
+0
+(b)
+
+10
+
+20
+
+30
+
+Elapsed Time, seconds
+
+40
+
+Monte Carlo analysis of (a) argument of periapsis and (b) RAAN for aerobraking at Titan.
+
+22
+
+50
+
+Furthermore, certain initial phasings reveal an interesting phenomenon where Saturn’s gravitational perturbations
+can overcome the effects of atmospheric drag, resulting in a net apoapsis altitude increase despite regular atmospheric
+passes (Fig. 29). In the example shown, the apoapsis altitude grows by nearly 2,000 km until either the periapsis decays
+into denser atmosphere or the Saturnian perturbation reverses sign. This behavior occurs under conditions nearly
+identical to those in Fig. 25, differing only in initial epoch (by one day) and in the minimum allowed periapsis altitude
+(600 km instead of 550 km).
+
+1.700
+
+1e7
+800000
+
+1.650
+
+Periapsis Altitude, km
+
+Apoapsis Altitude, km
+
+1.675
+
+1.625
+1.600
+1.575
+1.550
+1.525
+
+750000
+700000
+650000
+600000
+
+1.500
+0
+(a)
+
+10
+
+20
+
+30
+
+Passage Number
+
+40
+
+50
+
+0
+
+10
+
+(b)
+
+20
+
+30
+
+Passage Number
+
+40
+
+50
+
+Fig. 29 Titan aerobraking (a) apoapsis and (b) periapsis altitudes when Saturn’s gravity causes a net apoapsis
+increase.
+
+VII. Cross-Body Aerobraking Comparison
+A qualitative summary of the aerobraking perturbations analyzed in the previous sections is provided in Table 11,
+with corresponding quantitative metrics in terms of periapsis altitude, atmospheric density, AOP and RAAN rates and
+depicted in Figs. 30 and 31. These results will be discussed below in terms of third-body and central-body gravity. Note
+that the vertical axes of Fig. 30 are logarithmic.
+
+Mars
+Venus
+Earth
+Titan
+
+Table 11
+
+Qualitative Perturbations Comparison
+
+J2
+Significant
+Minor
+Significant (low altitude)
+Minor
+
+Higher-order gravitational harmonics
+Significant
+Minor
+Significant (low altitude)
+Negligible
+
+Third-body effects
+Negligible
+Significant
+Significant (high altitude)
+Significant
+
+Figure 30(a) clearly shows that Titan exhibits the largest per-orbit changes in periapsis altitude, followed by high- and
+low-apoapsis Earth cases, Venus, and finally Mars. This trend underscores the substantial gravitational perturbations
+experienced during Titan aerobraking. Notably, Fig. 30(b) reveals that Mars, despite smaller periapsis altitude variations,
+exhibits significantly greater orbit-to-orbit atmospheric density changes than Earth and Venus. This pronounced
+variability in Mars’ upper atmosphere complicates trajectory prediction, necessitating careful consideration for precision
+in guidance and control algorithms. Additionally, Fig. 31 highlights that Titan trajectories undergo the largest orbital
+precession, further emphasizing the dominant role of Saturn’s gravitational perturbations. In summary, third-body
+gravitational effects dominate Titan and high-apoapsis Earth trajectories, whereas central-body gravitational harmonics
+
+23
+
+Periapsis Density Difference, kg/m^3
+
+Periapsis Altitude Difference, km
+
+primarily influence Mars and low-altitude Earth trajectories. Venus occupies an intermediate regime where solar
+gravitational perturbations are important, but its minimal oblateness suppresses additional precession effects.
+
+101
+
+100
+Mars
+
+(a)
+
+Venus
+
+Fig. 30
+
+Titan
+
+Earth-High ra Earth-Low ra
+
+10 7
+10 8
+10 9
+10 10
+10 11
+Mars
+
+(b)
+
+Venus
+
+Titan
+
+Earth-High ra Earth-Low ra
+
+Average change in (a) periapsis altitude and (b) density per orbit.
+
+0.8
+
+0.10
+
+0.6
+
+RAAN Difference, degrees
+
+AOP Difference, degrees
+
+0.7
+
+0.5
+0.4
+0.3
+0.2
+
+0.08
+0.06
+0.04
+0.02
+
+0.1
+0.0
+(a)
+
+Mars
+
+Venus
+
+Titan
+
+Fig. 31
+
+Earth-High ra Earth-Low ra
+
+0.00
+(b)
+
+Mars
+
+Venus
+
+Titan
+
+Earth-High ra Earth-Low ra
+
+Average change in (a) AOP and (b) RAAN per orbit.
+
+A. Dimensionless Measures of Perturbation
+Following classical perturbation theory and Gauss’ variational equations, each perturbation can be characterized by
+the ratio of its characteristic acceleration to the local primary gravity 𝑎 𝑃 = 𝜇 𝑃 /𝑟 2 . For the regimes studied in Sec. VI,
+four dimensionless parameters are sufficient, defined using Eqs. (4) and (5) together with standard approximations for
+
+24
+
+relative motion and 𝐽2 perturbations [25]:
+ 3
+𝜇𝑘 𝑟𝑎
+𝑎 3b
+≈3
+,
+𝑎𝑃
+𝜇𝑃 𝑟𝑘
+2
+
+𝑎 𝐽2
+3
+𝑅𝑃
+,
+Π 𝐽2 ≡
+≈ 𝐽2
+𝑎𝑃
+2
+𝑎
+ℓ
+
+𝑎𝐻
+𝐾 𝑅𝑃
+Π𝐻 ≡
+,
+≈ max 2
+ℓ ≥3 ℓ
+𝑎𝑃
+𝑎
+𝜌 𝑝𝑟 𝑝
+𝑎𝐷
+Π𝐷 ≡
+≈
+,
+𝑎 𝑃 (𝑟 𝑝 )
+2𝛽
+
+Π3b ≡
+
+third-body tides at apoapsis,
+
+(8)
+
+oblateness (𝐽2 ),
+
+(9)
+
+higher-degree harmonics,
+
+(10)
+
+aerodynamic drag at periapsis,
+
+(11)
+
+The expression for Π 𝐻 uses an approximation for the order of the spherical harmonic coefficients according to
+Kaula’s rule [41], which states that the order of the spherical harmonic coefficients scales roughly inversely with the
+square of the degree. The parameter 𝐾 acts as a baseline for degree one, and varies by the body of interest. The 𝐾 values
+used for this analysis are 13.0e-5 for Mars [33], 1.2e-5 for Venus [34], 1.0e-5 for Earth [41], and 1.0e-5 for Titan [36].
+For Π𝐷 in Eq. 11, we use the standard approximations
+𝑎 𝐷 ≈ 12 𝜌 𝑝 𝑉 𝑝2 /𝛽
+
+𝑎 𝑃 (𝑟 𝑝 ) = 𝜇 𝑃 /𝑟 2𝑝 ≈ 𝑉 𝑝2 /𝑟 𝑝
+
+where the latter follows from the vis-viva equation near periapsis. Combining these equations gives
+1
+
+Π𝐷 =
+
+𝜌 𝑝𝑟 𝑝
+𝑎𝐷
+2 𝜌 𝑝 𝑉 𝑝 /𝛽
+=
+≈
+2
+𝑎 𝑃 (𝑟 𝑝 )
+2𝛽
+𝑉 𝑝 /𝑟 𝑝
+2
+
+(12)
+
+Physically, Π3b is the ratio of the third-body tidal acceleration at apoapsis to the primary’s gravity; Π 𝐽2 measures the
+fractional contribution of oblateness to the gravity field; Π 𝐻 groups the effect of higher-degree gravitational harmonics,
+evaluated at the periapsis where their influence is largest; and Π𝐷 compares the peak drag deceleration at periapsis to
+gravity at that point.
+Table 12 summarizes the qualitative ordering of these parameters for the nominal trajectories in Sec. VI, consistent
+with the trends observed in Figs. 30 and 31. The corresponding numerical results are shown in Fig. 32 for the scenarios
+tested in Sec. VI.
+Table 12
+Target
+Mars (Odyssey-like)
+Venus (VEx-like)
+Earth, high-apoapsis
+Earth, low-apoapsis
+Titan (TSSM-like)
+
+Qualitative Ordering of Perturbation Parameters
+
+Ordering of Π’s
+Π 𝐽2 ≫ Π 𝐻 ≳ Π3b ; Π𝐷 large
+Π3b ≫ Π 𝐻 ≫ Π 𝐽2 ; Π𝐷 moderate
+Π3b ≃ Π 𝐽2 ≳ Π 𝐻 ; Π𝐷 small-moderate
+Π 𝐽2 ≫ Π3b ≫ Π 𝐻 ; Π𝐷 small-moderate
+Π3b ≳ Π 𝐽2 ≫ Π 𝐻 ; Π𝐷 moderate-large
+
+Dominant non-aerodynamic perturber
+High-order gravity harmonics
+Solar third-body tides
+Luni-solar tides
+Central-body harmonics
+Saturnian tides + drag
+
+The numerical results in Sec. VI and the summary in Table 11 can therefore be interpreted as different orderings
+of (Π3b , Π 𝐽2 , Π 𝐻 , Π𝐷 ) across bodies and orbit geometries. Mars sits in a Π 𝐽2 -dominated regime, with Π 𝐻 becoming
+more significant as the apoapsis decreases and the spacecraft spends more time near the planet. Venus occupies a
+Π3b -dominated regime with weak 𝐽2 contribution. Earth transitions from Π3b - to Π 𝐽2 -dominated behavior as apoapsis
+shrinks, while Titan combines large Π3b with large Π𝐷 . This explains why the same basic aerobraking architecture
+leads to kilometer-scale gravity-driven periapsis excursions at Mars, solar-plateau behavior at Venus, distinct high- and
+low-apoapsis regimes at Earth, and highly dynamic, tide-driven corridors at Titan.
+B. Third-Body Gravity
+Titan experiences the most pronounced third-body perturbation of the four celestial bodies analyzed in this study, due
+to the strong interaction with Saturn. Over a 24-day campaign, Titan completes approximately 1.5 revolutions around
+25
+
+10 2
+
+10 3
+
+10 3
+10 4
+
+10 4
+
+3b
+j2
+harmonic
+drag
+
+10 5
+
+10 5
+10 6
+
+10 6
+
+3b
+j2
+harmonic
+drag
+
+10 7
+0
+
+50
+
+(a)
+
+100
+
+150
+
+Passage Number
+
+200
+
+10 7
+
+250
+
+0
+
+10
+
+20
+
+30
+
+40
+
+50
+
+Passage Number
+
+(b)
+
+10 3
+
+10 4
+
+10 4
+3b
+j2
+harmonic
+drag
+
+10 5
+
+10 5
+
+10 6
+
+10 6
+0
+(c)
+
+3b
+j2
+harmonic
+drag
+
+100
+
+200
+
+300
+
+400
+
+Passage Number
+
+0
+
+200
+
+(d)
+
+400
+
+600
+
+Passage Number
+
+800
+
+1000
+
+3b
+j2
+harmonic
+drag
+
+10 2
+10 3
+10 4
+10 5
+10 6
+0
+(e)
+
+5
+
+10
+
+15
+
+20
+
+25
+
+Passage Number
+
+30
+
+35
+
+40
+
+Fig. 32 Dimensionless parameter values over time for (a) Mars, (b) Venus, (c) Earth (high-𝑟 𝑎 ), (d) Earth (low-𝑟 𝑎 ),
+(e) Titan.
+26
+
+Saturn, periodically varying the effect of Saturn’s gravity on the spacecraft. This yields the largest per-orbit changes in
+periapsis altitude and orbital plane, as shown in Figs. 30(a) and 31. The Saturn-Titan mass-to-squared-distance ratio
+is roughly 2.5 times larger than that of Sun-Venus, with values of 381.2e6 kg/km2 and 168.1e6 kg/km2 , respectively,
+resulting in the effect of Saturn’s gravity on Titan-centric aerobraking trajectories will be much more significant than the
+effect of the Sun on Venus-centric trajectories. Compared to the force of the Sun experienced when aerobraking at
+Venus, the forces seen at Titan due to Saturn are roughly 1.5 times larger in magnitude and change direction much more
+quickly, with a period of just 16 days compared to 225 days on Venus.
+The effects of the Moon on Earth-based aerobraking mirror those of Saturn, albeit on a much smaller scale. Like
+Titan, the Moon may orbit Earth many times during an aerobraking campaign, and similar trends in the periapsis altitude
+and RAAN are observed. In particular, it is observed that the periapsis altitude change in the case of aerobraking at
+Earth with a highly eccentric orbit is noticeably larger than Venus, Mars, and even the lower altitude scenario at Earth
+where third-body effects are less significant. The third-body effects of the Sun on Mars are negligible compared to the
+other perturbations. For both Titan and high-apoapsis Earth-return cases, this sensitivity to third-body phasing implies
+that campaign design must account for the timing of atmospheric passes relative to the parent body’s orbit to avoid large,
+uncontrolled periapsis variations.
+C. Central-Body Gravity
+Central-body gravitational harmonics, especially higher-order harmonics beyond the dominant 𝐽2 term, play a
+critical role primarily for Mars and, to a lesser extent, for Earth. At Mars, substantial gravitational anomalies driven by
+pronounced topographical variations, such as the Tharsis bulge, Hellas Basin, and Olympus Mons, lead to significant
+perturbations in spacecraft periapsis altitude and orbital orientation. As illustrated in Fig. 33, Mars exhibits gravitational
+anomalies as large as 1000 mGal, significantly exceeding Venus (300 mGal), and Earth (50 mGal). Consequently, for
+Mars aerobraking, spacecraft ground-track alignment with these gravitational anomalies can substantially accelerate
+apoapsis altitude decay, or conversely, necessitate additional orbit-correction maneuvers if misaligned.
+In contrast, Earth’s gravitational field, while significantly varying due to mountain ranges (e.g., Himalayas, Andes),
+is partially moderated by large oceanic basins, reducing overall gravitational harmonic perturbations compared to Mars.
+For low-altitude Earth trajectories, Earth’s 𝐽2 effect primarily drives orbital precession, with higher-order harmonics
+playing a secondary role.
+
+Fig. 33
+
+GMM-3 Mars free-air gravity anomaly map [42].
+
+Venus exhibits extremely slow rotation and minimal oblateness, resulting in a very weak 𝐽2 term. Consequently,
+gravitational harmonic perturbations are relatively minor, and solar gravitational tides dominate periapsis altitude
+dynamics. Titan, tidally locked with Saturn, similarly exhibits minimal gravitational flattening, producing only minor
+𝐽2 effects. While higher-order gravitational harmonics are poorly characterized for Titan due to limited gravitational
+mapping, any unmodeled harmonics are likely negligible compared to the dominant perturbations from Saturn’s
+gravitational influence on aerobraking campaigns.
+
+VIII. Conclusion
+Aerobraking provides a propellant-efficient method of reducing spacecraft orbital energy, but its safe execution
+depends on accurately capturing how gravitational and atmospheric perturbations reshape the trajectory over hundreds of
+
+27
+
+passages. This work introduced SpaceAGORA.jl, a fast, open-source simulator that couples GRAM-based atmospheric
+models with high-degree gravity fields and 𝑛-body dynamics. In its point-mass configuration, the tool was validated
+against Mars Odyssey and Venus Express flight data, as well as GMAT-based Earth-return propagations, reproducing
+periapsis altitude histories to within roughly 1–3 km and apoapsis altitudes to better than 1%, which is sufficient fidelity
+for detailed aerobraking campaign design.
+Using SpaceAGORA.jl, a cross-body perturbation analysis for Mars, Venus, Earth, and Titan has been carried
+out. The results were interpreted through four dimensionless perturbation parameters, Π3b , Π 𝐽2 , Π 𝐻 , and Π𝐷 , which
+compare third-body tides, oblateness, higher-order gravity, and drag to primary gravity. For the geometries studied, these
+parameters are typically O (10−4 –10−5 ) in magnitude, so it is their relative ordering that distinguishes regimes. Mars
+sits in a gravity-harmonic regime where Π 𝐽2 and Π 𝐻 dominate and kilometer-scale periapsis shifts arise when ground
+tracks repeatedly cross major mass anomalies. Venus lies in a solar-tide regime where Π3b ≫ Π 𝐽2 , Π 𝐻 and the Sun
+largely controls long-term periapsis evolution. Earth exhibits a clear transition: for high-apoapsis orbits, Π3b initially
+exceeds Π 𝐽2 and lunisolar tides drive periapsis decay until the orbit shrinks and the problem becomes 𝐽2 –dominated; for
+low-apoapsis orbits, Π 𝐽2 and Π 𝐻 dominate throughout and third-body effects are secondary. Titan combines relatively
+large Π3b and Π𝐷 , producing the largest orbit-to-orbit periapsis excursions and the strongest coupling between Saturnian
+tides and atmospheric drag among the cases considered.
+These trends have direct design implications. At Mars and low-altitude Earth, campaign performance is set mainly
+by the choice of periapsis corridor relative to gravity anomalies; at Venus and high-apoapsis Earth, by the epoch and
+plane orientation relative to the Sun (and Moon); and at Titan, by the phasing of atmospheric passes within Titan’s orbit
+about Saturn. In particular, the combination of strong third-body tides, dense atmosphere, and large natural periapsis
+fluctuations at Titan implies that future Titan aerobraking campaigns will require especially conservative thermal
+margins and dedicated characterization of the local heating environment. Simulations with a representative spacecraft
+geometry yielded peak heating rates of order 0.36 W/cm2 , consistent with staying below heritage limits but highlighting
+the need for accurate prediction of orbit-to-orbit heating variations. More broadly, the Π parameters provide a compact
+way to classify aerobraking regimes across bodies and orbit geometries, and can be used as a preliminary screening tool
+to identify when drag, gravity harmonics, or third-body tides will drive campaign design.
+
+References
+[1] Uesugi, K., “Results of the MUSES-A “HITEN” mission,” Advances in Space Research, Vol. 18, No. 11, 1996, pp. 69–72.
+https://doi.org/10.1016/0273-1177(96)00090-7, URL https://linkinghub.elsevier.com/retrieve/pii/0273117796000907.
+[2] Lyons, D. T., Beerer, J. G., Esposito, P., Johnston, M. D., and Willcockson, W. H., “Mars Global Surveyor: Aerobraking
+Mission Overview,” Journal of Spacecraft and Rockets, Vol. 36, No. 3, 1999, pp. 307–313. https://doi.org/10.2514/2.3472,
+URL https://arc.aiaa.org/doi/10.2514/2.3472.
+[3] Smith, J. C., and Bell, J. L., “2001 Mars Odyssey Aerobraking,” Journal of Spacecraft and Rockets, Vol. 42, No. 3, 2005, pp.
+406–415. https://doi.org/10.2514/1.15213, URL https://arc.aiaa.org/doi/10.2514/1.15213.
+[4] Long, S. M., You, T.-H., Halsell, C. A., Bhat, R. S., Demcak, S. W., Graat, E. J., Higa, E. S., Highsmith, D. E., Mottinger, N. A.,
+and Jah, M. K., “Mars Reconnaissance Orbiter Aerobraking Daily Operations and Collision Avoidance,” 2007.
+[5] Carpenter, A., “The Magellan aerobraking experiment - Attitude control simulation and preliminary flight results,” Guidance,
+Navigation and Control Conference, American Institute of Aeronautics and Astronautics, Monterey,CA,U.S.A., 1993.
+https://doi.org/10.2514/6.1993-3830, URL https://arc.aiaa.org/doi/10.2514/6.1993-3830.
+[6] Val Serra, S., Bonnamy, O., Witasse, O., and Camino, O., “Venus Express Aerobraking,” Proceedings of the 18th World
+Congress, Milano, Italy, 2011.
+[7] Denis, M., Schmitz, P., Sangiorgi, S., Guilanya, R., Mitschdoerfer, P., Montagna, M., Renault, H., and Kutrowski, N.,
+“Thousand Times Through the Atmosphere of Mars: Aerobraking the ExoMars Trace Gas Orbiter,” 2018 SpaceOps Conference,
+American Institute of Aeronautics and Astronautics, Marseille, France, 2018. https://doi.org/10.2514/6.2018-2713, URL
+https://arc.aiaa.org/doi/10.2514/6.2018-2713.
+[8] Demcak, S., Young, B., Graat, E., Beswick, R., Criddle, K., Ionasescu, R., Hughes, R. S., Lee, J., Haggard, M., Sealy, N., Pisano,
+W., Carpenter, J. R., Burns, R., and Jakosky, B., “Navigation Design and Operations of MAVEN Aerobraking,” AIAA Scitech
+2020 Forum, American Institute of Aeronautics and Astronautics, Orlando, FL, 2020. https://doi.org/10.2514/6.2020-0471,
+URL https://arc.aiaa.org/doi/10.2514/6.2020-0471.
+
+28
+
+[9] Strange, N., Spilker, T., Landau, D., Lam, T., Lyons, D., and Guzman, J., “Mission design for the Titan Saturn system mission
+concept,” Vol. 135, 2010. URL https://www.researchgate.net/publication/265275107_Mission_design_for_the_Titan_Saturn_
+system_mission_concept.
+[10] Braun, R. D., Powell, R. W., and Lyne, J. E., “Earth aerobraking strategies for manned return from Mars,” Journal of Spacecraft
+and Rockets, Vol. 29, No. 3, 1992, pp. 297–304. https://doi.org/10.2514/3.26351, URL https://arc.aiaa.org/doi/10.2514/3.26351.
+[11] Gloyer, P., Robinson, T., Mignogna, A., and Ahmad, Y., “Aerobraking to Lower Apogee in Earth Orbit with the Small Payload
+ORbit Transfer (SPORT™) Microsatellite Vehicle,” Salt Lake City, Utah, 2001.
+[12] Analytic Graphics, “Systems Tool Kit,” , 2025. URL https://www.ansys.com/products/missions/ansys-stk.
+[13] a.i. Solutions, “FreeFlyer,” , Sep. 2024. URL https://ai-solutions.com/freeflyer/.
+[14] Hughes, S. P., “General Mission Analysis Tool (GMAT),” , Aug. 2007. URL https://ntrs.nasa.gov/citations/20080045879, nTRS
+Author Affiliations: NASA Goddard Space Flight Center NTRS Document ID: 20080045879 NTRS Research Center: Goddard
+Space Flight Center (GSFC).
+[15] Murri, D. G., Matz, D. A., Hoffman, D. A., Berndt, J. S., Brown, S. C., and Prokop, L. E., “Improvements to the Flight Analysis
+and Simulation Tool (FAST) and Initial Development of the Genesis Flight Mechanics Simulation for Ascent, Aerocapture,
+Entry, Descent, and Landing (A2EDL) Trajectory Design,” , Apr. 2021. URL https://ntrs.nasa.gov/api/citations/20210014622/
+downloads/20210014622.pdf.
+[16] National Aeronautics and Space Administration, “Trick Simulation Environment,” , Nov. 2024. URL https://nasa.github.io/trick/.
+[17] Jet Propulsion Laboratory, DARTS Lab, “DARTS Shell (Dshell),” , 2018. URL https://dartslab.jpl.nasa.gov/DARTS/index.php.
+[18] maisonobe, Cazabonne, B., Serra, R., Ward, E., Journot, M., Dinot, S., Bonnefille, G., Neidhart, T., G, H., Rutten, M.,
+Jonglez, C., gaetanpierre0, yjeand, Hernanz, J., lirw1984, Goetz, A., alugan, Guiuux, jvalet, Christensen, L. N., Fossà, A.,
+Ferrero, A., gabb5, liscju, Schank, C., Joe, Mills, T., plan3d, Yadav, V., and Iyer, S., “CS-SI/Orekit: 13.0.2,” , Apr. 2025.
+https://doi.org/10.5281/ZENODO.15311160, URL https://zenodo.org/doi/10.5281/zenodo.15311160.
+[19] Kenneally, P. W., Piggott, S., and Schaub, H., “Basilisk: A Flexible, Scalable and Modular Astrodynamics Simulation
+Framework,” Journal of Aerospace Information Systems, Vol. 17, No. 9, 2020, pp. 496–507. https://doi.org/10.2514/1.I010762,
+URL https://arc.aiaa.org/doi/10.2514/1.I010762.
+[20] Falcone, G., and Putnam, Z. R., “Design and Development of an Aerobraking Trajectory Simulation Tool,” AIAA Scitech 2021
+Forum, American Institute of Aeronautics and Astronautics, VIRTUAL EVENT, 2021. https://doi.org/10.2514/6.2021-1065,
+URL https://arc.aiaa.org/doi/10.2514/6.2021-1065.
+[21] Falcone, G., and Putnam, Z. R., “Energy Depletion Guidance for Aerobraking Atmospheric Passes,” Journal of Guidance,
+Control, and Dynamics, Vol. 45, No. 4, 2022, pp. 651–668. https://doi.org/10.2514/1.G006171, URL https://arc.aiaa.org/doi/10.
+2514/1.G006171.
+[22] Falcone, G., and Putnam, Z. R., “Autonomous Decision-Making for Aerobraking via Parallel Randomized Deep Reinforcement
+Learning,” IEEE Transactions on Aerospace and Electronic Systems, Vol. 59, No. 3, 2023, pp. 3055–3070. https://doi.org/10.
+1109/TAES.2022.3221697, URL https://ieeexplore.ieee.org/document/9946445/.
+[23] Simha, N., Yu, E. D., and Falcone, G., “Generalizing Energy Depletion Guidance for Mars, Venus, Earth, and Titan,” 2026.
+[24] Yu, E. D., Cutler, J., and Falcone, G., “Verification of SpaceAGORA.jl 6-DoF Dynamics Using University of Michigan
+SmallSats Telemetry,” Big Sky, MT, USA, 2026.
+[25] Vallado, D., and McClain, W., Fundamentals of Astrodynamics and Applications, Fundamentals of Astrodynamics and
+Applications, Microcosm Press, 2001. URL https://books.google.com/books?id=OCkGmwEACAAJ.
+[26] Justh, H., “Global Reference Atmosphere Model (GRAM) Suite,” , Oct. 2023. URL https://software.nasa.gov/software/MFS33888-1.
+[27] Damiani, S., Garcia, J. M., Guilanyà, R., Muñoz, P., and Müller, M., “FLIGHT DYNAMICS OPERATIONS FOR VENUS
+EXPRESS AEROBRAKING CAMPAIGN: A SUCCESSFUL END OF LIFE EXPERIMENT,” Munich, Germany, 2015. URL
+https://issfd.org/2015/files/downloads/papers/097_Damiani.pdf.
+
+29
+
+[28] Acton, C. H., “Ancillary data services of NASA’s Navigation and Ancillary Information Facility,” Planetary and Space Science,
+Vol. 44, No. 1, 1996, pp. 65–70. https://doi.org/10.1016/0032-0633(95)00107-7, URL https://linkinghub.elsevier.com/retrieve/
+pii/0032063395001077.
+[29] Picone, J. M., Hedin, A. E., Drob, D. P., and Aikin, A. C., “NRLMSISE-00 empirical model of the atmosphere: Statistical
+comparisons and scientific issues,” Journal of Geophysical Research: Space Physics, Vol. 107, No. A12, 2002. https:
+//doi.org/10.1029/2002JA009430, URL https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2002JA009430.
+[30] National Oceanic and Atmospheric Administration, “NOAA Whole Atmosphere Model - Ionosphere Plasmasphere Electrodynamics (WAM-IPE) Forcast System (WFS),” , 2025. URL https://registry.opendata.aws/noaa-nws-wam-ipe.
+[31] Pines, S., “Uniform Representation of the Gravitational Potential and its Derivatives,” AIAA Journal, Vol. 11, No. 11, 1973, pp.
+1508–1511. https://doi.org/10.2514/3.50619, URL https://arc.aiaa.org/doi/10.2514/3.50619.
+[32] Martin, J., and Schaub, H., “GPGPU Implementation of PInes’ Spherical Harmonic Gravity Model,” Astrodynamics 2020; Part
+1, 2021. URL https://hanspeterschaub.info/Papers/Martin2020a.pdf.
+[33] Konopliv, A. S., and Sjogren, W. L., “The JPL Mars Gravity Field, Mars50c, Based Upon Viking and Mariner 9 Doppler
+Tracking Data,” , Feb. 1995. URL https://ntrs.nasa.gov/api/citations/19950023923/downloads/19950023923.pdf.
+[34] Konopliv, A., Banerdt, W., and Sjogren, W., “Venus Gravity: 180th Degree and Order Model,” Icarus, Vol. 139, No. 1, 1999,
+pp. 3–18. https://doi.org/10.1006/icar.1999.6086, URL https://linkinghub.elsevier.com/retrieve/pii/S0019103599960864.
+[35] Lemoine, F., Kenyon, S., Pavlis, N., Chinn, D., Cox, C., Klosko, S., Luthcke, S., Torrence, M., Wang, Y., Williamson, R., Pavlis,
+E., Rapp, R., and Olson, T., “The Development of the Joint NASA GSFC and NIMA Geopotential Model EGM96,” , Jul. 1998.
+URL https://ntrs.nasa.gov/api/citations/19980218814/downloads/19980218814.pdf.
+[36] Durante, D., Hemingway, D., Racioppa, P., Iess, L., and Stevenson, D., “Titan’s gravity field and interior structure after
+Cassini,” Icarus, Vol. 326, 2019, pp. 123–132. https://doi.org/10.1016/j.icarus.2019.03.003, URL https://linkinghub.elsevier.
+com/retrieve/pii/S0019103518307267.
+[37] Reh, K. R., “Titan Saturn System Mission,” 2009 IEEE Aerospace conference, IEEE, Big Sky, MT, USA, 2009, pp. 1–8.
+https://doi.org/10.1109/AERO.2009.4839316, URL http://ieeexplore.ieee.org/document/4839316/.
+[38] Meginnis, I., Putnam, Z., Clark, I., Braun, R., and Barton, G., “Guided Entry Performance of Low Ballistic Coefficient Vehicles
+at Mars,” Big Sky, MT, USA, 2012. URL https://ssdl1.gatech.edu/sites/default/files/ssdl-files/papers/conferencePapers/IEEE2012-1161.pdf.
+[39] Daniel Murri, “Development of Autonomous Aerobraking: Phase 2,” Tech. rep., NASA, Aug. 2013. URL https://ntrs.nasa.gov/
+api/citations/20140001125/downloads/20140001125.pdf.
+[40] Anderson, J. D., and Anderson, J. D., Hypersonic and high temperature gas dynamics, 2nd ed., AIAA education series,
+American Institute of Aeronautics and Astronautics, Reston, Va, 2006.
+[41] Kaula, W. M., Theory of satellite geodesy: applications of satellites to geodesy, dover ed ed., Dover Publications, Mineola, N.Y,
+2000.
+[42] Genova, A., Goossens, S., Lemoine, F. G., Mazarico, E., Neumann, G. A., Smith, D. E., and Zuber, M. T., “Seasonal
+and static gravity field of Mars from MGS, Mars Odyssey and MRO radio science,” Icarus, Vol. 272, 2016, pp. 228–245.
+https://doi.org/10.1016/j.icarus.2016.02.050, URL https://linkinghub.elsevier.com/retrieve/pii/S0019103516001287.
+
+30
+
+

@@ -90,7 +90,10 @@ function _initialize_density_model_instances!(p)
     empty!(instances)
 
     density_model = p.args.environment_model.density_model
-    if !_gram_per_sat_instances_enabled() || !(density_model isa SimulationModel.EnvironmentModels.GRAMAtmosphereModel)
+    if !_gram_per_sat_instances_enabled() || !(
+        density_model isa SimulationModel.EnvironmentModels.GRAMAtmosphereModel ||
+        density_model isa SimulationModel.EnvironmentModels.GRAMAtmosphereModelSurrugate
+    )
         return nothing
     end
 

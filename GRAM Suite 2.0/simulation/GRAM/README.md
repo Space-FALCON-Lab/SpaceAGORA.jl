@@ -35,3 +35,40 @@ Windows CMD:
 - Windows uses `mingw32-make` (or `make`) from MSYS2/MinGW.
 - Scripts call `Build/setup_cspice.sh` automatically.
 - On Windows, bundled `common/cspice/lib/cspice_mingw64.a` is used.
+
+## Offline Atmosphere Products
+
+Use `build_offline_static_grids.jl` to generate offline GRAM payloads (`*.jls`) for SpaceAGORA.
+
+Default surrogate profile (`p175_mid`, recommended):
+
+```bash
+julia "GRAM Suite 2.0/simulation/GRAM/build_offline_static_grids.jl" \
+  --planets=all \
+  --out-dir="GRAM Suite 2.0/simulation/GRAM/static_grids/p175_mid_all_planets" \
+  --surrogate-only=true \
+  --surrogate-source=direct \
+  --surrogate-lat-step-deg=1.75 \
+  --surrogate-lon-step-deg=1.75 \
+  --alt-min-km=0 \
+  --alt-max-km=300
+```
+
+Earth low-altitude caveat:
+
+- Earth GRAM can assert in some MERRA2 conditions below ~5 km.
+- If that occurs, build Earth separately at `5-300 km`:
+
+```bash
+julia "GRAM Suite 2.0/simulation/GRAM/build_offline_static_grids.jl" \
+  --planets=earth \
+  --out-dir="GRAM Suite 2.0/simulation/GRAM/static_grids/p175_mid_all_planets" \
+  --surrogate-only=true \
+  --surrogate-source=direct \
+  --surrogate-lat-step-deg=1.75 \
+  --surrogate-lon-step-deg=1.75 \
+  --alt-min-km=5 \
+  --alt-max-km=300 \
+  --month=1 \
+  --earth-merra2-path="GRAM Suite 2.0/Earth/data/MERRA2data"
+```

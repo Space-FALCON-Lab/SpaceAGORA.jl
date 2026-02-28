@@ -1,0 +1,30 @@
+created_at_utc = "2026-02-28T16:35:27.823"
+format = "spaceagora_gram_offline_products_v2"
+wind = "on"
+monte_carlo = "off"
+dust = "off"
+elapsed_time_s = 0.0
+full_grid_nalt = 81
+full_grid_nlat = 73
+full_grid_nlon = 145
+alt_min_km = 5.0
+alt_max_km = 300.0
+planets = ["earth"]
+build_grid = false
+build_surrogate = true
+surrogate_only = true
+surrogate_source = "direct"
+surrogate_precision = "Float32"
+surrogate_lat_step_deg = 1.75
+surrogate_lon_step_deg = 1.75
+
+[[planet]]
+name = "earth"
+status = "ok"
+grid_status = "skipped"
+surrogate_status = "ok"
+surrogate_file = "earth_surrogate.jls"
+surrogate_elapsed_s = 178.39328166700002
+surrogate_source = "direct"
+surrogate_alt_bands_km = "5:100:1,100:200:2,200:300:4"
+

@@ -237,11 +237,13 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
         pos_primary_k_all[k] = model.planet.J2000_to_pci * pos_primary_body * 1e3
     end
 
-    use_threads = _multibody_use_threads(n_bodies; heavy_work=true)
+    decision = _multibody_thread_decision(n_bodies; heavy_work=true)
+    use_threads = decision.use_threads
+    started_ns = time_ns()
     if use_threads
         n_threads = _threadid_capacity()
         thread_force = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_threads]
-        Threads.@threads for k in eachindex(pos_primary_k_all)
+        ParallelPolicy.threaded_foreach(n_bodies, decision.allotment) do k
             tid = Threads.threadid()
             pos_primary_k = pos_primary_k_all[k]
             pos_spacecraft_k = pos_primary_k - pos_ii
@@ -263,6 +265,13 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
             )
         end
     end
+    ParallelPolicy.record_policy_observation!(
+        :multibody;
+        mode=decision.mode,
+        num_items=n_bodies,
+        use_threads=use_threads,
+        elapsed_ns=(time_ns() - started_ns)
+    )
 
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end

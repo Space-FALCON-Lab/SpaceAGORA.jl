@@ -6,6 +6,7 @@ module DynamicEffectors
 
     using ..ConfigTypes: ODEParams # Get the Planet struct
     using ..AbstractTypes: AbstractPlanet, AbstractForceTorqueModel, AbstractThrusterModel, AbstractGuidanceModel
+    using ..ParallelPolicy
     using ..LinearAlgebra       # Get deps from parent
     using ..StaticArrays        # Get deps from parent
     using ..Kinematics

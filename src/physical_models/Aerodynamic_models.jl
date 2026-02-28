@@ -6,64 +6,48 @@ using SpecialFunctions
 const sqrt_π = sqrt(π)
 const inv_sqrt_π = 1 / sqrt(π)
 
-@inline function _parse_bool_env(name::String, default::Bool)::Bool
-    raw = lowercase(strip(get(ENV, name, default ? "1" : "0")))
-    if raw in ("1", "true", "yes", "on")
-        return true
-    elseif raw in ("0", "false", "no", "off")
-        return false
-    end
-    throw(ArgumentError("Invalid $name='$raw'. Use one of: 1/0, true/false, yes/no, on/off."))
-end
+@inline _parse_bool_env(name::String, default::Bool)::Bool = ParallelPolicy.parse_bool_env(name, default)
 
 @inline function _multibody_parallel_mode()::Symbol
-    mode = lowercase(strip(get(ENV, "SPACEAGORA_MULTIBODY_PARALLEL", "auto")))
-    if mode in ("off", "none", "serial", "0", "false", "no")
-        return :off
-    elseif mode in ("on", "thread", "threads", "1", "true", "yes")
-        return :on
-    elseif mode == "auto"
-        return :auto
-    end
-    throw(ArgumentError("Unsupported SPACEAGORA_MULTIBODY_PARALLEL='$mode'. Use one of: off, auto, on."))
+    return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_MULTIBODY_PARALLEL")
 end
 
 @inline function _multibody_thread_threshold()::Int
-    raw = strip(get(ENV, "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD", "8"))
-    threshold = try
-        parse(Int, raw)
-    catch
-        throw(ArgumentError("SPACEAGORA_MULTIBODY_THREAD_THRESHOLD must be an integer, got '$raw'"))
-    end
-    return max(1, threshold)
+    return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_MULTIBODY_THREAD_THRESHOLD", 2)
+end
+
+@inline function _multibody_max_threads()::Int
+    return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_MULTIBODY_MAX_THREADS", 4)
 end
 
 @inline function _multibody_outer_parallel_hint()::Bool
     # Explicit hint for disabling intra-satellite threading under outer parallel execution.
-    return _parse_bool_env("SPACEAGORA_OUTER_PARALLEL_ACTIVE", false)
+    return ParallelPolicy.outer_parallel_active()
 end
 
 @inline function _multibody_use_threads(num_items::Int; heavy_work::Bool=true)::Bool
-    if Threads.nthreads() <= 1 || num_items <= 1
-        return false
-    end
+    return _multibody_thread_decision(num_items; heavy_work=heavy_work).use_threads
+end
+
+@inline function _multibody_thread_decision(num_items::Int; heavy_work::Bool=true)
     mode = _multibody_parallel_mode()
-    mode == :off && return false
-
-    if mode == :on
-        return true
-    end
-
-    if _multibody_outer_parallel_hint() &&
-       !_parse_bool_env("SPACEAGORA_MULTIBODY_PARALLEL_ALLOW_WITH_OUTER", false)
-        return false
-    end
-
-    if _parse_bool_env("SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY", true) && !heavy_work
-        return false
-    end
-
-    return num_items >= _multibody_thread_threshold()
+    threshold = _multibody_thread_threshold()
+    outer_active = _multibody_outer_parallel_hint()
+    allow_with_outer = _parse_bool_env("SPACEAGORA_MULTIBODY_PARALLEL_ALLOW_WITH_OUTER", false)
+    heavy_only = _parse_bool_env("SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY", true)
+    policy = ParallelPolicy.thread_policy_decision(
+        num_items;
+        mode=mode,
+        threshold=threshold,
+        heavy_work=heavy_work,
+        heavy_only=heavy_only,
+        outer_active=outer_active,
+        allow_with_outer=allow_with_outer,
+        source=:multibody
+    )
+    allotment = min(policy.allotment, _multibody_max_threads())
+    use_threads = policy.use_threads && allotment > 1
+    return (use_threads=use_threads, allotment=use_threads ? allotment : 1, mode=mode)
 end
 
 @inline function _threadid_capacity()::Int
@@ -292,7 +276,8 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     CL, CD = 0.0, 0.0 # Initialize aerodynamic coefficients
     total_area = 0.0 # Initialize total area
     θ_body = acos(clamp(vel_pp_rw[1] * vel_pp_rw_inv_mag, -1.0, 1.0))
-    use_threads = _multibody_use_threads(length(bodies); heavy_work=true)
+    decision = _multibody_thread_decision(length(bodies); heavy_work=true)
+    use_threads = decision.use_threads
 
     zero_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
 
@@ -345,6 +330,7 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     # Determine angle of attack (α) and sideslip angle (β)
     # Vehicle Aerodynamic Forces
     # CL and CD
+    started_ns = time_ns()
     if use_threads
         n_threads = _threadid_capacity()
         thread_force = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_threads]
@@ -352,7 +338,7 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
         thread_cd = zeros(Float64, n_threads)
         thread_area = zeros(Float64, n_threads)
 
-        Threads.@threads for idx in eachindex(bodies)
+        ParallelPolicy.threaded_foreach(length(bodies), decision.allotment) do idx
             tid = Threads.threadid()
             force_body, cl_area, cd_area, area = compute_link_wrench!(idx)
             thread_force[tid] .+= force_body
@@ -376,6 +362,13 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
             total_area += area
         end
     end
+    ParallelPolicy.record_policy_observation!(
+        :multibody;
+        mode=decision.mode,
+        num_items=length(bodies),
+        use_threads=use_threads,
+        elapsed_ns=(time_ns() - started_ns)
+    )
 
     # cnf.drag_pp = drag_pp
     # cnf.lift_pp = lift_pp

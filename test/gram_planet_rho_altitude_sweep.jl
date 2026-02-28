@@ -10,6 +10,10 @@ using DataFrames
 # Reuse GRAM initialization/config + adaptive altitude helpers.
 include(BUILDER_SCRIPT)
 
+const PLANET_ALT_CAP_KM = Dict(
+    "jupiter" => 1000.0
+)
+
 function parse_cli_sweep(args::Vector{String})
     opts = Dict{String, String}()
     i = 1
@@ -163,9 +167,10 @@ function run_sweep()
 
     planet = lowercase(strip(get(opts, "planet", "mars")))
     planet in SUPPORTED_PLANETS || error("Unsupported --planet=$planet. Supported: $(SUPPORTED_PLANETS)")
+    planet_alt_cap_km = haskey(opts, "planet-cap-km") ? parse_float(opts["planet-cap-km"]) : get(PLANET_ALT_CAP_KM, planet, Inf)
 
-    alt_max_list = parse_float_list(get(opts, "alt-max-list-km", "120,200,300,450,600"))
-    max_step_list = parse_float_list(get(opts, "max-step-list-km", "4,6,8,10,12"))
+    alt_max_list_raw = parse_float_list(get(opts, "alt-max-list-km", "120,200,300,450,600"))
+    max_step_list = parse_float_list(get(opts, "max-step-list-km", "4,6,8,10,12,16,20,24,30,40,50,60,80,100,125,150,175,200,225,250"))
     min_step_km = parse_float(get(opts, "min-step-km", "0.5"))
 
     profile_alt_step_km = parse_float(get(opts, "profile-alt-step-km", "2.0"))
@@ -182,9 +187,20 @@ function run_sweep()
     if !haskey(opts, "alt-min-km") && planet == "earth"
         cfg = merge(cfg, (alt_min_km=5.0,))
     end
+    if isfinite(planet_alt_cap_km)
+        cfg = merge(cfg, (alt_max_km=min(cfg.alt_max_km, planet_alt_cap_km),))
+    end
+
+    alt_max_list = isfinite(planet_alt_cap_km) ? min.(alt_max_list_raw, planet_alt_cap_km) : alt_max_list_raw
+    alt_max_list = sort(unique(filter(a -> a > cfg.alt_min_km + 1e-9, alt_max_list)))
+    isempty(alt_max_list) && error("No valid --alt-max-list-km values after applying constraints.")
 
     max_requested_alt = maximum(alt_max_list)
-    cfg = merge(cfg, (alt_max_km=max(cfg.alt_max_km, max_requested_alt),))
+    cfg_alt_max_km = max(cfg.alt_max_km, max_requested_alt)
+    if isfinite(planet_alt_cap_km)
+        cfg_alt_max_km = min(cfg_alt_max_km, planet_alt_cap_km)
+    end
+    cfg = merge(cfg, (alt_max_km=cfg_alt_max_km,))
 
     libext = Sys.iswindows() ? "dll" : (Sys.isapple() ? "dylib" : "so")
     libpath = get(opts, "lib", joinpath(GRAM_ROOT, "Build", "lib", "libGRAM.$libext"))
@@ -207,11 +223,14 @@ function run_sweep()
     )
 
     idx_suggest = findlast(profile.p95_rho .>= rho_floor_kgm3)
-    suggested_alt_km = idx_suggest === nothing ? cfg.alt_min_km : profile.alt_km[idx_suggest]
+    suggested_alt_raw_km = idx_suggest === nothing ? cfg.alt_min_km : profile.alt_km[idx_suggest]
+    suggested_alt_km = isfinite(planet_alt_cap_km) ? min(suggested_alt_raw_km, planet_alt_cap_km) : suggested_alt_raw_km
 
     rows = NamedTuple[]
     for alt_max in sort(unique(alt_max_list))
-        for max_step in sort(unique(max_step_list))
+        max_allowed_step_km = max(min_step_km, alt_max)
+        max_step_candidates = sort(unique(min.(max_step_list, max_allowed_step_km)))
+        for max_step in max_step_candidates
             max_step >= min_step_km || continue
             metrics = evaluate_adaptive_combo(
                 profile.alt_km,
@@ -224,6 +243,8 @@ function run_sweep()
                 planet=planet,
                 rho_floor_kgm3=rho_floor_kgm3,
                 rho_rel_p95_limit=rel_p95_limit,
+                planet_alt_cap_km=planet_alt_cap_km,
+                suggested_alt_raw_km=suggested_alt_raw_km,
                 suggested_alt_km=suggested_alt_km,
                 pass_rel_p95=metrics.rho_rel_p95 <= rel_p95_limit
             )))
@@ -254,6 +275,10 @@ function run_sweep()
 
     println("\n\nDensity profile suggestion:")
     println(@sprintf("  rho_floor = %.3e kg/m^3", rho_floor_kgm3))
+    if isfinite(planet_alt_cap_km)
+        println(@sprintf("  planet_alt_cap_km = %.2f", planet_alt_cap_km))
+        println(@sprintf("  suggested_alt_raw_km = %.2f", suggested_alt_raw_km))
+    end
     println(@sprintf("  suggested_alt_km = %.2f", suggested_alt_km))
 
     if rec !== nothing

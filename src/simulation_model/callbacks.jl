@@ -281,11 +281,11 @@ end
 @inline density_model_threadsafe(::EnvironmentModels.PolynomialFitAtmosphereModel)::Bool = true
 # GRAM C-wrapper calls are serialized inside getDensity via SimulationModel.GRAM_LOCK.
 @inline density_model_threadsafe(::EnvironmentModels.GRAMAtmosphereModel)::Bool = true
-@inline density_model_threadsafe(::EnvironmentModels.GRAMAtmosphereModelSurrugate)::Bool = true
+@inline density_model_threadsafe(::EnvironmentModels.GRAMAtmosphereModelSurrogate)::Bool = true
 
 @inline _is_gram_density_model(model)::Bool =
     model isa EnvironmentModels.GRAMAtmosphereModel ||
-    model isa EnvironmentModels.GRAMAtmosphereModelSurrugate
+    model isa EnvironmentModels.GRAMAtmosphereModelSurrogate
 
 @inline function _density_callback_thread_decision(args::SimulationConfiguration, num_sats::Int)
     mode = _density_callback_parallel_mode()

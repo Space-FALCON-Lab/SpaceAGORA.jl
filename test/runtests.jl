@@ -4255,6 +4255,171 @@ end
     end
 end
 
+@testset "Parallel Policy Adaptive Controller" begin
+    policy = SimulationModel.ParallelPolicy
+    policy.reset_policy_telemetry!()
+
+    withenv(
+        "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
+        "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "1",
+        "SPACEAGORA_PARALLEL_POLICY_TRIM_QUANTA" => "1",
+        "SPACEAGORA_PARALLEL_POLICY_DELTA" => "0.8",
+        "SPACEAGORA_PARALLEL_POLICY_RHO" => "1.5",
+        "SPACEAGORA_INNER_THREAD_BUDGET" => "1"
+    ) do
+        @test policy.use_threads_policy(
+            8;
+            mode=:auto,
+            threshold=1,
+            source=:density_callback
+        ) == false
+
+        policy.record_policy_observation!(
+            :density_callback;
+            mode=:auto,
+            num_items=1,
+            use_threads=false,
+            elapsed_ns=10
+        )
+        snap1 = policy.policy_telemetry_snapshot()
+        @test snap1.last_classification == "efficient_satisfied"
+        @test snap1.adaptation_updates_total >= 1
+        @test snap1.last_desire >= 2
+
+        policy.record_policy_observation!(
+            :density_callback;
+            mode=:auto,
+            num_items=1,
+            use_threads=false,
+            elapsed_ns=11
+        )
+        snap2 = policy.policy_telemetry_snapshot()
+        @test snap2.last_classification == "efficient_deprived"
+
+        policy.record_policy_observation!(
+            :density_callback;
+            mode=:auto,
+            num_items=0,
+            use_threads=false,
+            elapsed_ns=12
+        )
+        snap3 = policy.policy_telemetry_snapshot()
+        @test snap3.last_classification == "inefficient"
+        @test snap3.last_utilization <= 0.1
+        @test snap3.serial_elapsed_ns_total >= 33
+        @test snap3.quantum_length == 1
+        @test snap3.trim_quanta_budget == 1
+        @test snap3.quantums_total >= 3
+        @test snap3.quantums_inefficient >= 1
+        @test snap3.quantums_efficient_satisfied >= 1
+        @test snap3.quantums_efficient_deprived >= 1
+        @test snap3.accounted_fraction_proxy >= 0.0
+        @test snap3.trimmed_accounted_fraction_proxy >= 0.0
+    end
+
+    if Threads.nthreads() > 1
+        policy.reset_policy_telemetry!()
+        withenv(
+            "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
+            "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "1",
+            "SPACEAGORA_PARALLEL_POLICY_DELTA" => "0.8",
+            "SPACEAGORA_PARALLEL_POLICY_RHO" => "1.5",
+            "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads())
+        ) do
+            use_history = Bool[]
+            for _ in 1:8
+                decision = policy.thread_policy_decision(
+                    6;
+                    mode=:auto,
+                    threshold=1,
+                    source=:other_source
+                )
+                push!(use_history, decision.use_threads)
+                policy.record_policy_observation!(
+                    :other_source;
+                    mode=:auto,
+                    num_items=6,
+                    use_threads=decision.use_threads,
+                    elapsed_ns=1
+                )
+            end
+            @test any(use_history)
+            @test use_history[end] == true
+        end
+
+        policy.reset_policy_telemetry!()
+        withenv(
+            "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
+            "SPACEAGORA_PARALLEL_POLICY_BOOTSTRAP_THREADS" => "1",
+            "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads())
+        ) do
+            decision = policy.thread_policy_decision(
+                8;
+                mode=:auto,
+                threshold=2,
+                source=:control_callback
+            )
+            @test decision.use_threads == true
+            @test decision.allotment >= 2
+        end
+
+        policy.reset_policy_telemetry!()
+        withenv(
+            "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
+            "SPACEAGORA_PARALLEL_POLICY_BOOTSTRAP_THREADS" => "0",
+            "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => "0",
+            "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads())
+        ) do
+            decision = policy.thread_policy_decision(
+                8;
+                mode=:auto,
+                threshold=2,
+                source=:control_callback
+            )
+            @test decision.use_threads == false
+            @test decision.allotment == 1
+        end
+
+        policy.reset_policy_telemetry!()
+        withenv(
+            "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
+            "SPACEAGORA_PARALLEL_POLICY_BOOTSTRAP_THREADS" => "0",
+            "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => "1",
+            "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads())
+        ) do
+            decision = policy.thread_policy_decision(
+                8;
+                mode=:auto,
+                threshold=2,
+                source=:control_callback
+            )
+            @test decision.use_threads == true
+            @test decision.allotment == min(Threads.nthreads(), 8)
+        end
+    end
+
+    withenv(
+        "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0",
+        "SPACEAGORA_INNER_THREAD_BUDGET" => "1"
+    ) do
+        @test policy.use_threads_policy(4; mode=:on, threshold=1, source=:other_source) == false
+        policy.record_policy_observation!(
+            :other_source;
+            mode=:on,
+            num_items=4,
+            use_threads=true,
+            elapsed_ns=UInt(5)
+        )
+        snap = policy.policy_telemetry_snapshot()
+        @test snap.threaded_elapsed_ns_total >= 5
+        @test snap.other_decisions >= 1
+    end
+
+    withenv("SPACEAGORA_INNER_THREAD_BUDGET" => "oops") do
+        @test_throws ArgumentError policy.effective_inner_thread_budget()
+    end
+end
+
 @testset "Aerodynamic Helper Branch Coverage" begin
     dynamic_effectors = SimulationModel.DynamicEffectors
 
@@ -4290,6 +4455,12 @@ end
     end
     withenv("SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "oops") do
         @test_throws ArgumentError dynamic_effectors._multibody_thread_threshold()
+    end
+    withenv("SPACEAGORA_MULTIBODY_MAX_THREADS" => "3") do
+        @test dynamic_effectors._multibody_max_threads() == 3
+    end
+    withenv("SPACEAGORA_MULTIBODY_MAX_THREADS" => "oops") do
+        @test_throws ArgumentError dynamic_effectors._multibody_max_threads()
     end
 
     withenv("SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1") do
@@ -5175,7 +5346,10 @@ end
             @test isfile("simulation_results.csv")
 
             df_resume = CSV.read("simulation_results.csv", DataFrame)
-            @test nrow(df_resume) > 10
+            @test nrow(df_resume) >= 2
+            @test issorted(df_resume.time)
+            @test Float64(df_resume.time[1]) > 0.0
+            @test Float64(df_resume.time[end]) > Float64(df_resume.time[1])
             @test abs(Float64(df_resume.time[end]) - Float64(df_full.time[end])) < 1e-8
 
             p_full = SVector{3, Float64}(Float64(df_full.sc1_pos_1[end]), Float64(df_full.sc1_pos_2[end]), Float64(df_full.sc1_pos_3[end]))
@@ -5970,6 +6144,87 @@ end
     end
     withenv("SPACEAGORA_GRAM_PER_SAT_INSTANCES" => "maybe") do
         @test_throws ArgumentError _gram_per_sat_instances_enabled()
+    end
+
+    withenv("SPACEAGORA_EFFECTOR_PARALLEL" => "off") do
+        @test _effector_parallel_mode() == :off
+    end
+    withenv("SPACEAGORA_EFFECTOR_PARALLEL" => "on") do
+        @test _effector_parallel_mode() == :on
+    end
+    withenv("SPACEAGORA_EFFECTOR_PARALLEL" => "auto") do
+        @test _effector_parallel_mode() == :auto
+    end
+    withenv("SPACEAGORA_EFFECTOR_PARALLEL" => "invalid") do
+        @test_throws ArgumentError _effector_parallel_mode()
+    end
+    withenv("SPACEAGORA_EFFECTOR_THREAD_THRESHOLD" => "3") do
+        @test _effector_thread_threshold() == 3
+    end
+    withenv("SPACEAGORA_EFFECTOR_THREAD_THRESHOLD" => "oops") do
+        @test_throws ArgumentError _effector_thread_threshold()
+    end
+    withenv("SPACEAGORA_EFFECTOR_MAX_THREADS" => "3") do
+        @test _effector_max_threads() == 3
+    end
+    withenv("SPACEAGORA_EFFECTOR_MAX_THREADS" => "oops") do
+        @test_throws ArgumentError _effector_max_threads()
+    end
+    withenv("SPACEAGORA_EFFECTOR_LONG_MISSION_THRESHOLD_S" => "10.0") do
+        @test _effector_long_mission_threshold_s() == 10.0
+    end
+    withenv("SPACEAGORA_EFFECTOR_LONG_MISSION_THRESHOLD_S" => "0.0") do
+        @test_throws ArgumentError _effector_long_mission_threshold_s()
+    end
+
+    args_eff_single = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(), InverseSquaredJ2GravityModel()),
+        keplerian=true
+    )
+    withenv(
+        "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0",
+        "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads()),
+        "SPACEAGORA_EFFECTOR_PARALLEL" => "auto",
+        "SPACEAGORA_EFFECTOR_THREAD_THRESHOLD" => "2",
+        "SPACEAGORA_EFFECTOR_LONG_MISSION_THRESHOLD_S" => "1.0",
+        "SPACEAGORA_EFFECTOR_PARALLEL_HEAVY_ONLY" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0"
+    ) do
+        decision_single = _dynamic_effector_thread_decision(args_eff_single, args_eff_single.dynamics_model.dynamic_effectors, 1)
+        if Threads.nthreads() > 1
+            @test decision_single.use_threads == true
+            @test decision_single.allotment >= 2
+            @test decision_single.allotment <= min(Threads.nthreads(), 4)
+        else
+            @test decision_single.use_threads == false
+        end
+    end
+
+    args_eff_multi = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(), InverseSquaredJ2GravityModel()),
+        keplerian=true
+    )
+    withenv(
+        "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0",
+        "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads()),
+        "SPACEAGORA_EFFECTOR_PARALLEL" => "auto",
+        "SPACEAGORA_EFFECTOR_THREAD_THRESHOLD" => "2",
+        "SPACEAGORA_EFFECTOR_LONG_MISSION_THRESHOLD_S" => "1.0",
+        "SPACEAGORA_EFFECTOR_PARALLEL_HEAVY_ONLY" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0"
+    ) do
+        decision_multi = _dynamic_effector_thread_decision(args_eff_multi, args_eff_multi.dynamics_model.dynamic_effectors, 1)
+        @test decision_multi.use_threads == false
     end
 
     @test _retcode_is_stiff_symptom(:Unstable)

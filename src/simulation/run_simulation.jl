@@ -85,6 +85,110 @@ end
     ))
 end
 
+@inline function _parse_positive_float_env(name::String, default::Float64)::Float64
+    raw = strip(get(ENV, name, string(default)))
+    parsed = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("$name must be a floating-point value, got '$raw'"))
+    end
+    parsed > 0.0 || throw(ArgumentError("$name must be > 0.0, got $parsed"))
+    return parsed
+end
+
+@inline function _effector_parallel_mode()::Symbol
+    return SimulationModel.ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_EFFECTOR_PARALLEL"; default="auto")
+end
+
+@inline function _effector_thread_threshold()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_THREAD_THRESHOLD", 2)
+end
+
+@inline function _effector_max_threads()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_MAX_THREADS", 4)
+end
+
+@inline function _effector_outer_parallel_hint()::Bool
+    return SimulationModel.ParallelPolicy.outer_parallel_active()
+end
+
+@inline function _effector_allow_with_outer()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_EFFECTOR_PARALLEL_ALLOW_WITH_OUTER", false)
+end
+
+@inline function _effector_heavy_only()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_EFFECTOR_PARALLEL_HEAVY_ONLY", true)
+end
+
+@inline function _effector_long_mission_threshold_s()::Float64
+    return _parse_positive_float_env("SPACEAGORA_EFFECTOR_LONG_MISSION_THRESHOLD_S", 5400.0)
+end
+
+@inline function _effector_long_orbit_threshold()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_LONG_ORBIT_THRESHOLD", 8)
+end
+
+@inline function _dynamic_effector_threadsafe(::Any)::Bool
+    return false
+end
+@inline _dynamic_effector_threadsafe(::SimulationModel.InverseSquaredGravityModel)::Bool = true
+@inline _dynamic_effector_threadsafe(::SimulationModel.InverseSquaredJ2GravityModel)::Bool = true
+@inline _dynamic_effector_threadsafe(::SimulationModel.NBodyGravityModel)::Bool = true
+@inline _dynamic_effector_threadsafe(::SimulationModel.GravitationalHarmonicsModel)::Bool = true
+@inline _dynamic_effector_threadsafe(::SimulationModel.SolarRadiationPressureModel)::Bool = true
+@inline _dynamic_effector_threadsafe(::SimulationModel.AerodynamicCoefficientfM)::Bool = true
+
+@inline function _dynamic_effectors_parallel_supported(dynamic_effectors::Tuple)::Bool
+    aero_fm_count = 0
+    @inbounds for effector in dynamic_effectors
+        if effector isa SimulationModel.AerodynamicCoefficientfM
+            aero_fm_count += 1
+        end
+        _dynamic_effector_threadsafe(effector) || return false
+    end
+    return aero_fm_count <= 1
+end
+
+@inline function _mission_is_long_for_effector_threads(args)::Bool
+    mission_cfg = args.mission_configuration
+    if mission_cfg.mission_type == SimulationModel.MissionOrbits
+        return mission_cfg.number_of_orbits >= _effector_long_orbit_threshold()
+    end
+    return mission_cfg.mission_time >= _effector_long_mission_threshold_s()
+end
+
+@inline function _dynamic_effector_thread_decision(args::SimulationConfiguration, dynamic_effectors::Tuple, num_sats::Int)
+    mode = _effector_parallel_mode()
+    n_effectors = length(dynamic_effectors)
+    if n_effectors <= 1
+        return (use_threads=false, allotment=1, mode=mode, policy_applied=false)
+    end
+    if !_dynamic_effectors_parallel_supported(dynamic_effectors)
+        return (use_threads=false, allotment=1, mode=mode, policy_applied=false)
+    end
+
+    single_sat = num_sats == 1
+    single_body = single_sat && length(args.dynamics_model.spacecraft[1].links) <= 1
+    heavy_work = _mission_is_long_for_effector_threads(args)
+    if mode == :auto && (!single_sat || !single_body || !heavy_work)
+        return (use_threads=false, allotment=1, mode=mode, policy_applied=false)
+    end
+
+    policy = SimulationModel.ParallelPolicy.thread_policy_decision(
+        n_effectors;
+        mode=mode,
+        threshold=_effector_thread_threshold(),
+        heavy_work=heavy_work,
+        heavy_only=_effector_heavy_only(),
+        outer_active=_effector_outer_parallel_hint(),
+        allow_with_outer=_effector_allow_with_outer(),
+        source=:dynamic_effectors
+    )
+    allotment = min(policy.allotment, _effector_max_threads())
+    use_threads = policy.use_threads && allotment > 1
+    return (use_threads=use_threads, allotment=use_threads ? allotment : 1, mode=mode, policy_applied=true)
+end
+
 function _initialize_density_model_instances!(p)
     instances = p.shared_buffers.density_models
     empty!(instances)
@@ -92,7 +196,7 @@ function _initialize_density_model_instances!(p)
     density_model = p.args.environment_model.density_model
     if !_gram_per_sat_instances_enabled() || !(
         density_model isa SimulationModel.EnvironmentModels.GRAMAtmosphereModel ||
-        density_model isa SimulationModel.EnvironmentModels.GRAMAtmosphereModelSurrugate
+        density_model isa SimulationModel.EnvironmentModels.GRAMAtmosphereModelSurrogate
     )
         return nothing
     end
@@ -189,13 +293,36 @@ end
     return rc in ("Unstable", "DtLessThanMin", "MaxIters", "InitialFailure")
 end
 
+@inline function _solver_maxiters()::Union{Nothing, Int}
+    raw = strip(get(ENV, "SPACEAGORA_SOLVER_MAXITERS", ""))
+    isempty(raw) && return nothing
+    parsed = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_SOLVER_MAXITERS must be an integer, got '$raw'."))
+    end
+    parsed > 0 || throw(ArgumentError("SPACEAGORA_SOLVER_MAXITERS must be > 0, got $parsed."))
+    return parsed
+end
+
 @inline function _solve_with_explicit_solver(prob, args, alg, reltol_tol, abstol_tol)
+    maxiters = _solver_maxiters()
+    if maxiters === nothing
+        return solve(
+            prob,
+            alg;
+            reltol=reltol_tol,
+            abstol=abstol_tol,
+            dtmax=args.integration_tolerances.dt_max_orbit
+        )
+    end
     return solve(
         prob,
         alg;
         reltol=reltol_tol,
         abstol=abstol_tol,
-        dtmax=args.integration_tolerances.dt_max_orbit
+        dtmax=args.integration_tolerances.dt_max_orbit,
+        maxiters=maxiters
     )
 end
 
@@ -712,6 +839,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
     spacecraft = dynamics_model.spacecraft
     debug_control = p.shared_buffers.debug_control[]
     p.shared_buffers.current_time[] = t
+    effector_decision = _dynamic_effector_thread_decision(p.args, dynamic_effectors, length(spacecraft))
     minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores())) # Determine the batch size for LoopVectorization based on the number of spacecraft and available CPU cores
     # Loop over each spacecraft and compute its dynamics
     @batch minbatch=minbatch for i in eachindex(sc_state)
@@ -727,10 +855,41 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
             forces = MVector{3, Float64}(0.0, 0.0, 0.0)
             torques = MVector{3, Float64}(0.0, 0.0, 0.0)
             mass_rate = 0.0
-            @inbounds for effector in dynamic_effectors
-                force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, i)
-                forces .+= force
-                torques .+= torque
+            effector_started_ns = time_ns()
+            if effector_decision.use_threads
+                fx = Threads.Atomic{Float64}(0.0)
+                fy = Threads.Atomic{Float64}(0.0)
+                fz = Threads.Atomic{Float64}(0.0)
+                tx = Threads.Atomic{Float64}(0.0)
+                ty = Threads.Atomic{Float64}(0.0)
+                tz = Threads.Atomic{Float64}(0.0)
+                SimulationModel.ParallelPolicy.threaded_foreach(length(dynamic_effectors), effector_decision.allotment) do eff_idx
+                    effector = dynamic_effectors[eff_idx]
+                    force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, i)
+                    Threads.atomic_add!(fx, force[1])
+                    Threads.atomic_add!(fy, force[2])
+                    Threads.atomic_add!(fz, force[3])
+                    Threads.atomic_add!(tx, torque[1])
+                    Threads.atomic_add!(ty, torque[2])
+                    Threads.atomic_add!(tz, torque[3])
+                end
+                forces .= SVector{3, Float64}(fx[], fy[], fz[])
+                torques .= SVector{3, Float64}(tx[], ty[], tz[])
+            else
+                @inbounds for effector in dynamic_effectors
+                    force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, i)
+                    forces .+= force
+                    torques .+= torque
+                end
+            end
+            if effector_decision.policy_applied
+                SimulationModel.ParallelPolicy.record_policy_observation!(
+                    :dynamic_effectors;
+                    mode=effector_decision.mode,
+                    num_items=length(dynamic_effectors),
+                    use_threads=effector_decision.use_threads,
+                    elapsed_ns=(time_ns() - effector_started_ns)
+                )
             end
 
             # Compute control forces and torques using the control effectors (if any)

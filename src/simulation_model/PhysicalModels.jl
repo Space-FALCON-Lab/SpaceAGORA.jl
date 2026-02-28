@@ -6,7 +6,7 @@ module EnvironmentModels
     using ..SimConfig: InitialTime
     using Reexport
 
-    export NoAtmosphereModel, ExponentialAtmosphereModel, GRAMAtmosphereModel, GRAMAtmosphereModelSurrugate, GRAMAtmosphereModelSurrogate
+    export NoAtmosphereModel, ExponentialAtmosphereModel, GRAMAtmosphereModel, GRAMAtmosphereModelSurrogate
     export getDensity, precompute_gram_static_grids!, clear_gram_static_grid_cache!
     
     export MaxwellianHeat, getHeatRate

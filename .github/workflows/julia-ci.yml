@@ -87,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      JULIA_NUM_THREADS: "8"
+      JULIA_NUM_THREADS: "4"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -198,6 +198,40 @@ jobs:
 
       - name: Example regression
         run: julia --startup-file=no --project=.AGORA test/ci_examples_regression.jl
+
+  telemetry-quick-regression:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      JULIA_NUM_THREADS: "2"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: Cache Julia artifacts
+        uses: julia-actions/cache@v2
+
+      - name: Instantiate
+        run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Telemetry quick regression (GRAM deterministic)
+        run: julia --startup-file=no --depwarn=error --project=.AGORA test/telemetry_orbit_accuracy_study.jl quick --enforce=true
+
+      - name: Upload telemetry quick artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telemetry-quick-${{ github.run_id }}
+          path: |
+            output/telemetry_orbit_accuracy_summary.csv
+            output/telemetry_orbit_accuracy_errors.csv
+          if-no-files-found: warn
 
   coverage-quality-gate:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'

@@ -56,6 +56,9 @@ include("simulation_configuration.jl")
 include("config_types.jl")
 @reexport using .ConfigTypes
 
+# Shared parallel policy used by callbacks and dynamic effectors.
+include("parallel_policy.jl")
+
 # --- Dynamic Effectors ---
 include("DynamicEffectors.jl")
 @reexport using .DynamicEffectors

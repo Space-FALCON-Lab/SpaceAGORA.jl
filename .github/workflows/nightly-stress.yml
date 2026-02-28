@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
-      JULIA_NUM_THREADS: "8"
+      JULIA_NUM_THREADS: "4"
       SPACEAGORA_COVERAGE_MIN_OVERALL: "90.0"
       SPACEAGORA_COVERAGE_MIN_FILE: "80.0"
       SPACEAGORA_COVERAGE_WINDOW_SECONDS: "1200"
@@ -58,8 +58,21 @@ jobs:
       - name: Example regression stress
         run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_examples_regression.jl
 
+      - name: Telemetry full regression (GRAM deterministic)
+        run: julia --startup-file=no --depwarn=error --project=.AGORA test/telemetry_orbit_accuracy_study.jl full --enforce=true
+
       - name: Nightly Monte Carlo stress
         run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_nightly_montecarlo_stress.jl
 
       - name: Flake guard
         run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_flake_guard.jl
+
+      - name: Upload telemetry nightly artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telemetry-full-${{ github.run_id }}
+          path: |
+            output/telemetry_orbit_accuracy_summary.csv
+            output/telemetry_orbit_accuracy_errors.csv
+          if-no-files-found: warn

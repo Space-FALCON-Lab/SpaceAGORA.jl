@@ -28,15 +28,15 @@ struct GRAMAtmosphereModel{G, GA} <: AbstractDensityModel
     spice_root::String
     planet_name::String
     initial_time::InitialTime
+    offline_surrogate_supported::Bool
+    offline_surrogate_unsupported_reason::String
 end
 
-struct GRAMAtmosphereModelSurrugate{M} <: AbstractDensityModel
+struct GRAMAtmosphereModelSurrogate{M} <: AbstractDensityModel
     base_model::M
     surrogate_file::String
     point_fallback_below_m::Union{Nothing, Float64}
 end
-
-const GRAMAtmosphereModelSurrogate = GRAMAtmosphereModelSurrugate
 
 struct PolynomialFitAtmosphereModel <: AbstractDensityModel
     polyfit_coeffs::Vector{Float64} # Coefficients for the polynomial fit (ordered from highest degree to lowest)
@@ -50,6 +50,7 @@ const _GRAM_WRAPPER = Ref{Any}(nothing)
 const _GRAM_WRAPPER_FILE = Ref{String}("")
 const _GRAM_SEED_WARNING_EMITTED = Ref(false)
 const _GRAM_WIND_WARNING_EMITTED = Ref(false)
+const _GRAM_NONFINITE_WIND_WARNING_EMITTED = Ref(false)
 const _GRAM_LOCK_OFF_WARNING_EMITTED = Ref(false)
 const _GRAM_STATIC_GRID_LOGGED = Ref(false)
 const _GRAM_STATIC_GRID_CACHE = Dict{Any, Any}()
@@ -67,10 +68,23 @@ const _GRAM_PLANET_DIR_NAMES = Dict{String, String}(
 )
 const _GRAM_OFFLINE_SURROGATE_CACHE = Dict{Any, Any}()
 const _GRAM_OFFLINE_SURROGATE_LOCK = ReentrantLock()
+const _GRAM_OFFLINE_SURROGATE_LOGGED = Ref(false)
 const _GRAM_OFFLINE_SURROGATE_WARNED = Dict{String, Bool}()
 const _GRAM_OFFLINE_SURROGATE_WARNED_LOCK = ReentrantLock()
+const _GRAM_OFFLINE_SURROGATE_PROFILE = "p175_mid_all_planets"
 const _GRAM_OFFLINE_SURROGATE_POINT_FALLBACK_BELOW_M_DEFAULT = Dict{String, Float64}(
+    # Titan drag case exhibits solver max-iteration sensitivity in deep atmosphere when fully surrogate-driven.
+    # Use hybrid mode by default: surrogate above this altitude, point-to-point GRAM below it.
     "titan" => 260_000.0
+)
+const _GRAM_FROZEN_PLANET_ALT_RANGE_M = Dict{String, Tuple{Float64, Float64}}(
+    "earth" => (5_000.0, 1_115_000.0),
+    "mars" => (0.0, 365_000.0),
+    "venus" => (0.0, 460_000.0),
+    "jupiter" => (0.0, 1_000_000.0),
+    "titan" => (0.0, 2_500_000.0),
+    "neptune" => (0.0, 4_000_000.0),
+    "uranus" => (0.0, 7_000_000.0)
 )
 
 struct GRAMStaticGridKey
@@ -99,6 +113,9 @@ end
 struct GRAMOfflineSurrogate
     planet_name::String
     source_file::String
+    wind_mode::String
+    monte_carlo::String
+    dust::String
     alt_nodes_m::Vector{Float64}
     lat_nodes_rad::Vector{Float64}
     lon_nodes_rad::Vector{Float64}
@@ -151,16 +168,112 @@ end
     return nothing
 end
 
-@inline function Base.getproperty(model::GRAMAtmosphereModelSurrugate, name::Symbol)
+@inline function Base.getproperty(model::GRAMAtmosphereModelSurrogate, name::Symbol)
     if name === :base_model || name === :surrogate_file || name === :point_fallback_below_m
         return getfield(model, name)
     end
     return getproperty(getfield(model, :base_model), name)
 end
 
-@inline function Base.propertynames(model::GRAMAtmosphereModelSurrugate, private::Bool=false)
+@inline function Base.propertynames(model::GRAMAtmosphereModelSurrogate, private::Bool=false)
     wrapped = propertynames(getfield(model, :base_model), private)
     return (:base_model, :surrogate_file, :point_fallback_below_m, wrapped...)
+end
+
+@inline function _gram_wind_mode()::Symbol
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_GRAM_WIND_MODE", "auto")))
+    if raw in ("perturbed", "pert", "stochastic")
+        return :perturbed
+    elseif raw in ("nominal", "mean", "deterministic", "base")
+        return :nominal
+    elseif raw == "auto"
+        return :perturbed
+    end
+    throw(ArgumentError(
+        "Unsupported SPACEAGORA_GRAM_WIND_MODE='$raw'. Use one of: auto, nominal, perturbed."
+    ))
+end
+
+@inline function _gram_planet_dir_name(planet::String)::String
+    name = get(_GRAM_PLANET_DIR_NAMES, planet, "")
+    isempty(name) && throw(ArgumentError("Unsupported GRAM planet '$planet' for surrogate path resolution."))
+    return name
+end
+
+@inline function _gram_default_surrogate_file(planet::String)::String
+    planet_dir = _gram_planet_dir_name(planet)
+
+    # Preferred default: keep payload in the corresponding GRAM planet folder.
+    preferred = joinpath(
+        _spaceagora_repo_root(),
+        "GRAM Suite 2.0",
+        planet_dir,
+        "$(planet)_surrogate.jls"
+    )
+    isfile(preferred) && return preferred
+
+    # Compatibility fallback for older shared-location payloads.
+    legacy = joinpath(
+        _spaceagora_repo_root(),
+        "GRAM Suite 2.0",
+        "simulation",
+        "GRAM",
+        "static_grids",
+        _GRAM_OFFLINE_SURROGATE_PROFILE,
+        "surrogates",
+        "$(planet)_surrogate.jls"
+    )
+    isfile(legacy) && return legacy
+
+    return preferred
+end
+
+@inline function _gram_offline_surrogate_file(model::GRAMAtmosphereModel)::String
+    planet = lowercase(strip(model.planet_name))
+    return _gram_default_surrogate_file(planet)
+end
+
+@inline function _gram_offline_surrogate_file(model::GRAMAtmosphereModelSurrogate)::String
+    return model.surrogate_file
+end
+
+@inline function _gram_offline_surrogate_point_fallback_below_m(model::GRAMAtmosphereModel)::Union{Nothing, Float64}
+    planet_key = lowercase(strip(model.planet_name))
+    return get(_GRAM_OFFLINE_SURROGATE_POINT_FALLBACK_BELOW_M_DEFAULT, planet_key, nothing)
+end
+
+@inline function _gram_offline_surrogate_point_fallback_below_m(model::GRAMAtmosphereModelSurrogate)::Union{Nothing, Float64}
+    return model.point_fallback_below_m
+end
+
+@inline function _gram_offline_surrogate_features_supported(
+    planet_key::String;
+    gram_perturbation_scales=nothing,
+    mars_map_year=nothing,
+    mars_mgcm_dust_levels=nothing,
+    mars_dust_storm=nothing,
+    mars_f107=nothing,
+    mars_wind_scales=nothing,
+    mars_mola_heights=nothing,
+    mars_min_max=nothing
+)::Tuple{Bool, String}
+    unsupported = String[]
+
+    if gram_perturbation_scales !== nothing
+        push!(unsupported, "gram_perturbation_scales")
+    end
+
+    if planet_key == "mars"
+        mars_map_year !== nothing && push!(unsupported, "mars_map_year")
+        mars_mgcm_dust_levels !== nothing && push!(unsupported, "mars_mgcm_dust_levels")
+        mars_dust_storm !== nothing && push!(unsupported, "mars_dust_storm")
+        mars_f107 !== nothing && push!(unsupported, "mars_f107")
+        mars_wind_scales !== nothing && push!(unsupported, "mars_wind_scales")
+        mars_mola_heights !== nothing && push!(unsupported, "mars_mola_heights")
+        mars_min_max !== nothing && push!(unsupported, "mars_min_max")
+    end
+
+    return isempty(unsupported), join(unsupported, ",")
 end
 
 @inline _gram_static_grid_enabled() = _parse_bool_env("SPACEAGORA_GRAM_STATIC_GRID", false)
@@ -192,41 +305,6 @@ end
     return key
 end
 
-@inline function _gram_planet_dir_name(planet::String)::String
-    name = get(_GRAM_PLANET_DIR_NAMES, planet, "")
-    isempty(name) && throw(ArgumentError("Unsupported GRAM planet '$planet' for surrogate path resolution."))
-    return name
-end
-
-@inline function _gram_default_surrogate_file(planet::String)::String
-    planet_dir = _gram_planet_dir_name(planet)
-    preferred = joinpath(
-        _spaceagora_repo_root(),
-        "GRAM Suite 2.0",
-        "simulation",
-        "GRAM",
-        "static_grids",
-        "$(planet)_surrogate.jls"
-    )
-    if isfile(preferred)
-        return preferred
-    end
-    # Compatibility fallback for per-planet copies.
-    return joinpath(_spaceagora_repo_root(), "GRAM Suite 2.0", planet_dir, "$(planet)_surrogate.jls")
-end
-
-@inline function _gram_offline_surrogate_file(model::GRAMAtmosphereModelSurrugate)::String
-    return model.surrogate_file
-end
-
-@inline function _gram_offline_surrogate_point_fallback_below_m(model::GRAMAtmosphereModel)::Union{Nothing, Float64}
-    return get(_GRAM_OFFLINE_SURROGATE_POINT_FALLBACK_BELOW_M_DEFAULT, lowercase(strip(model.planet_name)), nothing)
-end
-
-@inline function _gram_offline_surrogate_point_fallback_below_m(model::GRAMAtmosphereModelSurrugate)::Union{Nothing, Float64}
-    return model.point_fallback_below_m
-end
-
 @inline function _gram_parse_static_grid_planets(raw::AbstractString)::Vector{String}
     v = lowercase(strip(String(raw)))
     if isempty(v) || v in ("all", "*")
@@ -247,8 +325,12 @@ end
 end
 
 @inline function _gram_static_grid_key(model::GRAMAtmosphereModel, wind::Bool)::GRAMStaticGridKey
-    alt_min_default = 0.0
-    alt_max_default = 2_000_000.0
+    planet_key = lowercase(strip(model.planet_name))
+    alt_min_default, alt_max_default = get(
+        _GRAM_FROZEN_PLANET_ALT_RANGE_M,
+        planet_key,
+        (0.0, 2_000_000.0)
+    )
     alt_min_m = _parse_float_env("SPACEAGORA_GRAM_STATIC_GRID_ALT_MIN_M", alt_min_default)
     alt_max_m = _parse_float_env("SPACEAGORA_GRAM_STATIC_GRID_ALT_MAX_M", alt_max_default)
     if alt_max_m <= alt_min_m
@@ -262,7 +344,7 @@ end
     include_wind = _parse_bool_env("SPACEAGORA_GRAM_STATIC_GRID_WIND", wind)
 
     return GRAMStaticGridKey(
-        lowercase(strip(model.planet_name)),
+        planet_key,
         alt_min_m,
         alt_max_m,
         n_alt,
@@ -331,6 +413,175 @@ end
     return i0, i1, clamp(w, 0.0, 1.0)
 end
 
+@inline function _gram_offline_surrogate_key(model::GRAMAtmosphereModel)::NamedTuple{(:planet, :file), Tuple{String, String}}
+    return (planet=lowercase(strip(model.planet_name)), file=_gram_offline_surrogate_file(model))
+end
+
+@inline function _gram_offline_surrogate_key(model::GRAMAtmosphereModelSurrogate)::NamedTuple{(:planet, :file), Tuple{String, String}}
+    return (planet=lowercase(strip(model.planet_name)), file=_gram_offline_surrogate_file(model))
+end
+
+function _gram_load_offline_surrogate(file::String, planet::String)::GRAMOfflineSurrogate
+    payload = open(file, "r") do io
+        deserialize(io)
+    end
+    payload isa Dict || throw(ArgumentError("Expected Dict payload in '$file'."))
+    dict = Dict{String, Any}(payload)
+
+    get(dict, "status", "error") == "ok" || throw(ArgumentError("Payload status is not ok in '$file'."))
+    get(dict, "type", "") == "surrogate_trilinear" || throw(ArgumentError("Unsupported payload type in '$file'."))
+
+    payload_planet = lowercase(strip(String(get(dict, "planet", ""))))
+    payload_planet == planet || throw(ArgumentError("Payload planet '$payload_planet' does not match expected '$planet' in '$file'."))
+
+    grid = dict["grid"]
+    fields = dict["fields"]
+    alt_nodes_m = Float64.(Vector{Float64}(grid["alt_km"])) .* 1e3
+    lat_nodes_rad = deg2rad.(Float64.(Vector{Float64}(grid["lat_deg"])))
+    lon_nodes_rad = deg2rad.(Float64.(Vector{Float64}(grid["lon_deg"])))
+
+    rho = Float64.(fields["density_kgm3"])
+    T = Float64.(fields["temperature_K"])
+    wind_e = Float64.(fields["wind_ew_ms"])
+    wind_n = Float64.(fields["wind_ns_ms"])
+    wind_u = Float64.(fields["wind_up_ms"])
+
+    dims = size(rho)
+    size(T) == dims || throw(ArgumentError("Temperature grid dimensions do not match density in '$file'."))
+    size(wind_e) == dims || throw(ArgumentError("EW wind grid dimensions do not match density in '$file'."))
+    size(wind_n) == dims || throw(ArgumentError("NS wind grid dimensions do not match density in '$file'."))
+    size(wind_u) == dims || throw(ArgumentError("Vertical wind grid dimensions do not match density in '$file'."))
+    length(alt_nodes_m) == dims[1] || throw(ArgumentError("Altitude axis size does not match fields in '$file'."))
+    length(lat_nodes_rad) == dims[2] || throw(ArgumentError("Latitude axis size does not match fields in '$file'."))
+    length(lon_nodes_rad) == dims[3] || throw(ArgumentError("Longitude axis size does not match fields in '$file'."))
+
+    return GRAMOfflineSurrogate(
+        payload_planet,
+        file,
+        lowercase(strip(String(get(dict, "wind_mode", "unknown")))),
+        lowercase(strip(String(get(dict, "monte_carlo", "unknown")))),
+        lowercase(strip(String(get(dict, "dust", "unknown")))),
+        alt_nodes_m,
+        lat_nodes_rad,
+        lon_nodes_rad,
+        rho,
+        T,
+        wind_e,
+        wind_n,
+        wind_u
+    )
+end
+
+function _gram_offline_surrogate_get_or_load!(model::GRAMAtmosphereModel)::Union{Nothing, GRAMOfflineSurrogate}
+    if !model.offline_surrogate_supported
+        _gram_warn_once(
+            "unsupported:$(model.planet_name):$(model.offline_surrogate_unsupported_reason)",
+            "GRAM offline surrogate disabled for unsupported feature configuration; using point-to-point GRAM.",
+            planet=model.planet_name,
+            unsupported=model.offline_surrogate_unsupported_reason
+        )
+        return nothing
+    end
+
+    key = _gram_offline_surrogate_key(model)
+    if !isfile(key.file)
+        _gram_warn_once(
+            "missing:$(key.planet):$(key.file)",
+            "GRAM offline surrogate payload not found; using point-to-point GRAM.",
+            planet=key.planet,
+            file=key.file
+        )
+        return nothing
+    end
+
+    lock(_GRAM_OFFLINE_SURROGATE_LOCK) do
+        if haskey(_GRAM_OFFLINE_SURROGATE_CACHE, key)
+            return _GRAM_OFFLINE_SURROGATE_CACHE[key]::GRAMOfflineSurrogate
+        end
+        surrogate = _gram_load_offline_surrogate(key.file, key.planet)
+        _GRAM_OFFLINE_SURROGATE_CACHE[key] = surrogate
+        if !_GRAM_OFFLINE_SURROGATE_LOGGED[]
+            _GRAM_OFFLINE_SURROGATE_LOGGED[] = true
+            @info "GRAM offline surrogate interpolation loaded."
+        end
+        @info "Loaded GRAM offline surrogate payload." planet=surrogate.planet_name file=surrogate.source_file
+        return surrogate
+    end
+end
+
+function _gram_offline_surrogate_get_or_load!(model::GRAMAtmosphereModelSurrogate)::GRAMOfflineSurrogate
+    key = _gram_offline_surrogate_key(model)
+    if !isfile(key.file)
+        throw(ArgumentError(
+            "GRAM surrogate payload not found for planet='$(key.planet)': $(key.file). " *
+            "Create/copy the file or pass `surrogate_file=...` to GRAMAtmosphereModelSurrogate."
+        ))
+    end
+
+    lock(_GRAM_OFFLINE_SURROGATE_LOCK) do
+        if haskey(_GRAM_OFFLINE_SURROGATE_CACHE, key)
+            return _GRAM_OFFLINE_SURROGATE_CACHE[key]::GRAMOfflineSurrogate
+        end
+        surrogate = _gram_load_offline_surrogate(key.file, key.planet)
+        _GRAM_OFFLINE_SURROGATE_CACHE[key] = surrogate
+        @info "Loaded GRAM surrogate payload." planet=surrogate.planet_name file=surrogate.source_file
+        return surrogate
+    end
+end
+
+function _gram_offline_surrogate_eval(
+    surrogate::GRAMOfflineSurrogate,
+    h::Float64,
+    lat::Float64,
+    lon::Float64
+)::Union{Nothing, Tuple{Float64, Float64, SVector{3, Float64}}}
+    ia = _gram_axis_segment_checked(surrogate.alt_nodes_m, h)
+    ia === nothing && return nothing
+    ilat = _gram_axis_segment_checked(surrogate.lat_nodes_rad, lat)
+    ilat === nothing && return nothing
+    ilon0, ilon1, wc = _gram_lon_segment(surrogate.lon_nodes_rad, lon)
+
+    ia0, ia1, wa = ia
+    ilat0, ilat1, wb = ilat
+
+    ρ = _gram_trilerp(
+        surrogate.rho[ia0, ilat0, ilon0], surrogate.rho[ia1, ilat0, ilon0],
+        surrogate.rho[ia0, ilat1, ilon0], surrogate.rho[ia1, ilat1, ilon0],
+        surrogate.rho[ia0, ilat0, ilon1], surrogate.rho[ia1, ilat0, ilon1],
+        surrogate.rho[ia0, ilat1, ilon1], surrogate.rho[ia1, ilat1, ilon1],
+        wa, wb, wc
+    )
+    Ti = _gram_trilerp(
+        surrogate.T[ia0, ilat0, ilon0], surrogate.T[ia1, ilat0, ilon0],
+        surrogate.T[ia0, ilat1, ilon0], surrogate.T[ia1, ilat1, ilon0],
+        surrogate.T[ia0, ilat0, ilon1], surrogate.T[ia1, ilat0, ilon1],
+        surrogate.T[ia0, ilat1, ilon1], surrogate.T[ia1, ilat1, ilon1],
+        wa, wb, wc
+    )
+    wE = _gram_trilerp(
+        surrogate.wind_e[ia0, ilat0, ilon0], surrogate.wind_e[ia1, ilat0, ilon0],
+        surrogate.wind_e[ia0, ilat1, ilon0], surrogate.wind_e[ia1, ilat1, ilon0],
+        surrogate.wind_e[ia0, ilat0, ilon1], surrogate.wind_e[ia1, ilat0, ilon1],
+        surrogate.wind_e[ia0, ilat1, ilon1], surrogate.wind_e[ia1, ilat1, ilon1],
+        wa, wb, wc
+    )
+    wN = _gram_trilerp(
+        surrogate.wind_n[ia0, ilat0, ilon0], surrogate.wind_n[ia1, ilat0, ilon0],
+        surrogate.wind_n[ia0, ilat1, ilon0], surrogate.wind_n[ia1, ilat1, ilon0],
+        surrogate.wind_n[ia0, ilat0, ilon1], surrogate.wind_n[ia1, ilat0, ilon1],
+        surrogate.wind_n[ia0, ilat1, ilon1], surrogate.wind_n[ia1, ilat1, ilon1],
+        wa, wb, wc
+    )
+    wU = _gram_trilerp(
+        surrogate.wind_u[ia0, ilat0, ilon0], surrogate.wind_u[ia1, ilat0, ilon0],
+        surrogate.wind_u[ia0, ilat1, ilon0], surrogate.wind_u[ia1, ilat1, ilon0],
+        surrogate.wind_u[ia0, ilat0, ilon1], surrogate.wind_u[ia1, ilat0, ilon1],
+        surrogate.wind_u[ia0, ilat1, ilon1], surrogate.wind_u[ia1, ilat1, ilon1],
+        wa, wb, wc
+    )
+    return ρ, Ti, SVector{3, Float64}(wE, wN, wU)
+end
+
 function _gram_static_grid_build(model::GRAMAtmosphereModel, key::GRAMStaticGridKey)::GRAMStaticGrid
     alt_nodes = collect(range(key.alt_min_m, key.alt_max_m, length=key.n_alt))
     lat_nodes = collect(range(-0.5pi, 0.5pi, length=key.n_lat))
@@ -392,6 +643,17 @@ function clear_gram_static_grid_cache!()
     lock(_GRAM_STATIC_GRID_LOCK) do
         empty!(_GRAM_STATIC_GRID_CACHE)
         _GRAM_STATIC_GRID_LOGGED[] = false
+    end
+    return nothing
+end
+
+function clear_gram_offline_surrogate_cache!()
+    lock(_GRAM_OFFLINE_SURROGATE_LOCK) do
+        empty!(_GRAM_OFFLINE_SURROGATE_CACHE)
+        _GRAM_OFFLINE_SURROGATE_LOGGED[] = false
+    end
+    lock(_GRAM_OFFLINE_SURROGATE_WARNED_LOCK) do
+        empty!(_GRAM_OFFLINE_SURROGATE_WARNED)
     end
     return nothing
 end
@@ -488,130 +750,6 @@ end
     )
 
     return ρ, Ti, SVector{3, Float64}(wE, wN, wU)
-end
-
-@inline function _gram_offline_surrogate_key(model::GRAMAtmosphereModelSurrugate)::NamedTuple{(:planet, :file), Tuple{String, String}}
-    return (planet=lowercase(strip(model.planet_name)), file=_gram_offline_surrogate_file(model))
-end
-
-function _gram_load_offline_surrogate(file::String, planet::String)::GRAMOfflineSurrogate
-    payload = open(file, "r") do io
-        deserialize(io)
-    end
-    payload isa Dict || throw(ArgumentError("Expected Dict payload in '$file'."))
-    dict = Dict{String, Any}(payload)
-
-    get(dict, "status", "error") == "ok" || throw(ArgumentError("Payload status is not ok in '$file'."))
-    get(dict, "type", "") == "surrogate_trilinear" || throw(ArgumentError("Unsupported payload type in '$file'."))
-
-    payload_planet = lowercase(strip(String(get(dict, "planet", ""))))
-    payload_planet == planet || throw(ArgumentError("Payload planet '$payload_planet' does not match expected '$planet' in '$file'."))
-
-    grid = dict["grid"]
-    fields = dict["fields"]
-    alt_nodes_m = Float64.(Vector{Float64}(grid["alt_km"])) .* 1e3
-    lat_nodes_rad = deg2rad.(Float64.(Vector{Float64}(grid["lat_deg"])))
-    lon_nodes_rad = deg2rad.(Float64.(Vector{Float64}(grid["lon_deg"])))
-
-    rho = Float64.(fields["density_kgm3"])
-    T = Float64.(fields["temperature_K"])
-    wind_e = Float64.(fields["wind_ew_ms"])
-    wind_n = Float64.(fields["wind_ns_ms"])
-    wind_u = Float64.(fields["wind_up_ms"])
-
-    dims = size(rho)
-    size(T) == dims || throw(ArgumentError("Temperature grid dimensions do not match density in '$file'."))
-    size(wind_e) == dims || throw(ArgumentError("EW wind grid dimensions do not match density in '$file'."))
-    size(wind_n) == dims || throw(ArgumentError("NS wind grid dimensions do not match density in '$file'."))
-    size(wind_u) == dims || throw(ArgumentError("Vertical wind grid dimensions do not match density in '$file'."))
-    length(alt_nodes_m) == dims[1] || throw(ArgumentError("Altitude axis size does not match fields in '$file'."))
-    length(lat_nodes_rad) == dims[2] || throw(ArgumentError("Latitude axis size does not match fields in '$file'."))
-    length(lon_nodes_rad) == dims[3] || throw(ArgumentError("Longitude axis size does not match fields in '$file'."))
-
-    return GRAMOfflineSurrogate(payload_planet, file, alt_nodes_m, lat_nodes_rad, lon_nodes_rad, rho, T, wind_e, wind_n, wind_u)
-end
-
-function _gram_offline_surrogate_get_or_load!(model::GRAMAtmosphereModelSurrugate)::GRAMOfflineSurrogate
-    key = _gram_offline_surrogate_key(model)
-    if !isfile(key.file)
-        throw(ArgumentError(
-            "GRAM surrogate payload not found for planet='$(key.planet)': $(key.file). " *
-            "Create/copy the file or pass `surrogate_file=...` to GRAMAtmosphereModelSurrugate."
-        ))
-    end
-
-    lock(_GRAM_OFFLINE_SURROGATE_LOCK) do
-        if haskey(_GRAM_OFFLINE_SURROGATE_CACHE, key)
-            return _GRAM_OFFLINE_SURROGATE_CACHE[key]::GRAMOfflineSurrogate
-        end
-        surrogate = _gram_load_offline_surrogate(key.file, key.planet)
-        _GRAM_OFFLINE_SURROGATE_CACHE[key] = surrogate
-        @info "Loaded GRAM surrogate payload." planet=surrogate.planet_name file=surrogate.source_file
-        return surrogate
-    end
-end
-
-function _gram_offline_surrogate_eval(
-    surrogate::GRAMOfflineSurrogate,
-    h::Float64,
-    lat::Float64,
-    lon::Float64
-)::Union{Nothing, Tuple{Float64, Float64, SVector{3, Float64}}}
-    ia = _gram_axis_segment_checked(surrogate.alt_nodes_m, h)
-    ia === nothing && return nothing
-    ilat = _gram_axis_segment_checked(surrogate.lat_nodes_rad, lat)
-    ilat === nothing && return nothing
-    ilon0, ilon1, wc = _gram_lon_segment(surrogate.lon_nodes_rad, lon)
-
-    ia0, ia1, wa = ia
-    ilat0, ilat1, wb = ilat
-
-    ρ = _gram_trilerp(
-        surrogate.rho[ia0, ilat0, ilon0], surrogate.rho[ia1, ilat0, ilon0],
-        surrogate.rho[ia0, ilat1, ilon0], surrogate.rho[ia1, ilat1, ilon0],
-        surrogate.rho[ia0, ilat0, ilon1], surrogate.rho[ia1, ilat0, ilon1],
-        surrogate.rho[ia0, ilat1, ilon1], surrogate.rho[ia1, ilat1, ilon1],
-        wa, wb, wc
-    )
-    Ti = _gram_trilerp(
-        surrogate.T[ia0, ilat0, ilon0], surrogate.T[ia1, ilat0, ilon0],
-        surrogate.T[ia0, ilat1, ilon0], surrogate.T[ia1, ilat1, ilon0],
-        surrogate.T[ia0, ilat0, ilon1], surrogate.T[ia1, ilat0, ilon1],
-        surrogate.T[ia0, ilat1, ilon1], surrogate.T[ia1, ilat1, ilon1],
-        wa, wb, wc
-    )
-    wE = _gram_trilerp(
-        surrogate.wind_e[ia0, ilat0, ilon0], surrogate.wind_e[ia1, ilat0, ilon0],
-        surrogate.wind_e[ia0, ilat1, ilon0], surrogate.wind_e[ia1, ilat1, ilon0],
-        surrogate.wind_e[ia0, ilat0, ilon1], surrogate.wind_e[ia1, ilat0, ilon1],
-        surrogate.wind_e[ia0, ilat1, ilon1], surrogate.wind_e[ia1, ilat1, ilon1],
-        wa, wb, wc
-    )
-    wN = _gram_trilerp(
-        surrogate.wind_n[ia0, ilat0, ilon0], surrogate.wind_n[ia1, ilat0, ilon0],
-        surrogate.wind_n[ia0, ilat1, ilon0], surrogate.wind_n[ia1, ilat1, ilon0],
-        surrogate.wind_n[ia0, ilat0, ilon1], surrogate.wind_n[ia1, ilat0, ilon1],
-        surrogate.wind_n[ia0, ilat1, ilon1], surrogate.wind_n[ia1, ilat1, ilon1],
-        wa, wb, wc
-    )
-    wU = _gram_trilerp(
-        surrogate.wind_u[ia0, ilat0, ilon0], surrogate.wind_u[ia1, ilat0, ilon0],
-        surrogate.wind_u[ia0, ilat1, ilon0], surrogate.wind_u[ia1, ilat1, ilon0],
-        surrogate.wind_u[ia0, ilat0, ilon1], surrogate.wind_u[ia1, ilat0, ilon1],
-        surrogate.wind_u[ia0, ilat1, ilon1], surrogate.wind_u[ia1, ilat1, ilon1],
-        wa, wb, wc
-    )
-    return ρ, Ti, SVector{3, Float64}(wE, wN, wU)
-end
-
-function clear_gram_offline_surrogate_cache!()
-    lock(_GRAM_OFFLINE_SURROGATE_LOCK) do
-        empty!(_GRAM_OFFLINE_SURROGATE_CACHE)
-    end
-    lock(_GRAM_OFFLINE_SURROGATE_WARNED_LOCK) do
-        empty!(_GRAM_OFFLINE_SURROGATE_WARNED)
-    end
-    return nothing
 end
 
 function _as_abspath(path::AbstractString)::String
@@ -873,6 +1011,18 @@ function GRAMAtmosphereModel(;
         end
     end
 
+    offline_surrogate_supported, offline_surrogate_unsupported_reason = _gram_offline_surrogate_features_supported(
+        planet_key;
+        gram_perturbation_scales=gram_perturbation_scales,
+        mars_map_year=mars_map_year,
+        mars_mgcm_dust_levels=mars_mgcm_dust_levels,
+        mars_dust_storm=mars_dust_storm,
+        mars_f107=mars_f107,
+        mars_wind_scales=mars_wind_scales,
+        mars_mola_heights=mars_mola_heights,
+        mars_min_max=mars_min_max
+    )
+
     model = GRAMAtmosphereModel(
         gram,
         gram_atmosphere,
@@ -880,7 +1030,9 @@ function GRAMAtmosphereModel(;
         gram_data_root,
         spice_root,
         planet_key,
-        initial_time
+        initial_time,
+        offline_surrogate_supported,
+        offline_surrogate_unsupported_reason
     )
     if _gram_static_grid_enabled() && _gram_static_grid_prebuild_all_planets_enabled() && !_GRAM_STATIC_GRID_PREBUILD_IN_PROGRESS[]
         wind_enabled = _parse_bool_env("SPACEAGORA_GRAM_STATIC_GRID_WIND", true)
@@ -889,12 +1041,18 @@ function GRAMAtmosphereModel(;
     return model
 end
 
-function GRAMAtmosphereModelSurrugate(;
+function GRAMAtmosphereModelSurrogate(;
     surrogate_file::String="",
     point_fallback_below_m::Union{Nothing, Real}=nothing,
     kwargs...
 )
     base_model = GRAMAtmosphereModel(; kwargs...)
+    if !base_model.offline_surrogate_supported
+        throw(ArgumentError(
+            "GRAMAtmosphereModelSurrogate does not support this GRAM configuration. " *
+            "Unsupported feature(s): $(base_model.offline_surrogate_unsupported_reason)"
+        ))
+    end
 
     file = isempty(strip(surrogate_file)) ?
         _gram_default_surrogate_file(base_model.planet_name) :
@@ -907,7 +1065,7 @@ function GRAMAtmosphereModelSurrugate(;
         value
     end
 
-    return GRAMAtmosphereModelSurrugate(base_model, file, point_fallback)
+    return GRAMAtmosphereModelSurrogate(base_model, file, point_fallback)
 end
 
 function Base.deepcopy_internal(model::GRAMAtmosphereModel, stackdict::IdDict)
@@ -926,12 +1084,12 @@ function Base.deepcopy_internal(model::GRAMAtmosphereModel, stackdict::IdDict)
     return copied
 end
 
-function Base.deepcopy_internal(model::GRAMAtmosphereModelSurrugate, stackdict::IdDict)
+function Base.deepcopy_internal(model::GRAMAtmosphereModelSurrogate, stackdict::IdDict)
     if haskey(stackdict, model)
         return stackdict[model]
     end
 
-    copied = GRAMAtmosphereModelSurrugate(
+    copied = GRAMAtmosphereModelSurrogate(
         deepcopy(model.base_model),
         model.surrogate_file,
         model.point_fallback_below_m
@@ -939,6 +1097,7 @@ function Base.deepcopy_internal(model::GRAMAtmosphereModelSurrugate, stackdict::
     stackdict[model] = copied
     return copied
 end
+
 function interp(a, b, x)
     """
 
@@ -1101,7 +1260,9 @@ end
     if isdefined(model.gram, :get_winds_state)
         get_winds_state = Base.invokelatest(getfield, model.gram, :get_winds_state)
         winds = Base.invokelatest(get_winds_state, model.gram_atmosphere)
-        wind_vec_local = if wind
+        wind_mode = _gram_wind_mode()
+        use_perturbed_winds = wind && wind_mode == :perturbed
+        wind_vec_local = if use_perturbed_winds
             SVector{3, Float64}(
                 Float64(winds.perturbedEWWind),
                 Float64(winds.perturbedNSWind),
@@ -1112,6 +1273,25 @@ end
                 Float64(winds.ewWind),
                 Float64(winds.nsWind),
                 Float64(winds.verticalWind)
+            )
+        end
+        if !all(isfinite, wind_vec_local)
+            if !_GRAM_NONFINITE_WIND_WARNING_EMITTED[]
+                _GRAM_NONFINITE_WIND_WARNING_EMITTED[] = true
+                @warn(
+                    "GRAM returned non-finite wind component(s). Replacing non-finite values with 0.0.",
+                    planet=model.planet_name,
+                    h_m=h,
+                    lat_deg=rad2deg(lat),
+                    lon_deg=rad2deg(lon),
+                    elapsed_time_s=el_time,
+                    wind_raw=wind_vec_local
+                )
+            end
+            wind_vec_local = SVector{3, Float64}(
+                isfinite(wind_vec_local[1]) ? wind_vec_local[1] : 0.0,
+                isfinite(wind_vec_local[2]) ? wind_vec_local[2] : 0.0,
+                isfinite(wind_vec_local[3]) ? wind_vec_local[3] : 0.0
             )
         end
         return rho_local, T_local, wind_vec_local
@@ -1142,7 +1322,7 @@ end
 end
 
 @inline function _gram_point_density(
-    model::GRAMAtmosphereModelSurrugate,
+    model::GRAMAtmosphereModelSurrogate,
     h::Float64,
     lat::Float64,
     lon::Float64,
@@ -1163,36 +1343,88 @@ function getDensity(model::GRAMAtmosphereModel, h::Float64, lat::Float64, lon::F
         rho = 0.0
         T = p.args.environment_model.planet.T_ref
         wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
-    elseif _gram_static_grid_enabled()
-        # Static piecewise-linear interpolation on a precomputed (alt, lat, lon) grid.
-        # This mode intentionally ignores elapsed time to trade fidelity for throughput.
-        grid = _gram_static_grid_get_or_build!(model, wind)
-        grid_alt_max_m = last(grid.alt_nodes)
-        if h > grid_alt_max_m
-            rho = 0.0
-            T = p.args.environment_model.planet.T_ref
-            wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
-            _gram_warn_once(
-                "above_ceiling_zero_rho_static:$(grid.key.planet_name)",
-                "State altitude is above GRAM static-grid ceiling. Returning rho=0 for this sample.",
-                planet=grid.key.planet_name,
-                h_m=h,
-                grid_alt_max_m=grid_alt_max_m
-            )
-        else
-            rho, T, wind_vec = _gram_static_grid_eval(grid, h, lat, lon)
-        end
     elseif !drag_state && !p.args.mission_configuration.keplerian
         rho, T, wind_vec = density_polyfit(h, p)
     else
-        rho, T, wind_vec = _gram_point_density(model, h, lat, lon, el_time, wind)
+        used_surrogate = false
+        rho = 0.0
+        T = p.args.environment_model.planet.T_ref
+        wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
+
+        if _gram_offline_surrogate_enabled()
+            surrogate = _gram_offline_surrogate_get_or_load!(model)
+            if surrogate !== nothing
+                point_fallback_below_m = _gram_offline_surrogate_point_fallback_below_m(model)
+                if point_fallback_below_m !== nothing && h <= point_fallback_below_m
+                    _gram_warn_once(
+                        "point_fallback_below:$(surrogate.planet_name)",
+                        "State altitude is below configured surrogate point-fallback altitude. Using point-to-point GRAM for this sample.",
+                        planet=surrogate.planet_name,
+                        h_m=h,
+                        fallback_below_m=point_fallback_below_m
+                    )
+                else
+                    s_eval = _gram_offline_surrogate_eval(surrogate, h, lat, lon)
+                    if s_eval !== nothing
+                        rho, T, wind_vec = s_eval
+                        used_surrogate = true
+                    else
+                        grid_alt_max_m = last(surrogate.alt_nodes_m)
+                        if h > grid_alt_max_m
+                            rho = 0.0
+                            used_surrogate = true
+                            _gram_warn_once(
+                                "above_ceiling_zero_rho:$(surrogate.planet_name)",
+                                "State altitude is above GRAM offline surrogate ceiling. Returning rho=0 for this sample.",
+                                planet=surrogate.planet_name,
+                                h_m=h,
+                                grid_alt_max_m=grid_alt_max_m
+                            )
+                        else
+                            _gram_warn_once(
+                                "outside_grid:$(surrogate.planet_name)",
+                                "State is outside GRAM offline surrogate grid. Falling back to point-to-point GRAM for this sample.",
+                                planet=surrogate.planet_name,
+                                h_m=h,
+                                lat_deg=rad2deg(lat),
+                                lon_deg=rad2deg(lon),
+                                grid_alt_min_m=first(surrogate.alt_nodes_m),
+                                grid_alt_max_m=grid_alt_max_m
+                            )
+                        end
+                    end
+                end
+            end
+        end
+
+        if !used_surrogate
+            if _gram_static_grid_enabled()
+                # Legacy static in-memory grid interpolation (time-independent).
+                grid = _gram_static_grid_get_or_build!(model, wind)
+                grid_alt_max_m = last(grid.alt_nodes)
+                if h > grid_alt_max_m
+                    rho = 0.0
+                    _gram_warn_once(
+                        "above_ceiling_zero_rho_static:$(grid.key.planet_name)",
+                        "State altitude is above GRAM static-grid ceiling. Returning rho=0 for this sample.",
+                        planet=grid.key.planet_name,
+                        h_m=h,
+                        grid_alt_max_m=grid_alt_max_m
+                    )
+                else
+                    rho, T, wind_vec = _gram_static_grid_eval(grid, h, lat, lon)
+                end
+            else
+                rho, T, wind_vec = _gram_point_density(model, h, lat, lon, el_time, wind)
+            end
+        end
     end
     # println("el_time: ", el_time, "h: ", h, " lat: ", rad2deg(lat), " lon: ", rad2deg(lon), " rho: ", rho, " T: ", T, " wind_vec: ", wind_vec)
     # println("rho: ", rho)
     return rho, T, wind_vec
 end
 
-function getDensity(model::GRAMAtmosphereModelSurrugate, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
+function getDensity(model::GRAMAtmosphereModelSurrogate, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
     EI = p.args.environment_model.EI * 1e3
     drag_state = h - EI <= 0.0
     if h > 2000.0e3

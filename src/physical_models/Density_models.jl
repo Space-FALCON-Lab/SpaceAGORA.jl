@@ -4,6 +4,7 @@
 using SatelliteToolbox
 using StaticArrays
 using LinearAlgebra
+using Serialization
 using ..SimulationModel: GRAM_LOCK
 # export NoAtmosphereModel, ExponentialAtmosphereModel, GRAMAtmosphereModel, PolynomialFitAtmosphereModel, NRLMSISE00AtmosphereModel
 # export getDensity
@@ -29,6 +30,14 @@ struct GRAMAtmosphereModel{G, GA} <: AbstractDensityModel
     initial_time::InitialTime
 end
 
+struct GRAMAtmosphereModelSurrugate{M} <: AbstractDensityModel
+    base_model::M
+    surrogate_file::String
+    point_fallback_below_m::Union{Nothing, Float64}
+end
+
+const GRAMAtmosphereModelSurrogate = GRAMAtmosphereModelSurrugate
+
 struct PolynomialFitAtmosphereModel <: AbstractDensityModel
     polyfit_coeffs::Vector{Float64} # Coefficients for the polynomial fit (ordered from highest degree to lowest)
 end
@@ -47,6 +56,22 @@ const _GRAM_STATIC_GRID_CACHE = Dict{Any, Any}()
 const _GRAM_STATIC_GRID_LOCK = ReentrantLock()
 const _GRAM_STATIC_GRID_PREBUILD_IN_PROGRESS = Ref(false)
 const _GRAM_SUPPORTED_PLANETS = ("earth", "mars", "venus", "titan", "jupiter", "uranus", "neptune")
+const _GRAM_PLANET_DIR_NAMES = Dict{String, String}(
+    "earth" => "Earth",
+    "mars" => "Mars",
+    "venus" => "Venus",
+    "titan" => "Titan",
+    "jupiter" => "Jupiter",
+    "uranus" => "Uranus",
+    "neptune" => "Neptune"
+)
+const _GRAM_OFFLINE_SURROGATE_CACHE = Dict{Any, Any}()
+const _GRAM_OFFLINE_SURROGATE_LOCK = ReentrantLock()
+const _GRAM_OFFLINE_SURROGATE_WARNED = Dict{String, Bool}()
+const _GRAM_OFFLINE_SURROGATE_WARNED_LOCK = ReentrantLock()
+const _GRAM_OFFLINE_SURROGATE_POINT_FALLBACK_BELOW_M_DEFAULT = Dict{String, Float64}(
+    "titan" => 260_000.0
+)
 
 struct GRAMStaticGridKey
     planet_name::String
@@ -64,6 +89,19 @@ struct GRAMStaticGrid
     alt_nodes::Vector{Float64}
     lat_nodes::Vector{Float64}
     lon_nodes::Vector{Float64}
+    rho::Array{Float64, 3}
+    T::Array{Float64, 3}
+    wind_e::Array{Float64, 3}
+    wind_n::Array{Float64, 3}
+    wind_u::Array{Float64, 3}
+end
+
+struct GRAMOfflineSurrogate
+    planet_name::String
+    source_file::String
+    alt_nodes_m::Vector{Float64}
+    lat_nodes_rad::Vector{Float64}
+    lon_nodes_rad::Vector{Float64}
     rho::Array{Float64, 3}
     T::Array{Float64, 3}
     wind_e::Array{Float64, 3}
@@ -101,6 +139,30 @@ end
     return parsed
 end
 
+@inline function _gram_warn_once(key::String, msg::String; kwargs...)
+    emit = false
+    lock(_GRAM_OFFLINE_SURROGATE_WARNED_LOCK) do
+        if !get(_GRAM_OFFLINE_SURROGATE_WARNED, key, false)
+            _GRAM_OFFLINE_SURROGATE_WARNED[key] = true
+            emit = true
+        end
+    end
+    emit && @warn msg kwargs...
+    return nothing
+end
+
+@inline function Base.getproperty(model::GRAMAtmosphereModelSurrugate, name::Symbol)
+    if name === :base_model || name === :surrogate_file || name === :point_fallback_below_m
+        return getfield(model, name)
+    end
+    return getproperty(getfield(model, :base_model), name)
+end
+
+@inline function Base.propertynames(model::GRAMAtmosphereModelSurrugate, private::Bool=false)
+    wrapped = propertynames(getfield(model, :base_model), private)
+    return (:base_model, :surrogate_file, :point_fallback_below_m, wrapped...)
+end
+
 @inline _gram_static_grid_enabled() = _parse_bool_env("SPACEAGORA_GRAM_STATIC_GRID", false)
 @inline _gram_static_grid_prebuild_all_planets_enabled() = _parse_bool_env("SPACEAGORA_GRAM_STATIC_GRID_PREBUILD_ALL_PLANETS", false)
 @inline _gram_static_grid_prebuild_strict() = _parse_bool_env("SPACEAGORA_GRAM_STATIC_GRID_PREBUILD_STRICT", false)
@@ -128,6 +190,34 @@ end
     key = lowercase(strip(String(planet)))
     key in _GRAM_SUPPORTED_PLANETS || throw(ArgumentError("Unsupported planet '$planet'. Supported planets: $(_GRAM_SUPPORTED_PLANETS)"))
     return key
+end
+
+@inline function _gram_planet_dir_name(planet::String)::String
+    name = get(_GRAM_PLANET_DIR_NAMES, planet, "")
+    isempty(name) && throw(ArgumentError("Unsupported GRAM planet '$planet' for surrogate path resolution."))
+    return name
+end
+
+@inline function _gram_default_surrogate_file(planet::String)::String
+    planet_dir = _gram_planet_dir_name(planet)
+    preferred = joinpath(_spaceagora_repo_root(), "GRAM Suite 2.0", planet_dir, "$(planet)_surrogate.jls")
+    if isfile(preferred)
+        return preferred
+    end
+    # Backward-compatible fallback in shared static-grid folder.
+    return joinpath(_spaceagora_repo_root(), "GRAM Suite 2.0", "simulation", "GRAM", "static_grids", "$(planet)_surrogate.jls")
+end
+
+@inline function _gram_offline_surrogate_file(model::GRAMAtmosphereModelSurrugate)::String
+    return model.surrogate_file
+end
+
+@inline function _gram_offline_surrogate_point_fallback_below_m(model::GRAMAtmosphereModel)::Union{Nothing, Float64}
+    return get(_GRAM_OFFLINE_SURROGATE_POINT_FALLBACK_BELOW_M_DEFAULT, lowercase(strip(model.planet_name)), nothing)
+end
+
+@inline function _gram_offline_surrogate_point_fallback_below_m(model::GRAMAtmosphereModelSurrugate)::Union{Nothing, Float64}
+    return model.point_fallback_below_m
 end
 
 @inline function _gram_parse_static_grid_planets(raw::AbstractString)::Vector{String}
@@ -215,6 +305,22 @@ end
     lon1 = i1 == 1 ? lon_nodes[1] + period : lon_nodes[i1]
     lonq_adj = i1 == 1 && lonq < lon0 ? lonq + period : lonq
     w = lon1 == lon0 ? 0.0 : (lonq_adj - lon0) / (lon1 - lon0)
+    return i0, i1, clamp(w, 0.0, 1.0)
+end
+
+@inline function _gram_axis_segment_checked(nodes::Vector{Float64}, x::Float64)::Union{Nothing, Tuple{Int, Int, Float64}}
+    n = length(nodes)
+    n >= 2 || throw(ArgumentError("Grid axis must have at least 2 nodes."))
+    tol = 1e-12 * max(abs(nodes[1]), abs(nodes[end]), 1.0)
+    if x < nodes[1] - tol || x > nodes[end] + tol
+        return nothing
+    end
+    xq = clamp(x, nodes[1], nodes[end])
+    i0 = clamp(searchsortedlast(nodes, xq), 1, n - 1)
+    i1 = i0 + 1
+    x0 = nodes[i0]
+    x1 = nodes[i1]
+    w = x1 == x0 ? 0.0 : (xq - x0) / (x1 - x0)
     return i0, i1, clamp(w, 0.0, 1.0)
 end
 
@@ -652,6 +758,33 @@ function GRAMAtmosphereModel(;
     return model
 end
 
+function GRAMAtmosphereModelSurrugate(;
+    surrogate_file::String="",
+    point_fallback_below_m::Union{Nothing, Real}=nothing,
+    kwargs...
+)
+    base_model = GRAMAtmosphereModel(; kwargs...)
+    if !base_model.offline_surrogate_supported
+        throw(ArgumentError(
+            "GRAMAtmosphereModelSurrugate does not support this GRAM configuration. " *
+            "Unsupported feature(s): $(base_model.offline_surrogate_unsupported_reason)"
+        ))
+    end
+
+    file = isempty(strip(surrogate_file)) ?
+        _gram_default_surrogate_file(base_model.planet_name) :
+        _as_abspath(surrogate_file)
+    point_fallback = if point_fallback_below_m === nothing
+        _gram_offline_surrogate_point_fallback_below_m(base_model)
+    else
+        value = Float64(point_fallback_below_m)
+        value >= 0.0 || throw(ArgumentError("point_fallback_below_m must be >= 0.0 m, got $value"))
+        value
+    end
+
+    return GRAMAtmosphereModelSurrugate(base_model, file, point_fallback)
+end
+
 function Base.deepcopy_internal(model::GRAMAtmosphereModel, stackdict::IdDict)
     if haskey(stackdict, model)
         return stackdict[model]
@@ -663,6 +796,20 @@ function Base.deepcopy_internal(model::GRAMAtmosphereModel, stackdict::IdDict)
         spice_directory=model.spice_root,
         planet_name=model.planet_name,
         initial_time=model.initial_time
+    )
+    stackdict[model] = copied
+    return copied
+end
+
+function Base.deepcopy_internal(model::GRAMAtmosphereModelSurrugate, stackdict::IdDict)
+    if haskey(stackdict, model)
+        return stackdict[model]
+    end
+
+    copied = GRAMAtmosphereModelSurrugate(
+        deepcopy(model.base_model),
+        model.surrogate_file,
+        model.point_fallback_below_m
     )
     stackdict[model] = copied
     return copied
@@ -852,6 +999,34 @@ end
     return rho_local, T_local, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
+@inline function _gram_point_density(
+    model::GRAMAtmosphereModel,
+    h::Float64,
+    lat::Float64,
+    lon::Float64,
+    el_time::Float64,
+    wind::Bool
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    return if _gram_use_global_lock()
+        lock(GRAM_LOCK) do
+            _gram_density_state(model, h, lat, lon, el_time, wind)
+        end
+    else
+        _gram_density_state(model, h, lat, lon, el_time, wind)
+    end
+end
+
+@inline function _gram_point_density(
+    model::GRAMAtmosphereModelSurrugate,
+    h::Float64,
+    lat::Float64,
+    lon::Float64,
+    el_time::Float64,
+    wind::Bool
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    return _gram_point_density(model.base_model, h, lat, lon, el_time, wind)
+end
+
 function getDensity(model::GRAMAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
     # cnf = params.cnf
     # println("In GRAM density model")
@@ -867,21 +1042,81 @@ function getDensity(model::GRAMAtmosphereModel, h::Float64, lat::Float64, lon::F
         # Static piecewise-linear interpolation on a precomputed (alt, lat, lon) grid.
         # This mode intentionally ignores elapsed time to trade fidelity for throughput.
         grid = _gram_static_grid_get_or_build!(model, wind)
-        rho, T, wind_vec = _gram_static_grid_eval(grid, h, lat, lon)
+        grid_alt_max_m = last(grid.alt_nodes)
+        if h > grid_alt_max_m
+            rho = 0.0
+            T = p.args.environment_model.planet.T_ref
+            wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
+            _gram_warn_once(
+                "above_ceiling_zero_rho_static:$(grid.key.planet_name)",
+                "State altitude is above GRAM static-grid ceiling. Returning rho=0 for this sample.",
+                planet=grid.key.planet_name,
+                h_m=h,
+                grid_alt_max_m=grid_alt_max_m
+            )
+        else
+            rho, T, wind_vec = _gram_static_grid_eval(grid, h, lat, lon)
+        end
     elseif !drag_state && !p.args.mission_configuration.keplerian
         rho, T, wind_vec = density_polyfit(h, p)
     else
-        rho, T, wind_vec = if _gram_use_global_lock()
-            lock(GRAM_LOCK) do
-                _gram_density_state(model, h, lat, lon, el_time, wind)
-            end
-        else
-            _gram_density_state(model, h, lat, lon, el_time, wind)
-        end
+        rho, T, wind_vec = _gram_point_density(model, h, lat, lon, el_time, wind)
     end
     # println("el_time: ", el_time, "h: ", h, " lat: ", rad2deg(lat), " lon: ", rad2deg(lon), " rho: ", rho, " T: ", T, " wind_vec: ", wind_vec)
     # println("rho: ", rho)
     return rho, T, wind_vec
+end
+
+function getDensity(model::GRAMAtmosphereModelSurrugate, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
+    EI = p.args.environment_model.EI * 1e3
+    drag_state = h - EI <= 0.0
+    if h > 2000.0e3
+        return 0.0, p.args.environment_model.planet.T_ref, SVector{3, Float64}(0.0, 0.0, 0.0)
+    elseif !drag_state && !p.args.mission_configuration.keplerian
+        return density_polyfit(h, p)
+    end
+
+    surrogate = _gram_offline_surrogate_get_or_load!(model)
+    point_fallback_below_m = _gram_offline_surrogate_point_fallback_below_m(model)
+    if point_fallback_below_m !== nothing && h <= point_fallback_below_m
+        _gram_warn_once(
+            "point_fallback_below:$(surrogate.planet_name)",
+            "State altitude is below configured surrogate point-fallback altitude. Using point-to-point GRAM for this sample.",
+            planet=surrogate.planet_name,
+            h_m=h,
+            fallback_below_m=point_fallback_below_m
+        )
+        return _gram_point_density(model, h, lat, lon, el_time, wind)
+    end
+
+    s_eval = _gram_offline_surrogate_eval(surrogate, h, lat, lon)
+    if s_eval !== nothing
+        return s_eval
+    end
+
+    grid_alt_max_m = last(surrogate.alt_nodes_m)
+    if h > grid_alt_max_m
+        _gram_warn_once(
+            "above_ceiling_zero_rho:$(surrogate.planet_name)",
+            "State altitude is above GRAM surrogate ceiling. Returning rho=0 for this sample.",
+            planet=surrogate.planet_name,
+            h_m=h,
+            grid_alt_max_m=grid_alt_max_m
+        )
+        return 0.0, p.args.environment_model.planet.T_ref, SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    _gram_warn_once(
+        "outside_grid:$(surrogate.planet_name)",
+        "State is outside GRAM surrogate grid. Falling back to point-to-point GRAM for this sample.",
+        planet=surrogate.planet_name,
+        h_m=h,
+        lat_deg=rad2deg(lat),
+        lon_deg=rad2deg(lon),
+        grid_alt_min_m=first(surrogate.alt_nodes_m),
+        grid_alt_max_m=grid_alt_max_m
+    )
+    return _gram_point_density(model, h, lat, lon, el_time, wind)
 end
 
 function getDensity(model::NRLMSISE00AtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool)::Tuple{Float64, Float64, SVector{3, Float64}}

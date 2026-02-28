@@ -294,10 +294,10 @@ function generate_pipeline_comparison_plots(
     comparison_df::DataFrame
 )::Vector{String}
     !_pipeline_plot_ready() && return String[]
+    _ensure_runtime_plot_theme!()
     mkpath(outdir)
 
     plot_paths = String[]
-    default_size = (1280, 720)
 
     mode_labels = String.(overview_df.mode)
 
@@ -307,11 +307,12 @@ function generate_pipeline_comparison_plots(
         plt = Plots.bar(
             mode_labels,
             elapsed;
+            color="#5b8fb9",
             legend=false,
             title="Pipeline Wall Time by Mode",
             xlabel="Mode",
             ylabel="Elapsed (s)",
-            size=default_size
+            _plot_margins(size=(1700, 950), bottom_mm=18, right_mm=18)...
         )
         _save_pipeline_plot!(plot_paths, plt, outdir, "paper_plot_mode_elapsed", profile, stamp)
     end
@@ -331,11 +332,12 @@ function generate_pipeline_comparison_plots(
             plt = Plots.bar(
                 labels,
                 baseline_vals;
+                color="#d67c1c",
                 legend=false,
                 title="Baseline Runtime by Mode (single_baseline_gravity)",
                 xlabel="Mode",
                 ylabel="Mean total time (s)",
-                size=default_size
+                _plot_margins(size=(1700, 950), bottom_mm=18, right_mm=18)...
             )
             _save_pipeline_plot!(plot_paths, plt, outdir, "paper_plot_mode_baseline", profile, stamp)
         end
@@ -356,21 +358,23 @@ function generate_pipeline_comparison_plots(
             plt = Plots.bar(
                 labels,
                 mc_vals;
+                color="#7b63c6",
                 legend=false,
                 title="Monte Carlo p90 Runtime by Mode",
                 xlabel="Mode",
                 ylabel="p90 total time (s)",
-                size=default_size
+                _plot_margins(size=(1700, 950), bottom_mm=18, right_mm=18)...
             )
             _save_pipeline_plot!(plot_paths, plt, outdir, "paper_plot_mode_montecarlo_p90", profile, stamp)
         end
     end
 
     top_df = _pipeline_top_scenarios(comparison_df; limit=12)
-    scenario_labels = [_plot_label(String(s)) for s in top_df.scenario]
+    scenario_labels = [_plot_axis_label(String(s)) for s in top_df.scenario]
+    x = collect(1:length(scenario_labels))
 
     # 4) Speedup vs serial by scenario (for each non-serial mode).
-    speedup_cols = [name for name in names(top_df) if startswith(String(name), "speedup_vs_serial_") && name != :speedup_vs_serial_serial]
+    speedup_cols = [name for name in names(top_df) if startswith(String(name), "speedup_vs_serial_") && String(name) != "speedup_vs_serial_serial"]
     if !isempty(speedup_cols) && !isempty(scenario_labels)
         values = Matrix{Float64}(undef, nrow(top_df), length(speedup_cols))
         for (j, col) in enumerate(speedup_cols)
@@ -380,16 +384,19 @@ function generate_pipeline_comparison_plots(
             ]
         end
         series_labels = [replace(String(c), "speedup_vs_serial_" => "") for c in speedup_cols]
+        label_value = length(series_labels) == 1 ? series_labels[1] : series_labels
         plt = Plots.bar(
-            scenario_labels,
+            x,
             values;
-            label=series_labels,
+            label=label_value,
+            color="#4f9d69",
             title="Speedup vs Serial (Top Scenarios by Serial Cost)",
             xlabel="Scenario",
             ylabel="Speedup (x)",
-            xrotation=25,
-            size=(1400, 800)
+            xticks=(x, scenario_labels),
+            _plot_margins(size=(2400, 1200), bottom_mm=92, right_mm=62, legend=:outertopright)...
         )
+        Plots.hline!(plt, [1.0]; color=:black, linestyle=:dash, label="Serial = 1x")
         _save_pipeline_plot!(plot_paths, plt, outdir, "paper_plot_speedup_vs_serial", profile, stamp)
     end
 
@@ -412,11 +419,13 @@ function generate_pipeline_comparison_plots(
             z;
             xticks=(1:length(runtime_cols), mode_order),
             yticks=(1:length(scenario_labels), scenario_labels),
+            colorbar=true,
             colorbar_title="mean total (s)",
             xlabel="Mode",
             ylabel="Scenario",
             title="Scenario Runtime Matrix (Top Serial-Cost Scenarios)",
-            size=(1400, 900)
+            color=Plots.cgrad([:lightsteelblue1, :mediumpurple3, "#3a0a2a"]),
+            _plot_margins(size=(2200, 1300), left_mm=72, right_mm=28, bottom_mm=18)...
         )
         _save_pipeline_plot!(plot_paths, plt, outdir, "paper_plot_runtime_matrix", profile, stamp)
     end

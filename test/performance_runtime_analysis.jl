@@ -1750,12 +1750,90 @@ function summarize_results(raw_df::DataFrame)::DataFrame
 end
 
 @inline _plot_label(name::AbstractString) = replace(name, "_" => " ")
+@inline _plot_axis_label(name::AbstractString) = replace(name, "_" => "\n")
+@inline _plot_number(v) = v isa Missing ? NaN : Float64(v)
+
+function _plot_wrapped_label(name::AbstractString; width::Int=16, max_lines::Int=3)::String
+    words = split(_plot_label(name))
+    isempty(words) && return ""
+    lines = String[]
+    current = ""
+    for word in words
+        if isempty(current)
+            current = word
+        elseif ncodeunits(current) + 1 + ncodeunits(word) <= width
+            current *= " " * word
+        else
+            push!(lines, current)
+            current = word
+        end
+    end
+    push!(lines, current)
+    if length(lines) > max_lines
+        head = lines[1:(max_lines - 1)]
+        tail = join(lines[max_lines:end], " ")
+        push!(head, tail)
+        lines = head
+    end
+    return join(lines, "\n")
+end
 
 @inline function _plot_ready()::Bool
     return myid() == 1 && isdefined(Main, :Plots)
 end
 
-function _plot_metric_pairs(df::DataFrame, label_col::Symbol, metric_col::Symbol)
+const _runtime_plot_theme_applied = Ref(false)
+
+function _ensure_runtime_plot_theme!()
+    !_plot_ready() && return nothing
+    _runtime_plot_theme_applied[] && return nothing
+
+    Plots.theme(:ggplot2)
+    Plots.default(
+        dpi=220,
+        lw=2,
+        ms=5,
+        markerstrokewidth=1.3,
+        markerstrokecolor=:black,
+        titlefont=Plots.font(24),
+        guidefont=Plots.font(16),
+        tickfont=Plots.font(12),
+        legend_font=Plots.font(11),
+        legend_background_color=:white,
+        legend_foreground_color=:black,
+        gridalpha=0.24,
+        minorgrid=false,
+        framestyle=:box
+    )
+    _runtime_plot_theme_applied[] = true
+    return nothing
+end
+
+@inline function _plot_margins(;
+    size::Tuple{Int, Int}=(2200, 1100),
+    left_mm::Int=18,
+    right_mm::Int=18,
+    top_mm::Int=8,
+    bottom_mm::Int=20,
+    legend=false,
+    xrotation::Real=0
+)
+    return (
+        size=size,
+        left_margin=left_mm * Plots.mm,
+        right_margin=right_mm * Plots.mm,
+        top_margin=top_mm * Plots.mm,
+        bottom_margin=bottom_mm * Plots.mm,
+        legend=legend,
+        xrotation=xrotation,
+        framestyle=:box,
+        gridalpha=0.24,
+        legend_background_color=:white,
+        legend_foreground_color=:black
+    )
+end
+
+function _plot_metric_pairs(df::DataFrame, label_col::Symbol, metric_col::Symbol; axis_labels::Bool=false)
     labels = String[]
     values = Float64[]
     for row in eachrow(df)
@@ -1763,7 +1841,8 @@ function _plot_metric_pairs(df::DataFrame, label_col::Symbol, metric_col::Symbol
         if !(value isa Missing)
             f = Float64(value)
             if isfinite(f)
-                push!(labels, _plot_label(string(row[label_col])))
+                raw = string(row[label_col])
+                push!(labels, axis_labels ? _plot_axis_label(raw) : _plot_label(raw))
                 push!(values, f)
             end
         end
@@ -1798,6 +1877,17 @@ function _save_runtime_plot!(
     return nothing
 end
 
+function _sorted_orbit_groups(df::DataFrame, metric::Symbol)
+    groups = collect(groupby(df, :scenario))
+    sort!(groups; by=g -> begin
+        local_df = DataFrame(g)
+        sort!(local_df, :orbit_count)
+        value = local_df[1, metric]
+        return value isa Missing ? Inf : -Float64(value)
+    end)
+    return groups
+end
+
 function generate_runtime_plots(
     outdir::String,
     spec::ProfileSpec,
@@ -1807,70 +1897,108 @@ function generate_runtime_plots(
     orbit_summary_df::DataFrame
 )::Vector{String}
     !_plot_ready() && return String[]
+    _ensure_runtime_plot_theme!()
 
     plot_artifacts = String[]
-    default_size = (1280, 720)
     success_summary = summary_df[summary_df.samples_success .> 0, :]
 
-    # 1) Mean total runtime per scenario.
-    labels_totals, values_totals = _plot_metric_pairs(success_summary, :scenario, :total_time_mean_s)
-    if !isempty(values_totals)
+    # 1) Mean and p90 runtime per scenario.
+    totals_df = success_summary[.!ismissing.(success_summary.total_time_mean_s), :]
+    if nrow(totals_df) > 0
+        labels = _plot_axis_label.(String.(totals_df.scenario))
+        means = Float64.(totals_df.total_time_mean_s)
+        p90_vals = [_plot_number(v) for v in totals_df.total_time_p90_s]
+        valid_p90 = findall(isfinite, p90_vals)
+
         plt = Plots.bar(
-            labels_totals,
-            values_totals;
-            legend=false,
-            title="Mean Total Runtime by Scenario",
+            labels,
+            means;
+            label="Mean total time",
+            color="#5b8fb9",
+            title="Scenario Runtime: Mean + P90 (bars sorted by mean)",
             xlabel="Scenario",
-            ylabel="Seconds",
-            xrotation=30,
-            size=default_size
+            ylabel="Wall Time [s]",
+            _plot_margins(size=(2500, 1200), bottom_mm=92, right_mm=62, legend=:outertopright)...
         )
+        if !isempty(valid_p90)
+            Plots.scatter!(
+                plt,
+                labels[valid_p90],
+                p90_vals[valid_p90];
+                marker=:diamond,
+                color=:black,
+                label="P90 total time"
+            )
+        end
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_totals", spec, stamp)
     end
 
-    # 2) Speedup against single_baseline_gravity.
-    labels_speedup, values_speedup = _plot_metric_pairs(success_summary, :scenario, :speedup_vs_baseline)
-    if !isempty(values_speedup)
+    # 2) Relative speedup vs single_baseline_gravity.
+    speedup_df = success_summary[.!ismissing.(success_summary.speedup_vs_baseline), :]
+    if nrow(speedup_df) > 0
+        labels = _plot_axis_label.(String.(speedup_df.scenario))
+        speedups = Float64.(speedup_df.speedup_vs_baseline)
         plt = Plots.bar(
-            labels_speedup,
-            values_speedup;
-            legend=false,
-            title="Speedup vs single_baseline_gravity",
+            labels,
+            speedups;
+            label="Speedup",
+            color="#4f9d69",
+            title="Relative Speedup (higher is faster)",
             xlabel="Scenario",
-            ylabel="Speedup (x)",
-            xrotation=30,
-            size=default_size
+            ylabel="Speedup vs single_baseline_gravity [x]",
+            _plot_margins(size=(2500, 1200), bottom_mm=92, right_mm=62, legend=:outertopright)...
         )
+        Plots.hline!(plt, [1.0]; color=:black, linestyle=:dash, label="Baseline = 1x")
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_speedup", spec, stamp)
     end
 
-    # 3) Runtime mean/std variability map.
+    # 3) Runtime variability by scenario.
     variability_df = success_summary[
+        .!ismissing.(success_summary.total_time_min_s) .&
         .!ismissing.(success_summary.total_time_mean_s) .&
-        .!ismissing.(success_summary.total_time_std_s), :
+        .!ismissing.(success_summary.total_time_p90_s) .&
+        .!ismissing.(success_summary.total_time_max_s), :
     ]
     if nrow(variability_df) > 0
-        x = Float64.(variability_df.total_time_mean_s)
-        y = Float64.(variability_df.total_time_std_s)
-        plt = Plots.scatter(
+        labels = _plot_axis_label.(String.(variability_df.scenario))
+        x = collect(1:length(labels))
+        mins = Float64.(variability_df.total_time_min_s)
+        means = Float64.(variability_df.total_time_mean_s)
+        p90s = Float64.(variability_df.total_time_p90_s)
+        maxs = Float64.(variability_df.total_time_max_s)
+        plt = Plots.plot(
             x,
-            y;
-            legend=false,
-            title="Runtime Variability Map",
-            xlabel="Mean total time (s)",
-            ylabel="Std total time (s)",
-            size=default_size
+            means;
+            label="Mean",
+            color="#3d83b8",
+            marker=:circle,
+            xticks=(x, labels),
+            title="Runtime Variability by Scenario (Min/Mean/P90/Max)",
+            xlabel="Scenario",
+            ylabel="Wall Time [s]",
+            _plot_margins(size=(2500, 1200), bottom_mm=92, right_mm=62, legend=:outertopright)...
         )
+        for i in eachindex(x)
+            Plots.plot!(
+                plt,
+                [x[i], x[i]],
+                [mins[i], maxs[i]];
+                color=:gray40,
+                linewidth=2,
+                label=i == 1 ? "Min-Max range" : ""
+            )
+        end
+        Plots.scatter!(plt, x, p90s; marker=:diamond, color=:black, label="P90")
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_variability", spec, stamp)
     end
 
-    # 4) Copy vs solve breakdown.
+    # 4) Configuration copy + solve breakdown.
     labels_breakdown = String[]
     copy_vals = Float64[]
     solve_vals = Float64[]
     for row in eachrow(success_summary)
         if _has_row_fields(row, [:copy_time_mean_s, :solve_time_mean_s])
-            push!(labels_breakdown, _plot_label(row.scenario))
+            push!(labels_breakdown, _plot_axis_label(String(row.scenario)))
             push!(copy_vals, Float64(row.copy_time_mean_s))
             push!(solve_vals, Float64(row.solve_time_mean_s))
         end
@@ -1879,78 +2007,137 @@ function generate_runtime_plots(
         plt = Plots.bar(
             labels_breakdown,
             hcat(copy_vals, solve_vals);
-            label=["copy" "solve"],
-            title="Copy vs Solve Runtime Breakdown",
+            label=["Copy time" "Solve time"],
+            color=["#9fb3c8" "#2a9d8f"],
+            title="Runtime Breakdown (Configuration Copy + Solve)",
             xlabel="Scenario",
-            ylabel="Seconds",
-            xrotation=30,
-            size=default_size
+            ylabel="Wall Time [s]",
+            _plot_margins(size=(2500, 1200), bottom_mm=92, right_mm=62, legend=:outertopright)...
         )
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_breakdown_copy_solve", spec, stamp)
     end
 
-    # 5) Memory and allocations proxies.
-    mem_df = success_summary[
+    # 5) Allocation footprint by scenario (memory + call count).
+    alloc_df = success_summary[
         .!ismissing.(success_summary.total_bytes_mean_mb) .&
         .!ismissing.(success_summary.solve_alloc_mean), :
     ]
-    if nrow(mem_df) > 0
-        x = Float64.(mem_df.total_bytes_mean_mb)
-        y = Float64.(mem_df.solve_alloc_mean)
-        plt = Plots.scatter(
+    if nrow(alloc_df) > 0
+        labels = _plot_axis_label.(String.(alloc_df.scenario))
+        x = collect(1:length(labels))
+        bytes_mb = Float64.(alloc_df.total_bytes_mean_mb)
+        alloc_million = Float64.(alloc_df.solve_alloc_mean) ./ 1e6
+        p1 = Plots.bar(
             x,
-            y;
-            legend=false,
-            title="Memory vs Allocation Calls",
-            xlabel="Mean allocated bytes (MB)",
-            ylabel="Mean solve allocation calls",
-            size=default_size
+            bytes_mb;
+            color="#d17a4f",
+            label=false,
+            xticks=(x, fill("", length(x))),
+            ylabel="Allocated Memory [MB]",
+            title="Allocation Footprint by Scenario",
+            _plot_margins(size=(2500, 780), bottom_mm=10)...
+        )
+        p2 = Plots.bar(
+            x,
+            alloc_million;
+            color="#6999a1",
+            label=false,
+            xticks=(x, labels),
+            xlabel="Scenario",
+            ylabel="Allocation Calls [million]",
+            _plot_margins(size=(2500, 980), bottom_mm=88)...
+        )
+        plt = Plots.plot(
+            p1,
+            p2;
+            layout=(2, 1),
+            size=(2500, 1760),
+            left_margin=20 * Plots.mm,
+            right_margin=20 * Plots.mm
         )
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_memory_alloc", spec, stamp)
     end
 
-    # 6) Solver accepted/rejected steps.
-    labels_solver = String[]
-    accepted_vals = Float64[]
-    rejected_vals = Float64[]
-    for row in eachrow(success_summary)
-        if _has_row_fields(row, [:accepted_steps_mean, :rejected_steps_mean])
-            push!(labels_solver, _plot_label(row.scenario))
-            push!(accepted_vals, Float64(row.accepted_steps_mean))
-            push!(rejected_vals, Float64(row.rejected_steps_mean))
-        end
-    end
-    if !isempty(labels_solver)
-        plt = Plots.bar(
-            labels_solver,
-            hcat(accepted_vals, rejected_vals);
-            label=["accepted" "rejected"],
-            title="Solver Workload (Accepted/Rejected Steps)",
+    # 6) Integrator workload and rejection pressure.
+    solver_df = success_summary[
+        .!ismissing.(success_summary.accepted_steps_mean) .&
+        .!ismissing.(success_summary.saved_points_mean), :
+    ]
+    if nrow(solver_df) > 0
+        labels = _plot_axis_label.(String.(solver_df.scenario))
+        x = collect(1:length(labels))
+        accepted = Float64.(solver_df.accepted_steps_mean)
+        saved = Float64.(solver_df.saved_points_mean)
+        rejected = [v isa Missing ? 0.0 : Float64(v) for v in solver_df.rejected_steps_mean]
+        rejection_ratio = [acc + rej <= 0.0 ? 0.0 : 100.0 * rej / (acc + rej) for (acc, rej) in zip(accepted, rejected)]
+        p1 = Plots.plot(
+            x,
+            accepted;
+            label="Accepted steps",
+            color="#2e7d32",
+            marker=:circle,
+            xticks=(x, fill("", length(x))),
+            ylabel="Steps / Saved Points",
+            title="Integrator Workload per Scenario",
+            _plot_margins(size=(2500, 780), bottom_mm=10, legend=:outertopright)...
+        )
+        Plots.plot!(p1, x, saved; color="#375fd2", marker=:diamond, label="Saved points")
+        p2 = Plots.bar(
+            x,
+            rejection_ratio;
+            color="#cc6666",
+            label=false,
+            xticks=(x, labels),
+            title="Solver Rejection Pressure",
             xlabel="Scenario",
-            ylabel="Step count",
-            xrotation=30,
-            size=default_size
+            ylabel="Rejected Step Ratio [%]",
+            _plot_margins(size=(2500, 980), bottom_mm=88)...
+        )
+        plt = Plots.plot(
+            p1,
+            p2;
+            layout=(2, 1),
+            size=(2500, 1760),
+            left_margin=20 * Plots.mm,
+            right_margin=20 * Plots.mm
         )
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_solver_workload", spec, stamp)
     end
 
-    # 7) Throughput by scenario.
-    labels_throughput, values_throughput = _plot_metric_pairs(success_summary, :scenario, :sim_seconds_per_wall_second_mean)
-    if !isempty(values_throughput)
+    # 7) Throughput ranking with per-satellite markers.
+    throughput_df = success_summary[.!ismissing.(success_summary.sim_seconds_per_wall_second_mean), :]
+    if nrow(throughput_df) > 0
+        sort!(throughput_df, :sim_seconds_per_wall_second_mean, rev=true)
+        labels = _plot_axis_label.(String.(throughput_df.scenario))
+        x = collect(1:length(labels))
+        global_tp = Float64.(throughput_df.sim_seconds_per_wall_second_mean)
+        sat_tp = [v isa Missing ? NaN : Float64(v) for v in throughput_df.satellite_sim_seconds_per_wall_second_mean]
         plt = Plots.bar(
-            labels_throughput,
-            values_throughput;
-            legend=false,
-            title="Throughput by Scenario",
+            x,
+            global_tp;
+            color="#4f9d69",
+            label="Global throughput",
+            xticks=(x, labels),
+            title="Simulation Throughput Ranking",
             xlabel="Scenario",
-            ylabel="Sim seconds / wall second",
-            xrotation=30,
-            size=default_size
+            ylabel="Sim Seconds / Wall Second",
+            _plot_margins(size=(2500, 1200), bottom_mm=92, right_mm=62, legend=:outertopright)...
         )
+        valid_sat = findall(isfinite, sat_tp)
+        if !isempty(valid_sat)
+            Plots.scatter!(
+                plt,
+                x[valid_sat],
+                sat_tp[valid_sat];
+                marker=:utriangle,
+                color=:black,
+                label="Per-satellite throughput"
+            )
+        end
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_throughput", spec, stamp)
     end
 
-    # 8) Satellite scaling curve.
+    # 8) Satellite-count scaling (measured vs ideal linear).
     sat_df = success_summary[
         (success_summary.category .== "satellite_scaling") .&
         .!ismissing.(success_summary.satellites) .&
@@ -1958,22 +2145,34 @@ function generate_runtime_plots(
     ]
     if nrow(sat_df) > 0
         sort!(sat_df, :satellites)
-        x = Int.(sat_df.satellites)
-        y = Float64.(sat_df.total_time_mean_s)
+        sat_count = Int.(sat_df.satellites)
+        measured = Float64.(sat_df.total_time_mean_s)
+        base_runtime = measured[1]
+        ideal = base_runtime .* (sat_count ./ sat_count[1])
         plt = Plots.plot(
-            x,
-            y;
+            sat_count,
+            measured;
             marker=:circle,
-            legend=false,
-            title="Satellite Scaling",
-            xlabel="Satellites",
-            ylabel="Mean total time (s)",
-            size=default_size
+            color="#3f7fb3",
+            label="Measured runtime",
+            title="Satellite-Count Scaling (Measured vs Ideal Linear)",
+            xlabel="Number of Satellites",
+            ylabel="Mean Runtime [s]",
+            _plot_margins(size=(2200, 1200), bottom_mm=20, right_mm=35, legend=:topleft)...
+        )
+        Plots.plot!(
+            plt,
+            sat_count,
+            ideal;
+            marker=:diamond,
+            color=:black,
+            linestyle=:dash,
+            label="Ideal linear from 1-sat baseline"
         )
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_satellite_scaling", spec, stamp)
     end
 
-    # 9) Dynamics fidelity ladder.
+    # 9) Dynamics fidelity ladder (absolute + relative).
     fidelity_order = [
         "single_baseline_gravity",
         "single_j2",
@@ -1988,58 +2187,101 @@ function generate_runtime_plots(
         if idx !== nothing
             value = success_summary.total_time_mean_s[idx]
             if !(value isa Missing)
-                push!(fidelity_labels, _plot_label(scenario))
+                if scenario == "single_baseline_gravity"
+                    push!(fidelity_labels, "Inverse\nSquared")
+                elseif scenario == "single_nbody_sun_moon"
+                    push!(fidelity_labels, "NBody\nSun+Moon")
+                elseif scenario == "single_harmonics_l20"
+                    push!(fidelity_labels, "Harmonics\nL20")
+                elseif scenario == "single_harmonics_l50"
+                    push!(fidelity_labels, "Harmonics\nL50")
+                else
+                    push!(fidelity_labels, _plot_label(scenario))
+                end
                 push!(fidelity_values, Float64(value))
             end
         end
     end
     if length(fidelity_values) >= 2
-        plt = Plots.plot(
-            fidelity_labels,
+        x = collect(1:length(fidelity_values))
+        baseline = fidelity_values[1]
+        relative = baseline <= 0.0 ? fill(NaN, length(fidelity_values)) : fidelity_values ./ baseline
+        p_abs = Plots.bar(
+            x,
             fidelity_values;
-            marker=:circle,
-            legend=false,
-            title="Dynamics Fidelity Ladder",
-            xlabel="Scenario",
-            ylabel="Mean total time (s)",
-            xrotation=20,
-            size=default_size
+            color="#7668c7",
+            label=false,
+            xticks=(x, fill("", length(x))),
+            ylabel="Mean Runtime [s]",
+            title="Dynamics Fidelity Ladder (Absolute Runtime)",
+            _plot_margins(size=(2200, 760), bottom_mm=10)...
+        )
+        p_rel = Plots.bar(
+            x,
+            relative;
+            color="#d67c1c",
+            label=false,
+            xticks=(x, fidelity_labels),
+            xlabel="Dynamics Model",
+            ylabel="Runtime / Baseline [x]",
+            title="Dynamics Fidelity Ladder (Relative Runtime)",
+            _plot_margins(size=(2200, 940), bottom_mm=56)...
+        )
+        Plots.hline!(p_rel, [1.0]; color=:black, linestyle=:dash, label=false)
+        plt = Plots.plot(
+            p_abs,
+            p_rel;
+            layout=(2, 1),
+            size=(2200, 1700),
+            left_margin=20 * Plots.mm,
+            right_margin=18 * Plots.mm
         )
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_fidelity_ladder", spec, stamp)
     end
 
-    # 10) Monte Carlo runtime histogram.
+    # 10) Monte Carlo runtime distribution with mean and p90 lines.
     mc_df = raw_df[(raw_df.category .== "montecarlo") .& (raw_df.solve_success .== true), :]
     mc_times = [Float64(v) for v in mc_df.total_time_s if !(v isa Missing)]
     if !isempty(mc_times)
+        mc_mean = mean(mc_times)
+        mc_p90 = quantile(mc_times, 0.9)
         plt = Plots.histogram(
             mc_times;
             bins=min(20, max(5, round(Int, sqrt(length(mc_times))))),
-            legend=false,
+            color="#7b63c6",
+            alpha=0.65,
+            label="Samples",
             title="Monte Carlo Runtime Distribution",
-            xlabel="Total time (s)",
+            xlabel="Total Wall Time [s]",
             ylabel="Count",
-            size=default_size
+            _plot_margins(size=(2200, 1300), right_mm=52, legend=:outertopright)...
         )
+        Plots.vline!(plt, [mc_mean]; color=:red, linewidth=2, label="Mean")
+        Plots.vline!(plt, [mc_p90]; color=:black, linewidth=2, linestyle=:dash, label="P90")
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_montecarlo_hist", spec, stamp)
     end
 
-    # 11) Monte Carlo seed trace.
+    # 11) Monte Carlo seed trace with mean and p90 lines.
     mc_seed_df = mc_df[.!ismissing.(mc_df.seed), :]
     if nrow(mc_seed_df) > 0
         sort!(mc_seed_df, :seed)
         seeds = Int.(mc_seed_df.seed)
         totals = Float64.(mc_seed_df.total_time_s)
+        seed_mean = mean(totals)
+        seed_p90 = quantile(totals, 0.9)
         plt = Plots.plot(
             seeds,
             totals;
             marker=:circle,
-            legend=false,
+            color="#356a97",
+            label="Seed runtime",
             title="Monte Carlo Runtime by Seed",
-            xlabel="Seed",
-            ylabel="Total time (s)",
-            size=default_size
+            xlabel="Monte Carlo Seed",
+            ylabel="Total Wall Time [s]",
+            _plot_margins(size=(2200, 1300), right_mm=52, legend=:outertopright)...
         )
+        Plots.hline!(plt, [seed_mean]; color=:red, linewidth=2, label="Mean")
+        Plots.hline!(plt, [seed_p90]; color=:black, linewidth=2, linestyle=:dash, label="P90")
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_montecarlo_seed_trace", spec, stamp)
     end
 
@@ -2048,52 +2290,60 @@ function generate_runtime_plots(
         .!ismissing.(orbit_summary_df.orbit_count), :
     ]
 
-    # 12) Per-orbit total scaling curves by scenario.
+    # 12) Per-orbit runtime scaling.
     orbit_scaling_df = orbit_valid[.!ismissing.(orbit_valid.total_time_mean_s), :]
     if nrow(orbit_scaling_df) > 0
-        plt = Plots.plot(
-            title="Per-Orbit Total Runtime Scaling",
-            xlabel="Orbit count",
-            ylabel="Mean total time (s)",
-            size=default_size
+        plt = Plots.plot(;
+            title="Per-Orbit Runtime Scaling",
+            xlabel="Orbit Count",
+            ylabel="Mean Time per Orbit [s]",
+            _plot_margins(size=(2300, 1200), right_mm=72, legend=:outerright)...
         )
-        for grp in groupby(orbit_scaling_df, :scenario)
+        for grp in _sorted_orbit_groups(orbit_scaling_df, :total_time_mean_s)
             local_df = DataFrame(grp)
             sort!(local_df, :orbit_count)
             x = Int.(local_df.orbit_count)
-            y = Float64.(local_df.total_time_mean_s)
-            Plots.plot!(plt, x, y; marker=:circle, label=_plot_label(local_df.scenario[1]))
+            y = Float64.(local_df.time_per_orbit_mean_s)
+            Plots.plot!(plt, x, y; marker=:circle, label=String(local_df.scenario[1]))
         end
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_per_orbit_scaling", spec, stamp)
     end
 
-    # 13) Per-orbit efficiency curves by scenario.
+    # 13) Per-orbit efficiency scaling.
     orbit_eff_df = orbit_valid[.!ismissing.(orbit_valid.orbits_per_wall_second_mean), :]
     if nrow(orbit_eff_df) > 0
-        plt = Plots.plot(
-            title="Per-Orbit Efficiency",
-            xlabel="Orbit count",
-            ylabel="Orbits per wall second",
-            size=default_size
+        plt = Plots.plot(;
+            title="Per-Orbit Efficiency Scaling",
+            xlabel="Orbit Count",
+            ylabel="Orbits / Wall-sec",
+            _plot_margins(size=(2300, 1200), right_mm=72, legend=:outerright)...
         )
-        for grp in groupby(orbit_eff_df, :scenario)
+        for grp in _sorted_orbit_groups(orbit_eff_df, :orbits_per_wall_second_mean)
             local_df = DataFrame(grp)
             sort!(local_df, :orbit_count)
             x = Int.(local_df.orbit_count)
             y = Float64.(local_df.orbits_per_wall_second_mean)
-            Plots.plot!(plt, x, y; marker=:circle, label=_plot_label(local_df.scenario[1]))
+            Plots.plot!(plt, x, y; marker=:circle, label=String(local_df.scenario[1]))
         end
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_per_orbit_efficiency", spec, stamp)
     end
 
-    # 14) Per-orbit time-per-orbit heatmap.
+    # 14) Per-orbit time heatmap.
     heat_df = orbit_valid[.!ismissing.(orbit_valid.time_per_orbit_mean_s), :]
     if nrow(heat_df) > 0
-        scenarios = sort(unique(String.(heat_df.scenario)))
+        scenario_names = unique(String.(heat_df.scenario))
+        scenario_order = sort(scenario_names; by=sc -> begin
+            vals = [
+                Float64(v)
+                for v in heat_df[heat_df.scenario .== sc, :time_per_orbit_mean_s]
+                if !(v isa Missing)
+            ]
+            return isempty(vals) ? Inf : -mean(vals)
+        end)
         orbits = sort(unique(Int.(heat_df.orbit_count)))
-        z = fill(NaN, length(scenarios), length(orbits))
+        z = fill(NaN, length(scenario_order), length(orbits))
         for row in eachrow(heat_df)
-            si = findfirst(==(String(row.scenario)), scenarios)
+            si = findfirst(==(String(row.scenario)), scenario_order)
             oi = findfirst(==(Int(row.orbit_count)), orbits)
             if si !== nothing && oi !== nothing
                 z[si, oi] = Float64(row.time_per_orbit_mean_s)
@@ -2101,14 +2351,16 @@ function generate_runtime_plots(
         end
         plt = Plots.heatmap(
             orbits,
-            1:length(scenarios),
+            1:length(scenario_order),
             z;
+            color=Plots.cgrad([:lightsteelblue1, :mediumpurple3, "#3a0a2a"]),
             colorbar_title="s/orbit",
-            yticks=(1:length(scenarios), _plot_label.(scenarios)),
-            xlabel="Orbit count",
+            colorbar=true,
+            yticks=(1:length(scenario_order), _plot_wrapped_label.(scenario_order)),
+            xlabel="Orbit Count",
             ylabel="Scenario",
-            title="Per-Orbit Time Heatmap",
-            size=default_size
+            title="Per-Orbit Time Heatmap [s/orbit]",
+            _plot_margins(size=(2300, 1400), left_mm=72, right_mm=52, bottom_mm=24)...
         )
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_per_orbit_heatmap", spec, stamp)
     end

@@ -3,6 +3,7 @@
 using Dates
 using Serialization
 using Printf
+using Statistics
 
 const GRAM_ROOT = normpath(dirname(dirname(@__DIR__)))
 include(joinpath(GRAM_ROOT, "Julia", "GRAM.jl"))
@@ -186,6 +187,176 @@ function bands_to_string(bands::Vector{NTuple{3, Float64}})
         push!(parts, @sprintf("%.6g:%.6g:%.6g", a, b, s))
     end
     return join(parts, ",")
+end
+
+@inline _clamp01(x::Float64) = clamp(x, 0.0, 1.0)
+
+@inline function _safe_quantile(v::Vector{Float64}, p::Float64)::Float64
+    isempty(v) && return 0.0
+    return quantile(v, _clamp01(p))
+end
+
+function bands_from_nodes(nodes::Vector{Float64}; rel_tol::Float64=1e-6)
+    length(nodes) >= 2 || error("Need at least two altitude nodes to form bands.")
+    b = NTuple{3, Float64}[]
+    i0 = 1
+    step_ref = nodes[2] - nodes[1]
+    for i in 2:(length(nodes) - 1)
+        step_i = nodes[i + 1] - nodes[i]
+        same_step = abs(step_i - step_ref) <= rel_tol * max(1.0, abs(step_ref))
+        if !same_step
+            push!(b, (nodes[i0], nodes[i], step_ref))
+            i0 = i
+            step_ref = step_i
+        end
+    end
+    push!(b, (nodes[i0], nodes[end], step_ref))
+    return b
+end
+
+@inline function _interp1_clamped(xnodes::Vector{Float64}, ynodes::Vector{Float64}, x::Float64)::Float64
+    n = length(xnodes)
+    n == length(ynodes) || error("x/ y profile lengths mismatch.")
+    n >= 2 || error("Need at least two profile nodes for interpolation.")
+    xq = clamp(x, xnodes[1], xnodes[end])
+    i0 = clamp(searchsortedlast(xnodes, xq), 1, n - 1)
+    i1 = i0 + 1
+    x0 = xnodes[i0]
+    x1 = xnodes[i1]
+    if x1 == x0
+        return ynodes[i0]
+    end
+    w = clamp((xq - x0) / (x1 - x0), 0.0, 1.0)
+    return ynodes[i0] + w * (ynodes[i1] - ynodes[i0])
+end
+
+function density_profile_from_grid_payload(grid_payload::Dict{String, Any})
+    get(grid_payload, "status", "error") == "ok" || error("Grid payload is not usable (status=$(get(grid_payload, "status", "unknown"))).")
+    grid = grid_payload["grid"]
+    fields = grid_payload["fields"]
+    alt_km = Vector{Float64}(grid["alt_km"])
+    rho_grid = fields["density_kgm3"]
+
+    nalt = length(alt_km)
+    nalt >= 2 || error("Grid payload requires at least two altitude nodes.")
+    logrho = Vector{Float64}(undef, nalt)
+    @inbounds for ia in 1:nalt
+        slice = rho_grid[ia, :, :]
+        s = 0.0
+        n = length(slice)
+        for v in slice
+            s += log(max(Float64(v), 1e-30))
+        end
+        logrho[ia] = s / max(1, n)
+    end
+    return alt_km, logrho
+end
+
+function density_profile_direct(
+    root::String,
+    planet::String,
+    cfg;
+    pilot_alt_step_km::Float64,
+    pilot_lat_step_deg::Float64,
+    pilot_lon_step_deg::Float64
+)
+    alt_km = linear_axis_nodes(cfg.alt_min_km, cfg.alt_max_km, pilot_alt_step_km; periodic=false)
+    lat_deg = linear_axis_nodes(-90.0, 90.0, pilot_lat_step_deg; periodic=false)
+    lon_deg = linear_axis_nodes(0.0, 360.0, pilot_lon_step_deg; periodic=true)
+
+    @printf("[%s] Building adaptive pilot profile (%d x %d x %d)\n", planet, length(alt_km), length(lat_deg), length(lon_deg))
+    logrho = Vector{Float64}(undef, length(alt_km))
+
+    atmos = atmosphere_for_planet(root, planet)
+    try
+        configure_common!(atmos, cfg)
+        configure_planet_specific!(planet, atmos)
+
+        @inbounds for ia in eachindex(alt_km)
+            if ia == 1 || ia == length(alt_km) || ia % max(1, fld(length(alt_km), 8)) == 0
+                @printf("[%s]   adaptive pilot altitude slice %d / %d\n", planet, ia, length(alt_km))
+            end
+            h = alt_km[ia]
+            s = 0.0
+            n = 0
+            for lat in lat_deg
+                for lon in lon_deg
+                    st = sample_state!(atmos, h, lat, lon, cfg.elapsed_time_s, planet)
+                    s += log(max(st.rho, 1e-30))
+                    n += 1
+                end
+            end
+            logrho[ia] = s / max(1, n)
+        end
+    finally
+        close!(atmos)
+    end
+
+    return alt_km, logrho
+end
+
+function adaptive_altitude_nodes(
+    alt_profile_km::Vector{Float64},
+    logrho_profile::Vector{Float64};
+    min_step_km::Float64,
+    max_step_km::Float64
+)
+    n = length(alt_profile_km)
+    n == length(logrho_profile) || error("Adaptive profile length mismatch.")
+    n >= 2 || error("Adaptive profile requires at least two points.")
+    min_step_km > 0.0 || error("Adaptive min step must be > 0.")
+    max_step_km >= min_step_km || error("Adaptive max step must be >= min step.")
+
+    grads = Vector{Float64}(undef, n)
+    @inbounds for i in 1:n
+        if i == 1
+            dh = max(1e-9, alt_profile_km[2] - alt_profile_km[1])
+            grads[i] = abs((logrho_profile[2] - logrho_profile[1]) / dh)
+        elseif i == n
+            dh = max(1e-9, alt_profile_km[n] - alt_profile_km[n - 1])
+            grads[i] = abs((logrho_profile[n] - logrho_profile[n - 1]) / dh)
+        else
+            dh = max(1e-9, alt_profile_km[i + 1] - alt_profile_km[i - 1])
+            grads[i] = abs((logrho_profile[i + 1] - logrho_profile[i - 1]) / dh)
+        end
+    end
+
+    rho_lo = _safe_quantile(logrho_profile, 0.15)
+    rho_hi = _safe_quantile(logrho_profile, 0.85)
+    grad_lo = _safe_quantile(grads, 0.15)
+    grad_hi = _safe_quantile(grads, 0.85)
+    (rho_hi - rho_lo) < 1e-12 && (rho_hi = rho_lo + 1.0)
+    (grad_hi - grad_lo) < 1e-12 && (grad_hi = grad_lo + 1.0)
+
+    score = Vector{Float64}(undef, n)
+    @inbounds for i in 1:n
+        s_rho = _clamp01((logrho_profile[i] - rho_lo) / (rho_hi - rho_lo))
+        s_grad = _clamp01((grads[i] - grad_lo) / (grad_hi - grad_lo))
+        score[i] = max(s_rho, s_grad)
+    end
+
+    alt_min_km = alt_profile_km[1]
+    alt_max_km = alt_profile_km[end]
+    nodes = Float64[alt_min_km]
+    while nodes[end] < alt_max_km - 1e-9
+        h = nodes[end]
+        s = _interp1_clamped(alt_profile_km, score, h)
+        dz = max_step_km - s * (max_step_km - min_step_km)
+        dz = clamp(dz, min_step_km, max_step_km)
+        nxt = min(h + dz, alt_max_km)
+        if nxt <= h + 1e-10
+            nxt = min(h + min_step_km, alt_max_km)
+        end
+        push!(nodes, nxt)
+    end
+
+    dedup = Float64[]
+    for x in nodes
+        if isempty(dedup) || abs(x - dedup[end]) > 1e-9
+            push!(dedup, x)
+        end
+    end
+    return dedup
 end
 
 function resolve_surrogate_bands(
@@ -527,7 +698,7 @@ function build_surrogate_from_grid_payload(
     s_cfg
 )
     Tnum = s_cfg.precision
-    alt_km = altitude_nodes_from_bands(s_cfg.alt_bands, cfg.alt_min_km, cfg.alt_max_km)
+    alt_km = s_cfg.alt_nodes === nothing ? altitude_nodes_from_bands(s_cfg.alt_bands, cfg.alt_min_km, cfg.alt_max_km) : Vector{Float64}(s_cfg.alt_nodes)
     lat_deg = linear_axis_nodes(-90.0, 90.0, s_cfg.lat_step_deg; periodic=false)
     lon_deg = linear_axis_nodes(0.0, 360.0, s_cfg.lon_step_deg; periodic=true)
     dims = (length(alt_km), length(lat_deg), length(lon_deg))
@@ -561,6 +732,7 @@ function build_surrogate_from_grid_payload(
     end
     elapsed_s = (time_ns() - t0_ns) * 1e-9
     @printf("[%s] Surrogate-from-grid done in %.3f s\n", planet, elapsed_s)
+    alt_steps = length(alt_km) >= 2 ? diff(alt_km) : Float64[]
 
     return Dict{String, Any}(
         "status" => "ok",
@@ -579,7 +751,11 @@ function build_surrogate_from_grid_payload(
             "precision" => string(Tnum),
             "lat_step_deg" => s_cfg.lat_step_deg,
             "lon_step_deg" => s_cfg.lon_step_deg,
-            "alt_bands_km" => bands_to_string(s_cfg.alt_bands)
+            "alt_mode" => s_cfg.alt_mode,
+            "alt_bands_km" => bands_to_string(s_cfg.alt_bands),
+            "alt_nodes_count" => length(alt_km),
+            "alt_step_min_km" => isempty(alt_steps) ? 0.0 : minimum(alt_steps),
+            "alt_step_max_km" => isempty(alt_steps) ? 0.0 : maximum(alt_steps)
         ),
         "grid" => Dict(
             "alt_km" => alt_km,
@@ -598,7 +774,7 @@ end
 
 function build_surrogate_direct(root::String, planet::String, cfg, s_cfg)
     Tnum = s_cfg.precision
-    alt_km = altitude_nodes_from_bands(s_cfg.alt_bands, cfg.alt_min_km, cfg.alt_max_km)
+    alt_km = s_cfg.alt_nodes === nothing ? altitude_nodes_from_bands(s_cfg.alt_bands, cfg.alt_min_km, cfg.alt_max_km) : Vector{Float64}(s_cfg.alt_nodes)
     lat_deg = linear_axis_nodes(-90.0, 90.0, s_cfg.lat_step_deg; periodic=false)
     lon_deg = linear_axis_nodes(0.0, 360.0, s_cfg.lon_step_deg; periodic=true)
     dims = (length(alt_km), length(lat_deg), length(lon_deg))
@@ -636,6 +812,7 @@ function build_surrogate_direct(root::String, planet::String, cfg, s_cfg)
         end
         elapsed_s = (time_ns() - t0_ns) * 1e-9
         @printf("[%s] Surrogate-direct done in %.3f s\n", planet, elapsed_s)
+        alt_steps = length(alt_km) >= 2 ? diff(alt_km) : Float64[]
 
         return Dict{String, Any}(
             "status" => "ok",
@@ -654,7 +831,11 @@ function build_surrogate_direct(root::String, planet::String, cfg, s_cfg)
                 "precision" => string(Tnum),
                 "lat_step_deg" => s_cfg.lat_step_deg,
                 "lon_step_deg" => s_cfg.lon_step_deg,
-                "alt_bands_km" => bands_to_string(s_cfg.alt_bands)
+                "alt_mode" => s_cfg.alt_mode,
+                "alt_bands_km" => bands_to_string(s_cfg.alt_bands),
+                "alt_nodes_count" => length(alt_km),
+                "alt_step_min_km" => isempty(alt_steps) ? 0.0 : minimum(alt_steps),
+                "alt_step_max_km" => isempty(alt_steps) ? 0.0 : maximum(alt_steps)
             ),
             "grid" => Dict(
                 "alt_km" => alt_km,
@@ -714,6 +895,14 @@ function save_summary(path::String, summary_rows::Vector{Dict{String, Any}}, cfg
         println(io, "surrogate_precision = \"$(opts_meta["surrogate_precision"])\"")
         println(io, "surrogate_lat_step_deg = $(opts_meta["surrogate_lat_step_deg"])")
         println(io, "surrogate_lon_step_deg = $(opts_meta["surrogate_lon_step_deg"])")
+        if haskey(opts_meta, "surrogate_adaptive_alt")
+            println(io, "surrogate_adaptive_alt = $(opts_meta["surrogate_adaptive_alt"])")
+            println(io, "surrogate_adaptive_min_step_km = $(opts_meta["surrogate_adaptive_min_step_km"])")
+            println(io, "surrogate_adaptive_max_step_km = $(opts_meta["surrogate_adaptive_max_step_km"])")
+            println(io, "surrogate_adaptive_pilot_alt_step_km = $(opts_meta["surrogate_adaptive_pilot_alt_step_km"])")
+            println(io, "surrogate_adaptive_pilot_lat_step_deg = $(opts_meta["surrogate_adaptive_pilot_lat_step_deg"])")
+            println(io, "surrogate_adaptive_pilot_lon_step_deg = $(opts_meta["surrogate_adaptive_pilot_lon_step_deg"])")
+        end
         println(io)
 
         for row in summary_rows
@@ -739,6 +928,21 @@ function save_summary(path::String, summary_rows::Vector{Dict{String, Any}}, cfg
             end
             if haskey(row, "surrogate_alt_bands_km")
                 println(io, "surrogate_alt_bands_km = \"$(toml_escape(row["surrogate_alt_bands_km"]))\"")
+            end
+            if haskey(row, "surrogate_alt_mode")
+                println(io, "surrogate_alt_mode = \"$(toml_escape(row["surrogate_alt_mode"]))\"")
+            end
+            if haskey(row, "surrogate_alt_nodes")
+                println(io, "surrogate_alt_nodes = $(row["surrogate_alt_nodes"])")
+            end
+            if haskey(row, "surrogate_alt_step_min_km")
+                println(io, "surrogate_alt_step_min_km = $(row["surrogate_alt_step_min_km"])")
+            end
+            if haskey(row, "surrogate_alt_step_max_km")
+                println(io, "surrogate_alt_step_max_km = $(row["surrogate_alt_step_max_km"])")
+            end
+            if haskey(row, "surrogate_alt_profile_source")
+                println(io, "surrogate_alt_profile_source = \"$(toml_escape(row["surrogate_alt_profile_source"]))\"")
             end
             if haskey(row, "error")
                 println(io, "error = \"$(toml_escape(row["error"]))\"")
@@ -785,6 +989,12 @@ function main()
     s_precision = parse_surrogate_precision(get(opts, "surrogate-precision", "float32"))
     s_lat_step_deg = parse_float(get(opts, "surrogate-lat-step-deg", "1.75"))
     s_lon_step_deg = parse_float(get(opts, "surrogate-lon-step-deg", "1.75"))
+    s_adaptive_alt = parse_bool(get(opts, "surrogate-adaptive-alt", "false"))
+    s_adaptive_min_step_km = parse_float(get(opts, "surrogate-adaptive-min-step-km", "0.5"))
+    s_adaptive_max_step_km = parse_float(get(opts, "surrogate-adaptive-max-step-km", "6.0"))
+    s_adaptive_pilot_alt_step_km = parse_float(get(opts, "surrogate-adaptive-pilot-alt-step-km", "2.0"))
+    s_adaptive_pilot_lat_step_deg = parse_float(get(opts, "surrogate-adaptive-pilot-lat-step-deg", "10.0"))
+    s_adaptive_pilot_lon_step_deg = parse_float(get(opts, "surrogate-adaptive-pilot-lon-step-deg", "10.0"))
     s_dir = get(opts, "surrogate-dir", joinpath(out_dir, "surrogates"))
 
     earth_merra2_override = haskey(opts, "earth-merra2-path") ? normpath(opts["earth-merra2-path"]) : nothing
@@ -802,6 +1012,11 @@ function main()
     cfg.alt_max_km > cfg.alt_min_km || error("--alt-max-km must be greater than --alt-min-km")
     s_lat_step_deg > 0.0 || error("--surrogate-lat-step-deg must be > 0")
     s_lon_step_deg > 0.0 || error("--surrogate-lon-step-deg must be > 0")
+    s_adaptive_min_step_km > 0.0 || error("--surrogate-adaptive-min-step-km must be > 0")
+    s_adaptive_max_step_km >= s_adaptive_min_step_km || error("--surrogate-adaptive-max-step-km must be >= --surrogate-adaptive-min-step-km")
+    s_adaptive_pilot_alt_step_km > 0.0 || error("--surrogate-adaptive-pilot-alt-step-km must be > 0")
+    s_adaptive_pilot_lat_step_deg > 0.0 || error("--surrogate-adaptive-pilot-lat-step-deg must be > 0")
+    s_adaptive_pilot_lon_step_deg > 0.0 || error("--surrogate-adaptive-pilot-lon-step-deg must be > 0")
 
     if !build_grid && !build_surrogate
         @warn "Both --build-grid=false and --build-surrogate=false. Nothing to do."
@@ -858,17 +1073,12 @@ function main()
         end
 
         if build_surrogate
-            s_bands = resolve_surrogate_bands(opts, planet, cfg.alt_min_km, cfg.alt_max_km)
-            s_cfg = (
-                alt_bands=s_bands,
-                lat_step_deg=s_lat_step_deg,
-                lon_step_deg=s_lon_step_deg,
-                precision=s_precision
-            )
             surrogate_file_path = joinpath(s_dir, "$(planet)_surrogate.jls")
             try
                 surrogate_payload = nothing
                 source_used = s_source
+                src = nothing
+                src_valid = false
 
                 if s_source == :grid
                     src = grid_payload
@@ -880,8 +1090,52 @@ function main()
                             end
                         end
                     end
+                    src_valid = src isa Dict{String, Any} && get(src, "status", "error") == "ok"
+                end
 
-                    if src isa Dict{String, Any} && get(src, "status", "error") == "ok"
+                alt_mode = "bands"
+                alt_profile_source = "none"
+                if s_adaptive_alt
+                    profile_alt = Float64[]
+                    profile_logrho = Float64[]
+                    if src_valid
+                        profile_alt, profile_logrho = density_profile_from_grid_payload(src)
+                        alt_profile_source = "grid"
+                    else
+                        profile_alt, profile_logrho = density_profile_direct(
+                            GRAM_ROOT,
+                            planet,
+                            cfg;
+                            pilot_alt_step_km=s_adaptive_pilot_alt_step_km,
+                            pilot_lat_step_deg=s_adaptive_pilot_lat_step_deg,
+                            pilot_lon_step_deg=s_adaptive_pilot_lon_step_deg
+                        )
+                        alt_profile_source = "direct"
+                    end
+                    s_alt_nodes = adaptive_altitude_nodes(
+                        profile_alt,
+                        profile_logrho;
+                        min_step_km=s_adaptive_min_step_km,
+                        max_step_km=s_adaptive_max_step_km
+                    )
+                    s_bands = bands_from_nodes(s_alt_nodes)
+                    alt_mode = "adaptive_profile"
+                else
+                    s_bands = resolve_surrogate_bands(opts, planet, cfg.alt_min_km, cfg.alt_max_km)
+                    s_alt_nodes = altitude_nodes_from_bands(s_bands, cfg.alt_min_km, cfg.alt_max_km)
+                end
+
+                s_cfg = (
+                    alt_bands=s_bands,
+                    alt_nodes=s_alt_nodes,
+                    alt_mode=alt_mode,
+                    lat_step_deg=s_lat_step_deg,
+                    lon_step_deg=s_lon_step_deg,
+                    precision=s_precision
+                )
+
+                if s_source == :grid
+                    if src_valid
                         surrogate_payload = build_surrogate_from_grid_payload(src, planet, cfg, s_cfg)
                     else
                         @warn "Grid source unavailable for surrogate-from-grid; falling back to direct surrogate build." planet
@@ -898,6 +1152,14 @@ function main()
                 row["surrogate_elapsed_s"] = surrogate_payload["elapsed_s"]
                 row["surrogate_source"] = String(source_used)
                 row["surrogate_alt_bands_km"] = bands_to_string(s_bands)
+                row["surrogate_alt_mode"] = alt_mode
+                row["surrogate_alt_nodes"] = length(s_alt_nodes)
+                if length(s_alt_nodes) >= 2
+                    steps = diff(s_alt_nodes)
+                    row["surrogate_alt_step_min_km"] = minimum(steps)
+                    row["surrogate_alt_step_max_km"] = maximum(steps)
+                end
+                row["surrogate_alt_profile_source"] = alt_profile_source
             catch err
                 err_msg = sprint(showerror, err)
                 row["status"] = "error"
@@ -927,7 +1189,13 @@ function main()
         "surrogate_source" => String(s_source),
         "surrogate_precision" => string(s_precision),
         "surrogate_lat_step_deg" => s_lat_step_deg,
-        "surrogate_lon_step_deg" => s_lon_step_deg
+        "surrogate_lon_step_deg" => s_lon_step_deg,
+        "surrogate_adaptive_alt" => s_adaptive_alt,
+        "surrogate_adaptive_min_step_km" => s_adaptive_min_step_km,
+        "surrogate_adaptive_max_step_km" => s_adaptive_max_step_km,
+        "surrogate_adaptive_pilot_alt_step_km" => s_adaptive_pilot_alt_step_km,
+        "surrogate_adaptive_pilot_lat_step_deg" => s_adaptive_pilot_lat_step_deg,
+        "surrogate_adaptive_pilot_lon_step_deg" => s_adaptive_pilot_lon_step_deg
     )
 
     summary_path = joinpath(out_dir, summary_file)

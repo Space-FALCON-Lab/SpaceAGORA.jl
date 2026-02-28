@@ -72,3 +72,26 @@ julia "GRAM Suite 2.0/simulation/GRAM/build_offline_static_grids.jl" \
   --month=1 \
   --earth-merra2-path="GRAM Suite 2.0/Earth/data/MERRA2data"
 ```
+
+Adaptive altitude grid (dynamic precision):
+
+- Enable `--surrogate-adaptive-alt=true` to automatically densify altitude nodes where density/gradient is high and coarsen where atmosphere is smoother.
+- Keep latitude/longitude spacing fixed; altitude spacing becomes nonuniform per-planet.
+
+```bash
+julia "GRAM Suite 2.0/simulation/GRAM/build_offline_static_grids.jl" \
+  --planets=all \
+  --out-dir="GRAM Suite 2.0/simulation/GRAM/static_grids/p175_adaptive_all_planets" \
+  --surrogate-only=true \
+  --surrogate-source=direct \
+  --surrogate-lat-step-deg=1.75 \
+  --surrogate-lon-step-deg=1.75 \
+  --alt-min-km=0 \
+  --alt-max-km=300 \
+  --surrogate-adaptive-alt=true \
+  --surrogate-adaptive-min-step-km=0.5 \
+  --surrogate-adaptive-max-step-km=6.0 \
+  --surrogate-adaptive-pilot-alt-step-km=2.0 \
+  --surrogate-adaptive-pilot-lat-step-deg=10.0 \
+  --surrogate-adaptive-pilot-lon-step-deg=10.0
+```

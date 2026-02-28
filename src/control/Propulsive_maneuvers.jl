@@ -142,13 +142,15 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
     start_time = controlModel.start_burn_time[i]
     stop_time = controlModel.stop_burn_time[i]
     if isfinite(start_time) && isfinite(stop_time) && stop_time > start_time
-        # Keep the scheduled window fixed while the burn is pending/active.
-        if t <= stop_time + 1e-9
+        # Lock the schedule only after ignition begins and until burn stop.
+        if t >= start_time - 1e-9 && t <= stop_time + 1e-9
             return
         end
         # Burn completed: clear the schedule so future campaign maneuvers can be planned.
-        controlModel.start_burn_time[i] = -1.0
-        controlModel.stop_burn_time[i] = -1.0
+        if t > stop_time + 1e-9
+            controlModel.start_burn_time[i] = -1.0
+            controlModel.stop_burn_time[i] = -1.0
+        end
     end
     pos = SVector{3, Float64}(u.sc[i].pos)
     vel = SVector{3, Float64}(u.sc[i].vel)

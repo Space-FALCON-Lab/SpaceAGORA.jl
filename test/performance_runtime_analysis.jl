@@ -105,9 +105,10 @@ end
 
 @inline function _perf_default_solver_mode(profile_name::String)::String
     normalized = lowercase(strip(profile_name))
+    # Keep benchmark defaults close to production behavior for both profiles.
+    # Individual cases can still pin solver_mode_override when needed.
     if normalized == "full"
-        # Keep full-profile benchmarks conservative/stable by default.
-        return "rodas5p"
+        return "auto_stiff"
     end
     # Quick profile is used for threshold tuning and should stay near production defaults.
     return "auto_stiff"

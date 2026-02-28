@@ -7,6 +7,8 @@ const STRICT_REL_ATM = 1e-7
 const STRICT_ABS_ATM = 1e-9
 const STRICT_DT_ORBIT = 60.0
 const STRICT_DT_ATM = 0.2
+const TELEMETRY_SOLVER_MAXITERS_QUICK_DEFAULT = 5_000_000
+const TELEMETRY_SOLVER_MAXITERS_FULL_DEFAULT = 20_000_000
 
 using Statistics
 using Dates
@@ -179,6 +181,31 @@ end
     end
     return default
 end
+
+@inline function _parse_positive_int_env(name::String, default::Int)::Int
+    raw = strip(get(ENV, name, ""))
+    isempty(raw) && return default
+    parsed = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("$name must be a positive integer, got '$raw'"))
+    end
+    parsed > 0 || throw(ArgumentError("$name must be a positive integer, got $parsed"))
+    return parsed
+end
+
+@inline function _telemetry_solver_maxiters(profile::Symbol)::Int
+    default_val = profile == :quick ? TELEMETRY_SOLVER_MAXITERS_QUICK_DEFAULT : TELEMETRY_SOLVER_MAXITERS_FULL_DEFAULT
+    return _parse_positive_int_env("SPACEAGORA_TELEMETRY_SOLVER_MAXITERS", default_val)
+end
+
+@inline function _telemetry_solver_retry_maxiters(base_maxiters::Int)::Int
+    default_retry = max(base_maxiters * 4, base_maxiters + 1_000_000)
+    retry = _parse_positive_int_env("SPACEAGORA_TELEMETRY_SOLVER_MAXITERS_RETRY", default_retry)
+    return max(retry, base_maxiters + 1)
+end
+
+@inline _is_maxiters_error(err)::Bool = occursin("MaxIters", sprint(showerror, err))
 
 @inline function _require_key(tbl, key::String, context::String)
     haskey(tbl, key) || throw(ArgumentError("Missing '$key' in $context"))
@@ -1496,7 +1523,8 @@ function _annotate_calibration_rows(
     score::Float64,
     selected_runtime_s::Float64,
     calibration_runtime_s::Float64,
-    calibration_used::Bool
+    calibration_used::Bool,
+    solver_info
 )::Vector{NamedTuple}
     out = NamedTuple[]
     for row in rows
@@ -1511,7 +1539,15 @@ function _annotate_calibration_rows(
                     calibrated_bias_km=get(bias_by_event, String(row.event), 0.0),
                     calibration_score=score,
                     selected_simulation_runtime_s=selected_runtime_s,
-                    calibration_runtime_s=calibration_runtime_s
+                    calibration_runtime_s=calibration_runtime_s,
+                    solver_mode=solver_info.solver_mode,
+                    solver_sequence=solver_info.solver_sequence,
+                    solver_fallback_used=solver_info.solver_fallback_used,
+                    solver_fallback_count=solver_info.solver_fallback_count,
+                    solver_fallback_trigger=solver_info.solver_fallback_trigger,
+                    solver_retcode=solver_info.solver_retcode,
+                    solver_maxiters=solver_info.solver_maxiters,
+                    solver_maxiters_retry_used=solver_info.solver_maxiters_retry_used
                 )
             )
         )
@@ -1667,7 +1703,7 @@ function _evaluate_thresholds(row, cfg::AbstractScenarioConfig, profile::Symbol)
     )
 end
 
-function _run_simulation_dataframe(args::SimulationConfiguration, scenario_name::String, truth::AtmosphereTruthConfig)
+function _run_simulation_dataframe(args::SimulationConfiguration, scenario_name::String, truth::AtmosphereTruthConfig, profile::Symbol)
     return mktempdir() do tmp
         cfg_run = SimulationConfiguration(
             file_paths=args.file_paths,
@@ -1691,26 +1727,72 @@ function _run_simulation_dataframe(args::SimulationConfiguration, scenario_name:
         )
 
         save_fields = _save_fields_for_study()
-        elapsed_s = @elapsed begin
-            withenv(
-                "SPACEAGORA_WARN_NORMALIZE" => "0",
-                "SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0",
-                "SPACEAGORA_SOLVER_MODE" => "auto_stiff",
-                "SPACEAGORA_GRAM_OFFLINE_SURROGATE" => truth.gram_offline_surrogate,
-                "SPACEAGORA_GRAM_STATIC_GRID" => truth.gram_static_grid ? "on" : "off",
-                "SPACEAGORA_GRAM_TRACK_CACHE" => truth.gram_track_cache ? "on" : "off",
-                "SPACEAGORA_GRAM_GLOBAL_LOCK" => truth.gram_global_lock
-            ) do
-                cd(tmp) do
-                    run_simulation(cfg_run; isolate_state=false, save_fields=save_fields)
+        base_maxiters = _telemetry_solver_maxiters(profile)
+
+        function _run_once(maxiters::Int)
+            solve_result = nothing
+            elapsed_s = @elapsed begin
+                withenv(
+                    "SPACEAGORA_WARN_NORMALIZE" => "0",
+                    "SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0",
+                    "SPACEAGORA_SOLVER_MODE" => "auto_stiff",
+                    "SPACEAGORA_SOLVER_MAXITERS" => string(maxiters),
+                    "SPACEAGORA_GRAM_OFFLINE_SURROGATE" => truth.gram_offline_surrogate,
+                    "SPACEAGORA_GRAM_STATIC_GRID" => truth.gram_static_grid ? "on" : "off",
+                    "SPACEAGORA_GRAM_TRACK_CACHE" => truth.gram_track_cache ? "on" : "off",
+                    "SPACEAGORA_GRAM_GLOBAL_LOCK" => truth.gram_global_lock
+                ) do
+                    cd(tmp) do
+                        solve_result = run_simulation(
+                            cfg_run;
+                            isolate_state=false,
+                            save_fields=save_fields,
+                            return_solution=true,
+                            return_solver_metadata=true
+                        )
+                    end
                 end
+            end
+            return solve_result, elapsed_s
+        end
+
+        retry_used = false
+        maxiters_used = base_maxiters
+        solve_result = nothing
+        elapsed_s = 0.0
+        try
+            solve_result, elapsed_s = _run_once(base_maxiters)
+        catch err
+            if _is_maxiters_error(err)
+                retry_used = true
+                maxiters_used = _telemetry_solver_retry_maxiters(base_maxiters)
+                @warn "Telemetry scenario '$scenario_name' hit MaxIters; retrying with larger SPACEAGORA_SOLVER_MAXITERS." base_maxiters=base_maxiters retry_maxiters=maxiters_used
+                solve_result, elapsed_s = _run_once(maxiters_used)
+            else
+                rethrow(err)
             end
         end
 
         csv_path = joinpath(tmp, "simulation_results.csv")
         isfile(csv_path) || error("Missing simulation output for $scenario_name: $csv_path")
         results_df = CSV.read(csv_path, DataFrame)
-        return (results_df, elapsed_s)
+
+        solver_trace = solve_result.solver_trace
+        solver_sequence = isempty(solver_trace) ? "n/a" : join([meta.solver for meta in solver_trace], "->")
+        solver_fallback_count = count(meta -> meta.fallback_used, solver_trace)
+        fallback_triggers = [meta.trigger_retcode for meta in solver_trace if !(meta.trigger_retcode isa Missing)]
+        solver_fallback_trigger = isempty(fallback_triggers) ? "n/a" : join(sort(unique(string.(fallback_triggers))), "|")
+        solver_info = (
+            solver_mode=String(solve_result.solver_mode),
+            solver_sequence=solver_sequence,
+            solver_fallback_used=solver_fallback_count > 0,
+            solver_fallback_count=solver_fallback_count,
+            solver_fallback_trigger=solver_fallback_trigger,
+            solver_retcode=string(solve_result.solution.retcode),
+            solver_maxiters=maxiters_used,
+            solver_maxiters_retry_used=retry_used
+        )
+        return (results_df=results_df, elapsed_s=elapsed_s, solver_info=solver_info)
     end
 end
 
@@ -1756,7 +1838,8 @@ function _run_single_scenario(cfg::OrbitEventsScenarioConfig, profile::Symbol)
         for cd_scale in cd_candidates, cr_value in cr_candidates
             args_eval = _make_orbit_args(cfg, eval_orbits; cd_scale=cd_scale, cr_override=cr_value)
             args_eval = _with_study_settings(args_eval; quick=eval_is_quick)
-            eval_df, _ = _run_simulation_dataframe(args_eval, cfg.name, cfg.atmosphere_truth)
+            eval_run = _run_simulation_dataframe(args_eval, cfg.name, cfg.atmosphere_truth, eval_profile)
+            eval_df = eval_run.results_df
             eval_rows, eval_errors = _orbit_rows_errors(cfg, args_eval, eval_df, eval_points)
             if cal.fit_bias
                 eval_bias = _estimate_event_biases(eval_errors, cal.bias_abs_max_km)
@@ -1775,7 +1858,10 @@ function _run_single_scenario(cfg::OrbitEventsScenarioConfig, profile::Symbol)
 
     args_final = _make_orbit_args(cfg, final_orbits; cd_scale=best_cd, cr_override=best_cr)
     args_final = _with_study_settings(args_final; quick=final_is_quick)
-    final_df, selected_runtime_s = _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth)
+    final_run = _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth, profile)
+    final_df = final_run.results_df
+    selected_runtime_s = final_run.elapsed_s
+    solver_info = final_run.solver_info
     final_rows, final_errors = _orbit_rows_errors(cfg, args_final, final_df, final_points)
     bias_by_event = (use_calibration && cal.fit_bias) ? _estimate_event_biases(final_errors, cal.bias_abs_max_km) : Dict{String, Float64}()
     if !isempty(bias_by_event)
@@ -1791,7 +1877,8 @@ function _run_single_scenario(cfg::OrbitEventsScenarioConfig, profile::Symbol)
         final_score,
         selected_runtime_s,
         calibration_runtime_s,
-        use_calibration
+        use_calibration,
+        solver_info
     )
     return annotated_rows, final_errors, calibration_runtime_s
 end
@@ -1834,7 +1921,8 @@ function _run_single_scenario(cfg::TimeAlignedScenarioConfig, profile::Symbol)
                 cr_override=cr_value
             )
             args_eval = _with_study_settings(args_eval; quick=eval_is_quick)
-            eval_df, _ = _run_simulation_dataframe(args_eval, cfg.name, cfg.atmosphere_truth)
+            eval_run = _run_simulation_dataframe(args_eval, cfg.name, cfg.atmosphere_truth, eval_profile)
+            eval_df = eval_run.results_df
             eval_rows, eval_errors = _time_aligned_rows_errors(cfg, args_eval, eval_df, eval_telemetry)
             if cal.fit_bias
                 eval_bias = _estimate_event_biases(eval_errors, cal.bias_abs_max_km)
@@ -1859,7 +1947,10 @@ function _run_single_scenario(cfg::TimeAlignedScenarioConfig, profile::Symbol)
         cr_override=best_cr
     )
     args_final = _with_study_settings(args_final; quick=final_is_quick)
-    final_df, selected_runtime_s = _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth)
+    final_run = _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth, profile)
+    final_df = final_run.results_df
+    selected_runtime_s = final_run.elapsed_s
+    solver_info = final_run.solver_info
     final_rows, final_errors = _time_aligned_rows_errors(cfg, args_final, final_df, final_telemetry)
     bias_by_event = (use_calibration && cal.fit_bias) ? _estimate_event_biases(final_errors, cal.bias_abs_max_km) : Dict{String, Float64}()
     if !isempty(bias_by_event)
@@ -1875,7 +1966,8 @@ function _run_single_scenario(cfg::TimeAlignedScenarioConfig, profile::Symbol)
         final_score,
         selected_runtime_s,
         calibration_runtime_s,
-        use_calibration
+        use_calibration,
+        solver_info
     )
     return annotated_rows, final_errors, calibration_runtime_s
 end

@@ -385,15 +385,16 @@ function _clear_checkpoint!(args)
     return nothing
 end
 
-function _drop_duplicate_saved_boundary!(saved_values, start_len::Int)
-    if start_len == 0 || length(saved_values.t) <= start_len
-        return nothing
+function _append_saved_segment!(times_acc::Vector{Float64}, data_acc::Vector, saved_values)
+    seg_len = length(saved_values.t)
+    seg_len == 0 && return nothing
+    start_idx = 1
+    if !isempty(times_acc) && isapprox(times_acc[end], saved_values.t[1]; atol=0.0, rtol=0.0)
+        start_idx = 2
     end
-    prev_t = saved_values.t[start_len]
-    next_t = saved_values.t[start_len + 1]
-    if isapprox(prev_t, next_t; atol=0.0, rtol=0.0)
-        deleteat!(saved_values.t, start_len + 1)
-        deleteat!(saved_values.saveval, start_len + 1)
+    if start_idx <= seg_len
+        append!(times_acc, @view saved_values.t[start_idx:seg_len])
+        append!(data_acc, @view saved_values.saveval[start_idx:seg_len])
     end
     return nothing
 end
@@ -518,6 +519,7 @@ function run_simulation(
     return_solver_metadata::Bool=false,
     save_fields=nothing
 )
+    return SimulationModel.ParallelPolicy.with_policy_context() do
     # Isolate mutable campaign/model state by default so repeated/concurrent runs
     # do not alias shared in-memory objects.
     args = isolate_state ? deepcopy(args) : args
@@ -527,6 +529,10 @@ function run_simulation(
     _enforce_typed_normalize_policy!(args)
     _validate_orientation_inertia!(args)
     _validate_thermal_model_support!(args)
+    try
+        SimulationModel.ParallelPolicy.reset_policy_telemetry!()
+    catch
+    end
 
     # Set up the model and initial conditions
     initial_conditions = build_initial_conditions(args)
@@ -630,6 +636,8 @@ function run_simulation(
     reltol_tol, abstol_tol = _build_solver_tolerances(u_start, args)
     last_sol = nothing
     solver_trace = NamedTuple[]
+    checkpoint_saved_times = Float64[]
+    checkpoint_saved_data = SimulationModel.SaveData[]
 
     if t_start < mission_end && checkpoint_active
         interval = args.simulation_settings.checkpoint_interval_s
@@ -638,14 +646,15 @@ function run_simulation(
 
         while t_cursor < mission_end
             t_next = min(t_cursor + interval, mission_end)
-            saved_len_before = length(saved_values.t)
+            empty!(saved_values.t)
+            empty!(saved_values.saveval)
             prob = ODEProblem(spacecraft_dynamics!, u_cursor, (t_cursor, t_next), p, callback=callbacks)
             seg_sol, solve_meta = _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
             push!(solver_trace, solve_meta)
             if !SciMLBase.successful_retcode(seg_sol.retcode)
                 throw(ErrorException("Checkpointed solve failed with retcode=$(seg_sol.retcode)."))
             end
-            _drop_duplicate_saved_boundary!(saved_values, saved_len_before)
+            _append_saved_segment!(checkpoint_saved_times, checkpoint_saved_data, saved_values)
             last_sol = seg_sol
             t_cursor = Float64(seg_sol.t[end])
             u_cursor = deepcopy(seg_sol.u[end])
@@ -664,11 +673,13 @@ function run_simulation(
 
     # Process and save results
     if args.simulation_settings.results
-        results_df = _build_results_dataframe(saved_values.t, saved_values.saveval, save_fields_resolved, args)
+        results_times = checkpoint_active ? checkpoint_saved_times : saved_values.t
+        results_data = checkpoint_active ? checkpoint_saved_data : saved_values.saveval
+        results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
         # Keep backwards-compatible CSV contract used by existing scripts/tests.
         CSV.write("simulation_results.csv", results_df)
         if _typed_save_bundle_enabled()
-            _write_results_bundle!(results_df, saved_values.t, args)
+            _write_results_bundle!(results_df, results_times, args)
         end
     end
 
@@ -686,6 +697,7 @@ function run_simulation(
         return last_sol
     end
     return nothing
+    end
 end
 
 function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Float64)

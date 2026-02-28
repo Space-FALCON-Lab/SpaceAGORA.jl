@@ -6,6 +6,7 @@ using LinearAlgebra
 using SPICE
 using Dates
 using ..SimulationModel: SPICE_LOCK, GRAM_LOCK
+using ..ParallelPolicy
 using ..EnvironmentModels
 using ..EnvironmentModels: getDensity, getHeatRate, NoAtmosphereModel
 using ..DynamicEffectors: BaseThrusterModel, AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight, InverseSquaredJ2GravityModel
@@ -159,16 +160,37 @@ end
     return heat_loads
 end
 
+@inline function _save_mass(num_sats::Int, u, t, integrator)
+    masses = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        masses[i] = Float64(u.sc[i].mass)
+    end
+    return masses
+end
+
+@inline function _save_quaternion(num_sats::Int, u, t, integrator)
+    quaternions = Vector{SVector{4, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        quaternions[i] = SVector{4, Float64}(u.sc[i].q)
+    end
+    return quaternions
+end
+
 function default_save_fields(args::SimulationConfiguration)
     num_sats = length(args.dynamics_model.spacecraft)
-    return SaveField[
-        SaveField(:position, (u, t, integrator) -> _save_positions(num_sats, u, t, integrator); per_satellite=true),
-        SaveField(:velocity, (u, t, integrator) -> _save_velocities(num_sats, u, t, integrator); per_satellite=true),
+    fields = SaveField[
+        SaveField(:position, (u, t, integrator) -> _save_positions(num_sats, u, t, integrator); per_satellite=true, column_prefix="pos"),
+        SaveField(:velocity, (u, t, integrator) -> _save_velocities(num_sats, u, t, integrator); per_satellite=true, column_prefix="vel"),
+        SaveField(:mass, (u, t, integrator) -> _save_mass(num_sats, u, t, integrator); per_satellite=true),
         SaveField(:drag, (u, t, integrator) -> _save_drag(num_sats, u, t, integrator); per_satellite=true),
         SaveField(:periapsis_altitude, (u, t, integrator) -> _save_periapsis_altitude(num_sats, u, t, integrator); per_satellite=true),
         SaveField(:heat_rate, (u, t, integrator) -> _save_heat_rate(num_sats, u, t, integrator); per_satellite=true),
         SaveField(:heat_load, (u, t, integrator) -> _save_heat_load(num_sats, u, t, integrator); per_satellite=true)
     ]
+    if args.mission_configuration.orientation_sim
+        push!(fields, SaveField(:quaternion, (u, t, integrator) -> _save_quaternion(num_sats, u, t, integrator); per_satellite=true, column_prefix="q"))
+    end
+    return fields
 end
 
 @inline function _resolve_save_fields(save_fields, args::SimulationConfiguration)
@@ -222,47 +244,33 @@ end
 end
 
 @inline function _density_callback_parallel_mode()::Symbol
-    mode = lowercase(strip(get(ENV, "SPACEAGORA_DENSITY_CALLBACK_PARALLEL", "auto")))
-    if mode in ("off", "none", "serial", "0", "false", "no")
-        return :off
-    elseif mode in ("on", "thread", "threads", "1", "true", "yes")
-        return :on
-    elseif mode == "auto"
-        return :auto
-    end
-    throw(ArgumentError("Unsupported SPACEAGORA_DENSITY_CALLBACK_PARALLEL='$mode'. Use one of: off, auto, on."))
+    return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_DENSITY_CALLBACK_PARALLEL")
 end
 
 @inline function _density_callback_thread_threshold()::Int
-    raw = strip(get(ENV, "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD", "8"))
-    threshold = try
-        parse(Int, raw)
-    catch
-        throw(ArgumentError("SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD must be an integer, got '$raw'"))
-    end
-    return max(1, threshold)
+    return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD", 8)
 end
 
 @inline function _control_callback_parallel_mode()::Symbol
-    mode = lowercase(strip(get(ENV, "SPACEAGORA_CONTROL_CALLBACK_PARALLEL", "auto")))
-    if mode in ("off", "none", "serial", "0", "false", "no")
-        return :off
-    elseif mode in ("on", "thread", "threads", "1", "true", "yes")
-        return :on
-    elseif mode == "auto"
-        return :auto
-    end
-    throw(ArgumentError("Unsupported SPACEAGORA_CONTROL_CALLBACK_PARALLEL='$mode'. Use one of: off, auto, on."))
+    return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_CONTROL_CALLBACK_PARALLEL")
 end
 
 @inline function _control_callback_thread_threshold()::Int
-    raw = strip(get(ENV, "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD", "8"))
-    threshold = try
-        parse(Int, raw)
-    catch
-        throw(ArgumentError("SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD must be an integer, got '$raw'"))
+    return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD", 8)
+end
+
+@inline function _thermal_callback_parallel_mode()::Symbol
+    if haskey(ENV, "SPACEAGORA_THERMAL_CALLBACK_PARALLEL")
+        return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_THERMAL_CALLBACK_PARALLEL")
     end
-    return max(1, threshold)
+    return _density_callback_parallel_mode()
+end
+
+@inline function _thermal_callback_thread_threshold()::Int
+    if haskey(ENV, "SPACEAGORA_THERMAL_CALLBACK_THREAD_THRESHOLD")
+        return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_THERMAL_CALLBACK_THREAD_THRESHOLD", 8)
+    end
+    return _density_callback_thread_threshold()
 end
 
 # Extend this for custom user density models as needed:
@@ -274,22 +282,25 @@ end
 # GRAM C-wrapper calls are serialized inside getDensity via SimulationModel.GRAM_LOCK.
 @inline density_model_threadsafe(::EnvironmentModels.GRAMAtmosphereModel)::Bool = true
 
-@inline function _density_callback_use_threads(args::SimulationConfiguration, num_sats::Int)::Bool
-    if Threads.nthreads() <= 1 || num_sats <= 1
-        return false
-    end
+@inline function _density_callback_thread_decision(args::SimulationConfiguration, num_sats::Int)
     mode = _density_callback_parallel_mode()
-    mode == :off && return false
 
     model = args.environment_model.density_model
     model_threadsafe = density_model_threadsafe(model)
     if !model_threadsafe && !_parse_bool_env("SPACEAGORA_DENSITY_CALLBACK_ASSUME_THREADSAFE", false)
-        return false
+        return (use_threads=false, allotment=1, mode=mode, policy_applied=false)
     end
-    if mode == :on
-        return true
-    end
-    return num_sats >= _density_callback_thread_threshold()
+    policy = ParallelPolicy.thread_policy_decision(
+        num_sats;
+        mode=mode,
+        threshold=_density_callback_thread_threshold(),
+        source=:density_callback
+    )
+    return (use_threads=policy.use_threads, allotment=policy.allotment, mode=mode, policy_applied=true)
+end
+
+@inline function _density_callback_use_threads(args::SimulationConfiguration, num_sats::Int)::Bool
+    return _density_callback_thread_decision(args, num_sats).use_threads
 end
 
 # Extend this for custom user control models as needed:
@@ -297,21 +308,38 @@ end
 @inline control_model_threadsafe(::Any)::Bool = false
 @inline control_model_threadsafe(::BaseThrusterModel)::Bool = true
 
-@inline function _control_callback_use_threads(control_model, num_sats::Int, use_invokelatest::Bool)::Bool
-    if use_invokelatest || Threads.nthreads() <= 1 || num_sats <= 1
-        return false
+@inline function _control_callback_thread_decision(control_model, num_sats::Int, use_invokelatest::Bool)
+    if use_invokelatest
+        return (use_threads=false, allotment=1, mode=:off, policy_applied=false)
     end
     mode = _control_callback_parallel_mode()
-    mode == :off && return false
 
     model_threadsafe = control_model_threadsafe(control_model)
     if !model_threadsafe && !_parse_bool_env("SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE", false)
-        return false
+        return (use_threads=false, allotment=1, mode=mode, policy_applied=false)
     end
-    if mode == :on
-        return true
-    end
-    return num_sats >= _control_callback_thread_threshold()
+    policy = ParallelPolicy.thread_policy_decision(
+        num_sats;
+        mode=mode,
+        threshold=_control_callback_thread_threshold(),
+        source=:control_callback
+    )
+    return (use_threads=policy.use_threads, allotment=policy.allotment, mode=mode, policy_applied=true)
+end
+
+@inline function _control_callback_use_threads(control_model, num_sats::Int, use_invokelatest::Bool)::Bool
+    return _control_callback_thread_decision(control_model, num_sats, use_invokelatest).use_threads
+end
+
+@inline function _thermal_callback_thread_decision(num_sats::Int)
+    mode = _thermal_callback_parallel_mode()
+    policy = ParallelPolicy.thread_policy_decision(
+        num_sats;
+        mode=mode,
+        threshold=_thermal_callback_thread_threshold(),
+        source=:thermal_callback
+    )
+    return (use_threads=policy.use_threads, allotment=policy.allotment, mode=mode, policy_applied=true)
 end
 
 @inline function _density_model_for_sat(p, sat_idx::Int)
@@ -1312,8 +1340,11 @@ function update_planet_frame_callback()
     return DiscreteCallback(condition, affect!, initialize=init_affect!)
 end
 # Factory function to build the callback
+function get_density_callback(num_sats::Int, args::SimulationConfiguration)
+    return get_density_callback(num_sats, args.dynamics_model.dynamic_effectors, args)
+end
+
 function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationConfiguration)
-    use_threads = _density_callback_use_threads(args, num_sats)
     cache_cfg = _gram_track_cache_config()
     stats_enabled = _gram_runtime_stats_enabled()
     target_include_j2 = _gram_track_cache_target_use_j2() && _uses_j2_gravity_effector(effectors)
@@ -1435,6 +1466,9 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
     function affect!(integrator)
         p = integrator.p
         u = integrator.u
+        decision = _density_callback_thread_decision(args, num_sats)
+        use_threads = decision.use_threads
+        started_ns = time_ns()
         segment_end_t = try
             Float64(integrator.sol.prob.tspan[2])
         catch
@@ -1442,7 +1476,7 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
         end
 
         if use_threads
-            Threads.@threads for i in 1:num_sats
+            ParallelPolicy.threaded_foreach(num_sats, decision.allotment) do i
                 @inbounds update_density_sat!(i, p, u, integrator.t, segment_end_t)
             end
         else
@@ -1450,14 +1484,21 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                 update_density_sat!(i, p, u, integrator.t, segment_end_t)
             end
         end
+        if decision.policy_applied
+            ParallelPolicy.record_policy_observation!(
+                :density_callback;
+                mode=decision.mode,
+                num_items=num_sats,
+                use_threads=use_threads,
+                elapsed_ns=(time_ns() - started_ns)
+            )
+        end
     end
 
     return DiscreteCallback(condition, affect!, initialize=(cb, u, t, integrator) -> affect!(integrator))
 end
 
 function get_thermal_callback(num_sats::Int, args::SimulationConfiguration)
-    use_threads = _density_callback_use_threads(args, num_sats)
-
     function update_thermal_sat!(i::Int, p, u)
         links = p.args.dynamics_model.spacecraft[i].links
         n_links = length(links)
@@ -1507,14 +1548,26 @@ function get_thermal_callback(num_sats::Int, args::SimulationConfiguration)
     function affect!(integrator)
         p = integrator.p
         u = integrator.u
+        decision = _thermal_callback_thread_decision(num_sats)
+        use_threads = decision.use_threads
+        started_ns = time_ns()
         if use_threads
-            Threads.@threads for i in 1:num_sats
+            ParallelPolicy.threaded_foreach(num_sats, decision.allotment) do i
                 @inbounds update_thermal_sat!(i, p, u)
             end
         else
             @inbounds for i in 1:num_sats
                 update_thermal_sat!(i, p, u)
             end
+        end
+        if decision.policy_applied
+            ParallelPolicy.record_policy_observation!(
+                :thermal_callback;
+                mode=decision.mode,
+                num_items=num_sats,
+                use_threads=use_threads,
+                elapsed_ns=(time_ns() - started_ns)
+            )
         end
     end
 
@@ -1620,10 +1673,9 @@ function get_drag_state_callback(num_sats::Int)
     end
     function affect_upcrossing!(integrator, idx::Int64)
         p = integrator.p
-        u = integrator.u
-        # if callback_verbose(integrator)
-        #     println("Switching to space integration at time $(integrator.t) seconds!")
-        # end
+        if callback_verbose(integrator)
+            println("Switching to space integration at time $(integrator.t) seconds!")
+        end
         # sleep(3.0)
         integrator.opts.dtmax = p.args.integration_tolerances.dt_max_orbit # Increase the maximum timestep when exiting the atmosphere
         reltol_new, abstol_new = _callback_tolerances_for_phase(
@@ -1638,10 +1690,9 @@ function get_drag_state_callback(num_sats::Int)
 
     function affect_downcrossing!(integrator, idx::Int64)
         p = integrator.p
-        u = integrator.u
-        # if callback_verbose(integrator)
-        #     println("Switching to atmosphere integration at time $(integrator.t) seconds!")
-        # end
+        if callback_verbose(integrator)
+            println("Switching to atmosphere integration at time $(integrator.t) seconds!")
+        end
         # sleep(3.0)
         integrator.opts.dtmax = p.args.integration_tolerances.dt_max_atmosphere # Decrease the maximum timestep when entering the atmosphere
         reltol_new, abstol_new = _callback_tolerances_for_phase(
@@ -1704,7 +1755,6 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)::Ve
     for i in eachindex(control_models)
         control_model = control_models[i]
         control_rate = control_rates[i]
-        use_threads = _control_callback_use_threads(control_model, num_sats, use_invokelatest)
         if control_model isa BaseThrusterModel
             n_slots = length(control_model.thrust)
             if n_slots != num_sats
@@ -1725,14 +1775,26 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)::Ve
             (integrator, sat_idx) -> calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
         end
         control_func = (integrator) -> begin
+            decision = _control_callback_thread_decision(control_model, num_sats, use_invokelatest)
+            use_threads = decision.use_threads
+            started_ns = time_ns()
             if use_threads
-                Threads.@threads for sat_idx in 1:num_sats
+                ParallelPolicy.threaded_foreach(num_sats, decision.allotment) do sat_idx
                     @inbounds apply_control!(integrator, sat_idx)
                 end
             else
                 @inbounds for sat_idx in 1:num_sats
                     apply_control!(integrator, sat_idx)
                 end
+            end
+            if decision.policy_applied
+                ParallelPolicy.record_policy_observation!(
+                    :control_callback;
+                    mode=decision.mode,
+                    num_items=num_sats,
+                    use_threads=use_threads,
+                    elapsed_ns=(time_ns() - started_ns)
+                )
             end
         end
         callbacks[i] = PeriodicCallback(control_func, control_rate)

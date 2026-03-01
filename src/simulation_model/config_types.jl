@@ -11,7 +11,7 @@ using Reexport
 
 export Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters
 export SaveCache, SaveData
-export SRPSunEphemerisCache
+export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache
 export LegacyGravityModelCode, LegacyDensityModelCode, LegacyAerodynamicModelCode, LegacyThermalModelCode, LegacyThrustControlCode
 export LegacyGravityConstant, LegacyGravityInverseSquared, LegacyGravityInverseSquaredJ2, LegacyGravityGRAM
 export LegacyDensityConstant, LegacyDensityExponential, LegacyDensityNoDensity, LegacyDensityGRAM, LegacyDensityNRLMSISE
@@ -539,6 +539,19 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         positions_j2000::Vector{SVector{3, Float64}}
     end
 
+    struct NBodyEphemerisCache
+        primary_body_name::String
+        body_query_names::Vector{String}
+        body_index_by_name::Dict{String, Int}
+        ets::Vector{Float64}
+        positions_j2000::Matrix{SVector{3, Float64}}
+    end
+
+    struct PlanetFrameEphemerisCache
+        ets::Vector{Float64}
+        quaternions::Vector{SVector{4, Float64}}
+    end
+
     @kwdef mutable struct Solution
         orientation::Orientation = Orientation()
         physical_properties::Physical_properties = Physical_properties()
@@ -559,7 +572,9 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         harmonics_workspaces::Vector{Any} = [nothing for _ in 1:N_sats]
         nbody_workspaces::Vector{Any} = [nothing for _ in 1:N_sats]
         aero_workspaces::Vector{Any} = [nothing for _ in 1:N_sats]
-        srp_sun_ephemeris_cache::Base.RefValue{Any} = Ref{Any}(nothing)
+        nbody_ephemeris_cache::Base.RefValue{Union{Nothing, NBodyEphemerisCache}} = Ref{Union{Nothing, NBodyEphemerisCache}}(nothing)
+        srp_sun_ephemeris_cache::Base.RefValue{Union{Nothing, SRPSunEphemerisCache}} = Ref{Union{Nothing, SRPSunEphemerisCache}}(nothing)
+        planet_frame_ephemeris_cache::Base.RefValue{Union{Nothing, PlanetFrameEphemerisCache}} = Ref{Union{Nothing, PlanetFrameEphemerisCache}}(nothing)
         current_time::Base.RefValue{Float64} = Ref(0.0)
         et_start::Base.RefValue{Float64} = Ref(0.0)
         debug_control::Base.RefValue{Bool} = Ref(false)

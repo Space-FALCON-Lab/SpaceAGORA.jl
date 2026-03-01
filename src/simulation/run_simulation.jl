@@ -108,6 +108,30 @@ end
     return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_SRP_EPHEMERIS_CACHE_MAX_SAMPLES", 200_000)
 end
 
+@inline function _nbody_ephemeris_cache_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_NBODY_EPHEMERIS_CACHE", true)
+end
+
+@inline function _nbody_ephemeris_cache_dt_s()::Float64
+    return _parse_positive_float_env("SPACEAGORA_NBODY_EPHEMERIS_CACHE_DT_S", 30.0)
+end
+
+@inline function _nbody_ephemeris_cache_max_samples()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES", 200_000)
+end
+
+@inline function _planet_frame_cache_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_PLANET_FRAME_CACHE", true)
+end
+
+@inline function _planet_frame_cache_dt_s()::Float64
+    return _parse_positive_float_env("SPACEAGORA_PLANET_FRAME_CACHE_DT_S", 5.0)
+end
+
+@inline function _planet_frame_cache_max_samples()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_PLANET_FRAME_CACHE_MAX_SAMPLES", 400_000)
+end
+
 @inline function _has_active_srp_effector(dynamic_effectors::Tuple)::Bool
     @inbounds for effector in dynamic_effectors
         if effector isa SimulationModel.SolarRadiationPressureModel && effector.A > 0.0
@@ -276,6 +300,43 @@ function _initialize_srp_sun_cache_buffer!(p)
     return nothing
 end
 
+function _initialize_nbody_ephemeris_cache_buffer!(p)
+    p.shared_buffers.nbody_ephemeris_cache[] = nothing
+    return nothing
+end
+
+function _initialize_planet_frame_cache_buffer!(p)
+    p.shared_buffers.planet_frame_ephemeris_cache[] = nothing
+    return nothing
+end
+
+@inline function _has_active_nbody_effector(dynamic_effectors::Tuple)::Bool
+    @inbounds for effector in dynamic_effectors
+        if effector isa SimulationModel.NBodyGravityModel && !isempty(effector.body_names)
+            return true
+        end
+    end
+    return false
+end
+
+function _collect_nbody_query_names(dynamic_effectors::Tuple)::Vector{String}
+    names = String[]
+    seen = Set{String}()
+    @inbounds for effector in dynamic_effectors
+        if !(effector isa SimulationModel.NBodyGravityModel)
+            continue
+        end
+        for body_name in effector.body_names
+            query_name = SimulationModel.DynamicEffectors._spice_query_name(body_name)
+            if !(query_name in seen)
+                push!(names, query_name)
+                push!(seen, query_name)
+            end
+        end
+    end
+    return names
+end
+
 function _initialize_srp_sun_ephemeris_cache!(p, et_start::Float64, mission_end_s::Float64)
     _srp_ephemeris_cache_enabled() || return nothing
     _has_active_srp_effector(p.args.dynamics_model.dynamic_effectors) || return nothing
@@ -307,6 +368,97 @@ function _initialize_srp_sun_ephemeris_cache!(p, et_start::Float64, mission_end_
     if p.args.simulation_settings.verbose
         println(
             "Initialized SRP Sun ephemeris cache: samples=$(n_samples), dt=$(round(dt_s; digits=3)) s, span=$(round(mission_end_s; digits=3)) s."
+        )
+    end
+    return nothing
+end
+
+function _initialize_nbody_ephemeris_cache!(p, et_start::Float64, mission_end_s::Float64)
+    _nbody_ephemeris_cache_enabled() || return nothing
+    _has_active_nbody_effector(p.args.dynamics_model.dynamic_effectors) || return nothing
+    if !isfinite(mission_end_s) || mission_end_s <= 0.0
+        return nothing
+    end
+
+    body_query_names = _collect_nbody_query_names(p.args.dynamics_model.dynamic_effectors)
+    isempty(body_query_names) && return nothing
+
+    dt_s = _nbody_ephemeris_cache_dt_s()
+    n_samples = max(2, Int(ceil(mission_end_s / dt_s)) + 1)
+    max_samples = _nbody_ephemeris_cache_max_samples()
+    if n_samples > max_samples
+        @warn "N-body ephemeris cache disabled: required samples=$n_samples exceeds SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES=$max_samples."
+        return nothing
+    end
+
+    primary_body_name = SimulationModel.DynamicEffectors._spice_query_name(p.args.environment_model.planet.name)
+    n_bodies = length(body_query_names)
+    ets = Vector{Float64}(undef, n_samples)
+    positions = Matrix{SVector{3, Float64}}(undef, n_samples, n_bodies)
+
+    lock(SimulationModel.SPICE_LOCK) do
+        @inbounds for sample_idx in 1:n_samples
+            et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
+            ets[sample_idx] = et
+            for body_idx in 1:n_bodies
+                body_query = body_query_names[body_idx]
+                positions[sample_idx, body_idx] = SVector{3, Float64}(spkpos(body_query, et, "J2000", "none", primary_body_name)[1])
+            end
+        end
+    end
+
+    body_index_by_name = Dict{String, Int}()
+    @inbounds for (idx, body_name) in pairs(body_query_names)
+        body_index_by_name[body_name] = idx
+    end
+
+    p.shared_buffers.nbody_ephemeris_cache[] = SimulationModel.NBodyEphemerisCache(
+        primary_body_name,
+        body_query_names,
+        body_index_by_name,
+        ets,
+        positions
+    )
+    if p.args.simulation_settings.verbose
+        println(
+            "Initialized N-body ephemeris cache: bodies=$(n_bodies), samples=$(n_samples), dt=$(round(dt_s; digits=3)) s, span=$(round(mission_end_s; digits=3)) s."
+        )
+    end
+    return nothing
+end
+
+function _initialize_planet_frame_ephemeris_cache!(p, et_start::Float64, mission_end_s::Float64)
+    _planet_frame_cache_enabled() || return nothing
+    if !isfinite(mission_end_s) || mission_end_s <= 0.0
+        return nothing
+    end
+
+    dt_s = _planet_frame_cache_dt_s()
+    n_samples = max(2, Int(ceil(mission_end_s / dt_s)) + 1)
+    max_samples = _planet_frame_cache_max_samples()
+    if n_samples > max_samples
+        @warn "Planet frame cache disabled: required samples=$n_samples exceeds SPACEAGORA_PLANET_FRAME_CACHE_MAX_SAMPLES=$max_samples."
+        return nothing
+    end
+
+    planet = p.args.environment_model.planet
+    frame_name = "IAU_$(planet.name)"
+    ets = Vector{Float64}(undef, n_samples)
+    quaternions = Vector{SVector{4, Float64}}(undef, n_samples)
+
+    lock(SimulationModel.SPICE_LOCK) do
+        @inbounds for sample_idx in 1:n_samples
+            et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
+            ets[sample_idx] = et
+            l_pi = SMatrix{3, 3, Float64}(pxform("J2000", frame_name, et)) * planet.J2000_to_pci'
+            quaternions[sample_idx] = SimulationModel.dcm_to_quaternion(l_pi)
+        end
+    end
+
+    p.shared_buffers.planet_frame_ephemeris_cache[] = SimulationModel.PlanetFrameEphemerisCache(ets, quaternions)
+    if p.args.simulation_settings.verbose
+        println(
+            "Initialized planet frame cache: samples=$(n_samples), dt=$(round(dt_s; digits=3)) s, span=$(round(mission_end_s; digits=3)) s."
         )
     end
     return nothing
@@ -787,7 +939,9 @@ function run_simulation(
     _initialize_harmonics_workspace_buffers!(p)
     _initialize_nbody_workspace_buffers!(p)
     _initialize_aero_workspace_buffers!(p)
+    _initialize_nbody_ephemeris_cache_buffer!(p)
     _initialize_srp_sun_cache_buffer!(p)
+    _initialize_planet_frame_cache_buffer!(p)
     p.shared_buffers.debug_control[] = get(ENV, "SPACEAGORA_DEBUG_CONTROL", "0") == "1"
     p.shared_buffers.debug_initial_derivative[] = get(ENV, "SPACEAGORA_DEBUG_INITIAL_DERIVATIVE", "0") == "1"
     save_fields_resolved = isnothing(save_fields) ? SimulationModel.default_save_fields(args) : collect(save_fields)
@@ -818,7 +972,9 @@ function run_simulation(
         args.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_$(args.environment_model.planet.name)", et_start)) * args.environment_model.planet.J2000_to_pci' # Initialize the planet frame at the start of the simulation (will be updated in the callback)
     end
     mission_end = args.mission_configuration.mission_time
+    _initialize_nbody_ephemeris_cache!(p, et_start, mission_end)
     _initialize_srp_sun_ephemeris_cache!(p, et_start, mission_end)
+    _initialize_planet_frame_ephemeris_cache!(p, et_start, mission_end)
     checkpoint_active = _typed_checkpoint_enabled(args)
     if checkpoint_active && args.simulation_settings.checkpoint_interval_s <= 0.0
         throw(ArgumentError("SimulationSettings.checkpoint_interval_s must be > 0 when checkpointing is enabled."))

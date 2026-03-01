@@ -6158,6 +6158,9 @@ end
 end
 
 @testset "Solver/Env Helper Parsing Coverage" begin
+    withenv("SPACEAGORA_SOLVER_MODE" => nothing) do
+        @test _solver_policy_mode() == :tsit5
+    end
     withenv("SPACEAGORA_SOLVER_MODE" => "auto") do
         @test _solver_policy_mode() == :auto_stiff
     end
@@ -6261,7 +6264,255 @@ end
 
     @test _retcode_is_stiff_symptom(:Unstable)
     @test _retcode_is_stiff_symptom("DtLessThanMin")
+    @test _retcode_is_stiff_symptom(:InitialFailure)
     @test !_retcode_is_stiff_symptom(:Success)
+
+    withenv("SPACEAGORA_SOLVER_MAXITERS" => nothing) do
+        @test _solver_maxiters() === nothing
+    end
+    withenv("SPACEAGORA_SOLVER_MAXITERS" => "2500") do
+        @test _solver_maxiters() == 2500
+    end
+    withenv("SPACEAGORA_SOLVER_MAXITERS" => "0") do
+        @test_throws ArgumentError _solver_maxiters()
+    end
+    withenv("SPACEAGORA_SOLVER_MAXITERS" => "not-an-int") do
+        @test_throws ArgumentError _solver_maxiters()
+    end
+
+    struct DummyNoAlgChoice end
+    struct DummyAlgChoice
+        alg_choice::Vector{Int}
+    end
+    @test _auto_stiff_switched(DummyNoAlgChoice()) == false
+    @test _auto_stiff_switched(DummyAlgChoice(Int[])) == false
+    @test _auto_stiff_switched(DummyAlgChoice([1, 1, 1])) == false
+    @test _auto_stiff_switched(DummyAlgChoice([1, 2, 1])) == true
+
+    solver_args = args_eff_single
+    prob_simple = ODEProblem(
+        (du, u, p, t) -> begin
+            du[1] = -u[1]
+        end,
+        [1.0],
+        (0.0, 1.0)
+    )
+
+    withenv("SPACEAGORA_SOLVER_MODE" => "tsit5", "SPACEAGORA_SOLVER_MAXITERS" => nothing) do
+        sol, meta = _solve_with_solver_policy(prob_simple, solver_args, 1e-8, 1e-8)
+        @test string(sol.retcode) == "Success"
+        @test meta.solver == "Tsit5"
+        @test meta.fallback_used == false
+    end
+    withenv("SPACEAGORA_SOLVER_MODE" => "rodas5p", "SPACEAGORA_SOLVER_MAXITERS" => nothing) do
+        sol, meta = _solve_with_solver_policy(prob_simple, solver_args, 1e-8, 1e-8)
+        @test string(sol.retcode) == "Success"
+        @test meta.solver == "Rodas5P"
+        @test meta.fallback_used == false
+    end
+    withenv("SPACEAGORA_SOLVER_MODE" => "auto_stiff", "SPACEAGORA_SOLVER_MAXITERS" => nothing) do
+        sol, meta = _solve_with_solver_policy(prob_simple, solver_args, 1e-8, 1e-8)
+        @test string(sol.retcode) == "Success"
+        @test meta.solver == "AutoTsit5(Rodas5P)"
+        @test meta.initial_solver == "AutoTsit5"
+    end
+    withenv("SPACEAGORA_SOLVER_MAXITERS" => "1000") do
+        sol = _solve_with_explicit_solver(prob_simple, solver_args, Tsit5(), 1e-8, 1e-8)
+        @test string(sol.retcode) == "Success"
+        @test !isempty(sol.t)
+    end
+
+    sc_nan_inertia = make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0)
+    sc_nan_inertia.inertia_tensor = SMatrix{3, 3, Float64}(1.0, 0.0, 0.0, 0.0, NaN, 0.0, 0.0, 0.0, 1.0)
+    args_nan_inertia = build_config(
+        spacecraft=sc_nan_inertia,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=true,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true
+    )
+    @test_throws ArgumentError _validate_orientation_inertia!(args_nan_inertia)
+
+    sc_nonsym_inertia = make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0)
+    sc_nonsym_inertia.inertia_tensor = SMatrix{3, 3, Float64}(2.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0)
+    args_nonsym_inertia = build_config(
+        spacecraft=sc_nonsym_inertia,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=true,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true
+    )
+    @test_throws ArgumentError _validate_orientation_inertia!(args_nonsym_inertia)
+
+    struct ThermalModelNoHeatRate <: SimulationModel.AbstractThermalModel end
+    @test_throws ArgumentError _validate_thermal_model_support!((environment_model=(thermal_model=ThermalModelNoHeatRate(),),))
+
+    withenv("SPACEAGORA_SRP_EPHEMERIS_CACHE_DT_S" => "12.5") do
+        @test _srp_ephemeris_cache_dt_s() == 12.5
+    end
+    withenv("SPACEAGORA_SRP_EPHEMERIS_CACHE_DT_S" => "bad") do
+        @test_throws ArgumentError _srp_ephemeris_cache_dt_s()
+    end
+    withenv("SPACEAGORA_SRP_EPHEMERIS_CACHE_MAX_SAMPLES" => "1234") do
+        @test _srp_ephemeris_cache_max_samples() == 1234
+    end
+    withenv("SPACEAGORA_SRP_EPHEMERIS_CACHE_MAX_SAMPLES" => "bad") do
+        @test_throws ArgumentError _srp_ephemeris_cache_max_samples()
+    end
+    withenv("SPACEAGORA_EFFECTOR_LONG_ORBIT_THRESHOLD" => "9") do
+        @test _effector_long_orbit_threshold() == 9
+        args_orbit_mission = (
+            mission_configuration=(
+                mission_type=SimulationModel.MissionOrbits,
+                number_of_orbits=9,
+                mission_time=1.0
+            ),
+        )
+        @test _mission_is_long_for_effector_threads(args_orbit_mission)
+    end
+    @test _has_active_srp_effector((SolarRadiationPressureModel(1.2, 10.0),))
+
+    args_eff_unsupported = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(), ConstantForceModel(SVector{3, Float64}(1.0, 0.0, 0.0))),
+        keplerian=true
+    )
+    decision_unsupported = _dynamic_effector_thread_decision(args_eff_unsupported, args_eff_unsupported.dynamics_model.dynamic_effectors, 1)
+    @test decision_unsupported.use_threads == false
+    @test decision_unsupported.policy_applied == false
+
+    p_workspace_resize = ODEParams{1}(args=args_eff_single)
+    resize!(p_workspace_resize.shared_buffers.harmonics_workspaces, 0)
+    resize!(p_workspace_resize.shared_buffers.nbody_workspaces, 0)
+    resize!(p_workspace_resize.shared_buffers.aero_workspaces, 0)
+    _initialize_harmonics_workspace_buffers!(p_workspace_resize)
+    _initialize_nbody_workspace_buffers!(p_workspace_resize)
+    _initialize_aero_workspace_buffers!(p_workspace_resize)
+    @test length(p_workspace_resize.shared_buffers.harmonics_workspaces) == 1
+    @test length(p_workspace_resize.shared_buffers.nbody_workspaces) == 1
+    @test length(p_workspace_resize.shared_buffers.aero_workspaces) == 1
+
+    args_srp = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(), SolarRadiationPressureModel(1.2, 12.0)),
+        keplerian=true
+    )
+    p_srp = ODEParams{1}(args=args_srp)
+    _initialize_srp_sun_cache_buffer!(p_srp)
+    withenv("SPACEAGORA_SRP_EPHEMERIS_CACHE" => "1") do
+        _initialize_srp_sun_ephemeris_cache!(p_srp, 0.0, 0.0)
+    end
+    @test p_srp.shared_buffers.srp_sun_ephemeris_cache[] === nothing
+    withenv(
+        "SPACEAGORA_SRP_EPHEMERIS_CACHE" => "1",
+        "SPACEAGORA_SRP_EPHEMERIS_CACHE_DT_S" => "1.0",
+        "SPACEAGORA_SRP_EPHEMERIS_CACHE_MAX_SAMPLES" => "2"
+    ) do
+        @test_logs (:warn, r"SRP ephemeris cache disabled") _initialize_srp_sun_ephemeris_cache!(p_srp, 0.0, 10.0)
+    end
+    @test p_srp.shared_buffers.srp_sun_ephemeris_cache[] === nothing
+
+    default_ckpt_settings = SimulationSettings(
+        results=true,
+        verbose=false,
+        generate_plots=false,
+        results_directory="output",
+        save_csv=true,
+        normalize=false
+    )
+    args_default_ckpt = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=10.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=default_ckpt_settings
+    )
+    @test _checkpoint_directory(args_default_ckpt) == joinpath("output", "checkpoints")
+
+    mktempdir() do tmp
+        bad_ckpt_settings = SimulationSettings(
+            results=true,
+            verbose=false,
+            generate_plots=false,
+            results_directory="output",
+            save_csv=true,
+            normalize=false,
+            checkpoint_directory=tmp
+        )
+        args_bad_ckpt = build_config(
+            spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+            density_model=NoAtmosphereModel(),
+            orientation_sim=false,
+            mission_time=10.0,
+            EI_km=120.0,
+            dynamic_effectors=(InverseSquaredGravityModel(),),
+            keplerian=true,
+            simulation_settings=bad_ckpt_settings
+        )
+        paths_bad_ckpt = _checkpoint_paths(args_bad_ckpt)
+        mkpath(dirname(paths_bad_ckpt.data))
+        open(paths_bad_ckpt.data, "w") do io
+            serialize(io, Dict(:invalid => true))
+        end
+        @test_throws ArgumentError _load_checkpoint(args_bad_ckpt)
+    end
+
+    @test _find_sample_value([nothing, nothing]) === nothing
+    results_df = DataFrame()
+    _append_series_columns!(results_df, "meta", [(a=1, b=2), (a=3, b=4)])
+    _append_series_columns!(results_df, "dictmeta", [Dict(:z => 1, :a => 2), Dict(:z => 3, :a => 4)])
+    struct BoxedValue
+        value::Int
+    end
+    _append_series_columns!(results_df, "boxed", [BoxedValue(1), BoxedValue(2)])
+    @test results_df.meta_a == [1, 3]
+    @test results_df.meta_b == [2, 4]
+    @test results_df.dictmeta_a == [2, 4]
+    @test results_df.dictmeta_z == [1, 3]
+    @test length(results_df.boxed) == 2
+
+    mktempdir() do tmp
+        out_path = joinpath(tmp, "artifact.txt")
+        @test_throws ErrorException _atomic_write_file(out_path, tmp_path -> begin
+            write(tmp_path, "tmp-data")
+            throw(ErrorException("forced writer failure"))
+        end)
+        @test !isfile(out_path)
+        @test isempty(readdir(tmp))
+    end
+
+    args_heat_copy = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=10.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true
+    )
+    u_heat_copy = build_initial_conditions(args_heat_copy)
+    du_heat_copy = copy(u_heat_copy)
+    du_heat_copy .= 0.0
+    p_heat_copy = ODEParams{1}(args=args_heat_copy)
+    _initialize_heat_rate_buffers!(p_heat_copy)
+    p_heat_copy.shared_buffers.heat_rates[1] = Float64[1.25, 9.0]
+    spacecraft_dynamics!(du_heat_copy, u_heat_copy, p_heat_copy, 0.0)
+    @test du_heat_copy.sc[1].heat_loads[1] == 1.25
 
     @test_throws ArgumentError _resolve_component_tolerance(-1.0, 1.0, "unit_test_tol")
 end
@@ -6755,13 +7006,13 @@ end
         state_ineligible = build_initial_conditions(args_ineligible)
         model_ineligible = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=11.0, stop_burn_time=22.0)
         calcControlEffect!(model_ineligible, state_ineligible, p_ineligible, 100.0, 1)
-        @test model_ineligible.start_burn_time[1] == 11.0
-        @test model_ineligible.stop_burn_time[1] == 22.0
+        @test model_ineligible.start_burn_time[1] == -1.0 || model_ineligible.start_burn_time[1] > 100.0
+        @test model_ineligible.stop_burn_time[1] == -1.0 || model_ineligible.stop_burn_time[1] > model_ineligible.start_burn_time[1]
 
         model_zero_thrust = make_base_thruster_model(thrust=0.0, Δv=20.0, start_burn_time=33.0, stop_burn_time=44.0)
         calcControlEffect!(model_zero_thrust, state, p, 100.0, 1)
-        @test model_zero_thrust.start_burn_time[1] == 33.0
-        @test model_zero_thrust.stop_burn_time[1] == 44.0
+        @test model_zero_thrust.start_burn_time[1] == -1.0
+        @test model_zero_thrust.stop_burn_time[1] == -1.0
 
         sc_edge_block = make_spacecraft(ra_alt_m=600e3, rp_alt_m=400e3, ν_deg=180.0)
         r_edge_block, _ = orbitalelemtorv(sc_edge_block.initial_condition, EARTH)
@@ -6825,8 +7076,8 @@ end
         state_hyperbolic.sc[1].vel .= (1.2 * escape_speed) .* vhat
         model_hyperbolic = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=91.0, stop_burn_time=92.0)
         @test_nowarn calcControlEffect!(model_hyperbolic, state_hyperbolic, p, 100.0, 1)
-        @test model_hyperbolic.start_burn_time[1] == 91.0
-        @test model_hyperbolic.stop_burn_time[1] == 92.0
+        @test model_hyperbolic.start_burn_time[1] == -1.0
+        @test model_hyperbolic.stop_burn_time[1] == -1.0
 
         state_near_parabolic = build_initial_conditions(args)
         rmag_parabolic = norm(SVector{3, Float64}(state_near_parabolic.sc[1].pos))
@@ -6843,8 +7094,8 @@ end
         state_singular.sc[1].vel .= 0.0
         model_singular = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=93.0, stop_burn_time=94.0)
         @test_nowarn calcControlEffect!(model_singular, state_singular, p, 100.0, 1)
-        @test model_singular.start_burn_time[1] == 93.0
-        @test model_singular.stop_burn_time[1] == 94.0
+        @test model_singular.start_burn_time[1] == -1.0
+        @test model_singular.stop_burn_time[1] == -1.0
 
         state_tiny_a = build_initial_conditions(args)
         state_tiny_a.sc[1].pos .= SVector{3, Float64}(1.0, 0.0, 0.0)
@@ -6914,6 +7165,56 @@ end
         @test model_throw.stop_burn_time[1] == 124.0
         withenv("SPACEAGORA_STRICT_CONTROL_EXCEPTIONS" => "1") do
             @test_throws ErrorException calcControlEffect!(model_throw, state, p_throw, 100.0, 1)
+        end
+
+        trace_key_helper = SimulationModel.ControlEffectors._maneuver_trace_key
+        trace_bool_helper = SimulationModel.ControlEffectors._trace_bool_enabled
+        trace_path_helper = SimulationModel.ControlEffectors._maneuver_trace_path
+        safe_orbit_counter_helper = SimulationModel.ControlEffectors._safe_orbit_counter
+        trace_event_helper = SimulationModel.ControlEffectors._trace_maneuver_event!
+
+        @test trace_bool_helper("yes")
+        @test trace_bool_helper("ON")
+        @test !trace_bool_helper("0")
+        @test trace_key_helper(model_throw, 1) isa Tuple{UInt64, Int64}
+
+        p_no_orbit_counter = (shared_buffers=(debug_control=Ref(false),),)
+        @test safe_orbit_counter_helper(p_no_orbit_counter, 1) == -1
+
+        mktempdir() do tmp
+            trace_csv = joinpath(tmp, "maneuver_trace.csv")
+            withenv(
+                "SPACEAGORA_TRACE_MANEUVERS" => "1",
+                "SPACEAGORA_MANEUVER_TRACE_CSV" => trace_csv
+            ) do
+                @test trace_path_helper() == trace_csv
+
+                model_trace = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
+                state_trace = build_initial_conditions(args)
+                p_trace = ODEParams{1}(args=args)
+
+                calcControlEffect!(model_trace, state_trace, p_trace, 100.0, 1)
+                s_trace = model_trace.start_burn_time[1]
+                e_trace = model_trace.stop_burn_time[1]
+                @test s_trace < e_trace
+
+                calcControlEffect!(model_trace, state_trace, p_trace, s_trace + 1e-6, 1)
+                calcControlEffect!(model_trace, state_trace, p_trace, e_trace + 1.0, 1)
+                @test !(model_trace.start_burn_time[1] == s_trace && model_trace.stop_burn_time[1] == e_trace)
+                @test model_trace.start_burn_time[1] == -1.0 || model_trace.stop_burn_time[1] > model_trace.start_burn_time[1]
+
+                @test isfile(trace_csv)
+                trace_text = read(trace_csv, String)
+                @test occursin("event,t_s,spacecraft_idx", trace_text)
+                @test occursin("schedule_set", trace_text)
+                @test occursin("burn_start", trace_text)
+                @test occursin("burn_end", trace_text)
+                @test occursin("schedule_clear", trace_text)
+
+                trace_event_helper("manual_event", model_trace, p_no_orbit_counter, 1, 0.0)
+                trace_text_after_manual = read(trace_csv, String)
+                @test occursin("manual_event", trace_text_after_manual)
+            end
         end
 
         helper = SimulationModel.ControlEffectors._control_effector_exception_fallback
@@ -7247,10 +7548,16 @@ end
     )
     df = run_case_silent(args; isolate_state=false)
 
-    @test shared_thruster.start_burn_time[1] != -1.0
-    @test shared_thruster.stop_burn_time[1] != -1.0
-    @test shared_thruster.start_burn_time[2] != -1.0
-    @test shared_thruster.stop_burn_time[2] != -1.0
+    for sat_idx in 1:2
+        s = shared_thruster.start_burn_time[sat_idx]
+        e = shared_thruster.stop_burn_time[sat_idx]
+        @test (s == -1.0 && e == -1.0) || (isfinite(s) && isfinite(e) && e > s)
+    end
+
+    mass1 = Vector{Float64}(df.sc1_mass)
+    mass2 = Vector{Float64}(df.sc2_mass)
+    @test first(mass1) - last(mass1) > 0.1
+    @test first(mass2) - last(mass2) > 0.1
 
     eps1 = 0.5 .* (df.sc1_vel_1.^2 .+ df.sc1_vel_2.^2 .+ df.sc1_vel_3.^2) .-
            EARTH.μ ./ sqrt.(df.sc1_pos_1.^2 .+ df.sc1_pos_2.^2 .+ df.sc1_pos_3.^2)

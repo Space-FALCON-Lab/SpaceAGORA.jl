@@ -18,6 +18,8 @@ Base.@kwdef struct ModeRunArtifacts
     mode::Symbol
     backend::String
     elapsed_s::Float64
+    bench_elapsed_s::Float64
+    orbit_elapsed_s::Float64
     raw_path::String
     summary_path::String
     orbit_raw_path::String
@@ -108,19 +110,25 @@ function run_mode(
 
     println()
     println("[paper-pipeline] mode=$(mode) backend=$(backend)")
-    mode_start = time_ns()
 
     raw_df = DataFrame()
     summary_df = DataFrame()
     orbit_raw_df = DataFrame()
     orbit_summary_df = DataFrame()
+    bench_elapsed_s = 0.0
+    orbit_elapsed_s = 0.0
     withenv("SPACEAGORA_PERF_PARALLEL_BACKEND" => backend) do
+        bench_started_ns = time_ns()
         raw_df = run_benchmarks(config.profile, cases, planet)
         summary_df = summarize_results(raw_df)
+        bench_elapsed_s = (time_ns() - bench_started_ns) / 1e9
+
+        orbit_started_ns = time_ns()
         orbit_raw_df = run_per_orbit_for_scenarios(config.profile, cases, planet)
         orbit_summary_df = summarize_per_orbit_results(orbit_raw_df)
+        orbit_elapsed_s = (time_ns() - orbit_started_ns) / 1e9
     end
-    elapsed_s = (time_ns() - mode_start) / 1e9
+    elapsed_s = bench_elapsed_s + orbit_elapsed_s
 
     raw_path = joinpath(mode_outdir, "runtime_raw_$(config.profile.name)_$(mode)_$(stamp).csv")
     summary_path = joinpath(mode_outdir, "runtime_summary_$(config.profile.name)_$(mode)_$(stamp).csv")
@@ -142,6 +150,8 @@ function run_mode(
         mode=mode,
         backend=backend,
         elapsed_s=elapsed_s,
+        bench_elapsed_s=bench_elapsed_s,
+        orbit_elapsed_s=orbit_elapsed_s,
         raw_path=raw_path,
         summary_path=summary_path,
         orbit_raw_path=orbit_raw_path,
@@ -228,16 +238,23 @@ function build_mode_overview(artifacts::Vector{ModeRunArtifacts})::DataFrame
         summary_df = artifact.summary_df
         failures = count(!, raw_df.solve_success)
         unstable = count(occursin("Unstable"), string.(raw_df.solve_retcode))
-        baseline_idx = findfirst(==("single_baseline_gravity"), summary_df.scenario)
+        baseline_idx = findfirst(==(PERF_BASELINE_SCENARIO), summary_df.scenario)
         baseline_mean = baseline_idx === nothing ? missing : summary_df.total_time_mean_s[baseline_idx]
         mc = raw_df[(raw_df.category .== "montecarlo") .& (raw_df.solve_success .== true), :]
         mc_mean = nrow(mc) > 0 ? mean(mc.total_time_s) : missing
         mc_p90 = nrow(mc) > 0 ? quantile(mc.total_time_s, 0.9) : missing
+        elapsed_total = artifact.elapsed_s
+        bench_elapsed = artifact.bench_elapsed_s
+        orbit_elapsed = artifact.orbit_elapsed_s
+        orbit_share = elapsed_total > 0.0 ? (100.0 * orbit_elapsed / elapsed_total) : missing
 
         push!(rows, (
             mode=string(artifact.mode),
             backend=artifact.backend,
-            elapsed_s=artifact.elapsed_s,
+            elapsed_s=elapsed_total,
+            bench_elapsed_s=bench_elapsed,
+            orbit_elapsed_s=orbit_elapsed,
+            orbit_share_pct=orbit_share,
             rows_raw=nrow(raw_df),
             rows_summary=nrow(summary_df),
             failed_rows=failures,
@@ -291,9 +308,13 @@ function _pipeline_top_scenarios(comparison_df::DataFrame; limit::Int=0)::DataFr
     if !_has_column(comparison_df, :serial_total_time_mean_s)
         return first(comparison_df, min(row_limit, nrow(comparison_df)))
     end
-    df = comparison_df[.!ismissing.(comparison_df.serial_total_time_mean_s), :]
-    nrow(df) == 0 && return first(comparison_df, min(row_limit, nrow(comparison_df)))
-    sort!(df, :serial_total_time_mean_s, rev=true)
+    if limit <= 0
+        return copy(comparison_df)
+    end
+    df = copy(comparison_df)
+    df[!, :_serial_sort_key] = [ismissing(v) ? -Inf : Float64(v) for v in df.serial_total_time_mean_s]
+    sort!(df, :_serial_sort_key, rev=true)
+    select!(df, Not(:_serial_sort_key))
     return first(df, min(row_limit, nrow(df)))
 end
 
@@ -328,7 +349,26 @@ function generate_pipeline_comparison_plots(
         _save_pipeline_plot!(plot_paths, plt, outdir, "paper_plot_mode_elapsed", profile, stamp)
     end
 
-    # 2) Baseline scenario mean runtime by mode.
+    # 2) Stage-split elapsed by mode.
+    if nrow(overview_df) > 0 && _has_column(overview_df, :bench_elapsed_s) && _has_column(overview_df, :orbit_elapsed_s)
+        bench = Float64.(overview_df.bench_elapsed_s)
+        orbit = Float64.(overview_df.orbit_elapsed_s)
+        vals = hcat(bench, orbit)
+        plt = Plots.bar(
+            mode_labels,
+            vals;
+            label=["run_benchmarks" "per_orbit"],
+            color=["#4b86b4" "#d97706"],
+            bar_position=:stack,
+            title="Pipeline Stage Wall Time by Mode",
+            xlabel="Mode",
+            ylabel="Elapsed (s)",
+            _plot_margins(size=(1900, 1000), bottom_mm=20, right_mm=50, legend=:outertopright)...
+        )
+        _save_pipeline_plot!(plot_paths, plt, outdir, "paper_plot_mode_stage_elapsed", profile, stamp)
+    end
+
+    # 3) Baseline scenario mean runtime by mode.
     if nrow(overview_df) > 0 && _has_column(overview_df, :baseline_mean_s)
         baseline_vals = Float64[]
         labels = String[]
@@ -345,7 +385,7 @@ function generate_pipeline_comparison_plots(
                 baseline_vals;
                 color="#d67c1c",
                 legend=false,
-                title="Baseline Runtime by Mode (single_baseline_gravity)",
+                title="Baseline Runtime by Mode ($(PERF_BASELINE_SCENARIO))",
                 xlabel="Mode",
                 ylabel="Mean total time (s)",
                 _plot_margins(size=(1700, 950), bottom_mm=18, right_mm=18)...
@@ -354,7 +394,7 @@ function generate_pipeline_comparison_plots(
         end
     end
 
-    # 3) Monte Carlo p90 runtime by mode.
+    # 4) Monte Carlo p90 runtime by mode.
     if nrow(overview_df) > 0 && _has_column(overview_df, :montecarlo_p90_s)
         mc_vals = Float64[]
         labels = String[]
@@ -386,7 +426,7 @@ function generate_pipeline_comparison_plots(
     scenario_labels = [_plot_axis_label(String(s)) for s in top_df.scenario]
     x = collect(1:length(scenario_labels))
 
-    # 4) Speedup vs serial by scenario (for each non-serial mode).
+    # 5) Speedup vs serial by scenario (for each non-serial mode).
     speedup_cols = [name for name in names(top_df) if startswith(String(name), "speedup_vs_serial_") && String(name) != "speedup_vs_serial_serial"]
     if !isempty(speedup_cols) && !isempty(scenario_labels)
         values = Matrix{Float64}(undef, nrow(top_df), length(speedup_cols))
@@ -413,10 +453,12 @@ function generate_pipeline_comparison_plots(
         _save_pipeline_plot!(plot_paths, plt, outdir, "paper_plot_speedup_vs_serial", profile, stamp)
     end
 
-    # 5) Scenario runtime heatmap across modes.
+    # 6) Scenario runtime heatmap across modes.
     runtime_cols = [name for name in names(top_df) if endswith(String(name), "_total_time_mean_s")]
     if !isempty(runtime_cols) && !isempty(scenario_labels)
         mode_order = [replace(String(c), "_total_time_mean_s" => "") for c in runtime_cols]
+        scenario_labels_matrix = [_plot_wrapped_label(String(s); width=22, max_lines=3) for s in top_df.scenario]
+        matrix_height = max(1300, 420 + 72 * length(scenario_labels_matrix))
         z = fill(NaN, length(scenario_labels), length(runtime_cols))
         for i in 1:nrow(top_df)
             for (j, col) in enumerate(runtime_cols)
@@ -431,14 +473,14 @@ function generate_pipeline_comparison_plots(
             1:length(scenario_labels),
             z;
             xticks=(1:length(runtime_cols), mode_order),
-            yticks=(1:length(scenario_labels), scenario_labels),
+            yticks=(1:length(scenario_labels), scenario_labels_matrix),
             colorbar=true,
             colorbar_title="mean total (s)",
             xlabel="Mode",
             ylabel="Scenario",
             title="Scenario Runtime Matrix ($scenario_scope)",
             color=Plots.cgrad([:lightsteelblue1, :mediumpurple3, "#3a0a2a"]),
-            _plot_margins(size=(2200, 1300), left_mm=72, right_mm=28, bottom_mm=18)...
+            _plot_margins(size=(2400, matrix_height), left_mm=120, right_mm=32, bottom_mm=18)...
         )
         _save_pipeline_plot!(plot_paths, plt, outdir, "paper_plot_runtime_matrix", profile, stamp)
     end
@@ -498,23 +540,23 @@ function write_pipeline_report(
                 println(io, "Serial mode was requested but not found in overview.")
             else
                 serial_summary = artifacts[findfirst(a -> a.mode == :serial, artifacts)].summary_df
-                baseline_idx = findfirst(==("single_baseline_gravity"), serial_summary.scenario)
+                baseline_idx = findfirst(==(PERF_BASELINE_SCENARIO), serial_summary.scenario)
                 if baseline_idx === nothing
-                    println(io, "Baseline scenario `single_baseline_gravity` not present.")
+                    println(io, "Baseline scenario `$(PERF_BASELINE_SCENARIO)` not present.")
                 else
                     baseline = serial_summary.total_time_mean_s[baseline_idx]
-                    println(io, "- Baseline (`single_baseline_gravity`) mean total time: `$(round(baseline; digits=6)) s`.")
+                    println(io, "- Baseline (`$(PERF_BASELINE_SCENARIO)`) mean total time: `$(round(baseline; digits=6)) s`.")
                     for scenario in (
                         "single_orientation_aero",
                         "single_nbody_sun_moon",
                         "single_harmonics_l20",
                         "single_harmonics_l50",
-                        "single_thruster_control",
                         "single_baseline_long_mission",
-                        "multi_2_gravity",
                         "multi_4_gravity",
                         "multi_8_gravity",
-                        "single_j2"
+                        "multi_16_gravity",
+                        "multi_32_gravity",
+                        "multi_64_gravity"
                     )
                         idx = findfirst(==(scenario), serial_summary.scenario)
                         if idx !== nothing
@@ -532,6 +574,8 @@ function write_pipeline_report(
         for artifact in artifacts
             println(io, "### Mode `$(artifact.mode)` (backend=`$(artifact.backend)`)")
             println(io, "- Wall elapsed: `$(round(artifact.elapsed_s; digits=3)) s`")
+            println(io, "- run_benchmarks elapsed: `$(round(artifact.bench_elapsed_s; digits=3)) s`")
+            println(io, "- per-orbit elapsed: `$(round(artifact.orbit_elapsed_s; digits=3)) s`")
             println(io, "- Raw: `$(artifact.raw_path)`")
             println(io, "- Summary: `$(artifact.summary_path)`")
             println(io, "- Per-orbit raw: `$(artifact.orbit_raw_path)`")

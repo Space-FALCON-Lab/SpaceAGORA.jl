@@ -2,6 +2,8 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 const DEFAULT_OUTPUT_DIR = joinpath(REPO_ROOT, "output", "performance")
 const SPICE_PATH = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
 const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "Gravity_harmonics_data", "EarthGGM05C.csv")
+const EARTH_GRAM_SURROGATE_FILE = joinpath(REPO_ROOT, "GRAM Suite 2.0", "Earth", "earth_surrogate.jls")
+const PERF_BASELINE_SCENARIO = "single_j2"
 const _PERF_POLICY_ENV_NAMES = (
     "SPACEAGORA_OUTER_PARALLEL_ACTIVE",
     "SPACEAGORA_DENSITY_CALLBACK_PARALLEL",
@@ -275,6 +277,16 @@ end
     return max(1, value)
 end
 
+@inline function _parse_nonnegative_int_env(name::String, default::Int)::Int
+    raw = strip(get(ENV, name, string(default)))
+    value = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("$name must be an integer, got '$raw'"))
+    end
+    return max(0, value)
+end
+
 @inline function _parse_nonnegative_float_env(name::String, default::Float64)::Float64
     raw = strip(get(ENV, name, string(default)))
     value = try
@@ -303,6 +315,24 @@ end
 
 @inline function _priority_outer_light_mission_threshold_s()::Float64
     return _parse_nonnegative_float_env("SPACEAGORA_PERF_PRIORITY_OUTER_LIGHT_MISSION_THRESHOLD_S", 14_400.0)
+end
+
+@inline function _control_stress_repeats_full()::Int
+    return _parse_positive_int_env("SPACEAGORA_PERF_CONTROL_STRESS_REPEATS_FULL", 3)
+end
+
+@inline function _control_stress_warmup_full()::Int
+    return _parse_nonnegative_int_env("SPACEAGORA_PERF_CONTROL_STRESS_WARMUP_FULL", 1)
+end
+
+@inline function _include_control_stress_per_orbit()::Bool
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_PERF_INCLUDE_CONTROL_STRESS_PER_ORBIT", "1")))
+    if raw in ("1", "true", "yes", "on")
+        return true
+    elseif raw in ("0", "false", "no", "off")
+        return false
+    end
+    throw(ArgumentError("Invalid SPACEAGORA_PERF_INCLUDE_CONTROL_STRESS_PER_ORBIT='$raw'. Use one of: 1/0, true/false, yes/no, on/off."))
 end
 
 @inline function _machine_parallel_class()::Symbol
@@ -617,6 +647,7 @@ function build_config(;
     mission_time_s::Float64,
     orientation_sim::Bool,
     dynamic_effectors::Tuple,
+    density_model=NoAtmosphereModel(),
     guidance_effectors::Tuple=(),
     guidance_rates::Vector{Float64}=Float64[],
     control_effectors::Tuple=(),
@@ -644,7 +675,7 @@ function build_config(;
         environment_model=EnvironmentModel(
             planet=planet,
             EI=120.0,
-            density_model=NoAtmosphereModel(),
+            density_model=density_model,
             thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
             topography=false,
             wind=false
@@ -660,6 +691,28 @@ function build_config(;
             dt_max_orbit=dt_max_orbit
         )
     )
+end
+
+Base.@kwdef struct _GRAMOfflineSurrogateFileBase
+    planet_name::String = "earth"
+end
+
+function SimulationModel.EnvironmentModels._gram_point_density(
+    model::_GRAMOfflineSurrogateFileBase,
+    h::Float64,
+    lat::Float64,
+    lon::Float64,
+    el_time::Float64,
+    wind::Bool
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    # Offline benchmark path: keep density lookup file-backed and avoid native point GRAM calls.
+    return 0.0, 200.0, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+function _build_earth_gram_surrogate_density()
+    isfile(EARTH_GRAM_SURROGATE_FILE) || throw(ArgumentError("GRAM surrogate file not found: $(EARTH_GRAM_SURROGATE_FILE)"))
+    base_model = _GRAMOfflineSurrogateFileBase(planet_name="earth")
+    return GRAMAtmosphereModelSurrogate(base_model, EARTH_GRAM_SURROGATE_FILE, nothing)
 end
 
 function make_montecarlo_config(seed::Int, planet::Earth, mission_time_s::Float64)::SimulationConfiguration
@@ -721,8 +774,8 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
 
     sc_baseline = [make_spacecraft(planet; id=1, with_panel=false)]
     sc_orientation = [make_spacecraft(planet; id=1, with_panel=true, orientation_state=(q0, w0))]
-    sc_thruster = [make_spacecraft(planet; id=1, with_panel=false, prop_mass=30.0)]
-    sc_super_constellation = make_constellation(planet, 8; with_panel=false)
+    earth_gram_surrogate_density = _build_earth_gram_surrogate_density()
+    multi_scaling_effectors = (InverseSquaredGravityModel(), harmonics20)
     sc_proximity_fullstack = [
         make_spacecraft(
             planet;
@@ -755,22 +808,6 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
             prop_mass=18.0
         )
     ]
-    thruster = BaseThrusterModel(
-        thrust=[0.8],
-        direction=[0.0],
-        Δv=[35.0],
-        start_burn_time=[-1.0],
-        stop_burn_time=[-1.0],
-        Isp=[300.0]
-    )
-    super_constellation_thruster = BaseThrusterModel(
-        thrust=fill(0.18, 8),
-        direction=fill(0.0, 8),
-        Δv=fill(4.0, 8),
-        start_burn_time=fill(-1.0, 8),
-        stop_burn_time=fill(-1.0, 8),
-        Isp=fill(300.0, 8)
-    )
     proximity_thruster = BaseThrusterModel(
         thrust=fill(0.28, 2),
         direction=fill(0.0, 2),
@@ -792,18 +829,6 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
 
     cases = BenchmarkCase[
         BenchmarkCase(
-            name="single_baseline_gravity",
-            category="core",
-            description="1 spacecraft, position-only, inverse-square gravity",
-            args_template=build_config(
-                planet=planet,
-                spacecraft=sc_baseline,
-                mission_time_s=spec.mission_short_s,
-                orientation_sim=false,
-                dynamic_effectors=(InverseSquaredGravityModel(),)
-            )
-        ),
-        BenchmarkCase(
             name="single_orientation_aero",
             category="orientation",
             description="1 spacecraft, orientation dynamics on, aerodynamic model active",
@@ -816,39 +841,71 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
             )
         ),
         BenchmarkCase(
-            name="multi_2_gravity",
-            category="satellite_scaling",
-            description="2 spacecraft, position-only, inverse-square gravity",
-            args_template=build_config(
-                planet=planet,
-                spacecraft=make_constellation(planet, 2; with_panel=false),
-                mission_time_s=spec.mission_short_s,
-                orientation_sim=false,
-                dynamic_effectors=(InverseSquaredGravityModel(),)
-            )
-        ),
-        BenchmarkCase(
             name="multi_4_gravity",
             category="satellite_scaling",
-            description="4 spacecraft, position-only, inverse-square gravity",
+            description="4 spacecraft, L20 harmonics with GRAM surrogate density from file",
             args_template=build_config(
                 planet=planet,
                 spacecraft=make_constellation(planet, 4; with_panel=false),
                 mission_time_s=spec.mission_short_s,
                 orientation_sim=false,
-                dynamic_effectors=(InverseSquaredGravityModel(),)
+                dynamic_effectors=multi_scaling_effectors,
+                density_model=deepcopy(earth_gram_surrogate_density)
             )
         ),
         BenchmarkCase(
             name="multi_8_gravity",
             category="satellite_scaling",
-            description="8 spacecraft, position-only, inverse-square gravity",
+            description="8 spacecraft, L20 harmonics with GRAM surrogate density from file",
             args_template=build_config(
                 planet=planet,
                 spacecraft=make_constellation(planet, 8; with_panel=false),
                 mission_time_s=spec.mission_short_s,
                 orientation_sim=false,
-                dynamic_effectors=(InverseSquaredGravityModel(),)
+                dynamic_effectors=multi_scaling_effectors,
+                density_model=deepcopy(earth_gram_surrogate_density)
+            ),
+            run_in_quick=false
+        ),
+        BenchmarkCase(
+            name="multi_16_gravity",
+            category="satellite_scaling",
+            description="16 spacecraft, L20 harmonics with GRAM surrogate density from file",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=make_constellation(planet, 16; with_panel=false),
+                mission_time_s=spec.mission_short_s,
+                orientation_sim=false,
+                dynamic_effectors=multi_scaling_effectors,
+                density_model=deepcopy(earth_gram_surrogate_density)
+            ),
+            run_in_quick=false
+        ),
+        BenchmarkCase(
+            name="multi_32_gravity",
+            category="satellite_scaling",
+            description="32 spacecraft, L20 harmonics with GRAM surrogate density from file",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=make_constellation(planet, 32; with_panel=false),
+                mission_time_s=spec.mission_short_s,
+                orientation_sim=false,
+                dynamic_effectors=multi_scaling_effectors,
+                density_model=deepcopy(earth_gram_surrogate_density)
+            ),
+            run_in_quick=false
+        ),
+        BenchmarkCase(
+            name="multi_64_gravity",
+            category="satellite_scaling",
+            description="64 spacecraft, L20 harmonics with GRAM surrogate density from file",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=make_constellation(planet, 64; with_panel=false),
+                mission_time_s=spec.mission_short_s,
+                orientation_sim=false,
+                dynamic_effectors=multi_scaling_effectors,
+                density_model=deepcopy(earth_gram_surrogate_density)
             ),
             run_in_quick=false
         ),
@@ -867,7 +924,7 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
         BenchmarkCase(
             name="single_nbody_sun_moon",
             category="dynamics_fidelity",
-            description="1 spacecraft, inverse-square gravity + N-body Sun/Moon perturbations (auto-stiff solver override)",
+            description="1 spacecraft, inverse-square gravity + N-body Sun/Moon perturbations",
             args_template=build_config(
                 planet=planet,
                 spacecraft=sc_baseline,
@@ -875,8 +932,7 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 orientation_sim=false,
                 dynamic_effectors=(InverseSquaredGravityModel(), nbody_sun_moon),
                 dt_max_orbit=10.0
-            ),
-            solver_mode_override="auto_stiff"
+            )
         ),
         BenchmarkCase(
             name="single_harmonics_l20",
@@ -905,23 +961,9 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
             run_in_quick=false
         ),
         BenchmarkCase(
-            name="single_thruster_control",
-            category="control",
-            description="1 spacecraft, inverse-square gravity + BaseThrusterModel control callback",
-            args_template=build_config(
-                planet=planet,
-                spacecraft=sc_thruster,
-                mission_time_s=spec.mission_short_s,
-                orientation_sim=false,
-                dynamic_effectors=(InverseSquaredGravityModel(),),
-                control_effectors=(thruster,),
-                control_rates=[1.0]
-            )
-        ),
-        BenchmarkCase(
             name="proximity_2sat_orientation_fullstack_gnc_highrate",
             category="rpo_gnc",
-            description="2-spacecraft close-proximity operations with orientation on and high-rate guidance/control stack",
+            description="2-spacecraft close-proximity operations with orientation on, high-rate guidance, and BaseThrusterModel control callback",
             args_template=build_config(
                 planet=planet,
                 spacecraft=sc_proximity_fullstack,
@@ -934,24 +976,6 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 control_rates=[0.1],
                 dt_max_orbit=0.2
             )
-        ),
-        BenchmarkCase(
-            name="super_constellation_8sat_l20_control",
-            category="control_stress",
-            description="8 spacecraft, L20 harmonics + BaseThrusterModel control callback stress case (mission capped for benchmark stability; Tsit5 override)",
-            args_template=build_config(
-                planet=planet,
-                spacecraft=sc_super_constellation,
-                mission_time_s=min(spec.mission_short_s, 60.0),
-                orientation_sim=false,
-                dynamic_effectors=(InverseSquaredGravityModel(), harmonics20),
-                control_effectors=(super_constellation_thruster,),
-                control_rates=[1.0],
-                dt_max_orbit=45.0,
-                reltol_orbit=1e-5,
-                abstol_orbit=1e-5
-            ),
-            solver_mode_override="tsit5"
         ),
         BenchmarkCase(
             name="single_baseline_long_mission",
@@ -1178,8 +1202,8 @@ end
     repeats = spec.repeats
     if case.category == "control_stress"
         if spec.name == "full"
-            warmup = 0
-            repeats = 1
+            warmup = _control_stress_warmup_full()
+            repeats = _control_stress_repeats_full()
         else
             warmup = min(warmup, 1)
             repeats = min(repeats, 2)
@@ -1722,9 +1746,10 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
     baseline_sc = make_spacecraft(planet; id=1, with_panel=false)
     period_s = orbital_period_seconds(baseline_sc, planet)
     orbit_counts = spec.name == "full" ? collect(1:5) : collect(1:3)
-    selected = [c for c in selected_cases(spec, cases) if c.category != "control_stress"]
+    include_control_stress = _include_control_stress_per_orbit()
+    selected = include_control_stress ? selected_cases(spec, cases) : [c for c in selected_cases(spec, cases) if c.category != "control_stress"]
 
-    println("[per-orbit] scenarios=$(length(selected)), baseline period=$(round(period_s; digits=3)) s, orbit counts=$(first(orbit_counts)):$(last(orbit_counts))")
+    println("[per-orbit] scenarios=$(length(selected)), baseline period=$(round(period_s; digits=3)) s, orbit counts=$(first(orbit_counts)):$(last(orbit_counts)), include_control_stress=$(include_control_stress)")
     rows = NamedTuple[]
     backend = perf_parallel_backend()
 
@@ -2004,7 +2029,7 @@ function summarize_results(raw_df::DataFrame)::DataFrame
         end
     end
 
-    baseline_idx = findfirst(==("single_baseline_gravity"), summary.scenario)
+    baseline_idx = findfirst(==(PERF_BASELINE_SCENARIO), summary.scenario)
     if baseline_idx === nothing || ismissing(summary.total_time_mean_s[baseline_idx]) || summary.total_time_mean_s[baseline_idx] <= 0.0
         summary[!, :relative_to_baseline] = fill(missing, nrow(summary))
         summary[!, :speedup_vs_baseline] = fill(missing, nrow(summary))
@@ -2210,7 +2235,7 @@ function generate_runtime_plots(
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_totals", spec, stamp)
     end
 
-    # 2) Relative speedup vs single_baseline_gravity.
+    # 2) Relative speedup vs selected baseline scenario.
     speedup_df = success_summary[.!ismissing.(success_summary.speedup_vs_baseline), :]
     if nrow(speedup_df) > 0
         labels = _plot_axis_label.(String.(speedup_df.scenario))
@@ -2222,7 +2247,7 @@ function generate_runtime_plots(
             color="#4f9d69",
             title="Relative Speedup (higher is faster)",
             xlabel="Scenario",
-            ylabel="Speedup vs single_baseline_gravity [x]",
+            ylabel="Speedup vs $(PERF_BASELINE_SCENARIO) [x]",
             _plot_margins(size=(2500, 1200), bottom_mm=92, right_mm=62, legend=:outertopright)...
         )
         Plots.hline!(plt, [1.0]; color=:black, linestyle=:dash, label="Baseline = 1x")
@@ -2444,14 +2469,13 @@ function generate_runtime_plots(
             marker=:diamond,
             color=:black,
             linestyle=:dash,
-            label="Ideal linear from 1-sat baseline"
+            label="Ideal linear from smallest satellite-count case"
         )
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_satellite_scaling", spec, stamp)
     end
 
     # 9) Dynamics fidelity ladder (absolute + relative).
     fidelity_order = [
-        "single_baseline_gravity",
         "single_j2",
         "single_nbody_sun_moon",
         "single_harmonics_l20",
@@ -2464,8 +2488,8 @@ function generate_runtime_plots(
         if idx !== nothing
             value = success_summary.total_time_mean_s[idx]
             if !(value isa Missing)
-                if scenario == "single_baseline_gravity"
-                    push!(fidelity_labels, "Inverse\nSquared")
+                if scenario == "single_j2"
+                    push!(fidelity_labels, "J2")
                 elseif scenario == "single_nbody_sun_moon"
                     push!(fidelity_labels, "NBody\nSun+Moon")
                 elseif scenario == "single_harmonics_l20"
@@ -2684,10 +2708,13 @@ function write_report(
         slowest = summary_df[valid_rows[argmax(vals)], :]
     end
 
-    baseline = _scenario_metric(summary_df, "single_baseline_gravity", :total_time_mean_s)
+    baseline = _scenario_metric(summary_df, PERF_BASELINE_SCENARIO, :total_time_mean_s)
     orientation = _scenario_metric(summary_df, "single_orientation_aero", :total_time_mean_s)
-    multi2 = _scenario_metric(summary_df, "multi_2_gravity", :total_time_mean_s)
     multi4 = _scenario_metric(summary_df, "multi_4_gravity", :total_time_mean_s)
+    multi8 = _scenario_metric(summary_df, "multi_8_gravity", :total_time_mean_s)
+    multi16 = _scenario_metric(summary_df, "multi_16_gravity", :total_time_mean_s)
+    multi32 = _scenario_metric(summary_df, "multi_32_gravity", :total_time_mean_s)
+    multi64 = _scenario_metric(summary_df, "multi_64_gravity", :total_time_mean_s)
     harmonics20 = _scenario_metric(summary_df, "single_harmonics_l20", :total_time_mean_s)
     harmonics50 = _scenario_metric(summary_df, "single_harmonics_l50", :total_time_mean_s)
 
@@ -2720,10 +2747,18 @@ function write_report(
             println(io, "- Fastest successful scenario: `$(fastest.scenario)` with mean total time `$(round(fastest.total_time_mean_s; digits=3)) s`.")
         end
         if baseline !== nothing && orientation !== nothing && !ismissing(baseline) && !ismissing(orientation) && baseline > 0.0
-            println(io, "- Orientation + aerodynamic run vs baseline: `$(round(orientation / baseline; digits=2))x` runtime.")
+            println(io, "- Orientation + aerodynamic run vs `$(PERF_BASELINE_SCENARIO)`: `$(round(orientation / baseline; digits=2))x` runtime.")
         end
-        if baseline !== nothing && multi2 !== nothing && multi4 !== nothing && !ismissing(baseline) && !ismissing(multi2) && !ismissing(multi4) && baseline > 0.0
-            println(io, "- Multi-satellite scaling: `2-sat=$(round(multi2 / baseline; digits=2))x`, `4-sat=$(round(multi4 / baseline; digits=2))x` relative to single-sat baseline.")
+        if multi4 !== nothing && multi8 !== nothing && multi16 !== nothing && multi32 !== nothing && multi64 !== nothing &&
+           !ismissing(multi4) && !ismissing(multi8) && !ismissing(multi16) && !ismissing(multi32) && !ismissing(multi64) && multi4 > 0.0
+            println(
+                io,
+                "- Multi-satellite scaling (runtime): " *
+                "`8/4=$(round(multi8 / multi4; digits=2))x`, " *
+                "`16/4=$(round(multi16 / multi4; digits=2))x`, " *
+                "`32/4=$(round(multi32 / multi4; digits=2))x`, " *
+                "`64/4=$(round(multi64 / multi4; digits=2))x`."
+            )
         end
         if harmonics20 !== nothing && harmonics50 !== nothing && !ismissing(harmonics20) && !ismissing(harmonics50) && harmonics20 > 0.0
             println(io, "- Harmonics scaling: `L=50` is `$(round(harmonics50 / harmonics20; digits=2))x` relative to `L=20`.")
@@ -2795,23 +2830,36 @@ function main()
 
     planet = Earth("", SPICE_PATH)
     cases = build_cases(spec, planet)
+    bench_started_ns = time_ns()
     raw_df = run_benchmarks(spec, cases, planet)
     summary_df = summarize_results(raw_df)
+    bench_elapsed_s = (time_ns() - bench_started_ns) / 1e9
+
+    orbit_started_ns = time_ns()
     orbit_raw_df = run_per_orbit_for_scenarios(spec, cases, planet)
     orbit_summary_df = summarize_per_orbit_results(orbit_raw_df)
+    orbit_elapsed_s = (time_ns() - orbit_started_ns) / 1e9
+    total_elapsed_s = bench_elapsed_s + orbit_elapsed_s
 
     stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
     raw_path = joinpath(outdir, "runtime_raw_$(spec.name)_$(stamp).csv")
     summary_path = joinpath(outdir, "runtime_summary_$(spec.name)_$(stamp).csv")
     orbit_raw_path = joinpath(outdir, "runtime_per_orbit_raw_$(spec.name)_$(stamp).csv")
     orbit_summary_path = joinpath(outdir, "runtime_per_orbit_summary_$(spec.name)_$(stamp).csv")
+    stage_timing_path = joinpath(outdir, "runtime_stage_timing_$(spec.name)_$(stamp).csv")
     report_path = joinpath(outdir, "runtime_report_$(spec.name)_$(stamp).md")
     plot_paths = generate_runtime_plots(outdir, spec, stamp, raw_df, summary_df, orbit_summary_df)
+
+    stage_timing_df = DataFrame(
+        stage=["run_benchmarks", "run_per_orbit", "total"],
+        elapsed_s=[bench_elapsed_s, orbit_elapsed_s, total_elapsed_s]
+    )
 
     CSV.write(raw_path, raw_df)
     CSV.write(summary_path, summary_df)
     CSV.write(orbit_raw_path, orbit_raw_df)
     CSV.write(orbit_summary_path, orbit_summary_df)
+    CSV.write(stage_timing_path, stage_timing_df)
     write_report(report_path, spec, raw_df, summary_df, orbit_summary_df; plot_paths=plot_paths)
 
     println("Analysis complete.")
@@ -2819,6 +2867,7 @@ function main()
     println("Summary: $summary_path")
     println("Per-orbit raw: $orbit_raw_path")
     println("Per-orbit summary: $orbit_summary_path")
+    println("Stage timing: $stage_timing_path")
     println("Plots generated: $(length(plot_paths))")
     println("Report: $report_path")
 end

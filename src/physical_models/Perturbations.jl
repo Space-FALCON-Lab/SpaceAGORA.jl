@@ -6,7 +6,7 @@ using SatelliteToolbox
 using SatelliteToolboxGeomagneticField
 using CSV
 using DataFrames
-using ..SimulationModel: SPICE_LOCK
+using ..SimulationModel: SPICE_LOCK, SRPSunEphemerisCache
 using ..AbstractTypes: AbstractPlanet
 using ..Planets: Earth, Mars, Venus, Titan
 include("../utils/quaternion_utils.jl")
@@ -70,6 +70,60 @@ struct NBodyGravityModel{P <: AbstractPlanet, NP <: Tuple{Vararg{String}}, NM <:
     planet::P # Planet data for primary body
 end
 
+struct NBodyScratchWorkspace
+    pos_primary_k_all::Vector{SVector{3, Float64}}
+    thread_force::Vector{MVector{3, Float64}}
+end
+
+@inline function _make_nbody_scratch_workspace(n_bodies::Int)::NBodyScratchWorkspace
+    n_bodies >= 0 || throw(ArgumentError("NBody scratch workspace size must be >= 0, got $n_bodies"))
+    n_threads = max(1, _threadid_capacity())
+    pos_primary_k_all = [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_bodies]
+    thread_force = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_threads]
+    return NBodyScratchWorkspace(pos_primary_k_all, thread_force)
+end
+
+@inline function _ensure_nbody_workspace_capacity!(
+    workspace::NBodyScratchWorkspace,
+    n_bodies::Int,
+    n_threads::Int
+)::NBodyScratchWorkspace
+    if length(workspace.pos_primary_k_all) < n_bodies
+        resize!(workspace.pos_primary_k_all, n_bodies)
+    end
+    if length(workspace.thread_force) < n_threads
+        old_len = length(workspace.thread_force)
+        resize!(workspace.thread_force, n_threads)
+        @inbounds for tid in (old_len + 1):n_threads
+            workspace.thread_force[tid] = MVector{3, Float64}(0.0, 0.0, 0.0)
+        end
+    end
+    return workspace
+end
+
+@inline function _nbody_workspace_for_sat!(
+    param::ODEParams,
+    sat_idx::Int,
+    n_bodies::Int,
+    n_threads::Int
+)::NBodyScratchWorkspace
+    workspaces = param.shared_buffers.nbody_workspaces
+    if sat_idx > length(workspaces)
+        return _ensure_nbody_workspace_capacity!(_make_nbody_scratch_workspace(n_bodies), n_bodies, n_threads)
+    end
+
+    sat_entry = @inbounds workspaces[sat_idx]
+    workspace = if sat_entry === nothing
+        created = _make_nbody_scratch_workspace(n_bodies)
+        @inbounds workspaces[sat_idx] = created
+        created
+    else
+        sat_entry::NBodyScratchWorkspace
+    end
+    _ensure_nbody_workspace_capacity!(workspace, n_bodies, n_threads)
+    return workspace
+end
+
 struct GravitationalHarmonicsModel{P <: AbstractPlanet} <: AbstractForceTorqueModel
     L::Int64 # Degree
     M::Int64 # Order
@@ -84,6 +138,55 @@ struct GravitationalHarmonicsModel{P <: AbstractPlanet} <: AbstractForceTorqueMo
     N2::Matrix{Float64} # Preallocated N2 array
     sqrt_2n_plus_3::Vector{Float64} # Precalculated sqrt(2n+3) values
     planet::P # Planet data for primary body
+end
+
+struct HarmonicsScratchWorkspace
+    A::Matrix{Float64}
+    R::Vector{Float64}
+    I::Vector{Float64}
+end
+
+@inline function _make_harmonics_scratch_workspace(model::GravitationalHarmonicsModel)::HarmonicsScratchWorkspace
+    L = model.L
+    A = zeros(Float64, L + 4, L + 4)
+    R = zeros(Float64, L + 4)
+    I = zeros(Float64, L + 4)
+
+    # Keep the same static diagonal initialization used by the legacy shared workspace.
+    A[1, 1] = 1.0
+    @inbounds for l = 1:(L + 2)
+        i = l + 1
+        A[i, i] = sqrt((2 * l + 1) / (2 * l)) * A[i - 1, i - 1]
+    end
+    return HarmonicsScratchWorkspace(A, R, I)
+end
+
+@inline function _harmonics_workspace_for_sat!(
+    model::GravitationalHarmonicsModel,
+    param::ODEParams,
+    sat_idx::Int
+)::HarmonicsScratchWorkspace
+    workspaces = param.shared_buffers.harmonics_workspaces
+    if sat_idx > length(workspaces)
+        return _make_harmonics_scratch_workspace(model)
+    end
+
+    sat_entry = @inbounds workspaces[sat_idx]
+    sat_map = if sat_entry === nothing
+        created = Dict{UInt, HarmonicsScratchWorkspace}()
+        @inbounds workspaces[sat_idx] = created
+        created
+    else
+        sat_entry::Dict{UInt, HarmonicsScratchWorkspace}
+    end
+
+    key = objectid(model)
+    workspace = get(sat_map, key, nothing)
+    if workspace === nothing
+        workspace = _make_harmonics_scratch_workspace(model)
+        sat_map[key] = workspace
+    end
+    return workspace
 end
 
 struct SolarRadiationPressureModel <: AbstractForceTorqueModel
@@ -227,7 +330,11 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
     force_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize force vector
     n_bodies = length(model.body_names)
-    pos_primary_k_all = Vector{SVector{3, Float64}}(undef, n_bodies)
+    decision = _multibody_thread_decision(n_bodies; heavy_work=true)
+    use_threads = decision.use_threads
+    n_threads = use_threads ? _threadid_capacity() : 1
+    workspace = _nbody_workspace_for_sat!(param, i, n_bodies, n_threads)
+    pos_primary_k_all = workspace.pos_primary_k_all
     for (k, body_name) in pairs(model.body_names)
         body_name_spice = _spice_query_name(body_name)
 
@@ -237,12 +344,12 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
         pos_primary_k_all[k] = model.planet.J2000_to_pci * pos_primary_body * 1e3
     end
 
-    decision = _multibody_thread_decision(n_bodies; heavy_work=true)
-    use_threads = decision.use_threads
     started_ns = time_ns()
     if use_threads
-        n_threads = _threadid_capacity()
-        thread_force = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_threads]
+        thread_force = workspace.thread_force
+        @inbounds for tid in 1:n_threads
+            thread_force[tid] .= 0.0
+        end
         ParallelPolicy.threaded_foreach(n_bodies, decision.allotment) do k
             tid = Threads.threadid()
             pos_primary_k = pos_primary_k_all[k]
@@ -286,8 +393,12 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
     primary_body_name = _spice_query_name(planet.name)
 
-    pos_primary_sun_j2000 = lock(SPICE_LOCK) do
-        SVector{3, Float64}(spkpos("sun", et, "J2000", "none", primary_body_name)[1])
+    cache_entry = param.shared_buffers.srp_sun_ephemeris_cache[]
+    pos_primary_sun_j2000 = if cache_entry isa SRPSunEphemerisCache
+        cached = _srp_sun_position_from_cache_j2000(cache_entry, et)
+        cached === nothing ? _srp_sun_position_from_spice_j2000(et, primary_body_name) : cached
+    else
+        _srp_sun_position_from_spice_j2000(et, primary_body_name)
     end
     pos_primary_sun = planet.J2000_to_pci * pos_primary_sun_j2000 * 1e3
     r_sun_to_sc = pos_ii - pos_primary_sun
@@ -305,11 +416,48 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
+@inline function _srp_sun_position_from_spice_j2000(et::Float64, primary_body_name::String)::SVector{3, Float64}
+    return lock(SPICE_LOCK) do
+        SVector{3, Float64}(spkpos("sun", et, "J2000", "none", primary_body_name)[1])
+    end
+end
+
+@inline function _srp_sun_position_from_cache_j2000(cache::SRPSunEphemerisCache, et::Float64)::Union{Nothing, SVector{3, Float64}}
+    ets = cache.ets
+    n_samples = length(ets)
+    n_samples >= 2 || return nothing
+    if et < ets[1] || et > ets[n_samples]
+        return nothing
+    end
+
+    idx = searchsortedlast(ets, et)
+    if idx <= 0
+        return nothing
+    elseif idx >= n_samples
+        return cache.positions_j2000[n_samples]
+    end
+
+    et0 = ets[idx]
+    et1 = ets[idx + 1]
+    if et1 <= et0
+        return cache.positions_j2000[idx]
+    end
+    α = (et - et0) / (et1 - et0)
+    p0 = cache.positions_j2000[idx]
+    p1 = cache.positions_j2000[idx + 1]
+    return p0 + α * (p1 - p0)
+end
+
 function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     # cnf = param.cnf
     
     rVec_cart = SVector{3, Float64}(x.pos)
     mass = x.mass               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
+
+    workspace = _harmonics_workspace_for_sat!(model, param, i)
+    A = workspace.A
+    R = workspace.R
+    I = workspace.I
 
     RE = param.args.environment_model.planet.Rp_e
     r = norm(rVec_cart)
@@ -317,27 +465,27 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
     L = model.L
     M = model.M
     @fastmath begin
-        model.A[2, 1] = u*sqrt_3
+        A[2, 1] = u * sqrt_3
         # Fill the off diagonal elements of A
         @inbounds @simd for n = 1:L+1
             i = n + 1
-            model.A[i+1, i] = u*model.sqrt_2n_plus_3[n]*model.A[i, i]
+            A[i + 1, i] = u * model.sqrt_2n_plus_3[n] * A[i, i]
         end
         # Fill the rest of A
         @inbounds for m = 0:M+1
             j = m + 1
             @inbounds for l = m+2:L+1
                 i = l + 1
-                model.A[i, j] = u*model.N1[i, j]*model.A[i-1, j] - model.N2[i, j]*model.A[i-2, j]
+                A[i, j] = u * model.N1[i, j] * A[i - 1, j] - model.N2[i, j] * A[i - 2, j]
             end
             if m == 0
-                model.R[j] = 1.0
-                model.I[j] = 0.0
+                R[j] = 1.0
+                I[j] = 0.0
             else
-                R_term = model.R[j-1]
-                I_term = model.I[j-1]
-                model.R[j] = s*R_term - t*I_term
-                model.I[j] = s*I_term + t*R_term
+                R_term = R[j - 1]
+                I_term = I[j - 1]
+                R[j] = s * R_term - t * I_term
+                I[j] = s * I_term + t * R_term
             end
         end
 
@@ -359,19 +507,19 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
                     R_term = 0.0
                     I_term = 0.0
                 else
-                    R_term = model.R[j-1]
-                    I_term = model.I[j-1]
+                    R_term = R[j - 1]
+                    I_term = I[j - 1]
                 end
-                D = (model.C[i, j]*model.R[j] + model.S[i, j]*model.I[j]) * sqrt_2
-                E = ifelse(m == 0, 0.0, (C*R_term + S*I_term) * sqrt_2)
-                F = ifelse(m == 0, 0.0, (S*R_term - C*I_term) * sqrt_2)
+                D = (model.C[i, j] * R[j] + model.S[i, j] * I[j]) * sqrt_2
+                E = ifelse(m == 0, 0.0, (C * R_term + S * I_term) * sqrt_2)
+                F = ifelse(m == 0, 0.0, (S * R_term - C * I_term) * sqrt_2)
 
-                # Avv00, Avv01, Avv11 = model.A[i, j], model.VR01[i, j]*model.A[i, j+1], model.VR11[i, j]*model.A[i+1, j+1]
+                # Avv00, Avv01, Avv11 = A[i, j], model.VR01[i, j] * A[i, j+1], model.VR11[i, j] * A[i+1, j+1]
 
-                sum1 += m * model.A[i, j] * E
-                sum2 += m * model.A[i, j] * F
-                sum3 +=     model.VR01[i, j]*model.A[i, j+1] * D
-                sum4 +=     model.VR11[i, j]*model.A[i+1, j+1] * D
+                sum1 += m * A[i, j] * E
+                sum2 += m * A[i, j] * F
+                sum3 += model.VR01[i, j] * A[i, j + 1] * D
+                sum4 += model.VR11[i, j] * A[i + 1, j + 1] * D
             end
             rr = ρ_np1/RE
             a1 += rr * sum1
@@ -506,23 +654,31 @@ function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64
     
     """
     rs = 695000e3 # Radius of the Sun in meters
+    @inline _clamp_unit(x::Float64) = clamp(x, -1.0, 1.0)
+
+    r_sun_norm = norm(r_sun)
+    r_sat_norm = norm(r_sat)
+    if !isfinite(r_sun_norm) || !isfinite(r_sat_norm) || r_sun_norm <= 0.0 || r_sat_norm <= 0.0
+        return 1.0
+    end
+
     if dot(r_sun, r_sat) >= 0 # check the cos of the angle between the satellite and the Sun. If positive (angle less than 90 degrees), the satellite is not in eclipse
         return 1.0 # If the satellite is not in eclipse, return 1.0
     end
     # Eclipse conditions
-    f1 = asin((rs + rp) / norm(r_sun)) # Penumbra angle
-    f2 = asin((rs - rp) / norm(r_sun)) # Umbra angle
-    s0 = -dot(r_sat, r_sun) / (norm(r_sun)) # Plane-axis intersection and planet center distance
+    f1 = asin(_clamp_unit((rs + rp) / r_sun_norm)) # Penumbra angle
+    f2 = asin(_clamp_unit((rs - rp) / r_sun_norm)) # Umbra angle
+    s0 = -dot(r_sat, r_sun) / r_sun_norm # Plane-axis intersection and planet center distance
     c1 = s0 + rp * sin(f1) # Distance from fundamental plane to cone vertex V1
     c2 = s0 - rp * sin(f2) # Distance from fundamental plane to cone vertex V2
     l1 = c1*tan(f1) # Radius of penumbra cone in fundamental plane
     l2 = c2*tan(f2) # Radius of umbra cone in fundamental plane
-    l = √(norm(r_sat)^2 - s0^2) # Distance from fundamental plane to satellite
+    l = √(max(r_sat_norm^2 - s0^2, 0.0)) # Distance from fundamental plane to satellite
     
     # Apparent radii of sun, planet, and apparent separation of sun and planet, respectively
-    a = asin(rs / norm(r_sun)) # Apparent radius of the Sun
-    b = asin(rp / norm(r_sat)) # Apparent radius of the planet
-    c = acos(-dot(r_sun, r_sat) / (norm(r_sun) * norm(r_sat))) # Apparent separation of the Sun and planet
+    a = asin(_clamp_unit(rs / r_sun_norm)) # Apparent radius of the Sun
+    b = asin(_clamp_unit(rp / r_sat_norm)) # Apparent radius of the planet
+    c = acos(_clamp_unit(-dot(r_sun, r_sat) / (r_sun_norm * r_sat_norm))) # Apparent separation of the Sun and planet
     if c < b - a # Total eclipse condition
         return 0.0 # If the satellite is in total eclipse, return 0.0
     elseif c < a - b # Annular eclipse condition
@@ -531,8 +687,8 @@ function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64
         return b^2 / a^2 # Shadow fraction
     elseif c < a + b # Partial eclipse condition
         x = (c^2 + a^2 - b^2) / (2 * c)
-        y = √(a^2 - x^2)
-        A = a^2 * acos(x / a) + b^2 * acos((c - x) / b) - c * y
+        y = √(max(a^2 - x^2, 0.0))
+        A = a^2 * acos(_clamp_unit(x / a)) + b^2 * acos(_clamp_unit((c - x) / b)) - c * y
         return 1 - A / (π * a^2) # Shadow fraction
     else # No eclipse condition
         return 1.0 # If the satellite is not in eclipse, return 1.0

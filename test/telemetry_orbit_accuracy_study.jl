@@ -200,6 +200,18 @@ end
     return parsed
 end
 
+@inline function _parse_positive_float_env(name::String)::Union{Nothing, Float64}
+    raw = strip(get(ENV, name, ""))
+    isempty(raw) && return nothing
+    parsed = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("$name must be a positive float, got '$raw'"))
+    end
+    parsed > 0.0 || throw(ArgumentError("$name must be > 0, got $parsed"))
+    return parsed
+end
+
 @inline function _telemetry_solver_maxiters(profile::Symbol)::Int
     default_val = profile == :quick ? TELEMETRY_SOLVER_MAXITERS_QUICK_DEFAULT : TELEMETRY_SOLVER_MAXITERS_FULL_DEFAULT
     return _parse_positive_int_env("SPACEAGORA_TELEMETRY_SOLVER_MAXITERS", default_val)
@@ -209,6 +221,14 @@ end
     default_retry = max(base_maxiters * 4, base_maxiters + 1_000_000)
     retry = _parse_positive_int_env("SPACEAGORA_TELEMETRY_SOLVER_MAXITERS_RETRY", default_retry)
     return max(retry, base_maxiters + 1)
+end
+
+@inline function _telemetry_solver_mode()::String
+    mode = strip(get(ENV, "SPACEAGORA_TELEMETRY_SOLVER_MODE", ""))
+    if isempty(mode)
+        mode = strip(get(ENV, "SPACEAGORA_SOLVER_MODE", ""))
+    end
+    return isempty(mode) ? "auto_stiff" : mode
 end
 
 @inline _is_maxiters_error(err)::Bool = occursin("MaxIters", sprint(showerror, err))
@@ -1110,8 +1130,12 @@ function _with_study_settings(args::SimulationConfiguration; quick::Bool=false):
     abs_orbit = min(quick ? 5e-9 : 1e-9, STRICT_ABS_ORBIT)
     rel_atm = min(quick ? 1e-6 : 1e-7, STRICT_REL_ATM)
     abs_atm = min(quick ? 1e-8 : 1e-9, STRICT_ABS_ATM)
-    dt_orbit = min(quick ? (hf ? 180.0 : 240.0) : (hf ? 60.0 : 120.0), STRICT_DT_ORBIT)
-    dt_atm = min(quick ? (hf ? 2.0 : 5.0) : (hf ? 0.2 : 0.5), STRICT_DT_ATM)
+    dt_orbit_base = min(quick ? (hf ? 180.0 : 240.0) : (hf ? 60.0 : 120.0), STRICT_DT_ORBIT)
+    dt_atm_base = min(quick ? (hf ? 2.0 : 5.0) : (hf ? 0.2 : 0.5), STRICT_DT_ATM)
+    dt_orbit_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_DT_MAX_ORBIT")
+    dt_atm_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_DT_MAX_ATM")
+    dt_orbit = dt_orbit_env === nothing ? dt_orbit_base : min(dt_orbit_env, STRICT_DT_ORBIT)
+    dt_atm = dt_atm_env === nothing ? dt_atm_base : min(dt_atm_env, STRICT_DT_ATM)
     return SimulationConfiguration(
         file_paths=args.file_paths,
         simulation_settings=SimulationSettings(
@@ -1900,10 +1924,11 @@ function _run_simulation_dataframe(args::SimulationConfiguration, scenario_name:
         function _run_once(maxiters::Int)
             solve_result = nothing
             elapsed_s = @elapsed begin
+                solver_mode = _telemetry_solver_mode()
                 withenv(
                     "SPACEAGORA_WARN_NORMALIZE" => "0",
                     "SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0",
-                    "SPACEAGORA_SOLVER_MODE" => "auto_stiff",
+                    "SPACEAGORA_SOLVER_MODE" => solver_mode,
                     "SPACEAGORA_SOLVER_MAXITERS" => string(maxiters),
                     "SPACEAGORA_GRAM_OFFLINE_SURROGATE" => truth.gram_offline_surrogate,
                     "SPACEAGORA_GRAM_STATIC_GRID" => truth.gram_static_grid ? "on" : "off",

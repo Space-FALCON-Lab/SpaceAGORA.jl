@@ -11,6 +11,7 @@ using Reexport
 
 export Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters
 export SaveCache, SaveData
+export SRPSunEphemerisCache
 export LegacyGravityModelCode, LegacyDensityModelCode, LegacyAerodynamicModelCode, LegacyThermalModelCode, LegacyThrustControlCode
 export LegacyGravityConstant, LegacyGravityInverseSquared, LegacyGravityInverseSquaredJ2, LegacyGravityGRAM
 export LegacyDensityConstant, LegacyDensityExponential, LegacyDensityNoDensity, LegacyDensityGRAM, LegacyDensityNRLMSISE
@@ -533,6 +534,11 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         v_cf::Vector{Float64} = []
     end
 
+    struct SRPSunEphemerisCache
+        ets::Vector{Float64}
+        positions_j2000::Vector{SVector{3, Float64}}
+    end
+
     @kwdef mutable struct Solution
         orientation::Orientation = Orientation()
         physical_properties::Physical_properties = Physical_properties()
@@ -550,6 +556,10 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         heat_rates::Vector{Vector{Float64}} = [Float64[] for _ in 1:N_sats]
         density_models::Vector{Any} = Any[]
         gram_density_cache::Vector{Any} = Any[]
+        harmonics_workspaces::Vector{Any} = [nothing for _ in 1:N_sats]
+        nbody_workspaces::Vector{Any} = [nothing for _ in 1:N_sats]
+        aero_workspaces::Vector{Any} = [nothing for _ in 1:N_sats]
+        srp_sun_ephemeris_cache::Base.RefValue{Any} = Ref{Any}(nothing)
         current_time::Base.RefValue{Float64} = Ref(0.0)
         et_start::Base.RefValue{Float64} = Ref(0.0)
         debug_control::Base.RefValue{Bool} = Ref(false)

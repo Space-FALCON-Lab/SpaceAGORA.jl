@@ -96,6 +96,27 @@ end
     return parsed
 end
 
+@inline function _srp_ephemeris_cache_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_SRP_EPHEMERIS_CACHE", true)
+end
+
+@inline function _srp_ephemeris_cache_dt_s()::Float64
+    return _parse_positive_float_env("SPACEAGORA_SRP_EPHEMERIS_CACHE_DT_S", 30.0)
+end
+
+@inline function _srp_ephemeris_cache_max_samples()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_SRP_EPHEMERIS_CACHE_MAX_SAMPLES", 200_000)
+end
+
+@inline function _has_active_srp_effector(dynamic_effectors::Tuple)::Bool
+    @inbounds for effector in dynamic_effectors
+        if effector isa SimulationModel.SolarRadiationPressureModel && effector.A > 0.0
+            return true
+        end
+    end
+    return false
+end
+
 @inline function _effector_parallel_mode()::Symbol
     return SimulationModel.ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_EFFECTOR_PARALLEL"; default="auto")
 end
@@ -220,6 +241,77 @@ function _initialize_density_cache_buffers!(p)
     return nothing
 end
 
+function _initialize_harmonics_workspace_buffers!(p)
+    n_sats = length(p.args.dynamics_model.spacecraft)
+    workspaces = p.shared_buffers.harmonics_workspaces
+    if length(workspaces) != n_sats
+        resize!(workspaces, n_sats)
+    end
+    fill!(workspaces, nothing)
+    return nothing
+end
+
+function _initialize_nbody_workspace_buffers!(p)
+    n_sats = length(p.args.dynamics_model.spacecraft)
+    workspaces = p.shared_buffers.nbody_workspaces
+    if length(workspaces) != n_sats
+        resize!(workspaces, n_sats)
+    end
+    fill!(workspaces, nothing)
+    return nothing
+end
+
+function _initialize_aero_workspace_buffers!(p)
+    n_sats = length(p.args.dynamics_model.spacecraft)
+    workspaces = p.shared_buffers.aero_workspaces
+    if length(workspaces) != n_sats
+        resize!(workspaces, n_sats)
+    end
+    fill!(workspaces, nothing)
+    return nothing
+end
+
+function _initialize_srp_sun_cache_buffer!(p)
+    p.shared_buffers.srp_sun_ephemeris_cache[] = nothing
+    return nothing
+end
+
+function _initialize_srp_sun_ephemeris_cache!(p, et_start::Float64, mission_end_s::Float64)
+    _srp_ephemeris_cache_enabled() || return nothing
+    _has_active_srp_effector(p.args.dynamics_model.dynamic_effectors) || return nothing
+    if !isfinite(mission_end_s) || mission_end_s <= 0.0
+        return nothing
+    end
+
+    dt_s = _srp_ephemeris_cache_dt_s()
+    n_samples = max(2, Int(ceil(mission_end_s / dt_s)) + 1)
+    max_samples = _srp_ephemeris_cache_max_samples()
+    if n_samples > max_samples
+        @warn "SRP ephemeris cache disabled: required samples=$n_samples exceeds SPACEAGORA_SRP_EPHEMERIS_CACHE_MAX_SAMPLES=$max_samples."
+        return nothing
+    end
+
+    primary_body_name = SimulationModel.DynamicEffectors._spice_query_name(p.args.environment_model.planet.name)
+    ets = Vector{Float64}(undef, n_samples)
+    positions = Vector{SVector{3, Float64}}(undef, n_samples)
+
+    lock(SimulationModel.SPICE_LOCK) do
+        @inbounds for sample_idx in 1:n_samples
+            et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
+            ets[sample_idx] = et
+            positions[sample_idx] = SVector{3, Float64}(spkpos("sun", et, "J2000", "none", primary_body_name)[1])
+        end
+    end
+
+    p.shared_buffers.srp_sun_ephemeris_cache[] = SimulationModel.SRPSunEphemerisCache(ets, positions)
+    if p.args.simulation_settings.verbose
+        println(
+            "Initialized SRP Sun ephemeris cache: samples=$(n_samples), dt=$(round(dt_s; digits=3)) s, span=$(round(mission_end_s; digits=3)) s."
+        )
+    end
+    return nothing
+end
+
 @inline function _resolve_component_tolerance(component_tol::Float64, fallback_tol::Float64, name::String)::Float64
     if component_tol < 0.0
         throw(ArgumentError("$name must be >= 0.0, got $component_tol"))
@@ -293,6 +385,19 @@ end
     return rc in ("Unstable", "DtLessThanMin", "MaxIters", "InitialFailure")
 end
 
+@inline function _auto_stiff_switched(sol)::Bool
+    hasproperty(sol, :alg_choice) || return false
+    choices = getproperty(sol, :alg_choice)
+    isempty(choices) && return false
+    first_choice = first(choices)
+    @inbounds for choice in choices
+        if choice != first_choice
+            return true
+        end
+    end
+    return false
+end
+
 @inline function _solver_maxiters()::Union{Nothing, Int}
     raw = strip(get(ENV, "SPACEAGORA_SOLVER_MAXITERS", ""))
     isempty(raw) && return nothing
@@ -329,7 +434,7 @@ end
 function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
     mode = _solver_policy_mode()
     if mode == :rodas5p
-        sol = _solve_with_explicit_solver(prob, args, Rodas5P(autodiff=false), reltol_tol, abstol_tol)
+        sol = _solve_with_explicit_solver(prob, args, Rodas5P(autodiff=AutoFiniteDiff()), reltol_tol, abstol_tol)
         return sol, (
             solver="Rodas5P",
             initial_solver="Rodas5P",
@@ -338,18 +443,21 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
         )
     end
 
-    tsit_sol = _solve_with_explicit_solver(prob, args, Tsit5(), reltol_tol, abstol_tol)
-    if mode == :auto_stiff &&
-       !SciMLBase.successful_retcode(tsit_sol.retcode) &&
-       _retcode_is_stiff_symptom(tsit_sol.retcode)
-        stiff_sol = _solve_with_explicit_solver(prob, args, Rodas5P(autodiff=false), reltol_tol, abstol_tol)
-        return stiff_sol, (
-            solver="Rodas5P",
-            initial_solver="Tsit5",
-            fallback_used=true,
-            trigger_retcode=string(tsit_sol.retcode)
+    if mode == :auto_stiff
+        # True stiffness-aware autoswitching handled internally by OrdinaryDiffEq.
+        # This replaces the manual "retry with Rodas5P on Tsit5 failure" policy.
+        autoswitch_alg = AutoTsit5(Rodas5P(autodiff=AutoFiniteDiff()))
+        sol = _solve_with_explicit_solver(prob, args, autoswitch_alg, reltol_tol, abstol_tol)
+        switched = _auto_stiff_switched(sol)
+        return sol, (
+            solver="AutoTsit5(Rodas5P)",
+            initial_solver="AutoTsit5",
+            fallback_used=switched,
+            trigger_retcode=switched ? "internal_autoswitch" : missing
         )
     end
+
+    tsit_sol = _solve_with_explicit_solver(prob, args, Tsit5(), reltol_tol, abstol_tol)
     return tsit_sol, (
         solver="Tsit5",
         initial_solver="Tsit5",
@@ -676,6 +784,10 @@ function run_simulation(
     _initialize_heat_rate_buffers!(p)
     _initialize_density_model_instances!(p)
     _initialize_density_cache_buffers!(p)
+    _initialize_harmonics_workspace_buffers!(p)
+    _initialize_nbody_workspace_buffers!(p)
+    _initialize_aero_workspace_buffers!(p)
+    _initialize_srp_sun_cache_buffer!(p)
     p.shared_buffers.debug_control[] = get(ENV, "SPACEAGORA_DEBUG_CONTROL", "0") == "1"
     p.shared_buffers.debug_initial_derivative[] = get(ENV, "SPACEAGORA_DEBUG_INITIAL_DERIVATIVE", "0") == "1"
     save_fields_resolved = isnothing(save_fields) ? SimulationModel.default_save_fields(args) : collect(save_fields)
@@ -706,6 +818,7 @@ function run_simulation(
         args.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_$(args.environment_model.planet.name)", et_start)) * args.environment_model.planet.J2000_to_pci' # Initialize the planet frame at the start of the simulation (will be updated in the callback)
     end
     mission_end = args.mission_configuration.mission_time
+    _initialize_srp_sun_ephemeris_cache!(p, et_start, mission_end)
     checkpoint_active = _typed_checkpoint_enabled(args)
     if checkpoint_active && args.simulation_settings.checkpoint_interval_s <= 0.0
         throw(ArgumentError("SimulationSettings.checkpoint_interval_s must be > 0 when checkpointing is enabled."))

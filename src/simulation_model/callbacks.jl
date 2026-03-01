@@ -1580,40 +1580,31 @@ function get_thermal_callback(num_sats::Int, args::SimulationConfiguration)
 end
 
 function get_impact_callback(num_sats::Int)
-    function condition(u, t, integrator)
+    function condition!(out, u, t, integrator)
         p = integrator.p
-        # Check for impacts based on the current state
+        Rp_e = p.args.environment_model.planet.Rp_e
         @inbounds for i in 1:num_sats
-            if p.is_active[i] && abs(norm(u.sc[i].pos) - p.args.environment_model.planet.Rp_e) < 50e3 # Example condition for impact (e.g., altitude below 80 km)
-                return true
-            end
+            out[i] = norm(u.sc[i].pos) - Rp_e
         end
-        return false
     end
 
-    function affect!(integrator)
+    function affect_downcrossing!(integrator, idx::Int64)
         p = integrator.p
-        u = integrator.u
-        
-        # Check for impacts and log them (placeholder logic)
-        @inbounds for i in 1:num_sats
-            if p.is_active[i] && abs(norm(u.sc[i].pos) - p.args.environment_model.planet.Rp_e) < 50e3 # Example condition for impact (e.g., altitude below 80 km)
+        if p.is_active[idx]
+            if callback_verbose(integrator)
+                println("Impact detected for satellite $idx at time $(integrator.t) seconds!")
+            end
+            p.is_active[idx] = false
+            if all(p.is_active .== false)
                 if callback_verbose(integrator)
-                    println("Impact detected for satellite $i at time $(integrator.t) seconds!")
+                    println("All satellites have impacted. Stopping simulation.")
                 end
-                p.is_active[i] = false # Mark the satellite as inactive after impact
-                if all(p.is_active .== false) # If all satellites are inactive, we can stop the simulation
-                    if callback_verbose(integrator)
-                        println("All satellites have impacted. Stopping simulation.")
-                    end
-                    terminate!(integrator)
-                end
-                # Log impact details to a file or data structure as needed
+                terminate!(integrator)
             end
         end
     end
 
-    return DiscreteCallback(condition, affect!)
+    return VectorContinuousCallback(condition!, nothing, affect_downcrossing!, num_sats)
 end
 
 # Only call if simulating a single satellite

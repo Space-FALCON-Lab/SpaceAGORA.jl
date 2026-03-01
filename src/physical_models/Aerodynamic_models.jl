@@ -77,6 +77,64 @@ end
 
 end
 
+struct AeroScratchWorkspace
+    thread_force::Vector{MVector{3, Float64}}
+    thread_cl::Vector{Float64}
+    thread_cd::Vector{Float64}
+    thread_area::Vector{Float64}
+end
+
+@inline function _make_aero_scratch_workspace(n_threads::Int)::AeroScratchWorkspace
+    n_threads >= 1 || throw(ArgumentError("Aerodynamic scratch workspace thread count must be >= 1, got $n_threads"))
+    thread_force = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_threads]
+    thread_cl = zeros(Float64, n_threads)
+    thread_cd = zeros(Float64, n_threads)
+    thread_area = zeros(Float64, n_threads)
+    return AeroScratchWorkspace(thread_force, thread_cl, thread_cd, thread_area)
+end
+
+@inline function _ensure_aero_workspace_capacity!(
+    workspace::AeroScratchWorkspace,
+    n_threads::Int
+)::AeroScratchWorkspace
+    n_threads >= 1 || throw(ArgumentError("Aerodynamic scratch workspace thread count must be >= 1, got $n_threads"))
+    if length(workspace.thread_force) < n_threads
+        old_len = length(workspace.thread_force)
+        resize!(workspace.thread_force, n_threads)
+        @inbounds for tid in (old_len + 1):n_threads
+            workspace.thread_force[tid] = MVector{3, Float64}(0.0, 0.0, 0.0)
+        end
+    end
+    if length(workspace.thread_cl) < n_threads
+        resize!(workspace.thread_cl, n_threads)
+        resize!(workspace.thread_cd, n_threads)
+        resize!(workspace.thread_area, n_threads)
+    end
+    return workspace
+end
+
+@inline function _aero_workspace_for_sat!(
+    param::ODEParams,
+    sat_idx::Int,
+    n_threads::Int
+)::AeroScratchWorkspace
+    workspaces = param.shared_buffers.aero_workspaces
+    if sat_idx > length(workspaces)
+        return _ensure_aero_workspace_capacity!(_make_aero_scratch_workspace(n_threads), n_threads)
+    end
+
+    sat_entry = @inbounds workspaces[sat_idx]
+    workspace = if sat_entry === nothing
+        created = _make_aero_scratch_workspace(n_threads)
+        @inbounds workspaces[sat_idx] = created
+        created
+    else
+        sat_entry::AeroScratchWorkspace
+    end
+    _ensure_aero_workspace_capacity!(workspace, n_threads)
+    return workspace
+end
+
 function collect_and_reset_link_wrenches!(bodies)
     # Collect into fresh vectors to avoid aliasing when there is only one link.
     force_acc = MVector{3, Float64}(0.0, 0.0, 0.0)
@@ -271,13 +329,16 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     drag_pp_hat = -vel_pp_rw_hat # Planet relative drag force direction
     cross_pp_hat = cross(drag_pp_hat, lift_pp_hat) # Cross product of the drag and lift vectors in planet relative frame
     q = 0.5 * ρ * vel_pp_mag^2 # Dynamic pressure in planet relative frame, using the density from the shared buffer updated by the callback function
-    vel_pi = orientation_sim ? planet.L_PI' * vel_pp_rw : SVector{3, Float64}(0.0, 0.0, 0.0)
+    L_PI_t = planet.L_PI'
+    vel_pi = orientation_sim ? L_PI_t * vel_pp_rw : SVector{3, Float64}(0.0, 0.0, 0.0)
+    lift_scale = q * cos(bank_angle)
 
     CL, CD = 0.0, 0.0 # Initialize aerodynamic coefficients
     total_area = 0.0 # Initialize total area
     θ_body = acos(clamp(vel_pp_rw[1] * vel_pp_rw_inv_mag, -1.0, 1.0))
     decision = _multibody_thread_decision(length(bodies); heavy_work=true)
     use_threads = decision.use_threads
+    n_threads = use_threads ? _threadid_capacity() : 1
 
     zero_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
 
@@ -308,18 +369,18 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
         CL_body, CD_body, CS_body, _, _, _ = aerodynamic_coefficient_fM(b, T, S)
 
         drag_pp_body = q * CD_body * b.ref_area * drag_pp_hat                       # Planet relative drag force vector
-        lift_pp_body = q * CL_body * b.ref_area * lift_pp_hat * cos(bank_angle)     # Planet relative lift force vector
+        lift_pp_body = lift_scale * CL_body * b.ref_area * lift_pp_hat     # Planet relative lift force vector
 
         if orientation_sim
             cross_pp_body = q * CS_body * b.ref_area * cross_pp_hat # Planet relative cross force vector
-            cross_body = planet.L_PI' * cross_pp_body # Inertial cross force vector
+            cross_body = L_PI_t * cross_pp_body # Inertial cross force vector
         else
             cross_pp_body = zero_vec # Planet relative cross force vector
             cross_body = zero_vec # Inertial cross force vector
         end
 
-        drag_body = planet.L_PI' * drag_pp_body   # Inertial drag force vector
-        lift_body = planet.L_PI' * lift_pp_body   # Inertial lift force vector
+        drag_body = L_PI_t * drag_pp_body   # Inertial drag force vector
+        lift_body = L_PI_t * lift_pp_body   # Inertial lift force vector
         force_body = drag_body + lift_body + cross_body
 
         return force_body, CL_body * b.ref_area, CD_body * b.ref_area, b.ref_area
@@ -332,11 +393,17 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     # CL and CD
     started_ns = time_ns()
     if use_threads
-        n_threads = _threadid_capacity()
-        thread_force = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_threads]
-        thread_cl = zeros(Float64, n_threads)
-        thread_cd = zeros(Float64, n_threads)
-        thread_area = zeros(Float64, n_threads)
+        workspace = _aero_workspace_for_sat!(param, i, n_threads)
+        thread_force = workspace.thread_force
+        thread_cl = workspace.thread_cl
+        thread_cd = workspace.thread_cd
+        thread_area = workspace.thread_area
+        @inbounds for tid in 1:n_threads
+            thread_force[tid] .= 0.0
+            thread_cl[tid] = 0.0
+            thread_cd[tid] = 0.0
+            thread_area[tid] = 0.0
+        end
 
         ParallelPolicy.threaded_foreach(length(bodies), decision.allotment) do idx
             tid = Threads.threadid()
@@ -627,6 +694,8 @@ function aerodynamic_coefficient_fM(body, T::Float64, S::Float64)
     lx = body.dims[1]
     ly = body.dims[2]
     lz = body.dims[3]
+    lx_over_ly = lx / ly
+    lx_over_lz = lx / lz
     σN = σ
     σT = σ
     cosα = cos(α)
@@ -651,19 +720,19 @@ function aerodynamic_coefficient_fM(body, T::Float64, S::Float64)
     CA = ((2-σN)/(S*sqrt_π)*cosα*cosβ+sign(cosα*cosβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*cosα^2*cosβ^2) +
             (2-σN)*(cosα^2*cosβ^2+1/(2*S^2)) * (sign(cosα*cosβ)+erf(S*cosα*cosβ)) + 
             (σN/(2*S)*cosα*cosβ*√(π*Tw/T)) * (1+sign(cosα*cosβ)*erf(S*cosα*cosβ)) +
-            σT*cosα*cosβ*(lx/ly*(1/(S*sqrt_π)*exp(-S^2*sinβ^2)+sinβ*(sign(sinβ)+erf(S*sinβ))) +
-            lx/lz*(1/(S*sqrt_π)*exp(-S^2*sinα^2*cosβ^2)+sinα*cosβ*(sign(sinα*cosβ)+erf(S*sinα*cosβ))))
+            σT*cosα*cosβ*(lx_over_ly*(1/(S*sqrt_π)*exp(-S^2*sinβ^2)+sinβ*(sign(sinβ)+erf(S*sinβ))) +
+            lx_over_lz*(1/(S*sqrt_π)*exp(-S^2*sinα^2*cosβ^2)+sinα*cosβ*(sign(sinα*cosβ)+erf(S*sinα*cosβ))))
     # Crossflow
-    CS = lx/ly*(((2-σN)/(S*sqrt_π)*sinβ+sign(sinβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*sinβ^2) +
+    CS = lx_over_ly*(((2-σN)/(S*sqrt_π)*sinβ+sign(sinβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*sinβ^2) +
                 (2-σN)*(sinβ^2+1/(2*S^2)) * (sign(sinβ)+erf(S*sinβ)) + 
                 (σN/(2*S)*sinβ*√(π*Tw/T)) * (1+sign(sinβ)*erf(S*sinβ))) +
                 σT*sinβ*(1/(S*sqrt_π)*exp(-S^2*cosα^2*cosβ^2) + cosα*cosβ*(sign(cosα*cosβ)+erf(S*cosα*cosβ)) + 
-                lx/lz*(1/(S*sqrt_π)*exp(-S^2*sinα^2*cosβ^2) + sinα*cosβ*(sign(sinα*cosβ)+erf(S*sinα*cosβ))))
+                lx_over_lz*(1/(S*sqrt_π)*exp(-S^2*sinα^2*cosβ^2) + sinα*cosβ*(sign(sinα*cosβ)+erf(S*sinα*cosβ))))
     # Normal
-    CN = lx/lz*((((2-σN)/(S*sqrt_π)*sinα*cosβ+sign(sinα*cosβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*sinα^2*cosβ^2) +
+    CN = lx_over_lz*((((2-σN)/(S*sqrt_π)*sinα*cosβ+sign(sinα*cosβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*sinα^2*cosβ^2) +
                 (2-σN)*(sinα^2*cosβ^2+1/(2*S^2)) * (sign(sinα*cosβ)+erf(S*sinα*cosβ)) + 
                 (σN/(2*S)*sinα*cosβ*√(π*Tw/T)) * (1+sign(sinα*cosβ)*erf(S*sinα*cosβ)))) +
-                σT*sinα*cosβ*(lx/ly*(1/(S*sqrt_π)*exp(-S^2*sinβ^2) + sinβ*(sign(sinβ)+erf(S*sinβ))) + 
+                σT*sinα*cosβ*(lx_over_ly*(1/(S*sqrt_π)*exp(-S^2*sinβ^2) + sinβ*(sign(sinβ)+erf(S*sinβ))) + 
                 (1/(S*sqrt_π)*exp(-S^2*cosα^2*cosβ^2) + cosα*cosβ*(sign(cosα*cosβ)+erf(S*cosα*cosβ))))
 
     # println("CA: ", CA)

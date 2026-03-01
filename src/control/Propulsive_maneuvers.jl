@@ -2,6 +2,10 @@ include("../utils/Reference_system.jl")
 using ComponentArrays
 using Logging
 
+const _MANEUVER_TRACE_LOCK = ReentrantLock()
+const _MANEUVER_TRACE_LAST_WINDOW = Dict{Tuple{UInt64, Int64}, Tuple{Float64, Float64}}()
+const _MANEUVER_TRACE_BURN_ACTIVE = Dict{Tuple{UInt64, Int64}, Bool}()
+
 @inline function _control_effector_log_enabled(p)::Bool
     if get(ENV, "SPACEAGORA_DEBUG_CONTROL", "0") == "1"
         return true
@@ -16,6 +20,82 @@ using Logging
 end
 
 @inline _control_effector_strict_exceptions() = get(ENV, "SPACEAGORA_STRICT_CONTROL_EXCEPTIONS", "0") == "1"
+
+@inline function _trace_bool_enabled(raw::AbstractString)::Bool
+    token = lowercase(strip(raw))
+    return token in ("1", "true", "yes", "on")
+end
+
+@inline function _maneuver_trace_enabled()::Bool
+    return _trace_bool_enabled(get(ENV, "SPACEAGORA_TRACE_MANEUVERS", "0")) ||
+           !isempty(strip(get(ENV, "SPACEAGORA_MANEUVER_TRACE_CSV", "")))
+end
+
+@inline function _maneuver_trace_path()::String
+    raw = strip(get(ENV, "SPACEAGORA_MANEUVER_TRACE_CSV", ""))
+    return isempty(raw) ? "/tmp/spaceagora_maneuver_trace.csv" : raw
+end
+
+@inline function _maneuver_trace_key(controlModel::BaseThrusterModel, i::Int64)::Tuple{UInt64, Int64}
+    return (UInt64(objectid(controlModel.start_burn_time)), i)
+end
+
+@inline function _safe_orbit_counter(p, i::Int64)::Int64
+    return try
+        Int64(p.orbit_counter[i])
+    catch
+        Int64(-1)
+    end
+end
+
+function _trace_maneuver_event!(
+    event::String,
+    controlModel::BaseThrusterModel,
+    p,
+    i::Int64,
+    t::Float64;
+    start_burn_s::Float64=NaN,
+    stop_burn_s::Float64=NaN,
+    alt_m::Float64=NaN,
+    e::Float64=NaN,
+    nu_rad::Float64=NaN,
+    a_m::Float64=NaN
+)
+    _maneuver_trace_enabled() || return nothing
+    path = _maneuver_trace_path()
+    orbit_counter = _safe_orbit_counter(p, i)
+    dv_cmd = i <= length(controlModel.Δv) ? Float64(controlModel.Δv[i]) : NaN
+    direction = i <= length(controlModel.direction) ? Float64(controlModel.direction[i]) : NaN
+    thrust_n = i <= length(controlModel.thrust) ? Float64(controlModel.thrust[i]) : NaN
+    burn_duration_s = (isfinite(start_burn_s) && isfinite(stop_burn_s)) ? (stop_burn_s - start_burn_s) : NaN
+
+    lock(_MANEUVER_TRACE_LOCK) do
+        mkpath(dirname(path))
+        new_file = !isfile(path)
+        open(path, "a") do io
+            if new_file
+                println(io, "event,t_s,spacecraft_idx,orbit_counter,dv_cmd_mps,direction_rad,thrust_n,start_burn_s,stop_burn_s,burn_duration_s,alt_m,e,nu_rad,a_m")
+            end
+            println(io,
+                string(event), ",",
+                string(t), ",",
+                string(i), ",",
+                string(orbit_counter), ",",
+                string(dv_cmd), ",",
+                string(direction), ",",
+                string(thrust_n), ",",
+                string(start_burn_s), ",",
+                string(stop_burn_s), ",",
+                string(burn_duration_s), ",",
+                string(alt_m), ",",
+                string(e), ",",
+                string(nu_rad), ",",
+                string(a_m)
+            )
+        end
+    end
+    return nothing
+end
 
 @inline function _control_effector_exception_fallback(p, spacecraft_idx::Int, err, bt)
     if _control_effector_log_enabled(p)
@@ -137,19 +217,34 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
     if i < 1 || i > length(controlModel.start_burn_time)
         return
     end
+    trace_key = _maneuver_trace_key(controlModel, i)
+
     # Default behavior: track/recenter the burn window until ignition,
     # then lock it once the burn has started.
     start_time = controlModel.start_burn_time[i]
     stop_time = controlModel.stop_burn_time[i]
     if isfinite(start_time) && isfinite(stop_time) && stop_time > start_time
+        in_burn_window = t >= start_time - 1e-9 && t <= stop_time + 1e-9
+        was_in_burn_window = get(_MANEUVER_TRACE_BURN_ACTIVE, trace_key, false)
+        if in_burn_window && !was_in_burn_window
+            _MANEUVER_TRACE_BURN_ACTIVE[trace_key] = true
+            _trace_maneuver_event!("burn_start", controlModel, p, i, t; start_burn_s=start_time, stop_burn_s=stop_time)
+        elseif !in_burn_window && was_in_burn_window && t > stop_time + 1e-9
+            _MANEUVER_TRACE_BURN_ACTIVE[trace_key] = false
+            _trace_maneuver_event!("burn_end", controlModel, p, i, t; start_burn_s=start_time, stop_burn_s=stop_time)
+        end
+
         # Lock the schedule only after ignition begins and until burn stop.
-        if t >= start_time - 1e-9 && t <= stop_time + 1e-9
+        if in_burn_window
             return
         end
         # Burn completed: clear the schedule so future campaign maneuvers can be planned.
         if t > stop_time + 1e-9
+            _trace_maneuver_event!("schedule_clear", controlModel, p, i, t; start_burn_s=start_time, stop_burn_s=stop_time)
             controlModel.start_burn_time[i] = -1.0
             controlModel.stop_burn_time[i] = -1.0
+            _MANEUVER_TRACE_BURN_ACTIVE[trace_key] = false
+            pop!(_MANEUVER_TRACE_LAST_WINDOW, trace_key, nothing)
         end
     end
     pos = SVector{3, Float64}(u.sc[i].pos)
@@ -178,6 +273,9 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
     if alt >= p.args.environment_model.EI * 1000 - 1e-6 && pre_apoapsis
         # Calculate the burn time required to achieve the desired Δv based on the current mass and thrust
         Δv = controlModel.Δv[i]
+        if !isfinite(Δv) || Δv <= 0.0
+            return
+        end
         thrust_mag = controlModel.thrust[i]
         # Calculate the burn duration for a constant-thrust impulsive approximation.
         if thrust_mag <= 0.0 || !isfinite(thrust_mag)
@@ -208,5 +306,27 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
         # Update the start/end time fields in the control model for the current spacecraft
         controlModel.start_burn_time[i] = start_burn_time
         controlModel.stop_burn_time[i] = stop_burn_time
+
+        prev_window = get(_MANEUVER_TRACE_LAST_WINDOW, trace_key, (NaN, NaN))
+        same_window = isfinite(prev_window[1]) && isfinite(prev_window[2]) &&
+            abs(prev_window[1] - start_burn_time) <= 1e-9 &&
+            abs(prev_window[2] - stop_burn_time) <= 1e-9
+        if !same_window
+            event = (isfinite(prev_window[1]) && isfinite(prev_window[2])) ? "schedule_update" : "schedule_set"
+            _trace_maneuver_event!(
+                event,
+                controlModel,
+                p,
+                i,
+                t;
+                start_burn_s=start_burn_time,
+                stop_burn_s=stop_burn_time,
+                alt_m=alt,
+                e=e,
+                nu_rad=ν,
+                a_m=a
+            )
+            _MANEUVER_TRACE_LAST_WINDOW[trace_key] = (start_burn_time, stop_burn_time)
+        end
     end
 end

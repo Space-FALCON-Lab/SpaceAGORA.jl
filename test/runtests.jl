@@ -3898,6 +3898,38 @@ end
     orbit_cb.affect!(integrator_orbit, 1)
     @test p_orbit.orbit_counter[1] == orbit_count_before + 1
 
+    args_impact = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+            make_spacecraft(ra_alt_m=550e3, rp_alt_m=500e3, ν_deg=160.0)
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    impact_cb = SimulationModel.SimulationCallbacks.get_impact_callback(2)
+    p_impact = ODEParams{2}(args=args_impact)
+    u_impact = build_initial_conditions(args_impact)
+    integrator_impact = MockCallbackIntegrator(
+        p_impact,
+        u_impact,
+        0.0,
+        MockCallbackOpts(1.0, 1e-8, 1e-8),
+        1,
+        Inf
+    )
+    impact_out = zeros(2)
+    impact_cb.condition(impact_out, u_impact, 0.0, integrator_impact)
+    @test all(impact_out .> 0.0)
+    @test impact_cb.affect! === nothing
+    impact_cb.affect_neg!(integrator_impact, 1)
+    @test p_impact.is_active[1] == false
+    @test p_impact.is_active[2] == true
+
     args_drag = build_config(
         spacecraft=make_spacecraft(ra_alt_m=220e3, rp_alt_m=100e3, ν_deg=180.0),
         density_model=ConstantDensityModel(1e-6, 240.0),

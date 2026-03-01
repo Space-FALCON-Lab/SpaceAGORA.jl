@@ -6549,6 +6549,9 @@ end
     withenv("SPACEAGORA_SOLVER_MODE" => "rodas") do
         @test _solver_policy_mode() == :rodas5p
     end
+    withenv("SPACEAGORA_SOLVER_MODE" => "split_imex") do
+        @test _solver_policy_mode() == :split_imex
+    end
     withenv("SPACEAGORA_SOLVER_MODE" => "unsupported-mode") do
         @test_throws ArgumentError _solver_policy_mode()
     end
@@ -6697,6 +6700,22 @@ end
         @test string(sol.retcode) == "Success"
         @test meta.solver == "AutoTsit5(Rodas5P)"
         @test meta.initial_solver == "AutoTsit5"
+    end
+    split_prob_simple = SplitODEProblem(
+        (du, u, p, t) -> begin
+            du[1] = -u[1]
+        end,
+        (du, u, p, t) -> begin
+            du[1] = -2u[1]
+        end,
+        [1.0],
+        (0.0, 1.0)
+    )
+    withenv("SPACEAGORA_SOLVER_MODE" => "split_imex", "SPACEAGORA_SOLVER_MAXITERS" => nothing) do
+        sol, meta = _solve_with_solver_policy(split_prob_simple, solver_args, 1e-8, 1e-8)
+        @test string(sol.retcode) == "Success"
+        @test meta.solver == "KenCarp4(IMEX)"
+        @test meta.initial_solver == "KenCarp4"
     end
     withenv("SPACEAGORA_SOLVER_MAXITERS" => "1000") do
         sol = _solve_with_explicit_solver(prob_simple, solver_args, Tsit5(), 1e-8, 1e-8)

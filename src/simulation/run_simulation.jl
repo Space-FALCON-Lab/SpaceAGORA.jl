@@ -715,9 +715,11 @@ end
         return :auto_stiff
     elseif mode in ("rodas5p", "rodas", "stiff")
         return :rodas5p
+    elseif mode in ("split_imex", "split-imex", "split", "imex")
+        return :split_imex
     end
     throw(ArgumentError(
-        "Unsupported SPACEAGORA_SOLVER_MODE='$mode'. Use one of: tsit5, auto_stiff, rodas5p."
+        "Unsupported SPACEAGORA_SOLVER_MODE='$mode'. Use one of: tsit5, auto_stiff, rodas5p, split_imex."
     ))
 end
 
@@ -795,6 +797,16 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
             initial_solver="AutoTsit5",
             fallback_used=switched,
             trigger_retcode=switched ? "internal_autoswitch" : missing
+        )
+    end
+
+    if mode == :split_imex
+        sol = _solve_with_explicit_solver(prob, args, KenCarp4(), reltol_tol, abstol_tol)
+        return sol, (
+            solver="KenCarp4(IMEX)",
+            initial_solver="KenCarp4",
+            fallback_used=false,
+            trigger_retcode=missing
         )
     end
 
@@ -1091,6 +1103,20 @@ function _write_results_bundle!(results_df::DataFrame, times::Vector{Float64}, a
     return nothing
 end
 
+@inline function _build_typed_solver_problem(u0, tspan, p, callbacks)
+    if _solver_policy_mode() == :split_imex
+        return SplitODEProblem(
+            spacecraft_dynamics_slow!,
+            spacecraft_dynamics_fast_control!,
+            u0,
+            tspan,
+            p,
+            callback=callbacks
+        )
+    end
+    return ODEProblem(spacecraft_dynamics!, u0, tspan, p, callback=callbacks)
+end
+
 function run_simulation(
     args;
     isolate_state::Bool=true,
@@ -1240,7 +1266,7 @@ function run_simulation(
             t_next = min(t_cursor + interval, mission_end)
             empty!(saved_values.t)
             empty!(saved_values.saveval)
-            prob = ODEProblem(spacecraft_dynamics!, u_cursor, (t_cursor, t_next), p, callback=callbacks)
+            prob = _build_typed_solver_problem(u_cursor, (t_cursor, t_next), p, callbacks)
             seg_sol, solve_meta = _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
             push!(solver_trace, solve_meta)
             if !SciMLBase.successful_retcode(seg_sol.retcode)
@@ -1254,7 +1280,7 @@ function run_simulation(
         end
 
     elseif t_start < mission_end
-        prob = ODEProblem(spacecraft_dynamics!, u_start, (t_start, mission_end), p, callback=callbacks)
+        prob = _build_typed_solver_problem(u_start, (t_start, mission_end), p, callbacks)
         sol, solve_meta = _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
         push!(solver_trace, solve_meta)
         if !SciMLBase.successful_retcode(sol.retcode)
@@ -1299,8 +1325,92 @@ function run_simulation(
     end
 end
 
+@inline function _accumulate_dynamic_effectors!(
+    forces::MVector{3, Float64},
+    torques::MVector{3, Float64},
+    sc_view,
+    p,
+    sat_idx::Int,
+    dynamic_effectors::Tuple,
+    effector_decision
+)
+    effector_started_ns = time_ns()
+    if effector_decision.use_threads
+        fx = Threads.Atomic{Float64}(0.0)
+        fy = Threads.Atomic{Float64}(0.0)
+        fz = Threads.Atomic{Float64}(0.0)
+        tx = Threads.Atomic{Float64}(0.0)
+        ty = Threads.Atomic{Float64}(0.0)
+        tz = Threads.Atomic{Float64}(0.0)
+        SimulationModel.ParallelPolicy.threaded_foreach(length(dynamic_effectors), effector_decision.allotment) do eff_idx
+            effector = dynamic_effectors[eff_idx]
+            force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)
+            Threads.atomic_add!(fx, force[1])
+            Threads.atomic_add!(fy, force[2])
+            Threads.atomic_add!(fz, force[3])
+            Threads.atomic_add!(tx, torque[1])
+            Threads.atomic_add!(ty, torque[2])
+            Threads.atomic_add!(tz, torque[3])
+        end
+        forces .= SVector{3, Float64}(fx[], fy[], fz[])
+        torques .= SVector{3, Float64}(tx[], ty[], tz[])
+    else
+        @inbounds for effector in dynamic_effectors
+            force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)
+            forces .+= force
+            torques .+= torque
+        end
+    end
+    if effector_decision.policy_applied
+        SimulationModel.ParallelPolicy.record_policy_observation!(
+            :dynamic_effectors;
+            mode=effector_decision.mode,
+            num_items=length(dynamic_effectors),
+            use_threads=effector_decision.use_threads,
+            elapsed_ns=(time_ns() - effector_started_ns)
+        )
+    end
+    return nothing
+end
+
+@inline function _accumulate_control_effectors!(
+    forces::MVector{3, Float64},
+    torques::MVector{3, Float64},
+    sc_view,
+    p,
+    sat_idx::Int,
+    t::Float64,
+    debug_control::Bool
+)::Float64
+    mass_rate = 0.0
+    @inbounds for control_effector in p.args.control_model.control_effectors
+        control_force, control_torque = SimulationModel.calcControlForceTorque(control_effector, sc_view, p, sat_idx, t)
+        control_mass_rate = SimulationModel.calcControlMassFlowRate(control_effector, sc_view, p, sat_idx, t)
+        if debug_control && (norm(control_force) > 0.0 || norm(control_torque) > 0.0)
+            println("Applying control effect for spacecraft $sat_idx at time $t seconds:")
+            println("  Control force: $control_force")
+        end
+        forces .+= control_force
+        torques .+= control_torque
+        mass_rate += isfinite(control_mass_rate) ? control_mass_rate : 0.0
+    end
+    return mass_rate
+end
+
+@inline function _assign_heat_rate_derivative!(du_heat::AbstractVector, heat_rates::AbstractVector)
+    if length(heat_rates) == length(du_heat)
+        du_heat .= heat_rates
+        return nothing
+    end
+    du_heat .= 0.0
+    n_copy = min(length(heat_rates), length(du_heat))
+    @inbounds for j in 1:n_copy
+        du_heat[j] = heat_rates[j]
+    end
+    return nothing
+end
+
 function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Float64)
-    # Unpack the state vector
     sc_state = u.sc
     sc_du = du.sc
     dynamics_model = p.args.dynamics_model
@@ -1309,102 +1419,109 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
     debug_control = p.shared_buffers.debug_control[]
     p.shared_buffers.current_time[] = t
     effector_decision = _dynamic_effector_thread_decision(p.args, dynamic_effectors, length(spacecraft))
-    minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores())) # Determine the batch size for LoopVectorization based on the number of spacecraft and available CPU cores
-    # Loop over each spacecraft and compute its dynamics
+    minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores()))
     @batch minbatch=minbatch for i in eachindex(sc_state)
         if !p.is_active[i]
-            sc_du[i] .= 0.0 # Set the derivatives to zero for inactive spacecraft
+            sc_du[i] .= 0.0
             continue
         end
         @views begin
             sc_view = sc_state[i]
             du_view = sc_du[i]
-            # println("Computing dynamics for spacecraft $i at time $t seconds...")
-            # Compute forces and torques using the dynamic effectors
             forces = MVector{3, Float64}(0.0, 0.0, 0.0)
             torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-            mass_rate = 0.0
-            effector_started_ns = time_ns()
-            if effector_decision.use_threads
-                fx = Threads.Atomic{Float64}(0.0)
-                fy = Threads.Atomic{Float64}(0.0)
-                fz = Threads.Atomic{Float64}(0.0)
-                tx = Threads.Atomic{Float64}(0.0)
-                ty = Threads.Atomic{Float64}(0.0)
-                tz = Threads.Atomic{Float64}(0.0)
-                SimulationModel.ParallelPolicy.threaded_foreach(length(dynamic_effectors), effector_decision.allotment) do eff_idx
-                    effector = dynamic_effectors[eff_idx]
-                    force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, i)
-                    Threads.atomic_add!(fx, force[1])
-                    Threads.atomic_add!(fy, force[2])
-                    Threads.atomic_add!(fz, force[3])
-                    Threads.atomic_add!(tx, torque[1])
-                    Threads.atomic_add!(ty, torque[2])
-                    Threads.atomic_add!(tz, torque[3])
-                end
-                forces .= SVector{3, Float64}(fx[], fy[], fz[])
-                torques .= SVector{3, Float64}(tx[], ty[], tz[])
-            else
-                @inbounds for effector in dynamic_effectors
-                    force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, i)
-                    forces .+= force
-                    torques .+= torque
-                end
-            end
-            if effector_decision.policy_applied
-                SimulationModel.ParallelPolicy.record_policy_observation!(
-                    :dynamic_effectors;
-                    mode=effector_decision.mode,
-                    num_items=length(dynamic_effectors),
-                    use_threads=effector_decision.use_threads,
-                    elapsed_ns=(time_ns() - effector_started_ns)
-                )
-            end
+            _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
+            mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
 
-            # Compute control forces and torques using the control effectors (if any)
-                @inbounds for control_effector in p.args.control_model.control_effectors
-                    control_force, control_torque = SimulationModel.calcControlForceTorque(control_effector, sc_view, p, i, t)
-                    control_mass_rate = SimulationModel.calcControlMassFlowRate(control_effector, sc_view, p, i, t)
-                    if debug_control && (norm(control_force) > 0.0 || norm(control_torque) > 0.0)
-                        println("Applying control effect for spacecraft $i at time $t seconds:")
-                        println("  Control force: $control_force")
-                        # println("  Control torque: $control_torque")
-                    end
-                # println("Control force for spacecraft $i at time $t seconds: $control_force")
-                forces .+= control_force
-                torques .+= control_torque
-                mass_rate += isfinite(control_mass_rate) ? control_mass_rate : 0.0
-            end
-
-            # Update the derivatives of position and velocity
             du_view.pos .= sc_view.vel
             du_view.vel .= forces / sc_view.mass
             du_view.mass = mass_rate
 
             if p.args.mission_configuration.orientation_sim
-                # Update the derivatives of orientation (quaternion) and angular velocity
                 ω_body = SVector{3, Float64}(sc_view.ω)
                 inertia_tensor = spacecraft[i].inertia_tensor
                 τ_body = SVector{3, Float64}(torques)
-
                 du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
                 du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
             end
 
-            # Thermal callback precomputes per-link heat-rate derivatives once per step.
-            heat_rates = p.shared_buffers.heat_rates[i]
-            if length(heat_rates) == length(du_view.heat_loads)
-                du_view.heat_loads .= heat_rates
-            else
-                du_view.heat_loads .= 0.0
-                n_copy = min(length(heat_rates), length(du_view.heat_loads))
-                @inbounds for j in 1:n_copy
-                    du_view.heat_loads[j] = heat_rates[j]
-                end
-            end
+            _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
         end
     end
 end # function spacecraft_dynamics!
+
+function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t::Float64)
+    sc_state = u.sc
+    sc_du = du.sc
+    dynamics_model = p.args.dynamics_model
+    dynamic_effectors = dynamics_model.dynamic_effectors
+    spacecraft = dynamics_model.spacecraft
+    p.shared_buffers.current_time[] = t
+    effector_decision = _dynamic_effector_thread_decision(p.args, dynamic_effectors, length(spacecraft))
+    minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores()))
+    @batch minbatch=minbatch for i in eachindex(sc_state)
+        if !p.is_active[i]
+            sc_du[i] .= 0.0
+            continue
+        end
+        @views begin
+            sc_view = sc_state[i]
+            du_view = sc_du[i]
+            forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+            torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+            _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
+
+            du_view.pos .= sc_view.vel
+            du_view.vel .= forces / sc_view.mass
+            du_view.mass = 0.0
+
+            if p.args.mission_configuration.orientation_sim
+                ω_body = SVector{3, Float64}(sc_view.ω)
+                inertia_tensor = spacecraft[i].inertia_tensor
+                τ_body = SVector{3, Float64}(torques)
+                du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
+                du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+            end
+
+            _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+        end
+    end
+end # function spacecraft_dynamics_slow!
+
+function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVector, p, t::Float64)
+    sc_state = u.sc
+    sc_du = du.sc
+    spacecraft = p.args.dynamics_model.spacecraft
+    debug_control = p.shared_buffers.debug_control[]
+    p.shared_buffers.current_time[] = t
+    minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores()))
+    @batch minbatch=minbatch for i in eachindex(sc_state)
+        if !p.is_active[i]
+            sc_du[i] .= 0.0
+            continue
+        end
+        @views begin
+            sc_view = sc_state[i]
+            du_view = sc_du[i]
+            forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+            torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+            mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+
+            du_view.pos .= 0.0
+            du_view.vel .= forces / sc_view.mass
+            du_view.mass = mass_rate
+
+            if p.args.mission_configuration.orientation_sim
+                inertia_tensor = spacecraft[i].inertia_tensor
+                τ_body = SVector{3, Float64}(torques)
+                du_view.q .= 0.0
+                du_view.ω .= inertia_tensor \ τ_body
+            end
+
+            du_view.heat_loads .= 0.0
+        end
+    end
+end # function spacecraft_dynamics_fast_control!
 
 function build_initial_conditions(args)::ComponentVector
     # 1. Build the structure (Axis) based on each spacecraft's unique body count

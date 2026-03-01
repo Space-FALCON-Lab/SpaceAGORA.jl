@@ -66,6 +66,9 @@ include("DynamicEffectors.jl")
 # --- Guidance Effectors ---
 include("GuidanceEffectors.jl")
 @reexport using .GuidanceEffectors
+# --- Navigation Effectors ---
+include("NavigationEffectors.jl")
+@reexport using .NavigationEffectors
 # --- Control Effectors ---
 include("ControlEffectors.jl")
 @reexport using .ControlEffectors

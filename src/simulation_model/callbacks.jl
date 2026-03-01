@@ -14,6 +14,7 @@ using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
 using ..ConfigTypes: SaveData
 using ..ControlEffectors: calcControlEffect!
 using ..GuidanceEffectors: calcGuidanceEffect!
+using ..NavigationEffectors: calcNavigationEffect!
 using ..SimConfig: SimulationConfiguration, MissionOrbits
 export SaveField, default_save_fields, get_callbacks
 
@@ -1237,6 +1238,10 @@ end
     return _requires_density_callback(effectors, args)
 end
 
+@inline function _requires_quaternion_projection_callback(args::SimulationConfiguration)::Bool
+    return args.mission_configuration.orientation_sim
+end
+
 @inline function _resolved_component_tolerance(component_tol::Float64, baseline_tol::Float64)::Float64
     return component_tol == 0.0 ? baseline_tol : component_tol
 end
@@ -1307,8 +1312,12 @@ function get_callbacks(
         push!(callbacks, get_drag_state_callback(num_sats))
     end
 
+    append!(callbacks, get_navigation_callbacks(num_sats, args))
     append!(callbacks, get_control_callbacks(num_sats, args))
     append!(callbacks, get_guidance_callbacks(num_sats, args))
+    if _requires_quaternion_projection_callback(args)
+        push!(callbacks, get_quaternion_projection_callback(num_sats, args))
+    end
     push!(callbacks, get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values))
 
     return CallbackSet(callbacks...)
@@ -1750,6 +1759,56 @@ function get_drag_state_callback(num_sats::Int)
     return VectorContinuousCallback(condition!, affect_upcrossing!, affect_downcrossing!, num_sats)
 end
 
+function get_quaternion_projection_callback(num_sats::Int, args::SimulationConfiguration)
+    tol_q = max(1e-12, args.integration_tolerances.abstol_quaternion)
+    condition(u, t, integrator) = begin
+        p = integrator.p
+        @inbounds for i in 1:num_sats
+            if !p.is_active[i]
+                continue
+            end
+            q = u.sc[i].q
+            qnorm2 = dot(q, q)
+            if !isfinite(qnorm2) || abs(qnorm2 - 1.0) > tol_q
+                return true
+            end
+        end
+        return false
+    end
+
+    function affect!(integrator)
+        p = integrator.p
+        u = integrator.u
+        corrected = false
+        @inbounds for i in 1:num_sats
+            if !p.is_active[i]
+                continue
+            end
+            q = u.sc[i].q
+            qnorm2 = dot(q, q)
+            if !(isfinite(qnorm2) && qnorm2 > eps(Float64))
+                # Keep attitude state finite if a pathological quaternion is encountered.
+                q .= (0.0, 0.0, 0.0, 1.0)
+                corrected = true
+                continue
+            end
+            if abs(qnorm2 - 1.0) > tol_q
+                q ./= sqrt(qnorm2)
+                corrected = true
+            end
+        end
+        if corrected && callback_verbose(integrator)
+            println("Quaternion projection applied at time $(integrator.t) seconds.")
+        end
+    end
+
+    return DiscreteCallback(
+        condition,
+        affect!,
+        initialize=(cb, u, t, integrator) -> affect!(integrator)
+    )
+end
+
 function get_data_saving_callback(
     num_sats::Int,
     args::SimulationConfiguration,
@@ -1761,6 +1820,30 @@ function get_data_saving_callback(
         return _save_snapshot(save_fields, u, t, integrator)
     end
     return SavingCallback(save_func, saved_values; save_everystep=true)
+end
+
+function get_navigation_callbacks(num_sats::Int, args::SimulationConfiguration)::Vector{DiscreteCallback}
+    navigation_models = args.navigation_model.navigation_effectors
+    navigation_rates = args.navigation_model.navigation_rates
+    use_invokelatest = callback_use_invokelatest()
+    callbacks = Vector{DiscreteCallback}(undef, length(navigation_models))
+    for i in eachindex(navigation_models)
+        navigation_model = navigation_models[i]
+        navigation_rate = navigation_rates[i]
+        navigation_func = (integrator) -> begin
+            if use_invokelatest
+                @inbounds for sat_idx in 1:num_sats
+                    Base.invokelatest(calcNavigationEffect!, navigation_model, integrator.u, integrator.p, integrator.t, sat_idx)
+                end
+            else
+                @inbounds for sat_idx in 1:num_sats
+                    calcNavigationEffect!(navigation_model, integrator.u, integrator.p, integrator.t, sat_idx)
+                end
+            end
+        end
+        callbacks[i] = PeriodicCallback(navigation_func, navigation_rate)
+    end
+    return callbacks
 end
 
 function get_guidance_callbacks(num_sats::Int, args::SimulationConfiguration)::Vector{DiscreteCallback}

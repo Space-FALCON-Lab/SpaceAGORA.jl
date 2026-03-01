@@ -37,6 +37,10 @@ mutable struct CountingGuidanceModel <: SimulationModel.AbstractTypes.AbstractGu
     hits::Vector{Int}
 end
 
+mutable struct CountingNavigationModel
+    hits::Vector{Int}
+end
+
 mutable struct CountingControlModel <: SimulationModel.AbstractControlEffectorModel
     hits::Vector{Int}
 end
@@ -107,6 +111,17 @@ end
 
 function SimulationModel.calcGuidanceEffect!(
     model::CountingGuidanceModel,
+    u::ComponentVector,
+    p::ODEParams,
+    t::Float64,
+    i::Int64
+)
+    model.hits[i] += 1
+    return nothing
+end
+
+function SimulationModel.calcNavigationEffect!(
+    model::CountingNavigationModel,
     u::ComponentVector,
     p::ODEParams,
     t::Float64,
@@ -3861,6 +3876,16 @@ end
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=true, generate_plots=false, normalize=false)
     )
+    args_orient = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=true,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=true, generate_plots=false, normalize=false)
+    )
 
     mission_orbits = MissionConfiguration(
         mission_type=MissionOrbits,
@@ -3986,6 +4011,54 @@ end
     @test integrator_drag.opts.reltol == args_drag.integration_tolerances.reltol_orbit
     @test integrator_drag.opts.abstol == args_drag.integration_tolerances.abstol_orbit
 
+    quat_proj_cb = SimulationModel.SimulationCallbacks.get_quaternion_projection_callback(1, args_orient)
+    p_orient = ODEParams{1}(args=args_orient)
+    u_orient = build_initial_conditions(args_orient)
+    u_orient.sc[1].q .= [0.0, 0.0, 0.0, 2.0]
+    integrator_orient = MockCallbackIntegrator(
+        p_orient,
+        u_orient,
+        0.0,
+        MockCallbackOpts(1.0, 1e-8, 1e-8),
+        1,
+        Inf
+    )
+    @test quat_proj_cb.condition(u_orient, 0.0, integrator_orient) == true
+    quat_proj_cb.affect!(integrator_orient)
+    @test isapprox(norm(integrator_orient.u.sc[1].q), 1.0; atol=1e-12, rtol=0.0)
+
+    counting_navigation = CountingNavigationModel([0])
+    args_navigation = SimulationConfiguration(
+        file_paths=args_base.file_paths,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        mission_configuration=args_base.mission_configuration,
+        environment_model=args_base.environment_model,
+        dynamics_model=args_base.dynamics_model,
+        guidance_model=args_base.guidance_model,
+        navigation_model=NavigationModel(navigation_effectors=(counting_navigation,), navigation_rates=[1.0]),
+        control_model=args_base.control_model,
+        initial_time=args_base.initial_time,
+        integration_tolerances=args_base.integration_tolerances
+    )
+    navigation_cbs = SimulationModel.SimulationCallbacks.get_navigation_callbacks(1, args_navigation)
+    p_navigation = ODEParams{1}(args=args_navigation)
+    u_navigation = build_initial_conditions(args_navigation)
+    integrator_navigation = MockCallbackIntegrator(
+        p_navigation,
+        u_navigation,
+        0.0,
+        MockCallbackOpts(1.0, 1e-8, 1e-8),
+        1,
+        Inf
+    )
+    navigation_cbs[1].affect!.affect!(integrator_navigation)
+    @test counting_navigation.hits == [1]
+    withenv("SPACEAGORA_DEV_HOT_RELOAD" => "1") do
+        navigation_cbs_hot = SimulationModel.SimulationCallbacks.get_navigation_callbacks(1, args_navigation)
+        navigation_cbs_hot[1].affect!.affect!(integrator_navigation)
+    end
+    @test counting_navigation.hits == [2]
+
     counting_guidance = CountingGuidanceModel([0])
     args_guidance = SimulationConfiguration(
         file_paths=args_base.file_paths,
@@ -4053,6 +4126,7 @@ end
     requires_density = SimulationModel.SimulationCallbacks._requires_density_callback
     requires_orbit_end = SimulationModel.SimulationCallbacks._requires_orbit_end_callback
     requires_drag_state = SimulationModel.SimulationCallbacks._requires_drag_state_callback
+    requires_quat_projection = SimulationModel.SimulationCallbacks._requires_quaternion_projection_callback
     density_use_threads = SimulationModel.SimulationCallbacks._density_callback_use_threads
     control_use_threads = SimulationModel.SimulationCallbacks._control_callback_use_threads
 
@@ -4063,6 +4137,8 @@ end
     @test requires_orbit_end(args_orbits) == true
     @test requires_drag_state((InverseSquaredGravityModel(),), args_base) == false
     @test requires_drag_state((InverseSquaredGravityModel(), AerodynamicCoefficientfM()), args_drag) == true
+    @test requires_quat_projection(args_base) == false
+    @test requires_quat_projection(args_orient) == true
 
     has_worker_threads = Threads.nthreads() > 1
     withenv(

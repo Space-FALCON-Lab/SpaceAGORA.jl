@@ -1206,8 +1206,6 @@ function _run_case_batch_core!(
     for rep in 1:repeat_count
         last_row = nothing
         for attempt in 1:spec.max_attempts
-            println("  repeat $(rep)/$(repeat_count) attempt $(attempt)/$(spec.max_attempts): start")
-            flush(stdout)
             row = measure_case(case, spec.name, rep; attempt=attempt, plan=plan)
             last_row = row
             if row.solve_success

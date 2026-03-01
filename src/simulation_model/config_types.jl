@@ -11,7 +11,7 @@ using Reexport
 
 export Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters
 export SaveCache, SaveData
-export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache
+export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, SpiceRuntimeCounters, SpiceRhsMemo
 export LegacyGravityModelCode, LegacyDensityModelCode, LegacyAerodynamicModelCode, LegacyThermalModelCode, LegacyThrustControlCode
 export LegacyGravityConstant, LegacyGravityInverseSquared, LegacyGravityInverseSquaredJ2, LegacyGravityGRAM
 export LegacyDensityConstant, LegacyDensityExponential, LegacyDensityNoDensity, LegacyDensityGRAM, LegacyDensityNRLMSISE
@@ -552,6 +552,22 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         quaternions::Vector{SVector{4, Float64}}
     end
 
+    @kwdef struct SpiceRuntimeCounters
+        nbody_spkpos_runtime_calls::Base.Threads.Atomic{Int64} = Base.Threads.Atomic{Int64}(0)
+        nbody_spkpos_cache_build_calls::Base.Threads.Atomic{Int64} = Base.Threads.Atomic{Int64}(0)
+        srp_spkpos_runtime_calls::Base.Threads.Atomic{Int64} = Base.Threads.Atomic{Int64}(0)
+        srp_spkpos_cache_build_calls::Base.Threads.Atomic{Int64} = Base.Threads.Atomic{Int64}(0)
+        planet_pxform_runtime_calls::Base.Threads.Atomic{Int64} = Base.Threads.Atomic{Int64}(0)
+        planet_pxform_cache_build_calls::Base.Threads.Atomic{Int64} = Base.Threads.Atomic{Int64}(0)
+    end
+
+    @kwdef mutable struct SpiceRhsMemo
+        lock::ReentrantLock = ReentrantLock()
+        et::Float64 = NaN
+        primary_body_name::String = ""
+        body_positions_j2000::Dict{String, SVector{3, Float64}} = Dict{String, SVector{3, Float64}}()
+    end
+
     @kwdef mutable struct Solution
         orientation::Orientation = Orientation()
         physical_properties::Physical_properties = Physical_properties()
@@ -575,6 +591,9 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         nbody_ephemeris_cache::Base.RefValue{Union{Nothing, NBodyEphemerisCache}} = Ref{Union{Nothing, NBodyEphemerisCache}}(nothing)
         srp_sun_ephemeris_cache::Base.RefValue{Union{Nothing, SRPSunEphemerisCache}} = Ref{Union{Nothing, SRPSunEphemerisCache}}(nothing)
         planet_frame_ephemeris_cache::Base.RefValue{Union{Nothing, PlanetFrameEphemerisCache}} = Ref{Union{Nothing, PlanetFrameEphemerisCache}}(nothing)
+        spice_runtime_counters::SpiceRuntimeCounters = SpiceRuntimeCounters()
+        spice_rhs_memo_enabled::Base.RefValue{Bool} = Ref(true)
+        spice_rhs_memo::SpiceRhsMemo = SpiceRhsMemo()
         current_time::Base.RefValue{Float64} = Ref(0.0)
         et_start::Base.RefValue{Float64} = Ref(0.0)
         debug_control::Base.RefValue{Bool} = Ref(false)

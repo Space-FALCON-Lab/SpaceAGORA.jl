@@ -6,7 +6,7 @@ using SatelliteToolbox
 using SatelliteToolboxGeomagneticField
 using CSV
 using DataFrames
-using ..SimulationModel: SPICE_LOCK, SRPSunEphemerisCache
+using ..SimulationModel: SPICE_LOCK, SRPSunEphemerisCache, NBodyEphemerisCache, SpiceRhsMemo
 using ..AbstractTypes: AbstractPlanet
 using ..Planets: Earth, Mars, Venus, Titan
 include("../utils/quaternion_utils.jl")
@@ -335,11 +335,16 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
     n_threads = use_threads ? _threadid_capacity() : 1
     workspace = _nbody_workspace_for_sat!(param, i, n_bodies, n_threads)
     pos_primary_k_all = workspace.pos_primary_k_all
+    nbody_cache_entry = param.shared_buffers.nbody_ephemeris_cache[]
+    spice_rhs_memo_enabled = param.shared_buffers.spice_rhs_memo_enabled[]
+    spice_rhs_memo = param.shared_buffers.spice_rhs_memo
     for (k, body_name) in pairs(model.body_names)
         body_name_spice = _spice_query_name(body_name)
-
-        pos_primary_body = lock(SPICE_LOCK) do
-            SVector{3, Float64}(spkpos(body_name_spice, et, "J2000", "none", primary_body_name)[1])
+        pos_primary_body = if nbody_cache_entry isa NBodyEphemerisCache
+            cached = _nbody_body_position_from_cache_j2000(nbody_cache_entry, et, body_name_spice, primary_body_name)
+            cached === nothing ? _nbody_body_position_from_spice_j2000(body_name_spice, et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls) : cached
+        else
+            _nbody_body_position_from_spice_j2000(body_name_spice, et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls)
         end
         pos_primary_k_all[k] = model.planet.J2000_to_pci * pos_primary_body * 1e3
     end
@@ -383,6 +388,105 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
+@inline function _spice_rhs_memo_reset_if_stale!(
+    memo::SpiceRhsMemo,
+    et::Float64,
+    primary_body_name::String
+)
+    if memo.et != et || memo.primary_body_name != primary_body_name
+        memo.et = et
+        memo.primary_body_name = primary_body_name
+        empty!(memo.body_positions_j2000)
+    end
+    return nothing
+end
+
+@inline function _nbody_body_position_from_spice_j2000(
+    body_name_spice::String,
+    et::Float64,
+    primary_body_name::String,
+    memo_enabled::Bool,
+    memo::SpiceRhsMemo,
+    counter::Base.Threads.Atomic{Int64}
+)::SVector{3, Float64}
+    return memo_enabled ?
+        _nbody_body_position_from_spice_memoized_j2000(body_name_spice, et, primary_body_name, memo, counter) :
+        _nbody_body_position_from_spice_direct_j2000(body_name_spice, et, primary_body_name, counter)
+end
+
+@inline function _nbody_body_position_from_spice_direct_j2000(
+    body_name_spice::String,
+    et::Float64,
+    primary_body_name::String,
+    counter::Base.Threads.Atomic{Int64}
+)::SVector{3, Float64}
+    Base.Threads.atomic_add!(counter, 1)
+    return lock(SPICE_LOCK) do
+        SVector{3, Float64}(spkpos(body_name_spice, et, "J2000", "none", primary_body_name)[1])
+    end
+end
+
+@inline function _nbody_body_position_from_spice_memoized_j2000(
+    body_name_spice::String,
+    et::Float64,
+    primary_body_name::String,
+    memo::SpiceRhsMemo,
+    counter::Base.Threads.Atomic{Int64}
+)::SVector{3, Float64}
+    return lock(memo.lock) do
+        _spice_rhs_memo_reset_if_stale!(memo, et, primary_body_name)
+        if haskey(memo.body_positions_j2000, body_name_spice)
+            return memo.body_positions_j2000[body_name_spice]
+        end
+        Base.Threads.atomic_add!(counter, 1)
+        position = lock(SPICE_LOCK) do
+            SVector{3, Float64}(spkpos(body_name_spice, et, "J2000", "none", primary_body_name)[1])
+        end
+        memo.body_positions_j2000[body_name_spice] = position
+        return position
+    end
+end
+
+@inline function _nbody_body_position_from_cache_j2000(
+    cache::NBodyEphemerisCache,
+    et::Float64,
+    body_name_spice::String,
+    primary_body_name::String
+)::Union{Nothing, SVector{3, Float64}}
+    cache.primary_body_name == primary_body_name || return nothing
+    body_idx = get(cache.body_index_by_name, body_name_spice, 0)
+    body_idx > 0 || return nothing
+
+    ets = cache.ets
+    n_samples = length(ets)
+    n_samples >= 2 || return nothing
+    if et < ets[1] || et > ets[n_samples]
+        return nothing
+    end
+
+    idx = searchsortedlast(ets, et)
+    if idx <= 0
+        return nothing
+    elseif idx >= n_samples
+        return cache.positions_j2000[n_samples, body_idx]
+    end
+
+    et0 = ets[idx]
+    et1 = ets[idx + 1]
+    if et1 <= et0
+        return cache.positions_j2000[idx, body_idx]
+    end
+    tau = (et - et0) / (et1 - et0)
+    p1 = cache.positions_j2000[idx, body_idx]
+    p2 = cache.positions_j2000[idx + 1, body_idx]
+    if idx <= 1 || (idx + 2) > n_samples
+        return _interp_vec3_linear(p1, p2, tau)
+    end
+    p0 = cache.positions_j2000[idx - 1, body_idx]
+    p3 = cache.positions_j2000[idx + 2, body_idx]
+    return _interp_vec3_catmull_rom(p0, p1, p2, p3, tau)
+end
+
 function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     if model.A == 0.0
         return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
@@ -392,13 +496,15 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
     pos_ii = hasproperty(x, :pos) ? SVector{3, Float64}(x.pos) : SVector{3, Float64}(x[1:3])
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
     primary_body_name = _spice_query_name(planet.name)
+    spice_rhs_memo_enabled = param.shared_buffers.spice_rhs_memo_enabled[]
+    spice_rhs_memo = param.shared_buffers.spice_rhs_memo
 
     cache_entry = param.shared_buffers.srp_sun_ephemeris_cache[]
     pos_primary_sun_j2000 = if cache_entry isa SRPSunEphemerisCache
         cached = _srp_sun_position_from_cache_j2000(cache_entry, et)
-        cached === nothing ? _srp_sun_position_from_spice_j2000(et, primary_body_name) : cached
+        cached === nothing ? _srp_sun_position_from_spice_j2000(et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls) : cached
     else
-        _srp_sun_position_from_spice_j2000(et, primary_body_name)
+        _srp_sun_position_from_spice_j2000(et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls)
     end
     pos_primary_sun = planet.J2000_to_pci * pos_primary_sun_j2000 * 1e3
     r_sun_to_sc = pos_ii - pos_primary_sun
@@ -416,9 +522,47 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-@inline function _srp_sun_position_from_spice_j2000(et::Float64, primary_body_name::String)::SVector{3, Float64}
+@inline function _srp_sun_position_from_spice_j2000(
+    et::Float64,
+    primary_body_name::String,
+    memo_enabled::Bool,
+    memo::SpiceRhsMemo,
+    counter::Base.Threads.Atomic{Int64}
+)::SVector{3, Float64}
+    return memo_enabled ?
+        _srp_sun_position_from_spice_memoized_j2000(et, primary_body_name, memo, counter) :
+        _srp_sun_position_from_spice_direct_j2000(et, primary_body_name, counter)
+end
+
+@inline function _srp_sun_position_from_spice_direct_j2000(
+    et::Float64,
+    primary_body_name::String,
+    counter::Base.Threads.Atomic{Int64}
+)::SVector{3, Float64}
+    Base.Threads.atomic_add!(counter, 1)
     return lock(SPICE_LOCK) do
         SVector{3, Float64}(spkpos("sun", et, "J2000", "none", primary_body_name)[1])
+    end
+end
+
+@inline function _srp_sun_position_from_spice_memoized_j2000(
+    et::Float64,
+    primary_body_name::String,
+    memo::SpiceRhsMemo,
+    counter::Base.Threads.Atomic{Int64}
+)::SVector{3, Float64}
+    sun_query_name = "sun"
+    return lock(memo.lock) do
+        _spice_rhs_memo_reset_if_stale!(memo, et, primary_body_name)
+        if haskey(memo.body_positions_j2000, sun_query_name)
+            return memo.body_positions_j2000[sun_query_name]
+        end
+        Base.Threads.atomic_add!(counter, 1)
+        position = lock(SPICE_LOCK) do
+            SVector{3, Float64}(spkpos(sun_query_name, et, "J2000", "none", primary_body_name)[1])
+        end
+        memo.body_positions_j2000[sun_query_name] = position
+        return position
     end
 end
 
@@ -442,10 +586,40 @@ end
     if et1 <= et0
         return cache.positions_j2000[idx]
     end
-    α = (et - et0) / (et1 - et0)
-    p0 = cache.positions_j2000[idx]
-    p1 = cache.positions_j2000[idx + 1]
-    return p0 + α * (p1 - p0)
+    tau = (et - et0) / (et1 - et0)
+    p1 = cache.positions_j2000[idx]
+    p2 = cache.positions_j2000[idx + 1]
+    if idx <= 1 || (idx + 2) > n_samples
+        return _interp_vec3_linear(p1, p2, tau)
+    end
+    p0 = cache.positions_j2000[idx - 1]
+    p3 = cache.positions_j2000[idx + 2]
+    return _interp_vec3_catmull_rom(p0, p1, p2, p3, tau)
+end
+
+@inline function _interp_vec3_linear(
+    p0::SVector{3, Float64},
+    p1::SVector{3, Float64},
+    tau::Float64
+)::SVector{3, Float64}
+    return p0 + tau * (p1 - p0)
+end
+
+@inline function _interp_vec3_catmull_rom(
+    p0::SVector{3, Float64},
+    p1::SVector{3, Float64},
+    p2::SVector{3, Float64},
+    p3::SVector{3, Float64},
+    tau::Float64
+)::SVector{3, Float64}
+    tau2 = tau * tau
+    tau3 = tau2 * tau
+    return 0.5 * (
+        (2.0 * p1) +
+        (-p0 + p2) * tau +
+        (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * tau2 +
+        (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * tau3
+    )
 end
 
 function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}

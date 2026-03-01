@@ -297,6 +297,16 @@ end
     return max(0.0, value)
 end
 
+@inline function _parse_bool_env(name::String, default::Bool)::Bool
+    raw = lowercase(strip(get(ENV, name, default ? "1" : "0")))
+    if raw in ("1", "true", "yes", "on")
+        return true
+    elseif raw in ("0", "false", "no", "off")
+        return false
+    end
+    throw(ArgumentError("Invalid $name='$raw'. Use one of: 1/0, true/false, yes/no, on/off."))
+end
+
 @inline function _priority_inner_sat_threshold()::Int
     return _parse_positive_int_env("SPACEAGORA_PERF_PRIORITY_INNER_SAT_THRESHOLD", 8)
 end
@@ -317,6 +327,14 @@ end
     return _parse_nonnegative_float_env("SPACEAGORA_PERF_PRIORITY_OUTER_LIGHT_MISSION_THRESHOLD_S", 14_400.0)
 end
 
+@inline function _priority_spice_constellation_process_enabled()::Bool
+    return _parse_bool_env("SPACEAGORA_PERF_PRIORITY_SPICE_CONSTELLATION_PROCESS", true)
+end
+
+@inline function _priority_spice_constellation_min_sats()::Int
+    return _parse_positive_int_env("SPACEAGORA_PERF_PRIORITY_SPICE_CONSTELLATION_MIN_SATS", 4)
+end
+
 @inline function _control_stress_repeats_full()::Int
     return _parse_positive_int_env("SPACEAGORA_PERF_CONTROL_STRESS_REPEATS_FULL", 3)
 end
@@ -326,13 +344,7 @@ end
 end
 
 @inline function _include_control_stress_per_orbit()::Bool
-    raw = lowercase(strip(get(ENV, "SPACEAGORA_PERF_INCLUDE_CONTROL_STRESS_PER_ORBIT", "1")))
-    if raw in ("1", "true", "yes", "on")
-        return true
-    elseif raw in ("0", "false", "no", "off")
-        return false
-    end
-    throw(ArgumentError("Invalid SPACEAGORA_PERF_INCLUDE_CONTROL_STRESS_PER_ORBIT='$raw'. Use one of: 1/0, true/false, yes/no, on/off."))
+    return _parse_bool_env("SPACEAGORA_PERF_INCLUDE_CONTROL_STRESS_PER_ORBIT", true)
 end
 
 @inline function _machine_parallel_class()::Symbol
@@ -371,6 +383,15 @@ end
     return false
 end
 
+@inline function _has_srp_dynamic_effector(effectors::Tuple)::Bool
+    @inbounds for effector in effectors
+        if effector isa SolarRadiationPressureModel && effector.A > 0.0
+            return true
+        end
+    end
+    return false
+end
+
 @inline function _max_harmonics_degree(effectors::Tuple)::Int
     degree = 0
     @inbounds for effector in effectors
@@ -391,6 +412,7 @@ end
     mission_time_s = case.args_template.mission_configuration.mission_time
     dynamic_effectors = case.args_template.dynamics_model.dynamic_effectors
     has_nbody = _has_nbody_dynamic_effector(dynamic_effectors)
+    has_srp = _has_srp_dynamic_effector(dynamic_effectors)
     harmonics_degree = _max_harmonics_degree(dynamic_effectors)
     has_control = !isempty(case.args_template.control_model.control_effectors)
     orientation_on = case.args_template.mission_configuration.orientation_sim
@@ -418,6 +440,12 @@ end
     # avoid also parallelizing the outer loop.
     if n_sats >= sat_threshold || n_links >= link_threshold
         return :none
+    end
+
+    if _priority_spice_constellation_process_enabled() &&
+       n_sats >= _priority_spice_constellation_min_sats() &&
+       (has_nbody || has_srp)
+        return machine in (:large, :medium) ? :process : _threads_or_none_backend()
     end
 
     if case.category == "satellite_scaling" && n_sats >= 4
@@ -1063,6 +1091,15 @@ function measure_case(
     policy_control_threads_enabled = missing
     policy_multibody_threads_enabled = missing
     policy_other_threads_enabled = missing
+    nbody_spkpos_runtime_calls = missing
+    nbody_spkpos_cache_build_calls = missing
+    nbody_spkpos_total_calls = missing
+    srp_spkpos_runtime_calls = missing
+    srp_spkpos_cache_build_calls = missing
+    srp_spkpos_total_calls = missing
+    planet_pxform_runtime_calls = missing
+    planet_pxform_cache_build_calls = missing
+    planet_pxform_total_calls = missing
 
     solve_payload = solve_timed.value
     if solve_payload.ok
@@ -1091,6 +1128,20 @@ function measure_case(
                 policy_control_threads_enabled = getproperty(snapshot, :control_threads_enabled)
                 policy_multibody_threads_enabled = getproperty(snapshot, :multibody_threads_enabled)
                 policy_other_threads_enabled = getproperty(snapshot, :other_threads_enabled)
+            end
+        end
+        if hasproperty(solve_result, :spice_counters)
+            counters = solve_result.spice_counters
+            if !(counters isa Nothing)
+                nbody_spkpos_runtime_calls = getproperty(counters, :nbody_spkpos_runtime_calls)
+                nbody_spkpos_cache_build_calls = getproperty(counters, :nbody_spkpos_cache_build_calls)
+                nbody_spkpos_total_calls = getproperty(counters, :nbody_spkpos_total_calls)
+                srp_spkpos_runtime_calls = getproperty(counters, :srp_spkpos_runtime_calls)
+                srp_spkpos_cache_build_calls = getproperty(counters, :srp_spkpos_cache_build_calls)
+                srp_spkpos_total_calls = getproperty(counters, :srp_spkpos_total_calls)
+                planet_pxform_runtime_calls = getproperty(counters, :planet_pxform_runtime_calls)
+                planet_pxform_cache_build_calls = getproperty(counters, :planet_pxform_cache_build_calls)
+                planet_pxform_total_calls = getproperty(counters, :planet_pxform_total_calls)
             end
         end
     else
@@ -1149,6 +1200,15 @@ function measure_case(
         policy_control_threads_enabled=policy_control_threads_enabled,
         policy_multibody_threads_enabled=policy_multibody_threads_enabled,
         policy_other_threads_enabled=policy_other_threads_enabled,
+        nbody_spkpos_runtime_calls=nbody_spkpos_runtime_calls,
+        nbody_spkpos_cache_build_calls=nbody_spkpos_cache_build_calls,
+        nbody_spkpos_total_calls=nbody_spkpos_total_calls,
+        srp_spkpos_runtime_calls=srp_spkpos_runtime_calls,
+        srp_spkpos_cache_build_calls=srp_spkpos_cache_build_calls,
+        srp_spkpos_total_calls=srp_spkpos_total_calls,
+        planet_pxform_runtime_calls=planet_pxform_runtime_calls,
+        planet_pxform_cache_build_calls=planet_pxform_cache_build_calls,
+        planet_pxform_total_calls=planet_pxform_total_calls,
         sim_seconds_per_wall_second=sim_seconds_per_wall_second,
         satellite_sim_seconds_per_wall_second=satellite_sim_seconds_per_wall_second,
         timestamp_utc=timestamp_utc

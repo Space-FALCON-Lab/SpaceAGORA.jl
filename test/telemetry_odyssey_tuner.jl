@@ -144,6 +144,27 @@ end
     end
 end
 
+@inline function _env_with_default(name::String, default::String)::String
+    raw = strip(get(ENV, name, ""))
+    return isempty(raw) ? default : raw
+end
+
+function _candidate_runtime_policy_env_pairs()::Vector{Pair{String, String}}
+    # Odyssey candidates are single-spacecraft and usually run in outer process-level
+    # parallelism, so keep inner callback/effector threading disabled by default.
+    return Pair{String, String}[
+        "OPENBLAS_NUM_THREADS" => _env_with_default("OPENBLAS_NUM_THREADS", "1"),
+        "SPACEAGORA_INNER_THREAD_BUDGET" => _env_with_default("SPACEAGORA_INNER_THREAD_BUDGET", "1"),
+        "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => _env_with_default("SPACEAGORA_PARALLEL_POLICY_ADAPTIVE", "0"),
+        "SPACEAGORA_EFFECTOR_PARALLEL" => _env_with_default("SPACEAGORA_EFFECTOR_PARALLEL", "off"),
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => _env_with_default("SPACEAGORA_DENSITY_CALLBACK_PARALLEL", "off"),
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => _env_with_default("SPACEAGORA_CONTROL_CALLBACK_PARALLEL", "off"),
+        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => _env_with_default("SPACEAGORA_THERMAL_CALLBACK_PARALLEL", "off"),
+        "SPACEAGORA_MULTIBODY_PARALLEL" => _env_with_default("SPACEAGORA_MULTIBODY_PARALLEL", "off"),
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => _env_with_default("SPACEAGORA_OUTER_PARALLEL_ACTIVE", "0")
+    ]
+end
+
 function _ensure_plots_loaded()::Bool
     if _PLOTS_READY[]
         return _PLOTS_AVAILABLE[]
@@ -650,13 +671,14 @@ function evaluate_candidate(
         "SPACEAGORA_TELEMETRY_DT_MAX_ORBIT" => string(cand.dt_max_orbit_s),
         "SPACEAGORA_TELEMETRY_DT_MAX_ATM" => string(cand.dt_max_atm_s)
     ]
+    append!(env_pairs, _candidate_runtime_policy_env_pairs())
     if stage == :quick && cfg.maxiters_quick !== nothing
         push!(env_pairs, "SPACEAGORA_TELEMETRY_SOLVER_MAXITERS" => string(cfg.maxiters_quick))
     elseif stage == :full && cfg.maxiters_full !== nothing
         push!(env_pairs, "SPACEAGORA_TELEMETRY_SOLVER_MAXITERS" => string(cfg.maxiters_full))
     end
 
-    success = true
+    run_ok = true
     error_text = ""
     wall_s = @elapsed begin
         open(paths.log, "w") do io
@@ -686,19 +708,19 @@ function evaluate_candidate(
                         end
                     end
                     wait(proc)
-                    if !success(proc)
-                        success = false
+                    if !Base.success(proc)
+                        run_ok = false
                         error_text = "nonzero_exit_code=$(proc.exitcode)"
                     end
                 end
             catch err
-                success = false
+                run_ok = false
                 error_text = sprint(showerror, err)
             end
         end
     end
 
-    if !success || !isfile(paths.summary)
+    if !run_ok || !isfile(paths.summary)
         return merge(
             _candidate_nt(cand),
             (

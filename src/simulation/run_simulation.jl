@@ -16,6 +16,10 @@ using TOML
 const _normalize_warning_emitted = Ref(false)
 const RESULTS_BUNDLE_SCHEMA_VERSION = "1"
 const CHECKPOINT_SCHEMA_VERSION = "1"
+const _EPHEMERIS_REUSE_LOCK = ReentrantLock()
+const _SRP_EPHEMERIS_REUSE_CACHE = Dict{Any, SimulationModel.SRPSunEphemerisCache}()
+const _NBODY_EPHEMERIS_REUSE_CACHE = Dict{Any, SimulationModel.NBodyEphemerisCache}()
+const _PLANET_FRAME_EPHEMERIS_REUSE_CACHE = Dict{Any, SimulationModel.PlanetFrameEphemerisCache}()
 
 @inline _typed_normalize_warning_enabled() = get(ENV, "SPACEAGORA_WARN_NORMALIZE", "1") == "1"
 @inline _typed_allow_legacy_normalize() = get(ENV, "SPACEAGORA_ALLOW_TYPED_NORMALIZE", "0") == "1"
@@ -96,6 +100,17 @@ end
     return parsed
 end
 
+@inline function _parse_nonnegative_int_env(name::String, default::Int)::Int
+    raw = strip(get(ENV, name, string(default)))
+    parsed = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("$name must be an integer value, got '$raw'"))
+    end
+    parsed >= 0 || throw(ArgumentError("$name must be >= 0, got $parsed"))
+    return parsed
+end
+
 @inline function _srp_ephemeris_cache_enabled()::Bool
     return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_SRP_EPHEMERIS_CACHE", true)
 end
@@ -125,11 +140,96 @@ end
 end
 
 @inline function _planet_frame_cache_dt_s()::Float64
-    return _parse_positive_float_env("SPACEAGORA_PLANET_FRAME_CACHE_DT_S", 5.0)
+    return _parse_positive_float_env("SPACEAGORA_PLANET_FRAME_CACHE_DT_S", 30.0)
 end
 
 @inline function _planet_frame_cache_max_samples()::Int
     return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_PLANET_FRAME_CACHE_MAX_SAMPLES", 400_000)
+end
+
+@inline function _spice_rhs_memo_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_SPICE_RHS_MEMO", true)
+end
+
+@inline function _ephemeris_reuse_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_EPHEMERIS_CACHE_REUSE", true)
+end
+
+@inline function _ephemeris_reuse_max_entries()::Int
+    return _parse_nonnegative_int_env("SPACEAGORA_EPHEMERIS_CACHE_REUSE_MAX_ENTRIES", 32)
+end
+
+@inline function _cache_time_key(x::Float64)::Int64
+    return round(Int64, x * 1e6)
+end
+
+@inline function _planet_transform_key(planet)::NTuple{9, Int64}
+    return ntuple(i -> round(Int64, planet.J2000_to_pci[i] * 1e12), 9)
+end
+
+@inline function _srp_ephemeris_reuse_key(primary_body_name::String, et_start::Float64, mission_end_s::Float64, dt_s::Float64)
+    return (
+        :srp,
+        primary_body_name,
+        _cache_time_key(et_start),
+        _cache_time_key(mission_end_s),
+        _cache_time_key(dt_s)
+    )
+end
+
+@inline function _nbody_ephemeris_reuse_key(primary_body_name::String, body_query_names::Vector{String}, et_start::Float64, mission_end_s::Float64, dt_s::Float64)
+    return (
+        :nbody,
+        primary_body_name,
+        Tuple(body_query_names),
+        _cache_time_key(et_start),
+        _cache_time_key(mission_end_s),
+        _cache_time_key(dt_s)
+    )
+end
+
+@inline function _planet_frame_ephemeris_reuse_key(planet, et_start::Float64, mission_end_s::Float64, dt_s::Float64)
+    return (
+        :planet_frame,
+        string(planet.name),
+        _planet_transform_key(planet),
+        _cache_time_key(et_start),
+        _cache_time_key(mission_end_s),
+        _cache_time_key(dt_s)
+    )
+end
+
+@inline function _ephemeris_reuse_lookup(cache::Dict{Any, T}, key) where {T}
+    return lock(_EPHEMERIS_REUSE_LOCK) do
+        get(cache, key, nothing)
+    end
+end
+
+@inline function _ephemeris_reuse_store!(cache::Dict{Any, T}, key, value::T, max_entries::Int)::T where {T}
+    return lock(_EPHEMERIS_REUSE_LOCK) do
+        existing = get(cache, key, nothing)
+        if existing !== nothing
+            return existing
+        end
+        if max_entries <= 0
+            return value
+        end
+        if length(cache) >= max_entries
+            oldest = first(keys(cache))
+            delete!(cache, oldest)
+        end
+        cache[key] = value
+        return value
+    end
+end
+
+function _clear_ephemeris_reuse_cache!()
+    lock(_EPHEMERIS_REUSE_LOCK) do
+        empty!(_SRP_EPHEMERIS_REUSE_CACHE)
+        empty!(_NBODY_EPHEMERIS_REUSE_CACHE)
+        empty!(_PLANET_FRAME_EPHEMERIS_REUSE_CACHE)
+    end
+    return nothing
 end
 
 @inline function _has_active_srp_effector(dynamic_effectors::Tuple)::Bool
@@ -310,6 +410,53 @@ function _initialize_planet_frame_cache_buffer!(p)
     return nothing
 end
 
+function _initialize_spice_rhs_memo_mode!(p)
+    p.shared_buffers.spice_rhs_memo_enabled[] = _spice_rhs_memo_enabled()
+    return nothing
+end
+
+@inline function _reset_spice_runtime_counters!(p)
+    counters = p.shared_buffers.spice_runtime_counters
+    Base.Threads.atomic_xchg!(counters.nbody_spkpos_runtime_calls, 0)
+    Base.Threads.atomic_xchg!(counters.nbody_spkpos_cache_build_calls, 0)
+    Base.Threads.atomic_xchg!(counters.srp_spkpos_runtime_calls, 0)
+    Base.Threads.atomic_xchg!(counters.srp_spkpos_cache_build_calls, 0)
+    Base.Threads.atomic_xchg!(counters.planet_pxform_runtime_calls, 0)
+    Base.Threads.atomic_xchg!(counters.planet_pxform_cache_build_calls, 0)
+    return nothing
+end
+
+@inline function _reset_spice_rhs_memo!(p)
+    memo = p.shared_buffers.spice_rhs_memo
+    lock(memo.lock) do
+        memo.et = NaN
+        memo.primary_body_name = ""
+        empty!(memo.body_positions_j2000)
+    end
+    return nothing
+end
+
+@inline function _spice_runtime_counters_snapshot(p)
+    counters = p.shared_buffers.spice_runtime_counters
+    nbody_runtime = counters.nbody_spkpos_runtime_calls[]
+    nbody_build = counters.nbody_spkpos_cache_build_calls[]
+    srp_runtime = counters.srp_spkpos_runtime_calls[]
+    srp_build = counters.srp_spkpos_cache_build_calls[]
+    planet_runtime = counters.planet_pxform_runtime_calls[]
+    planet_build = counters.planet_pxform_cache_build_calls[]
+    return (
+        nbody_spkpos_runtime_calls=nbody_runtime,
+        nbody_spkpos_cache_build_calls=nbody_build,
+        nbody_spkpos_total_calls=(nbody_runtime + nbody_build),
+        srp_spkpos_runtime_calls=srp_runtime,
+        srp_spkpos_cache_build_calls=srp_build,
+        srp_spkpos_total_calls=(srp_runtime + srp_build),
+        planet_pxform_runtime_calls=planet_runtime,
+        planet_pxform_cache_build_calls=planet_build,
+        planet_pxform_total_calls=(planet_runtime + planet_build)
+    )
+end
+
 @inline function _has_active_nbody_effector(dynamic_effectors::Tuple)::Bool
     @inbounds for effector in dynamic_effectors
         if effector isa SimulationModel.NBodyGravityModel && !isempty(effector.body_names)
@@ -353,6 +500,14 @@ function _initialize_srp_sun_ephemeris_cache!(p, et_start::Float64, mission_end_
     end
 
     primary_body_name = SimulationModel.DynamicEffectors._spice_query_name(p.args.environment_model.planet.name)
+    if _ephemeris_reuse_enabled()
+        reuse_key = _srp_ephemeris_reuse_key(primary_body_name, et_start, mission_end_s, dt_s)
+        reused = _ephemeris_reuse_lookup(_SRP_EPHEMERIS_REUSE_CACHE, reuse_key)
+        if reused isa SimulationModel.SRPSunEphemerisCache
+            p.shared_buffers.srp_sun_ephemeris_cache[] = reused
+            return nothing
+        end
+    end
     ets = Vector{Float64}(undef, n_samples)
     positions = Vector{SVector{3, Float64}}(undef, n_samples)
 
@@ -361,10 +516,16 @@ function _initialize_srp_sun_ephemeris_cache!(p, et_start::Float64, mission_end_
             et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
             ets[sample_idx] = et
             positions[sample_idx] = SVector{3, Float64}(spkpos("sun", et, "J2000", "none", primary_body_name)[1])
+            Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.srp_spkpos_cache_build_calls, 1)
         end
     end
 
-    p.shared_buffers.srp_sun_ephemeris_cache[] = SimulationModel.SRPSunEphemerisCache(ets, positions)
+    cache_value = SimulationModel.SRPSunEphemerisCache(ets, positions)
+    if _ephemeris_reuse_enabled()
+        reuse_key = _srp_ephemeris_reuse_key(primary_body_name, et_start, mission_end_s, dt_s)
+        cache_value = _ephemeris_reuse_store!(_SRP_EPHEMERIS_REUSE_CACHE, reuse_key, cache_value, _ephemeris_reuse_max_entries())
+    end
+    p.shared_buffers.srp_sun_ephemeris_cache[] = cache_value
     if p.args.simulation_settings.verbose
         println(
             "Initialized SRP Sun ephemeris cache: samples=$(n_samples), dt=$(round(dt_s; digits=3)) s, span=$(round(mission_end_s; digits=3)) s."
@@ -392,6 +553,14 @@ function _initialize_nbody_ephemeris_cache!(p, et_start::Float64, mission_end_s:
     end
 
     primary_body_name = SimulationModel.DynamicEffectors._spice_query_name(p.args.environment_model.planet.name)
+    if _ephemeris_reuse_enabled()
+        reuse_key = _nbody_ephemeris_reuse_key(primary_body_name, body_query_names, et_start, mission_end_s, dt_s)
+        reused = _ephemeris_reuse_lookup(_NBODY_EPHEMERIS_REUSE_CACHE, reuse_key)
+        if reused isa SimulationModel.NBodyEphemerisCache
+            p.shared_buffers.nbody_ephemeris_cache[] = reused
+            return nothing
+        end
+    end
     n_bodies = length(body_query_names)
     ets = Vector{Float64}(undef, n_samples)
     positions = Matrix{SVector{3, Float64}}(undef, n_samples, n_bodies)
@@ -403,6 +572,7 @@ function _initialize_nbody_ephemeris_cache!(p, et_start::Float64, mission_end_s:
             for body_idx in 1:n_bodies
                 body_query = body_query_names[body_idx]
                 positions[sample_idx, body_idx] = SVector{3, Float64}(spkpos(body_query, et, "J2000", "none", primary_body_name)[1])
+                Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.nbody_spkpos_cache_build_calls, 1)
             end
         end
     end
@@ -412,13 +582,18 @@ function _initialize_nbody_ephemeris_cache!(p, et_start::Float64, mission_end_s:
         body_index_by_name[body_name] = idx
     end
 
-    p.shared_buffers.nbody_ephemeris_cache[] = SimulationModel.NBodyEphemerisCache(
+    cache_value = SimulationModel.NBodyEphemerisCache(
         primary_body_name,
         body_query_names,
         body_index_by_name,
         ets,
         positions
     )
+    if _ephemeris_reuse_enabled()
+        reuse_key = _nbody_ephemeris_reuse_key(primary_body_name, body_query_names, et_start, mission_end_s, dt_s)
+        cache_value = _ephemeris_reuse_store!(_NBODY_EPHEMERIS_REUSE_CACHE, reuse_key, cache_value, _ephemeris_reuse_max_entries())
+    end
+    p.shared_buffers.nbody_ephemeris_cache[] = cache_value
     if p.args.simulation_settings.verbose
         println(
             "Initialized N-body ephemeris cache: bodies=$(n_bodies), samples=$(n_samples), dt=$(round(dt_s; digits=3)) s, span=$(round(mission_end_s; digits=3)) s."
@@ -442,6 +617,14 @@ function _initialize_planet_frame_ephemeris_cache!(p, et_start::Float64, mission
     end
 
     planet = p.args.environment_model.planet
+    if _ephemeris_reuse_enabled()
+        reuse_key = _planet_frame_ephemeris_reuse_key(planet, et_start, mission_end_s, dt_s)
+        reused = _ephemeris_reuse_lookup(_PLANET_FRAME_EPHEMERIS_REUSE_CACHE, reuse_key)
+        if reused isa SimulationModel.PlanetFrameEphemerisCache
+            p.shared_buffers.planet_frame_ephemeris_cache[] = reused
+            return nothing
+        end
+    end
     frame_name = "IAU_$(planet.name)"
     ets = Vector{Float64}(undef, n_samples)
     quaternions = Vector{SVector{4, Float64}}(undef, n_samples)
@@ -452,10 +635,16 @@ function _initialize_planet_frame_ephemeris_cache!(p, et_start::Float64, mission
             ets[sample_idx] = et
             l_pi = SMatrix{3, 3, Float64}(pxform("J2000", frame_name, et)) * planet.J2000_to_pci'
             quaternions[sample_idx] = SimulationModel.dcm_to_quaternion(l_pi)
+            Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.planet_pxform_cache_build_calls, 1)
         end
     end
 
-    p.shared_buffers.planet_frame_ephemeris_cache[] = SimulationModel.PlanetFrameEphemerisCache(ets, quaternions)
+    cache_value = SimulationModel.PlanetFrameEphemerisCache(ets, quaternions)
+    if _ephemeris_reuse_enabled()
+        reuse_key = _planet_frame_ephemeris_reuse_key(planet, et_start, mission_end_s, dt_s)
+        cache_value = _ephemeris_reuse_store!(_PLANET_FRAME_EPHEMERIS_REUSE_CACHE, reuse_key, cache_value, _ephemeris_reuse_max_entries())
+    end
+    p.shared_buffers.planet_frame_ephemeris_cache[] = cache_value
     if p.args.simulation_settings.verbose
         println(
             "Initialized planet frame cache: samples=$(n_samples), dt=$(round(dt_s; digits=3)) s, span=$(round(mission_end_s; digits=3)) s."
@@ -942,6 +1131,9 @@ function run_simulation(
     _initialize_nbody_ephemeris_cache_buffer!(p)
     _initialize_srp_sun_cache_buffer!(p)
     _initialize_planet_frame_cache_buffer!(p)
+    _initialize_spice_rhs_memo_mode!(p)
+    _reset_spice_runtime_counters!(p)
+    _reset_spice_rhs_memo!(p)
     p.shared_buffers.debug_control[] = get(ENV, "SPACEAGORA_DEBUG_CONTROL", "0") == "1"
     p.shared_buffers.debug_initial_derivative[] = get(ENV, "SPACEAGORA_DEBUG_INITIAL_DERIVATIVE", "0") == "1"
     save_fields_resolved = isnothing(save_fields) ? SimulationModel.default_save_fields(args) : collect(save_fields)
@@ -971,6 +1163,7 @@ function run_simulation(
     lock(SimulationModel.SPICE_LOCK) do
         args.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_$(args.environment_model.planet.name)", et_start)) * args.environment_model.planet.J2000_to_pci' # Initialize the planet frame at the start of the simulation (will be updated in the callback)
     end
+    Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.planet_pxform_runtime_calls, 1)
     mission_end = args.mission_configuration.mission_time
     _initialize_nbody_ephemeris_cache!(p, et_start, mission_end)
     _initialize_srp_sun_ephemeris_cache!(p, et_start, mission_end)
@@ -1096,7 +1289,8 @@ function run_simulation(
                 solution=last_sol,
                 solver_mode=string(_solver_policy_mode()),
                 solver_trace=solver_trace,
-                parallel_policy=parallel_policy
+                parallel_policy=parallel_policy,
+                spice_counters=_spice_runtime_counters_snapshot(p)
             )
         end
         return last_sol

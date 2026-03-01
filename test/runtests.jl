@@ -2802,6 +2802,15 @@ end
     @test isapprox(det(Matrix(rot_child)), 1.0; atol=1e-12)
     @test norm(Matrix(rot_child) - Matrix{Float64}(I, 3, 3)) > 0.1
 
+    @testset "Quaternion DCM Conversion Negative-Trace Branch" begin
+        dcm_180_x = SMatrix{3, 3, Float64}(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, -1.0)
+        q_neg_trace = SimulationModel.dcm_to_quaternion(dcm_180_x)
+        @test isapprox(norm(q_neg_trace), 1.0; atol=1e-12, rtol=0.0)
+
+        dcm_roundtrip = SimulationModel.rot(q_neg_trace)
+        @test isapprox(Matrix(dcm_roundtrip), Matrix(dcm_180_x); atol=1e-12, rtol=0.0)
+    end
+
     @testset "Effector Rate Validation" begin
         @test GuidanceModel((), Float64[]) isa GuidanceModel
         @test NavigationModel((), Float64[]) isa NavigationModel
@@ -4003,6 +4012,11 @@ end
     )
     guidance_cbs[1].affect!.affect!(integrator_guidance)
     @test counting_guidance.hits == [1]
+    withenv("SPACEAGORA_DEV_HOT_RELOAD" => "1") do
+        guidance_cbs_hot = SimulationModel.SimulationCallbacks.get_guidance_callbacks(1, args_guidance)
+        guidance_cbs_hot[1].affect!.affect!(integrator_guidance)
+    end
+    @test counting_guidance.hits == [2]
 
     control_model = CountingControlModel([0, 0])
     args_control = build_config_multi(
@@ -4233,6 +4247,298 @@ end
     thruster_model = make_base_thruster_model(thrust=0.1, Δv=0.0, start_burn_time=0.0, stop_burn_time=1.0)
     @test callbacks.control_model_threadsafe(thruster_model) == true
     @test callbacks.control_model_threadsafe(CountingControlModel([0])) == false
+
+    callbacks._gram_runtime_stats_reset!()
+    @test callbacks._gram_runtime_stats_update!(s -> begin
+        s.density_calls += 1
+        s.direct_calls += 1
+    end) === nothing
+    stats_snap = callbacks._gram_runtime_stats_snapshot()
+    @test stats_snap.density_calls == 1
+    @test stats_snap.direct_calls == 1
+
+    withenv("SPACEAGORA_GRAM_TRACK_CACHE_IGNORE_TIME_WINDOW" => "off") do
+        @test callbacks._gram_track_cache_ignore_time_window() == false
+    end
+    withenv("SPACEAGORA_GRAM_TRACK_CACHE_TARGET_USE_J2" => "on") do
+        @test callbacks._gram_track_cache_target_use_j2() == true
+    end
+
+    withenv("SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => "on") do
+        @test callbacks._thermal_callback_parallel_mode() == :on
+    end
+    withenv(
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => nothing
+    ) do
+        @test callbacks._thermal_callback_parallel_mode() == :auto
+    end
+    withenv("SPACEAGORA_THERMAL_CALLBACK_THREAD_THRESHOLD" => "5") do
+        @test callbacks._thermal_callback_thread_threshold() == 5
+    end
+    withenv(
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "6",
+        "SPACEAGORA_THERMAL_CALLBACK_THREAD_THRESHOLD" => nothing
+    ) do
+        @test callbacks._thermal_callback_thread_threshold() == 6
+    end
+
+    @test callbacks._is_gram_density_model(NoAtmosphereModel()) == false
+
+    args_density_lookup = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true
+    )
+    p_density_lookup = ODEParams{1}(args=args_density_lookup)
+    resize!(p_density_lookup.shared_buffers.density_models, 1)
+    p_density_lookup.shared_buffers.density_models[1] = ConstantDensityModel(1e-6, 220.0)
+    @test callbacks._density_model_for_sat(p_density_lookup, 1) isa ConstantDensityModel
+    @test callbacks._density_model_for_sat(p_density_lookup, 2) isa NoAtmosphereModel
+
+    withenv("SPACEAGORA_CB_TEST_FLOAT" => "oops") do
+        @test_throws ArgumentError callbacks._parse_float_env("SPACEAGORA_CB_TEST_FLOAT", 1.0)
+    end
+    withenv("SPACEAGORA_CB_TEST_FLOAT_OPT" => "oops") do
+        @test_throws ArgumentError callbacks._parse_float_env_optional("SPACEAGORA_CB_TEST_FLOAT_OPT")
+    end
+    withenv("SPACEAGORA_CB_TEST_INT_OPT" => "oops") do
+        @test_throws ArgumentError callbacks._parse_int_env_optional("SPACEAGORA_CB_TEST_INT_OPT")
+    end
+
+    withenv("SPACEAGORA_GRAM_TRACK_CACHE" => "on") do
+        @test callbacks._gram_track_cache_mode() == :on
+    end
+    withenv("SPACEAGORA_GRAM_TRACK_CACHE" => "auto") do
+        @test callbacks._gram_track_cache_mode() == :auto
+    end
+    withenv("SPACEAGORA_GRAM_TRACK_CACHE" => "invalid") do
+        @test_throws ArgumentError callbacks._gram_track_cache_mode()
+    end
+
+    cfg = callbacks.GramTrackCacheConfig(
+        :on,
+        2.0,
+        100.0,
+        deg2rad(0.5),
+        8,
+        10.0,
+        1000.0,
+        deg2rad(4.0),
+        32,
+        20_000.0
+    )
+    @test callbacks._gram_track_cache_enabled(cfg, NoAtmosphereModel()) == false
+    entry_profile = callbacks._gram_track_cache_profile(cfg, p_density_lookup, 130e3)
+    orbit_profile = callbacks._gram_track_cache_profile(cfg, p_density_lookup, 200e3)
+    @test entry_profile[1] == cfg.entry_horizon_s
+    @test orbit_profile[1] == cfg.orbit_horizon_s
+
+    @test callbacks._lerp(0.0, 10.0, 0.25) == 2.5
+    @test isapprox(callbacks._angdiff_rad(0.0, 2pi - 0.1), 0.1; atol=1e-12, rtol=0.0)
+    @test isapprox(callbacks._lerp_angle_rad(0.0, Float64(pi), 0.5), Float64(pi) / 2; atol=1e-12, rtol=0.0)
+
+    cache = callbacks.GramTrackCache()
+    cache.valid = true
+    cache.t0 = 0.0
+    cache.t1 = 10.0
+    cache.index_hint = 1
+    cache.times = [0.0, 5.0, 10.0]
+    cache.alts = [1000.0, 2000.0, 3000.0]
+    cache.lats = [0.0, 0.1, 0.2]
+    cache.lons = [0.0, 0.1, 0.2]
+    cache.rhos = [1.0, 2.0, 3.0]
+    cache.Ts = [200.0, 220.0, 240.0]
+    cache.winds = [SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(1.0, 0.0, 0.0), SVector{3, Float64}(2.0, 0.0, 0.0)]
+
+    withenv("SPACEAGORA_GRAM_TRACK_CACHE_IGNORE_TIME_WINDOW" => "0") do
+        @test callbacks._gram_track_cache_segment(cache, -1.0) === nothing
+    end
+    withenv("SPACEAGORA_GRAM_TRACK_CACHE_IGNORE_TIME_WINDOW" => "1") do
+        seg_clamped = callbacks._gram_track_cache_segment(cache, -1.0)
+        @test seg_clamped == (1, 0.0)
+    end
+
+    seg_hit = callbacks._gram_track_cache_ready(cache, 2.5, 1500.0, 0.05, 0.05, 1e-9, 1e-9)
+    @test seg_hit == (1, 0.5)
+    @test callbacks._gram_track_cache_ready(cache, 2.5, 2000.0, 0.05, 0.05, 1e-9, 1e-9) === nothing
+    ρ_eval, T_eval, wind_eval = callbacks._gram_track_cache_eval(cache, 1, 0.25)
+    @test isapprox(ρ_eval, 1.25; atol=1e-12, rtol=0.0)
+    @test isapprox(T_eval, 205.0; atol=1e-12, rtol=0.0)
+    @test isapprox(wind_eval[1], 0.25; atol=1e-12, rtol=0.0)
+
+    cache_flat = callbacks.GramTrackCache()
+    cache_flat.valid = true
+    cache_flat.t0 = 2.0
+    cache_flat.t1 = 2.0
+    cache_flat.index_hint = 1
+    cache_flat.times = [2.0, 2.0]
+    cache_flat.alts = [1000.0, 1000.0]
+    cache_flat.lats = [0.0, 0.0]
+    cache_flat.lons = [0.0, 0.0]
+    cache_flat.rhos = [1.0, 1.0]
+    cache_flat.Ts = [200.0, 200.0]
+    cache_flat.winds = [SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)]
+    withenv("SPACEAGORA_GRAM_TRACK_CACHE_IGNORE_TIME_WINDOW" => "1") do
+        @test callbacks._gram_track_cache_segment(cache_flat, 2.0) == (1, 0.0)
+    end
+
+    @test callbacks._uses_j2_gravity_effector((InverseSquaredGravityModel(), InverseSquaredJ2GravityModel())) == true
+
+    tol_args = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=true,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        tolerances=IntegrationTolerances(
+            reltol_orbit=1e-8,
+            abstol_orbit=1e-8,
+            reltol_quaternion=1e-9,
+            abstol_quaternion=1e-9,
+            reltol_angular_rate=4e-7,
+            abstol_angular_rate=5e-8
+        )
+    )
+    u_tol = build_initial_conditions(tol_args)
+    template_reltol, template_abstol = _build_solver_tolerances(u_tol, tol_args)
+    reltol_phase, abstol_phase = callbacks._callback_tolerances_for_phase(template_reltol, template_abstol, tol_args, false)
+    @test all(isapprox.(reltol_phase.sc[1].q, tol_args.integration_tolerances.reltol_quaternion; atol=0.0, rtol=0.0))
+    @test all(isapprox.(abstol_phase.sc[1].q, tol_args.integration_tolerances.abstol_quaternion; atol=0.0, rtol=0.0))
+    @test all(isapprox.(reltol_phase.sc[1].ω, tol_args.integration_tolerances.reltol_angular_rate; atol=0.0, rtol=0.0))
+    @test all(isapprox.(abstol_phase.sc[1].ω, tol_args.integration_tolerances.abstol_angular_rate; atol=0.0, rtol=0.0))
+
+    q_id = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
+    cache_lpi = PlanetFrameEphemerisCache(
+        [0.0, 5.0, 10.0],
+        [q_id, q_id, q_id]
+    )
+    @test callbacks._planet_lpi_from_cache(cache_lpi, -1.0) === nothing
+    @test callbacks._planet_lpi_from_cache(cache_lpi, NaN) isa SMatrix{3, 3, Float64}
+    @test callbacks._planet_lpi_from_cache(cache_lpi, 10.0) isa SMatrix{3, 3, Float64}
+    cache_lpi_flip = PlanetFrameEphemerisCache(
+        [0.0, 10.0],
+        [q_id, -q_id]
+    )
+    @test callbacks._planet_lpi_from_cache(cache_lpi_flip, 5.0) isa SMatrix{3, 3, Float64}
+
+    args_density_stats = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true
+    )
+    p_density_stats = ODEParams{1}(args=args_density_stats)
+    u_density_stats = build_initial_conditions(args_density_stats)
+    withenv(
+        "SPACEAGORA_GRAM_PROFILE" => "1",
+        "SPACEAGORA_GRAM_TRACK_CACHE" => "off"
+    ) do
+        callbacks._gram_runtime_stats_reset!()
+        density_cb_stats = callbacks.get_density_callback(1, args_density_stats)
+        density_cb_stats.affect!((p=p_density_stats, u=u_density_stats, t=0.0))
+        stats_after_density = callbacks._gram_runtime_stats_snapshot()
+        @test stats_after_density.density_calls >= 1
+        @test stats_after_density.direct_calls >= 1
+    end
+
+    args_thermal_branches = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true
+    )
+    p_thermal_branches = ODEParams{1}(args=args_thermal_branches)
+    u_thermal_branches = build_initial_conditions(args_thermal_branches)
+    thermal_cb_branches = callbacks.get_thermal_callback(1, args_thermal_branches)
+
+    p_thermal_branches.shared_buffers.heat_rates[1] = [1.0, 2.0, 3.0]
+    p_thermal_branches.shared_buffers.densities[1] = 0.0
+    p_thermal_branches.shared_buffers.temperatures[1] = 250.0
+    thermal_cb_branches.affect!((p=p_thermal_branches, u=u_thermal_branches, t=0.0))
+    @test length(p_thermal_branches.shared_buffers.heat_rates[1]) == length(args_thermal_branches.dynamics_model.spacecraft[1].links)
+
+    p_thermal_branches.shared_buffers.densities[1] = 1e-6
+    p_thermal_branches.shared_buffers.temperatures[1] = 250.0
+    p_thermal_branches.shared_buffers.winds[1] = SVector{3, Float64}(NaN, NaN, NaN)
+    thermal_cb_branches.affect!((p=p_thermal_branches, u=u_thermal_branches, t=0.0))
+
+    p_thermal_branches.shared_buffers.winds[1] = SVector{3, Float64}(0.0, 0.0, 0.0)
+    p_thermal_branches.shared_buffers.densities[1] = 1e-6
+    p_thermal_branches.shared_buffers.temperatures[1] = 250.0
+    args_thermal_branches.dynamics_model.spacecraft[1].links[1].α = NaN
+    thermal_cb_branches.affect!((p=p_thermal_branches, u=u_thermal_branches, t=0.0))
+    @test p_thermal_branches.shared_buffers.heat_rates[1][1] == 0.0
+
+    mission_orbits = MissionConfiguration(
+        mission_type=MissionOrbits,
+        keplerian=true,
+        number_of_orbits=1,
+        mission_time=120.0,
+        orientation_sim=false,
+        num_steps_to_save=100
+    )
+    args_orbit_multi_base = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+            make_spacecraft(ra_alt_m=550e3, rp_alt_m=500e3, ν_deg=160.0)
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true
+    )
+    args_orbit_multi = SimulationConfiguration(
+        file_paths=args_orbit_multi_base.file_paths,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        mission_configuration=mission_orbits,
+        environment_model=args_orbit_multi_base.environment_model,
+        dynamics_model=args_orbit_multi_base.dynamics_model,
+        guidance_model=args_orbit_multi_base.guidance_model,
+        navigation_model=args_orbit_multi_base.navigation_model,
+        control_model=args_orbit_multi_base.control_model,
+        initial_time=args_orbit_multi_base.initial_time,
+        integration_tolerances=args_orbit_multi_base.integration_tolerances
+    )
+    p_orbit_multi = ODEParams{2}(args=args_orbit_multi)
+    p_orbit_multi.orbit_counter .= [2, 1]
+    p_orbit_multi.is_active .= [true, true]
+    orbit_cb_multi = callbacks.get_orbit_end_callback(2)
+    mutable struct OrbitStopIntegrator{P, U}
+        p::P
+        u::U
+        t::Float64
+        terminated::Bool
+    end
+    DiffEqBase.terminate!(integrator::OrbitStopIntegrator) = begin
+        integrator.terminated = true
+        nothing
+    end
+    orbit_integrator = OrbitStopIntegrator(
+        p_orbit_multi,
+        build_initial_conditions(args_orbit_multi),
+        0.0,
+        false
+    )
+    orbit_cb_multi.affect!(orbit_integrator, 1)
+    @test orbit_integrator.terminated == false
+    p_orbit_multi.orbit_counter .= [2, 2]
+    orbit_cb_multi.affect!(orbit_integrator, 1)
+    @test orbit_integrator.terminated == true
 end
 
 @testset "Coverage Threaded Probe Driver" begin
@@ -6363,6 +6669,45 @@ end
     withenv("SPACEAGORA_SRP_EPHEMERIS_CACHE_MAX_SAMPLES" => "bad") do
         @test_throws ArgumentError _srp_ephemeris_cache_max_samples()
     end
+    withenv("SPACEAGORA_NBODY_EPHEMERIS_CACHE_DT_S" => "15.0") do
+        @test _nbody_ephemeris_cache_dt_s() == 15.0
+    end
+    withenv("SPACEAGORA_NBODY_EPHEMERIS_CACHE_DT_S" => "bad") do
+        @test_throws ArgumentError _nbody_ephemeris_cache_dt_s()
+    end
+    withenv("SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES" => "1234") do
+        @test _nbody_ephemeris_cache_max_samples() == 1234
+    end
+    withenv("SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES" => "bad") do
+        @test_throws ArgumentError _nbody_ephemeris_cache_max_samples()
+    end
+    withenv("SPACEAGORA_PLANET_FRAME_CACHE_DT_S" => "2.5") do
+        @test _planet_frame_cache_dt_s() == 2.5
+    end
+    withenv("SPACEAGORA_PLANET_FRAME_CACHE_DT_S" => "bad") do
+        @test_throws ArgumentError _planet_frame_cache_dt_s()
+    end
+    withenv("SPACEAGORA_PLANET_FRAME_CACHE_MAX_SAMPLES" => "4321") do
+        @test _planet_frame_cache_max_samples() == 4321
+    end
+    withenv("SPACEAGORA_PLANET_FRAME_CACHE_MAX_SAMPLES" => "bad") do
+        @test_throws ArgumentError _planet_frame_cache_max_samples()
+    end
+    withenv("SPACEAGORA_EPHEMERIS_CACHE_REUSE" => "1") do
+        @test _ephemeris_reuse_enabled() == true
+    end
+    withenv("SPACEAGORA_EPHEMERIS_CACHE_REUSE" => "0") do
+        @test _ephemeris_reuse_enabled() == false
+    end
+    withenv("SPACEAGORA_EPHEMERIS_CACHE_REUSE" => "bad") do
+        @test_throws ArgumentError _ephemeris_reuse_enabled()
+    end
+    withenv("SPACEAGORA_EPHEMERIS_CACHE_REUSE_MAX_ENTRIES" => "7") do
+        @test _ephemeris_reuse_max_entries() == 7
+    end
+    withenv("SPACEAGORA_EPHEMERIS_CACHE_REUSE_MAX_ENTRIES" => "-1") do
+        @test_throws ArgumentError _ephemeris_reuse_max_entries()
+    end
     withenv("SPACEAGORA_EFFECTOR_LONG_ORBIT_THRESHOLD" => "9") do
         @test _effector_long_orbit_threshold() == 9
         args_orbit_mission = (
@@ -6423,6 +6768,207 @@ end
         @test_logs (:warn, r"SRP ephemeris cache disabled") _initialize_srp_sun_ephemeris_cache!(p_srp, 0.0, 10.0)
     end
     @test p_srp.shared_buffers.srp_sun_ephemeris_cache[] === nothing
+
+    _clear_ephemeris_reuse_cache!()
+    p_srp_reuse_a = ODEParams{1}(args=args_srp)
+    p_srp_reuse_b = ODEParams{1}(args=args_srp)
+    _initialize_srp_sun_cache_buffer!(p_srp_reuse_a)
+    _initialize_srp_sun_cache_buffer!(p_srp_reuse_b)
+    _reset_spice_runtime_counters!(p_srp_reuse_a)
+    _reset_spice_runtime_counters!(p_srp_reuse_b)
+    withenv(
+        "SPACEAGORA_SRP_EPHEMERIS_CACHE" => "1",
+        "SPACEAGORA_EPHEMERIS_CACHE_REUSE" => "1",
+        "SPACEAGORA_EPHEMERIS_CACHE_REUSE_MAX_ENTRIES" => "16",
+        "SPACEAGORA_SRP_EPHEMERIS_CACHE_DT_S" => "10.0",
+        "SPACEAGORA_SRP_EPHEMERIS_CACHE_MAX_SAMPLES" => "100"
+    ) do
+        _initialize_srp_sun_ephemeris_cache!(p_srp_reuse_a, 0.0, 10.0)
+        cache_a = p_srp_reuse_a.shared_buffers.srp_sun_ephemeris_cache[]
+        @test cache_a isa SRPSunEphemerisCache
+        @test p_srp_reuse_a.shared_buffers.spice_runtime_counters.srp_spkpos_cache_build_calls[] == 2
+        _initialize_srp_sun_ephemeris_cache!(p_srp_reuse_b, 0.0, 10.0)
+        cache_b = p_srp_reuse_b.shared_buffers.srp_sun_ephemeris_cache[]
+        @test cache_b === cache_a
+        @test p_srp_reuse_b.shared_buffers.spice_runtime_counters.srp_spkpos_cache_build_calls[] == 0
+    end
+    _clear_ephemeris_reuse_cache!()
+
+    args_nbody = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(), NBodyGravityModel(body_names=("moon",), primary_body_name="Earth")),
+        keplerian=true
+    )
+    p_nbody = ODEParams{1}(args=args_nbody)
+    _initialize_nbody_ephemeris_cache_buffer!(p_nbody)
+    withenv("SPACEAGORA_NBODY_EPHEMERIS_CACHE" => "1") do
+        _initialize_nbody_ephemeris_cache!(p_nbody, 0.0, 0.0)
+    end
+    @test p_nbody.shared_buffers.nbody_ephemeris_cache[] === nothing
+    withenv(
+        "SPACEAGORA_NBODY_EPHEMERIS_CACHE" => "1",
+        "SPACEAGORA_NBODY_EPHEMERIS_CACHE_DT_S" => "1.0",
+        "SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES" => "2"
+    ) do
+        @test_logs (:warn, r"N-body ephemeris cache disabled") _initialize_nbody_ephemeris_cache!(p_nbody, 0.0, 10.0)
+    end
+    @test p_nbody.shared_buffers.nbody_ephemeris_cache[] === nothing
+
+    p_planet_frame = ODEParams{1}(args=args_srp)
+    _initialize_planet_frame_cache_buffer!(p_planet_frame)
+    withenv("SPACEAGORA_PLANET_FRAME_CACHE" => "1") do
+        _initialize_planet_frame_ephemeris_cache!(p_planet_frame, 0.0, 0.0)
+    end
+    @test p_planet_frame.shared_buffers.planet_frame_ephemeris_cache[] === nothing
+    withenv(
+        "SPACEAGORA_PLANET_FRAME_CACHE" => "1",
+        "SPACEAGORA_PLANET_FRAME_CACHE_DT_S" => "1.0",
+        "SPACEAGORA_PLANET_FRAME_CACHE_MAX_SAMPLES" => "2"
+    ) do
+        @test_logs (:warn, r"Planet frame cache disabled") _initialize_planet_frame_ephemeris_cache!(p_planet_frame, 0.0, 10.0)
+    end
+    @test p_planet_frame.shared_buffers.planet_frame_ephemeris_cache[] === nothing
+
+    args_nbody_srp = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            NBodyGravityModel(body_names=("moon", "sun"), primary_body_name="Earth"),
+            SolarRadiationPressureModel(1.2, 12.0)
+        ),
+        keplerian=true
+    )
+    p_nbody_srp = ODEParams{1}(args=args_nbody_srp)
+    _initialize_nbody_ephemeris_cache_buffer!(p_nbody_srp)
+    _initialize_srp_sun_cache_buffer!(p_nbody_srp)
+    _reset_spice_runtime_counters!(p_nbody_srp)
+    _reset_spice_rhs_memo!(p_nbody_srp)
+    p_nbody_srp.shared_buffers.et_start[] = 0.0
+    p_nbody_srp.shared_buffers.current_time[] = 123.0
+    nbody_model = args_nbody_srp.dynamics_model.dynamic_effectors[2]
+    srp_model = args_nbody_srp.dynamics_model.dynamic_effectors[3]
+    x_a = Float64[7000e3, 0.0, 0.0, 0.0, 0.0, 0.0, 200.0]
+    x_b = Float64[6999e3, 10.0, 0.0, 0.0, 0.0, 0.0, 200.0]
+    SimulationModel.calcForceTorque(nbody_model, x_a, p_nbody_srp, 1)
+    @test p_nbody_srp.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls[] == 2
+    SimulationModel.calcForceTorque(nbody_model, x_b, p_nbody_srp, 1)
+    @test p_nbody_srp.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls[] == 2
+    SimulationModel.calcForceTorque(srp_model, x_a, p_nbody_srp, 1)
+    @test p_nbody_srp.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls[] == 0
+    p_nbody_srp.shared_buffers.current_time[] = 124.0
+    SimulationModel.calcForceTorque(srp_model, x_a, p_nbody_srp, 1)
+    @test p_nbody_srp.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls[] == 1
+    p_nbody_srp.shared_buffers.spice_rhs_memo_enabled[] = false
+    _reset_spice_runtime_counters!(p_nbody_srp)
+    _reset_spice_rhs_memo!(p_nbody_srp)
+    p_nbody_srp.shared_buffers.current_time[] = 223.0
+    SimulationModel.calcForceTorque(nbody_model, x_a, p_nbody_srp, 1)
+    @test p_nbody_srp.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls[] == 2
+    SimulationModel.calcForceTorque(nbody_model, x_b, p_nbody_srp, 1)
+    @test p_nbody_srp.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls[] == 4
+    SimulationModel.calcForceTorque(srp_model, x_a, p_nbody_srp, 1)
+    @test p_nbody_srp.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls[] == 1
+
+    dyn = SimulationModel.DynamicEffectors
+    harmonics_file = joinpath(REPO_ROOT, "Gravity_harmonics_data", "EarthGGM05C.csv")
+    @test_throws ArgumentError GravitationalHarmonicsModel(-1, 0, harmonics_file, EARTH)
+    @test_throws ArgumentError GravitationalHarmonicsModel(10_000, 0, harmonics_file, EARTH)
+
+    nbody_ws = dyn._make_nbody_scratch_workspace(1)
+    dyn._ensure_nbody_workspace_capacity!(nbody_ws, 3, 4)
+    @test length(nbody_ws.pos_primary_k_all) == 3
+    @test length(nbody_ws.thread_force) == 4
+    nbody_ws_oob = dyn._nbody_workspace_for_sat!(p_nbody_srp, 5, 2, 2)
+    @test length(nbody_ws_oob.pos_primary_k_all) == 2
+    @test length(nbody_ws_oob.thread_force) == 2
+
+    nbody_positions = reshape(
+        SVector{3, Float64}[
+            SVector{3, Float64}(1.0, 0.0, 0.0),
+            SVector{3, Float64}(2.0, 0.0, 0.0),
+            SVector{3, Float64}(3.0, 0.0, 0.0),
+            SVector{3, Float64}(4.0, 0.0, 0.0)
+        ],
+        4,
+        1
+    )
+    nbody_cache = NBodyEphemerisCache(
+        "earth_barycenter",
+        ["moon_barycenter"],
+        Dict("moon_barycenter" => 1),
+        [0.0, 5.0, 10.0, 15.0],
+        nbody_positions
+    )
+    @test dyn._nbody_body_position_from_cache_j2000(nbody_cache, -1.0, "moon_barycenter", "earth_barycenter") === nothing
+    @test dyn._nbody_body_position_from_cache_j2000(nbody_cache, NaN, "moon_barycenter", "earth_barycenter") isa SVector{3, Float64}
+    @test dyn._nbody_body_position_from_cache_j2000(nbody_cache, 15.0, "moon_barycenter", "earth_barycenter") == nbody_positions[4, 1]
+    @test dyn._nbody_body_position_from_cache_j2000(nbody_cache, 2.5, "moon_barycenter", "earth_barycenter") == SVector{3, Float64}(1.5, 0.0, 0.0)
+    nbody_interp_catmull = dyn._nbody_body_position_from_cache_j2000(nbody_cache, 7.5, "moon_barycenter", "earth_barycenter")
+    @test nbody_interp_catmull isa SVector{3, Float64}
+
+    srp_cache = SRPSunEphemerisCache(
+        [0.0, 5.0, 10.0, 15.0],
+        SVector{3, Float64}[
+            SVector{3, Float64}(1.0, 0.0, 0.0),
+            SVector{3, Float64}(2.0, 0.0, 0.0),
+            SVector{3, Float64}(3.0, 0.0, 0.0),
+            SVector{3, Float64}(4.0, 0.0, 0.0)
+        ]
+    )
+    @test dyn._srp_sun_position_from_cache_j2000(srp_cache, -1.0) === nothing
+    @test dyn._srp_sun_position_from_cache_j2000(srp_cache, NaN) isa SVector{3, Float64}
+    @test dyn._srp_sun_position_from_cache_j2000(srp_cache, 15.0) == srp_cache.positions_j2000[end]
+    @test dyn._srp_sun_position_from_cache_j2000(srp_cache, 2.5) == SVector{3, Float64}(1.5, 0.0, 0.0)
+    srp_interp_catmull = dyn._srp_sun_position_from_cache_j2000(srp_cache, 7.5)
+    @test srp_interp_catmull isa SVector{3, Float64}
+
+    force_zero_srp, torque_zero_srp = calcForceTorque(SolarRadiationPressureModel(1.2, 0.0), x_a, p_nbody_srp, 1)
+    @test force_zero_srp == SVector{3, Float64}(0.0, 0.0, 0.0)
+    @test torque_zero_srp == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    p_srp.shared_buffers.srp_sun_ephemeris_cache[] = SRPSunEphemerisCache(
+        [0.0, 10.0],
+        SVector{3, Float64}[SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)]
+    )
+    p_srp.shared_buffers.et_start[] = 0.0
+    p_srp.shared_buffers.current_time[] = 5.0
+    x_zero_dist = Float64[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 200.0]
+    force_zero_dist, torque_zero_dist = calcForceTorque(SolarRadiationPressureModel(1.2, 12.0), x_zero_dist, p_srp, 1)
+    @test force_zero_dist == SVector{3, Float64}(0.0, 0.0, 0.0)
+    @test torque_zero_dist == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    @test dyn.eclipse_area_calc(SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(1.0, 0.0, 0.0), EARTH.Rp_e) == 1.0
+    @test dyn.eclipse_area_calc(
+        SVector{3, Float64}(-5.271937279754128e6, -4.185218527153555e6, -1.0434271238606143e6),
+        SVector{3, Float64}(-1.1107937751409042e10, 1.6143690900498734e11, 8.75872644289004e10),
+        EARTH.Rp_e
+    ) == 0.0
+    annular_ratio = dyn.eclipse_area_calc(
+        SVector{3, Float64}(0.0, 0.0, 1.0e10),
+        SVector{3, Float64}(0.0, 0.0, -1.5e11),
+        EARTH.Rp_e
+    )
+    @test 0.0 < annular_ratio < 1.0
+    partial_ratio = dyn.eclipse_area_calc(
+        SVector{3, Float64}(6.930027129188876e6, -2.6352977471555886e6, -3.363004422597388e6),
+        SVector{3, Float64}(-9.438128429326639e10, -6.696979722657439e10, 1.7822072441008075e11),
+        EARTH.Rp_e
+    )
+    @test 0.0 < partial_ratio < 1.0
+    none_ratio = dyn.eclipse_area_calc(
+        SVector{3, Float64}(1.2249535847697716e7, -5.782145543435082e6, -7.299266925237677e6),
+        SVector{3, Float64}(-4.937007687846062e10, -7.233778731136734e10, 1.7733640551002377e11),
+        EARTH.Rp_e
+    )
+    @test isapprox(none_ratio, 1.0; atol=1e-12, rtol=0.0)
 
     default_ckpt_settings = SimulationSettings(
         results=true,

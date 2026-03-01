@@ -30,7 +30,10 @@ include(joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"))
 include(joinpath(REPO_ROOT, "src", "examples", "typed_example_utils.jl"))
 
 const SPICE_PATH = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
-const EventTolerance = NamedTuple{(:max_abs_km, :max_nmae), Tuple{Float64, Float64}}
+const EventTolerance = NamedTuple{
+    (:max_abs_km, :max_nmae, :max_rmse_km),
+    Tuple{Float64, Float64, Float64}
+}
 
 Base.@kwdef struct AtmosphereTruthConfig
     assumption_id::String = "gram_default"
@@ -159,6 +162,9 @@ Base.@kwdef struct TimeAlignedScenarioConfig <: AbstractScenarioConfig
     srp_cr::Float64 = 1.3
     srp_area_m2::Float64 = 0.0
     include_wind::Bool = false
+    orbit_altitude_mode::Symbol = :vacuum
+    comparison_mode::Symbol = :time_aligned_state
+    extrema_min_separation_s::Float64 = 500.0
     atmosphere_truth::AtmosphereTruthConfig = AtmosphereTruthConfig()
     calibration::CalibrationConfig = CalibrationConfig()
     EI_km::Float64
@@ -302,6 +308,18 @@ end
     end
     throw(ArgumentError(
         "Unsupported orbit_altitude_mode='$raw' in $context; use vacuum|true."
+    ))
+end
+
+@inline function _parse_time_aligned_comparison_mode(raw::String, context::String)::Symbol
+    key = lowercase(strip(raw))
+    if key in ("time_aligned_state", "time_aligned", "state")
+        return :time_aligned_state
+    elseif key in ("orbit_events", "apo_peri", "extrema")
+        return :orbit_events
+    end
+    throw(ArgumentError(
+        "Unsupported comparison_mode='$raw' in $context; use time_aligned_state|orbit_events."
     ))
 end
 
@@ -499,7 +517,8 @@ function _parse_tolerances(tbl, key::String, events::Vector{String}, context::St
         etbl = _require_table(ttbl, event, "$context.$key")
         out[event] = (
             max_abs_km=_require_float(etbl, "max_abs_km", "$context.$key.$event"),
-            max_nmae=_require_float(etbl, "max_nmae", "$context.$key.$event")
+            max_nmae=_require_float(etbl, "max_nmae", "$context.$key.$event"),
+            max_rmse_km=_optional_float(etbl, "max_rmse_km", Inf)
         )
     end
     return out
@@ -587,6 +606,14 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
             ))
         elseif kind == "time_aligned_state"
             ctbl = _require_table(tbl, "telemetry_columns", context)
+            comparison_mode = _parse_time_aligned_comparison_mode(
+                _optional_str(tbl, "comparison_mode", "time_aligned_state"),
+                context
+            )
+            extrema_min_separation_s = _optional_float(tbl, "extrema_min_separation_s", 500.0)
+            extrema_min_separation_s > 0.0 || throw(ArgumentError(
+                "extrema_min_separation_s must be > 0.0 in $context"
+            ))
             push!(scenarios, TimeAlignedScenarioConfig(
                 name=name,
                 planet_name=planet_name,
@@ -620,6 +647,9 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 srp_cr=srp_cr,
                 srp_area_m2=srp_area_m2,
                 include_wind=include_wind,
+                orbit_altitude_mode=orbit_altitude_mode,
+                comparison_mode=comparison_mode,
+                extrema_min_separation_s=extrema_min_separation_s,
                 atmosphere_truth=atmosphere_truth,
                 calibration=calibration,
                 EI_km=EI_km
@@ -795,6 +825,45 @@ function _scenario_dynamic_effectors(
     return Tuple(effectors)
 end
 
+Base.@kwdef struct _GRAMOfflineSurrogateFallbackBase
+    planet_name::String
+end
+
+function SimulationModel.EnvironmentModels._gram_point_density(
+    model::_GRAMOfflineSurrogateFallbackBase,
+    h::Float64,
+    lat::Float64,
+    lon::Float64,
+    el_time::Float64,
+    wind::Bool
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    # Library-less fallback cannot query native GRAM point model; return vacuum-like fallback.
+    return 0.0, 200.0, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+@inline function _is_gram_library_missing_error(err)::Bool
+    msg = lowercase(sprint(showerror, err))
+    return occursin("gram shared library", msg) || occursin("gram_lib", msg)
+end
+
+@inline function _libraryless_gram_surrogate_enabled()::Bool
+    return _safe_parse_bool(get(ENV, "SPACEAGORA_TELEMETRY_ALLOW_GRAM_OFFLINE_NO_LIB", "1"), true)
+end
+
+function _try_libraryless_gram_surrogate(planet_name::String)
+    _libraryless_gram_surrogate_enabled() || return nothing
+    planet_key = lowercase(strip(planet_name))
+    surrogate_file = try
+        Base.invokelatest(SimulationModel.EnvironmentModels._gram_default_surrogate_file, planet_key)
+    catch
+        ""
+    end
+    isempty(surrogate_file) && return nothing
+    isfile(surrogate_file) || return nothing
+    base_model = _GRAMOfflineSurrogateFallbackBase(planet_name=planet_key)
+    return GRAMAtmosphereModelSurrogate(base_model, surrogate_file, nothing)
+end
+
 function _make_required_gram_density_model(
     planet_name::String,
     initial_time::InitialTime,
@@ -818,6 +887,13 @@ function _make_required_gram_density_model(
         )
     catch err
         msg = sprint(showerror, err)
+        if _is_gram_library_missing_error(err)
+            offline_model = _try_libraryless_gram_surrogate(planet_name)
+            if offline_model !== nothing
+                @warn "GRAM shared library unavailable; using library-less GRAM offline surrogate fallback for telemetry." planet=planet_name surrogate_file=offline_model.surrogate_file
+                return offline_model
+            end
+        end
         throw(ErrorException("GRAM atmosphere initialization failed for planet=$planet_name initial_time=$(initial_time): $msg"))
     end
 end
@@ -1303,6 +1379,59 @@ function _load_time_aligned_telemetry(cfg::TimeAlignedScenarioConfig, max_points
     )
 end
 
+function _extract_extrema_from_time_aligned_telemetry(
+    time_s::Vector{Float64},
+    altitude_km::Vector{Float64},
+    min_sep_s::Float64
+)
+    n = length(time_s)
+    n == length(altitude_km) || throw(ArgumentError("time/altitude length mismatch: $n vs $(length(altitude_km))"))
+    n >= 3 || throw(ArgumentError("Need at least 3 telemetry samples to derive peri/apo extrema (got $n)."))
+
+    peri_t = Float64[]
+    peri_alt = Float64[]
+    apo_t = Float64[]
+    apo_alt = Float64[]
+    last_peri_t = -Inf
+    last_apo_t = -Inf
+
+    @inbounds for i in 2:(n - 1)
+        a0 = altitude_km[i - 1]
+        a1 = altitude_km[i]
+        a2 = altitude_km[i + 1]
+        ti = time_s[i]
+        if a1 <= a0 && a1 < a2
+            if isempty(peri_t) || (ti - last_peri_t) >= min_sep_s
+                push!(peri_t, ti)
+                push!(peri_alt, a1)
+                last_peri_t = ti
+            elseif a1 < peri_alt[end]
+                peri_t[end] = ti
+                peri_alt[end] = a1
+                last_peri_t = ti
+            end
+        elseif a1 >= a0 && a1 > a2
+            if isempty(apo_t) || (ti - last_apo_t) >= min_sep_s
+                push!(apo_t, ti)
+                push!(apo_alt, a1)
+                last_apo_t = ti
+            elseif a1 > apo_alt[end]
+                apo_t[end] = ti
+                apo_alt[end] = a1
+                last_apo_t = ti
+            end
+        end
+    end
+
+    isempty(peri_alt) && throw(ArgumentError("No periapsis extrema derived from telemetry altitude history."))
+    isempty(apo_alt) && throw(ArgumentError("No apoapsis extrema derived from telemetry altitude history."))
+
+    return (
+        peri=(orbit=collect(1.0:length(peri_alt)), altitude=peri_alt, time_s=peri_t),
+        apo=(orbit=collect(1.0:length(apo_alt)), altitude=apo_alt, time_s=apo_t)
+    )
+end
+
 function _interp_linear(x::Vector{Float64}, y::Vector{Float64}, xq::Vector{Float64})
     length(x) == length(y) || throw(ArgumentError("x/y length mismatch: $(length(x)) vs $(length(y))"))
     n = length(x)
@@ -1522,6 +1651,7 @@ function _annotate_calibration_rows(
     bias_by_event::Dict{String, Float64},
     score::Float64,
     selected_runtime_s::Float64,
+    dt_max_orbit_s::Float64,
     calibration_runtime_s::Float64,
     calibration_used::Bool,
     solver_info
@@ -1539,6 +1669,7 @@ function _annotate_calibration_rows(
                     calibrated_bias_km=get(bias_by_event, String(row.event), 0.0),
                     calibration_score=score,
                     selected_simulation_runtime_s=selected_runtime_s,
+                    dt_max_orbit_s=dt_max_orbit_s,
                     calibration_runtime_s=calibration_runtime_s,
                     solver_mode=solver_info.solver_mode,
                     solver_sequence=solver_info.solver_sequence,
@@ -1597,6 +1728,33 @@ function _time_aligned_rows_errors(
     telemetry;
     bias_by_event::Dict{String, Float64}=Dict{String, Float64}()
 )
+    if cfg.comparison_mode == :orbit_events
+        tele_extrema = _extract_extrema_from_time_aligned_telemetry(
+            telemetry.time_s,
+            telemetry.altitude_km,
+            cfg.extrema_min_separation_s
+        )
+        sim_extrema = _extract_extrema_series(results_df, args.environment_model.planet, cfg.orbit_altitude_mode)
+        peri_bias = get(bias_by_event, "peri", 0.0)
+        apo_bias = get(bias_by_event, "apo", 0.0)
+
+        peri_summary, peri_errors = _compare_orbit_curve(
+            cfg.name,
+            "peri",
+            tele_extrema.peri.orbit,
+            tele_extrema.peri.altitude,
+            sim_extrema.peri.altitude .+ peri_bias
+        )
+        apo_summary, apo_errors = _compare_orbit_curve(
+            cfg.name,
+            "apo",
+            tele_extrema.apo.orbit,
+            tele_extrema.apo.altitude,
+            sim_extrema.apo.altitude .+ apo_bias
+        )
+        return [peri_summary, apo_summary], [peri_errors, apo_errors]
+    end
+
     sim_time = _to_float_vector(results_df.time, "sim-time")
     sim_x_m = _require_column(results_df, ["sc1_pos_1", "sc1_position_1"], "sim-position-x")
     sim_y_m = _require_column(results_df, ["sc1_pos_2", "sc1_position_2"], "sim-position-y")
@@ -1669,7 +1827,9 @@ end
 @inline _source_file(cfg::TimeAlignedScenarioConfig, event::String) = cfg.telemetry_path
 
 @inline _orbit_altitude_mode(cfg::OrbitEventsScenarioConfig) = String(cfg.orbit_altitude_mode)
-@inline _orbit_altitude_mode(::TimeAlignedScenarioConfig) = "n/a"
+@inline function _orbit_altitude_mode(cfg::TimeAlignedScenarioConfig)
+    return cfg.comparison_mode == :orbit_events ? String(cfg.orbit_altitude_mode) : "n/a"
+end
 
 @inline _maneuver_count(cfg::OrbitEventsScenarioConfig) = length(cfg.maneuver_orbit_numbers)
 @inline _maneuver_count(::TimeAlignedScenarioConfig) = 0
@@ -1680,7 +1840,12 @@ end
 @inline function _scenario_status_extra(cfg::OrbitEventsScenarioConfig)::String
     return ", altitude_mode=$(String(cfg.orbit_altitude_mode)), maneuvers=$(length(cfg.maneuver_orbit_numbers))"
 end
-@inline _scenario_status_extra(::TimeAlignedScenarioConfig)::String = ""
+@inline function _scenario_status_extra(cfg::TimeAlignedScenarioConfig)::String
+    if cfg.comparison_mode == :orbit_events
+        return ", comparison_mode=orbit_events, altitude_mode=$(String(cfg.orbit_altitude_mode))"
+    end
+    return ", comparison_mode=time_aligned_state"
+end
 
 function _evaluate_thresholds(row, cfg::AbstractScenarioConfig, profile::Symbol)
     tmap = _tolerances_for(cfg, profile)
@@ -1690,15 +1855,18 @@ function _evaluate_thresholds(row, cfg::AbstractScenarioConfig, profile::Symbol)
     pass_points = row.n_sim >= _min_eval_points(cfg)
     pass_abs = row.max_abs_km <= tol.max_abs_km
     pass_nmae = row.nmae <= tol.max_nmae
-    pass = pass_points && pass_abs && pass_nmae
+    pass_rmse = row.rmse_km <= tol.max_rmse_km
+    pass = pass_points && pass_abs && pass_nmae && pass_rmse
 
     return (
         pass=pass,
         pass_points=pass_points,
         pass_abs=pass_abs,
         pass_nmae=pass_nmae,
+        pass_rmse=pass_rmse,
         limit_max_abs_km=tol.max_abs_km,
         limit_nmae=tol.max_nmae,
+        limit_max_rmse_km=tol.max_rmse_km,
         min_eval_points=_min_eval_points(cfg)
     )
 end
@@ -1876,6 +2044,7 @@ function _run_single_scenario(cfg::OrbitEventsScenarioConfig, profile::Symbol)
         bias_by_event,
         final_score,
         selected_runtime_s,
+        args_final.integration_tolerances.dt_max_orbit,
         calibration_runtime_s,
         use_calibration,
         solver_info
@@ -1965,6 +2134,7 @@ function _run_single_scenario(cfg::TimeAlignedScenarioConfig, profile::Symbol)
         bias_by_event,
         final_score,
         selected_runtime_s,
+        args_final.integration_tolerances.dt_max_orbit,
         calibration_runtime_s,
         use_calibration,
         solver_info
@@ -2026,6 +2196,15 @@ function run_study()
                     gram_global_lock=sc.atmosphere_truth.gram_global_lock
                 )
             ))
+        end
+        dt_by_event = Dict{String, Float64}()
+        for row in row_batch
+            dt_by_event[String(row.event)] = Float64(row.dt_max_orbit_s)
+        end
+        for err_df in err_batch
+            nrow(err_df) == 0 && continue
+            evt = String(err_df.event[1])
+            err_df.dt_max_orbit_s = fill(get(dt_by_event, evt, NaN), nrow(err_df))
         end
         append!(error_tables, err_batch)
     end

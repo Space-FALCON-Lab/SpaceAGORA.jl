@@ -12,6 +12,7 @@ const _PERF_POLICY_ENV_BASELINE = Dict{String, Union{Nothing, String}}(
     name => (haskey(ENV, name) ? String(ENV[name]) : nothing)
     for name in _PERF_POLICY_ENV_NAMES
 )
+const _PERF_THREADS_BACKEND_WARNING_EMITTED = Ref(false)
 
 using CSV
 using DataFrames
@@ -96,6 +97,11 @@ end
 
 @inline function _perf_strict_errors()::Bool
     raw = lowercase(strip(get(ENV, "SPACEAGORA_PERF_STRICT_ERRORS", "0")))
+    return raw in ("1", "true", "yes", "on")
+end
+
+@inline function _perf_warmup_logs()::Bool
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_PERF_WARMUP_LOGS", "0")))
     return raw in ("1", "true", "yes", "on")
 end
 
@@ -219,19 +225,28 @@ end
 
 @inline function perf_parallel_enabled()::Bool
     mode = lowercase(strip(get(ENV, "SPACEAGORA_PERF_PARALLEL", "auto")))
-    if mode in ("0", "false", "off", "no")
-        return false
-    end
-    return Threads.nthreads() > 1
+    return !(mode in ("0", "false", "off", "no"))
 end
+
+@inline perf_threads_available()::Bool = Threads.nthreads() > 1
 
 
 @inline function perf_parallel_backend()::Symbol
-    mode = lowercase(strip(get(ENV, "SPACEAGORA_PERF_PARALLEL_BACKEND", "threads")))
+    mode = lowercase(strip(get(ENV, "SPACEAGORA_PERF_PARALLEL_BACKEND", "auto")))
     if mode in ("none", "serial", "off", "0", "false", "no")
         return :none
     elseif mode in ("threads", "thread")
-        return perf_parallel_enabled() ? :threads : :none
+        if !perf_parallel_enabled()
+            return :none
+        end
+        if perf_threads_available()
+            return :threads
+        end
+        if !_PERF_THREADS_BACKEND_WARNING_EMITTED[]
+            @warn "[perf] SPACEAGORA_PERF_PARALLEL_BACKEND=threads requested but JULIA_NUM_THREADS=$(Threads.nthreads()). Falling back to serial backend (:none). Set JULIA_NUM_THREADS>1 or use SPACEAGORA_PERF_PARALLEL_BACKEND=auto/process."
+            _PERF_THREADS_BACKEND_WARNING_EMITTED[] = true
+        end
+        return :none
     elseif mode in ("process", "processes", "distributed", "pmap")
         return :process
     elseif mode == "auto"
@@ -241,7 +256,7 @@ end
     end
 end
 
-@inline _threads_or_none_backend()::Symbol = perf_parallel_enabled() ? :threads : :none
+@inline _threads_or_none_backend()::Symbol = perf_threads_available() ? :threads : :none
 
 Base.@kwdef struct ParallelPriorityPlan
     outer_route::Symbol = :none
@@ -347,6 +362,8 @@ end
     dynamic_effectors = case.args_template.dynamics_model.dynamic_effectors
     has_nbody = _has_nbody_dynamic_effector(dynamic_effectors)
     harmonics_degree = _max_harmonics_degree(dynamic_effectors)
+    has_control = !isempty(case.args_template.control_model.control_effectors)
+    orientation_on = case.args_template.mission_configuration.orientation_sim
 
     machine = _machine_parallel_class()
     if case.category == "montecarlo"
@@ -358,6 +375,8 @@ end
        n_links <= _priority_outer_light_link_threshold() &&
        mission_time_s <= _priority_outer_light_mission_threshold_s() &&
        !has_nbody &&
+       !has_control &&
+       !orientation_on &&
        harmonics_degree == 0
         return :none
     end
@@ -420,7 +439,16 @@ end
     # Only respect user-provided baseline overrides captured at startup.
     # This avoids inheriting transient values left by other benchmark phases.
     baseline = get(_PERF_POLICY_ENV_BASELINE, name, nothing)
-    return baseline === nothing ? value : baseline
+    if baseline === nothing
+        return value
+    end
+    token = lowercase(strip(baseline))
+    valid = if name == "SPACEAGORA_OUTER_PARALLEL_ACTIVE"
+        token in ("1", "0", "true", "false", "yes", "no", "on", "off")
+    else
+        token in ("off", "none", "serial", "0", "false", "no", "on", "thread", "threads", "1", "true", "yes", "auto")
+    end
+    return valid ? baseline : value
 end
 
 @inline function parallel_priority_env_pairs(plan::ParallelPriorityPlan)::Vector{Pair{String, String}}
@@ -589,6 +617,8 @@ function build_config(;
     mission_time_s::Float64,
     orientation_sim::Bool,
     dynamic_effectors::Tuple,
+    guidance_effectors::Tuple=(),
+    guidance_rates::Vector{Float64}=Float64[],
     control_effectors::Tuple=(),
     control_rates::Vector{Float64}=Float64[],
     dt_max_orbit::Float64=1.0,
@@ -620,7 +650,7 @@ function build_config(;
             wind=false
         ),
         dynamics_model=DynamicsModel(spacecraft, dynamic_effectors),
-        guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
+        guidance_model=GuidanceModel(guidance_effectors=guidance_effectors, guidance_rates=guidance_rates),
         navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
         control_model=ControlModel(control_effectors=control_effectors, control_rates=control_rates),
         initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
@@ -686,11 +716,45 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
 
     q0 = normalize(SVector{4, Float64}(0.15, -0.05, 0.2, 0.96))
     w0 = SVector{3, Float64}(0.01, -0.02, 0.015)
+    q1 = normalize(SVector{4, Float64}(0.12, -0.08, 0.24, 0.96))
+    w1 = SVector{3, Float64}(0.012, -0.018, 0.02)
 
     sc_baseline = [make_spacecraft(planet; id=1, with_panel=false)]
     sc_orientation = [make_spacecraft(planet; id=1, with_panel=true, orientation_state=(q0, w0))]
     sc_thruster = [make_spacecraft(planet; id=1, with_panel=false, prop_mass=30.0)]
     sc_super_constellation = make_constellation(planet, 8; with_panel=false)
+    sc_proximity_fullstack = [
+        make_spacecraft(
+            planet;
+            id=1,
+            with_panel=true,
+            orientation_state=(q0, w0),
+            ra_alt_m=520e3,
+            rp_alt_m=515e3,
+            ν_deg=168.0,
+            root_mass=280.0,
+            root_area=4.0,
+            panel_mass=12.0,
+            panel_area=1.8,
+            panel_offset_y=1.0,
+            prop_mass=18.0
+        ),
+        make_spacecraft(
+            planet;
+            id=2,
+            with_panel=true,
+            orientation_state=(q1, w1),
+            ra_alt_m=520.15e3,
+            rp_alt_m=515.1e3,
+            ν_deg=168.18,
+            root_mass=280.0,
+            root_area=4.0,
+            panel_mass=12.0,
+            panel_area=1.8,
+            panel_offset_y=1.0,
+            prop_mass=18.0
+        )
+    ]
     thruster = BaseThrusterModel(
         thrust=[0.8],
         direction=[0.0],
@@ -706,6 +770,24 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
         start_burn_time=fill(-1.0, 8),
         stop_burn_time=fill(-1.0, 8),
         Isp=fill(300.0, 8)
+    )
+    proximity_thruster = BaseThrusterModel(
+        thrust=fill(0.28, 2),
+        direction=fill(0.0, 2),
+        Δv=fill(2.5, 2),
+        start_burn_time=fill(-1.0, 2),
+        stop_burn_time=fill(-1.0, 2),
+        Isp=fill(290.0, 2)
+    )
+    proximity_guidance = (
+        AerobrakingCampaignPropulsiveManeuverGuidanceModel(
+            maneuver_orbit_number=[1],
+            maneuver_Δv=[2.5]
+        ),
+        AerobrakingCampaignPropulsiveManeuverGuidanceModel(
+            maneuver_orbit_number=[1],
+            maneuver_Δv=[2.5]
+        )
     )
 
     cases = BenchmarkCase[
@@ -837,6 +919,23 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
             )
         ),
         BenchmarkCase(
+            name="proximity_2sat_orientation_fullstack_gnc_highrate",
+            category="rpo_gnc",
+            description="2-spacecraft close-proximity operations with orientation on and high-rate guidance/control stack",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_proximity_fullstack,
+                mission_time_s=min(spec.mission_short_s, 2400.0),
+                orientation_sim=true,
+                dynamic_effectors=(InverseSquaredGravityModel(),),
+                guidance_effectors=proximity_guidance,
+                guidance_rates=[0.1, 0.1],
+                control_effectors=(proximity_thruster,),
+                control_rates=[0.1],
+                dt_max_orbit=0.2
+            )
+        ),
+        BenchmarkCase(
             name="super_constellation_8sat_l20_control",
             category="control_stress",
             description="8 spacecraft, L20 harmonics + BaseThrusterModel control callback stress case (mission capped for benchmark stability; Tsit5 override)",
@@ -871,11 +970,19 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
     return cases
 end
 
-function measure_case(case::BenchmarkCase, profile_name::String, repeat_idx::Int; seed::Union{Missing, Int}=missing, attempt::Int=1)
+function measure_case(
+    case::BenchmarkCase,
+    profile_name::String,
+    repeat_idx::Int;
+    seed::Union{Missing, Int}=missing,
+    attempt::Int=1,
+    plan::Union{Nothing, ParallelPriorityPlan}=nothing
+)
     timestamp_utc = string(now(UTC))
     args_meta = case.args_template
     n_sats = length(args_meta.dynamics_model.spacecraft)
     mission_time_s = args_meta.mission_configuration.mission_time
+    resolved_plan = isnothing(plan) ? ParallelPriorityPlan() : plan
 
     GC.gc()
     copy_timed = @timed deepcopy(case.args_template)
@@ -926,6 +1033,12 @@ function measure_case(case::BenchmarkCase, profile_name::String, repeat_idx::Int
     rejected_steps = missing
     sim_seconds_per_wall_second = missing
     satellite_sim_seconds_per_wall_second = missing
+    policy_decisions_total = missing
+    policy_threads_enabled_total = missing
+    policy_density_threads_enabled = missing
+    policy_control_threads_enabled = missing
+    policy_multibody_threads_enabled = missing
+    policy_other_threads_enabled = missing
 
     solve_payload = solve_timed.value
     if solve_payload.ok
@@ -945,6 +1058,17 @@ function measure_case(case::BenchmarkCase, profile_name::String, repeat_idx::Int
         rejected_steps = _destat_int(sol, :nreject)
         sim_seconds_per_wall_second = _safe_div(mission_time_s, total_time_s)
         satellite_sim_seconds_per_wall_second = _safe_div(mission_time_s * n_sats, total_time_s)
+        if hasproperty(solve_result, :parallel_policy)
+            snapshot = solve_result.parallel_policy
+            if !(snapshot isa Nothing)
+                policy_decisions_total = getproperty(snapshot, :decisions_total)
+                policy_threads_enabled_total = getproperty(snapshot, :threads_enabled_total)
+                policy_density_threads_enabled = getproperty(snapshot, :density_threads_enabled)
+                policy_control_threads_enabled = getproperty(snapshot, :control_threads_enabled)
+                policy_multibody_threads_enabled = getproperty(snapshot, :multibody_threads_enabled)
+                policy_other_threads_enabled = getproperty(snapshot, :other_threads_enabled)
+            end
+        end
     else
         solve_err = solve_payload.err
         solve_bt = solve_payload.bt
@@ -966,6 +1090,11 @@ function measure_case(case::BenchmarkCase, profile_name::String, repeat_idx::Int
         satellites=n_sats,
         orientation=args_meta.mission_configuration.orientation_sim,
         mission_time_s=mission_time_s,
+        outer_route=string(resolved_plan.outer_route),
+        density_parallel_mode=resolved_plan.density_mode,
+        control_parallel_mode=resolved_plan.control_mode,
+        multibody_parallel_mode=resolved_plan.multibody_mode,
+        dt_max_orbit_s=args_meta.integration_tolerances.dt_max_orbit,
         dynamic_effectors=_effector_signature(args_meta.dynamics_model.dynamic_effectors),
         control_effectors=_effector_signature(args_meta.control_model.control_effectors),
         copy_time_s=copy_time_s,
@@ -990,6 +1119,12 @@ function measure_case(case::BenchmarkCase, profile_name::String, repeat_idx::Int
         saved_points=saved_points,
         accepted_steps=accepted_steps,
         rejected_steps=rejected_steps,
+        policy_decisions_total=policy_decisions_total,
+        policy_threads_enabled_total=policy_threads_enabled_total,
+        policy_density_threads_enabled=policy_density_threads_enabled,
+        policy_control_threads_enabled=policy_control_threads_enabled,
+        policy_multibody_threads_enabled=policy_multibody_threads_enabled,
+        policy_other_threads_enabled=policy_other_threads_enabled,
         sim_seconds_per_wall_second=sim_seconds_per_wall_second,
         satellite_sim_seconds_per_wall_second=satellite_sim_seconds_per_wall_second,
         timestamp_utc=timestamp_utc
@@ -997,10 +1132,13 @@ function measure_case(case::BenchmarkCase, profile_name::String, repeat_idx::Int
 end
 
 function run_warmup(case::BenchmarkCase, warmup::Int, profile_name::String)
+    log_warmup = _perf_warmup_logs()
     for i in 1:warmup
         args_run = deepcopy(case.args_template)
-        println("  warmup $(i)/$(warmup): start")
-        flush(stdout)
+        if log_warmup
+            println("  warmup $(i)/$(warmup): start")
+            flush(stdout)
+        end
         warmup_started_ns = time_ns()
         try
             _run_perf_simulation(
@@ -1010,8 +1148,10 @@ function run_warmup(case::BenchmarkCase, warmup::Int, profile_name::String)
                 solver_mode_override=case.solver_mode_override
             )
             warmup_elapsed_s = (time_ns() - warmup_started_ns) / 1e9
-            println("  warmup $(i)/$(warmup): done total=$(round(warmup_elapsed_s; digits=3)) s")
-            flush(stdout)
+            if log_warmup
+                println("  warmup $(i)/$(warmup): done total=$(round(warmup_elapsed_s; digits=3)) s")
+                flush(stdout)
+            end
         catch err
             if err isa InterruptException
                 rethrow()
@@ -1024,7 +1164,7 @@ function run_warmup(case::BenchmarkCase, warmup::Int, profile_name::String)
             warmup_elapsed_s = (time_ns() - warmup_started_ns) / 1e9
             if ismissing(solve_retcode)
                 @warn "[warmup] $(case.name) $(i)/$(warmup) threw $(typeof(err)): $(_perf_error_text(err)) @ $(_perf_stack_head(err_bt)); continuing (elapsed=$(round(warmup_elapsed_s; digits=3)) s)"
-            else
+            elseif log_warmup
                 println("  warmup $(i)/$(warmup): failed retcode=$(solve_retcode), continuing (elapsed=$(round(warmup_elapsed_s; digits=3)) s)")
                 flush(stdout)
             end
@@ -1068,7 +1208,7 @@ function _run_case_batch_core!(
         for attempt in 1:spec.max_attempts
             println("  repeat $(rep)/$(repeat_count) attempt $(attempt)/$(spec.max_attempts): start")
             flush(stdout)
-            row = measure_case(case, spec.name, rep; attempt=attempt)
+            row = measure_case(case, spec.name, rep; attempt=attempt, plan=plan)
             last_row = row
             if row.solve_success
                 push!(rows, row)
@@ -1128,7 +1268,7 @@ function measure_montecarlo_seed(
     run_seed = () -> begin
         last_row = nothing
         for attempt in 1:spec.max_attempts
-            row = measure_case(case, spec.name, 1; seed=seed, attempt=attempt)
+            row = measure_case(case, spec.name, 1; seed=seed, attempt=attempt, plan=resolved_plan)
             last_row = row
             if row.solve_success
                 return row, nothing
@@ -1450,7 +1590,7 @@ function measure_per_orbit_scenario(
             for rep in 1:spec.repeats
                 last_row = nothing
                 for attempt in 1:spec.max_attempts
-                    row = measure_case(case, spec.name, rep; attempt=attempt)
+                    row = measure_case(case, spec.name, rep; attempt=attempt, plan=plan)
                     row_orbit = merge(
                         row,
                         (
@@ -1719,7 +1859,7 @@ function _safe_stat(values, op::Function)
 end
 
 function summarize_per_orbit_results(orbit_raw_df::DataFrame)::DataFrame
-    keys = [:category, :scenario, :description, :orbit_count, :orbital_period_s]
+    keys = [:category, :scenario, :description, :orbit_count, :orbital_period_s, :dt_max_orbit_s]
     counts = combine(
         groupby(orbit_raw_df, keys),
         nrow => :samples_total,
@@ -1766,7 +1906,21 @@ function summarize_per_orbit_results(orbit_raw_df::DataFrame)::DataFrame
 end
 
 function summarize_results(raw_df::DataFrame)::DataFrame
-    keys = [:category, :scenario, :description, :satellites, :orientation, :mission_time_s, :dynamic_effectors, :control_effectors]
+    keys = [
+        :category,
+        :scenario,
+        :description,
+        :satellites,
+        :orientation,
+        :mission_time_s,
+        :outer_route,
+        :density_parallel_mode,
+        :control_parallel_mode,
+        :multibody_parallel_mode,
+        :dt_max_orbit_s,
+        :dynamic_effectors,
+        :control_effectors
+    ]
     counts = combine(
         groupby(raw_df, keys),
         nrow => :samples_total,
@@ -1797,6 +1951,13 @@ function summarize_results(raw_df::DataFrame)::DataFrame
         :solver_fallback_any,
         :solver_fallback_count_mean,
         :solver_fallback_triggers,
+        :parallel_threads_used_any,
+        :policy_decisions_mean,
+        :policy_threads_enabled_mean,
+        :policy_density_threads_enabled_mean,
+        :policy_control_threads_enabled_mean,
+        :policy_multibody_threads_enabled_mean,
+        :policy_other_threads_enabled_mean,
         :sim_seconds_per_wall_second_mean,
         :satellite_sim_seconds_per_wall_second_mean
     ]
@@ -1825,6 +1986,16 @@ function summarize_results(raw_df::DataFrame)::DataFrame
             :solver_fallback_used => (v -> any(skipmissing(v))) => :solver_fallback_any,
             :solver_fallback_count => (v -> _safe_stat(v, mean)) => :solver_fallback_count_mean,
             :solver_fallback_trigger => (v -> _safe_unique_join(v; delimiter="|")) => :solver_fallback_triggers,
+            :policy_threads_enabled_total => (v -> begin
+                vals = collect(skipmissing(v))
+                isempty(vals) ? missing : any(x -> x > 0, vals)
+            end) => :parallel_threads_used_any,
+            :policy_decisions_total => (v -> _safe_stat(v, mean)) => :policy_decisions_mean,
+            :policy_threads_enabled_total => (v -> _safe_stat(v, mean)) => :policy_threads_enabled_mean,
+            :policy_density_threads_enabled => (v -> _safe_stat(v, mean)) => :policy_density_threads_enabled_mean,
+            :policy_control_threads_enabled => (v -> _safe_stat(v, mean)) => :policy_control_threads_enabled_mean,
+            :policy_multibody_threads_enabled => (v -> _safe_stat(v, mean)) => :policy_multibody_threads_enabled_mean,
+            :policy_other_threads_enabled => (v -> _safe_stat(v, mean)) => :policy_other_threads_enabled_mean,
             :sim_seconds_per_wall_second => (v -> _safe_stat(v, mean)) => :sim_seconds_per_wall_second_mean,
             :satellite_sim_seconds_per_wall_second => (v -> _safe_stat(v, mean)) => :satellite_sim_seconds_per_wall_second_mean
         )

@@ -258,6 +258,16 @@ end
     return col in Symbol.(names(df))
 end
 
+@inline function _pipeline_plot_scenario_limit()::Int
+    raw = strip(get(ENV, "SPACEAGORA_PIPELINE_PLOT_SCENARIO_LIMIT", "0"))
+    parsed = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_PIPELINE_PLOT_SCENARIO_LIMIT must be an integer, got '$raw'"))
+    end
+    return max(0, parsed)
+end
+
 function _save_pipeline_plot!(
     paths::Vector{String},
     plt,
@@ -276,14 +286,15 @@ function _save_pipeline_plot!(
     return nothing
 end
 
-function _pipeline_top_scenarios(comparison_df::DataFrame; limit::Int=12)::DataFrame
+function _pipeline_top_scenarios(comparison_df::DataFrame; limit::Int=0)::DataFrame
+    row_limit = limit <= 0 ? nrow(comparison_df) : limit
     if !_has_column(comparison_df, :serial_total_time_mean_s)
-        return first(comparison_df, min(limit, nrow(comparison_df)))
+        return first(comparison_df, min(row_limit, nrow(comparison_df)))
     end
     df = comparison_df[.!ismissing.(comparison_df.serial_total_time_mean_s), :]
-    nrow(df) == 0 && return first(comparison_df, min(limit, nrow(comparison_df)))
+    nrow(df) == 0 && return first(comparison_df, min(row_limit, nrow(comparison_df)))
     sort!(df, :serial_total_time_mean_s, rev=true)
-    return first(df, min(limit, nrow(df)))
+    return first(df, min(row_limit, nrow(df)))
 end
 
 function generate_pipeline_comparison_plots(
@@ -369,7 +380,9 @@ function generate_pipeline_comparison_plots(
         end
     end
 
-    top_df = _pipeline_top_scenarios(comparison_df; limit=12)
+    scenario_limit = _pipeline_plot_scenario_limit()
+    top_df = _pipeline_top_scenarios(comparison_df; limit=scenario_limit)
+    scenario_scope = scenario_limit <= 0 ? "All Scenarios" : "Top Scenarios by Serial Cost"
     scenario_labels = [_plot_axis_label(String(s)) for s in top_df.scenario]
     x = collect(1:length(scenario_labels))
 
@@ -390,7 +403,7 @@ function generate_pipeline_comparison_plots(
             values;
             label=label_value,
             color="#4f9d69",
-            title="Speedup vs Serial (Top Scenarios by Serial Cost)",
+            title="Speedup vs Serial ($scenario_scope)",
             xlabel="Scenario",
             ylabel="Speedup (x)",
             xticks=(x, scenario_labels),
@@ -423,7 +436,7 @@ function generate_pipeline_comparison_plots(
             colorbar_title="mean total (s)",
             xlabel="Mode",
             ylabel="Scenario",
-            title="Scenario Runtime Matrix (Top Serial-Cost Scenarios)",
+            title="Scenario Runtime Matrix ($scenario_scope)",
             color=Plots.cgrad([:lightsteelblue1, :mediumpurple3, "#3a0a2a"]),
             _plot_margins(size=(2200, 1300), left_mm=72, right_mm=28, bottom_mm=18)...
         )

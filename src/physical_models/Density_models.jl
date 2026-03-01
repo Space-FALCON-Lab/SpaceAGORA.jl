@@ -280,6 +280,32 @@ end
 @inline _gram_static_grid_prebuild_all_planets_enabled() = _parse_bool_env("SPACEAGORA_GRAM_STATIC_GRID_PREBUILD_ALL_PLANETS", false)
 @inline _gram_static_grid_prebuild_strict() = _parse_bool_env("SPACEAGORA_GRAM_STATIC_GRID_PREBUILD_STRICT", false)
 
+@inline function _gram_offline_surrogate_enabled()::Bool
+    mode = lowercase(strip(get(ENV, "SPACEAGORA_GRAM_OFFLINE_SURROGATE", "off")))
+    if mode in ("on", "true", "1", "yes")
+        return true
+    elseif mode in ("off", "false", "0", "no")
+        return false
+    elseif mode == "auto"
+        env_lib = strip(get(ENV, "GRAM_LIB", ""))
+        if !isempty(env_lib)
+            return !isfile(env_lib)
+        end
+        local_ext = Sys.iswindows() ? "dll" : (Sys.isapple() ? "dylib" : "so")
+        local_lib = joinpath(
+            normpath(joinpath(@__DIR__, "..", "..")),
+            "GRAM Suite 2.0",
+            "Build",
+            "lib",
+            "libGRAM.$local_ext"
+        )
+        return !isfile(local_lib)
+    end
+    throw(ArgumentError(
+        "Unsupported SPACEAGORA_GRAM_OFFLINE_SURROGATE='$mode'. Use one of: off, on, auto."
+    ))
+end
+
 @inline _spaceagora_repo_root() = normpath(joinpath(@__DIR__, "..", ".."))
 @inline _gram_lib_extension() = Sys.iswindows() ? "dll" : (Sys.isapple() ? "dylib" : "so")
 @inline function _gram_use_global_lock()::Bool

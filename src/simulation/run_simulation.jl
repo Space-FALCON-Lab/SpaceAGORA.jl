@@ -818,10 +818,16 @@ function run_simulation(
             @warn "return_solution=true with checkpointed integration returns the final segment ODESolution, not a stitched full-history ODESolution."
         end
         if return_solver_metadata
+            parallel_policy = try
+                SimulationModel.ParallelPolicy.policy_telemetry_snapshot()
+            catch
+                nothing
+            end
             return (
                 solution=last_sol,
                 solver_mode=string(_solver_policy_mode()),
-                solver_trace=solver_trace
+                solver_trace=solver_trace,
+                parallel_policy=parallel_policy
             )
         end
         return last_sol

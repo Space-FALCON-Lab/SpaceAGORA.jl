@@ -753,6 +753,20 @@ end
     return parsed
 end
 
+@inline function _split_imex_solver_spec()
+    mode = lowercase(strip(get(ENV, "SPACEAGORA_SPLIT_IMEX_SOLVER", "kencarp4")))
+    if mode in ("kencarp4", "ken4", "default")
+        return (alg=KenCarp4(autodiff=AutoFiniteDiff()), label="KenCarp4")
+    elseif mode in ("kencarp47", "ken47")
+        return (alg=KenCarp47(autodiff=AutoFiniteDiff()), label="KenCarp47")
+    elseif mode in ("kencarp58", "ken58")
+        return (alg=KenCarp58(autodiff=AutoFiniteDiff()), label="KenCarp58")
+    end
+    throw(ArgumentError(
+        "Unsupported SPACEAGORA_SPLIT_IMEX_SOLVER='$mode'. Use one of: kencarp4, kencarp47, kencarp58."
+    ))
+end
+
 @inline function _solve_with_explicit_solver(prob, args, alg, reltol_tol, abstol_tol)
     maxiters = _solver_maxiters()
     if maxiters === nothing
@@ -801,10 +815,11 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
     end
 
     if mode == :split_imex
-        sol = _solve_with_explicit_solver(prob, args, KenCarp4(), reltol_tol, abstol_tol)
+        split_solver = _split_imex_solver_spec()
+        sol = _solve_with_explicit_solver(prob, args, split_solver.alg, reltol_tol, abstol_tol)
         return sol, (
-            solver="KenCarp4(IMEX)",
-            initial_solver="KenCarp4",
+            solver="$(split_solver.label)(IMEX)",
+            initial_solver=split_solver.label,
             fallback_used=false,
             trigger_retcode=missing
         )

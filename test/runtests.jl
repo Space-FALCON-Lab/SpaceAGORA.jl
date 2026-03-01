@@ -6665,6 +6665,22 @@ end
         @test_throws ArgumentError _solver_maxiters()
     end
 
+    withenv("SPACEAGORA_SPLIT_IMEX_SOLVER" => nothing) do
+        split_solver = _split_imex_solver_spec()
+        @test split_solver.label == "KenCarp4"
+    end
+    withenv("SPACEAGORA_SPLIT_IMEX_SOLVER" => "kencarp47") do
+        split_solver = _split_imex_solver_spec()
+        @test split_solver.label == "KenCarp47"
+    end
+    withenv("SPACEAGORA_SPLIT_IMEX_SOLVER" => "kencarp58") do
+        split_solver = _split_imex_solver_spec()
+        @test split_solver.label == "KenCarp58"
+    end
+    withenv("SPACEAGORA_SPLIT_IMEX_SOLVER" => "unsupported-split-solver") do
+        @test_throws ArgumentError _split_imex_solver_spec()
+    end
+
     struct DummyNoAlgChoice end
     struct DummyAlgChoice
         alg_choice::Vector{Int}
@@ -6716,6 +6732,16 @@ end
         @test string(sol.retcode) == "Success"
         @test meta.solver == "KenCarp4(IMEX)"
         @test meta.initial_solver == "KenCarp4"
+    end
+    withenv(
+        "SPACEAGORA_SOLVER_MODE" => "split_imex",
+        "SPACEAGORA_SPLIT_IMEX_SOLVER" => "kencarp47",
+        "SPACEAGORA_SOLVER_MAXITERS" => nothing
+    ) do
+        sol, meta = _solve_with_solver_policy(split_prob_simple, solver_args, 1e-8, 1e-8)
+        @test string(sol.retcode) == "Success"
+        @test meta.solver == "KenCarp47(IMEX)"
+        @test meta.initial_solver == "KenCarp47"
     end
     withenv("SPACEAGORA_SOLVER_MAXITERS" => "1000") do
         sol = _solve_with_explicit_solver(prob_simple, solver_args, Tsit5(), 1e-8, 1e-8)

@@ -263,6 +263,36 @@ jobs:
       - name: Coverage quality gate (legacy simulation elements excluded)
         run: julia --startup-file=no --project=.AGORA test/ci_coverage_quality_gate.jl
 
+  calibration-coverage-quality-gate:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      JULIA_NUM_THREADS: "2"
+      SPACEAGORA_CAL_COVERAGE_MIN_OVERALL: "90.0"
+      SPACEAGORA_CAL_COVERAGE_MIN_FILE: "70.0"
+      SPACEAGORA_CAL_COVERAGE_WINDOW_SECONDS: "1200"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: Cache Julia artifacts
+        uses: julia-actions/cache@v2
+
+      - name: Instantiate SpaceAGORACalibration
+        run: julia --startup-file=no --project=SpaceAGORACalibration.jl -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Run SpaceAGORACalibration tests with coverage
+        run: julia --startup-file=no --project=SpaceAGORACalibration.jl --code-coverage=user SpaceAGORACalibration.jl/test/runtests.jl
+
+      - name: SpaceAGORACalibration coverage quality gate
+        run: julia --startup-file=no --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/test/ci_coverage_quality_gate.jl
+
   p1-findings-gate:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest

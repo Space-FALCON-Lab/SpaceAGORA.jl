@@ -6743,6 +6743,120 @@ end
         @test meta.solver == "KenCarp47(IMEX)"
         @test meta.initial_solver == "KenCarp47"
     end
+
+    withenv("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => "6") do
+        @test _multirate_fast_substeps() == 6
+    end
+    withenv("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => "bad") do
+        @test_throws ArgumentError _multirate_fast_substeps()
+    end
+    withenv("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => "0") do
+        @test_throws ArgumentError _multirate_fast_substeps()
+    end
+
+    withenv("SPACEAGORA_MULTIRATE_SLOW_DT_S" => nothing) do
+        @test _multirate_slow_dt_s(solver_args) == min(solver_args.integration_tolerances.dt_max_orbit, 2.0)
+    end
+    withenv("SPACEAGORA_MULTIRATE_SLOW_DT_S" => "0.4") do
+        @test _multirate_slow_dt_s(solver_args) == 0.4
+    end
+    withenv("SPACEAGORA_MULTIRATE_SLOW_DT_S" => "bad") do
+        @test_throws ArgumentError _multirate_slow_dt_s(solver_args)
+    end
+    withenv("SPACEAGORA_MULTIRATE_SLOW_DT_S" => "0.0") do
+        @test_throws ArgumentError _multirate_slow_dt_s(solver_args)
+    end
+
+    withenv("SPACEAGORA_MULTIRATE_SLOW_SOLVER" => "auto") do
+        spec = _multirate_slow_solver_spec()
+        @test spec.label == "AutoTsit5(Rodas5P)"
+        @test spec.auto_switch_capable == true
+    end
+    withenv("SPACEAGORA_MULTIRATE_SLOW_SOLVER" => "rodas5p") do
+        spec = _multirate_slow_solver_spec()
+        @test spec.label == "Rodas5P"
+        @test spec.auto_switch_capable == false
+    end
+    withenv("SPACEAGORA_MULTIRATE_FAST_SOLVER" => "kencarp4") do
+        spec = _multirate_fast_solver_spec()
+        @test spec.label == "KenCarp4"
+        @test spec.auto_switch_capable == false
+    end
+    withenv("SPACEAGORA_MULTIRATE_FAST_SOLVER" => "unsupported") do
+        @test_throws ArgumentError _multirate_fast_solver_spec()
+    end
+
+    multirate_subprob = _split_subproblem(split_prob_simple, split_prob_simple.f.f1, [1.0], (0.0, 0.5))
+    @test multirate_subprob.tspan == (0.0, 0.5)
+
+    @test_throws ArgumentError _solve_with_multirate_solver(prob_simple, solver_args, 1e-8, 1e-8)
+
+    split_prob_zero = SplitODEProblem(
+        (du, u, p, t) -> begin
+            du[1] = -u[1]
+        end,
+        (du, u, p, t) -> begin
+            du[1] = -2u[1]
+        end,
+        [1.0],
+        (1.0, 1.0)
+    )
+    withenv("SPACEAGORA_SOLVER_MAXITERS" => nothing) do
+        sol_zero, meta_zero = _solve_with_multirate_solver(split_prob_zero, solver_args, 1e-8, 1e-8)
+        @test string(sol_zero.retcode) == "Success"
+        @test meta_zero.macro_steps == 0
+        @test meta_zero.fast_substeps == 0
+        @test meta_zero.slow_solver == "Tsit5"
+        @test meta_zero.fast_solver == "Tsit5"
+    end
+
+    withenv(
+        "SPACEAGORA_SOLVER_MAXITERS" => nothing,
+        "SPACEAGORA_MULTIRATE_SLOW_SOLVER" => "tsit5",
+        "SPACEAGORA_MULTIRATE_FAST_SOLVER" => "tsit5",
+        "SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => "4",
+        "SPACEAGORA_MULTIRATE_SLOW_DT_S" => "0.2"
+    ) do
+        sol_mr, meta_mr = _solve_with_multirate_solver(split_prob_simple, solver_args, 1e-8, 1e-8)
+        @test string(sol_mr.retcode) == "Success"
+        @test meta_mr.macro_steps >= 1
+        @test meta_mr.fast_substeps == 4
+        @test meta_mr.slow_solver == "Tsit5"
+        @test meta_mr.fast_solver == "Tsit5"
+        @test isapprox(meta_mr.slow_dt_s, 0.2; atol=0.0, rtol=0.0)
+        @test isapprox(meta_mr.fast_dt_s, 0.05; atol=0.0, rtol=0.0)
+        @test meta_mr.auto_switch_events == 0
+    end
+
+    withenv(
+        "SPACEAGORA_SOLVER_MODE" => "multirate",
+        "SPACEAGORA_SOLVER_MAXITERS" => nothing,
+        "SPACEAGORA_MULTIRATE_SLOW_SOLVER" => "tsit5",
+        "SPACEAGORA_MULTIRATE_FAST_SOLVER" => "tsit5",
+        "SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => "4",
+        "SPACEAGORA_MULTIRATE_SLOW_DT_S" => "0.2"
+    ) do
+        sol, meta = _solve_with_solver_policy(split_prob_simple, solver_args, 1e-8, 1e-8)
+        @test string(sol.retcode) == "Success"
+        @test occursin("Multirate(Strang;", meta.solver)
+        @test meta.initial_solver == "Tsit5"
+    end
+
+    withenv("SPACEAGORA_EPHEMERIS_CACHE_REUSE_MAX_ENTRIES" => "oops") do
+        @test_throws ArgumentError _ephemeris_reuse_max_entries()
+    end
+
+    reuse_cache = Dict{Any, SRPSunEphemerisCache}()
+    reuse_value_a = SRPSunEphemerisCache([0.0], SVector{3, Float64}[SVector{3, Float64}(1.0, 0.0, 0.0)])
+    reuse_value_b = SRPSunEphemerisCache([0.0], SVector{3, Float64}[SVector{3, Float64}(2.0, 0.0, 0.0)])
+    @test _ephemeris_reuse_store!(reuse_cache, :k1, reuse_value_a, 0) === reuse_value_a
+    @test !haskey(reuse_cache, :k1)
+    _ephemeris_reuse_store!(reuse_cache, :k1, reuse_value_a, 2)
+    @test _ephemeris_reuse_store!(reuse_cache, :k1, reuse_value_b, 2) === reuse_value_a
+    _ephemeris_reuse_store!(reuse_cache, :k2, reuse_value_b, 1)
+    @test !haskey(reuse_cache, :k1)
+    @test haskey(reuse_cache, :k2)
+
     withenv("SPACEAGORA_SOLVER_MAXITERS" => "1000") do
         sol = _solve_with_explicit_solver(prob_simple, solver_args, Tsit5(), 1e-8, 1e-8)
         @test string(sol.retcode) == "Success"

@@ -1,0 +1,249 @@
+schema_version = 1
+id = "telemetry_hybrid"
+name = "Telemetry Hybrid Calibration"
+description = "Surrogate-assisted Bayesian global search, local refinement, and robustness validation over VEx/Odyssey/GMAT telemetry scenarios"
+output_root = "output/calibration"
+seed = 42
+objective = "telemetry_robust_huber"
+verification_script = "scripts/verify_telemetry.jl"
+manifest_paths = ["test/telemetry_benchmark_manifest.toml"]
+
+[scenario_weights]
+odyssey = 1.0
+vex = 1.0
+earth_gmat = 1.0
+
+[[parameters]]
+name = "odyssey_ra_scale"
+kind = "continuous"
+lower = 0.995
+upper = 1.005
+transform = "mul"
+manifest_targets = ["scenarios[name=odyssey].ra_m"]
+
+[[parameters]]
+name = "odyssey_rp_altitude_offset_m"
+kind = "continuous"
+lower = -3000.0
+upper = 3000.0
+transform = "add"
+manifest_targets = ["scenarios[name=odyssey].rp_altitude_m"]
+
+[[parameters]]
+name = "odyssey_i_offset_deg"
+kind = "continuous"
+lower = -0.03
+upper = 0.03
+transform = "add"
+manifest_targets = ["scenarios[name=odyssey].i_deg"]
+
+[[parameters]]
+name = "odyssey_aop_offset_deg"
+kind = "continuous"
+lower = -0.2
+upper = 0.2
+transform = "add"
+manifest_targets = ["scenarios[name=odyssey].aop_deg"]
+
+[[parameters]]
+name = "odyssey_raan_offset_deg"
+kind = "continuous"
+lower = -0.2
+upper = 0.2
+transform = "add"
+manifest_targets = ["scenarios[name=odyssey].raan_deg"]
+
+[[parameters]]
+name = "odyssey_ta_offset_deg"
+kind = "continuous"
+lower = -0.5
+upper = 0.5
+transform = "add"
+manifest_targets = ["scenarios[name=odyssey].ta_deg"]
+
+[[parameters]]
+name = "bus_mass_scale"
+kind = "continuous"
+lower = 0.99
+upper = 1.01
+transform = "mul"
+manifest_targets = [
+  "scenarios[name=odyssey].spacecraft.bus_mass_kg",
+  "scenarios[name=vex].spacecraft.bus_mass_kg",
+  "scenarios[name=earth_gmat].spacecraft.bus_mass_kg"
+]
+
+[[parameters]]
+name = "prop_mass_scale"
+kind = "continuous"
+lower = 0.95
+upper = 1.05
+transform = "mul"
+manifest_targets = [
+  "scenarios[name=odyssey].spacecraft.prop_mass_kg",
+  "scenarios[name=vex].spacecraft.prop_mass_kg",
+  "scenarios[name=earth_gmat].spacecraft.prop_mass_kg"
+]
+
+[[parameters]]
+name = "panel_mass_scale"
+kind = "continuous"
+lower = 0.95
+upper = 1.05
+transform = "mul"
+manifest_targets = [
+  "scenarios[name=odyssey].spacecraft.panel_mass_each_kg",
+  "scenarios[name=vex].spacecraft.panel_mass_each_kg",
+  "scenarios[name=earth_gmat].spacecraft.panel_mass_each_kg"
+]
+
+[[parameters]]
+name = "earth_bus_dims_scale"
+kind = "continuous"
+lower = 0.97
+upper = 1.03
+transform = "mul"
+manifest_targets = ["scenarios[name=earth_gmat].spacecraft.bus_dims_m"]
+
+[[parameters]]
+name = "earth_panel_dims_scale"
+kind = "continuous"
+lower = 0.97
+upper = 1.03
+transform = "mul"
+manifest_targets = ["scenarios[name=earth_gmat].spacecraft.panel_dims_m"]
+
+[[parameters]]
+name = "earth_panel_offset_scale"
+kind = "continuous"
+lower = 0.9
+upper = 1.1
+transform = "mul"
+manifest_targets = ["scenarios[name=earth_gmat].spacecraft.panel_offset_y_m"]
+
+[[parameters]]
+name = "srp_cr_scale"
+kind = "continuous"
+lower = 0.95
+upper = 1.05
+transform = "mul"
+manifest_targets = [
+  "scenarios[name=odyssey].srp_cr",
+  "scenarios[name=vex].srp_cr"
+]
+
+[[parameters]]
+name = "srp_area_scale"
+kind = "continuous"
+lower = 0.95
+upper = 1.05
+transform = "mul"
+manifest_targets = [
+  "scenarios[name=odyssey].srp_area_m2",
+  "scenarios[name=vex].srp_area_m2"
+]
+
+[[parameters]]
+name = "gravity_model_variant"
+kind = "categorical"
+choices = ["inverse_squared", "inverse_squared_j2"]
+transform = "set"
+manifest_targets = ["scenarios[name=odyssey].gravity_model"]
+
+[[parameters]]
+name = "earth_gravity_model"
+kind = "categorical"
+choices = ["inverse_squared", "inverse_squared_j2"]
+transform = "set"
+manifest_targets = ["scenarios[name=earth_gmat].gravity_model"]
+
+[[parameters]]
+name = "earth_gravity_harmonics_degree"
+kind = "integer"
+lower = 20
+upper = 70
+transform = "set"
+manifest_targets = [
+  "scenarios[name=earth_gmat].gravity_harmonics_degree",
+  "scenarios[name=earth_gmat].gravity_harmonics_order"
+]
+
+[[parameters]]
+name = "earth_gram_perturb_scale_add"
+kind = "continuous"
+lower = 0.0
+upper = 0.05
+transform = "add"
+manifest_targets = ["scenarios[name=earth_gmat].atmosphere_truth.gram_perturbation_scales"]
+
+[[parameters]]
+name = "odyssey_dv_global_scale"
+kind = "continuous"
+lower = 0.8
+upper = 1.2
+transform = "mul"
+manifest_targets = ["scenarios[name=odyssey].maneuvers.delta_v_mps"]
+
+[[parameters]]
+name = "solver_mode"
+kind = "categorical"
+choices = ["auto_stiff", "rodas5p", "qbdf2", "trbdf2"]
+transform = "set"
+env_targets = ["SPACEAGORA_TELEMETRY_SOLVER_MODE"]
+
+[[parameters]]
+name = "dt_max_orbit_s"
+kind = "continuous"
+lower = 20.0
+upper = 120.0
+transform = "set"
+env_targets = ["SPACEAGORA_TELEMETRY_DT_MAX_ORBIT"]
+
+[[parameters]]
+name = "dt_max_atm_s"
+kind = "continuous"
+lower = 0.05
+upper = 0.4
+transform = "set"
+env_targets = ["SPACEAGORA_TELEMETRY_DT_MAX_ATM"]
+
+[[parameters]]
+name = "solver_maxiters"
+kind = "integer"
+lower = 4000000
+upper = 25000000
+transform = "set"
+env_targets = ["SPACEAGORA_TELEMETRY_SOLVER_MAXITERS"]
+
+[budgets]
+initial_samples = 12
+global_iters = 10
+batch_size = 2
+global_acquisition = "lcb"
+bo_pool_size = 256
+bo_length_scale = 0.35
+bo_noise = 1.0e-6
+bo_kappa = 1.96
+bo_xi = 0.01
+local_refine_strategy = "trust_region"
+local_refine_topk = 4
+local_refine_steps = 6
+local_refine_neighbors = 4
+local_refine_init_scale = 0.12
+local_refine_shrink = 0.6
+local_refine_expand = 1.2
+local_refine_min_improvement = 1.0e-6
+robustness_samples = 12
+initial_design = "lhs"
+robustness_uncertainty = "normal"
+uncertainty_atm_scale = 0.03
+uncertainty_ic_scale = 0.002
+robust_ranking = "weighted"
+robust_cvar_alpha = 0.9
+robust_p95_weight = 0.5
+robust_fail_weight = 5.0
+objective_huber_delta = 1.0
+objective_lambda_fail = 25.0
+objective_lambda_time = 2.0
+objective_runtime_budget_s = 1800.0
+objective_telemetry_noise_frac = 0.01

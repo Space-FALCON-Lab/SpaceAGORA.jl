@@ -15,6 +15,9 @@ jobs:
       SPACEAGORA_COVERAGE_MIN_OVERALL: "90.0"
       SPACEAGORA_COVERAGE_MIN_FILE: "80.0"
       SPACEAGORA_COVERAGE_WINDOW_SECONDS: "1200"
+      SPACEAGORA_CAL_COVERAGE_MIN_OVERALL: "90.0"
+      SPACEAGORA_CAL_COVERAGE_MIN_FILE: "70.0"
+      SPACEAGORA_CAL_COVERAGE_WINDOW_SECONDS: "1200"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,6 +35,9 @@ jobs:
       - name: Instantiate
         run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
 
+      - name: Instantiate SpaceAGORACalibration
+        run: julia --startup-file=no --project=SpaceAGORACalibration.jl -e 'using Pkg; Pkg.instantiate()'
+
       - name: Fetch base ref (PR only)
         if: github.event_name == 'pull_request'
         run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}
@@ -41,6 +47,12 @@ jobs:
 
       - name: Coverage quality gate
         run: julia --startup-file=no --project=.AGORA test/ci_coverage_quality_gate.jl
+
+      - name: SpaceAGORACalibration tests with coverage
+        run: julia --startup-file=no --project=SpaceAGORACalibration.jl --code-coverage=user SpaceAGORACalibration.jl/test/runtests.jl
+
+      - name: SpaceAGORACalibration coverage quality gate
+        run: julia --startup-file=no --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/test/ci_coverage_quality_gate.jl
 
       - name: P1 findings gate
         run: julia --startup-file=no --project=.AGORA test/ci_p1_findings_gate.jl

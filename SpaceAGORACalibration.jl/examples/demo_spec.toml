@@ -1,0 +1,70 @@
+schema_version = 1
+id = "demo"
+name = "Demo Calibration"
+description = "Scaffold specification for SpaceAGORACalibration"
+output_root = "output/calibration"
+seed = 42
+objective = "score"
+verification_script = "scripts/verify_telemetry.jl"
+manifest_paths = ["test/telemetry_benchmark_manifest.toml"]
+
+[scenario_weights]
+odyssey = 1.0
+vex = 1.0
+earth_gmat = 1.0
+
+[[parameters]]
+name = "odyssey_ra_scale"
+kind = "continuous"
+lower = 0.995
+upper = 1.005
+transform = "mul"
+manifest_targets = ["scenarios[name=odyssey].ra_m"]
+
+[[parameters]]
+name = "odyssey_rp_offset_m"
+kind = "continuous"
+lower = -3000.0
+upper = 3000.0
+transform = "add"
+manifest_targets = ["scenarios[name=odyssey].rp_altitude_m"]
+
+[[parameters]]
+name = "odyssey_gravity_model"
+kind = "categorical"
+choices = ["inverse_squared", "inverse_squared_j2"]
+transform = "set"
+manifest_targets = ["scenarios[name=odyssey].gravity_model"]
+
+[budgets]
+initial_samples = 4
+global_iters = 2
+batch_size = 2
+global_acquisition = "ei"
+bo_pool_size = 128
+bo_length_scale = 0.35
+bo_noise = 1.0e-6
+bo_kappa = 1.96
+bo_xi = 0.01
+local_refine_strategy = "trust_region"
+local_refine_topk = 2
+local_refine_steps = 2
+local_refine_neighbors = 4
+local_refine_init_scale = 0.15
+local_refine_shrink = 0.6
+local_refine_expand = 1.2
+local_refine_min_improvement = 1.0e-8
+robustness_samples = 3
+initial_design = "lhs"
+robustness_uncertainty = "normal"
+uncertainty_atm_scale = 0.02
+uncertainty_ic_scale = 0.002
+robust_ranking = "weighted"
+robust_cvar_alpha = 0.9
+robust_p95_weight = 0.5
+robust_fail_weight = 5.0
+objective_huber_delta = 1.0
+objective_lambda_fail = 25.0
+objective_lambda_time = 2.0
+objective_runtime_budget_s = 1800.0
+objective_telemetry_noise_frac = 0.01

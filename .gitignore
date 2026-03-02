@@ -8,6 +8,7 @@ GRAM Suite 2.0/Build/lib/
 GRAM Suite 2.0/Build/mod/
 GRAM Suite 2.0/Build/*/obj/
 GRAM Suite 2.0/Build/*/tobj/
+GRAM Suite 2.0/SPICE/*
 GRAM Suite 2.0/simulation/GRAM/gram.env
 GRAM Suite 2.0/simulation/GRAM/gram.env.ps1
 GRAM Suite 2.0/simulation/GRAM/.gram-build-manifest

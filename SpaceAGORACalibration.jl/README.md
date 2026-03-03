@@ -60,7 +60,7 @@ julia --project=SpaceAGORACalibration.jl \
   SpaceAGORACalibration.jl/bin/run_telemetry_tuner.jl \
   --spec=SpaceAGORACalibration.jl/examples/telemetry_hybrid_spec.toml \
   --project=.AGORA \
-  --verification-script=scripts/verify_telemetry.jl \
+  --verification-script=src/analysis/verification/TelemetryVerification.jl \
   --profile=quick \
   --plots=0
 
@@ -69,7 +69,7 @@ julia --project=SpaceAGORACalibration.jl \
   SpaceAGORACalibration.jl/bin/run_telemetry_tuner.jl \
   --spec=SpaceAGORACalibration.jl/examples/telemetry_earth_spec.toml \
   --project=.AGORA \
-  --verification-script=scripts/verify_telemetry.jl \
+  --verification-script=src/analysis/verification/TelemetryVerification.jl \
   --profile=quick \
   --plots=0
 

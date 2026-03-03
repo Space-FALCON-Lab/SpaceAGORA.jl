@@ -5,7 +5,7 @@ description = "Earth-only offline calibration study with physically influential 
 output_root = "output/calibration/earth_offline"
 seed = 42
 objective = "telemetry_robust_huber"
-verification_script = "scripts/verify_telemetry.jl"
+verification_script = "src/analysis/verification/TelemetryVerification.jl"
 manifest_paths = ["SpaceAGORACalibration.jl/studies/earth_offline/manifest_earth_offline.toml"]
 
 [scenario_weights]

@@ -51,7 +51,7 @@ end
 function parse_cli(args::Vector{String})
     spec_path = joinpath(@__DIR__, "..", "examples", "telemetry_hybrid_spec.toml")
     project_path = abspath(joinpath(@__DIR__, "..", ".."))
-    verification_script = abspath(joinpath(project_path, "scripts", "verify_telemetry.jl"))
+    verification_script = abspath(joinpath(project_path, "src", "analysis", "verification", "TelemetryVerification.jl"))
     manifest_path = ""
     profile = "quick"
     parallel_profile = nothing

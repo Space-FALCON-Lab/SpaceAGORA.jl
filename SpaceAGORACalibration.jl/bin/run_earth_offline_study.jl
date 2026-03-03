@@ -52,7 +52,7 @@ function parse_cli(args::Vector{String})
     repo_root = abspath(joinpath(@__DIR__, "..", ".."))
     spec_path = abspath(joinpath(@__DIR__, "..", "studies", "earth_offline", "spec_earth_offline.toml"))
     project_path = abspath(joinpath(repo_root, ".AGORA"))
-    verification_script = abspath(joinpath(repo_root, "scripts", "verify_telemetry.jl"))
+    verification_script = abspath(joinpath(repo_root, "src", "analysis", "verification", "TelemetryVerification.jl"))
     manifest_path = ""
     profile = "quick"
     parallel_profile = nothing

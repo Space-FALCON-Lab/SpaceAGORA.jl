@@ -41,7 +41,7 @@ end
 Base.@kwdef struct CommandBackend <: AbstractBackend
     julia_cmd::Cmd = Base.julia_cmd()
     project_path::String = ".AGORA"
-    verification_script::String = "scripts/verify_telemetry.jl"
+    verification_script::String = "src/analysis/verification/TelemetryVerification.jl"
     manifest_path::String = ""
     profile::String = "quick"
     parallel_profile::Union{Nothing, String} = nothing

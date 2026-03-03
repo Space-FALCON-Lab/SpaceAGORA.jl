@@ -65,7 +65,7 @@ Base.@kwdef struct CalibrationSpec
     output_root::String = "output/calibration"
     seed::Int = 42
     objective::String = "score"
-    verification_script::String = "scripts/verify_telemetry.jl"
+    verification_script::String = "src/analysis/verification/TelemetryVerification.jl"
     manifest_paths::Vector{String} = String["test/telemetry_benchmark_manifest.toml"]
     scenario_weights::Dict{String, Float64} = Dict{String, Float64}()
     parameters::Vector{ParameterSpec} = ParameterSpec[]
@@ -180,7 +180,7 @@ function load_spec(path::AbstractString)::CalibrationSpec
         output_root=String(get(doc, "output_root", "output/calibration")),
         seed=Int(get(doc, "seed", 42)),
         objective=String(get(doc, "objective", "score")),
-        verification_script=String(get(doc, "verification_script", "scripts/verify_telemetry.jl")),
+        verification_script=String(get(doc, "verification_script", "src/analysis/verification/TelemetryVerification.jl")),
         manifest_paths=_parse_manifest_paths(doc),
         scenario_weights=weights,
         parameters=params,

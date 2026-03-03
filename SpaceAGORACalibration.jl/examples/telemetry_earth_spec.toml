@@ -5,7 +5,7 @@ description = "Earth GMAT-focused calibration with physically influential Earth 
 output_root = "output/calibration"
 seed = 42
 objective = "telemetry_robust_huber"
-verification_script = "scripts/verify_telemetry.jl"
+verification_script = "src/analysis/verification/TelemetryVerification.jl"
 manifest_paths = ["test/telemetry_benchmark_manifest.toml"]
 
 [scenario_weights]

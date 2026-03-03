@@ -1,5 +1,5 @@
  $INPUT
-  SpicePath = 'data/GRAMSuite.jl/GRAM Suite 2.0/SPICE'
+  SpicePath = 'GRAMSuite.jl/GRAM Suite 2.0/SPICE'
   SpiceLsk = '/lsk/naif0012.tls'
  $END                
 

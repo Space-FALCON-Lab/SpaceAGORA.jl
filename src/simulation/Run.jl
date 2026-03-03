@@ -30,7 +30,7 @@ end
 end
 
 function _legacy_typed_planet(selector, args)
-    spice_path = get(args, :directory_spice, get(args, :spice_path, "data/GRAMSuite.jl/GRAM Suite 2.0/SPICE"))
+    spice_path = get(args, :directory_spice, get(args, :spice_path, "GRAMSuite.jl/GRAM Suite 2.0/SPICE"))
     pid = _legacy_run_planet_id(selector)
     pid == 0 && return Earth("", spice_path)
     pid == 1 && return Mars("", spice_path)

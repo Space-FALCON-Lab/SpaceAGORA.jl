@@ -1010,7 +1010,7 @@ version = "0.73.22"
 
 [[deps.GRAMSuite]]
 deps = ["LinearAlgebra", "Serialization", "StaticArrays"]
-path = "data/GRAMSuite.jl"
+path = "GRAMSuite.jl"
 uuid = "b50455af-6a46-4eae-bf92-8039261dd674"
 version = "0.1.0"
 

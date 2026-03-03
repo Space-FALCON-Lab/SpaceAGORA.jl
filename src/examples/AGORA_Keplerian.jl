@@ -17,7 +17,7 @@ if !isdefined(@__MODULE__, :make_example_config)
 end
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
+const SPICE_PATH = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 
 planet = Mars("", SPICE_PATH)
 

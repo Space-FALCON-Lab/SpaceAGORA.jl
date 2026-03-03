@@ -196,7 +196,7 @@ function SimulationModel.ControlEffectors.rvtoorbitalelement(
     throw(ErrorException("forced-orbital-element-conversion-failure"))
 end
 
-const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
+const SPICE_PATH = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const EARTH = Earth("", SPICE_PATH)
 
 angle_distance(a::Float64, b::Float64) = abs(mod(a - b + pi, 2pi) - pi)
@@ -795,7 +795,7 @@ end
     @test isdefined(sandbox, :execute_elements_case)
 
     typed_args = Core.eval(sandbox, quote
-        planet = SimulationModel.Earth("", joinpath(Main.REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE"))
+        planet = SimulationModel.Earth("", joinpath(Main.REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE"))
         env = SimulationModel.EnvironmentModel(
             planet=planet,
             EI=120.0,
@@ -1704,7 +1704,7 @@ end
     # Cover typed execute_elements_case dispatch wrapper in SimulationElements.jl.
     typed_dispatch_ret = Core.eval(sandbox, quote
         run_simulation(args::SimulationConfiguration; isolate_state::Bool=true) = :legacy_complete_passage_typed_dispatch_ok
-        planet = Earth("", joinpath(Main.REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE"))
+        planet = Earth("", joinpath(Main.REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE"))
         env = EnvironmentModel(
             planet=planet,
             EI=120.0,
@@ -2805,7 +2805,7 @@ end
     @test all(isfinite, force_nbody)
     @test torque_nbody == SVector{3, Float64}(0.0, 0.0, 0.0)
 
-    harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT, "Gravity_harmonics_data", "EarthGGM05C.csv")
     harmonics_l20 = GravitationalHarmonicsModel(20, 20, harmonics_file, EARTH)
     @test size(harmonics_l20.C) == (21, 21)
     @test size(harmonics_l20.S) == (21, 21)
@@ -7113,7 +7113,7 @@ end
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls[] == 1
 
     dyn = SimulationModel.DynamicEffectors
-    harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT, "Gravity_harmonics_data", "EarthGGM05C.csv")
     @test_throws ArgumentError GravitationalHarmonicsModel(-1, 0, harmonics_file, EARTH)
     @test_throws ArgumentError GravitationalHarmonicsModel(10_000, 0, harmonics_file, EARTH)
 

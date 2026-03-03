@@ -83,10 +83,10 @@ module SimConfig
 
     @kwdef struct FilePaths
         results::String = "Results" # Directory to save results
-        GRAM::String = "data/GRAMSuite.jl/GRAM Suite 2.0" # Directory for GRAM atmospheric model data
-        SPICE::String = "data/GRAMSuite.jl/GRAM Suite 2.0/SPICE" # Directory for SPICE kernels
-        topography_harmonics::String = "data/Topography_harmonics_data" # Directory for topography harmonics data (move to planet?)
-        gravity_harmonics::String = "data/Gravity_harmonics_data" # Directory for gravity harmonics data (move to planet?)
+        GRAM::String = "GRAMSuite.jl/GRAM Suite 2.0" # Directory for GRAM atmospheric model data
+        SPICE::String = "GRAMSuite.jl/GRAM Suite 2.0/SPICE" # Directory for SPICE kernels
+        topography_harmonics::String = "Topography_harmonics_data" # Directory for topography harmonics data (move to planet?)
+        gravity_harmonics::String = "Gravity_harmonics_data" # Directory for gravity harmonics data (move to planet?)
     end # struct FilePaths
 
     @kwdef struct SimulationSettings

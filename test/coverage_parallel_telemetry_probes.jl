@@ -272,9 +272,9 @@ end
 
     mktempdir() do tmp
         manifest_path = joinpath(tmp, "manifest.toml")
-        peri_path = "telemetry/fake_peri.feather"
-        apo_path = "telemetry/fake_apo.feather"
-        tal_path = "telemetry/fake_time.feather"
+        peri_path = "data/telemetry/fake_peri.feather"
+        apo_path = "data/telemetry/fake_apo.feather"
+        tal_path = "data/telemetry/fake_time.feather"
 
         manifest = Dict(
             "version" => 1,

@@ -17,8 +17,6 @@ output/*
 GRAMpy/*
 *.pdf
 *.csv
-!telemetry/OPS-SAT1/uhf_telemetry.csv
-!telemetry/OPS-SAT1/UHF_TM_notebook/uhf_telemetry.csv
 .AGORA/.CondaPkg/env/lib/terminfo/e/eterm-color
 orchestrator/data/*
 !orchestrator/data/.gitkeep
@@ -27,5 +25,7 @@ orchestrator/data/*
 output/calibration/
 SpaceAGORACalibration.jl/test/output/
 SpaceAGORACalibration.jl/.CondaPkg/
-telemetry/CYGNSS/
-telemetry/GRIFEX/
+!data/telemetry/OPS-SAT1/uhf_telemetry.csv
+!data/telemetry/OPS-SAT1/UHF_TM_notebook/uhf_telemetry.csv
+data/telemetry/CYGNSS/
+data/telemetry/GRIFEX/

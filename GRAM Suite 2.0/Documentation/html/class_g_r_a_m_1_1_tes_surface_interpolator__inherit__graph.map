@@ -1,4 +1,0 @@
-<map id="GRAM::TesSurfaceInterpolator" name="GRAM::TesSurfaceInterpolator">
-<area shape="rect" id="node1" title="The TES surface (boundary layer) model (0 to 0.03 km)." alt="" coords="5,81,203,109"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_tes_lower_interpolator.html" title="The TES lower atmosphere model (&#45;5 to 80 km)." alt="" coords="10,5,198,33"/>
-</map>

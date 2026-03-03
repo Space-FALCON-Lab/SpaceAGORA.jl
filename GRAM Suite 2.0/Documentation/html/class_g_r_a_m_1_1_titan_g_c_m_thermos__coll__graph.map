@@ -1,6 +1,0 @@
-<map id="GRAM::TitanGCMThermos" name="GRAM::TitanGCMThermos">
-<area shape="rect" id="node1" title="The GCM Thermosphere model of a Titan Atmosphere." alt="" coords="5,267,182,295"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_atmosphere.html" title="An abstract base class for all GRAM atmosphere models." alt="" coords="72,5,211,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_titan_common.html" title="Common values for the Titan atmosphere models." alt="" coords="67,97,216,125"/>
-<area shape="rect" id="node4" href="$class_g_r_a_m_1_1_titan_g_c_m_mid.html" title="The GCM mid model of a Titan Atmosphere." alt="" coords="131,175,278,203"/>
-</map>

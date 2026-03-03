@@ -1,5 +1,0 @@
-<map id="GRAM::AtmosphereState" name="GRAM::AtmosphereState">
-<area shape="rect" id="node1" title="The output state of an Atmosphere model." alt="" coords="107,97,276,125"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_atmosphere_state_base.html" title="The output state of an Atmosphere model." alt="" coords="5,5,205,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_many.html" title="This is a utility class for storing variant data types with one class." alt="" coords="228,5,329,33"/>
-</map>

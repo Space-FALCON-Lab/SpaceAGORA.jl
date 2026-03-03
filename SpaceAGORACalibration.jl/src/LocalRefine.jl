@@ -4,7 +4,7 @@ using Random
 
 using ..Spec: CalibrationSpec
 using ..ParamSpace: Candidate, candidate_signature, perturb_candidate
-using ..Backend: AbstractBackend, BackendEvaluation, evaluate_candidate
+using ..Backend: AbstractBackend, BackendEvaluation, CandidateRuntimePolicy, evaluate_candidate
 using ..Objective: primary_score, sort_indices_by_score
 
 export LocalRefineResult, plan_local_candidates, run_local_refine
@@ -13,6 +13,76 @@ Base.@kwdef struct LocalRefineResult
     candidates::Vector{Candidate}
     evaluations::Vector{BackendEvaluation}
     planned_count::Int
+end
+
+@inline function _parallel_evaluations(spec::CalibrationSpec)::Int
+    default = max(1, spec.budgets.parallel_evaluations)
+    raw = strip(get(ENV, "SPACEAGORA_CALIBRATION_PARALLEL_EVALUATIONS", ""))
+    isempty(raw) && return default
+    parsed = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_CALIBRATION_PARALLEL_EVALUATIONS must be a positive integer, got '$raw'"))
+    end
+    parsed > 0 || throw(ArgumentError(
+        "SPACEAGORA_CALIBRATION_PARALLEL_EVALUATIONS must be a positive integer, got $parsed"
+    ))
+    return parsed
+end
+
+function _evaluate_candidates_ordered(
+    backend::AbstractBackend,
+    spec::CalibrationSpec,
+    candidates::Vector{Candidate};
+    stage::String,
+    run_dir::Union{Nothing, String},
+    workers_override::Union{Nothing, Int}=nothing,
+    runtime_policy::Union{Nothing, CandidateRuntimePolicy}=nothing
+)::Vector{BackendEvaluation}
+    isempty(candidates) && return BackendEvaluation[]
+    base_workers = workers_override === nothing ? _parallel_evaluations(spec) : max(1, workers_override)
+    workers = min(base_workers, length(candidates))
+    if workers <= 1
+        out = Vector{BackendEvaluation}(undef, length(candidates))
+        for i in eachindex(candidates)
+            out[i] = evaluate_candidate(
+                backend,
+                spec,
+                candidates[i];
+                stage=stage,
+                run_dir=run_dir,
+                runtime_policy=runtime_policy
+            )
+        end
+        return out
+    end
+
+    gate = Base.Semaphore(workers)
+    tasks = Vector{Task}(undef, length(candidates))
+    for i in eachindex(candidates)
+        cand = candidates[i]
+        tasks[i] = @async begin
+            Base.acquire(gate)
+            try
+                return evaluate_candidate(
+                    backend,
+                    spec,
+                    cand;
+                    stage=stage,
+                    run_dir=run_dir,
+                    runtime_policy=runtime_policy
+                )
+            finally
+                Base.release(gate)
+            end
+        end
+    end
+
+    out = Vector{BackendEvaluation}(undef, length(candidates))
+    for i in eachindex(tasks)
+        out[i] = fetch(tasks[i])
+    end
+    return out
 end
 
 function plan_local_candidates(
@@ -69,7 +139,9 @@ function run_local_refine(
     stage::String="local_refine_full",
     prior_candidates::Vector{Candidate}=Candidate[],
     prior_evals::Vector{BackendEvaluation}=BackendEvaluation[],
-    run_dir::Union{Nothing, String}=nothing
+    run_dir::Union{Nothing, String}=nothing,
+    workers_override::Union{Nothing, Int}=nothing,
+    runtime_policy::Union{Nothing, CandidateRuntimePolicy}=nothing
 )::LocalRefineResult
     _ = rng
     isempty(seed_candidates) && return LocalRefineResult(
@@ -100,8 +172,10 @@ function run_local_refine(
         scale = spec.budgets.local_refine_init_scale
 
         for step in 1:spec.budgets.local_refine_steps
-            step_candidates = Candidate[]
-            step_evals = BackendEvaluation[]
+            step_candidates = Vector{Candidate}(undef, n_neighbors)
+            step_evals = Vector{BackendEvaluation}(undef, n_neighbors)
+            pending_indices = Int[]
+            pending_candidates = Candidate[]
 
             for nb in 1:n_neighbors
                 if prior_idx <= length(prior_candidates)
@@ -130,12 +204,39 @@ function run_local_refine(
                         scale=scale,
                         perturb_discrete=false
                     )
-                    ev = evaluate_candidate(backend, spec, cand; stage=stage, run_dir=run_dir)
+                    push!(pending_indices, nb)
+                    push!(pending_candidates, cand)
+                    ev = BackendEvaluation(
+                        candidate_id=cand.id,
+                        stage=stage,
+                        success=false,
+                        score=Inf
+                    )
                 end
 
                 next_id = max(next_id, cand.id + 1)
-                push!(step_candidates, cand)
-                push!(step_evals, ev)
+                step_candidates[nb] = cand
+                step_evals[nb] = ev
+            end
+
+            if !isempty(pending_candidates)
+                pending_evals = _evaluate_candidates_ordered(
+                    backend,
+                    spec,
+                    pending_candidates;
+                    stage=stage,
+                    run_dir=run_dir,
+                    workers_override=workers_override,
+                    runtime_policy=runtime_policy
+                )
+                for i in eachindex(pending_candidates)
+                    step_evals[pending_indices[i]] = pending_evals[i]
+                end
+            end
+
+            for nb in 1:n_neighbors
+                cand = step_candidates[nb]
+                ev = step_evals[nb]
                 push!(all_candidates, cand)
                 push!(all_evals, ev)
             end

@@ -1,8 +1,0 @@
-<map id="GRAM::TesGCM" name="GRAM::TesGCM">
-<area shape="rect" id="node1" title="The TesGCM model of the Mars atmosphere." alt="" coords="553,123,673,151"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_mars_g_c_m_base.html" title="The base class for the MGCM and TesGCM models." alt="" coords="262,5,419,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_tes_lower_interpolator.html" title="The TES lower atmosphere model (&#45;5 to 80 km)." alt="" coords="5,92,193,120"/>
-<area shape="rect" id="node5" href="$class_g_r_a_m_1_1_tes_surface_interpolator.html" title="The TES surface (boundary layer) model (0 to 0.03 km)." alt="" coords="242,123,439,151"/>
-<area shape="rect" id="node4" href="$class_g_r_a_m_1_1_tes_dust_model.html" title="The TES dust model class." alt="" coords="265,175,416,203"/>
-<area shape="rect" id="node6" href="$class_g_r_a_m_1_1_tes_upper_interpolator.html" title="The MGCM upper atmosphere model (80 to 240 km)." alt="" coords="247,227,434,255"/>
-</map>

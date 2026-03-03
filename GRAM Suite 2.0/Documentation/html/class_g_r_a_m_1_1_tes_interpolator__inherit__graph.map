@@ -1,6 +1,0 @@
-<map id="GRAM::TesInterpolator" name="GRAM::TesInterpolator">
-<area shape="rect" id="node1" title="The base class for TesGCM interpolation models." alt="" coords="128,81,281,109"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_tes_lower_interpolator.html" title="The TES lower atmosphere model (&#45;5 to 80 km)." alt="" coords="5,157,193,185"/>
-<area shape="rect" id="node4" href="$class_g_r_a_m_1_1_tes_upper_interpolator.html" title="The MGCM upper atmosphere model (80 to 240 km)." alt="" coords="217,157,405,185"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_mars_interpolator_base.html" title="The base class for all Mars GCM interpolation models." alt="" coords="109,5,300,33"/>
-</map>

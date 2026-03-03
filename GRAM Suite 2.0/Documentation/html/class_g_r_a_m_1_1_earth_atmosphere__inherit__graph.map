@@ -1,5 +1,0 @@
-<map id="GRAM::EarthAtmosphere" name="GRAM::EarthAtmosphere">
-<area shape="rect" id="node1" title="The primary interface for the Earth atmosphere model." alt="" coords="117,81,286,109"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_perturbed_atmosphere.html" title="Produces random perturbations on an Atmosphere." alt="" coords="5,5,200,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_earth_common.html" title="Common values for the Earth atmosphere models." alt="" coords="224,5,376,33"/>
-</map>

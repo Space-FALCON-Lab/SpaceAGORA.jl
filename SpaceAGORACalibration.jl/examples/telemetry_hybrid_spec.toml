@@ -219,6 +219,7 @@ env_targets = ["SPACEAGORA_TELEMETRY_SOLVER_MAXITERS"]
 initial_samples = 12
 global_iters = 10
 batch_size = 2
+parallel_evaluations = 4
 global_acquisition = "lcb"
 bo_pool_size = 256
 bo_length_scale = 0.35

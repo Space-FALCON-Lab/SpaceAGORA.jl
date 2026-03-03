@@ -1,8 +1,8 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 const DEFAULT_OUTPUT_DIR = joinpath(REPO_ROOT, "output", "performance")
-const SPICE_PATH = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
+const SPICE_PATH = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "Gravity_harmonics_data", "EarthGGM05C.csv")
-const EARTH_GRAM_SURROGATE_FILE = joinpath(REPO_ROOT, "GRAM Suite 2.0", "Earth", "earth_surrogate.jls")
+const EARTH_GRAM_SURROGATE_FILE = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "Earth", "earth_surrogate.jls")
 const PERF_BASELINE_SCENARIO = "single_j2"
 const _PERF_POLICY_ENV_NAMES = (
     "SPACEAGORA_OUTER_PARALLEL_ACTIVE",
@@ -16,12 +16,16 @@ const _PERF_POLICY_ENV_BASELINE = Dict{String, Union{Nothing, String}}(
 )
 const _PERF_THREADS_BACKEND_WARNING_EMITTED = Ref(false)
 
+include(joinpath(REPO_ROOT, "src", "parallel", "ParallelProfiles.jl"))
+using .ParallelProfiles
+
 using CSV
 using DataFrames
 using Dates
 using Distributed
 using LinearAlgebra
 using Random
+using Sockets
 using SPICE
 using StaticArrays
 using Statistics
@@ -56,6 +60,8 @@ Base.@kwdef struct BenchmarkCase
     args_template::SimulationConfiguration
     run_in_quick::Bool = true
     solver_mode_override::Union{Nothing, String} = nothing
+    split_imex_solver_override::Union{Nothing, String} = nothing
+    entry_target_count_override::Union{Nothing, Int} = nothing
 end
 
 @inline _safe_div(num::Float64, den::Float64) = den > 0.0 ? num / den : NaN
@@ -84,6 +90,20 @@ end
     return retcode == "Success"
 end
 
+@inline function _solve_success_for_case(sol, case::BenchmarkCase)::Bool
+    if _solve_success(sol)
+        return true
+    end
+    if string(sol.retcode) == "Terminated" &&
+       case.category == "entry" &&
+       !(isnothing(case.entry_target_count_override)) &&
+       case.entry_target_count_override > 0
+        # Entry cases intentionally terminate after target interface crossings.
+        return true
+    end
+    return false
+end
+
 @inline function _effector_signature(effectors::Tuple)
     isempty(effectors) && return "none"
     return join([string(nameof(typeof(e))) for e in effectors], "+")
@@ -93,6 +113,44 @@ end
     vec = collect(skipmissing(values))
     isempty(vec) && return missing
     return join(sort(unique(string.(vec))), delimiter)
+end
+
+function _primary_terminal_state_metrics(sol)
+    pos_norm_m = missing
+    vel_norm_mps = missing
+    mass_kg = missing
+
+    if length(sol.u) == 0
+        return (pos_norm_m=pos_norm_m, vel_norm_mps=vel_norm_mps, mass_kg=mass_kg)
+    end
+    final_state = sol.u[end]
+    if !(hasproperty(final_state, :sc))
+        return (pos_norm_m=pos_norm_m, vel_norm_mps=vel_norm_mps, mass_kg=mass_kg)
+    end
+    states = final_state.sc
+    isempty(states) && return (pos_norm_m=pos_norm_m, vel_norm_mps=vel_norm_mps, mass_kg=mass_kg)
+    primary = states[1]
+
+    if hasproperty(primary, :pos)
+        value = norm(primary.pos)
+        if isfinite(value)
+            pos_norm_m = Float64(value)
+        end
+    end
+    if hasproperty(primary, :vel)
+        value = norm(primary.vel)
+        if isfinite(value)
+            vel_norm_mps = Float64(value)
+        end
+    end
+    if hasproperty(primary, :mass)
+        value = Float64(primary.mass)
+        if isfinite(value)
+            mass_kg = value
+        end
+    end
+
+    return (pos_norm_m=pos_norm_m, vel_norm_mps=vel_norm_mps, mass_kg=mass_kg)
 end
 
 @inline _perf_error_text(err) = sprint(showerror, err)
@@ -143,10 +201,24 @@ function _run_perf_simulation(
     return_solution::Bool,
     return_solver_metadata::Bool=false,
     profile_name::String="quick",
-    solver_mode_override::Union{Nothing, String}=nothing
+    solver_mode_override::Union{Nothing, String}=nothing,
+    split_imex_solver_override::Union{Nothing, String}=nothing,
+    entry_target_count_override::Union{Nothing, Int}=nothing
 )
     solver_mode = isnothing(solver_mode_override) ? _perf_solver_mode_env(profile_name) : solver_mode_override
-    return withenv("SPACEAGORA_SOLVER_MODE" => solver_mode) do
+    split_solver_env = isnothing(split_imex_solver_override) ? nothing : String(split_imex_solver_override)
+    entry_target_env = if isnothing(entry_target_count_override)
+        nothing
+    else
+        value = Int(entry_target_count_override)
+        value >= 0 || throw(ArgumentError("entry_target_count_override must be >= 0, got $value"))
+        string(value)
+    end
+    return withenv(
+        "SPACEAGORA_SOLVER_MODE" => solver_mode,
+        "SPACEAGORA_SPLIT_IMEX_SOLVER" => split_solver_env,
+        "SPACEAGORA_ENTRY_TARGET_COUNT" => entry_target_env
+    ) do
         run_simulation(
             args_run;
             isolate_state=false,
@@ -187,7 +259,7 @@ end
             max_attempts=4,
             mission_short_s=3600.0,
             mission_long_s=14400.0,
-            montecarlo_samples=20,
+            montecarlo_samples=50,
             montecarlo_mission_s=3600.0
         )
     elseif name == "quick"
@@ -198,7 +270,7 @@ end
             max_attempts=4,
             mission_short_s=1800.0,
             mission_long_s=7200.0,
-            montecarlo_samples=8,
+            montecarlo_samples=50,
             montecarlo_mission_s=1800.0
         )
     else
@@ -266,6 +338,8 @@ Base.@kwdef struct ParallelPriorityPlan
     control_mode::String = "off"
     multibody_mode::String = "off"
 end
+
+const _PERF_OUTER_ROUTE_STATE = Ref(ParallelProfiles.OuterRouteState())
 
 @inline function _parse_positive_int_env(name::String, default::Int)::Int
     raw = strip(get(ENV, name, string(default)))
@@ -335,6 +409,30 @@ end
     return _parse_positive_int_env("SPACEAGORA_PERF_PRIORITY_SPICE_CONSTELLATION_MIN_SATS", 4)
 end
 
+@inline function _outer_route_adaptive_enabled()::Bool
+    return _parse_bool_env("SPACEAGORA_PERF_OUTER_ROUTE_ADAPTIVE", true)
+end
+
+@inline function _outer_route_min_samples()::Int
+    return _parse_positive_int_env("SPACEAGORA_PERF_OUTER_ROUTE_MIN_SAMPLES", 2)
+end
+
+@inline function _outer_route_failure_penalty_s()::Float64
+    return _parse_nonnegative_float_env("SPACEAGORA_PERF_OUTER_ROUTE_FAILURE_PENALTY_S", 120.0)
+end
+
+@inline function _outer_route_mc_process_min_samples()::Int
+    return _parse_positive_int_env("SPACEAGORA_PERF_MC_PROCESS_MIN_SAMPLES", 16)
+end
+
+@inline function _outer_route_mc_process_min_mission_s()::Float64
+    return _parse_nonnegative_float_env("SPACEAGORA_PERF_MC_PROCESS_MIN_MISSION_S", 3600.0)
+end
+
+@inline function _outer_route_trace_enabled()::Bool
+    return _parse_bool_env("SPACEAGORA_PERF_OUTER_ROUTE_TRACE", false)
+end
+
 @inline function _control_stress_repeats_full()::Int
     return _parse_positive_int_env("SPACEAGORA_PERF_CONTROL_STRESS_REPEATS_FULL", 3)
 end
@@ -347,6 +445,153 @@ end
     return _parse_bool_env("SPACEAGORA_PERF_INCLUDE_CONTROL_STRESS_PER_ORBIT", true)
 end
 
+@inline function _split_rollout_enabled()::Bool
+    return _parse_bool_env("SPACEAGORA_PERF_SPLIT_ROLLOUT_GATE", false)
+end
+
+@inline function _split_rollout_enforce()::Bool
+    return _parse_bool_env("SPACEAGORA_PERF_SPLIT_ROLLOUT_ENFORCE", false)
+end
+
+@inline function _split_rollout_case_names()::Vector{String}
+    raw = strip(get(
+        ENV,
+        "SPACEAGORA_PERF_SPLIT_ROLLOUT_CASES",
+        "single_orientation_aero,proximity_2sat_orientation_fullstack_gnc_highrate,multi_4_gravity"
+    ))
+    tokens = String[]
+    for token in split(raw, ",")
+        t = strip(token)
+        isempty(t) && continue
+        push!(tokens, t)
+    end
+    return unique(tokens)
+end
+
+@inline function _split_rollout_solver_variants()::Vector{String}
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_PERF_SPLIT_ROLLOUT_SOLVERS", "kencarp4,kencarp47")))
+    tokens = String[]
+    for token in split(raw, ",")
+        t = lowercase(strip(token))
+        isempty(t) && continue
+        if !(t in ("kencarp4", "kencarp47", "kencarp58"))
+            throw(ArgumentError(
+                "SPACEAGORA_PERF_SPLIT_ROLLOUT_SOLVERS token '$t' is unsupported. " *
+                "Use comma-separated values from: kencarp4, kencarp47, kencarp58."
+            ))
+        end
+        push!(tokens, t)
+    end
+    isempty(tokens) && return ["kencarp4"]
+    return unique(tokens)
+end
+
+@inline function _split_rollout_max_slowdown_ratio()::Float64
+    return max(eps(Float64), _parse_nonnegative_float_env("SPACEAGORA_PERF_SPLIT_MAX_SLOWDOWN_RATIO", 1.15))
+end
+
+@inline function _split_rollout_pos_rel_tol()::Float64
+    return _parse_nonnegative_float_env("SPACEAGORA_PERF_SPLIT_POS_REL_TOL", 5e-4)
+end
+
+@inline function _split_rollout_vel_rel_tol()::Float64
+    return _parse_nonnegative_float_env("SPACEAGORA_PERF_SPLIT_VEL_REL_TOL", 5e-4)
+end
+
+@inline function _split_rollout_q_angle_tol_rad()::Float64
+    return _parse_nonnegative_float_env("SPACEAGORA_PERF_SPLIT_Q_ANGLE_TOL_RAD", 5e-4)
+end
+
+@inline function _split_rollout_omega_rel_tol()::Float64
+    return _parse_nonnegative_float_env("SPACEAGORA_PERF_SPLIT_OMEGA_REL_TOL", 1e-3)
+end
+
+@inline function _split_rollout_sample_count()::Int
+    return _parse_positive_int_env("SPACEAGORA_PERF_SPLIT_TRAJ_SAMPLES", 128)
+end
+
+@inline function _multirate_rollout_enabled()::Bool
+    return _parse_bool_env("SPACEAGORA_PERF_MULTIRATE_ROLLOUT_GATE", false)
+end
+
+@inline function _multirate_rollout_enforce()::Bool
+    return _parse_bool_env("SPACEAGORA_PERF_MULTIRATE_ROLLOUT_ENFORCE", false)
+end
+
+@inline function _multirate_rollout_case_names()::Vector{String}
+    raw = strip(get(
+        ENV,
+        "SPACEAGORA_PERF_MULTIRATE_ROLLOUT_CASES",
+        "single_orientation_aero,proximity_2sat_orientation_fullstack_gnc_highrate,multi_4_gravity"
+    ))
+    tokens = String[]
+    for token in split(raw, ",")
+        t = strip(token)
+        isempty(t) && continue
+        push!(tokens, t)
+    end
+    return unique(tokens)
+end
+
+@inline function _multirate_rollout_max_slowdown_ratio()::Float64
+    return max(eps(Float64), _parse_nonnegative_float_env("SPACEAGORA_PERF_MULTIRATE_MAX_SLOWDOWN_RATIO", 1.25))
+end
+
+@inline function _multirate_rollout_pos_rel_tol()::Float64
+    return _parse_nonnegative_float_env("SPACEAGORA_PERF_MULTIRATE_POS_REL_TOL", 7.5e-4)
+end
+
+@inline function _multirate_rollout_vel_rel_tol()::Float64
+    return _parse_nonnegative_float_env("SPACEAGORA_PERF_MULTIRATE_VEL_REL_TOL", 7.5e-4)
+end
+
+@inline function _multirate_rollout_q_angle_tol_rad()::Float64
+    return _parse_nonnegative_float_env("SPACEAGORA_PERF_MULTIRATE_Q_ANGLE_TOL_RAD", 7.5e-4)
+end
+
+@inline function _multirate_rollout_omega_rel_tol()::Float64
+    return _parse_nonnegative_float_env("SPACEAGORA_PERF_MULTIRATE_OMEGA_REL_TOL", 1.5e-3)
+end
+
+@inline function _multirate_rollout_sample_count()::Int
+    return _parse_positive_int_env("SPACEAGORA_PERF_MULTIRATE_TRAJ_SAMPLES", 128)
+end
+
+@inline function _multirate_env_float_or_missing(name::String)
+    raw = strip(get(ENV, name, ""))
+    isempty(raw) && return missing
+    parsed = try
+        parse(Float64, raw)
+    catch
+        return missing
+    end
+    return parsed
+end
+
+@inline function _multirate_env_int_or_missing(name::String)
+    raw = strip(get(ENV, name, ""))
+    isempty(raw) && return missing
+    parsed = try
+        parse(Int, raw)
+    catch
+        return missing
+    end
+    return parsed
+end
+
+@inline function _multirate_rollout_setting_snapshot()
+    slow_solver = lowercase(strip(get(ENV, "SPACEAGORA_MULTIRATE_SLOW_SOLVER", "tsit5")))
+    fast_solver = lowercase(strip(get(ENV, "SPACEAGORA_MULTIRATE_FAST_SOLVER", "auto_stiff")))
+    slow_dt_s = _multirate_env_float_or_missing("SPACEAGORA_MULTIRATE_SLOW_DT_S")
+    fast_substeps = _multirate_env_int_or_missing("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS")
+    return (
+        slow_solver=slow_solver,
+        fast_solver=fast_solver,
+        slow_dt_s=slow_dt_s,
+        fast_substeps=fast_substeps
+    )
+end
+
 @inline function _machine_parallel_class()::Symbol
     cpu_threads = Sys.CPU_THREADS
     if cpu_threads >= 24
@@ -355,6 +600,36 @@ end
         return :medium
     end
     return :small
+end
+
+@inline function _hardware_class_name()::String
+    override_raw = lowercase(strip(get(ENV, "SPACEAGORA_PERF_HARDWARE_CLASS", "auto")))
+    if override_raw == "auto" || isempty(override_raw)
+        return String(_machine_parallel_class())
+    end
+    return override_raw
+end
+
+@inline function _machine_label()::String
+    raw = strip(get(ENV, "SPACEAGORA_PERF_MACHINE_LABEL", ""))
+    return isempty(raw) ? gethostname() : raw
+end
+
+@inline function _cpu_name_string()::String
+    return hasproperty(Sys, :CPU_NAME) ? String(getproperty(Sys, :CPU_NAME)) : "unknown"
+end
+
+@inline function _runtime_hardware_snapshot()
+    return (
+        hardware_class=_hardware_class_name(),
+        machine_label=_machine_label(),
+        host_name=gethostname(),
+        cpu_name=_cpu_name_string(),
+        cpu_threads=Sys.CPU_THREADS,
+        julia_threads=Threads.nthreads(),
+        os=string(Sys.KERNEL),
+        arch=string(Sys.ARCH)
+    )
 end
 
 @inline function _total_links(case::BenchmarkCase)::Int
@@ -402,11 +677,33 @@ end
     return degree
 end
 
-@inline function _priority_outer_route(case::BenchmarkCase)::Symbol
-    if !perf_parallel_enabled()
-        return :none
-    end
+function _reset_outer_route_history!()
+    _PERF_OUTER_ROUTE_STATE[] = ParallelProfiles.OuterRouteState()
+    return nothing
+end
 
+@inline function _outer_route_tuning()::ParallelProfiles.OuterRouteTuning
+    return ParallelProfiles.OuterRouteTuning(
+        inner_sat_threshold=_priority_inner_sat_threshold(),
+        inner_link_threshold=_priority_inner_link_threshold(),
+        outer_light_sat_threshold=_priority_outer_light_sat_threshold(),
+        outer_light_link_threshold=_priority_outer_light_link_threshold(),
+        outer_light_mission_threshold_s=_priority_outer_light_mission_threshold_s(),
+        spice_constellation_process_enabled=_priority_spice_constellation_process_enabled(),
+        spice_constellation_min_sats=_priority_spice_constellation_min_sats(),
+        adaptive_enabled=_outer_route_adaptive_enabled(),
+        adaptive_min_samples=_outer_route_min_samples(),
+        failure_penalty_s=_outer_route_failure_penalty_s(),
+        mc_process_min_samples=_outer_route_mc_process_min_samples(),
+        mc_process_min_mission_s=_outer_route_mc_process_min_mission_s(),
+        trace=_outer_route_trace_enabled()
+    )
+end
+
+@inline function _outer_route_features(
+    case::BenchmarkCase;
+    spec::Union{Nothing, ProfileSpec}=nothing
+)::ParallelProfiles.OuterRouteFeatures
     n_sats = length(case.args_template.dynamics_model.spacecraft)
     n_links = _total_links(case)
     mission_time_s = case.args_template.mission_configuration.mission_time
@@ -416,48 +713,94 @@ end
     harmonics_degree = _max_harmonics_degree(dynamic_effectors)
     has_control = !isempty(case.args_template.control_model.control_effectors)
     orientation_on = case.args_template.mission_configuration.orientation_sim
+    mc_samples = isnothing(spec) ? 0 : spec.montecarlo_samples
+    return ParallelProfiles.OuterRouteFeatures(
+        category=case.category,
+        n_sats=n_sats,
+        n_links=n_links,
+        mission_time_s=mission_time_s,
+        has_nbody=has_nbody,
+        has_srp=has_srp,
+        harmonics_degree=harmonics_degree,
+        has_control=has_control,
+        orientation_on=orientation_on,
+        montecarlo_samples=mc_samples
+    )
+end
 
-    machine = _machine_parallel_class()
-    if case.category == "montecarlo"
-        return machine in (:large, :medium) ? :process : _threads_or_none_backend()
-    end
+@inline function _priority_outer_route_montecarlo(case::BenchmarkCase, spec::Union{Nothing, ProfileSpec}=nothing)::Symbol
+    features = _outer_route_features(case; spec=spec)
+    return ParallelProfiles.default_outer_route(
+        features;
+        tuning=_outer_route_tuning(),
+        machine_class=_machine_parallel_class(),
+        threads_available=perf_threads_available(),
+        parallel_enabled=perf_parallel_enabled()
+    )
+end
 
-    # Lightweight scenarios are usually overhead-bound, so keep them serial.
-    if n_sats <= _priority_outer_light_sat_threshold() &&
-       n_links <= _priority_outer_light_link_threshold() &&
-       mission_time_s <= _priority_outer_light_mission_threshold_s() &&
-       !has_nbody &&
-       !has_control &&
-       !orientation_on &&
-       harmonics_degree == 0
-        return :none
-    end
+@inline function _outer_route_candidates(case::BenchmarkCase; spec::Union{Nothing, ProfileSpec}=nothing)::Vector{Symbol}
+    features = _outer_route_features(case; spec=spec)
+    return ParallelProfiles.outer_route_candidates(
+        features;
+        tuning=_outer_route_tuning(),
+        machine_class=_machine_parallel_class(),
+        threads_available=perf_threads_available(),
+        parallel_enabled=perf_parallel_enabled()
+    )
+end
 
-    sat_threshold = _priority_inner_sat_threshold()
-    link_threshold = _priority_inner_link_threshold()
+@inline function _outer_route_signature(case::BenchmarkCase)::String
+    return ParallelProfiles.outer_route_signature(_outer_route_features(case))
+end
 
-    # Keep one dominant layer: if the case is large enough for intra-sim parallelism,
-    # avoid also parallelizing the outer loop.
-    if n_sats >= sat_threshold || n_links >= link_threshold
-        return :none
-    end
+@inline function _outer_route_stats_snapshot(signature::String)
+    return ParallelProfiles.outer_route_stats_snapshot(_PERF_OUTER_ROUTE_STATE[], signature)
+end
 
-    if _priority_spice_constellation_process_enabled() &&
-       n_sats >= _priority_spice_constellation_min_sats() &&
-       (has_nbody || has_srp)
-        return machine in (:large, :medium) ? :process : _threads_or_none_backend()
+function _record_outer_route_feedback!(
+    case::BenchmarkCase,
+    rows::AbstractVector{<:NamedTuple};
+    route::Symbol
+)
+    features = _outer_route_features(case)
+    successes = 0
+    failures = 0
+    elapsed_success_s = 0.0
+    for row in rows
+        if !hasproperty(row, :solve_success)
+            continue
+        end
+        if row.solve_success === true
+            if hasproperty(row, :total_time_s) && row.total_time_s isa Real && isfinite(Float64(row.total_time_s))
+                successes += 1
+                elapsed_success_s += Float64(row.total_time_s)
+            end
+        elseif row.solve_success === false
+            failures += 1
+        end
     end
+    ParallelProfiles.record_outer_route_feedback!(
+        _PERF_OUTER_ROUTE_STATE[],
+        features;
+        route=route,
+        successes=successes,
+        failures=failures,
+        elapsed_success_s=elapsed_success_s,
+        tuning=_outer_route_tuning()
+    )
+    return nothing
+end
 
-    if case.category == "satellite_scaling" && n_sats >= 4
-        return _threads_or_none_backend()
-    end
-    if has_nbody || harmonics_degree >= 20
-        return machine in (:large, :medium) ? :process : _threads_or_none_backend()
-    end
-    if machine in (:large, :medium)
-        return :process
-    end
-    return _threads_or_none_backend()
+@inline function _priority_outer_route(case::BenchmarkCase)::Symbol
+    features = _outer_route_features(case)
+    return ParallelProfiles.default_outer_route(
+        features;
+        tuning=_outer_route_tuning(),
+        machine_class=_machine_parallel_class(),
+        threads_available=perf_threads_available(),
+        parallel_enabled=perf_parallel_enabled()
+    )
 end
 
 @inline function parallel_priority_plan(case::BenchmarkCase, outer_route::Symbol)::ParallelPriorityPlan
@@ -546,8 +889,19 @@ function _thread_plan_groups(
     return [(grouped_pairs[key], grouped_payload[key]) for key in ordered_keys]
 end
 
-@inline function auto_backend_for_case(case::BenchmarkCase)::Symbol
-    return _priority_outer_route(case)
+function auto_backend_for_case(
+    case::BenchmarkCase;
+    spec::Union{Nothing, ProfileSpec}=nothing
+)::Symbol
+    features = _outer_route_features(case; spec=spec)
+    return ParallelProfiles.select_outer_route!(
+        _PERF_OUTER_ROUTE_STATE[],
+        features;
+        tuning=_outer_route_tuning(),
+        machine_class=_machine_parallel_class(),
+        threads_available=perf_threads_available(),
+        parallel_enabled=perf_parallel_enabled()
+    )
 end
 
 @inline function perf_process_workers_target()::Int
@@ -565,6 +919,10 @@ end
 
 const _perf_workers_initialized = Ref(false)
 const _perf_worker_planet_cache = Ref{Any}(nothing)
+const _perf_worker_mars_cache = Ref{Any}(nothing)
+const _perf_harmonics20_cache = Ref{Any}(nothing)
+const _perf_harmonics50_cache = Ref{Any}(nothing)
+const _perf_mars_gram_point_density_cache = Ref{Any}(nothing)
 
 function ensure_perf_workers!()
     _perf_workers_initialized[] && return nothing
@@ -580,6 +938,7 @@ function ensure_perf_workers!()
     @everywhere workers() include($script_path)
     for w in workers()
         remotecall_wait(perf_worker_planet, w)
+        remotecall_wait(perf_worker_mars, w)
     end
     _perf_workers_initialized[] = true
     return nothing
@@ -594,12 +953,82 @@ function perf_worker_planet()::Earth
     return cached::Earth
 end
 
+function perf_worker_mars()::Mars
+    cached = _perf_worker_mars_cache[]
+    if cached === nothing
+        cached = Mars("", SPICE_PATH)
+        _perf_worker_mars_cache[] = cached
+    end
+    return cached::Mars
+end
+
+function _perf_harmonics20_model(planet::Earth)
+    cached = _perf_harmonics20_cache[]
+    if cached === nothing
+        cached = GravitationalHarmonicsModel(20, 20, EARTH_HARMONICS_FILE, planet)
+        _perf_harmonics20_cache[] = cached
+    end
+    return deepcopy(cached)
+end
+
+function _perf_harmonics50_model(planet::Earth)
+    cached = _perf_harmonics50_cache[]
+    if cached === nothing
+        cached = GravitationalHarmonicsModel(50, 50, EARTH_HARMONICS_FILE, planet)
+        _perf_harmonics50_cache[] = cached
+    end
+    return deepcopy(cached)
+end
+
+function _perf_mars_gram_point_density_model()
+    cached = _perf_mars_gram_point_density_cache[]
+    if cached === nothing
+        cached = _build_mars_gram_point_density()
+        _perf_mars_gram_point_density_cache[] = cached
+    end
+    return deepcopy(cached)
+end
+
 @inline function orbital_period_seconds(spacecraft::SpacecraftModel, planet::AbstractPlanet)::Float64
     a = spacecraft.initial_condition.a
     if !isfinite(a) || a <= 0.0
         throw(ArgumentError("Invalid semimajor axis for orbital period calculation: $a"))
     end
     return 2π * sqrt(a^3 / planet.μ)
+end
+
+function _entry_orbital_elements_from_gamma_v_h(
+    planet::AbstractPlanet;
+    gamma_deg::Float64,
+    v_mps::Float64,
+    h_m::Float64
+)::NamedTuple{(:a, :e, :ν_deg), Tuple{Float64, Float64, Float64}}
+    v_mps > 0.0 || throw(ArgumentError("Entry speed must be > 0 m/s (got $v_mps)."))
+    h_m >= 0.0 || throw(ArgumentError("Entry altitude h must be >= 0 m (got $h_m)."))
+
+    r = planet.Rp_e + h_m
+    γ = deg2rad(gamma_deg)
+    μ = planet.μ
+    specific_energy = 0.5 * v_mps^2 - μ / r
+    abs(specific_energy) > 1e-12 || throw(ArgumentError("Parabolic entry state is unsupported (specific energy ~ 0)."))
+
+    a = -μ / (2.0 * specific_energy)
+    h_spec = r * v_mps * cos(γ)
+    p = h_spec^2 / μ
+    e_sq = 1.0 - p / a
+    e_sq >= -1e-10 || throw(ArgumentError("Invalid entry state (computed e^2=$e_sq < 0). Check gamma/v/h."))
+    e = sqrt(max(0.0, e_sq))
+
+    ν_deg = if e <= 1e-10
+        180.0
+    else
+        cos_ν = clamp((p / r - 1.0) / e, -1.0, 1.0)
+        rdot = v_mps * sin(γ)
+        sin_ν = clamp((rdot * h_spec) / (μ * e), -1.0, 1.0)
+        rad2deg(mod(atan(sin_ν, cos_ν), 2π))
+    end
+
+    return (a=a, e=e, ν_deg=ν_deg)
 end
 
 function make_spacecraft(
@@ -612,6 +1041,7 @@ function make_spacecraft(
     Ω_deg::Float64=10.0,
     ν_deg::Float64=170.0,
     with_panel::Bool=true,
+    panel_count::Int=1,
     orientation_state::Union{Nothing, Tuple{SVector{4, Float64}, SVector{3, Float64}}}=nothing,
     root_mass::Float64=500.0,
     root_area::Float64=12.0,
@@ -623,8 +1053,23 @@ function make_spacecraft(
     root = Link{0}(root=true, m=root_mass, ref_area=root_area)
     links = Link[root]
     if with_panel
-        panel = Link{0}(root=false, m=panel_mass, ref_area=panel_area, r=MVector{3, Float64}(0.0, panel_offset_y, 0.0))
-        push!(links, panel)
+        panel_count >= 1 || throw(ArgumentError("panel_count must be >= 1 when with_panel=true (got $panel_count)."))
+        if panel_count == 1
+            panel = Link{0}(root=false, m=panel_mass, ref_area=panel_area, r=MVector{3, Float64}(0.0, panel_offset_y, 0.0))
+            push!(links, panel)
+        else
+            # Spread appended bodies around the root to keep a balanced 5-body orientation benchmark.
+            for panel_idx in 1:panel_count
+                θ = 2π * (panel_idx - 1) / panel_count
+                panel = Link{0}(
+                    root=false,
+                    m=panel_mass,
+                    ref_area=panel_area,
+                    r=MVector{3, Float64}(panel_offset_y * cos(θ), panel_offset_y * sin(θ), 0.0)
+                )
+                push!(links, panel)
+            end
+        end
     end
 
     ra = planet.Rp_e + ra_alt_m
@@ -640,6 +1085,57 @@ function make_spacecraft(
     end
 
     dry_mass = sum(link.m for link in links)
+    return SpacecraftModel(
+        Joint[],
+        links,
+        root,
+        true,
+        dry_mass,
+        prop_mass,
+        root.inertia,
+        0,
+        0,
+        ic,
+        id
+    )
+end
+
+function make_blunted_cone_entry_spacecraft(
+    planet::AbstractPlanet;
+    id::Int=1,
+    gamma_deg::Float64=-11.5,
+    v_mps::Float64=5500.0,
+    h_m::Float64=130e3,
+    i_deg::Float64=51.6,
+    ω_deg::Float64=30.0,
+    Ω_deg::Float64=25.0,
+    root_mass::Float64=320.0,
+    base_radius_m::Float64=0.89,
+    body_length_m::Float64=1.2,
+    reflection_coefficient::Float64=1.0,
+    prop_mass::Float64=0.0
+)::SpacecraftModel
+    base_radius_m > 0.0 || throw(ArgumentError("base_radius_m must be > 0 (got $base_radius_m)."))
+    body_length_m > 0.0 || throw(ArgumentError("body_length_m must be > 0 (got $body_length_m)."))
+
+    entry_oe = _entry_orbital_elements_from_gamma_v_h(
+        planet;
+        gamma_deg=gamma_deg,
+        v_mps=v_mps,
+        h_m=h_m
+    )
+
+    root = Link{0}(
+        root=true,
+        m=root_mass,
+        ref_area=π * base_radius_m^2,
+        dims=MVector{3, Float64}(body_length_m, 2.0 * base_radius_m, 2.0 * base_radius_m),
+        reflection_coefficient=reflection_coefficient
+    )
+    links = Link[root]
+    ic = InitialCondition(entry_oe.a, entry_oe.e, i_deg, ω_deg, Ω_deg, entry_oe.ν_deg)
+    dry_mass = sum(link.m for link in links)
+
     return SpacecraftModel(
         Joint[],
         links,
@@ -675,6 +1171,9 @@ function build_config(;
     mission_time_s::Float64,
     orientation_sim::Bool,
     dynamic_effectors::Tuple,
+    mission_type::MissionType=MissionTime,
+    mission_keplerian::Bool=true,
+    mission_orbits::Int=1,
     density_model=NoAtmosphereModel(),
     guidance_effectors::Tuple=(),
     guidance_rates::Vector{Float64}=Float64[],
@@ -693,9 +1192,9 @@ function build_config(;
             save_csv=false
         ),
         mission_configuration=MissionConfiguration(
-            mission_type=MissionTime,
-            keplerian=true,
-            number_of_orbits=1,
+            mission_type=mission_type,
+            keplerian=mission_keplerian,
+            number_of_orbits=mission_orbits,
             mission_time=mission_time_s,
             orientation_sim=orientation_sim,
             num_steps_to_save=400
@@ -741,6 +1240,32 @@ function _build_earth_gram_surrogate_density()
     isfile(EARTH_GRAM_SURROGATE_FILE) || throw(ArgumentError("GRAM surrogate file not found: $(EARTH_GRAM_SURROGATE_FILE)"))
     base_model = _GRAMOfflineSurrogateFileBase(planet_name="earth")
     return GRAMAtmosphereModelSurrogate(base_model, EARTH_GRAM_SURROGATE_FILE, nothing)
+end
+
+function _build_earth_gram_point_density()
+    gram_root = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0")
+    # GRAM Python bindings can be sensitive to world-age in long-lived Julia sessions.
+    return Base.invokelatest(
+        GRAMAtmosphereModel;
+        gram_directory=gram_root,
+        gram_data_directory=gram_root,
+        spice_directory=SPICE_PATH,
+        planet_name="earth",
+        initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
+    )
+end
+
+function _build_mars_gram_point_density()
+    gram_root = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0")
+    # GRAM Python bindings can be sensitive to world-age in long-lived Julia sessions.
+    return Base.invokelatest(
+        GRAMAtmosphereModel;
+        gram_directory=gram_root,
+        gram_data_directory=gram_root,
+        spice_directory=SPICE_PATH,
+        planet_name="mars",
+        initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
+    )
 end
 
 function make_montecarlo_config(seed::Int, planet::Earth, mission_time_s::Float64)::SimulationConfiguration
@@ -790,10 +1315,193 @@ function make_montecarlo_config(seed::Int, planet::Earth, mission_time_s::Float6
     )
 end
 
+@inline function _montecarlo_scenario_catalog()::Vector{NamedTuple}
+    return NamedTuple[
+        (
+            variant=:mars_aerobraking,
+            name="montecarlo_mars_aerobraking",
+            description="Mars aerobraking mission randomized per seed (aero + MarsGRAM point-to-point)"
+        ),
+        (
+            variant=:multi_sat,
+            name="montecarlo_multi_sat",
+            description="4-spacecraft constellation randomized per seed"
+        ),
+        (
+            variant=:high_accuracy,
+            name="montecarlo_high_accuracy",
+            description="High-accuracy single-spacecraft mission randomized per seed (L50 harmonics)"
+        )
+    ]
+end
+
+@inline function _active_montecarlo_scenarios()::Vector{NamedTuple}
+    return _montecarlo_scenario_catalog()
+end
+
+@inline function _montecarlo_batch_mission_time_s(spec::ProfileSpec, variant::Symbol)::Float64
+    if variant == :mars_aerobraking
+        # Keep Mars aerobraking seeds long enough to include drag-passage behavior.
+        return max(spec.montecarlo_mission_s, spec.mission_long_s)
+    end
+    return spec.montecarlo_mission_s
+end
+
+function make_montecarlo_mars_aerobraking_config(
+    seed::Int,
+    mars::Mars,
+    mission_time_s::Float64
+)::SimulationConfiguration
+    rng = MersenneTwister(seed)
+    ra_alt = 4500e3 + randn(rng) * 220e3
+    rp_alt = clamp(120e3 + randn(rng) * 18e3, 95e3, 180e3)
+    if rp_alt >= ra_alt
+        ra_alt = rp_alt + 120e3
+    end
+
+    sc = make_spacecraft(
+        mars;
+        id=1,
+        with_panel=false,
+        ra_alt_m=ra_alt,
+        rp_alt_m=rp_alt,
+        i_deg=93.0 + randn(rng) * 0.8,
+        ω_deg=80.0 + randn(rng) * 3.0,
+        Ω_deg=30.0 + randn(rng) * 3.0,
+        ν_deg=180.0 + randn(rng) * 10.0
+    )
+
+    return build_config(
+        planet=mars,
+        spacecraft=[sc],
+        mission_time_s=mission_time_s,
+        orientation_sim=false,
+        mission_keplerian=false,
+        dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+        density_model=_perf_mars_gram_point_density_model(),
+        dt_max_orbit=1.0,
+        reltol_orbit=1e-9,
+        abstol_orbit=1e-9
+    )
+end
+
+function make_montecarlo_multi_sat_config(
+    seed::Int,
+    planet::Earth,
+    mission_time_s::Float64
+)::SimulationConfiguration
+    rng = MersenneTwister(seed)
+    spacecraft = SpacecraftModel[]
+    for i in 1:4
+        ra_alt = 540e3 + 20e3 * (i - 1) + randn(rng) * 8e3
+        rp_alt = 470e3 + 15e3 * (i - 1) + randn(rng) * 8e3
+        rp_alt = max(rp_alt, 120e3)
+        if rp_alt >= ra_alt
+            ra_alt = rp_alt + 8e3
+        end
+        ν = 140.0 + 180.0 * (i - 1) / 4 + randn(rng) * 5.0
+        push!(
+            spacecraft,
+            make_spacecraft(
+                planet;
+                id=i,
+                with_panel=false,
+                ra_alt_m=ra_alt,
+                rp_alt_m=rp_alt,
+                i_deg=35.0 + randn(rng) * 0.4,
+                ω_deg=40.0 + randn(rng) * 1.0,
+                Ω_deg=10.0 + randn(rng) * 1.0,
+                ν_deg=ν
+            )
+        )
+    end
+    harmonics20 = _perf_harmonics20_model(planet)
+    return build_config(
+        planet=planet,
+        spacecraft=spacecraft,
+        mission_time_s=mission_time_s,
+        orientation_sim=false,
+        dynamic_effectors=(InverseSquaredGravityModel(), harmonics20),
+        dt_max_orbit=1.0,
+        reltol_orbit=1e-9,
+        abstol_orbit=1e-9
+    )
+end
+
+function make_montecarlo_high_accuracy_config(
+    seed::Int,
+    planet::Earth,
+    mission_time_s::Float64
+)::SimulationConfiguration
+    rng = MersenneTwister(seed)
+    ra_alt = 550e3 + randn(rng) * 12e3
+    rp_alt = 500e3 + randn(rng) * 12e3
+    rp_alt = max(rp_alt, 140e3)
+    if rp_alt >= ra_alt
+        ra_alt = rp_alt + 8e3
+    end
+
+    sc = make_spacecraft(
+        planet;
+        id=1,
+        with_panel=false,
+        ra_alt_m=ra_alt,
+        rp_alt_m=rp_alt,
+        i_deg=35.0 + randn(rng) * 0.3,
+        ω_deg=40.0 + randn(rng) * 0.8,
+        Ω_deg=10.0 + randn(rng) * 0.8,
+        ν_deg=170.0 + randn(rng) * 3.0
+    )
+    harmonics50 = _perf_harmonics50_model(planet)
+    return build_config(
+        planet=planet,
+        spacecraft=[sc],
+        mission_time_s=mission_time_s,
+        orientation_sim=false,
+        dynamic_effectors=(InverseSquaredGravityModel(), harmonics50),
+        dt_max_orbit=0.5,
+        reltol_orbit=1e-10,
+        abstol_orbit=1e-10
+    )
+end
+
+function make_montecarlo_case(
+    seed::Int,
+    mission_time_s::Float64,
+    variant::Symbol,
+    planet::Earth;
+    mars::Union{Nothing, Mars}=nothing
+)::BenchmarkCase
+    catalog = _active_montecarlo_scenarios()
+    scenario_idx = findfirst(s -> s.variant == variant, catalog)
+    scenario_idx === nothing && throw(ArgumentError("Unsupported Monte Carlo scenario variant '$variant'."))
+    scenario_meta = catalog[scenario_idx]
+
+    args_template = if variant == :mars_aerobraking
+        mars_planet = isnothing(mars) ? perf_worker_mars() : mars
+        make_montecarlo_mars_aerobraking_config(seed, mars_planet, mission_time_s)
+    elseif variant == :multi_sat
+        make_montecarlo_multi_sat_config(seed, planet, mission_time_s)
+    elseif variant == :high_accuracy
+        make_montecarlo_high_accuracy_config(seed, planet, mission_time_s)
+    else
+        throw(ArgumentError("Unsupported Monte Carlo scenario variant '$variant'."))
+    end
+
+    return BenchmarkCase(
+        name=scenario_meta.name,
+        category="montecarlo",
+        description=scenario_meta.description,
+        args_template=args_template,
+        run_in_quick=true
+    )
+end
+
 function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
     harmonics20 = GravitationalHarmonicsModel(20, 20, EARTH_HARMONICS_FILE, planet)
     harmonics50 = GravitationalHarmonicsModel(50, 50, EARTH_HARMONICS_FILE, planet)
     nbody_sun_moon = NBodyGravityModel(body_names=("Sun", "Moon"), primary_body_name="Earth", planet=planet)
+    mars = Mars("", SPICE_PATH)
 
     q0 = normalize(SVector{4, Float64}(0.15, -0.05, 0.2, 0.96))
     w0 = SVector{3, Float64}(0.01, -0.02, 0.015)
@@ -801,7 +1509,62 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
     w1 = SVector{3, Float64}(0.012, -0.018, 0.02)
 
     sc_baseline = [make_spacecraft(planet; id=1, with_panel=false)]
-    sc_orientation = [make_spacecraft(planet; id=1, with_panel=true, orientation_state=(q0, w0))]
+    sc_orientation = [make_spacecraft(planet; id=1, with_panel=true, panel_count=4, orientation_state=(q0, w0))]
+    sc_entry_shallow = [make_blunted_cone_entry_spacecraft(
+        planet;
+        id=1,
+        gamma_deg=-8.5,
+        v_mps=5200.0,
+        h_m=135e3,
+        root_mass=320.0,
+        base_radius_m=0.89,
+        body_length_m=1.2,
+        prop_mass=0.0,
+        i_deg=51.6,
+        ω_deg=30.0,
+        Ω_deg=25.0
+    )]
+    sc_entry_nominal = [make_blunted_cone_entry_spacecraft(
+        planet;
+        id=1,
+        gamma_deg=-11.5,
+        v_mps=5500.0,
+        h_m=130e3,
+        root_mass=320.0,
+        base_radius_m=0.89,
+        body_length_m=1.2,
+        prop_mass=0.0,
+        i_deg=51.6,
+        ω_deg=30.0,
+        Ω_deg=25.0
+    )]
+    sc_entry_steep = [make_blunted_cone_entry_spacecraft(
+        planet;
+        id=1,
+        gamma_deg=-14.5,
+        v_mps=5800.0,
+        h_m=125e3,
+        root_mass=320.0,
+        base_radius_m=0.89,
+        body_length_m=1.2,
+        prop_mass=0.0,
+        i_deg=51.6,
+        ω_deg=30.0,
+        Ω_deg=25.0
+    )]
+    sc_mars_aerobrake = [make_spacecraft(
+        mars;
+        id=1,
+        with_panel=false,
+        ra_alt_m=4500e3,
+        rp_alt_m=120e3,
+        i_deg=93.0,
+        ω_deg=80.0,
+        Ω_deg=30.0,
+        ν_deg=180.0
+    )]
+    earth_gram_point_density = _build_earth_gram_point_density()
+    mars_gram_point_density = _build_mars_gram_point_density()
     earth_gram_surrogate_density = _build_earth_gram_surrogate_density()
     multi_scaling_effectors = (InverseSquaredGravityModel(), harmonics20)
     sc_proximity_fullstack = [
@@ -859,7 +1622,7 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
         BenchmarkCase(
             name="single_orientation_aero",
             category="orientation",
-            description="1 spacecraft, orientation dynamics on, aerodynamic model active",
+            description="1 spacecraft (5-body), orientation dynamics on, aerodynamic model active",
             args_template=build_config(
                 planet=planet,
                 spacecraft=sc_orientation,
@@ -867,6 +1630,51 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 orientation_sim=true,
                 dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM())
             )
+        ),
+        BenchmarkCase(
+            name="single_entry_earth_shallow",
+            category="entry",
+            description="1 blunted-cone entry spacecraft, Earth shallow entry from gamma/v/h (target 1 entry interface downcrossing, drag + aero, Earth GRAM point-to-point)",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_entry_shallow,
+                mission_time_s=max(spec.mission_short_s, 2400.0),
+                orientation_sim=false,
+                dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+                density_model=deepcopy(earth_gram_point_density),
+                dt_max_orbit=0.5
+            ),
+            entry_target_count_override=1
+        ),
+        BenchmarkCase(
+            name="single_entry_earth_nominal",
+            category="entry",
+            description="1 blunted-cone entry spacecraft, Earth nominal entry from gamma/v/h (target 1 entry interface downcrossing, drag + aero, Earth GRAM point-to-point)",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_entry_nominal,
+                mission_time_s=max(spec.mission_short_s, 1800.0),
+                orientation_sim=false,
+                dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+                density_model=deepcopy(earth_gram_point_density),
+                dt_max_orbit=0.5
+            ),
+            entry_target_count_override=1
+        ),
+        BenchmarkCase(
+            name="single_entry_earth_steep",
+            category="entry",
+            description="1 blunted-cone entry spacecraft, Earth steep entry from gamma/v/h (target 1 entry interface downcrossing, drag + aero, Earth GRAM point-to-point)",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_entry_steep,
+                mission_time_s=max(spec.mission_short_s, 1200.0),
+                orientation_sim=false,
+                dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+                density_model=deepcopy(earth_gram_point_density),
+                dt_max_orbit=0.25
+            ),
+            entry_target_count_override=1
         ),
         BenchmarkCase(
             name="multi_4_gravity",
@@ -952,13 +1760,13 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
         BenchmarkCase(
             name="single_nbody_sun_moon",
             category="dynamics_fidelity",
-            description="1 spacecraft, inverse-square gravity + N-body Sun/Moon perturbations",
+            description="1 spacecraft, J2 gravity + N-body Sun/Moon perturbations",
             args_template=build_config(
                 planet=planet,
                 spacecraft=sc_baseline,
                 mission_time_s=spec.mission_short_s,
                 orientation_sim=false,
-                dynamic_effectors=(InverseSquaredGravityModel(), nbody_sun_moon),
+                dynamic_effectors=(InverseSquaredJ2GravityModel(), nbody_sun_moon),
                 dt_max_orbit=10.0
             )
         ),
@@ -972,8 +1780,7 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 mission_time_s=spec.mission_short_s,
                 orientation_sim=false,
                 dynamic_effectors=(InverseSquaredGravityModel(), harmonics20)
-            ),
-            run_in_quick=false
+            )
         ),
         BenchmarkCase(
             name="single_harmonics_l50",
@@ -1008,18 +1815,96 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
         BenchmarkCase(
             name="single_baseline_long_mission",
             category="mission_length",
-            description="1 spacecraft baseline gravity with longer mission duration",
+            description="1 spacecraft Mars aerobraking-style long mission (10 orbits, atmospheric drag + aero, MarsGRAM point-to-point)",
             args_template=build_config(
-                planet=planet,
-                spacecraft=sc_baseline,
+                planet=mars,
+                spacecraft=sc_mars_aerobrake,
                 mission_time_s=spec.mission_long_s,
                 orientation_sim=false,
-                dynamic_effectors=(InverseSquaredGravityModel(),)
+                mission_type=MissionOrbits,
+                mission_keplerian=false,
+                mission_orbits=10,
+                dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+                density_model=deepcopy(mars_gram_point_density),
+                dt_max_orbit=1.0
             )
         )
     ]
 
     return cases
+end
+
+@inline function _split_variant_case_name(base::AbstractString, solver::AbstractString)::String
+    return string(base, "__split_imex_", lowercase(String(solver)))
+end
+
+@inline function _split_base_scenario_name(name::AbstractString)::String
+    token = "__split_imex_"
+    idx = findfirst(token, String(name))
+    if idx === nothing
+        return String(name)
+    end
+    start_idx = first(idx)
+    return String(name)[1:(start_idx - 1)]
+end
+
+@inline function _split_is_variant_case(name::AbstractString)::Bool
+    return occursin("__split_imex_", String(name))
+end
+
+function _split_rollout_benchmark_cases(cases::Vector{BenchmarkCase})::Vector{BenchmarkCase}
+    if !_split_rollout_enabled()
+        return cases
+    end
+    target_names = Set(_split_rollout_case_names())
+    split_solvers = _split_rollout_solver_variants()
+    expanded = copy(cases)
+    for case in cases
+        if !(case.name in target_names)
+            continue
+        end
+        for split_solver in split_solvers
+            push!(expanded, BenchmarkCase(
+                name=_split_variant_case_name(case.name, split_solver),
+                category=case.category,
+                description=string(case.description, " [split_imex:", split_solver, "]"),
+                args_template=case.args_template,
+                run_in_quick=case.run_in_quick,
+                solver_mode_override="split_imex",
+                split_imex_solver_override=split_solver,
+                entry_target_count_override=case.entry_target_count_override
+            ))
+        end
+    end
+    return expanded
+end
+
+@inline function _multirate_variant_case_name(base::AbstractString)::String
+    return string(base, "__multirate")
+end
+
+function _multirate_rollout_benchmark_cases(cases::Vector{BenchmarkCase})::Vector{BenchmarkCase}
+    if !_multirate_rollout_enabled()
+        return cases
+    end
+    target_names = Set(_multirate_rollout_case_names())
+    expanded = copy(cases)
+    for case in cases
+        if !(case.name in target_names)
+            continue
+        end
+        push!(expanded, BenchmarkCase(
+            name=_multirate_variant_case_name(case.name),
+            category=case.category,
+            description=string(case.description, " [multirate]"),
+            args_template=case.args_template,
+            run_in_quick=case.run_in_quick,
+            solver_mode_override="multirate",
+            split_imex_solver_override=nothing,
+            entry_target_count_override=case.entry_target_count_override
+        ))
+    end
+    return expanded
 end
 
 function measure_case(
@@ -1035,6 +1920,7 @@ function measure_case(
     n_sats = length(args_meta.dynamics_model.spacecraft)
     mission_time_s = args_meta.mission_configuration.mission_time
     resolved_plan = isnothing(plan) ? ParallelPriorityPlan() : plan
+    hardware = _runtime_hardware_snapshot()
 
     GC.gc()
     copy_timed = @timed deepcopy(case.args_template)
@@ -1048,7 +1934,9 @@ function measure_case(
                 return_solution=true,
                 return_solver_metadata=true,
                 profile_name=profile_name,
-                solver_mode_override=case.solver_mode_override
+                solver_mode_override=case.solver_mode_override,
+                split_imex_solver_override=case.split_imex_solver_override,
+                entry_target_count_override=case.entry_target_count_override
             )
             (ok=true, result=result, err=nothing, bt=nothing)
         catch err
@@ -1100,6 +1988,9 @@ function measure_case(
     planet_pxform_runtime_calls = missing
     planet_pxform_cache_build_calls = missing
     planet_pxform_total_calls = missing
+    final_primary_pos_norm_m = missing
+    final_primary_vel_norm_mps = missing
+    final_primary_mass_kg = missing
 
     solve_payload = solve_timed.value
     if solve_payload.ok
@@ -1113,12 +2004,16 @@ function measure_case(
         fallback_triggers = [meta.trigger_retcode for meta in solver_trace if !(meta.trigger_retcode isa Missing)]
         solver_fallback_trigger = isempty(fallback_triggers) ? missing : _safe_unique_join(fallback_triggers; delimiter="|")
         solve_retcode = string(sol.retcode)
-        solve_success = _solve_success(sol)
+        solve_success = _solve_success_for_case(sol, case)
         saved_points = length(sol.t)
         accepted_steps = _destat_int(sol, :naccept)
         rejected_steps = _destat_int(sol, :nreject)
         sim_seconds_per_wall_second = _safe_div(mission_time_s, total_time_s)
         satellite_sim_seconds_per_wall_second = _safe_div(mission_time_s * n_sats, total_time_s)
+        terminal = _primary_terminal_state_metrics(sol)
+        final_primary_pos_norm_m = terminal.pos_norm_m
+        final_primary_vel_norm_mps = terminal.vel_norm_mps
+        final_primary_mass_kg = terminal.mass_kg
         if hasproperty(solve_result, :parallel_policy)
             snapshot = solve_result.parallel_policy
             if !(snapshot isa Nothing)
@@ -1156,6 +2051,14 @@ function measure_case(
 
     return (
         profile=profile_name,
+        hardware_class=hardware.hardware_class,
+        machine_label=hardware.machine_label,
+        host_name=hardware.host_name,
+        cpu_name=hardware.cpu_name,
+        cpu_threads=hardware.cpu_threads,
+        julia_threads=hardware.julia_threads,
+        os=hardware.os,
+        arch=hardware.arch,
         category=case.category,
         scenario=case.name,
         description=case.description,
@@ -1180,6 +2083,7 @@ function measure_case(
         copy_gctime_s=copy_timed.gctime,
         solve_gctime_s=solve_timed.gctime,
         solver_mode=solver_mode,
+        split_imex_solver_override=isnothing(case.split_imex_solver_override) ? missing : String(case.split_imex_solver_override),
         solver_sequence=solver_sequence,
         solver_fallback_used=solver_fallback_used,
         solver_fallback_count=solver_fallback_count,
@@ -1209,6 +2113,9 @@ function measure_case(
         planet_pxform_runtime_calls=planet_pxform_runtime_calls,
         planet_pxform_cache_build_calls=planet_pxform_cache_build_calls,
         planet_pxform_total_calls=planet_pxform_total_calls,
+        final_primary_pos_norm_m=final_primary_pos_norm_m,
+        final_primary_vel_norm_mps=final_primary_vel_norm_mps,
+        final_primary_mass_kg=final_primary_mass_kg,
         sim_seconds_per_wall_second=sim_seconds_per_wall_second,
         satellite_sim_seconds_per_wall_second=satellite_sim_seconds_per_wall_second,
         timestamp_utc=timestamp_utc
@@ -1229,7 +2136,9 @@ function run_warmup(case::BenchmarkCase, warmup::Int, profile_name::String)
                 args_run;
                 return_solution=false,
                 profile_name=profile_name,
-                solver_mode_override=case.solver_mode_override
+                solver_mode_override=case.solver_mode_override,
+                split_imex_solver_override=case.split_imex_solver_override,
+                entry_target_count_override=case.entry_target_count_override
             )
             warmup_elapsed_s = (time_ns() - warmup_started_ns) / 1e9
             if log_warmup
@@ -1284,7 +2193,8 @@ function _run_case_batch_core!(
     println(
         "[$idx/$total] $(case.name) :: warmup x$(warmup_count), repeats x$(repeat_count), " *
         "outer=$(plan.outer_route), density=$(plan.density_mode), control=$(plan.control_mode), multibody=$(plan.multibody_mode), " *
-        "solver_override=$(isnothing(case.solver_mode_override) ? "none" : case.solver_mode_override)"
+        "solver_override=$(isnothing(case.solver_mode_override) ? "none" : case.solver_mode_override), " *
+        "split_override=$(isnothing(case.split_imex_solver_override) ? "none" : case.split_imex_solver_override)"
     )
     run_warmup(case, warmup_count, spec.name)
     for rep in 1:repeat_count
@@ -1335,17 +2245,13 @@ function measure_montecarlo_seed(
     planet::Earth,
     mission_time_s::Float64,
     seed::Int;
+    variant::Symbol=:high_accuracy,
+    mars::Union{Nothing, Mars}=nothing,
     outer_route::Symbol=:none,
     plan::Union{Nothing, ParallelPriorityPlan}=nothing,
     apply_env::Bool=true
 )
-    case = BenchmarkCase(
-        name="montecarlo_randomized",
-        category="montecarlo",
-        description="Randomized initial conditions + thruster, one run per seed",
-        args_template=make_montecarlo_config(seed, planet, mission_time_s),
-        run_in_quick=true
-    )
+    case = make_montecarlo_case(seed, mission_time_s, variant, planet; mars=mars)
     resolved_plan = isnothing(plan) ? parallel_priority_plan(case, outer_route) : plan
     run_seed = () -> begin
         last_row = nothing
@@ -1371,16 +2277,12 @@ function perf_worker_montecarlo_warmup(
     spec::ProfileSpec,
     mission_time_s::Float64,
     seed::Int,
+    variant::Symbol,
     outer_route::Symbol=:process
 )
     planet = perf_worker_planet()
-    warmup_case = BenchmarkCase(
-        name="montecarlo_randomized",
-        category="montecarlo",
-        description="Randomized initial conditions + thruster, one run per seed",
-        args_template=make_montecarlo_config(seed, planet, mission_time_s),
-        run_in_quick=true
-    )
+    mars = perf_worker_mars()
+    warmup_case = make_montecarlo_case(seed, mission_time_s, variant, planet; mars=mars)
     plan = parallel_priority_plan(warmup_case, outer_route)
     env_pairs = parallel_priority_env_pairs(plan)
     withenv(env_pairs...) do
@@ -1393,10 +2295,20 @@ function perf_worker_measure_montecarlo_seed(
     spec::ProfileSpec,
     mission_time_s::Float64,
     seed::Int,
+    variant::Symbol,
     outer_route::Symbol=:process
 )
     planet = perf_worker_planet()
-    return measure_montecarlo_seed(spec, planet, mission_time_s, seed; outer_route=outer_route)
+    mars = perf_worker_mars()
+    return measure_montecarlo_seed(
+        spec,
+        planet,
+        mission_time_s,
+        seed;
+        variant=variant,
+        mars=mars,
+        outer_route=outer_route
+    )
 end
 
 function perf_worker_run_case_batch(
@@ -1423,102 +2335,121 @@ end
 
 function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, planet::Earth)
     seeds = collect(1001:(1000 + spec.montecarlo_samples))
-    warmup_case = BenchmarkCase(
-        name="montecarlo_randomized",
-        category="montecarlo",
-        description="Randomized initial conditions + thruster, one run per seed",
-        args_template=make_montecarlo_config(first(seeds), planet, spec.montecarlo_mission_s),
-        run_in_quick=true
-    )
-    println("[montecarlo] warmup x$(spec.warmup), seeds=$(length(seeds))")
+    scenarios = _active_montecarlo_scenarios()
+    scenario_names = join([s.name for s in scenarios], ", ")
+    println("[montecarlo] warmup x$(spec.warmup), seeds=$(length(seeds)), scenarios=$(scenario_names)")
 
     backend = perf_parallel_backend()
-    mc_backend = backend == :auto ? :process : backend
-    if mc_backend == :process
-        ensure_perf_workers!()
-        warmup_seed = first(seeds)
-        for w in workers()
-            remotecall_wait(perf_worker_montecarlo_warmup, w, spec, spec.montecarlo_mission_s, warmup_seed, :process)
-        end
-    else
-        plan = parallel_priority_plan(warmup_case, mc_backend)
-        env_pairs = parallel_priority_env_pairs(plan)
-        withenv(env_pairs...) do
-            run_warmup(warmup_case, spec.warmup, spec.name)
-        end
-    end
+    mars = perf_worker_mars()
 
-    seed_rows = Vector{NamedTuple}(undef, length(seeds))
-    seed_msgs = Vector{String}(undef, length(seeds))
+    for scenario in scenarios
+        variant = scenario.variant
+        mission_time_s = _montecarlo_batch_mission_time_s(spec, variant)
+        warmup_case = make_montecarlo_case(first(seeds), mission_time_s, variant, planet; mars=mars)
+        println("  scenario $(scenario.name) (mission_time=$(round(mission_time_s; digits=1)) s)")
 
-    if mc_backend == :process
-        seed_results = pmap(seed -> perf_worker_measure_montecarlo_seed(spec, spec.montecarlo_mission_s, seed, :process), seeds)
-        for i in eachindex(seeds)
-            seed = seeds[i]
-            row, err = seed_results[i]
-            seed_rows[i] = row
-            if row.solve_success
-                seed_msgs[i] = "  seed $(i)/$(length(seeds))=$(seed): total=$(round(row.total_time_s; digits=3)) s"
-            else
-                seed_msgs[i] = "  seed $(i)/$(length(seeds))=$(seed): $(err)"
+        mc_backend = backend == :auto ? auto_backend_for_case(warmup_case; spec=spec) : backend
+        if mc_backend == :process
+            ensure_perf_workers!()
+            warmup_seed = first(seeds)
+            for w in workers()
+                remotecall_wait(perf_worker_montecarlo_warmup, w, spec, mission_time_s, warmup_seed, variant, :process)
+            end
+        else
+            plan = parallel_priority_plan(warmup_case, mc_backend)
+            env_pairs = parallel_priority_env_pairs(plan)
+            withenv(env_pairs...) do
+                run_warmup(warmup_case, spec.warmup, spec.name)
             end
         end
-    elseif mc_backend == :threads
-        threaded_plan = parallel_priority_plan(warmup_case, :threads)
-        threaded_env = parallel_priority_env_pairs(threaded_plan)
-        withenv(threaded_env...) do
-            Threads.@threads for i in eachindex(seeds)
+
+        seed_rows = Vector{NamedTuple}(undef, length(seeds))
+        seed_msgs = Vector{String}(undef, length(seeds))
+
+        if mc_backend == :process
+            seed_results = pmap(seed -> perf_worker_measure_montecarlo_seed(spec, mission_time_s, seed, variant, :process), seeds)
+            for i in eachindex(seeds)
+                seed = seeds[i]
+                row, err = seed_results[i]
+                seed_rows[i] = row
+                if row.solve_success
+                    seed_msgs[i] = "    seed $(i)/$(length(seeds))=$(seed): total=$(round(row.total_time_s; digits=3)) s"
+                else
+                    seed_msgs[i] = "    seed $(i)/$(length(seeds))=$(seed): $(err)"
+                end
+            end
+        elseif mc_backend == :threads
+            threaded_plan = parallel_priority_plan(warmup_case, :threads)
+            threaded_env = parallel_priority_env_pairs(threaded_plan)
+            withenv(threaded_env...) do
+                Threads.@threads for i in eachindex(seeds)
+                    seed = seeds[i]
+                    row, err = measure_montecarlo_seed(
+                        spec,
+                        planet,
+                        mission_time_s,
+                        seed;
+                        variant=variant,
+                        mars=mars,
+                        outer_route=:threads,
+                        plan=threaded_plan,
+                        apply_env=false
+                    )
+                    seed_rows[i] = row
+                    if row.solve_success
+                        seed_msgs[i] = "    seed $(i)/$(length(seeds))=$(seed): total=$(round(row.total_time_s; digits=3)) s"
+                    else
+                        seed_msgs[i] = "    seed $(i)/$(length(seeds))=$(seed): $(err)"
+                    end
+                end
+            end
+        else
+            for i in eachindex(seeds)
                 seed = seeds[i]
                 row, err = measure_montecarlo_seed(
                     spec,
                     planet,
-                    spec.montecarlo_mission_s,
+                    mission_time_s,
                     seed;
-                    outer_route=:threads,
-                    plan=threaded_plan,
-                    apply_env=false
+                    variant=variant,
+                    mars=mars,
+                    outer_route=:none
                 )
                 seed_rows[i] = row
                 if row.solve_success
-                    seed_msgs[i] = "  seed $(i)/$(length(seeds))=$(seed): total=$(round(row.total_time_s; digits=3)) s"
+                    seed_msgs[i] = "    seed $(i)/$(length(seeds))=$(seed): total=$(round(row.total_time_s; digits=3)) s"
                 else
-                    seed_msgs[i] = "  seed $(i)/$(length(seeds))=$(seed): $(err)"
+                    seed_msgs[i] = "    seed $(i)/$(length(seeds))=$(seed): $(err)"
                 end
             end
         end
-    else
-        for i in eachindex(seeds)
-            seed = seeds[i]
-            row, err = measure_montecarlo_seed(spec, planet, spec.montecarlo_mission_s, seed; outer_route=:none)
-            seed_rows[i] = row
-            if row.solve_success
-                seed_msgs[i] = "  seed $(i)/$(length(seeds))=$(seed): total=$(round(row.total_time_s; digits=3)) s"
-            else
-                seed_msgs[i] = "  seed $(i)/$(length(seeds))=$(seed): $(err)"
-            end
-        end
-    end
 
-    for i in eachindex(seeds)
-        push!(rows, seed_rows[i])
-        println(seed_msgs[i])
+        for i in eachindex(seeds)
+            push!(rows, seed_rows[i])
+            println(seed_msgs[i])
+        end
+        _record_outer_route_feedback!(warmup_case, seed_rows; route=mc_backend)
     end
     return nothing
 end
 
 function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet::Earth)::DataFrame
     selected = spec.name == "full" ? cases : [c for c in cases if c.run_in_quick]
+    selected = _split_rollout_benchmark_cases(selected)
+    selected = _multirate_rollout_benchmark_cases(selected)
     rows = NamedTuple[]
     total = length(selected)
     backend = perf_parallel_backend()
     if backend == :auto
         case_rows = Vector{Vector{NamedTuple}}(undef, total)
+        chosen_routes = fill(:none, total)
         process_tasks = Tuple{Int, BenchmarkCase}[]
         thread_indices = Int[]
         serial_indices = Int[]
 
         for (idx, case) in enumerate(selected)
-            route = auto_backend_for_case(case)
+            route = auto_backend_for_case(case; spec=spec)
+            chosen_routes[idx] = route
             if route == :process
                 push!(process_tasks, (idx, case))
             elseif route == :threads
@@ -1569,6 +2500,7 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
         end
 
         for idx in eachindex(case_rows)
+            _record_outer_route_feedback!(selected[idx], case_rows[idx]; route=chosen_routes[idx])
             append!(rows, case_rows[idx])
         end
     elseif backend == :process
@@ -1579,6 +2511,7 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
             perf_worker_run_case_batch(case, spec, idx, total, :process)
         end
         for idx in eachindex(case_rows)
+            _record_outer_route_feedback!(selected[idx], case_rows[idx]; route=:process)
             append!(rows, case_rows[idx])
         end
     elseif backend == :threads
@@ -1604,11 +2537,15 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
             end
         end
         for idx in eachindex(case_rows)
+            _record_outer_route_feedback!(selected[idx], case_rows[idx]; route=:threads)
             append!(rows, case_rows[idx])
         end
     else
         for (idx, case) in enumerate(selected)
-            run_case_batch!(rows, case, spec, idx, total; outer_route=:none)
+            local_rows = NamedTuple[]
+            run_case_batch!(local_rows, case, spec, idx, total; outer_route=:none)
+            _record_outer_route_feedback!(case, local_rows; route=:none)
+            append!(rows, local_rows)
         end
     end
 
@@ -1659,13 +2596,15 @@ function measure_per_orbit_scenario(
             description=base_case.description,
             args_template=args_template,
             run_in_quick=base_case.run_in_quick,
-            solver_mode_override=base_case.solver_mode_override
+            solver_mode_override=base_case.solver_mode_override,
+            split_imex_solver_override=base_case.split_imex_solver_override,
+            entry_target_count_override=base_case.entry_target_count_override
         )
 
         plan = parallel_priority_plan(case, outer_route)
         run_case = () -> begin
             if stream_logs
-                println("    orbit=$(orbit_count): warmup x$(spec.warmup), repeats x$(spec.repeats)")
+                println("    mission_time_multiplier=x$(orbit_count): warmup x$(spec.warmup), repeats x$(spec.repeats)")
                 flush(stdout)
             end
             run_warmup(case, spec.warmup, spec.name)
@@ -1677,13 +2616,14 @@ function measure_per_orbit_scenario(
                         row,
                         (
                             orbit_count=orbit_count,
+                            mission_time_multiplier=orbit_count,
                             orbital_period_s=period_s
                         )
                     )
                     last_row = row_orbit
                     if row_orbit.solve_success
                         push!(rows, row_orbit)
-                        line = "    orbit=$(orbit_count) repeat $(rep)/$(spec.repeats): total=$(round(row_orbit.total_time_s; digits=3)) s"
+                        line = "    mission_time_multiplier=x$(orbit_count) repeat $(rep)/$(spec.repeats): total=$(round(row_orbit.total_time_s; digits=3)) s"
                         push!(logs, line)
                         if stream_logs
                             println(line)
@@ -1694,7 +2634,7 @@ function measure_per_orbit_scenario(
                 end
                 if !(last_row === nothing) && !last_row.solve_success
                     push!(rows, last_row)
-                    line = "    orbit=$(orbit_count) repeat $(rep)/$(spec.repeats): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)"
+                    line = "    mission_time_multiplier=x$(orbit_count) repeat $(rep)/$(spec.repeats): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)"
                     push!(logs, line)
                     if stream_logs
                         println(line)
@@ -1723,56 +2663,80 @@ function run_montecarlo_per_orbit!(
     orbit_counts::Vector{Int}
 )
     seeds = collect(1:spec.montecarlo_samples)
-    println("  scenario montecarlo_randomized (per-orbit, seeds=$(length(seeds)))")
+    scenarios = _active_montecarlo_scenarios()
+    scenario_names = join([s.name for s in scenarios], ", ")
+    println("  montecarlo scenarios (mission-time sweep, seeds=$(length(seeds))): $(scenario_names)")
     backend = perf_parallel_backend()
-    mc_backend = backend == :auto ? :process : backend
+    mars = perf_worker_mars()
+    workers_ready = false
 
-    if mc_backend == :process
-        ensure_perf_workers!()
-    end
-
-    for orbit_count in orbit_counts
-        mission_time = orbit_count * period_s
-        println("    orbit=$(orbit_count)")
-        orbit_rows = Vector{NamedTuple}(undef, length(seeds))
-        orbit_msgs = Vector{String}(undef, length(seeds))
-
-        if mc_backend == :process
-            seed_results = pmap(seed -> perf_worker_measure_montecarlo_seed(spec, mission_time, seed, :process), seeds)
-            for i in eachindex(seeds)
-                seed = seeds[i]
-                row, err = seed_results[i]
-                row_orbit = merge(row, (orbit_count=orbit_count, orbital_period_s=period_s))
-                orbit_rows[i] = row_orbit
-                if row_orbit.solve_success
-                    orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): total=$(round(row_orbit.total_time_s; digits=3)) s"
-                else
-                    orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): $(err)"
-                end
+    for scenario in scenarios
+        variant = scenario.variant
+        println("  scenario $(scenario.name)")
+        for orbit_count in orbit_counts
+            mission_time = orbit_count * period_s
+            orbit_case = make_montecarlo_case(first(seeds), mission_time, variant, planet; mars=mars)
+            mc_backend = backend == :auto ? auto_backend_for_case(orbit_case; spec=spec) : backend
+            if mc_backend == :process && !workers_ready
+                ensure_perf_workers!()
+                workers_ready = true
             end
-        elseif mc_backend == :threads
-            warmup_case = BenchmarkCase(
-                name="montecarlo_randomized",
-                category="montecarlo",
-                description="Randomized initial conditions + thruster, one run per seed",
-                args_template=make_montecarlo_config(first(seeds), planet, mission_time),
-                run_in_quick=true
-            )
-            threaded_plan = parallel_priority_plan(warmup_case, :threads)
-            threaded_env = parallel_priority_env_pairs(threaded_plan)
-            withenv(threaded_env...) do
-                Threads.@threads for i in eachindex(seeds)
+            println("    mission_time_multiplier=x$(orbit_count)")
+            orbit_rows = Vector{NamedTuple}(undef, length(seeds))
+            orbit_msgs = Vector{String}(undef, length(seeds))
+
+            if mc_backend == :process
+                seed_results = pmap(seed -> perf_worker_measure_montecarlo_seed(spec, mission_time, seed, variant, :process), seeds)
+                for i in eachindex(seeds)
+                    seed = seeds[i]
+                    row, err = seed_results[i]
+                    row_orbit = merge(row, (orbit_count=orbit_count, mission_time_multiplier=orbit_count, orbital_period_s=period_s))
+                    orbit_rows[i] = row_orbit
+                    if row_orbit.solve_success
+                        orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): total=$(round(row_orbit.total_time_s; digits=3)) s"
+                    else
+                        orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): $(err)"
+                    end
+                end
+            elseif mc_backend == :threads
+                threaded_plan = parallel_priority_plan(orbit_case, :threads)
+                threaded_env = parallel_priority_env_pairs(threaded_plan)
+                withenv(threaded_env...) do
+                    Threads.@threads for i in eachindex(seeds)
+                        seed = seeds[i]
+                        row, err = measure_montecarlo_seed(
+                            spec,
+                            planet,
+                            mission_time,
+                            seed;
+                            variant=variant,
+                            mars=mars,
+                            outer_route=:threads,
+                            plan=threaded_plan,
+                            apply_env=false
+                        )
+                        row_orbit = merge(row, (orbit_count=orbit_count, mission_time_multiplier=orbit_count, orbital_period_s=period_s))
+                        orbit_rows[i] = row_orbit
+                        if row_orbit.solve_success
+                            orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): total=$(round(row_orbit.total_time_s; digits=3)) s"
+                        else
+                            orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): $(err)"
+                        end
+                    end
+                end
+            else
+                for i in eachindex(seeds)
                     seed = seeds[i]
                     row, err = measure_montecarlo_seed(
                         spec,
                         planet,
                         mission_time,
                         seed;
-                        outer_route=:threads,
-                        plan=threaded_plan,
-                        apply_env=false
+                        variant=variant,
+                        mars=mars,
+                        outer_route=:none
                     )
-                    row_orbit = merge(row, (orbit_count=orbit_count, orbital_period_s=period_s))
+                    row_orbit = merge(row, (orbit_count=orbit_count, mission_time_multiplier=orbit_count, orbital_period_s=period_s))
                     orbit_rows[i] = row_orbit
                     if row_orbit.solve_success
                         orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): total=$(round(row_orbit.total_time_s; digits=3)) s"
@@ -1781,23 +2745,12 @@ function run_montecarlo_per_orbit!(
                     end
                 end
             end
-        else
-            for i in eachindex(seeds)
-                seed = seeds[i]
-                row, err = measure_montecarlo_seed(spec, planet, mission_time, seed; outer_route=:none)
-                row_orbit = merge(row, (orbit_count=orbit_count, orbital_period_s=period_s))
-                orbit_rows[i] = row_orbit
-                if row_orbit.solve_success
-                    orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): total=$(round(row_orbit.total_time_s; digits=3)) s"
-                else
-                    orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): $(err)"
-                end
-            end
-        end
 
-        for i in eachindex(seeds)
-            push!(rows, orbit_rows[i])
-            println(orbit_msgs[i])
+            for i in eachindex(seeds)
+                push!(rows, orbit_rows[i])
+                println(orbit_msgs[i])
+            end
+            _record_outer_route_feedback!(orbit_case, orbit_rows; route=mc_backend)
         end
     end
     return nothing
@@ -1807,21 +2760,30 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
     period_s = orbital_period_seconds(baseline_sc, planet)
     orbit_counts = spec.name == "full" ? collect(1:5) : collect(1:3)
     include_control_stress = _include_control_stress_per_orbit()
-    selected = include_control_stress ? selected_cases(spec, cases) : [c for c in selected_cases(spec, cases) if c.category != "control_stress"]
+    selected_base = include_control_stress ? selected_cases(spec, cases) : [c for c in selected_cases(spec, cases) if c.category != "control_stress"]
+    # Entry scenarios use entry-interface counting semantics, not baseline-period multipliers.
+    selected = [c for c in selected_base if c.category != "entry"]
+    excluded_entry = length(selected_base) - length(selected)
 
-    println("[per-orbit] scenarios=$(length(selected)), baseline period=$(round(period_s; digits=3)) s, orbit counts=$(first(orbit_counts)):$(last(orbit_counts)), include_control_stress=$(include_control_stress)")
+    println(
+        "[mission-time-sweep] scenarios=$(length(selected)), baseline period=$(round(period_s; digits=3)) s, " *
+        "multipliers=x$(first(orbit_counts)):x$(last(orbit_counts)), include_control_stress=$(include_control_stress), " *
+        "entry_excluded=$(excluded_entry)"
+    )
     rows = NamedTuple[]
     backend = perf_parallel_backend()
 
     if backend == :auto
         scenario_rows = Vector{Vector{NamedTuple}}(undef, length(selected))
         scenario_logs = Vector{Vector{String}}(undef, length(selected))
+        chosen_routes = fill(:none, length(selected))
         process_tasks = Tuple{Int, BenchmarkCase}[]
         thread_indices = Int[]
         serial_indices = Int[]
 
         for (idx, base_case) in enumerate(selected)
-            route = auto_backend_for_case(base_case)
+            route = auto_backend_for_case(base_case; spec=spec)
+            chosen_routes[idx] = route
             if route == :process
                 push!(process_tasks, (idx, base_case))
             elseif route == :threads
@@ -1873,6 +2835,7 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
 
         for (idx, base_case) in enumerate(selected)
             println("  scenario $(idx)/$(length(selected)) = $(base_case.name)")
+            _record_outer_route_feedback!(base_case, scenario_rows[idx]; route=chosen_routes[idx])
             append!(rows, scenario_rows[idx])
             for log_line in scenario_logs[idx]
                 println(log_line)
@@ -1888,6 +2851,7 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
         end
         for (idx, base_case) in enumerate(selected)
             println("  scenario $(idx)/$(length(selected)) = $(base_case.name)")
+            _record_outer_route_feedback!(base_case, scenario_results[idx].rows; route=:process)
             append!(rows, scenario_results[idx].rows)
             for log_line in scenario_results[idx].logs
                 println(log_line)
@@ -1916,6 +2880,7 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
         end
         for (idx, base_case) in enumerate(selected)
             println("  scenario $(idx)/$(length(selected)) = $(base_case.name)")
+            _record_outer_route_feedback!(base_case, scenario_rows[idx]; route=:threads)
             append!(rows, scenario_rows[idx])
             for log_line in scenario_logs[idx]
                 println(log_line)
@@ -1925,6 +2890,7 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
         for (idx, base_case) in enumerate(selected)
             println("  scenario $(idx)/$(length(selected)) = $(base_case.name)")
             local_rows, local_logs = measure_per_orbit_scenario(base_case, spec, period_s, orbit_counts; outer_route=:none)
+            _record_outer_route_feedback!(base_case, local_rows; route=:none)
             append!(rows, local_rows)
             for log_line in local_logs
                 println(log_line)
@@ -1941,8 +2907,88 @@ function _safe_stat(values, op::Function)
     return op(vec)
 end
 
+@inline function _ci95_bounds(values)
+    vec = collect(skipmissing(values))
+    n = length(vec)
+    if n == 0
+        return (missing, missing)
+    elseif n == 1
+        μ = Float64(vec[1])
+        return (μ, μ)
+    end
+    μ = mean(vec)
+    σ = std(vec; corrected=true)
+    sem = σ / sqrt(n)
+    margin = 1.96 * sem
+    return (μ - margin, μ + margin)
+end
+
+@inline _ci95_low(values) = _ci95_bounds(values)[1]
+@inline _ci95_high(values) = _ci95_bounds(values)[2]
+
+@inline function _sem(values)
+    vec = collect(skipmissing(values))
+    n = length(vec)
+    if n == 0
+        return missing
+    elseif n == 1
+        return 0.0
+    end
+    return std(vec; corrected=true) / sqrt(n)
+end
+
+@inline function _cv_pct(values)
+    vec = collect(skipmissing(values))
+    n = length(vec)
+    if n == 0
+        return missing
+    elseif n == 1
+        return 0.0
+    end
+    μ = mean(vec)
+    abs(μ) <= eps(Float64) && return missing
+    return 100.0 * std(vec; corrected=true) / abs(μ)
+end
+
+@inline function _sum_nonmissing(values...)
+    acc = 0.0
+    seen = false
+    for v in values
+        if !(v isa Missing)
+            acc += Float64(v)
+            seen = true
+        end
+    end
+    return seen ? acc : missing
+end
+
+@inline function _summary_group_keys(df::DataFrame, base_keys::Vector{Symbol})::Vector{Symbol}
+    keys = copy(base_keys)
+    optional_keys = (
+        :hardware_class,
+        :machine_label,
+        :host_name,
+        :cpu_name,
+        :cpu_threads,
+        :julia_threads,
+        :os,
+        :arch
+    )
+    df_names = Set(Symbol.(names(df)))
+    for key in optional_keys
+        if key in df_names
+            push!(keys, key)
+        end
+    end
+    return keys
+end
+
 function summarize_per_orbit_results(orbit_raw_df::DataFrame)::DataFrame
-    keys = [:category, :scenario, :description, :orbit_count, :orbital_period_s, :dt_max_orbit_s]
+    sweep_multiplier_key = :mission_time_multiplier in names(orbit_raw_df) ? :mission_time_multiplier : :orbit_count
+    keys = _summary_group_keys(
+        orbit_raw_df,
+        [:category, :scenario, :description, sweep_multiplier_key, :orbital_period_s, :dt_max_orbit_s]
+    )
     counts = combine(
         groupby(orbit_raw_df, keys),
         nrow => :samples_total,
@@ -1960,6 +3006,10 @@ function summarize_per_orbit_results(orbit_raw_df::DataFrame)::DataFrame
             :mission_time_s => (v -> _safe_stat(v, mean)) => :mission_time_mean_s,
             :total_time_s => (v -> _safe_stat(v, mean)) => :total_time_mean_s,
             :total_time_s => (v -> _safe_stat(v, x -> quantile(x, 0.9))) => :total_time_p90_s,
+            :total_time_s => (v -> _ci95_low(v)) => :total_time_ci95_low_s,
+            :total_time_s => (v -> _ci95_high(v)) => :total_time_ci95_high_s,
+            :total_time_s => (v -> _sem(v)) => :total_time_sem_s,
+            :total_time_s => (v -> _cv_pct(v)) => :total_time_cv_pct,
             :solve_time_s => (v -> _safe_stat(v, mean)) => :solve_time_mean_s,
             :total_bytes_mb => (v -> _safe_stat(v, mean)) => :total_bytes_mean_mb,
             :sim_seconds_per_wall_second => (v -> _safe_stat(v, mean)) => :sim_seconds_per_wall_second_mean
@@ -1970,40 +3020,53 @@ function summarize_per_orbit_results(orbit_raw_df::DataFrame)::DataFrame
         summary[!, :mission_time_mean_s] = fill(missing, nrow(summary))
         summary[!, :total_time_mean_s] = fill(missing, nrow(summary))
         summary[!, :total_time_p90_s] = fill(missing, nrow(summary))
+        summary[!, :total_time_ci95_low_s] = fill(missing, nrow(summary))
+        summary[!, :total_time_ci95_high_s] = fill(missing, nrow(summary))
+        summary[!, :total_time_sem_s] = fill(missing, nrow(summary))
+        summary[!, :total_time_cv_pct] = fill(missing, nrow(summary))
         summary[!, :solve_time_mean_s] = fill(missing, nrow(summary))
         summary[!, :total_bytes_mean_mb] = fill(missing, nrow(summary))
         summary[!, :sim_seconds_per_wall_second_mean] = fill(missing, nrow(summary))
     end
 
+    if !(:mission_time_multiplier in names(summary))
+        summary[!, :mission_time_multiplier] = summary.orbit_count
+    end
     summary[!, :time_per_orbit_mean_s] = [
-        (ismissing(tt) || orbit <= 0) ? missing : tt / orbit
-        for (tt, orbit) in zip(summary.total_time_mean_s, summary.orbit_count)
+        (ismissing(tt) || multiplier <= 0) ? missing : tt / multiplier
+        for (tt, multiplier) in zip(summary.total_time_mean_s, summary.mission_time_multiplier)
     ]
     summary[!, :orbits_per_wall_second_mean] = [
-        (ismissing(tt) || tt <= 0.0) ? missing : orbit / tt
-        for (tt, orbit) in zip(summary.total_time_mean_s, summary.orbit_count)
+        (ismissing(tt) || tt <= 0.0) ? missing : multiplier / tt
+        for (tt, multiplier) in zip(summary.total_time_mean_s, summary.mission_time_multiplier)
     ]
+    # Human-facing aliases for mission-time sweep semantics.
+    summary[!, :time_per_baseline_period_mean_s] = summary.time_per_orbit_mean_s
+    summary[!, :baseline_periods_per_wall_second_mean] = summary.orbits_per_wall_second_mean
 
-    sort!(summary, [:scenario, :orbit_count])
+    sort!(summary, [:scenario, :mission_time_multiplier])
     return summary
 end
 
 function summarize_results(raw_df::DataFrame)::DataFrame
-    keys = [
-        :category,
-        :scenario,
-        :description,
-        :satellites,
-        :orientation,
-        :mission_time_s,
-        :outer_route,
-        :density_parallel_mode,
-        :control_parallel_mode,
-        :multibody_parallel_mode,
-        :dt_max_orbit_s,
-        :dynamic_effectors,
-        :control_effectors
-    ]
+    keys = _summary_group_keys(
+        raw_df,
+        [
+            :category,
+            :scenario,
+            :description,
+            :satellites,
+            :orientation,
+            :mission_time_s,
+            :outer_route,
+            :density_parallel_mode,
+            :control_parallel_mode,
+            :multibody_parallel_mode,
+            :dt_max_orbit_s,
+            :dynamic_effectors,
+            :control_effectors
+        ]
+    )
     counts = combine(
         groupby(raw_df, keys),
         nrow => :samples_total,
@@ -2023,6 +3086,10 @@ function summarize_results(raw_df::DataFrame)::DataFrame
         :total_time_min_s,
         :total_time_max_s,
         :total_time_p90_s,
+        :total_time_ci95_low_s,
+        :total_time_ci95_high_s,
+        :total_time_sem_s,
+        :total_time_cv_pct,
         :total_bytes_mean_mb,
         :copy_alloc_mean,
         :solve_alloc_mean,
@@ -2042,7 +3109,21 @@ function summarize_results(raw_df::DataFrame)::DataFrame
         :policy_multibody_threads_enabled_mean,
         :policy_other_threads_enabled_mean,
         :sim_seconds_per_wall_second_mean,
-        :satellite_sim_seconds_per_wall_second_mean
+        :satellite_sim_seconds_per_wall_second_mean,
+        :nbody_spkpos_runtime_calls_mean,
+        :nbody_spkpos_cache_build_calls_mean,
+        :nbody_spkpos_total_calls_mean,
+        :srp_spkpos_runtime_calls_mean,
+        :srp_spkpos_cache_build_calls_mean,
+        :srp_spkpos_total_calls_mean,
+        :planet_pxform_runtime_calls_mean,
+        :planet_pxform_cache_build_calls_mean,
+        :planet_pxform_total_calls_mean,
+        :spice_calls_runtime_mean,
+        :spice_calls_cache_build_mean,
+        :spice_calls_total_mean,
+        :spice_calls_per_wall_second_mean,
+        :spice_calls_per_sim_second_mean
     ]
 
     summary = counts
@@ -2058,6 +3139,10 @@ function summarize_results(raw_df::DataFrame)::DataFrame
             :total_time_s => (v -> _safe_stat(v, minimum)) => :total_time_min_s,
             :total_time_s => (v -> _safe_stat(v, maximum)) => :total_time_max_s,
             :total_time_s => (v -> _safe_stat(v, x -> quantile(x, 0.9))) => :total_time_p90_s,
+            :total_time_s => (v -> _ci95_low(v)) => :total_time_ci95_low_s,
+            :total_time_s => (v -> _ci95_high(v)) => :total_time_ci95_high_s,
+            :total_time_s => (v -> _sem(v)) => :total_time_sem_s,
+            :total_time_s => (v -> _cv_pct(v)) => :total_time_cv_pct,
             :total_bytes_mb => (v -> _safe_stat(v, mean)) => :total_bytes_mean_mb,
             :copy_alloc_calls => (v -> _safe_stat(v, mean)) => :copy_alloc_mean,
             :solve_alloc_calls => (v -> _safe_stat(v, mean)) => :solve_alloc_mean,
@@ -2080,7 +3165,16 @@ function summarize_results(raw_df::DataFrame)::DataFrame
             :policy_multibody_threads_enabled => (v -> _safe_stat(v, mean)) => :policy_multibody_threads_enabled_mean,
             :policy_other_threads_enabled => (v -> _safe_stat(v, mean)) => :policy_other_threads_enabled_mean,
             :sim_seconds_per_wall_second => (v -> _safe_stat(v, mean)) => :sim_seconds_per_wall_second_mean,
-            :satellite_sim_seconds_per_wall_second => (v -> _safe_stat(v, mean)) => :satellite_sim_seconds_per_wall_second_mean
+            :satellite_sim_seconds_per_wall_second => (v -> _safe_stat(v, mean)) => :satellite_sim_seconds_per_wall_second_mean,
+            :nbody_spkpos_runtime_calls => (v -> _safe_stat(v, mean)) => :nbody_spkpos_runtime_calls_mean,
+            :nbody_spkpos_cache_build_calls => (v -> _safe_stat(v, mean)) => :nbody_spkpos_cache_build_calls_mean,
+            :nbody_spkpos_total_calls => (v -> _safe_stat(v, mean)) => :nbody_spkpos_total_calls_mean,
+            :srp_spkpos_runtime_calls => (v -> _safe_stat(v, mean)) => :srp_spkpos_runtime_calls_mean,
+            :srp_spkpos_cache_build_calls => (v -> _safe_stat(v, mean)) => :srp_spkpos_cache_build_calls_mean,
+            :srp_spkpos_total_calls => (v -> _safe_stat(v, mean)) => :srp_spkpos_total_calls_mean,
+            :planet_pxform_runtime_calls => (v -> _safe_stat(v, mean)) => :planet_pxform_runtime_calls_mean,
+            :planet_pxform_cache_build_calls => (v -> _safe_stat(v, mean)) => :planet_pxform_cache_build_calls_mean,
+            :planet_pxform_total_calls => (v -> _safe_stat(v, mean)) => :planet_pxform_total_calls_mean
         )
         summary = leftjoin(counts, success_summary, on=keys)
     else
@@ -2088,6 +3182,29 @@ function summarize_results(raw_df::DataFrame)::DataFrame
             summary[!, col] = fill(missing, nrow(summary))
         end
     end
+
+    summary[!, :spice_calls_runtime_mean] = [
+        _sum_nonmissing(row.nbody_spkpos_runtime_calls_mean, row.srp_spkpos_runtime_calls_mean, row.planet_pxform_runtime_calls_mean)
+        for row in eachrow(summary)
+    ]
+    summary[!, :spice_calls_cache_build_mean] = [
+        _sum_nonmissing(row.nbody_spkpos_cache_build_calls_mean, row.srp_spkpos_cache_build_calls_mean, row.planet_pxform_cache_build_calls_mean)
+        for row in eachrow(summary)
+    ]
+    summary[!, :spice_calls_total_mean] = [
+        _sum_nonmissing(row.nbody_spkpos_total_calls_mean, row.srp_spkpos_total_calls_mean, row.planet_pxform_total_calls_mean)
+        for row in eachrow(summary)
+    ]
+    summary[!, :spice_calls_per_wall_second_mean] = [
+        (row.spice_calls_total_mean isa Missing || row.total_time_mean_s isa Missing || row.total_time_mean_s <= 0.0) ? missing :
+        (Float64(row.spice_calls_total_mean) / Float64(row.total_time_mean_s))
+        for row in eachrow(summary)
+    ]
+    summary[!, :spice_calls_per_sim_second_mean] = [
+        (row.spice_calls_total_mean isa Missing || row.mission_time_s isa Missing || row.mission_time_s <= 0.0) ? missing :
+        (Float64(row.spice_calls_total_mean) / Float64(row.mission_time_s))
+        for row in eachrow(summary)
+    ]
 
     baseline_idx = findfirst(==(PERF_BASELINE_SCENARIO), summary.scenario)
     if baseline_idx === nothing || ismissing(summary.total_time_mean_s[baseline_idx]) || summary.total_time_mean_s[baseline_idx] <= 0.0
@@ -2109,6 +3226,516 @@ function summarize_results(raw_df::DataFrame)::DataFrame
     sort!(summary, :_sort_key, rev=true)
     select!(summary, Not(:_sort_key))
     return summary
+end
+
+@inline function _case_with_solver(
+    case::BenchmarkCase;
+    solver_mode_override::Union{Nothing, String}=nothing,
+    split_imex_solver_override::Union{Nothing, String}=nothing
+)::BenchmarkCase
+    return BenchmarkCase(
+        name=case.name,
+        category=case.category,
+        description=case.description,
+        args_template=case.args_template,
+        run_in_quick=case.run_in_quick,
+        solver_mode_override=solver_mode_override,
+        split_imex_solver_override=split_imex_solver_override,
+        entry_target_count_override=case.entry_target_count_override
+    )
+end
+
+@inline function _solution_state_at(sol, t::Float64)
+    try
+        return sol(t)
+    catch
+        idx = searchsortedlast(sol.t, t)
+        idx = clamp(idx, 1, length(sol.u))
+        return sol.u[idx]
+    end
+end
+
+@inline function _relative_vector_delta(ref_vec, cmp_vec; floor::Float64=1e-12)::Float64
+    ref_norm = norm(ref_vec)
+    delta_norm = norm(ref_vec - cmp_vec)
+    return ref_norm > floor ? delta_norm / ref_norm : delta_norm
+end
+
+@inline function _quaternion_angle_delta_rad(q_ref, q_cmp)::Float64
+    q_ref_norm = norm(q_ref)
+    q_cmp_norm = norm(q_cmp)
+    if !(isfinite(q_ref_norm) && isfinite(q_cmp_norm)) || q_ref_norm <= eps(Float64) || q_cmp_norm <= eps(Float64)
+        return Inf
+    end
+    c = abs(dot(q_ref / q_ref_norm, q_cmp / q_cmp_norm))
+    c = clamp(c, -1.0, 1.0)
+    return 2.0 * acos(c)
+end
+
+function _trajectory_delta_metrics(
+    sol_ref,
+    sol_cmp,
+    n_sats::Int,
+    orientation::Bool;
+    n_samples::Int
+)
+    t_ref_start = Float64(first(sol_ref.t))
+    t_ref_end = Float64(last(sol_ref.t))
+    t_cmp_start = Float64(first(sol_cmp.t))
+    t_cmp_end = Float64(last(sol_cmp.t))
+    t_start = max(t_ref_start, t_cmp_start)
+    t_end = min(t_ref_end, t_cmp_end)
+    if !(isfinite(t_start) && isfinite(t_end)) || t_end < t_start
+        throw(ArgumentError("Cannot compare trajectories: incompatible time spans [$(t_ref_start), $(t_ref_end)] vs [$(t_cmp_start), $(t_cmp_end)]."))
+    end
+    sample_count = max(2, n_samples)
+    sample_times = collect(range(t_start, t_end; length=sample_count))
+
+    pos_rel_max = 0.0
+    vel_rel_max = 0.0
+    q_angle_max_rad = 0.0
+    omega_rel_max = 0.0
+
+    for t in sample_times
+        u_ref = _solution_state_at(sol_ref, t)
+        u_cmp = _solution_state_at(sol_cmp, t)
+        for sat_idx in 1:n_sats
+            sc_ref = u_ref.sc[sat_idx]
+            sc_cmp = u_cmp.sc[sat_idx]
+            pos_rel_max = max(pos_rel_max, _relative_vector_delta(sc_ref.pos, sc_cmp.pos))
+            vel_rel_max = max(vel_rel_max, _relative_vector_delta(sc_ref.vel, sc_cmp.vel))
+            if orientation
+                q_angle_max_rad = max(q_angle_max_rad, _quaternion_angle_delta_rad(sc_ref.q, sc_cmp.q))
+                omega_rel_max = max(omega_rel_max, _relative_vector_delta(sc_ref.ω, sc_cmp.ω))
+            end
+        end
+    end
+
+    return (
+        t_start=t_start,
+        t_end=t_end,
+        sample_count=sample_count,
+        pos_rel_max=pos_rel_max,
+        vel_rel_max=vel_rel_max,
+        q_angle_max_rad=orientation ? q_angle_max_rad : missing,
+        omega_rel_max=orientation ? omega_rel_max : missing
+    )
+end
+
+function _run_split_gate_solution(
+    case::BenchmarkCase,
+    profile_name::String;
+    solver_mode::String,
+    split_solver::Union{Nothing, String}=nothing
+)
+    GC.gc()
+    args_run = deepcopy(case.args_template)
+    started_ns = time_ns()
+    try
+        result = _run_perf_simulation(
+            args_run;
+            return_solution=true,
+            return_solver_metadata=true,
+            profile_name=profile_name,
+            solver_mode_override=solver_mode,
+            split_imex_solver_override=split_solver,
+            entry_target_count_override=case.entry_target_count_override
+        )
+        elapsed_s = (time_ns() - started_ns) / 1e9
+        sol = result.solution
+        solver_trace = result.solver_trace
+        solver_sequence = isempty(solver_trace) ? missing : join([meta.solver for meta in solver_trace], "->")
+        return (
+            ok=true,
+            elapsed_s=elapsed_s,
+            success=_solve_success_for_case(sol, case),
+            retcode=string(sol.retcode),
+            solver_mode=result.solver_mode,
+            solver_sequence=solver_sequence,
+            solution=sol,
+            error_text=missing
+        )
+    catch err
+        if err isa InterruptException
+            rethrow()
+        end
+        elapsed_s = (time_ns() - started_ns) / 1e9
+        retcode = _solve_retcode_from_error(err)
+        if ismissing(retcode)
+            retcode = "Exception"
+        end
+        return (
+            ok=false,
+            elapsed_s=elapsed_s,
+            success=false,
+            retcode=String(retcode),
+            solver_mode=missing,
+            solver_sequence=missing,
+            solution=nothing,
+            error_text=_perf_error_text(err)
+        )
+    end
+end
+
+function _write_split_rollout_gate_report(
+    path::String,
+    spec::ProfileSpec,
+    gate_df::DataFrame,
+    gate_csv_path::String
+)
+    open(path, "w") do io
+        println(io, "# Split-IMEX Rollout Gate (`$(spec.name)` profile)")
+        println(io)
+        println(io, "- Generated (UTC): $(string(now(UTC)))")
+        println(io, "- Cases requested: `$(join(_split_rollout_case_names(), ", "))`")
+        println(io, "- Split solvers: `$(join(_split_rollout_solver_variants(), ", "))`")
+        println(io, "- Runtime slowdown ceiling: `$(_split_rollout_max_slowdown_ratio())x`")
+        println(io, "- Position relative tolerance: `$(_split_rollout_pos_rel_tol())`")
+        println(io, "- Velocity relative tolerance: `$(_split_rollout_vel_rel_tol())`")
+        println(io, "- Quaternion angle tolerance [rad]: `$(_split_rollout_q_angle_tol_rad())`")
+        println(io, "- Angular-rate relative tolerance: `$(_split_rollout_omega_rel_tol())`")
+        println(io, "- Trajectory samples per comparison: `$(_split_rollout_sample_count())`")
+        println(io, "- Enforce mode: `$(_split_rollout_enforce())`")
+        println(io)
+        println(io, "- Gate CSV: `$(gate_csv_path)`")
+        println(io)
+        pass_count = (nrow(gate_df) == 0 || !(:pass_all in names(gate_df))) ? 0 : count(Bool.(gate_df.pass_all))
+        println(io, "- Gate pass count: `$(pass_count)/$(nrow(gate_df))`")
+        println(io)
+        println(io, "| Scenario | Split Solver | Baseline Retcode | Split Retcode | Runtime Ratio | Pos Rel Max | Vel Rel Max | Q Angle Max [rad] | Omega Rel Max | Pass Runtime | Pass Trajectory | Pass All |")
+        println(io, "|---|---|---|---|---:|---:|---:|---:|---:|---|---|---|")
+        for row in eachrow(gate_df)
+            pass_traj = Bool(row.pass_pos) && Bool(row.pass_vel) && Bool(row.pass_q) && Bool(row.pass_omega)
+            println(
+                io,
+                "| $(row.scenario) | $(row.split_solver) | $(row.baseline_retcode) | $(row.split_retcode) | $(_fmt(row.runtime_ratio; digits=4)) | " *
+                "$(_fmt(row.pos_rel_max; digits=4)) | $(_fmt(row.vel_rel_max; digits=4)) | $(_fmt(row.q_angle_max_rad; digits=4)) | " *
+                "$(_fmt(row.omega_rel_max; digits=4)) | $(row.pass_runtime) | $(pass_traj) | $(row.pass_all) |"
+            )
+        end
+    end
+    return nothing
+end
+
+function evaluate_split_rollout_gate(
+    spec::ProfileSpec,
+    cases::Vector{BenchmarkCase},
+    outdir::String
+)
+    requested_names = _split_rollout_case_names()
+    split_solvers = _split_rollout_solver_variants()
+    case_pool = selected_cases(spec, cases)
+    case_by_name = Dict(c.name => c for c in case_pool)
+    max_slowdown = _split_rollout_max_slowdown_ratio()
+    pos_tol = _split_rollout_pos_rel_tol()
+    vel_tol = _split_rollout_vel_rel_tol()
+    q_tol = _split_rollout_q_angle_tol_rad()
+    omega_tol = _split_rollout_omega_rel_tol()
+    sample_count = _split_rollout_sample_count()
+    rows = NamedTuple[]
+
+    for scenario_name in requested_names
+        if !haskey(case_by_name, scenario_name)
+            @warn "[split-rollout] requested scenario '$scenario_name' was not found in profile=$(spec.name); skipping."
+            continue
+        end
+        case = case_by_name[scenario_name]
+        baseline_case = _case_with_solver(case; solver_mode_override="auto_stiff", split_imex_solver_override=nothing)
+
+        # Warm up both solver paths so the gate compares runtime behavior, not first-call compilation.
+        run_warmup(baseline_case, 1, spec.name)
+        for split_solver in split_solvers
+            split_case = _case_with_solver(case; solver_mode_override="split_imex", split_imex_solver_override=split_solver)
+            run_warmup(split_case, 1, spec.name)
+
+            baseline_run = _run_split_gate_solution(
+                baseline_case,
+                spec.name;
+                solver_mode="auto_stiff",
+                split_solver=nothing
+            )
+            split_run = _run_split_gate_solution(
+                split_case,
+                spec.name;
+                solver_mode="split_imex",
+                split_solver=split_solver
+            )
+
+            runtime_ratio = (baseline_run.elapsed_s > 0.0) ? split_run.elapsed_s / baseline_run.elapsed_s : Inf
+            pass_runtime = baseline_run.success && split_run.success && isfinite(runtime_ratio) && runtime_ratio <= max_slowdown
+
+            pos_rel_max = missing
+            vel_rel_max = missing
+            q_angle_max_rad = missing
+            omega_rel_max = missing
+            compared_t_start = missing
+            compared_t_end = missing
+            compared_samples = missing
+            pass_pos = false
+            pass_vel = false
+            pass_q = !case.args_template.mission_configuration.orientation_sim
+            pass_omega = !case.args_template.mission_configuration.orientation_sim
+
+            if baseline_run.success && split_run.success
+                metrics = _trajectory_delta_metrics(
+                    baseline_run.solution,
+                    split_run.solution,
+                    length(case.args_template.dynamics_model.spacecraft),
+                    case.args_template.mission_configuration.orientation_sim;
+                    n_samples=sample_count
+                )
+                pos_rel_max = metrics.pos_rel_max
+                vel_rel_max = metrics.vel_rel_max
+                q_angle_max_rad = metrics.q_angle_max_rad
+                omega_rel_max = metrics.omega_rel_max
+                compared_t_start = metrics.t_start
+                compared_t_end = metrics.t_end
+                compared_samples = metrics.sample_count
+                pass_pos = metrics.pos_rel_max <= pos_tol
+                pass_vel = metrics.vel_rel_max <= vel_tol
+                if case.args_template.mission_configuration.orientation_sim
+                    pass_q = !(metrics.q_angle_max_rad isa Missing) && metrics.q_angle_max_rad <= q_tol
+                    pass_omega = !(metrics.omega_rel_max isa Missing) && metrics.omega_rel_max <= omega_tol
+                end
+            end
+
+            pass_all = pass_runtime && pass_pos && pass_vel && pass_q && pass_omega
+            push!(rows, (
+                profile=spec.name,
+                scenario=scenario_name,
+                split_solver=split_solver,
+                satellites=length(case.args_template.dynamics_model.spacecraft),
+                orientation=case.args_template.mission_configuration.orientation_sim,
+                baseline_elapsed_s=baseline_run.elapsed_s,
+                split_elapsed_s=split_run.elapsed_s,
+                runtime_ratio=runtime_ratio,
+                max_slowdown_ratio=max_slowdown,
+                pass_runtime=pass_runtime,
+                pos_rel_max=pos_rel_max,
+                vel_rel_max=vel_rel_max,
+                q_angle_max_rad=q_angle_max_rad,
+                omega_rel_max=omega_rel_max,
+                pos_rel_tol=pos_tol,
+                vel_rel_tol=vel_tol,
+                q_angle_tol_rad=q_tol,
+                omega_rel_tol=omega_tol,
+                compared_t_start_s=compared_t_start,
+                compared_t_end_s=compared_t_end,
+                compared_samples=compared_samples,
+                pass_pos=pass_pos,
+                pass_vel=pass_vel,
+                pass_q=pass_q,
+                pass_omega=pass_omega,
+                pass_all=pass_all,
+                baseline_solver_mode=baseline_run.solver_mode,
+                baseline_solver_sequence=baseline_run.solver_sequence,
+                baseline_retcode=baseline_run.retcode,
+                baseline_error=baseline_run.error_text,
+                split_solver_mode=split_run.solver_mode,
+                split_solver_sequence=split_run.solver_sequence,
+                split_retcode=split_run.retcode,
+                split_error=split_run.error_text
+            ))
+        end
+    end
+
+    gate_df = DataFrame(rows)
+    stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
+    gate_csv_path = joinpath(outdir, "split_rollout_gate_$(spec.name)_$(stamp).csv")
+    gate_report_path = joinpath(outdir, "split_rollout_gate_$(spec.name)_$(stamp).md")
+    CSV.write(gate_csv_path, gate_df)
+    _write_split_rollout_gate_report(gate_report_path, spec, gate_df, gate_csv_path)
+
+    if _split_rollout_enforce() && nrow(gate_df) > 0 && (:pass_all in names(gate_df)) && any(.!Bool.(gate_df.pass_all))
+        failing = gate_df[.!gate_df.pass_all, :]
+        summary = join(["$(row.scenario):$(row.split_solver)" for row in eachrow(failing)], ", ")
+        error("Split rollout gate failed for $(nrow(failing)) configuration(s): $summary")
+    end
+
+    return (df=gate_df, csv_path=gate_csv_path, report_path=gate_report_path)
+end
+
+function _write_multirate_rollout_gate_report(
+    path::String,
+    spec::ProfileSpec,
+    gate_df::DataFrame,
+    gate_csv_path::String
+)
+    settings = _multirate_rollout_setting_snapshot()
+    open(path, "w") do io
+        println(io, "# Multirate Rollout Gate (`$(spec.name)` profile)")
+        println(io)
+        println(io, "- Generated (UTC): $(string(now(UTC)))")
+        println(io, "- Cases requested: `$(join(_multirate_rollout_case_names(), ", "))`")
+        println(io, "- Runtime slowdown ceiling: `$(_multirate_rollout_max_slowdown_ratio())x`")
+        println(io, "- Position relative tolerance: `$(_multirate_rollout_pos_rel_tol())`")
+        println(io, "- Velocity relative tolerance: `$(_multirate_rollout_vel_rel_tol())`")
+        println(io, "- Quaternion angle tolerance [rad]: `$(_multirate_rollout_q_angle_tol_rad())`")
+        println(io, "- Angular-rate relative tolerance: `$(_multirate_rollout_omega_rel_tol())`")
+        println(io, "- Trajectory samples per comparison: `$(_multirate_rollout_sample_count())`")
+        println(io, "- Enforce mode: `$(_multirate_rollout_enforce())`")
+        println(io, "- Multirate slow solver: `$(settings.slow_solver)`")
+        println(io, "- Multirate fast solver: `$(settings.fast_solver)`")
+        println(io, "- Multirate slow dt [s]: `$(_fmt(settings.slow_dt_s; digits=4))`")
+        println(io, "- Multirate fast substeps: `$(_fmt(settings.fast_substeps; digits=0))`")
+        println(io)
+        println(io, "- Gate CSV: `$(gate_csv_path)`")
+        println(io)
+        pass_count = (nrow(gate_df) == 0 || !(:pass_all in names(gate_df))) ? 0 : count(Bool.(gate_df.pass_all))
+        println(io, "- Gate pass count: `$(pass_count)/$(nrow(gate_df))`")
+        println(io)
+        println(io, "| Scenario | Baseline Retcode | Multirate Retcode | Runtime Ratio | Pos Rel Max | Vel Rel Max | Q Angle Max [rad] | Omega Rel Max | Pass Runtime | Pass Trajectory | Pass All |")
+        println(io, "|---|---|---|---:|---:|---:|---:|---:|---|---|---|")
+        for row in eachrow(gate_df)
+            pass_traj = Bool(row.pass_pos) && Bool(row.pass_vel) && Bool(row.pass_q) && Bool(row.pass_omega)
+            println(
+                io,
+                "| $(row.scenario) | $(row.baseline_retcode) | $(row.multirate_retcode) | $(_fmt(row.runtime_ratio; digits=4)) | " *
+                "$(_fmt(row.pos_rel_max; digits=4)) | $(_fmt(row.vel_rel_max; digits=4)) | $(_fmt(row.q_angle_max_rad; digits=4)) | " *
+                "$(_fmt(row.omega_rel_max; digits=4)) | $(row.pass_runtime) | $(pass_traj) | $(row.pass_all) |"
+            )
+        end
+    end
+    return nothing
+end
+
+function evaluate_multirate_rollout_gate(
+    spec::ProfileSpec,
+    cases::Vector{BenchmarkCase},
+    outdir::String
+)
+    requested_names = _multirate_rollout_case_names()
+    case_pool = selected_cases(spec, cases)
+    case_by_name = Dict(c.name => c for c in case_pool)
+    max_slowdown = _multirate_rollout_max_slowdown_ratio()
+    pos_tol = _multirate_rollout_pos_rel_tol()
+    vel_tol = _multirate_rollout_vel_rel_tol()
+    q_tol = _multirate_rollout_q_angle_tol_rad()
+    omega_tol = _multirate_rollout_omega_rel_tol()
+    sample_count = _multirate_rollout_sample_count()
+    settings = _multirate_rollout_setting_snapshot()
+    rows = NamedTuple[]
+
+    for scenario_name in requested_names
+        if !haskey(case_by_name, scenario_name)
+            @warn "[multirate-rollout] requested scenario '$scenario_name' was not found in profile=$(spec.name); skipping."
+            continue
+        end
+        case = case_by_name[scenario_name]
+        baseline_case = _case_with_solver(case; solver_mode_override="auto_stiff", split_imex_solver_override=nothing)
+        multirate_case = _case_with_solver(case; solver_mode_override="multirate", split_imex_solver_override=nothing)
+
+        # Warm up both solver paths so the gate compares runtime behavior, not first-call compilation.
+        run_warmup(baseline_case, 1, spec.name)
+        run_warmup(multirate_case, 1, spec.name)
+
+        baseline_run = _run_split_gate_solution(
+            baseline_case,
+            spec.name;
+            solver_mode="auto_stiff",
+            split_solver=nothing
+        )
+        multirate_run = _run_split_gate_solution(
+            multirate_case,
+            spec.name;
+            solver_mode="multirate",
+            split_solver=nothing
+        )
+
+        runtime_ratio = (baseline_run.elapsed_s > 0.0) ? multirate_run.elapsed_s / baseline_run.elapsed_s : Inf
+        pass_runtime = baseline_run.success && multirate_run.success && isfinite(runtime_ratio) && runtime_ratio <= max_slowdown
+
+        pos_rel_max = missing
+        vel_rel_max = missing
+        q_angle_max_rad = missing
+        omega_rel_max = missing
+        compared_t_start = missing
+        compared_t_end = missing
+        compared_samples = missing
+        pass_pos = false
+        pass_vel = false
+        pass_q = !case.args_template.mission_configuration.orientation_sim
+        pass_omega = !case.args_template.mission_configuration.orientation_sim
+
+        if baseline_run.success && multirate_run.success
+            metrics = _trajectory_delta_metrics(
+                baseline_run.solution,
+                multirate_run.solution,
+                length(case.args_template.dynamics_model.spacecraft),
+                case.args_template.mission_configuration.orientation_sim;
+                n_samples=sample_count
+            )
+            pos_rel_max = metrics.pos_rel_max
+            vel_rel_max = metrics.vel_rel_max
+            q_angle_max_rad = metrics.q_angle_max_rad
+            omega_rel_max = metrics.omega_rel_max
+            compared_t_start = metrics.t_start
+            compared_t_end = metrics.t_end
+            compared_samples = metrics.sample_count
+            pass_pos = metrics.pos_rel_max <= pos_tol
+            pass_vel = metrics.vel_rel_max <= vel_tol
+            if case.args_template.mission_configuration.orientation_sim
+                pass_q = !(metrics.q_angle_max_rad isa Missing) && metrics.q_angle_max_rad <= q_tol
+                pass_omega = !(metrics.omega_rel_max isa Missing) && metrics.omega_rel_max <= omega_tol
+            end
+        end
+
+        pass_all = pass_runtime && pass_pos && pass_vel && pass_q && pass_omega
+        push!(rows, (
+            profile=spec.name,
+            scenario=scenario_name,
+            satellites=length(case.args_template.dynamics_model.spacecraft),
+            orientation=case.args_template.mission_configuration.orientation_sim,
+            baseline_elapsed_s=baseline_run.elapsed_s,
+            multirate_elapsed_s=multirate_run.elapsed_s,
+            runtime_ratio=runtime_ratio,
+            max_slowdown_ratio=max_slowdown,
+            pass_runtime=pass_runtime,
+            pos_rel_max=pos_rel_max,
+            vel_rel_max=vel_rel_max,
+            q_angle_max_rad=q_angle_max_rad,
+            omega_rel_max=omega_rel_max,
+            pos_rel_tol=pos_tol,
+            vel_rel_tol=vel_tol,
+            q_angle_tol_rad=q_tol,
+            omega_rel_tol=omega_tol,
+            compared_t_start_s=compared_t_start,
+            compared_t_end_s=compared_t_end,
+            compared_samples=compared_samples,
+            pass_pos=pass_pos,
+            pass_vel=pass_vel,
+            pass_q=pass_q,
+            pass_omega=pass_omega,
+            pass_all=pass_all,
+            multirate_slow_solver=settings.slow_solver,
+            multirate_fast_solver=settings.fast_solver,
+            multirate_slow_dt_s=settings.slow_dt_s,
+            multirate_fast_substeps=settings.fast_substeps,
+            baseline_solver_mode=baseline_run.solver_mode,
+            baseline_solver_sequence=baseline_run.solver_sequence,
+            baseline_retcode=baseline_run.retcode,
+            baseline_error=baseline_run.error_text,
+            multirate_solver_mode=multirate_run.solver_mode,
+            multirate_solver_sequence=multirate_run.solver_sequence,
+            multirate_retcode=multirate_run.retcode,
+            multirate_error=multirate_run.error_text
+        ))
+    end
+
+    gate_df = DataFrame(rows)
+    stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
+    gate_csv_path = joinpath(outdir, "multirate_rollout_gate_$(spec.name)_$(stamp).csv")
+    gate_report_path = joinpath(outdir, "multirate_rollout_gate_$(spec.name)_$(stamp).md")
+    CSV.write(gate_csv_path, gate_df)
+    _write_multirate_rollout_gate_report(gate_report_path, spec, gate_df, gate_csv_path)
+
+    if _multirate_rollout_enforce() && nrow(gate_df) > 0 && (:pass_all in names(gate_df)) && any(.!Bool.(gate_df.pass_all))
+        failing = gate_df[.!gate_df.pass_all, :]
+        summary = join([String(row.scenario) for row in eachrow(failing)], ", ")
+        error("Multirate rollout gate failed for $(nrow(failing)) configuration(s): $summary")
+    end
+
+    return (df=gate_df, csv_path=gate_csv_path, report_path=gate_report_path)
 end
 
 @inline _plot_label(name::AbstractString) = replace(name, "_" => " ")
@@ -2240,10 +3867,11 @@ function _save_runtime_plot!(
 end
 
 function _sorted_orbit_groups(df::DataFrame, metric::Symbol)
+    multiplier_col = :mission_time_multiplier in names(df) ? :mission_time_multiplier : :orbit_count
     groups = collect(groupby(df, :scenario))
     sort!(groups; by=g -> begin
         local_df = DataFrame(g)
-        sort!(local_df, :orbit_count)
+        sort!(local_df, multiplier_col)
         value = local_df[1, metric]
         return value isa Missing ? Inf : -Float64(value)
     end)
@@ -2646,84 +4274,139 @@ function generate_runtime_plots(
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_montecarlo_seed_trace", spec, stamp)
     end
 
+    sweep_multiplier_col = :mission_time_multiplier in names(orbit_summary_df) ? :mission_time_multiplier : :orbit_count
     orbit_valid = orbit_summary_df[
         (orbit_summary_df.samples_success .> 0) .&
-        .!ismissing.(orbit_summary_df.orbit_count), :
+        .!ismissing.(orbit_summary_df[!, sweep_multiplier_col]), :
     ]
 
-    # 12) Per-orbit runtime scaling.
+    # 12) Mission-time sweep runtime scaling.
     orbit_scaling_df = orbit_valid[.!ismissing.(orbit_valid.total_time_mean_s), :]
     if nrow(orbit_scaling_df) > 0
+        multiplier_col = :mission_time_multiplier in names(orbit_scaling_df) ? :mission_time_multiplier : :orbit_count
+        time_per_unit_col = :time_per_baseline_period_mean_s in names(orbit_scaling_df) ? :time_per_baseline_period_mean_s : :time_per_orbit_mean_s
         plt = Plots.plot(;
-            title="Per-Orbit Runtime Scaling",
-            xlabel="Orbit Count",
-            ylabel="Mean Time per Orbit [s]",
+            title="Mission-Time Sweep Runtime Scaling",
+            xlabel="Mission-Time Multiplier [x baseline period]",
+            ylabel="Mean Time per Baseline-Period Unit [s]",
             _plot_margins(size=(2300, 1200), right_mm=72, legend=:outerright)...
         )
         for grp in _sorted_orbit_groups(orbit_scaling_df, :total_time_mean_s)
             local_df = DataFrame(grp)
-            sort!(local_df, :orbit_count)
-            x = Int.(local_df.orbit_count)
-            y = Float64.(local_df.time_per_orbit_mean_s)
+            sort!(local_df, multiplier_col)
+            x = Int.(local_df[!, multiplier_col])
+            y = Float64.(local_df[!, time_per_unit_col])
             Plots.plot!(plt, x, y; marker=:circle, label=String(local_df.scenario[1]))
         end
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_per_orbit_scaling", spec, stamp)
     end
 
-    # 13) Per-orbit efficiency scaling.
+    # 13) Mission-time sweep efficiency scaling.
     orbit_eff_df = orbit_valid[.!ismissing.(orbit_valid.orbits_per_wall_second_mean), :]
     if nrow(orbit_eff_df) > 0
+        multiplier_col = :mission_time_multiplier in names(orbit_eff_df) ? :mission_time_multiplier : :orbit_count
+        throughput_col = :baseline_periods_per_wall_second_mean in names(orbit_eff_df) ? :baseline_periods_per_wall_second_mean : :orbits_per_wall_second_mean
         plt = Plots.plot(;
-            title="Per-Orbit Efficiency Scaling",
-            xlabel="Orbit Count",
-            ylabel="Orbits / Wall-sec",
+            title="Mission-Time Sweep Efficiency Scaling",
+            xlabel="Mission-Time Multiplier [x baseline period]",
+            ylabel="Baseline-Period Units / Wall-sec",
             _plot_margins(size=(2300, 1200), right_mm=72, legend=:outerright)...
         )
-        for grp in _sorted_orbit_groups(orbit_eff_df, :orbits_per_wall_second_mean)
+        for grp in _sorted_orbit_groups(orbit_eff_df, throughput_col)
             local_df = DataFrame(grp)
-            sort!(local_df, :orbit_count)
-            x = Int.(local_df.orbit_count)
-            y = Float64.(local_df.orbits_per_wall_second_mean)
+            sort!(local_df, multiplier_col)
+            x = Int.(local_df[!, multiplier_col])
+            y = Float64.(local_df[!, throughput_col])
             Plots.plot!(plt, x, y; marker=:circle, label=String(local_df.scenario[1]))
         end
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_per_orbit_efficiency", spec, stamp)
     end
 
-    # 14) Per-orbit time heatmap.
+    # 14) Mission-time sweep time heatmap.
     heat_df = orbit_valid[.!ismissing.(orbit_valid.time_per_orbit_mean_s), :]
     if nrow(heat_df) > 0
+        multiplier_col = :mission_time_multiplier in names(heat_df) ? :mission_time_multiplier : :orbit_count
+        heat_value_col = :time_per_baseline_period_mean_s in names(heat_df) ? :time_per_baseline_period_mean_s : :time_per_orbit_mean_s
         scenario_names = unique(String.(heat_df.scenario))
         scenario_order = sort(scenario_names; by=sc -> begin
             vals = [
                 Float64(v)
-                for v in heat_df[heat_df.scenario .== sc, :time_per_orbit_mean_s]
+                for v in heat_df[heat_df.scenario .== sc, heat_value_col]
                 if !(v isa Missing)
             ]
             return isempty(vals) ? Inf : -mean(vals)
         end)
-        orbits = sort(unique(Int.(heat_df.orbit_count)))
-        z = fill(NaN, length(scenario_order), length(orbits))
+        multipliers = sort(unique(Int.(heat_df[!, multiplier_col])))
+        z = fill(NaN, length(scenario_order), length(multipliers))
         for row in eachrow(heat_df)
             si = findfirst(==(String(row.scenario)), scenario_order)
-            oi = findfirst(==(Int(row.orbit_count)), orbits)
+            oi = findfirst(==(Int(row[ multiplier_col ])), multipliers)
             if si !== nothing && oi !== nothing
-                z[si, oi] = Float64(row.time_per_orbit_mean_s)
+                z[si, oi] = Float64(row[heat_value_col])
             end
         end
         plt = Plots.heatmap(
-            orbits,
+            multipliers,
             1:length(scenario_order),
             z;
             color=Plots.cgrad([:lightsteelblue1, :mediumpurple3, "#3a0a2a"]),
-            colorbar_title="s/orbit",
+            colorbar_title="s / baseline-period unit",
             colorbar=true,
             yticks=(1:length(scenario_order), _plot_wrapped_label.(scenario_order)),
-            xlabel="Orbit Count",
+            xlabel="Mission-Time Multiplier [x baseline period]",
             ylabel="Scenario",
-            title="Per-Orbit Time Heatmap [s/orbit]",
+            title="Mission-Time Sweep Heatmap [s / baseline-period unit]",
             _plot_margins(size=(2300, 1400), left_mm=72, right_mm=52, bottom_mm=24)...
         )
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_per_orbit_heatmap", spec, stamp)
+    end
+
+    # 15) SPICE call budget by scenario (N-body + SRP + planet frame).
+    spice_df = success_summary[
+        .!ismissing.(success_summary.spice_calls_total_mean) .&
+        .!ismissing.(success_summary.total_time_mean_s), :
+    ]
+    if nrow(spice_df) > 0
+        labels = _plot_axis_label.(String.(spice_df.scenario))
+        nbody_calls = [v isa Missing ? 0.0 : Float64(v) for v in spice_df.nbody_spkpos_total_calls_mean]
+        srp_calls = [v isa Missing ? 0.0 : Float64(v) for v in spice_df.srp_spkpos_total_calls_mean]
+        pxform_calls = [v isa Missing ? 0.0 : Float64(v) for v in spice_df.planet_pxform_total_calls_mean]
+        total_calls = nbody_calls .+ srp_calls .+ pxform_calls
+        calls_per_wall_s = [
+            (tt <= 0.0) ? NaN : tc / tt
+            for (tc, tt) in zip(total_calls, Float64.(spice_df.total_time_mean_s))
+        ]
+        if any(>(0.0), total_calls)
+            p1 = Plots.bar(
+                labels,
+                hcat(nbody_calls, srp_calls, pxform_calls);
+                label=["N-body spkpos" "SRP spkpos" "Planet pxform"],
+                color=["#2f80ed" "#56b870" "#d17a4f"],
+                bar_position=:stack,
+                ylabel="Mean SPICE Calls / Successful Run",
+                title="SPICE Call Budget by Scenario",
+                _plot_margins(size=(2500, 760), bottom_mm=10, right_mm=62, legend=:outertopright)...
+            )
+            p2 = Plots.bar(
+                labels,
+                calls_per_wall_s;
+                color="#7b63c6",
+                label=false,
+                xlabel="Scenario",
+                ylabel="Calls / Wall-sec",
+                title="SPICE Call Rate by Scenario",
+                _plot_margins(size=(2500, 940), bottom_mm=88, right_mm=42)...
+            )
+            plt = Plots.plot(
+                p1,
+                p2;
+                layout=(2, 1),
+                size=(2500, 1700),
+                left_margin=20 * Plots.mm,
+                right_margin=20 * Plots.mm
+            )
+            _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_spice_budget", spec, stamp)
+        end
     end
 
     return plot_artifacts
@@ -2751,13 +4434,61 @@ function write_report(
     raw_df::DataFrame,
     summary_df::DataFrame,
     orbit_summary_df::DataFrame;
-    plot_paths::Vector{String}=String[]
+    plot_paths::Vector{String}=String[],
+    split_gate_df::Union{Nothing, DataFrame}=nothing,
+    split_gate_csv_path::Union{Nothing, String}=nothing,
+    split_gate_report_path::Union{Nothing, String}=nothing,
+    multirate_gate_df::Union{Nothing, DataFrame}=nothing,
+    multirate_gate_csv_path::Union{Nothing, String}=nothing,
+    multirate_gate_report_path::Union{Nothing, String}=nothing,
+    stage_timing_df::Union{Nothing, DataFrame}=nothing
 )
     generated = string(now(UTC))
     julia_ver = string(VERSION)
     nthreads = Threads.nthreads()
     solver_mode_default = _perf_default_solver_mode(spec.name)
     solver_mode_effective = _perf_solver_mode_env(spec.name)
+    hw_default = _runtime_hardware_snapshot()
+
+    function _first_nonmissing(df::DataFrame, col::Symbol, fallback)
+        if !(col in names(df))
+            return fallback
+        end
+        vals = [v for v in df[!, col] if !(v isa Missing)]
+        isempty(vals) && return fallback
+        return vals[1]
+    end
+
+    hardware_class = string(_first_nonmissing(raw_df, :hardware_class, hw_default.hardware_class))
+    machine_label = string(_first_nonmissing(raw_df, :machine_label, hw_default.machine_label))
+    host_name = string(_first_nonmissing(raw_df, :host_name, hw_default.host_name))
+    cpu_name = string(_first_nonmissing(raw_df, :cpu_name, hw_default.cpu_name))
+    cpu_threads = Int(_first_nonmissing(raw_df, :cpu_threads, hw_default.cpu_threads))
+    julia_threads = Int(_first_nonmissing(raw_df, :julia_threads, hw_default.julia_threads))
+    os_name = string(_first_nonmissing(raw_df, :os, hw_default.os))
+    arch_name = string(_first_nonmissing(raw_df, :arch, hw_default.arch))
+
+    bench_stage_s = missing
+    split_stage_s = missing
+    multirate_stage_s = missing
+    orbit_stage_s = missing
+    total_stage_s = missing
+    if !(stage_timing_df === nothing) && (:stage in names(stage_timing_df)) && (:elapsed_s in names(stage_timing_df))
+        for row in eachrow(stage_timing_df)
+            stage_name = String(row.stage)
+            if stage_name == "run_benchmarks"
+                bench_stage_s = row.elapsed_s
+            elseif stage_name == "run_split_rollout_gate"
+                split_stage_s = row.elapsed_s
+            elseif stage_name == "run_multirate_rollout_gate"
+                multirate_stage_s = row.elapsed_s
+            elseif stage_name == "run_per_orbit"
+                orbit_stage_s = row.elapsed_s
+            elseif stage_name == "total"
+                total_stage_s = row.elapsed_s
+            end
+        end
+    end
 
     valid_rows = findall(x -> !ismissing(x), summary_df.total_time_mean_s)
     fastest = nothing
@@ -2784,6 +4515,49 @@ function write_report(
     mc_std = nrow(mc_rows) > 0 ? std(mc_rows.total_time_s; corrected=false) : missing
     fallback_rows = raw_df[(raw_df.solve_success .== true) .& (raw_df.solver_fallback_used .== true), :]
     solver_modes = _safe_unique_join(raw_df.solver_mode)
+    total_success = count(identity, raw_df.solve_success)
+    total_samples = nrow(raw_df)
+    solve_success_rate = total_samples > 0 ? (100.0 * total_success / total_samples) : missing
+    failed_groups = summary_df[summary_df.samples_failed .> 0, :]
+
+    spice_rows = summary_df[.!ismissing.(summary_df.spice_calls_total_mean), :]
+    spice_peak = nothing
+    if nrow(spice_rows) > 0
+        spice_rows_sorted = copy(spice_rows)
+        sort!(spice_rows_sorted, :spice_calls_total_mean, rev=true)
+        spice_peak = spice_rows_sorted[1, :]
+    end
+
+    ci_rows = summary_df[
+        .!ismissing.(summary_df.total_time_ci95_low_s) .&
+        .!ismissing.(summary_df.total_time_ci95_high_s) .&
+        .!ismissing.(summary_df.total_time_mean_s), :
+    ]
+    ci_rows_sorted = DataFrame()
+    if nrow(ci_rows) > 0
+        ci_rows_sorted = copy(ci_rows)
+        ci_rows_sorted[!, :_total_sort] = [Float64(v) for v in ci_rows_sorted.total_time_mean_s]
+        sort!(ci_rows_sorted, :_total_sort, rev=true)
+        select!(ci_rows_sorted, Not(:_total_sort))
+    end
+
+    split_pass_count = 0
+    split_total = 0
+    split_any_fail = false
+    if !(split_gate_df === nothing) && (:pass_all in names(split_gate_df))
+        split_total = nrow(split_gate_df)
+        split_pass_count = count(Bool.(split_gate_df.pass_all))
+        split_any_fail = split_pass_count < split_total
+    end
+
+    multirate_pass_count = 0
+    multirate_total = 0
+    multirate_any_fail = false
+    if !(multirate_gate_df === nothing) && (:pass_all in names(multirate_gate_df))
+        multirate_total = nrow(multirate_gate_df)
+        multirate_pass_count = count(Bool.(multirate_gate_df.pass_all))
+        multirate_any_fail = multirate_pass_count < multirate_total
+    end
 
     open(path, "w") do io
         println(io, "# SpaceAGORA Computational Time Analysis (`$(spec.name)` profile)")
@@ -2791,12 +4565,26 @@ function write_report(
         println(io, "- Generated (UTC): $generated")
         println(io, "- Julia: `$julia_ver`")
         println(io, "- Threads: `$nthreads`")
+        println(io, "- Machine label: `$(machine_label)`")
+        println(io, "- Hardware class: `$(hardware_class)`")
+        println(io, "- Hostname: `$(host_name)`")
+        println(io, "- CPU: `$(cpu_name)` (`$(cpu_threads)` system threads)")
+        println(io, "- Julia threads in process: `$(julia_threads)`")
+        println(io, "- OS/Arch: `$(os_name)` / `$(arch_name)`")
         println(io, "- Repeats per deterministic scenario: `$(spec.repeats)`")
         println(io, "- Warmup runs per scenario: `$(spec.warmup)`")
         println(io, "- Monte Carlo seeds: `$(spec.montecarlo_samples)`")
         println(io, "- Solver mode default for profile: `$(solver_mode_default)`")
         println(io, "- Solver mode effective (after env overrides): `$(solver_mode_effective)`")
         println(io, "- Solver mode(s) observed: `$(_fmt(solver_modes))`")
+        if !(total_stage_s isa Missing)
+            println(
+                io,
+                "- Stage elapsed [s]: run_benchmarks=`$(_fmt(bench_stage_s))`, " *
+                "split_gate=`$(_fmt(split_stage_s))`, multirate_gate=`$(_fmt(multirate_stage_s))`, " *
+                "mission_time_sweep=`$(_fmt(orbit_stage_s))`, total=`$(_fmt(total_stage_s))`"
+            )
+        end
         println(io)
         println(io, "## Key Findings")
         println(io)
@@ -2827,8 +4615,25 @@ function write_report(
             println(io, "- Monte Carlo runtime spread: mean `$(round(mc_mean; digits=3)) s`, p90 `$(round(mc_p90; digits=3)) s`, std `$(round(mc_std; digits=3)) s`.")
         end
         println(io, "- Auto-stiff fallback activations (successful runs): `$(nrow(fallback_rows))`.")
+        println(io, "- Successful samples: `$(total_success)/$(total_samples)` (`$(_fmt(solve_success_rate))%`).")
+        if !(spice_peak === nothing)
+            println(
+                io,
+                "- Highest mean SPICE call budget: `$(spice_peak.scenario)` with `$(_fmt(spice_peak.spice_calls_total_mean))` calls/run " *
+                "(`$(_fmt(spice_peak.spice_calls_per_wall_second_mean))` calls/wall-sec)."
+            )
+        end
+        if split_total > 0
+            println(io, "- Split rollout guardrail: `$(split_pass_count)/$(split_total)` pass.")
+        else
+            println(io, "- Split rollout guardrail: disabled or no gate rows.")
+        end
+        if multirate_total > 0
+            println(io, "- Multirate rollout guardrail: `$(multirate_pass_count)/$(multirate_total)` pass.")
+        else
+            println(io, "- Multirate rollout guardrail: disabled or no gate rows.")
+        end
         println(io, "- Plot artifacts generated: `$(length(plot_paths))`.")
-        failed_groups = summary_df[summary_df.samples_failed .> 0, :]
         if nrow(failed_groups) > 0
             println(io, "- Solver failures detected in `$(nrow(failed_groups))` scenario groups; timings only use successful runs.")
         end
@@ -2841,26 +4646,118 @@ function write_report(
             end
             println(io)
         end
+
+        println(io, "## Statistical Confidence")
+        println(io)
+        if nrow(ci_rows_sorted) == 0
+            println(io, "- No confidence interval rows are available (insufficient successful samples).")
+        else
+            println(io, "| Scenario | Samples | Mean Total (s) | 95% CI Low (s) | 95% CI High (s) | SEM (s) | CV (%) |")
+            println(io, "|---|---:|---:|---:|---:|---:|---:|")
+            for row in eachrow(ci_rows_sorted)
+                println(
+                    io,
+                    "| $(row.scenario) | $(row.samples_success) | $(_fmt(row.total_time_mean_s)) | $(_fmt(row.total_time_ci95_low_s)) | " *
+                    "$(_fmt(row.total_time_ci95_high_s)) | $(_fmt(row.total_time_sem_s)) | $(_fmt(row.total_time_cv_pct)) |"
+                )
+            end
+        end
+        println(io)
+
+        println(io, "## Subsystem Evidence (SPICE)")
+        println(io)
+        if nrow(spice_rows) == 0
+            println(io, "- No SPICE counters were captured for successful rows.")
+        else
+            println(io, "| Scenario | N-body total calls | SRP total calls | Planet pxform calls | SPICE total calls | Calls/wall-sec |")
+            println(io, "|---|---:|---:|---:|---:|---:|")
+            spice_table = copy(spice_rows)
+            sort!(spice_table, :spice_calls_total_mean, rev=true)
+            for row in eachrow(spice_table)
+                println(
+                    io,
+                    "| $(row.scenario) | $(_fmt(row.nbody_spkpos_total_calls_mean)) | $(_fmt(row.srp_spkpos_total_calls_mean)) | " *
+                    "$(_fmt(row.planet_pxform_total_calls_mean)) | $(_fmt(row.spice_calls_total_mean)) | $(_fmt(row.spice_calls_per_wall_second_mean)) |"
+                )
+            end
+        end
+        println(io)
+
+        println(io, "## Fidelity Guardrails")
+        println(io)
+        println(io, "- Split rollout gate enabled: `$(_split_rollout_enabled())`")
+        println(io, "- Split rollout enforce mode: `$(_split_rollout_enforce())`")
+        println(io, "- Split rollout cases: `$(join(_split_rollout_case_names(), ", "))`")
+        println(io, "- Split rollout solvers: `$(join(_split_rollout_solver_variants(), ", "))`")
+        if split_total > 0
+            println(io, "- Gate pass count: `$(split_pass_count)/$(split_total)`")
+            println(io, "- Any gate failure: `$(split_any_fail)`")
+            if !(split_gate_csv_path === nothing)
+                println(io, "- Gate CSV: `$(split_gate_csv_path)`")
+            end
+            if !(split_gate_report_path === nothing)
+                println(io, "- Gate report: `$(split_gate_report_path)`")
+            end
+        else
+            println(io, "- Gate rows: none (gate disabled or no matching cases).")
+        end
+        println(io)
+        println(io, "- Multirate rollout gate enabled: `$(_multirate_rollout_enabled())`")
+        println(io, "- Multirate rollout enforce mode: `$(_multirate_rollout_enforce())`")
+        println(io, "- Multirate rollout cases: `$(join(_multirate_rollout_case_names(), ", "))`")
+        println(io, "- Multirate rollout max slowdown ratio: `$(_multirate_rollout_max_slowdown_ratio())`")
+        if multirate_total > 0
+            println(io, "- Multirate gate pass count: `$(multirate_pass_count)/$(multirate_total)`")
+            println(io, "- Multirate any gate failure: `$(multirate_any_fail)`")
+            if !(multirate_gate_csv_path === nothing)
+                println(io, "- Multirate gate CSV: `$(multirate_gate_csv_path)`")
+            end
+            if !(multirate_gate_report_path === nothing)
+                println(io, "- Multirate gate report: `$(multirate_gate_report_path)`")
+            end
+        else
+            println(io, "- Multirate gate rows: none (gate disabled or no matching cases).")
+        end
+        println(io)
+
+        println(io, "## Verification Snapshot")
+        println(io)
+        println(io, "- Solver-success samples: `$(total_success)/$(total_samples)` (`$(_fmt(solve_success_rate))%`).")
+        println(io, "- Scenario groups with failures: `$(nrow(failed_groups))`.")
+        println(io, "- Auto-stiff fallback rows: `$(nrow(fallback_rows))`.")
+        if split_total > 0
+            println(io, "- Split rollout verification rows: `$(split_total)` (`$(split_pass_count)` pass).")
+        end
+        if multirate_total > 0
+            println(io, "- Multirate rollout verification rows: `$(multirate_total)` (`$(multirate_pass_count)` pass).")
+        end
+        println(io)
+
         println(io)
         println(io, "## Scenario Summary")
         println(io)
-        println(io, "| Scenario | Category | Success/Total | Solver(s) | Fallback Any | Mean Total (s) | P90 (s) | Mean Solve (s) | Mean Copy (s) | Sim sec / wall sec | Rel. Baseline |")
-        println(io, "|---|---|---:|---|---|---:|---:|---:|---:|---:|---:|")
+        println(io, "| Scenario | Category | Success/Total | Solver(s) | Fallback Any | Mean Total (s) | 95% CI [low, high] (s) | CV (%) | P90 (s) | Mean Solve (s) | Mean Copy (s) | SPICE Calls/run | Sim sec / wall sec | Rel. Baseline |")
+        println(io, "|---|---|---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|")
         for row in eachrow(summary_df)
+            ci_band = "[$(_fmt(row.total_time_ci95_low_s)), $(_fmt(row.total_time_ci95_high_s))]"
             println(
                 io,
-                "| $(row.scenario) | $(row.category) | $(row.samples_success)/$(row.samples_total) | $(_fmt(row.solver_sequences)) | $(_fmt(row.solver_fallback_any)) | $(_fmt(row.total_time_mean_s)) | $(_fmt(row.total_time_p90_s)) | $(_fmt(row.solve_time_mean_s)) | $(_fmt(row.copy_time_mean_s)) | $(_fmt(row.sim_seconds_per_wall_second_mean)) | $(_fmt(row.relative_to_baseline)) |"
+                "| $(row.scenario) | $(row.category) | $(row.samples_success)/$(row.samples_total) | $(_fmt(row.solver_sequences)) | $(_fmt(row.solver_fallback_any)) | $(_fmt(row.total_time_mean_s)) | $(ci_band) | $(_fmt(row.total_time_cv_pct)) | $(_fmt(row.total_time_p90_s)) | $(_fmt(row.solve_time_mean_s)) | $(_fmt(row.copy_time_mean_s)) | $(_fmt(row.spice_calls_total_mean)) | $(_fmt(row.sim_seconds_per_wall_second_mean)) | $(_fmt(row.relative_to_baseline)) |"
             )
         end
         println(io)
-        println(io, "## Per-Orbit Results (All Scenarios)")
+        println(io, "## Mission-Time Sweep Results (All Scenarios)")
         println(io)
-        println(io, "| Scenario | Category | Orbit Count | Success/Total | Mission Time (s) | Mean Total (s) | P90 (s) | Time / Orbit (s) | Orbits / Wall-sec |")
-        println(io, "|---|---|---:|---:|---:|---:|---:|---:|---:|")
+        println(io, "| Scenario | Category | Mission-Time Multiplier (x baseline period) | Success/Total | Mission Time (s) | Mean Total (s) | 95% CI [low, high] (s) | P90 (s) | Time / Baseline-Period Unit (s) | Baseline-Period Units / Wall-sec |")
+        println(io, "|---|---|---:|---:|---:|---:|---|---:|---:|---:|")
         for row in eachrow(orbit_summary_df)
+            ci_band = "[$(_fmt(row.total_time_ci95_low_s)), $(_fmt(row.total_time_ci95_high_s))]"
+            multiplier = hasproperty(row, :mission_time_multiplier) ? row.mission_time_multiplier : row.orbit_count
+            time_per_unit = hasproperty(row, :time_per_baseline_period_mean_s) ? row.time_per_baseline_period_mean_s : row.time_per_orbit_mean_s
+            units_per_wall = hasproperty(row, :baseline_periods_per_wall_second_mean) ? row.baseline_periods_per_wall_second_mean : row.orbits_per_wall_second_mean
             println(
                 io,
-                "| $(row.scenario) | $(row.category) | $(row.orbit_count) | $(row.samples_success)/$(row.samples_total) | $(_fmt(row.mission_time_mean_s)) | $(_fmt(row.total_time_mean_s)) | $(_fmt(row.total_time_p90_s)) | $(_fmt(row.time_per_orbit_mean_s)) | $(_fmt(row.orbits_per_wall_second_mean)) |"
+                "| $(row.scenario) | $(row.category) | $(multiplier) | $(row.samples_success)/$(row.samples_total) | $(_fmt(row.mission_time_mean_s)) | $(_fmt(row.total_time_mean_s)) | $(ci_band) | $(_fmt(row.total_time_p90_s)) | $(_fmt(time_per_unit)) | $(_fmt(units_per_wall)) |"
             )
         end
     end
@@ -2869,6 +4766,7 @@ end
 function main()
     spec, outdir = parse_cli()
     mkpath(outdir)
+    _reset_outer_route_history!()
 
     solver_mode_default = _perf_default_solver_mode(spec.name)
     solver_mode_effective = _perf_solver_mode_env(spec.name)
@@ -2883,6 +4781,12 @@ function main()
     println("Solver mode default: $(solver_mode_default)")
     println("Solver mode effective: $(solver_mode_effective)")
     println(
+        "Outer-route adaptive=$(_outer_route_adaptive_enabled() ? "on" : "off"), " *
+        "min_samples=$(_outer_route_min_samples()), " *
+        "mc_process_min_samples=$(_outer_route_mc_process_min_samples()), " *
+        "mc_process_min_mission_s=$(round(_outer_route_mc_process_min_mission_s(); digits=3))"
+    )
+    println(
         "Priority thresholds: inner_sat=$(sat_threshold), inner_link=$(link_threshold), " *
         "outer_light_sat=$(outer_light_sat), outer_light_link=$(outer_light_link), " *
         "outer_light_mission_s=$(round(outer_light_mission_s; digits=3))"
@@ -2895,11 +4799,37 @@ function main()
     summary_df = summarize_results(raw_df)
     bench_elapsed_s = (time_ns() - bench_started_ns) / 1e9
 
+    split_gate_df = nothing
+    split_gate_csv_path = nothing
+    split_gate_report_path = nothing
+    split_gate_elapsed_s = 0.0
+    if _split_rollout_enabled()
+        split_gate_started_ns = time_ns()
+        split_gate_result = evaluate_split_rollout_gate(spec, cases, outdir)
+        split_gate_elapsed_s = (time_ns() - split_gate_started_ns) / 1e9
+        split_gate_df = split_gate_result.df
+        split_gate_csv_path = split_gate_result.csv_path
+        split_gate_report_path = split_gate_result.report_path
+    end
+
+    multirate_gate_df = nothing
+    multirate_gate_csv_path = nothing
+    multirate_gate_report_path = nothing
+    multirate_gate_elapsed_s = 0.0
+    if _multirate_rollout_enabled()
+        multirate_gate_started_ns = time_ns()
+        multirate_gate_result = evaluate_multirate_rollout_gate(spec, cases, outdir)
+        multirate_gate_elapsed_s = (time_ns() - multirate_gate_started_ns) / 1e9
+        multirate_gate_df = multirate_gate_result.df
+        multirate_gate_csv_path = multirate_gate_result.csv_path
+        multirate_gate_report_path = multirate_gate_result.report_path
+    end
+
     orbit_started_ns = time_ns()
     orbit_raw_df = run_per_orbit_for_scenarios(spec, cases, planet)
     orbit_summary_df = summarize_per_orbit_results(orbit_raw_df)
     orbit_elapsed_s = (time_ns() - orbit_started_ns) / 1e9
-    total_elapsed_s = bench_elapsed_s + orbit_elapsed_s
+    total_elapsed_s = bench_elapsed_s + split_gate_elapsed_s + multirate_gate_elapsed_s + orbit_elapsed_s
 
     stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
     raw_path = joinpath(outdir, "runtime_raw_$(spec.name)_$(stamp).csv")
@@ -2907,27 +4837,89 @@ function main()
     orbit_raw_path = joinpath(outdir, "runtime_per_orbit_raw_$(spec.name)_$(stamp).csv")
     orbit_summary_path = joinpath(outdir, "runtime_per_orbit_summary_$(spec.name)_$(stamp).csv")
     stage_timing_path = joinpath(outdir, "runtime_stage_timing_$(spec.name)_$(stamp).csv")
+    hardware_info_path = joinpath(outdir, "runtime_hardware_info_$(spec.name)_$(stamp).csv")
     report_path = joinpath(outdir, "runtime_report_$(spec.name)_$(stamp).md")
     plot_paths = generate_runtime_plots(outdir, spec, stamp, raw_df, summary_df, orbit_summary_df)
 
-    stage_timing_df = DataFrame(
-        stage=["run_benchmarks", "run_per_orbit", "total"],
-        elapsed_s=[bench_elapsed_s, orbit_elapsed_s, total_elapsed_s]
-    )
+    stage_names = ["run_benchmarks"]
+    stage_elapsed = [bench_elapsed_s]
+    if _split_rollout_enabled()
+        push!(stage_names, "run_split_rollout_gate")
+        push!(stage_elapsed, split_gate_elapsed_s)
+    end
+    if _multirate_rollout_enabled()
+        push!(stage_names, "run_multirate_rollout_gate")
+        push!(stage_elapsed, multirate_gate_elapsed_s)
+    end
+    push!(stage_names, "run_per_orbit")
+    push!(stage_names, "total")
+    push!(stage_elapsed, orbit_elapsed_s)
+    push!(stage_elapsed, total_elapsed_s)
+    stage_timing_df = DataFrame(stage=stage_names, elapsed_s=stage_elapsed)
+    hw = _runtime_hardware_snapshot()
+    hardware_info_df = DataFrame([
+        (
+            profile=spec.name,
+            machine_label=hw.machine_label,
+            hardware_class=hw.hardware_class,
+            host_name=hw.host_name,
+            cpu_name=hw.cpu_name,
+            cpu_threads=hw.cpu_threads,
+            julia_threads=hw.julia_threads,
+            os=hw.os,
+            arch=hw.arch
+        )
+    ])
 
     CSV.write(raw_path, raw_df)
     CSV.write(summary_path, summary_df)
     CSV.write(orbit_raw_path, orbit_raw_df)
     CSV.write(orbit_summary_path, orbit_summary_df)
     CSV.write(stage_timing_path, stage_timing_df)
-    write_report(report_path, spec, raw_df, summary_df, orbit_summary_df; plot_paths=plot_paths)
+    CSV.write(hardware_info_path, hardware_info_df)
+    write_report(
+        report_path,
+        spec,
+        raw_df,
+        summary_df,
+        orbit_summary_df;
+        plot_paths=plot_paths,
+        split_gate_df=split_gate_df,
+        split_gate_csv_path=split_gate_csv_path,
+        split_gate_report_path=split_gate_report_path,
+        multirate_gate_df=multirate_gate_df,
+        multirate_gate_csv_path=multirate_gate_csv_path,
+        multirate_gate_report_path=multirate_gate_report_path,
+        stage_timing_df=stage_timing_df
+    )
 
     println("Analysis complete.")
     println("Raw results: $raw_path")
     println("Summary: $summary_path")
-    println("Per-orbit raw: $orbit_raw_path")
-    println("Per-orbit summary: $orbit_summary_path")
+    println("Mission-time-sweep raw: $orbit_raw_path")
+    println("Mission-time-sweep summary: $orbit_summary_path")
     println("Stage timing: $stage_timing_path")
+    println("Hardware info: $hardware_info_path")
+    if !(split_gate_df === nothing)
+        pass_count = (:pass_all in names(split_gate_df)) ? count(Bool.(split_gate_df.pass_all)) : 0
+        println("Split rollout gate: $(pass_count)/$(nrow(split_gate_df)) pass")
+    end
+    if !(split_gate_csv_path === nothing)
+        println("Split rollout gate CSV: $(split_gate_csv_path)")
+    end
+    if !(split_gate_report_path === nothing)
+        println("Split rollout gate report: $(split_gate_report_path)")
+    end
+    if !(multirate_gate_df === nothing)
+        pass_count = (:pass_all in names(multirate_gate_df)) ? count(Bool.(multirate_gate_df.pass_all)) : 0
+        println("Multirate rollout gate: $(pass_count)/$(nrow(multirate_gate_df)) pass")
+    end
+    if !(multirate_gate_csv_path === nothing)
+        println("Multirate rollout gate CSV: $(multirate_gate_csv_path)")
+    end
+    if !(multirate_gate_report_path === nothing)
+        println("Multirate rollout gate report: $(multirate_gate_report_path)")
+    end
     println("Plots generated: $(length(plot_paths))")
     println("Report: $report_path")
 end

@@ -1,8 +1,0 @@
-<map id="GRAM::MGCM" name="GRAM::MGCM">
-<area shape="rect" id="node1" title="The MGCM model of the Mars atmosphere." alt="" coords="611,109,721,137"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_mars_g_c_m_base.html" title="The base class for the MGCM and TesGCM models." alt="" coords="292,5,449,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_m_g_c_m_upper_interpolator.html" title="The MGCM upper atmosphere model (80 to 170 km)." alt="" coords="267,57,474,85"/>
-<area shape="rect" id="node4" href="$class_g_r_a_m_1_1_m_g_c_m_dust_model.html" title="The MGCM dust model class." alt="" coords="285,109,456,137"/>
-<area shape="rect" id="node5" href="$class_g_r_a_m_1_1_m_g_c_m_surface_interpolator.html" title="The MGCM surface (boundary layer) model (0 to 0.03 km)." alt="" coords="262,227,479,255"/>
-<area shape="rect" id="node6" href="$class_g_r_a_m_1_1_m_g_c_m_lower_interpolator.html" title="The MGCM lower atmosphere model (0 to 80 km)." alt="" coords="5,196,213,224"/>
-</map>

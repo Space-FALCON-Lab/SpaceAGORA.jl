@@ -196,7 +196,7 @@ function SimulationModel.ControlEffectors.rvtoorbitalelement(
     throw(ErrorException("forced-orbital-element-conversion-failure"))
 end
 
-const SPICE_PATH = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
+const SPICE_PATH = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const EARTH = Earth("", SPICE_PATH)
 
 angle_distance(a::Float64, b::Float64) = abs(mod(a - b + pi, 2pi) - pi)
@@ -795,7 +795,7 @@ end
     @test isdefined(sandbox, :execute_elements_case)
 
     typed_args = Core.eval(sandbox, quote
-        planet = SimulationModel.Earth("", joinpath(Main.REPO_ROOT, "GRAM Suite 2.0", "SPICE"))
+        planet = SimulationModel.Earth("", joinpath(Main.REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE"))
         env = SimulationModel.EnvironmentModel(
             planet=planet,
             EI=120.0,
@@ -1704,7 +1704,7 @@ end
     # Cover typed execute_elements_case dispatch wrapper in SimulationElements.jl.
     typed_dispatch_ret = Core.eval(sandbox, quote
         run_simulation(args::SimulationConfiguration; isolate_state::Bool=true) = :legacy_complete_passage_typed_dispatch_ok
-        planet = Earth("", joinpath(Main.REPO_ROOT, "GRAM Suite 2.0", "SPICE"))
+        planet = Earth("", joinpath(Main.REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE"))
         env = EnvironmentModel(
             planet=planet,
             EI=120.0,
@@ -8349,6 +8349,8 @@ end
     @test Δeps1 > 2e3
     @test Δeps2 < -2e3
 end
+
+include(joinpath(REPO_ROOT, "test", "coverage_parallel_telemetry_probes.jl"))
 
 @testset "JET Static Analysis" begin
     JET.@test_opt InitialCondition()

@@ -1,9 +1,0 @@
-<map id="GRAM::VenusCommon" name="GRAM::VenusCommon">
-<area shape="rect" id="node1" title="Common values for the Venus atmosphere models." alt="" coords="5,136,163,164"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_venus_atmosphere.html" title="The main Venus Atmosphere class." alt="" coords="211,5,387,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_venus_i_r_a.html" title="The VIRA model of a Venus Atmosphere." alt="" coords="236,57,362,85"/>
-<area shape="rect" id="node4" href="$class_g_r_a_m_1_1_venus_i_r_a_high.html" title="The VIRA model of the upper Venus Atmosphere." alt="" coords="223,109,375,137"/>
-<area shape="rect" id="node5" href="$class_g_r_a_m_1_1_venus_i_r_a_low.html" title="The VIRA model of the lower Venus Atmosphere." alt="" coords="224,161,374,189"/>
-<area shape="rect" id="node6" href="$class_g_r_a_m_1_1_venus_i_r_a_mid.html" title="The VIRA model of the middle Venus Atmosphere." alt="" coords="225,213,373,241"/>
-<area shape="rect" id="node7" href="$class_g_r_a_m_1_1_venus_i_r_a_thermos.html" title="The VIRA thermosphere model of a Venus Atmosphere." alt="" coords="211,265,387,293"/>
-</map>

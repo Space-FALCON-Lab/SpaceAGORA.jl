@@ -15,7 +15,7 @@ ENV["SPACEAGORA_DEV_HOT_RELOAD"] = "1"
 const quat_mult = SimulationModel.quat_mult
 include(joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"))
 
-const spice_path = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
+const spice_path = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const planet = Earth("", spice_path)
 
 struct ReviseHotReloadEffector <: SimulationModel.AbstractControlEffectorModel end

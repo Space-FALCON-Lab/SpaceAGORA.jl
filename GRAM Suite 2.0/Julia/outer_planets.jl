@@ -1,6 +1,0 @@
-include("outer_planets/common.jl")
-include("outer_planets/venus.jl")
-include("outer_planets/jupiter.jl")
-include("outer_planets/uranus.jl")
-include("outer_planets/neptune.jl")
-include("outer_planets/titan.jl")

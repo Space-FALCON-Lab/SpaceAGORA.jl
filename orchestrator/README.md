@@ -43,8 +43,8 @@ Standalone service layer for prompt-driven mission simulation that keeps `SpaceA
 
 ## Environment Variables
 - `ORCH_STORAGE_DIR`: run metadata and artifact root
-- `ORCH_SPICE_PATH`: SPICE kernel root (default: `<repo>/GRAM Suite 2.0/SPICE`, fallback `<repo>/GRAM_Data/SPICE`)
-- `ORCH_GRAM_DATA_PATH`: GRAM data root (default: `<repo>/GRAM Suite 2.0`, fallback `<repo>/GRAM_Data`)
+- `ORCH_SPICE_PATH`: SPICE kernel root (default: `<repo>/GRAMSuite.jl/GRAM Suite 2.0/SPICE`, fallback `<repo>/GRAM_Data/SPICE`)
+- `ORCH_GRAM_DATA_PATH`: GRAM data root (default: `<repo>/GRAMSuite.jl/GRAM Suite 2.0`, fallback `<repo>/GRAM_Data`)
 - `ORCH_GRAM_ROOT_PATH`: GRAM Suite root for Julia wrapper (legacy alias: `ORCH_GRAMPY_PATH`)
 - `ORCH_ENABLE_WEB_RETRIEVAL`: `true/false` (default `false`)
 - `ORCH_MAX_MISSION_TIME_SEC`: hard mission-time cap

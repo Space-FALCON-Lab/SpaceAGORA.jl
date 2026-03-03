@@ -34,7 +34,7 @@ end
 _with_env(f::Function, vars::Dict{String, String}) = _with_env(vars, f)
 
 function _make_args(; mission_time_s::Float64)
-    spice_path = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
+    spice_path = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
     planet = Mars("", spice_path)
 
     ic = InitialCondition(

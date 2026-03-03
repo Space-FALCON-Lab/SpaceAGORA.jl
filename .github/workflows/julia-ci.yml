@@ -26,6 +26,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -70,6 +73,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -91,6 +97,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -115,6 +124,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -139,6 +151,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -160,6 +175,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -184,6 +202,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -208,6 +229,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -245,6 +269,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -275,6 +302,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -300,6 +330,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -317,6 +350,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          submodules: recursive
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
           fetch-depth: 0
 
       - name: Fetch base ref

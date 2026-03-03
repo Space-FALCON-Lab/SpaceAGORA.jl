@@ -15,7 +15,7 @@ if Threads.nthreads() < 2
     error("Threaded smoke requires at least 2 Julia threads; got $(Threads.nthreads())")
 end
 
-spice_path = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
+spice_path = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 planet = Earth("", spice_path)
 
 function make_sc(id::Int64, ν_deg::Float64)

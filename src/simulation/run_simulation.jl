@@ -717,9 +717,11 @@ end
         return :rodas5p
     elseif mode in ("split_imex", "split-imex", "split", "imex")
         return :split_imex
+    elseif mode in ("multirate", "multirate_split", "split_multirate", "mr")
+        return :multirate
     end
     throw(ArgumentError(
-        "Unsupported SPACEAGORA_SOLVER_MODE='$mode'. Use one of: tsit5, auto_stiff, rodas5p, split_imex."
+        "Unsupported SPACEAGORA_SOLVER_MODE='$mode'. Use one of: tsit5, auto_stiff, rodas5p, split_imex, multirate."
     ))
 end
 
@@ -767,15 +769,68 @@ end
     ))
 end
 
-@inline function _solve_with_explicit_solver(prob, args, alg, reltol_tol, abstol_tol)
+@inline function _multirate_fast_substeps()::Int
+    raw = strip(get(ENV, "SPACEAGORA_MULTIRATE_FAST_SUBSTEPS", "8"))
+    parsed = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS must be an integer, got '$raw'."))
+    end
+    parsed > 0 || throw(ArgumentError("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS must be > 0, got $parsed."))
+    return parsed
+end
+
+@inline function _multirate_slow_dt_s(args)::Float64
+    default_dt = min(args.integration_tolerances.dt_max_orbit, 2.0)
+    raw = strip(get(ENV, "SPACEAGORA_MULTIRATE_SLOW_DT_S", ""))
+    dt = if isempty(raw)
+        default_dt
+    else
+        parsed = try
+            parse(Float64, raw)
+        catch
+            throw(ArgumentError("SPACEAGORA_MULTIRATE_SLOW_DT_S must be a number, got '$raw'."))
+        end
+        parsed
+    end
+    dt > 0.0 || throw(ArgumentError("SPACEAGORA_MULTIRATE_SLOW_DT_S must be > 0.0, got $dt."))
+    return min(dt, args.integration_tolerances.dt_max_orbit)
+end
+
+@inline function _multirate_solver_spec(env_name::String, default_mode::String)
+    mode = lowercase(strip(get(ENV, env_name, default_mode)))
+    if mode in ("tsit5", "tsit", "default")
+        return (alg=Tsit5(), label="Tsit5", auto_switch_capable=false)
+    elseif mode in ("auto_stiff", "auto-stiff", "autostiff", "auto")
+        return (
+            alg=AutoTsit5(Rodas5P(autodiff=AutoFiniteDiff())),
+            label="AutoTsit5(Rodas5P)",
+            auto_switch_capable=true
+        )
+    elseif mode in ("rodas5p", "rodas", "stiff")
+        return (alg=Rodas5P(autodiff=AutoFiniteDiff()), label="Rodas5P", auto_switch_capable=false)
+    elseif mode in ("kencarp4", "ken4")
+        return (alg=KenCarp4(autodiff=AutoFiniteDiff()), label="KenCarp4", auto_switch_capable=false)
+    end
+    throw(ArgumentError(
+        "Unsupported $(env_name)='$mode'. Use one of: tsit5, auto_stiff, rodas5p, kencarp4."
+    ))
+end
+
+@inline _multirate_slow_solver_spec() = _multirate_solver_spec("SPACEAGORA_MULTIRATE_SLOW_SOLVER", "tsit5")
+@inline _multirate_fast_solver_spec() = _multirate_solver_spec("SPACEAGORA_MULTIRATE_FAST_SOLVER", "auto_stiff")
+
+@inline function _solve_with_explicit_solver(prob, args, alg, reltol_tol, abstol_tol; dtmax_override::Union{Nothing, Float64}=nothing)
     maxiters = _solver_maxiters()
+    dtmax_use = isnothing(dtmax_override) ? args.integration_tolerances.dt_max_orbit : dtmax_override
+    dtmax_use > 0.0 || throw(ArgumentError("Solver dtmax must be > 0.0, got $dtmax_use."))
     if maxiters === nothing
         return solve(
             prob,
             alg;
             reltol=reltol_tol,
             abstol=abstol_tol,
-            dtmax=args.integration_tolerances.dt_max_orbit
+            dtmax=dtmax_use
         )
     end
     return solve(
@@ -783,8 +838,149 @@ end
         alg;
         reltol=reltol_tol,
         abstol=abstol_tol,
-        dtmax=args.integration_tolerances.dt_max_orbit,
+        dtmax=dtmax_use,
         maxiters=maxiters
+    )
+end
+
+@inline function _split_subproblem(prob, f, u, tspan)
+    return ODEProblem(f, u, tspan, prob.p; prob.kwargs...)
+end
+
+function _solve_with_multirate_solver(prob, args, reltol_tol, abstol_tol)
+    if !(hasproperty(prob.f, :f1) && hasproperty(prob.f, :f2))
+        throw(ArgumentError("SPACEAGORA_SOLVER_MODE=multirate requires a split problem with f1/f2 components."))
+    end
+
+    t_start = Float64(first(prob.tspan))
+    t_end = Float64(last(prob.tspan))
+    if t_end <= t_start
+        sol = _solve_with_explicit_solver(prob, args, Tsit5(), reltol_tol, abstol_tol)
+        return sol, (
+            slow_solver="Tsit5",
+            fast_solver="Tsit5",
+            macro_steps=0,
+            fast_substeps=0,
+            slow_dt_s=0.0,
+            fast_dt_s=0.0,
+            auto_switch_events=0
+        )
+    end
+
+    slow_spec = _multirate_slow_solver_spec()
+    fast_spec = _multirate_fast_solver_spec()
+    fast_substeps = _multirate_fast_substeps()
+    slow_dt_s = _multirate_slow_dt_s(args)
+    fast_dt_s = slow_dt_s / fast_substeps
+
+    t_cursor = t_start
+    u_cursor = deepcopy(prob.u0)
+    final_sol = nothing
+    macro_steps = 0
+    auto_switch_events = 0
+
+    while t_cursor < t_end
+        t_next = min(t_cursor + slow_dt_s, t_end)
+        macro_steps += 1
+
+        # Strang splitting: fast half-step -> slow full-step -> fast half-step.
+        segment_dt = t_next - t_cursor
+        half_dt = 0.5 * segment_dt
+        t_half = t_cursor + half_dt
+
+        if half_dt > 0.0
+            fast_prob_pre = _split_subproblem(prob, prob.f.f2, u_cursor, (t_cursor, t_half))
+            sol_fast_pre = _solve_with_explicit_solver(
+                fast_prob_pre,
+                args,
+                fast_spec.alg,
+                reltol_tol,
+                abstol_tol;
+                dtmax_override=min(fast_dt_s, half_dt)
+            )
+            if fast_spec.auto_switch_capable && _auto_stiff_switched(sol_fast_pre)
+                auto_switch_events += 1
+            end
+            if !SciMLBase.successful_retcode(sol_fast_pre.retcode)
+                return sol_fast_pre, (
+                    slow_solver=slow_spec.label,
+                    fast_solver=fast_spec.label,
+                    macro_steps=macro_steps,
+                    fast_substeps=fast_substeps,
+                    slow_dt_s=slow_dt_s,
+                    fast_dt_s=fast_dt_s,
+                    auto_switch_events=auto_switch_events
+                )
+            end
+            u_cursor = deepcopy(sol_fast_pre.u[end])
+            final_sol = sol_fast_pre
+        end
+
+        slow_prob = _split_subproblem(prob, prob.f.f1, u_cursor, (t_cursor, t_next))
+        sol_slow = _solve_with_explicit_solver(
+            slow_prob,
+            args,
+            slow_spec.alg,
+            reltol_tol,
+            abstol_tol;
+            dtmax_override=segment_dt
+        )
+        if slow_spec.auto_switch_capable && _auto_stiff_switched(sol_slow)
+            auto_switch_events += 1
+        end
+        if !SciMLBase.successful_retcode(sol_slow.retcode)
+            return sol_slow, (
+                slow_solver=slow_spec.label,
+                fast_solver=fast_spec.label,
+                macro_steps=macro_steps,
+                fast_substeps=fast_substeps,
+                slow_dt_s=slow_dt_s,
+                fast_dt_s=fast_dt_s,
+                auto_switch_events=auto_switch_events
+            )
+        end
+        u_cursor = deepcopy(sol_slow.u[end])
+        final_sol = sol_slow
+
+        if half_dt > 0.0
+            fast_prob_post = _split_subproblem(prob, prob.f.f2, u_cursor, (t_half, t_next))
+            sol_fast_post = _solve_with_explicit_solver(
+                fast_prob_post,
+                args,
+                fast_spec.alg,
+                reltol_tol,
+                abstol_tol;
+                dtmax_override=min(fast_dt_s, half_dt)
+            )
+            if fast_spec.auto_switch_capable && _auto_stiff_switched(sol_fast_post)
+                auto_switch_events += 1
+            end
+            if !SciMLBase.successful_retcode(sol_fast_post.retcode)
+                return sol_fast_post, (
+                    slow_solver=slow_spec.label,
+                    fast_solver=fast_spec.label,
+                    macro_steps=macro_steps,
+                    fast_substeps=fast_substeps,
+                    slow_dt_s=slow_dt_s,
+                    fast_dt_s=fast_dt_s,
+                    auto_switch_events=auto_switch_events
+                )
+            end
+            u_cursor = deepcopy(sol_fast_post.u[end])
+            final_sol = sol_fast_post
+        end
+
+        t_cursor = t_next
+    end
+
+    return final_sol, (
+        slow_solver=slow_spec.label,
+        fast_solver=fast_spec.label,
+        macro_steps=macro_steps,
+        fast_substeps=fast_substeps,
+        slow_dt_s=slow_dt_s,
+        fast_dt_s=fast_dt_s,
+        auto_switch_events=auto_switch_events
     )
 end
 
@@ -822,6 +1018,17 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
             initial_solver=split_solver.label,
             fallback_used=false,
             trigger_retcode=missing
+        )
+    end
+
+    if mode == :multirate
+        sol, multirate_meta = _solve_with_multirate_solver(prob, args, reltol_tol, abstol_tol)
+        switched = multirate_meta.auto_switch_events > 0
+        return sol, (
+            solver="Multirate(Strang; slow=$(multirate_meta.slow_solver), fast=$(multirate_meta.fast_solver))",
+            initial_solver=multirate_meta.slow_solver,
+            fallback_used=switched,
+            trigger_retcode=switched ? "internal_autoswitch" : missing
         )
     end
 
@@ -1119,7 +1326,8 @@ function _write_results_bundle!(results_df::DataFrame, times::Vector{Float64}, a
 end
 
 @inline function _build_typed_solver_problem(u0, tspan, p, callbacks)
-    if _solver_policy_mode() == :split_imex
+    mode = _solver_policy_mode()
+    if mode == :split_imex || mode == :multirate
         return SplitODEProblem(
             spacecraft_dynamics_slow!,
             spacecraft_dynamics_fast_control!,

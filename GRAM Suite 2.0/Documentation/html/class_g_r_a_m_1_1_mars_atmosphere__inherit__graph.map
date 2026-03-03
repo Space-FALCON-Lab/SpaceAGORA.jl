@@ -1,5 +1,0 @@
-<map id="GRAM::MarsAtmosphere" name="GRAM::MarsAtmosphere">
-<area shape="rect" id="node1" title="The primary interface for the Mars atmosphere model." alt="" coords="116,81,284,109"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_perturbed_atmosphere.html" title="Produces random perturbations on an Atmosphere." alt="" coords="5,5,200,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_mars_common.html" title="Common values for the Mars atmosphere models." alt="" coords="224,5,373,33"/>
-</map>

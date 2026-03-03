@@ -11,6 +11,7 @@ const SOLVER_CONFIGS = (
     (name="auto_stiff", solver_mode="auto_stiff", split_solver=nothing),
     (name="split_imex_kencarp4", solver_mode="split_imex", split_solver="kencarp4"),
     (name="split_imex_kencarp47", solver_mode="split_imex", split_solver="kencarp47"),
+    (name="multirate", solver_mode="multirate", split_solver=nothing),
 )
 
 using CSV

@@ -1,6 +1,0 @@
-<map id="GRAM::ProfileData" name="GRAM::ProfileData">
-<area shape="rect" id="node1" title=" " alt="" coords="210,97,341,125"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_ephemeris_state.html" title="The current ephemeris values." alt="" coords="5,5,167,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_atmosphere_state.html" title="The output state of an Atmosphere model." alt="" coords="191,5,360,33"/>
-<area shape="rect" id="node4" href="$class_g_r_a_m_1_1_position.html" title="An input state for an Atmosphere model." alt="" coords="384,5,500,33"/>
-</map>

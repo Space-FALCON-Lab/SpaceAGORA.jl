@@ -57,7 +57,7 @@ end
 
 function build_case(seed::Int)
     rng = MersenneTwister(seed)
-    spice_path = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
+    spice_path = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
     planet = Earth("", spice_path)
     spacecraft = make_spacecraft(rng, planet)
 

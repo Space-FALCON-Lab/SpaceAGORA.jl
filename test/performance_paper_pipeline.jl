@@ -25,6 +25,12 @@ Base.@kwdef struct ModeRunArtifacts
     orbit_raw_path::String
     orbit_summary_path::String
     report_path::String
+    stage_timing_path::String = ""
+    hardware_info_path::String = ""
+    split_gate_elapsed_s::Float64 = 0.0
+    split_gate_csv_path::Union{Nothing, String} = nothing
+    split_gate_report_path::Union{Nothing, String} = nothing
+    split_gate_df::Union{Nothing, DataFrame} = nothing
     raw_df::DataFrame
     summary_df::DataFrame
     orbit_summary_df::DataFrame
@@ -116,6 +122,10 @@ function run_mode(
     orbit_raw_df = DataFrame()
     orbit_summary_df = DataFrame()
     bench_elapsed_s = 0.0
+    split_gate_elapsed_s = 0.0
+    split_gate_df = nothing
+    split_gate_csv_path = nothing
+    split_gate_report_path = nothing
     orbit_elapsed_s = 0.0
     withenv("SPACEAGORA_PERF_PARALLEL_BACKEND" => backend) do
         bench_started_ns = time_ns()
@@ -123,28 +133,82 @@ function run_mode(
         summary_df = summarize_results(raw_df)
         bench_elapsed_s = (time_ns() - bench_started_ns) / 1e9
 
+        if _split_rollout_enabled()
+            split_gate_started_ns = time_ns()
+            split_gate_result = evaluate_split_rollout_gate(config.profile, cases, mode_outdir)
+            split_gate_elapsed_s = (time_ns() - split_gate_started_ns) / 1e9
+            split_gate_df = split_gate_result.df
+            split_gate_csv_path = split_gate_result.csv_path
+            split_gate_report_path = split_gate_result.report_path
+        end
+
         orbit_started_ns = time_ns()
         orbit_raw_df = run_per_orbit_for_scenarios(config.profile, cases, planet)
         orbit_summary_df = summarize_per_orbit_results(orbit_raw_df)
         orbit_elapsed_s = (time_ns() - orbit_started_ns) / 1e9
     end
-    elapsed_s = bench_elapsed_s + orbit_elapsed_s
+    elapsed_s = bench_elapsed_s + split_gate_elapsed_s + orbit_elapsed_s
 
     raw_path = joinpath(mode_outdir, "runtime_raw_$(config.profile.name)_$(mode)_$(stamp).csv")
     summary_path = joinpath(mode_outdir, "runtime_summary_$(config.profile.name)_$(mode)_$(stamp).csv")
     orbit_raw_path = joinpath(mode_outdir, "runtime_per_orbit_raw_$(config.profile.name)_$(mode)_$(stamp).csv")
     orbit_summary_path = joinpath(mode_outdir, "runtime_per_orbit_summary_$(config.profile.name)_$(mode)_$(stamp).csv")
+    stage_timing_path = joinpath(mode_outdir, "runtime_stage_timing_$(config.profile.name)_$(mode)_$(stamp).csv")
+    hardware_info_path = joinpath(mode_outdir, "runtime_hardware_info_$(config.profile.name)_$(mode)_$(stamp).csv")
     report_path = joinpath(mode_outdir, "runtime_report_$(config.profile.name)_$(mode)_$(stamp).md")
     plot_stamp = "$(mode)_$(stamp)"
     plot_paths = generate_runtime_plots(mode_outdir, config.profile, plot_stamp, raw_df, summary_df, orbit_summary_df)
+
+    stage_names = ["run_benchmarks"]
+    stage_elapsed = [bench_elapsed_s]
+    if _split_rollout_enabled()
+        push!(stage_names, "run_split_rollout_gate")
+        push!(stage_elapsed, split_gate_elapsed_s)
+    end
+    push!(stage_names, "run_per_orbit")
+    push!(stage_names, "total")
+    push!(stage_elapsed, orbit_elapsed_s)
+    push!(stage_elapsed, elapsed_s)
+    stage_timing_df = DataFrame(stage=stage_names, elapsed_s=stage_elapsed)
+    hw = _runtime_hardware_snapshot()
+    hardware_info_df = DataFrame([
+        (
+            profile=config.profile.name,
+            mode=string(mode),
+            machine_label=hw.machine_label,
+            hardware_class=hw.hardware_class,
+            host_name=hw.host_name,
+            cpu_name=hw.cpu_name,
+            cpu_threads=hw.cpu_threads,
+            julia_threads=hw.julia_threads,
+            os=hw.os,
+            arch=hw.arch
+        )
+    ])
 
     CSV.write(raw_path, raw_df)
     CSV.write(summary_path, summary_df)
     CSV.write(orbit_raw_path, orbit_raw_df)
     CSV.write(orbit_summary_path, orbit_summary_df)
-    write_report(report_path, config.profile, raw_df, summary_df, orbit_summary_df; plot_paths=plot_paths)
+    CSV.write(stage_timing_path, stage_timing_df)
+    CSV.write(hardware_info_path, hardware_info_df)
+    write_report(
+        report_path,
+        config.profile,
+        raw_df,
+        summary_df,
+        orbit_summary_df;
+        plot_paths=plot_paths,
+        split_gate_df=split_gate_df,
+        split_gate_csv_path=split_gate_csv_path,
+        split_gate_report_path=split_gate_report_path,
+        stage_timing_df=stage_timing_df
+    )
 
-    println("[paper-pipeline] mode=$(mode) completed in $(round(elapsed_s; digits=3)) s (plots=$(length(plot_paths)))")
+    println(
+        "[paper-pipeline] mode=$(mode) completed in $(round(elapsed_s; digits=3)) s " *
+        "(run_benchmarks=$(round(bench_elapsed_s; digits=3)) s, split_gate=$(round(split_gate_elapsed_s; digits=3)) s, mission_time_sweep=$(round(orbit_elapsed_s; digits=3)) s, plots=$(length(plot_paths)))"
+    )
 
     return ModeRunArtifacts(
         mode=mode,
@@ -157,6 +221,12 @@ function run_mode(
         orbit_raw_path=orbit_raw_path,
         orbit_summary_path=orbit_summary_path,
         report_path=report_path,
+        stage_timing_path=stage_timing_path,
+        hardware_info_path=hardware_info_path,
+        split_gate_elapsed_s=split_gate_elapsed_s,
+        split_gate_csv_path=split_gate_csv_path,
+        split_gate_report_path=split_gate_report_path,
+        split_gate_df=split_gate_df,
         raw_df=raw_df,
         summary_df=summary_df,
         orbit_summary_df=orbit_summary_df
@@ -200,16 +270,35 @@ function build_comparison_table(artifacts::Vector{ModeRunArtifacts})::DataFrame
         :category,
         :samples_success,
         :samples_total,
-        :total_time_mean_s
+        :total_time_mean_s,
+        :total_time_ci95_low_s,
+        :total_time_ci95_high_s,
+        :total_time_cv_pct
     )
     rename!(comparison, :total_time_mean_s => :serial_total_time_mean_s)
+    rename!(comparison, :total_time_ci95_low_s => :serial_total_time_ci95_low_s)
+    rename!(comparison, :total_time_ci95_high_s => :serial_total_time_ci95_high_s)
+    rename!(comparison, :total_time_cv_pct => :serial_total_time_cv_pct)
 
     for artifact in artifacts
         mode = artifact.mode
         mode == :serial && continue
-        mode_df = select(artifact.summary_df, :scenario, :total_time_mean_s)
+        mode_df = select(
+            artifact.summary_df,
+            :scenario,
+            :total_time_mean_s,
+            :total_time_ci95_low_s,
+            :total_time_ci95_high_s,
+            :total_time_cv_pct
+        )
         mean_col = Symbol("$(mode)_total_time_mean_s")
+        ci_low_col = Symbol("$(mode)_total_time_ci95_low_s")
+        ci_high_col = Symbol("$(mode)_total_time_ci95_high_s")
+        cv_col = Symbol("$(mode)_total_time_cv_pct")
         rename!(mode_df, :total_time_mean_s => mean_col)
+        rename!(mode_df, :total_time_ci95_low_s => ci_low_col)
+        rename!(mode_df, :total_time_ci95_high_s => ci_high_col)
+        rename!(mode_df, :total_time_cv_pct => cv_col)
         comparison = leftjoin(comparison, mode_df, on=:scenario)
     end
 
@@ -220,9 +309,11 @@ function build_comparison_table(artifacts::Vector{ModeRunArtifacts})::DataFrame
             comparison[!, speedup_col] = ones(Float64, nrow(comparison))
         else
             mean_col = Symbol("$(mode)_total_time_mean_s")
+            serial_vals = _safe_float.(comparison.serial_total_time_mean_s)
+            mode_vals = _safe_float.(comparison[!, mean_col])
             comparison[!, speedup_col] = [
-                (isfinite(s) && s > 0.0 && isfinite(m) && m > 0.0) ? s / m : missing
-                for (s, m) in zip(Float64.(comparison.serial_total_time_mean_s), _safe_float.(comparison[!, mean_col]))
+                (!(s isa Missing) && !(m isa Missing) && isfinite(Float64(s)) && Float64(s) > 0.0 && isfinite(Float64(m)) && Float64(m) > 0.0) ? (Float64(s) / Float64(m)) : missing
+                for (s, m) in zip(serial_vals, mode_vals)
             ]
         end
     end
@@ -236,6 +327,8 @@ function build_mode_overview(artifacts::Vector{ModeRunArtifacts})::DataFrame
     for artifact in artifacts
         raw_df = artifact.raw_df
         summary_df = artifact.summary_df
+        machine_label = (:machine_label in names(raw_df) && nrow(raw_df) > 0) ? string(raw_df.machine_label[1]) : _machine_label()
+        hardware_class = (:hardware_class in names(raw_df) && nrow(raw_df) > 0) ? string(raw_df.hardware_class[1]) : _hardware_class_name()
         failures = count(!, raw_df.solve_success)
         unstable = count(occursin("Unstable"), string.(raw_df.solve_retcode))
         baseline_idx = findfirst(==(PERF_BASELINE_SCENARIO), summary_df.scenario)
@@ -245,14 +338,25 @@ function build_mode_overview(artifacts::Vector{ModeRunArtifacts})::DataFrame
         mc_p90 = nrow(mc) > 0 ? quantile(mc.total_time_s, 0.9) : missing
         elapsed_total = artifact.elapsed_s
         bench_elapsed = artifact.bench_elapsed_s
+        split_elapsed = artifact.split_gate_elapsed_s
         orbit_elapsed = artifact.orbit_elapsed_s
         orbit_share = elapsed_total > 0.0 ? (100.0 * orbit_elapsed / elapsed_total) : missing
+        split_gate_total = 0
+        split_gate_pass = 0
+        if !(artifact.split_gate_df === nothing) && (:pass_all in names(artifact.split_gate_df))
+            split_gate_total = nrow(artifact.split_gate_df)
+            split_gate_pass = count(Bool.(artifact.split_gate_df.pass_all))
+        end
+        split_gate_pass_rate = split_gate_total > 0 ? (100.0 * split_gate_pass / split_gate_total) : missing
 
         push!(rows, (
             mode=string(artifact.mode),
             backend=artifact.backend,
+            machine_label=machine_label,
+            hardware_class=hardware_class,
             elapsed_s=elapsed_total,
             bench_elapsed_s=bench_elapsed,
+            split_gate_elapsed_s=split_elapsed,
             orbit_elapsed_s=orbit_elapsed,
             orbit_share_pct=orbit_share,
             rows_raw=nrow(raw_df),
@@ -261,7 +365,10 @@ function build_mode_overview(artifacts::Vector{ModeRunArtifacts})::DataFrame
             unstable_rows=unstable,
             baseline_mean_s=baseline_mean,
             montecarlo_mean_s=mc_mean,
-            montecarlo_p90_s=mc_p90
+            montecarlo_p90_s=mc_p90,
+            split_gate_rows=split_gate_total,
+            split_gate_pass_rows=split_gate_pass,
+            split_gate_pass_rate_pct=split_gate_pass_rate
         ))
     end
     return DataFrame(rows)
@@ -283,6 +390,78 @@ end
         throw(ArgumentError("SPACEAGORA_PIPELINE_PLOT_SCENARIO_LIMIT must be an integer, got '$raw'"))
     end
     return max(0, parsed)
+end
+
+@inline function _pipeline_speedup_series_color(label::String)::String
+    token = lowercase(strip(label))
+    if token in ("auto", "auto_static", "r2_inner_only", "inner_only")
+        return "#2f7fc1"
+    elseif token in ("auto_adaptive", "r4_outer_inner_adaptive", "outer_inner_adaptive")
+        return "#4f9d69"
+    elseif token in ("threads", "threads_static", "r1_outer_only", "r1_a_outer_only", "outer_only")
+        return "#d67c1c"
+    elseif token in ("r0p_outer_only_process", "r1_b_outer_only_process", "outer_only_process")
+        return "#b64a3a"
+    elseif token in ("process", "process_static", "r3_outer_inner_static", "outer_inner_static")
+        return "#7b63c6"
+    end
+    # Fallback keeps unknown/new series visible and distinct from the default auto color.
+    return "#c44e52"
+end
+
+@inline function _pipeline_speedup_series_label(label::String)::String
+    token = lowercase(strip(label))
+    if token in ("outer_only_process", "r0p_outer_only_process", "r1_b_outer_only_process")
+        return "R1_b outer-only process"
+    end
+    if token in ("outer_only", "r1_outer_only", "r1_a_outer_only")
+        return "R1_a outer-only"
+    elseif token in ("inner_only", "r2_inner_only")
+        return "R2 inner-only"
+    elseif token in ("outer_inner_static", "r3_outer_inner_static")
+        return "R3 outer+inner static"
+    elseif token in ("outer_inner_adaptive", "r4_outer_inner_adaptive")
+        return "R4 outer+inner adaptive"
+    elseif token in ("auto", "auto_static")
+        return "Auto static"
+    elseif token == "auto_adaptive"
+        return "Auto adaptive"
+    elseif token in ("threads", "threads_static")
+        return "Threads"
+    elseif token in ("process", "process_static")
+        return "Process"
+    end
+    return label
+end
+
+@inline function _pipeline_speedup_palette(series_labels::Vector{String})::Vector{String}
+    return [_pipeline_speedup_series_color(label) for label in series_labels]
+end
+
+@inline function _pipeline_series_visible(vals::AbstractVector{<:Real}, eps::Float64)::Bool
+    return any(isfinite(v) && abs(v) > eps for v in vals)
+end
+
+@inline function _pipeline_series_visible(vals::AbstractVector{<:Real})::Bool
+    return _pipeline_series_visible(vals, 1e-9)
+end
+
+@inline function _pipeline_speedup_series_rank(token::String)::Int
+    t = lowercase(strip(token))
+    if t in ("serial", "r0_true_serial")
+        return 0
+    elseif t in ("r1_b_outer_only_process", "outer_only_process", "r0p_outer_only_process")
+        return 1
+    elseif t in ("r1_a_outer_only", "outer_only", "r1_outer_only", "threads", "threads_static")
+        return 2
+    elseif t in ("r2_inner_only", "inner_only", "auto", "auto_static")
+        return 3
+    elseif t in ("r3_outer_inner_static", "outer_inner_static", "process", "process_static")
+        return 4
+    elseif t in ("r4_outer_inner_adaptive", "outer_inner_adaptive", "auto_adaptive")
+        return 5
+    end
+    return typemax(Int)
 end
 
 function _save_pipeline_plot!(
@@ -352,20 +531,35 @@ function generate_pipeline_comparison_plots(
     # 2) Stage-split elapsed by mode.
     if nrow(overview_df) > 0 && _has_column(overview_df, :bench_elapsed_s) && _has_column(overview_df, :orbit_elapsed_s)
         bench = Float64.(overview_df.bench_elapsed_s)
+        split_gate = _has_column(overview_df, :split_gate_elapsed_s) ? Float64.(overview_df.split_gate_elapsed_s) : zeros(length(bench))
         orbit = Float64.(overview_df.orbit_elapsed_s)
-        vals = hcat(bench, orbit)
-        plt = Plots.bar(
-            mode_labels,
-            vals;
-            label=["run_benchmarks" "per_orbit"],
-            color=["#4b86b4" "#d97706"],
-            bar_position=:stack,
-            title="Pipeline Stage Wall Time by Mode",
-            xlabel="Mode",
-            ylabel="Elapsed (s)",
-            _plot_margins(size=(1900, 1000), bottom_mm=20, right_mm=50, legend=:outertopright)...
-        )
-        _save_pipeline_plot!(plot_paths, plt, outdir, "paper_plot_mode_stage_elapsed", profile, stamp)
+        stage_values = [bench, split_gate, orbit]
+        stage_labels = ["run_benchmarks", "split_rollout_gate", "per_orbit"]
+        stage_colors = ["#4b86b4", "#6b5ca5", "#d97706"]
+        stage_maxima = [maximum([abs(v) for v in vals if isfinite(v)]; init=0.0) for vals in stage_values]
+        global_stage_max = maximum(stage_maxima; init=0.0)
+        stage_eps = max(1e-9, 1e-4 * global_stage_max)
+        keep = [_pipeline_series_visible(vals, stage_eps) for vals in stage_values]
+        if any(keep)
+            selected_values = stage_values[keep]
+            vals = hcat(selected_values...)
+            labels = stage_labels[keep]
+            colors = stage_colors[keep]
+            label_value = length(labels) == 1 ? labels[1] : labels
+            color_value = length(colors) == 1 ? colors[1] : colors
+            plt = Plots.bar(
+                mode_labels,
+                vals;
+                label=label_value,
+                color=color_value,
+                bar_position=:stack,
+                title="Pipeline Stage Wall Time by Mode",
+                xlabel="Mode",
+                ylabel="Elapsed (s)",
+                _plot_margins(size=(1900, 1000), bottom_mm=20, right_mm=50, legend=:outertopright)...
+            )
+            _save_pipeline_plot!(plot_paths, plt, outdir, "paper_plot_mode_stage_elapsed", profile, stamp)
+        end
     end
 
     # 3) Baseline scenario mean runtime by mode.
@@ -429,6 +623,7 @@ function generate_pipeline_comparison_plots(
     # 5) Speedup vs serial by scenario (for each non-serial mode).
     speedup_cols = [name for name in names(top_df) if startswith(String(name), "speedup_vs_serial_") && String(name) != "speedup_vs_serial_serial"]
     if !isempty(speedup_cols) && !isempty(scenario_labels)
+        sort!(speedup_cols; by=c -> (_pipeline_speedup_series_rank(replace(String(c), "speedup_vs_serial_" => "")), String(c)))
         values = Matrix{Float64}(undef, nrow(top_df), length(speedup_cols))
         for (j, col) in enumerate(speedup_cols)
             values[:, j] = [
@@ -436,13 +631,22 @@ function generate_pipeline_comparison_plots(
                 for v in top_df[!, col]
             ]
         end
-        series_labels = [replace(String(c), "speedup_vs_serial_" => "") for c in speedup_cols]
+        finite_series = [any(isfinite.(values[:, j])) for j in 1:size(values, 2)]
+        if !any(finite_series)
+            finite_series .= true
+        end
+        values = values[:, finite_series]
+        kept_cols = speedup_cols[finite_series]
+        series_tokens = [replace(String(c), "speedup_vs_serial_" => "") for c in kept_cols]
+        series_labels = [_pipeline_speedup_series_label(token) for token in series_tokens]
+        series_palette = _pipeline_speedup_palette(series_tokens)
         label_value = length(series_labels) == 1 ? series_labels[1] : series_labels
+        color_value = length(series_palette) == 1 ? series_palette[1] : series_palette
         plt = Plots.bar(
             x,
             values;
             label=label_value,
-            color="#4f9d69",
+            color=color_value,
             title="Speedup vs Serial ($scenario_scope)",
             xlabel="Scenario",
             ylabel="Speedup (x)",
@@ -500,6 +704,16 @@ function write_pipeline_report(
     nthreads = Threads.nthreads()
     cpu_threads = Sys.CPU_THREADS
     mode_list = join(string.(config.modes), ", ")
+    unique_hardware = (:hardware_class in names(overview_df)) ? unique(String.(overview_df.hardware_class)) : String[]
+    unique_machines = (:machine_label in names(overview_df)) ? unique(String.(overview_df.machine_label)) : String[]
+    total_split_rows = 0
+    total_split_pass = 0
+    for artifact in artifacts
+        if !(artifact.split_gate_df === nothing) && (:pass_all in names(artifact.split_gate_df))
+            total_split_rows += nrow(artifact.split_gate_df)
+            total_split_pass += count(Bool.(artifact.split_gate_df.pass_all))
+        end
+    end
 
     open(path, "w") do io
         println(io, "# SpaceAGORA Paper Runtime Pipeline")
@@ -510,6 +724,12 @@ function write_pipeline_report(
         println(io, "- Detected CPU threads: `$cpu_threads`")
         println(io, "- Profile: `$(config.profile.name)`")
         println(io, "- Modes executed: `$mode_list`")
+        if !isempty(unique_hardware)
+            println(io, "- Hardware classes observed: `$(join(unique_hardware, ", "))`")
+        end
+        if !isempty(unique_machines)
+            println(io, "- Machine labels observed: `$(join(unique_machines, ", "))`")
+        end
         println(io)
 
         println(io, "## Mode Overview")
@@ -517,9 +737,24 @@ function write_pipeline_report(
         _write_markdown_table(io, overview_df)
         println(io)
 
-        println(io, "## Scenario Comparison (Means)")
+        println(io, "## Scenario Comparison (Means + CI)")
         println(io)
         _write_markdown_table(io, comparison_df)
+        println(io)
+
+        println(io, "## Verification Snapshot")
+        println(io)
+        if total_split_rows > 0
+            pass_rate = 100.0 * total_split_pass / total_split_rows
+            println(io, "- Split rollout gate rows: `$(total_split_rows)`; pass rows: `$(total_split_pass)` (`$(round(pass_rate; digits=2))%`).")
+        else
+            println(io, "- Split rollout gate rows: none (gate disabled or not configured).")
+        end
+        if :failed_rows in names(overview_df)
+            total_failed = sum(Int.(overview_df.failed_rows))
+            total_rows = sum(Int.(overview_df.rows_raw))
+            println(io, "- Solver-success samples across modes: `$(total_rows - total_failed)/$(total_rows)`.")
+        end
         println(io)
 
         println(io, "## Comparison Plots")
@@ -548,6 +783,9 @@ function write_pipeline_report(
                     println(io, "- Baseline (`$(PERF_BASELINE_SCENARIO)`) mean total time: `$(round(baseline; digits=6)) s`.")
                     for scenario in (
                         "single_orientation_aero",
+                        "single_entry_earth_shallow",
+                        "single_entry_earth_nominal",
+                        "single_entry_earth_steep",
                         "single_nbody_sun_moon",
                         "single_harmonics_l20",
                         "single_harmonics_l50",
@@ -575,11 +813,24 @@ function write_pipeline_report(
             println(io, "### Mode `$(artifact.mode)` (backend=`$(artifact.backend)`)")
             println(io, "- Wall elapsed: `$(round(artifact.elapsed_s; digits=3)) s`")
             println(io, "- run_benchmarks elapsed: `$(round(artifact.bench_elapsed_s; digits=3)) s`")
-            println(io, "- per-orbit elapsed: `$(round(artifact.orbit_elapsed_s; digits=3)) s`")
+            println(io, "- split rollout gate elapsed: `$(round(artifact.split_gate_elapsed_s; digits=3)) s`")
+            println(io, "- mission-time-sweep elapsed: `$(round(artifact.orbit_elapsed_s; digits=3)) s`")
             println(io, "- Raw: `$(artifact.raw_path)`")
             println(io, "- Summary: `$(artifact.summary_path)`")
-            println(io, "- Per-orbit raw: `$(artifact.orbit_raw_path)`")
-            println(io, "- Per-orbit summary: `$(artifact.orbit_summary_path)`")
+            println(io, "- Mission-time-sweep raw: `$(artifact.orbit_raw_path)`")
+            println(io, "- Mission-time-sweep summary: `$(artifact.orbit_summary_path)`")
+            if !isempty(artifact.stage_timing_path)
+                println(io, "- Stage timing: `$(artifact.stage_timing_path)`")
+            end
+            if !isempty(artifact.hardware_info_path)
+                println(io, "- Hardware info: `$(artifact.hardware_info_path)`")
+            end
+            if !(artifact.split_gate_csv_path === nothing)
+                println(io, "- Split rollout gate CSV: `$(artifact.split_gate_csv_path)`")
+            end
+            if !(artifact.split_gate_report_path === nothing)
+                println(io, "- Split rollout gate report: `$(artifact.split_gate_report_path)`")
+            end
             println(io, "- Detailed report: `$(artifact.report_path)`")
             println(io)
         end

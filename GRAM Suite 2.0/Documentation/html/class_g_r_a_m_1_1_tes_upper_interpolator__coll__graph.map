@@ -1,4 +1,0 @@
-<map id="GRAM::TesUpperInterpolator" name="GRAM::TesUpperInterpolator">
-<area shape="rect" id="node1" title="The MGCM upper atmosphere model (80 to 240 km)." alt="" coords="5,81,193,109"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_tes_interpolator.html" title="The base class for TesGCM interpolation models." alt="" coords="22,5,176,33"/>
-</map>

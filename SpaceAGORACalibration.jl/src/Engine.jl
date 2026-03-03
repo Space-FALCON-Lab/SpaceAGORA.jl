@@ -5,11 +5,14 @@ using TOML
 
 using ..Spec: CalibrationSpec, primary_manifest_path, validate_spec
 using ..ParamSpace: Candidate, candidate_signature
-using ..Backend: AbstractBackend, BackendEvaluation, apply_candidate_to_manifest!, evaluate_candidate
+using ..Backend: AbstractBackend, BackendEvaluation, CandidateRuntimePolicy
+using ..Backend: apply_candidate_to_manifest!, backend_full_auto_requested, backend_parallel_profile, evaluate_candidate
 using ..GlobalSearch: global_target_count, plan_initial_design, propose_bo_candidate
 using ..LocalRefine: run_local_refine
 using ..Robustness: RobustnessResult, plan_robustness_candidates, summarize_robustness
 using ..Objective: sort_indices_by_score
+using ..AdaptiveRuntime: RuntimeController, RuntimeDecision
+using ..AdaptiveRuntime: init_runtime_controller, choose_runtime_decision!, record_runtime_feedback!, save_runtime_controller!
 using ..Store: RunStore, RunState, STAGE_SEQUENCE
 using ..Store: init_store, append_evaluation!, load_ledger_entries, load_stage_entries
 using ..Store: load_state, save_state!, stage_is_completed!, report_path, best_manifest_path
@@ -26,6 +29,92 @@ Base.@kwdef struct CalibrationResult
 end
 
 @inline _stage_done(state::RunState, stage::String) = get(state.stage_status, stage, "pending") == "completed"
+
+@inline function _progress_enabled()::Bool
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_CALIBRATION_PROGRESS", "1")))
+    return !(raw in ("0", "false", "off", "no"))
+end
+
+@inline function _log_progress(msg::AbstractString)::Nothing
+    _progress_enabled() || return nothing
+    println(msg)
+    flush(stdout)
+    return nothing
+end
+
+@inline function _fmt_eval_log(stage::String, cand::Candidate, ev::BackendEvaluation)::String
+    return "[calibration] stage=$(stage) candidate=$(cand.id) success=$(ev.success) score=$(round(ev.score; digits=6)) runtime_s=$(round(ev.runtime_s; digits=2))"
+end
+
+@inline function _parallel_evaluations(spec::CalibrationSpec)::Int
+    default = max(1, spec.budgets.parallel_evaluations)
+    raw = strip(get(ENV, "SPACEAGORA_CALIBRATION_PARALLEL_EVALUATIONS", ""))
+    isempty(raw) && return default
+    parsed = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_CALIBRATION_PARALLEL_EVALUATIONS must be a positive integer, got '$raw'"))
+    end
+    parsed > 0 || throw(ArgumentError(
+        "SPACEAGORA_CALIBRATION_PARALLEL_EVALUATIONS must be a positive integer, got $parsed"
+    ))
+    return parsed
+end
+
+function _evaluate_candidates_ordered(
+    backend::AbstractBackend,
+    spec::CalibrationSpec,
+    candidates::Vector{Candidate};
+    stage::String,
+    run_dir::Union{Nothing, String},
+    workers::Union{Nothing, Int}=nothing,
+    runtime_policy::Union{Nothing, CandidateRuntimePolicy}=nothing
+)::Vector{BackendEvaluation}
+    isempty(candidates) && return BackendEvaluation[]
+    base_workers = workers === nothing ? _parallel_evaluations(spec) : max(1, workers)
+    worker_budget = min(base_workers, length(candidates))
+    if worker_budget <= 1
+        out = Vector{BackendEvaluation}(undef, length(candidates))
+        for i in eachindex(candidates)
+            out[i] = evaluate_candidate(
+                backend,
+                spec,
+                candidates[i];
+                stage=stage,
+                run_dir=run_dir,
+                runtime_policy=runtime_policy
+            )
+        end
+        return out
+    end
+
+    gate = Base.Semaphore(worker_budget)
+    tasks = Vector{Task}(undef, length(candidates))
+    for i in eachindex(candidates)
+        cand = candidates[i]
+        tasks[i] = @async begin
+            Base.acquire(gate)
+            try
+                return evaluate_candidate(
+                    backend,
+                    spec,
+                    cand;
+                    stage=stage,
+                    run_dir=run_dir,
+                    runtime_policy=runtime_policy
+                )
+            finally
+                Base.release(gate)
+            end
+        end
+    end
+
+    out = Vector{BackendEvaluation}(undef, length(candidates))
+    for i in eachindex(tasks)
+        out[i] = fetch(tasks[i])
+    end
+    return out
+end
 
 @inline function _entries_to_vectors(entries)
     candidates = Candidate[]
@@ -56,6 +145,18 @@ end
     return [candidates[ranked[i]] for i in 1:k]
 end
 
+@inline function _runtime_policy_from_decision(decision::RuntimeDecision)::CandidateRuntimePolicy
+    return CandidateRuntimePolicy(
+        outer_parallel_active=decision.workers > 1,
+        outer_backend=decision.outer_backend,
+        inner_thread_budget=max(1, decision.inner_thread_budget)
+    )
+end
+
+@inline function _fmt_runtime_decision(stage::String, decision::RuntimeDecision)::String
+    return "[calibration] stage=$(stage) runtime_policy workers=$(decision.workers) batch_size=$(decision.batch_size) outer_backend=$(decision.outer_backend) inner_thread_budget=$(decision.inner_thread_budget)"
+end
+
 function _execute_stage_plan!(
     store::RunStore,
     state::RunState,
@@ -63,7 +164,8 @@ function _execute_stage_plan!(
     backend::AbstractBackend,
     stage::String,
     plan::Vector{Candidate};
-    advance_candidate_id::Bool=true
+    advance_candidate_id::Bool=true,
+    controller::Union{Nothing, RuntimeController}=nothing
 )
     if _stage_done(state, stage)
         return _entries_to_vectors(load_stage_entries(store, stage))
@@ -72,20 +174,47 @@ function _execute_stage_plan!(
     state.stage_status[stage] = "in_progress"
     state.current_stage = stage
     save_state!(store, state)
+    _log_progress("[calibration] stage=$(stage) status=in_progress")
 
     existing_entries = load_stage_entries(store, stage)
     skip = length(existing_entries)
 
     if skip < length(plan)
-        for i in (skip + 1):length(plan)
-            cand = plan[i]
-            ev = evaluate_candidate(backend, spec, cand; stage=stage, run_dir=store.run_dir)
-            append_evaluation!(store, cand, ev)
+        cursor = skip + 1
+        while cursor <= length(plan)
+            remaining = length(plan) - cursor + 1
+            decision = controller === nothing ? nothing : choose_runtime_decision!(controller, stage, remaining)
+            worker_budget = decision === nothing ? max(1, _parallel_evaluations(spec)) : decision.workers
+            runtime_policy = decision === nothing ? nothing : _runtime_policy_from_decision(decision)
+            decision === nothing || _log_progress(_fmt_runtime_decision(stage, decision))
 
-            if advance_candidate_id
-                state.next_candidate_id = max(state.next_candidate_id, cand.id + 1)
+            chunk_size = max(1, min(worker_budget, remaining))
+            hi = min(length(plan), cursor + chunk_size - 1)
+            chunk = plan[cursor:hi]
+            ids = join((string(c.id) for c in chunk), ",")
+            _log_progress("[calibration] stage=$(stage) evaluating candidates=[$(ids)]")
+            chunk_evals = _evaluate_candidates_ordered(
+                backend,
+                spec,
+                chunk;
+                stage=stage,
+                run_dir=store.run_dir,
+                workers=worker_budget,
+                runtime_policy=runtime_policy
+            )
+            decision === nothing || record_runtime_feedback!(controller, stage, decision, chunk_evals)
+            for i in eachindex(chunk)
+                cand = chunk[i]
+                ev = chunk_evals[i]
+                append_evaluation!(store, cand, ev)
+
+                if advance_candidate_id
+                    state.next_candidate_id = max(state.next_candidate_id, cand.id + 1)
+                end
+                save_state!(store, state)
+                _log_progress(_fmt_eval_log(stage, cand, ev))
             end
-            save_state!(store, state)
+            cursor = hi + 1
         end
     end
 
@@ -94,6 +223,7 @@ function _execute_stage_plan!(
     end
 
     stage_is_completed!(store, state, stage; next_candidate_id=state.next_candidate_id)
+    _log_progress("[calibration] stage=$(stage) status=completed")
     return _entries_to_vectors(load_stage_entries(store, stage))
 end
 
@@ -137,8 +267,10 @@ function _prepare_state!(store::RunStore, state::RunState)
     all_entries = load_ledger_entries(store)
     state.next_candidate_id = _next_candidate_id(all_entries)
     save_state!(store, state)
+    _log_progress("[calibration] stage=prepare status=in_progress")
 
     stage_is_completed!(store, state, "prepare"; next_candidate_id=state.next_candidate_id)
+    _log_progress("[calibration] stage=prepare status=completed")
     return state
 end
 
@@ -146,7 +278,8 @@ function _run_global_stage!(
     store::RunStore,
     state::RunState,
     spec::CalibrationSpec,
-    backend::AbstractBackend
+    backend::AbstractBackend;
+    controller::Union{Nothing, RuntimeController}=nothing
 )::Tuple{Vector{Candidate}, Vector{BackendEvaluation}}
     stage = "global_search_quick"
     if _stage_done(state, stage)
@@ -156,6 +289,7 @@ function _run_global_stage!(
     state.stage_status[stage] = "in_progress"
     state.current_stage = stage
     save_state!(store, state)
+    _log_progress("[calibration] stage=$(stage) status=in_progress")
 
     entries = load_stage_entries(store, stage)
     candidates, evals = _entries_to_vectors(entries)
@@ -168,9 +302,14 @@ function _run_global_stage!(
     while length(candidates) < target
         remaining = target - length(candidates)
         batch = Candidate[]
+        decision = controller === nothing ? nothing : choose_runtime_decision!(controller, stage, remaining)
+        max_parallel = decision === nothing ? max(1, _parallel_evaluations(spec)) : decision.workers
+        bo_batch_size = decision === nothing ? max(1, spec.budgets.batch_size) : decision.batch_size
+        runtime_policy = decision === nothing ? nothing : _runtime_policy_from_decision(decision)
+        decision === nothing || _log_progress(_fmt_runtime_decision(stage, decision))
 
         if length(candidates) < length(initial_plan)
-            init_take = min(remaining, length(initial_plan) - length(candidates))
+            init_take = min(remaining, length(initial_plan) - length(candidates), max_parallel)
             for _ in 1:init_take
                 base = initial_plan[length(candidates) + length(batch) + 1]
                 sig = candidate_signature(base)
@@ -190,7 +329,7 @@ function _run_global_stage!(
                 next_id += 1
             end
         else
-            q = min(remaining, max(1, spec.budgets.batch_size))
+            q = min(remaining, bo_batch_size)
             batch_seen = Set{String}()
             for _ in 1:q
                 cand = propose_bo_candidate(
@@ -207,8 +346,22 @@ function _run_global_stage!(
             end
         end
 
-        for cand in batch
-            ev = evaluate_candidate(backend, spec, cand; stage=stage, run_dir=store.run_dir)
+        ids = join((string(c.id) for c in batch), ",")
+        _log_progress("[calibration] stage=$(stage) evaluating candidates=[$(ids)]")
+        batch_evals = _evaluate_candidates_ordered(
+            backend,
+            spec,
+            batch;
+            stage=stage,
+            run_dir=store.run_dir,
+            workers=max_parallel,
+            runtime_policy=runtime_policy
+        )
+        decision === nothing || record_runtime_feedback!(controller, stage, decision, batch_evals)
+
+        for i in eachindex(batch)
+            cand = batch[i]
+            ev = batch_evals[i]
             append_evaluation!(store, cand, ev)
 
             push!(candidates, cand)
@@ -217,10 +370,12 @@ function _run_global_stage!(
 
             state.next_candidate_id = max(state.next_candidate_id, cand.id + 1)
             save_state!(store, state)
+            _log_progress(_fmt_eval_log(stage, cand, ev))
         end
     end
 
     stage_is_completed!(store, state, stage; next_candidate_id=next_id)
+    _log_progress("[calibration] stage=$(stage) status=completed")
     return candidates, evals
 end
 
@@ -231,7 +386,8 @@ function _run_local_stage!(
     backend::AbstractBackend,
     seed_candidates::Vector{Candidate},
     seed_evals::Vector{BackendEvaluation},
-    start_id::Int
+    start_id::Int;
+    controller::Union{Nothing, RuntimeController}=nothing
 )::Tuple{Vector{Candidate}, Vector{BackendEvaluation}}
     stage = "local_refine_full"
     if _stage_done(state, stage)
@@ -241,9 +397,14 @@ function _run_local_stage!(
     state.stage_status[stage] = "in_progress"
     state.current_stage = stage
     save_state!(store, state)
+    _log_progress("[calibration] stage=$(stage) status=in_progress")
 
     existing_entries = load_stage_entries(store, stage)
     prior_candidates, prior_evals = _entries_to_vectors(existing_entries)
+    decision = controller === nothing ? nothing : choose_runtime_decision!(controller, stage, max(1, spec.budgets.local_refine_neighbors))
+    workers_override = decision === nothing ? nothing : decision.workers
+    runtime_policy = decision === nothing ? nothing : _runtime_policy_from_decision(decision)
+    decision === nothing || _log_progress(_fmt_runtime_decision(stage, decision))
 
     rng = MersenneTwister(hash((spec.seed, stage)))
     local_result = run_local_refine(
@@ -256,18 +417,25 @@ function _run_local_stage!(
         stage=stage,
         prior_candidates=prior_candidates,
         prior_evals=prior_evals,
-        run_dir=store.run_dir
+        run_dir=store.run_dir,
+        workers_override=workers_override,
+        runtime_policy=runtime_policy
     )
 
+    new_evals = BackendEvaluation[]
     for i in (length(prior_candidates) + 1):length(local_result.candidates)
         cand = local_result.candidates[i]
         ev = local_result.evaluations[i]
+        push!(new_evals, ev)
         append_evaluation!(store, cand, ev)
         state.next_candidate_id = max(state.next_candidate_id, cand.id + 1)
         save_state!(store, state)
+        _log_progress(_fmt_eval_log(stage, cand, ev))
     end
+    decision === nothing || record_runtime_feedback!(controller, stage, decision, new_evals)
 
     stage_is_completed!(store, state, stage; next_candidate_id=state.next_candidate_id)
+    _log_progress("[calibration] stage=$(stage) status=completed")
     return _entries_to_vectors(load_stage_entries(store, stage))
 end
 
@@ -299,13 +467,27 @@ function run_calibration(spec::CalibrationSpec, backend::AbstractBackend)::Calib
 
     store = init_store(spec)
     state = load_state(store)
+    _log_progress("[calibration] run_id=$(store.run_id) run_dir=$(store.run_dir)")
+    profile = backend_parallel_profile(backend)
+    controller = init_runtime_controller(
+        spec,
+        profile;
+        base_parallel=_parallel_evaluations(spec),
+        base_batch_size=spec.budgets.batch_size,
+        full_auto_requested=backend_full_auto_requested(backend)
+    )
+    if controller !== nothing
+        _log_progress(
+            "[calibration] runtime_policy_controller enabled profile=$(controller.profile_name) machine=$(controller.machine_key) cache=$(controller.cache_path)"
+        )
+    end
 
     restored = _restore_completed_result(store, state)
     restored !== nothing && return restored
 
     _prepare_state!(store, state)
 
-    global_candidates, global_evals = _run_global_stage!(store, state, spec, backend)
+    global_candidates, global_evals = _run_global_stage!(store, state, spec, backend; controller=controller)
 
     isempty(global_candidates) && throw(ArgumentError("No global candidates available for calibration."))
 
@@ -324,7 +506,8 @@ function run_calibration(spec::CalibrationSpec, backend::AbstractBackend)::Calib
         backend,
         local_seed_candidates,
         local_seed_evals,
-        local_start_id
+        local_start_id;
+        controller=controller
     )
 
     finalists = if isempty(local_candidates)
@@ -342,7 +525,8 @@ function run_calibration(spec::CalibrationSpec, backend::AbstractBackend)::Calib
         backend,
         robust_stage,
         robust_plan;
-        advance_candidate_id=false
+        advance_candidate_id=false,
+        controller=controller
     )
 
     robust_entries = load_stage_entries(store, robust_stage)
@@ -392,6 +576,7 @@ function run_calibration(spec::CalibrationSpec, backend::AbstractBackend)::Calib
         save_state!(store, state)
 
         stage_is_completed!(store, state, promote_stage; next_candidate_id=state.next_candidate_id)
+        controller === nothing || save_runtime_controller!(controller)
 
         return CalibrationResult(
             run_id=store.run_id,
@@ -402,6 +587,7 @@ function run_calibration(spec::CalibrationSpec, backend::AbstractBackend)::Calib
         )
     end
 
+    controller === nothing || save_runtime_controller!(controller)
     return CalibrationResult(
         run_id=store.run_id,
         run_dir=store.run_dir,

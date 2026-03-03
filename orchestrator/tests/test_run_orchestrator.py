@@ -72,7 +72,7 @@ def _make_settings(root: Path) -> Settings:
         worker_tmp_dir=worker_tmp,
         spice_path=root / "GRAM_Data" / "SPICE",
         gram_data_path=root / "GRAM_Data",
-        gram_py_path=root / "GRAMSuite.jl/GRAM Suite 2.0",
+        gram_py_path=root / "data/GRAMSuite.jl/GRAM Suite 2.0",
         max_mission_time_sec=604800.0,
         sync_max_mission_time_sec=21600.0,
         max_sync_job_wall_sec=180.0,
@@ -95,7 +95,7 @@ class RunOrchestratorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _create_spice_tree(root / "GRAM_Data" / "SPICE")
-            (root / "GRAMSuite.jl/GRAM Suite 2.0").mkdir(parents=True, exist_ok=True)
+            (root / "data/GRAMSuite.jl/GRAM Suite 2.0").mkdir(parents=True, exist_ok=True)
 
             settings = _make_settings(root)
             orchestrator = RunOrchestrator(
@@ -118,7 +118,7 @@ class RunOrchestratorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _create_spice_tree(root / "GRAM_Data" / "SPICE")
-            (root / "GRAMSuite.jl/GRAM Suite 2.0").mkdir(parents=True, exist_ok=True)
+            (root / "data/GRAMSuite.jl/GRAM Suite 2.0").mkdir(parents=True, exist_ok=True)
 
             settings = _make_settings(root)
             orchestrator = RunOrchestrator(

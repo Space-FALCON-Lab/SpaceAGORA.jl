@@ -435,14 +435,14 @@ function run_study()
     samples = parse(Int, get(opts, "samples", "220"))
     selected = _parse_scenarios(get(opts, "scenarios", "all"))
 
-    static_root = get(opts, "static-root", joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "simulation", "GRAM", "static_grids"))
+    static_root = get(opts, "static-root", joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "simulation", "GRAM", "static_grids"))
     grid_file = get(opts, "grid-file", joinpath(static_root, "$(planet_name)_grid.jls"))
     surrogate_file = get(opts, "surrogate-file", joinpath(static_root, "surrogates", "$(planet_name)_surrogate.jls"))
 
     out_summary = get(opts, "out-summary", joinpath(REPO_ROOT, "output", "gram_offline_db_accuracy_summary.csv"))
     out_errors = get(opts, "out-errors", joinpath(REPO_ROOT, "output", "gram_offline_db_accuracy_errors.csv"))
 
-    spice_path = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
+    spice_path = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
     planet = _planet_from_name(planet_name, spice_path)
     planet.L_PI .= [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]
 

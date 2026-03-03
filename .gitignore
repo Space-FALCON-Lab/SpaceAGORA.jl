@@ -25,3 +25,5 @@ orchestrator/data/*
 output/calibration/
 SpaceAGORACalibration.jl/test/output/
 SpaceAGORACalibration.jl/.CondaPkg/
+telemetry/CYGNSS/
+telemetry/OPS-SAT1/

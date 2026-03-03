@@ -1,0 +1,13 @@
+name = "GRAMSuite"
+uuid = "b50455af-6a46-4eae-bf92-8039261dd674"
+authors = ["SpaceAGORA Contributors"]
+version = "0.1.0"
+
+[deps]
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+
+[compat]
+StaticArrays = "1"
+julia = "1.10"

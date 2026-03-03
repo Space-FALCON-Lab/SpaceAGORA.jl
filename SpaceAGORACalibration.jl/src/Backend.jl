@@ -5,11 +5,13 @@ using Random
 using Statistics
 using TOML
 using CSV
+import SpaceAGORA
 
 using ..Spec: CalibrationSpec, ParameterSpec, primary_manifest_path, continuous, integer, categorical
 using ..ParamSpace: Candidate
 
-export AbstractBackend, CommandBackend, MockBackend, BackendEvaluation
+export AbstractBackend, CommandBackend, InProcessBackend, MockBackend, BackendEvaluation
+export CandidateRuntimePolicy, backend_parallel_profile, backend_full_auto_requested
 export evaluate_candidate, apply_candidate_to_manifest!
 
 abstract type AbstractBackend end
@@ -25,6 +27,12 @@ Base.@kwdef struct BackendEvaluation
     artifacts::Dict{String, String} = Dict{String, String}()
 end
 
+Base.@kwdef struct CandidateRuntimePolicy
+    outer_parallel_active::Bool = false
+    outer_backend::Symbol = :none
+    inner_thread_budget::Int = 1
+end
+
 Base.@kwdef struct MockBackend <: AbstractBackend
     noise_sigma::Float64 = 0.025
     fail_rate::Float64 = 0.0
@@ -36,11 +44,28 @@ Base.@kwdef struct CommandBackend <: AbstractBackend
     verification_script::String = "scripts/verify_telemetry.jl"
     manifest_path::String = ""
     profile::String = "quick"
+    parallel_profile::Union{Nothing, String} = nothing
+    enforce::Bool = false
+    plots::Union{Nothing, Bool} = nothing
+end
+
+Base.@kwdef struct InProcessBackend{F} <: AbstractBackend
+    run_verification::F = SpaceAGORA.run_verification
+    manifest_path::String = ""
+    profile::String = "quick"
+    parallel_profile::Union{Nothing, String} = nothing
     enforce::Bool = false
     plots::Union{Nothing, Bool} = nothing
 end
 
 @inline function _profile_for_stage(stage::String, backend::CommandBackend)::String
+    if stage in ("local_refine_full", "robustness_validation", "promote")
+        return "full"
+    end
+    return backend.profile
+end
+
+@inline function _profile_for_stage(stage::String, backend::InProcessBackend)::String
     if stage in ("local_refine_full", "robustness_validation", "promote")
         return "full"
     end
@@ -255,9 +280,11 @@ function evaluate_candidate(
     spec::CalibrationSpec,
     candidate::Candidate;
     stage::String=candidate.stage,
-    run_dir::Union{Nothing, String}=nothing
+    run_dir::Union{Nothing, String}=nothing,
+    runtime_policy::Union{Nothing, CandidateRuntimePolicy}=nothing
 )::BackendEvaluation
     _ = run_dir
+    _ = runtime_policy
     rng = MersenneTwister(hash((spec.seed, candidate.id, stage)))
     if rand(rng) < backend.fail_rate
         return BackendEvaluation(
@@ -356,6 +383,23 @@ end
            (hasproperty(row, :limit_max_rmse_km) || hasproperty(row, :limit_nmae))
 end
 
+@inline function _row_metric_value(
+    row,
+    legacy_name::Symbol,
+    display_name::Symbol
+)::Float64
+    if hasproperty(row, display_name)
+        value = _safe_float(getproperty(row, display_name))
+        if isfinite(value)
+            return value
+        end
+    end
+    if hasproperty(row, legacy_name)
+        return _safe_float(getproperty(row, legacy_name))
+    end
+    return NaN
+end
+
 function _objective_from_rows(
     rows,
     spec::CalibrationSpec;
@@ -364,14 +408,14 @@ function _objective_from_rows(
     noise_rng::Union{Nothing, AbstractRNG}=nothing
 )::NamedTuple
     budgets = spec.budgets
-    runtime_pen = budgets.objective_lambda_time * max(0.0, runtime_s / budgets.objective_runtime_budget_s - 1.0)
+    _ = runtime_s
 
     if run_failed || isempty(rows)
         return (
-            score=budgets.objective_lambda_fail + runtime_pen,
-            base_loss=0.0,
-            fail_penalty=budgets.objective_lambda_fail,
-            runtime_penalty=runtime_pen,
+            score=Inf,
+            base_loss=Inf,
+            fail_penalty=0.0,
+            runtime_penalty=0.0,
             all_pass=false,
             failed_rows=0.0
         )
@@ -395,10 +439,10 @@ function _objective_from_rows(
 
         base_loss = isempty(nmae_values) ? Inf : mean(nmae_values)
         return (
-            score=base_loss + runtime_pen,
+            score=base_loss,
             base_loss=base_loss,
             fail_penalty=0.0,
-            runtime_penalty=runtime_pen,
+            runtime_penalty=0.0,
             all_pass=all_pass,
             failed_rows=failed_rows
         )
@@ -412,11 +456,12 @@ function _objective_from_rows(
         scenario = hasproperty(row, :scenario) ? String(getproperty(row, :scenario)) : "default"
         weight = get(spec.scenario_weights, scenario, 1.0)
 
-        rmse = _safe_float(getproperty(row, :rmse_km))
-        max_abs = _safe_float(getproperty(row, :max_abs_km))
+        # Prefer display-normalized metrics when available (e.g., velocity rows in m/s).
+        rmse = _row_metric_value(row, :rmse_km, :rmse_display)
+        max_abs = _row_metric_value(row, :max_abs_km, :max_abs_display)
         nmae = hasproperty(row, :nmae) ? _safe_float(getproperty(row, :nmae)) : NaN
-        lim_rmse = hasproperty(row, :limit_max_rmse_km) ? _safe_float(getproperty(row, :limit_max_rmse_km)) : NaN
-        lim_abs = hasproperty(row, :limit_max_abs_km) ? _safe_float(getproperty(row, :limit_max_abs_km)) : NaN
+        lim_rmse = _row_metric_value(row, :limit_max_rmse_km, :limit_max_rmse_display)
+        lim_abs = _row_metric_value(row, :limit_max_abs_km, :limit_max_abs_display)
         lim_nmae = hasproperty(row, :limit_nmae) ? _safe_float(getproperty(row, :limit_nmae)) : NaN
 
         rmse_ratio = if isfinite(lim_rmse) && lim_rmse > 0.0
@@ -449,14 +494,13 @@ function _objective_from_rows(
         end
     end
 
-    fail_pen = budgets.objective_lambda_fail * (run_failed ? 1.0 : 0.0)
-    score = base_loss + fail_pen + runtime_pen
+    score = base_loss
 
     return (
         score=score,
         base_loss=base_loss,
-        fail_penalty=fail_pen,
-        runtime_penalty=runtime_pen,
+        fail_penalty=0.0,
+        runtime_penalty=0.0,
         all_pass=all_pass,
         failed_rows=failed_rows
     )
@@ -555,21 +599,117 @@ end
     return isempty(raw) ? default : raw
 end
 
-function _candidate_runtime_policy_env_pairs()::Vector{Pair{String, String}}
-    return Pair{String, String}[
-        "OPENBLAS_NUM_THREADS" => _env_with_default("OPENBLAS_NUM_THREADS", "1"),
-        "SPACEAGORA_INNER_THREAD_BUDGET" => _env_with_default("SPACEAGORA_INNER_THREAD_BUDGET", "1"),
-        "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => _env_with_default("SPACEAGORA_PARALLEL_POLICY_ADAPTIVE", "0"),
-        "SPACEAGORA_EFFECTOR_PARALLEL" => _env_with_default("SPACEAGORA_EFFECTOR_PARALLEL", "off"),
-        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => _env_with_default("SPACEAGORA_DENSITY_CALLBACK_PARALLEL", "off"),
-        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => _env_with_default("SPACEAGORA_CONTROL_CALLBACK_PARALLEL", "off"),
-        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => _env_with_default("SPACEAGORA_THERMAL_CALLBACK_PARALLEL", "off"),
-        "SPACEAGORA_MULTIBODY_PARALLEL" => _env_with_default("SPACEAGORA_MULTIBODY_PARALLEL", "off"),
-        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => _env_with_default("SPACEAGORA_OUTER_PARALLEL_ACTIVE", "0")
-    ]
+@inline function _backend_parallel_profile_raw(::AbstractBackend)::Union{Nothing, String}
+    return nothing
 end
 
-function _candidate_env_pairs(spec::CalibrationSpec, candidate::Candidate)::Vector{Pair{String, String}}
+@inline function _backend_parallel_profile_raw(backend::CommandBackend)::Union{Nothing, String}
+    return backend.parallel_profile
+end
+
+@inline function _backend_parallel_profile_raw(backend::InProcessBackend)::Union{Nothing, String}
+    return backend.parallel_profile
+end
+
+@inline function _is_full_auto_profile_token(raw::AbstractString)::Bool
+    token = lowercase(strip(String(raw)))
+    token = replace(token, "-" => "_")
+    token = replace(token, " " => "")
+    return token in ("r4_full_auto", "r4fullauto", "r4_calibration_full_auto", "full_smart")
+end
+
+@inline function backend_full_auto_requested(backend::AbstractBackend)::Bool
+    raw = _backend_parallel_profile_raw(backend)
+    if raw === nothing || isempty(strip(raw))
+        env_raw = strip(get(ENV, "SPACEAGORA_CALIBRATION_PARALLEL_PROFILE", ""))
+        return _is_full_auto_profile_token(env_raw)
+    end
+    return _is_full_auto_profile_token(raw)
+end
+
+function _backend_parallel_profile(backend::AbstractBackend)::SpaceAGORA.ParallelProfile
+    raw = _backend_parallel_profile_raw(backend)
+    if raw === nothing || isempty(strip(raw))
+        env_raw = strip(get(ENV, "SPACEAGORA_CALIBRATION_PARALLEL_PROFILE", ""))
+        raw = isempty(env_raw) ? "R0" : env_raw
+    end
+    try
+        return SpaceAGORA.parse_parallel_profile(raw)
+    catch err
+        if _is_full_auto_profile_token(raw)
+            # Compatibility fallback: older SpaceAGORA builds may not define R4_full_auto.
+            return SpaceAGORA.parse_parallel_profile("R4")
+        end
+        rethrow(err)
+    end
+end
+
+@inline backend_parallel_profile(backend::AbstractBackend) = _backend_parallel_profile(backend)
+
+@inline function _calibration_parallel_evaluations(spec::CalibrationSpec)::Int
+    default = max(1, spec.budgets.parallel_evaluations)
+    raw = strip(get(ENV, "SPACEAGORA_CALIBRATION_PARALLEL_EVALUATIONS", ""))
+    isempty(raw) && return default
+    parsed = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_CALIBRATION_PARALLEL_EVALUATIONS must be a positive integer, got '$raw'"))
+    end
+    parsed > 0 || throw(ArgumentError(
+        "SPACEAGORA_CALIBRATION_PARALLEL_EVALUATIONS must be a positive integer, got $parsed"
+    ))
+    return parsed
+end
+
+@inline function _coerce_outer_backend_token(backend::Symbol)::String
+    if backend == :none
+        return "none"
+    elseif backend == :threads
+        return "threads"
+    elseif backend == :process
+        return "process"
+    elseif backend == :auto
+        return "auto"
+    end
+    throw(ArgumentError("Unsupported runtime outer backend '$backend'."))
+end
+
+function _candidate_runtime_policy_env_pairs(
+    backend::AbstractBackend,
+    spec::CalibrationSpec;
+    runtime_policy::Union{Nothing, CandidateRuntimePolicy}=nothing
+)::Vector{Pair{String, String}}
+    profile = _backend_parallel_profile(backend)
+    outer_active = runtime_policy === nothing ? (_calibration_parallel_evaluations(spec) > 1) : runtime_policy.outer_parallel_active
+    profile_pairs = SpaceAGORA.profile_env_pairs(
+        profile;
+        preserve_existing=true,
+        outer_parallel_active=outer_active
+    )
+
+    env_map = Dict{String, String}()
+    env_map["OPENBLAS_NUM_THREADS"] = _env_with_default("OPENBLAS_NUM_THREADS", "1")
+    env_map["SPACEAGORA_INNER_THREAD_BUDGET"] = if runtime_policy === nothing
+        _env_with_default("SPACEAGORA_INNER_THREAD_BUDGET", "1")
+    else
+        string(max(1, runtime_policy.inner_thread_budget))
+    end
+    for (k, v) in profile_pairs
+        env_map[k] = v
+    end
+    if runtime_policy !== nothing
+        env_map["SPACEAGORA_PERF_PARALLEL_BACKEND"] = _coerce_outer_backend_token(runtime_policy.outer_backend)
+        env_map["SPACEAGORA_OUTER_PARALLEL_ACTIVE"] = runtime_policy.outer_parallel_active ? "1" : "0"
+    end
+    return collect(env_map)
+end
+
+function _candidate_env_pairs(
+    backend::AbstractBackend,
+    spec::CalibrationSpec,
+    candidate::Candidate;
+    runtime_policy::Union{Nothing, CandidateRuntimePolicy}=nothing
+)::Vector{Pair{String, String}}
     env_map = Dict{String, String}()
 
     for (pname, raw_value) in candidate.values
@@ -582,11 +722,52 @@ function _candidate_env_pairs(spec::CalibrationSpec, candidate::Candidate)::Vect
         end
     end
 
-    for (k, v) in _candidate_runtime_policy_env_pairs()
+    for (k, v) in _candidate_runtime_policy_env_pairs(backend, spec; runtime_policy=runtime_policy)
         get!(env_map, k, v)
     end
 
     return collect(env_map)
+end
+
+@inline function _candidate_runtime_policy_env_pairs()::Vector{Pair{String, String}}
+    return _candidate_runtime_policy_env_pairs(CommandBackend(), CalibrationSpec())
+end
+
+@inline function _candidate_env_pairs(spec::CalibrationSpec, candidate::Candidate)::Vector{Pair{String, String}}
+    return _candidate_env_pairs(CommandBackend(), spec, candidate)
+end
+
+@inline function _profile_symbol(profile::String)::Symbol
+    token = lowercase(strip(profile))
+    token in ("quick", "full") || throw(ArgumentError("backend profile must be quick|full, got '$profile'."))
+    return Symbol(token)
+end
+
+function _verification_request(
+    backend::InProcessBackend,
+    profile::String,
+    tuned_manifest_path::String,
+    summary_path::String,
+    errors_path::String
+)
+    profile_symbol = _profile_symbol(profile)
+    if backend.plots === nothing
+        return SpaceAGORA.VerificationRequest(
+            profile=profile_symbol,
+            out_summary=summary_path,
+            out_errors=errors_path,
+            manifest_path=tuned_manifest_path,
+            enforce=backend.enforce
+        )
+    end
+    return SpaceAGORA.VerificationRequest(
+        profile=profile_symbol,
+        out_summary=summary_path,
+        out_errors=errors_path,
+        manifest_path=tuned_manifest_path,
+        enforce=backend.enforce,
+        generate_plots=backend.plots
+    )
 end
 
 function _read_summary_rows(path::String)
@@ -597,11 +778,120 @@ function _read_summary_rows(path::String)
 end
 
 function evaluate_candidate(
+    backend::InProcessBackend,
+    spec::CalibrationSpec,
+    candidate::Candidate;
+    stage::String=candidate.stage,
+    run_dir::Union{Nothing, String}=nothing,
+    runtime_policy::Union{Nothing, CandidateRuntimePolicy}=nothing
+)::BackendEvaluation
+    workdir = run_dir === nothing ? mktempdir() : run_dir
+    replica = _replica_id(candidate)
+    suffix = replica === nothing ? "" : "_r$(lpad(string(replica), 3, '0'))"
+    cdir = joinpath(workdir, "candidate_$(lpad(string(candidate.id), 4, '0'))_$(stage)$(suffix)")
+    mkpath(cdir)
+
+    payload_path = joinpath(cdir, "candidate.toml")
+    open(payload_path, "w") do io
+        TOML.print(io, Dict(
+            "candidate_id" => candidate.id,
+            "stage" => stage,
+            "values" => Dict(candidate.values)
+        ))
+    end
+
+    summary_path = joinpath(cdir, "summary.csv")
+    errors_path = joinpath(cdir, "errors.csv")
+
+    manifest_base = isempty(strip(backend.manifest_path)) ? primary_manifest_path(spec) : backend.manifest_path
+    isfile(manifest_base) || throw(ArgumentError("Base manifest file not found: $manifest_base"))
+
+    manifest_doc = TOML.parsefile(manifest_base)
+    tuned_manifest_path = joinpath(cdir, "manifest_tuned.toml")
+    _apply_candidate_to_manifest!(manifest_doc, spec, candidate)
+
+    if replica !== nothing
+        _apply_uncertainty_to_manifest!(manifest_doc, spec, candidate.id, replica)
+    end
+
+    open(tuned_manifest_path, "w") do io
+        TOML.print(io, manifest_doc)
+    end
+
+    profile = _profile_for_stage(stage, backend)
+    request = _verification_request(
+        backend,
+        profile,
+        tuned_manifest_path,
+        summary_path,
+        errors_path
+    )
+    env_pairs = _candidate_env_pairs(backend, spec, candidate; runtime_policy=runtime_policy)
+
+    ok = true
+    err = ""
+    wall_runtime_s = @elapsed begin
+        try
+            withenv(env_pairs...) do
+                backend.run_verification(request)
+            end
+        catch e
+            ok = false
+            err = sprint(showerror, e)
+        end
+    end
+
+    rows = ok ? _read_summary_rows(summary_path) : Any[]
+    runtime_s = _runtime_from_rows(rows, wall_runtime_s)
+
+    obj_rng = if replica === nothing
+        nothing
+    else
+        MersenneTwister(hash((spec.seed, "telemetry_noise", candidate.id, replica, stage)))
+    end
+
+    obj = _objective_from_rows(
+        rows,
+        spec;
+        run_failed=(!ok || isempty(rows)),
+        runtime_s=runtime_s,
+        noise_rng=obj_rng
+    )
+
+    success = ok && !isempty(rows) && isfinite(obj.score)
+
+    return BackendEvaluation(
+        candidate_id=candidate.id,
+        stage=stage,
+        success=success,
+        score=obj.score,
+        runtime_s=runtime_s,
+        metrics=Dict(
+            "objective_base" => obj.base_loss,
+            "penalty_fail" => obj.fail_penalty,
+            "penalty_time" => obj.runtime_penalty,
+            "all_pass" => obj.all_pass ? 1.0 : 0.0,
+            "failed_rows" => obj.failed_rows,
+            "summary_rows" => Float64(length(rows))
+        ),
+        error_message=ok ? (isempty(rows) ? "summary_missing_or_invalid" : "") : (isempty(err) ? "inprocess_failed" : err),
+        artifacts=Dict(
+            "summary" => summary_path,
+            "errors" => errors_path,
+            "candidate" => payload_path,
+            "manifest_base" => manifest_base,
+            "manifest_tuned" => tuned_manifest_path
+        )
+    )
+end
+
+function evaluate_candidate(
     backend::CommandBackend,
     spec::CalibrationSpec,
     candidate::Candidate;
     stage::String=candidate.stage,
-    run_dir::Union{Nothing, String}=nothing
+    run_dir::Union{Nothing, String}=nothing,
+    runtime_policy::Union{Nothing, CandidateRuntimePolicy}=nothing
 )::BackendEvaluation
     workdir = run_dir === nothing ? mktempdir() : run_dir
     replica = _replica_id(candidate)
@@ -644,7 +934,7 @@ function evaluate_candidate(
         `$(backend.julia_cmd) --project=$(backend.project_path) --startup-file=no $(backend.verification_script) --profile=$(profile) --manifest=$(tuned_manifest_path) --out-summary=$(summary_path) --out-errors=$(errors_path) --enforce=$(backend.enforce ? "1" : "0") --plots=$(backend.plots ? "1" : "0")`
     end
 
-    env_pairs = _candidate_env_pairs(spec, candidate)
+    env_pairs = _candidate_env_pairs(backend, spec, candidate; runtime_policy=runtime_policy)
 
     ok = true
     err = ""

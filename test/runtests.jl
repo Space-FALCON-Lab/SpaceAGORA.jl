@@ -8350,6 +8350,8 @@ end
     @test Δeps2 < -2e3
 end
 
+include(joinpath(REPO_ROOT, "test", "coverage_parallel_telemetry_probes.jl"))
+
 @testset "JET Static Analysis" begin
     JET.@test_opt InitialCondition()
     JET.@test_opt Link()

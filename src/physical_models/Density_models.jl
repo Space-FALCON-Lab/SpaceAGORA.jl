@@ -1099,7 +1099,8 @@ function Base.deepcopy_internal(model::GRAMAtmosphereModel, stackdict::IdDict)
         return stackdict[model]
     end
 
-    copied = GRAMAtmosphereModel(
+    copied = Base.invokelatest(
+        GRAMAtmosphereModel;
         gram_root_directory=model.gram_root,
         gram_data_directory=model.gram_data_root,
         spice_directory=model.spice_root,

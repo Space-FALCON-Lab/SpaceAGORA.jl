@@ -20,3 +20,8 @@ GRAMpy/*
 .AGORA/.CondaPkg/env/lib/terminfo/e/eterm-color
 orchestrator/data/*
 !orchestrator/data/.gitkeep
+.DS_Store
+*.cov
+output/calibration/
+SpaceAGORACalibration.jl/test/output/
+SpaceAGORACalibration.jl/.CondaPkg/

@@ -1,12 +1,12 @@
 schema_version = 1
-id = "telemetry_earth"
-name = "Telemetry Earth Calibration"
-description = "Earth GMAT-focused calibration with physically influential Earth parameters"
-output_root = "output/calibration"
+id = "telemetry_earth_offline_smoke_v1"
+name = "Telemetry Earth Offline Study (Smoke)"
+description = "Fast smoke calibration for Earth-only offline pipeline validation"
+output_root = "output/calibration/earth_offline"
 seed = 42
 objective = "telemetry_robust_huber"
 verification_script = "scripts/verify_telemetry.jl"
-manifest_paths = ["test/telemetry_benchmark_manifest.toml"]
+manifest_paths = ["SpaceAGORACalibration.jl/studies/earth_offline/manifest_earth_offline.toml"]
 
 [scenario_weights]
 earth_gmat = 1.0
@@ -22,8 +22,8 @@ manifest_targets = ["scenarios[name=earth_gmat].spacecraft.bus_mass_kg"]
 [[parameters]]
 name = "earth_prop_mass_scale"
 kind = "continuous"
-lower = 0.8
-upper = 1.2
+lower = 0.75
+upper = 1.30
 transform = "mul"
 manifest_targets = ["scenarios[name=earth_gmat].spacecraft.prop_mass_kg"]
 
@@ -87,7 +87,7 @@ env_targets = ["SPACEAGORA_TELEMETRY_SOLVER_MODE"]
 [[parameters]]
 name = "dt_max_orbit_s"
 kind = "continuous"
-lower = 20.0
+lower = 25.0
 upper = 120.0
 transform = "set"
 env_targets = ["SPACEAGORA_TELEMETRY_DT_MAX_ORBIT"]
@@ -96,7 +96,7 @@ env_targets = ["SPACEAGORA_TELEMETRY_DT_MAX_ORBIT"]
 name = "dt_max_atm_s"
 kind = "continuous"
 lower = 0.05
-upper = 0.4
+upper = 0.35
 transform = "set"
 env_targets = ["SPACEAGORA_TELEMETRY_DT_MAX_ATM"]
 
@@ -104,40 +104,40 @@ env_targets = ["SPACEAGORA_TELEMETRY_DT_MAX_ATM"]
 name = "solver_maxiters"
 kind = "integer"
 lower = 5000000
-upper = 25000000
+upper = 20000000
 transform = "set"
 env_targets = ["SPACEAGORA_TELEMETRY_SOLVER_MAXITERS"]
 
 [budgets]
-initial_samples = 8
-global_iters = 8
+initial_samples = 2
+global_iters = 1
 batch_size = 1
-parallel_evaluations = 4
+parallel_evaluations = 2
 global_acquisition = "lcb"
-bo_pool_size = 256
+bo_pool_size = 64
 bo_length_scale = 0.35
 bo_noise = 1.0e-6
 bo_kappa = 1.96
 bo_xi = 0.01
 local_refine_strategy = "trust_region"
-local_refine_topk = 2
-local_refine_steps = 4
-local_refine_neighbors = 2
+local_refine_topk = 1
+local_refine_steps = 0
+local_refine_neighbors = 1
 local_refine_init_scale = 0.12
 local_refine_shrink = 0.6
 local_refine_expand = 1.2
 local_refine_min_improvement = 1.0e-6
-robustness_samples = 8
+robustness_samples = 1
 initial_design = "lhs"
 robustness_uncertainty = "normal"
-uncertainty_atm_scale = 0.03
-uncertainty_ic_scale = 0.002
+uncertainty_atm_scale = 0.01
+uncertainty_ic_scale = 0.001
 robust_ranking = "weighted"
 robust_cvar_alpha = 0.9
 robust_p95_weight = 0.5
-robust_fail_weight = 5.0
+robust_fail_weight = 6.0
 objective_huber_delta = 1.0
-objective_lambda_fail = 25.0
+objective_lambda_fail = 30.0
 objective_lambda_time = 2.0
-objective_runtime_budget_s = 1800.0
-objective_telemetry_noise_frac = 0.01
+objective_runtime_budget_s = 900.0
+objective_telemetry_noise_frac = 0.0

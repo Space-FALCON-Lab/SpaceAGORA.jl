@@ -2,7 +2,7 @@
 
 julia_version = "1.12.3"
 manifest_format = "2.0"
-project_hash = "542af4216d9529647f1db6d4e4c317764bf7f231"
+project_hash = "f98fc6cf6eddc19b6773039401b2780bde215bce"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -2863,8 +2863,14 @@ version = "1.2.2"
 
 [[deps.SpaceAGORA]]
 deps = ["Arrow", "AssociatedLegendrePolynomials", "AstroTime", "CSV", "ComponentArrays", "ControlSystemsBase", "DataFrames", "Dates", "DiffEqBase", "DiffEqCallbacks", "DifferentialEquations", "Distributions", "FiniteDiff", "ForwardDiff", "Interpolations", "LaTeXStrings", "LegendrePolynomials", "LinearAlgebra", "Logging", "LoopVectorization", "MatrixEquations", "NLsolve", "NonlinearSolve", "OrdinaryDiffEq", "PlotlyBase", "PlotlyJS", "Plots", "Polyester", "PreallocationTools", "Printf", "PythonCall", "Quaternions", "Random", "Reexport", "Roots", "Rotations", "SHA", "SPICE", "SatelliteToolbox", "SatelliteToolboxAtmosphericModels", "SatelliteToolboxGeomagneticField", "SatelliteToolboxTransformations", "Serialization", "SparseArrays", "SpecialFunctions", "StaticArrays", "Statistics", "TOML"]
-path = "."
+path = ".."
 uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
+version = "0.1.0"
+
+[[deps.SpaceAGORACalibration]]
+deps = ["Arrow", "CSV", "Dates", "LinearAlgebra", "Random", "SHA", "SpaceAGORA", "Statistics", "TOML", "Tables"]
+path = "."
+uuid = "7afa8a84-8664-4728-9f96-724cd4b46d55"
 version = "0.1.0"
 
 [[deps.SpaceIndices]]

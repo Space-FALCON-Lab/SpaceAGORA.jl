@@ -24,7 +24,7 @@ The versioned TOML spec includes:
 - `manifest_paths`
 - `scenario_weights`
 - parameter list with bounds/types and manifest target mappings
-- budgets and robustness settings (`initial_design`, `global_acquisition`, `bo_*`, `local_refine_*`, `robustness_*`, `robust_*`)
+- budgets and robustness settings (`initial_design`, `parallel_evaluations`, `global_acquisition`, `bo_*`, `local_refine_*`, `robustness_*`, `robust_*`)
 - objective settings (`objective_huber_delta`, `objective_lambda_fail`, `objective_lambda_time`, `objective_runtime_budget_s`, `objective_telemetry_noise_frac`)
 - uncertainty settings (`uncertainty_atm_scale`, `uncertainty_ic_scale`)
 - seed and verification command settings
@@ -84,3 +84,5 @@ julia --project=SpaceAGORACalibration.jl \
 `J(θ) = Σ_s w_s Σ_e [Huber(rmse_km/limit_rmse) + 0.5*Huber(max_abs_km/limit_abs)] + λfail*I(run_failed) + λtime*max(0, runtime/t_budget - 1)`.
 
 Local refinement perturbs continuous parameters only; robustness uses Monte Carlo uncertainty draws and robust ranking (`mean + α*p95 + β*fail_rate`) before full-profile promote confirmation.
+
+Candidate evaluations can run concurrently via `budgets.parallel_evaluations` (override with `SPACEAGORA_CALIBRATION_PARALLEL_EVALUATIONS`).

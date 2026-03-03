@@ -37,8 +37,8 @@ function write_report!(
         println(io, "- Manifest Paths: `$(join(spec.manifest_paths, ", "))`")
         println(io, "- Robust Ranking: `$(spec.budgets.robust_ranking)`")
         println(io, "- Robustness Uncertainty: `$(spec.budgets.robustness_uncertainty)`")
-        println(io, "- Objective: `J(θ) = Σ_s w_s Σ_e [Huber(rmse_km/limit_rmse) + 0.5*Huber(max_abs_km/limit_abs)] + λfail*I(run_failed) + λtime*max(0, runtime/t_budget - 1)`")
-        println(io, "- Objective Weights: `lambda_fail=$(spec.budgets.objective_lambda_fail), lambda_time=$(spec.budgets.objective_lambda_time), huber_delta=$(spec.budgets.objective_huber_delta)`")
+        println(io, "- Objective: `J(θ) = Σ_s w_s Σ_e [Huber(rmse_km/limit_rmse) + 0.5*Huber(max_abs_km/limit_abs)]`")
+        println(io, "- Objective Weights: `huber_delta=$(spec.budgets.objective_huber_delta)`")
         println(io)
 
         println(io, "## Lifecycle")

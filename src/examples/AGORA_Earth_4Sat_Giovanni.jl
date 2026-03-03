@@ -16,7 +16,7 @@ if !isdefined(@__MODULE__, :run_and_report)
 end
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const SPICE_PATH = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
+const SPICE_PATH = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "Gravity_harmonics_data", "EarthGGM05C.csv")
 const MISSION_TIME_SEC = 24.0 * 3600.0
 

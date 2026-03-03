@@ -1,5 +1,0 @@
-<map id="GRAM::EarthCorrelator" name="GRAM::EarthCorrelator">
-<area shape="rect" id="node1" title="Correlate perturbations of Earth atmosphere states." alt="" coords="111,97,266,125"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_state_correlator.html" title="Correlate perturbations of atmosphere states." alt="" coords="5,5,161,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_random_number_generator.html" title="This class generates random numbers." alt="" coords="185,5,403,33"/>
-</map>

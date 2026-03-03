@@ -1,5 +1,0 @@
-<map id="GRAM::Yelle" name="GRAM::Yelle">
-<area shape="rect" id="node1" title="The Yelle model of a Titan Atmosphere." alt="" coords="118,81,215,109"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_min_max_model.html" title="A three&#45;tiered height based atmosphere model base class." alt="" coords="5,5,155,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_titan_common.html" title="Common values for the Titan atmosphere models." alt="" coords="179,5,328,33"/>
-</map>

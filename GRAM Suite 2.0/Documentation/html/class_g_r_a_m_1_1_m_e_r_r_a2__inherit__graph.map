@@ -1,5 +1,0 @@
-<map id="GRAM::MERRA2" name="GRAM::MERRA2">
-<area shape="rect" id="node1" title="The Modern&#45;Era Retrospective Analysis for Research and Applications, Version 2 (MERRA&#45;2) lower atmosp..." alt="" coords="97,81,220,109"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_atmosphere.html" title="An abstract base class for all GRAM atmosphere models." alt="" coords="5,5,144,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_earth_common.html" title="Common values for the Earth atmosphere models." alt="" coords="168,5,320,33"/>
-</map>

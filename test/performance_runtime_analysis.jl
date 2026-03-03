@@ -1,8 +1,8 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 const DEFAULT_OUTPUT_DIR = joinpath(REPO_ROOT, "output", "performance")
-const SPICE_PATH = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
+const SPICE_PATH = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "Gravity_harmonics_data", "EarthGGM05C.csv")
-const EARTH_GRAM_SURROGATE_FILE = joinpath(REPO_ROOT, "GRAM Suite 2.0", "Earth", "earth_surrogate.jls")
+const EARTH_GRAM_SURROGATE_FILE = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "Earth", "earth_surrogate.jls")
 const PERF_BASELINE_SCENARIO = "single_j2"
 const _PERF_POLICY_ENV_NAMES = (
     "SPACEAGORA_OUTER_PARALLEL_ACTIVE",
@@ -1243,7 +1243,7 @@ function _build_earth_gram_surrogate_density()
 end
 
 function _build_earth_gram_point_density()
-    gram_root = joinpath(REPO_ROOT, "GRAM Suite 2.0")
+    gram_root = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0")
     # GRAM Python bindings can be sensitive to world-age in long-lived Julia sessions.
     return Base.invokelatest(
         GRAMAtmosphereModel;
@@ -1256,7 +1256,7 @@ function _build_earth_gram_point_density()
 end
 
 function _build_mars_gram_point_density()
-    gram_root = joinpath(REPO_ROOT, "GRAM Suite 2.0")
+    gram_root = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0")
     # GRAM Python bindings can be sensitive to world-age in long-lived Julia sessions.
     return Base.invokelatest(
         GRAMAtmosphereModel;

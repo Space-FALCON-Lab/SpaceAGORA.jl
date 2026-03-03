@@ -1,9 +1,0 @@
-<map id="GRAM::TitanCommon" name="GRAM::TitanCommon">
-<area shape="rect" id="node1" title="Common values for the Titan atmosphere models." alt="" coords="5,136,154,164"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_titan_atmosphere.html" title="The main Titan Atmosphere class." alt="" coords="207,5,373,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_titan_g_c_m.html" title="The General Circulation Model of a Titan Atmosphere." alt="" coords="227,57,353,85"/>
-<area shape="rect" id="node4" href="$class_g_r_a_m_1_1_titan_g_c_m_mid.html" title="The GCM mid model of a Titan Atmosphere." alt="" coords="216,109,364,137"/>
-<area shape="rect" id="node5" href="$class_g_r_a_m_1_1_titan_g_c_m_terp.html" title="The GCM Terp model of a Titan Atmosphere." alt="" coords="214,161,366,189"/>
-<area shape="rect" id="node6" href="$class_g_r_a_m_1_1_titan_g_c_m_thermos.html" title="The GCM Thermosphere model of a Titan Atmosphere." alt="" coords="202,213,378,241"/>
-<area shape="rect" id="node7" href="$class_g_r_a_m_1_1_yelle.html" title="The Yelle model of a Titan Atmosphere." alt="" coords="241,265,339,293"/>
-</map>

@@ -1,7 +1,0 @@
-<map id="GRAM::MarsInterpolatorBase" name="GRAM::MarsInterpolatorBase">
-<area shape="rect" id="node1" title="The base class for all Mars GCM interpolation models." alt="" coords="90,81,281,109"/>
-<area shape="rect" id="node4" href="$class_g_r_a_m_1_1_m_g_c_m_interpolator.html" title="The base class for MGCM interpolation models." alt="" coords="5,157,179,185"/>
-<area shape="rect" id="node5" href="$class_g_r_a_m_1_1_tes_interpolator.html" title="The base class for TesGCM interpolation models." alt="" coords="203,157,357,185"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_atmosphere.html" title="An abstract base class for all GRAM atmosphere models." alt="" coords="32,5,171,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_mars_common.html" title="Common values for the Mars atmosphere models." alt="" coords="195,5,344,33"/>
-</map>

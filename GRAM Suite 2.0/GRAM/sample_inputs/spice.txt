@@ -1,6 +1,0 @@
- $INPUT
-  SpicePath = '../../SPICE'
- $END                
-
- Explanation of variables:
-  SpicePath         =  Path to NAIF Spice data

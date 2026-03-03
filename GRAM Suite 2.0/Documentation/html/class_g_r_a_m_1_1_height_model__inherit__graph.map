@@ -1,6 +1,0 @@
-<map id="GRAM::HeightModel" name="GRAM::HeightModel">
-<area shape="rect" id="node1" title="A height based atmosphere model base class." alt="" coords="89,81,229,109"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_jupiter_model.html" title="The height based model of a Jupiter Atmosphere." alt="" coords="5,157,147,185"/>
-<area shape="rect" id="node4" href="$class_g_r_a_m_1_1_uranus_model.html" title="The height based model of a Uranus Atmosphere." alt="" coords="171,157,315,185"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_atmosphere.html" title="An abstract base class for all GRAM atmosphere models." alt="" coords="90,5,228,33"/>
-</map>

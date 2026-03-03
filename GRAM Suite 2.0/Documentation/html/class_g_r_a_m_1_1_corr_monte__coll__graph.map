@@ -1,7 +1,0 @@
-<map id="GRAM::CorrMonte" name="GRAM::CorrMonte">
-<area shape="rect" id="node1" title="Generate a Monte Carlo of correlated profiles." alt="" coords="228,97,356,125"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_profile.html" title="An abstract base class for collecting GRAM inputs and outputs." alt="" coords="5,5,110,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_profile_printer.html" title="The ProfilePrinter class is an output utility class for Profile data." alt="" coords="134,5,277,33"/>
-<area shape="rect" id="node4" href="$class_g_r_a_m_1_1_state_correlator.html" title="Correlate perturbations of atmosphere states." alt="" coords="301,5,457,33"/>
-<area shape="rect" id="node5" href="$class_g_r_a_m_1_1_input_parameters.html" title="This is a InputParameters." alt="" coords="481,5,645,33"/>
-</map>

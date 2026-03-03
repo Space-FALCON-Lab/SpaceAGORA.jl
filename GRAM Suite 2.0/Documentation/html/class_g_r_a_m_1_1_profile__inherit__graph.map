@@ -1,8 +1,0 @@
-<map id="GRAM::Profile" name="GRAM::Profile">
-<area shape="rect" id="node1" title="An abstract base class for collecting GRAM inputs and outputs." alt="" coords="5,109,110,137"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_ballistic_trajectory.html" title="Generate a ballistic trajectory profile." alt="" coords="158,5,329,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_ephemeris_profile.html" title="Generate a profile using a sweep of ephemeris values." alt="" coords="160,57,327,85"/>
-<area shape="rect" id="node4" href="$class_g_r_a_m_1_1_testing_profile.html" title="Generate a TestingProfile profile." alt="" coords="170,109,317,137"/>
-<area shape="rect" id="node5" href="$class_g_r_a_m_1_1_trajectory.html" title="Generate a trajectory profile." alt="" coords="181,161,306,189"/>
-<area shape="rect" id="node6" href="$class_g_r_a_m_1_1_vertical_profile.html" title="Generate a vertical height profile over a specified position." alt="" coords="169,213,318,241"/>
-</map>

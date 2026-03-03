@@ -1,7 +1,0 @@
- $INPUT
-  SpicePath = '../../SPICE'
- $END                
-
- Copy this file into the bin folder.
- Explanation of variables:
-  SpicePath         =  Path to NAIF Spice data

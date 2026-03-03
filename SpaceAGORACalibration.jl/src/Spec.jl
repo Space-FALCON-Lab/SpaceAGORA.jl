@@ -26,6 +26,7 @@ Base.@kwdef struct BudgetSpec
     initial_samples::Int = 16
     global_iters::Int = 32
     batch_size::Int = 1
+    parallel_evaluations::Int = 1
     global_acquisition::String = "ei"
     bo_pool_size::Int = 256
     bo_length_scale::Float64 = 0.35
@@ -64,7 +65,7 @@ Base.@kwdef struct CalibrationSpec
     output_root::String = "output/calibration"
     seed::Int = 42
     objective::String = "score"
-    verification_script::String = "scripts/verify_telemetry.jl"
+    verification_script::String = "src/analysis/verification/TelemetryVerification.jl"
     manifest_paths::Vector{String} = String["test/telemetry_benchmark_manifest.toml"]
     scenario_weights::Dict{String, Float64} = Dict{String, Float64}()
     parameters::Vector{ParameterSpec} = ParameterSpec[]
@@ -137,6 +138,7 @@ function load_spec(path::AbstractString)::CalibrationSpec
         initial_samples=Int(get(budgets_raw, "initial_samples", 16)),
         global_iters=Int(get(budgets_raw, "global_iters", 32)),
         batch_size=Int(get(budgets_raw, "batch_size", 1)),
+        parallel_evaluations=Int(get(budgets_raw, "parallel_evaluations", 1)),
         global_acquisition=lowercase(String(get(budgets_raw, "global_acquisition", "ei"))),
         bo_pool_size=Int(get(budgets_raw, "bo_pool_size", 256)),
         bo_length_scale=Float64(get(budgets_raw, "bo_length_scale", 0.35)),
@@ -178,7 +180,7 @@ function load_spec(path::AbstractString)::CalibrationSpec
         output_root=String(get(doc, "output_root", "output/calibration")),
         seed=Int(get(doc, "seed", 42)),
         objective=String(get(doc, "objective", "score")),
-        verification_script=String(get(doc, "verification_script", "scripts/verify_telemetry.jl")),
+        verification_script=String(get(doc, "verification_script", "src/analysis/verification/TelemetryVerification.jl")),
         manifest_paths=_parse_manifest_paths(doc),
         scenario_weights=weights,
         parameters=params,
@@ -259,6 +261,7 @@ function validate_spec(spec::CalibrationSpec)::Nothing
     b.initial_samples > 0 || throw(ArgumentError("budgets.initial_samples must be > 0."))
     b.global_iters >= 0 || throw(ArgumentError("budgets.global_iters must be >= 0."))
     b.batch_size > 0 || throw(ArgumentError("budgets.batch_size must be > 0."))
+    b.parallel_evaluations > 0 || throw(ArgumentError("budgets.parallel_evaluations must be > 0."))
     b.global_acquisition in ("ei", "lcb") || throw(ArgumentError(
         "budgets.global_acquisition must be ei|lcb, got '$(b.global_acquisition)'."
     ))
@@ -332,6 +335,7 @@ function spec_to_dict(spec::CalibrationSpec)::Dict{String, Any}
             "initial_samples" => spec.budgets.initial_samples,
             "global_iters" => spec.budgets.global_iters,
             "batch_size" => spec.budgets.batch_size,
+            "parallel_evaluations" => spec.budgets.parallel_evaluations,
             "global_acquisition" => spec.budgets.global_acquisition,
             "bo_pool_size" => spec.budgets.bo_pool_size,
             "bo_length_scale" => spec.budgets.bo_length_scale,

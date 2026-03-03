@@ -1,5 +1,0 @@
-<map id="GRAM::NeptuneCommon" name="GRAM::NeptuneCommon">
-<area shape="rect" id="node1" title="Common values for the Neptune atmosphere models." alt="" coords="113,5,281,33"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_neptune_atmosphere.html" title="The primary interface for the Neptune atmosphere model." alt="" coords="5,81,192,109"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_neptune_min_max.html" title="The min&#45;max data model of the Neptune atmosphere." alt="" coords="216,81,378,109"/>
-</map>

@@ -1,5 +1,0 @@
-<map id="GRAM::MAP" name="GRAM::MAP">
-<area shape="rect" id="node1" title="The Middle Atmosphere Program (MAP) model of Earth&#39;s middle atmosphere." alt="" coords="21,175,118,203"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_atmosphere.html" title="An abstract base class for all GRAM atmosphere models." alt="" coords="5,5,144,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_earth_common.html" title="Common values for the Earth atmosphere models." alt="" coords="91,97,242,125"/>
-</map>

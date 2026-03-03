@@ -1,5 +1,0 @@
-<map id="GRAM::VenusIRAMid" name="GRAM::VenusIRAMid">
-<area shape="rect" id="node1" title="The VIRA model of the middle Venus Atmosphere." alt="" coords="86,81,234,109"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_atmosphere.html" title="An abstract base class for all GRAM atmosphere models." alt="" coords="5,5,144,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_venus_common.html" title="Common values for the Venus atmosphere models." alt="" coords="168,5,325,33"/>
-</map>

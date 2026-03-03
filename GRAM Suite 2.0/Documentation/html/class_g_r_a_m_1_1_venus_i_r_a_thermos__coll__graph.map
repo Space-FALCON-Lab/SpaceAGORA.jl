@@ -1,6 +1,0 @@
-<map id="GRAM::VenusIRAThermos" name="GRAM::VenusIRAThermos">
-<area shape="rect" id="node1" title="The VIRA thermosphere model of a Venus Atmosphere." alt="" coords="71,267,248,295"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_atmosphere.html" title="An abstract base class for all GRAM atmosphere models." alt="" coords="106,97,245,125"/>
-<area shape="rect" id="node4" href="$class_g_r_a_m_1_1_venus_common.html" title="Common values for the Venus atmosphere models." alt="" coords="197,189,354,217"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_atmosphere_state.html" title="The output state of an Atmosphere model." alt="" coords="5,5,175,33"/>
-</map>

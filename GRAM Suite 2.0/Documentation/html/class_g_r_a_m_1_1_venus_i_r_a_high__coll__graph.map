@@ -1,6 +1,0 @@
-<map id="GRAM::VenusIRAHigh" name="GRAM::VenusIRAHigh">
-<area shape="rect" id="node1" title="The VIRA model of the upper Venus Atmosphere." alt="" coords="93,189,245,217"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_atmosphere.html" title="An abstract base class for all GRAM atmosphere models." alt="" coords="5,5,144,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_venus_common.html" title="Common values for the Venus atmosphere models." alt="" coords="91,97,248,125"/>
-<area shape="rect" id="node4" href="$struct_g_r_a_m_1_1_v_high_data.html" title=" " alt="" coords="272,97,402,125"/>
-</map>

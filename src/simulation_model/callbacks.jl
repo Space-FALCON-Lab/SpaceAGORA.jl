@@ -1223,6 +1223,21 @@ end
     return args.mission_configuration.mission_type == MissionOrbits
 end
 
+@inline function _entry_target_count()::Int
+    raw = strip(get(ENV, "SPACEAGORA_ENTRY_TARGET_COUNT", "0"))
+    parsed = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_ENTRY_TARGET_COUNT must be an integer value, got '$raw'"))
+    end
+    parsed >= 0 || throw(ArgumentError("SPACEAGORA_ENTRY_TARGET_COUNT must be >= 0, got $parsed"))
+    return parsed
+end
+
+@inline function _requires_entry_end_callback(effectors::Tuple, args::SimulationConfiguration)::Bool
+    return _entry_target_count() > 0 && _requires_density_callback(effectors, args)
+end
+
 @inline function _requires_drag_state_callback(effectors::Tuple, args::SimulationConfiguration)::Bool
     if !_requires_density_callback(effectors, args)
         return false
@@ -1306,6 +1321,10 @@ function get_callbacks(
 
     if _requires_orbit_end_callback(args)
         push!(callbacks, get_orbit_end_callback(num_sats))
+    end
+
+    if _requires_entry_end_callback(effectors, args)
+        push!(callbacks, get_entry_end_callback(num_sats, args))
     end
 
     if _requires_drag_state_callback(effectors, args)
@@ -1708,6 +1727,60 @@ function get_orbit_end_callback(num_sats::Int)
     end
 
     return VectorContinuousCallback(condition!, affect!, nothing, num_sats)
+end
+
+function get_entry_end_callback(num_sats::Int, args::SimulationConfiguration)
+    target_entries = _entry_target_count()
+    target_entries > 0 || throw(ArgumentError("Entry target callback requires SPACEAGORA_ENTRY_TARGET_COUNT > 0"))
+    entry_interface_m = args.environment_model.EI * 1e3
+    entry_counter = zeros(Int64, num_sats)
+
+    function condition!(out, u, t, integrator)
+        p = integrator.p
+        planet = p.args.environment_model.planet
+        @inbounds for i in 1:num_sats
+            if !p.is_active[i]
+                out[i] = 1.0
+                continue
+            end
+            alt = norm(u.sc[i].pos) - planet.Rp_e
+            out[i] = alt - entry_interface_m
+        end
+    end
+
+    function affect_downcrossing!(integrator, idx::Int64)
+        p = integrator.p
+        if !p.is_active[idx]
+            return nothing
+        end
+
+        entry_counter[idx] += 1
+        completed_entries = entry_counter[idx]
+        if callback_verbose(integrator)
+            println("Entry $(completed_entries) detected for Satellite $idx at time $(integrator.t) seconds!")
+        end
+
+        if completed_entries >= target_entries
+            all_active_reached_target = true
+            @inbounds for sat_idx in eachindex(entry_counter)
+                if p.is_active[sat_idx] && entry_counter[sat_idx] < target_entries
+                    all_active_reached_target = false
+                    break
+                end
+            end
+            if all_active_reached_target
+                if callback_verbose(integrator)
+                    println("Target entry count reached for all active satellites. Stopping simulation.")
+                end
+                if applicable(terminate!, integrator)
+                    terminate!(integrator)
+                end
+            end
+        end
+        return nothing
+    end
+
+    return VectorContinuousCallback(condition!, nothing, affect_downcrossing!, num_sats)
 end
 
 # Only call if simulating single satellite

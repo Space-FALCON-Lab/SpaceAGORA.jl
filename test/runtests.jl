@@ -196,7 +196,7 @@ function SimulationModel.ControlEffectors.rvtoorbitalelement(
     throw(ErrorException("forced-orbital-element-conversion-failure"))
 end
 
-const SPICE_PATH = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
+const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const EARTH = Earth("", SPICE_PATH)
 
 angle_distance(a::Float64, b::Float64) = abs(mod(a - b + pi, 2pi) - pi)
@@ -316,7 +316,7 @@ function build_config(;
     keplerian::Bool=true,
     simulation_settings::SimulationSettings=SimulationSettings(results=true, verbose=false, generate_plots=false, normalize=false),
     tolerances::IntegrationTolerances=IntegrationTolerances(),
-    initial_time::InitialTime=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+    initial_time::SimulationModel.InitialTime=SimulationModel.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
     planet=EARTH
 )
     environment_model = EnvironmentModel(
@@ -360,7 +360,7 @@ function build_config_multi(;
     keplerian::Bool=true,
     simulation_settings::SimulationSettings=SimulationSettings(results=true, verbose=false, generate_plots=false, normalize=false),
     tolerances::IntegrationTolerances=IntegrationTolerances(),
-    initial_time::InitialTime=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+    initial_time::SimulationModel.InitialTime=SimulationModel.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
     planet=EARTH
 )
     environment_model = EnvironmentModel(
@@ -795,7 +795,7 @@ end
     @test isdefined(sandbox, :execute_elements_case)
 
     typed_args = Core.eval(sandbox, quote
-        planet = SimulationModel.Earth("", joinpath(Main.REPO_ROOT, "GRAM Suite 2.0", "SPICE"))
+        planet = SimulationModel.Earth("", joinpath(Main.REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE"))
         env = SimulationModel.EnvironmentModel(
             planet=planet,
             EI=120.0,
@@ -1704,7 +1704,7 @@ end
     # Cover typed execute_elements_case dispatch wrapper in SimulationElements.jl.
     typed_dispatch_ret = Core.eval(sandbox, quote
         run_simulation(args::SimulationConfiguration; isolate_state::Bool=true) = :legacy_complete_passage_typed_dispatch_ok
-        planet = Earth("", joinpath(Main.REPO_ROOT, "GRAM Suite 2.0", "SPICE"))
+        planet = Earth("", joinpath(Main.REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE"))
         env = EnvironmentModel(
             planet=planet,
             EI=120.0,
@@ -1731,7 +1731,7 @@ end
             guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
             navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
             control_model=ControlModel(control_effectors=(), control_rates=Float64[]),
-            initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+            initial_time=SimulationModel.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
             integration_tolerances=IntegrationTolerances(reltol_orbit=1e-8, abstol_orbit=1e-8)
         )
         execute_elements_case(args_typed)
@@ -2805,7 +2805,7 @@ end
     @test all(isfinite, force_nbody)
     @test torque_nbody == SVector{3, Float64}(0.0, 0.0, 0.0)
 
-    harmonics_file = joinpath(REPO_ROOT, "Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
     harmonics_l20 = GravitationalHarmonicsModel(20, 20, harmonics_file, EARTH)
     @test size(harmonics_l20.C) == (21, 21)
     @test size(harmonics_l20.S) == (21, 21)
@@ -7113,7 +7113,7 @@ end
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls[] == 1
 
     dyn = SimulationModel.DynamicEffectors
-    harmonics_file = joinpath(REPO_ROOT, "Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
     @test_throws ArgumentError GravitationalHarmonicsModel(-1, 0, harmonics_file, EARTH)
     @test_throws ArgumentError GravitationalHarmonicsModel(10_000, 0, harmonics_file, EARTH)
 
@@ -7476,7 +7476,7 @@ end
         EI_km=300.0,
         dynamic_effectors=(InverseSquaredJ2GravityModel(),),
         keplerian=true,
-        initial_time=InitialTime(year=2014, month=5, day=27, hour=5, minute=0, second=0.0),
+        initial_time=SimulationModel.InitialTime(year=2014, month=5, day=27, hour=5, minute=0, second=0.0),
         tolerances=IntegrationTolerances(
             reltol_orbit=1e-8,
             abstol_orbit=1e-8,
@@ -8349,6 +8349,8 @@ end
     @test Δeps1 > 2e3
     @test Δeps2 < -2e3
 end
+
+include(joinpath(REPO_ROOT, "test", "coverage_parallel_telemetry_probes.jl"))
 
 @testset "JET Static Analysis" begin
     JET.@test_opt InitialCondition()

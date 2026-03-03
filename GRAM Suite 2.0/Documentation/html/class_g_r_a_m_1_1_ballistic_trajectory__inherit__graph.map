@@ -1,4 +1,0 @@
-<map id="GRAM::BallisticTrajectory" name="GRAM::BallisticTrajectory">
-<area shape="rect" id="node1" title="Generate a ballistic trajectory profile." alt="" coords="5,81,177,109"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_profile.html" title="An abstract base class for collecting GRAM inputs and outputs." alt="" coords="39,5,143,33"/>
-</map>

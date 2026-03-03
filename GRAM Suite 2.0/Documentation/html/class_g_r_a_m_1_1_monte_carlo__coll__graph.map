@@ -1,5 +1,0 @@
-<map id="GRAM::MonteCarlo" name="GRAM::MonteCarlo">
-<area shape="rect" id="node1" title="Generate a Monte Carlo of profiles." alt="" coords="64,97,198,125"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_profile.html" title="An abstract base class for collecting GRAM inputs and outputs." alt="" coords="5,5,110,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_profile_printer.html" title="The ProfilePrinter class is an output utility class for Profile data." alt="" coords="134,5,277,33"/>
-</map>

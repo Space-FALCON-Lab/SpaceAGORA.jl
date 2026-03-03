@@ -1,7 +1,0 @@
-<map id="GRAM::TitanGCMTerp" name="GRAM::TitanGCMTerp">
-<area shape="rect" id="node1" title="The GCM Terp model of a Titan Atmosphere." alt="" coords="207,189,358,217"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_atmosphere.html" title="An abstract base class for all GRAM atmosphere models." alt="" coords="5,5,144,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_titan_common.html" title="Common values for the Titan atmosphere models." alt="" coords="91,97,239,125"/>
-<area shape="rect" id="node4" href="$struct_g_r_a_m_1_1_t_n2_data.html" title=" " alt="" coords="263,97,382,125"/>
-<area shape="rect" id="node5" href="$struct_g_r_a_m_1_1_t_g_c_m_data.html" title=" " alt="" coords="406,97,538,125"/>
-</map>

@@ -16,9 +16,9 @@ if !isdefined(@__MODULE__, :run_and_report)
 end
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const SPICE_PATH = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
-const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "Gravity_harmonics_data", "EarthGGM05C.csv")
-const MISSION_TIME_SEC = 2.0 * 3600.0
+const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
+const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
+const MISSION_TIME_SEC = 24.0 * 3600.0
 
 @inline function mean_to_true_anomaly_rad(M_rad::Float64, e::Float64; tol::Float64=1e-13, max_iter::Int=30)
     M_norm = mod(M_rad + pi, 2pi) - pi

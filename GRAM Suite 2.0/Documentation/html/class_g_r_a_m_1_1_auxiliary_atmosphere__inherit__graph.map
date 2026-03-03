@@ -1,4 +1,0 @@
-<map id="GRAM::AuxiliaryAtmosphere" name="GRAM::AuxiliaryAtmosphere">
-<area shape="rect" id="node1" title="An AuxiliaryAtmosphere overrides the values of atmospheric model." alt="" coords="5,81,194,109"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_atmosphere.html" title="An abstract base class for all GRAM atmosphere models." alt="" coords="30,5,169,33"/>
-</map>

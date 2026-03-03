@@ -11,7 +11,7 @@ To ensure that all the package versions are consistent, a Docker environment has
 6. Now, you should be able to run any existing scenario or create and run a new scenario
 
 # GRAM access
-If part of the Space-FALCON Lab, access through the lab's Drive in SpaceAGORA/GRAM. Use the `GRAM Suite 2.0` folder at the repository root and build the shared library with the scripts in `GRAM Suite 2.0/simulation/GRAM/`. Treat `GRAM Suite 2.0/Build/` as generated, host-specific output and rebuild it natively on each machine.
+If part of the Space-FALCON Lab, access through the lab's Drive in SpaceAGORA/GRAM. Use the `data/GRAMSuite.jl/GRAM Suite 2.0` folder at the repository root and build the shared library with the scripts in `data/GRAMSuite.jl/GRAM Suite 2.0/simulation/GRAM/`. Treat `data/GRAMSuite.jl/GRAM Suite 2.0/Build/` as generated, host-specific output and rebuild it natively on each machine.
 
 If not part of Space-FALCON lab, GRAM may be requested [here](https://software.nasa.gov/software/MFS-33888-1). Build the suite and keep the full GRAM root available locally (including `Build/`, `SPICE/`, and planetary data folders).
 
@@ -43,7 +43,7 @@ The following describes necessary modifications to the example code in several c
 * Change the ```density_model``` argument to ```Constant``` or ```Exponential```. This will change the model used to calculate the atmospheric density at each step from GRAM to either an exponential model or a constant density model.
 * Change the `GRAMAtmosphereModel(...)` setup to use local fallback models only.
 > Docker is not properly set up
-* Change the GRAM root/data/SPICE paths to match your system. They should point to your local `GRAM Suite 2.0` installation.
+* Change the GRAM root/data/SPICE paths to match your system. They should point to your local `data/GRAMSuite.jl/GRAM Suite 2.0` installation.
 
 # Usage Guide
 This section provides a brief overview of the structure and usage of this simulator. Generally, user interaction with the simulator is through a program similar to those given in the ```AGORA_*.jl``` files. This is where simulation settings and variables are defined and where the run function is called. The user may use this format to easily modify settings or perform a Monte Carlo analysis.

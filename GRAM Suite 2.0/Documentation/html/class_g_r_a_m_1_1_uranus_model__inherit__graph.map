@@ -1,5 +1,0 @@
-<map id="GRAM::UranusModel" name="GRAM::UranusModel">
-<area shape="rect" id="node1" title="The height based model of a Uranus Atmosphere." alt="" coords="90,81,234,109"/>
-<area shape="rect" id="node2" href="$class_g_r_a_m_1_1_height_model.html" title="A height based atmosphere model base class." alt="" coords="5,5,146,33"/>
-<area shape="rect" id="node3" href="$class_g_r_a_m_1_1_uranus_common.html" title="Common values for the Uranus atmosphere models." alt="" coords="170,5,331,33"/>
-</map>

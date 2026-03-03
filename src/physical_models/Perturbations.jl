@@ -217,7 +217,7 @@ function NBodyGravityModel(;
 end
 
 # Constructor to get planet data
-function NBodyGravityModel(body_names::Vector{String}, primary_body_name::String="Earth", spice_path::String="GRAM Suite 2.0/SPICE")
+function NBodyGravityModel(body_names::Vector{String}, primary_body_name::String="Earth", spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
     pname = lowercase(primary_body_name)
     planet = if pname == "earth"
         Earth("", spice_path)

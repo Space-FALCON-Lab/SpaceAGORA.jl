@@ -206,6 +206,51 @@ for acq in ("ei", "lcb")
 end
 
 mktempdir() do tmp
+    base = default_spec()
+    budgets = BudgetSpec(
+        initial_samples=4,
+        global_iters=0,
+        batch_size=1,
+        parallel_evaluations=3,
+        global_acquisition="lcb",
+        bo_pool_size=32,
+        bo_length_scale=0.35,
+        bo_noise=1.0e-6,
+        bo_kappa=1.96,
+        bo_xi=0.01,
+        local_refine_topk=1,
+        local_refine_steps=0,
+        robustness_samples=0,
+        initial_design="lhs",
+        robust_p95_weight=0.5,
+        robust_fail_weight=5.0
+    )
+    spec = CalibrationSpec(
+        schema_version=base.schema_version,
+        id="parallel_eval_engine_test",
+        name=base.name,
+        description=base.description,
+        output_root=joinpath(tmp, "calibration_out"),
+        seed=base.seed,
+        objective=base.objective,
+        verification_script=base.verification_script,
+        manifest_paths=base.manifest_paths,
+        scenario_weights=base.scenario_weights,
+        parameters=base.parameters,
+        budgets=budgets
+    )
+
+    backend = MockBackend(noise_sigma=0.0, fail_rate=0.0)
+    result = run_calibration(spec, backend)
+    table = Arrow.Table(joinpath(result.run_dir, "evaluations.arrow"))
+    n_global = count(row -> String(row.stage) == "global_search_quick", Tables.rows(table))
+    @assert n_global == budgets.initial_samples
+
+    spec_doc = SpaceAGORACalibration.Spec.spec_to_dict(spec)
+    @assert Int(spec_doc["budgets"]["parallel_evaluations"]) == budgets.parallel_evaluations
+end
+
+mktempdir() do tmp
     manifest_path = joinpath(tmp, "base_manifest.toml")
     open(manifest_path, "w") do io
         TOML.print(io, Dict(
@@ -299,6 +344,164 @@ mktempdir() do tmp
     ev_rep = evaluate_candidate(cmd_backend, cmd_spec, replica_candidate; stage="robustness_validation", run_dir=tmp)
     @assert ev_rep.success
     @assert occursin("_r002", ev_rep.artifacts["summary"])
+end
+
+mktempdir() do tmp
+    manifest_path = joinpath(tmp, "base_manifest.toml")
+    open(manifest_path, "w") do io
+        TOML.print(io, Dict(
+            "version" => 1,
+            "scenarios" => Any[
+                Dict(
+                    "name" => "test",
+                    "value" => 5.0
+                )
+            ]
+        ))
+    end
+
+    spec = CalibrationSpec(
+        id="inprocess_backend_mapping_test",
+        output_root=joinpath(tmp, "out"),
+        manifest_paths=[manifest_path],
+        parameters=[
+            ParameterSpec(
+                name="value_scale",
+                lower=2.0,
+                upper=2.0,
+                manifest_targets=["scenarios[name=test].value"],
+                transform="mul"
+            )
+        ],
+        budgets=BudgetSpec(
+            initial_samples=1,
+            global_iters=0,
+            batch_size=1,
+            local_refine_topk=1,
+            local_refine_steps=0,
+            robustness_samples=1
+        )
+    )
+
+    seen_requests = Any[]
+    fake_runner = function (request)
+        push!(seen_requests, request)
+        doc = TOML.parsefile(request.manifest_path)
+        value = Float64(doc["scenarios"][1]["value"])
+
+        open(request.out_summary, "w") do io
+            println(io, "scenario,event,nmae")
+            println(io, "test,metric,$(value)")
+        end
+        open(request.out_errors, "w") do io
+            println(io, "scenario,event,error_km")
+        end
+        return nothing
+    end
+
+    backend = InProcessBackend(
+        run_verification=fake_runner,
+        manifest_path=manifest_path,
+        profile="quick",
+        enforce=true,
+        plots=false
+    )
+    candidate = Candidate(
+        id=2,
+        values=Dict{String, Any}("value_scale" => 2.0, "robustness_replica" => 1),
+        stage="robustness_validation"
+    )
+
+    ev = evaluate_candidate(backend, spec, candidate; stage="robustness_validation", run_dir=tmp)
+    @assert ev.success
+    @assert ev.score == 10.0
+    @assert occursin("_r001", ev.artifacts["summary"])
+
+    @assert length(seen_requests) == 1
+    request = seen_requests[1]
+    @assert request.profile == :full
+    @assert request.enforce == true
+    @assert request.generate_plots == false
+end
+
+mktempdir() do tmp
+    manifest_path = joinpath(tmp, "base_manifest.toml")
+    open(manifest_path, "w") do io
+        TOML.print(io, Dict(
+            "version" => 1,
+            "scenarios" => Any[
+                Dict(
+                    "name" => "test",
+                    "value" => 1.0
+                )
+            ]
+        ))
+    end
+
+    spec = CalibrationSpec(
+        id="full_auto_runtime_controller_smoke",
+        output_root=joinpath(tmp, "out"),
+        manifest_paths=[manifest_path],
+        parameters=[
+            ParameterSpec(
+                name="value_scale",
+                lower=0.8,
+                upper=1.2,
+                transform="mul",
+                manifest_targets=["scenarios[name=test].value"]
+            )
+        ],
+        budgets=BudgetSpec(
+            initial_samples=4,
+            global_iters=2,
+            batch_size=1,
+            parallel_evaluations=3,
+            local_refine_topk=1,
+            local_refine_steps=1,
+            local_refine_neighbors=2,
+            robustness_samples=1
+        )
+    )
+
+    fake_runner = function (request)
+        doc = TOML.parsefile(request.manifest_path)
+        value = Float64(doc["scenarios"][1]["value"])
+        open(request.out_summary, "w") do io
+            println(io, "scenario,event,nmae,pass,total_runtime_s")
+            println(io, "test,metric,$(value),true,0.05")
+        end
+        open(request.out_errors, "w") do io
+            println(io, "scenario,event,error_km")
+        end
+        return nothing
+    end
+
+    backend = InProcessBackend(
+        run_verification=fake_runner,
+        manifest_path=manifest_path,
+        profile="quick",
+        parallel_profile="R4_full_auto",
+        enforce=false,
+        plots=false
+    )
+
+    withenv(
+        "SPACEAGORA_CALIBRATION_MACHINE_LABEL" => "ci_box",
+        "SPACEAGORA_CALIBRATION_PARALLEL_EVALUATIONS" => "3",
+        "SPACEAGORA_CALIBRATION_AUTO_WARMUP_BATCHES" => "2",
+        "SPACEAGORA_CALIBRATION_AUTO_REBALANCE_WINDOW" => "1"
+    ) do
+        result = run_calibration(spec, backend)
+        @assert isfinite(result.best_score)
+    end
+
+    cache_dir = joinpath(spec.output_root, "runtime_policy_cache")
+    @assert isdir(cache_dir)
+    cache_files = filter(f -> endswith(f, ".toml"), readdir(cache_dir))
+    @assert !isempty(cache_files)
+    cache_doc = TOML.parsefile(joinpath(cache_dir, cache_files[1]))
+    @assert String(get(cache_doc, "profile_name", "")) == "R4_full_auto"
+    @assert !isempty(get(cache_doc, "stats", Any[]))
 end
 
 mktempdir() do tmp
@@ -574,6 +777,24 @@ mktempdir() do tmp
     obj_robust = B._objective_from_rows(rows_robust, spec; run_failed=false, runtime_s=10.0, noise_rng=MersenneTwister(12))
     @assert isfinite(obj_robust.score)
     @assert obj_robust.failed_rows == 1.0
+
+    # Display-normalized columns should take precedence when present.
+    rows_display = [(
+        scenario="unknown",
+        rmse_km=10.0,
+        max_abs_km=10.0,
+        rmse_display=1.0,
+        max_abs_display=1.0,
+        limit_max_rmse_km=1.0,
+        limit_max_abs_km=1.0,
+        limit_max_rmse_display=1.0,
+        limit_max_abs_display=1.0,
+        limit_nmae=1.0,
+        nmae=1.0,
+        pass=true
+    )]
+    obj_display = B._objective_from_rows(rows_display, spec; run_failed=false, runtime_s=10.0)
+    @assert isapprox(obj_display.score, 0.75; atol=1e-12, rtol=0.0)
 
     scenario = Dict{String, Any}(
         "name" => "s1",

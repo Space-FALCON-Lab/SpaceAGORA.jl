@@ -242,7 +242,7 @@ function planet_data(ip)
         name = "titan"
     end
 
-    # Derived in References/J2000_to_pci.mlx(.m)
+    # Derived in data/References/J2000_to_pci.mlx(.m)
     # Converts from J2000 to Planet Centered Inertial (PCI) 
     # frame based on the planet's North pole of rotation
     # α = Right ascension of the north pole of rotation, radians

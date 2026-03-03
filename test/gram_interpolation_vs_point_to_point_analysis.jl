@@ -390,7 +390,7 @@ end
 
 function run_analysis()
     initial_time = InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
-    spice_path = joinpath(REPO_ROOT, "GRAM Suite 2.0", "SPICE")
+    spice_path = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
     planet = Mars("", spice_path)
     planet.L_PI .= [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]
 

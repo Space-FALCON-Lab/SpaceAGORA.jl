@@ -316,7 +316,7 @@ function build_config(;
     keplerian::Bool=true,
     simulation_settings::SimulationSettings=SimulationSettings(results=true, verbose=false, generate_plots=false, normalize=false),
     tolerances::IntegrationTolerances=IntegrationTolerances(),
-    initial_time::InitialTime=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+    initial_time::SimulationModel.InitialTime=SimulationModel.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
     planet=EARTH
 )
     environment_model = EnvironmentModel(
@@ -360,7 +360,7 @@ function build_config_multi(;
     keplerian::Bool=true,
     simulation_settings::SimulationSettings=SimulationSettings(results=true, verbose=false, generate_plots=false, normalize=false),
     tolerances::IntegrationTolerances=IntegrationTolerances(),
-    initial_time::InitialTime=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+    initial_time::SimulationModel.InitialTime=SimulationModel.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
     planet=EARTH
 )
     environment_model = EnvironmentModel(
@@ -1731,7 +1731,7 @@ end
             guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
             navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
             control_model=ControlModel(control_effectors=(), control_rates=Float64[]),
-            initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+            initial_time=SimulationModel.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
             integration_tolerances=IntegrationTolerances(reltol_orbit=1e-8, abstol_orbit=1e-8)
         )
         execute_elements_case(args_typed)
@@ -7476,7 +7476,7 @@ end
         EI_km=300.0,
         dynamic_effectors=(InverseSquaredJ2GravityModel(),),
         keplerian=true,
-        initial_time=InitialTime(year=2014, month=5, day=27, hour=5, minute=0, second=0.0),
+        initial_time=SimulationModel.InitialTime(year=2014, month=5, day=27, hour=5, minute=0, second=0.0),
         tolerances=IntegrationTolerances(
             reltol_orbit=1e-8,
             abstol_orbit=1e-8,

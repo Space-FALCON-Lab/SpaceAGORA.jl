@@ -1,5 +1,5 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
-const BUILDER_SCRIPT = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "simulation", "GRAM", "build_offline_static_grids.jl")
+const BUILDER_SCRIPT = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "simulation", "GRAM", "build_offline_static_grids.jl")
 
 using Statistics
 using Printf

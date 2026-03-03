@@ -143,7 +143,7 @@ function _planet_from_name(name::String, spice_path::String)
 end
 
 function _make_args(planet_name::String, scenario::ScenarioDef, initial_time::InitialTime)::SimulationConfiguration
-    spice_path = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
+    spice_path = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
     planet = _planet_from_name(planet_name, spice_path)
 
     ic = InitialCondition(

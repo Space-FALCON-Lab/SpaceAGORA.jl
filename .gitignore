@@ -26,4 +26,6 @@ output/calibration/
 SpaceAGORACalibration.jl/test/output/
 SpaceAGORACalibration.jl/.CondaPkg/
 telemetry/CYGNSS/
-telemetry/OPS-SAT1/
+telemetry/GRIFEX/
+telemetry/OPS-SAT1/*.csv
+telemetry/OPS-SAT1/UHF_TM_notebook/uhf_telemetry.csv

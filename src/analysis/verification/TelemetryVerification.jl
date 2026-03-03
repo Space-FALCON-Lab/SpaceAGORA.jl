@@ -33,7 +33,7 @@ const quat_mult = SimulationModel.quat_mult
 include(joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"))
 include(joinpath(REPO_ROOT, "src", "examples", "typed_example_utils.jl"))
 
-const SPICE_PATH = joinpath(REPO_ROOT, "GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
+const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const EventTolerance = NamedTuple{
     (:max_abs_km, :max_nmae, :max_rmse_km),
     Tuple{Float64, Float64, Float64}

@@ -92,7 +92,7 @@ spacecraft = make_three_body_spacecraft(
     id=100
 )
 
-mars_harmonics_file = joinpath(REPO_ROOT, "Gravity_harmonics_data", "Mars50c.csv")
+mars_harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "Mars50c.csv")
 dynamic_effectors = smoke_mode ? (InverseSquaredGravityModel(),) : (
     InverseSquaredGravityModel(),
     GravitationalHarmonicsModel(20, 20, mars_harmonics_file, planet),

@@ -14,7 +14,7 @@ min_eval_points = 4
 gravity_model = "inverse_squared"
 gravity_harmonics_degree = 50
 gravity_harmonics_order = 50
-gravity_harmonics_file = "Gravity_harmonics_data/EarthGGM05C.csv"
+gravity_harmonics_file = "data/Gravity_harmonics_data/EarthGGM05C.csv"
 nbody_bodies = ["sun", "moon"]
 EI_km = 300.0
 

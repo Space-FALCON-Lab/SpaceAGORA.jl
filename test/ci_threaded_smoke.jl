@@ -88,10 +88,11 @@ args = SimulationConfiguration(
 mktempdir() do tmp
     cd(tmp) do
         run_simulation(args)
-        if !isfile("simulation_results.csv")
+        csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
+        if !isfile(csv_path)
             error("Expected simulation_results.csv to be written by threaded smoke run")
         end
-        df = CSV.read("simulation_results.csv", DataFrame)
+        df = CSV.read(csv_path, DataFrame)
         if nrow(df) < 20
             error("Threaded smoke produced too few rows: $(nrow(df))")
         end

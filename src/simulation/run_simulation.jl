@@ -1112,7 +1112,17 @@ end
     return joinpath(args.simulation_settings.results_directory, "simulation_results")
 end
 
-function _atomic_write_file(path::String, writer::Function)
+@inline function _legacy_results_csv_path(args)::String
+    return joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
+end
+
+@inline function _collision_results_csv_path(args)::String
+    stamp = Dates.format(now(UTC), dateformat"yyyymmddTHHMMSSsss")
+    token = string(stamp, ".", getpid(), ".", rand(UInt))
+    return joinpath(args.simulation_settings.results_directory, "simulation_results.$token.csv")
+end
+
+function _atomic_write_file(path::String, writer::Function; force::Bool=true)
     dir = dirname(path)
     mkpath(dir)
     tmp = joinpath(
@@ -1121,13 +1131,38 @@ function _atomic_write_file(path::String, writer::Function)
     )
     try
         writer(tmp)
-        mv(tmp, path; force=true)
+        mv(tmp, path; force=force)
     finally
         if isfile(tmp)
             rm(tmp; force=true)
         end
     end
     return path
+end
+
+function _write_legacy_results_csv!(results_df::DataFrame, args)::String
+    primary_path = _legacy_results_csv_path(args)
+    started_s = time()
+    existed_before = isfile(primary_path)
+    try
+        return _atomic_write_file(primary_path, tmp -> CSV.write(tmp, results_df); force=false)
+    catch err
+        if err isa ArgumentError && isfile(primary_path)
+            mtime_s = try
+                stat(primary_path).mtime
+            catch
+                0.0
+            end
+            # Keep per-run collision artifacts only when a concurrent writer is likely.
+            concurrent_writer = (!existed_before) || (mtime_s >= started_s)
+            if concurrent_writer
+                collision_path = _collision_results_csv_path(args)
+                _atomic_write_file(collision_path, tmp -> CSV.write(tmp, results_df); force=false)
+            end
+            return _atomic_write_file(primary_path, tmp -> CSV.write(tmp, results_df); force=true)
+        end
+        rethrow(err)
+    end
 end
 
 function _sha256_hex(path::String)::String
@@ -1282,7 +1317,12 @@ function _build_results_dataframe(times::Vector{Float64}, saved_data::Vector, sa
     return results_df
 end
 
-function _write_results_bundle!(results_df::DataFrame, times::Vector{Float64}, args)
+function _write_results_bundle!(
+    results_df::DataFrame,
+    times::Vector{Float64},
+    args;
+    csv_path::Union{Nothing, String}=nothing
+)
     prefix = _results_bundle_prefix(args)
     feather_path = prefix * ".feather"
     manifest_path = prefix * ".manifest.toml"
@@ -1297,12 +1337,14 @@ function _write_results_bundle!(results_df::DataFrame, times::Vector{Float64}, a
     )
 
     if args.simulation_settings.save_csv
-        csv_path = prefix * ".csv"
-        _atomic_write_file(csv_path, tmp -> CSV.write(tmp, results_df))
+        csv_file_path = csv_path === nothing ? (prefix * ".csv") : csv_path
+        if csv_path === nothing
+            _atomic_write_file(csv_file_path, tmp -> CSV.write(tmp, results_df))
+        end
         files["csv"] = Dict(
-            "path" => csv_path,
-            "size_bytes" => filesize(csv_path),
-            "sha256" => _sha256_hex(csv_path)
+            "path" => csv_file_path,
+            "size_bytes" => filesize(csv_file_path),
+            "sha256" => _sha256_hex(csv_file_path)
         )
     end
 
@@ -1518,9 +1560,9 @@ function run_simulation(
         results_data = checkpoint_active ? checkpoint_saved_data : saved_values.saveval
         results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
         # Keep backwards-compatible CSV contract used by existing scripts/tests.
-        CSV.write("simulation_results.csv", results_df)
+        csv_path = _write_legacy_results_csv!(results_df, args)
         if _typed_save_bundle_enabled()
-            _write_results_bundle!(results_df, results_times, args)
+            _write_results_bundle!(results_df, results_times, args; csv_path=csv_path)
         end
     end
 
@@ -1559,24 +1601,30 @@ end
 )
     effector_started_ns = time_ns()
     if effector_decision.use_threads
-        fx = Threads.Atomic{Float64}(0.0)
-        fy = Threads.Atomic{Float64}(0.0)
-        fz = Threads.Atomic{Float64}(0.0)
-        tx = Threads.Atomic{Float64}(0.0)
-        ty = Threads.Atomic{Float64}(0.0)
-        tz = Threads.Atomic{Float64}(0.0)
-        SimulationModel.ParallelPolicy.threaded_foreach(length(dynamic_effectors), effector_decision.allotment) do eff_idx
-            effector = dynamic_effectors[eff_idx]
-            force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)
-            Threads.atomic_add!(fx, force[1])
-            Threads.atomic_add!(fy, force[2])
-            Threads.atomic_add!(fz, force[3])
-            Threads.atomic_add!(tx, torque[1])
-            Threads.atomic_add!(ty, torque[2])
-            Threads.atomic_add!(tz, torque[3])
-        end
-        forces .= SVector{3, Float64}(fx[], fy[], fz[])
-        torques .= SVector{3, Float64}(tx[], ty[], tz[])
+        reduced = SimulationModel.ParallelPolicy.threaded_reduce(
+            length(dynamic_effectors),
+            effector_decision.allotment,
+            () -> MVector{6, Float64}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            (local_sum, eff_idx) -> begin
+                effector = dynamic_effectors[eff_idx]
+                force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)
+                local_sum[1] += force[1]
+                local_sum[2] += force[2]
+                local_sum[3] += force[3]
+                local_sum[4] += torque[1]
+                local_sum[5] += torque[2]
+                local_sum[6] += torque[3]
+                return nothing
+            end,
+            (dest, src) -> begin
+                @inbounds for i in 1:6
+                    dest[i] += src[i]
+                end
+                return nothing
+            end
+        )
+        forces .= SVector{3, Float64}(reduced[1], reduced[2], reduced[3])
+        torques .= SVector{3, Float64}(reduced[4], reduced[5], reduced[6])
     else
         @inbounds for effector in dynamic_effectors
             force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)

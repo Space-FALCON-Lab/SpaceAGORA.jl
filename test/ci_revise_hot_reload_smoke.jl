@@ -121,10 +121,11 @@ function run_once()::DataFrame
     mktempdir() do tmp
         cd(tmp) do
             run_simulation(args; isolate_state=true)
-            if !isfile("simulation_results.csv")
+            csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
+            if !isfile(csv_path)
                 error("Expected simulation_results.csv was not written")
             end
-            return CSV.read("simulation_results.csv", DataFrame)
+            return CSV.read(csv_path, DataFrame)
         end
     end
 end

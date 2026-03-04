@@ -158,9 +158,9 @@ end
 
 @inline function _ladder_matrix_modes(matrix::Symbol)::NamedTuple
     if matrix == :outer_pinned
-        return (density="off", control="off", multibody="off", effector="off")
+        return (density="off", thermal="off", control="off", multibody="off", effector="off")
     elseif matrix == :full_auto
-        return (density="auto", control="auto", multibody="auto", effector="auto")
+        return (density="auto", thermal="auto", control="auto", multibody="auto", effector="auto")
     end
     throw(ArgumentError("Unsupported ladder matrix '$matrix'. Use: outer_pinned, full_auto."))
 end
@@ -215,7 +215,16 @@ function _ladder_rungs(config::SmartLadderConfig)::Vector{LadderRungSpec}
         LadderRungSpec(
             mode=:outer_inner_adaptive,
             label="r4_outer_inner_adaptive",
-            description="Outer + inner enabled with adaptive policy behavior.",
+            description="Outer + inner enabled with adaptive policy behavior (baseline full-auto heuristic).",
+            matrix=:full_auto,
+            backend="auto",
+            inner_adaptive=true,
+            outer_route_adaptive=true
+        ),
+        LadderRungSpec(
+            mode=:outer_inner_full_smart,
+            label="r5_full_smart",
+            description="Outer + inner enabled with tuned adaptive policy behavior (thermal forced on, shorter adaptive window, control tail-guard).",
             matrix=:full_auto,
             backend="auto",
             inner_adaptive=true,
@@ -234,9 +243,12 @@ function _ladder_env_pairs(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => (rung.inner_adaptive ? "1" : "0"),
         "SPACEAGORA_PERF_OUTER_ROUTE_ADAPTIVE" => (rung.outer_route_adaptive ? "1" : "0"),
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => matrix.density,
+        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => matrix.thermal,
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => matrix.control,
         "SPACEAGORA_MULTIBODY_PARALLEL" => matrix.multibody,
         "SPACEAGORA_EFFECTOR_PARALLEL" => matrix.effector,
+        "SPACEAGORA_PARALLEL_POLICY_WINDOW" => (rung.mode == :outer_inner_full_smart ? "4" : "8"),
+        "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => (rung.mode == :outer_inner_full_smart ? "1" : "0"),
         "SPACEAGORA_PERF_INCLUDE_CONTROL_STRESS_PER_ORBIT" => (config.include_control_stress_per_orbit ? "1" : "0"),
         "SPACEAGORA_PERF_CONTROL_STRESS_REPEATS_FULL" => string(config.control_stress_repeats_full),
         "SPACEAGORA_PERF_CONTROL_STRESS_WARMUP_FULL" => string(config.control_stress_warmup_full)
@@ -485,6 +497,12 @@ end
     return "short_light"
 end
 
+@inline function _is_thermal_scenario(row)::Bool
+    category = hasproperty(row, :category) ? lowercase(string(getproperty(row, :category))) : ""
+    scenario = hasproperty(row, :scenario) ? lowercase(string(getproperty(row, :scenario))) : ""
+    return category == "thermal_stress" || occursin("thermal", scenario)
+end
+
 @inline function _match_key(row)::String
     parts = (
         _key_token(hasproperty(row, :pass) ? getproperty(row, :pass) : missing),
@@ -601,6 +619,111 @@ function _build_mission_family_speedup_table(
     df = DataFrame(rows)
     if nrow(df) > 0
         sort!(df, [:rung, :mission_family])
+    end
+    return df
+end
+
+function _prepare_thermal_speed_sample_table(raw_df::DataFrame)::DataFrame
+    rows = NamedTuple[]
+    for row in eachrow(raw_df)
+        if hasproperty(row, :solve_success) && row.solve_success !== true
+            continue
+        end
+        total_time = hasproperty(row, :total_time_s) ? getproperty(row, :total_time_s) : missing
+        if !(total_time isa Real) || !isfinite(Float64(total_time)) || Float64(total_time) <= 0.0
+            continue
+        end
+        push!(rows, (
+            match_key=_match_key(row),
+            total_time_s=Float64(total_time),
+            is_thermal=_is_thermal_scenario(row)
+        ))
+    end
+    sample_df = DataFrame(rows)
+    nrow(sample_df) == 0 && return sample_df
+    return combine(
+        groupby(sample_df, :match_key),
+        :total_time_s => mean => :total_time_s,
+        :is_thermal => (v -> any(Bool.(v))) => :is_thermal
+    )
+end
+
+@inline function _thermal_runtime_share_pct(raw_df::DataFrame)
+    total_time_s = 0.0
+    thermal_time_s = 0.0
+    for row in eachrow(raw_df)
+        if hasproperty(row, :solve_success) && row.solve_success !== true
+            continue
+        end
+        total_time = hasproperty(row, :total_time_s) ? getproperty(row, :total_time_s) : missing
+        if !(total_time isa Real) || !isfinite(Float64(total_time)) || Float64(total_time) <= 0.0
+            continue
+        end
+        total_time_s += Float64(total_time)
+        if _is_thermal_scenario(row)
+            thermal_time_s += Float64(total_time)
+        end
+    end
+    total_time_s > 0.0 || return missing
+    return 100.0 * thermal_time_s / total_time_s
+end
+
+function _build_thermal_contribution_table(
+    artifacts::Vector{ModeRunArtifacts},
+    rung_label_by_mode::Dict{Symbol, String}
+)::DataFrame
+    baseline = _baseline_artifact(artifacts)
+    baseline_samples = _prepare_thermal_speed_sample_table(baseline.raw_df)
+    if nrow(baseline_samples) == 0 || !_has_column(baseline_samples, :is_thermal)
+        return DataFrame()
+    end
+    baseline_samples = baseline_samples[baseline_samples.is_thermal .== true, :]
+    nrow(baseline_samples) == 0 && return DataFrame()
+    baseline_samples = select(
+        baseline_samples,
+        :match_key,
+        :total_time_s => :r0_total_time_s
+    )
+
+    rows = NamedTuple[]
+    for artifact in artifacts
+        rung_samples = _prepare_thermal_speed_sample_table(artifact.raw_df)
+        if nrow(rung_samples) == 0 || !_has_column(rung_samples, :is_thermal)
+            continue
+        end
+        rung_samples = rung_samples[rung_samples.is_thermal .== true, :]
+        nrow(rung_samples) == 0 && continue
+
+        joined = innerjoin(
+            baseline_samples,
+            select(rung_samples, :match_key, :total_time_s => :rung_total_time_s),
+            on=:match_key
+        )
+        nrow(joined) == 0 && continue
+        joined[!, :speedup_vs_r0] = [Float64(r0) / Float64(rt) for (r0, rt) in zip(joined.r0_total_time_s, joined.rung_total_time_s)]
+        joined = joined[isfinite.(joined.speedup_vs_r0) .& (joined.speedup_vs_r0 .> 0.0), :]
+        nrow(joined) == 0 && continue
+
+        vals = Float64.(joined.speedup_vs_r0)
+        sample_count = length(vals)
+        slower_count = count(v -> v < 1.0, vals)
+        rung_label = get(rung_label_by_mode, artifact.mode, string(artifact.mode))
+        push!(rows, (
+            rung=rung_label,
+            mode=String(artifact.mode),
+            thermal_samples=sample_count,
+            median_speedup_vs_r0=median(vals),
+            p90_speedup_vs_r0=quantile(vals, 0.9),
+            best_speedup_vs_r0=maximum(vals),
+            worst_slowdown_x=maximum(1.0 ./ vals),
+            slower_share_pct=100.0 * slower_count / sample_count,
+            thermal_runtime_share_pct=_thermal_runtime_share_pct(artifact.raw_df)
+        ))
+    end
+
+    df = DataFrame(rows)
+    if nrow(df) > 0
+        sort!(df, :mode)
     end
     return df
 end
@@ -1017,6 +1140,7 @@ function _write_smart_ladder_report(
     comparison_df::DataFrame,
     speedup_vs_r0_df::DataFrame,
     mission_family_df::DataFrame,
+    thermal_contribution_df::DataFrame,
     fidelity_df::DataFrame,
     accuracy_df::DataFrame,
     route_mix_df::DataFrame,
@@ -1027,6 +1151,7 @@ function _write_smart_ladder_report(
     overview_csv_path::String="",
     speedup_vs_r0_csv_path::String="",
     mission_family_csv_path::String="",
+    thermal_contribution_csv_path::String="",
     fidelity_csv_path::String="",
     accuracy_csv_path::String="",
     route_mix_csv_path::String="",
@@ -1102,6 +1227,17 @@ function _write_smart_ladder_report(
         end
         println(io)
 
+        println(io, "## Thermal Contribution vs R0")
+        println(io)
+        println(io, "_Thermal rows include scenarios tagged `thermal_stress` or scenario names containing `thermal`._")
+        println(io)
+        if nrow(thermal_contribution_df) > 0
+            _write_markdown_table(io, thermal_contribution_df)
+        else
+            println(io, "- No thermal contribution samples available.")
+        end
+        println(io)
+
         println(io, "## Fidelity Parity")
         println(io)
         _write_markdown_table(io, fidelity_df)
@@ -1137,6 +1273,7 @@ function _write_smart_ladder_report(
         println(io, "- Overview CSV: `$(overview_csv_path)`")
         println(io, "- Speedup vs R0 CSV: `$(speedup_vs_r0_csv_path)`")
         println(io, "- Mission-family speedup CSV: `$(mission_family_csv_path)`")
+        println(io, "- Thermal contribution CSV: `$(thermal_contribution_csv_path)`")
         println(io, "- Fidelity parity CSV: `$(fidelity_csv_path)`")
         println(io, "- Accuracy parity CSV: `$(accuracy_csv_path)`")
         println(io, "- Route mix CSV: `$(route_mix_csv_path)`")
@@ -1238,6 +1375,7 @@ function main_smart_parallel_ladder()
     ]
     speedup_vs_r0_df = _build_vs_r0_speedup_table(aggregated_artifacts, rung_label_by_mode)
     mission_family_df = _build_mission_family_speedup_table(aggregated_artifacts, rung_label_by_mode)
+    thermal_contribution_df = _build_thermal_contribution_table(aggregated_artifacts, rung_label_by_mode)
     fidelity_df = _build_fidelity_parity_table(aggregated_artifacts, rung_label_by_mode, config)
     accuracy_df = _build_accuracy_parity_table(aggregated_artifacts, rung_label_by_mode)
     route_mix_df = _build_route_mix_table(aggregated_artifacts, rung_label_by_mode)
@@ -1264,6 +1402,7 @@ function main_smart_parallel_ladder()
     overview_path = joinpath(config.outdir, "smart_parallel_ladder_mode_overview_$(config.profile.name)_$(stamp).csv")
     speedup_vs_r0_path = joinpath(config.outdir, "smart_parallel_ladder_speedup_vs_r0_$(config.profile.name)_$(stamp).csv")
     mission_family_path = joinpath(config.outdir, "smart_parallel_ladder_mission_family_speedup_$(config.profile.name)_$(stamp).csv")
+    thermal_contribution_path = joinpath(config.outdir, "smart_parallel_ladder_thermal_contribution_$(config.profile.name)_$(stamp).csv")
     fidelity_path = joinpath(config.outdir, "smart_parallel_ladder_fidelity_parity_$(config.profile.name)_$(stamp).csv")
     accuracy_path = joinpath(config.outdir, "smart_parallel_ladder_accuracy_parity_$(config.profile.name)_$(stamp).csv")
     route_mix_path = joinpath(config.outdir, "smart_parallel_ladder_route_mix_$(config.profile.name)_$(stamp).csv")
@@ -1283,6 +1422,7 @@ function main_smart_parallel_ladder()
     CSV.write(overview_path, overview_df)
     CSV.write(speedup_vs_r0_path, speedup_vs_r0_df)
     CSV.write(mission_family_path, mission_family_df)
+    CSV.write(thermal_contribution_path, thermal_contribution_df)
     CSV.write(fidelity_path, fidelity_df)
     CSV.write(accuracy_path, accuracy_df)
     CSV.write(route_mix_path, route_mix_df)
@@ -1297,6 +1437,7 @@ function main_smart_parallel_ladder()
         comparison_df,
         speedup_vs_r0_df,
         mission_family_df,
+        thermal_contribution_df,
         fidelity_df,
         accuracy_df,
         route_mix_df,
@@ -1307,6 +1448,7 @@ function main_smart_parallel_ladder()
         overview_csv_path=overview_path,
         speedup_vs_r0_csv_path=speedup_vs_r0_path,
         mission_family_csv_path=mission_family_path,
+        thermal_contribution_csv_path=thermal_contribution_path,
         fidelity_csv_path=fidelity_path,
         accuracy_csv_path=accuracy_path,
         route_mix_csv_path=route_mix_path,
@@ -1321,6 +1463,7 @@ function main_smart_parallel_ladder()
     println("mode overview: $(overview_path)")
     println("speedup vs r0: $(speedup_vs_r0_path)")
     println("mission-family speedup: $(mission_family_path)")
+    println("thermal contribution: $(thermal_contribution_path)")
     println("fidelity parity: $(fidelity_path)")
     println("accuracy parity: $(accuracy_path)")
     println("route mix: $(route_mix_path)")

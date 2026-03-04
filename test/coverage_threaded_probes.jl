@@ -16,6 +16,9 @@ const EARTH = Earth("", SPICE_PATH)
 struct ProbeDensityModel <: SimulationModel.AbstractDensityModel
 end
 
+struct ThrowDensityModel <: SimulationModel.AbstractDensityModel
+end
+
 mutable struct ProbeControlModel <: SimulationModel.AbstractControlEffectorModel
     hits::Vector{Int}
 end
@@ -44,6 +47,18 @@ function SimulationModel.calcGuidanceEffect!(
 )
     model.hits[i] += 1
     return nothing
+end
+
+function SimulationModel.EnvironmentModels.getDensity(
+    ::ThrowDensityModel,
+    h::Float64,
+    lat::Float64,
+    lon::Float64,
+    el_time::Float64,
+    wind::Bool,
+    p
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    error("throw_density_probe")
 end
 
 function make_spacecraft(;
@@ -251,6 +266,22 @@ end
     ) do
         @test callbacks._density_callback_use_threads(thread_safe_args, 4) == true
     end
+    withenv(
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "0"
+    ) do
+        @test callbacks._density_callback_use_threads(thread_safe_args, 4) == false
+    end
+    withenv(
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
+    ) do
+        @test callbacks._density_callback_use_threads(thread_safe_args, 4) == true
+    end
 
     probe_control = ProbeControlModel(zeros(Int, 4))
     withenv(
@@ -269,6 +300,24 @@ end
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "3",
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1"
+    ) do
+        @test callbacks._control_callback_use_threads(probe_control, 4, false) == true
+    end
+    withenv(
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "0"
+    ) do
+        @test callbacks._control_callback_use_threads(probe_control, 4, false) == false
+    end
+    withenv(
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
     ) do
         @test callbacks._control_callback_use_threads(probe_control, 4, false) == true
     end
@@ -425,6 +474,631 @@ end
         force_nbody, torque_nbody = calcForceTorque(nbody, x_nbody, p_nbody, 1)
         @test all(isfinite, force_nbody)
         @test torque_nbody == SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    callbacks._gram_runtime_stats_reset!()
+
+    # ParallelPolicy private-branch probes.
+    policy = SimulationModel.ParallelPolicy
+    req_stop = Channel{Any}(1)
+    done_stop = Channel{Any}(1)
+    worker_stop = Threads.@spawn policy._persistent_foreach_worker_loop(1, req_stop, done_stop)
+    put!(req_stop, :stop)
+    wait(worker_stop)
+    @test istaskdone(worker_stop)
+
+    req_err = Channel{Any}(1)
+    done_err = Channel{Any}(1)
+    worker_err = Threads.@spawn policy._persistent_foreach_worker_loop(1, req_err, done_err)
+    put!(req_err, (num_items=1, active_workers=1, f=(idx -> error("persistent_worker_probe"))))
+    @test take!(done_err) isa Base.CapturedException
+    put!(req_err, :stop)
+    wait(worker_err)
+
+    pool_direct = policy._create_persistent_foreach_pool(2)
+    @test pool_direct.workers >= 2
+    policy._shutdown_persistent_foreach_pool!(pool_direct)
+
+    scope_ctx = policy.PolicyContext()
+    scope_id = policy._policy_scope_id(scope_ctx)
+    lock(policy._persistent_foreach_lock) do
+        policy._persistent_foreach_pools[(scope_id, :probe_scope)] = policy._create_persistent_foreach_pool(2)
+    end
+    policy._destroy_persistent_foreach_scope!(scope_id)
+    @test !haskey(policy._persistent_foreach_pools, (scope_id, :probe_scope))
+
+    withenv("SPACEAGORA_PARALLEL_POLICY_DELTA" => "oops") do
+        @test_throws ArgumentError policy.adaptive_delta()
+    end
+    withenv("SPACEAGORA_PARALLEL_POLICY_RHO" => "1.0") do
+        @test_throws ArgumentError policy.adaptive_rho()
+    end
+    withenv("SPACEAGORA_PARALLEL_POLICY_TRIM_QUANTA" => "oops") do
+        @test_throws ArgumentError policy.adaptive_trim_quanta_budget()
+    end
+
+    withenv("SPACEAGORA_INNER_THREAD_BUDGET" => string(max(2, Threads.nthreads()))) do
+        acc_foreach = Base.Threads.Atomic{Int}(0)
+        policy.threaded_foreach(8, 8) do idx
+            Base.Threads.atomic_add!(acc_foreach, idx)
+        end
+        @test acc_foreach[] == sum(1:8)
+
+        worker_ids = zeros(Int, 4)
+        policy.threaded_foreach_worker(4, 1) do worker_id, idx
+            worker_ids[idx] = worker_id
+        end
+        @test all(==(1), worker_ids)
+
+        reduced_mt = policy.threaded_reduce(
+            12,
+            8,
+            () -> Ref(0),
+            (acc, idx) -> begin
+                acc[] += idx
+                return nothing
+            end,
+            (dest, src) -> begin
+                dest[] += src[]
+                return nothing
+            end
+        )
+        @test reduced_mt[] == sum(1:12)
+
+        pool_err = policy._create_persistent_foreach_pool(2)
+        persistent_err = try
+            policy._threaded_foreach_persistent!(pool_err, 4, 2, idx -> error("persistent_dispatch_probe"))
+            nothing
+        catch err
+            err
+        end
+        @test persistent_err !== nothing
+        policy._shutdown_persistent_foreach_pool!(pool_err)
+    end
+
+    policy.reset_policy_telemetry!()
+    withenv(
+        "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
+        "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "3",
+        "SPACEAGORA_PARALLEL_POLICY_DELTA" => "0.8",
+        "SPACEAGORA_PARALLEL_POLICY_RHO" => "1.5",
+        "SPACEAGORA_INNER_THREAD_BUDGET" => "2"
+    ) do
+        _ = policy.thread_policy_decision(4; mode=:auto, threshold=1, source=:probe_obs)
+        policy.record_policy_observation!(
+            :probe_obs;
+            mode=:auto,
+            num_items=1,
+            use_threads=false,
+            elapsed_ns=1
+        )
+        snap = policy.policy_telemetry_snapshot()
+        @test snap.adaptation_updates_total == 0
+    end
+
+    withenv(
+        "SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION" => "1.5",
+        "SPACEAGORA_PARALLEL_POLICY_HINT_MIN_SAMPLES" => "2"
+    ) do
+        lock(policy._persistent_hint_lock) do
+            state = policy._persistent_hint_state[]
+            state.loaded = true
+            state.dirty = false
+            state.path = "inner_hint_probe_state.toml"
+            empty!(state.history)
+            state.history["profile=r5|machine=probe_machine|src=density_callback|items=3_4|thr=1|budget=2|outer=0|heavy_only=0|heavy=1"] = Dict(
+                Int64(1) => policy.AdaptiveChoiceStats(samples=2, successes=2, failures=0, elapsed_sum_ns=200.0, elapsed_sq_sum_ns=20_000.0),
+                Int64(2) => policy.AdaptiveChoiceStats(samples=2, successes=2, failures=0, elapsed_sum_ns=120.0, elapsed_sq_sum_ns=7_200.0)
+            )
+            state.history["profile=r5|machine=probe_machine|src=control_callback|items=3_4|thr=1|budget=2|outer=0|heavy_only=0|heavy=1"] = Dict(
+                Int64(1) => policy.AdaptiveChoiceStats(samples=1, successes=1, failures=0, elapsed_sum_ns=50.0, elapsed_sq_sum_ns=2_500.0)
+            )
+        end
+
+        layer_rows = policy.hint_layer_stats_snapshot(profile="R5", machine="probe_machine")
+        @test length(layer_rows) == 2
+        @test all(row -> row.profile == "r5", layer_rows)
+        @test all(row -> row.machine == "probe_machine", layer_rows)
+        density_row = only([row for row in layer_rows if row.layer == "density_callback"])
+        @test density_row.samples_total == 4
+        @test density_row.regret_mean_ns >= 0.0
+        @test density_row.confidence_mean >= 0.0
+        @test density_row.state_path == "inner_hint_probe_state.toml"
+        @test isempty(policy.hint_layer_stats_snapshot(profile="R4", machine="probe_machine"))
+    end
+    lock(policy._persistent_hint_lock) do
+        state = policy._persistent_hint_state[]
+        state.loaded = false
+        state.dirty = false
+        state.path = ""
+        empty!(state.history)
+    end
+
+    # Density_models helper probes.
+    env_models = SimulationModel.EnvironmentModels
+    args_density_helpers = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=false
+    )
+    p_density_helpers = ODEParams{1}(args=args_density_helpers)
+
+    rho_no, T_no, wind_no = env_models.getDensity(NoAtmosphereModel(), 150e3, 0.0, 0.0, 0.0, true, p_density_helpers)
+    @test rho_no == 0.0
+    @test T_no == args_density_helpers.environment_model.planet.T_ref
+    @test wind_no == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    exp_model = env_models.ExponentialAtmosphereModel(1e-4, 120e3, 12e3)
+    rho_exp, T_exp, wind_exp = env_models.getDensity(exp_model, 120e3, 0.0, 0.0, 0.0, false)
+    @test isapprox(rho_exp, 1e-4; atol=0.0, rtol=1e-12)
+    @test T_exp == 200.0
+    @test wind_exp == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    poly_model = env_models.PolynomialFitAtmosphereModel([0.0, -1.0])
+    @test_throws MethodError env_models.getDensity(poly_model, [120e3, 130e3], 0.0, 0.0, 0.0, false, p_density_helpers)
+    rho_scalar, T_scalar, wind_scalar = env_models.getDensity(poly_model, 120e3, 0.0, 0.0, 0.0, false, p_density_helpers)
+    @test isfinite(rho_scalar)
+    @test T_scalar == args_density_helpers.environment_model.planet.T_ref
+    @test wind_scalar == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    @test isfinite(env_models.interp(5.0, 355.0, 0.25))
+    @test isfinite(env_models.interp(355.0, 5.0, 0.25))
+    @test env_models.temperature_linear(10.0, (T_ref=123.0,)) == 123.0
+    @test env_models._gram_use_global_lock() isa Bool
+    @test_throws MethodError env_models._gram_point_density(:bad_model, 0.0, 0.0, 0.0, 0.0, false)
+
+    gram_model = env_models.GRAMAtmosphereModel(
+        planet_name="earth",
+        initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
+    )
+    @test gram_model.core === gram_model.core
+    @test gram_model.planet_name == "earth"
+    copied_gram = Base.deepcopy_internal(gram_model, IdDict())
+    @test copied_gram !== gram_model
+
+    rho_hi, T_hi, wind_hi = env_models.getDensity(gram_model, 2_500e3, 0.0, 0.0, 0.0, true, p_density_helpers)
+    @test rho_hi == 0.0
+    @test T_hi == args_density_helpers.environment_model.planet.T_ref
+    @test wind_hi == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    rho_mid, T_mid, wind_mid = env_models.getDensity(gram_model, 150e3, 0.0, 0.0, 0.0, true, p_density_helpers)
+    @test isfinite(rho_mid)
+    @test T_mid == args_density_helpers.environment_model.planet.T_ref
+    @test wind_mid == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    rho_polyfit, T_polyfit, wind_polyfit = env_models.density_polyfit(150e3, p_density_helpers)
+    @test isfinite(rho_polyfit)
+    @test T_polyfit == args_density_helpers.environment_model.planet.T_ref
+    @test wind_polyfit == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    # Deep callback branch probes around entry targeting and cache refresh.
+    withenv("SPACEAGORA_GRAM_ENTRY_TARGET_MODE" => "off") do
+        @test callbacks._gram_entry_target_mode() == :off
+    end
+    withenv("SPACEAGORA_GRAM_ENTRY_TARGET_MODE" => "allen_eggers") do
+        @test callbacks._gram_entry_target_mode() == :allen_eggers
+    end
+    withenv("SPACEAGORA_GRAM_ENTRY_TARGET_MODE" => "invalid_mode") do
+        @test_throws ArgumentError callbacks._gram_entry_target_mode()
+    end
+    withenv("SPACEAGORA_GRAM_ENTRY_TARGET_CD" => "0.01") do
+        @test callbacks._gram_entry_target_cd() == 0.05
+    end
+    withenv("SPACEAGORA_GRAM_ENTRY_TARGET_DT_S" => "0.01") do
+        @test callbacks._gram_entry_target_dt() == 0.05
+    end
+    withenv("SPACEAGORA_GRAM_ENTRY_TARGET_MAX_STEPS" => "4") do
+        @test callbacks._gram_entry_target_max_steps() == 8
+    end
+    withenv("SPACEAGORA_GRAM_ENTRY_TARGET_MAX_STEPS" => "oops") do
+        @test_throws ArgumentError callbacks._gram_entry_target_max_steps()
+    end
+    withenv("SPACEAGORA_CB_TEST_FLOAT_OPT_VALID" => "1.25") do
+        @test callbacks._parse_float_env_optional("SPACEAGORA_CB_TEST_FLOAT_OPT_VALID") == 1.25
+    end
+    withenv("SPACEAGORA_CB_TEST_INT_OPT_VALID" => "7") do
+        @test callbacks._parse_int_env_optional("SPACEAGORA_CB_TEST_INT_OPT_VALID") == 7
+    end
+    withenv("SPACEAGORA_GRAM_TRACK_CACHE_MAX_NPOS" => "1") do
+        @test callbacks._gram_track_cache_max_npos() == 2
+    end
+    withenv("SPACEAGORA_GRAM_TRACK_CACHE_MAX_NPOS" => "oops") do
+        @test_throws ArgumentError callbacks._gram_track_cache_max_npos()
+    end
+    @test callbacks._gram_track_cache_target_spacing_m(500.0, deg2rad(1.0), 6.5e6) >= 1.0
+
+    cache_unset = callbacks.GramTrackCache()
+    @test callbacks._gram_track_cache_segment(cache_unset, 0.0) === nothing
+
+    cache_seek = callbacks.GramTrackCache()
+    cache_seek.valid = true
+    cache_seek.t0 = 0.0
+    cache_seek.t1 = 2.0
+    cache_seek.index_hint = 1
+    cache_seek.times = [0.0, 1.0, 2.0]
+    cache_seek.alts = [100.0, 200.0, 300.0]
+    cache_seek.lats = [0.0, 0.1, 0.2]
+    cache_seek.lons = [0.0, 0.1, 0.2]
+    cache_seek.rhos = [1.0, 2.0, 3.0]
+    cache_seek.Ts = [200.0, 220.0, 240.0]
+    cache_seek.winds = [SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)]
+    withenv("SPACEAGORA_GRAM_TRACK_CACHE_IGNORE_TIME_WINDOW" => "1") do
+        @test callbacks._gram_track_cache_segment(cache_seek, 1.8) == (2, 0.8)
+    end
+
+    cache_nonmono = callbacks.GramTrackCache()
+    cache_nonmono.valid = true
+    cache_nonmono.t0 = 0.0
+    cache_nonmono.t1 = 1.0
+    cache_nonmono.index_hint = 2
+    cache_nonmono.times = [0.0, 1.0, 0.5]
+    cache_nonmono.alts = [100.0, 200.0, 300.0]
+    cache_nonmono.lats = [0.0, 0.1, 0.2]
+    cache_nonmono.lons = [0.0, 0.1, 0.2]
+    cache_nonmono.rhos = [1.0, 2.0, 3.0]
+    cache_nonmono.Ts = [200.0, 220.0, 240.0]
+    cache_nonmono.winds = [SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)]
+    withenv("SPACEAGORA_GRAM_TRACK_CACHE_IGNORE_TIME_WINDOW" => "1") do
+        seg_nonmono = callbacks._gram_track_cache_segment(cache_nonmono, 0.75)
+        @test seg_nonmono === nothing || seg_nonmono isa Tuple{Int, Float64}
+    end
+
+    @test callbacks._gram_entry_reference_area_m2(p_density_helpers, 1) > 0.0
+    @test callbacks._gram_entry_reference_area_m2(p_density_helpers, 999) == 1.0
+    @test callbacks._gram_entry_mass_kg(p_density_helpers, 1, 42.0) == 42.0
+    @test callbacks._gram_entry_mass_kg(p_density_helpers, 1, -1.0) > 0.0
+    @test callbacks._gram_entry_mass_kg(p_density_helpers, 999, -1.0) == 100.0
+
+    sc_zero_area = make_spacecraft(ra_alt_m=450e3, rp_alt_m=420e3, ν_deg=175.0)
+    @inbounds for link in sc_zero_area.links
+        link.ref_area = 0.0
+    end
+    args_zero_area = build_config(
+        spacecraft=sc_zero_area,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=false
+    )
+    p_zero_area = ODEParams{1}(args=args_zero_area)
+    @test callbacks._gram_entry_reference_area_m2(p_zero_area, 1) == 1.0
+
+    u_refresh = build_initial_conditions(args_density_helpers)
+    planet_refresh = p_density_helpers.args.environment_model.planet
+    planet_refresh.L_PI .= [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]
+    pos_refresh = SVector{3, Float64}(planet_refresh.Rp_e + 250e3, 0.0, 0.0)
+    vel_refresh = SVector{3, Float64}(0.0, 7.6e3, 0.0)
+    rp_refresh, _ = r_intor_p!(pos_refresh, vel_refresh, p_density_helpers.args.environment_model.planet)
+    alt_refresh, lat_refresh, lon_refresh = rtolatlong(rp_refresh, p_density_helpers.args.environment_model.planet)
+    cache_refresh = callbacks.GramTrackCache()
+    @test callbacks._gram_entry_reference_density(planet_refresh, 120e3) >= 0.0
+    @test callbacks._gram_entry_target_allen_eggers(
+        pos_refresh,
+        SVector{3, Float64}(0.0, 7.6e3, 0.0),
+        planet_refresh,
+        5.0,
+        500.0,
+        2.0
+    ) !== nothing
+    @test callbacks._gram_entry_target_allen_eggers(
+        pos_refresh,
+        SVector{3, Float64}(0.0, 7.6e3, 0.0),
+        planet_refresh,
+        0.0,
+        500.0,
+        2.0
+    ) === nothing
+
+    withenv(
+        "SPACEAGORA_GRAM_PROFILE" => "1",
+        "SPACEAGORA_GRAM_TRACK_CACHE_PERIAPSIS_SPLIT" => "0",
+        "SPACEAGORA_GRAM_TRACK_CACHE_MAX_NPOS" => "64"
+    ) do
+        rho_ok, T_ok, _ = callbacks._gram_track_cache_refresh!(
+            callbacks.GramTrackCache(),
+            NoAtmosphereModel(),
+            p_density_helpers,
+            pos_refresh,
+            SVector{3, Float64}(0.0, 0.0, 0.0),
+            alt_refresh,
+            lat_refresh,
+            lon_refresh,
+            0.0,
+            10.0,
+            6,
+            500.0,
+            deg2rad(2.0),
+            0.0,
+            10.0,
+            false,
+            1,
+            Float64(u_refresh.sc[1].mass)
+        )
+        @test isfinite(rho_ok)
+        @test isfinite(T_ok)
+
+        rho_a, T_a, _ = callbacks._gram_track_cache_refresh!(
+            cache_refresh,
+            NoAtmosphereModel(),
+            p_density_helpers,
+            pos_refresh,
+            SVector{3, Float64}(0.0, 0.0, 0.0),
+            alt_refresh,
+            lat_refresh,
+            lon_refresh,
+            0.0,
+            30.0,
+            8,
+            500.0,
+            deg2rad(2.0),
+            0.0,
+            20.0,
+            false,
+            1,
+            Float64(u_refresh.sc[1].mass)
+        )
+        @test isfinite(rho_a)
+        @test isfinite(T_a)
+
+        rho_b, T_b, _ = callbacks._gram_track_cache_refresh!(
+            cache_refresh,
+            NoAtmosphereModel(),
+            p_density_helpers,
+            pos_refresh,
+            SVector{3, Float64}(0.0, 0.0, 0.0),
+            alt_refresh,
+            lat_refresh,
+            lon_refresh,
+            0.0,
+            30.0,
+            8,
+            500.0,
+            deg2rad(2.0),
+            0.0,
+            NaN,
+            false,
+            1,
+            Float64(u_refresh.sc[1].mass)
+        )
+        @test isfinite(rho_b)
+        @test isfinite(T_b)
+    end
+
+    mission_orbits = MissionConfiguration(
+        mission_type=MissionOrbits,
+        keplerian=false,
+        number_of_orbits=1,
+        mission_time=120.0,
+        orientation_sim=false,
+        num_steps_to_save=1000
+    )
+    args_orbit_refresh = SimulationConfiguration(
+        simulation_settings=args_density_helpers.simulation_settings,
+        mission_configuration=mission_orbits,
+        environment_model=args_density_helpers.environment_model,
+        dynamics_model=args_density_helpers.dynamics_model,
+        guidance_model=args_density_helpers.guidance_model,
+        navigation_model=args_density_helpers.navigation_model,
+        control_model=args_density_helpers.control_model,
+        initial_time=args_density_helpers.initial_time,
+        integration_tolerances=args_density_helpers.integration_tolerances
+    )
+    p_orbit_refresh = ODEParams{1}(args=args_orbit_refresh)
+    u_orbit_refresh = build_initial_conditions(args_orbit_refresh)
+    pos_orbit = SVector{3, Float64}(u_orbit_refresh.sc[1].pos)
+    vel_orbit = SVector{3, Float64}(u_orbit_refresh.sc[1].vel)
+    rp_orbit, _ = r_intor_p!(pos_orbit, vel_orbit, p_orbit_refresh.args.environment_model.planet)
+    alt_orbit, lat_orbit, lon_orbit = rtolatlong(rp_orbit, p_orbit_refresh.args.environment_model.planet)
+    withenv("SPACEAGORA_GRAM_PROFILE" => "1", "SPACEAGORA_GRAM_TRACK_CACHE_PERIAPSIS_SPLIT" => "0") do
+        rho_orbit, T_orbit, _ = callbacks._gram_track_cache_refresh!(
+            callbacks.GramTrackCache(),
+            NoAtmosphereModel(),
+            p_orbit_refresh,
+            pos_orbit,
+            vel_orbit,
+            alt_orbit,
+            lat_orbit,
+            lon_orbit,
+            0.0,
+            40.0,
+            8,
+            500.0,
+            deg2rad(2.0),
+            0.0,
+            NaN,
+            false,
+            1,
+            Float64(u_orbit_refresh.sc[1].mass)
+        )
+        @test isfinite(rho_orbit)
+        @test isfinite(T_orbit)
+    end
+
+    withenv("SPACEAGORA_GRAM_PROFILE" => "1", "SPACEAGORA_GRAM_TRACK_CACHE_PERIAPSIS_SPLIT" => "1") do
+        rho_entry_peri, T_entry_peri, _ = callbacks._gram_track_cache_refresh!(
+            callbacks.GramTrackCache(),
+            NoAtmosphereModel(),
+            p_density_helpers,
+            pos_refresh,
+            vel_refresh,
+            80e3,
+            lat_refresh,
+            lon_refresh,
+            0.0,
+            20.0,
+            8,
+            500.0,
+            deg2rad(2.0),
+            40e3,
+            NaN,
+            false,
+            1,
+            Float64(u_refresh.sc[1].mass)
+        )
+        @test isfinite(rho_entry_peri)
+        @test isfinite(T_entry_peri)
+    end
+
+    withenv(
+        "SPACEAGORA_GRAM_PROFILE" => "1",
+        "SPACEAGORA_GRAM_TRACK_CACHE_PERIAPSIS_SPLIT" => "1",
+        "SPACEAGORA_GRAM_ENTRY_TARGET_MODE" => "off"
+    ) do
+        rho_entry_off, T_entry_off, _ = callbacks._gram_track_cache_refresh!(
+            callbacks.GramTrackCache(),
+            NoAtmosphereModel(),
+            p_density_helpers,
+            pos_refresh,
+            SVector{3, Float64}(0.0, 0.0, 0.0),
+            80e3,
+            lat_refresh,
+            lon_refresh,
+            0.0,
+            20.0,
+            8,
+            500.0,
+            deg2rad(2.0),
+            40e3,
+            15.0,
+            false,
+            1,
+            Float64(u_refresh.sc[1].mass)
+        )
+        @test isfinite(rho_entry_off)
+        @test isfinite(T_entry_off)
+    end
+
+    withenv(
+        "SPACEAGORA_GRAM_PROFILE" => "1",
+        "SPACEAGORA_GRAM_TRACK_CACHE_PERIAPSIS_SPLIT" => "1",
+        "SPACEAGORA_GRAM_ENTRY_TARGET_MODE" => "allen_eggers"
+    ) do
+        rho_entry_ae, T_entry_ae, _ = callbacks._gram_track_cache_refresh!(
+            callbacks.GramTrackCache(),
+            NoAtmosphereModel(),
+            p_density_helpers,
+            pos_refresh,
+            SVector{3, Float64}(0.0, 0.0, 0.0),
+            80e3,
+            lat_refresh,
+            lon_refresh,
+            0.0,
+            20.0,
+            8,
+            500.0,
+            deg2rad(2.0),
+            40e3,
+            NaN,
+            false,
+            1,
+            Float64(u_refresh.sc[1].mass)
+        )
+        @test isfinite(rho_entry_ae)
+        @test isfinite(T_entry_ae)
+    end
+
+    callbacks._gram_track_cache_warning_emitted[] = false
+    withenv("SPACEAGORA_GRAM_PROFILE" => "1", "SPACEAGORA_GRAM_TRACK_CACHE_PERIAPSIS_SPLIT" => "0") do
+        @test_throws ErrorException callbacks._gram_track_cache_refresh!(
+            callbacks.GramTrackCache(),
+            ThrowDensityModel(),
+            p_density_helpers,
+            pos_refresh,
+            vel_refresh,
+            alt_refresh,
+            lat_refresh,
+            lon_refresh,
+            0.0,
+            5.0,
+            4,
+            500.0,
+            deg2rad(2.0),
+            0.0,
+            5.0,
+            false,
+            1,
+            Float64(u_refresh.sc[1].mass)
+        )
+    end
+
+    args_thermal_threaded = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+            make_spacecraft(ra_alt_m=530e3, rp_alt_m=460e3, ν_deg=165.0)
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),)
+    )
+    p_thermal_threaded = ODEParams{2}(args=args_thermal_threaded)
+    u_thermal_threaded = build_initial_conditions(args_thermal_threaded)
+    p_thermal_threaded.shared_buffers.densities .= 1e-6
+    p_thermal_threaded.shared_buffers.temperatures .= 250.0
+    withenv(
+        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_THERMAL_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "0"
+    ) do
+        @test callbacks._thermal_callback_thread_decision(2).use_threads == false
+    end
+    withenv(
+        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_THERMAL_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
+    ) do
+        @test callbacks._thermal_callback_thread_decision(2).use_threads == true
+    end
+    withenv(
+        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => "on",
+        "SPACEAGORA_THERMAL_CALLBACK_THREAD_THRESHOLD" => "1"
+    ) do
+        thermal_cb_threaded = callbacks.get_thermal_callback(2, args_thermal_threaded)
+        thermal_cb_threaded.affect!((p=p_thermal_threaded, u=u_thermal_threaded, t=0.0))
+    end
+
+    args_quat = build_config_multi(
+        spacecraft=[
+            make_spacecraft(
+                ra_alt_m=500e3,
+                rp_alt_m=450e3,
+                ν_deg=170.0,
+                orientation_state=(SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0))
+            ),
+            make_spacecraft(
+                ra_alt_m=530e3,
+                rp_alt_m=460e3,
+                ν_deg=165.0,
+                orientation_state=(SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0))
+            )
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=true,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),)
+    )
+    p_quat = ODEParams{2}(args=args_quat)
+    u_quat = build_initial_conditions(args_quat)
+    p_quat.is_active[1] = false
+    u_quat.sc[2].q .= (NaN, NaN, NaN, NaN)
+    quat_cb = callbacks.get_quaternion_projection_callback(2, args_quat)
+    @test quat_cb.condition(u_quat, 0.0, (p=p_quat, u=u_quat, t=0.0))
+    quat_cb.affect!((p=p_quat, u=u_quat, t=0.0))
+    @test u_quat.sc[2].q == SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
+
+    withenv("SPACEAGORA_ENTRY_TARGET_COUNT" => "1") do
+        entry_cb = callbacks.get_entry_end_callback(1, args_density_helpers)
+        @test entry_cb isa DiffEqBase.VectorContinuousCallback
     end
 end
 

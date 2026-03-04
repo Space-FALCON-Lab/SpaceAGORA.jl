@@ -480,7 +480,7 @@ mktempdir() do tmp
         run_verification=fake_runner,
         manifest_path=manifest_path,
         profile="quick",
-        parallel_profile="R4_full_auto",
+        parallel_profile="R5",
         enforce=false,
         plots=false
     )
@@ -500,7 +500,7 @@ mktempdir() do tmp
     cache_files = filter(f -> endswith(f, ".toml"), readdir(cache_dir))
     @assert !isempty(cache_files)
     cache_doc = TOML.parsefile(joinpath(cache_dir, cache_files[1]))
-    @assert String(get(cache_doc, "profile_name", "")) == "R4_full_auto"
+    @assert String(get(cache_doc, "profile_name", "")) == "R5"
     @assert !isempty(get(cache_doc, "stats", Any[]))
 end
 

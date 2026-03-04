@@ -438,9 +438,10 @@ end
 function run_case(args::SimulationConfiguration; isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
+            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             run_simulation(args; isolate_state=isolate_state)
-            @test isfile("simulation_results.csv")
-            return CSV.read("simulation_results.csv", DataFrame)
+            @test isfile(results_csv_path)
+            return CSV.read(results_csv_path, DataFrame)
         end
     end
 end
@@ -448,11 +449,12 @@ end
 function run_case_silent(args::SimulationConfiguration; isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
+            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             redirect_stdout(devnull) do
                 run_simulation(args; isolate_state=isolate_state)
             end
-            @test isfile("simulation_results.csv")
-            return CSV.read("simulation_results.csv", DataFrame)
+            @test isfile(results_csv_path)
+            return CSV.read(results_csv_path, DataFrame)
         end
     end
 end
@@ -460,6 +462,7 @@ end
 function run_case_capture_stdout(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
+            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             output = ""
             mktemp() do path, io
                 redirect_stdout(io) do
@@ -470,10 +473,10 @@ function run_case_capture_stdout(args::SimulationConfiguration; expect_results_c
                 output = read(io, String)
             end
             if expect_results_csv
-                @test isfile("simulation_results.csv")
-                return CSV.read("simulation_results.csv", DataFrame), output
+                @test isfile(results_csv_path)
+                return CSV.read(results_csv_path, DataFrame), output
             else
-                @test !isfile("simulation_results.csv")
+                @test !isfile(results_csv_path)
                 return DataFrame(), output
             end
         end
@@ -483,14 +486,15 @@ end
 function run_case_via_execute_analysis(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
+            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             redirect_stdout(devnull) do
                 execute_analysis(args; isolate_state=isolate_state)
             end
             if expect_results_csv
-                @test isfile("simulation_results.csv")
-                return CSV.read("simulation_results.csv", DataFrame)
+                @test isfile(results_csv_path)
+                return CSV.read(results_csv_path, DataFrame)
             else
-                @test !isfile("simulation_results.csv")
+                @test !isfile(results_csv_path)
                 return DataFrame()
             end
         end
@@ -500,6 +504,7 @@ end
 function run_case_via_campaign(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true, state=nothing)
     return mktempdir() do tmp
         cd(tmp) do
+            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             redirect_stdout(devnull) do
                 if state === nothing
                     execute_campaign(args; isolate_state=isolate_state)
@@ -508,10 +513,10 @@ function run_case_via_campaign(args::SimulationConfiguration; expect_results_csv
                 end
             end
             if expect_results_csv
-                @test isfile("simulation_results.csv")
-                return CSV.read("simulation_results.csv", DataFrame)
+                @test isfile(results_csv_path)
+                return CSV.read(results_csv_path, DataFrame)
             else
-                @test !isfile("simulation_results.csv")
+                @test !isfile(results_csv_path)
                 return DataFrame()
             end
         end
@@ -521,6 +526,7 @@ end
 function run_case_via_execute_campaign(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true, state=nothing)
     return mktempdir() do tmp
         cd(tmp) do
+            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             redirect_stdout(devnull) do
                 if state === nothing
                     execute_campaign(args; isolate_state=isolate_state)
@@ -529,10 +535,10 @@ function run_case_via_execute_campaign(args::SimulationConfiguration; expect_res
                 end
             end
             if expect_results_csv
-                @test isfile("simulation_results.csv")
-                return CSV.read("simulation_results.csv", DataFrame)
+                @test isfile(results_csv_path)
+                return CSV.read(results_csv_path, DataFrame)
             else
-                @test !isfile("simulation_results.csv")
+                @test !isfile(results_csv_path)
                 return DataFrame()
             end
         end
@@ -542,14 +548,15 @@ end
 function run_case_via_execute_orbital_elements_campaign(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
+            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             redirect_stdout(devnull) do
                 execute_orbital_elements_campaign(args; isolate_state=isolate_state)
             end
             if expect_results_csv
-                @test isfile("simulation_results.csv")
-                return CSV.read("simulation_results.csv", DataFrame)
+                @test isfile(results_csv_path)
+                return CSV.read(results_csv_path, DataFrame)
             else
-                @test !isfile("simulation_results.csv")
+                @test !isfile(results_csv_path)
                 return DataFrame()
             end
         end
@@ -559,14 +566,15 @@ end
 function run_case_via_execute_vgamma_campaign(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
+            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             redirect_stdout(devnull) do
                 execute_vgamma_campaign(args; isolate_state=isolate_state)
             end
             if expect_results_csv
-                @test isfile("simulation_results.csv")
-                return CSV.read("simulation_results.csv", DataFrame)
+                @test isfile(results_csv_path)
+                return CSV.read(results_csv_path, DataFrame)
             else
-                @test !isfile("simulation_results.csv")
+                @test !isfile(results_csv_path)
                 return DataFrame()
             end
         end
@@ -4159,6 +4167,22 @@ end
     ) do
         @test density_use_threads(args_control, 2) == has_worker_threads
     end
+    withenv(
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "0"
+    ) do
+        @test density_use_threads(args_control, 8) == false
+    end
+    withenv(
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
+    ) do
+        @test density_use_threads(args_control, 8) == has_worker_threads
+    end
 
     control_thruster = BaseThrusterModel(
         thrust=[0.5, 0.6],
@@ -4180,6 +4204,24 @@ end
     ) do
         @test control_use_threads(control_thruster, 8, false) == has_worker_threads
         @test control_use_threads(control_thruster, 8, true) == false
+    end
+    withenv(
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "0"
+    ) do
+        @test control_use_threads(control_thruster, 8, false) == false
+    end
+    withenv(
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
+    ) do
+        @test control_use_threads(control_thruster, 8, false) == has_worker_threads
     end
 
     n_parallel_sats = 4
@@ -4293,6 +4335,12 @@ end
     withenv("SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "oops") do
         @test_throws ArgumentError callbacks._density_callback_thread_threshold()
     end
+    withenv("SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1") do
+        @test callbacks._density_callback_allow_with_outer() == true
+    end
+    withenv("SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "invalid") do
+        @test_throws ArgumentError callbacks._density_callback_allow_with_outer()
+    end
 
     withenv("SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "off") do
         @test callbacks._control_callback_parallel_mode() == :off
@@ -4315,6 +4363,12 @@ end
     end
     withenv("SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "oops") do
         @test_throws ArgumentError callbacks._control_callback_thread_threshold()
+    end
+    withenv("SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1") do
+        @test callbacks._control_callback_allow_with_outer() == true
+    end
+    withenv("SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "invalid") do
+        @test_throws ArgumentError callbacks._control_callback_allow_with_outer()
     end
 
     @test callbacks.density_model_threadsafe(NoAtmosphereModel()) == true
@@ -4357,6 +4411,18 @@ end
         "SPACEAGORA_THERMAL_CALLBACK_THREAD_THRESHOLD" => nothing
     ) do
         @test callbacks._thermal_callback_thread_threshold() == 6
+    end
+    withenv("SPACEAGORA_THERMAL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1") do
+        @test callbacks._thermal_callback_allow_with_outer() == true
+    end
+    withenv(
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1",
+        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => nothing
+    ) do
+        @test callbacks._thermal_callback_allow_with_outer() == true
+    end
+    withenv("SPACEAGORA_THERMAL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "invalid") do
+        @test_throws ArgumentError callbacks._thermal_callback_allow_with_outer()
     end
 
     @test callbacks._is_gram_density_model(NoAtmosphereModel()) == false
@@ -4831,6 +4897,96 @@ end
 
     withenv("SPACEAGORA_INNER_THREAD_BUDGET" => "oops") do
         @test_throws ArgumentError policy.effective_inner_thread_budget()
+    end
+end
+
+@testset "Parallel Policy threaded_reduce" begin
+    policy = SimulationModel.ParallelPolicy
+    budget = max(1, Threads.nthreads())
+    withenv("SPACEAGORA_INNER_THREAD_BUDGET" => string(budget)) do
+        reduced = policy.threaded_reduce(
+            16,
+            budget,
+            () -> MVector{2, Int}(0, 0),
+            (local_acc, idx) -> begin
+                local_acc[1] += idx
+                local_acc[2] += 1
+                return nothing
+            end,
+            (dest, src) -> begin
+                dest[1] += src[1]
+                dest[2] += src[2]
+                return nothing
+            end
+        )
+        @test reduced[1] == sum(1:16)
+        @test reduced[2] == 16
+
+        reduced_empty = policy.threaded_reduce(
+            0,
+            budget,
+            () -> Ref(0),
+            (local_acc, idx) -> begin
+                local_acc[] += idx
+                return nothing
+            end,
+            (dest, src) -> begin
+                dest[] += src[]
+                return nothing
+            end
+        )
+        @test reduced_empty[] == 0
+    end
+end
+
+@testset "Parallel Policy threaded_foreach_persistent" begin
+    policy = SimulationModel.ParallelPolicy
+    budget = max(1, Threads.nthreads())
+
+    withenv(
+        "SPACEAGORA_INNER_THREAD_BUDGET" => string(budget),
+        "SPACEAGORA_CALLBACK_PERSISTENT_WORKERS" => "1"
+    ) do
+        acc = Base.Threads.Atomic{Int}(0)
+        policy.with_policy_context() do
+            policy.threaded_foreach_persistent(:density_callback, 16, budget) do idx
+                Base.Threads.atomic_add!(acc, idx)
+            end
+            policy.threaded_foreach_persistent(:density_callback, 16, budget) do idx
+                Base.Threads.atomic_add!(acc, idx)
+            end
+        end
+        @test acc[] == 2 * sum(1:16)
+    end
+
+    withenv(
+        "SPACEAGORA_INNER_THREAD_BUDGET" => string(budget),
+        "SPACEAGORA_CALLBACK_PERSISTENT_WORKERS" => "0"
+    ) do
+        acc = Base.Threads.Atomic{Int}(0)
+        policy.threaded_foreach_persistent(:density_callback, 8, budget) do idx
+            Base.Threads.atomic_add!(acc, idx)
+        end
+        @test acc[] == sum(1:8)
+    end
+
+    withenv(
+        "SPACEAGORA_INNER_THREAD_BUDGET" => string(budget),
+        "SPACEAGORA_CALLBACK_PERSISTENT_WORKERS" => "1"
+    ) do
+        err = try
+            policy.with_policy_context() do
+                policy.threaded_foreach_persistent(:thermal_callback, 8, budget) do idx
+                    if idx == 3
+                        error("threaded_foreach_persistent_probe")
+                    end
+                end
+            end
+            nothing
+        catch e
+            e
+        end
+        @test err !== nothing
     end
 end
 
@@ -5555,7 +5711,7 @@ end
             redirect_stdout(devnull) do
                 execute_analysis(args_no_csv)
             end
-            @test isfile("simulation_results.csv")
+            @test isfile(joinpath("output", "simulation_results.csv"))
             @test isfile(joinpath("output", "results.feather"))
         end
     end
@@ -5648,7 +5804,7 @@ end
     mktempdir() do tmp
         cd(tmp) do
             run_simulation(args)
-            @test isfile("simulation_results.csv")
+            @test isfile(joinpath("output", "simulation_results.csv"))
 
             bundle_prefix = joinpath("output", "simulation_results")
             feather_path = bundle_prefix * ".feather"
@@ -5757,9 +5913,9 @@ end
             run_simulation(resume_args)
             @test isfile(checkpoint_data_path)
             @test isfile(checkpoint_manifest_path)
-            @test isfile("simulation_results.csv")
+            @test isfile(joinpath("output", "simulation_results.csv"))
 
-            df_resume = CSV.read("simulation_results.csv", DataFrame)
+            df_resume = CSV.read(joinpath("output", "simulation_results.csv"), DataFrame)
             @test nrow(df_resume) >= 2
             @test issorted(df_resume.time)
             @test Float64(df_resume.time[1]) > 0.0
@@ -5826,9 +5982,9 @@ end
     mktempdir() do tmp
         cd(tmp) do
             @test_logs (:warn, r"resume_from_checkpoint=true but no checkpoint file was found") run_simulation(args_resume_missing)
-            @test isfile("simulation_results.csv")
+            @test isfile(joinpath("output", "simulation_results.csv"))
 
-            df = CSV.read("simulation_results.csv", DataFrame)
+            df = CSV.read(joinpath("output", "simulation_results.csv"), DataFrame)
             @test nrow(df) > 10
             @test abs(Float64(df.time[end]) - 60.0) < 1e-8
 
@@ -5858,10 +6014,9 @@ end
             withenv("SPACEAGORA_SAVE_BUNDLE" => "0") do
                 run_simulation(args_bundle_disabled)
             end
-            @test isfile("simulation_results.csv")
+            @test isfile(joinpath("output", "simulation_results.csv"))
             @test !isfile(joinpath("output", "simulation_results.feather"))
             @test !isfile(joinpath("output", "simulation_results.manifest.toml"))
-            @test !isfile(joinpath("output", "simulation_results.csv"))
         end
     end
 end

@@ -62,6 +62,7 @@ Base.@kwdef struct BenchmarkCase
     solver_mode_override::Union{Nothing, String} = nothing
     split_imex_solver_override::Union{Nothing, String} = nothing
     entry_target_count_override::Union{Nothing, Int} = nothing
+    env_overrides::Vector{Pair{String, String}} = Pair{String, String}[]
 end
 
 @inline _safe_div(num::Float64, den::Float64) = den > 0.0 ? num / den : NaN
@@ -433,6 +434,14 @@ end
     return _parse_bool_env("SPACEAGORA_PERF_OUTER_ROUTE_TRACE", false)
 end
 
+@inline function _outer_route_state_persist_enabled()::Bool
+    return _parse_bool_env("SPACEAGORA_PERF_OUTER_ROUTE_STATE_PERSIST", true)
+end
+
+@inline function _outer_route_state_reset_requested()::Bool
+    return _parse_bool_env("SPACEAGORA_PERF_OUTER_ROUTE_STATE_RESET", false)
+end
+
 @inline function _control_stress_repeats_full()::Int
     return _parse_positive_int_env("SPACEAGORA_PERF_CONTROL_STRESS_REPEATS_FULL", 3)
 end
@@ -615,6 +624,37 @@ end
     return isempty(raw) ? gethostname() : raw
 end
 
+@inline function _active_parallel_profile_token()::String
+    raw = strip(get(ENV, "SPACEAGORA_PARALLEL_PROFILE", "default"))
+    return isempty(raw) ? "default" : raw
+end
+
+@inline function _active_parallel_machine_token()::String
+    raw = strip(get(ENV, "SPACEAGORA_PERF_MACHINE_LABEL", "default"))
+    return isempty(raw) ? "default" : raw
+end
+
+@inline function _safe_path_token(raw::AbstractString)::String
+    token = lowercase(strip(String(raw)))
+    token = replace(token, r"[^a-z0-9._-]+" => "_")
+    return isempty(token) ? "default" : token
+end
+
+@inline function _outer_route_state_cache_path(spec::ProfileSpec, outdir::String)::String
+    override_raw = strip(get(ENV, "SPACEAGORA_PERF_OUTER_ROUTE_STATE_PATH", ""))
+    if !isempty(override_raw)
+        return normpath(isabspath(override_raw) ? override_raw : joinpath(REPO_ROOT, override_raw))
+    end
+    profile_token = _safe_path_token(spec.name)
+    machine_token = _safe_path_token(_machine_label())
+    hardware_token = _safe_path_token(_hardware_class_name())
+    return joinpath(
+        outdir,
+        "outer_route_state",
+        "outer_route_state_$(profile_token)_$(hardware_token)_$(machine_token).toml"
+    )
+end
+
 @inline function _cpu_name_string()::String
     return hasproperty(Sys, :CPU_NAME) ? String(getproperty(Sys, :CPU_NAME)) : "unknown"
 end
@@ -630,6 +670,63 @@ end
         os=string(Sys.KERNEL),
         arch=string(Sys.ARCH)
     )
+end
+
+function _inner_hint_layer_report_df(spec::ProfileSpec, hw)::DataFrame
+    rows = SimulationModel.ParallelPolicy.hint_layer_stats_snapshot(
+        profile=_active_parallel_profile_token(),
+        machine=_active_parallel_machine_token()
+    )
+    stamp_utc = string(now(UTC))
+    if isempty(rows)
+        return DataFrame(
+            runtime_profile=String[],
+            parallel_profile=String[],
+            hint_machine=String[],
+            hardware_class=String[],
+            machine_label=String[],
+            host_name=String[],
+            layer=String[],
+            signature_count=Int[],
+            choice_count=Int[],
+            samples_total=Int[],
+            successes_total=Int[],
+            failures_total=Int[],
+            elapsed_mean_ns=Float64[],
+            elapsed_std_ns=Float64[],
+            confidence_mean=Float64[],
+            regret_mean_ns=Float64[],
+            exploration_c=Float64[],
+            min_samples=Int[],
+            state_path=String[],
+            timestamp_utc=String[]
+        )
+    end
+    return DataFrame([
+        (
+            runtime_profile=spec.name,
+            parallel_profile=String(row.profile),
+            hint_machine=String(row.machine),
+            hardware_class=hw.hardware_class,
+            machine_label=hw.machine_label,
+            host_name=hw.host_name,
+            layer=String(row.layer),
+            signature_count=Int(row.signature_count),
+            choice_count=Int(row.choice_count),
+            samples_total=Int(row.samples_total),
+            successes_total=Int(row.successes_total),
+            failures_total=Int(row.failures_total),
+            elapsed_mean_ns=Float64(row.elapsed_mean_ns),
+            elapsed_std_ns=Float64(row.elapsed_std_ns),
+            confidence_mean=Float64(row.confidence_mean),
+            regret_mean_ns=Float64(row.regret_mean_ns),
+            exploration_c=Float64(row.exploration_c),
+            min_samples=Int(row.min_samples),
+            state_path=String(row.state_path),
+            timestamp_utc=stamp_utc
+        )
+        for row in rows
+    ])
 end
 
 @inline function _total_links(case::BenchmarkCase)::Int
@@ -677,9 +774,252 @@ end
     return degree
 end
 
+@inline function _max_links_per_sat(case::BenchmarkCase)::Int
+    max_links = 1
+    @inbounds for sc in case.args_template.dynamics_model.spacecraft
+        max_links = max(max_links, length(sc.links))
+    end
+    return max_links
+end
+
+@inline function _density_model_family(density_model)::String
+    if density_model isa NoAtmosphereModel
+        return "none"
+    elseif density_model isa GRAMAtmosphereModelSurrogate
+        return "gram_surrogate"
+    elseif density_model isa GRAMAtmosphereModel
+        return "gram_point"
+    elseif density_model isa ExponentialAtmosphereModel
+        return "exponential"
+    elseif density_model isa PolynomialFitAtmosphereModel
+        return "polyfit"
+    elseif density_model isa NRLMSISE00AtmosphereModel
+        return "nrlmsise00"
+    end
+    return lowercase(string(nameof(typeof(density_model))))
+end
+
+@inline function _read_bool_property_safe(obj, name::Symbol)::Union{Nothing, Bool}
+    if !hasproperty(obj, name)
+        return nothing
+    end
+    value = try
+        getproperty(obj, name)
+    catch
+        return nothing
+    end
+    return value isa Bool ? value : nothing
+end
+
+@inline function _gram_surrogate_flag(density_model)::Bool
+    if density_model isa GRAMAtmosphereModelSurrogate
+        return true
+    end
+    # Fallback for custom wrappers exposing a boolean surrogate toggle.
+    flag = _read_bool_property_safe(density_model, :gram_offline_surrogate)
+    return isnothing(flag) ? false : flag
+end
+
+@inline function _gram_static_grid_flag(density_model)::Bool
+    if !(density_model isa GRAMAtmosphereModel || density_model isa GRAMAtmosphereModelSurrogate)
+        return false
+    end
+    for key in (:use_static_grid, :static_grid, :gram_static_grid)
+        flag = _read_bool_property_safe(density_model, key)
+        if !(flag === nothing)
+            return flag
+        end
+    end
+    return false
+end
+
+@inline function _env_bool_token(raw::AbstractString)::Union{Nothing, Bool}
+    token = lowercase(strip(String(raw)))
+    if token in ("1", "true", "yes", "on")
+        return true
+    elseif token in ("0", "false", "no", "off")
+        return false
+    end
+    return nothing
+end
+
+@inline function _case_env_value(case::BenchmarkCase, name::String)::Union{Nothing, String}
+    for pair in case.env_overrides
+        if first(pair) == name
+            return String(last(pair))
+        end
+    end
+    return nothing
+end
+
+@inline function _env_bool_override_for_case(case::BenchmarkCase, name::String)::Union{Nothing, Bool}
+    value = _case_env_value(case, name)
+    value === nothing && return nothing
+    return _env_bool_token(value)
+end
+
+@inline function _gram_static_grid_flag_for_case(case::BenchmarkCase, density_model)::Bool
+    if !(density_model isa GRAMAtmosphereModel || density_model isa GRAMAtmosphereModelSurrogate)
+        return false
+    end
+    override = _env_bool_override_for_case(case, "SPACEAGORA_GRAM_STATIC_GRID")
+    if !(override === nothing)
+        return override
+    end
+    return _gram_static_grid_flag(density_model)
+end
+
+@inline function _gram_track_cache_mode_for_case(case::BenchmarkCase)::String
+    override = _case_env_value(case, "SPACEAGORA_GRAM_TRACK_CACHE")
+    if !(override === nothing)
+        token = lowercase(strip(override))
+        if token in ("on", "off", "auto")
+            return token
+        end
+    end
+    return lowercase(strip(get(ENV, "SPACEAGORA_GRAM_TRACK_CACHE", "off")))
+end
+
+@inline function _density_backend_bucket(
+    density_family::AbstractString,
+    gram_surrogate_enabled::Bool,
+    gram_static_grid_enabled::Bool,
+    gram_track_cache_mode::AbstractString
+)::String
+    family = lowercase(strip(String(density_family)))
+    cache_on = lowercase(strip(String(gram_track_cache_mode))) in ("on", "auto")
+    if family in ("gram_point", "gram")
+        return gram_static_grid_enabled ? "gram_static_grid_or_cached_surrogate" : "gram_point_to_point"
+    elseif family in ("gram_surrogate", "gram_offline_surrogate")
+        if gram_static_grid_enabled || cache_on
+            return "gram_static_grid_or_cached_surrogate"
+        end
+        return gram_surrogate_enabled ? "gram_surrogate" : "gram_point_to_point"
+    elseif family == "none"
+        return "non_gram"
+    elseif occursin("gram", family)
+        return gram_static_grid_enabled ? "gram_static_grid_or_cached_surrogate" : "gram_point_to_point"
+    end
+    return "non_gram"
+end
+
+@inline function _solver_mode_for_outer_route(case::BenchmarkCase, profile_name::String)::String
+    if !(case.solver_mode_override === nothing)
+        return String(case.solver_mode_override)
+    end
+    if !(case.split_imex_solver_override === nothing)
+        return "split_imex:" * String(case.split_imex_solver_override)
+    end
+    return _perf_solver_mode_env(profile_name)
+end
+
+@inline function _min_positive_rate(rates::AbstractVector{<:Real})::Float64
+    best = Inf
+    @inbounds for rate in rates
+        value = Float64(rate)
+        if isfinite(value) && value > 0.0
+            best = min(best, value)
+        end
+    end
+    return isfinite(best) ? best : 0.0
+end
+
+@inline function _has_aero_dynamic_effector(effectors::Tuple)::Bool
+    return _has_atmo_dynamic_effector(effectors)
+end
+
+@inline function _dynamic_effector_cost_class(effectors::Tuple, control_effector_count::Int)::String
+    effector_count = length(effectors)
+    has_nbody = _has_nbody_dynamic_effector(effectors)
+    has_srp = _has_srp_dynamic_effector(effectors)
+    has_aero = _has_aero_dynamic_effector(effectors)
+    harmonics_degree = _max_harmonics_degree(effectors)
+
+    if has_nbody || harmonics_degree >= 20 || effector_count >= 5
+        return "heavy"
+    end
+    if has_srp || has_aero || harmonics_degree > 0 || effector_count >= 2 || control_effector_count >= 2
+        return "medium"
+    end
+    return "light"
+end
+
+@inline function _case_outer_threads_safe(case::BenchmarkCase)::Bool
+    # Guard against native-library aborts seen under outer-threaded case concurrency.
+    density_model = case.args_template.environment_model.density_model
+    if density_model isa GRAMAtmosphereModel || density_model isa GRAMAtmosphereModelSurrogate
+        return false
+    end
+    return !_has_nbody_dynamic_effector(case.args_template.dynamics_model.dynamic_effectors)
+end
+
+function _split_threadsafe_indices(
+    selected::Vector{BenchmarkCase},
+    indices::Vector{Int}
+)::Tuple{Vector{Int}, Vector{Int}}
+    thread_indices = Int[]
+    serial_indices = Int[]
+    for idx in indices
+        if _case_outer_threads_safe(selected[idx])
+            push!(thread_indices, idx)
+        else
+            push!(serial_indices, idx)
+        end
+    end
+    return thread_indices, serial_indices
+end
+
 function _reset_outer_route_history!()
     _PERF_OUTER_ROUTE_STATE[] = ParallelProfiles.OuterRouteState()
     return nothing
+end
+
+function _load_outer_route_history!(spec::ProfileSpec, outdir::String)
+    _reset_outer_route_history!()
+    persist = _outer_route_state_persist_enabled() && _outer_route_adaptive_enabled()
+    path = _outer_route_state_cache_path(spec, outdir)
+    if !persist
+        return (persist=false, reset_requested=false, path=path, loaded_rows=0, loaded_signatures=0)
+    end
+    reset_requested = _outer_route_state_reset_requested()
+    if reset_requested
+        return (persist=true, reset_requested=true, path=path, loaded_rows=0, loaded_signatures=0)
+    end
+    loaded = try
+        ParallelProfiles.load_outer_route_state!(_PERF_OUTER_ROUTE_STATE[], path; replace=true)
+    catch err
+        @warn "[perf] Failed to load outer-route adaptive cache; starting with empty history." path=path exception=(err, catch_backtrace())
+        (path=path, rows=0, signatures=0)
+    end
+    return (
+        persist=true,
+        reset_requested=false,
+        path=loaded.path,
+        loaded_rows=loaded.rows,
+        loaded_signatures=loaded.signatures
+    )
+end
+
+function _save_outer_route_history!(spec::ProfileSpec, path::String, enabled::Bool)
+    enabled || return (path=path, rows=0, signatures=0)
+    metadata = Dict{String, Any}(
+        "profile" => spec.name,
+        "machine_label" => _machine_label(),
+        "hardware_class" => _hardware_class_name(),
+        "cpu_threads" => Sys.CPU_THREADS,
+        "julia_threads" => Threads.nthreads()
+    )
+    saved = try
+        ParallelProfiles.save_outer_route_state(
+            _PERF_OUTER_ROUTE_STATE[],
+            path;
+            metadata=metadata
+        )
+    catch err
+        @warn "[perf] Failed to persist outer-route adaptive cache." path=path exception=(err, catch_backtrace())
+        return (path=path, rows=0, signatures=0)
+    end
+    return saved
 end
 
 @inline function _outer_route_tuning()::ParallelProfiles.OuterRouteTuning
@@ -704,26 +1044,54 @@ end
     case::BenchmarkCase;
     spec::Union{Nothing, ProfileSpec}=nothing
 )::ParallelProfiles.OuterRouteFeatures
+    profile_name = isnothing(spec) ? lowercase(strip(get(ENV, "SPACEAGORA_PERF_PROFILE", "quick"))) : spec.name
     n_sats = length(case.args_template.dynamics_model.spacecraft)
     n_links = _total_links(case)
+    max_links_per_sat = _max_links_per_sat(case)
     mission_time_s = case.args_template.mission_configuration.mission_time
+    dt_max_orbit_s = case.args_template.integration_tolerances.dt_max_orbit
     dynamic_effectors = case.args_template.dynamics_model.dynamic_effectors
+    density_model = case.args_template.environment_model.density_model
     has_nbody = _has_nbody_dynamic_effector(dynamic_effectors)
     has_srp = _has_srp_dynamic_effector(dynamic_effectors)
     harmonics_degree = _max_harmonics_degree(dynamic_effectors)
     has_control = !isempty(case.args_template.control_model.control_effectors)
+    control_effector_count = length(case.args_template.control_model.control_effectors)
     orientation_on = case.args_template.mission_configuration.orientation_sim
+    density_family = _density_model_family(density_model)
+    solver_mode = _solver_mode_for_outer_route(case, profile_name)
+    control_rate_s = _min_positive_rate(case.args_template.control_model.control_rates)
+    guidance_rate_s = _min_positive_rate(case.args_template.guidance_model.guidance_rates)
+    navigation_rate_s = _min_positive_rate(case.args_template.navigation_model.navigation_rates)
+    gram_surrogate_enabled = _gram_surrogate_flag(density_model)
+    gram_static_grid_enabled = _gram_static_grid_flag_for_case(case, density_model)
+    thermal_enabled = _has_atmo_dynamic_effector(dynamic_effectors) || !(density_model isa NoAtmosphereModel)
+    dynamic_effector_count = length(dynamic_effectors)
+    effector_cost_class = _dynamic_effector_cost_class(dynamic_effectors, control_effector_count)
     mc_samples = isnothing(spec) ? 0 : spec.montecarlo_samples
     return ParallelProfiles.OuterRouteFeatures(
         category=case.category,
         n_sats=n_sats,
         n_links=n_links,
+        max_links_per_sat=max_links_per_sat,
         mission_time_s=mission_time_s,
         has_nbody=has_nbody,
         has_srp=has_srp,
         harmonics_degree=harmonics_degree,
         has_control=has_control,
         orientation_on=orientation_on,
+        density_family=density_family,
+        solver_mode=solver_mode,
+        dt_max_orbit_s=dt_max_orbit_s,
+        control_rate_s=control_rate_s,
+        guidance_rate_s=guidance_rate_s,
+        navigation_rate_s=navigation_rate_s,
+        gram_surrogate_enabled=gram_surrogate_enabled,
+        gram_static_grid_enabled=gram_static_grid_enabled,
+        control_effector_count=control_effector_count,
+        thermal_enabled=thermal_enabled,
+        dynamic_effector_count=dynamic_effector_count,
+        effector_cost_class=effector_cost_class,
         montecarlo_samples=mc_samples
     )
 end
@@ -862,6 +1230,31 @@ end
     ]
 end
 
+@inline function _merged_env_pairs(
+    base_pairs::Vector{Pair{String, String}},
+    override_pairs::Vector{Pair{String, String}}
+)::Vector{Pair{String, String}}
+    isempty(override_pairs) && return base_pairs
+    merged = copy(base_pairs)
+    for pair in override_pairs
+        key = first(pair)
+        idx = findfirst(p -> first(p) == key, merged)
+        if idx === nothing
+            push!(merged, key => last(pair))
+        else
+            merged[idx] = key => last(pair)
+        end
+    end
+    return merged
+end
+
+@inline function case_env_pairs(
+    case::BenchmarkCase,
+    plan::ParallelPriorityPlan
+)::Vector{Pair{String, String}}
+    return _merged_env_pairs(parallel_priority_env_pairs(plan), case.env_overrides)
+end
+
 @inline function _env_pairs_key(env_pairs::Vector{Pair{String, String}})::String
     isempty(env_pairs) && return ""
     return join([string(first(p), "=", last(p)) for p in env_pairs], ";")
@@ -877,7 +1270,7 @@ function _thread_plan_groups(
     ordered_keys = String[]
     for idx in indices
         plan = parallel_priority_plan(cases[idx], outer_route)
-        env_pairs = parallel_priority_env_pairs(plan)
+        env_pairs = case_env_pairs(cases[idx], plan)
         key = _env_pairs_key(env_pairs)
         if !haskey(grouped_payload, key)
             grouped_pairs[key] = env_pairs
@@ -917,6 +1310,46 @@ end
     return max(1, n)
 end
 
+@inline function _is_valid_worker_project(path::String)::Bool
+    return isdir(path) && (
+        isfile(joinpath(path, "Project.toml")) ||
+        isfile(joinpath(path, "JuliaProject.toml"))
+    )
+end
+
+@inline function _project_candidate_path(raw::AbstractString)::String
+    token = strip(String(raw))
+    isempty(token) && return ""
+    return normpath(isabspath(token) ? token : joinpath(REPO_ROOT, token))
+end
+
+function _resolve_perf_worker_project_path()::String
+    checked = String[]
+    override_raw = strip(get(ENV, "SPACEAGORA_PERF_WORKER_PROJECT", ""))
+    if !isempty(override_raw)
+        override_path = _project_candidate_path(override_raw)
+        push!(checked, override_path)
+        if _is_valid_worker_project(override_path)
+            return override_path
+        end
+    end
+
+    for candidate in (joinpath(REPO_ROOT, ".AGORA"), REPO_ROOT)
+        candidate_path = normpath(candidate)
+        candidate_path in checked || push!(checked, candidate_path)
+        if _is_valid_worker_project(candidate_path)
+            return candidate_path
+        end
+    end
+
+    throw(ArgumentError(
+        "Unable to resolve process-worker Julia project. " *
+        "Set SPACEAGORA_PERF_WORKER_PROJECT to a valid project directory " *
+        "(must contain Project.toml or JuliaProject.toml). " *
+        "Checked: $(join(checked, ", "))."
+    ))
+end
+
 const _perf_workers_initialized = Ref(false)
 const _perf_worker_planet_cache = Ref{Any}(nothing)
 const _perf_worker_mars_cache = Ref{Any}(nothing)
@@ -929,9 +1362,10 @@ function ensure_perf_workers!()
     target_workers = perf_process_workers_target()
     missing_workers = target_workers - nworkers()
     if missing_workers > 0
+        worker_project = _resolve_perf_worker_project_path()
         addprocs(
             missing_workers;
-            exeflags=`--startup-file=no --project=$(joinpath(REPO_ROOT, ".AGORA"))`
+            exeflags=`--startup-file=no --project=$(worker_project)`
         )
     end
     script_path = abspath(@__FILE__)
@@ -939,6 +1373,7 @@ function ensure_perf_workers!()
     for w in workers()
         remotecall_wait(perf_worker_planet, w)
         remotecall_wait(perf_worker_mars, w)
+        remotecall_wait(perf_worker_prime_gram_bindings!, w)
     end
     _perf_workers_initialized[] = true
     return nothing
@@ -960,6 +1395,14 @@ function perf_worker_mars()::Mars
         _perf_worker_mars_cache[] = cached
     end
     return cached::Mars
+end
+
+function perf_worker_prime_gram_bindings!()::Nothing
+    # Julia 1.12 is stricter about global bindings during cross-process
+    # deserialization; eagerly load both GRAM wrappers on each worker.
+    _build_earth_gram_point_density()
+    _build_mars_gram_point_density()
+    return nothing
 end
 
 function _perf_harmonics20_model(planet::Earth)
@@ -1151,7 +1594,12 @@ function make_blunted_cone_entry_spacecraft(
     )
 end
 
-function make_constellation(planet::AbstractPlanet, n::Int; with_panel::Bool=false)::Vector{SpacecraftModel}
+function make_constellation(
+    planet::AbstractPlanet,
+    n::Int;
+    with_panel::Bool=false,
+    panel_count::Int=1
+)::Vector{SpacecraftModel}
     sats = SpacecraftModel[]
     for i in 1:n
         ra_alt = 540e3 + 20e3 * (i - 1)
@@ -1160,7 +1608,18 @@ function make_constellation(planet::AbstractPlanet, n::Int; with_panel::Bool=fal
             ra_alt = rp_alt + 8e3
         end
         ν = 140.0 + 180.0 * (i - 1) / n
-        push!(sats, make_spacecraft(planet; id=i, ra_alt_m=ra_alt, rp_alt_m=rp_alt, ν_deg=ν, with_panel=with_panel))
+        push!(
+            sats,
+            make_spacecraft(
+                planet;
+                id=i,
+                ra_alt_m=ra_alt,
+                rp_alt_m=rp_alt,
+                ν_deg=ν,
+                with_panel=with_panel,
+                panel_count=panel_count
+            )
+        )
     end
     return sats
 end
@@ -1566,7 +2025,9 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
     earth_gram_point_density = _build_earth_gram_point_density()
     mars_gram_point_density = _build_mars_gram_point_density()
     earth_gram_surrogate_density = _build_earth_gram_surrogate_density()
+    thermal_stress_density = SimulationModel.EnvironmentModels.PolynomialFitAtmosphereModel([-27.0])
     multi_scaling_effectors = (InverseSquaredGravityModel(), harmonics20)
+    sc_thermal_stress = make_constellation(planet, 8; with_panel=true, panel_count=12)
     sc_proximity_fullstack = [
         make_spacecraft(
             planet;
@@ -1629,6 +2090,20 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 mission_time_s=spec.mission_short_s,
                 orientation_sim=true,
                 dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM())
+            )
+        ),
+        BenchmarkCase(
+            name="thermal_8sat_panel12_aero",
+            category="thermal_stress",
+            description="8 spacecraft (13 links each) with aerodynamic model and fixed polynomial atmosphere to stress thermal callback throughput",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_thermal_stress,
+                mission_time_s=min(spec.mission_short_s, 3600.0),
+                orientation_sim=false,
+                dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+                density_model=deepcopy(thermal_stress_density),
+                dt_max_orbit=0.5
             )
         ),
         BenchmarkCase(
@@ -1702,6 +2177,23 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 density_model=deepcopy(earth_gram_surrogate_density)
             ),
             run_in_quick=false
+        ),
+        BenchmarkCase(
+            name="multi_8_gravity_surrogate_cached",
+            category="satellite_scaling",
+            description="8 spacecraft, L20 harmonics with GRAM surrogate density and track-cache enabled",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=make_constellation(planet, 8; with_panel=false),
+                mission_time_s=spec.mission_short_s,
+                orientation_sim=false,
+                dynamic_effectors=multi_scaling_effectors,
+                density_model=deepcopy(earth_gram_surrogate_density)
+            ),
+            run_in_quick=false,
+            env_overrides=Pair{String, String}[
+                "SPACEAGORA_GRAM_TRACK_CACHE" => "on"
+            ]
         ),
         BenchmarkCase(
             name="multi_16_gravity",
@@ -1872,7 +2364,8 @@ function _split_rollout_benchmark_cases(cases::Vector{BenchmarkCase})::Vector{Be
                 run_in_quick=case.run_in_quick,
                 solver_mode_override="split_imex",
                 split_imex_solver_override=split_solver,
-                entry_target_count_override=case.entry_target_count_override
+                entry_target_count_override=case.entry_target_count_override,
+                env_overrides=copy(case.env_overrides)
             ))
         end
     end
@@ -1901,7 +2394,8 @@ function _multirate_rollout_benchmark_cases(cases::Vector{BenchmarkCase})::Vecto
             run_in_quick=case.run_in_quick,
             solver_mode_override="multirate",
             split_imex_solver_override=nothing,
-            entry_target_count_override=case.entry_target_count_override
+            entry_target_count_override=case.entry_target_count_override,
+            env_overrides=copy(case.env_overrides)
         ))
     end
     return expanded
@@ -1919,6 +2413,22 @@ function measure_case(
     args_meta = case.args_template
     n_sats = length(args_meta.dynamics_model.spacecraft)
     mission_time_s = args_meta.mission_configuration.mission_time
+    density_model = args_meta.environment_model.density_model
+    density_family = _density_model_family(density_model)
+    gram_surrogate_enabled = _gram_surrogate_flag(density_model)
+    gram_static_grid_enabled = (
+        density_model isa GRAMAtmosphereModel || density_model isa GRAMAtmosphereModelSurrogate
+    ) && (
+        (_env_bool_token(get(ENV, "SPACEAGORA_GRAM_STATIC_GRID", "off")) === true) ||
+        _gram_static_grid_flag_for_case(case, density_model)
+    )
+    gram_track_cache_mode = _gram_track_cache_mode_for_case(case)
+    density_backend_bucket = _density_backend_bucket(
+        density_family,
+        gram_surrogate_enabled,
+        gram_static_grid_enabled,
+        gram_track_cache_mode
+    )
     resolved_plan = isnothing(plan) ? ParallelPriorityPlan() : plan
     hardware = _runtime_hardware_snapshot()
 
@@ -2062,6 +2572,11 @@ function measure_case(
         category=case.category,
         scenario=case.name,
         description=case.description,
+        density_family=density_family,
+        gram_surrogate_enabled=gram_surrogate_enabled,
+        gram_static_grid_enabled=gram_static_grid_enabled,
+        gram_track_cache_mode=gram_track_cache_mode,
+        density_backend_bucket=density_backend_bucket,
         seed=seed,
         repeat=repeat_idx,
         attempt=attempt,
@@ -2232,7 +2747,7 @@ function run_case_batch!(
 )
     resolved_plan = isnothing(plan) ? parallel_priority_plan(case, outer_route) : plan
     if apply_env
-        env_pairs = parallel_priority_env_pairs(resolved_plan)
+        env_pairs = case_env_pairs(case, resolved_plan)
         return withenv(env_pairs...) do
             _run_case_batch_core!(rows, case, spec, idx, total, resolved_plan)
         end
@@ -2349,6 +2864,9 @@ function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, plan
         println("  scenario $(scenario.name) (mission_time=$(round(mission_time_s; digits=1)) s)")
 
         mc_backend = backend == :auto ? auto_backend_for_case(warmup_case; spec=spec) : backend
+        if mc_backend == :threads && !_case_outer_threads_safe(warmup_case)
+            mc_backend = :none
+        end
         if mc_backend == :process
             ensure_perf_workers!()
             warmup_seed = first(seeds)
@@ -2453,7 +2971,12 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
             if route == :process
                 push!(process_tasks, (idx, case))
             elseif route == :threads
-                push!(thread_indices, idx)
+                if _case_outer_threads_safe(case)
+                    push!(thread_indices, idx)
+                else
+                    push!(serial_indices, idx)
+                    chosen_routes[idx] = :none
+                end
             else
                 push!(serial_indices, idx)
             end
@@ -2516,7 +3039,7 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
         end
     elseif backend == :threads
         case_rows = Vector{Vector{NamedTuple}}(undef, total)
-        thread_indices = collect(eachindex(selected))
+        thread_indices, serial_indices = _split_threadsafe_indices(selected, collect(eachindex(selected)))
         for (env_pairs, payload) in _thread_plan_groups(selected, thread_indices, :threads)
             withenv(env_pairs...) do
                 Threads.@threads for j in eachindex(payload)
@@ -2536,8 +3059,14 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
                 end
             end
         end
+        for idx in serial_indices
+            local_rows = NamedTuple[]
+            run_case_batch!(local_rows, selected[idx], spec, idx, total; outer_route=:none)
+            case_rows[idx] = local_rows
+        end
         for idx in eachindex(case_rows)
-            _record_outer_route_feedback!(selected[idx], case_rows[idx]; route=:threads)
+            route = idx in serial_indices ? :none : :threads
+            _record_outer_route_feedback!(selected[idx], case_rows[idx]; route=route)
             append!(rows, case_rows[idx])
         end
     else
@@ -2787,7 +3316,12 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
             if route == :process
                 push!(process_tasks, (idx, base_case))
             elseif route == :threads
-                push!(thread_indices, idx)
+                if _case_outer_threads_safe(base_case)
+                    push!(thread_indices, idx)
+                else
+                    push!(serial_indices, idx)
+                    chosen_routes[idx] = :none
+                end
             else
                 push!(serial_indices, idx)
             end
@@ -2860,7 +3394,7 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
     elseif backend == :threads
         scenario_rows = Vector{Vector{NamedTuple}}(undef, length(selected))
         scenario_logs = Vector{Vector{String}}(undef, length(selected))
-        thread_indices = collect(eachindex(selected))
+        thread_indices, serial_indices = _split_threadsafe_indices(selected, collect(eachindex(selected)))
         for (env_pairs, payload) in _thread_plan_groups(selected, thread_indices, :threads)
             withenv(env_pairs...) do
                 Threads.@threads for j in eachindex(payload)
@@ -2878,9 +3412,21 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
                 end
             end
         end
+        for idx in serial_indices
+            local_rows, local_logs = measure_per_orbit_scenario(
+                selected[idx],
+                spec,
+                period_s,
+                orbit_counts;
+                outer_route=:none
+            )
+            scenario_rows[idx] = local_rows
+            scenario_logs[idx] = local_logs
+        end
         for (idx, base_case) in enumerate(selected)
             println("  scenario $(idx)/$(length(selected)) = $(base_case.name)")
-            _record_outer_route_feedback!(base_case, scenario_rows[idx]; route=:threads)
+            route = idx in serial_indices ? :none : :threads
+            _record_outer_route_feedback!(base_case, scenario_rows[idx]; route=route)
             append!(rows, scenario_rows[idx])
             for log_line in scenario_logs[idx]
                 println(log_line)
@@ -3228,6 +3774,61 @@ function summarize_results(raw_df::DataFrame)::DataFrame
     return summary
 end
 
+function summarize_density_backend_breakdown(raw_df::DataFrame)::DataFrame
+    expected_buckets = [
+        "gram_point_to_point",
+        "gram_surrogate",
+        "gram_static_grid_or_cached_surrogate",
+        "non_gram"
+    ]
+    if nrow(raw_df) == 0 || !(:density_backend_bucket in names(raw_df))
+        return DataFrame([
+            (
+                density_backend_bucket=bucket,
+                covered=false,
+                density_families="",
+                outer_routes="",
+                samples_total=0,
+                samples_success=0,
+                samples_failed=0,
+                success_rate_pct=missing,
+                total_time_mean_s=missing,
+                total_time_p90_s=missing,
+                sim_seconds_per_wall_second_mean=missing,
+                recommended_route=(bucket == "gram_point_to_point" ? "process" : "threads_or_auto")
+            ) for bucket in expected_buckets
+        ])
+    end
+
+    rows = NamedTuple[]
+    for bucket in expected_buckets
+        bucket_df = raw_df[raw_df.density_backend_bucket .== bucket, :]
+        samples_total = nrow(bucket_df)
+        samples_success = samples_total == 0 ? 0 : count(identity, bucket_df.solve_success)
+        samples_failed = samples_total - samples_success
+        success_rate_pct = samples_total > 0 ? (100.0 * samples_success / samples_total) : missing
+        success_df = samples_total == 0 ? bucket_df : bucket_df[bucket_df.solve_success .== true, :]
+        total_time_mean_s = nrow(success_df) > 0 ? _safe_stat(success_df.total_time_s, mean) : missing
+        total_time_p90_s = nrow(success_df) > 0 ? _safe_stat(success_df.total_time_s, x -> quantile(x, 0.9)) : missing
+        throughput_mean = nrow(success_df) > 0 ? _safe_stat(success_df.sim_seconds_per_wall_second, mean) : missing
+        push!(rows, (
+            density_backend_bucket=bucket,
+            covered=samples_total > 0,
+            density_families=_safe_unique_join(bucket_df.density_family),
+            outer_routes=_safe_unique_join(bucket_df.outer_route),
+            samples_total=samples_total,
+            samples_success=samples_success,
+            samples_failed=samples_failed,
+            success_rate_pct=success_rate_pct,
+            total_time_mean_s=total_time_mean_s,
+            total_time_p90_s=total_time_p90_s,
+            sim_seconds_per_wall_second_mean=throughput_mean,
+            recommended_route=(bucket == "gram_point_to_point" ? "process" : "threads_or_auto")
+        ))
+    end
+    return DataFrame(rows)
+end
+
 @inline function _case_with_solver(
     case::BenchmarkCase;
     solver_mode_override::Union{Nothing, String}=nothing,
@@ -3241,7 +3842,8 @@ end
         run_in_quick=case.run_in_quick,
         solver_mode_override=solver_mode_override,
         split_imex_solver_override=split_imex_solver_override,
-        entry_target_count_override=case.entry_target_count_override
+        entry_target_count_override=case.entry_target_count_override,
+        env_overrides=copy(case.env_overrides)
     )
 end
 
@@ -3332,7 +3934,7 @@ function _run_split_gate_solution(
     args_run = deepcopy(case.args_template)
     started_ns = time_ns()
     try
-        result = _run_perf_simulation(
+        run_once = () -> _run_perf_simulation(
             args_run;
             return_solution=true,
             return_solver_metadata=true,
@@ -3341,6 +3943,9 @@ function _run_split_gate_solution(
             split_imex_solver_override=split_solver,
             entry_target_count_override=case.entry_target_count_override
         )
+        result = isempty(case.env_overrides) ? run_once() : withenv(case.env_overrides...) do
+            run_once()
+        end
         elapsed_s = (time_ns() - started_ns) / 1e9
         sol = result.solution
         solver_trace = result.solver_trace
@@ -4441,7 +5046,11 @@ function write_report(
     multirate_gate_df::Union{Nothing, DataFrame}=nothing,
     multirate_gate_csv_path::Union{Nothing, String}=nothing,
     multirate_gate_report_path::Union{Nothing, String}=nothing,
-    stage_timing_df::Union{Nothing, DataFrame}=nothing
+    stage_timing_df::Union{Nothing, DataFrame}=nothing,
+    inner_hint_layer_df::Union{Nothing, DataFrame}=nothing,
+    inner_hint_layer_csv_path::Union{Nothing, String}=nothing,
+    density_backend_breakdown_df::Union{Nothing, DataFrame}=nothing,
+    density_backend_breakdown_csv_path::Union{Nothing, String}=nothing
 )
     generated = string(now(UTC))
     julia_ver = string(VERSION)
@@ -4683,6 +5292,56 @@ function write_report(
         end
         println(io)
 
+        println(io, "## Inner Hint Layer Stats")
+        println(io)
+        hint_rows = inner_hint_layer_df === nothing ? 0 : nrow(inner_hint_layer_df)
+        if hint_rows == 0
+            println(io, "- No persistent inner-hint rows matched the active parallel profile/machine filter.")
+        else
+            println(io, "| Layer | Signatures | Choices | Samples | Mean elapsed (ns) | Mean confidence | Mean regret (ns) |")
+            println(io, "|---|---:|---:|---:|---:|---:|---:|")
+            hint_table = copy(inner_hint_layer_df)
+            sort!(hint_table, :regret_mean_ns, rev=true)
+            for row in eachrow(hint_table)
+                println(
+                    io,
+                    "| $(row.layer) | $(row.signature_count) | $(row.choice_count) | $(row.samples_total) | " *
+                    "$(_fmt(row.elapsed_mean_ns)) | $(_fmt(row.confidence_mean)) | $(_fmt(row.regret_mean_ns)) |"
+                )
+            end
+        end
+        if !(inner_hint_layer_csv_path === nothing)
+            println(io, "- Inner hint CSV: `$(inner_hint_layer_csv_path)`")
+        end
+        println(io)
+
+        println(io, "## Density Backend Parallelism Scope")
+        println(io)
+        println(io, "- Callback-level parallelism is available for density callbacks.")
+        println(io, "- True density-backend scalability depends on the active density model path.")
+        println(io, "- GRAM point-to-point is lock-sensitive and generally prefers outer process isolation for heavy workloads.")
+        println(io, "- For throughput-heavy campaigns, prefer surrogate/static-grid/cached-surrogate paths (batched/vectorized surrogates where available).")
+        density_rows = density_backend_breakdown_df === nothing ? 0 : nrow(density_backend_breakdown_df)
+        if density_rows == 0
+            println(io, "- No density-backend breakdown rows were produced.")
+        else
+            println(io, "| Density Backend Bucket | Covered | Density Families | Outer Routes | Success/Total | Success Rate (%) | Mean Total (s) | P90 Total (s) | Mean Sim sec / wall sec | Recommended Route |")
+            println(io, "|---|---|---|---|---:|---:|---:|---:|---:|---|")
+            for row in eachrow(density_backend_breakdown_df)
+                println(
+                    io,
+                    "| $(row.density_backend_bucket) | $(row.covered) | $(_fmt(row.density_families)) | $(_fmt(row.outer_routes)) | " *
+                    "$(row.samples_success)/$(row.samples_total) | $(_fmt(row.success_rate_pct)) | " *
+                    "$(_fmt(row.total_time_mean_s)) | $(_fmt(row.total_time_p90_s)) | " *
+                    "$(_fmt(row.sim_seconds_per_wall_second_mean)) | $(row.recommended_route) |"
+                )
+            end
+        end
+        if !(density_backend_breakdown_csv_path === nothing)
+            println(io, "- Density backend breakdown CSV: `$(density_backend_breakdown_csv_path)`")
+        end
+        println(io)
+
         println(io, "## Fidelity Guardrails")
         println(io)
         println(io, "- Split rollout gate enabled: `$(_split_rollout_enabled())`")
@@ -4766,7 +5425,7 @@ end
 function main()
     spec, outdir = parse_cli()
     mkpath(outdir)
-    _reset_outer_route_history!()
+    outer_route_state = _load_outer_route_history!(spec, outdir)
 
     solver_mode_default = _perf_default_solver_mode(spec.name)
     solver_mode_effective = _perf_solver_mode_env(spec.name)
@@ -4786,6 +5445,20 @@ function main()
         "mc_process_min_samples=$(_outer_route_mc_process_min_samples()), " *
         "mc_process_min_mission_s=$(round(_outer_route_mc_process_min_mission_s(); digits=3))"
     )
+    if outer_route_state.persist
+        if outer_route_state.reset_requested
+            println("Outer-route state cache reset requested; starting from empty history.")
+        elseif outer_route_state.loaded_rows > 0
+            println(
+                "Outer-route state cache loaded rows=$(outer_route_state.loaded_rows), " *
+                "signatures=$(outer_route_state.loaded_signatures) from $(outer_route_state.path)"
+            )
+        else
+            println("Outer-route state cache path: $(outer_route_state.path) (no prior state loaded)")
+        end
+    else
+        println("Outer-route state cache persistence: off")
+    end
     println(
         "Priority thresholds: inner_sat=$(sat_threshold), inner_link=$(link_threshold), " *
         "outer_light_sat=$(outer_light_sat), outer_light_link=$(outer_light_link), " *
@@ -4797,6 +5470,7 @@ function main()
     bench_started_ns = time_ns()
     raw_df = run_benchmarks(spec, cases, planet)
     summary_df = summarize_results(raw_df)
+    density_backend_breakdown_df = summarize_density_backend_breakdown(raw_df)
     bench_elapsed_s = (time_ns() - bench_started_ns) / 1e9
 
     split_gate_df = nothing
@@ -4830,6 +5504,7 @@ function main()
     orbit_summary_df = summarize_per_orbit_results(orbit_raw_df)
     orbit_elapsed_s = (time_ns() - orbit_started_ns) / 1e9
     total_elapsed_s = bench_elapsed_s + split_gate_elapsed_s + multirate_gate_elapsed_s + orbit_elapsed_s
+    outer_route_state_saved = _save_outer_route_history!(spec, outer_route_state.path, outer_route_state.persist)
 
     stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
     raw_path = joinpath(outdir, "runtime_raw_$(spec.name)_$(stamp).csv")
@@ -4838,6 +5513,8 @@ function main()
     orbit_summary_path = joinpath(outdir, "runtime_per_orbit_summary_$(spec.name)_$(stamp).csv")
     stage_timing_path = joinpath(outdir, "runtime_stage_timing_$(spec.name)_$(stamp).csv")
     hardware_info_path = joinpath(outdir, "runtime_hardware_info_$(spec.name)_$(stamp).csv")
+    inner_hint_layer_path = joinpath(outdir, "runtime_inner_hint_layers_$(spec.name)_$(stamp).csv")
+    density_backend_breakdown_path = joinpath(outdir, "runtime_density_backend_breakdown_$(spec.name)_$(stamp).csv")
     report_path = joinpath(outdir, "runtime_report_$(spec.name)_$(stamp).md")
     plot_paths = generate_runtime_plots(outdir, spec, stamp, raw_df, summary_df, orbit_summary_df)
 
@@ -4870,6 +5547,7 @@ function main()
             arch=hw.arch
         )
     ])
+    inner_hint_layer_df = _inner_hint_layer_report_df(spec, hw)
 
     CSV.write(raw_path, raw_df)
     CSV.write(summary_path, summary_df)
@@ -4877,6 +5555,8 @@ function main()
     CSV.write(orbit_summary_path, orbit_summary_df)
     CSV.write(stage_timing_path, stage_timing_df)
     CSV.write(hardware_info_path, hardware_info_df)
+    CSV.write(inner_hint_layer_path, inner_hint_layer_df)
+    CSV.write(density_backend_breakdown_path, density_backend_breakdown_df)
     write_report(
         report_path,
         spec,
@@ -4890,7 +5570,11 @@ function main()
         multirate_gate_df=multirate_gate_df,
         multirate_gate_csv_path=multirate_gate_csv_path,
         multirate_gate_report_path=multirate_gate_report_path,
-        stage_timing_df=stage_timing_df
+        stage_timing_df=stage_timing_df,
+        inner_hint_layer_df=inner_hint_layer_df,
+        inner_hint_layer_csv_path=inner_hint_layer_path,
+        density_backend_breakdown_df=density_backend_breakdown_df,
+        density_backend_breakdown_csv_path=density_backend_breakdown_path
     )
 
     println("Analysis complete.")
@@ -4900,6 +5584,8 @@ function main()
     println("Mission-time-sweep summary: $orbit_summary_path")
     println("Stage timing: $stage_timing_path")
     println("Hardware info: $hardware_info_path")
+    println("Inner hint layers: $inner_hint_layer_path")
+    println("Density backend breakdown: $density_backend_breakdown_path")
     if !(split_gate_df === nothing)
         pass_count = (:pass_all in names(split_gate_df)) ? count(Bool.(split_gate_df.pass_all)) : 0
         println("Split rollout gate: $(pass_count)/$(nrow(split_gate_df)) pass")
@@ -4919,6 +5605,12 @@ function main()
     end
     if !(multirate_gate_report_path === nothing)
         println("Multirate rollout gate report: $(multirate_gate_report_path)")
+    end
+    if outer_route_state.persist
+        println(
+            "Outer-route state cache: $(outer_route_state_saved.path) " *
+            "(rows_saved=$(outer_route_state_saved.rows), signatures=$(outer_route_state_saved.signatures))"
+        )
     end
     println("Plots generated: $(length(plot_paths))")
     println("Report: $report_path")

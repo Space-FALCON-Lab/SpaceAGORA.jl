@@ -110,8 +110,9 @@ function run_seed(seed::Int)
     return mktempdir() do tmp
         cd(tmp) do
             run_simulation(args; isolate_state=true)
-            isfile("simulation_results.csv") || error("Missing simulation_results.csv for seed=$seed")
-            df = CSV.read("simulation_results.csv", DataFrame)
+            csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
+            isfile(csv_path) || error("Missing simulation_results.csv for seed=$seed")
+            df = CSV.read(csv_path, DataFrame)
 
             nrow(df) >= 40 || error("Too few rows for seed=$seed: $(nrow(df))")
             required_cols = ("time", "sc1_pos_1", "sc1_pos_2", "sc1_pos_3", "sc1_vel_1", "sc1_vel_2", "sc1_vel_3", "sc1_mass")

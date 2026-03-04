@@ -172,8 +172,10 @@ function execute_elements_case(initial_state, numberofpassage, args, params)
         el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation
         current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
         time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
-        cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
-        m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+        lock(SimulationModel.SPICE_LOCK) do
+            cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
+            m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+        end
         
         # quat_idx = 8 + length(m.body.links)
         if orientation_sim
@@ -500,7 +502,9 @@ function execute_elements_case(initial_state, numberofpassage, args, params)
             end
         end
         if args[:srp]
-            r_sun_planet = m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", cnf.et, "J2000", "NONE", uppercase(m.planet.name))[1])*1e3 # Vector describing the position of the Sun wrt the planet in J2000 frame
+            r_sun_planet = lock(SimulationModel.SPICE_LOCK) do
+                m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", cnf.et, "J2000", "NONE", uppercase(m.planet.name))[1]) * 1e3 # Vector describing the position of the Sun wrt the planet in J2000 frame
+            end
             eclipse_ratio = args[:eclipse] ? eclipse_area_calc(pos_ii, r_sun_planet, m.planet.Rp_e) : 1.0
             numAU = AstU / norm(r_sun_planet - pos_ii) # 1 / Number of Astronomical Units from the Sun
             P_srp = (solarRadFlux / speedLight) * numAU * numAU # Solar radiation pressure at the spacecraft location, N/m^2

@@ -115,7 +115,9 @@ function Base.deepcopy_internal(model::GRAMAtmosphereModel, stackdict::IdDict)
         return stackdict[model]
     end
 
-    copied = GRAMAtmosphereModel(deepcopy(model.core))
+    copied = lock(GRAM_LOCK) do
+        GRAMAtmosphereModel(deepcopy(model.core))
+    end
     stackdict[model] = copied
     return copied
 end
@@ -125,11 +127,13 @@ function Base.deepcopy_internal(model::GRAMAtmosphereModelSurrogate, stackdict::
         return stackdict[model]
     end
 
-    copied = GRAMAtmosphereModelSurrogate(
-        deepcopy(model.base_model),
-        model.surrogate_file,
-        model.point_fallback_below_m
-    )
+    copied = lock(GRAM_LOCK) do
+        GRAMAtmosphereModelSurrogate(
+            deepcopy(model.base_model),
+            model.surrogate_file,
+            model.point_fallback_below_m
+        )
+    end
     stackdict[model] = copied
     return copied
 end

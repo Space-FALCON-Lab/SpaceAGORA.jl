@@ -2028,6 +2028,14 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
     thermal_stress_density = SimulationModel.EnvironmentModels.PolynomialFitAtmosphereModel([-27.0])
     multi_scaling_effectors = (InverseSquaredGravityModel(), harmonics20)
     sc_thermal_stress = make_constellation(planet, 8; with_panel=true, panel_count=12)
+    sc_effector_stress6 = make_constellation(planet, 6; with_panel=false)
+    sc_effector_stress12 = make_constellation(planet, 12; with_panel=false)
+    effector_stress_effectors = (
+        InverseSquaredGravityModel(),
+        InverseSquaredJ2GravityModel(),
+        SolarRadiationPressureModel(1.2, 16.0),
+        SolarRadiationPressureModel(1.6, 24.0)
+    )
     sc_proximity_fullstack = [
         make_spacecraft(
             planet;
@@ -2105,6 +2113,35 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 density_model=deepcopy(thermal_stress_density),
                 dt_max_orbit=0.5
             )
+        ),
+        BenchmarkCase(
+            name="effector_6sat_dual_srp_stack",
+            category="effector_stress",
+            description="6 spacecraft with inverse gravity, J2, and dual SRP effectors (no atmosphere/control) to stress dynamic effector reduction with outer routing off (r2)",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_effector_stress6,
+                mission_time_s=min(spec.mission_short_s, 3600.0),
+                orientation_sim=false,
+                dynamic_effectors=effector_stress_effectors,
+                density_model=NoAtmosphereModel(),
+                dt_max_orbit=0.5
+            )
+        ),
+        BenchmarkCase(
+            name="effector_12sat_dual_srp_stack",
+            category="effector_stress",
+            description="12 spacecraft with inverse gravity, J2, and dual SRP effectors (no atmosphere/control) for larger multi-satellite effector scaling",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_effector_stress12,
+                mission_time_s=min(spec.mission_short_s, 3600.0),
+                orientation_sim=false,
+                dynamic_effectors=effector_stress_effectors,
+                density_model=NoAtmosphereModel(),
+                dt_max_orbit=0.5
+            ),
+            run_in_quick=false
         ),
         BenchmarkCase(
             name="single_entry_earth_shallow",

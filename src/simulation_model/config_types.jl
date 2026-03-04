@@ -598,6 +598,8 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         et_start::Base.RefValue{Float64} = Ref(0.0)
         debug_control::Base.RefValue{Bool} = Ref(false)
         debug_initial_derivative::Base.RefValue{Bool} = Ref(false)
+        effector_cost_ns_per_item::Base.RefValue{Float64} = Ref(NaN)
+        effector_cost_samples::Base.RefValue{Int64} = Ref(Int64(0))
     end
 
     const SaveData = Dict{Symbol, Any}

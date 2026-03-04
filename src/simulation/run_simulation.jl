@@ -100,6 +100,17 @@ end
     return parsed
 end
 
+@inline function _parse_unit_float_env(name::String, default::Float64)::Float64
+    raw = strip(get(ENV, name, string(default)))
+    parsed = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("$name must be a floating-point value, got '$raw'"))
+    end
+    (0.0 < parsed <= 1.0) || throw(ArgumentError("$name must satisfy 0.0 < value <= 1.0, got $parsed"))
+    return parsed
+end
+
 @inline function _parse_nonnegative_int_env(name::String, default::Int)::Int
     raw = strip(get(ENV, name, string(default)))
     parsed = try
@@ -265,6 +276,26 @@ end
     return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_EFFECTOR_PARALLEL_HEAVY_ONLY", true)
 end
 
+@inline function _effector_cost_ns_per_item_default()::Float64
+    return _parse_positive_float_env("SPACEAGORA_EFFECTOR_COST_NS_PER_ITEM_DEFAULT", 2.5e4)
+end
+
+@inline function _effector_cost_min_samples()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_COST_MIN_SAMPLES", 4)
+end
+
+@inline function _effector_cost_ema_alpha()::Float64
+    return _parse_unit_float_env("SPACEAGORA_EFFECTOR_COST_EMA_ALPHA", 0.2)
+end
+
+@inline function _effector_work_ns_per_worker_threshold()::Float64
+    return _parse_positive_float_env("SPACEAGORA_EFFECTOR_WORK_NS_PER_WORKER_THRESHOLD", 4.0e4)
+end
+
+@inline function _effector_outer_work_scale()::Float64
+    return _parse_positive_float_env("SPACEAGORA_EFFECTOR_OUTER_WORK_SCALE", 1.5)
+end
+
 @inline function _effector_long_mission_threshold_s()::Float64
     return _parse_positive_float_env("SPACEAGORA_EFFECTOR_LONG_MISSION_THRESHOLD_S", 5400.0)
 end
@@ -302,7 +333,65 @@ end
     return mission_cfg.mission_time >= _effector_long_mission_threshold_s()
 end
 
-@inline function _dynamic_effector_thread_decision(args::SimulationConfiguration, dynamic_effectors::Tuple, num_sats::Int)
+@inline function _effector_shared_buffers(p)
+    if p === nothing || !hasproperty(p, :shared_buffers)
+        return nothing
+    end
+    return getproperty(p, :shared_buffers)
+end
+
+@inline function _effector_observed_cost_ns_per_item(shared_buffers)::Float64
+    default_cost = _effector_cost_ns_per_item_default()
+    shared_buffers === nothing && return default_cost
+    if !(hasproperty(shared_buffers, :effector_cost_ns_per_item) && hasproperty(shared_buffers, :effector_cost_samples))
+        return default_cost
+    end
+    samples = Int(getproperty(shared_buffers, :effector_cost_samples)[])
+    estimate = Float64(getproperty(shared_buffers, :effector_cost_ns_per_item)[])
+    if samples >= _effector_cost_min_samples() && isfinite(estimate) && estimate > 0.0
+        return estimate
+    end
+    return default_cost
+end
+
+@inline function _effector_satellite_share_budget(num_sats::Int, budget::Int)::Int
+    sat_concurrency = max(1, min(max(1, num_sats), max(1, budget)))
+    return max(1, fld(max(1, budget), sat_concurrency))
+end
+
+@inline function _update_effector_cost_model!(
+    shared_buffers,
+    n_effectors::Int,
+    elapsed_ns::Int64,
+    allotment::Int
+)::Nothing
+    shared_buffers === nothing && return nothing
+    if !(hasproperty(shared_buffers, :effector_cost_ns_per_item) && hasproperty(shared_buffers, :effector_cost_samples))
+        return nothing
+    end
+    n_effectors > 0 || return nothing
+    wall_elapsed = max(1.0, Float64(elapsed_ns))
+    # Scale by allotment to keep a rough "work per effector" estimate across serial/threaded samples.
+    sample_ns_per_item = wall_elapsed * max(1, allotment) / max(1, n_effectors)
+    α = _effector_cost_ema_alpha()
+    estimate_ref = getproperty(shared_buffers, :effector_cost_ns_per_item)
+    samples_ref = getproperty(shared_buffers, :effector_cost_samples)
+    previous = Float64(estimate_ref[])
+    estimate_ref[] = if isfinite(previous) && previous > 0.0
+        (1.0 - α) * previous + α * sample_ns_per_item
+    else
+        sample_ns_per_item
+    end
+    samples_ref[] = min(typemax(Int64), samples_ref[] + Int64(1))
+    return nothing
+end
+
+@inline function _dynamic_effector_thread_decision(
+    args::SimulationConfiguration,
+    p,
+    dynamic_effectors::Tuple,
+    num_sats::Int
+)
     mode = _effector_parallel_mode()
     n_effectors = length(dynamic_effectors)
     if n_effectors <= 1
@@ -312,12 +401,22 @@ end
         return (use_threads=false, allotment=1, mode=mode, policy_applied=false)
     end
 
-    single_sat = num_sats == 1
-    single_body = single_sat && length(args.dynamics_model.spacecraft[1].links) <= 1
-    heavy_work = _mission_is_long_for_effector_threads(args)
-    if mode == :auto && (!single_sat || !single_body || !heavy_work)
-        return (use_threads=false, allotment=1, mode=mode, policy_applied=false)
+    outer_active = _effector_outer_parallel_hint()
+    allow_with_outer = _effector_allow_with_outer()
+    budget = SimulationModel.ParallelPolicy.effective_inner_thread_budget()
+    share_budget = _effector_satellite_share_budget(num_sats, budget)
+    if outer_active && allow_with_outer
+        share_budget = max(1, fld(share_budget, 2))
     end
+    inner_floor = (!outer_active && num_sats > 1 && budget > 1) ? min(2, budget) : 1
+    max_allotment = min(_effector_max_threads(), budget, max(share_budget, inner_floor))
+
+    shared_buffers = _effector_shared_buffers(p)
+    per_effector_cost_ns = _effector_observed_cost_ns_per_item(shared_buffers)
+    estimated_work_ns = per_effector_cost_ns * n_effectors
+    work_per_worker_ns = estimated_work_ns / max(1, max_allotment)
+    target_ns = _effector_work_ns_per_worker_threshold() * (outer_active ? _effector_outer_work_scale() : 1.0)
+    heavy_work = work_per_worker_ns >= target_ns
 
     policy = SimulationModel.ParallelPolicy.thread_policy_decision(
         n_effectors;
@@ -325,13 +424,21 @@ end
         threshold=_effector_thread_threshold(),
         heavy_work=heavy_work,
         heavy_only=_effector_heavy_only(),
-        outer_active=_effector_outer_parallel_hint(),
-        allow_with_outer=_effector_allow_with_outer(),
+        outer_active=outer_active,
+        allow_with_outer=allow_with_outer,
         source=:dynamic_effectors
     )
-    allotment = min(policy.allotment, _effector_max_threads())
+    allotment = min(policy.allotment, max_allotment)
     use_threads = policy.use_threads && allotment > 1
     return (use_threads=use_threads, allotment=use_threads ? allotment : 1, mode=mode, policy_applied=true)
+end
+
+@inline function _dynamic_effector_thread_decision(
+    args::SimulationConfiguration,
+    dynamic_effectors::Tuple,
+    num_sats::Int
+)
+    return _dynamic_effector_thread_decision(args, nothing, dynamic_effectors, num_sats)
 end
 
 function _initialize_density_model_instances!(p)
@@ -1600,9 +1707,10 @@ end
     effector_decision
 )
     effector_started_ns = time_ns()
+    n_effectors = length(dynamic_effectors)
     if effector_decision.use_threads
         reduced = SimulationModel.ParallelPolicy.threaded_reduce(
-            length(dynamic_effectors),
+            n_effectors,
             effector_decision.allotment,
             () -> MVector{6, Float64}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
             (local_sum, eff_idx) -> begin
@@ -1632,13 +1740,17 @@ end
             torques .+= torque
         end
     end
+    elapsed_ns = Int64(time_ns() - effector_started_ns)
+    if effector_decision.policy_applied && sat_idx == 1
+        _update_effector_cost_model!(p.shared_buffers, n_effectors, elapsed_ns, effector_decision.allotment)
+    end
     if effector_decision.policy_applied
         SimulationModel.ParallelPolicy.record_policy_observation!(
             :dynamic_effectors;
             mode=effector_decision.mode,
-            num_items=length(dynamic_effectors),
+            num_items=n_effectors,
             use_threads=effector_decision.use_threads,
-            elapsed_ns=(time_ns() - effector_started_ns)
+            elapsed_ns=elapsed_ns
         )
     end
     return nothing
@@ -1689,7 +1801,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
     spacecraft = dynamics_model.spacecraft
     debug_control = p.shared_buffers.debug_control[]
     p.shared_buffers.current_time[] = t
-    effector_decision = _dynamic_effector_thread_decision(p.args, dynamic_effectors, length(spacecraft))
+    effector_decision = _dynamic_effector_thread_decision(p.args, p, dynamic_effectors, length(spacecraft))
     minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores()))
     @batch minbatch=minbatch for i in eachindex(sc_state)
         if !p.is_active[i]
@@ -1728,7 +1840,7 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
     dynamic_effectors = dynamics_model.dynamic_effectors
     spacecraft = dynamics_model.spacecraft
     p.shared_buffers.current_time[] = t
-    effector_decision = _dynamic_effector_thread_decision(p.args, dynamic_effectors, length(spacecraft))
+    effector_decision = _dynamic_effector_thread_decision(p.args, p, dynamic_effectors, length(spacecraft))
     minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores()))
     @batch minbatch=minbatch for i in eachindex(sc_state)
         if !p.is_active[i]

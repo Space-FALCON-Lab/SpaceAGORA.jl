@@ -6751,6 +6751,24 @@ end
     withenv("SPACEAGORA_EFFECTOR_LONG_MISSION_THRESHOLD_S" => "0.0") do
         @test_throws ArgumentError _effector_long_mission_threshold_s()
     end
+    withenv("SPACEAGORA_EFFECTOR_COST_NS_PER_ITEM_DEFAULT" => "12345.0") do
+        @test _effector_cost_ns_per_item_default() == 12345.0
+    end
+    withenv("SPACEAGORA_EFFECTOR_COST_NS_PER_ITEM_DEFAULT" => "0.0") do
+        @test_throws ArgumentError _effector_cost_ns_per_item_default()
+    end
+    withenv("SPACEAGORA_EFFECTOR_COST_EMA_ALPHA" => "0.3") do
+        @test _effector_cost_ema_alpha() == 0.3
+    end
+    withenv("SPACEAGORA_EFFECTOR_COST_EMA_ALPHA" => "1.5") do
+        @test_throws ArgumentError _effector_cost_ema_alpha()
+    end
+    withenv("SPACEAGORA_EFFECTOR_WORK_NS_PER_WORKER_THRESHOLD" => "25000.0") do
+        @test _effector_work_ns_per_worker_threshold() == 25000.0
+    end
+    withenv("SPACEAGORA_EFFECTOR_WORK_NS_PER_WORKER_THRESHOLD" => "0.0") do
+        @test_throws ArgumentError _effector_work_ns_per_worker_threshold()
+    end
 
     args_eff_single = build_config(
         spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
@@ -6761,16 +6779,19 @@ end
         dynamic_effectors=(InverseSquaredGravityModel(), InverseSquaredJ2GravityModel()),
         keplerian=true
     )
+    p_eff_single = ODEParams{1}(args=args_eff_single)
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0",
         "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads()),
         "SPACEAGORA_EFFECTOR_PARALLEL" => "auto",
         "SPACEAGORA_EFFECTOR_THREAD_THRESHOLD" => "2",
-        "SPACEAGORA_EFFECTOR_LONG_MISSION_THRESHOLD_S" => "1.0",
         "SPACEAGORA_EFFECTOR_PARALLEL_HEAVY_ONLY" => "1",
+        "SPACEAGORA_EFFECTOR_COST_NS_PER_ITEM_DEFAULT" => "120000.0",
+        "SPACEAGORA_EFFECTOR_COST_MIN_SAMPLES" => "999",
+        "SPACEAGORA_EFFECTOR_WORK_NS_PER_WORKER_THRESHOLD" => "1000.0",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0"
     ) do
-        decision_single = _dynamic_effector_thread_decision(args_eff_single, args_eff_single.dynamics_model.dynamic_effectors, 1)
+        decision_single = _dynamic_effector_thread_decision(args_eff_single, p_eff_single, args_eff_single.dynamics_model.dynamic_effectors, 1)
         if Threads.nthreads() > 1
             @test decision_single.use_threads == true
             @test decision_single.allotment >= 2
@@ -6789,17 +6810,52 @@ end
         dynamic_effectors=(InverseSquaredGravityModel(), InverseSquaredJ2GravityModel()),
         keplerian=true
     )
+    p_eff_multi = ODEParams{1}(args=args_eff_multi)
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0",
         "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads()),
         "SPACEAGORA_EFFECTOR_PARALLEL" => "auto",
         "SPACEAGORA_EFFECTOR_THREAD_THRESHOLD" => "2",
-        "SPACEAGORA_EFFECTOR_LONG_MISSION_THRESHOLD_S" => "1.0",
         "SPACEAGORA_EFFECTOR_PARALLEL_HEAVY_ONLY" => "1",
+        "SPACEAGORA_EFFECTOR_COST_NS_PER_ITEM_DEFAULT" => "1.0",
+        "SPACEAGORA_EFFECTOR_COST_MIN_SAMPLES" => "999",
+        "SPACEAGORA_EFFECTOR_WORK_NS_PER_WORKER_THRESHOLD" => "1.0e9",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0"
     ) do
-        decision_multi = _dynamic_effector_thread_decision(args_eff_multi, args_eff_multi.dynamics_model.dynamic_effectors, 1)
+        decision_multi = _dynamic_effector_thread_decision(args_eff_multi, p_eff_multi, args_eff_multi.dynamics_model.dynamic_effectors, 1)
         @test decision_multi.use_threads == false
+    end
+
+    args_eff_constellation = args_eff_single
+    p_eff_constellation = ODEParams{1}(args=args_eff_constellation)
+    withenv(
+        "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0",
+        "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads()),
+        "SPACEAGORA_EFFECTOR_PARALLEL" => "auto",
+        "SPACEAGORA_EFFECTOR_THREAD_THRESHOLD" => "2",
+        "SPACEAGORA_EFFECTOR_PARALLEL_HEAVY_ONLY" => "1",
+        "SPACEAGORA_EFFECTOR_COST_NS_PER_ITEM_DEFAULT" => "120000.0",
+        "SPACEAGORA_EFFECTOR_COST_MIN_SAMPLES" => "999",
+        "SPACEAGORA_EFFECTOR_WORK_NS_PER_WORKER_THRESHOLD" => "1000.0",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
+        "SPACEAGORA_EFFECTOR_MAX_THREADS" => string(Threads.nthreads())
+    ) do
+        decision_constellation = _dynamic_effector_thread_decision(
+            args_eff_constellation,
+            p_eff_constellation,
+            args_eff_constellation.dynamics_model.dynamic_effectors,
+            4
+        )
+        share_budget = max(1, fld(max(1, Threads.nthreads()), min(4, max(1, Threads.nthreads()))))
+        inner_floor = Threads.nthreads() > 1 ? min(2, Threads.nthreads()) : 1
+        expected_cap = min(Threads.nthreads(), max(share_budget, inner_floor))
+        if expected_cap > 1
+            @test decision_constellation.use_threads == true
+            @test decision_constellation.allotment <= expected_cap
+        else
+            @test decision_constellation.use_threads == false
+            @test decision_constellation.allotment == 1
+        end
     end
 
     @test _retcode_is_stiff_symptom(:Unstable)

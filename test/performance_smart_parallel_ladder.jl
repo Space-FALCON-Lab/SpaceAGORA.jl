@@ -485,6 +485,9 @@ end
     if category == "montecarlo" || occursin("montecarlo", scenario)
         return mission_time_s <= 7200.0 ? "mc_short" : "mc_long"
     end
+    if category == "effector_stress" || occursin("effector", scenario)
+        return "effector_stress"
+    end
     if satellites >= 2
         return "multi_sat"
     end
@@ -1218,7 +1221,7 @@ function _write_smart_ladder_report(
 
         println(io, "## Mission-Family Speedup Distribution vs R0")
         println(io)
-        println(io, "_Family rules: `mc_short`/`mc_long` by mission time <=/> 7200 s; `multi_sat` for satellites >= 2; `high_fidelity_nbody` for N-body/harmonics; `long` for mission_time > 7200 s; otherwise `short_light`._")
+        println(io, "_Family rules: `mc_short`/`mc_long` by mission time <=/> 7200 s; `effector_stress` for dedicated effector stress scenarios; `multi_sat` for satellites >= 2; `high_fidelity_nbody` for N-body/harmonics; `long` for mission_time > 7200 s; otherwise `short_light`._")
         println(io)
         if nrow(mission_family_df) > 0
             _write_markdown_table(io, mission_family_df)

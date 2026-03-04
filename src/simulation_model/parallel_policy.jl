@@ -7,6 +7,7 @@ export parse_bool_env, parse_parallel_mode_env, parse_thread_threshold_env
 export outer_parallel_active, effective_inner_thread_budget, use_threads_policy
 export thread_policy_decision, threaded_foreach, threaded_reduce, threaded_foreach_persistent, with_policy_context
 export reset_policy_telemetry!, policy_telemetry_snapshot, record_policy_observation!
+export reset_persistent_hint_state!, persistent_hints_state_reset_requested
 export hint_layer_stats_snapshot
 
 Base.@kwdef mutable struct AdaptiveControllerState
@@ -322,6 +323,10 @@ end
     return parse_bool_env("SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST", persistent_hints_enabled())
 end
 
+@inline function persistent_hints_state_reset_requested()::Bool
+    return parse_bool_env("SPACEAGORA_PARALLEL_POLICY_STATE_RESET", false)
+end
+
 @inline function persistent_hints_exploration()::Float64
     c = parse_float_env("SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION", 1.5)
     return c > 0.0 ? c : 1.5
@@ -415,6 +420,12 @@ function _load_persistent_hint_state_locked!()::Nothing
     end
     state.loaded = true
     state.path = _persistent_hint_path()
+    if persistent_hints_state_reset_requested()
+        # Cold-start mode: intentionally skip loading prior persisted hints.
+        state.dirty = false
+        empty!(state.history)
+        return nothing
+    end
     if !persistent_hints_enabled()
         return nothing
     end
@@ -500,6 +511,17 @@ function _ensure_persistent_hint_state_loaded!()::Nothing
                 nothing
             end)
         end
+    end
+    return nothing
+end
+
+function reset_persistent_hint_state!()::Nothing
+    lock(_persistent_hint_lock) do
+        state = _persistent_hint_state[]
+        state.loaded = false
+        state.dirty = false
+        state.path = ""
+        empty!(state.history)
     end
     return nothing
 end

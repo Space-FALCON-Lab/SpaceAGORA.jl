@@ -1528,6 +1528,9 @@ function run_simulation(
     _validate_thermal_model_support!(args)
     try
         SimulationModel.ParallelPolicy.reset_policy_telemetry!()
+        if SimulationModel.ParallelPolicy.persistent_hints_state_reset_requested()
+            SimulationModel.ParallelPolicy.reset_persistent_hint_state!()
+        end
     catch
     end
 

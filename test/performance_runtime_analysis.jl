@@ -2779,6 +2779,7 @@ function measure_case(
         orientation=args_meta.mission_configuration.orientation_sim,
         mission_time_s=mission_time_s,
         outer_route=string(resolved_plan.outer_route),
+        outer_threads_safe=_case_outer_threads_safe(case),
         density_parallel_mode=resolved_plan.density_mode,
         control_parallel_mode=resolved_plan.control_mode,
         multibody_parallel_mode=resolved_plan.multibody_mode,
@@ -4056,8 +4057,26 @@ end
     return seen ? acc : missing
 end
 
+@inline function _safe_share(num, den)
+    if num isa Missing || den isa Missing
+        return missing
+    end
+    n = Float64(num)
+    d = Float64(den)
+    if !isfinite(n) || !isfinite(d) || d <= 0.0
+        return missing
+    end
+    return n / d
+end
+
 @inline function _summary_group_keys(df::DataFrame, base_keys::Vector{Symbol})::Vector{Symbol}
-    keys = copy(base_keys)
+    df_names = Set(Symbol.(names(df)))
+    keys = Symbol[]
+    for key in base_keys
+        if key in df_names
+            push!(keys, key)
+        end
+    end
     optional_keys = (
         :hardware_class,
         :machine_label,
@@ -4068,9 +4087,8 @@ end
         :os,
         :arch
     )
-    df_names = Set(Symbol.(names(df)))
     for key in optional_keys
-        if key in df_names
+        if key in df_names && !(key in keys)
             push!(keys, key)
         end
     end
@@ -4081,7 +4099,7 @@ function summarize_per_orbit_results(orbit_raw_df::DataFrame)::DataFrame
     sweep_multiplier_key = :mission_time_multiplier in names(orbit_raw_df) ? :mission_time_multiplier : :orbit_count
     keys = _summary_group_keys(
         orbit_raw_df,
-        [:category, :scenario, :description, sweep_multiplier_key, :orbital_period_s, :dt_max_orbit_s]
+        [:category, :scenario, :description, sweep_multiplier_key, :orbital_period_s, :dt_max_orbit_s, :outer_threads_safe]
     )
     counts = combine(
         groupby(orbit_raw_df, keys),
@@ -4158,7 +4176,7 @@ function summarize_entry_duration_results(entry_raw_df::DataFrame)::DataFrame
 
     keys = _summary_group_keys(
         entry_raw_df,
-        [:category, :scenario, :description, :entry_atmospheric_interface_count, :entry_run_role]
+        [:category, :scenario, :description, :entry_atmospheric_interface_count, :entry_run_role, :outer_threads_safe]
     )
     counts = combine(
         groupby(entry_raw_df, keys),
@@ -4217,6 +4235,7 @@ function summarize_results(raw_df::DataFrame)::DataFrame
             :orientation,
             :mission_time_s,
             :outer_route,
+            :outer_threads_safe,
             :density_parallel_mode,
             :control_parallel_mode,
             :multibody_parallel_mode,
@@ -4225,13 +4244,61 @@ function summarize_results(raw_df::DataFrame)::DataFrame
             :control_effectors
         ]
     )
+    grouped = groupby(raw_df, keys)
     counts = combine(
-        groupby(raw_df, keys),
+        grouped,
         nrow => :samples_total,
-        :solve_success => (v -> count(identity, v)) => :samples_success
+        :solve_success => (v -> count(identity, v)) => :samples_success,
+        :total_time_s => (v -> begin
+            vals = Float64[]
+            for x in v
+                if !(x isa Missing)
+                    push!(vals, Float64(x))
+                end
+            end
+            isempty(vals) ? missing : sum(vals)
+        end) => :total_time_all_attempts_s,
+        :solver_fallback_count => (v -> begin
+            vals = Float64[]
+            for x in v
+                push!(vals, x isa Missing ? 0.0 : Float64(x))
+            end
+            isempty(vals) ? missing : mean(vals)
+        end) => :fallback_count_mean_all_attempts
     )
+    if :attempt in Symbol.(names(raw_df))
+        requested_counts = combine(
+            grouped,
+            :attempt => (v -> begin
+                n = 0
+                for x in v
+                    if !(x isa Missing) && Int(x) == 1
+                        n += 1
+                    end
+                end
+                n
+            end) => :requested_runs
+        )
+        counts = leftjoin(counts, requested_counts, on=keys)
+    else
+        counts[!, :requested_runs] = Int.(counts.samples_total)
+    end
+    counts[!, :requested_runs] = [
+        (v isa Missing || Int(v) <= 0) ? Int(samples_total) : Int(v)
+        for (v, samples_total) in zip(counts.requested_runs, counts.samples_total)
+    ]
     counts[!, :samples_failed] = counts.samples_total .- counts.samples_success
     counts[!, :success_rate] = Float64.(counts.samples_success) ./ Float64.(counts.samples_total)
+    counts[!, :failure_rate] = Float64.(counts.samples_failed) ./ Float64.(counts.samples_total)
+    counts[!, :retries_total] = max.(0, counts.samples_total .- counts.requested_runs)
+    counts[!, :retry_count_mean] = [
+        requested <= 0 ? missing : (Float64(retries) / Float64(requested))
+        for (retries, requested) in zip(counts.retries_total, counts.requested_runs)
+    ]
+    counts[!, :penalized_expected_wall_time_s] = [
+        (total_time isa Missing || requested <= 0) ? missing : (Float64(total_time) / Float64(requested))
+        for (total_time, requested) in zip(counts.total_time_all_attempts_s, counts.requested_runs)
+    ]
 
     success_df = raw_df[raw_df.solve_success .== true, :]
     metric_cols = [
@@ -4239,6 +4306,17 @@ function summarize_results(raw_df::DataFrame)::DataFrame
         :copy_time_mean_s,
         :solve_time_mean_s,
         :total_time_mean_s,
+        :copy_compile_time_mean_s,
+        :solve_compile_time_mean_s,
+        :compile_time_mean_s,
+        :copy_gc_time_mean_s,
+        :solve_gc_time_mean_s,
+        :gc_time_mean_s,
+        :setup_share,
+        :solve_share,
+        :compile_share,
+        :gc_share,
+        :compile_gc_share,
         :total_time_median_s,
         :total_time_std_s,
         :total_time_min_s,
@@ -4292,6 +4370,10 @@ function summarize_results(raw_df::DataFrame)::DataFrame
             :copy_time_s => (v -> _safe_stat(v, mean)) => :copy_time_mean_s,
             :solve_time_s => (v -> _safe_stat(v, mean)) => :solve_time_mean_s,
             :total_time_s => (v -> _safe_stat(v, mean)) => :total_time_mean_s,
+            :copy_compile_time_s => (v -> _safe_stat(v, mean)) => :copy_compile_time_mean_s,
+            :solve_compile_time_s => (v -> _safe_stat(v, mean)) => :solve_compile_time_mean_s,
+            :copy_gctime_s => (v -> _safe_stat(v, mean)) => :copy_gc_time_mean_s,
+            :solve_gctime_s => (v -> _safe_stat(v, mean)) => :solve_gc_time_mean_s,
             :total_time_s => (v -> _safe_stat(v, median)) => :total_time_median_s,
             :total_time_s => (v -> _safe_stat(v, x -> std(x; corrected=false))) => :total_time_std_s,
             :total_time_s => (v -> _safe_stat(v, minimum)) => :total_time_min_s,
@@ -4340,6 +4422,35 @@ function summarize_results(raw_df::DataFrame)::DataFrame
             summary[!, col] = fill(missing, nrow(summary))
         end
     end
+
+    summary[!, :compile_time_mean_s] = [
+        _sum_nonmissing(row.copy_compile_time_mean_s, row.solve_compile_time_mean_s)
+        for row in eachrow(summary)
+    ]
+    summary[!, :gc_time_mean_s] = [
+        _sum_nonmissing(row.copy_gc_time_mean_s, row.solve_gc_time_mean_s)
+        for row in eachrow(summary)
+    ]
+    summary[!, :setup_share] = [
+        _safe_share(row.copy_time_mean_s, row.total_time_mean_s)
+        for row in eachrow(summary)
+    ]
+    summary[!, :solve_share] = [
+        _safe_share(row.solve_time_mean_s, row.total_time_mean_s)
+        for row in eachrow(summary)
+    ]
+    summary[!, :compile_share] = [
+        _safe_share(row.compile_time_mean_s, row.total_time_mean_s)
+        for row in eachrow(summary)
+    ]
+    summary[!, :gc_share] = [
+        _safe_share(row.gc_time_mean_s, row.total_time_mean_s)
+        for row in eachrow(summary)
+    ]
+    summary[!, :compile_gc_share] = [
+        _safe_share(_sum_nonmissing(row.compile_time_mean_s, row.gc_time_mean_s), row.total_time_mean_s)
+        for row in eachrow(summary)
+    ]
 
     summary[!, :spice_calls_runtime_mean] = [
         _sum_nonmissing(row.nbody_spkpos_runtime_calls_mean, row.srp_spkpos_runtime_calls_mean, row.planet_pxform_runtime_calls_mean)
@@ -5287,7 +5398,51 @@ function generate_runtime_plots(
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_speedup", spec, stamp)
     end
 
-    # 3) Runtime variability by scenario.
+    # 3) Robustness-adjusted performance (all attempts) + failure rate.
+    if (:penalized_expected_wall_time_s in Symbol.(names(summary_df))) &&
+       (:failure_rate in Symbol.(names(summary_df)))
+        robust_df = summary_df[.!ismissing.(summary_df.penalized_expected_wall_time_s), :]
+        if nrow(robust_df) > 0
+            sort!(robust_df, :penalized_expected_wall_time_s)
+            labels = _plot_axis_label.(String.(robust_df.scenario))
+            penalized = Float64.(robust_df.penalized_expected_wall_time_s)
+            failure_pct = [
+                v isa Missing ? 0.0 : (100.0 * Float64(v))
+                for v in robust_df.failure_rate
+            ]
+            p1 = Plots.bar(
+                labels,
+                penalized;
+                color="#3f7fb3",
+                label=false,
+                title="Robustness-Adjusted Performance (All Attempts)",
+                xlabel="Scenario",
+                ylabel="Penalized Expected Wall Time [s / requested run]",
+                _plot_margins(size=(2500, 760), bottom_mm=92, right_mm=32)...
+            )
+            p2 = Plots.bar(
+                labels,
+                failure_pct;
+                color="#bc4749",
+                label=false,
+                title="Failure Rate by Scenario (All Attempts)",
+                xlabel="Scenario",
+                ylabel="Failure Rate [%]",
+                _plot_margins(size=(2500, 760), bottom_mm=92, right_mm=32)...
+            )
+            plt = Plots.plot(
+                p1,
+                p2;
+                layout=(2, 1),
+                size=(2500, 1600),
+                left_margin=20 * Plots.mm,
+                right_margin=18 * Plots.mm
+            )
+            _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_robustness_adjusted", spec, stamp)
+        end
+    end
+
+    # 4) Runtime variability by scenario.
     variability_df = success_summary[
         .!ismissing.(success_summary.total_time_min_s) .&
         .!ismissing.(success_summary.total_time_mean_s) .&
@@ -5327,7 +5482,7 @@ function generate_runtime_plots(
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_variability", spec, stamp)
     end
 
-    # 4) Configuration copy + solve breakdown.
+    # 5) Configuration copy + solve breakdown.
     labels_breakdown = String[]
     copy_vals = Float64[]
     solve_vals = Float64[]
@@ -5352,7 +5507,7 @@ function generate_runtime_plots(
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_breakdown_copy_solve", spec, stamp)
     end
 
-    # 5) Allocation footprint by scenario (memory + call count).
+    # 6) Allocation footprint by scenario (memory + call count).
     alloc_df = success_summary[
         .!ismissing.(success_summary.total_bytes_mean_mb) .&
         .!ismissing.(success_summary.solve_alloc_mean), :
@@ -5393,7 +5548,7 @@ function generate_runtime_plots(
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_memory_alloc", spec, stamp)
     end
 
-    # 6) Integrator workload and rejection pressure.
+    # 7) Integrator workload and rejection pressure.
     solver_df = success_summary[
         .!ismissing.(success_summary.accepted_steps_mean) .&
         .!ismissing.(success_summary.saved_points_mean), :
@@ -5439,7 +5594,7 @@ function generate_runtime_plots(
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_solver_workload", spec, stamp)
     end
 
-    # 7) Throughput ranking with per-satellite markers.
+    # 8) Throughput ranking with per-satellite markers.
     throughput_df = success_summary[.!ismissing.(success_summary.sim_seconds_per_wall_second_mean), :]
     if nrow(throughput_df) > 0
         sort!(throughput_df, :sim_seconds_per_wall_second_mean, rev=true)
@@ -5472,7 +5627,7 @@ function generate_runtime_plots(
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_throughput", spec, stamp)
     end
 
-    # 8) Satellite-count scaling (measured vs ideal linear).
+    # 9) Satellite-count scaling (measured vs ideal linear).
     sat_df = success_summary[
         (success_summary.category .== "satellite_scaling") .&
         .!ismissing.(success_summary.satellites) .&
@@ -5507,7 +5662,7 @@ function generate_runtime_plots(
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_satellite_scaling", spec, stamp)
     end
 
-    # 9) Dynamics fidelity ladder (absolute + relative).
+    # 10) Dynamics fidelity ladder (absolute + relative).
     fidelity_order = [
         "single_j2",
         "single_nbody_sun_moon",
@@ -5573,7 +5728,7 @@ function generate_runtime_plots(
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_fidelity_ladder", spec, stamp)
     end
 
-    # 10) Monte Carlo runtime distribution with mean and p90 lines.
+    # 11) Monte Carlo runtime distribution with mean and p90 lines.
     mc_df = raw_df[(raw_df.category .== "montecarlo") .& (raw_df.solve_success .== true), :]
     mc_times = [Float64(v) for v in mc_df.total_time_s if !(v isa Missing)]
     if !isempty(mc_times)
@@ -5595,7 +5750,7 @@ function generate_runtime_plots(
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_montecarlo_hist", spec, stamp)
     end
 
-    # 11) Monte Carlo seed trace with mean and p90 lines.
+    # 12) Monte Carlo seed trace with mean and p90 lines.
     mc_seed_df = mc_df[.!ismissing.(mc_df.seed), :]
     if nrow(mc_seed_df) > 0
         sort!(mc_seed_df, :seed)
@@ -5625,7 +5780,7 @@ function generate_runtime_plots(
         .!ismissing.(orbit_summary_df[!, sweep_multiplier_col]), :
     ]
 
-    # 12) Mission-time sweep runtime scaling.
+    # 13) Mission-time sweep runtime scaling.
     orbit_scaling_df = orbit_valid[.!ismissing.(orbit_valid.total_time_mean_s), :]
     if nrow(orbit_scaling_df) > 0
         multiplier_col = :mission_time_multiplier in names(orbit_scaling_df) ? :mission_time_multiplier : :orbit_count
@@ -5646,7 +5801,7 @@ function generate_runtime_plots(
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_per_orbit_scaling", spec, stamp)
     end
 
-    # 13) Mission-time sweep efficiency scaling.
+    # 14) Mission-time sweep efficiency scaling.
     orbit_eff_df = orbit_valid[.!ismissing.(orbit_valid.orbits_per_wall_second_mean), :]
     if nrow(orbit_eff_df) > 0
         multiplier_col = :mission_time_multiplier in names(orbit_eff_df) ? :mission_time_multiplier : :orbit_count
@@ -5667,7 +5822,7 @@ function generate_runtime_plots(
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_per_orbit_efficiency", spec, stamp)
     end
 
-    # 14) Mission-time sweep time heatmap.
+    # 15) Mission-time sweep time heatmap.
     heat_df = orbit_valid[.!ismissing.(orbit_valid.time_per_orbit_mean_s), :]
     if nrow(heat_df) > 0
         multiplier_col = :mission_time_multiplier in names(heat_df) ? :mission_time_multiplier : :orbit_count
@@ -5706,7 +5861,7 @@ function generate_runtime_plots(
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_per_orbit_heatmap", spec, stamp)
     end
 
-    # 15) Entry-duration sweep trends (separate from per-orbit mission-time sweep).
+    # 16) Entry-duration sweep trends (separate from per-orbit mission-time sweep).
     if nrow(entry_duration_summary_df) > 0 &&
        (:entry_run_role in names(entry_duration_summary_df)) &&
        (:entry_atmospheric_interface_count in names(entry_duration_summary_df))
@@ -6468,6 +6623,35 @@ function write_report(
     total_success = count(identity, raw_df.solve_success)
     total_samples = nrow(raw_df)
     solve_success_rate = total_samples > 0 ? (100.0 * total_success / total_samples) : missing
+    solve_failure_rate = total_samples > 0 ? (100.0 * (total_samples - total_success) / total_samples) : missing
+    requested_runs = if :attempt in Symbol.(names(raw_df))
+        count(v -> !(v isa Missing) && Int(v) == 1, raw_df.attempt)
+    else
+        total_samples
+    end
+    retries_total = max(total_samples - requested_runs, 0)
+    retry_count_mean_all_runs = requested_runs > 0 ? (Float64(retries_total) / Float64(requested_runs)) : missing
+    total_attempt_time_s = begin
+        vals = [Float64(v) for v in raw_df.total_time_s if !(v isa Missing)]
+        isempty(vals) ? missing : sum(vals)
+    end
+    penalized_expected_wall_time_all_runs = (total_attempt_time_s isa Missing || requested_runs <= 0) ? missing :
+        (Float64(total_attempt_time_s) / Float64(requested_runs))
+    fallback_count_mean_all_attempts_global = if :solver_fallback_count in Symbol.(names(raw_df))
+        vals = Float64[(v isa Missing) ? 0.0 : Float64(v) for v in raw_df.solver_fallback_count]
+        isempty(vals) ? missing : mean(vals)
+    else
+        missing
+    end
+    robustness_table = DataFrame()
+    if (:penalized_expected_wall_time_s in Symbol.(names(summary_df))) &&
+       (:failure_rate in Symbol.(names(summary_df))) &&
+       (:retry_count_mean in Symbol.(names(summary_df)))
+        robustness_table = summary_df[.!ismissing.(summary_df.penalized_expected_wall_time_s), :]
+        if nrow(robustness_table) > 0
+            sort!(robustness_table, :penalized_expected_wall_time_s)
+        end
+    end
     failed_groups = summary_df[summary_df.samples_failed .> 0, :]
 
     spice_rows = summary_df[.!ismissing.(summary_df.spice_calls_total_mean), :]
@@ -6577,6 +6761,10 @@ function write_report(
         end
         println(io, "- Auto-stiff fallback activations (successful runs): `$(nrow(fallback_rows))`.")
         println(io, "- Successful samples: `$(total_success)/$(total_samples)` (`$(_fmt(solve_success_rate))%`).")
+        println(io, "- Failed attempts: `$(total_samples - total_success)/$(total_samples)` (`$(_fmt(solve_failure_rate))%`).")
+        println(io, "- Retry overhead: `$(retries_total)` retries across `$(requested_runs)` requested runs (`$(_fmt(retry_count_mean_all_runs))` retries/requested run).")
+        println(io, "- Robustness-adjusted expected wall time (all attempts): `$(_fmt(penalized_expected_wall_time_all_runs)) s/requested run`.")
+        println(io, "- Mean fallback count across all attempts: `$(_fmt(fallback_count_mean_all_attempts_global))`.")
         if !(spice_peak === nothing)
             println(
                 io,
@@ -6741,6 +6929,26 @@ function write_report(
         end
         if multirate_total > 0
             println(io, "- Multirate rollout verification rows: `$(multirate_total)` (`$(multirate_pass_count)` pass).")
+        end
+        println(io)
+
+        println(io)
+        println(io, "## Robustness-Adjusted Scenario Summary")
+        println(io)
+        if nrow(robustness_table) == 0
+            println(io, "- No robustness-adjusted rows are available.")
+        else
+            println(io, "| Scenario | Success/Total | Requested Runs | Retries Total | Retry Mean | Failure Rate (%) | Fallback Mean (All Attempts) | Penalized Expected Wall Time (s/requested run) |")
+            println(io, "|---|---:|---:|---:|---:|---:|---:|---:|")
+            for row in eachrow(robustness_table)
+                failure_pct = row.failure_rate isa Missing ? missing : (100.0 * Float64(row.failure_rate))
+                println(
+                    io,
+                    "| $(row.scenario) | $(row.samples_success)/$(row.samples_total) | $(row.requested_runs) | " *
+                    "$(row.retries_total) | $(_fmt(row.retry_count_mean)) | $(_fmt(failure_pct)) | " *
+                    "$(_fmt(row.fallback_count_mean_all_attempts)) | $(_fmt(row.penalized_expected_wall_time_s)) |"
+                )
+            end
         end
         println(io)
 

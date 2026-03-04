@@ -596,6 +596,147 @@ end
     return _safe_ratio(num::Real, den::Real)
 end
 
+@inline function _safe_cv_pct(values::Vector{Float64})::Union{Missing, Float64}
+    n = length(values)
+    if n == 0
+        return missing
+    elseif n == 1
+        return 0.0
+    end
+    μ = mean(values)
+    abs(μ) <= eps(Float64) && return missing
+    return 100.0 * std(values; corrected=true) / abs(μ)
+end
+
+@inline function _safe_ci95_bounds(values::Vector{Float64})::Tuple{Union{Missing, Float64}, Union{Missing, Float64}}
+    n = length(values)
+    if n == 0
+        return (missing, missing)
+    elseif n == 1
+        μ = values[1]
+        return (μ, μ)
+    end
+    μ = mean(values)
+    σ = std(values; corrected=true)
+    sem = σ / sqrt(n)
+    margin = 1.96 * sem
+    return (μ - margin, μ + margin)
+end
+
+@inline function _pass_stats(values::Vector{Float64})::NamedTuple
+    n = length(values)
+    if n == 0
+        return (
+            samples=0,
+            mean_s=missing,
+            std_s=missing,
+            cv_pct=missing,
+            ci95_low_s=missing,
+            ci95_high_s=missing
+        )
+    end
+    ci_low, ci_high = _safe_ci95_bounds(values)
+    return (
+        samples=n,
+        mean_s=mean(values),
+        std_s=(n == 1 ? 0.0 : std(values; corrected=true)),
+        cv_pct=_safe_cv_pct(values),
+        ci95_low_s=ci_low,
+        ci95_high_s=ci_high
+    )
+end
+
+@inline function _parse_bool_env_default(name::String, default::Bool)::Bool
+    raw = get(ENV, name, default ? "1" : "0")
+    try
+        return _parse_bool_token(raw)
+    catch
+        return default
+    end
+end
+
+@inline function _protocol_mode_tags(config::SmartLadderConfig)::NamedTuple
+    cache_cold = config.clean
+    outer_state_reset = _parse_bool_env_default("SPACEAGORA_PERF_OUTER_ROUTE_STATE_RESET", false)
+    inner_state_reset = _parse_bool_env_default("SPACEAGORA_PARALLEL_POLICY_STATE_RESET", false)
+    start_mode =
+        (cache_cold && outer_state_reset && inner_state_reset) ? "cold" :
+        (!cache_cold && !outer_state_reset && !inner_state_reset) ? "warm" :
+        "mixed"
+    return (
+        start_mode=start_mode,
+        cache_mode=(cache_cold ? "cold_cache" : "warm_cache"),
+        cache_cold=cache_cold,
+        outer_state_reset=outer_state_reset,
+        inner_state_reset=inner_state_reset
+    )
+end
+
+function _build_protocol_summary_df(
+    config::SmartLadderConfig,
+    rungs::Vector{LadderRungSpec},
+    pass_results::Vector{LadderPassResult}
+)::DataFrame
+    tags = _protocol_mode_tags(config)
+    rows = NamedTuple[]
+    for rung in rungs
+        runs = [result for result in pass_results if result.rung.label == rung.label]
+        total_elapsed = Float64[result.artifact.elapsed_s for result in runs]
+        bench_elapsed = Float64[result.artifact.bench_elapsed_s for result in runs]
+        orbit_elapsed = Float64[result.artifact.orbit_elapsed_s for result in runs]
+        split_elapsed = Float64[result.artifact.split_gate_elapsed_s for result in runs]
+
+        total_stats = _pass_stats(total_elapsed)
+        bench_stats = _pass_stats(bench_elapsed)
+        orbit_stats = _pass_stats(orbit_elapsed)
+        split_stats = _pass_stats(split_elapsed)
+
+        push!(rows, (
+            profile=config.profile.name,
+            rung=rung.label,
+            mode=String(rung.mode),
+            matrix=String(rung.matrix),
+            backend=rung.backend,
+            inner_adaptive=rung.inner_adaptive,
+            outer_route_adaptive=rung.outer_route_adaptive,
+            pass_count=length(runs),
+            passes_requested=config.passes,
+            randomize_rung_order=config.randomize_rung_order,
+            random_seed=config.random_seed,
+            start_mode=tags.start_mode,
+            cache_mode=tags.cache_mode,
+            cache_cold=tags.cache_cold,
+            outer_state_reset=tags.outer_state_reset,
+            inner_state_reset=tags.inner_state_reset,
+            total_elapsed_mean_s=total_stats.mean_s,
+            total_elapsed_std_s=total_stats.std_s,
+            total_elapsed_cv_pct=total_stats.cv_pct,
+            total_elapsed_ci95_low_s=total_stats.ci95_low_s,
+            total_elapsed_ci95_high_s=total_stats.ci95_high_s,
+            bench_elapsed_mean_s=bench_stats.mean_s,
+            bench_elapsed_std_s=bench_stats.std_s,
+            bench_elapsed_cv_pct=bench_stats.cv_pct,
+            bench_elapsed_ci95_low_s=bench_stats.ci95_low_s,
+            bench_elapsed_ci95_high_s=bench_stats.ci95_high_s,
+            orbit_elapsed_mean_s=orbit_stats.mean_s,
+            orbit_elapsed_std_s=orbit_stats.std_s,
+            orbit_elapsed_cv_pct=orbit_stats.cv_pct,
+            orbit_elapsed_ci95_low_s=orbit_stats.ci95_low_s,
+            orbit_elapsed_ci95_high_s=orbit_stats.ci95_high_s,
+            split_gate_elapsed_mean_s=split_stats.mean_s,
+            split_gate_elapsed_std_s=split_stats.std_s,
+            split_gate_elapsed_cv_pct=split_stats.cv_pct,
+            split_gate_elapsed_ci95_low_s=split_stats.ci95_low_s,
+            split_gate_elapsed_ci95_high_s=split_stats.ci95_high_s
+        ))
+    end
+    df = DataFrame(rows)
+    if nrow(df) > 0
+        sort!(df, :rung)
+    end
+    return df
+end
+
 @inline function _key_token(value)::String
     if value isa Missing || value === nothing
         return "_"
@@ -2097,7 +2238,8 @@ function _write_smart_ladder_report(
     montecarlo_parity_df::DataFrame,
     route_mix_df::DataFrame,
     artifacts::Vector{ModeRunArtifacts},
-    run_order_df::DataFrame;
+    run_order_df::DataFrame,
+    protocol_summary_df::DataFrame;
     comparison_plot_paths::Vector{String}=String[],
     comparison_csv_path::String="",
     overview_csv_path::String="",
@@ -2114,7 +2256,8 @@ function _write_smart_ladder_report(
     route_mix_csv_path::String="",
     merged_raw_csv_path::String="",
     merged_summary_csv_path::String="",
-    run_order_csv_path::String=""
+    run_order_csv_path::String="",
+    protocol_summary_csv_path::String=""
 )
     generated = string(now(UTC))
     nthreads = Threads.nthreads()
@@ -2172,6 +2315,31 @@ function _write_smart_ladder_report(
         println(io, "## Run Order By Pass")
         println(io)
         _write_markdown_table(io, run_order_df)
+        println(io)
+
+        println(io, "## Experimental Protocol Summary")
+        println(io)
+        println(io, "_Per-rung statistics summarize wrapper elapsed runtime across passes (mean/std/CV/95% CI). `start_mode` is derived from cache/state reset knobs (`clean`, `SPACEAGORA_PERF_OUTER_ROUTE_STATE_RESET`, `SPACEAGORA_PARALLEL_POLICY_STATE_RESET`)._")
+        println(io)
+        if nrow(protocol_summary_df) > 0
+            protocol_table = select(
+                protocol_summary_df,
+                [
+                    :rung,
+                    :pass_count,
+                    :start_mode,
+                    :cache_mode,
+                    :total_elapsed_mean_s,
+                    :total_elapsed_std_s,
+                    :total_elapsed_cv_pct,
+                    :total_elapsed_ci95_low_s,
+                    :total_elapsed_ci95_high_s
+                ]
+            )
+            _write_markdown_table(io, protocol_table)
+        else
+            println(io, "- No protocol summary rows were produced.")
+        end
         println(io)
 
         println(io, "## Mode Overview (Aggregated Across Passes)")
@@ -2305,6 +2473,7 @@ function _write_smart_ladder_report(
         println(io, "- Merged raw CSV (all passes): `$(merged_raw_csv_path)`")
         println(io, "- Merged summary CSV (all passes): `$(merged_summary_csv_path)`")
         println(io, "- Run order CSV: `$(run_order_csv_path)`")
+        println(io, "- Protocol summary CSV: `$(protocol_summary_csv_path)`")
         for artifact in artifacts
             println(io, "- Rung `$(artifact.mode)` aggregated raw: `$(artifact.raw_path)`")
             println(io, "- Rung `$(artifact.mode)` aggregated summary: `$(artifact.summary_path)`")
@@ -2439,6 +2608,7 @@ function main_smart_parallel_ladder()
     end
 
     run_order_df = DataFrame(order_rows)
+    protocol_summary_df = _build_protocol_summary_df(config, rungs, pass_results)
 
     stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
     comparison_path = joinpath(config.outdir, "smart_parallel_ladder_compare_summary_$(config.profile.name)_$(stamp).csv")
@@ -2457,6 +2627,7 @@ function main_smart_parallel_ladder()
     merged_raw_path = joinpath(config.outdir, "smart_parallel_ladder_raw_merged_$(config.profile.name)_$(stamp).csv")
     merged_summary_path = joinpath(config.outdir, "smart_parallel_ladder_summary_merged_$(config.profile.name)_$(stamp).csv")
     run_order_path = joinpath(config.outdir, "smart_parallel_ladder_run_order_$(config.profile.name)_$(stamp).csv")
+    protocol_summary_path = joinpath(config.outdir, "smart_parallel_ladder_protocol_summary_$(config.profile.name)_$(stamp).csv")
     report_path = joinpath(config.outdir, "smart_parallel_ladder_report_$(config.profile.name)_$(stamp).md")
     comparison_plot_paths = generate_pipeline_comparison_plots(
         config.outdir,
@@ -2482,6 +2653,7 @@ function main_smart_parallel_ladder()
     CSV.write(merged_raw_path, merged_raw_df)
     CSV.write(merged_summary_path, merged_summary_df)
     CSV.write(run_order_path, run_order_df)
+    CSV.write(protocol_summary_path, protocol_summary_df)
     _write_smart_ladder_report(
         report_path,
         config,
@@ -2500,7 +2672,8 @@ function main_smart_parallel_ladder()
         montecarlo_parity_df,
         route_mix_df,
         aggregated_artifacts,
-        run_order_df;
+        run_order_df,
+        protocol_summary_df;
         comparison_plot_paths=comparison_plot_paths,
         comparison_csv_path=comparison_path,
         overview_csv_path=overview_path,
@@ -2517,7 +2690,8 @@ function main_smart_parallel_ladder()
         route_mix_csv_path=route_mix_path,
         merged_raw_csv_path=merged_raw_path,
         merged_summary_csv_path=merged_summary_path,
-        run_order_csv_path=run_order_path
+        run_order_csv_path=run_order_path,
+        protocol_summary_csv_path=protocol_summary_path
     )
 
     println()
@@ -2538,6 +2712,7 @@ function main_smart_parallel_ladder()
     println("merged raw: $(merged_raw_path)")
     println("merged summary: $(merged_summary_path)")
     println("run order: $(run_order_path)")
+    println("protocol summary: $(protocol_summary_path)")
     println("comparison plots: $(length(comparison_plot_paths))")
     println("report: $(report_path)")
 end

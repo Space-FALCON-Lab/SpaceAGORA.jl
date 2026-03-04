@@ -755,6 +755,25 @@ end
 
         withenv(
             "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "1",
+            "SPACEAGORA_PARALLEL_POLICY_STATE_PATH" => good_path,
+            "SPACEAGORA_PARALLEL_POLICY_STATE_RESET" => "1"
+        ) do
+            lock(policy._persistent_hint_lock) do
+                state = policy._persistent_hint_state[]
+                state.loaded = false
+                state.dirty = false
+                state.path = ""
+                empty!(state.history)
+                policy._load_persistent_hint_state_locked!()
+                @test state.loaded
+                @test state.path == normpath(good_path)
+                @test isempty(state.history)
+            end
+            @test policy.persistent_hints_state_reset_requested()
+        end
+
+        withenv(
+            "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "1",
             "SPACEAGORA_PARALLEL_POLICY_STATE_PATH" => missing_path
         ) do
             previous_registered = policy._persistent_hint_atexit_registered[]
@@ -770,6 +789,21 @@ end
             @test policy._persistent_hint_atexit_registered[]
             policy._persistent_hint_atexit_registered[] = previous_registered || policy._persistent_hint_atexit_registered[]
         end
+    end
+
+    lock(policy._persistent_hint_lock) do
+        state = policy._persistent_hint_state[]
+        state.loaded = true
+        state.dirty = false
+        state.path = "inner_hint_manual_reset.toml"
+        state.history["manual_reset_sig"] = Dict(Int64(1) => policy.AdaptiveChoiceStats(samples=1, successes=1, failures=0, elapsed_sum_ns=1.0, elapsed_sq_sum_ns=1.0))
+    end
+    policy.reset_persistent_hint_state!()
+    lock(policy._persistent_hint_lock) do
+        state = policy._persistent_hint_state[]
+        @test !state.loaded
+        @test isempty(state.path)
+        @test isempty(state.history)
     end
 
     @test policy._hint_bucket(12) == "9_16"

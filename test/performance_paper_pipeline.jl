@@ -126,6 +126,7 @@ function run_mode(
     orbit_summary_df = DataFrame()
     entry_duration_raw_df = DataFrame()
     entry_duration_summary_df = DataFrame()
+    density_backend_breakdown_df = DataFrame()
     bench_elapsed_s = 0.0
     split_gate_elapsed_s = 0.0
     split_gate_df = nothing
@@ -137,6 +138,7 @@ function run_mode(
         bench_started_ns = time_ns()
         raw_df = run_benchmarks(config.profile, cases, planet)
         summary_df = summarize_results(raw_df)
+        density_backend_breakdown_df = summarize_density_backend_breakdown(raw_df)
         bench_elapsed_s = (time_ns() - bench_started_ns) / 1e9
 
         if _split_rollout_enabled()
@@ -170,7 +172,20 @@ function run_mode(
     hardware_info_path = joinpath(mode_outdir, "runtime_hardware_info_$(config.profile.name)_$(mode)_$(stamp).csv")
     report_path = joinpath(mode_outdir, "runtime_report_$(config.profile.name)_$(mode)_$(stamp).md")
     plot_stamp = "$(mode)_$(stamp)"
-    plot_paths = generate_runtime_plots(mode_outdir, config.profile, plot_stamp, raw_df, summary_df, orbit_summary_df, entry_duration_summary_df)
+    hw = _runtime_hardware_snapshot()
+    inner_hint_layer_df = _inner_hint_layer_report_df(config.profile, hw)
+    plot_paths = generate_runtime_plots(
+        mode_outdir,
+        config.profile,
+        plot_stamp,
+        raw_df,
+        summary_df,
+        orbit_summary_df,
+        entry_duration_summary_df;
+        split_gate_df=split_gate_df,
+        inner_hint_layer_df=inner_hint_layer_df,
+        density_backend_breakdown_df=density_backend_breakdown_df
+    )
 
     stage_names = ["run_benchmarks"]
     stage_elapsed = [bench_elapsed_s]
@@ -185,7 +200,6 @@ function run_mode(
     push!(stage_elapsed, entry_duration_elapsed_s)
     push!(stage_elapsed, elapsed_s)
     stage_timing_df = DataFrame(stage=stage_names, elapsed_s=stage_elapsed)
-    hw = _runtime_hardware_snapshot()
     hardware_info_df = DataFrame([
         (
             profile=config.profile.name,

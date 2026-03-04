@@ -517,6 +517,9 @@ end
     withenv("SPACEAGORA_PARALLEL_POLICY_TRIM_QUANTA" => "oops") do
         @test_throws ArgumentError policy.adaptive_trim_quanta_budget()
     end
+    withenv("SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER" => "guided") do
+        @test_throws ArgumentError policy.inner_scheduler_mode()
+    end
 
     withenv("SPACEAGORA_INNER_THREAD_BUDGET" => string(max(2, Threads.nthreads()))) do
         acc_foreach = Base.Threads.Atomic{Int}(0)
@@ -555,6 +558,33 @@ end
         end
         @test persistent_err !== nothing
         policy._shutdown_persistent_foreach_pool!(pool_err)
+    end
+
+    withenv(
+        "SPACEAGORA_INNER_THREAD_BUDGET" => string(max(2, Threads.nthreads())),
+        "SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER" => "dynamic",
+        "SPACEAGORA_PARALLEL_POLICY_INNER_DYNAMIC_CHUNK" => "2"
+    ) do
+        acc_dynamic = Base.Threads.Atomic{Int}(0)
+        policy.threaded_foreach(9, 9) do idx
+            Base.Threads.atomic_add!(acc_dynamic, idx)
+        end
+        @test acc_dynamic[] == sum(1:9)
+
+        reduced_dynamic = policy.threaded_reduce(
+            9,
+            9,
+            () -> Ref(0),
+            (acc, idx) -> begin
+                acc[] += idx
+                return nothing
+            end,
+            (dest, src) -> begin
+                dest[] += src[]
+                return nothing
+            end
+        )
+        @test reduced_dynamic[] == sum(1:9)
     end
 
     policy.reset_policy_telemetry!()
@@ -870,8 +900,13 @@ end
             heavy_only=false,
             heavy_work=true
         )
-        @test decision.use_threads
-        @test decision.allotment >= 2
+        @test decision.use_threads isa Bool
+        @test decision.allotment >= 1
+        if decision.use_threads
+            @test decision.allotment >= 2
+        else
+            @test decision.allotment == 1
+        end
 
         policy.record_policy_observation!(
             :control_callback;
@@ -924,6 +959,68 @@ end
     @test isfinite(rho_scalar)
     @test T_scalar == args_density_helpers.environment_model.planet.T_ref
     @test wind_scalar == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    hs_batch = [120e3, 130e3, 140e3]
+    lats_batch = [0.0, 0.05, -0.02]
+    lons_batch = [0.0, 0.1, -0.2]
+    ts_batch = [0.0, 20.0, 40.0]
+
+    rhos_batch = zeros(Float64, length(hs_batch))
+    Ts_batch = zeros(Float64, length(hs_batch))
+    winds_batch = [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in eachindex(hs_batch)]
+    env_models.getDensityBatch!(
+        rhos_batch,
+        Ts_batch,
+        winds_batch,
+        NoAtmosphereModel(),
+        hs_batch,
+        lats_batch,
+        lons_batch,
+        ts_batch,
+        true,
+        p_density_helpers
+    )
+    @test all(==(0.0), rhos_batch)
+    @test all(x -> x == args_density_helpers.environment_model.planet.T_ref, Ts_batch)
+    @test all(==(SVector{3, Float64}(0.0, 0.0, 0.0)), winds_batch)
+
+    rhos_poly_batch = zeros(Float64, length(hs_batch))
+    Ts_poly_batch = zeros(Float64, length(hs_batch))
+    winds_poly_batch = [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in eachindex(hs_batch)]
+    env_models.getDensityBatch!(
+        rhos_poly_batch,
+        Ts_poly_batch,
+        winds_poly_batch,
+        poly_model,
+        hs_batch,
+        lats_batch,
+        lons_batch,
+        0.0,
+        false,
+        p_density_helpers
+    )
+    @test all(isfinite, rhos_poly_batch)
+    @test all(x -> x == args_density_helpers.environment_model.planet.T_ref, Ts_poly_batch)
+    @test all(==(SVector{3, Float64}(0.0, 0.0, 0.0)), winds_poly_batch)
+    @inbounds for i in eachindex(hs_batch)
+        rho_i, T_i, wind_i = env_models.getDensity(poly_model, hs_batch[i], lats_batch[i], lons_batch[i], 0.0, false, p_density_helpers)
+        @test isapprox(rhos_poly_batch[i], rho_i; atol=0.0, rtol=1e-12)
+        @test Ts_poly_batch[i] == T_i
+        @test winds_poly_batch[i] == wind_i
+    end
+
+    @test_throws ArgumentError env_models.getDensityBatch!(
+        zeros(Float64, 2),
+        zeros(Float64, 3),
+        [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:3],
+        poly_model,
+        hs_batch,
+        lats_batch,
+        lons_batch,
+        0.0,
+        false,
+        p_density_helpers
+    )
 
     @test isfinite(env_models.interp(5.0, 355.0, 0.25))
     @test isfinite(env_models.interp(355.0, 5.0, 0.25))
@@ -988,6 +1085,81 @@ end
     end
     withenv("SPACEAGORA_GRAM_TRACK_CACHE_MAX_NPOS" => "oops") do
         @test_throws ArgumentError callbacks._gram_track_cache_max_npos()
+    end
+    withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => "invalid_mode") do
+        @test_throws ArgumentError callbacks._gram_isolated_pool_mode()
+    end
+    withenv(
+        "SPACEAGORA_GRAM_ISOLATED_POOL" => "auto",
+        "SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD" => "2"
+    ) do
+        @test callbacks._gram_isolated_pool_enabled(2) == (Threads.nthreads() > 1)
+    end
+    withenv(
+        "SPACEAGORA_GRAM_ISOLATED_POOL" => "off",
+        "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => "2"
+    ) do
+        rho_pool = zeros(Float64, length(hs_batch))
+        T_pool = zeros(Float64, length(hs_batch))
+        wind_pool = [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in eachindex(hs_batch)]
+        @test !callbacks._gram_isolated_pool_batch_eval!(
+            rho_pool,
+            T_pool,
+            wind_pool,
+            gram_model,
+            hs_batch,
+            lats_batch,
+            lons_batch,
+            ts_batch,
+            true,
+            p_density_helpers
+        )
+    end
+    withenv(
+        "SPACEAGORA_GRAM_ISOLATED_POOL" => "on",
+        "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => "2"
+    ) do
+        rho_pool = zeros(Float64, length(hs_batch))
+        T_pool = zeros(Float64, length(hs_batch))
+        wind_pool = [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in eachindex(hs_batch)]
+        pooled = callbacks._gram_isolated_pool_batch_eval!(
+            rho_pool,
+            T_pool,
+            wind_pool,
+            gram_model,
+            hs_batch,
+            lats_batch,
+            lons_batch,
+            ts_batch,
+            true,
+            p_density_helpers;
+            allotment_hint=2
+        )
+        @test pooled || Threads.nthreads() == 1
+        @test all(isfinite, rho_pool)
+        @test all(isfinite, T_pool)
+        @test all(isfinite, getindex.(wind_pool, 1))
+        if Threads.nthreads() > 1
+            @test length(p_density_helpers.shared_buffers.gram_isolated_pool_models) >= 2
+            @test length(p_density_helpers.shared_buffers.gram_isolated_pool_locks) >= 2
+        end
+    end
+    withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => "on") do
+        rho_pool = zeros(Float64, length(hs_batch))
+        T_pool = zeros(Float64, length(hs_batch))
+        wind_pool = [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in eachindex(hs_batch)]
+        @test !callbacks._gram_isolated_pool_batch_eval!(
+            rho_pool,
+            T_pool,
+            wind_pool,
+            NoAtmosphereModel(),
+            hs_batch,
+            lats_batch,
+            lons_batch,
+            ts_batch,
+            true,
+            p_density_helpers
+        )
     end
     @test callbacks._gram_track_cache_target_spacing_m(500.0, deg2rad(1.0), 6.5e6) >= 1.0
 

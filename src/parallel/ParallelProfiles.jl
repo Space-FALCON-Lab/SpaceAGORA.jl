@@ -34,8 +34,10 @@ Base.@kwdef struct ParallelProfileConfig
     thermal_mode::String
     multibody_mode::String
     effector_mode::String
+    inner_scheduler::String = "static"
     adaptive_window::Int = 8
     adaptive_control_tail_guard::Bool = false
+    adaptive_measured_reward::Bool = false
     persistent_hints::Bool = false
     persistent_state_persist::Bool = false
 end
@@ -190,8 +192,10 @@ function profile_config(profile_in)::ParallelProfileConfig
         thermal_mode="on",
         multibody_mode="auto",
         effector_mode="auto",
+        inner_scheduler="dynamic",
         adaptive_window=4,
         adaptive_control_tail_guard=true,
+        adaptive_measured_reward=true,
         persistent_hints=true,
         persistent_state_persist=true
     )
@@ -307,6 +311,11 @@ function profile_env_pairs(
             cfg.effector_mode;
             preserve_existing=preserve_existing
         ),
+        "SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER" => _env_or_default(
+            "SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER",
+            cfg.inner_scheduler;
+            preserve_existing=preserve_existing
+        ),
         "SPACEAGORA_PARALLEL_POLICY_WINDOW" => _env_or_default(
             "SPACEAGORA_PARALLEL_POLICY_WINDOW",
             string(cfg.adaptive_window);
@@ -315,6 +324,11 @@ function profile_env_pairs(
         "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => _env_or_default(
             "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD",
             _coerce_env_bool(cfg.adaptive_control_tail_guard);
+            preserve_existing=preserve_existing
+        ),
+        "SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD" => _env_or_default(
+            "SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD",
+            _coerce_env_bool(cfg.adaptive_measured_reward);
             preserve_existing=preserve_existing
         ),
         "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => _env_or_default(
@@ -837,9 +851,14 @@ end
         f.harmonics_degree == 0
 end
 
+@inline function _is_native_gram_point_density(f::OuterRouteFeatures)::Bool
+    return _route_density_bucket(f.density_family) == "gram_pt" &&
+        !f.gram_surrogate_enabled &&
+        !f.gram_static_grid_enabled
+end
+
 @inline function _feature_heavy_for_process(f::OuterRouteFeatures, t::OuterRouteTuning)::Bool
-    dens_bucket = _route_density_bucket(f.density_family)
-    if dens_bucket == "gram_pt" && !f.gram_surrogate_enabled && !f.gram_static_grid_enabled
+    if _is_native_gram_point_density(f)
         # Native GRAM point calls are lock-limited; prefer outer process isolation.
         return true
     end
@@ -881,10 +900,8 @@ function default_outer_route(
         return :none
     end
 
-    if _route_density_bucket(f.density_family) == "gram_pt" &&
-       !f.gram_surrogate_enabled &&
-       !f.gram_static_grid_enabled
-        return machine_class in (:large, :medium) ? :process : _threads_or_none(threads_available)
+    if _is_native_gram_point_density(f)
+        return :process
     end
 
     if lowercase(strip(f.category)) == "montecarlo"
@@ -932,6 +949,13 @@ function outer_route_candidates(
     threads_available::Bool=true,
     parallel_enabled::Bool=true
 )::Vector{Symbol}
+    if !parallel_enabled
+        return Symbol[:none]
+    end
+    if _is_native_gram_point_density(f)
+        return Symbol[:none, :process]
+    end
+
     candidates = Symbol[:none]
     if threads_available
         push!(candidates, :threads)

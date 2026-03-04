@@ -44,11 +44,15 @@ const TV = TelemetryVerification
     @test cfg_r3.outer_backend == :auto
     @test cfg_r4.inner_adaptive == true
     @test cfg_r4.thermal_mode == "auto"
+    @test cfg_r4.inner_scheduler == "static"
     @test cfg_r4.adaptive_control_tail_guard == false
+    @test cfg_r4.adaptive_measured_reward == false
     @test cfg_full.outer_route_adaptive == true
     @test cfg_full.label == "r5"
     @test cfg_full.thermal_mode == "on"
+    @test cfg_full.inner_scheduler == "dynamic"
     @test cfg_full.adaptive_control_tail_guard == true
+    @test cfg_full.adaptive_measured_reward == true
     @test cfg_full.adaptive_window == 4
     @test cfg_full.persistent_hints == true
     @test cfg_full.persistent_state_persist == true
@@ -73,8 +77,10 @@ const TV = TelemetryVerification
     env_map_auto = Dict(env_pairs_auto)
     @test env_map_auto["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "auto"
     @test env_map_auto["SPACEAGORA_THERMAL_CALLBACK_PARALLEL"] == "on"
+    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER"] == "dynamic"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_WINDOW"] == "4"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD"] == "1"
+    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD"] == "1"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS"] == "1"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST"] == "1"
     @test parse(Float64, env_map_auto["SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION"]) > 0.0
@@ -148,7 +154,7 @@ const TV = TelemetryVerification
     @test PP.default_outer_route(f_mc_small; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :threads
     @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=false) == :none
     @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
-    @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :threads
+    @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :process
     @test PP.default_outer_route(f_gram_surrogate; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :none
 
     cand_heavy = PP.outer_route_candidates(f_heavy; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true)
@@ -160,6 +166,7 @@ const TV = TelemetryVerification
     @test cand_light == [:none]
     @test :process in cand_mc
     @test :process in cand_gram
+    @test !(:threads in cand_gram)
     @test !(:process in cand_gram_sur)
 
     state = PP.OuterRouteState()
@@ -231,7 +238,7 @@ const TV = TelemetryVerification
     )
     sig_variant = PP.outer_route_signature(f_variant)
     @test isempty(PP.outer_route_stats_snapshot(state, sig_variant))
-    @test PP.default_outer_route(f_variant; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :threads
+    @test PP.default_outer_route(f_variant; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :process
     chosen_fallback = PP.select_outer_route!(
         state,
         f_variant;

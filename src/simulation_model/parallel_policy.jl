@@ -159,9 +159,23 @@ function _persistent_foreach_worker_loop(
         try
             num_items = request.num_items
             active_workers = request.active_workers
+            scheduler = request.scheduler
+            chunk = request.chunk
             f = request.f
-            @inbounds for idx in worker_id:active_workers:num_items
-                f(idx)
+            if scheduler == :dynamic
+                next_index = request.next_index
+                @inbounds while true
+                    start_idx = Threads.atomic_add!(next_index, chunk)
+                    start_idx > num_items && break
+                    stop_idx = min(num_items, start_idx + chunk - 1)
+                    for idx in start_idx:stop_idx
+                        f(idx)
+                    end
+                end
+            else
+                @inbounds for idx in worker_id:active_workers:num_items
+                    f(idx)
+                end
             end
         catch err
             captured = Base.CapturedException(err, catch_backtrace())
@@ -280,6 +294,20 @@ end
         throw(ArgumentError("$name must be an integer, got '$raw'"))
     end
     return max(0, value)
+end
+
+@inline function inner_scheduler_mode()::Symbol
+    mode = lowercase(strip(get(ENV, "SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER", "static")))
+    if mode in ("static", "strided")
+        return :static
+    elseif mode == "dynamic"
+        return :dynamic
+    end
+    throw(ArgumentError("Unsupported SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER='$mode'. Use one of: static, dynamic."))
+end
+
+@inline function inner_dynamic_chunk_size()::Int
+    return parse_thread_threshold_env("SPACEAGORA_PARALLEL_POLICY_INNER_DYNAMIC_CHUNK", 1)
 end
 
 @inline function _safe_token(raw)::String
@@ -544,35 +572,78 @@ end
     return mean_ns, width
 end
 
+@inline function _hint_samples(bucket, candidate::Int64)::Int64
+    stats = get(bucket, candidate, nothing)
+    if stats isa AdaptiveChoiceStats
+        return max(Int64(0), stats.samples)
+    end
+    return Int64(0)
+end
+
 function _hint_choose_allotment(
     signature::String,
     candidates::Vector{Int64}
-)::NamedTuple{(:allotment, :confidence, :regret_ns), Tuple{Int64, Float64, Float64}}
+)::NamedTuple{(:allotment, :confidence, :regret_ns, :samples, :exploring), Tuple{Int64, Float64, Float64, Int64, Bool}}
     _ensure_persistent_hint_state_loaded!()
+    candidate_pool = isempty(candidates) ? Int64[1] : sort!(unique!(Int64[max(Int64(1), c) for c in candidates]))
     if !persistent_hints_enabled()
-        return (allotment=Int64(1), confidence=0.0, regret_ns=0.0)
+        return (allotment=Int64(1), confidence=0.0, regret_ns=0.0, samples=Int64(0), exploring=false)
     end
     lock(_persistent_hint_lock) do
         state = _persistent_hint_state[]
         bucket = get(state.history, signature, nothing)
         if bucket === nothing || isempty(bucket)
-            return (allotment=Int64(1), confidence=0.0, regret_ns=0.0)
+            return (
+                allotment=first(candidate_pool),
+                confidence=Inf,
+                regret_ns=0.0,
+                samples=Int64(0),
+                exploring=true
+            )
         end
         total_samples = Int64(0)
-        for c in candidates
+        for c in candidate_pool
             stats = get(bucket, c, nothing)
             stats isa AdaptiveChoiceStats || continue
             total_samples += stats.samples
         end
-        total_samples <= 0 && return (allotment=Int64(1), confidence=0.0, regret_ns=0.0)
+        total_samples = max(Int64(0), total_samples)
 
         explore_c = persistent_hints_exploration()
+        min_samples = Int64(persistent_hints_min_samples())
+        explore_candidate = Int64(0)
+        explore_samples = typemax(Int64)
+        for c in candidate_pool
+            samples = _hint_samples(bucket, c)
+            if samples < min_samples && (samples < explore_samples || (samples == explore_samples && (explore_candidate == 0 || c < explore_candidate)))
+                explore_candidate = c
+                explore_samples = samples
+            end
+        end
+        if explore_candidate > 0
+            stats = get(bucket, explore_candidate, nothing)
+            confidence = if stats isa AdaptiveChoiceStats && stats.samples > 0 && total_samples > 0
+                _, width = _hint_mean_and_width(stats, total_samples, explore_c)
+                width
+            else
+                Inf
+            end
+            return (
+                allotment=explore_candidate,
+                confidence=confidence,
+                regret_ns=0.0,
+                samples=max(Int64(0), explore_samples),
+                exploring=true
+            )
+        end
+
         best_allotment = Int64(1)
         best_score = Inf
         best_width = 0.0
         best_mean = Inf
+        best_samples = Int64(0)
         known_means = Float64[]
-        for c in candidates
+        for c in candidate_pool
             stats = get(bucket, c, nothing)
             stats isa AdaptiveChoiceStats || continue
             stats.samples > 0 || continue
@@ -584,12 +655,22 @@ function _hint_choose_allotment(
                 best_allotment = c
                 best_width = width
                 best_mean = mean_ns
+                best_samples = max(Int64(0), stats.samples)
             end
         end
-        isempty(known_means) && return (allotment=Int64(1), confidence=0.0, regret_ns=0.0)
+        if isempty(known_means)
+            fallback = first(candidate_pool)
+            return (allotment=fallback, confidence=Inf, regret_ns=0.0, samples=Int64(0), exploring=true)
+        end
         best_observed = minimum(known_means)
         regret = max(0.0, best_mean - best_observed)
-        return (allotment=best_allotment, confidence=best_width, regret_ns=regret)
+        return (
+            allotment=best_allotment,
+            confidence=best_width,
+            regret_ns=regret,
+            samples=best_samples,
+            exploring=false
+        )
     end
 end
 
@@ -784,6 +865,7 @@ end
 @inline adaptive_trim_quanta_budget()::Int = parse_nonnegative_int_env("SPACEAGORA_PARALLEL_POLICY_TRIM_QUANTA", 0)
 @inline adaptive_bootstrap_threads()::Bool = parse_bool_env("SPACEAGORA_PARALLEL_POLICY_BOOTSTRAP_THREADS", true)
 @inline adaptive_control_tail_guard()::Bool = parse_bool_env("SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD", false)
+@inline adaptive_measured_reward_enabled()::Bool = parse_bool_env("SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD", persistent_hints_enabled())
 
 @inline function adaptive_delta()::Float64
     δ = parse_float_env("SPACEAGORA_PARALLEL_POLICY_DELTA", 0.85)
@@ -965,6 +1047,7 @@ end
 )
     budget = effective_inner_thread_budget()
     adaptive_enabled = (mode == :auto) && adaptive_policy_enabled()
+    measured_reward = adaptive_enabled && persistent_hints_enabled() && adaptive_measured_reward_enabled()
     bootstrap_threads = adaptive_enabled && adaptive_bootstrap_threads()
     control_tail_guard = adaptive_enabled && adaptive_control_tail_guard()
     signature = ""
@@ -998,18 +1081,23 @@ end
         lock(_policy_telemetry_lock) do
             st = _adaptive_state_for(source)
             st.desire = min(max(1, st.desire), desire_cap)
-            # Tail guard: avoid a cold-start serial window on obviously parallel workloads.
-            if bootstrap_threads && st.desire == 1 && budget > 1 && num_items >= max(1, threshold)
-                st.desire = min(desire_cap, 2)
-            end
-            if control_tail_guard && source == :control_callback && budget > 1 && num_items >= max(1, threshold)
-                stable_desire = min(desire_cap, min(budget, max(2, num_items)))
-                st.desire = max(st.desire, stable_desire)
-            end
-            if hint_allotment > 1
-                # Blend persisted hint with live AIMD state; this reuses past wins without hard pinning.
-                blended = max(st.desire, Int(hint_allotment))
-                st.desire = min(desire_cap, max(1, blended))
+            if measured_reward
+                # Measured-reward mode: drive desire directly from elapsed-time hint choice.
+                st.desire = min(desire_cap, max(1, Int(hint_allotment)))
+            else
+                # Tail guard: avoid a cold-start serial window on obviously parallel workloads.
+                if bootstrap_threads && st.desire == 1 && budget > 1 && num_items >= max(1, threshold)
+                    st.desire = min(desire_cap, 2)
+                end
+                if control_tail_guard && source == :control_callback && budget > 1 && num_items >= max(1, threshold)
+                    stable_desire = min(desire_cap, min(budget, max(2, num_items)))
+                    st.desire = max(st.desire, stable_desire)
+                end
+                if hint_allotment > 1
+                    # Blend persisted hint with live AIMD state; this reuses past wins without hard pinning.
+                    blended = max(st.desire, Int(hint_allotment))
+                    st.desire = min(desire_cap, max(1, blended))
+                end
             end
             desire = st.desire
         end
@@ -1114,10 +1202,28 @@ function threaded_foreach(num_items::Int, allotment::Int, f::F) where {F <: Func
         end
         return nothing
     end
-    Threads.@sync for worker_id in 1:workers
-        Threads.@spawn begin
-            @inbounds for idx in worker_id:workers:num_items
-                f(idx)
+    scheduler = inner_scheduler_mode()
+    if scheduler == :dynamic
+        chunk = inner_dynamic_chunk_size()
+        next_index = Threads.Atomic{Int}(1)
+        Threads.@sync for _ in 1:workers
+            Threads.@spawn begin
+                @inbounds while true
+                    start_idx = Threads.atomic_add!(next_index, chunk)
+                    start_idx > num_items && break
+                    stop_idx = min(num_items, start_idx + chunk - 1)
+                    for idx in start_idx:stop_idx
+                        f(idx)
+                    end
+                end
+            end
+        end
+    else
+        Threads.@sync for worker_id in 1:workers
+            Threads.@spawn begin
+                @inbounds for idx in worker_id:workers:num_items
+                    f(idx)
+                end
             end
         end
     end
@@ -1149,11 +1255,21 @@ function _threaded_foreach_persistent!(
     workers::Int,
     f::F
 ) where {F <: Function}
+    scheduler = inner_scheduler_mode()
+    chunk = inner_dynamic_chunk_size()
+    next_index = Threads.Atomic{Int}(1)
     lock(pool.run_lock) do
         @inbounds for worker_id in 1:workers
             put!(
                 pool.request_channels[worker_id],
-                (num_items=num_items, active_workers=workers, f=f)
+                (
+                    num_items=num_items,
+                    active_workers=workers,
+                    scheduler=scheduler,
+                    chunk=chunk,
+                    next_index=next_index,
+                    f=f
+                )
             )
         end
         first_error = nothing
@@ -1217,10 +1333,28 @@ function threaded_foreach_worker(num_items::Int, allotment::Int, f::F) where {F 
         end
         return nothing
     end
-    Threads.@sync for worker_id in 1:workers
-        Threads.@spawn begin
-            @inbounds for idx in worker_id:workers:num_items
-                f(worker_id, idx)
+    scheduler = inner_scheduler_mode()
+    if scheduler == :dynamic
+        chunk = inner_dynamic_chunk_size()
+        next_index = Threads.Atomic{Int}(1)
+        Threads.@sync for worker_id in 1:workers
+            Threads.@spawn begin
+                @inbounds while true
+                    start_idx = Threads.atomic_add!(next_index, chunk)
+                    start_idx > num_items && break
+                    stop_idx = min(num_items, start_idx + chunk - 1)
+                    for idx in start_idx:stop_idx
+                        f(worker_id, idx)
+                    end
+                end
+            end
+        end
+    else
+        Threads.@sync for worker_id in 1:workers
+            Threads.@spawn begin
+                @inbounds for idx in worker_id:workers:num_items
+                    f(worker_id, idx)
+                end
             end
         end
     end
@@ -1252,13 +1386,33 @@ function threaded_reduce(
 
     partials = Vector{typeof(acc0)}(undef, workers)
     partials[1] = acc0
-    Threads.@sync for worker_id in 1:workers
-        Threads.@spawn begin
-            local_acc = worker_id == 1 ? partials[1] : init()
-            @inbounds for idx in worker_id:workers:num_items
-                body!(local_acc, idx)
+    scheduler = inner_scheduler_mode()
+    if scheduler == :dynamic
+        chunk = inner_dynamic_chunk_size()
+        next_index = Threads.Atomic{Int}(1)
+        Threads.@sync for worker_id in 1:workers
+            Threads.@spawn begin
+                local_acc = worker_id == 1 ? partials[1] : init()
+                @inbounds while true
+                    start_idx = Threads.atomic_add!(next_index, chunk)
+                    start_idx > num_items && break
+                    stop_idx = min(num_items, start_idx + chunk - 1)
+                    for idx in start_idx:stop_idx
+                        body!(local_acc, idx)
+                    end
+                end
+                partials[worker_id] = local_acc
             end
-            partials[worker_id] = local_acc
+        end
+    else
+        Threads.@sync for worker_id in 1:workers
+            Threads.@spawn begin
+                local_acc = worker_id == 1 ? partials[1] : init()
+                @inbounds for idx in worker_id:workers:num_items
+                    body!(local_acc, idx)
+                end
+                partials[worker_id] = local_acc
+            end
         end
     end
 
@@ -1284,6 +1438,7 @@ function record_policy_observation!(
     end
     elapsed_ns_clamped = max(Int64(0), elapsed_ns_i64)
     adaptive_enabled = (mode == :auto) && adaptive_policy_enabled()
+    measured_reward = adaptive_enabled && persistent_hints_enabled() && adaptive_measured_reward_enabled()
     hint_signature = ""
     hint_allotment = Int64(1)
 
@@ -1308,6 +1463,26 @@ function record_policy_observation!(
         end
 
         st = _adaptive_state_for(source)
+        if measured_reward
+            st.desire = max(Int64(1), hint_allotment)
+            st.last_classification = :measured_reward
+            st.last_utilization = use_threads ? 1.0 : 0.0
+            st.window_calls = 0
+            st.window_allotment_sum = 0
+            st.window_useful_sum = 0.0
+            st.window_deprived_calls = 0
+
+            t.adaptation_updates_total += 1
+            t.last_classification = st.last_classification
+            t.last_utilization = st.last_utilization
+            t.last_desire = st.desire
+            t.quantum_length = 1
+            t.trim_quanta_budget = 0
+            t.quantums_total += 1
+            t.quantums_accounted_proxy += 1
+            return nothing
+        end
+
         ρ = adaptive_rho()
         δ = adaptive_delta()
         L = adaptive_window_size()

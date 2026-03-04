@@ -256,6 +256,20 @@ end
     return SimulationModel.ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_EFFECTOR_PARALLEL"; default="auto")
 end
 
+@inline function _rhs_batch_parallel_mode()::Symbol
+    return SimulationModel.ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_RHS_BATCH_PARALLEL"; default="auto")
+end
+
+@inline function _rhs_batch_parallel_enabled(num_spacecraft::Int)::Bool
+    mode = _rhs_batch_parallel_mode()
+    if mode == :off
+        return false
+    elseif mode == :on
+        return true
+    end
+    return num_spacecraft > 1 && Polyester.num_cores() > 1
+end
+
 @inline function _effector_thread_threshold()::Int
     return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_THREAD_THRESHOLD", 2)
 end
@@ -469,6 +483,12 @@ function _initialize_density_cache_buffers!(p)
         resize!(caches, n_sats)
     end
     fill!(caches, nothing)
+    return nothing
+end
+
+function _initialize_gram_isolated_pool_buffers!(p)
+    empty!(p.shared_buffers.gram_isolated_pool_models)
+    empty!(p.shared_buffers.gram_isolated_pool_locks)
     return nothing
 end
 
@@ -1523,6 +1543,7 @@ function run_simulation(
     _initialize_heat_rate_buffers!(p)
     _initialize_density_model_instances!(p)
     _initialize_density_cache_buffers!(p)
+    _initialize_gram_isolated_pool_buffers!(p)
     _initialize_harmonics_workspace_buffers!(p)
     _initialize_nbody_workspace_buffers!(p)
     _initialize_aero_workspace_buffers!(p)
@@ -1802,33 +1823,65 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
     debug_control = p.shared_buffers.debug_control[]
     p.shared_buffers.current_time[] = t
     effector_decision = _dynamic_effector_thread_decision(p.args, p, dynamic_effectors, length(spacecraft))
-    minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores()))
-    @batch minbatch=minbatch for i in eachindex(sc_state)
-        if !p.is_active[i]
-            sc_du[i] .= 0.0
-            continue
-        end
-        @views begin
-            sc_view = sc_state[i]
-            du_view = sc_du[i]
-            forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-            torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-            _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
-            mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
-
-            du_view.pos .= sc_view.vel
-            du_view.vel .= forces / sc_view.mass
-            du_view.mass = mass_rate
-
-            if p.args.mission_configuration.orientation_sim
-                ω_body = SVector{3, Float64}(sc_view.ω)
-                inertia_tensor = spacecraft[i].inertia_tensor
-                τ_body = SVector{3, Float64}(torques)
-                du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
-                du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+    use_rhs_batch = _rhs_batch_parallel_enabled(length(spacecraft))
+    if use_rhs_batch
+        minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
+        @batch minbatch=minbatch for i in eachindex(sc_state)
+            if !p.is_active[i]
+                sc_du[i] .= 0.0
+                continue
             end
+            @views begin
+                sc_view = sc_state[i]
+                du_view = sc_du[i]
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
+                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
 
-            _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+                du_view.pos .= sc_view.vel
+                du_view.vel .= forces / sc_view.mass
+                du_view.mass = mass_rate
+
+                if p.args.mission_configuration.orientation_sim
+                    ω_body = SVector{3, Float64}(sc_view.ω)
+                    inertia_tensor = spacecraft[i].inertia_tensor
+                    τ_body = SVector{3, Float64}(torques)
+                    du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
+                    du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+                end
+
+                _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+            end
+        end
+    else
+        @inbounds for i in eachindex(sc_state)
+            if !p.is_active[i]
+                sc_du[i] .= 0.0
+                continue
+            end
+            @views begin
+                sc_view = sc_state[i]
+                du_view = sc_du[i]
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
+                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+
+                du_view.pos .= sc_view.vel
+                du_view.vel .= forces / sc_view.mass
+                du_view.mass = mass_rate
+
+                if p.args.mission_configuration.orientation_sim
+                    ω_body = SVector{3, Float64}(sc_view.ω)
+                    inertia_tensor = spacecraft[i].inertia_tensor
+                    τ_body = SVector{3, Float64}(torques)
+                    du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
+                    du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+                end
+
+                _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+            end
         end
     end
 end # function spacecraft_dynamics!
@@ -1841,32 +1894,63 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
     spacecraft = dynamics_model.spacecraft
     p.shared_buffers.current_time[] = t
     effector_decision = _dynamic_effector_thread_decision(p.args, p, dynamic_effectors, length(spacecraft))
-    minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores()))
-    @batch minbatch=minbatch for i in eachindex(sc_state)
-        if !p.is_active[i]
-            sc_du[i] .= 0.0
-            continue
-        end
-        @views begin
-            sc_view = sc_state[i]
-            du_view = sc_du[i]
-            forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-            torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-            _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
-
-            du_view.pos .= sc_view.vel
-            du_view.vel .= forces / sc_view.mass
-            du_view.mass = 0.0
-
-            if p.args.mission_configuration.orientation_sim
-                ω_body = SVector{3, Float64}(sc_view.ω)
-                inertia_tensor = spacecraft[i].inertia_tensor
-                τ_body = SVector{3, Float64}(torques)
-                du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
-                du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+    use_rhs_batch = _rhs_batch_parallel_enabled(length(spacecraft))
+    if use_rhs_batch
+        minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
+        @batch minbatch=minbatch for i in eachindex(sc_state)
+            if !p.is_active[i]
+                sc_du[i] .= 0.0
+                continue
             end
+            @views begin
+                sc_view = sc_state[i]
+                du_view = sc_du[i]
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
 
-            _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+                du_view.pos .= sc_view.vel
+                du_view.vel .= forces / sc_view.mass
+                du_view.mass = 0.0
+
+                if p.args.mission_configuration.orientation_sim
+                    ω_body = SVector{3, Float64}(sc_view.ω)
+                    inertia_tensor = spacecraft[i].inertia_tensor
+                    τ_body = SVector{3, Float64}(torques)
+                    du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
+                    du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+                end
+
+                _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+            end
+        end
+    else
+        @inbounds for i in eachindex(sc_state)
+            if !p.is_active[i]
+                sc_du[i] .= 0.0
+                continue
+            end
+            @views begin
+                sc_view = sc_state[i]
+                du_view = sc_du[i]
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
+
+                du_view.pos .= sc_view.vel
+                du_view.vel .= forces / sc_view.mass
+                du_view.mass = 0.0
+
+                if p.args.mission_configuration.orientation_sim
+                    ω_body = SVector{3, Float64}(sc_view.ω)
+                    inertia_tensor = spacecraft[i].inertia_tensor
+                    τ_body = SVector{3, Float64}(torques)
+                    du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
+                    du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+                end
+
+                _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+            end
         end
     end
 end # function spacecraft_dynamics_slow!
@@ -1877,31 +1961,61 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
     spacecraft = p.args.dynamics_model.spacecraft
     debug_control = p.shared_buffers.debug_control[]
     p.shared_buffers.current_time[] = t
-    minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores()))
-    @batch minbatch=minbatch for i in eachindex(sc_state)
-        if !p.is_active[i]
-            sc_du[i] .= 0.0
-            continue
-        end
-        @views begin
-            sc_view = sc_state[i]
-            du_view = sc_du[i]
-            forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-            torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-            mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
-
-            du_view.pos .= 0.0
-            du_view.vel .= forces / sc_view.mass
-            du_view.mass = mass_rate
-
-            if p.args.mission_configuration.orientation_sim
-                inertia_tensor = spacecraft[i].inertia_tensor
-                τ_body = SVector{3, Float64}(torques)
-                du_view.q .= 0.0
-                du_view.ω .= inertia_tensor \ τ_body
+    use_rhs_batch = _rhs_batch_parallel_enabled(length(spacecraft))
+    if use_rhs_batch
+        minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
+        @batch minbatch=minbatch for i in eachindex(sc_state)
+            if !p.is_active[i]
+                sc_du[i] .= 0.0
+                continue
             end
+            @views begin
+                sc_view = sc_state[i]
+                du_view = sc_du[i]
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
 
-            du_view.heat_loads .= 0.0
+                du_view.pos .= 0.0
+                du_view.vel .= forces / sc_view.mass
+                du_view.mass = mass_rate
+
+                if p.args.mission_configuration.orientation_sim
+                    inertia_tensor = spacecraft[i].inertia_tensor
+                    τ_body = SVector{3, Float64}(torques)
+                    du_view.q .= 0.0
+                    du_view.ω .= inertia_tensor \ τ_body
+                end
+
+                du_view.heat_loads .= 0.0
+            end
+        end
+    else
+        @inbounds for i in eachindex(sc_state)
+            if !p.is_active[i]
+                sc_du[i] .= 0.0
+                continue
+            end
+            @views begin
+                sc_view = sc_state[i]
+                du_view = sc_du[i]
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+
+                du_view.pos .= 0.0
+                du_view.vel .= forces / sc_view.mass
+                du_view.mass = mass_rate
+
+                if p.args.mission_configuration.orientation_sim
+                    inertia_tensor = spacecraft[i].inertia_tensor
+                    τ_body = SVector{3, Float64}(torques)
+                    du_view.q .= 0.0
+                    du_view.ω .= inertia_tensor \ τ_body
+                end
+
+                du_view.heat_loads .= 0.0
+            end
         end
     end
 end # function spacecraft_dynamics_fast_control!

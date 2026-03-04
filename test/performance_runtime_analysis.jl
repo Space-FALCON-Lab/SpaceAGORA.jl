@@ -116,6 +116,15 @@ end
     return join(sort(unique(string.(vec))), delimiter)
 end
 
+@inline function _mode_token(v)::String
+    return lowercase(strip(string(v)))
+end
+
+@inline function _is_adaptive_mode_token(v)::Bool
+    token = _mode_token(v)
+    return token in ("outer_inner_adaptive", "outer_inner_full_smart")
+end
+
 function _primary_terminal_state_metrics(sol)
     pos_norm_m = missing
     vel_norm_mps = missing
@@ -5095,6 +5104,107 @@ function _save_runtime_plot!(
     return nothing
 end
 
+@inline function _paper_figure_pack_enabled()::Bool
+    return _parse_bool_env("SPACEAGORA_PERF_PAPER_FIGURE_PACK", true)
+end
+
+@inline function _paper_ladder_outdir()::String
+    raw = strip(get(ENV, "SPACEAGORA_PERF_PAPER_LADDER_OUTDIR", joinpath(DEFAULT_OUTPUT_DIR, "smart_parallel_ladder")))
+    return normpath(isabspath(raw) ? raw : joinpath(REPO_ROOT, raw))
+end
+
+@inline function _paper_cross_machine_outdir()::String
+    raw = strip(get(ENV, "SPACEAGORA_PERF_PAPER_CROSS_MACHINE_OUTDIR", joinpath(DEFAULT_OUTPUT_DIR, "smart_parallel_ladder_cross_machine")))
+    return normpath(isabspath(raw) ? raw : joinpath(REPO_ROOT, raw))
+end
+
+function _latest_profile_artifact_optional(
+    outdir::String,
+    prefix::String,
+    profile::String;
+    suffix::String=".csv"
+)::Union{Nothing, String}
+    isdir(outdir) || return nothing
+    pattern = "$(prefix)_$(profile)_"
+    candidates = String[]
+    for entry in readdir(outdir)
+        if startswith(entry, pattern) && endswith(entry, suffix)
+            push!(candidates, joinpath(outdir, entry))
+        end
+    end
+    isempty(candidates) && return nothing
+    sort!(candidates; by=path -> stat(path).mtime)
+    return last(candidates)
+end
+
+function _read_optional_dataframe(path::Union{Nothing, String}, label::String)::Union{Nothing, DataFrame}
+    path === nothing && return nothing
+    try
+        return CSV.read(path, DataFrame)
+    catch err
+        @warn "[perf] Failed to read optional paper-figure artifact; skipping." label=label path=path exception=(err, catch_backtrace())
+        return nothing
+    end
+end
+
+function _paper_figure_external_data(spec::ProfileSpec)
+    ladder_outdir = _paper_ladder_outdir()
+    cross_outdir = _paper_cross_machine_outdir()
+
+    layer_attr_speedup_path = _latest_profile_artifact_optional(
+        ladder_outdir,
+        "smart_parallel_ladder_layer_attribution_speedup",
+        spec.name
+    )
+    deep_accuracy_path = _latest_profile_artifact_optional(
+        ladder_outdir,
+        "smart_parallel_ladder_deep_accuracy_parity",
+        spec.name
+    )
+    montecarlo_parity_path = _latest_profile_artifact_optional(
+        ladder_outdir,
+        "smart_parallel_ladder_montecarlo_distribution_parity",
+        spec.name
+    )
+    route_mix_path = _latest_profile_artifact_optional(
+        ladder_outdir,
+        "smart_parallel_ladder_route_mix",
+        spec.name
+    )
+    cross_speedup_summary_path = _latest_profile_artifact_optional(
+        cross_outdir,
+        "smart_parallel_ladder_cross_machine_speedup_summary",
+        spec.name
+    )
+    cross_adaptive_regret_summary_path = _latest_profile_artifact_optional(
+        cross_outdir,
+        "smart_parallel_ladder_cross_machine_adaptive_regret_summary",
+        spec.name
+    )
+    cross_route_mix_summary_path = _latest_profile_artifact_optional(
+        cross_outdir,
+        "smart_parallel_ladder_cross_machine_route_mix_summary",
+        spec.name
+    )
+
+    return (
+        layer_attribution_speedup_df=_read_optional_dataframe(layer_attr_speedup_path, "layer_attribution_speedup"),
+        deep_accuracy_df=_read_optional_dataframe(deep_accuracy_path, "deep_accuracy_parity"),
+        montecarlo_parity_df=_read_optional_dataframe(montecarlo_parity_path, "montecarlo_distribution_parity"),
+        route_mix_df=_read_optional_dataframe(route_mix_path, "route_mix"),
+        cross_speedup_summary_df=_read_optional_dataframe(cross_speedup_summary_path, "cross_machine_speedup_summary"),
+        cross_adaptive_regret_summary_df=_read_optional_dataframe(cross_adaptive_regret_summary_path, "cross_machine_adaptive_regret_summary"),
+        cross_route_mix_summary_df=_read_optional_dataframe(cross_route_mix_summary_path, "cross_machine_route_mix_summary"),
+        layer_attribution_speedup_path=layer_attr_speedup_path,
+        deep_accuracy_path=deep_accuracy_path,
+        montecarlo_parity_path=montecarlo_parity_path,
+        route_mix_path=route_mix_path,
+        cross_speedup_summary_path=cross_speedup_summary_path,
+        cross_adaptive_regret_summary_path=cross_adaptive_regret_summary_path,
+        cross_route_mix_summary_path=cross_route_mix_summary_path
+    )
+end
+
 function _sorted_orbit_groups(df::DataFrame, metric::Symbol)
     multiplier_col = :mission_time_multiplier in names(df) ? :mission_time_multiplier : :orbit_count
     groups = collect(groupby(df, :scenario))
@@ -5114,13 +5224,18 @@ function generate_runtime_plots(
     raw_df::DataFrame,
     summary_df::DataFrame,
     orbit_summary_df::DataFrame,
-    entry_duration_summary_df::DataFrame=DataFrame()
+    entry_duration_summary_df::DataFrame=DataFrame();
+    split_gate_df::Union{Nothing, DataFrame}=nothing,
+    multirate_gate_df::Union{Nothing, DataFrame}=nothing,
+    inner_hint_layer_df::Union{Nothing, DataFrame}=nothing,
+    density_backend_breakdown_df::Union{Nothing, DataFrame}=nothing
 )::Vector{String}
     !_plot_ready() && return String[]
     _ensure_runtime_plot_theme!()
 
     plot_artifacts = String[]
     success_summary = summary_df[summary_df.samples_success .> 0, :]
+    paper_external = _paper_figure_pack_enabled() ? _paper_figure_external_data(spec) : nothing
 
     # 1) Mean and p90 runtime per scenario.
     totals_df = success_summary[.!ismissing.(success_summary.total_time_mean_s), :]
@@ -5710,6 +5825,531 @@ function generate_runtime_plots(
         end
     end
 
+    # 17) Paper pack: adaptivity behavior (route mix + confidence/regret + best-fixed regret).
+    if _paper_figure_pack_enabled()
+        panels = Any[]
+
+        route_mix_df = (paper_external === nothing) ? nothing : paper_external.route_mix_df
+        if !(route_mix_df === nothing) &&
+           nrow(route_mix_df) > 0 &&
+           (:none_pct in names(route_mix_df)) &&
+           (:threads_pct in names(route_mix_df)) &&
+           (:process_pct in names(route_mix_df))
+            local_df = copy(route_mix_df)
+            if :mode in names(local_df)
+                mask = [_is_adaptive_mode_token(v) for v in local_df.mode]
+                if any(mask)
+                    local_df = local_df[mask, :]
+                end
+            end
+            if nrow(local_df) > 0
+                labels = if :rung in names(local_df)
+                    _plot_axis_label.(String.(local_df.rung))
+                elseif :mode in names(local_df)
+                    _plot_axis_label.(String.(local_df.mode))
+                else
+                    _plot_axis_label.(string.("adaptive_", collect(1:nrow(local_df))))
+                end
+                none_pct = [v isa Missing ? 0.0 : Float64(v) for v in local_df.none_pct]
+                threads_pct = [v isa Missing ? 0.0 : Float64(v) for v in local_df.threads_pct]
+                process_pct = [v isa Missing ? 0.0 : Float64(v) for v in local_df.process_pct]
+                p_route = Plots.bar(
+                    labels,
+                    hcat(none_pct, threads_pct, process_pct);
+                    label=["none" "threads" "process"],
+                    bar_position=:stack,
+                    color=["#9aa4b2" "#3f7fb3" "#2f8f5b"],
+                    title="Adaptive Route-Choice Distribution",
+                    xlabel="Adaptive Mode / Rung",
+                    ylabel="Route Share [%]",
+                    _plot_margins(size=(2400, 760), bottom_mm=72, right_mm=62, legend=:outertopright)...
+                )
+                push!(panels, p_route)
+            end
+        elseif nrow(raw_df) > 0 && (:outer_route in names(raw_df))
+            counts = Dict("none" => 0, "threads" => 0, "process" => 0, "other" => 0)
+            for v in raw_df.outer_route
+                token = lowercase(strip(String(v)))
+                if haskey(counts, token)
+                    counts[token] += 1
+                else
+                    counts["other"] += 1
+                end
+            end
+            denom = max(1, nrow(raw_df))
+            labels = ["none", "threads", "process", "other"]
+            vals = [100.0 * counts[label] / denom for label in labels]
+            p_route = Plots.bar(
+                labels,
+                vals;
+                color=["#9aa4b2", "#3f7fb3", "#2f8f5b", "#c06c84"],
+                title="Observed Outer-Route Distribution",
+                xlabel="Outer Route",
+                ylabel="Share of Runs [%]",
+                _plot_margins(size=(2400, 760), bottom_mm=42, right_mm=42, legend=false)...
+            )
+            push!(panels, p_route)
+        end
+
+        if !(inner_hint_layer_df === nothing) &&
+           nrow(inner_hint_layer_df) > 0 &&
+           (:layer in names(inner_hint_layer_df)) &&
+           (:confidence_mean in names(inner_hint_layer_df)) &&
+           (:regret_mean_ns in names(inner_hint_layer_df))
+            hint_df = inner_hint_layer_df[
+                .!ismissing.(inner_hint_layer_df.confidence_mean) .&
+                .!ismissing.(inner_hint_layer_df.regret_mean_ns), :
+            ]
+            if nrow(hint_df) > 0
+                labels = _plot_axis_label.(String.(hint_df.layer))
+                confidence = Float64.(hint_df.confidence_mean)
+                regret_ms = Float64.(hint_df.regret_mean_ns) ./ 1e6
+                p_hint = Plots.plot(
+                    labels,
+                    confidence;
+                    marker=:circle,
+                    color="#355070",
+                    label="Mean confidence width",
+                    title="Inner Adaptive Hint Confidence/Regret by Layer",
+                    xlabel="Inner Layer",
+                    ylabel="Confidence (lower is tighter)",
+                    _plot_margins(size=(2400, 760), bottom_mm=72, right_mm=62, legend=:outertopright)...
+                )
+                Plots.plot!(
+                    p_hint,
+                    labels,
+                    regret_ms;
+                    marker=:diamond,
+                    color="#bc4749",
+                    label="Mean regret [ms]"
+                )
+                push!(panels, p_hint)
+            end
+        end
+
+        regret_summary_df = (paper_external === nothing) ? nothing : paper_external.cross_adaptive_regret_summary_df
+        if !(regret_summary_df === nothing) &&
+           nrow(regret_summary_df) > 0 &&
+           (:adaptive_mode in names(regret_summary_df)) &&
+           (:mean_time_regret_pct in names(regret_summary_df)) &&
+           (:win_rate_pct in names(regret_summary_df))
+            local_df = regret_summary_df
+            labels = _plot_axis_label.(String.(local_df.adaptive_mode))
+            mean_regret = [v isa Missing ? NaN : Float64(v) for v in local_df.mean_time_regret_pct]
+            win_rate = [v isa Missing ? NaN : Float64(v) for v in local_df.win_rate_pct]
+            p_regret = Plots.plot(
+                labels,
+                mean_regret;
+                marker=:circle,
+                color="#d17a4f",
+                label="Mean time regret vs best fixed [%]",
+                title="Adaptive Regret vs Best Fixed (Cross-Machine)",
+                xlabel="Adaptive Mode",
+                ylabel="Regret / Win Rate [%]",
+                _plot_margins(size=(2400, 760), bottom_mm=72, right_mm=62, legend=:outertopright)...
+            )
+            Plots.plot!(
+                p_regret,
+                labels,
+                win_rate;
+                marker=:utriangle,
+                color="#2a9d8f",
+                label="Win rate vs best fixed [%]"
+            )
+            push!(panels, p_regret)
+        end
+
+        if !isempty(panels)
+            plt = if length(panels) == 1
+                panels[1]
+            else
+                Plots.plot(
+                    panels...;
+                    layout=(length(panels), 1),
+                    size=(2500, 660 * length(panels)),
+                    left_margin=20 * Plots.mm,
+                    right_margin=20 * Plots.mm
+                )
+            end
+            _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_paper_adaptivity_behavior", spec, stamp)
+        end
+    end
+
+    # 18) Paper pack: explicit layer-attribution speedup panel.
+    if _paper_figure_pack_enabled() && !(paper_external === nothing)
+        layer_df = paper_external.layer_attribution_speedup_df
+        if !(layer_df === nothing) &&
+           nrow(layer_df) > 0 &&
+           (:layer_set in names(layer_df)) &&
+           (:total_speedup_vs_outer_only in names(layer_df))
+            speed_by_layer = Dict{String, Float64}()
+            for row in eachrow(layer_df)
+                layer = lowercase(strip(String(row.layer_set)))
+                speed = row.total_speedup_vs_outer_only
+                if speed isa Missing
+                    continue
+                end
+                speed_f = Float64(speed)
+                if !isfinite(speed_f)
+                    continue
+                end
+                if !haskey(speed_by_layer, layer) || speed_f > speed_by_layer[layer]
+                    speed_by_layer[layer] = speed_f
+                end
+            end
+            ordered_layers = ["outer_only", "density", "thermal", "control", "multibody", "effector"]
+            labels = String[]
+            values = Float64[]
+            for layer in ordered_layers
+                if haskey(speed_by_layer, layer)
+                    push!(labels, _plot_axis_label(layer))
+                    push!(values, speed_by_layer[layer])
+                end
+            end
+            if !isempty(values)
+                plt = Plots.bar(
+                    labels,
+                    values;
+                    color="#4f9d69",
+                    title="Layer Attribution: Speedup vs Outer-Only Baseline",
+                    xlabel="Layer Stack",
+                    ylabel="Speedup vs outer-only [x]",
+                    _plot_margins(size=(2300, 980), bottom_mm=60, right_mm=42, legend=false)...
+                )
+                Plots.hline!(plt, [1.0]; color=:black, linestyle=:dash, label=false)
+                _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_paper_layer_attribution", spec, stamp)
+            end
+        end
+    end
+
+    # 19) Paper pack: density-backend benchmark panel.
+    if _paper_figure_pack_enabled()
+        density_df = density_backend_breakdown_df === nothing ? summarize_density_backend_breakdown(raw_df) : density_backend_breakdown_df
+        if nrow(density_df) > 0 &&
+           (:density_backend_bucket in names(density_df)) &&
+           (:total_time_mean_s in names(density_df)) &&
+           (:sim_seconds_per_wall_second_mean in names(density_df))
+            bucket_order = [
+                "gram_point_to_point",
+                "gram_surrogate",
+                "gram_static_grid_or_cached_surrogate",
+                "non_gram"
+            ]
+            labels = String[]
+            mean_time = Float64[]
+            throughput = Float64[]
+            success_rate = Float64[]
+            for bucket in bucket_order
+                idx = findfirst(==(bucket), String.(density_df.density_backend_bucket))
+                idx === nothing && continue
+                row = density_df[idx, :]
+                push!(labels, _plot_axis_label(bucket))
+                push!(mean_time, row.total_time_mean_s isa Missing ? NaN : Float64(row.total_time_mean_s))
+                push!(throughput, row.sim_seconds_per_wall_second_mean isa Missing ? NaN : Float64(row.sim_seconds_per_wall_second_mean))
+                push!(success_rate, row.success_rate_pct isa Missing ? NaN : Float64(row.success_rate_pct))
+            end
+            if !isempty(labels)
+                p_time = Plots.bar(
+                    labels,
+                    mean_time;
+                    color="#7f8c8d",
+                    ylabel="Mean Runtime [s]",
+                    title="Density Backend Benchmark: Runtime",
+                    xticks=(1:length(labels), fill("", length(labels))),
+                    _plot_margins(size=(2400, 600), bottom_mm=10, right_mm=42)...
+                )
+                p_tp = Plots.bar(
+                    labels,
+                    throughput;
+                    color="#2f8f5b",
+                    ylabel="Sim sec / wall sec",
+                    title="Density Backend Benchmark: Throughput",
+                    xticks=(1:length(labels), fill("", length(labels))),
+                    _plot_margins(size=(2400, 600), bottom_mm=10, right_mm=42)...
+                )
+                p_sr = Plots.bar(
+                    labels,
+                    success_rate;
+                    color="#3f7fb3",
+                    xlabel="Density Backend Bucket",
+                    ylabel="Success Rate [%]",
+                    title="Density Backend Benchmark: Solve Success",
+                    _plot_margins(size=(2400, 760), bottom_mm=64, right_mm=42)...
+                )
+                plt = Plots.plot(
+                    p_time,
+                    p_tp,
+                    p_sr;
+                    layout=(3, 1),
+                    size=(2500, 1880),
+                    left_margin=20 * Plots.mm,
+                    right_margin=20 * Plots.mm
+                )
+                _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_paper_density_backend", spec, stamp)
+            end
+        end
+    end
+
+    # 20) Paper pack: accuracy-parity suite.
+    if _paper_figure_pack_enabled() && !(paper_external === nothing)
+        panels = Any[]
+        deep_df = paper_external.deep_accuracy_df
+        if !(deep_df === nothing) &&
+           nrow(deep_df) > 0 &&
+           (:rung in names(deep_df)) &&
+           (:traj_pos_rel_rms_median_pct in names(deep_df)) &&
+           (:traj_vel_rel_rms_median_pct in names(deep_df))
+            local_df = copy(deep_df)
+            if :mode in names(local_df)
+                sort!(local_df, :mode)
+            end
+            labels = _plot_axis_label.(String.(local_df.rung))
+            pos_rms = [v isa Missing ? NaN : Float64(v) for v in local_df.traj_pos_rel_rms_median_pct]
+            vel_rms = [v isa Missing ? NaN : Float64(v) for v in local_df.traj_vel_rel_rms_median_pct]
+            p_traj = Plots.bar(
+                labels,
+                hcat(pos_rms, vel_rms);
+                label=["Pos RMS rel err (median %)" "Vel RMS rel err (median %)"],
+                color=["#2a9d8f" "#3f7fb3"],
+                title="Accuracy Parity: Trajectory RMS Relative Error",
+                xlabel="Rung",
+                ylabel="Relative Error [%]",
+                _plot_margins(size=(2400, 760), bottom_mm=72, right_mm=62, legend=:outertopright)...
+            )
+            push!(panels, p_traj)
+
+            if (:periapsis_time_abs_err_p90_s in names(local_df)) && (:interface_time_abs_err_p90_s in names(local_df))
+                peri_p90 = [v isa Missing ? NaN : Float64(v) for v in local_df.periapsis_time_abs_err_p90_s]
+                interface_p90 = [v isa Missing ? NaN : Float64(v) for v in local_df.interface_time_abs_err_p90_s]
+                p_event = Plots.bar(
+                    labels,
+                    hcat(peri_p90, interface_p90);
+                    label=["Periapsis timing abs err (P90)" "Interface timing abs err (P90)"],
+                    color=["#d17a4f" "#e9c46a"],
+                    title="Accuracy Parity: Event-Time Error",
+                    xlabel="Rung",
+                    ylabel="Absolute Error [s]",
+                    _plot_margins(size=(2400, 760), bottom_mm=72, right_mm=62, legend=:outertopright)...
+                )
+                push!(panels, p_event)
+            end
+
+            if (:propellant_rel_err_p90_pct in names(local_df)) && (:control_impulse_rel_err_p90_pct in names(local_df))
+                prop_p90 = [v isa Missing ? NaN : Float64(v) for v in local_df.propellant_rel_err_p90_pct]
+                impulse_p90 = [v isa Missing ? NaN : Float64(v) for v in local_df.control_impulse_rel_err_p90_pct]
+                p_control = Plots.bar(
+                    labels,
+                    hcat(prop_p90, impulse_p90);
+                    label=["Propellant rel err (P90 %)" "Control impulse rel err (P90 %)"],
+                    color=["#8d99ae" "#6d597a"],
+                    title="Accuracy Parity: Control/Propellant",
+                    xlabel="Rung",
+                    ylabel="Relative Error [%]",
+                    _plot_margins(size=(2400, 760), bottom_mm=72, right_mm=62, legend=:outertopright)...
+                )
+                push!(panels, p_control)
+            end
+
+            if :callback_exact_match_pct in names(local_df)
+                callback_match = [v isa Missing ? NaN : Float64(v) for v in local_df.callback_exact_match_pct]
+                p_callback = Plots.bar(
+                    labels,
+                    callback_match;
+                    color="#457b9d",
+                    title="Accuracy Parity: Callback-State Exact Match",
+                    xlabel="Rung",
+                    ylabel="Exact Match [%]",
+                    _plot_margins(size=(2400, 760), bottom_mm=72, right_mm=42, legend=false)...
+                )
+                push!(panels, p_callback)
+            end
+        end
+
+        mc_df = paper_external.montecarlo_parity_df
+        if !(mc_df === nothing) &&
+           nrow(mc_df) > 0 &&
+           (:mode in names(mc_df)) &&
+           (:rung in names(mc_df)) &&
+           (:event_time_ks_distance in names(mc_df))
+            agg = combine(
+                groupby(mc_df, [:mode, :rung]),
+                :event_time_ks_distance => (v -> _safe_stat(v, median)) => :event_ks_median,
+                :pos_ks_distance => (v -> _safe_stat(v, median)) => :pos_ks_median,
+                :vel_ks_distance => (v -> _safe_stat(v, median)) => :vel_ks_median,
+                :mass_ks_distance => (v -> _safe_stat(v, median)) => :mass_ks_median
+            )
+            sort!(agg, :mode)
+            labels = _plot_axis_label.(String.(agg.rung))
+            event_ks = [v isa Missing ? NaN : Float64(v) for v in agg.event_ks_median]
+            pos_ks = [v isa Missing ? NaN : Float64(v) for v in agg.pos_ks_median]
+            vel_ks = [v isa Missing ? NaN : Float64(v) for v in agg.vel_ks_median]
+            mass_ks = [v isa Missing ? NaN : Float64(v) for v in agg.mass_ks_median]
+            p_mc = Plots.bar(
+                labels,
+                hcat(event_ks, pos_ks, vel_ks, mass_ks);
+                label=["Event-time KS" "Position KS" "Velocity KS" "Mass KS"],
+                color=["#bc4749" "#2a9d8f" "#3f7fb3" "#6d597a"],
+                title="Accuracy Parity: Monte Carlo Distribution KS Distance",
+                xlabel="Rung",
+                ylabel="KS Distance",
+                _plot_margins(size=(2400, 760), bottom_mm=72, right_mm=62, legend=:outertopright)...
+            )
+            push!(panels, p_mc)
+        end
+
+        if isempty(panels)
+            gate_parts = DataFrame[]
+            if !(split_gate_df === nothing) && nrow(split_gate_df) > 0
+                local_df = copy(split_gate_df)
+                local_df[!, :gate_label] = fill("split", nrow(local_df))
+                push!(gate_parts, local_df)
+            end
+            if !(multirate_gate_df === nothing) && nrow(multirate_gate_df) > 0
+                local_df = copy(multirate_gate_df)
+                local_df[!, :gate_label] = fill("multirate", nrow(local_df))
+                push!(gate_parts, local_df)
+            end
+            if !isempty(gate_parts)
+                gate_df = vcat(gate_parts...; cols=:union)
+                labels = _plot_axis_label.(String.(gate_df.scenario))
+                pos_max = [v isa Missing ? NaN : Float64(v) for v in gate_df.pos_rel_max]
+                vel_max = [v isa Missing ? NaN : Float64(v) for v in gate_df.vel_rel_max]
+                p_gate = Plots.bar(
+                    labels,
+                    hcat(pos_max, vel_max);
+                    label=["Pos rel max" "Vel rel max"],
+                    color=["#2a9d8f" "#3f7fb3"],
+                    title="Accuracy Gate Fallback: Trajectory Relative Error Maxima",
+                    xlabel="Scenario",
+                    ylabel="Relative Error",
+                    _plot_margins(size=(2400, 760), bottom_mm=72, right_mm=62, legend=:outertopright)...
+                )
+                push!(panels, p_gate)
+            end
+        end
+
+        if !isempty(panels)
+            plt = if length(panels) == 1
+                panels[1]
+            else
+                Plots.plot(
+                    panels...;
+                    layout=(length(panels), 1),
+                    size=(2500, 660 * length(panels)),
+                    left_margin=20 * Plots.mm,
+                    right_margin=20 * Plots.mm
+                )
+            end
+            _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_paper_accuracy_suite", spec, stamp)
+        end
+    end
+
+    # 21) Paper pack: cross-machine comparison panel.
+    if _paper_figure_pack_enabled() && !(paper_external === nothing)
+        panels = Any[]
+        speedup_summary_df = paper_external.cross_speedup_summary_df
+        if !(speedup_summary_df === nothing) &&
+           nrow(speedup_summary_df) > 0 &&
+           (:rung in names(speedup_summary_df)) &&
+           (:median_speedup_vs_r0 in names(speedup_summary_df))
+            local_df = copy(speedup_summary_df)
+            sort!(local_df, :median_speedup_vs_r0, rev=true)
+            labels = _plot_axis_label.(String.(local_df.rung))
+            med_speedup = [v isa Missing ? NaN : Float64(v) for v in local_df.median_speedup_vs_r0]
+            p_speedup = Plots.bar(
+                labels,
+                med_speedup;
+                color="#4f9d69",
+                title="Cross-Machine Median Speedup vs R0",
+                xlabel="Rung",
+                ylabel="Median Speedup [x]",
+                _plot_margins(size=(2400, 760), bottom_mm=72, right_mm=42, legend=false)...
+            )
+            Plots.hline!(p_speedup, [1.0]; color=:black, linestyle=:dash, label=false)
+            push!(panels, p_speedup)
+        end
+
+        regret_summary_df = paper_external.cross_adaptive_regret_summary_df
+        if !(regret_summary_df === nothing) &&
+           nrow(regret_summary_df) > 0 &&
+           (:adaptive_mode in names(regret_summary_df)) &&
+           (:mean_time_regret_pct in names(regret_summary_df))
+            local_df = regret_summary_df
+            labels = _plot_axis_label.(String.(local_df.adaptive_mode))
+            regret_pct = [v isa Missing ? NaN : Float64(v) for v in local_df.mean_time_regret_pct]
+            win_rate = (:win_rate_pct in names(local_df)) ?
+                [v isa Missing ? NaN : Float64(v) for v in local_df.win_rate_pct] :
+                fill(NaN, nrow(local_df))
+            p_regret = Plots.plot(
+                labels,
+                regret_pct;
+                marker=:circle,
+                color="#d17a4f",
+                label="Mean time regret [%]",
+                title="Cross-Machine Adaptive Regret vs Best Fixed",
+                xlabel="Adaptive Mode",
+                ylabel="Regret / Win Rate [%]",
+                _plot_margins(size=(2400, 760), bottom_mm=72, right_mm=62, legend=:outertopright)...
+            )
+            Plots.plot!(p_regret, labels, win_rate; marker=:diamond, color="#2a9d8f", label="Win rate [%]")
+            push!(panels, p_regret)
+        end
+
+        route_mix_summary_df = paper_external.cross_route_mix_summary_df
+        if !(route_mix_summary_df === nothing) &&
+           nrow(route_mix_summary_df) > 0 &&
+           (:none_pct_mean in names(route_mix_summary_df)) &&
+           (:threads_pct_mean in names(route_mix_summary_df)) &&
+           (:process_pct_mean in names(route_mix_summary_df))
+            local_df = copy(route_mix_summary_df)
+            if :mode in names(local_df)
+                mask = [_is_adaptive_mode_token(v) for v in local_df.mode]
+                if any(mask)
+                    local_df = local_df[mask, :]
+                end
+            end
+            if nrow(local_df) > 0
+                labels = if :rung in names(local_df)
+                    _plot_axis_label.(String.(local_df.rung))
+                elseif :mode in names(local_df)
+                    _plot_axis_label.(String.(local_df.mode))
+                else
+                    _plot_axis_label.(string.("adaptive_", collect(1:nrow(local_df))))
+                end
+                none_pct = [v isa Missing ? 0.0 : Float64(v) for v in local_df.none_pct_mean]
+                threads_pct = [v isa Missing ? 0.0 : Float64(v) for v in local_df.threads_pct_mean]
+                process_pct = [v isa Missing ? 0.0 : Float64(v) for v in local_df.process_pct_mean]
+                p_mix = Plots.bar(
+                    labels,
+                    hcat(none_pct, threads_pct, process_pct);
+                    label=["none" "threads" "process"],
+                    bar_position=:stack,
+                    color=["#9aa4b2" "#3f7fb3" "#2f8f5b"],
+                    title="Cross-Machine Adaptive Route Mix",
+                    xlabel="Adaptive Mode / Rung",
+                    ylabel="Mean Route Share [%]",
+                    _plot_margins(size=(2400, 760), bottom_mm=72, right_mm=62, legend=:outertopright)...
+                )
+                push!(panels, p_mix)
+            end
+        end
+
+        if !isempty(panels)
+            plt = if length(panels) == 1
+                panels[1]
+            else
+                Plots.plot(
+                    panels...;
+                    layout=(length(panels), 1),
+                    size=(2500, 660 * length(panels)),
+                    left_margin=20 * Plots.mm,
+                    right_margin=20 * Plots.mm
+                )
+            end
+            _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_paper_cross_machine", spec, stamp)
+        end
+    end
+
     return plot_artifacts
 end
 
@@ -6266,7 +6906,21 @@ function main()
     inner_hint_layer_path = joinpath(outdir, "runtime_inner_hint_layers_$(spec.name)_$(stamp).csv")
     density_backend_breakdown_path = joinpath(outdir, "runtime_density_backend_breakdown_$(spec.name)_$(stamp).csv")
     report_path = joinpath(outdir, "runtime_report_$(spec.name)_$(stamp).md")
-    plot_paths = generate_runtime_plots(outdir, spec, stamp, raw_df, summary_df, orbit_summary_df, entry_duration_summary_df)
+    hw = _runtime_hardware_snapshot()
+    inner_hint_layer_df = _inner_hint_layer_report_df(spec, hw)
+    plot_paths = generate_runtime_plots(
+        outdir,
+        spec,
+        stamp,
+        raw_df,
+        summary_df,
+        orbit_summary_df,
+        entry_duration_summary_df;
+        split_gate_df=split_gate_df,
+        multirate_gate_df=multirate_gate_df,
+        inner_hint_layer_df=inner_hint_layer_df,
+        density_backend_breakdown_df=density_backend_breakdown_df
+    )
 
     stage_names = ["run_benchmarks"]
     stage_elapsed = [bench_elapsed_s]
@@ -6285,7 +6939,6 @@ function main()
     push!(stage_elapsed, entry_duration_elapsed_s)
     push!(stage_elapsed, total_elapsed_s)
     stage_timing_df = DataFrame(stage=stage_names, elapsed_s=stage_elapsed)
-    hw = _runtime_hardware_snapshot()
     hardware_info_df = DataFrame([
         (
             profile=spec.name,
@@ -6299,7 +6952,6 @@ function main()
             arch=hw.arch
         )
     ])
-    inner_hint_layer_df = _inner_hint_layer_report_df(spec, hw)
 
     CSV.write(raw_path, raw_df)
     CSV.write(summary_path, summary_df)

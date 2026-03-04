@@ -4,7 +4,7 @@ using Base.Threads
 
 export parse_bool_env, parse_parallel_mode_env, parse_thread_threshold_env
 export outer_parallel_active, effective_inner_thread_budget, use_threads_policy
-export thread_policy_decision, threaded_foreach, with_policy_context
+export thread_policy_decision, threaded_foreach, threaded_reduce, with_policy_context
 export reset_policy_telemetry!, policy_telemetry_snapshot, record_policy_observation!
 
 Base.@kwdef mutable struct AdaptiveControllerState
@@ -458,6 +458,45 @@ end
 
 function threaded_foreach(f::F, num_items::Int, allotment::Int) where {F <: Function}
     return threaded_foreach(num_items, allotment, f)
+end
+
+function threaded_reduce(
+    num_items::Int,
+    allotment::Int,
+    init::I,
+    body!::B,
+    combine!::C
+) where {I <: Function, B <: Function, C <: Function}
+    budget = effective_inner_thread_budget()
+    workers = num_items <= 0 ? 1 : min(num_items, max(1, allotment), budget)
+    acc0 = init()
+    if num_items <= 0
+        return acc0
+    end
+    if workers <= 1 || Threads.nthreads() <= 1
+        @inbounds for idx in 1:num_items
+            body!(acc0, idx)
+        end
+        return acc0
+    end
+
+    partials = Vector{typeof(acc0)}(undef, workers)
+    partials[1] = acc0
+    Threads.@sync for worker_id in 1:workers
+        Threads.@spawn begin
+            local_acc = worker_id == 1 ? partials[1] : init()
+            @inbounds for idx in worker_id:workers:num_items
+                body!(local_acc, idx)
+            end
+            partials[worker_id] = local_acc
+        end
+    end
+
+    result = partials[1]
+    @inbounds for worker_id in 2:workers
+        combine!(result, partials[worker_id])
+    end
+    return result
 end
 
 function record_policy_observation!(

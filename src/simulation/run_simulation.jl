@@ -1601,24 +1601,30 @@ end
 )
     effector_started_ns = time_ns()
     if effector_decision.use_threads
-        fx = Threads.Atomic{Float64}(0.0)
-        fy = Threads.Atomic{Float64}(0.0)
-        fz = Threads.Atomic{Float64}(0.0)
-        tx = Threads.Atomic{Float64}(0.0)
-        ty = Threads.Atomic{Float64}(0.0)
-        tz = Threads.Atomic{Float64}(0.0)
-        SimulationModel.ParallelPolicy.threaded_foreach(length(dynamic_effectors), effector_decision.allotment) do eff_idx
-            effector = dynamic_effectors[eff_idx]
-            force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)
-            Threads.atomic_add!(fx, force[1])
-            Threads.atomic_add!(fy, force[2])
-            Threads.atomic_add!(fz, force[3])
-            Threads.atomic_add!(tx, torque[1])
-            Threads.atomic_add!(ty, torque[2])
-            Threads.atomic_add!(tz, torque[3])
-        end
-        forces .= SVector{3, Float64}(fx[], fy[], fz[])
-        torques .= SVector{3, Float64}(tx[], ty[], tz[])
+        reduced = SimulationModel.ParallelPolicy.threaded_reduce(
+            length(dynamic_effectors),
+            effector_decision.allotment,
+            () -> MVector{6, Float64}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            (local_sum, eff_idx) -> begin
+                effector = dynamic_effectors[eff_idx]
+                force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)
+                local_sum[1] += force[1]
+                local_sum[2] += force[2]
+                local_sum[3] += force[3]
+                local_sum[4] += torque[1]
+                local_sum[5] += torque[2]
+                local_sum[6] += torque[3]
+                return nothing
+            end,
+            (dest, src) -> begin
+                @inbounds for i in 1:6
+                    dest[i] += src[i]
+                end
+                return nothing
+            end
+        )
+        forces .= SVector{3, Float64}(reduced[1], reduced[2], reduced[3])
+        torques .= SVector{3, Float64}(reduced[4], reduced[5], reduced[6])
     else
         @inbounds for effector in dynamic_effectors
             force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)

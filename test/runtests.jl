@@ -4842,6 +4842,45 @@ end
     end
 end
 
+@testset "Parallel Policy threaded_reduce" begin
+    policy = SimulationModel.ParallelPolicy
+    budget = max(1, Threads.nthreads())
+    withenv("SPACEAGORA_INNER_THREAD_BUDGET" => string(budget)) do
+        reduced = policy.threaded_reduce(
+            16,
+            budget,
+            () -> MVector{2, Int}(0, 0),
+            (local_acc, idx) -> begin
+                local_acc[1] += idx
+                local_acc[2] += 1
+                return nothing
+            end,
+            (dest, src) -> begin
+                dest[1] += src[1]
+                dest[2] += src[2]
+                return nothing
+            end
+        )
+        @test reduced[1] == sum(1:16)
+        @test reduced[2] == 16
+
+        reduced_empty = policy.threaded_reduce(
+            0,
+            budget,
+            () -> Ref(0),
+            (local_acc, idx) -> begin
+                local_acc[] += idx
+                return nothing
+            end,
+            (dest, src) -> begin
+                dest[] += src[]
+                return nothing
+            end
+        )
+        @test reduced_empty[] == 0
+    end
+end
+
 @testset "Aerodynamic Helper Branch Coverage" begin
     dynamic_effectors = SimulationModel.DynamicEffectors
 

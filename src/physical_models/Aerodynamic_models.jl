@@ -20,6 +20,12 @@ end
     return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_MULTIBODY_MAX_THREADS", 4)
 end
 
+@inline function _threadid_capacity()::Int
+    # Compatibility shim for legacy tests/callers after migrating scratch indexing
+    # from thread ids to stable worker ids.
+    return max(Threads.maxthreadid(), _multibody_max_threads())
+end
+
 @inline function _multibody_outer_parallel_hint()::Bool
     # Explicit hint for disabling intra-satellite threading under outer parallel execution.
     return ParallelPolicy.outer_parallel_active()

@@ -37,9 +37,11 @@ const TV = TelemetryVerification
     @test_throws ArgumentError PP.parse_parallel_profile("not_a_profile")
 
     cfg_r0 = PP.profile_config("R0")
+    cfg_r3 = PP.profile_config("R3")
     cfg_r4 = PP.profile_config("R4")
     cfg_full = PP.profile_config("R5")
     @test cfg_r0.outer_backend == :none
+    @test cfg_r3.outer_backend == :auto
     @test cfg_r4.inner_adaptive == true
     @test cfg_full.outer_route_adaptive == true
     @test cfg_full.label == "r5"
@@ -56,6 +58,8 @@ const TV = TelemetryVerification
     @test env_map_override["SPACEAGORA_PARALLEL_PROFILE"] == "R2"
     @test env_map_override["SPACEAGORA_OUTER_PARALLEL_ACTIVE"] == "0"
     @test env_map_override["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "none"
+    env_pairs_auto = PP.profile_env_pairs("R5"; preserve_existing=false, outer_parallel_active=false)
+    @test Dict(env_pairs_auto)["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "auto"
 
     value_a = PP.with_parallel_profile("R1_a"; preserve_existing=false, outer_parallel_active=true) do
         (ENV["SPACEAGORA_PARALLEL_PROFILE"], ENV["SPACEAGORA_OUTER_PARALLEL_ACTIVE"])
@@ -73,6 +77,9 @@ const TV = TelemetryVerification
     sig = PP.outer_route_signature(f_heavy)
     @test occursin("cat=deterministic", sig)
     @test occursin("harm=21p", sig)
+    @test occursin("sat=1", PP.outer_route_signature(PP.OuterRouteFeatures(n_sats=1, n_links=1, mission_time_s=100.0)))
+    @test occursin("sat=2", PP.outer_route_signature(PP.OuterRouteFeatures(n_sats=2, n_links=2, mission_time_s=100.0)))
+    @test occursin("sat=5p", PP.outer_route_signature(PP.OuterRouteFeatures(n_sats=7, n_links=10, mission_time_s=10_000.0)))
 
     tune = PP.OuterRouteTuning(
         adaptive_enabled=true,

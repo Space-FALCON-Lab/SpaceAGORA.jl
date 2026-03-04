@@ -656,6 +656,10 @@ function threaded_foreach_worker(num_items::Int, allotment::Int, f::F) where {F 
     return nothing
 end
 
+function threaded_foreach_worker(f::F, num_items::Int, allotment::Int) where {F <: Function}
+    return threaded_foreach_worker(num_items, allotment, f)
+end
+
 function threaded_reduce(
     num_items::Int,
     allotment::Int,

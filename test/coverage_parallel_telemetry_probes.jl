@@ -18,7 +18,7 @@ const TV = TelemetryVerification
         PP.R2 => "R2",
         PP.R3 => "R3",
         PP.R4 => "R4",
-        PP.R4_full_auto => "R4_full_auto"
+        PP.R5 => "R5"
     )
     for (profile, name_expected) in names_expected
         @test PP.parallel_profile_name(profile) == name_expected
@@ -30,18 +30,19 @@ const TV = TelemetryVerification
     @test PP.parse_parallel_profile("inner_only") == PP.R2
     @test PP.parse_parallel_profile("outer_inner_static") == PP.R3
     @test PP.parse_parallel_profile("auto_adaptive") == PP.R4
-    @test PP.parse_parallel_profile("full_smart") == PP.R4_full_auto
+    @test PP.parse_parallel_profile("full_smart") == PP.R5
+    @test PP.parse_parallel_profile("R4_full_auto") == PP.R5
     @test PP.parse_parallel_profile(:R0) == PP.R0
     @test PP.parse_parallel_profile(PP.R3) == PP.R3
     @test_throws ArgumentError PP.parse_parallel_profile("not_a_profile")
 
     cfg_r0 = PP.profile_config("R0")
     cfg_r4 = PP.profile_config("R4")
-    cfg_full = PP.profile_config("R4_full_auto")
+    cfg_full = PP.profile_config("R5")
     @test cfg_r0.outer_backend == :none
     @test cfg_r4.inner_adaptive == true
     @test cfg_full.outer_route_adaptive == true
-    @test cfg_full.label == "r4_full_auto"
+    @test cfg_full.label == "r5"
 
     withenv("SPACEAGORA_PARALLEL_PROFILE" => "existing_profile") do
         env_pairs = PP.profile_env_pairs("R1_b"; preserve_existing=true, outer_parallel_active=true)
@@ -129,6 +130,27 @@ const TV = TelemetryVerification
         parallel_enabled=true
     )
     @test chosen_adaptive == :process
+
+    mktempdir() do tmp
+        cache_path = joinpath(tmp, "outer_route_state.toml")
+        saved = PP.save_outer_route_state(state, cache_path; metadata=Dict("profile" => "quick"))
+        @test isfile(cache_path)
+        @test saved.rows >= 3
+        @test saved.signatures >= 1
+
+        loaded_state = PP.OuterRouteState()
+        loaded = PP.load_outer_route_state!(loaded_state, cache_path; replace=true)
+        @test loaded.rows >= 3
+        snap_loaded = PP.outer_route_stats_snapshot(loaded_state, sig)
+        @test snap_loaded[:process].samples == snap[:process].samples
+        @test snap_loaded[:threads].samples == snap[:threads].samples
+
+        PP.record_outer_route_feedback!(loaded_state, f_heavy; route=:process, successes=1, failures=0, elapsed_success_s=1.0, tuning=tune)
+        merged = PP.load_outer_route_state!(loaded_state, cache_path; replace=false)
+        @test merged.rows >= 3
+        snap_merged = PP.outer_route_stats_snapshot(loaded_state, sig)
+        @test snap_merged[:process].samples == 2 * snap[:process].samples + 1
+    end
 
     PP.reset_outer_route_state!(state)
     @test isempty(PP.outer_route_stats_snapshot(state, sig))

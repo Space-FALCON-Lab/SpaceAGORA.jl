@@ -97,7 +97,7 @@ function parse_cli(args::Vector{String})
             plots = _parse_bool(split(arg, "=", limit=2)[2])
         else
             throw(ArgumentError(
-                "Unknown argument '$arg'. Supported: --spec=..., --project=..., --backend=command|inprocess, --verification-script=..., --manifest=..., --profile=quick|full, --parallel-profile=R0|R1_a|R1_b|R2|R3|R4|R4_full_auto, --post-verify-best=0|1, --post-verify-profile=quick|full, --post-verify-plots=0|1, --post-verify-enforce=0|1, --enforce=0|1, --plots=0|1"
+                "Unknown argument '$arg'. Supported: --spec=..., --project=..., --backend=command|inprocess, --verification-script=..., --manifest=..., --profile=quick|full, --parallel-profile=R0|R1_a|R1_b|R2|R3|R4|R5, --post-verify-best=0|1, --post-verify-profile=quick|full, --post-verify-plots=0|1, --post-verify-enforce=0|1, --enforce=0|1, --plots=0|1"
             ))
         end
     end

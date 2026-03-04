@@ -615,7 +615,17 @@ end
     token = lowercase(strip(String(raw)))
     token = replace(token, "-" => "_")
     token = replace(token, " " => "")
-    return token in ("r4_full_auto", "r4fullauto", "r4_calibration_full_auto", "full_smart")
+    return token in (
+        "r5",
+        "r5_full_auto",
+        "r5fullauto",
+        "r5_calibration_full_auto",
+        "full_smart",
+        # Legacy aliases:
+        "r4_full_auto",
+        "r4fullauto",
+        "r4_calibration_full_auto"
+    )
 end
 
 @inline function backend_full_auto_requested(backend::AbstractBackend)::Bool
@@ -637,8 +647,13 @@ function _backend_parallel_profile(backend::AbstractBackend)::SpaceAGORA.Paralle
         return SpaceAGORA.parse_parallel_profile(raw)
     catch err
         if _is_full_auto_profile_token(raw)
-            # Compatibility fallback: older SpaceAGORA builds may not define R4_full_auto.
-            return SpaceAGORA.parse_parallel_profile("R4")
+            # Compatibility fallback across SpaceAGORA versions with different full-auto tokens.
+            for fallback in ("R5", "R4_full_auto", "R4")
+                try
+                    return SpaceAGORA.parse_parallel_profile(fallback)
+                catch
+                end
+            end
         end
         rethrow(err)
     end

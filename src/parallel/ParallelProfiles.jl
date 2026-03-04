@@ -1,10 +1,14 @@
 module ParallelProfiles
 
+using Dates
+using TOML
+
 export ParallelProfile, ParallelProfileConfig
 export parse_parallel_profile, parallel_profile_name, profile_config, profile_env_pairs, with_parallel_profile
 export OuterRouteFeatures, OuterRouteTuning, OuterRouteState
 export reset_outer_route_state!, outer_route_signature, outer_route_stats_snapshot
 export default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
+export load_outer_route_state!, save_outer_route_state
 
 @enum ParallelProfile begin
     R0
@@ -13,8 +17,11 @@ export default_outer_route, outer_route_candidates, select_outer_route!, record_
     R2
     R3
     R4
-    R4_full_auto
+    R5
 end
+
+# Backward-compatible alias for historical profile naming.
+const R4_full_auto = R5
 
 Base.@kwdef struct ParallelProfileConfig
     profile::ParallelProfile
@@ -43,7 +50,7 @@ end
     elseif profile == R4
         return "R4"
     end
-    return "R4_full_auto"
+    return "R5"
 end
 
 @inline function _normalize_profile_token(raw::AbstractString)::String
@@ -66,11 +73,21 @@ function parse_parallel_profile(raw::AbstractString)::ParallelProfile
         return R3
     elseif token in ("r4", "r4_outer_inner_adaptive", "outer_inner_adaptive", "auto_adaptive")
         return R4
-    elseif token in ("r4_full_auto", "r4fullauto", "r4_calibration_full_auto", "full_smart")
-        return R4_full_auto
+    elseif token in (
+        "r5",
+        "r5_full_auto",
+        "r5fullauto",
+        "r5_calibration_full_auto",
+        "full_smart",
+        # Legacy aliases:
+        "r4_full_auto",
+        "r4fullauto",
+        "r4_calibration_full_auto"
+    )
+        return R5
     end
     throw(ArgumentError(
-        "Unsupported parallel profile '$raw'. Use one of: R0, R1_a, R1_b, R2, R3, R4, R4_full_auto."
+        "Unsupported parallel profile '$raw'. Use one of: R0, R1_a, R1_b, R2, R3, R4, R5."
     ))
 end
 
@@ -160,7 +177,7 @@ function profile_config(profile_in)::ParallelProfileConfig
     end
     return ParallelProfileConfig(
         profile=profile,
-        label="r4_full_auto",
+        label="r5",
         outer_backend=:auto,
         inner_adaptive=true,
         outer_route_adaptive=true,
@@ -333,6 +350,142 @@ function reset_outer_route_state!(state::OuterRouteState)
         empty!(state.history)
     end
     return nothing
+end
+
+@inline function _route_stats_payload(stats::OuterRouteStats)::Dict{String, Any}
+    return Dict{String, Any}(
+        "samples" => max(0, Int(stats.samples)),
+        "successes" => max(0, Int(stats.successes)),
+        "failures" => max(0, Int(stats.failures)),
+        "elapsed_sum_s" => max(0.0, Float64(stats.elapsed_sum_s))
+    )
+end
+
+@inline function _route_payload_stats(payload)::Union{Nothing, OuterRouteStats}
+    payload isa AbstractDict || return nothing
+    samples = try
+        max(0, Int(get(payload, "samples", 0)))
+    catch
+        0
+    end
+    successes = try
+        max(0, Int(get(payload, "successes", 0)))
+    catch
+        0
+    end
+    failures = try
+        max(0, Int(get(payload, "failures", 0)))
+    catch
+        0
+    end
+    elapsed_sum_s = try
+        max(0.0, Float64(get(payload, "elapsed_sum_s", 0.0)))
+    catch
+        0.0
+    end
+    samples <= 0 && return nothing
+    successes = min(samples, successes)
+    failures = min(samples - successes, failures)
+    elapsed_sum_s = max(0.0, elapsed_sum_s)
+    return OuterRouteStats(
+        samples=samples,
+        successes=successes,
+        failures=failures,
+        elapsed_sum_s=elapsed_sum_s
+    )
+end
+
+function save_outer_route_state(
+    state::OuterRouteState,
+    path::AbstractString;
+    metadata::AbstractDict=Dict{String, Any}()
+)::NamedTuple{(:path, :signatures, :rows), Tuple{String, Int, Int}}
+    path_s = String(path)
+    rows = Dict{String, Any}[]
+    signatures = 0
+    lock(state.lock) do
+        for signature in sort!(collect(keys(state.history)))
+            bucket = state.history[signature]
+            isempty(bucket) && continue
+            signature_rows = 0
+            for route in (:none, :threads, :process)
+                stats = get(bucket, route, nothing)
+                stats isa OuterRouteStats || continue
+                stats.samples > 0 || continue
+                push!(rows, Dict{String, Any}(
+                    "signature" => signature,
+                    "route" => String(route),
+                    "stats" => _route_stats_payload(stats)
+                ))
+                signature_rows += 1
+            end
+            signature_rows > 0 && (signatures += 1)
+        end
+    end
+
+    metadata_out = Dict{String, Any}()
+    for (k, v) in metadata
+        key = String(k)
+        metadata_out[key] = if v isa Number || v isa Bool
+            v
+        else
+            String(v)
+        end
+    end
+
+    payload = Dict{String, Any}(
+        "schema_version" => 1,
+        "updated_utc" => string(now(UTC)),
+        "metadata" => metadata_out,
+        "history" => rows
+    )
+
+    mkpath(dirname(path_s))
+    open(path_s, "w") do io
+        TOML.print(io, payload)
+    end
+    return (path=path_s, signatures=signatures, rows=length(rows))
+end
+
+function load_outer_route_state!(
+    state::OuterRouteState,
+    path::AbstractString;
+    replace::Bool=true
+)::NamedTuple{(:path, :signatures, :rows), Tuple{String, Int, Int}}
+    path_s = String(path)
+    isfile(path_s) || return (path=path_s, signatures=0, rows=0)
+    parsed = TOML.parsefile(path_s)
+    rows_in = get(parsed, "history", Any[])
+    rows_in isa AbstractVector || return (path=path_s, signatures=0, rows=0)
+
+    loaded_rows = 0
+    loaded_signatures = Set{String}()
+    lock(state.lock) do
+        replace && empty!(state.history)
+        for row in rows_in
+            row isa AbstractDict || continue
+            signature = strip(String(get(row, "signature", "")))
+            isempty(signature) && continue
+            route = Symbol(String(get(row, "route", "")))
+            route in (:none, :threads, :process) || continue
+            stats = _route_payload_stats(get(row, "stats", nothing))
+            stats === nothing && continue
+
+            bucket = get!(state.history, signature) do
+                Dict{Symbol, OuterRouteStats}()
+            end
+            existing = get!(bucket, route) do
+                OuterRouteStats()
+            end
+            existing.samples += stats.samples
+            existing.successes += stats.successes
+            existing.failures += stats.failures
+            existing.elapsed_sum_s += stats.elapsed_sum_s
+            loaded_rows += 1
+            push!(loaded_signatures, signature)
+        end
+    end
+    return (path=path_s, signatures=length(loaded_signatures), rows=loaded_rows)
 end
 
 @inline function _threads_or_none(threads_available::Bool)::Symbol

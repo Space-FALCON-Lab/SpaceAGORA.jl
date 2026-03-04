@@ -53,6 +53,9 @@ JULIA_NUM_THREADS=4 SPACEAGORA_PERF_PARALLEL_BACKEND=auto SPACEAGORA_PERF_PROCS=
 - `SPACEAGORA_PERF_MC_PROCESS_MIN_SAMPLES`: Monte Carlo seed-count floor before considering `process` (`16` default).
 - `SPACEAGORA_PERF_MC_PROCESS_MIN_MISSION_S`: Monte Carlo mission-time floor before considering `process` (`3600` default).
 - `SPACEAGORA_PERF_OUTER_ROUTE_TRACE`: print route decision traces (`0` default).
+- `SPACEAGORA_PERF_OUTER_ROUTE_STATE_PERSIST`: persist adaptive outer-route state to disk (`1` default when adaptive mode is on).
+- `SPACEAGORA_PERF_OUTER_ROUTE_STATE_PATH`: optional cache file path override (when unset, a machine/profile-scoped cache is created under `<outdir>/outer_route_state/`).
+- `SPACEAGORA_PERF_OUTER_ROUTE_STATE_RESET`: start with empty route history even if a cache exists (`0` default).
 
 ## Outputs
 

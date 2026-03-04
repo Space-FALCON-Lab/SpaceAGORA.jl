@@ -49,7 +49,7 @@ end
     catch
         ""
     end
-    return token in ("r4_full_auto", "r4fullauto")
+    return token in ("r5", "r5_full_auto", "r5fullauto", "r4_full_auto", "r4fullauto")
 end
 
 @inline function _parse_positive_int_env(name::String, default::Int)::Int
@@ -258,7 +258,7 @@ function init_runtime_controller(
 )::Union{Nothing, RuntimeController}
     (full_auto_requested || full_auto_enabled(profile)) || return nothing
 
-    profile_name = full_auto_requested ? "R4_full_auto" : SpaceAGORA.parallel_profile_name(profile)
+    profile_name = full_auto_requested ? "R5" : SpaceAGORA.parallel_profile_name(profile)
     machine_key = _machine_key()
     policy_space = _build_policy_space(base_parallel, base_batch_size)
     isempty(policy_space) && return nothing

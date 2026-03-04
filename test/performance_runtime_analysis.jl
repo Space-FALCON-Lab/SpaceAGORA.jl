@@ -433,6 +433,14 @@ end
     return _parse_bool_env("SPACEAGORA_PERF_OUTER_ROUTE_TRACE", false)
 end
 
+@inline function _outer_route_state_persist_enabled()::Bool
+    return _parse_bool_env("SPACEAGORA_PERF_OUTER_ROUTE_STATE_PERSIST", true)
+end
+
+@inline function _outer_route_state_reset_requested()::Bool
+    return _parse_bool_env("SPACEAGORA_PERF_OUTER_ROUTE_STATE_RESET", false)
+end
+
 @inline function _control_stress_repeats_full()::Int
     return _parse_positive_int_env("SPACEAGORA_PERF_CONTROL_STRESS_REPEATS_FULL", 3)
 end
@@ -615,6 +623,27 @@ end
     return isempty(raw) ? gethostname() : raw
 end
 
+@inline function _safe_path_token(raw::AbstractString)::String
+    token = lowercase(strip(String(raw)))
+    token = replace(token, r"[^a-z0-9._-]+" => "_")
+    return isempty(token) ? "default" : token
+end
+
+@inline function _outer_route_state_cache_path(spec::ProfileSpec, outdir::String)::String
+    override_raw = strip(get(ENV, "SPACEAGORA_PERF_OUTER_ROUTE_STATE_PATH", ""))
+    if !isempty(override_raw)
+        return normpath(isabspath(override_raw) ? override_raw : joinpath(REPO_ROOT, override_raw))
+    end
+    profile_token = _safe_path_token(spec.name)
+    machine_token = _safe_path_token(_machine_label())
+    hardware_token = _safe_path_token(_hardware_class_name())
+    return joinpath(
+        outdir,
+        "outer_route_state",
+        "outer_route_state_$(profile_token)_$(hardware_token)_$(machine_token).toml"
+    )
+end
+
 @inline function _cpu_name_string()::String
     return hasproperty(Sys, :CPU_NAME) ? String(getproperty(Sys, :CPU_NAME)) : "unknown"
 end
@@ -705,6 +734,54 @@ end
 function _reset_outer_route_history!()
     _PERF_OUTER_ROUTE_STATE[] = ParallelProfiles.OuterRouteState()
     return nothing
+end
+
+function _load_outer_route_history!(spec::ProfileSpec, outdir::String)
+    _reset_outer_route_history!()
+    persist = _outer_route_state_persist_enabled() && _outer_route_adaptive_enabled()
+    path = _outer_route_state_cache_path(spec, outdir)
+    if !persist
+        return (persist=false, reset_requested=false, path=path, loaded_rows=0, loaded_signatures=0)
+    end
+    reset_requested = _outer_route_state_reset_requested()
+    if reset_requested
+        return (persist=true, reset_requested=true, path=path, loaded_rows=0, loaded_signatures=0)
+    end
+    loaded = try
+        ParallelProfiles.load_outer_route_state!(_PERF_OUTER_ROUTE_STATE[], path; replace=true)
+    catch err
+        @warn "[perf] Failed to load outer-route adaptive cache; starting with empty history." path=path exception=(err, catch_backtrace())
+        (path=path, rows=0, signatures=0)
+    end
+    return (
+        persist=true,
+        reset_requested=false,
+        path=loaded.path,
+        loaded_rows=loaded.rows,
+        loaded_signatures=loaded.signatures
+    )
+end
+
+function _save_outer_route_history!(spec::ProfileSpec, path::String, enabled::Bool)
+    enabled || return (path=path, rows=0, signatures=0)
+    metadata = Dict{String, Any}(
+        "profile" => spec.name,
+        "machine_label" => _machine_label(),
+        "hardware_class" => _hardware_class_name(),
+        "cpu_threads" => Sys.CPU_THREADS,
+        "julia_threads" => Threads.nthreads()
+    )
+    saved = try
+        ParallelProfiles.save_outer_route_state(
+            _PERF_OUTER_ROUTE_STATE[],
+            path;
+            metadata=metadata
+        )
+    catch err
+        @warn "[perf] Failed to persist outer-route adaptive cache." path=path exception=(err, catch_backtrace())
+        return (path=path, rows=0, signatures=0)
+    end
+    return saved
 end
 
 @inline function _outer_route_tuning()::ParallelProfiles.OuterRouteTuning
@@ -4872,7 +4949,7 @@ end
 function main()
     spec, outdir = parse_cli()
     mkpath(outdir)
-    _reset_outer_route_history!()
+    outer_route_state = _load_outer_route_history!(spec, outdir)
 
     solver_mode_default = _perf_default_solver_mode(spec.name)
     solver_mode_effective = _perf_solver_mode_env(spec.name)
@@ -4892,6 +4969,20 @@ function main()
         "mc_process_min_samples=$(_outer_route_mc_process_min_samples()), " *
         "mc_process_min_mission_s=$(round(_outer_route_mc_process_min_mission_s(); digits=3))"
     )
+    if outer_route_state.persist
+        if outer_route_state.reset_requested
+            println("Outer-route state cache reset requested; starting from empty history.")
+        elseif outer_route_state.loaded_rows > 0
+            println(
+                "Outer-route state cache loaded rows=$(outer_route_state.loaded_rows), " *
+                "signatures=$(outer_route_state.loaded_signatures) from $(outer_route_state.path)"
+            )
+        else
+            println("Outer-route state cache path: $(outer_route_state.path) (no prior state loaded)")
+        end
+    else
+        println("Outer-route state cache persistence: off")
+    end
     println(
         "Priority thresholds: inner_sat=$(sat_threshold), inner_link=$(link_threshold), " *
         "outer_light_sat=$(outer_light_sat), outer_light_link=$(outer_light_link), " *
@@ -4936,6 +5027,7 @@ function main()
     orbit_summary_df = summarize_per_orbit_results(orbit_raw_df)
     orbit_elapsed_s = (time_ns() - orbit_started_ns) / 1e9
     total_elapsed_s = bench_elapsed_s + split_gate_elapsed_s + multirate_gate_elapsed_s + orbit_elapsed_s
+    outer_route_state_saved = _save_outer_route_history!(spec, outer_route_state.path, outer_route_state.persist)
 
     stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
     raw_path = joinpath(outdir, "runtime_raw_$(spec.name)_$(stamp).csv")
@@ -5025,6 +5117,12 @@ function main()
     end
     if !(multirate_gate_report_path === nothing)
         println("Multirate rollout gate report: $(multirate_gate_report_path)")
+    end
+    if outer_route_state.persist
+        println(
+            "Outer-route state cache: $(outer_route_state_saved.path) " *
+            "(rows_saved=$(outer_route_state_saved.rows), signatures=$(outer_route_state_saved.signatures))"
+        )
     end
     println("Plots generated: $(length(plot_paths))")
     println("Report: $report_path")

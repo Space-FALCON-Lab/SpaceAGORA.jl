@@ -266,6 +266,22 @@ end
     ) do
         @test callbacks._density_callback_use_threads(thread_safe_args, 4) == true
     end
+    withenv(
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "0"
+    ) do
+        @test callbacks._density_callback_use_threads(thread_safe_args, 4) == false
+    end
+    withenv(
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
+    ) do
+        @test callbacks._density_callback_use_threads(thread_safe_args, 4) == true
+    end
 
     probe_control = ProbeControlModel(zeros(Int, 4))
     withenv(
@@ -284,6 +300,24 @@ end
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "3",
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1"
+    ) do
+        @test callbacks._control_callback_use_threads(probe_control, 4, false) == true
+    end
+    withenv(
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "0"
+    ) do
+        @test callbacks._control_callback_use_threads(probe_control, 4, false) == false
+    end
+    withenv(
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
     ) do
         @test callbacks._control_callback_use_threads(probe_control, 4, false) == true
     end
@@ -540,6 +574,44 @@ end
         )
         snap = policy.policy_telemetry_snapshot()
         @test snap.adaptation_updates_total == 0
+    end
+
+    withenv(
+        "SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION" => "1.5",
+        "SPACEAGORA_PARALLEL_POLICY_HINT_MIN_SAMPLES" => "2"
+    ) do
+        lock(policy._persistent_hint_lock) do
+            state = policy._persistent_hint_state[]
+            state.loaded = true
+            state.dirty = false
+            state.path = "inner_hint_probe_state.toml"
+            empty!(state.history)
+            state.history["profile=r5|machine=probe_machine|src=density_callback|items=3_4|thr=1|budget=2|outer=0|heavy_only=0|heavy=1"] = Dict(
+                Int64(1) => policy.AdaptiveChoiceStats(samples=2, successes=2, failures=0, elapsed_sum_ns=200.0, elapsed_sq_sum_ns=20_000.0),
+                Int64(2) => policy.AdaptiveChoiceStats(samples=2, successes=2, failures=0, elapsed_sum_ns=120.0, elapsed_sq_sum_ns=7_200.0)
+            )
+            state.history["profile=r5|machine=probe_machine|src=control_callback|items=3_4|thr=1|budget=2|outer=0|heavy_only=0|heavy=1"] = Dict(
+                Int64(1) => policy.AdaptiveChoiceStats(samples=1, successes=1, failures=0, elapsed_sum_ns=50.0, elapsed_sq_sum_ns=2_500.0)
+            )
+        end
+
+        layer_rows = policy.hint_layer_stats_snapshot(profile="R5", machine="probe_machine")
+        @test length(layer_rows) == 2
+        @test all(row -> row.profile == "r5", layer_rows)
+        @test all(row -> row.machine == "probe_machine", layer_rows)
+        density_row = only([row for row in layer_rows if row.layer == "density_callback"])
+        @test density_row.samples_total == 4
+        @test density_row.regret_mean_ns >= 0.0
+        @test density_row.confidence_mean >= 0.0
+        @test density_row.state_path == "inner_hint_probe_state.toml"
+        @test isempty(policy.hint_layer_stats_snapshot(profile="R4", machine="probe_machine"))
+    end
+    lock(policy._persistent_hint_lock) do
+        state = policy._persistent_hint_state[]
+        state.loaded = false
+        state.dirty = false
+        state.path = ""
+        empty!(state.history)
     end
 
     # Density_models helper probes.
@@ -970,6 +1042,22 @@ end
     u_thermal_threaded = build_initial_conditions(args_thermal_threaded)
     p_thermal_threaded.shared_buffers.densities .= 1e-6
     p_thermal_threaded.shared_buffers.temperatures .= 250.0
+    withenv(
+        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_THERMAL_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "0"
+    ) do
+        @test callbacks._thermal_callback_thread_decision(2).use_threads == false
+    end
+    withenv(
+        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_THERMAL_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
+    ) do
+        @test callbacks._thermal_callback_thread_decision(2).use_threads == true
+    end
     withenv(
         "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => "on",
         "SPACEAGORA_THERMAL_CALLBACK_THREAD_THRESHOLD" => "1"

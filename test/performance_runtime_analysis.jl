@@ -623,6 +623,16 @@ end
     return isempty(raw) ? gethostname() : raw
 end
 
+@inline function _active_parallel_profile_token()::String
+    raw = strip(get(ENV, "SPACEAGORA_PARALLEL_PROFILE", "default"))
+    return isempty(raw) ? "default" : raw
+end
+
+@inline function _active_parallel_machine_token()::String
+    raw = strip(get(ENV, "SPACEAGORA_PERF_MACHINE_LABEL", "default"))
+    return isempty(raw) ? "default" : raw
+end
+
 @inline function _safe_path_token(raw::AbstractString)::String
     token = lowercase(strip(String(raw)))
     token = replace(token, r"[^a-z0-9._-]+" => "_")
@@ -659,6 +669,63 @@ end
         os=string(Sys.KERNEL),
         arch=string(Sys.ARCH)
     )
+end
+
+function _inner_hint_layer_report_df(spec::ProfileSpec, hw)::DataFrame
+    rows = SimulationModel.ParallelPolicy.hint_layer_stats_snapshot(
+        profile=_active_parallel_profile_token(),
+        machine=_active_parallel_machine_token()
+    )
+    stamp_utc = string(now(UTC))
+    if isempty(rows)
+        return DataFrame(
+            runtime_profile=String[],
+            parallel_profile=String[],
+            hint_machine=String[],
+            hardware_class=String[],
+            machine_label=String[],
+            host_name=String[],
+            layer=String[],
+            signature_count=Int[],
+            choice_count=Int[],
+            samples_total=Int[],
+            successes_total=Int[],
+            failures_total=Int[],
+            elapsed_mean_ns=Float64[],
+            elapsed_std_ns=Float64[],
+            confidence_mean=Float64[],
+            regret_mean_ns=Float64[],
+            exploration_c=Float64[],
+            min_samples=Int[],
+            state_path=String[],
+            timestamp_utc=String[]
+        )
+    end
+    return DataFrame([
+        (
+            runtime_profile=spec.name,
+            parallel_profile=String(row.profile),
+            hint_machine=String(row.machine),
+            hardware_class=hw.hardware_class,
+            machine_label=hw.machine_label,
+            host_name=hw.host_name,
+            layer=String(row.layer),
+            signature_count=Int(row.signature_count),
+            choice_count=Int(row.choice_count),
+            samples_total=Int(row.samples_total),
+            successes_total=Int(row.successes_total),
+            failures_total=Int(row.failures_total),
+            elapsed_mean_ns=Float64(row.elapsed_mean_ns),
+            elapsed_std_ns=Float64(row.elapsed_std_ns),
+            confidence_mean=Float64(row.confidence_mean),
+            regret_mean_ns=Float64(row.regret_mean_ns),
+            exploration_c=Float64(row.exploration_c),
+            min_samples=Int(row.min_samples),
+            state_path=String(row.state_path),
+            timestamp_utc=stamp_utc
+        )
+        for row in rows
+    ])
 end
 
 @inline function _total_links(case::BenchmarkCase)::Int
@@ -704,6 +771,106 @@ end
         end
     end
     return degree
+end
+
+@inline function _max_links_per_sat(case::BenchmarkCase)::Int
+    max_links = 1
+    @inbounds for sc in case.args_template.dynamics_model.spacecraft
+        max_links = max(max_links, length(sc.links))
+    end
+    return max_links
+end
+
+@inline function _density_model_family(density_model)::String
+    if density_model isa NoAtmosphereModel
+        return "none"
+    elseif density_model isa GRAMAtmosphereModelSurrogate
+        return "gram_surrogate"
+    elseif density_model isa GRAMAtmosphereModel
+        return "gram_point"
+    elseif density_model isa ExponentialAtmosphereModel
+        return "exponential"
+    elseif density_model isa PolynomialFitAtmosphereModel
+        return "polyfit"
+    elseif density_model isa NRLMSISE00AtmosphereModel
+        return "nrlmsise00"
+    end
+    return lowercase(string(nameof(typeof(density_model))))
+end
+
+@inline function _read_bool_property_safe(obj, name::Symbol)::Union{Nothing, Bool}
+    if !hasproperty(obj, name)
+        return nothing
+    end
+    value = try
+        getproperty(obj, name)
+    catch
+        return nothing
+    end
+    return value isa Bool ? value : nothing
+end
+
+@inline function _gram_surrogate_flag(density_model)::Bool
+    if density_model isa GRAMAtmosphereModelSurrogate
+        return true
+    end
+    # Fallback for custom wrappers exposing a boolean surrogate toggle.
+    flag = _read_bool_property_safe(density_model, :gram_offline_surrogate)
+    return isnothing(flag) ? false : flag
+end
+
+@inline function _gram_static_grid_flag(density_model)::Bool
+    if !(density_model isa GRAMAtmosphereModel || density_model isa GRAMAtmosphereModelSurrogate)
+        return false
+    end
+    for key in (:use_static_grid, :static_grid, :gram_static_grid)
+        flag = _read_bool_property_safe(density_model, key)
+        if !(flag === nothing)
+            return flag
+        end
+    end
+    return false
+end
+
+@inline function _solver_mode_for_outer_route(case::BenchmarkCase, profile_name::String)::String
+    if !(case.solver_mode_override === nothing)
+        return String(case.solver_mode_override)
+    end
+    if !(case.split_imex_solver_override === nothing)
+        return "split_imex:" * String(case.split_imex_solver_override)
+    end
+    return _perf_solver_mode_env(profile_name)
+end
+
+@inline function _min_positive_rate(rates::AbstractVector{<:Real})::Float64
+    best = Inf
+    @inbounds for rate in rates
+        value = Float64(rate)
+        if isfinite(value) && value > 0.0
+            best = min(best, value)
+        end
+    end
+    return isfinite(best) ? best : 0.0
+end
+
+@inline function _has_aero_dynamic_effector(effectors::Tuple)::Bool
+    return _has_atmo_dynamic_effector(effectors)
+end
+
+@inline function _dynamic_effector_cost_class(effectors::Tuple, control_effector_count::Int)::String
+    effector_count = length(effectors)
+    has_nbody = _has_nbody_dynamic_effector(effectors)
+    has_srp = _has_srp_dynamic_effector(effectors)
+    has_aero = _has_aero_dynamic_effector(effectors)
+    harmonics_degree = _max_harmonics_degree(effectors)
+
+    if has_nbody || harmonics_degree >= 20 || effector_count >= 5
+        return "heavy"
+    end
+    if has_srp || has_aero || harmonics_degree > 0 || effector_count >= 2 || control_effector_count >= 2
+        return "medium"
+    end
+    return "light"
 end
 
 @inline function _case_outer_threads_safe(case::BenchmarkCase)::Bool
@@ -806,26 +973,54 @@ end
     case::BenchmarkCase;
     spec::Union{Nothing, ProfileSpec}=nothing
 )::ParallelProfiles.OuterRouteFeatures
+    profile_name = isnothing(spec) ? lowercase(strip(get(ENV, "SPACEAGORA_PERF_PROFILE", "quick"))) : spec.name
     n_sats = length(case.args_template.dynamics_model.spacecraft)
     n_links = _total_links(case)
+    max_links_per_sat = _max_links_per_sat(case)
     mission_time_s = case.args_template.mission_configuration.mission_time
+    dt_max_orbit_s = case.args_template.integration_tolerances.dt_max_orbit
     dynamic_effectors = case.args_template.dynamics_model.dynamic_effectors
+    density_model = case.args_template.environment_model.density_model
     has_nbody = _has_nbody_dynamic_effector(dynamic_effectors)
     has_srp = _has_srp_dynamic_effector(dynamic_effectors)
     harmonics_degree = _max_harmonics_degree(dynamic_effectors)
     has_control = !isempty(case.args_template.control_model.control_effectors)
+    control_effector_count = length(case.args_template.control_model.control_effectors)
     orientation_on = case.args_template.mission_configuration.orientation_sim
+    density_family = _density_model_family(density_model)
+    solver_mode = _solver_mode_for_outer_route(case, profile_name)
+    control_rate_s = _min_positive_rate(case.args_template.control_model.control_rates)
+    guidance_rate_s = _min_positive_rate(case.args_template.guidance_model.guidance_rates)
+    navigation_rate_s = _min_positive_rate(case.args_template.navigation_model.navigation_rates)
+    gram_surrogate_enabled = _gram_surrogate_flag(density_model)
+    gram_static_grid_enabled = _gram_static_grid_flag(density_model)
+    thermal_enabled = _has_atmo_dynamic_effector(dynamic_effectors) || !(density_model isa NoAtmosphereModel)
+    dynamic_effector_count = length(dynamic_effectors)
+    effector_cost_class = _dynamic_effector_cost_class(dynamic_effectors, control_effector_count)
     mc_samples = isnothing(spec) ? 0 : spec.montecarlo_samples
     return ParallelProfiles.OuterRouteFeatures(
         category=case.category,
         n_sats=n_sats,
         n_links=n_links,
+        max_links_per_sat=max_links_per_sat,
         mission_time_s=mission_time_s,
         has_nbody=has_nbody,
         has_srp=has_srp,
         harmonics_degree=harmonics_degree,
         has_control=has_control,
         orientation_on=orientation_on,
+        density_family=density_family,
+        solver_mode=solver_mode,
+        dt_max_orbit_s=dt_max_orbit_s,
+        control_rate_s=control_rate_s,
+        guidance_rate_s=guidance_rate_s,
+        navigation_rate_s=navigation_rate_s,
+        gram_surrogate_enabled=gram_surrogate_enabled,
+        gram_static_grid_enabled=gram_static_grid_enabled,
+        control_effector_count=control_effector_count,
+        thermal_enabled=thermal_enabled,
+        dynamic_effector_count=dynamic_effector_count,
+        effector_cost_class=effector_cost_class,
         montecarlo_samples=mc_samples
     )
 end
@@ -1303,7 +1498,12 @@ function make_blunted_cone_entry_spacecraft(
     )
 end
 
-function make_constellation(planet::AbstractPlanet, n::Int; with_panel::Bool=false)::Vector{SpacecraftModel}
+function make_constellation(
+    planet::AbstractPlanet,
+    n::Int;
+    with_panel::Bool=false,
+    panel_count::Int=1
+)::Vector{SpacecraftModel}
     sats = SpacecraftModel[]
     for i in 1:n
         ra_alt = 540e3 + 20e3 * (i - 1)
@@ -1312,7 +1512,18 @@ function make_constellation(planet::AbstractPlanet, n::Int; with_panel::Bool=fal
             ra_alt = rp_alt + 8e3
         end
         ν = 140.0 + 180.0 * (i - 1) / n
-        push!(sats, make_spacecraft(planet; id=i, ra_alt_m=ra_alt, rp_alt_m=rp_alt, ν_deg=ν, with_panel=with_panel))
+        push!(
+            sats,
+            make_spacecraft(
+                planet;
+                id=i,
+                ra_alt_m=ra_alt,
+                rp_alt_m=rp_alt,
+                ν_deg=ν,
+                with_panel=with_panel,
+                panel_count=panel_count
+            )
+        )
     end
     return sats
 end
@@ -1718,7 +1929,9 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
     earth_gram_point_density = _build_earth_gram_point_density()
     mars_gram_point_density = _build_mars_gram_point_density()
     earth_gram_surrogate_density = _build_earth_gram_surrogate_density()
+    thermal_stress_density = SimulationModel.EnvironmentModels.PolynomialFitAtmosphereModel([-27.0])
     multi_scaling_effectors = (InverseSquaredGravityModel(), harmonics20)
+    sc_thermal_stress = make_constellation(planet, 8; with_panel=true, panel_count=12)
     sc_proximity_fullstack = [
         make_spacecraft(
             planet;
@@ -1781,6 +1994,20 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 mission_time_s=spec.mission_short_s,
                 orientation_sim=true,
                 dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM())
+            )
+        ),
+        BenchmarkCase(
+            name="thermal_8sat_panel12_aero",
+            category="thermal_stress",
+            description="8 spacecraft (13 links each) with aerodynamic model and fixed polynomial atmosphere to stress thermal callback throughput",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_thermal_stress,
+                mission_time_s=min(spec.mission_short_s, 3600.0),
+                orientation_sim=false,
+                dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+                density_model=deepcopy(thermal_stress_density),
+                dt_max_orbit=0.5
             )
         ),
         BenchmarkCase(
@@ -4624,7 +4851,9 @@ function write_report(
     multirate_gate_df::Union{Nothing, DataFrame}=nothing,
     multirate_gate_csv_path::Union{Nothing, String}=nothing,
     multirate_gate_report_path::Union{Nothing, String}=nothing,
-    stage_timing_df::Union{Nothing, DataFrame}=nothing
+    stage_timing_df::Union{Nothing, DataFrame}=nothing,
+    inner_hint_layer_df::Union{Nothing, DataFrame}=nothing,
+    inner_hint_layer_csv_path::Union{Nothing, String}=nothing
 )
     generated = string(now(UTC))
     julia_ver = string(VERSION)
@@ -4866,6 +5095,29 @@ function write_report(
         end
         println(io)
 
+        println(io, "## Inner Hint Layer Stats")
+        println(io)
+        hint_rows = inner_hint_layer_df === nothing ? 0 : nrow(inner_hint_layer_df)
+        if hint_rows == 0
+            println(io, "- No persistent inner-hint rows matched the active parallel profile/machine filter.")
+        else
+            println(io, "| Layer | Signatures | Choices | Samples | Mean elapsed (ns) | Mean confidence | Mean regret (ns) |")
+            println(io, "|---|---:|---:|---:|---:|---:|---:|")
+            hint_table = copy(inner_hint_layer_df)
+            sort!(hint_table, :regret_mean_ns, rev=true)
+            for row in eachrow(hint_table)
+                println(
+                    io,
+                    "| $(row.layer) | $(row.signature_count) | $(row.choice_count) | $(row.samples_total) | " *
+                    "$(_fmt(row.elapsed_mean_ns)) | $(_fmt(row.confidence_mean)) | $(_fmt(row.regret_mean_ns)) |"
+                )
+            end
+        end
+        if !(inner_hint_layer_csv_path === nothing)
+            println(io, "- Inner hint CSV: `$(inner_hint_layer_csv_path)`")
+        end
+        println(io)
+
         println(io, "## Fidelity Guardrails")
         println(io)
         println(io, "- Split rollout gate enabled: `$(_split_rollout_enabled())`")
@@ -5036,6 +5288,7 @@ function main()
     orbit_summary_path = joinpath(outdir, "runtime_per_orbit_summary_$(spec.name)_$(stamp).csv")
     stage_timing_path = joinpath(outdir, "runtime_stage_timing_$(spec.name)_$(stamp).csv")
     hardware_info_path = joinpath(outdir, "runtime_hardware_info_$(spec.name)_$(stamp).csv")
+    inner_hint_layer_path = joinpath(outdir, "runtime_inner_hint_layers_$(spec.name)_$(stamp).csv")
     report_path = joinpath(outdir, "runtime_report_$(spec.name)_$(stamp).md")
     plot_paths = generate_runtime_plots(outdir, spec, stamp, raw_df, summary_df, orbit_summary_df)
 
@@ -5068,6 +5321,7 @@ function main()
             arch=hw.arch
         )
     ])
+    inner_hint_layer_df = _inner_hint_layer_report_df(spec, hw)
 
     CSV.write(raw_path, raw_df)
     CSV.write(summary_path, summary_df)
@@ -5075,6 +5329,7 @@ function main()
     CSV.write(orbit_summary_path, orbit_summary_df)
     CSV.write(stage_timing_path, stage_timing_df)
     CSV.write(hardware_info_path, hardware_info_df)
+    CSV.write(inner_hint_layer_path, inner_hint_layer_df)
     write_report(
         report_path,
         spec,
@@ -5088,7 +5343,9 @@ function main()
         multirate_gate_df=multirate_gate_df,
         multirate_gate_csv_path=multirate_gate_csv_path,
         multirate_gate_report_path=multirate_gate_report_path,
-        stage_timing_df=stage_timing_df
+        stage_timing_df=stage_timing_df,
+        inner_hint_layer_df=inner_hint_layer_df,
+        inner_hint_layer_csv_path=inner_hint_layer_path
     )
 
     println("Analysis complete.")
@@ -5098,6 +5355,7 @@ function main()
     println("Mission-time-sweep summary: $orbit_summary_path")
     println("Stage timing: $stage_timing_path")
     println("Hardware info: $hardware_info_path")
+    println("Inner hint layers: $inner_hint_layer_path")
     if !(split_gate_df === nothing)
         pass_count = (:pass_all in names(split_gate_df)) ? count(Bool.(split_gate_df.pass_all)) : 0
         println("Split rollout gate: $(pass_count)/$(nrow(split_gate_df)) pass")

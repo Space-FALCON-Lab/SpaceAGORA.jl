@@ -5,6 +5,7 @@ Use `test/performance_runtime_analysis.jl` to measure computational time across:
 - single-satellite and multi-satellite scenarios
 - position-only vs orientation + aerodynamic dynamics
 - dynamics fidelity levels (`InverseSquared`, `J2`, `NBody`, spherical harmonics)
+- thermal callback stress case (`thermal_8sat_panel12_aero`: 8 sats, 13 links/sat, atmosphere-on)
 - control callback overhead (`BaseThrusterModel`)
 - control-stress supercase (`super_constellation_8sat_l20_control`: 8 sats, L20 + control callback)
 - Monte Carlo runtime distribution (randomized seeds)
@@ -44,6 +45,8 @@ JULIA_NUM_THREADS=4 SPACEAGORA_PERF_PARALLEL_BACKEND=auto SPACEAGORA_PERF_PROCS=
 
 - `SPACEAGORA_PERF_PARALLEL_BACKEND`: `auto` (default), `threads`, `process`, or `none`.
 - `auto` policy: starts from static heuristics, then updates per-signature route choice (`none`/`threads`/`process`) from observed runtime.
+  Signature features include category, satellites/links, mission bucket, N-body/SRP/harmonics/control/orientation, density family, solver mode, callback-rate buckets, GRAM surrogate/static-grid flags, control-effector count, thermal enabled flag, and effector cost class.
+  Route lookup uses hierarchical fallback (specific -> medium -> legacy/coarse signature) so sparse signatures can still generalize.
 - `SPACEAGORA_PERF_PROCS`: number of worker processes for `process` backend (default: `Sys.CPU_THREADS - 1`).
 - `SPACEAGORA_PERF_WORKER_PROJECT`: optional Julia project for process workers.
   Resolution order when unset/invalid: env override -> `REPO_ROOT/.AGORA` -> `REPO_ROOT`.
@@ -56,6 +59,13 @@ JULIA_NUM_THREADS=4 SPACEAGORA_PERF_PARALLEL_BACKEND=auto SPACEAGORA_PERF_PROCS=
 - `SPACEAGORA_PERF_OUTER_ROUTE_STATE_PERSIST`: persist adaptive outer-route state to disk (`1` default when adaptive mode is on).
 - `SPACEAGORA_PERF_OUTER_ROUTE_STATE_PATH`: optional cache file path override (when unset, a machine/profile-scoped cache is created under `<outdir>/outer_route_state/`).
 - `SPACEAGORA_PERF_OUTER_ROUTE_STATE_RESET`: start with empty route history even if a cache exists (`0` default).
+- `SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS`: enable runtime-only inner-layer persistent hinting (`0` default; enabled in profile `R5`).
+- `SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST`: persist inner-layer policy state to disk (`0` default unless profile/env enables it).
+- `SPACEAGORA_PARALLEL_POLICY_STATE_PATH`: optional inner-layer policy state path override.
+- `SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION`: exploration factor for confidence-aware inner hint selection.
+  Defaults: `R5` -> `1.3` (`small`), `1.5` (`medium`), `1.8` (`large`); other profiles default to `1.5`.
+- `SPACEAGORA_PARALLEL_POLICY_HINT_MIN_SAMPLES`: minimum samples before trusting a persistent inner hint.
+  Defaults: `R5` -> `2` (`small`/`medium`), `3` (`large`); other profiles default to `2`.
 
 ## Outputs
 
@@ -65,10 +75,22 @@ The script writes timestamped artifacts in `output/performance` by default:
 - `runtime_summary_<profile>_<timestamp>.csv`: aggregated scenario statistics
 - `runtime_per_orbit_raw_<profile>_<timestamp>.csv`: per-orbit raw timings across all scenarios (including Monte Carlo seeds)
 - `runtime_per_orbit_summary_<profile>_<timestamp>.csv`: per-orbit aggregates across all scenarios
+- `runtime_inner_hint_layers_<profile>_<timestamp>.csv`: per-layer persistent inner-hint stats/regret snapshot for the active parallel profile + machine token
 - `runtime_plot_<kind>_<profile>_<timestamp>.png`: plot artifacts (up to 14 files, including totals, speedup, breakdown, memory/alloc, throughput, Monte Carlo, and per-orbit views)
 - `runtime_report_<profile>_<timestamp>.md`: human-readable findings and comparison table
 
-## Paper Ladder Harness (`R0` to `R4`)
+## Hierarchical Parallel Stack
+
+SpaceAGORA runtime parallelization is structured as a hierarchical stack:
+
+- Outer route orchestration layer (`none` / `threads` / `process`): `src/parallel/ParallelProfiles.jl`, `test/performance_runtime_analysis.jl`
+- Inner layer 1 (density callback parallelism): `src/simulation_model/callbacks.jl`
+- Inner layer 2 (thermal callback parallelism): `src/simulation_model/callbacks.jl`
+- Inner layer 3 (control callback parallelism): `src/simulation_model/callbacks.jl`
+- Inner layer 4 (multibody/link kernels for aero and N-body work): `src/physical_models/Aerodynamic_models.jl`, `src/physical_models/Perturbations.jl`
+- Inner layer 5 (dynamic effector reduction): `src/simulation/run_simulation.jl`
+
+## Paper Ladder Harness (`R0` to `R5`)
 
 Use `test/performance_smart_parallel_ladder.jl` for a single-run experiment that captures:
 
@@ -76,7 +98,8 @@ Use `test/performance_smart_parallel_ladder.jl` for a single-run experiment that
 - `R1` outer-only parallelization
 - `R2` inner-only parallelization
 - `R3` outer + inner (static policy behavior)
-- `R4` outer + inner adaptive ("smart parallel")
+- `R4` outer + inner adaptive (baseline full-auto heuristic)
+- `R5` outer + inner adaptive (explicit full-smart rung with tuned adaptive knobs)
 
 Example (`quick` profile):
 
@@ -98,6 +121,7 @@ Key outputs in `output/performance/smart_parallel_ladder`:
 - `smart_parallel_ladder_mode_overview_<profile>_<timestamp>.csv`
 - `smart_parallel_ladder_speedup_vs_r0_<profile>_<timestamp>.csv`
 - `smart_parallel_ladder_mission_family_speedup_<profile>_<timestamp>.csv`
+- `smart_parallel_ladder_thermal_contribution_<profile>_<timestamp>.csv`
 - `smart_parallel_ladder_fidelity_parity_<profile>_<timestamp>.csv`
 - `smart_parallel_ladder_accuracy_parity_<profile>_<timestamp>.csv`
 - `smart_parallel_ladder_route_mix_<profile>_<timestamp>.csv`

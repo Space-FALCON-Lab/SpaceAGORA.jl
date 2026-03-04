@@ -4167,6 +4167,22 @@ end
     ) do
         @test density_use_threads(args_control, 2) == has_worker_threads
     end
+    withenv(
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "0"
+    ) do
+        @test density_use_threads(args_control, 8) == false
+    end
+    withenv(
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
+    ) do
+        @test density_use_threads(args_control, 8) == has_worker_threads
+    end
 
     control_thruster = BaseThrusterModel(
         thrust=[0.5, 0.6],
@@ -4188,6 +4204,24 @@ end
     ) do
         @test control_use_threads(control_thruster, 8, false) == has_worker_threads
         @test control_use_threads(control_thruster, 8, true) == false
+    end
+    withenv(
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "0"
+    ) do
+        @test control_use_threads(control_thruster, 8, false) == false
+    end
+    withenv(
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
+        "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1",
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
+    ) do
+        @test control_use_threads(control_thruster, 8, false) == has_worker_threads
     end
 
     n_parallel_sats = 4
@@ -4301,6 +4335,12 @@ end
     withenv("SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "oops") do
         @test_throws ArgumentError callbacks._density_callback_thread_threshold()
     end
+    withenv("SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1") do
+        @test callbacks._density_callback_allow_with_outer() == true
+    end
+    withenv("SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "invalid") do
+        @test_throws ArgumentError callbacks._density_callback_allow_with_outer()
+    end
 
     withenv("SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "off") do
         @test callbacks._control_callback_parallel_mode() == :off
@@ -4323,6 +4363,12 @@ end
     end
     withenv("SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "oops") do
         @test_throws ArgumentError callbacks._control_callback_thread_threshold()
+    end
+    withenv("SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1") do
+        @test callbacks._control_callback_allow_with_outer() == true
+    end
+    withenv("SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "invalid") do
+        @test_throws ArgumentError callbacks._control_callback_allow_with_outer()
     end
 
     @test callbacks.density_model_threadsafe(NoAtmosphereModel()) == true
@@ -4365,6 +4411,18 @@ end
         "SPACEAGORA_THERMAL_CALLBACK_THREAD_THRESHOLD" => nothing
     ) do
         @test callbacks._thermal_callback_thread_threshold() == 6
+    end
+    withenv("SPACEAGORA_THERMAL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1") do
+        @test callbacks._thermal_callback_allow_with_outer() == true
+    end
+    withenv(
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1",
+        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => nothing
+    ) do
+        @test callbacks._thermal_callback_allow_with_outer() == true
+    end
+    withenv("SPACEAGORA_THERMAL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "invalid") do
+        @test_throws ArgumentError callbacks._thermal_callback_allow_with_outer()
     end
 
     @test callbacks._is_gram_density_model(NoAtmosphereModel()) == false

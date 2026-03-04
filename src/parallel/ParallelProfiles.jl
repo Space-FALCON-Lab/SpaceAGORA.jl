@@ -34,6 +34,10 @@ Base.@kwdef struct ParallelProfileConfig
     thermal_mode::String
     multibody_mode::String
     effector_mode::String
+    adaptive_window::Int = 8
+    adaptive_control_tail_guard::Bool = false
+    persistent_hints::Bool = false
+    persistent_state_persist::Bool = false
 end
 
 @inline function parallel_profile_name(profile::ParallelProfile)::String
@@ -183,9 +187,13 @@ function profile_config(profile_in)::ParallelProfileConfig
         outer_route_adaptive=true,
         density_mode="auto",
         control_mode="auto",
-        thermal_mode="auto",
+        thermal_mode="on",
         multibody_mode="auto",
-        effector_mode="auto"
+        effector_mode="auto",
+        adaptive_window=4,
+        adaptive_control_tail_guard=true,
+        persistent_hints=true,
+        persistent_state_persist=true
     )
 end
 
@@ -206,6 +214,33 @@ end
     throw(ArgumentError("Unsupported outer backend '$backend'."))
 end
 
+@inline function _machine_parallel_class()::Symbol
+    override_raw = lowercase(strip(get(ENV, "SPACEAGORA_PERF_HARDWARE_CLASS", "auto")))
+    if override_raw in ("small", "medium", "large")
+        return Symbol(override_raw)
+    end
+    cpu_threads = Sys.CPU_THREADS
+    if cpu_threads >= 24
+        return :large
+    elseif cpu_threads >= 12
+        return :medium
+    end
+    return :small
+end
+
+@inline function _inner_hint_defaults(cfg::ParallelProfileConfig)::NamedTuple{(:exploration, :min_samples), Tuple{Float64, Int}}
+    if cfg.profile != R5
+        return (exploration=1.5, min_samples=2)
+    end
+    machine_class = _machine_parallel_class()
+    if machine_class == :large
+        return (exploration=1.8, min_samples=3)
+    elseif machine_class == :medium
+        return (exploration=1.5, min_samples=2)
+    end
+    return (exploration=1.3, min_samples=2)
+end
+
 @inline function _env_or_default(name::String, fallback::String; preserve_existing::Bool)::String
     if !preserve_existing
         return fallback
@@ -220,6 +255,7 @@ function profile_env_pairs(
     outer_parallel_active::Bool=false
 )::Vector{Pair{String, String}}
     cfg = profile_config(profile_in)
+    hint_defaults = _inner_hint_defaults(cfg)
     return Pair{String, String}[
         "SPACEAGORA_PARALLEL_PROFILE" => _env_or_default(
             "SPACEAGORA_PARALLEL_PROFILE",
@@ -270,6 +306,36 @@ function profile_env_pairs(
             "SPACEAGORA_EFFECTOR_PARALLEL",
             cfg.effector_mode;
             preserve_existing=preserve_existing
+        ),
+        "SPACEAGORA_PARALLEL_POLICY_WINDOW" => _env_or_default(
+            "SPACEAGORA_PARALLEL_POLICY_WINDOW",
+            string(cfg.adaptive_window);
+            preserve_existing=preserve_existing
+        ),
+        "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => _env_or_default(
+            "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD",
+            _coerce_env_bool(cfg.adaptive_control_tail_guard);
+            preserve_existing=preserve_existing
+        ),
+        "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => _env_or_default(
+            "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS",
+            _coerce_env_bool(cfg.persistent_hints);
+            preserve_existing=preserve_existing
+        ),
+        "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => _env_or_default(
+            "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST",
+            _coerce_env_bool(cfg.persistent_state_persist);
+            preserve_existing=preserve_existing
+        ),
+        "SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION" => _env_or_default(
+            "SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION",
+            string(round(hint_defaults.exploration; digits=3));
+            preserve_existing=preserve_existing
+        ),
+        "SPACEAGORA_PARALLEL_POLICY_HINT_MIN_SAMPLES" => _env_or_default(
+            "SPACEAGORA_PARALLEL_POLICY_HINT_MIN_SAMPLES",
+            string(hint_defaults.min_samples);
+            preserve_existing=preserve_existing
         )
     ]
 end
@@ -308,12 +374,25 @@ Base.@kwdef struct OuterRouteFeatures
     category::String = "deterministic"
     n_sats::Int = 1
     n_links::Int = 1
+    max_links_per_sat::Int = 1
     mission_time_s::Float64 = 0.0
     has_nbody::Bool = false
     has_srp::Bool = false
     harmonics_degree::Int = 0
     has_control::Bool = false
     orientation_on::Bool = false
+    density_family::String = "unknown"
+    solver_mode::String = "auto"
+    dt_max_orbit_s::Float64 = 0.0
+    control_rate_s::Float64 = 0.0
+    guidance_rate_s::Float64 = 0.0
+    navigation_rate_s::Float64 = 0.0
+    gram_surrogate_enabled::Bool = false
+    gram_static_grid_enabled::Bool = false
+    control_effector_count::Int = 0
+    thermal_enabled::Bool = false
+    dynamic_effector_count::Int = 0
+    effector_cost_class::String = "unknown"
     montecarlo_samples::Int = 0
 end
 
@@ -514,6 +593,19 @@ end
     return "9p"
 end
 
+@inline function _route_max_link_bucket(n_links::Int)::String
+    if n_links <= 1
+        return "1"
+    elseif n_links <= 2
+        return "2"
+    elseif n_links <= 4
+        return "3_4"
+    elseif n_links <= 8
+        return "5_8"
+    end
+    return "9p"
+end
+
 @inline function _route_mission_bucket(mission_time_s::Float64)::String
     if mission_time_s <= 1800.0
         return "short"
@@ -534,7 +626,81 @@ end
     return "21p"
 end
 
-@inline function outer_route_signature(f::OuterRouteFeatures)::String
+@inline function _route_density_bucket(family::AbstractString)::String
+    token = lowercase(strip(String(family)))
+    if token in ("none", "vacuum", "noatmosphere")
+        return "none"
+    elseif token in ("gram_point", "gram")
+        return "gram_pt"
+    elseif token in ("gram_surrogate", "gram_offline_surrogate")
+        return "gram_srg"
+    elseif token in ("exponential", "exp")
+        return "exp"
+    elseif token in ("polynomialfit", "polyfit", "poly")
+        return "poly"
+    elseif token in ("nrlmsise00", "nrl")
+        return "nrl"
+    elseif isempty(token)
+        return "unknown"
+    end
+    return replace(token, "|" => "_")
+end
+
+@inline function _route_solver_bucket(mode::AbstractString)::String
+    token = lowercase(strip(String(mode)))
+    if token in ("auto", "auto_stiff", "autostiff")
+        return "auto"
+    elseif token in ("rodas5p", "rodas")
+        return "rodas"
+    elseif token in ("tsit5",)
+        return "tsit5"
+    elseif startswith(token, "split_imex")
+        return "split"
+    elseif token in ("multirate",)
+        return "mrate"
+    elseif isempty(token)
+        return "auto"
+    end
+    return replace(token, "|" => "_")
+end
+
+@inline function _route_interval_bucket(interval_s::Float64)::String
+    if !isfinite(interval_s) || interval_s <= 0.0
+        return "na"
+    elseif interval_s <= 0.2
+        return "ultra"
+    elseif interval_s <= 1.0
+        return "fast"
+    elseif interval_s <= 10.0
+        return "med"
+    end
+    return "slow"
+end
+
+@inline function _route_count_bucket(v::Int)::String
+    if v <= 0
+        return "0"
+    elseif v == 1
+        return "1"
+    elseif v <= 3
+        return "2_3"
+    elseif v <= 6
+        return "4_6"
+    end
+    return "7p"
+end
+
+@inline function _route_effector_cost_bucket(raw::AbstractString)::String
+    token = lowercase(strip(String(raw)))
+    if token in ("light", "medium", "heavy")
+        return token
+    elseif isempty(token)
+        return "unknown"
+    end
+    return replace(token, "|" => "_")
+end
+
+@inline function _legacy_outer_route_signature(f::OuterRouteFeatures)::String
     return join((
         "cat=$(f.category)",
         "sat=$(_route_sat_bucket(f.n_sats))",
@@ -546,6 +712,55 @@ end
         "ctrl=$(f.has_control ? "1" : "0")",
         "orient=$(f.orientation_on ? "1" : "0")"
     ), "|")
+end
+
+@inline function outer_route_signature(f::OuterRouteFeatures)::String
+    return join((
+        "cat=$(f.category)",
+        "sat=$(_route_sat_bucket(f.n_sats))",
+        "links=$(_route_link_bucket(f.n_links))",
+        "maxlinks=$(_route_max_link_bucket(f.max_links_per_sat))",
+        "mission=$(_route_mission_bucket(f.mission_time_s))",
+        "nbody=$(f.has_nbody ? "1" : "0")",
+        "srp=$(f.has_srp ? "1" : "0")",
+        "harm=$(_route_harmonics_bucket(f.harmonics_degree))",
+        "ctrl=$(f.has_control ? "1" : "0")",
+        "orient=$(f.orientation_on ? "1" : "0")",
+        "dens=$(_route_density_bucket(f.density_family))",
+        "solver=$(_route_solver_bucket(f.solver_mode))",
+        "dt=$(_route_interval_bucket(f.dt_max_orbit_s))",
+        "ctrl_rate=$(_route_interval_bucket(f.control_rate_s))",
+        "guid_rate=$(_route_interval_bucket(f.guidance_rate_s))",
+        "nav_rate=$(_route_interval_bucket(f.navigation_rate_s))",
+        "gram_srg=$(f.gram_surrogate_enabled ? "1" : "0")",
+        "gram_grid=$(f.gram_static_grid_enabled ? "1" : "0")",
+        "ctrl_eff=$(_route_count_bucket(f.control_effector_count))",
+        "thermal=$(f.thermal_enabled ? "1" : "0")",
+        "eff_cnt=$(_route_count_bucket(f.dynamic_effector_count))",
+        "eff_cost=$(_route_effector_cost_bucket(f.effector_cost_class))"
+    ), "|")
+end
+
+@inline function _outer_route_signature_hierarchy(f::OuterRouteFeatures)::Vector{String}
+    full = outer_route_signature(f)
+    mid = join((
+        "cat=$(f.category)",
+        "sat=$(_route_sat_bucket(f.n_sats))",
+        "links=$(_route_link_bucket(f.n_links))",
+        "maxlinks=$(_route_max_link_bucket(f.max_links_per_sat))",
+        "mission=$(_route_mission_bucket(f.mission_time_s))",
+        "nbody=$(f.has_nbody ? "1" : "0")",
+        "srp=$(f.has_srp ? "1" : "0")",
+        "harm=$(_route_harmonics_bucket(f.harmonics_degree))",
+        "ctrl=$(f.has_control ? "1" : "0")",
+        "orient=$(f.orientation_on ? "1" : "0")",
+        "dens=$(_route_density_bucket(f.density_family))",
+        "solver=$(_route_solver_bucket(f.solver_mode))",
+        "thermal=$(f.thermal_enabled ? "1" : "0")",
+        "eff_cost=$(_route_effector_cost_bucket(f.effector_cost_class))"
+    ), "|")
+    legacy = _legacy_outer_route_signature(f)
+    return unique(String[full, mid, legacy])
 end
 
 function outer_route_stats_snapshot(
@@ -773,27 +988,37 @@ function select_outer_route!(
         default_route = first(candidates)
     end
 
-    signature = outer_route_signature(f)
-    snapshot = outer_route_stats_snapshot(state, signature)
+    signature_chain = _outer_route_signature_hierarchy(f)
+    signature = first(signature_chain)
+    snapshot = Dict{Symbol, NamedTuple{(:samples, :mean_s, :success_rate), Tuple{Int, Float64, Float64}}}()
+    signature_used = signature
+    for candidate_sig in signature_chain
+        snap = outer_route_stats_snapshot(state, candidate_sig)
+        if !isempty(snap)
+            snapshot = snap
+            signature_used = candidate_sig
+            break
+        end
+    end
     chosen = default_route
     reason = "default"
     if !isempty(snapshot)
         explore = _under_sampled_candidate(candidates, snapshot, default_route, tuning.adaptive_min_samples)
         if !(explore === nothing)
             chosen = explore
-            reason = "explore"
+            reason = "explore_hier"
         else
             best = _best_candidate(candidates, snapshot)
             if !(best === nothing)
                 chosen = best
-                reason = chosen == default_route ? "default_best" : "exploit_best"
+                reason = chosen == default_route ? "default_best_hier" : "exploit_best_hier"
             end
         end
     end
     if tuning.trace
         println(
             "[outer-route] signature=$(signature) default=$(default_route) chosen=$(chosen) " *
-            "reason=$(reason) candidates=$(join(string.(candidates), ','))"
+            "reason=$(reason) signature_used=$(signature_used) candidates=$(join(string.(candidates), ','))"
         )
     end
     return chosen
@@ -814,18 +1039,20 @@ function record_outer_route_feedback!(
     samples = success_count + failure_count
     samples <= 0 && return nothing
     elapsed_sum_s = max(0.0, elapsed_success_s) + failure_count * max(0.0, tuning.failure_penalty_s)
-    signature = outer_route_signature(f)
+    signatures = _outer_route_signature_hierarchy(f)
     lock(state.lock) do
-        bucket = get!(state.history, signature) do
-            Dict{Symbol, OuterRouteStats}()
+        for signature in signatures
+            bucket = get!(state.history, signature) do
+                Dict{Symbol, OuterRouteStats}()
+            end
+            stats = get!(bucket, route) do
+                OuterRouteStats()
+            end
+            stats.samples += samples
+            stats.successes += success_count
+            stats.failures += failure_count
+            stats.elapsed_sum_s += elapsed_sum_s
         end
-        stats = get!(bucket, route) do
-            OuterRouteStats()
-        end
-        stats.samples += samples
-        stats.successes += success_count
-        stats.failures += failure_count
-        stats.elapsed_sum_s += elapsed_sum_s
     end
     return nothing
 end

@@ -252,12 +252,20 @@ end
     return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD", 8)
 end
 
+@inline function _density_callback_allow_with_outer()::Bool
+    return _parse_bool_env("SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER", false)
+end
+
 @inline function _control_callback_parallel_mode()::Symbol
     return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_CONTROL_CALLBACK_PARALLEL")
 end
 
 @inline function _control_callback_thread_threshold()::Int
     return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD", 8)
+end
+
+@inline function _control_callback_allow_with_outer()::Bool
+    return _parse_bool_env("SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER", false)
 end
 
 @inline function _thermal_callback_parallel_mode()::Symbol
@@ -272,6 +280,17 @@ end
         return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_THERMAL_CALLBACK_THREAD_THRESHOLD", 8)
     end
     return _density_callback_thread_threshold()
+end
+
+@inline function _thermal_callback_allow_with_outer()::Bool
+    if haskey(ENV, "SPACEAGORA_THERMAL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER")
+        return _parse_bool_env("SPACEAGORA_THERMAL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER", false)
+    end
+    return _density_callback_allow_with_outer()
+end
+
+@inline function _callback_outer_parallel_hint()::Bool
+    return ParallelPolicy.outer_parallel_active()
 end
 
 # Extend this for custom user density models as needed:
@@ -290,6 +309,8 @@ end
 
 @inline function _density_callback_thread_decision(args::SimulationConfiguration, num_sats::Int)
     mode = _density_callback_parallel_mode()
+    outer_active = _callback_outer_parallel_hint()
+    allow_with_outer = _density_callback_allow_with_outer()
 
     model = args.environment_model.density_model
     model_threadsafe = density_model_threadsafe(model)
@@ -300,6 +321,8 @@ end
         num_sats;
         mode=mode,
         threshold=_density_callback_thread_threshold(),
+        outer_active=outer_active,
+        allow_with_outer=allow_with_outer,
         source=:density_callback
     )
     return (use_threads=policy.use_threads, allotment=policy.allotment, mode=mode, policy_applied=true)
@@ -319,6 +342,8 @@ end
         return (use_threads=false, allotment=1, mode=:off, policy_applied=false)
     end
     mode = _control_callback_parallel_mode()
+    outer_active = _callback_outer_parallel_hint()
+    allow_with_outer = _control_callback_allow_with_outer()
 
     model_threadsafe = control_model_threadsafe(control_model)
     if !model_threadsafe && !_parse_bool_env("SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE", false)
@@ -328,6 +353,8 @@ end
         num_sats;
         mode=mode,
         threshold=_control_callback_thread_threshold(),
+        outer_active=outer_active,
+        allow_with_outer=allow_with_outer,
         source=:control_callback
     )
     return (use_threads=policy.use_threads, allotment=policy.allotment, mode=mode, policy_applied=true)
@@ -339,10 +366,14 @@ end
 
 @inline function _thermal_callback_thread_decision(num_sats::Int)
     mode = _thermal_callback_parallel_mode()
+    outer_active = _callback_outer_parallel_hint()
+    allow_with_outer = _thermal_callback_allow_with_outer()
     policy = ParallelPolicy.thread_policy_decision(
         num_sats;
         mode=mode,
         threshold=_thermal_callback_thread_threshold(),
+        outer_active=outer_active,
+        allow_with_outer=allow_with_outer,
         source=:thermal_callback
     )
     return (use_threads=policy.use_threads, allotment=policy.allotment, mode=mode, policy_applied=true)

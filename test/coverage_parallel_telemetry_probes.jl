@@ -43,8 +43,15 @@ const TV = TelemetryVerification
     @test cfg_r0.outer_backend == :none
     @test cfg_r3.outer_backend == :auto
     @test cfg_r4.inner_adaptive == true
+    @test cfg_r4.thermal_mode == "auto"
+    @test cfg_r4.adaptive_control_tail_guard == false
     @test cfg_full.outer_route_adaptive == true
     @test cfg_full.label == "r5"
+    @test cfg_full.thermal_mode == "on"
+    @test cfg_full.adaptive_control_tail_guard == true
+    @test cfg_full.adaptive_window == 4
+    @test cfg_full.persistent_hints == true
+    @test cfg_full.persistent_state_persist == true
 
     withenv("SPACEAGORA_PARALLEL_PROFILE" => "existing_profile") do
         env_pairs = PP.profile_env_pairs("R1_b"; preserve_existing=true, outer_parallel_active=true)
@@ -58,8 +65,31 @@ const TV = TelemetryVerification
     @test env_map_override["SPACEAGORA_PARALLEL_PROFILE"] == "R2"
     @test env_map_override["SPACEAGORA_OUTER_PARALLEL_ACTIVE"] == "0"
     @test env_map_override["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "none"
+    @test env_map_override["SPACEAGORA_PARALLEL_POLICY_WINDOW"] == "8"
+    @test env_map_override["SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD"] == "0"
+    @test parse(Float64, env_map_override["SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION"]) > 0.0
+    @test parse(Int, env_map_override["SPACEAGORA_PARALLEL_POLICY_HINT_MIN_SAMPLES"]) >= 1
     env_pairs_auto = PP.profile_env_pairs("R5"; preserve_existing=false, outer_parallel_active=false)
-    @test Dict(env_pairs_auto)["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "auto"
+    env_map_auto = Dict(env_pairs_auto)
+    @test env_map_auto["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "auto"
+    @test env_map_auto["SPACEAGORA_THERMAL_CALLBACK_PARALLEL"] == "on"
+    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_WINDOW"] == "4"
+    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD"] == "1"
+    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS"] == "1"
+    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST"] == "1"
+    @test parse(Float64, env_map_auto["SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION"]) > 0.0
+    @test parse(Int, env_map_auto["SPACEAGORA_PARALLEL_POLICY_HINT_MIN_SAMPLES"]) >= 2
+
+    withenv("SPACEAGORA_PERF_HARDWARE_CLASS" => "small") do
+        env_small = Dict(PP.profile_env_pairs("R5"; preserve_existing=false, outer_parallel_active=false))
+        @test parse(Float64, env_small["SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION"]) == 1.3
+        @test parse(Int, env_small["SPACEAGORA_PARALLEL_POLICY_HINT_MIN_SAMPLES"]) == 2
+    end
+    withenv("SPACEAGORA_PERF_HARDWARE_CLASS" => "large") do
+        env_large = Dict(PP.profile_env_pairs("R5"; preserve_existing=false, outer_parallel_active=false))
+        @test parse(Float64, env_large["SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION"]) == 1.8
+        @test parse(Int, env_large["SPACEAGORA_PARALLEL_POLICY_HINT_MIN_SAMPLES"]) == 3
+    end
 
     value_a = PP.with_parallel_profile("R1_a"; preserve_existing=false, outer_parallel_active=true) do
         (ENV["SPACEAGORA_PARALLEL_PROFILE"], ENV["SPACEAGORA_OUTER_PARALLEL_ACTIVE"])
@@ -77,6 +107,10 @@ const TV = TelemetryVerification
     sig = PP.outer_route_signature(f_heavy)
     @test occursin("cat=deterministic", sig)
     @test occursin("harm=21p", sig)
+    @test occursin("dens=", sig)
+    @test occursin("solver=", sig)
+    @test occursin("thermal=", sig)
+    @test occursin("eff_cost=", sig)
     @test occursin("sat=1", PP.outer_route_signature(PP.OuterRouteFeatures(n_sats=1, n_links=1, mission_time_s=100.0)))
     @test occursin("sat=2", PP.outer_route_signature(PP.OuterRouteFeatures(n_sats=2, n_links=2, mission_time_s=100.0)))
     @test occursin("sat=5p", PP.outer_route_signature(PP.OuterRouteFeatures(n_sats=7, n_links=10, mission_time_s=10_000.0)))
@@ -137,6 +171,36 @@ const TV = TelemetryVerification
         parallel_enabled=true
     )
     @test chosen_adaptive == :process
+
+    f_variant = PP.OuterRouteFeatures(
+        category="deterministic",
+        n_sats=3,
+        n_links=6,
+        max_links_per_sat=3,
+        mission_time_s=20_000.0,
+        has_nbody=true,
+        harmonics_degree=30,
+        has_control=false,
+        orientation_on=false,
+        density_family="gram_point",
+        solver_mode="split_imex:kencarp4",
+        dt_max_orbit_s=0.2,
+        thermal_enabled=true,
+        dynamic_effector_count=5,
+        effector_cost_class="heavy"
+    )
+    sig_variant = PP.outer_route_signature(f_variant)
+    @test isempty(PP.outer_route_stats_snapshot(state, sig_variant))
+    @test PP.default_outer_route(f_variant; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :threads
+    chosen_fallback = PP.select_outer_route!(
+        state,
+        f_variant;
+        tuning=tune,
+        machine_class=:small,
+        threads_available=true,
+        parallel_enabled=true
+    )
+    @test chosen_fallback == :process
 
     mktempdir() do tmp
         cache_path = joinpath(tmp, "outer_route_state.toml")

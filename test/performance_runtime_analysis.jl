@@ -1135,14 +1135,17 @@ function _record_outer_route_feedback!(
     successes = 0
     failures = 0
     elapsed_success_s = 0.0
+    elapsed_success_sq_sum_s = 0.0
     for row in rows
         if !hasproperty(row, :solve_success)
             continue
         end
         if row.solve_success === true
             if hasproperty(row, :total_time_s) && row.total_time_s isa Real && isfinite(Float64(row.total_time_s))
+                elapsed_s = Float64(row.total_time_s)
                 successes += 1
-                elapsed_success_s += Float64(row.total_time_s)
+                elapsed_success_s += elapsed_s
+                elapsed_success_sq_sum_s += elapsed_s^2
             end
         elseif row.solve_success === false
             failures += 1
@@ -1155,6 +1158,7 @@ function _record_outer_route_feedback!(
         successes=successes,
         failures=failures,
         elapsed_success_s=elapsed_success_s,
+        elapsed_success_sq_sum_s=elapsed_success_sq_sum_s,
         tuning=_outer_route_tuning()
     )
     return nothing
@@ -2028,6 +2032,70 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
     thermal_stress_density = SimulationModel.EnvironmentModels.PolynomialFitAtmosphereModel([-27.0])
     multi_scaling_effectors = (InverseSquaredGravityModel(), harmonics20)
     sc_thermal_stress = make_constellation(planet, 8; with_panel=true, panel_count=12)
+    sc_thermal_aerobrake = [make_spacecraft(
+        mars;
+        id=1,
+        with_panel=true,
+        panel_count=16,
+        ra_alt_m=4500e3,
+        rp_alt_m=120e3,
+        i_deg=93.0,
+        ω_deg=80.0,
+        Ω_deg=30.0,
+        ν_deg=180.0,
+        root_mass=340.0,
+        root_area=5.0,
+        panel_mass=6.0,
+        panel_area=1.8,
+        panel_offset_y=1.2
+    )]
+    sc_srp_heavy = [make_spacecraft(
+        planet;
+        id=1,
+        with_panel=true,
+        panel_count=8,
+        ra_alt_m=700e3,
+        rp_alt_m=680e3,
+        i_deg=97.0,
+        ω_deg=10.0,
+        Ω_deg=45.0,
+        ν_deg=30.0,
+        root_mass=600.0,
+        root_area=40.0,
+        panel_mass=20.0,
+        panel_area=35.0,
+        panel_offset_y=2.5
+    )]
+    srp_heavy_effectors = (
+        InverseSquaredGravityModel(),
+        SolarRadiationPressureModel(1.2, 120.0),
+        SolarRadiationPressureModel(1.8, 220.0)
+    )
+    sc_articulated_heavy = [make_spacecraft(
+        planet;
+        id=1,
+        with_panel=true,
+        panel_count=28,
+        orientation_state=(q0, w0),
+        ra_alt_m=520e3,
+        rp_alt_m=500e3,
+        ν_deg=160.0,
+        root_mass=450.0,
+        root_area=10.0,
+        panel_mass=8.0,
+        panel_area=3.0,
+        panel_offset_y=2.0
+    )]
+    sc_multi_sat_control = make_constellation(planet, 8; with_panel=false)
+    constellation_thruster = BaseThrusterModel(
+        thrust=fill(0.18, 4),
+        direction=fill(0.0, 4),
+        Δv=fill(0.0, 4),
+        start_burn_time=[120.0, 540.0, 960.0, 1380.0],
+        stop_burn_time=[180.0, 600.0, 1020.0, 1440.0],
+        Isp=fill(285.0, 4)
+    )
+    sc_long_constellation = make_constellation(planet, 12; with_panel=false)
     sc_effector_stress6 = make_constellation(planet, 6; with_panel=false)
     sc_effector_stress12 = make_constellation(planet, 12; with_panel=false)
     effector_stress_effectors = (
@@ -2113,6 +2181,82 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 density_model=deepcopy(thermal_stress_density),
                 dt_max_orbit=0.5
             )
+        ),
+        BenchmarkCase(
+            name="thermal_aerobrake_mars_panel16",
+            category="thermal_entry",
+            description="1 articulated spacecraft (17 links) in Mars aerobraking regime (10 orbits, aero + MarsGRAM point-to-point) to stress thermal callback under entry-like heating",
+            args_template=build_config(
+                planet=mars,
+                spacecraft=sc_thermal_aerobrake,
+                mission_time_s=spec.mission_long_s,
+                orientation_sim=false,
+                mission_type=MissionOrbits,
+                mission_keplerian=false,
+                mission_orbits=10,
+                dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+                density_model=deepcopy(mars_gram_point_density),
+                dt_max_orbit=1.0
+            ),
+            run_in_quick=false
+        ),
+        BenchmarkCase(
+            name="srp_heavy_high_area",
+            category="srp_heavy",
+            description="1 high-area spacecraft (9 links) with stacked SRP effectors to stress SRP-heavy workloads",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_srp_heavy,
+                mission_time_s=spec.mission_short_s,
+                orientation_sim=true,
+                dynamic_effectors=srp_heavy_effectors,
+                dt_max_orbit=1.0
+            )
+        ),
+        BenchmarkCase(
+            name="articulated_1sat_panel28_fullstack",
+            category="articulated_multibody",
+            description="1 heavily articulated spacecraft (29 links), orientation dynamics on, harmonics + aero active to stress multibody/link-level kernels",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_articulated_heavy,
+                mission_time_s=min(spec.mission_short_s, 2400.0),
+                orientation_sim=true,
+                dynamic_effectors=(InverseSquaredGravityModel(), harmonics20, AerodynamicCoefficientfM()),
+                density_model=deepcopy(thermal_stress_density),
+                dt_max_orbit=0.5
+            ),
+            run_in_quick=false
+        ),
+        BenchmarkCase(
+            name="multi_sat_control_8sat_thruster",
+            category="multi_sat_control",
+            description="8-spacecraft constellation with active thruster control callbacks to capture multi-satellite + active control behavior",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_multi_sat_control,
+                mission_time_s=min(spec.mission_short_s, 2400.0),
+                orientation_sim=false,
+                dynamic_effectors=(InverseSquaredGravityModel(), InverseSquaredJ2GravityModel()),
+                control_effectors=(constellation_thruster,),
+                control_rates=[0.2],
+                dt_max_orbit=0.5
+            )
+        ),
+        BenchmarkCase(
+            name="long_constellation_12sat",
+            category="long_constellation",
+            description="12-spacecraft long-duration constellation with L20 harmonics + SRP and GRAM surrogate density",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_long_constellation,
+                mission_time_s=spec.mission_long_s,
+                orientation_sim=false,
+                dynamic_effectors=(InverseSquaredGravityModel(), harmonics20, SolarRadiationPressureModel(1.2, 12.0)),
+                density_model=deepcopy(earth_gram_surrogate_density),
+                dt_max_orbit=2.0
+            ),
+            run_in_quick=false
         ),
         BenchmarkCase(
             name="effector_6sat_dual_srp_stack",
@@ -2538,6 +2682,8 @@ function measure_case(
     final_primary_pos_norm_m = missing
     final_primary_vel_norm_mps = missing
     final_primary_mass_kg = missing
+    terminal_time_s = missing
+    entry_target_count = isnothing(case.entry_target_count_override) ? missing : Int(case.entry_target_count_override)
 
     solve_payload = solve_timed.value
     if solve_payload.ok
@@ -2561,6 +2707,9 @@ function measure_case(
         final_primary_pos_norm_m = terminal.pos_norm_m
         final_primary_vel_norm_mps = terminal.vel_norm_mps
         final_primary_mass_kg = terminal.mass_kg
+        if !isempty(sol.t)
+            terminal_time_s = Float64(sol.t[end])
+        end
         if hasproperty(solve_result, :parallel_policy)
             snapshot = solve_result.parallel_policy
             if !(snapshot isa Nothing)
@@ -2668,6 +2817,8 @@ function measure_case(
         final_primary_pos_norm_m=final_primary_pos_norm_m,
         final_primary_vel_norm_mps=final_primary_vel_norm_mps,
         final_primary_mass_kg=final_primary_mass_kg,
+        terminal_time_s=terminal_time_s,
+        entry_target_count=entry_target_count,
         sim_seconds_per_wall_second=sim_seconds_per_wall_second,
         satellite_sim_seconds_per_wall_second=satellite_sim_seconds_per_wall_second,
         timestamp_utc=timestamp_utc
@@ -2883,6 +3034,26 @@ function perf_worker_measure_per_orbit_scenario(
     outer_route::Symbol=:process
 )
     return measure_per_orbit_scenario(base_case, spec, period_s, orbit_counts; outer_route=outer_route)
+end
+
+function perf_worker_measure_entry_duration_scenario(
+    base_case::BenchmarkCase,
+    spec::ProfileSpec,
+    interface_counts::Vector{Int},
+    outer_route::Symbol=:process,
+    run_role::String="measured";
+    warmup_override::Union{Nothing, Int}=nothing,
+    repeats_override::Union{Nothing, Int}=nothing
+)
+    return measure_entry_duration_scenario(
+        base_case,
+        spec,
+        interface_counts;
+        outer_route=outer_route,
+        run_role=run_role,
+        warmup_override=warmup_override,
+        repeats_override=repeats_override
+    )
 end
 
 function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, planet::Earth)
@@ -3120,6 +3291,108 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
 end
 @inline function selected_cases(spec::ProfileSpec, cases::Vector{BenchmarkCase})::Vector{BenchmarkCase}
     return spec.name == "full" ? cases : [c for c in cases if c.run_in_quick]
+end
+
+@inline function _entry_duration_interface_counts(spec::ProfileSpec)::Vector{Int}
+    return spec.name == "full" ? collect(1:3) : collect(1:2)
+end
+
+@inline function _entry_duration_selected_cases(spec::ProfileSpec, cases::Vector{BenchmarkCase})::Vector{BenchmarkCase}
+    return [c for c in selected_cases(spec, cases) if c.category == "entry"]
+end
+
+@inline function _entry_sweep_case(base_case::BenchmarkCase, interface_count::Int)::BenchmarkCase
+    interface_count > 0 || throw(ArgumentError("entry interface count must be > 0, got $interface_count"))
+    return BenchmarkCase(
+        name=base_case.name,
+        category=base_case.category,
+        description=base_case.description,
+        args_template=base_case.args_template,
+        run_in_quick=base_case.run_in_quick,
+        solver_mode_override=base_case.solver_mode_override,
+        split_imex_solver_override=base_case.split_imex_solver_override,
+        entry_target_count_override=interface_count
+    )
+end
+
+function measure_entry_duration_scenario(
+    base_case::BenchmarkCase,
+    spec::ProfileSpec,
+    interface_counts::Vector{Int};
+    outer_route::Symbol=:none,
+    apply_env::Bool=true,
+    run_role::String="measured",
+    warmup_override::Union{Nothing, Int}=nothing,
+    repeats_override::Union{Nothing, Int}=nothing
+)
+    rows = NamedTuple[]
+    logs = String[]
+    stream_logs = _perf_stream_orbit_logs()
+    warmup_count = isnothing(warmup_override) ? spec.warmup : Int(warmup_override)
+    repeat_count = isnothing(repeats_override) ? spec.repeats : Int(repeats_override)
+    warmup_count >= 0 || throw(ArgumentError("warmup_override must be >= 0, got $warmup_count"))
+    repeat_count > 0 || throw(ArgumentError("repeats_override must be > 0, got $repeat_count"))
+
+    for interface_count in interface_counts
+        case = _entry_sweep_case(base_case, interface_count)
+        plan = parallel_priority_plan(case, outer_route)
+
+        run_case = () -> begin
+            if stream_logs
+                println(
+                    "    entry_interface_count=$(interface_count): warmup x$(warmup_count), " *
+                    "repeats x$(repeat_count), role=$(run_role)"
+                )
+                flush(stdout)
+            end
+            run_warmup(case, warmup_count, spec.name)
+            for rep in 1:repeat_count
+                last_row = nothing
+                for attempt in 1:spec.max_attempts
+                    row = measure_case(case, spec.name, rep; attempt=attempt, plan=plan)
+                    row_entry = merge(
+                        row,
+                        (
+                            entry_atmospheric_interface_count=interface_count,
+                            entry_run_role=run_role,
+                            entry_passage_duration_s=row.terminal_time_s,
+                            entry_wall_time_per_passage_s=_safe_div(row.total_time_s, Float64(interface_count))
+                        )
+                    )
+                    last_row = row_entry
+                    if row_entry.solve_success
+                        push!(rows, row_entry)
+                        line = "    entry_interface_count=$(interface_count) repeat $(rep)/$(repeat_count): total=$(round(row_entry.total_time_s; digits=3)) s"
+                        push!(logs, line)
+                        if stream_logs
+                            println(line)
+                            flush(stdout)
+                        end
+                        break
+                    end
+                end
+                if !(last_row === nothing) && !last_row.solve_success
+                    push!(rows, last_row)
+                    line = "    entry_interface_count=$(interface_count) repeat $(rep)/$(repeat_count): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)"
+                    push!(logs, line)
+                    if stream_logs
+                        println(line)
+                        flush(stdout)
+                    end
+                end
+            end
+        end
+
+        if apply_env
+            env_pairs = parallel_priority_env_pairs(plan)
+            withenv(env_pairs...) do
+                run_case()
+            end
+        else
+            run_case()
+        end
+    end
+    return rows, logs
 end
 
 function measure_per_orbit_scenario(
@@ -3484,6 +3757,235 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
     run_montecarlo_per_orbit!(rows, spec, planet, period_s, orbit_counts)
     return DataFrame(rows)
 end
+
+function run_entry_duration_sweep(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet::Earth)::DataFrame
+    selected = _entry_duration_selected_cases(spec, cases)
+    interface_counts = _entry_duration_interface_counts(spec)
+    println(
+        "[entry-duration-sweep] scenarios=$(length(selected)), interface_counts=$(join(interface_counts, ",")), " *
+        "profile=$(spec.name)"
+    )
+    isempty(selected) && return DataFrame()
+
+    rows = NamedTuple[]
+    backend = perf_parallel_backend()
+
+    # Always collect serial references first so event-time error can be reported for any backend path.
+    println("[entry-duration-sweep] building serial event-time references")
+    for (idx, base_case) in enumerate(selected)
+        println("  reference scenario $(idx)/$(length(selected)) = $(base_case.name)")
+        ref_rows, ref_logs = measure_entry_duration_scenario(
+            base_case,
+            spec,
+            interface_counts;
+            outer_route=:none,
+            run_role="reference",
+            warmup_override=min(spec.warmup, 1),
+            repeats_override=1
+        )
+        append!(rows, ref_rows)
+        for log_line in ref_logs
+            println(log_line)
+        end
+    end
+
+    if backend == :auto
+        scenario_rows = Vector{Vector{NamedTuple}}(undef, length(selected))
+        scenario_logs = Vector{Vector{String}}(undef, length(selected))
+        chosen_routes = fill(:none, length(selected))
+        process_tasks = Tuple{Int, BenchmarkCase}[]
+        thread_indices = Int[]
+        serial_indices = Int[]
+
+        for (idx, base_case) in enumerate(selected)
+            route = auto_backend_for_case(base_case; spec=spec)
+            chosen_routes[idx] = route
+            if route == :process
+                push!(process_tasks, (idx, base_case))
+            elseif route == :threads
+                if _case_outer_threads_safe(base_case)
+                    push!(thread_indices, idx)
+                else
+                    push!(serial_indices, idx)
+                    chosen_routes[idx] = :none
+                end
+            else
+                push!(serial_indices, idx)
+            end
+        end
+
+        if !isempty(process_tasks)
+            ensure_perf_workers!()
+            process_results = pmap(process_tasks) do task
+                _, base_case = task
+                local_rows, local_logs = perf_worker_measure_entry_duration_scenario(
+                    base_case,
+                    spec,
+                    interface_counts,
+                    :process,
+                    "measured"
+                )
+                return (rows=local_rows, logs=local_logs)
+            end
+            for (k, task) in enumerate(process_tasks)
+                idx = task[1]
+                scenario_rows[idx] = process_results[k].rows
+                scenario_logs[idx] = process_results[k].logs
+            end
+        end
+
+        if !isempty(thread_indices)
+            for (env_pairs, payload) in _thread_plan_groups(selected, thread_indices, :threads)
+                withenv(env_pairs...) do
+                    Threads.@threads for j in eachindex(payload)
+                        idx, _ = payload[j]
+                        local_rows, local_logs = measure_entry_duration_scenario(
+                            selected[idx],
+                            spec,
+                            interface_counts;
+                            outer_route=:threads,
+                            apply_env=false,
+                            run_role="measured"
+                        )
+                        scenario_rows[idx] = local_rows
+                        scenario_logs[idx] = local_logs
+                    end
+                end
+            end
+        end
+
+        for idx in serial_indices
+            local_rows, local_logs = measure_entry_duration_scenario(
+                selected[idx],
+                spec,
+                interface_counts;
+                outer_route=:none,
+                run_role="measured"
+            )
+            scenario_rows[idx] = local_rows
+            scenario_logs[idx] = local_logs
+        end
+
+        for (idx, base_case) in enumerate(selected)
+            println("  measured scenario $(idx)/$(length(selected)) = $(base_case.name)")
+            _record_outer_route_feedback!(base_case, scenario_rows[idx]; route=chosen_routes[idx])
+            append!(rows, scenario_rows[idx])
+            for log_line in scenario_logs[idx]
+                println(log_line)
+            end
+        end
+    elseif backend == :process
+        ensure_perf_workers!()
+        tasks = collect(enumerate(selected))
+        scenario_results = pmap(tasks) do task
+            _, base_case = task
+            local_rows, local_logs = perf_worker_measure_entry_duration_scenario(
+                base_case,
+                spec,
+                interface_counts,
+                :process,
+                "measured"
+            )
+            return (rows=local_rows, logs=local_logs)
+        end
+        for (idx, base_case) in enumerate(selected)
+            println("  measured scenario $(idx)/$(length(selected)) = $(base_case.name)")
+            _record_outer_route_feedback!(base_case, scenario_results[idx].rows; route=:process)
+            append!(rows, scenario_results[idx].rows)
+            for log_line in scenario_results[idx].logs
+                println(log_line)
+            end
+        end
+    elseif backend == :threads
+        scenario_rows = Vector{Vector{NamedTuple}}(undef, length(selected))
+        scenario_logs = Vector{Vector{String}}(undef, length(selected))
+        thread_indices, serial_indices = _split_threadsafe_indices(selected, collect(eachindex(selected)))
+
+        for (env_pairs, payload) in _thread_plan_groups(selected, thread_indices, :threads)
+            withenv(env_pairs...) do
+                Threads.@threads for j in eachindex(payload)
+                    idx, _ = payload[j]
+                    local_rows, local_logs = measure_entry_duration_scenario(
+                        selected[idx],
+                        spec,
+                        interface_counts;
+                        outer_route=:threads,
+                        apply_env=false,
+                        run_role="measured"
+                    )
+                    scenario_rows[idx] = local_rows
+                    scenario_logs[idx] = local_logs
+                end
+            end
+        end
+        for idx in serial_indices
+            local_rows, local_logs = measure_entry_duration_scenario(
+                selected[idx],
+                spec,
+                interface_counts;
+                outer_route=:none,
+                run_role="measured"
+            )
+            scenario_rows[idx] = local_rows
+            scenario_logs[idx] = local_logs
+        end
+        for (idx, base_case) in enumerate(selected)
+            println("  measured scenario $(idx)/$(length(selected)) = $(base_case.name)")
+            route = idx in serial_indices ? :none : :threads
+            _record_outer_route_feedback!(base_case, scenario_rows[idx]; route=route)
+            append!(rows, scenario_rows[idx])
+            for log_line in scenario_logs[idx]
+                println(log_line)
+            end
+        end
+    else
+        for (idx, base_case) in enumerate(selected)
+            println("  measured scenario $(idx)/$(length(selected)) = $(base_case.name)")
+            local_rows, local_logs = measure_entry_duration_scenario(
+                base_case,
+                spec,
+                interface_counts;
+                outer_route=:none,
+                run_role="measured"
+            )
+            _record_outer_route_feedback!(base_case, local_rows; route=:none)
+            append!(rows, local_rows)
+            for log_line in local_logs
+                println(log_line)
+            end
+        end
+    end
+
+    entry_raw_df = DataFrame(rows)
+    if nrow(entry_raw_df) == 0
+        return entry_raw_df
+    end
+
+    reference_rows = entry_raw_df[
+        (entry_raw_df.entry_run_role .== "reference") .&
+        (entry_raw_df.solve_success .== true) .&
+        .!ismissing.(entry_raw_df.terminal_time_s), :
+    ]
+    reference_map = Dict{Tuple{String, Int}, Float64}()
+    if nrow(reference_rows) > 0
+        for grp in groupby(reference_rows, [:scenario, :entry_atmospheric_interface_count])
+            key = (String(grp.scenario[1]), Int(grp.entry_atmospheric_interface_count[1]))
+            reference_map[key] = mean(Float64.(grp.terminal_time_s))
+        end
+    end
+
+    entry_raw_df[!, :entry_reference_terminal_time_s] = [
+        get(reference_map, (String(sc), Int(ic)), missing)
+        for (sc, ic) in zip(entry_raw_df.scenario, entry_raw_df.entry_atmospheric_interface_count)
+    ]
+    entry_raw_df[!, :entry_event_time_abs_error_s] = [
+        (t isa Missing || ref isa Missing) ? missing : abs(Float64(t) - Float64(ref))
+        for (t, ref) in zip(entry_raw_df.terminal_time_s, entry_raw_df.entry_reference_terminal_time_s)
+    ]
+
+    return entry_raw_df
+end
+
 function _safe_stat(values, op::Function)
     vec = collect(skipmissing(values))
     isempty(vec) && return missing
@@ -3597,7 +4099,7 @@ function summarize_per_orbit_results(orbit_raw_df::DataFrame)::DataFrame
             :total_bytes_mb => (v -> _safe_stat(v, mean)) => :total_bytes_mean_mb,
             :sim_seconds_per_wall_second => (v -> _safe_stat(v, mean)) => :sim_seconds_per_wall_second_mean
         )
-        summary = leftjoin(counts, success_summary, on=keys)
+        summary = leftjoin(counts, success_summary, on=keys, matchmissing=:equal)
     else
         summary[!, :samples] = fill(missing, nrow(summary))
         summary[!, :mission_time_mean_s] = fill(missing, nrow(summary))
@@ -3628,6 +4130,70 @@ function summarize_per_orbit_results(orbit_raw_df::DataFrame)::DataFrame
     summary[!, :baseline_periods_per_wall_second_mean] = summary.orbits_per_wall_second_mean
 
     sort!(summary, [:scenario, :mission_time_multiplier])
+    return summary
+end
+
+function summarize_entry_duration_results(entry_raw_df::DataFrame)::DataFrame
+    if nrow(entry_raw_df) == 0
+        return DataFrame()
+    end
+
+    if !(:entry_run_role in names(entry_raw_df))
+        entry_raw_df[!, :entry_run_role] = fill("measured", nrow(entry_raw_df))
+    end
+    for col in (:entry_atmospheric_interface_count, :entry_passage_duration_s, :entry_wall_time_per_passage_s, :entry_event_time_abs_error_s, :entry_reference_terminal_time_s, :terminal_time_s)
+        if !(col in names(entry_raw_df))
+            entry_raw_df[!, col] = fill(missing, nrow(entry_raw_df))
+        end
+    end
+
+    keys = _summary_group_keys(
+        entry_raw_df,
+        [:category, :scenario, :description, :entry_atmospheric_interface_count, :entry_run_role]
+    )
+    counts = combine(
+        groupby(entry_raw_df, keys),
+        nrow => :samples_total,
+        :solve_success => (v -> count(identity, v)) => :samples_success
+    )
+    counts[!, :samples_failed] = counts.samples_total .- counts.samples_success
+    counts[!, :success_rate] = Float64.(counts.samples_success) ./ Float64.(counts.samples_total)
+
+    success_df = entry_raw_df[entry_raw_df.solve_success .== true, :]
+    summary = counts
+    if nrow(success_df) > 0
+        success_summary = combine(
+            groupby(success_df, keys),
+            nrow => :samples,
+            :entry_passage_duration_s => (v -> _safe_stat(v, mean)) => :passage_duration_mean_s,
+            :entry_passage_duration_s => (v -> _safe_stat(v, x -> quantile(x, 0.9))) => :passage_duration_p90_s,
+            :entry_wall_time_per_passage_s => (v -> _safe_stat(v, mean)) => :wall_time_per_passage_mean_s,
+            :entry_wall_time_per_passage_s => (v -> _safe_stat(v, x -> quantile(x, 0.9))) => :wall_time_per_passage_p90_s,
+            :entry_event_time_abs_error_s => (v -> _safe_stat(v, mean)) => :event_time_abs_error_mean_s,
+            :entry_event_time_abs_error_s => (v -> _safe_stat(v, maximum)) => :event_time_abs_error_max_s,
+            :terminal_time_s => (v -> _safe_stat(v, mean)) => :event_time_mean_s,
+            :entry_reference_terminal_time_s => (v -> _safe_stat(v, mean)) => :reference_event_time_mean_s,
+            :total_time_s => (v -> _safe_stat(v, mean)) => :total_time_mean_s,
+            :total_time_s => (v -> _safe_stat(v, x -> quantile(x, 0.9))) => :total_time_p90_s,
+            :sim_seconds_per_wall_second => (v -> _safe_stat(v, mean)) => :sim_seconds_per_wall_second_mean
+        )
+        summary = leftjoin(counts, success_summary, on=keys, matchmissing=:equal)
+    else
+        summary[!, :samples] = fill(missing, nrow(summary))
+        summary[!, :passage_duration_mean_s] = fill(missing, nrow(summary))
+        summary[!, :passage_duration_p90_s] = fill(missing, nrow(summary))
+        summary[!, :wall_time_per_passage_mean_s] = fill(missing, nrow(summary))
+        summary[!, :wall_time_per_passage_p90_s] = fill(missing, nrow(summary))
+        summary[!, :event_time_abs_error_mean_s] = fill(missing, nrow(summary))
+        summary[!, :event_time_abs_error_max_s] = fill(missing, nrow(summary))
+        summary[!, :event_time_mean_s] = fill(missing, nrow(summary))
+        summary[!, :reference_event_time_mean_s] = fill(missing, nrow(summary))
+        summary[!, :total_time_mean_s] = fill(missing, nrow(summary))
+        summary[!, :total_time_p90_s] = fill(missing, nrow(summary))
+        summary[!, :sim_seconds_per_wall_second_mean] = fill(missing, nrow(summary))
+    end
+
+    sort!(summary, [:scenario, :entry_atmospheric_interface_count, :entry_run_role])
     return summary
 end
 
@@ -3934,6 +4500,12 @@ function _trajectory_delta_metrics(
     vel_rel_max = 0.0
     q_angle_max_rad = 0.0
     omega_rel_max = 0.0
+    pos_rel_sum2 = 0.0
+    vel_rel_sum2 = 0.0
+    q_angle_sum2 = 0.0
+    omega_rel_sum2 = 0.0
+    sample_count_total = 0
+    orientation_count_total = 0
 
     for t in sample_times
         u_ref = _solution_state_at(sol_ref, t)
@@ -3941,11 +4513,21 @@ function _trajectory_delta_metrics(
         for sat_idx in 1:n_sats
             sc_ref = u_ref.sc[sat_idx]
             sc_cmp = u_cmp.sc[sat_idx]
-            pos_rel_max = max(pos_rel_max, _relative_vector_delta(sc_ref.pos, sc_cmp.pos))
-            vel_rel_max = max(vel_rel_max, _relative_vector_delta(sc_ref.vel, sc_cmp.vel))
+            pos_rel = _relative_vector_delta(sc_ref.pos, sc_cmp.pos)
+            vel_rel = _relative_vector_delta(sc_ref.vel, sc_cmp.vel)
+            pos_rel_max = max(pos_rel_max, pos_rel)
+            vel_rel_max = max(vel_rel_max, vel_rel)
+            pos_rel_sum2 += pos_rel^2
+            vel_rel_sum2 += vel_rel^2
+            sample_count_total += 1
             if orientation
-                q_angle_max_rad = max(q_angle_max_rad, _quaternion_angle_delta_rad(sc_ref.q, sc_cmp.q))
-                omega_rel_max = max(omega_rel_max, _relative_vector_delta(sc_ref.ω, sc_cmp.ω))
+                q_angle = _quaternion_angle_delta_rad(sc_ref.q, sc_cmp.q)
+                omega_rel = _relative_vector_delta(sc_ref.ω, sc_cmp.ω)
+                q_angle_max_rad = max(q_angle_max_rad, q_angle)
+                omega_rel_max = max(omega_rel_max, omega_rel)
+                q_angle_sum2 += q_angle^2
+                omega_rel_sum2 += omega_rel^2
+                orientation_count_total += 1
             end
         end
     end
@@ -3954,10 +4536,15 @@ function _trajectory_delta_metrics(
         t_start=t_start,
         t_end=t_end,
         sample_count=sample_count,
+        compared_state_count=sample_count_total,
         pos_rel_max=pos_rel_max,
+        pos_rel_rms=sample_count_total > 0 ? sqrt(pos_rel_sum2 / sample_count_total) : missing,
         vel_rel_max=vel_rel_max,
+        vel_rel_rms=sample_count_total > 0 ? sqrt(vel_rel_sum2 / sample_count_total) : missing,
         q_angle_max_rad=orientation ? q_angle_max_rad : missing,
-        omega_rel_max=orientation ? omega_rel_max : missing
+        q_angle_rms_rad=orientation && orientation_count_total > 0 ? sqrt(q_angle_sum2 / orientation_count_total) : missing,
+        omega_rel_max=orientation ? omega_rel_max : missing,
+        omega_rel_rms=orientation && orientation_count_total > 0 ? sqrt(omega_rel_sum2 / orientation_count_total) : missing
     )
 end
 
@@ -4526,7 +5113,8 @@ function generate_runtime_plots(
     stamp::String,
     raw_df::DataFrame,
     summary_df::DataFrame,
-    orbit_summary_df::DataFrame
+    orbit_summary_df::DataFrame,
+    entry_duration_summary_df::DataFrame=DataFrame()
 )::Vector{String}
     !_plot_ready() && return String[]
     _ensure_runtime_plot_theme!()
@@ -5003,7 +5591,78 @@ function generate_runtime_plots(
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_per_orbit_heatmap", spec, stamp)
     end
 
-    # 15) SPICE call budget by scenario (N-body + SRP + planet frame).
+    # 15) Entry-duration sweep trends (separate from per-orbit mission-time sweep).
+    if nrow(entry_duration_summary_df) > 0 &&
+       (:entry_run_role in names(entry_duration_summary_df)) &&
+       (:entry_atmospheric_interface_count in names(entry_duration_summary_df))
+        entry_measured = entry_duration_summary_df[
+            (entry_duration_summary_df.entry_run_role .== "measured") .&
+            .!ismissing.(entry_duration_summary_df.entry_atmospheric_interface_count), :
+        ]
+        if nrow(entry_measured) > 0
+            if :passage_duration_mean_s in names(entry_measured)
+                passage_df = entry_measured[.!ismissing.(entry_measured.passage_duration_mean_s), :]
+                if nrow(passage_df) > 0
+                    plt = Plots.plot(;
+                        title="Entry-Duration Sweep: Passage Duration",
+                        xlabel="Atmospheric-Interface Count",
+                        ylabel="Passage Duration [s]",
+                        _plot_margins(size=(2200, 1200), right_mm=72, legend=:outerright)...
+                    )
+                    for grp in groupby(passage_df, :scenario)
+                        local_df = DataFrame(grp)
+                        sort!(local_df, :entry_atmospheric_interface_count)
+                        x = Int.(local_df.entry_atmospheric_interface_count)
+                        y = Float64.(local_df.passage_duration_mean_s)
+                        Plots.plot!(plt, x, y; marker=:circle, label=String(local_df.scenario[1]))
+                    end
+                    _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_entry_duration_passage", spec, stamp)
+                end
+            end
+
+            if :wall_time_per_passage_mean_s in names(entry_measured)
+                wall_df = entry_measured[.!ismissing.(entry_measured.wall_time_per_passage_mean_s), :]
+                if nrow(wall_df) > 0
+                    plt = Plots.plot(;
+                        title="Entry-Duration Sweep: Wall Time per Entry Passage",
+                        xlabel="Atmospheric-Interface Count",
+                        ylabel="Wall Time per Passage [s]",
+                        _plot_margins(size=(2200, 1200), right_mm=72, legend=:outerright)...
+                    )
+                    for grp in groupby(wall_df, :scenario)
+                        local_df = DataFrame(grp)
+                        sort!(local_df, :entry_atmospheric_interface_count)
+                        x = Int.(local_df.entry_atmospheric_interface_count)
+                        y = Float64.(local_df.wall_time_per_passage_mean_s)
+                        Plots.plot!(plt, x, y; marker=:circle, label=String(local_df.scenario[1]))
+                    end
+                    _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_entry_duration_wall_per_passage", spec, stamp)
+                end
+            end
+
+            if :event_time_abs_error_mean_s in names(entry_measured)
+                error_df = entry_measured[.!ismissing.(entry_measured.event_time_abs_error_mean_s), :]
+                if nrow(error_df) > 0
+                    plt = Plots.plot(;
+                        title="Entry-Duration Sweep: Event-Time Absolute Error vs Serial Reference",
+                        xlabel="Atmospheric-Interface Count",
+                        ylabel="|Event-Time Error| [s]",
+                        _plot_margins(size=(2200, 1200), right_mm=72, legend=:outerright)...
+                    )
+                    for grp in groupby(error_df, :scenario)
+                        local_df = DataFrame(grp)
+                        sort!(local_df, :entry_atmospheric_interface_count)
+                        x = Int.(local_df.entry_atmospheric_interface_count)
+                        y = Float64.(local_df.event_time_abs_error_mean_s)
+                        Plots.plot!(plt, x, y; marker=:circle, label=String(local_df.scenario[1]))
+                    end
+                    _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_entry_duration_event_time_error", spec, stamp)
+                end
+            end
+        end
+    end
+
+    # 16) SPICE call budget by scenario (N-body + SRP + planet frame).
     spice_df = success_summary[
         .!ismissing.(success_summary.spice_calls_total_mean) .&
         .!ismissing.(success_summary.total_time_mean_s), :
@@ -5075,7 +5734,8 @@ function write_report(
     spec::ProfileSpec,
     raw_df::DataFrame,
     summary_df::DataFrame,
-    orbit_summary_df::DataFrame;
+    orbit_summary_df::DataFrame,
+    entry_duration_summary_df::Union{Nothing, DataFrame}=nothing;
     plot_paths::Vector{String}=String[],
     split_gate_df::Union{Nothing, DataFrame}=nothing,
     split_gate_csv_path::Union{Nothing, String}=nothing,
@@ -5087,7 +5747,8 @@ function write_report(
     inner_hint_layer_df::Union{Nothing, DataFrame}=nothing,
     inner_hint_layer_csv_path::Union{Nothing, String}=nothing,
     density_backend_breakdown_df::Union{Nothing, DataFrame}=nothing,
-    density_backend_breakdown_csv_path::Union{Nothing, String}=nothing
+    density_backend_breakdown_csv_path::Union{Nothing, String}=nothing,
+    entry_duration_summary_csv_path::Union{Nothing, String}=nothing
 )
     generated = string(now(UTC))
     julia_ver = string(VERSION)
@@ -5118,6 +5779,7 @@ function write_report(
     split_stage_s = missing
     multirate_stage_s = missing
     orbit_stage_s = missing
+    entry_duration_stage_s = missing
     total_stage_s = missing
     if !(stage_timing_df === nothing) && (:stage in names(stage_timing_df)) && (:elapsed_s in names(stage_timing_df))
         for row in eachrow(stage_timing_df)
@@ -5130,6 +5792,8 @@ function write_report(
                 multirate_stage_s = row.elapsed_s
             elseif stage_name == "run_per_orbit"
                 orbit_stage_s = row.elapsed_s
+            elseif stage_name == "run_entry_duration_sweep"
+                entry_duration_stage_s = row.elapsed_s
             elseif stage_name == "total"
                 total_stage_s = row.elapsed_s
             end
@@ -5228,9 +5892,20 @@ function write_report(
                 io,
                 "- Stage elapsed [s]: run_benchmarks=`$(_fmt(bench_stage_s))`, " *
                 "split_gate=`$(_fmt(split_stage_s))`, multirate_gate=`$(_fmt(multirate_stage_s))`, " *
-                "mission_time_sweep=`$(_fmt(orbit_stage_s))`, total=`$(_fmt(total_stage_s))`"
+                "mission_time_sweep=`$(_fmt(orbit_stage_s))`, entry_duration_sweep=`$(_fmt(entry_duration_stage_s))`, " *
+                "total=`$(_fmt(total_stage_s))`"
             )
         end
+        println(io)
+        println(io, "## Claim Scope")
+        println(io)
+        if spec.name == "full"
+            println(io, "- This `full` profile report is intended for paper-grade scalability and adaptivity claims.")
+        else
+            println(io, "- This `quick` profile report is for development/CI/regression and should not be used for paper-grade scalability claims.")
+        end
+        println(io, "- Mission-time sweep excludes `entry` cases by design because multipliers are based on baseline orbital periods.")
+        println(io, "- Entry behavior is covered separately by the `Entry-Duration Sweep` section using atmospheric-interface counts.")
         println(io)
         println(io, "## Key Findings")
         println(io)
@@ -5444,6 +6119,8 @@ function write_report(
         println(io)
         println(io, "## Mission-Time Sweep Results (All Scenarios)")
         println(io)
+        println(io, "_Entry scenarios are intentionally excluded from this sweep because multipliers are baseline-orbit based._")
+        println(io)
         println(io, "| Scenario | Category | Mission-Time Multiplier (x baseline period) | Success/Total | Mission Time (s) | Mean Total (s) | 95% CI [low, high] (s) | P90 (s) | Time / Baseline-Period Unit (s) | Baseline-Period Units / Wall-sec |")
         println(io, "|---|---|---:|---:|---:|---:|---|---:|---:|---:|")
         for row in eachrow(orbit_summary_df)
@@ -5455,6 +6132,36 @@ function write_report(
                 io,
                 "| $(row.scenario) | $(row.category) | $(multiplier) | $(row.samples_success)/$(row.samples_total) | $(_fmt(row.mission_time_mean_s)) | $(_fmt(row.total_time_mean_s)) | $(ci_band) | $(_fmt(row.total_time_p90_s)) | $(_fmt(time_per_unit)) | $(_fmt(units_per_wall)) |"
             )
+        end
+        println(io)
+        println(io, "## Entry-Duration Sweep Results")
+        println(io)
+        if entry_duration_summary_df === nothing || nrow(entry_duration_summary_df) == 0
+            println(io, "- No entry-duration sweep rows were produced.")
+        else
+            measured_df = if :entry_run_role in names(entry_duration_summary_df)
+                entry_duration_summary_df[entry_duration_summary_df.entry_run_role .== "measured", :]
+            else
+                entry_duration_summary_df
+            end
+            if nrow(measured_df) == 0
+                println(io, "- Entry-duration sweep executed, but no measured rows were available.")
+            else
+                println(io, "| Scenario | Atmos Interfaces | Success/Total | Passage Duration Mean (s) | Event-Time Abs Error Mean (s) | Wall-Time / Passage Mean (s) | Mean Total (s) |")
+                println(io, "|---|---:|---:|---:|---:|---:|---:|")
+                for row in eachrow(measured_df)
+                    println(
+                        io,
+                        "| $(row.scenario) | $(row.entry_atmospheric_interface_count) | $(row.samples_success)/$(row.samples_total) | " *
+                        "$(_fmt(row.passage_duration_mean_s)) | $(_fmt(row.event_time_abs_error_mean_s)) | " *
+                        "$(_fmt(row.wall_time_per_passage_mean_s)) | $(_fmt(row.total_time_mean_s)) |"
+                    )
+                end
+            end
+            if !(entry_duration_summary_csv_path === nothing)
+                println(io)
+                println(io, "- Entry-duration summary CSV: `$(entry_duration_summary_csv_path)`")
+            end
         end
     end
 end
@@ -5540,7 +6247,11 @@ function main()
     orbit_raw_df = run_per_orbit_for_scenarios(spec, cases, planet)
     orbit_summary_df = summarize_per_orbit_results(orbit_raw_df)
     orbit_elapsed_s = (time_ns() - orbit_started_ns) / 1e9
-    total_elapsed_s = bench_elapsed_s + split_gate_elapsed_s + multirate_gate_elapsed_s + orbit_elapsed_s
+    entry_duration_started_ns = time_ns()
+    entry_duration_raw_df = run_entry_duration_sweep(spec, cases, planet)
+    entry_duration_summary_df = summarize_entry_duration_results(entry_duration_raw_df)
+    entry_duration_elapsed_s = (time_ns() - entry_duration_started_ns) / 1e9
+    total_elapsed_s = bench_elapsed_s + split_gate_elapsed_s + multirate_gate_elapsed_s + orbit_elapsed_s + entry_duration_elapsed_s
     outer_route_state_saved = _save_outer_route_history!(spec, outer_route_state.path, outer_route_state.persist)
 
     stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
@@ -5548,12 +6259,14 @@ function main()
     summary_path = joinpath(outdir, "runtime_summary_$(spec.name)_$(stamp).csv")
     orbit_raw_path = joinpath(outdir, "runtime_per_orbit_raw_$(spec.name)_$(stamp).csv")
     orbit_summary_path = joinpath(outdir, "runtime_per_orbit_summary_$(spec.name)_$(stamp).csv")
+    entry_duration_raw_path = joinpath(outdir, "runtime_entry_duration_raw_$(spec.name)_$(stamp).csv")
+    entry_duration_summary_path = joinpath(outdir, "runtime_entry_duration_summary_$(spec.name)_$(stamp).csv")
     stage_timing_path = joinpath(outdir, "runtime_stage_timing_$(spec.name)_$(stamp).csv")
     hardware_info_path = joinpath(outdir, "runtime_hardware_info_$(spec.name)_$(stamp).csv")
     inner_hint_layer_path = joinpath(outdir, "runtime_inner_hint_layers_$(spec.name)_$(stamp).csv")
     density_backend_breakdown_path = joinpath(outdir, "runtime_density_backend_breakdown_$(spec.name)_$(stamp).csv")
     report_path = joinpath(outdir, "runtime_report_$(spec.name)_$(stamp).md")
-    plot_paths = generate_runtime_plots(outdir, spec, stamp, raw_df, summary_df, orbit_summary_df)
+    plot_paths = generate_runtime_plots(outdir, spec, stamp, raw_df, summary_df, orbit_summary_df, entry_duration_summary_df)
 
     stage_names = ["run_benchmarks"]
     stage_elapsed = [bench_elapsed_s]
@@ -5566,8 +6279,10 @@ function main()
         push!(stage_elapsed, multirate_gate_elapsed_s)
     end
     push!(stage_names, "run_per_orbit")
+    push!(stage_names, "run_entry_duration_sweep")
     push!(stage_names, "total")
     push!(stage_elapsed, orbit_elapsed_s)
+    push!(stage_elapsed, entry_duration_elapsed_s)
     push!(stage_elapsed, total_elapsed_s)
     stage_timing_df = DataFrame(stage=stage_names, elapsed_s=stage_elapsed)
     hw = _runtime_hardware_snapshot()
@@ -5590,6 +6305,8 @@ function main()
     CSV.write(summary_path, summary_df)
     CSV.write(orbit_raw_path, orbit_raw_df)
     CSV.write(orbit_summary_path, orbit_summary_df)
+    CSV.write(entry_duration_raw_path, entry_duration_raw_df)
+    CSV.write(entry_duration_summary_path, entry_duration_summary_df)
     CSV.write(stage_timing_path, stage_timing_df)
     CSV.write(hardware_info_path, hardware_info_df)
     CSV.write(inner_hint_layer_path, inner_hint_layer_df)
@@ -5599,7 +6316,8 @@ function main()
         spec,
         raw_df,
         summary_df,
-        orbit_summary_df;
+        orbit_summary_df,
+        entry_duration_summary_df;
         plot_paths=plot_paths,
         split_gate_df=split_gate_df,
         split_gate_csv_path=split_gate_csv_path,
@@ -5611,7 +6329,8 @@ function main()
         inner_hint_layer_df=inner_hint_layer_df,
         inner_hint_layer_csv_path=inner_hint_layer_path,
         density_backend_breakdown_df=density_backend_breakdown_df,
-        density_backend_breakdown_csv_path=density_backend_breakdown_path
+        density_backend_breakdown_csv_path=density_backend_breakdown_path,
+        entry_duration_summary_csv_path=entry_duration_summary_path
     )
 
     println("Analysis complete.")
@@ -5619,6 +6338,8 @@ function main()
     println("Summary: $summary_path")
     println("Mission-time-sweep raw: $orbit_raw_path")
     println("Mission-time-sweep summary: $orbit_summary_path")
+    println("Entry-duration-sweep raw: $entry_duration_raw_path")
+    println("Entry-duration-sweep summary: $entry_duration_summary_path")
     println("Stage timing: $stage_timing_path")
     println("Hardware info: $hardware_info_path")
     println("Inner hint layers: $inner_hint_layer_path")

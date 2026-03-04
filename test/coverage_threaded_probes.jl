@@ -1,6 +1,7 @@
 using Test
 using StaticArrays
 using ComponentArrays
+using TOML
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
@@ -612,6 +613,285 @@ end
         state.dirty = false
         state.path = ""
         empty!(state.history)
+    end
+
+    withenv("SPACEAGORA_PARALLEL_POLICY_STATE_PATH" => joinpath("relative_hint_state", "policy.toml")) do
+        rel_hint_path = policy._persistent_hint_path()
+        @test isabspath(rel_hint_path)
+        @test endswith(rel_hint_path, normpath(joinpath("relative_hint_state", "policy.toml")))
+    end
+
+    mktempdir() do tmp
+        missing_path = joinpath(tmp, "missing_inner_policy.toml")
+        withenv(
+            "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "1",
+            "SPACEAGORA_PARALLEL_POLICY_STATE_PATH" => missing_path
+        ) do
+            lock(policy._persistent_hint_lock) do
+                state = policy._persistent_hint_state[]
+                state.loaded = false
+                state.dirty = false
+                state.path = ""
+                empty!(state.history)
+                policy._load_persistent_hint_state_locked!()
+                @test state.loaded
+                @test state.path == normpath(missing_path)
+                @test isempty(state.history)
+            end
+        end
+
+        broken_path = joinpath(tmp, "broken_inner_policy.toml")
+        write(broken_path, "history = [")
+        withenv(
+            "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "1",
+            "SPACEAGORA_PARALLEL_POLICY_STATE_PATH" => broken_path
+        ) do
+            lock(policy._persistent_hint_lock) do
+                state = policy._persistent_hint_state[]
+                state.loaded = false
+                state.dirty = false
+                state.path = ""
+                empty!(state.history)
+                policy._load_persistent_hint_state_locked!()
+                @test state.loaded
+                @test isempty(state.history)
+            end
+        end
+
+        good_path = joinpath(tmp, "good_inner_policy.toml")
+        loaded_signature = "profile=r5|machine=probe_machine|src=density_callback|items=3_4|thr=1|budget=2|outer=0|heavy_only=0|heavy=1"
+        payload = Dict(
+            "schema_version" => 1,
+            "history" => Any[
+                Dict(
+                    "signature" => loaded_signature,
+                    "allotment" => 2,
+                    "stats" => Dict(
+                        "samples" => 3,
+                        "successes" => 2,
+                        "failures" => 1,
+                        "elapsed_sum_ns" => 90.0,
+                        "elapsed_sq_sum_ns" => 2_700.0
+                    )
+                ),
+                Dict(
+                    "signature" => "",
+                    "allotment" => 1,
+                    "stats" => Dict(
+                        "samples" => 2,
+                        "successes" => 1,
+                        "failures" => 1,
+                        "elapsed_sum_ns" => 10.0,
+                        "elapsed_sq_sum_ns" => 100.0
+                    )
+                ),
+                Dict(
+                    "signature" => loaded_signature,
+                    "allotment" => "bad",
+                    "stats" => Dict(
+                        "samples" => 1,
+                        "successes" => 1,
+                        "failures" => 0,
+                        "elapsed_sum_ns" => 1.0,
+                        "elapsed_sq_sum_ns" => 1.0
+                    )
+                ),
+                Dict(
+                    "signature" => "profile=r5|machine=probe_machine|src=control_callback|items=3_4|thr=1|budget=2|outer=0|heavy_only=0|heavy=1",
+                    "allotment" => 1,
+                    "stats" => "bad"
+                )
+            ]
+        )
+        open(good_path, "w") do io
+            TOML.print(io, payload)
+        end
+        withenv(
+            "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "1",
+            "SPACEAGORA_PARALLEL_POLICY_STATE_PATH" => good_path
+        ) do
+            lock(policy._persistent_hint_lock) do
+                state = policy._persistent_hint_state[]
+                state.loaded = false
+                state.dirty = false
+                state.path = ""
+                empty!(state.history)
+                policy._load_persistent_hint_state_locked!()
+                @test haskey(state.history, loaded_signature)
+                @test state.history[loaded_signature][Int64(2)].samples == 3
+                @test policy._hint_entry_count(state) == 1
+            end
+        end
+
+        withenv(
+            "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "1",
+            "SPACEAGORA_PARALLEL_POLICY_STATE_PATH" => missing_path
+        ) do
+            previous_registered = policy._persistent_hint_atexit_registered[]
+            policy._persistent_hint_atexit_registered[] = false
+            lock(policy._persistent_hint_lock) do
+                state = policy._persistent_hint_state[]
+                state.loaded = false
+                state.dirty = false
+                state.path = ""
+                empty!(state.history)
+            end
+            policy._ensure_persistent_hint_state_loaded!()
+            @test policy._persistent_hint_atexit_registered[]
+            policy._persistent_hint_atexit_registered[] = previous_registered || policy._persistent_hint_atexit_registered[]
+        end
+    end
+
+    @test policy._hint_bucket(12) == "9_16"
+    @test policy._hint_bucket(24) == "17p"
+    hint_candidates = policy._hint_candidate_allotments(12, 12)
+    @test 4 in hint_candidates
+    @test 8 in hint_candidates
+
+    withenv(
+        "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "1",
+        "SPACEAGORA_PARALLEL_POLICY_STATE_PATH" => "inner_hint_choose_probe.toml"
+    ) do
+        lock(policy._persistent_hint_lock) do
+            state = policy._persistent_hint_state[]
+            state.loaded = true
+            state.dirty = false
+            state.path = "inner_hint_choose_probe.toml"
+            empty!(state.history)
+            state.history["sig_zero"] = Dict(Int64(1) => policy.AdaptiveChoiceStats())
+            state.history["sig_choose"] = Dict(
+                Int64(1) => policy.AdaptiveChoiceStats(samples=4, successes=4, failures=0, elapsed_sum_ns=360.0, elapsed_sq_sum_ns=32_400.0),
+                Int64(2) => policy.AdaptiveChoiceStats(samples=4, successes=3, failures=1, elapsed_sum_ns=120.0, elapsed_sq_sum_ns=3_600.0)
+            )
+        end
+        miss_choice = policy._hint_choose_allotment("sig_missing", Int64[1, 2])
+        @test miss_choice.allotment == 1
+        zero_choice = policy._hint_choose_allotment("sig_zero", Int64[1])
+        @test zero_choice.allotment == 1
+        chosen = policy._hint_choose_allotment("sig_choose", Int64[1, 2])
+        @test chosen.allotment == 2
+        @test chosen.confidence >= 0.0
+        @test chosen.regret_ns >= 0.0
+
+        policy._hint_record_observation!("sig_obs", Int64(0), Int64(10); success=true)
+        lock(policy._persistent_hint_lock) do
+            state = policy._persistent_hint_state[]
+            @test !haskey(state.history, "sig_obs")
+        end
+        policy._hint_record_observation!("sig_obs", Int64(2), Int64(10); success=false)
+        policy._hint_record_observation!("sig_obs", Int64(2), Int64(20); success=true)
+        lock(policy._persistent_hint_lock) do
+            state = policy._persistent_hint_state[]
+            obs = state.history["sig_obs"][Int64(2)]
+            @test obs.samples == 2
+            @test obs.successes == 1
+            @test obs.failures == 1
+        end
+    end
+
+    withenv("SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "0") do
+        lock(policy._persistent_hint_lock) do
+            state = policy._persistent_hint_state[]
+            state.loaded = true
+            state.dirty = false
+            state.path = "inner_hint_disabled_probe.toml"
+            empty!(state.history)
+        end
+        policy._hint_record_observation!("sig_disabled", Int64(2), Int64(15); success=true)
+        lock(policy._persistent_hint_lock) do
+            state = policy._persistent_hint_state[]
+            @test isempty(state.history)
+        end
+    end
+
+    @test policy._hint_signature_value("profile=|machine=probe", "profile") == ""
+    @test isnothing(policy._hint_signature_value("profile=r5|machine=probe", "missing"))
+
+    lock(policy._persistent_hint_lock) do
+        state = policy._persistent_hint_state[]
+        state.loaded = true
+        state.dirty = false
+        state.path = "inner_hint_snapshot_probe.toml"
+        empty!(state.history)
+    end
+    @test isempty(policy.hint_layer_stats_snapshot())
+    lock(policy._persistent_hint_lock) do
+        state = policy._persistent_hint_state[]
+        state.history["profile=r5|machine=machine_a|src=density_callback|items=1|thr=1|budget=1|outer=0|heavy_only=0|heavy=0"] = Dict(
+            Int64(1) => policy.AdaptiveChoiceStats(samples=1, successes=1, failures=0, elapsed_sum_ns=10.0, elapsed_sq_sum_ns=100.0)
+        )
+    end
+    filtered_rows = policy.hint_layer_stats_snapshot(profile="r5", machine="machine_b")
+    @test filtered_rows isa Vector
+    @test isempty(filtered_rows)
+
+    withenv("SPACEAGORA_PARALLEL_POLICY_DELTA" => "1.2") do
+        @test_throws ArgumentError policy.adaptive_delta()
+    end
+
+    withenv(
+        "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
+        "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "2",
+        "SPACEAGORA_PARALLEL_POLICY_DELTA" => "0.8",
+        "SPACEAGORA_PARALLEL_POLICY_RHO" => "1.5",
+        "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => "1",
+        "SPACEAGORA_PARALLEL_POLICY_BOOTSTRAP_THREADS" => "1",
+        "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "1",
+        "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => "0",
+        "SPACEAGORA_INNER_THREAD_BUDGET" => "4"
+    ) do
+        lock(policy._policy_telemetry_lock) do
+            ctx = policy._active_policy_context()
+            ctx.telemetry = policy.PolicyTelemetry()
+            empty!(ctx.adaptive_state)
+            empty!(ctx.decision_signature)
+            empty!(ctx.decision_allotment)
+        end
+        signature_control = policy._hint_workload_signature(:control_callback, 4, 1, 4, false, false, true)
+        lock(policy._persistent_hint_lock) do
+            state = policy._persistent_hint_state[]
+            state.loaded = true
+            state.dirty = false
+            state.path = "adaptive_hint_probe.toml"
+            empty!(state.history)
+            state.history[signature_control] = Dict(
+                Int64(1) => policy.AdaptiveChoiceStats(samples=3, successes=3, failures=0, elapsed_sum_ns=300.0, elapsed_sq_sum_ns=30_000.0),
+                Int64(2) => policy.AdaptiveChoiceStats(samples=3, successes=2, failures=1, elapsed_sum_ns=90.0, elapsed_sq_sum_ns=4_500.0)
+            )
+        end
+
+        decision = policy.thread_policy_decision(
+            4;
+            mode=:auto,
+            threshold=1,
+            source=:control_callback,
+            outer_active=false,
+            allow_with_outer=true,
+            heavy_only=false,
+            heavy_work=true
+        )
+        @test decision.use_threads
+        @test decision.allotment >= 2
+
+        policy.record_policy_observation!(
+            :control_callback;
+            mode=:auto,
+            num_items=4,
+            use_threads=decision.use_threads,
+            elapsed_ns=10
+        )
+        policy.record_policy_observation!(
+            :control_callback;
+            mode=:auto,
+            num_items=4,
+            use_threads=decision.use_threads,
+            elapsed_ns=10
+        )
+        snap = policy.policy_telemetry_snapshot()
+        @test snap.persistent_hints_updates >= 1
+        @test snap.persistent_hints_entries >= 1
+        @test snap.persistent_hints_loaded == true
+        @test snap.persistent_hints_path == "adaptive_hint_probe.toml"
     end
 
     # Density_models helper probes.

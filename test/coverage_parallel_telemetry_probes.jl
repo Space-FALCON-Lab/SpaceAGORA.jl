@@ -177,6 +177,21 @@ const TV = TelemetryVerification
     @test snap[:threads].samples == 2
     @test snap[:process].success_rate == 1.0
 
+    state_var = PP.OuterRouteState()
+    PP.record_outer_route_feedback!(
+        state_var,
+        f_heavy;
+        route=:threads,
+        successes=2,
+        failures=0,
+        elapsed_success_s=10.0,
+        elapsed_success_sq_sum_s=58.0,
+        tuning=tune
+    )
+    snap_var = PP._outer_route_stats_snapshot_internal(state_var, sig)
+    @test isapprox(snap_var[:threads].mean_s, 5.0; atol=1e-12, rtol=0.0)
+    @test snap_var[:threads].std_s > 0.0
+
     chosen_default = PP.select_outer_route!(
         state,
         f_heavy;
@@ -227,12 +242,124 @@ const TV = TelemetryVerification
     )
     @test chosen_fallback == :process
 
+    # Drive unhit route-bucket and adaptive-selection branches.
+    @test_throws ArgumentError PP._profile_outer_backend_token(:unsupported_backend)
+    @test PP._route_max_link_bucket(2) == "2"
+    @test PP._route_max_link_bucket(6) == "5_8"
+    @test PP._route_harmonics_bucket(5) == "1_10"
+    @test PP._route_harmonics_bucket(15) == "11_20"
+    @test PP._route_density_bucket("vacuum") == "none"
+    @test PP._route_density_bucket("exp") == "exp"
+    @test PP._route_density_bucket("polyfit") == "poly"
+    @test PP._route_density_bucket("nrlmsise00") == "nrl"
+    @test PP._route_density_bucket("") == "unknown"
+    @test PP._route_solver_bucket("rodas5p") == "rodas"
+    @test PP._route_solver_bucket("tsit5") == "tsit5"
+    @test PP._route_solver_bucket("multirate") == "mrate"
+    @test PP._route_solver_bucket("") == "auto"
+    @test PP._route_solver_bucket("custom|solver") == "custom_solver"
+    @test PP._route_interval_bucket(0.5) == "fast"
+    @test PP._route_interval_bucket(5.0) == "med"
+    @test PP._route_interval_bucket(20.0) == "slow"
+    @test PP._route_count_bucket(1) == "1"
+    @test PP._route_count_bucket(3) == "2_3"
+    @test PP._route_count_bucket(9) == "7p"
+    @test PP._route_effector_cost_bucket("") == "unknown"
+
+    sparse_state = PP.OuterRouteState()
+    lock(sparse_state.lock) do
+        sparse_state.history["empty_sig"] = Dict(:threads => PP.OuterRouteStats(samples=0, successes=0, failures=0, elapsed_sum_s=0.0))
+    end
+    @test isempty(PP.outer_route_stats_snapshot(sparse_state, "empty_sig"))
+
+    @test PP._priority_outer_route_montecarlo(
+        f_mc,
+        tune;
+        machine_class=:large,
+        threads_available=true,
+        parallel_enabled=false
+    ) == :none
+    @test PP._priority_outer_route_montecarlo(
+        PP.OuterRouteFeatures(category="montecarlo", n_sats=1, n_links=1, mission_time_s=100.0, montecarlo_samples=1),
+        tune;
+        machine_class=:large,
+        threads_available=true,
+        parallel_enabled=true
+    ) == :none
+
+    f_inner_gate = PP.OuterRouteFeatures(category="deterministic", n_sats=3, n_links=1, mission_time_s=2_000.0)
+    tune_inner_gate = PP.OuterRouteTuning(inner_sat_threshold=2, inner_link_threshold=12)
+    @test PP.default_outer_route(f_inner_gate; tuning=tune_inner_gate, machine_class=:large, threads_available=true, parallel_enabled=true) == :none
+
+    f_sat_scaling = PP.OuterRouteFeatures(category="satellite_scaling", n_sats=5, n_links=2, mission_time_s=3_000.0)
+    tune_sat_scaling = PP.OuterRouteTuning(inner_sat_threshold=10, inner_link_threshold=12)
+    @test PP.default_outer_route(f_sat_scaling; tuning=tune_sat_scaling, machine_class=:small, threads_available=true, parallel_enabled=true) == :threads
+
+    f_machine_choice = PP.OuterRouteFeatures(category="deterministic", n_sats=1, n_links=2, mission_time_s=3_000.0, has_control=true)
+    @test PP.default_outer_route(f_machine_choice; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
+    @test PP.default_outer_route(f_machine_choice; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :threads
+
+    @test PP._route_ranked_candidates([:threads, :custom], :none) == [:threads, :custom]
+    under_sampled = PP._under_sampled_candidate(
+        [:threads, :none],
+        Dict(
+            :threads => (samples=3, mean_s=10.0, success_rate=1.0),
+            :none => (samples=0, mean_s=Inf, success_rate=0.0)
+        ),
+        :threads,
+        2
+    )
+    @test under_sampled == :none
+    best_valid = PP._best_candidate(
+        [:threads, :none],
+        Dict(
+            :threads => (samples=2, mean_s=Inf, success_rate=1.0),
+            :none => (samples=2, mean_s=3.0, success_rate=0.5)
+        )
+    )
+    @test best_valid == :none
+    best_tie = PP._best_candidate(
+        [:threads, :process],
+        Dict(
+            :threads => (samples=2, mean_s=2.0, success_rate=0.1),
+            :process => (samples=2, mean_s=2.0, success_rate=0.9)
+        )
+    )
+    @test best_tie == :process
+    best_conf = PP._best_candidate_confidence(
+        [:threads, :process],
+        Dict(
+            :threads => (samples=8, mean_s=5.0, success_rate=1.0, std_s=0.05),
+            :process => (samples=8, mean_s=5.0, success_rate=1.0, std_s=1.5)
+        ),
+        :threads,
+        1.25
+    )
+    @test best_conf.route == :process
+    @test best_conf.confidence_s >= 0.0
+    @test best_conf.regret_s >= 0.0
+
+    state_explore = PP.OuterRouteState()
+    PP.record_outer_route_feedback!(state_explore, f_machine_choice; route=:threads, successes=2, failures=0, elapsed_success_s=5.0, tuning=tune)
+    chosen_default_not_candidate = PP.select_outer_route!(
+        state_explore,
+        f_machine_choice;
+        tuning=PP.OuterRouteTuning(adaptive_enabled=true, adaptive_min_samples=2, trace=true),
+        machine_class=:large,
+        threads_available=true,
+        parallel_enabled=true
+    )
+    @test chosen_default_not_candidate == :none
+
     mktempdir() do tmp
         cache_path = joinpath(tmp, "outer_route_state.toml")
         saved = PP.save_outer_route_state(state, cache_path; metadata=Dict("profile" => "quick"))
         @test isfile(cache_path)
         @test saved.rows >= 3
         @test saved.signatures >= 1
+        parsed_cache = TOML.parsefile(cache_path)
+        rows_cache = get(parsed_cache, "history", Any[])
+        @test any(row -> haskey(get(row, "stats", Dict{String, Any}()), "elapsed_sq_sum_s"), rows_cache)
 
         loaded_state = PP.OuterRouteState()
         loaded = PP.load_outer_route_state!(loaded_state, cache_path; replace=true)

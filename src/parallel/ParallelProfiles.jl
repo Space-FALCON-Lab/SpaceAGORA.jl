@@ -406,6 +406,7 @@ Base.@kwdef struct OuterRouteTuning
     spice_constellation_min_sats::Int = 4
     adaptive_enabled::Bool = true
     adaptive_min_samples::Int = 2
+    adaptive_exploration_c::Float64 = 1.25
     failure_penalty_s::Float64 = 120.0
     mc_process_min_samples::Int = 16
     mc_process_min_mission_s::Float64 = 3600.0
@@ -417,6 +418,7 @@ Base.@kwdef mutable struct OuterRouteStats
     successes::Int = 0
     failures::Int = 0
     elapsed_sum_s::Float64 = 0.0
+    elapsed_sq_sum_s::Float64 = 0.0
 end
 
 Base.@kwdef mutable struct OuterRouteState
@@ -436,7 +438,8 @@ end
         "samples" => max(0, Int(stats.samples)),
         "successes" => max(0, Int(stats.successes)),
         "failures" => max(0, Int(stats.failures)),
-        "elapsed_sum_s" => max(0.0, Float64(stats.elapsed_sum_s))
+        "elapsed_sum_s" => max(0.0, Float64(stats.elapsed_sum_s)),
+        "elapsed_sq_sum_s" => max(0.0, Float64(stats.elapsed_sq_sum_s))
     )
 end
 
@@ -462,15 +465,26 @@ end
     catch
         0.0
     end
+    elapsed_sq_sum_s = try
+        max(0.0, Float64(get(payload, "elapsed_sq_sum_s", NaN)))
+    catch
+        NaN
+    end
     samples <= 0 && return nothing
     successes = min(samples, successes)
     failures = min(samples - successes, failures)
     elapsed_sum_s = max(0.0, elapsed_sum_s)
+    if !isfinite(elapsed_sq_sum_s)
+        # Backward-compatibility path for legacy state files without second-moment data.
+        elapsed_sq_sum_s = (elapsed_sum_s^2) / samples
+    end
+    elapsed_sq_sum_s = max(elapsed_sq_sum_s, (elapsed_sum_s^2) / samples)
     return OuterRouteStats(
         samples=samples,
         successes=successes,
         failures=failures,
-        elapsed_sum_s=elapsed_sum_s
+        elapsed_sum_s=elapsed_sum_s,
+        elapsed_sq_sum_s=elapsed_sq_sum_s
     )
 end
 
@@ -513,7 +527,7 @@ function save_outer_route_state(
     end
 
     payload = Dict{String, Any}(
-        "schema_version" => 1,
+        "schema_version" => 2,
         "updated_utc" => string(now(UTC)),
         "metadata" => metadata_out,
         "history" => rows
@@ -560,6 +574,7 @@ function load_outer_route_state!(
             existing.successes += stats.successes
             existing.failures += stats.failures
             existing.elapsed_sum_s += stats.elapsed_sum_s
+            existing.elapsed_sq_sum_s += stats.elapsed_sq_sum_s
             loaded_rows += 1
             push!(loaded_signatures, signature)
         end
@@ -763,13 +778,23 @@ end
     return unique(String[full, mid, legacy])
 end
 
-function outer_route_stats_snapshot(
+@inline function _route_elapsed_stats(
+    stats::OuterRouteStats
+)::NamedTuple{(:mean_s, :std_s), Tuple{Float64, Float64}}
+    samples = max(1, stats.samples)
+    mean_s = stats.elapsed_sum_s / samples
+    mean_sq_s = stats.elapsed_sq_sum_s / samples
+    variance_s = max(0.0, mean_sq_s - mean_s^2)
+    return (mean_s=mean_s, std_s=sqrt(variance_s))
+end
+
+function _outer_route_stats_snapshot_internal(
     state::OuterRouteState,
     signature::String
-)::Dict{Symbol, NamedTuple{(:samples, :mean_s, :success_rate), Tuple{Int, Float64, Float64}}}
+)::Dict{Symbol, NamedTuple{(:samples, :mean_s, :success_rate, :std_s), Tuple{Int, Float64, Float64, Float64}}}
     lock(state.lock) do
         entry = get(state.history, signature, nothing)
-        snap = Dict{Symbol, NamedTuple{(:samples, :mean_s, :success_rate), Tuple{Int, Float64, Float64}}}()
+        snap = Dict{Symbol, NamedTuple{(:samples, :mean_s, :success_rate, :std_s), Tuple{Int, Float64, Float64, Float64}}}()
         if entry === nothing
             return snap
         end
@@ -778,10 +803,28 @@ function outer_route_stats_snapshot(
                 continue
             end
             success_rate = stats.successes / max(1, stats.samples)
-            snap[route] = (samples=stats.samples, mean_s=stats.elapsed_sum_s / stats.samples, success_rate=success_rate)
+            elapsed = _route_elapsed_stats(stats)
+            snap[route] = (
+                samples=stats.samples,
+                mean_s=elapsed.mean_s,
+                success_rate=success_rate,
+                std_s=elapsed.std_s
+            )
         end
         return snap
     end
+end
+
+function outer_route_stats_snapshot(
+    state::OuterRouteState,
+    signature::String
+)::Dict{Symbol, NamedTuple{(:samples, :mean_s, :success_rate), Tuple{Int, Float64, Float64}}}
+    base = _outer_route_stats_snapshot_internal(state, signature)
+    snap = Dict{Symbol, NamedTuple{(:samples, :mean_s, :success_rate), Tuple{Int, Float64, Float64}}}()
+    for (route, info) in base
+        snap[route] = (samples=info.samples, mean_s=info.mean_s, success_rate=info.success_rate)
+    end
+    return snap
 end
 
 @inline function _feature_is_lightweight(f::OuterRouteFeatures, t::OuterRouteTuning)::Bool
@@ -930,7 +973,7 @@ end
 
 @inline function _under_sampled_candidate(
     candidates::Vector{Symbol},
-    snapshot::Dict{Symbol, NamedTuple{(:samples, :mean_s, :success_rate), Tuple{Int, Float64, Float64}}},
+    snapshot,
     default_route::Symbol,
     min_samples::Int
 )::Union{Nothing, Symbol}
@@ -946,7 +989,7 @@ end
 
 @inline function _best_candidate(
     candidates::Vector{Symbol},
-    snapshot::Dict{Symbol, NamedTuple{(:samples, :mean_s, :success_rate), Tuple{Int, Float64, Float64}}}
+    snapshot
 )::Union{Nothing, Symbol}
     best_route = nothing
     best_mean = Inf
@@ -966,6 +1009,71 @@ end
         end
     end
     return best_route
+end
+
+@inline function _candidate_confidence_width(
+    std_s::Float64,
+    samples::Int,
+    total_samples::Int,
+    exploration_c::Float64
+)::Float64
+    samples <= 0 && return 0.0
+    exploration = max(0.0, exploration_c)
+    scaled = std_s * sqrt(log(max(2.0, Float64(total_samples) + 1.0)) / max(1.0, Float64(samples)))
+    width = exploration * scaled
+    return isfinite(width) ? max(0.0, width) : 0.0
+end
+
+@inline function _best_candidate_confidence(
+    candidates::Vector{Symbol},
+    snapshot,
+    default_route::Symbol,
+    exploration_c::Float64
+)::NamedTuple{(:route, :confidence_s, :regret_s), Tuple{Union{Nothing, Symbol}, Float64, Float64}}
+    total_samples = 0
+    for route in candidates
+        info = get(snapshot, route, nothing)
+        info === nothing && continue
+        total_samples += max(0, info.samples)
+    end
+    total_samples = max(1, total_samples)
+
+    best_route = nothing
+    best_score = Inf
+    best_mean = Inf
+    best_width = 0.0
+    best_success_rate = -Inf
+    best_observed_mean = Inf
+
+    ranked = _route_ranked_candidates(candidates, default_route)
+    for route in ranked
+        info = get(snapshot, route, nothing)
+        info === nothing && continue
+        if info.samples <= 0 || !isfinite(info.mean_s)
+            continue
+        end
+        best_observed_mean = min(best_observed_mean, info.mean_s)
+        width = _candidate_confidence_width(info.std_s, info.samples, total_samples, exploration_c)
+        score = info.mean_s - width
+        if score < best_score - 1e-12
+            best_route = route
+            best_score = score
+            best_mean = info.mean_s
+            best_width = width
+            best_success_rate = info.success_rate
+        elseif isapprox(score, best_score; atol=1e-12, rtol=0.0) && info.success_rate > best_success_rate + 1e-12
+            best_route = route
+            best_mean = info.mean_s
+            best_width = width
+            best_success_rate = info.success_rate
+        end
+    end
+
+    if best_route === nothing
+        return (route=nothing, confidence_s=0.0, regret_s=0.0)
+    end
+    regret_s = isfinite(best_observed_mean) ? max(0.0, best_mean - best_observed_mean) : 0.0
+    return (route=best_route, confidence_s=best_width, regret_s=regret_s)
 end
 
 function select_outer_route!(
@@ -1001,10 +1109,10 @@ function select_outer_route!(
 
     signature_chain = _outer_route_signature_hierarchy(f)
     signature = first(signature_chain)
-    snapshot = Dict{Symbol, NamedTuple{(:samples, :mean_s, :success_rate), Tuple{Int, Float64, Float64}}}()
+    snapshot = Dict{Symbol, NamedTuple{(:samples, :mean_s, :success_rate, :std_s), Tuple{Int, Float64, Float64, Float64}}}()
     signature_used = signature
     for candidate_sig in signature_chain
-        snap = outer_route_stats_snapshot(state, candidate_sig)
+        snap = _outer_route_stats_snapshot_internal(state, candidate_sig)
         if !isempty(snap)
             snapshot = snap
             signature_used = candidate_sig
@@ -1013,23 +1121,33 @@ function select_outer_route!(
     end
     chosen = default_route
     reason = "default"
+    confidence_s = 0.0
+    regret_s = 0.0
     if !isempty(snapshot)
         explore = _under_sampled_candidate(candidates, snapshot, default_route, tuning.adaptive_min_samples)
         if !(explore === nothing)
             chosen = explore
             reason = "explore_hier"
         else
-            best = _best_candidate(candidates, snapshot)
-            if !(best === nothing)
-                chosen = best
-                reason = chosen == default_route ? "default_best_hier" : "exploit_best_hier"
+            best = _best_candidate_confidence(
+                candidates,
+                snapshot,
+                default_route,
+                tuning.adaptive_exploration_c
+            )
+            if !(best.route === nothing)
+                chosen = best.route
+                confidence_s = best.confidence_s
+                regret_s = best.regret_s
+                reason = chosen == default_route ? "default_ucb_hier" : "exploit_ucb_hier"
             end
         end
     end
     if tuning.trace
         println(
             "[outer-route] signature=$(signature) default=$(default_route) chosen=$(chosen) " *
-            "reason=$(reason) signature_used=$(signature_used) candidates=$(join(string.(candidates), ','))"
+            "reason=$(reason) signature_used=$(signature_used) candidates=$(join(string.(candidates), ',')) " *
+            "confidence_s=$(round(confidence_s; digits=6)) regret_s=$(round(regret_s; digits=6))"
         )
     end
     return chosen
@@ -1042,6 +1160,7 @@ function record_outer_route_feedback!(
     successes::Int,
     failures::Int,
     elapsed_success_s::Float64=0.0,
+    elapsed_success_sq_sum_s::Float64=NaN,
     tuning::OuterRouteTuning=OuterRouteTuning()
 )::Nothing
     route in (:none, :threads, :process) || return nothing
@@ -1049,7 +1168,25 @@ function record_outer_route_feedback!(
     failure_count = max(0, failures)
     samples = success_count + failure_count
     samples <= 0 && return nothing
-    elapsed_sum_s = max(0.0, elapsed_success_s) + failure_count * max(0.0, tuning.failure_penalty_s)
+
+    success_elapsed_sum_s = max(0.0, elapsed_success_s)
+    success_elapsed_sq_sum_s = if success_count > 0
+        approx_sq = (success_elapsed_sum_s^2) / max(1, success_count)
+        provided_sq = max(0.0, elapsed_success_sq_sum_s)
+        if isfinite(provided_sq)
+            max(provided_sq, approx_sq)
+        else
+            approx_sq
+        end
+    else
+        0.0
+    end
+
+    failure_penalty_s = max(0.0, tuning.failure_penalty_s)
+    elapsed_sum_s = success_elapsed_sum_s + failure_count * failure_penalty_s
+    elapsed_sq_sum_s = success_elapsed_sq_sum_s + failure_count * failure_penalty_s^2
+    elapsed_sq_sum_s = max(elapsed_sq_sum_s, (elapsed_sum_s^2) / samples)
+
     signatures = _outer_route_signature_hierarchy(f)
     lock(state.lock) do
         for signature in signatures
@@ -1063,6 +1200,7 @@ function record_outer_route_feedback!(
             stats.successes += success_count
             stats.failures += failure_count
             stats.elapsed_sum_s += elapsed_sum_s
+            stats.elapsed_sq_sum_s += elapsed_sq_sum_s
         end
     end
     return nothing

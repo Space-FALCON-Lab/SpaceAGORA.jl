@@ -677,6 +677,31 @@ end
     return degree
 end
 
+@inline function _case_outer_threads_safe(case::BenchmarkCase)::Bool
+    # Guard against native-library aborts seen under outer-threaded case concurrency.
+    density_model = case.args_template.environment_model.density_model
+    if density_model isa GRAMAtmosphereModel || density_model isa GRAMAtmosphereModelSurrogate
+        return false
+    end
+    return !_has_nbody_dynamic_effector(case.args_template.dynamics_model.dynamic_effectors)
+end
+
+function _split_threadsafe_indices(
+    selected::Vector{BenchmarkCase},
+    indices::Vector{Int}
+)::Tuple{Vector{Int}, Vector{Int}}
+    thread_indices = Int[]
+    serial_indices = Int[]
+    for idx in indices
+        if _case_outer_threads_safe(selected[idx])
+            push!(thread_indices, idx)
+        else
+            push!(serial_indices, idx)
+        end
+    end
+    return thread_indices, serial_indices
+end
+
 function _reset_outer_route_history!()
     _PERF_OUTER_ROUTE_STATE[] = ParallelProfiles.OuterRouteState()
     return nothing
@@ -939,6 +964,7 @@ function ensure_perf_workers!()
     for w in workers()
         remotecall_wait(perf_worker_planet, w)
         remotecall_wait(perf_worker_mars, w)
+        remotecall_wait(perf_worker_prime_gram_bindings!, w)
     end
     _perf_workers_initialized[] = true
     return nothing
@@ -960,6 +986,14 @@ function perf_worker_mars()::Mars
         _perf_worker_mars_cache[] = cached
     end
     return cached::Mars
+end
+
+function perf_worker_prime_gram_bindings!()::Nothing
+    # Julia 1.12 is stricter about global bindings during cross-process
+    # deserialization; eagerly load both GRAM wrappers on each worker.
+    _build_earth_gram_point_density()
+    _build_mars_gram_point_density()
+    return nothing
 end
 
 function _perf_harmonics20_model(planet::Earth)
@@ -2349,6 +2383,9 @@ function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, plan
         println("  scenario $(scenario.name) (mission_time=$(round(mission_time_s; digits=1)) s)")
 
         mc_backend = backend == :auto ? auto_backend_for_case(warmup_case; spec=spec) : backend
+        if mc_backend == :threads && !_case_outer_threads_safe(warmup_case)
+            mc_backend = :none
+        end
         if mc_backend == :process
             ensure_perf_workers!()
             warmup_seed = first(seeds)
@@ -2453,7 +2490,12 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
             if route == :process
                 push!(process_tasks, (idx, case))
             elseif route == :threads
-                push!(thread_indices, idx)
+                if _case_outer_threads_safe(case)
+                    push!(thread_indices, idx)
+                else
+                    push!(serial_indices, idx)
+                    chosen_routes[idx] = :none
+                end
             else
                 push!(serial_indices, idx)
             end
@@ -2516,7 +2558,7 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
         end
     elseif backend == :threads
         case_rows = Vector{Vector{NamedTuple}}(undef, total)
-        thread_indices = collect(eachindex(selected))
+        thread_indices, serial_indices = _split_threadsafe_indices(selected, collect(eachindex(selected)))
         for (env_pairs, payload) in _thread_plan_groups(selected, thread_indices, :threads)
             withenv(env_pairs...) do
                 Threads.@threads for j in eachindex(payload)
@@ -2536,8 +2578,14 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
                 end
             end
         end
+        for idx in serial_indices
+            local_rows = NamedTuple[]
+            run_case_batch!(local_rows, selected[idx], spec, idx, total; outer_route=:none)
+            case_rows[idx] = local_rows
+        end
         for idx in eachindex(case_rows)
-            _record_outer_route_feedback!(selected[idx], case_rows[idx]; route=:threads)
+            route = idx in serial_indices ? :none : :threads
+            _record_outer_route_feedback!(selected[idx], case_rows[idx]; route=route)
             append!(rows, case_rows[idx])
         end
     else
@@ -2787,7 +2835,12 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
             if route == :process
                 push!(process_tasks, (idx, base_case))
             elseif route == :threads
-                push!(thread_indices, idx)
+                if _case_outer_threads_safe(base_case)
+                    push!(thread_indices, idx)
+                else
+                    push!(serial_indices, idx)
+                    chosen_routes[idx] = :none
+                end
             else
                 push!(serial_indices, idx)
             end
@@ -2860,7 +2913,7 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
     elseif backend == :threads
         scenario_rows = Vector{Vector{NamedTuple}}(undef, length(selected))
         scenario_logs = Vector{Vector{String}}(undef, length(selected))
-        thread_indices = collect(eachindex(selected))
+        thread_indices, serial_indices = _split_threadsafe_indices(selected, collect(eachindex(selected)))
         for (env_pairs, payload) in _thread_plan_groups(selected, thread_indices, :threads)
             withenv(env_pairs...) do
                 Threads.@threads for j in eachindex(payload)
@@ -2878,9 +2931,21 @@ function run_per_orbit_for_scenarios(spec::ProfileSpec, cases::Vector{BenchmarkC
                 end
             end
         end
+        for idx in serial_indices
+            local_rows, local_logs = measure_per_orbit_scenario(
+                selected[idx],
+                spec,
+                period_s,
+                orbit_counts;
+                outer_route=:none
+            )
+            scenario_rows[idx] = local_rows
+            scenario_logs[idx] = local_logs
+        end
         for (idx, base_case) in enumerate(selected)
             println("  scenario $(idx)/$(length(selected)) = $(base_case.name)")
-            _record_outer_route_feedback!(base_case, scenario_rows[idx]; route=:threads)
+            route = idx in serial_indices ? :none : :threads
+            _record_outer_route_feedback!(base_case, scenario_rows[idx]; route=route)
             append!(rows, scenario_rows[idx])
             for log_line in scenario_logs[idx]
                 println(log_line)

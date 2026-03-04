@@ -438,9 +438,10 @@ end
 function run_case(args::SimulationConfiguration; isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
+            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             run_simulation(args; isolate_state=isolate_state)
-            @test isfile("simulation_results.csv")
-            return CSV.read("simulation_results.csv", DataFrame)
+            @test isfile(results_csv_path)
+            return CSV.read(results_csv_path, DataFrame)
         end
     end
 end
@@ -448,11 +449,12 @@ end
 function run_case_silent(args::SimulationConfiguration; isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
+            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             redirect_stdout(devnull) do
                 run_simulation(args; isolate_state=isolate_state)
             end
-            @test isfile("simulation_results.csv")
-            return CSV.read("simulation_results.csv", DataFrame)
+            @test isfile(results_csv_path)
+            return CSV.read(results_csv_path, DataFrame)
         end
     end
 end
@@ -460,6 +462,7 @@ end
 function run_case_capture_stdout(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
+            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             output = ""
             mktemp() do path, io
                 redirect_stdout(io) do
@@ -470,10 +473,10 @@ function run_case_capture_stdout(args::SimulationConfiguration; expect_results_c
                 output = read(io, String)
             end
             if expect_results_csv
-                @test isfile("simulation_results.csv")
-                return CSV.read("simulation_results.csv", DataFrame), output
+                @test isfile(results_csv_path)
+                return CSV.read(results_csv_path, DataFrame), output
             else
-                @test !isfile("simulation_results.csv")
+                @test !isfile(results_csv_path)
                 return DataFrame(), output
             end
         end
@@ -483,14 +486,15 @@ end
 function run_case_via_execute_analysis(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
+            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             redirect_stdout(devnull) do
                 execute_analysis(args; isolate_state=isolate_state)
             end
             if expect_results_csv
-                @test isfile("simulation_results.csv")
-                return CSV.read("simulation_results.csv", DataFrame)
+                @test isfile(results_csv_path)
+                return CSV.read(results_csv_path, DataFrame)
             else
-                @test !isfile("simulation_results.csv")
+                @test !isfile(results_csv_path)
                 return DataFrame()
             end
         end
@@ -500,6 +504,7 @@ end
 function run_case_via_campaign(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true, state=nothing)
     return mktempdir() do tmp
         cd(tmp) do
+            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             redirect_stdout(devnull) do
                 if state === nothing
                     execute_campaign(args; isolate_state=isolate_state)
@@ -508,10 +513,10 @@ function run_case_via_campaign(args::SimulationConfiguration; expect_results_csv
                 end
             end
             if expect_results_csv
-                @test isfile("simulation_results.csv")
-                return CSV.read("simulation_results.csv", DataFrame)
+                @test isfile(results_csv_path)
+                return CSV.read(results_csv_path, DataFrame)
             else
-                @test !isfile("simulation_results.csv")
+                @test !isfile(results_csv_path)
                 return DataFrame()
             end
         end
@@ -521,6 +526,7 @@ end
 function run_case_via_execute_campaign(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true, state=nothing)
     return mktempdir() do tmp
         cd(tmp) do
+            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             redirect_stdout(devnull) do
                 if state === nothing
                     execute_campaign(args; isolate_state=isolate_state)
@@ -529,10 +535,10 @@ function run_case_via_execute_campaign(args::SimulationConfiguration; expect_res
                 end
             end
             if expect_results_csv
-                @test isfile("simulation_results.csv")
-                return CSV.read("simulation_results.csv", DataFrame)
+                @test isfile(results_csv_path)
+                return CSV.read(results_csv_path, DataFrame)
             else
-                @test !isfile("simulation_results.csv")
+                @test !isfile(results_csv_path)
                 return DataFrame()
             end
         end
@@ -542,14 +548,15 @@ end
 function run_case_via_execute_orbital_elements_campaign(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
+            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             redirect_stdout(devnull) do
                 execute_orbital_elements_campaign(args; isolate_state=isolate_state)
             end
             if expect_results_csv
-                @test isfile("simulation_results.csv")
-                return CSV.read("simulation_results.csv", DataFrame)
+                @test isfile(results_csv_path)
+                return CSV.read(results_csv_path, DataFrame)
             else
-                @test !isfile("simulation_results.csv")
+                @test !isfile(results_csv_path)
                 return DataFrame()
             end
         end
@@ -559,14 +566,15 @@ end
 function run_case_via_execute_vgamma_campaign(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
     return mktempdir() do tmp
         cd(tmp) do
+            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             redirect_stdout(devnull) do
                 execute_vgamma_campaign(args; isolate_state=isolate_state)
             end
             if expect_results_csv
-                @test isfile("simulation_results.csv")
-                return CSV.read("simulation_results.csv", DataFrame)
+                @test isfile(results_csv_path)
+                return CSV.read(results_csv_path, DataFrame)
             else
-                @test !isfile("simulation_results.csv")
+                @test !isfile(results_csv_path)
                 return DataFrame()
             end
         end
@@ -5555,7 +5563,7 @@ end
             redirect_stdout(devnull) do
                 execute_analysis(args_no_csv)
             end
-            @test isfile("simulation_results.csv")
+            @test isfile(joinpath("output", "simulation_results.csv"))
             @test isfile(joinpath("output", "results.feather"))
         end
     end
@@ -5648,7 +5656,7 @@ end
     mktempdir() do tmp
         cd(tmp) do
             run_simulation(args)
-            @test isfile("simulation_results.csv")
+            @test isfile(joinpath("output", "simulation_results.csv"))
 
             bundle_prefix = joinpath("output", "simulation_results")
             feather_path = bundle_prefix * ".feather"
@@ -5757,9 +5765,9 @@ end
             run_simulation(resume_args)
             @test isfile(checkpoint_data_path)
             @test isfile(checkpoint_manifest_path)
-            @test isfile("simulation_results.csv")
+            @test isfile(joinpath("output", "simulation_results.csv"))
 
-            df_resume = CSV.read("simulation_results.csv", DataFrame)
+            df_resume = CSV.read(joinpath("output", "simulation_results.csv"), DataFrame)
             @test nrow(df_resume) >= 2
             @test issorted(df_resume.time)
             @test Float64(df_resume.time[1]) > 0.0
@@ -5826,9 +5834,9 @@ end
     mktempdir() do tmp
         cd(tmp) do
             @test_logs (:warn, r"resume_from_checkpoint=true but no checkpoint file was found") run_simulation(args_resume_missing)
-            @test isfile("simulation_results.csv")
+            @test isfile(joinpath("output", "simulation_results.csv"))
 
-            df = CSV.read("simulation_results.csv", DataFrame)
+            df = CSV.read(joinpath("output", "simulation_results.csv"), DataFrame)
             @test nrow(df) > 10
             @test abs(Float64(df.time[end]) - 60.0) < 1e-8
 
@@ -5858,10 +5866,9 @@ end
             withenv("SPACEAGORA_SAVE_BUNDLE" => "0") do
                 run_simulation(args_bundle_disabled)
             end
-            @test isfile("simulation_results.csv")
+            @test isfile(joinpath("output", "simulation_results.csv"))
             @test !isfile(joinpath("output", "simulation_results.feather"))
             @test !isfile(joinpath("output", "simulation_results.manifest.toml"))
-            @test !isfile(joinpath("output", "simulation_results.csv"))
         end
     end
 end

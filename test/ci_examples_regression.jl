@@ -128,7 +128,7 @@ function run_case(case::RegressionCase)
             error("NaN initialization warning found for $(case.file)")
         end
 
-        csv_path = joinpath(tmp, "simulation_results.csv")
+        csv_path = joinpath(tmp, "output", "simulation_results.csv")
         isfile(csv_path) || error("Missing simulation_results.csv for $(case.file)")
 
         df = CSV.read(csv_path, DataFrame)

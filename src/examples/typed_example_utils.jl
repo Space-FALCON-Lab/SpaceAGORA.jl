@@ -46,7 +46,8 @@ function _example_smoke_args(args::SM.SimulationConfiguration)
     ss_smoke = SM.SimulationSettings(
         results=keep_results,
         verbose=false,
-        results_directory=ss.results_directory,
+        # Keep smoke outputs local to the current run directory to avoid cross-run collisions.
+        results_directory=joinpath(pwd(), "output"),
         generate_plots=false,
         generate_filenames=ss.generate_filenames,
         normalize=false,
@@ -151,9 +152,10 @@ end
 function run_and_report(args::SM.SimulationConfiguration)
     args_eff = _example_smoke_args(args)
     t = @elapsed run_simulation(args_eff)
-    if args_eff.simulation_settings.results && isfile("simulation_results.csv")
-        df = CSV.read("simulation_results.csv", DataFrame)
-        println("Saved $(nrow(df)) samples to $(abspath("simulation_results.csv"))")
+    csv_path = joinpath(args_eff.simulation_settings.results_directory, "simulation_results.csv")
+    if args_eff.simulation_settings.results && isfile(csv_path)
+        df = CSV.read(csv_path, DataFrame)
+        println("Saved $(nrow(df)) samples to $(abspath(csv_path))")
     end
     println("COMPUTATIONAL TIME = $(t) s")
 end

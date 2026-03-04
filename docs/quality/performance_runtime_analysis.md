@@ -45,6 +45,8 @@ JULIA_NUM_THREADS=4 SPACEAGORA_PERF_PARALLEL_BACKEND=auto SPACEAGORA_PERF_PROCS=
 - `SPACEAGORA_PERF_PARALLEL_BACKEND`: `auto` (default), `threads`, `process`, or `none`.
 - `auto` policy: starts from static heuristics, then updates per-signature route choice (`none`/`threads`/`process`) from observed runtime.
 - `SPACEAGORA_PERF_PROCS`: number of worker processes for `process` backend (default: `Sys.CPU_THREADS - 1`).
+- `SPACEAGORA_PERF_WORKER_PROJECT`: optional Julia project for process workers.
+  Resolution order when unset/invalid: env override -> `REPO_ROOT/.AGORA` -> `REPO_ROOT`.
 - `SPACEAGORA_PERF_PARALLEL`: keeps controlling threaded on/off behavior (`auto`, `0`, `1`).
 - `SPACEAGORA_PERF_OUTER_ROUTE_ADAPTIVE`: enable/disable outer-route learning (`1` default).
 - `SPACEAGORA_PERF_OUTER_ROUTE_MIN_SAMPLES`: samples per route before exploit-only mode (`2` default).

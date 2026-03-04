@@ -942,6 +942,46 @@ end
     return max(1, n)
 end
 
+@inline function _is_valid_worker_project(path::String)::Bool
+    return isdir(path) && (
+        isfile(joinpath(path, "Project.toml")) ||
+        isfile(joinpath(path, "JuliaProject.toml"))
+    )
+end
+
+@inline function _project_candidate_path(raw::AbstractString)::String
+    token = strip(String(raw))
+    isempty(token) && return ""
+    return normpath(isabspath(token) ? token : joinpath(REPO_ROOT, token))
+end
+
+function _resolve_perf_worker_project_path()::String
+    checked = String[]
+    override_raw = strip(get(ENV, "SPACEAGORA_PERF_WORKER_PROJECT", ""))
+    if !isempty(override_raw)
+        override_path = _project_candidate_path(override_raw)
+        push!(checked, override_path)
+        if _is_valid_worker_project(override_path)
+            return override_path
+        end
+    end
+
+    for candidate in (joinpath(REPO_ROOT, ".AGORA"), REPO_ROOT)
+        candidate_path = normpath(candidate)
+        candidate_path in checked || push!(checked, candidate_path)
+        if _is_valid_worker_project(candidate_path)
+            return candidate_path
+        end
+    end
+
+    throw(ArgumentError(
+        "Unable to resolve process-worker Julia project. " *
+        "Set SPACEAGORA_PERF_WORKER_PROJECT to a valid project directory " *
+        "(must contain Project.toml or JuliaProject.toml). " *
+        "Checked: $(join(checked, ", "))."
+    ))
+end
+
 const _perf_workers_initialized = Ref(false)
 const _perf_worker_planet_cache = Ref{Any}(nothing)
 const _perf_worker_mars_cache = Ref{Any}(nothing)
@@ -954,9 +994,10 @@ function ensure_perf_workers!()
     target_workers = perf_process_workers_target()
     missing_workers = target_workers - nworkers()
     if missing_workers > 0
+        worker_project = _resolve_perf_worker_project_path()
         addprocs(
             missing_workers;
-            exeflags=`--startup-file=no --project=$(joinpath(REPO_ROOT, ".AGORA"))`
+            exeflags=`--startup-file=no --project=$(worker_project)`
         )
     end
     script_path = abspath(@__FILE__)

@@ -77,25 +77,25 @@ end
 
 @inline function _make_nbody_scratch_workspace(n_bodies::Int)::NBodyScratchWorkspace
     n_bodies >= 0 || throw(ArgumentError("NBody scratch workspace size must be >= 0, got $n_bodies"))
-    n_threads = max(1, _threadid_capacity())
+    n_workers = 1
     pos_primary_k_all = [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_bodies]
-    thread_force = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_threads]
+    thread_force = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_workers]
     return NBodyScratchWorkspace(pos_primary_k_all, thread_force)
 end
 
 @inline function _ensure_nbody_workspace_capacity!(
     workspace::NBodyScratchWorkspace,
     n_bodies::Int,
-    n_threads::Int
+    n_workers::Int
 )::NBodyScratchWorkspace
     if length(workspace.pos_primary_k_all) < n_bodies
         resize!(workspace.pos_primary_k_all, n_bodies)
     end
-    if length(workspace.thread_force) < n_threads
+    if length(workspace.thread_force) < n_workers
         old_len = length(workspace.thread_force)
-        resize!(workspace.thread_force, n_threads)
-        @inbounds for tid in (old_len + 1):n_threads
-            workspace.thread_force[tid] = MVector{3, Float64}(0.0, 0.0, 0.0)
+        resize!(workspace.thread_force, n_workers)
+        @inbounds for worker_id in (old_len + 1):n_workers
+            workspace.thread_force[worker_id] = MVector{3, Float64}(0.0, 0.0, 0.0)
         end
     end
     return workspace
@@ -105,11 +105,11 @@ end
     param::ODEParams,
     sat_idx::Int,
     n_bodies::Int,
-    n_threads::Int
+    n_workers::Int
 )::NBodyScratchWorkspace
     workspaces = param.shared_buffers.nbody_workspaces
     if sat_idx > length(workspaces)
-        return _ensure_nbody_workspace_capacity!(_make_nbody_scratch_workspace(n_bodies), n_bodies, n_threads)
+        return _ensure_nbody_workspace_capacity!(_make_nbody_scratch_workspace(n_bodies), n_bodies, n_workers)
     end
 
     sat_entry = @inbounds workspaces[sat_idx]
@@ -120,7 +120,7 @@ end
     else
         sat_entry::NBodyScratchWorkspace
     end
-    _ensure_nbody_workspace_capacity!(workspace, n_bodies, n_threads)
+    _ensure_nbody_workspace_capacity!(workspace, n_bodies, n_workers)
     return workspace
 end
 
@@ -332,8 +332,8 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
     n_bodies = length(model.body_names)
     decision = _multibody_thread_decision(n_bodies; heavy_work=true)
     use_threads = decision.use_threads
-    n_threads = use_threads ? _threadid_capacity() : 1
-    workspace = _nbody_workspace_for_sat!(param, i, n_bodies, n_threads)
+    n_workers = use_threads ? ParallelPolicy.thread_worker_count(n_bodies, decision.allotment) : 1
+    workspace = _nbody_workspace_for_sat!(param, i, n_bodies, n_workers)
     pos_primary_k_all = workspace.pos_primary_k_all
     nbody_cache_entry = param.shared_buffers.nbody_ephemeris_cache[]
     spice_rhs_memo_enabled = param.shared_buffers.spice_rhs_memo_enabled[]
@@ -352,20 +352,19 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
     started_ns = time_ns()
     if use_threads
         thread_force = workspace.thread_force
-        @inbounds for tid in 1:n_threads
-            thread_force[tid] .= 0.0
+        @inbounds for worker_id in 1:n_workers
+            thread_force[worker_id] .= 0.0
         end
-        ParallelPolicy.threaded_foreach(n_bodies, decision.allotment) do k
-            tid = Threads.threadid()
+        ParallelPolicy.threaded_foreach_worker(n_bodies, decision.allotment) do worker_id, k
             pos_primary_k = pos_primary_k_all[k]
             pos_spacecraft_k = pos_primary_k - pos_ii
             pos_spacecraft_k_mag = norm(pos_spacecraft_k)
-            thread_force[tid] .+= mass * model.body_mus[k] * (
+            thread_force[worker_id] .+= mass * model.body_mus[k] * (
                 (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
             )
         end
-        @inbounds for tid in 1:n_threads
-            force_ii .+= thread_force[tid]
+        @inbounds for worker_id in 1:n_workers
+            force_ii .+= thread_force[worker_id]
         end
     else
         @inbounds for k in eachindex(pos_primary_k_all)

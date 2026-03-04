@@ -50,20 +50,6 @@ end
     return (use_threads=use_threads, allotment=use_threads ? allotment : 1, mode=mode)
 end
 
-@inline function _threadid_capacity()::Int
-    default_threads = try
-        Threads.nthreads(:default)
-    catch
-        Threads.nthreads()
-    end
-    interactive_threads = try
-        Threads.nthreads(:interactive)
-    catch
-        0
-    end
-    return max(Threads.maxthreadid(), default_threads + interactive_threads)
-end
-
 # Aerodynamic models
 @kwdef struct AerodynamicCoefficientConstant <: AbstractForceTorqueModel
 
@@ -338,7 +324,7 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     θ_body = acos(clamp(vel_pp_rw[1] * vel_pp_rw_inv_mag, -1.0, 1.0))
     decision = _multibody_thread_decision(length(bodies); heavy_work=true)
     use_threads = decision.use_threads
-    n_threads = use_threads ? _threadid_capacity() : 1
+    n_workers = use_threads ? ParallelPolicy.thread_worker_count(length(bodies), decision.allotment) : 1
 
     zero_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
 
@@ -393,32 +379,31 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     # CL and CD
     started_ns = time_ns()
     if use_threads
-        workspace = _aero_workspace_for_sat!(param, i, n_threads)
+        workspace = _aero_workspace_for_sat!(param, i, n_workers)
         thread_force = workspace.thread_force
         thread_cl = workspace.thread_cl
         thread_cd = workspace.thread_cd
         thread_area = workspace.thread_area
-        @inbounds for tid in 1:n_threads
-            thread_force[tid] .= 0.0
-            thread_cl[tid] = 0.0
-            thread_cd[tid] = 0.0
-            thread_area[tid] = 0.0
+        @inbounds for worker_id in 1:n_workers
+            thread_force[worker_id] .= 0.0
+            thread_cl[worker_id] = 0.0
+            thread_cd[worker_id] = 0.0
+            thread_area[worker_id] = 0.0
         end
 
-        ParallelPolicy.threaded_foreach(length(bodies), decision.allotment) do idx
-            tid = Threads.threadid()
+        ParallelPolicy.threaded_foreach_worker(length(bodies), decision.allotment) do worker_id, idx
             force_body, cl_area, cd_area, area = compute_link_wrench!(idx)
-            thread_force[tid] .+= force_body
-            thread_cl[tid] += cl_area
-            thread_cd[tid] += cd_area
-            thread_area[tid] += area
+            thread_force[worker_id] .+= force_body
+            thread_cl[worker_id] += cl_area
+            thread_cd[worker_id] += cd_area
+            thread_area[worker_id] += area
         end
 
-        @inbounds for tid in 1:n_threads
-            force_ii .+= thread_force[tid]
-            CL += thread_cl[tid]
-            CD += thread_cd[tid]
-            total_area += thread_area[tid]
+        @inbounds for worker_id in 1:n_workers
+            force_ii .+= thread_force[worker_id]
+            CL += thread_cl[worker_id]
+            CD += thread_cd[worker_id]
+            total_area += thread_area[worker_id]
         end
     else
         @inbounds for idx in eachindex(bodies)

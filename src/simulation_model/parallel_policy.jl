@@ -438,8 +438,7 @@ end
 
 function threaded_foreach(num_items::Int, allotment::Int, f::F) where {F <: Function}
     num_items <= 0 && return nothing
-    budget = effective_inner_thread_budget()
-    workers = min(num_items, max(1, allotment), budget)
+    workers = _thread_worker_count(num_items, allotment)
     if workers <= 1 || Threads.nthreads() <= 1
         @inbounds for idx in 1:num_items
             f(idx)
@@ -460,6 +459,39 @@ function threaded_foreach(f::F, num_items::Int, allotment::Int) where {F <: Func
     return threaded_foreach(num_items, allotment, f)
 end
 
+@inline function _thread_worker_count(num_items::Int, allotment::Int)::Int
+    num_items <= 0 && return 1
+    budget = effective_inner_thread_budget()
+    workers = min(num_items, max(1, allotment), budget)
+    if workers <= 1 || Threads.nthreads() <= 1
+        return 1
+    end
+    return workers
+end
+
+@inline function thread_worker_count(num_items::Int, allotment::Int)::Int
+    return _thread_worker_count(num_items, allotment)
+end
+
+function threaded_foreach_worker(num_items::Int, allotment::Int, f::F) where {F <: Function}
+    num_items <= 0 && return nothing
+    workers = _thread_worker_count(num_items, allotment)
+    if workers <= 1
+        @inbounds for idx in 1:num_items
+            f(1, idx)
+        end
+        return nothing
+    end
+    Threads.@sync for worker_id in 1:workers
+        Threads.@spawn begin
+            @inbounds for idx in worker_id:workers:num_items
+                f(worker_id, idx)
+            end
+        end
+    end
+    return nothing
+end
+
 function threaded_reduce(
     num_items::Int,
     allotment::Int,
@@ -467,13 +499,12 @@ function threaded_reduce(
     body!::B,
     combine!::C
 ) where {I <: Function, B <: Function, C <: Function}
-    budget = effective_inner_thread_budget()
-    workers = num_items <= 0 ? 1 : min(num_items, max(1, allotment), budget)
+    workers = _thread_worker_count(num_items, allotment)
     acc0 = init()
     if num_items <= 0
         return acc0
     end
-    if workers <= 1 || Threads.nthreads() <= 1
+    if workers <= 1
         @inbounds for idx in 1:num_items
             body!(acc0, idx)
         end

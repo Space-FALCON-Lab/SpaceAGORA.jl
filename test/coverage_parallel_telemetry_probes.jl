@@ -103,6 +103,24 @@ const TV = TelemetryVerification
     f_heavy = PP.OuterRouteFeatures(category="deterministic", n_sats=3, n_links=6, mission_time_s=20_000.0, has_nbody=true, harmonics_degree=30)
     f_mc = PP.OuterRouteFeatures(category="montecarlo", n_sats=2, n_links=2, mission_time_s=6_000.0, montecarlo_samples=32)
     f_mc_small = PP.OuterRouteFeatures(category="montecarlo", n_sats=2, n_links=2, mission_time_s=500.0, montecarlo_samples=2)
+    f_gram_point = PP.OuterRouteFeatures(
+        category="deterministic",
+        n_sats=1,
+        n_links=1,
+        mission_time_s=600.0,
+        density_family="gram_point",
+        gram_surrogate_enabled=false,
+        gram_static_grid_enabled=false
+    )
+    f_gram_surrogate = PP.OuterRouteFeatures(
+        category="deterministic",
+        n_sats=1,
+        n_links=1,
+        mission_time_s=600.0,
+        density_family="gram_surrogate",
+        gram_surrogate_enabled=true,
+        gram_static_grid_enabled=false
+    )
 
     sig = PP.outer_route_signature(f_heavy)
     @test occursin("cat=deterministic", sig)
@@ -129,13 +147,20 @@ const TV = TelemetryVerification
     @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
     @test PP.default_outer_route(f_mc_small; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :threads
     @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=false) == :none
+    @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
+    @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :threads
+    @test PP.default_outer_route(f_gram_surrogate; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :none
 
     cand_heavy = PP.outer_route_candidates(f_heavy; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true)
     cand_light = PP.outer_route_candidates(f_light; tuning=tune, machine_class=:small, threads_available=false, parallel_enabled=true)
     cand_mc = PP.outer_route_candidates(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true)
+    cand_gram = PP.outer_route_candidates(f_gram_point; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true)
+    cand_gram_sur = PP.outer_route_candidates(f_gram_surrogate; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true)
     @test :process in cand_heavy
     @test cand_light == [:none]
     @test :process in cand_mc
+    @test :process in cand_gram
+    @test !(:process in cand_gram_sur)
 
     state = PP.OuterRouteState()
     @test isempty(PP.outer_route_stats_snapshot(state, sig))

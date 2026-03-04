@@ -795,6 +795,11 @@ end
 end
 
 @inline function _feature_heavy_for_process(f::OuterRouteFeatures, t::OuterRouteTuning)::Bool
+    dens_bucket = _route_density_bucket(f.density_family)
+    if dens_bucket == "gram_pt" && !f.gram_surrogate_enabled && !f.gram_static_grid_enabled
+        # Native GRAM point calls are lock-limited; prefer outer process isolation.
+        return true
+    end
     if _feature_is_lightweight(f, t)
         return false
     end
@@ -831,6 +836,12 @@ function default_outer_route(
 )::Symbol
     if !parallel_enabled
         return :none
+    end
+
+    if _route_density_bucket(f.density_family) == "gram_pt" &&
+       !f.gram_surrogate_enabled &&
+       !f.gram_static_grid_enabled
+        return machine_class in (:large, :medium) ? :process : _threads_or_none(threads_available)
     end
 
     if lowercase(strip(f.category)) == "montecarlo"

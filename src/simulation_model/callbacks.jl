@@ -1555,7 +1555,7 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
         end
 
         if use_threads
-            ParallelPolicy.threaded_foreach(num_sats, decision.allotment) do i
+            ParallelPolicy.threaded_foreach_persistent(:density_callback, num_sats, decision.allotment) do i
                 @inbounds update_density_sat!(i, p, u, integrator.t, segment_end_t)
             end
         else
@@ -1631,7 +1631,7 @@ function get_thermal_callback(num_sats::Int, args::SimulationConfiguration)
         use_threads = decision.use_threads
         started_ns = time_ns()
         if use_threads
-            ParallelPolicy.threaded_foreach(num_sats, decision.allotment) do i
+            ParallelPolicy.threaded_foreach_persistent(:thermal_callback, num_sats, decision.allotment) do i
                 @inbounds update_thermal_sat!(i, p, u)
             end
         else
@@ -1977,7 +1977,7 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)::Ve
             use_threads = decision.use_threads
             started_ns = time_ns()
             if use_threads
-                ParallelPolicy.threaded_foreach(num_sats, decision.allotment) do sat_idx
+                ParallelPolicy.threaded_foreach_persistent(:control_callback, num_sats, decision.allotment) do sat_idx
                     @inbounds apply_control!(integrator, sat_idx)
                 end
             else

@@ -4,7 +4,7 @@ using Base.Threads
 
 export parse_bool_env, parse_parallel_mode_env, parse_thread_threshold_env
 export outer_parallel_active, effective_inner_thread_budget, use_threads_policy
-export thread_policy_decision, threaded_foreach, threaded_reduce, with_policy_context
+export thread_policy_decision, threaded_foreach, threaded_reduce, threaded_foreach_persistent, with_policy_context
 export reset_policy_telemetry!, policy_telemetry_snapshot, record_policy_observation!
 
 Base.@kwdef mutable struct AdaptiveControllerState
@@ -68,6 +68,16 @@ end
 const _policy_telemetry_lock = ReentrantLock()
 const _policy_context_tls_key = :spaceagora_parallel_policy_context
 const _global_policy_context = Ref{PolicyContext}(PolicyContext())
+const _persistent_foreach_lock = ReentrantLock()
+
+Base.@kwdef mutable struct _PersistentForeachPool
+    workers::Int
+    request_channels::Vector{Channel{Any}}
+    done_channel::Channel{Any}
+    run_lock::ReentrantLock = ReentrantLock()
+end
+
+const _persistent_foreach_pools = Dict{Tuple{UInt, Symbol}, _PersistentForeachPool}()
 
 @inline function _active_policy_context()::PolicyContext
     ctx = try
@@ -81,9 +91,97 @@ const _global_policy_context = Ref{PolicyContext}(PolicyContext())
     return _global_policy_context[]
 end
 
+@inline function _policy_scope_id(ctx::PolicyContext)::UInt
+    return UInt(objectid(ctx))
+end
+
+@inline function _active_policy_scope_id()::UInt
+    return _policy_scope_id(_active_policy_context())
+end
+
+function _persistent_foreach_worker_loop(
+    worker_id::Int,
+    request_channel::Channel{Any},
+    done_channel::Channel{Any}
+)::Nothing
+    while true
+        request = take!(request_channel)
+        if request === :stop
+            return nothing
+        end
+
+        captured = nothing
+        try
+            num_items = request.num_items
+            active_workers = request.active_workers
+            f = request.f
+            @inbounds for idx in worker_id:active_workers:num_items
+                f(idx)
+            end
+        catch err
+            captured = Base.CapturedException(err, catch_backtrace())
+        end
+        put!(done_channel, captured)
+    end
+end
+
+function _create_persistent_foreach_pool(workers::Int)::_PersistentForeachPool
+    workers = max(2, workers)
+    request_channels = [Channel{Any}(1) for _ in 1:workers]
+    done_channel = Channel{Any}(workers)
+    pool = _PersistentForeachPool(
+        workers=workers,
+        request_channels=request_channels,
+        done_channel=done_channel
+    )
+    @inbounds for worker_id in 1:workers
+        Threads.@spawn _persistent_foreach_worker_loop(
+            worker_id,
+            request_channels[worker_id],
+            done_channel
+        )
+    end
+    return pool
+end
+
+function _shutdown_persistent_foreach_pool!(pool::_PersistentForeachPool)::Nothing
+    lock(pool.run_lock) do
+        @inbounds for channel in pool.request_channels
+            put!(channel, :stop)
+        end
+    end
+    return nothing
+end
+
+function _destroy_persistent_foreach_scope!(scope_id::UInt)::Nothing
+    pools = _PersistentForeachPool[]
+    lock(_persistent_foreach_lock) do
+        stale_keys = Tuple{UInt, Symbol}[]
+        for (key, pool) in _persistent_foreach_pools
+            if key[1] == scope_id
+                push!(stale_keys, key)
+                push!(pools, pool)
+            end
+        end
+        @inbounds for key in stale_keys
+            delete!(_persistent_foreach_pools, key)
+        end
+    end
+    @inbounds for pool in pools
+        _shutdown_persistent_foreach_pool!(pool)
+    end
+    return nothing
+end
+
 function with_policy_context(f::Function)
-    return Base.task_local_storage(_policy_context_tls_key, PolicyContext()) do
-        f()
+    ctx = PolicyContext()
+    scope_id = _policy_scope_id(ctx)
+    return Base.task_local_storage(_policy_context_tls_key, ctx) do
+        try
+            return f()
+        finally
+            _destroy_persistent_foreach_scope!(scope_id)
+        end
     end
 end
 
@@ -457,6 +555,72 @@ end
 
 function threaded_foreach(f::F, num_items::Int, allotment::Int) where {F <: Function}
     return threaded_foreach(num_items, allotment, f)
+end
+
+@inline callback_persistent_workers_enabled()::Bool = parse_bool_env("SPACEAGORA_CALLBACK_PERSISTENT_WORKERS", true)
+
+@inline function _persistent_pool_key(source::Symbol)::Tuple{UInt, Symbol}
+    return (_active_policy_scope_id(), source)
+end
+
+function _persistent_pool_for(source::Symbol)::_PersistentForeachPool
+    key = _persistent_pool_key(source)
+    lock(_persistent_foreach_lock) do
+        return get!(_persistent_foreach_pools, key) do
+            _create_persistent_foreach_pool(_default_thread_pool_size())
+        end
+    end
+end
+
+function _threaded_foreach_persistent!(
+    pool::_PersistentForeachPool,
+    num_items::Int,
+    workers::Int,
+    f::F
+) where {F <: Function}
+    lock(pool.run_lock) do
+        @inbounds for worker_id in 1:workers
+            put!(
+                pool.request_channels[worker_id],
+                (num_items=num_items, active_workers=workers, f=f)
+            )
+        end
+        first_error = nothing
+        @inbounds for _ in 1:workers
+            captured = take!(pool.done_channel)
+            if !(captured === nothing) && first_error === nothing
+                first_error = captured
+            end
+        end
+        if !(first_error === nothing)
+            throw(first_error)
+        end
+    end
+    return nothing
+end
+
+function threaded_foreach_persistent(
+    source::Symbol,
+    num_items::Int,
+    allotment::Int,
+    f::F
+) where {F <: Function}
+    num_items <= 0 && return nothing
+    workers = _thread_worker_count(num_items, allotment)
+    if workers <= 1 || !callback_persistent_workers_enabled()
+        return threaded_foreach(num_items, allotment, f)
+    end
+    pool = _persistent_pool_for(source)
+    return _threaded_foreach_persistent!(pool, num_items, workers, f)
+end
+
+function threaded_foreach_persistent(
+    f::F,
+    source::Symbol,
+    num_items::Int,
+    allotment::Int
+) where {F <: Function}
+    return threaded_foreach_persistent(source, num_items, allotment, f)
 end
 
 @inline function _thread_worker_count(num_items::Int, allotment::Int)::Int

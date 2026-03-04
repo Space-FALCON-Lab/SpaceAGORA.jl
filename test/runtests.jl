@@ -4881,6 +4881,57 @@ end
     end
 end
 
+@testset "Parallel Policy threaded_foreach_persistent" begin
+    policy = SimulationModel.ParallelPolicy
+    budget = max(1, Threads.nthreads())
+
+    withenv(
+        "SPACEAGORA_INNER_THREAD_BUDGET" => string(budget),
+        "SPACEAGORA_CALLBACK_PERSISTENT_WORKERS" => "1"
+    ) do
+        acc = Base.Threads.Atomic{Int}(0)
+        policy.with_policy_context() do
+            policy.threaded_foreach_persistent(:density_callback, 16, budget) do idx
+                Base.Threads.atomic_add!(acc, idx)
+            end
+            policy.threaded_foreach_persistent(:density_callback, 16, budget) do idx
+                Base.Threads.atomic_add!(acc, idx)
+            end
+        end
+        @test acc[] == 2 * sum(1:16)
+    end
+
+    withenv(
+        "SPACEAGORA_INNER_THREAD_BUDGET" => string(budget),
+        "SPACEAGORA_CALLBACK_PERSISTENT_WORKERS" => "0"
+    ) do
+        acc = Base.Threads.Atomic{Int}(0)
+        policy.threaded_foreach_persistent(:density_callback, 8, budget) do idx
+            Base.Threads.atomic_add!(acc, idx)
+        end
+        @test acc[] == sum(1:8)
+    end
+
+    withenv(
+        "SPACEAGORA_INNER_THREAD_BUDGET" => string(budget),
+        "SPACEAGORA_CALLBACK_PERSISTENT_WORKERS" => "1"
+    ) do
+        err = try
+            policy.with_policy_context() do
+                policy.threaded_foreach_persistent(:thermal_callback, 8, budget) do idx
+                    if idx == 3
+                        error("threaded_foreach_persistent_probe")
+                    end
+                end
+            end
+            nothing
+        catch e
+            e
+        end
+        @test err !== nothing
+    end
+end
+
 @testset "Aerodynamic Helper Branch Coverage" begin
     dynamic_effectors = SimulationModel.DynamicEffectors
 

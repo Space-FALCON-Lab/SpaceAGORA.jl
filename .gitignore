@@ -29,3 +29,4 @@ SpaceAGORACalibration.jl/.CondaPkg/
 !data/telemetry/OPS-SAT1/UHF_TM_notebook/uhf_telemetry.csv
 data/telemetry/CYGNSS/
 data/telemetry/GRIFEX/
+*.sh

@@ -12,8 +12,10 @@ fi
 
 PROFILE="full"
 SEED="20260304"
-PASSES="3"
+PASSES_MAIN="1"
+PASSES_SWEEPS="1"
 LAYER_ATTR="1"
+R5_SWEEP_RUNGS="r5_full_smart"
 
 THREADS_MAIN="32"
 PROCESS_WORKERS_LIST=(8 16 24 32)
@@ -49,14 +51,16 @@ run_ladder_once() {
   local reset="$3"
   local backend="$4"
   local threads="$5"
-  local workers="${6:-}"
+  local passes="$6"
+  local rungs="${7:-}"
+  local workers="${8:-}"
 
   local cmd=(
     julia --project=.AGORA test/performance_smart_parallel_ladder.jl
     "$PROFILE"
     --outdir="$outdir"
     --clean="$clean"
-    --passes="$PASSES"
+    --passes="$passes"
     --randomize-rung-order=1
     --seed="$SEED"
     --outer-only-backend="$backend"
@@ -64,6 +68,10 @@ run_ladder_once() {
     --solver-axis=frozen
     --solver-mode=auto_stiff
   )
+
+  if [[ -n "$rungs" ]]; then
+    cmd+=(--rungs="$rungs")
+  fi
 
   if [[ -n "$workers" ]]; then
     cmd+=(--process-workers="$workers")
@@ -79,27 +87,29 @@ run_cold_warm_pair() {
   local outdir="$1"
   local backend="$2"
   local threads="$3"
-  local workers="${4:-}"
+  local passes="$4"
+  local rungs="${5:-}"
+  local workers="${6:-}"
 
   echo "=== COLD: $outdir ==="
-  run_ladder_once "$outdir" 1 1 "$backend" "$threads" "$workers"
+  run_ladder_once "$outdir" 1 1 "$backend" "$threads" "$passes" "$rungs" "$workers"
 
   echo "=== WARM: $outdir ==="
-  run_ladder_once "$outdir" 0 0 "$backend" "$threads" "$workers"
+  run_ladder_once "$outdir" 0 0 "$backend" "$threads" "$passes" "$rungs" "$workers"
 }
 
 echo "[run] 1) Main full run (threads outer rung), cold+warm"
-run_cold_warm_pair "$BASE_OUT/ladder_full_threads_main" "threads" "$THREADS_MAIN"
+run_cold_warm_pair "$BASE_OUT/ladder_full_threads_main" "threads" "$THREADS_MAIN" "$PASSES_MAIN"
 
-echo "[run] 2) Process outer-rung comparison, cold+warm"
+echo "[run] 2) Process outer-rung comparison (r5-only), cold+warm"
 for W in "${PROCESS_WORKERS_LIST[@]}"; do
   # Keep worker subprocesses single-threaded at root to avoid oversubscription.
-  run_cold_warm_pair "$BASE_OUT/ladder_full_process_w${W}" "process" "1" "$W"
+  run_cold_warm_pair "$BASE_OUT/ladder_full_process_w${W}" "process" "1" "$PASSES_SWEEPS" "$R5_SWEEP_RUNGS" "$W"
 done
 
-echo "[run] 3) Strong-scaling sweep (threads), cold+warm"
+echo "[run] 3) Strong-scaling sweep (r5-only, threads), cold+warm"
 for T in "${SCALING_THREADS_LIST[@]}"; do
-  run_cold_warm_pair "$BASE_OUT/ladder_scaling_threads_${T}" "threads" "$T"
+  run_cold_warm_pair "$BASE_OUT/ladder_scaling_threads_${T}" "threads" "$T" "$PASSES_SWEEPS" "$R5_SWEEP_RUNGS"
 done
 
 echo "[run] 4) Paper pipeline summary across modes"

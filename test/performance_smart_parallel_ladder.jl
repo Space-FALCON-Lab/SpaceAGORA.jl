@@ -47,6 +47,7 @@ Base.@kwdef struct SmartLadderConfig
     outer_only_backend::String
     process_workers::Union{Nothing, Int}
     include_layer_attribution::Bool
+    rung_labels::Vector{String}
     include_control_stress_per_orbit::Bool
     control_stress_repeats_full::Int
     control_stress_warmup_full::Int
@@ -139,6 +140,22 @@ end
     return values
 end
 
+@inline function _parse_rung_labels(raw::AbstractString)::Vector{String}
+    token = strip(String(raw))
+    isempty(token) && return String[]
+    labels = String[]
+    seen = Set{String}()
+    for part in split(token, ",")
+        label = lowercase(strip(part))
+        isempty(label) && continue
+        if !(label in seen)
+            push!(labels, label)
+            push!(seen, label)
+        end
+    end
+    return labels
+end
+
 function parse_smart_ladder_cli()::SmartLadderConfig
     profile_name = lowercase(strip(get(ENV, "SPACEAGORA_SMART_LADDER_PROFILE", get(ENV, "SPACEAGORA_PERF_PROFILE", "full"))))
     outdir = get(ENV, "SPACEAGORA_SMART_LADDER_OUTDIR", SMART_LADDER_DEFAULT_OUTDIR)
@@ -149,6 +166,7 @@ function parse_smart_ladder_cli()::SmartLadderConfig
     outer_only_backend = _parse_outer_only_backend(get(ENV, "SPACEAGORA_SMART_LADDER_OUTER_ONLY_BACKEND", "threads"))
     process_workers = _parse_optional_positive_int(get(ENV, "SPACEAGORA_SMART_LADDER_PROCESS_WORKERS", ""))
     include_layer_attribution = _parse_bool_token(get(ENV, "SPACEAGORA_SMART_LADDER_LAYER_ATTRIBUTION", "1"))
+    rung_labels = _parse_rung_labels(get(ENV, "SPACEAGORA_SMART_LADDER_RUNGS", ""))
     include_control_stress_per_orbit = _parse_bool_token(get(ENV, "SPACEAGORA_PERF_INCLUDE_CONTROL_STRESS_PER_ORBIT", "1"))
     control_stress_repeats_full = _parse_positive_int(
         get(ENV, "SPACEAGORA_PERF_CONTROL_STRESS_REPEATS_FULL", "3"),
@@ -185,6 +203,8 @@ function parse_smart_ladder_cli()::SmartLadderConfig
             process_workers = _parse_optional_positive_int(String(split(arg, "=", limit=2)[2]))
         elseif startswith(arg, "--layer-attribution=")
             include_layer_attribution = _parse_bool_token(String(split(arg, "=", limit=2)[2]))
+        elseif startswith(arg, "--rungs=")
+            rung_labels = _parse_rung_labels(String(split(arg, "=", limit=2)[2]))
         elseif startswith(arg, "--include-control-stress-per-orbit=")
             include_control_stress_per_orbit = _parse_bool_token(String(split(arg, "=", limit=2)[2]))
         elseif startswith(arg, "--control-stress-repeats-full=")
@@ -207,7 +227,7 @@ function parse_smart_ladder_cli()::SmartLadderConfig
             throw(ArgumentError(
                 "Unknown argument '$arg'. Supported: [quick|full], --profile=..., --outdir=..., --clean=0|1, " *
                 "--passes=N, --randomize-rung-order=0|1, --seed=N, --outer-only-backend=threads|process|auto, " *
-                "--process-workers=N, --layer-attribution=0|1, --include-control-stress-per-orbit=0|1, --control-stress-repeats-full=N, " *
+                "--process-workers=N, --layer-attribution=0|1, --rungs=<csv>, --include-control-stress-per-orbit=0|1, --control-stress-repeats-full=N, " *
                 "--control-stress-warmup-full=N, --solver-axis=inherit|frozen|factorial, --solver-mode=<mode>, --solver-factors=<csv>."
             ))
         end
@@ -233,6 +253,7 @@ function parse_smart_ladder_cli()::SmartLadderConfig
         outer_only_backend=outer_only_backend,
         process_workers=process_workers,
         include_layer_attribution=include_layer_attribution,
+        rung_labels=rung_labels,
         include_control_stress_per_orbit=include_control_stress_per_orbit,
         control_stress_repeats_full=control_stress_repeats_full,
         control_stress_warmup_full=control_stress_warmup_full,
@@ -342,107 +363,119 @@ function _ladder_rungs(config::SmartLadderConfig)::Vector{LadderRungSpec}
             outer_route_adaptive=true
         )
     ]
-    if !config.include_layer_attribution
+    if config.include_layer_attribution
+        attribution_backend = _layer_attribution_backend(config)
+        append!(
+            rungs,
+            LadderRungSpec[
+                LadderRungSpec(
+                    mode=:attr_outer_only,
+                    label="la_outer_only",
+                    description="Layer attribution baseline: outer parallel enabled, all inner layers off.",
+                    matrix=:outer_pinned,
+                    backend=attribution_backend,
+                    inner_adaptive=false,
+                    outer_route_adaptive=false
+                ),
+                LadderRungSpec(
+                    mode=:attr_density,
+                    label="la_density",
+                    description="Outer + density inner layer only.",
+                    matrix=:attribution_density,
+                    backend=attribution_backend,
+                    inner_adaptive=false,
+                    outer_route_adaptive=false
+                ),
+                LadderRungSpec(
+                    mode=:attr_thermal,
+                    label="la_thermal",
+                    description="Outer + thermal inner layer only.",
+                    matrix=:attribution_thermal,
+                    backend=attribution_backend,
+                    inner_adaptive=false,
+                    outer_route_adaptive=false
+                ),
+                LadderRungSpec(
+                    mode=:attr_control,
+                    label="la_control",
+                    description="Outer + control inner layer only.",
+                    matrix=:attribution_control,
+                    backend=attribution_backend,
+                    inner_adaptive=false,
+                    outer_route_adaptive=false
+                ),
+                LadderRungSpec(
+                    mode=:attr_multibody,
+                    label="la_multibody",
+                    description="Outer + multibody inner layer only.",
+                    matrix=:attribution_multibody,
+                    backend=attribution_backend,
+                    inner_adaptive=false,
+                    outer_route_adaptive=false
+                ),
+                LadderRungSpec(
+                    mode=:attr_effector,
+                    label="la_effector",
+                    description="Outer + effector inner layer only.",
+                    matrix=:attribution_effector,
+                    backend=attribution_backend,
+                    inner_adaptive=false,
+                    outer_route_adaptive=false
+                ),
+                LadderRungSpec(
+                    mode=:attr_density_thermal,
+                    label="la_density_thermal",
+                    description="Outer + density + thermal pair interaction.",
+                    matrix=:attribution_density_thermal,
+                    backend=attribution_backend,
+                    inner_adaptive=false,
+                    outer_route_adaptive=false
+                ),
+                LadderRungSpec(
+                    mode=:attr_density_multibody,
+                    label="la_density_multibody",
+                    description="Outer + density + multibody pair interaction.",
+                    matrix=:attribution_density_multibody,
+                    backend=attribution_backend,
+                    inner_adaptive=false,
+                    outer_route_adaptive=false
+                ),
+                LadderRungSpec(
+                    mode=:attr_control_effector,
+                    label="la_control_effector",
+                    description="Outer + control + effector pair interaction.",
+                    matrix=:attribution_control_effector,
+                    backend=attribution_backend,
+                    inner_adaptive=false,
+                    outer_route_adaptive=false
+                ),
+                LadderRungSpec(
+                    mode=:attr_multibody_effector,
+                    label="la_multibody_effector",
+                    description="Outer + multibody + effector pair interaction.",
+                    matrix=:attribution_multibody_effector,
+                    backend=attribution_backend,
+                    inner_adaptive=false,
+                    outer_route_adaptive=false
+                ),
+            ]
+        )
+    end
+
+    if isempty(config.rung_labels)
         return rungs
     end
 
-    attribution_backend = _layer_attribution_backend(config)
-    append!(
-        rungs,
-        LadderRungSpec[
-            LadderRungSpec(
-                mode=:attr_outer_only,
-                label="la_outer_only",
-                description="Layer attribution baseline: outer parallel enabled, all inner layers off.",
-                matrix=:outer_pinned,
-                backend=attribution_backend,
-                inner_adaptive=false,
-                outer_route_adaptive=false
-            ),
-            LadderRungSpec(
-                mode=:attr_density,
-                label="la_density",
-                description="Outer + density inner layer only.",
-                matrix=:attribution_density,
-                backend=attribution_backend,
-                inner_adaptive=false,
-                outer_route_adaptive=false
-            ),
-            LadderRungSpec(
-                mode=:attr_thermal,
-                label="la_thermal",
-                description="Outer + thermal inner layer only.",
-                matrix=:attribution_thermal,
-                backend=attribution_backend,
-                inner_adaptive=false,
-                outer_route_adaptive=false
-            ),
-            LadderRungSpec(
-                mode=:attr_control,
-                label="la_control",
-                description="Outer + control inner layer only.",
-                matrix=:attribution_control,
-                backend=attribution_backend,
-                inner_adaptive=false,
-                outer_route_adaptive=false
-            ),
-            LadderRungSpec(
-                mode=:attr_multibody,
-                label="la_multibody",
-                description="Outer + multibody inner layer only.",
-                matrix=:attribution_multibody,
-                backend=attribution_backend,
-                inner_adaptive=false,
-                outer_route_adaptive=false
-            ),
-            LadderRungSpec(
-                mode=:attr_effector,
-                label="la_effector",
-                description="Outer + effector inner layer only.",
-                matrix=:attribution_effector,
-                backend=attribution_backend,
-                inner_adaptive=false,
-                outer_route_adaptive=false
-            ),
-            LadderRungSpec(
-                mode=:attr_density_thermal,
-                label="la_density_thermal",
-                description="Outer + density + thermal pair interaction.",
-                matrix=:attribution_density_thermal,
-                backend=attribution_backend,
-                inner_adaptive=false,
-                outer_route_adaptive=false
-            ),
-            LadderRungSpec(
-                mode=:attr_density_multibody,
-                label="la_density_multibody",
-                description="Outer + density + multibody pair interaction.",
-                matrix=:attribution_density_multibody,
-                backend=attribution_backend,
-                inner_adaptive=false,
-                outer_route_adaptive=false
-            ),
-            LadderRungSpec(
-                mode=:attr_control_effector,
-                label="la_control_effector",
-                description="Outer + control + effector pair interaction.",
-                matrix=:attribution_control_effector,
-                backend=attribution_backend,
-                inner_adaptive=false,
-                outer_route_adaptive=false
-            ),
-            LadderRungSpec(
-                mode=:attr_multibody_effector,
-                label="la_multibody_effector",
-                description="Outer + multibody + effector pair interaction.",
-                matrix=:attribution_multibody_effector,
-                backend=attribution_backend,
-                inner_adaptive=false,
-                outer_route_adaptive=false
-            ),
-        ]
-    )
-    return rungs
+    available_labels = [r.label for r in rungs]
+    by_label = Dict(r.label => r for r in rungs)
+    unknown_labels = [label for label in config.rung_labels if !haskey(by_label, label)]
+    if !isempty(unknown_labels)
+        throw(ArgumentError(
+            "Unknown rung label(s): $(join(unknown_labels, ", ")). " *
+            "Available rung labels: $(join(sort(available_labels), ", "))."
+        ))
+    end
+    return [by_label[label] for label in config.rung_labels]
 end
 
 function _ladder_env_pairs(
@@ -1048,10 +1081,9 @@ end
     return join(parts, "|")
 end
 
-function _baseline_artifact(artifacts::Vector{ModeRunArtifacts})::ModeRunArtifacts
+function _baseline_artifact(artifacts::Vector{ModeRunArtifacts})::Union{Nothing, ModeRunArtifacts}
     idx = findfirst(a -> a.mode == :serial, artifacts)
-    idx === nothing && error("Smart ladder requires a serial baseline rung with mode=:serial.")
-    return artifacts[idx]
+    return idx === nothing ? nothing : artifacts[idx]
 end
 
 function _prepare_speed_sample_table(raw_df::DataFrame)::DataFrame
@@ -1293,6 +1325,7 @@ function _build_vs_r0_speedup_table(
     rung_label_by_mode::Dict{Symbol, String}
 )::DataFrame
     baseline = _baseline_artifact(artifacts)
+    baseline === nothing && return DataFrame()
     rows = NamedTuple[]
     for artifact in artifacts
         rung_label = get(rung_label_by_mode, artifact.mode, string(artifact.mode))
@@ -1318,6 +1351,7 @@ function _build_mission_family_speedup_table(
     rung_label_by_mode::Dict{Symbol, String}
 )::DataFrame
     baseline = _baseline_artifact(artifacts)
+    baseline === nothing && return DataFrame()
     baseline_samples = _prepare_speed_sample_table(baseline.raw_df)
     if nrow(baseline_samples) == 0
         return DataFrame()
@@ -1414,6 +1448,7 @@ function _build_thermal_contribution_table(
     rung_label_by_mode::Dict{Symbol, String}
 )::DataFrame
     baseline = _baseline_artifact(artifacts)
+    baseline === nothing && return DataFrame()
     baseline_samples = _prepare_thermal_speed_sample_table(baseline.raw_df)
     if nrow(baseline_samples) == 0 || !_has_column(baseline_samples, :is_thermal)
         return DataFrame()
@@ -1889,6 +1924,7 @@ function _build_accuracy_parity_table(
     rung_label_by_mode::Dict{Symbol, String}
 )::DataFrame
     baseline = _baseline_artifact(artifacts)
+    baseline === nothing && return DataFrame()
     baseline_samples = _prepare_accuracy_sample_table(baseline.raw_df)
     if nrow(baseline_samples) == 0
         return DataFrame()
@@ -2100,6 +2136,7 @@ function _build_montecarlo_distribution_parity_table(
     rung_label_by_mode::Dict{Symbol, String}
 )::DataFrame
     baseline = _baseline_artifact(artifacts)
+    baseline === nothing && return DataFrame()
     baseline_raw = baseline.raw_df
     if !(_has_column(baseline_raw, :category) && _has_column(baseline_raw, :scenario) && _has_column(baseline_raw, :solve_success))
         return DataFrame()
@@ -2604,6 +2641,7 @@ function _write_smart_ladder_report(
         println(io, "- Rungs executed: `$rung_labels`")
         println(io, "- Passes: `$(config.passes)`")
         println(io, "- Randomized rung order: `$(config.randomize_rung_order)` (seed=`$(config.random_seed)`)")
+        println(io, "- Rung filter: `$(isempty(config.rung_labels) ? "all" : join(config.rung_labels, ","))`")
         println(io, "- Outer-only backend: `$(config.outer_only_backend)`")
         println(io, "- Include layer-attribution matrix: `$(config.include_layer_attribution)`")
         println(io, "- Include control_stress in per-orbit stage: `$(config.include_control_stress_per_orbit)`")
@@ -2844,6 +2882,7 @@ function _write_smart_ladder_report(
         println(io, "## Reproducibility")
         println(io, "```bash")
         process_suffix = isnothing(config.process_workers) ? "" : " --process-workers=$(config.process_workers)"
+        rung_suffix = isempty(config.rung_labels) ? "" : " --rungs=$(join(config.rung_labels, ","))"
         project_flag = Base.shell_escape(SMART_LADDER_PROJECT)
         println(
             io,
@@ -2851,7 +2890,7 @@ function _write_smart_ladder_report(
             "--profile=$(config.profile.name) --outdir=$(config.outdir) --clean=1 --passes=$(config.passes) " *
             "--randomize-rung-order=$(config.randomize_rung_order ? 1 : 0) --seed=$(config.random_seed) " *
             "--outer-only-backend=$(config.outer_only_backend)$(process_suffix) " *
-            "--layer-attribution=$(config.include_layer_attribution ? 1 : 0) " *
+            "--layer-attribution=$(config.include_layer_attribution ? 1 : 0)$(rung_suffix) " *
             "--include-control-stress-per-orbit=$(config.include_control_stress_per_orbit ? 1 : 0) " *
             "--control-stress-repeats-full=$(config.control_stress_repeats_full) " *
             "--control-stress-warmup-full=$(config.control_stress_warmup_full) " *
@@ -2896,6 +2935,7 @@ function main_smart_parallel_ladder()
     println("Rungs: $(join([r.label for r in rungs], ", "))")
     println("Passes: $(config.passes)")
     println("Randomized rung order: $(config.randomize_rung_order) (seed=$(config.random_seed))")
+    println("Rung filter: $(isempty(config.rung_labels) ? "all" : join(config.rung_labels, ","))")
     println("Outer-only backend: $(config.outer_only_backend)")
     println("Include layer-attribution matrix: $(config.include_layer_attribution)")
     println("Include control_stress in per-orbit stage: $(config.include_control_stress_per_orbit)")

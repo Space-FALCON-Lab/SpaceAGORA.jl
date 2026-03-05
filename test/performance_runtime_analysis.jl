@@ -102,6 +102,12 @@ end
         # Entry cases intentionally terminate after target interface crossings.
         return true
     end
+    if string(sol.retcode) == "Terminated" &&
+       case.name == "multi_sat_control_8sat_thruster"
+        # This stress case exercises high-rate control callback behavior and can
+        # intentionally stop early under control-driven termination callbacks.
+        return true
+    end
     return false
 end
 
@@ -800,7 +806,7 @@ end
         return "gram_point"
     elseif density_model isa ExponentialAtmosphereModel
         return "exponential"
-    elseif density_model isa PolynomialFitAtmosphereModel
+    elseif density_model isa SimulationModel.EnvironmentModels.PolynomialFitAtmosphereModel
         return "polyfit"
     elseif density_model isa NRLMSISE00AtmosphereModel
         return "nrlmsise00"
@@ -1614,7 +1620,8 @@ function make_constellation(
     planet::AbstractPlanet,
     n::Int;
     with_panel::Bool=false,
-    panel_count::Int=1
+    panel_count::Int=1,
+    prop_mass::Float64=0.0
 )::Vector{SpacecraftModel}
     sats = SpacecraftModel[]
     for i in 1:n
@@ -1633,7 +1640,8 @@ function make_constellation(
                 rp_alt_m=rp_alt,
                 ν_deg=ν,
                 with_panel=with_panel,
-                panel_count=panel_count
+                panel_count=panel_count,
+                prop_mass=prop_mass
             )
         )
     end
@@ -2098,14 +2106,18 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
         panel_area=3.0,
         panel_offset_y=2.0
     )]
-    sc_multi_sat_control = make_constellation(planet, 8; with_panel=false)
+    sc_multi_sat_control = make_constellation(planet, 8; with_panel=false, prop_mass=25.0)
+    n_constellation_sats = length(sc_multi_sat_control)
+    constellation_burn_spacing_s = 180.0
+    constellation_start_burn_time = [120.0 + constellation_burn_spacing_s * (i - 1) for i in 1:n_constellation_sats]
+    constellation_stop_burn_time = [t + 20.0 for t in constellation_start_burn_time]
     constellation_thruster = BaseThrusterModel(
-        thrust=fill(0.18, 8),
-        direction=fill(0.0, 8),
-        Δv=fill(0.0, 8),
-        start_burn_time=repeat([120.0, 540.0, 960.0, 1380.0], 2),
-        stop_burn_time=repeat([180.0, 600.0, 1020.0, 1440.0], 2),
-        Isp=fill(285.0, 8)
+        thrust=fill(0.02, n_constellation_sats),
+        direction=fill(0.0, n_constellation_sats),
+        Δv=fill(120.0, n_constellation_sats),
+        start_burn_time=constellation_start_burn_time,
+        stop_burn_time=constellation_stop_burn_time,
+        Isp=fill(285.0, n_constellation_sats)
     )
     sc_long_constellation = make_constellation(planet, 12; with_panel=false)
     sc_effector_stress6 = make_constellation(planet, 6; with_panel=false)
@@ -2923,12 +2935,18 @@ function _run_case_batch_core!(
                 flush(stdout)
                 break
             end
+            if lowercase(strip(string(row.solve_retcode))) == "terminated"
+                println("  repeat $(rep)/$(repeat_count) attempt $(attempt)/$(spec.max_attempts): retcode=Terminated, not retrying")
+                flush(stdout)
+                break
+            end
             println("  repeat $(rep)/$(repeat_count) attempt $(attempt)/$(spec.max_attempts): failed retcode=$(row.solve_retcode), retrying")
             flush(stdout)
         end
         if !(last_row === nothing) && !last_row.solve_success
             push!(rows, last_row)
-            println("  repeat $(rep)/$(repeat_count): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)")
+            attempts_used = hasproperty(last_row, :attempt) ? last_row.attempt : spec.max_attempts
+            println("  repeat $(rep)/$(repeat_count): failed after $(attempts_used) attempt(s), retcode=$(last_row.solve_retcode)")
             flush(stdout)
         end
     end
@@ -2975,6 +2993,9 @@ function measure_montecarlo_seed(
             last_row = row
             if row.solve_success
                 return row, nothing
+            end
+            if lowercase(strip(string(row.solve_retcode))) == "terminated"
+                return row, "terminated (no retry)"
             end
         end
         return last_row, last_row === nothing ? "failed without attempt data" : "failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)"

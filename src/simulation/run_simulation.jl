@@ -1594,8 +1594,9 @@ function run_simulation(
         args.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_$(args.environment_model.planet.name)", et_start)) * args.environment_model.planet.J2000_to_pci' # Initialize the planet frame at the start of the simulation (will be updated in the callback)
     end
     Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.planet_pxform_runtime_calls, 1)
-    mission_end = args.mission_configuration.mission_time
-    _initialize_nbody_ephemeris_cache!(p, et_start, mission_end)
+    # mission_end = args.mission_configuration.mission_time
+    mission_end = 1.0e9
+    # _initialize_nbody_ephemeris_cache!(p, et_start, mission_end)
     _initialize_srp_sun_ephemeris_cache!(p, et_start, mission_end)
     _initialize_planet_frame_ephemeris_cache!(p, et_start, mission_end)
     checkpoint_active = _typed_checkpoint_enabled(args)

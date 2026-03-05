@@ -6,10 +6,12 @@ function calcGuidanceEffect!(guidanceAlg::AerobrakingCampaignPropulsiveManeuverG
     orbit_counter = p.orbit_counter[i]
     if orbit_counter in guidanceAlg.maneuver_orbit_number
         thruster.Δv[i] = guidanceAlg.maneuver_Δv[findfirst(==(orbit_counter), guidanceAlg.maneuver_orbit_number)]
-        if thruster.Δv[i] > 0.0
+        if thruster.Δv[i] < 0.0
             thruster.direction[i] = π # Retrograde burn
+            # println("Lower maneuver: Orbit $orbit_counter, Δv = $(thruster.Δv[i]) m/s (retrograde)")
         else            
             thruster.direction[i] = 0.0 # Prograde burn
+            # println("Raise maneuver: Orbit $orbit_counter, Δv = $(thruster.Δv[i]) m/s (prograde)")
         end
         thruster.Δv[i] = abs(thruster.Δv[i])
     else

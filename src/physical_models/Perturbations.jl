@@ -63,10 +63,10 @@ end
 end
 
 # N-body gravity perturbation model
-struct NBodyGravityModel{P <: AbstractPlanet, NP <: Tuple{Vararg{String}}, NM <: Tuple{Vararg{Float64}}} <: AbstractForceTorqueModel
-    body_names::NP  # Names of celestial bodies to include
+struct NBodyGravityModel{P <: AbstractPlanet, NP <: Tuple{Vararg{Int64}}, NM <: Tuple{Vararg{Float64}}} <: AbstractForceTorqueModel
+    body_ids::NP  # Names of celestial bodies to include
     body_mus::NM    # Gravitational parameters [m^3/s^2] for each third body
-    primary_body_name::String # Name of the primary body
+    primary_body_id::Int64 # Name of the primary body
     planet::P # Planet data for primary body
 end
 
@@ -206,19 +206,19 @@ function SolarRadiationPressureModel(Cr::Real, A::Real, AU_m::Real=149_597_870_7
 end
 
 function NBodyGravityModel(;
-    body_names::Tuple{Vararg{String}},
-    primary_body_name::String="Earth",
+    body_ids::Tuple{Vararg{Int64}},
+    primary_body_id::Int64=399,
     planet::P=Earth(""),
     body_mus::Union{Nothing, Tuple{Vararg{Float64}}}=nothing
 ) where {P <: AbstractPlanet}
-    mus = body_mus === nothing ? Tuple(_resolve_third_body_mu(name) for name in body_names) : body_mus
-    length(mus) == length(body_names) || throw(ArgumentError("NBodyGravityModel.body_mus length ($(length(mus))) must match body_names length ($(length(body_names)))."))
-    return NBodyGravityModel{P, typeof(body_names), typeof(mus)}(body_names, mus, primary_body_name, planet)
+    mus = body_mus === nothing ? Tuple(_resolve_third_body_mu(SPICE.bodc2n(id)) for id in body_ids) : body_mus
+    length(mus) == length(body_ids) || throw(ArgumentError("NBodyGravityModel.body_mus length ($(length(mus))) must match body_ids length ($(length(body_ids)))."))
+    return NBodyGravityModel{P, typeof(body_ids), typeof(mus)}(body_ids, mus, primary_body_id, planet)
 end
 
 # Constructor to get planet data
-function NBodyGravityModel(body_names::Vector{String}, primary_body_name::String="Earth", spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-    pname = lowercase(primary_body_name)
+function NBodyGravityModel(body_ids::Vector{Int64}, primary_body_id::Int64=399, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
+    pname = SPICE.bodc2n(primary_body_id)
     planet = if pname == "earth"
         Earth("", spice_path)
     elseif pname == "mars"
@@ -228,9 +228,9 @@ function NBodyGravityModel(body_names::Vector{String}, primary_body_name::String
     elseif pname == "titan"
         Titan("", spice_path)
     else
-        throw(ArgumentError("Unsupported primary body '$primary_body_name' for NBodyGravityModel"))
+        throw(ArgumentError("Unsupported primary body '$primary_body_id' for NBodyGravityModel"))
     end
-    return NBodyGravityModel(body_names=Tuple(body_names), primary_body_name=primary_body_name, planet=planet)
+    return NBodyGravityModel(body_ids=Tuple(body_ids), primary_body_id=primary_body_id, planet=planet)
 end
 
 function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::String, planet::P) where P <: AbstractPlanet
@@ -323,66 +323,79 @@ end
 """
     calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
 """
+const J2000_frame_id = 1
 function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     pos_ii = hasproperty(x, :pos) ? SVector{3, Float64}(x.pos) : SVector{3, Float64}(x[1:3])
     mass = hasproperty(x, :mass) ? x.mass : x[7]
-    primary_body_name = _spice_query_name(model.primary_body_name)
+    primary_body_id = model.primary_body_id
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
     force_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize force vector
-    n_bodies = length(model.body_names)
-    decision = _multibody_thread_decision(n_bodies; heavy_work=true)
-    use_threads = decision.use_threads
-    n_workers = use_threads ? ParallelPolicy.thread_worker_count(n_bodies, decision.allotment) : 1
-    workspace = _nbody_workspace_for_sat!(param, i, n_bodies, n_workers)
-    pos_primary_k_all = workspace.pos_primary_k_all
-    nbody_cache_entry = param.shared_buffers.nbody_ephemeris_cache[]
-    spice_rhs_memo_enabled = param.shared_buffers.spice_rhs_memo_enabled[]
-    spice_rhs_memo = param.shared_buffers.spice_rhs_memo
-    for (k, body_name) in pairs(model.body_names)
-        body_name_spice = _spice_query_name(body_name)
-        pos_primary_body = if nbody_cache_entry isa NBodyEphemerisCache
-            cached = _nbody_body_position_from_cache_j2000(nbody_cache_entry, et, body_name_spice, primary_body_name)
-            cached === nothing ? _nbody_body_position_from_spice_j2000(body_name_spice, et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls) : cached
-        else
-            _nbody_body_position_from_spice_j2000(body_name_spice, et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls)
-        end
-        pos_primary_k_all[k] = model.planet.J2000_to_pci * pos_primary_body * 1e3
+    n_bodies = length(model.body_ids)
+    @inbounds for i in 1:n_bodies
+        # body_name_spice = _spice_query_name(model.body_names[i])
+        pos_primary_body = SVector{3, Float64}(lock(SPICE_LOCK) do
+            spkgeo(model.body_ids[i], et, "J2000", primary_body_id)[1][1:3]
+        end)
+        pos_primary_k = model.planet.J2000_to_pci * pos_primary_body * 1e3 # Convert from km to m and rotate to PCI frame
+        pos_spacecraft_k = pos_primary_k - pos_ii
+        pos_spacecraft_k_mag = norm(pos_spacecraft_k)
+        force_ii .+= mass * model.body_mus[i] * (
+            (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
+        )
     end
+    # decision = _multibody_thread_decision(n_bodies; heavy_work=true)
+    # use_threads = decision.use_threads
+    # n_workers = use_threads ? ParallelPolicy.thread_worker_count(n_bodies, decision.allotment) : 1
+    # workspace = _nbody_workspace_for_sat!(param, i, n_bodies, n_workers)
+    # pos_primary_k_all = workspace.pos_primary_k_all
+    # nbody_cache_entry = param.shared_buffers.nbody_ephemeris_cache[]
+    # spice_rhs_memo_enabled = param.shared_buffers.spice_rhs_memo_enabled[]
+    # spice_rhs_memo = param.shared_buffers.spice_rhs_memo
+    # for (k, body_name) in pairs(model.body_names)
+    #     body_name_spice = _spice_query_name(body_name)
+    #     pos_primary_body = if nbody_cache_entry isa NBodyEphemerisCache
+    #         cached = _nbody_body_position_from_cache_j2000(nbody_cache_entry, et, body_name_spice, primary_body_name)
+    #         cached === nothing ? _nbody_body_position_from_spice_j2000(body_name_spice, et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls) : cached
+    #     else
+    #         _nbody_body_position_from_spice_j2000(body_name_spice, et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls)
+    #     end
+    #     pos_primary_k_all[k] = model.planet.J2000_to_pci * pos_primary_body * 1e3
+    # end
 
-    started_ns = time_ns()
-    if use_threads
-        thread_force = workspace.thread_force
-        @inbounds for worker_id in 1:n_workers
-            thread_force[worker_id] .= 0.0
-        end
-        ParallelPolicy.threaded_foreach_worker(n_bodies, decision.allotment) do worker_id, k
-            pos_primary_k = pos_primary_k_all[k]
-            pos_spacecraft_k = pos_primary_k - pos_ii
-            pos_spacecraft_k_mag = norm(pos_spacecraft_k)
-            thread_force[worker_id] .+= mass * model.body_mus[k] * (
-                (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
-            )
-        end
-        @inbounds for worker_id in 1:n_workers
-            force_ii .+= thread_force[worker_id]
-        end
-    else
-        @inbounds for k in eachindex(pos_primary_k_all)
-            pos_primary_k = pos_primary_k_all[k]
-            pos_spacecraft_k = pos_primary_k - pos_ii
-            pos_spacecraft_k_mag = norm(pos_spacecraft_k)
-            force_ii += mass * model.body_mus[k] * (
-                (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
-            )
-        end
-    end
-    ParallelPolicy.record_policy_observation!(
-        :multibody;
-        mode=decision.mode,
-        num_items=n_bodies,
-        use_threads=use_threads,
-        elapsed_ns=(time_ns() - started_ns)
-    )
+    # started_ns = time_ns()
+    # if use_threads
+    #     thread_force = workspace.thread_force
+    #     @inbounds for worker_id in 1:n_workers
+    #         thread_force[worker_id] .= 0.0
+    #     end
+    #     ParallelPolicy.threaded_foreach_worker(n_bodies, decision.allotment) do worker_id, k
+    #         pos_primary_k = pos_primary_k_all[k]
+    #         pos_spacecraft_k = pos_primary_k - pos_ii
+    #         pos_spacecraft_k_mag = norm(pos_spacecraft_k)
+    #         thread_force[worker_id] .+= mass * model.body_mus[k] * (
+    #             (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
+    #         )
+    #     end
+    #     @inbounds for worker_id in 1:n_workers
+    #         force_ii .+= thread_force[worker_id]
+    #     end
+    # else
+    #     @inbounds for k in eachindex(pos_primary_k_all)
+    #         pos_primary_k = pos_primary_k_all[k]
+    #         pos_spacecraft_k = pos_primary_k - pos_ii
+    #         pos_spacecraft_k_mag = norm(pos_spacecraft_k)
+    #         force_ii += mass * model.body_mus[k] * (
+    #             (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
+    #         )
+    #     end
+    # end
+    # ParallelPolicy.record_policy_observation!(
+    #     :multibody;
+    #     mode=decision.mode,
+    #     num_items=n_bodies,
+    #     use_threads=use_threads,
+    #     elapsed_ns=(time_ns() - started_ns)
+    # )
 
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end

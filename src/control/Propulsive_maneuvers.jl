@@ -161,7 +161,6 @@ function calcControlForceTorque(controlModel::BaseThrusterModel, u::AbstractVect
         force = SVector{3, Float64}(0.0, 0.0, 0.0)
         torque = SVector{3, Float64}(0.0, 0.0, 0.0)
     end
-
     return force, torque
 end
 
@@ -270,7 +269,7 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
     alt = norm(pos) - p.args.environment_model.planet.Rp_e
     circular_e_tol = 1e-8
     pre_apoapsis = e <= circular_e_tol || ν < π - 1e-12
-    if alt >= p.args.environment_model.EI * 1000 - 1e-6 && pre_apoapsis
+    if alt >= p.args.environment_model.EI * 1000.0 - 1e-6 && pre_apoapsis
         # Calculate the burn time required to achieve the desired Δv based on the current mass and thrust
         Δv = controlModel.Δv[i]
         if !isfinite(Δv) || Δv <= 0.0
@@ -306,7 +305,6 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
         # Update the start/end time fields in the control model for the current spacecraft
         controlModel.start_burn_time[i] = start_burn_time
         controlModel.stop_burn_time[i] = stop_burn_time
-
         prev_window = get(_MANEUVER_TRACE_LAST_WINDOW, trace_key, (NaN, NaN))
         same_window = isfinite(prev_window[1]) && isfinite(prev_window[2]) &&
             abs(prev_window[1] - start_burn_time) <= 1e-9 &&

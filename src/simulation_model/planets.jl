@@ -18,6 +18,7 @@ module Planets
 
     @kwdef struct Earth <: AbstractPlanet
         name::String = "Earth" # Name of the planet
+        spice_id::Int = 399 # NAIF SPICE ID
         Rp_e::Float64 = 6.3781e6 # Equatorial radius in meters
         Rp_p::Float64 = 6.3568e6 # Polar radius in meters
         Rp_m::Float64 = 6.371e6  # Mean radius in meters
@@ -48,6 +49,7 @@ module Planets
 
     @kwdef struct Mars <: AbstractPlanet
         name::String = "Mars" # Name of the planet
+        spice_id::Int = 499 # NAIF SPICE ID
         Rp_e::Float64 = 3.3962e6 # Equatorial radius in meters
         Rp_p::Float64 = 3.3762e6 # Polar radius in meters
         Rp_m::Float64 = 3.3895e6 # Mean radius in meters
@@ -77,6 +79,7 @@ module Planets
 
     @kwdef struct Venus <: AbstractPlanet
         name::String = "Venus" # Name of the planet
+        spice_id::Int = 299 # NAIF SPICE ID
         Rp_e::Float64 = 6.0518e6 # Equatorial radius in meters
         Rp_p::Float64 = 6.0518e6 # Polar radius in meters
         Rp_m::Float64 = 6.0518e6 # Mean radius in meters
@@ -110,6 +113,7 @@ module Planets
 
     @kwdef struct Titan <: AbstractPlanet
         name::String = "Titan" # Name of the planet
+        spice_id::Int = 606 # NAIF SPICE ID
         Rp_e::Float64 = 2.575e6 # Equatorial radius in meters
         Rp_p::Float64 = 2.575e6 # Polar radius in meters
         Rp_m::Float64 = 2.575e6 # Mean radius in meters
@@ -159,9 +163,17 @@ module Planets
         throw(ArgumentError("Unable to find required SPICE kernel in $(spice_path). Tried: $(join(relpaths, ", "))"))
     end
 
+    @inline function _lookup_spice_id(body_name::String)::Int
+        try
+            return Int(bodn2c(uppercase(strip(body_name))))
+        catch err
+            throw(ArgumentError("Unable to resolve SPICE ID for body name $(repr(body_name)): $(sprint(showerror, err))"))
+        end
+    end
+
     # Constructors
     function Earth(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        earth = Earth()
+        earth = Earth(spice_id=_lookup_spice_id("Earth"))
         # TopographyHarmonicsWorkspace!(topo_harmonics_file, earth)
         _furnsh_required(spice_path, "pck/pck00011.tpc")
         _furnsh_required(spice_path, "lsk/naif0012.tls")
@@ -171,7 +183,7 @@ module Planets
     end
 
     function Mars(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        mars = Mars()
+        mars = Mars(spice_id=_lookup_spice_id("Mars"))
         # TopographyHarmonicsWorkspace!(topo_harmonics_file, mars)
         _furnsh_required(spice_path, "pck/pck00011.tpc")
         _furnsh_required(spice_path, "lsk/naif0012.tls")
@@ -181,7 +193,7 @@ module Planets
     end
 
     function Venus(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        venus = Venus()
+        venus = Venus(spice_id=_lookup_spice_id("Venus"))
         # TopographyHarmonicsWorkspace!(topo_harmonics_file, venus)
         _furnsh_required(spice_path, "pck/pck00011.tpc")
         _furnsh_required(spice_path, "lsk/naif0012.tls")
@@ -191,7 +203,7 @@ module Planets
     end
 
     function Titan(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        titan = Titan()
+        titan = Titan(spice_id=_lookup_spice_id("Titan"))
         # TopographyHarmonicsWorkspace!(topo_harmonics_file, titan)
         _furnsh_required(spice_path, "pck/pck00011.tpc")
         _furnsh_required(spice_path, "lsk/naif0012.tls")

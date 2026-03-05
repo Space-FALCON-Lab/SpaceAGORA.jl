@@ -6,13 +6,14 @@ using LinearAlgebra
 using SPICE
 using Dates
 using GRAMSuite
+using ComponentArrays
 using ..SimulationModel: SPICE_LOCK, GRAM_LOCK, PlanetFrameEphemerisCache, rot
 using ..ParallelPolicy
 using ..EnvironmentModels
 using ..EnvironmentModels: getDensity, getDensityBatch!, getHeatRate, NoAtmosphereModel
 using ..DynamicEffectors: BaseThrusterModel, AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight, InverseSquaredJ2GravityModel
 using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
-using ..ConfigTypes: SaveData
+using ..ConfigTypes: SaveData, ODEParams
 using ..ControlEffectors: calcControlEffect!
 using ..GuidanceEffectors: calcGuidanceEffect!
 using ..NavigationEffectors: calcNavigationEffect!
@@ -1579,9 +1580,9 @@ function get_callbacks(
         push!(callbacks, get_thermal_callback(num_sats, args))
     end
 
-    if _requires_orbit_end_callback(args)
-        push!(callbacks, get_orbit_end_callback(num_sats))
-    end
+    # if _requires_orbit_end_callback(args)
+    push!(callbacks, get_orbit_end_callback(num_sats))
+    # end
 
     if _requires_entry_end_callback(effectors, args)
         push!(callbacks, get_entry_end_callback(num_sats, args))
@@ -1594,11 +1595,11 @@ function get_callbacks(
     append!(callbacks, get_navigation_callbacks(num_sats, args))
     append!(callbacks, get_control_callbacks(num_sats, args))
     append!(callbacks, get_guidance_callbacks(num_sats, args))
+    push!(callbacks, get_periapsis_save_callback(num_sats))
     if _requires_quaternion_projection_callback(args)
         push!(callbacks, get_quaternion_projection_callback(num_sats, args))
     end
     push!(callbacks, get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values))
-
     return CallbackSet(callbacks...)
 end
 
@@ -1687,7 +1688,7 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
     cache_cfg = _gram_track_cache_config()
     stats_enabled = _gram_runtime_stats_enabled()
     target_include_j2 = _gram_track_cache_target_use_j2() && _uses_j2_gravity_effector(effectors)
-    function update_density_sat!(i::Int, p, u, t, segment_end_t::Float64)
+    function update_density_sat!(i::Int, p::ODEParams, u::ComponentVector, t::Float64, segment_end_t::Float64)
         if stats_enabled
             _gram_runtime_stats_update!(s -> begin
                 s.density_calls += 1
@@ -2031,6 +2032,7 @@ function get_orbit_end_callback(num_sats::Int)
             vel = SVector{3, Float64}(u.sc[i].vel)
             out[i] = -dot(pos, vel)
         end
+        # println("Orbit end callback condition evaluated at time $(integrator.t) seconds with outputs: $(out)")
     end
 
     function affect!(integrator, idx::Int64)
@@ -2344,7 +2346,7 @@ function get_periapsis_save_callback(num_sats::Int)
     function condition!(out, u, t, integrator)
         @inbounds for i in 1:num_sats
             OE = rvtoorbitalelement(SVector{3, Float64}(u.sc[i].pos), SVector{3, Float64}(u.sc[i].vel), integrator.p.args.environment_model.planet)
-            out[i] = OE[6] # Return the true anomaly (ν) which is zero at periapsis
+            out[i] = OE[6] - π # Return the true anomaly minus pi (ν) which switches from positive to negative at periapsis (ν = 0)
         end
     end
 
@@ -2357,7 +2359,7 @@ function get_periapsis_save_callback(num_sats::Int)
         end
         # Save the state at periapsis to a file or data structure as needed
     end
-
-    return VectorContinuousCallback(condition!, affect!, nothing, num_sats)
+    # out = zeros(num_sats) # Output array to store the condition for each satellite
+    return VectorContinuousCallback(condition!, nothing, affect!, num_sats)
 end
 end # module

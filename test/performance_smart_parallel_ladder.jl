@@ -2,10 +2,40 @@ const _SMART_LADDER_DIR = @__DIR__
 include(joinpath(_SMART_LADDER_DIR, "performance_paper_pipeline.jl"))
 
 using Random
+using SHA
 
 const SMART_LADDER_DEFAULT_OUTDIR = joinpath(REPO_ROOT, "output", "performance", "smart_parallel_ladder")
 const SMART_LADDER_RUNTIME_SCRIPT = joinpath(_SMART_LADDER_DIR, "performance_runtime_analysis.jl")
-const SMART_LADDER_PROJECT = joinpath(REPO_ROOT, ".AGORA")
+
+@inline function _is_julia_project_dir(path::String)::Bool
+    return isdir(path) && isfile(joinpath(path, "Project.toml"))
+end
+
+function _resolve_smart_ladder_project()::String
+    candidates = Pair{String, String}[]
+    env_project = strip(get(ENV, "SPACEAGORA_SMART_LADDER_PROJECT", ""))
+    if !isempty(env_project)
+        push!(candidates, "SPACEAGORA_SMART_LADDER_PROJECT" => env_project)
+    end
+    push!(candidates, "repo_dot_AGORA" => joinpath(REPO_ROOT, ".AGORA"))
+    push!(candidates, "repo_root" => REPO_ROOT)
+
+    checked = String[]
+    for (label, raw_path) in candidates
+        path = abspath(raw_path)
+        push!(checked, "$(label)=$(path)")
+        if _is_julia_project_dir(path)
+            return path
+        end
+    end
+
+    error(
+        "Unable to resolve smart ladder project path. Checked: $(join(checked, ", ")). " *
+        "Set SPACEAGORA_SMART_LADDER_PROJECT to a valid Julia project directory (must contain Project.toml)."
+    )
+end
+
+const SMART_LADDER_PROJECT = _resolve_smart_ladder_project()
 
 Base.@kwdef struct SmartLadderConfig
     profile::ProfileSpec
@@ -20,6 +50,9 @@ Base.@kwdef struct SmartLadderConfig
     include_control_stress_per_orbit::Bool
     control_stress_repeats_full::Int
     control_stress_warmup_full::Int
+    solver_axis::Symbol
+    solver_mode::String
+    solver_factor_modes::Vector{String}
 end
 
 Base.@kwdef struct LadderRungSpec
@@ -34,6 +67,8 @@ end
 
 Base.@kwdef struct LadderPassResult
     pass::Int
+    solver_label::String
+    solver_mode::Union{Nothing, String}
     rung::LadderRungSpec
     artifact::ModeRunArtifacts
 end
@@ -80,6 +115,30 @@ end
     return backend
 end
 
+@inline function _parse_solver_axis(raw::AbstractString)::Symbol
+    token = lowercase(strip(String(raw)))
+    token in ("inherit", "frozen", "factorial") || throw(
+        ArgumentError("solver-axis must be one of: inherit, frozen, factorial (got '$raw').")
+    )
+    return Symbol(token)
+end
+
+@inline function _parse_solver_factor_modes(raw::AbstractString)::Vector{String}
+    token = strip(String(raw))
+    isempty(token) && return String[]
+    values = String[]
+    seen = Set{String}()
+    for part in split(token, ",")
+        mode = lowercase(strip(part))
+        isempty(mode) && continue
+        if !(mode in seen)
+            push!(values, mode)
+            push!(seen, mode)
+        end
+    end
+    return values
+end
+
 function parse_smart_ladder_cli()::SmartLadderConfig
     profile_name = lowercase(strip(get(ENV, "SPACEAGORA_SMART_LADDER_PROFILE", get(ENV, "SPACEAGORA_PERF_PROFILE", "full"))))
     outdir = get(ENV, "SPACEAGORA_SMART_LADDER_OUTDIR", SMART_LADDER_DEFAULT_OUTDIR)
@@ -99,6 +158,9 @@ function parse_smart_ladder_cli()::SmartLadderConfig
         get(ENV, "SPACEAGORA_PERF_CONTROL_STRESS_WARMUP_FULL", "1"),
         "SPACEAGORA_PERF_CONTROL_STRESS_WARMUP_FULL"
     )
+    solver_axis = _parse_solver_axis(get(ENV, "SPACEAGORA_SMART_LADDER_SOLVER_AXIS", "frozen"))
+    solver_mode = lowercase(strip(get(ENV, "SPACEAGORA_SMART_LADDER_SOLVER_MODE", "auto_stiff")))
+    solver_factor_modes = _parse_solver_factor_modes(get(ENV, "SPACEAGORA_SMART_LADDER_SOLVER_FACTORS", "auto_stiff,split_imex,multirate"))
 
     for arg in ARGS
         if arg in ("quick", "full")
@@ -135,14 +197,30 @@ function parse_smart_ladder_cli()::SmartLadderConfig
                 String(split(arg, "=", limit=2)[2]),
                 "--control-stress-warmup-full"
             )
+        elseif startswith(arg, "--solver-axis=")
+            solver_axis = _parse_solver_axis(String(split(arg, "=", limit=2)[2]))
+        elseif startswith(arg, "--solver-mode=")
+            solver_mode = lowercase(strip(String(split(arg, "=", limit=2)[2])))
+        elseif startswith(arg, "--solver-factors=")
+            solver_factor_modes = _parse_solver_factor_modes(String(split(arg, "=", limit=2)[2]))
         else
             throw(ArgumentError(
                 "Unknown argument '$arg'. Supported: [quick|full], --profile=..., --outdir=..., --clean=0|1, " *
                 "--passes=N, --randomize-rung-order=0|1, --seed=N, --outer-only-backend=threads|process|auto, " *
                 "--process-workers=N, --layer-attribution=0|1, --include-control-stress-per-orbit=0|1, --control-stress-repeats-full=N, " *
-                "--control-stress-warmup-full=N."
+                "--control-stress-warmup-full=N, --solver-axis=inherit|frozen|factorial, --solver-mode=<mode>, --solver-factors=<csv>."
             ))
         end
+    end
+
+    if isempty(solver_mode)
+        throw(ArgumentError("solver-mode must be non-empty."))
+    end
+    if solver_axis == :factorial && isempty(solver_factor_modes)
+        solver_factor_modes = [solver_mode]
+    end
+    if !(solver_mode in solver_factor_modes)
+        pushfirst!(solver_factor_modes, solver_mode)
     end
 
     return SmartLadderConfig(
@@ -157,7 +235,10 @@ function parse_smart_ladder_cli()::SmartLadderConfig
         include_layer_attribution=include_layer_attribution,
         include_control_stress_per_orbit=include_control_stress_per_orbit,
         control_stress_repeats_full=control_stress_repeats_full,
-        control_stress_warmup_full=control_stress_warmup_full
+        control_stress_warmup_full=control_stress_warmup_full,
+        solver_axis=solver_axis,
+        solver_mode=solver_mode,
+        solver_factor_modes=solver_factor_modes
     )
 end
 
@@ -366,7 +447,8 @@ end
 
 function _ladder_env_pairs(
     rung::LadderRungSpec,
-    config::SmartLadderConfig
+    config::SmartLadderConfig;
+    solver_mode::Union{Nothing, String}=nothing
 )::Vector{Pair{String, Union{Nothing, String}}}
     matrix = _ladder_matrix_modes(rung.matrix)
     pairs = Pair{String, Union{Nothing, String}}[
@@ -389,7 +471,32 @@ function _ladder_env_pairs(
     else
         push!(pairs, "SPACEAGORA_PERF_PROCS" => string(config.process_workers))
     end
+    if !(solver_mode === nothing)
+        push!(pairs, "SPACEAGORA_PERF_SOLVER_MODE" => String(solver_mode))
+    end
     return pairs
+end
+
+function _solver_variants(config::SmartLadderConfig)::Vector{NamedTuple{(:label, :solver_mode), Tuple{String, Union{Nothing, String}}}}
+    if config.solver_axis == :inherit
+        return [(label="inherit", solver_mode=nothing)]
+    elseif config.solver_axis == :frozen
+        mode = config.solver_mode
+        return [(label=_safe_path_token(mode), solver_mode=mode)]
+    elseif config.solver_axis == :factorial
+        variants = NamedTuple{(:label, :solver_mode), Tuple{String, Union{Nothing, String}}}[]
+        for mode in config.solver_factor_modes
+            push!(variants, (label=_safe_path_token(mode), solver_mode=mode))
+        end
+        return variants
+    end
+    error("Unsupported solver-axis '$(config.solver_axis)'.")
+end
+
+@inline function _primary_solver_variant(config::SmartLadderConfig)::NamedTuple{(:label, :solver_mode), Tuple{String, Union{Nothing, String}}}
+    variants = _solver_variants(config)
+    isempty(variants) && error("No solver variants resolved for solver-axis '$(config.solver_axis)'.")
+    return first(variants)
 end
 
 function _latest_artifact_path(outdir::String, prefix::String, profile_name::String, suffix::String)::String
@@ -416,6 +523,95 @@ function _latest_artifact_path_optional(outdir::String, prefix::String, profile_
     isempty(candidates) && return nothing
     sort!(candidates; by=path -> stat(path).mtime)
     return last(candidates)
+end
+
+@inline function _git_head_commit(repo_root::String)::String
+    try
+        return strip(read(`git -C $(repo_root) rev-parse HEAD`, String))
+    catch
+        return "unknown"
+    end
+end
+
+@inline function _manifest_path_for_project(project_path::String)::Union{Nothing, String}
+    primary = joinpath(project_path, "Manifest.toml")
+    if isfile(primary)
+        return primary
+    end
+    fallback = joinpath(REPO_ROOT, "Manifest.toml")
+    if isfile(fallback)
+        return fallback
+    end
+    return nothing
+end
+
+@inline function _sha256_file(path::String)::String
+    return bytes2hex(sha256(read(path)))
+end
+
+@inline function _cmd_string(cmd::Cmd)::String
+    return sprint(io -> print(io, cmd))
+end
+
+function _write_rung_repro_metadata(
+    rung_outdir::String,
+    rung::LadderRungSpec,
+    config::SmartLadderConfig,
+    pass_idx::Int,
+    solver_label::String,
+    solver_mode::Union{Nothing, String},
+    cmd::Cmd,
+    env_pairs::Vector{Pair{String, Union{Nothing, String}}}
+)::NamedTuple
+    manifest_path = _manifest_path_for_project(SMART_LADDER_PROJECT)
+    manifest_sha256 = isnothing(manifest_path) ? missing : _sha256_file(manifest_path)
+    metadata_path = joinpath(
+        rung_outdir,
+        "smart_parallel_ladder_rung_metadata_$(config.profile.name)_$(rung.label).csv"
+    )
+    env_path = joinpath(
+        rung_outdir,
+        "smart_parallel_ladder_rung_env_$(config.profile.name)_$(rung.label).csv"
+    )
+
+    metadata_df = DataFrame([
+        (
+            timestamp_utc=string(now(UTC)),
+            profile=config.profile.name,
+            pass=pass_idx,
+            solver_label=solver_label,
+            solver_mode=(solver_mode === nothing ? missing : solver_mode),
+            rung=rung.label,
+            mode=String(rung.mode),
+            matrix=String(rung.matrix),
+            backend=rung.backend,
+            inner_adaptive=rung.inner_adaptive,
+            outer_route_adaptive=rung.outer_route_adaptive,
+            project_path=SMART_LADDER_PROJECT,
+            command=_cmd_string(cmd),
+            julia_version=string(VERSION),
+            julia_threads=Threads.nthreads(),
+            cpu_threads=Sys.CPU_THREADS,
+            git_commit=_git_head_commit(REPO_ROOT),
+            manifest_path=isnothing(manifest_path) ? missing : manifest_path,
+            manifest_sha256=manifest_sha256
+        )
+    ])
+    CSV.write(metadata_path, metadata_df)
+
+    env_rows = NamedTuple[]
+    for (key, value) in env_pairs
+        push!(env_rows, (
+            key=String(key),
+            value=(value === nothing ? missing : String(value))
+        ))
+    end
+    env_df = DataFrame(env_rows)
+    if nrow(env_df) > 0
+        sort!(env_df, :key)
+    end
+    CSV.write(env_path, env_df)
+    return (metadata_path=metadata_path, env_path=env_path)
 end
 
 @inline function _has_column(df::DataFrame, column::Symbol)::Bool
@@ -514,7 +710,9 @@ function run_rung(
     rung::LadderRungSpec,
     config::SmartLadderConfig,
     pass_idx::Int,
-    pass_outdir::String
+    pass_outdir::String;
+    solver_label::String="inherit",
+    solver_mode::Union{Nothing, String}=nothing
 )::ModeRunArtifacts
     rung_outdir = joinpath(pass_outdir, rung.label)
     mkpath(rung_outdir)
@@ -525,7 +723,17 @@ function run_rung(
         "inner_adaptive=$(rung.inner_adaptive) outer_route_adaptive=$(rung.outer_route_adaptive)"
     )
     cmd = `$(Base.julia_cmd()) --project=$(SMART_LADDER_PROJECT) $(SMART_LADDER_RUNTIME_SCRIPT) --profile=$(config.profile.name) --outdir=$(rung_outdir)`
-    env_pairs = _ladder_env_pairs(rung, config)
+    env_pairs = _ladder_env_pairs(rung, config; solver_mode=solver_mode)
+    metadata_paths = _write_rung_repro_metadata(
+        rung_outdir,
+        rung,
+        config,
+        pass_idx,
+        solver_label,
+        solver_mode,
+        cmd,
+        env_pairs
+    )
 
     started_ns = time_ns()
     withenv(env_pairs...) do
@@ -537,7 +745,7 @@ function run_rung(
     println(
         "[smart-ladder] pass=$(pass_idx) rung=$(rung.label) completed total=$(round(artifacts.elapsed_s; digits=3)) s " *
         "(run_benchmarks=$(round(artifacts.bench_elapsed_s; digits=3)) s, split_gate=$(round(artifacts.split_gate_elapsed_s; digits=3)) s, " *
-        "per_orbit=$(round(artifacts.orbit_elapsed_s; digits=3)) s)"
+        "per_orbit=$(round(artifacts.orbit_elapsed_s; digits=3)) s, solver=$(solver_label), metadata=$(metadata_paths.metadata_path), env=$(metadata_paths.env_path))"
     )
     return artifacts
 end
@@ -545,7 +753,9 @@ end
 function _tag_rung_column(
     df::DataFrame,
     rung::LadderRungSpec;
-    pass_idx::Union{Nothing, Int}=nothing
+    pass_idx::Union{Nothing, Int}=nothing,
+    solver_label::Union{Nothing, String}=nothing,
+    solver_mode::Union{Nothing, String}=nothing
 )::DataFrame
     tagged = copy(df)
     tagged[!, :rung] = fill(rung.label, nrow(tagged))
@@ -554,6 +764,12 @@ function _tag_rung_column(
     tagged[!, :rung_backend] = fill(rung.backend, nrow(tagged))
     tagged[!, :rung_inner_adaptive] = fill(rung.inner_adaptive, nrow(tagged))
     tagged[!, :rung_outer_route_adaptive] = fill(rung.outer_route_adaptive, nrow(tagged))
+    if !(solver_label === nothing)
+        tagged[!, :solver_label] = fill(solver_label, nrow(tagged))
+    end
+    if !(solver_mode === nothing)
+        tagged[!, :solver_mode_factor] = fill(solver_mode, nrow(tagged))
+    end
     if !isnothing(pass_idx)
         tagged[!, :pass] = fill(pass_idx, nrow(tagged))
     end
@@ -675,64 +891,76 @@ end
 function _build_protocol_summary_df(
     config::SmartLadderConfig,
     rungs::Vector{LadderRungSpec},
-    pass_results::Vector{LadderPassResult}
+    pass_results::Vector{LadderPassResult};
+    primary_solver_label::String=""
 )::DataFrame
     tags = _protocol_mode_tags(config)
     rows = NamedTuple[]
-    for rung in rungs
-        runs = [result for result in pass_results if result.rung.label == rung.label]
-        total_elapsed = Float64[result.artifact.elapsed_s for result in runs]
-        bench_elapsed = Float64[result.artifact.bench_elapsed_s for result in runs]
-        orbit_elapsed = Float64[result.artifact.orbit_elapsed_s for result in runs]
-        split_elapsed = Float64[result.artifact.split_gate_elapsed_s for result in runs]
+    solver_labels = unique([result.solver_label for result in pass_results])
+    sort!(solver_labels)
+    for solver_label in solver_labels
+        solver_runs = [result for result in pass_results if result.solver_label == solver_label]
+        solver_mode = isempty(solver_runs) ? missing : (solver_runs[1].solver_mode === nothing ? missing : String(solver_runs[1].solver_mode))
+        for rung in rungs
+            runs = [result for result in solver_runs if result.rung.label == rung.label]
+            isempty(runs) && continue
+            total_elapsed = Float64[result.artifact.elapsed_s for result in runs]
+            bench_elapsed = Float64[result.artifact.bench_elapsed_s for result in runs]
+            orbit_elapsed = Float64[result.artifact.orbit_elapsed_s for result in runs]
+            split_elapsed = Float64[result.artifact.split_gate_elapsed_s for result in runs]
 
-        total_stats = _pass_stats(total_elapsed)
-        bench_stats = _pass_stats(bench_elapsed)
-        orbit_stats = _pass_stats(orbit_elapsed)
-        split_stats = _pass_stats(split_elapsed)
+            total_stats = _pass_stats(total_elapsed)
+            bench_stats = _pass_stats(bench_elapsed)
+            orbit_stats = _pass_stats(orbit_elapsed)
+            split_stats = _pass_stats(split_elapsed)
 
-        push!(rows, (
-            profile=config.profile.name,
-            rung=rung.label,
-            mode=String(rung.mode),
-            matrix=String(rung.matrix),
-            backend=rung.backend,
-            inner_adaptive=rung.inner_adaptive,
-            outer_route_adaptive=rung.outer_route_adaptive,
-            pass_count=length(runs),
-            passes_requested=config.passes,
-            randomize_rung_order=config.randomize_rung_order,
-            random_seed=config.random_seed,
-            start_mode=tags.start_mode,
-            cache_mode=tags.cache_mode,
-            cache_cold=tags.cache_cold,
-            outer_state_reset=tags.outer_state_reset,
-            inner_state_reset=tags.inner_state_reset,
-            total_elapsed_mean_s=total_stats.mean_s,
-            total_elapsed_std_s=total_stats.std_s,
-            total_elapsed_cv_pct=total_stats.cv_pct,
-            total_elapsed_ci95_low_s=total_stats.ci95_low_s,
-            total_elapsed_ci95_high_s=total_stats.ci95_high_s,
-            bench_elapsed_mean_s=bench_stats.mean_s,
-            bench_elapsed_std_s=bench_stats.std_s,
-            bench_elapsed_cv_pct=bench_stats.cv_pct,
-            bench_elapsed_ci95_low_s=bench_stats.ci95_low_s,
-            bench_elapsed_ci95_high_s=bench_stats.ci95_high_s,
-            orbit_elapsed_mean_s=orbit_stats.mean_s,
-            orbit_elapsed_std_s=orbit_stats.std_s,
-            orbit_elapsed_cv_pct=orbit_stats.cv_pct,
-            orbit_elapsed_ci95_low_s=orbit_stats.ci95_low_s,
-            orbit_elapsed_ci95_high_s=orbit_stats.ci95_high_s,
-            split_gate_elapsed_mean_s=split_stats.mean_s,
-            split_gate_elapsed_std_s=split_stats.std_s,
-            split_gate_elapsed_cv_pct=split_stats.cv_pct,
-            split_gate_elapsed_ci95_low_s=split_stats.ci95_low_s,
-            split_gate_elapsed_ci95_high_s=split_stats.ci95_high_s
-        ))
+            push!(rows, (
+                profile=config.profile.name,
+                solver_label=solver_label,
+                solver_mode=solver_mode,
+                solver_axis=String(config.solver_axis),
+                solver_primary=(solver_label == primary_solver_label),
+                rung=rung.label,
+                mode=String(rung.mode),
+                matrix=String(rung.matrix),
+                backend=rung.backend,
+                inner_adaptive=rung.inner_adaptive,
+                outer_route_adaptive=rung.outer_route_adaptive,
+                pass_count=length(runs),
+                passes_requested=config.passes,
+                randomize_rung_order=config.randomize_rung_order,
+                random_seed=config.random_seed,
+                start_mode=tags.start_mode,
+                cache_mode=tags.cache_mode,
+                cache_cold=tags.cache_cold,
+                outer_state_reset=tags.outer_state_reset,
+                inner_state_reset=tags.inner_state_reset,
+                total_elapsed_mean_s=total_stats.mean_s,
+                total_elapsed_std_s=total_stats.std_s,
+                total_elapsed_cv_pct=total_stats.cv_pct,
+                total_elapsed_ci95_low_s=total_stats.ci95_low_s,
+                total_elapsed_ci95_high_s=total_stats.ci95_high_s,
+                bench_elapsed_mean_s=bench_stats.mean_s,
+                bench_elapsed_std_s=bench_stats.std_s,
+                bench_elapsed_cv_pct=bench_stats.cv_pct,
+                bench_elapsed_ci95_low_s=bench_stats.ci95_low_s,
+                bench_elapsed_ci95_high_s=bench_stats.ci95_high_s,
+                orbit_elapsed_mean_s=orbit_stats.mean_s,
+                orbit_elapsed_std_s=orbit_stats.std_s,
+                orbit_elapsed_cv_pct=orbit_stats.cv_pct,
+                orbit_elapsed_ci95_low_s=orbit_stats.ci95_low_s,
+                orbit_elapsed_ci95_high_s=orbit_stats.ci95_high_s,
+                split_gate_elapsed_mean_s=split_stats.mean_s,
+                split_gate_elapsed_std_s=split_stats.std_s,
+                split_gate_elapsed_cv_pct=split_stats.cv_pct,
+                split_gate_elapsed_ci95_low_s=split_stats.ci95_low_s,
+                split_gate_elapsed_ci95_high_s=split_stats.ci95_high_s
+            ))
+        end
     end
     df = DataFrame(rows)
     if nrow(df) > 0
-        sort!(df, :rung)
+        sort!(df, [:solver_label, :rung])
     end
     return df
 end
@@ -2042,6 +2270,8 @@ function _write_aggregate_rung_report(
     bench_elapsed_s::Float64,
     orbit_elapsed_s::Float64,
     total_elapsed_s::Float64;
+    solver_label::Union{Nothing, String}=nothing,
+    solver_mode::Union{Nothing, String}=nothing,
     split_gate_csv_path::Union{Nothing, String}=nothing,
     split_gate_pass_rows::Int=0,
     split_gate_total_rows::Int=0,
@@ -2060,6 +2290,12 @@ function _write_aggregate_rung_report(
         println(io, "- Backend: `$(rung.backend)`")
         println(io, "- Inner adaptive: `$(rung.inner_adaptive)`")
         println(io, "- Outer-route adaptive: `$(rung.outer_route_adaptive)`")
+        if !(solver_label === nothing)
+            println(io, "- Solver label: `$(solver_label)`")
+        end
+        if !(solver_mode === nothing)
+            println(io, "- Solver mode override: `$(solver_mode)`")
+        end
         println(io, "- Aggregated passes: `$(length(runs))`")
         println(io, "- Mean run_benchmarks elapsed: `$(round(bench_elapsed_s; digits=3)) s`")
         println(io, "- Mean per-orbit elapsed: `$(round(orbit_elapsed_s; digits=3)) s`")
@@ -2084,7 +2320,7 @@ function _write_aggregate_rung_report(
         println(io, "## Source Runs")
         println(io)
         for run in runs
-            println(io, "- pass=$(run.pass): raw=`$(run.artifact.raw_path)`, per-orbit raw=`$(run.artifact.orbit_raw_path)`, report=`$(run.artifact.report_path)`")
+            println(io, "- pass=$(run.pass), solver=$(run.solver_label): raw=`$(run.artifact.raw_path)`, per-orbit raw=`$(run.artifact.orbit_raw_path)`, report=`$(run.artifact.report_path)`")
         end
     end
 end
@@ -2092,7 +2328,10 @@ end
 function _aggregate_rung_artifacts(
     config::SmartLadderConfig,
     rung::LadderRungSpec,
-    runs::Vector{LadderPassResult}
+    runs::Vector{LadderPassResult};
+    solver_split::Bool=false,
+    solver_label::Union{Nothing, String}=nothing,
+    solver_mode::Union{Nothing, String}=nothing
 )::ModeRunArtifacts
     isempty(runs) && error("No pass data collected for rung '$(rung.label)'.")
 
@@ -2101,17 +2340,34 @@ function _aggregate_rung_artifacts(
     split_gate_df = DataFrame()
     multirate_gate_df = DataFrame()
     for run in runs
-        raw_df = vcat(raw_df, _tag_rung_column(run.artifact.raw_df, rung; pass_idx=run.pass); cols=:union)
+        run_solver_mode = run.solver_mode === nothing ? nothing : String(run.solver_mode)
+        raw_df = vcat(
+            raw_df,
+            _tag_rung_column(run.artifact.raw_df, rung; pass_idx=run.pass, solver_label=run.solver_label, solver_mode=run_solver_mode);
+            cols=:union
+        )
         local_orbit_raw = CSV.read(run.artifact.orbit_raw_path, DataFrame)
-        orbit_raw_df = vcat(orbit_raw_df, _tag_rung_column(local_orbit_raw, rung; pass_idx=run.pass); cols=:union)
+        orbit_raw_df = vcat(
+            orbit_raw_df,
+            _tag_rung_column(local_orbit_raw, rung; pass_idx=run.pass, solver_label=run.solver_label, solver_mode=run_solver_mode);
+            cols=:union
+        )
         if !(run.artifact.split_gate_df === nothing)
-            split_gate_df = vcat(split_gate_df, _tag_rung_column(run.artifact.split_gate_df, rung; pass_idx=run.pass); cols=:union)
+            split_gate_df = vcat(
+                split_gate_df,
+                _tag_rung_column(run.artifact.split_gate_df, rung; pass_idx=run.pass, solver_label=run.solver_label, solver_mode=run_solver_mode);
+                cols=:union
+            )
         end
         run_outdir = dirname(run.artifact.raw_path)
         run_multirate_csv_path = _latest_artifact_path_optional(run_outdir, "multirate_rollout_gate", config.profile.name, ".csv")
         if !(run_multirate_csv_path === nothing)
             run_multirate_df = CSV.read(run_multirate_csv_path, DataFrame)
-            multirate_gate_df = vcat(multirate_gate_df, _tag_rung_column(run_multirate_df, rung; pass_idx=run.pass); cols=:union)
+            multirate_gate_df = vcat(
+                multirate_gate_df,
+                _tag_rung_column(run_multirate_df, rung; pass_idx=run.pass, solver_label=run.solver_label, solver_mode=run_solver_mode);
+                cols=:union
+            )
         end
     end
 
@@ -2124,7 +2380,9 @@ function _aggregate_rung_artifacts(
     total_elapsed_s = bench_elapsed_s + split_gate_elapsed_s + orbit_elapsed_s
 
     stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
-    agg_outdir = joinpath(config.outdir, "aggregate", rung.label)
+    agg_outdir = solver_split && !(solver_label === nothing) ?
+        joinpath(config.outdir, "aggregate", "solver_$(solver_label)", rung.label) :
+        joinpath(config.outdir, "aggregate", rung.label)
     mkpath(agg_outdir)
 
     raw_path = joinpath(agg_outdir, "runtime_raw_agg_$(config.profile.name)_$(rung.label)_$(stamp).csv")
@@ -2152,6 +2410,8 @@ function _aggregate_rung_artifacts(
             backend=rung.backend,
             inner_adaptive=rung.inner_adaptive,
             outer_route_adaptive=rung.outer_route_adaptive,
+            solver_label=(solver_label === nothing ? missing : solver_label),
+            solver_mode=(solver_mode === nothing ? missing : solver_mode),
             machine_label=hw.machine_label,
             hardware_class=hw.hardware_class,
             host_name=hw.host_name,
@@ -2188,6 +2448,8 @@ function _aggregate_rung_artifacts(
         bench_elapsed_s,
         orbit_elapsed_s,
         total_elapsed_s;
+        solver_label=solver_label,
+        solver_mode=solver_mode,
         split_gate_csv_path=split_gate_csv_path,
         split_gate_pass_rows=split_gate_pass_rows,
         split_gate_total_rows=split_gate_total_rows,
@@ -2220,6 +2482,55 @@ function _aggregate_rung_artifacts(
     )
 end
 
+function _build_solver_factorial_overview_df(
+    config::SmartLadderConfig,
+    rungs::Vector{LadderRungSpec},
+    artifacts_by_solver::Dict{String, Vector{ModeRunArtifacts}},
+    solver_mode_by_label::Dict{String, Union{Nothing, String}},
+    primary_solver_label::String
+)::DataFrame
+    rows = DataFrame()
+    rung_map = Dict(r.mode => r for r in rungs)
+    solver_labels = sort(collect(keys(artifacts_by_solver)))
+    for solver_label in solver_labels
+        artifacts = artifacts_by_solver[solver_label]
+        local_df = build_mode_overview(artifacts)
+        local_df.mode = [
+            haskey(rung_map, Symbol(mode_name)) ? rung_map[Symbol(mode_name)].label : String(mode_name)
+            for mode_name in String.(local_df.mode)
+        ]
+        local_df[!, :solver_label] = fill(solver_label, nrow(local_df))
+        local_df[!, :solver_mode] = fill(get(solver_mode_by_label, solver_label, nothing), nrow(local_df))
+        local_df[!, :solver_primary] = fill(solver_label == primary_solver_label, nrow(local_df))
+        rows = vcat(rows, local_df; cols=:union)
+    end
+    if nrow(rows) > 0
+        sort!(rows, [:solver_label, :mode])
+    end
+    return rows
+end
+
+function _build_solver_factorial_comparison_df(
+    artifacts_by_solver::Dict{String, Vector{ModeRunArtifacts}},
+    solver_mode_by_label::Dict{String, Union{Nothing, String}},
+    primary_solver_label::String
+)::DataFrame
+    rows = DataFrame()
+    solver_labels = sort(collect(keys(artifacts_by_solver)))
+    for solver_label in solver_labels
+        artifacts = artifacts_by_solver[solver_label]
+        local_df = build_comparison_table(artifacts)
+        local_df[!, :solver_label] = fill(solver_label, nrow(local_df))
+        local_df[!, :solver_mode] = fill(get(solver_mode_by_label, solver_label, nothing), nrow(local_df))
+        local_df[!, :solver_primary] = fill(solver_label == primary_solver_label, nrow(local_df))
+        rows = vcat(rows, local_df; cols=:union)
+    end
+    if nrow(rows) > 0
+        sort!(rows, [:solver_label, :scenario])
+    end
+    return rows
+end
+
 function _write_smart_ladder_report(
     path::String,
     config::SmartLadderConfig,
@@ -2240,6 +2551,9 @@ function _write_smart_ladder_report(
     artifacts::Vector{ModeRunArtifacts},
     run_order_df::DataFrame,
     protocol_summary_df::DataFrame;
+    solver_variants::Vector{NamedTuple{(:label, :solver_mode), Tuple{String, Union{Nothing, String}}}}=NamedTuple{(:label, :solver_mode), Tuple{String, Union{Nothing, String}}}[],
+    primary_solver_label::String="",
+    primary_solver_mode::Union{Nothing, String}=nothing,
     comparison_plot_paths::Vector{String}=String[],
     comparison_csv_path::String="",
     overview_csv_path::String="",
@@ -2257,7 +2571,9 @@ function _write_smart_ladder_report(
     merged_raw_csv_path::String="",
     merged_summary_csv_path::String="",
     run_order_csv_path::String="",
-    protocol_summary_csv_path::String=""
+    protocol_summary_csv_path::String="",
+    solver_factorial_overview_csv_path::String="",
+    solver_factorial_comparison_csv_path::String=""
 )
     generated = string(now(UTC))
     nthreads = Threads.nthreads()
@@ -2279,6 +2595,17 @@ function _write_smart_ladder_report(
         println(io, "- Include layer-attribution matrix: `$(config.include_layer_attribution)`")
         println(io, "- Include control_stress in per-orbit stage: `$(config.include_control_stress_per_orbit)`")
         println(io, "- Control_stress full schedule override: warmup=`$(config.control_stress_warmup_full)`, repeats=`$(config.control_stress_repeats_full)`")
+        println(io, "- Solver axis mode: `$(config.solver_axis)`")
+        println(io, "- Primary solver label: `$(primary_solver_label)`")
+        println(io, "- Primary solver mode override: `$(primary_solver_mode === nothing ? "inherit" : primary_solver_mode)`")
+        if !isempty(solver_variants)
+            variant_tokens = String[]
+            for variant in solver_variants
+                mode_token = variant.solver_mode === nothing ? "inherit" : String(variant.solver_mode)
+                push!(variant_tokens, "$(variant.label):$(mode_token)")
+            end
+            println(io, "- Solver variants: `$(join(variant_tokens, ", "))`")
+        end
         println(io)
 
         println(io, "## Ladder Definition")
@@ -2322,20 +2649,21 @@ function _write_smart_ladder_report(
         println(io, "_Per-rung statistics summarize wrapper elapsed runtime across passes (mean/std/CV/95% CI). `start_mode` is derived from cache/state reset knobs (`clean`, `SPACEAGORA_PERF_OUTER_ROUTE_STATE_RESET`, `SPACEAGORA_PARALLEL_POLICY_STATE_RESET`)._")
         println(io)
         if nrow(protocol_summary_df) > 0
-            protocol_table = select(
-                protocol_summary_df,
-                [
-                    :rung,
-                    :pass_count,
-                    :start_mode,
-                    :cache_mode,
-                    :total_elapsed_mean_s,
-                    :total_elapsed_std_s,
-                    :total_elapsed_cv_pct,
-                    :total_elapsed_ci95_low_s,
-                    :total_elapsed_ci95_high_s
-                ]
-            )
+            protocol_columns = Symbol[
+                :solver_label,
+                :solver_mode,
+                :solver_primary,
+                :rung,
+                :pass_count,
+                :start_mode,
+                :cache_mode,
+                :total_elapsed_mean_s,
+                :total_elapsed_std_s,
+                :total_elapsed_cv_pct,
+                :total_elapsed_ci95_low_s,
+                :total_elapsed_ci95_high_s
+            ]
+            protocol_table = select(protocol_summary_df, protocol_columns)
             _write_markdown_table(io, protocol_table)
         else
             println(io, "- No protocol summary rows were produced.")
@@ -2457,6 +2785,7 @@ function _write_smart_ladder_report(
 
         println(io, "## Output Files")
         println(io)
+        println(io, "- Canonical comparison/overview outputs use primary solver label: `$(primary_solver_label)`")
         println(io, "- Comparison CSV: `$(comparison_csv_path)`")
         println(io, "- Overview CSV: `$(overview_csv_path)`")
         println(io, "- Speedup vs R0 CSV: `$(speedup_vs_r0_csv_path)`")
@@ -2474,6 +2803,14 @@ function _write_smart_ladder_report(
         println(io, "- Merged summary CSV (all passes): `$(merged_summary_csv_path)`")
         println(io, "- Run order CSV: `$(run_order_csv_path)`")
         println(io, "- Protocol summary CSV: `$(protocol_summary_csv_path)`")
+        if !isempty(solver_factorial_overview_csv_path)
+            println(io, "- Solver factorial mode overview CSV: `$(solver_factorial_overview_csv_path)`")
+        end
+        if !isempty(solver_factorial_comparison_csv_path)
+            println(io, "- Solver factorial comparison CSV: `$(solver_factorial_comparison_csv_path)`")
+        end
+        println(io, "- Per-rung metadata CSV: `pass_XX[/solver_<label>]/<rung>/smart_parallel_ladder_rung_metadata_<profile>_<rung>.csv`")
+        println(io, "- Per-rung env CSV: `pass_XX[/solver_<label>]/<rung>/smart_parallel_ladder_rung_env_<profile>_<rung>.csv`")
         for artifact in artifacts
             println(io, "- Rung `$(artifact.mode)` aggregated raw: `$(artifact.raw_path)`")
             println(io, "- Rung `$(artifact.mode)` aggregated summary: `$(artifact.summary_path)`")
@@ -2494,16 +2831,20 @@ function _write_smart_ladder_report(
         println(io, "## Reproducibility")
         println(io, "```bash")
         process_suffix = isnothing(config.process_workers) ? "" : " --process-workers=$(config.process_workers)"
+        project_flag = Base.shell_escape(SMART_LADDER_PROJECT)
         println(
             io,
-            "JULIA_NUM_THREADS=$(Threads.nthreads()) julia --project=.AGORA test/performance_smart_parallel_ladder.jl " *
+            "JULIA_NUM_THREADS=$(Threads.nthreads()) julia --project=$(project_flag) test/performance_smart_parallel_ladder.jl " *
             "--profile=$(config.profile.name) --outdir=$(config.outdir) --clean=1 --passes=$(config.passes) " *
             "--randomize-rung-order=$(config.randomize_rung_order ? 1 : 0) --seed=$(config.random_seed) " *
             "--outer-only-backend=$(config.outer_only_backend)$(process_suffix) " *
             "--layer-attribution=$(config.include_layer_attribution ? 1 : 0) " *
             "--include-control-stress-per-orbit=$(config.include_control_stress_per_orbit ? 1 : 0) " *
             "--control-stress-repeats-full=$(config.control_stress_repeats_full) " *
-            "--control-stress-warmup-full=$(config.control_stress_warmup_full)"
+            "--control-stress-warmup-full=$(config.control_stress_warmup_full) " *
+            "--solver-axis=$(config.solver_axis) " *
+            "--solver-mode=$(config.solver_mode) " *
+            "--solver-factors=$(join(config.solver_factor_modes, ","))"
         )
         println(io, "```")
         println(io)
@@ -2529,9 +2870,15 @@ function main_smart_parallel_ladder()
 
     rungs = _ladder_rungs(config)
     rng = MersenneTwister(config.random_seed)
+    solver_variants = _solver_variants(config)
+    primary_solver = _primary_solver_variant(config)
+    primary_solver_label = primary_solver.label
+    primary_solver_mode = primary_solver.solver_mode
+    solver_split = length(solver_variants) > 1
 
     println("Smart parallel ladder profile: $(config.profile.name)")
     println("Outdir: $(config.outdir)")
+    println("Project path: $(SMART_LADDER_PROJECT)")
     println("Clean outdir: $(config.clean)")
     println("Rungs: $(join([r.label for r in rungs], ", "))")
     println("Passes: $(config.passes)")
@@ -2540,6 +2887,9 @@ function main_smart_parallel_ladder()
     println("Include layer-attribution matrix: $(config.include_layer_attribution)")
     println("Include control_stress in per-orbit stage: $(config.include_control_stress_per_orbit)")
     println("Control_stress full schedule override: warmup=$(config.control_stress_warmup_full), repeats=$(config.control_stress_repeats_full)")
+    println("Solver axis: $(config.solver_axis)")
+    println("Primary solver: label=$(primary_solver_label), mode=$(primary_solver_mode === nothing ? "inherit" : primary_solver_mode)")
+    println("Solver variants: $(join(["$(v.label):$(v.solver_mode === nothing ? "inherit" : String(v.solver_mode))" for v in solver_variants], ", "))")
     println("Wrapper Threads.nthreads()=$(Threads.nthreads()), Sys.CPU_THREADS=$(Sys.CPU_THREADS)")
 
     pass_results = LadderPassResult[]
@@ -2550,27 +2900,73 @@ function main_smart_parallel_ladder()
         ordered = _ordered_rungs(rungs, rng, config.randomize_rung_order)
         order_line = join([r.label for r in ordered], " -> ")
         println("[smart-ladder] pass=$(pass_idx) rung-order=$(order_line)")
-        for (order_idx, rung) in enumerate(ordered)
-            push!(order_rows, (
-                pass=pass_idx,
-                order_index=order_idx,
-                rung=rung.label,
-                mode=String(rung.mode),
-                matrix=String(rung.matrix),
-                backend=rung.backend,
-                inner_adaptive=rung.inner_adaptive,
-                outer_route_adaptive=rung.outer_route_adaptive
-            ))
-            artifact = run_rung(rung, config, pass_idx, pass_outdir)
-            push!(pass_results, LadderPassResult(pass=pass_idx, rung=rung, artifact=artifact))
+        for solver_variant in solver_variants
+            solver_label = solver_variant.label
+            solver_mode = solver_variant.solver_mode
+            solver_outdir = solver_split ? joinpath(pass_outdir, "solver_$(solver_label)") : pass_outdir
+            mkpath(solver_outdir)
+            println(
+                "[smart-ladder] pass=$(pass_idx) solver=$(solver_label) mode=$(solver_mode === nothing ? "inherit" : String(solver_mode))"
+            )
+            for (order_idx, rung) in enumerate(ordered)
+                push!(order_rows, (
+                    pass=pass_idx,
+                    solver_label=solver_label,
+                    solver_mode=(solver_mode === nothing ? missing : String(solver_mode)),
+                    order_index=order_idx,
+                    rung=rung.label,
+                    mode=String(rung.mode),
+                    matrix=String(rung.matrix),
+                    backend=rung.backend,
+                    inner_adaptive=rung.inner_adaptive,
+                    outer_route_adaptive=rung.outer_route_adaptive
+                ))
+                artifact = run_rung(
+                    rung,
+                    config,
+                    pass_idx,
+                    solver_outdir;
+                    solver_label=solver_label,
+                    solver_mode=solver_mode
+                )
+                push!(
+                    pass_results,
+                    LadderPassResult(
+                        pass=pass_idx,
+                        solver_label=solver_label,
+                        solver_mode=solver_mode,
+                        rung=rung,
+                        artifact=artifact
+                    )
+                )
+            end
         end
     end
 
-    aggregated_artifacts = ModeRunArtifacts[]
-    for rung in rungs
-        runs = [result for result in pass_results if result.rung.label == rung.label]
-        push!(aggregated_artifacts, _aggregate_rung_artifacts(config, rung, runs))
+    solver_mode_by_label = Dict{String, Union{Nothing, String}}(variant.label => variant.solver_mode for variant in solver_variants)
+    artifacts_by_solver = Dict{String, Vector{ModeRunArtifacts}}()
+    for solver_variant in solver_variants
+        solver_label = solver_variant.label
+        solver_mode = solver_variant.solver_mode
+        solver_runs = [result for result in pass_results if result.solver_label == solver_label]
+        solver_artifacts = ModeRunArtifacts[]
+        for rung in rungs
+            rung_runs = [result for result in solver_runs if result.rung.label == rung.label]
+            push!(
+                solver_artifacts,
+                _aggregate_rung_artifacts(
+                    config,
+                    rung,
+                    rung_runs;
+                    solver_split=solver_split,
+                    solver_label=solver_label,
+                    solver_mode=solver_mode
+                )
+            )
+        end
+        artifacts_by_solver[solver_label] = solver_artifacts
     end
+    aggregated_artifacts = artifacts_by_solver[primary_solver_label]
 
     comparison_df = build_comparison_table(aggregated_artifacts)
     overview_df = build_mode_overview(aggregated_artifacts)
@@ -2595,20 +2991,49 @@ function main_smart_parallel_ladder()
     merged_raw_df = DataFrame()
     merged_summary_df = DataFrame()
     for result in pass_results
+        result_solver_mode = result.solver_mode === nothing ? nothing : String(result.solver_mode)
         merged_raw_df = vcat(
             merged_raw_df,
-            _tag_rung_column(result.artifact.raw_df, result.rung; pass_idx=result.pass);
+            _tag_rung_column(
+                result.artifact.raw_df,
+                result.rung;
+                pass_idx=result.pass,
+                solver_label=result.solver_label,
+                solver_mode=result_solver_mode
+            );
             cols=:union
         )
         merged_summary_df = vcat(
             merged_summary_df,
-            _tag_rung_column(result.artifact.summary_df, result.rung; pass_idx=result.pass);
+            _tag_rung_column(
+                result.artifact.summary_df,
+                result.rung;
+                pass_idx=result.pass,
+                solver_label=result.solver_label,
+                solver_mode=result_solver_mode
+            );
             cols=:union
         )
     end
 
     run_order_df = DataFrame(order_rows)
-    protocol_summary_df = _build_protocol_summary_df(config, rungs, pass_results)
+    protocol_summary_df = _build_protocol_summary_df(config, rungs, pass_results; primary_solver_label=primary_solver_label)
+    solver_factorial_overview_df = DataFrame()
+    solver_factorial_comparison_df = DataFrame()
+    if solver_split
+        solver_factorial_overview_df = _build_solver_factorial_overview_df(
+            config,
+            rungs,
+            artifacts_by_solver,
+            solver_mode_by_label,
+            primary_solver_label
+        )
+        solver_factorial_comparison_df = _build_solver_factorial_comparison_df(
+            artifacts_by_solver,
+            solver_mode_by_label,
+            primary_solver_label
+        )
+    end
 
     stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
     comparison_path = joinpath(config.outdir, "smart_parallel_ladder_compare_summary_$(config.profile.name)_$(stamp).csv")
@@ -2628,6 +3053,14 @@ function main_smart_parallel_ladder()
     merged_summary_path = joinpath(config.outdir, "smart_parallel_ladder_summary_merged_$(config.profile.name)_$(stamp).csv")
     run_order_path = joinpath(config.outdir, "smart_parallel_ladder_run_order_$(config.profile.name)_$(stamp).csv")
     protocol_summary_path = joinpath(config.outdir, "smart_parallel_ladder_protocol_summary_$(config.profile.name)_$(stamp).csv")
+    solver_factorial_overview_path = joinpath(
+        config.outdir,
+        "smart_parallel_ladder_solver_factorial_mode_overview_$(config.profile.name)_$(stamp).csv"
+    )
+    solver_factorial_comparison_path = joinpath(
+        config.outdir,
+        "smart_parallel_ladder_solver_factorial_compare_summary_$(config.profile.name)_$(stamp).csv"
+    )
     report_path = joinpath(config.outdir, "smart_parallel_ladder_report_$(config.profile.name)_$(stamp).md")
     comparison_plot_paths = generate_pipeline_comparison_plots(
         config.outdir,
@@ -2654,6 +3087,10 @@ function main_smart_parallel_ladder()
     CSV.write(merged_summary_path, merged_summary_df)
     CSV.write(run_order_path, run_order_df)
     CSV.write(protocol_summary_path, protocol_summary_df)
+    if solver_split
+        CSV.write(solver_factorial_overview_path, solver_factorial_overview_df)
+        CSV.write(solver_factorial_comparison_path, solver_factorial_comparison_df)
+    end
     _write_smart_ladder_report(
         report_path,
         config,
@@ -2674,6 +3111,9 @@ function main_smart_parallel_ladder()
         aggregated_artifacts,
         run_order_df,
         protocol_summary_df;
+        solver_variants=solver_variants,
+        primary_solver_label=primary_solver_label,
+        primary_solver_mode=primary_solver_mode,
         comparison_plot_paths=comparison_plot_paths,
         comparison_csv_path=comparison_path,
         overview_csv_path=overview_path,
@@ -2691,7 +3131,9 @@ function main_smart_parallel_ladder()
         merged_raw_csv_path=merged_raw_path,
         merged_summary_csv_path=merged_summary_path,
         run_order_csv_path=run_order_path,
-        protocol_summary_csv_path=protocol_summary_path
+        protocol_summary_csv_path=protocol_summary_path,
+        solver_factorial_overview_csv_path=(solver_split ? solver_factorial_overview_path : ""),
+        solver_factorial_comparison_csv_path=(solver_split ? solver_factorial_comparison_path : "")
     )
 
     println()
@@ -2713,6 +3155,10 @@ function main_smart_parallel_ladder()
     println("merged summary: $(merged_summary_path)")
     println("run order: $(run_order_path)")
     println("protocol summary: $(protocol_summary_path)")
+    if solver_split
+        println("solver factorial mode overview: $(solver_factorial_overview_path)")
+        println("solver factorial comparison: $(solver_factorial_comparison_path)")
+    end
     println("comparison plots: $(length(comparison_plot_paths))")
     println("report: $(report_path)")
 end

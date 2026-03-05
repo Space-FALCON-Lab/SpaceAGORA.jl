@@ -1235,11 +1235,14 @@ end
 
 @inline function parallel_priority_env_pairs(plan::ParallelPriorityPlan)::Vector{Pair{String, String}}
     outer_flag = plan.outer_route == :none ? "0" : "1"
+    serial_inner_off = plan.density_mode == "off" && plan.control_mode == "off" && plan.multibody_mode == "off"
+    rhs_batch_mode = (plan.outer_route == :none && serial_inner_off) ? "off" : "auto"
     return Pair{String, String}[
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => _existing_or_policy_env("SPACEAGORA_OUTER_PARALLEL_ACTIVE", outer_flag),
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => _existing_or_policy_env("SPACEAGORA_DENSITY_CALLBACK_PARALLEL", plan.density_mode),
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => _existing_or_policy_env("SPACEAGORA_CONTROL_CALLBACK_PARALLEL", plan.control_mode),
         "SPACEAGORA_MULTIBODY_PARALLEL" => _existing_or_policy_env("SPACEAGORA_MULTIBODY_PARALLEL", plan.multibody_mode),
+        "SPACEAGORA_RHS_BATCH_PARALLEL" => _existing_or_policy_env("SPACEAGORA_RHS_BATCH_PARALLEL", rhs_batch_mode),
     ]
 end
 
@@ -2108,7 +2111,6 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
     sc_effector_stress6 = make_constellation(planet, 6; with_panel=false)
     sc_effector_stress12 = make_constellation(planet, 12; with_panel=false)
     effector_stress_effectors = (
-        InverseSquaredGravityModel(),
         InverseSquaredJ2GravityModel(),
         SolarRadiationPressureModel(1.2, 16.0),
         SolarRadiationPressureModel(1.6, 24.0)
@@ -2270,7 +2272,7 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
         BenchmarkCase(
             name="effector_6sat_dual_srp_stack",
             category="effector_stress",
-            description="6 spacecraft with inverse gravity, J2, and dual SRP effectors (no atmosphere/control) to stress dynamic effector reduction with outer routing off (r2)",
+            description="6 spacecraft with J2 + dual SRP effectors (no atmosphere/control) to stress dynamic effector reduction with outer routing off (r2)",
             args_template=build_config(
                 planet=planet,
                 spacecraft=sc_effector_stress6,
@@ -2284,7 +2286,7 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
         BenchmarkCase(
             name="effector_12sat_dual_srp_stack",
             category="effector_stress",
-            description="12 spacecraft with inverse gravity, J2, and dual SRP effectors (no atmosphere/control) for larger multi-satellite effector scaling",
+            description="12 spacecraft with J2 + dual SRP effectors (no atmosphere/control) for larger multi-satellite effector scaling",
             args_template=build_config(
                 planet=planet,
                 spacecraft=sc_effector_stress12,

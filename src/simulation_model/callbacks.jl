@@ -348,6 +348,18 @@ end
     model isa EnvironmentModels.GRAMAtmosphereModel ||
     model isa EnvironmentModels.GRAMAtmosphereModelSurrogate
 
+@inline function _gram_track_trajectory_supported(density_model)::Bool
+    _is_gram_density_model(density_model) || return false
+    hasproperty(density_model, :gram) || return false
+    hasproperty(density_model, :gram_atmosphere) || return false
+    gram_driver = try
+        getproperty(density_model, :gram)
+    catch
+        return false
+    end
+    return hasproperty(gram_driver, :generate_trajectory)
+end
+
 @inline function _density_callback_thread_decision(args::SimulationConfiguration, num_sats::Int)
     mode = _density_callback_parallel_mode()
     outer_active = _callback_outer_parallel_hint()
@@ -1346,8 +1358,9 @@ function _gram_track_cache_refresh!(
         end
 
         gram_traj_built = false
-        if _is_gram_density_model(density_model) &&
-           isdefined(density_model.gram, :generate_trajectory)
+        if _gram_track_trajectory_supported(density_model)
+            gram_driver = getproperty(density_model, :gram)
+            gram_atmosphere = getproperty(density_model, :gram_atmosphere)
             denom = max(1, n - 1)
             Δalt_km = (target_alt - alt) * 1e-3 / denom
             Δlat_deg = rad2deg(_angle_delta_rad(lat, target_lat)) / denom
@@ -1355,8 +1368,8 @@ function _gram_track_cache_refresh!(
             Δt = dt_segment / denom
 
             gen_track = () -> Base.invokelatest(
-                density_model.gram.generate_trajectory,
-                density_model.gram_atmosphere;
+                getproperty(gram_driver, :generate_trajectory),
+                gram_atmosphere;
                 initial_height=alt * 1e-3,
                 initial_latitude=rad2deg(lat),
                 initial_longitude=rad2deg(lon),

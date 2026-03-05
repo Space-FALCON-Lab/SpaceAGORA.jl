@@ -2097,12 +2097,12 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
     )]
     sc_multi_sat_control = make_constellation(planet, 8; with_panel=false)
     constellation_thruster = BaseThrusterModel(
-        thrust=fill(0.18, 4),
-        direction=fill(0.0, 4),
-        Δv=fill(0.0, 4),
-        start_burn_time=[120.0, 540.0, 960.0, 1380.0],
-        stop_burn_time=[180.0, 600.0, 1020.0, 1440.0],
-        Isp=fill(285.0, 4)
+        thrust=fill(0.18, 8),
+        direction=fill(0.0, 8),
+        Δv=fill(0.0, 8),
+        start_burn_time=repeat([120.0, 540.0, 960.0, 1380.0], 2),
+        stop_burn_time=repeat([180.0, 600.0, 1020.0, 1440.0], 2),
+        Isp=fill(285.0, 8)
     )
     sc_long_constellation = make_constellation(planet, 12; with_panel=false)
     sc_effector_stress6 = make_constellation(planet, 6; with_panel=false)
@@ -2246,7 +2246,7 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 spacecraft=sc_multi_sat_control,
                 mission_time_s=min(spec.mission_short_s, 2400.0),
                 orientation_sim=false,
-                dynamic_effectors=(InverseSquaredGravityModel(), InverseSquaredJ2GravityModel()),
+                dynamic_effectors=(InverseSquaredJ2GravityModel(),),
                 control_effectors=(constellation_thruster,),
                 control_rates=[0.2],
                 dt_max_orbit=0.5

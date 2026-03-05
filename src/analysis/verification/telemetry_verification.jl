@@ -25,12 +25,17 @@ using DataFrames
 using Arrow
 using TOML
 
-include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+if isdefined(parentmodule(@__MODULE__), :SimulationEngine)
+    using ..SimulationEngine
+    const SimulationModel = SimulationEngine.SimulationModel
+else
+    include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+    using .SimulationModel
+    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    using .SimulationEngine
+end
 using .SimulationModel
-
-# run_simulation.jl expects quat_mult in the including scope.
-const quat_mult = SimulationModel.quat_mult
-include(joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl"))
+include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
 include(joinpath(REPO_ROOT, "src", "examples", "typed_example_utils.jl"))
 
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
@@ -2156,7 +2161,7 @@ function _run_simulation_dataframe(args::SimulationConfiguration, scenario_name:
                     "SPACEAGORA_GRAM_GLOBAL_LOCK" => truth.gram_global_lock
                 ) do
                     cd(tmp) do
-                        solve_result = run_simulation(
+                        solve_result = SimulationEngine.run_simulation(
                             cfg_run;
                             isolate_state=false,
                             save_fields=save_fields,

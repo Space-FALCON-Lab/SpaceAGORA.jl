@@ -1,0 +1,62 @@
+const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
+
+function _read(rel)
+    path = joinpath(REPO_ROOT, rel)
+    isfile(path) || error("Missing required file: $rel")
+    return read(path, String)
+end
+
+spaceagora_src = _read(joinpath("src", "SpaceAGORA.jl"))
+telemetry_src = _read(joinpath("src", "analysis", "verification", "telemetry_verification.jl"))
+
+occursin("run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kwargs...)", spaceagora_src) ||
+    error("SpaceAGORA.run_simulation is not forwarded to SimulationEngine.")
+
+!occursin("simulation\", \"execution\", \"run_simulation.jl", telemetry_src) ||
+    error("TelemetryVerification still directly includes simulation/execution/run_simulation.jl.")
+
+occursin("SimulationEngine.run_simulation", telemetry_src) ||
+    error("TelemetryVerification is not calling SimulationEngine.run_simulation.")
+
+engine_dir = joinpath(REPO_ROOT, "src", "simulation", "engine")
+for (root, _, files) in walkdir(engine_dir)
+    for file in files
+        endswith(file, ".jl") || continue
+        rel = relpath(joinpath(root, file), REPO_ROOT)
+        rel in (
+            joinpath("src", "simulation", "engine", "adapters", "from_env.jl"),
+            joinpath("src", "simulation", "engine", "adapters", "from_simulation_configuration.jl")
+        ) && continue
+        src = read(joinpath(root, file), String)
+        if occursin("get(ENV", src) || occursin("ENV[", src)
+            error("ENV usage found outside engine adapters: $rel")
+        end
+    end
+end
+
+wrapper_files = [
+    "test/performance_runtime_analysis.jl",
+    "test/performance_smart_parallel_ladder.jl",
+    "test/performance_smart_parallel_ladder_cross_machine.jl",
+    "test/performance_split_imex_compare.jl",
+    "test/performance_static_vs_parallel.jl",
+    "test/performance_effector_reduction_microbench.jl",
+    "test/performance_paper_pipeline.jl",
+    "test/gram_interpolation_vs_point_to_point_analysis.jl",
+    "test/gram_single_call_vs_point_to_point_analysis.jl",
+    "test/gram_real_sim_runtime_compare.jl",
+    "test/gram_real_sim_surrogate_matrix.jl",
+    "test/gram_real_sim_surrogate_decision_table.jl",
+    "test/gram_offline_db_accuracy_study.jl",
+    "test/gram_planet_rho_altitude_sweep.jl",
+    "test/telemetry_hybrid_tuner.jl",
+    "test/telemetry_odyssey_tuner.jl",
+    "test/telemetry_orbit_accuracy_study.jl",
+    "test/telemetry_orbit_accuracy_plots.jl"
+]
+for rel in wrapper_files
+    src = _read(rel)
+    occursin("benchmarks", src) || error("Wrapper does not forward to benchmarks path: $rel")
+end
+
+println("architecture_contract_gate_ok")

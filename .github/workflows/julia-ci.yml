@@ -342,6 +342,12 @@ jobs:
       - name: P1 findings gate
         run: julia --startup-file=no --project=.AGORA test/ci_p1_findings_gate.jl
 
+      - name: Naming contract gate
+        run: julia --startup-file=no --project=.AGORA test/ci_naming_contract_gate.jl
+
+      - name: Architecture contract gate
+        run: julia --startup-file=no --project=.AGORA test/ci_architecture_contract_gate.jl
+
   ai-review-artifact-gate:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

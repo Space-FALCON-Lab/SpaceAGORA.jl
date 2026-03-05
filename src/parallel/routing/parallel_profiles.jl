@@ -1,5 +1,11 @@
 module ParallelProfiles
 
+include(joinpath(@__DIR__, "profile_definitions.jl"))
+include(joinpath(@__DIR__, "env_mapping.jl"))
+include(joinpath(@__DIR__, "outer_route_state.jl"))
+include(joinpath(@__DIR__, "outer_route_selection.jl"))
+include(joinpath(@__DIR__, "outer_route_metrics.jl"))
+
 using Dates
 using TOML
 

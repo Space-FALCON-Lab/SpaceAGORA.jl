@@ -17,8 +17,9 @@ The canonical entrypoints are:
 ## Canonical File Names
 Simulation entry files are:
 
-1. `src/simulation/SimulationExecution.jl`
-2. `src/simulation/SimulationElements.jl`
+1. `src/simulation/execution/simulation_execution.jl`
+2. `src/simulation/execution/simulation_elements.jl`
+3. `src/simulation/execution/run_simulation.jl`
 
 ## Contract Rules
 1. New public APIs must follow `execute_*` naming.

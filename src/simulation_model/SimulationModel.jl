@@ -11,73 +11,73 @@ const SPICE_LOCK = ReentrantLock()
 const GRAM_LOCK = ReentrantLock()
 
 # --- Utils ---
-include("../utils/quaternion_utils.jl")
-include("../physical_models/Planet_shapes.jl")
+include(joinpath(@__DIR__, "..", "core", "numerics", "quaternion_utils.jl"))
+include(joinpath(@__DIR__, "..", "environment", "ephemerides", "planet_shapes.jl"))
 
 # --- Submodules ---
 # We include the files, which define their own modules.
 # We then @reexport their public APIs.
 
 # 1. Core abstract types
-include("abstract_types.jl")
+include(joinpath(@__DIR__, "..", "core", "types", "abstract_types.jl"))
 @reexport using .AbstractTypes
 
-include("planets.jl")
+include(joinpath(@__DIR__, "..", "environment", "ephemerides", "planets.jl"))
 @reexport using .Planets
 
 # 2. Simple hardware data structs
-include("components.jl")
+include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "components.jl"))
 @reexport using .Components
 
 # 3. Main container structs (Link, Joint, Model)
-include("model.jl")
+include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "model.jl"))
 @reexport using .PhysicalModel
 
 # 4. Functions for building the model (add_...!)
-include("assembly.jl")
+include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "assembly.jl"))
 @reexport using .Assembly
 
 # 5. Functions for rotations and frames
-include("kinematics.jl")
+include(joinpath(@__DIR__, "..", "vehicle", "kinematics", "kinematics.jl"))
 @reexport using .Kinematics
 
 # 6. Functions for calculating effectors (thrusters, etc.)
-include("effectors.jl")
+include(joinpath(@__DIR__, "..", "vehicle", "actuators", "thruster_effectors.jl"))
 @reexport using .Effectors
 
 # 7. Functions for analysis (get_COM, get_inertia, etc.)
-include("analysis.jl")
+include(joinpath(@__DIR__, "..", "analysis", "reports", "simulation_model_analysis.jl"))
 @reexport using .Analysis
 
 # --- Config types ---
-include("simulation_configuration.jl")
+include(joinpath(@__DIR__, "..", "core", "state", "simulation_configuration.jl"))
 @reexport using .SimConfig
 
-include("config_types.jl")
+include(joinpath(@__DIR__, "..", "core", "types", "runtime_types.jl"))
 @reexport using .ConfigTypes
 
 # Shared parallel policy used by callbacks and dynamic effectors.
-include("parallel_policy.jl")
+include(joinpath(@__DIR__, "..", "parallel", "policy", "parallel_policy.jl"))
 
 # --- Dynamic Effectors ---
-include("DynamicEffectors.jl")
+include(joinpath(@__DIR__, "..", "dynamics", "models", "dynamic_effectors.jl"))
 @reexport using .DynamicEffectors
 
 # --- Guidance Effectors ---
-include("GuidanceEffectors.jl")
+include(joinpath(@__DIR__, "..", "gnc", "guidance", "effectors.jl"))
 @reexport using .GuidanceEffectors
 # --- Navigation Effectors ---
-include("NavigationEffectors.jl")
+include(joinpath(@__DIR__, "..", "gnc", "navigation", "effectors.jl"))
 @reexport using .NavigationEffectors
 # --- Control Effectors ---
-include("ControlEffectors.jl")
+include(joinpath(@__DIR__, "..", "gnc", "control", "effectors.jl"))
 @reexport using .ControlEffectors
 
 # --- Physical Models ---
-include("PhysicalModels.jl")
+include(joinpath(@__DIR__, "..", "environment", "physical_models.jl"))
 @reexport using .EnvironmentModels
 
 # --- Integrator Callbacks ---
-include("callbacks.jl")
+include(joinpath(@__DIR__, "..", "simulation", "callbacks", "callbacks.jl"))
 @reexport using .SimulationCallbacks
 end # module SimulationModel

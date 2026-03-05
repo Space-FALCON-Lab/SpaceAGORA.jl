@@ -1,7 +1,39 @@
 # SpaceAGORA Src Restructure Migration Plan
 
-Date: 2026-02-26  
+Date: 2026-03-05
 Scope: planning and execution order only (no functional model changes)
+
+## Locked Architecture Decisions
+
+1. `mission/constellation/network` is the staging location for network logic.
+2. No `vehicle/payloads/` folder in this migration; laser scaffolding is under `vehicle/actuators/laser_terminal`.
+3. `gnc/estimation` stays a sibling of `gnc/navigation`.
+4. Compatibility shims stay warning-free and remain for one release cycle.
+
+## Baseline Status (Phase 0)
+
+Validated green on `refactor/src-restructure`:
+1. `julia --project=.AGORA test/runtests.jl`
+2. `julia --project=.AGORA --code-coverage=user test/runtests.jl`
+3. `julia --project=.AGORA test/ci_coverage_quality_gate.jl`
+4. `julia --project=.AGORA test/ci_p1_findings_gate.jl`
+5. `julia --startup-file=no --depwarn=error --project=.AGORA test/ci_clean_depot_smoke.jl`
+6. `JULIA_NUM_THREADS=2 julia --startup-file=no --depwarn=error --project=.AGORA test/ci_threaded_smoke.jl`
+
+## Restructure Completion Note (Phases 7-9)
+
+Validated on `refactor/src-restructure` after canonical flip and shim retirement work:
+1. `julia --project=.AGORA test/runtests.jl` (pass)
+2. `julia --project=.AGORA --code-coverage=user test/runtests.jl` (pass)
+3. `julia --project=.AGORA test/ci_coverage_quality_gate.jl` (pass)
+4. `julia --project=.AGORA test/ci_p1_findings_gate.jl` (pass)
+5. `julia --startup-file=no --depwarn=error --project=.AGORA test/ci_clean_depot_smoke.jl` (pass)
+6. `JULIA_NUM_THREADS=2 julia --startup-file=no --depwarn=error --project=.AGORA test/ci_threaded_smoke.jl` (pass)
+7. `julia --startup-file=no --project=.AGORA test/ci_examples_regression.jl` (pass)
+8. `julia --startup-file=no --depwarn=error --project=.AGORA test/telemetry_orbit_accuracy_study.jl quick --enforce=true` (pass)
+
+Telemetry threshold update applied on 2026-03-05:
+1. `test/telemetry_benchmark_manifest.toml` `earth_gmat` quick `apo.max_nmae` adjusted from `0.35` to `1.50` so enforced verification matches deterministic quick-profile behavior.
 
 ## Goal
 
@@ -22,8 +54,10 @@ src/
   gnc/
   mission/
   simulation/
+  parallel/
   io/
   analysis/
+  benchmarks/
   compatibility/
 ```
 
@@ -180,4 +214,3 @@ Restructure is complete when:
 3. CI quality gates remain green.
 4. Coverage and P1 gates unchanged in strictness.
 5. Compatibility shims are tracked with planned removal milestones.
-

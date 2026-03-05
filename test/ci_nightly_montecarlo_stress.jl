@@ -12,7 +12,7 @@ using .SimulationModel
 
 # run_simulation.jl expects quat_mult in the including scope.
 const quat_mult = SimulationModel.quat_mult
-include(joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"))
+include(joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl"))
 
 struct StressMetrics
     rows::Int

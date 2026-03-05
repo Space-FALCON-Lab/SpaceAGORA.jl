@@ -13,7 +13,7 @@ include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
 using .SimulationModel
 
 const quat_mult = SimulationModel.quat_mult
-include(joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"))
+include(joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl"))
 
 const EM = SimulationModel.EnvironmentModels
 const CB = SimulationModel.SimulationCallbacks

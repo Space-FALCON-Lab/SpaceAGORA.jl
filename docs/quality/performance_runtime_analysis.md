@@ -83,12 +83,12 @@ The script writes timestamped artifacts in `output/performance` by default:
 
 SpaceAGORA runtime parallelization is structured as a hierarchical stack:
 
-- Outer route orchestration layer (`none` / `threads` / `process`): `src/parallel/ParallelProfiles.jl`, `test/performance_runtime_analysis.jl`
+- Outer route orchestration layer (`none` / `threads` / `process`): `src/parallel/routing/parallel_profiles.jl`, `test/performance_runtime_analysis.jl`
 - Inner layer 1 (density callback parallelism): `src/simulation_model/callbacks.jl`
 - Inner layer 2 (thermal callback parallelism): `src/simulation_model/callbacks.jl`
 - Inner layer 3 (control callback parallelism): `src/simulation_model/callbacks.jl`
 - Inner layer 4 (multibody/link kernels for aero and N-body work): `src/physical_models/Aerodynamic_models.jl`, `src/physical_models/Perturbations.jl`
-- Inner layer 5 (dynamic effector reduction): `src/simulation/run_simulation.jl`
+- Inner layer 5 (dynamic effector reduction): `src/simulation/execution/run_simulation.jl`
 
 ## Paper Ladder Harness (`R0` to `R5`)
 

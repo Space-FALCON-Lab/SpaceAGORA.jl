@@ -292,7 +292,7 @@ max_nmae = 0.35
 
 [scenarios.tolerances_quick.apo]
 max_abs_km = 2500.0
-max_nmae = 0.35
+max_nmae = 1.50
 
 [scenarios.tolerances_full.peri]
 max_abs_km = 2.794

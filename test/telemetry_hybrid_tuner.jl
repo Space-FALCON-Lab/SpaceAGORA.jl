@@ -1,7 +1,7 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 const DEFAULT_BASE_MANIFEST = joinpath(@__DIR__, "telemetry_benchmark_manifest.toml")
 const DEFAULT_OUTDIR = joinpath(REPO_ROOT, "output", "telemetry_tuning", "hybrid")
-const TELEMETRY_STUDY_SCRIPT = joinpath(REPO_ROOT, "src", "analysis", "verification", "TelemetryVerification.jl")
+const TELEMETRY_STUDY_SCRIPT = joinpath(REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl")
 const TUNER_HEARTBEAT_SECONDS = 120.0
 
 using CSV
@@ -1499,7 +1499,7 @@ function _write_report(
         println(io, "## Reproduce Best (Full)")
         println(io)
         println(io, "```bash")
-        println(io, "JULIA_NUM_THREADS=$(Threads.nthreads()) julia --project=.AGORA --startup-file=no src/analysis/verification/TelemetryVerification.jl --profile=full --manifest=$(best_manifest_path) --enforce=$(cfg.enforce ? "1" : "0")")
+        println(io, "JULIA_NUM_THREADS=$(Threads.nthreads()) julia --project=.AGORA --startup-file=no src/analysis/verification/telemetry_verification.jl --profile=full --manifest=$(best_manifest_path) --enforce=$(cfg.enforce ? "1" : "0")")
         println(io, "```")
     end
 end

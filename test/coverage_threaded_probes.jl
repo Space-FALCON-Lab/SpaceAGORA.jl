@@ -9,7 +9,7 @@ include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
 using .SimulationModel
 
 const quat_mult = SimulationModel.quat_mult
-include(joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"))
+include(joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl"))
 
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const EARTH = Earth("", SPICE_PATH)

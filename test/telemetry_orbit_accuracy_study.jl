@@ -1,5 +1,5 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
-include(joinpath(REPO_ROOT, "src", "analysis", "verification", "TelemetryVerification.jl"))
+include(joinpath(REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
 using .TelemetryVerification
 
 if abspath(PROGRAM_FILE) == abspath(@__FILE__)

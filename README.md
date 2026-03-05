@@ -60,7 +60,7 @@ planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, args=nothing
 It must also modify the ```:delta_v``` and ```:phi``` fields of ```args``` and return ```args```. The ```:delta_v``` field specifies the $\Delta V$ of the propulsive maneuver, and the ```:phi``` field specifies the direction in which the thruster is oriented, with $\phi=\pi$ being a raise maneuver, and $\phi=0$ being a lower maneuver.
 
 ## Planet
-The planet model is mostly predefined, with the option to specify the models used for different physical characteristics such as atmospheric density and gravity. The planet shape and size are predefined in ```src/physical_models/Planet_data.jl```. The orientation is determined using the SPICE system for accurate latitude and longitude calculations.
+The planet model is mostly predefined, with the option to specify the models used for different physical characteristics such as atmospheric density and gravity. The planet shape and size are predefined in ```src/environment/ephemerides/planet_data.jl``` (legacy compatibility path: `src/physical_models/Planet_data.jl`). The orientation is determined using the SPICE system for accurate latitude and longitude calculations.
 
 ### Density Models
 The atmospheric density calculation can be done using several built-in methods. The most accurate is to use the GRAM Suite, the set up for which is discussed previously. Other models include an exponential atmosphere model and a constant density model.

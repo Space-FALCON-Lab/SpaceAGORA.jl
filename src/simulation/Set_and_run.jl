@@ -5,7 +5,7 @@ using .SimulationModel
 # include("../physical_models/Mission.jl")
 # include("../utils/Save_csv.jl")
 # include("../utils/Plot_data.jl")
-include("SimulationExecution.jl")
+include(joinpath(@__DIR__, "execution", "simulation_execution.jl"))
 # include("../utils/Reference_system.jl")
 
 using SPICE

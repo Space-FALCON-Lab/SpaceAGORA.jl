@@ -16,7 +16,7 @@ const _PERF_POLICY_ENV_BASELINE = Dict{String, Union{Nothing, String}}(
 )
 const _PERF_THREADS_BACKEND_WARNING_EMITTED = Ref(false)
 
-include(joinpath(REPO_ROOT, "src", "parallel", "ParallelProfiles.jl"))
+include(joinpath(REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
 using .ParallelProfiles
 
 using CSV
@@ -40,7 +40,7 @@ using .SimulationModel
 
 # run_simulation.jl expects quat_mult in the including scope.
 const quat_mult = SimulationModel.quat_mult
-include(joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"))
+include(joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl"))
 
 Base.@kwdef struct ProfileSpec
     name::String

@@ -34,7 +34,7 @@ Coverage rules are enforced by `test/ci_coverage_quality_gate.jl`.
 - Main overall coverage: `>= 90.0%`
 - Main per-file coverage: `>= 80.0%`
 - Critical-file coverage: `>= 90.0%` for:
-  - `src/simulation/run_simulation.jl`
+  - `src/simulation/execution/run_simulation.jl`
   - `src/control/Propulsive_maneuvers.jl`
   - `src/utils/Closed_form_solution.jl`
   - `src/utils/Save_results.jl`
@@ -43,7 +43,7 @@ Coverage rules are enforced by `test/ci_coverage_quality_gate.jl`.
 Legacy code can be handled with explicit policy exceptions only:
 
 - Fully excluded from main coverage threshold:
-  - `src/simulation/SimulationElements.jl`
+  - `src/simulation/execution/simulation_elements.jl`
 - Legacy per-file override:
   - `src/control/heatload_control/Second_tsw_calcs.jl` with minimum `50.0%`
   - `src/simulation_model/callbacks.jl` with minimum `70.0%`

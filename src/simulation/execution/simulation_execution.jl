@@ -7,7 +7,7 @@
 const __spaceagora_simulation_execution_included__ = true
 
 using .SimulationModel
-include("run_simulation.jl")
+include(joinpath(@__DIR__, "run_simulation.jl"))
 # using PythonCall
 
 # sys = pyimport("sys")

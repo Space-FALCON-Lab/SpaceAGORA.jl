@@ -17,7 +17,7 @@ using .SimulationModel
 
 # run_simulation.jl expects quat_mult in the including scope.
 const quat_mult = SimulationModel.quat_mult
-include(joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"))
+include(joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl"))
 # Simulation entry wrappers.
 include(joinpath(REPO_ROOT, "src", "simulation", "Run.jl"))
 
@@ -759,18 +759,20 @@ end
 
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
     Core.eval(sandbox, :(const quat_mult = SimulationModel.quat_mult))
-    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"))
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl"))
     @test isdefined(sandbox, :run_simulation)
 end
 
 @testset "Simulation Filename Canonical Contract" begin
-    execution_path = joinpath(REPO_ROOT, "src", "simulation", "SimulationExecution.jl")
-    elements_path = joinpath(REPO_ROOT, "src", "simulation", "SimulationElements.jl")
+    execution_path = joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_execution.jl")
+    elements_path = joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_elements.jl")
+    run_path = joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl")
     legacy_execution_path = joinpath(REPO_ROOT, "src", "simulation", "Aerobraking.jl")
     legacy_elements_path = joinpath(REPO_ROOT, "src", "simulation", "Complete_passage.jl")
 
     @test isfile(execution_path)
     @test isfile(elements_path)
+    @test isfile(run_path)
     @test !isfile(legacy_execution_path)
     @test !isfile(legacy_elements_path)
 end
@@ -789,7 +791,7 @@ end
         end
     end)
 
-    complete_src = read(joinpath(REPO_ROOT, "src", "simulation", "SimulationElements.jl"), String)
+    complete_src = read(joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_elements.jl"), String)
     start_idx = findfirst("function execute_elements_case(args::SimulationConfiguration; isolate_state::Bool=true)", complete_src)
     next_idx = findfirst("function execute_elements_case(initial_state, numberofpassage, args, params)", complete_src)
     @test start_idx !== nothing
@@ -881,11 +883,11 @@ function ensure_legacy_complete_passage_loaded!()
         return
     end
 
-    source = read(joinpath(REPO_ROOT, "src", "simulation", "SimulationElements.jl"), String)
+    source = read(joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_elements.jl"), String)
     typed_start = findfirst("function execute_elements_case(args::SimulationConfiguration; isolate_state::Bool=true)", source)
     legacy_start = findfirst("function execute_elements_case(initial_state, numberofpassage, args, params)", source)
-    typed_start === nothing && throw(ArgumentError("Typed execute_elements_case entrypoint missing in SimulationElements.jl"))
-    legacy_start === nothing && throw(ArgumentError("Legacy execute_elements_case entrypoint missing in SimulationElements.jl"))
+    typed_start === nothing && throw(ArgumentError("Typed execute_elements_case entrypoint missing in simulation/execution/simulation_elements.jl"))
+    legacy_start === nothing && throw(ArgumentError("Legacy execute_elements_case entrypoint missing in simulation/execution/simulation_elements.jl"))
 
     typed_method = strip(source[first(typed_start):(first(legacy_start) - 1)])
     legacy_method = strip(source[first(legacy_start):end])
@@ -900,7 +902,7 @@ function ensure_legacy_complete_passage_full_loaded!()
         return
     end
 
-    Core.eval(LEGACY_COMPLETE_PASSAGE_FULL_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "simulation", "SimulationElements.jl"))))
+    Core.eval(LEGACY_COMPLETE_PASSAGE_FULL_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "simulation", "execution", "simulation_elements.jl"))))
     LEGACY_COMPLETE_PASSAGE_FULL_LOADED[] = true
 end
 
@@ -6094,8 +6096,8 @@ end
         return join(no_line, "\n")
     end
 
-    run_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"), String))
-    complete_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "SimulationElements.jl"), String))
+    run_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl"), String))
+    complete_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_elements.jl"), String))
 
     # Typed path should stay SI-native; legacy path still carries DU/TU/MU normalization.
     @test !occursin("cnf.DU", run_src)

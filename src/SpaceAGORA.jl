@@ -2,8 +2,8 @@ __precompile__(false)
 
 module SpaceAGORA
 
-include(joinpath(@__DIR__, "parallel", "ParallelProfiles.jl"))
-include(joinpath(@__DIR__, "analysis", "verification", "TelemetryVerification.jl"))
+include(joinpath(@__DIR__, "parallel", "routing", "parallel_profiles.jl"))
+include(joinpath(@__DIR__, "analysis", "verification", "telemetry_verification.jl"))
 
 using .ParallelProfiles: ParallelProfile, ParallelProfileConfig
 using .ParallelProfiles: parse_parallel_profile, parallel_profile_name, profile_config, profile_env_pairs, with_parallel_profile

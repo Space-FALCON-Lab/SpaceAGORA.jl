@@ -8,7 +8,7 @@ using StaticArrays
 # run_simulation.jl expects quat_mult in the including scope.
 const quat_mult = SimulationModel.quat_mult
 if !isdefined(@__MODULE__, :run_simulation)
-    include("../simulation/run_simulation.jl")
+    include("../simulation/execution/run_simulation.jl")
 end
 if !isdefined(@__MODULE__, :make_example_config)
     include("typed_example_utils.jl")

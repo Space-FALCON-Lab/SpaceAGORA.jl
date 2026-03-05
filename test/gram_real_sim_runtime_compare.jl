@@ -10,7 +10,7 @@ include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
 using .SimulationModel
 
 const QUAT_MULT = SimulationModel.quat_mult
-include(joinpath(REPO_ROOT, "src", "simulation", "run_simulation.jl"))
+include(joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl"))
 
 function _with_env(vars::Dict{String, String}, f::Function)
     old = Dict{String, Union{Nothing, String}}()

@@ -1,33 +1,33 @@
 const __spaceagora_simulation_elements_included__ = true
 
 if !isdefined(@__MODULE__, :__legacy_reference_system_included__)
-    include("../utils/Reference_system.jl")
+    include(joinpath(@__DIR__, "..", "..", "utils", "Reference_system.jl"))
     const __legacy_reference_system_included__ = true
 end
-include("../integrator/Integrators.jl")
-include("../integrator/Events.jl")
+include(joinpath(@__DIR__, "..", "..", "integrator", "Integrators.jl"))
+include(joinpath(@__DIR__, "..", "..", "integrator", "Events.jl"))
 # include("../integrator/implicit_midpoint_jacobian.jl")
-include("../utils/Save_results.jl")
+include(joinpath(@__DIR__, "..", "..", "utils", "Save_results.jl"))
 if !isdefined(@__MODULE__, :__legacy_quaternion_utils_included__)
-    include("../utils/quaternion_utils.jl")
+    include(joinpath(@__DIR__, "..", "..", "utils", "quaternion_utils.jl"))
     const __legacy_quaternion_utils_included__ = true
 end
 
 # include("../physical_models/Gravity_models.jl")
 # include("../physical_models/Density_models.jl")
 # include("../physical_models/Aerodynamic_models.jl")
-include("../physical_models/Thermal_models.jl")
-include("../physical_models/Attitude_control_models.jl")
+include(joinpath(@__DIR__, "..", "..", "physical_models", "Thermal_models.jl"))
+include(joinpath(@__DIR__, "..", "..", "physical_models", "Attitude_control_models.jl"))
 # include("../physical_models/Perturbations.jl")
 # include("../physical_models/DynamicEffectors.jl")
 
-include("../control/Control.jl")
-include("../control/utils/Propulsive_maneuvers.jl")
-include("../control/targeting_control/targeting.jl")
+include(joinpath(@__DIR__, "..", "..", "control", "Control.jl"))
+include(joinpath(@__DIR__, "..", "..", "control", "utils", "Propulsive_maneuvers.jl"))
+include(joinpath(@__DIR__, "..", "..", "control", "targeting_control", "targeting.jl"))
 
-include("../control/utils/Eom_ctrl.jl")
-include("../control/targeting_control/Eom_targeting.jl")
-include("../control/targeting_control/sim_targeting.jl")
+include(joinpath(@__DIR__, "..", "..", "control", "utils", "Eom_ctrl.jl"))
+include(joinpath(@__DIR__, "..", "..", "control", "targeting_control", "Eom_targeting.jl"))
+include(joinpath(@__DIR__, "..", "..", "control", "targeting_control", "sim_targeting.jl"))
 
 using LinearAlgebra
 using OrdinaryDiffEq
@@ -52,7 +52,7 @@ const AstU = 149597870.7e3 # Astronomical Unit, m
 
 function execute_elements_case(args::SimulationConfiguration; isolate_state::Bool=true)
     if !isdefined(@__MODULE__, :run_simulation)
-        throw(ArgumentError("run_simulation is not loaded. Include simulation/run_simulation.jl before calling execute_elements_case(args::SimulationConfiguration)."))
+        throw(ArgumentError("run_simulation is not loaded. Include simulation/execution/run_simulation.jl before calling execute_elements_case(args::SimulationConfiguration)."))
     end
     return run_simulation(args; isolate_state=isolate_state)
 end

@@ -4,12 +4,12 @@ const SRC_ROOT = joinpath(REPO_ROOT, "src")
 using Printf
 
 const EXCLUDED_FROM_MAIN_GATE = Set([
-    # Legacy simulation-elements path validated via dedicated smoke tests, not core coverage targets.
-    "src/simulation/SimulationElements.jl",
+    # Legacy simulation-elements implementation validated via dedicated smoke tests, not core coverage targets.
+    "src/simulation/execution/simulation_elements.jl",
 ])
 
 const LEGACY_MIN_SMOKE_COVERAGE = Dict(
-    "src/simulation/SimulationElements.jl" => 35.0,
+    "src/simulation/execution/simulation_elements.jl" => 35.0,
 )
 
 const MIN_MAIN_OVERALL = let raw = get(ENV, "SPACEAGORA_COVERAGE_MIN_OVERALL", "90.0")
@@ -34,7 +34,7 @@ const MAIN_FILE_MIN_OVERRIDES = Dict(
 )
 
 const CRITICAL_FILE_MIN_OVERRIDES = Dict(
-    "src/simulation/run_simulation.jl" => 90.0,
+    "src/simulation/execution/run_simulation.jl" => 90.0,
     "src/control/Propulsive_maneuvers.jl" => 90.0,
     "src/utils/Closed_form_solution.jl" => 90.0,
     "src/utils/Save_results.jl" => 90.0,

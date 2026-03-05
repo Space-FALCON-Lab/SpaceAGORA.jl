@@ -4,8 +4,8 @@ using DataFrames
 
 const _COV_REPO_ROOT = isdefined(Main, :REPO_ROOT) ? Main.REPO_ROOT : normpath(joinpath(@__DIR__, ".."))
 
-include(joinpath(_COV_REPO_ROOT, "src", "parallel", "ParallelProfiles.jl"))
-include(joinpath(_COV_REPO_ROOT, "src", "analysis", "verification", "TelemetryVerification.jl"))
+include(joinpath(_COV_REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
+include(joinpath(_COV_REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
 
 const PP = ParallelProfiles
 const TV = TelemetryVerification

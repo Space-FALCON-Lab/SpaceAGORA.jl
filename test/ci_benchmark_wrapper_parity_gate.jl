@@ -36,4 +36,14 @@ for (wrapper_rel, canonical_rel) in WRAPPER_TO_CANONICAL
     n_lines <= 12 || error("Wrapper is not thin (expected <=12 lines): $wrapper_rel")
 end
 
+canonical_launcher = joinpath(REPO_ROOT, "benchmarks", "studies", "performance_runtime_analysis.jl")
+launcher_src = read(canonical_launcher, String)
+(
+    occursin(joinpath("performance_runtime_analysis", "main.jl"), launcher_src) ||
+    occursin("\"performance_runtime_analysis\", \"main.jl\"", launcher_src)
+) ||
+    error("Runtime-analysis canonical launcher does not include split main.jl")
+launcher_lines = count(==('\n'), launcher_src) + 1
+launcher_lines <= 10 || error("Runtime-analysis canonical launcher is not thin (expected <=10 lines)")
+
 println("benchmark_wrapper_parity_gate_ok")

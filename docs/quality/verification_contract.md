@@ -1,88 +1,79 @@
 # SpaceAGORA Verification Contract
 
 ## Objective
-This contract defines the minimum quality bar for merging changes into SpaceAGORA.  
-The target is zero known critical defects (P1), deterministic CI behavior, and sustained nightly stability.
+This contract defines merge and release quality gates for SpaceAGORA architecture and runtime changes.
 
-## CI Merge Gates
-The following checks are required for pull requests:
+## Required PR Gates
+1. `tests` (`test/runtests.jl`)
+2. `coverage-quality-gate` (`test/ci_coverage_quality_gate.jl`)
+3. `p1-findings-gate` (`test/ci_p1_findings_gate.jl`)
+4. `ai-review-artifact-gate` (`test/ci_ai_review_artifact_gate.jl`)
+5. `architecture-contract-gate` (`test/ci_architecture_contract_gate.jl`)
+6. `typed-config-equivalence-gate` (`test/ci_typed_config_equivalence_gate.jl`)
+7. `benchmark-wrapper-parity-gate` (`test/ci_benchmark_wrapper_parity_gate.jl`)
+8. `naming-contract-gate` (`test/ci_naming_contract_gate.jl`)
 
-1. `tests` in `.github/workflows/julia-ci.yml`
-2. `coverage-quality-gate`
-3. `p1-findings-gate`
-4. `ai-review-artifact-gate`
+Additional required smoke checks for this migration track:
+1. `test/ci_clean_depot_smoke.jl`
+2. `test/ci_threaded_smoke.jl`
+3. `test/ci_examples_regression.jl`
+4. `test/telemetry_orbit_accuracy_study.jl quick --enforce=true`
 
-Nightly checks are required for release readiness and are defined in `.github/workflows/nightly-stress.yml`.
-
-## Branch Protection Rollout
-Branch protection on `main` must require these checks:
-
-1. `tests`
-2. `coverage-quality-gate`
-3. `p1-findings-gate`
-4. `ai-review-artifact-gate`
-
-Nightly rollout policy:
-
-1. `nightly-stress` is informational from March 2, 2026 through March 8, 2026.
-2. Starting March 9, 2026, release tagging requires a recent successful nightly run.
-3. Release-tag enforcement is implemented in `.github/workflows/release-tag-gate.yml`.
+Telemetry threshold failures are blocking in this cleanup track.
 
 ## Coverage Policy
-Coverage rules are enforced by `test/ci_coverage_quality_gate.jl`.
+Coverage enforcement is implemented by `test/ci_coverage_quality_gate.jl`.
 
-- Main overall coverage: `>= 90.0%`
-- Main per-file coverage: `>= 80.0%`
-- Critical-file coverage: `>= 90.0%` for:
-  - `src/simulation/execution/run_simulation.jl`
-  - `src/control/Propulsive_maneuvers.jl`
-  - `src/utils/Closed_form_solution.jl`
-  - `src/utils/Save_results.jl`
+Main thresholds:
+1. Main overall coverage: `>= 90.0%`
+2. Main per-file coverage: `>= 80.0%` (unless explicit override exists)
 
-### Legacy Scope Handling
-Legacy code can be handled with explicit policy exceptions only:
+Critical-file thresholds (`>= 90.0%`):
+1. `src/simulation/engine/execution.jl`
+2. `src/control/Propulsive_maneuvers.jl`
+3. `src/utils/Closed_form_solution.jl`
+4. `src/utils/Save_results.jl`
 
-- Fully excluded from main coverage threshold:
-  - `src/simulation/execution/simulation_elements.jl`
-- Legacy per-file override:
-  - `src/control/heatload_control/Second_tsw_calcs.jl` with minimum `50.0%`
-  - `src/simulation_model/callbacks.jl` with minimum `70.0%`
+Main per-file overrides:
+1. `src/control/heatload_control/Second_tsw_calcs.jl` => `>= 50.0%`
+2. `src/simulation_model/callbacks.jl` => `>= 70.0%`
+3. `src/physical_models/Density_models.jl` => `>= 5.0%`
+4. `src/simulation/engine/adapters/from_env.jl` => `>= 70.0%`
+5. `src/simulation/engine/dynamics_rhs.jl` => `>= 70.0%`
 
-Excluded/overridden files must stay explicitly documented in this contract and in the gate script.
+Excluded-from-main gate list:
+1. `src/simulation/execution/simulation_elements.jl`
+
+Legacy excluded-file smoke minimums:
+1. `src/simulation/execution/simulation_elements.jl` => `>= 35.0%`
+
+## Architecture/Dependency Policy
+1. `SpaceAGORA.run_simulation` must forward to `SimulationEngine.run_simulation`.
+2. `TelemetryVerification` must call `SimulationEngine.run_simulation`.
+3. `TelemetryVerification` must not include `src/simulation/execution/run_simulation.jl` directly.
+4. Engine internals must not read `ENV` directly outside adapter files.
+
+Enforced by `test/ci_architecture_contract_gate.jl`.
 
 ## P1 Findings Policy
-P1 findings are enforced by `test/ci_p1_findings_gate.jl`.
+Enforced by `test/ci_p1_findings_gate.jl`.
 
-- New unallowlisted P1 markers fail CI.
-- Allowlist entries must use `path::exact_line` format.
-- Optional metadata may be appended in an inline comment:
-  - `owner=<value>`
-  - `opened=<YYYY-MM-DD>`
-  - `expires=<YYYY-MM-DD>`
-- If `expires` is present and in the past, CI fails.
+1. New unallowlisted P1 markers fail CI.
+2. Allowlist format: `path::exact_line`.
+3. Optional metadata fields: `owner`, `opened`, `expires`.
+4. Expired allowlist entries fail CI.
 
-## AI Verification Policy
-AI review artifacts are enforced by `test/ci_ai_review_artifact_gate.jl`.
+## AI Artifact Policy
+Enforced by `test/ci_ai_review_artifact_gate.jl`.
 
-- Required artifact path: `test/ai_reviews/PR_<number>.md`
-- Required sections:
-  - `Scope`
-  - `Changed Files`
-  - `Findings`
-  - `P1 Assessment`
-  - `Tests Added/Updated`
-  - `Residual Risk`
-- Every changed `src/**/*.jl` file in the PR must be listed in `Changed Files`.
+Required path: `test/ai_reviews/PR_<number>.md`.
+Required sections:
+1. `Scope`
+2. `Changed Files`
+3. `Findings`
+4. `P1 Assessment`
+5. `Tests Added/Updated`
+6. `Residual Risk`
 
-## Nightly Stress Policy
-Nightly stress checks run on a schedule in `.github/workflows/nightly-stress.yml` and include:
-
-1. Full test suite with coverage
-2. Coverage quality gate
-3. P1 findings gate
-4. Threaded smoke stress
-5. Example regression stress
-6. Nightly Monte Carlo stress
-7. Flake guard
-
-For pull request runs of the nightly workflow, the AI artifact gate is also required.
+## Nightly Policy
+Nightly stress checks remain required for release readiness and run through `.github/workflows/nightly-stress.yml`.

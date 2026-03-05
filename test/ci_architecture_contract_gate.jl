@@ -18,6 +18,24 @@ occursin("run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(a
 occursin("SimulationEngine.run_simulation", telemetry_src) ||
     error("TelemetryVerification is not calling SimulationEngine.run_simulation.")
 
+legacy_run_sim_src = _read(joinpath("src", "simulation", "execution", "run_simulation.jl"))
+(
+    occursin(joinpath("engine", "execution.jl"), legacy_run_sim_src) ||
+    occursin("\"engine\", \"execution.jl\"", legacy_run_sim_src)
+) ||
+    error("Legacy run_simulation path does not forward to canonical engine execution split.")
+legacy_run_sim_lines = count(==('\n'), legacy_run_sim_src) + 1
+legacy_run_sim_lines <= 25 || error("Legacy run_simulation wrapper is not thin: src/simulation/execution/run_simulation.jl")
+
+legacy_callbacks_src = _read(joinpath("src", "simulation_model", "callbacks.jl"))
+(
+    occursin(joinpath("simulation", "callbacks", "callbacks.jl"), legacy_callbacks_src) ||
+    occursin("\"simulation\", \"callbacks\", \"callbacks.jl\"", legacy_callbacks_src)
+) ||
+    error("Legacy callbacks path does not forward to canonical callbacks aggregator.")
+legacy_callbacks_lines = count(==('\n'), legacy_callbacks_src) + 1
+legacy_callbacks_lines <= 10 || error("Legacy callbacks wrapper is not thin: src/simulation_model/callbacks.jl")
+
 engine_dir = joinpath(REPO_ROOT, "src", "simulation", "engine")
 for (root, _, files) in walkdir(engine_dir)
     for file in files
@@ -32,6 +50,22 @@ for (root, _, files) in walkdir(engine_dir)
             error("ENV usage found outside engine adapters: $rel")
         end
     end
+end
+
+perf_launcher = _read(joinpath("benchmarks", "studies", "performance_runtime_analysis.jl"))
+(
+    occursin(joinpath("performance_runtime_analysis", "main.jl"), perf_launcher) ||
+    occursin("\"performance_runtime_analysis\", \"main.jl\"", perf_launcher)
+) ||
+    error("Canonical runtime-analysis launcher is not forwarding to split main.jl.")
+for rel in (
+    joinpath("benchmarks", "studies", "performance_runtime_analysis", "main.jl"),
+    joinpath("benchmarks", "studies", "performance_runtime_analysis", "case_catalog.jl"),
+    joinpath("benchmarks", "studies", "performance_runtime_analysis", "measurement.jl"),
+    joinpath("benchmarks", "studies", "performance_runtime_analysis", "reporting.jl"),
+    joinpath("benchmarks", "studies", "performance_runtime_analysis", "cli.jl")
+)
+    isfile(joinpath(REPO_ROOT, rel)) || error("Missing split runtime-analysis file: $rel")
 end
 
 wrapper_files = [

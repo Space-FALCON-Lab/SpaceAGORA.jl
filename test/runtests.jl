@@ -1,10 +1,16 @@
 using Test
 using CSV
 using DataFrames
+using Dates
 using LinearAlgebra
 using Logging
+using Serialization
 using StaticArrays
 using ComponentArrays
+using DiffEqBase
+using DiffEqCallbacks
+using OrdinaryDiffEq
+using Quaternions
 using SPICE
 using TOML
 using JET
@@ -14,10 +20,79 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
 include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
 using .SimulationModel
+include(joinpath(REPO_ROOT, "src", "utils", "Reference_system.jl"))
 
-# run_simulation.jl expects quat_mult in the including scope.
+# SimulationEngine uses SimulationModel and provides canonical runtime entrypoints.
 const quat_mult = SimulationModel.quat_mult
-include(joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl"))
+if !isdefined(@__MODULE__, :SimulationEngine)
+    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+end
+if !isdefined(@__MODULE__, :run_simulation)
+    const run_simulation = SimulationEngine.run_simulation
+end
+if !isdefined(@__MODULE__, :_solver_policy_mode)
+    const build_initial_conditions = SimulationEngine.build_initial_conditions
+    const _build_solver_tolerances = SimulationEngine._build_solver_tolerances
+    const _solve_with_solver_policy = SimulationEngine._solve_with_solver_policy
+    const _split_subproblem = SimulationEngine._split_subproblem
+    const _resolve_component_tolerance = SimulationEngine._resolve_component_tolerance
+    const spacecraft_dynamics! = SimulationEngine.spacecraft_dynamics!
+    const _debug_print_nan_parameter_paths! = SimulationEngine._debug_print_nan_parameter_paths!
+    const _load_checkpoint = SimulationEngine._load_checkpoint
+    const _normalize_warning_emitted = SimulationEngine._normalize_warning_emitted
+    const _solver_policy_mode = SimulationEngine._solver_policy_mode
+    const _gram_per_sat_instances_enabled = SimulationEngine._gram_per_sat_instances_enabled
+    const _solver_maxiters = SimulationEngine._solver_maxiters
+    const _effector_parallel_mode = SimulationEngine._effector_parallel_mode
+    const _effector_thread_threshold = SimulationEngine._effector_thread_threshold
+    const _effector_max_threads = SimulationEngine._effector_max_threads
+    const _effector_long_mission_threshold_s = SimulationEngine._effector_long_mission_threshold_s
+    const _effector_cost_ns_per_item_default = SimulationEngine._effector_cost_ns_per_item_default
+    const _effector_cost_ema_alpha = SimulationEngine._effector_cost_ema_alpha
+    const _effector_work_ns_per_worker_threshold = SimulationEngine._effector_work_ns_per_worker_threshold
+    const _dynamic_effector_thread_decision = SimulationEngine._dynamic_effector_thread_decision
+    const _retcode_is_stiff_symptom = SimulationEngine._retcode_is_stiff_symptom
+    const _split_imex_solver_spec = SimulationEngine._split_imex_solver_spec
+    const _auto_stiff_switched = SimulationEngine._auto_stiff_switched
+    const _solve_with_explicit_solver = SimulationEngine._solve_with_explicit_solver
+    const _solve_with_multirate_solver = SimulationEngine._solve_with_multirate_solver
+    const _multirate_fast_substeps = SimulationEngine._multirate_fast_substeps
+    const _multirate_slow_dt_s = SimulationEngine._multirate_slow_dt_s
+    const _multirate_slow_solver_spec = SimulationEngine._multirate_slow_solver_spec
+    const _multirate_fast_solver_spec = SimulationEngine._multirate_fast_solver_spec
+    const _append_series_columns! = SimulationEngine._append_series_columns!
+    const _atomic_write_file = SimulationEngine._atomic_write_file
+    const _checkpoint_directory = SimulationEngine._checkpoint_directory
+    const _checkpoint_paths = SimulationEngine._checkpoint_paths
+    const _clear_ephemeris_reuse_cache! = SimulationEngine._clear_ephemeris_reuse_cache!
+    const _effector_long_orbit_threshold = SimulationEngine._effector_long_orbit_threshold
+    const _ephemeris_reuse_enabled = SimulationEngine._ephemeris_reuse_enabled
+    const _ephemeris_reuse_max_entries = SimulationEngine._ephemeris_reuse_max_entries
+    const _ephemeris_reuse_store! = SimulationEngine._ephemeris_reuse_store!
+    const _find_sample_value = SimulationEngine._find_sample_value
+    const _has_active_srp_effector = SimulationEngine._has_active_srp_effector
+    const _initialize_aero_workspace_buffers! = SimulationEngine._initialize_aero_workspace_buffers!
+    const _initialize_harmonics_workspace_buffers! = SimulationEngine._initialize_harmonics_workspace_buffers!
+    const _initialize_heat_rate_buffers! = SimulationEngine._initialize_heat_rate_buffers!
+    const _initialize_nbody_ephemeris_cache! = SimulationEngine._initialize_nbody_ephemeris_cache!
+    const _initialize_nbody_ephemeris_cache_buffer! = SimulationEngine._initialize_nbody_ephemeris_cache_buffer!
+    const _initialize_nbody_workspace_buffers! = SimulationEngine._initialize_nbody_workspace_buffers!
+    const _initialize_planet_frame_cache_buffer! = SimulationEngine._initialize_planet_frame_cache_buffer!
+    const _initialize_planet_frame_ephemeris_cache! = SimulationEngine._initialize_planet_frame_ephemeris_cache!
+    const _initialize_srp_sun_cache_buffer! = SimulationEngine._initialize_srp_sun_cache_buffer!
+    const _initialize_srp_sun_ephemeris_cache! = SimulationEngine._initialize_srp_sun_ephemeris_cache!
+    const _mission_is_long_for_effector_threads = SimulationEngine._mission_is_long_for_effector_threads
+    const _nbody_ephemeris_cache_dt_s = SimulationEngine._nbody_ephemeris_cache_dt_s
+    const _nbody_ephemeris_cache_max_samples = SimulationEngine._nbody_ephemeris_cache_max_samples
+    const _planet_frame_cache_dt_s = SimulationEngine._planet_frame_cache_dt_s
+    const _planet_frame_cache_max_samples = SimulationEngine._planet_frame_cache_max_samples
+    const _reset_spice_rhs_memo! = SimulationEngine._reset_spice_rhs_memo!
+    const _reset_spice_runtime_counters! = SimulationEngine._reset_spice_runtime_counters!
+    const _srp_ephemeris_cache_dt_s = SimulationEngine._srp_ephemeris_cache_dt_s
+    const _srp_ephemeris_cache_max_samples = SimulationEngine._srp_ephemeris_cache_max_samples
+    const _validate_orientation_inertia! = SimulationEngine._validate_orientation_inertia!
+    const _validate_thermal_model_support! = SimulationEngine._validate_thermal_model_support!
+end
 # Simulation entry wrappers.
 include(joinpath(REPO_ROOT, "src", "simulation", "Run.jl"))
 
@@ -759,20 +834,23 @@ end
 
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
     Core.eval(sandbox, :(const quat_mult = SimulationModel.quat_mult))
-    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl"))
-    @test isdefined(sandbox, :run_simulation)
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    @test isdefined(sandbox, :SimulationEngine)
+    @test Core.eval(sandbox, :(isdefined(SimulationEngine, :run_simulation)))
 end
 
 @testset "Simulation Filename Canonical Contract" begin
     execution_path = joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_execution.jl")
     elements_path = joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_elements.jl")
-    run_path = joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl")
+    engine_path = joinpath(REPO_ROOT, "src", "simulation", "engine", "execution.jl")
+    legacy_run_path = joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl")
     legacy_execution_path = joinpath(REPO_ROOT, "src", "simulation", "Aerobraking.jl")
     legacy_elements_path = joinpath(REPO_ROOT, "src", "simulation", "Complete_passage.jl")
 
     @test isfile(execution_path)
     @test isfile(elements_path)
-    @test isfile(run_path)
+    @test isfile(engine_path)
+    @test !isfile(legacy_run_path)
     @test !isfile(legacy_execution_path)
     @test !isfile(legacy_elements_path)
 end
@@ -6123,7 +6201,7 @@ end
         return join(no_line, "\n")
     end
 
-    run_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl"), String))
+    run_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "engine", "execution.jl"), String))
     complete_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_elements.jl"), String))
 
     # Typed path should stay SI-native; legacy path still carries DU/TU/MU normalization.

@@ -27,8 +27,6 @@ end
 const MAIN_FILE_MIN_OVERRIDES = Dict(
     # Legacy heatload-control helper kept for compatibility; currently validated via smoke checks.
     "src/control/heatload_control/Second_tsw_calcs.jl" => 50.0,
-    # Callback plumbing has high branch fanout and is also guarded by dedicated callback smoke tests.
-    "src/simulation_model/callbacks.jl" => 70.0,
     # GRAM-heavy behavior is validated in GRAMSuite; SpaceAGORA keeps a thin adapter with smoke coverage.
     "src/physical_models/Density_models.jl" => 5.0,
     # Adapter-only file is exercised indirectly via config/entrypoint tests.

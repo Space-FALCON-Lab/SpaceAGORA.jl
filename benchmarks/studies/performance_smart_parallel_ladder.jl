@@ -2847,7 +2847,7 @@ function _write_smart_ladder_report(
         project_flag = Base.shell_escape(SMART_LADDER_PROJECT)
         println(
             io,
-            "JULIA_NUM_THREADS=$(Threads.nthreads()) julia --project=$(project_flag) test/performance_smart_parallel_ladder.jl " *
+            "JULIA_NUM_THREADS=$(Threads.nthreads()) julia --project=$(project_flag) benchmarks/studies/performance_smart_parallel_ladder.jl " *
             "--profile=$(config.profile.name) --outdir=$(config.outdir) --clean=1 --passes=$(config.passes) " *
             "--randomize-rung-order=$(config.randomize_rung_order ? 1 : 0) --seed=$(config.random_seed) " *
             "--outer-only-backend=$(config.outer_only_backend)$(process_suffix) " *
@@ -2866,7 +2866,7 @@ function _write_smart_ladder_report(
         cross_outdir = joinpath(dirname(config.outdir), "smart_parallel_ladder_cross_machine")
         println(
             io,
-            "julia --project=.AGORA test/performance_smart_parallel_ladder_cross_machine.jl " *
+            "julia --project=.AGORA benchmarks/studies/performance_smart_parallel_ladder_cross_machine.jl " *
             "--profile=$(config.profile.name) --outdir=$(cross_outdir) " *
             "--input=machine_a:/path/to/machine_a/ladder_outdir --input=machine_b:/path/to/machine_b/ladder_outdir"
         )

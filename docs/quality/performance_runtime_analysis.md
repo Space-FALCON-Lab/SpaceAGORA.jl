@@ -3,9 +3,6 @@
 Canonical study launcher:
 1. `benchmarks/studies/performance_runtime_analysis.jl`
 
-Compatibility wrapper (one release cycle):
-1. `test/performance_runtime_analysis.jl`
-
 ## Run
 Quick profile:
 ```bash
@@ -22,11 +19,6 @@ Optional output directory:
 julia --startup-file=no --project=.AGORA benchmarks/studies/performance_runtime_analysis.jl --profile=quick --outdir=/absolute/path/to/output
 ```
 
-Wrapper-compatible invocation (temporary):
-```bash
-julia --startup-file=no --project=.AGORA test/performance_runtime_analysis.jl quick
-```
-
 ## Parallel Backend Selection
 ```bash
 SPACEAGORA_PERF_PARALLEL_BACKEND=threads julia --startup-file=no --project=.AGORA benchmarks/studies/performance_runtime_analysis.jl quick
@@ -35,7 +27,6 @@ JULIA_NUM_THREADS=4 SPACEAGORA_PERF_PARALLEL_BACKEND=auto SPACEAGORA_PERF_PROCS=
 ```
 
 ## Split-by-Responsibility Layout
-The runtime-analysis study is split into:
 1. `benchmarks/studies/performance_runtime_analysis/main.jl`
 2. `benchmarks/studies/performance_runtime_analysis/case_catalog.jl`
 3. `benchmarks/studies/performance_runtime_analysis/measurement.jl`

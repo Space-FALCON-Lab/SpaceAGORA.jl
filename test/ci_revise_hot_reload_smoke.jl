@@ -11,9 +11,14 @@ using .SimulationModel
 # Revise-based hot-swap workflows require callback invokelatest dispatch.
 ENV["SPACEAGORA_DEV_HOT_RELOAD"] = "1"
 
-# run_simulation.jl expects quat_mult in the including scope.
+# SimulationEngine uses SimulationModel and provides the canonical run_simulation entrypoint.
 const quat_mult = SimulationModel.quat_mult
-include(joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl"))
+if !isdefined(@__MODULE__, :SimulationEngine)
+    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+end
+if !isdefined(@__MODULE__, :run_simulation)
+    const run_simulation = SimulationEngine.run_simulation
+end
 
 const spice_path = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const planet = Earth("", spice_path)

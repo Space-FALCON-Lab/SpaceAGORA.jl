@@ -6,6 +6,7 @@ else
     include(joinpath(@__DIR__, "..", "..", "simulation_model", "SimulationModel.jl"))
 end
 using .SimulationModel
+const quat_mult = SimulationModel.quat_mult
 using SPICE
 
 include(joinpath(@__DIR__, "config", "parallel_config.jl"))

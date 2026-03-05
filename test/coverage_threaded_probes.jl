@@ -1,4 +1,10 @@
 using Test
+using Dates
+using DiffEqBase
+using DiffEqCallbacks
+using OrdinaryDiffEq
+using Quaternions
+using Serialization
 using StaticArrays
 using ComponentArrays
 using TOML
@@ -7,9 +13,18 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
 include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
 using .SimulationModel
+include(joinpath(REPO_ROOT, "src", "utils", "Reference_system.jl"))
 
 const quat_mult = SimulationModel.quat_mult
-include(joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl"))
+if !isdefined(@__MODULE__, :SimulationEngine)
+    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+end
+if !isdefined(@__MODULE__, :run_simulation)
+    const run_simulation = SimulationEngine.run_simulation
+end
+if !isdefined(@__MODULE__, :build_initial_conditions)
+    const build_initial_conditions = SimulationEngine.build_initial_conditions
+end
 
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const EARTH = Earth("", SPICE_PATH)

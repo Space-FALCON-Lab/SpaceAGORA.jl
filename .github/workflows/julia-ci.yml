@@ -245,7 +245,7 @@ jobs:
         run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
 
       - name: Telemetry quick regression (GRAM deterministic)
-        run: julia --startup-file=no --depwarn=error --project=.AGORA test/telemetry_orbit_accuracy_study.jl quick --enforce=true
+        run: julia --startup-file=no --depwarn=error --project=.AGORA benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
 
       - name: Upload telemetry quick artifacts
         if: always()

@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-if [[ ! -f "Project.toml" || ! -f "test/performance_smart_parallel_ladder.jl" ]]; then
+if [[ ! -f "Project.toml" || ! -f "benchmarks/studies/performance_smart_parallel_ladder.jl" ]]; then
   echo "[error] run_parallel_paper_protocol.sh must live in the SpaceAGORA repo root."
   exit 1
 fi
@@ -52,7 +52,7 @@ run_ladder_once() {
   local workers="${6:-}"
 
   local cmd=(
-    julia --project=.AGORA test/performance_smart_parallel_ladder.jl
+    julia --project=.AGORA benchmarks/studies/performance_smart_parallel_ladder.jl
     "$PROFILE"
     --outdir="$outdir"
     --clean="$clean"
@@ -104,7 +104,7 @@ done
 
 echo "[run] 4) Paper pipeline summary across modes"
 JULIA_NUM_THREADS="$THREADS_MAIN" \
-julia --project=.AGORA test/performance_paper_pipeline.jl \
+julia --project=.AGORA benchmarks/scripts/performance_paper_pipeline.jl \
   --profile=full \
   --modes=serial,auto,threads,process \
   --outdir="$BASE_OUT/paper_pipeline_full"

@@ -7,7 +7,12 @@
 const __spaceagora_simulation_execution_included__ = true
 
 using .SimulationModel
-include(joinpath(@__DIR__, "run_simulation.jl"))
+if !isdefined(@__MODULE__, :SimulationEngine)
+    include(joinpath(@__DIR__, "..", "engine", "simulation_engine.jl"))
+end
+if !isdefined(@__MODULE__, :run_simulation)
+    const run_simulation = SimulationEngine.run_simulation
+end
 # using PythonCall
 
 # sys = pyimport("sys")

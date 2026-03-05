@@ -85,7 +85,7 @@ jobs:
         run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_examples_regression.jl
 
       - name: Telemetry full regression (GRAM deterministic)
-        run: julia --startup-file=no --depwarn=error --project=.AGORA test/telemetry_orbit_accuracy_study.jl full --enforce=true
+        run: julia --startup-file=no --depwarn=error --project=.AGORA benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true
 
       - name: Nightly Monte Carlo stress
         run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_nightly_montecarlo_stress.jl

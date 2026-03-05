@@ -52,7 +52,7 @@ const AstU = 149597870.7e3 # Astronomical Unit, m
 
 function execute_elements_case(args::SimulationConfiguration; isolate_state::Bool=true)
     if !isdefined(@__MODULE__, :run_simulation)
-        throw(ArgumentError("run_simulation is not loaded. Include simulation/execution/run_simulation.jl before calling execute_elements_case(args::SimulationConfiguration)."))
+        throw(ArgumentError("run_simulation is not loaded. Include simulation/engine/simulation_engine.jl before calling execute_elements_case(args::SimulationConfiguration)."))
     end
     return run_simulation(args; isolate_state=isolate_state)
 end

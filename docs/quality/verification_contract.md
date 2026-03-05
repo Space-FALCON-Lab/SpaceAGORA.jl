@@ -17,7 +17,7 @@ Additional required smoke checks for this migration track:
 1. `test/ci_clean_depot_smoke.jl`
 2. `test/ci_threaded_smoke.jl`
 3. `test/ci_examples_regression.jl`
-4. `test/telemetry_orbit_accuracy_study.jl quick --enforce=true`
+4. `benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true`
 
 Telemetry threshold failures are blocking in this cleanup track.
 
@@ -36,10 +36,9 @@ Critical-file thresholds (`>= 90.0%`):
 
 Main per-file overrides:
 1. `src/control/heatload_control/Second_tsw_calcs.jl` => `>= 50.0%`
-2. `src/simulation_model/callbacks.jl` => `>= 70.0%`
-3. `src/physical_models/Density_models.jl` => `>= 5.0%`
-4. `src/simulation/engine/adapters/from_env.jl` => `>= 70.0%`
-5. `src/simulation/engine/dynamics_rhs.jl` => `>= 70.0%`
+2. `src/physical_models/Density_models.jl` => `>= 5.0%`
+3. `src/simulation/engine/adapters/from_env.jl` => `>= 70.0%`
+4. `src/simulation/engine/dynamics_rhs.jl` => `>= 70.0%`
 
 Excluded-from-main gate list:
 1. `src/simulation/execution/simulation_elements.jl`
@@ -48,10 +47,14 @@ Legacy excluded-file smoke minimums:
 1. `src/simulation/execution/simulation_elements.jl` => `>= 35.0%`
 
 ## Architecture/Dependency Policy
-1. `SpaceAGORA.run_simulation` must forward to `SimulationEngine.run_simulation`.
-2. `TelemetryVerification` must call `SimulationEngine.run_simulation`.
-3. `TelemetryVerification` must not include `src/simulation/execution/run_simulation.jl` directly.
-4. Engine internals must not read `ENV` directly outside adapter files.
+1. `SpaceAGORA.run_simulation` forwards to `SimulationEngine.run_simulation`.
+2. `TelemetryVerification` calls `SimulationEngine.run_simulation`.
+3. `TelemetryVerification` does not include `src/simulation/execution/run_simulation.jl` directly.
+4. Engine internals do not read `ENV` directly outside adapter files.
+5. Retired wrapper files remain absent:
+   - `src/simulation/execution/run_simulation.jl`
+   - `src/simulation_model/callbacks.jl`
+   - benchmark/study wrappers under `test/`
 
 Enforced by `test/ci_architecture_contract_gate.jl`.
 

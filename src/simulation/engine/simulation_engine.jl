@@ -19,11 +19,11 @@ include(joinpath(@__DIR__, "adapters", "from_simulation_configuration.jl"))
 
 include(joinpath(@__DIR__, "setup.jl"))
 include(joinpath(@__DIR__, "solver_policy.jl"))
-include(joinpath(@__DIR__, "execution.jl"))
 include(joinpath(@__DIR__, "dynamics_rhs.jl"))
 include(joinpath(@__DIR__, "persistence.jl"))
 include(joinpath(@__DIR__, "resume_checkpoint.jl"))
 include(joinpath(@__DIR__, "reporting.jl"))
+include(joinpath(@__DIR__, "execution.jl"))
 include(joinpath(@__DIR__, "public_api.jl"))
 
 export ParallelConfig

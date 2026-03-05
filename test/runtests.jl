@@ -2866,6 +2866,33 @@ end
     end
 end
 
+@testset "Run Simulation Metadata Return" begin
+    sc = make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=120.0)
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=20.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        keplerian=true
+    )
+
+    metadata = mktempdir() do tmp
+        cd(tmp) do
+            run_simulation(args; return_solution=true, return_solver_metadata=true)
+        end
+    end
+
+    @test metadata isa NamedTuple
+    @test hasproperty(metadata, :solution)
+    @test hasproperty(metadata, :solver_mode)
+    @test hasproperty(metadata, :solver_trace)
+    @test hasproperty(metadata, :parallel_policy)
+    @test hasproperty(metadata, :spice_counters)
+end
+
 @testset "RHS Completeness: Mass Derivative" begin
     sc = make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=120.0)
     args = build_config(

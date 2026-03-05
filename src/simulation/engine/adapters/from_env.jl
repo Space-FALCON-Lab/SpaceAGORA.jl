@@ -1,4 +1,6 @@
 @inline _env_bool(v::Bool) = v ? "1" : "0"
+const _engine_active_config_ref = Ref{Union{Nothing, SimulationEngineConfig}}(nothing)
+const _engine_active_overrides_ref = Ref{Union{Nothing, Dict{String, String}}}(nothing)
 
 function _parse_bool(raw, default::Bool)
     raw === nothing && return default
@@ -71,6 +73,22 @@ function simulation_engine_config_from_env(env::AbstractDict{<:Any, <:Any}=ENV):
     )
 end
 
+@inline function _engine_env_get(name::String, default::String="")::String
+    active_overrides = _engine_active_overrides_ref[]
+    if active_overrides !== nothing
+        return String(get(active_overrides, name, default))
+    end
+    return String(get(ENV, name, default))
+end
+
+@inline function _engine_env_haskey(name::String)::Bool
+    active_overrides = _engine_active_overrides_ref[]
+    if active_overrides !== nothing
+        return haskey(active_overrides, name)
+    end
+    return haskey(ENV, name)
+end
+
 function _engine_env_overrides(config::SimulationEngineConfig)::Dict{String, String}
     overrides = Dict{String, String}(
         "SPACEAGORA_WARN_NORMALIZE" => _env_bool(config.runtime_policy.warn_normalize),
@@ -106,7 +124,16 @@ end
 
 function _with_engine_env_overrides(config::SimulationEngineConfig, f::Function)
     overrides = _engine_env_overrides(config)
-    isempty(overrides) && return f()
+    previous_config = _engine_active_config_ref[]
+    previous_overrides = _engine_active_overrides_ref[]
+    _engine_active_config_ref[] = config
+    _engine_active_overrides_ref[] = overrides
+    isempty(overrides) && return try
+        f()
+    finally
+        _engine_active_config_ref[] = previous_config
+        _engine_active_overrides_ref[] = previous_overrides
+    end
 
     previous = Dict{String, Union{Nothing, String}}()
     for (k, v) in overrides
@@ -124,5 +151,7 @@ function _with_engine_env_overrides(config::SimulationEngineConfig, f::Function)
                 ENV[k] = old
             end
         end
+        _engine_active_config_ref[] = previous_config
+        _engine_active_overrides_ref[] = previous_overrides
     end
 end

@@ -65,6 +65,12 @@ jobs:
       - name: Architecture contract gate
         run: julia --startup-file=no --project=.AGORA test/ci_architecture_contract_gate.jl
 
+      - name: Typed config equivalence gate
+        run: julia --startup-file=no --project=.AGORA test/ci_typed_config_equivalence_gate.jl
+
+      - name: Benchmark wrapper parity gate
+        run: julia --startup-file=no --project=.AGORA test/ci_benchmark_wrapper_parity_gate.jl
+
       - name: AI review artifact gate (PR only)
         if: github.event_name == 'pull_request'
         env:

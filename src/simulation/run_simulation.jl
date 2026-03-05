@@ -260,7 +260,15 @@ end
     return SimulationModel.ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_RHS_BATCH_PARALLEL"; default="auto")
 end
 
+@inline function _profile_forces_serial_rhs()::Bool
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_PARALLEL_PROFILE", "")))
+    return raw in ("r0", "serial", "r0_true_serial", "true_serial")
+end
+
 @inline function _rhs_batch_parallel_enabled(num_spacecraft::Int)::Bool
+    if _profile_forces_serial_rhs()
+        return false
+    end
     mode = _rhs_batch_parallel_mode()
     if mode == :off
         return false

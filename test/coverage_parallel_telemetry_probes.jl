@@ -69,6 +69,7 @@ const TV = TelemetryVerification
     @test env_map_override["SPACEAGORA_PARALLEL_PROFILE"] == "R2"
     @test env_map_override["SPACEAGORA_OUTER_PARALLEL_ACTIVE"] == "0"
     @test env_map_override["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "none"
+    @test env_map_override["SPACEAGORA_RHS_BATCH_PARALLEL"] == "auto"
     @test env_map_override["SPACEAGORA_PARALLEL_POLICY_WINDOW"] == "8"
     @test env_map_override["SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD"] == "0"
     @test parse(Float64, env_map_override["SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION"]) > 0.0
@@ -83,8 +84,15 @@ const TV = TelemetryVerification
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD"] == "1"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS"] == "1"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST"] == "1"
+    @test env_map_auto["SPACEAGORA_RHS_BATCH_PARALLEL"] == "auto"
     @test parse(Float64, env_map_auto["SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION"]) > 0.0
     @test parse(Int, env_map_auto["SPACEAGORA_PARALLEL_POLICY_HINT_MIN_SAMPLES"]) >= 2
+
+    withenv("SPACEAGORA_RHS_BATCH_PARALLEL" => "on") do
+        env_r0 = Dict(PP.profile_env_pairs("R0"; preserve_existing=true, outer_parallel_active=false))
+        # R0 is forced true-serial and must not preserve a pre-existing RHS batch override.
+        @test env_r0["SPACEAGORA_RHS_BATCH_PARALLEL"] == "off"
+    end
 
     withenv("SPACEAGORA_PERF_HARDWARE_CLASS" => "small") do
         env_small = Dict(PP.profile_env_pairs("R5"; preserve_existing=false, outer_parallel_active=false))

@@ -260,6 +260,9 @@ function profile_env_pairs(
 )::Vector{Pair{String, String}}
     cfg = profile_config(profile_in)
     hint_defaults = _inner_hint_defaults(cfg)
+    rhs_batch_default = cfg.profile == R0 ? "off" : "auto"
+    # R0 is defined as truly serial, so do not preserve a pre-existing RHS batch override.
+    rhs_batch_preserve_existing = preserve_existing && cfg.profile != R0
     return Pair{String, String}[
         "SPACEAGORA_PARALLEL_PROFILE" => _env_or_default(
             "SPACEAGORA_PARALLEL_PROFILE",
@@ -310,6 +313,11 @@ function profile_env_pairs(
             "SPACEAGORA_EFFECTOR_PARALLEL",
             cfg.effector_mode;
             preserve_existing=preserve_existing
+        ),
+        "SPACEAGORA_RHS_BATCH_PARALLEL" => _env_or_default(
+            "SPACEAGORA_RHS_BATCH_PARALLEL",
+            rhs_batch_default;
+            preserve_existing=rhs_batch_preserve_existing
         ),
         "SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER" => _env_or_default(
             "SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER",

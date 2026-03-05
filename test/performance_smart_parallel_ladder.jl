@@ -451,17 +451,27 @@ function _ladder_env_pairs(
     solver_mode::Union{Nothing, String}=nothing
 )::Vector{Pair{String, Union{Nothing, String}}}
     matrix = _ladder_matrix_modes(rung.matrix)
+    r5_full_smart = rung.mode == :outer_inner_full_smart
+    thermal_mode = r5_full_smart ? "on" : matrix.thermal
+    inner_scheduler = r5_full_smart ? "dynamic" : "static"
+    measured_reward = r5_full_smart ? "1" : "0"
+    persistent_hints = r5_full_smart ? "1" : "0"
+    persistent_state_persist = r5_full_smart ? "1" : "0"
     pairs = Pair{String, Union{Nothing, String}}[
         "SPACEAGORA_PERF_PARALLEL_BACKEND" => rung.backend,
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => (rung.inner_adaptive ? "1" : "0"),
         "SPACEAGORA_PERF_OUTER_ROUTE_ADAPTIVE" => (rung.outer_route_adaptive ? "1" : "0"),
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => matrix.density,
-        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => matrix.thermal,
+        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => thermal_mode,
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => matrix.control,
         "SPACEAGORA_MULTIBODY_PARALLEL" => matrix.multibody,
         "SPACEAGORA_EFFECTOR_PARALLEL" => matrix.effector,
+        "SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER" => inner_scheduler,
         "SPACEAGORA_PARALLEL_POLICY_WINDOW" => (rung.mode == :outer_inner_full_smart ? "4" : "8"),
         "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => (rung.mode == :outer_inner_full_smart ? "1" : "0"),
+        "SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD" => measured_reward,
+        "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => persistent_hints,
+        "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => persistent_state_persist,
         "SPACEAGORA_PERF_INCLUDE_CONTROL_STRESS_PER_ORBIT" => (config.include_control_stress_per_orbit ? "1" : "0"),
         "SPACEAGORA_PERF_CONTROL_STRESS_REPEATS_FULL" => string(config.control_stress_repeats_full),
         "SPACEAGORA_PERF_CONTROL_STRESS_WARMUP_FULL" => string(config.control_stress_warmup_full)

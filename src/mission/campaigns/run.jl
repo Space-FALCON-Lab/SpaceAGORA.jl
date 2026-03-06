@@ -1,10 +1,19 @@
-# Compatibility wrapper: canonical path forwarding to legacy implementation.
-include(joinpath(let
-    p = @__DIR__
-    while basename(p) != "src"
-        nextp = dirname(p)
-        nextp == p && error("Could not locate src root from $(@__DIR__)")
-        p = nextp
-    end
-    p
-end, "simulation/Run.jl"))
+using .SimulationModel
+
+include(joinpath(@__DIR__, "set_and_run.jl"))
+
+function execute_orbital_elements_campaign(args::SimulationConfiguration; isolate_state::Bool=true)
+    return execute_campaign(args; isolate_state=isolate_state)
+end
+
+function execute_vgamma_campaign(args::SimulationConfiguration; isolate_state::Bool=true)
+    return execute_campaign(args; isolate_state=isolate_state)
+end
+
+function execute_ae_campaign(args::SimulationConfiguration; isolate_state::Bool=true)
+    return execute_campaign(args; isolate_state=isolate_state)
+end
+
+function execute_analysis(args::SimulationConfiguration; isolate_state::Bool=true)
+    return execute_campaign(args; isolate_state=isolate_state)
+end

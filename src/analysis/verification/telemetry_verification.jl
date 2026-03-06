@@ -29,7 +29,7 @@ if isdefined(parentmodule(@__MODULE__), :SimulationEngine)
     using ..SimulationEngine
     const SimulationModel = SimulationEngine.SimulationModel
 else
-    include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+    include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
     using .SimulationModel
     include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
     using .SimulationEngine

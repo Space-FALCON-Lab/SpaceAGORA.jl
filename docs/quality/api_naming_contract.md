@@ -28,9 +28,8 @@ Stable root exports:
    - `benchmarks/studies/performance_runtime_analysis/cli.jl`
 
 Removed in Wave 2:
-1. `src/simulation/execution/run_simulation.jl`
-2. `src/simulation_model/callbacks.jl`
-3. benchmark/study wrappers under `test/`
+1. legacy simulation execution wrapper file
+2. benchmark/study wrappers under `test/`
 
 ## Naming Rules (Canonical Folders)
 1. File names: `lower_snake_case.jl`

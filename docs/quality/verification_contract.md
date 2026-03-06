@@ -12,6 +12,9 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
 6. `typed-config-equivalence-gate` (`test/ci_typed_config_equivalence_gate.jl`)
 7. `benchmark-wrapper-parity-gate` (`test/ci_benchmark_wrapper_parity_gate.jl`)
 8. `naming-contract-gate` (`test/ci_naming_contract_gate.jl`)
+9. `no-legacy-ownership-gate` (`test/ci_no_legacy_ownership_gate.jl`)
+10. `no-artifact-files-gate` (`test/ci_no_artifact_files_gate.jl`)
+11. `canonical-path-contract-gate` (`test/ci_canonical_path_contract_gate.jl`)
 
 Additional required smoke checks for this migration track:
 1. `test/ci_clean_depot_smoke.jl`
@@ -30,30 +33,20 @@ Main thresholds:
 
 Critical-file thresholds (`>= 90.0%`):
 1. `src/simulation/engine/execution.jl`
-2. `src/control/Propulsive_maneuvers.jl`
-3. `src/utils/Closed_form_solution.jl`
-4. `src/utils/Save_results.jl`
+2. `src/gnc/control/propulsive_maneuvers.jl`
+3. `src/core/interfaces/reference_system.jl`
 
 Main per-file overrides:
-1. `src/control/heatload_control/Second_tsw_calcs.jl` => `>= 50.0%`
-2. `src/physical_models/Density_models.jl` => `>= 5.0%`
-3. `src/simulation/engine/adapters/from_env.jl` => `>= 70.0%`
-4. `src/simulation/engine/dynamics_rhs.jl` => `>= 70.0%`
-
-Excluded-from-main gate list:
-1. `src/simulation/execution/simulation_elements.jl`
-
-Legacy excluded-file smoke minimums:
-1. `src/simulation/execution/simulation_elements.jl` => `>= 35.0%`
+1. `src/simulation/engine/adapters/from_env.jl` => `>= 70.0%`
+2. `src/simulation/engine/dynamics_rhs.jl` => `>= 70.0%`
 
 ## Architecture/Dependency Policy
 1. `SpaceAGORA.run_simulation` forwards to `SimulationEngine.run_simulation`.
 2. `TelemetryVerification` calls `SimulationEngine.run_simulation`.
-3. `TelemetryVerification` does not include `src/simulation/execution/run_simulation.jl` directly.
+3. `TelemetryVerification` does not include retired simulation-execution wrappers directly.
 4. Engine internals do not read `ENV` directly outside adapter files.
 5. Retired wrapper files remain absent:
-   - `src/simulation/execution/run_simulation.jl`
-   - `src/simulation_model/callbacks.jl`
+   - legacy simulation execution wrapper file
    - benchmark/study wrappers under `test/`
 
 Enforced by `test/ci_architecture_contract_gate.jl`.

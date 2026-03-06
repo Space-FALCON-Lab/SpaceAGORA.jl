@@ -20,8 +20,14 @@ occursin("SimulationEngine.run_simulation", telemetry_src) ||
 
 isfile(joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl")) &&
     error("Wave 2 contract violation: legacy simulation execution wrapper still exists at src/simulation/execution/run_simulation.jl")
-isfile(joinpath(REPO_ROOT, "src", "simulation_model", "callbacks.jl")) &&
-    error("Wave 2 contract violation: legacy callbacks wrapper still exists at src/simulation_model/callbacks.jl")
+isfile(joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_elements.jl")) &&
+    error("Canonical-ownership contract violation: legacy simulation elements file still exists at src/simulation/execution/simulation_elements.jl")
+isfile(joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_execution.jl")) &&
+    error("Canonical-ownership contract violation: legacy simulation execution file still exists at src/simulation/execution/simulation_execution.jl")
+for retired in ("control", "physical_models", "guidance", "integrator", "utils", "simulation_model")
+    isdir(joinpath(REPO_ROOT, "src", retired)) &&
+        error("Canonical-ownership contract violation: retired source tree still exists at src/$retired")
+end
 
 engine_dir = joinpath(REPO_ROOT, "src", "simulation", "engine")
 for (root, _, files) in walkdir(engine_dir)

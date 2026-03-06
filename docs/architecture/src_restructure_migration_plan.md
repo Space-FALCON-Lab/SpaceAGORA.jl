@@ -50,12 +50,14 @@ Additional contract gates:
 2. `julia --project=.AGORA test/ci_typed_config_equivalence_gate.jl`
 3. `julia --project=.AGORA test/ci_benchmark_wrapper_parity_gate.jl`
 4. `julia --project=.AGORA test/ci_naming_contract_gate.jl`
+5. `julia --project=.AGORA test/ci_no_legacy_ownership_gate.jl`
+6. `julia --project=.AGORA test/ci_no_artifact_files_gate.jl`
+7. `julia --project=.AGORA test/ci_canonical_path_contract_gate.jl`
 
 ## Wave 2 Retirement Summary
 Removed:
-1. `src/simulation/execution/run_simulation.jl`
-2. `src/simulation_model/callbacks.jl`
-3. benchmark/study wrappers in `test/`
+1. legacy simulation execution wrapper file
+2. benchmark/study wrappers in `test/`
 
 Contracts tightened:
 1. architecture gate fails if retired wrappers reappear

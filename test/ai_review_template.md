@@ -7,7 +7,7 @@ Use this template for PR review artifacts saved as `test/ai_reviews/PR_<number>.
 
 ## Changed Files
 - List every changed `src/**/*.jl` file in this PR.
-- Example: `src/control/Propulsive_maneuvers.jl`
+- Example: `src/gnc/control/propulsive_maneuvers.jl`
 
 ## Findings
 - List findings by severity (`P1`, `P2`, `P3`) and file/line context.

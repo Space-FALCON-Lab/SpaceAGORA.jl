@@ -287,7 +287,7 @@ jobs:
       - name: Run tests with coverage
         run: julia --startup-file=no --project=.AGORA --code-coverage=user test/runtests.jl
 
-      - name: Coverage quality gate (legacy simulation elements excluded)
+      - name: Coverage quality gate
         run: julia --startup-file=no --project=.AGORA test/ci_coverage_quality_gate.jl
 
   calibration-coverage-quality-gate:
@@ -347,6 +347,15 @@ jobs:
 
       - name: Architecture contract gate
         run: julia --startup-file=no --project=.AGORA test/ci_architecture_contract_gate.jl
+
+      - name: No legacy ownership gate
+        run: julia --startup-file=no --project=.AGORA test/ci_no_legacy_ownership_gate.jl
+
+      - name: No artifact files gate
+        run: julia --startup-file=no --project=.AGORA test/ci_no_artifact_files_gate.jl
+
+      - name: Canonical path contract gate
+        run: julia --startup-file=no --project=.AGORA test/ci_canonical_path_contract_gate.jl
 
       - name: Typed config equivalence gate
         run: julia --startup-file=no --project=.AGORA test/ci_typed_config_equivalence_gate.jl

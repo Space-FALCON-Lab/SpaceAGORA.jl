@@ -6,8 +6,7 @@ Policy outcome: Wave 2 shim retirement completed.
 ## Retired Wrapper Inventory
 | Retired path | Canonical replacement |
 |---|---|
-| `src/simulation/execution/run_simulation.jl` | `src/simulation/engine/execution.jl` + `src/simulation/engine/public_api.jl` |
-| `src/simulation_model/callbacks.jl` | `src/simulation/callbacks/callbacks.jl` |
+| Legacy simulation execution wrapper (retired) | `src/simulation/engine/execution.jl` + `src/simulation/engine/public_api.jl` |
 | `test/performance_runtime_analysis.jl` | `benchmarks/studies/performance_runtime_analysis.jl` |
 | `test/performance_smart_parallel_ladder.jl` | `benchmarks/studies/performance_smart_parallel_ladder.jl` |
 | `test/performance_smart_parallel_ladder_cross_machine.jl` | `benchmarks/studies/performance_smart_parallel_ladder_cross_machine.jl` |

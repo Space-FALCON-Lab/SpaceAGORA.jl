@@ -1,5 +1,5 @@
 if !isdefined(@__MODULE__, :SimulationModel)
-    include("../simulation_model/SimulationModel.jl")
+    include("../core/simulation_model.jl")
 end
 using .SimulationModel
 using Dates

@@ -6,7 +6,7 @@ using CSV
 using SPICE
 using Profile
 
-include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
 using .SimulationModel
 
 const QUAT_MULT = SimulationModel.quat_mult

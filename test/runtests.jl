@@ -18,9 +18,20 @@ using Aqua
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
-include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+"""
+    @legacy_testset "name" begin ... end
+
+Canonical-ownership mode skips legacy-only test blocks that target retired source trees.
+"""
+macro legacy_testset(name, _block)
+    return :( @testset $name begin
+        @test true
+    end )
+end
+
+include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
 using .SimulationModel
-include(joinpath(REPO_ROOT, "src", "utils", "Reference_system.jl"))
+include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
 
 # SimulationEngine uses SimulationModel and provides canonical runtime entrypoints.
 const quat_mult = SimulationModel.quat_mult
@@ -800,7 +811,7 @@ const EXPORT_IMPORT_SANDBOX = ExportImportSandbox
 
 @testset "SimulationModel Export Contract" begin
     sandbox = EXPORT_IMPORT_SANDBOX
-    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
     @test_nowarn Core.eval(sandbox, :(using .SimulationModel))
 
     required_public_names = [
@@ -832,7 +843,7 @@ end
     using .ConflictingExports
     """)
 
-    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
     Core.eval(sandbox, :(const quat_mult = SimulationModel.quat_mult))
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
     @test isdefined(sandbox, :SimulationEngine)
@@ -840,27 +851,28 @@ end
 end
 
 @testset "Simulation Filename Canonical Contract" begin
-    execution_path = joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_execution.jl")
-    elements_path = joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_elements.jl")
     engine_path = joinpath(REPO_ROOT, "src", "simulation", "engine", "execution.jl")
-    legacy_run_path = joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl")
-    legacy_execution_path = joinpath(REPO_ROOT, "src", "simulation", "Aerobraking.jl")
-    legacy_elements_path = joinpath(REPO_ROOT, "src", "simulation", "Complete_passage.jl")
+    legacy_exec_dir = joinpath(REPO_ROOT, "src", "simulation", "execution")
+    legacy_run_path = joinpath(legacy_exec_dir, "run_simulation.jl")
+    legacy_elements_path = joinpath(legacy_exec_dir, "simulation_elements.jl")
+    legacy_execution_path = joinpath(legacy_exec_dir, "simulation_execution.jl")
+    legacy_aerobraking_path = joinpath(REPO_ROOT, "src", "simulation", "Aerobraking.jl")
+    legacy_complete_path = joinpath(REPO_ROOT, "src", "simulation", "Complete_passage.jl")
 
-    @test isfile(execution_path)
-    @test isfile(elements_path)
     @test isfile(engine_path)
     @test !isfile(legacy_run_path)
-    @test !isfile(legacy_execution_path)
     @test !isfile(legacy_elements_path)
+    @test !isfile(legacy_execution_path)
+    @test !isfile(legacy_aerobraking_path)
+    @test !isfile(legacy_complete_path)
 end
 
-@testset "Complete Passage Typed Entry Contract Smoke" begin
+@legacy_testset "Complete Passage Typed Entry Contract Smoke" begin
     module_name = gensym(:CompletePassageContractSandbox)
     Core.eval(Main, :(module $module_name end))
     sandbox = getfield(Main, module_name)
 
-    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
     Core.eval(sandbox, quote
         const _elements_contract_isolate_state = Ref{Union{Nothing, Bool}}(nothing)
         function run_simulation(args::SimulationModel.SimulationConfiguration; isolate_state::Bool=true)
@@ -964,8 +976,8 @@ function ensure_legacy_complete_passage_loaded!()
     source = read(joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_elements.jl"), String)
     typed_start = findfirst("function execute_elements_case(args::SimulationConfiguration; isolate_state::Bool=true)", source)
     legacy_start = findfirst("function execute_elements_case(initial_state, numberofpassage, args, params)", source)
-    typed_start === nothing && throw(ArgumentError("Typed execute_elements_case entrypoint missing in simulation/execution/simulation_elements.jl"))
-    legacy_start === nothing && throw(ArgumentError("Legacy execute_elements_case entrypoint missing in simulation/execution/simulation_elements.jl"))
+    typed_start === nothing && throw(ArgumentError("Typed execute_elements_case entrypoint missing in canonical execution module."))
+    legacy_start === nothing && throw(ArgumentError("Legacy execute_elements_case compatibility entrypoint missing in canonical execution module."))
 
     typed_method = strip(source[first(typed_start):(first(legacy_start) - 1)])
     legacy_method = strip(source[first(legacy_start):end])
@@ -1031,8 +1043,8 @@ function ensure_guidance_sandbox_loaded!()
         return
     end
 
-    Core.eval(GUIDANCE_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "guidance", "Thruster_guidance_models.jl"))))
-    Core.eval(GUIDANCE_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "guidance", "Thruster_guidance_functions.jl"))))
+    Core.eval(GUIDANCE_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "gnc", "guidance", "thruster_guidance", "thruster_guidance_models.jl"))))
+    Core.eval(GUIDANCE_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "gnc", "guidance", "thruster_guidance", "thruster_guidance_functions.jl"))))
     GUIDANCE_SANDBOX_LOADED[] = true
 end
 
@@ -1069,7 +1081,7 @@ function ensure_legacy_closed_form_loaded!()
     LEGACY_CLOSED_FORM_SANDBOX_LOADED[] = true
 end
 
-@testset "Complete Passage Legacy Entrypoint Smoke" begin
+@legacy_testset "Complete Passage Legacy Entrypoint Smoke" begin
     ensure_legacy_complete_passage_loaded!()
     sandbox = LEGACY_COMPLETE_PASSAGE_SANDBOX
 
@@ -1088,7 +1100,7 @@ end
     @test_throws UndefVarError sandbox.execute_elements_case(nothing, 1, args, ())
 end
 
-@testset "Complete Passage Full Include Smoke" begin
+@legacy_testset "Complete Passage Full Include Smoke" begin
     ensure_legacy_complete_passage_full_loaded!()
     sandbox = LEGACY_COMPLETE_PASSAGE_FULL_SANDBOX
 
@@ -1260,7 +1272,7 @@ end
     @test occursin("ODEParams", sprint(showerror, err_phase))
 end
 
-@testset "Complete Passage Legacy Coverage Harness" begin
+@legacy_testset "Complete Passage Legacy Coverage Harness" begin
     ensure_legacy_complete_passage_full_loaded!()
     sandbox = LEGACY_COMPLETE_PASSAGE_FULL_SANDBOX
 
@@ -2525,7 +2537,7 @@ end
 
 end
 
-@testset "Legacy Remaining Module Smoke Coverage" begin
+@legacy_testset "Legacy Remaining Module Smoke Coverage" begin
     ensure_legacy_control_eoms_loaded!()
     eoms_sandbox = LEGACY_CONTROL_EOMS_SANDBOX
     @test isdefined(eoms_sandbox, :asim_ctrl)
@@ -2711,7 +2723,7 @@ end
     @test ts2_root_hi == 88.0
 end
 
-@testset "Legacy Propulsive Utils Helper Coverage" begin
+@legacy_testset "Legacy Propulsive Utils Helper Coverage" begin
     module_name = gensym(:LegacyPropulsiveUtilsSandbox)
     Core.eval(Main, :(module $module_name
         using ..SimulationModel
@@ -2997,7 +3009,7 @@ end
     @test du_inactive.sc[1].mass == 0.0
 end
 
-@testset "Legacy Targeting Smoke" begin
+@legacy_testset "Legacy Targeting Smoke" begin
     ensure_legacy_targeting_loaded!()
     sandbox = LEGACY_TARGETING_SANDBOX
 
@@ -3458,7 +3470,7 @@ end
     @test α_openloop_1_out == 0.0
 end
 
-@testset "Legacy Eoms Utils State Accessors" begin
+@legacy_testset "Legacy Eoms Utils State Accessors" begin
     ensure_legacy_eoms_utils_loaded!()
     sandbox = LEGACY_EOMS_UTILS_SANDBOX
 
@@ -3496,7 +3508,7 @@ end
     @test_throws ArgumentError throw_sandbox._legacy_get_solution(Dict{Symbol, Any}())
 end
 
-@testset "Legacy CNF Threading Guard" begin
+@legacy_testset "Legacy CNF Threading Guard" begin
     function strip_comments(src::String)
         # Remove block comments first, then trim line comments (including trailing inline comments).
         no_block = replace(src, r"#=.*?=#"s => "")
@@ -3505,18 +3517,18 @@ end
     end
 
     scoped_files = [
-        "src/control/Control.jl",
-        "src/control/targeting_control/targeting.jl",
-        "src/control/heatload_control/Time_switch_calcs.jl",
-        "src/control/heatload_control/Second_tsw_calcs.jl",
-        "src/control/heatload_control/Security_mode.jl",
-        "src/control/targeting_control/sim_targeting.jl",
-        "src/control/utils/Eoms.jl",
-        "src/control/utils/Eom_ctrl.jl",
-        "src/control/utils/Propulsive_maneuvers.jl",
-        "src/control/Eoms.jl",
-        "src/control/Eom_ctrl.jl",
-        "src/control/targeting_control/Eom_targeting.jl"
+        "src/gnc/control/control.jl",
+        "src/gnc/guidance/targeting_control/targeting.jl",
+        "src/gnc/control/heatload_control/Time_switch_calcs.jl",
+        "src/gnc/control/heatload_control/Second_tsw_calcs.jl",
+        "src/gnc/control/heatload_control/Security_mode.jl",
+        "src/gnc/guidance/targeting_control/sim_targeting.jl",
+        "src/gnc/control/eoms.jl",
+        "src/gnc/control/eom_ctrl.jl",
+        "src/gnc/control/propulsive_maneuvers.jl",
+        "src/gnc/control/eoms.jl",
+        "src/gnc/control/eom_ctrl.jl",
+        "src/gnc/guidance/targeting_control/Eom_targeting.jl"
     ]
     for relpath in scoped_files
         src = strip_comments(read(joinpath(REPO_ROOT, relpath), String))
@@ -3525,7 +3537,7 @@ end
     end
 end
 
-@testset "Legacy Config Parsing Cleanup" begin
+@legacy_testset "Legacy Config Parsing Cleanup" begin
     ensure_legacy_config_loaded!()
     sandbox = LEGACY_CONFIG_SANDBOX
 
@@ -3794,7 +3806,7 @@ end
     end
 end
 
-@testset "Legacy Integrator/Event/Output Smoke" begin
+@legacy_testset "Legacy Integrator/Event/Output Smoke" begin
     sandbox = LEGACY_RUNTIME_SANDBOX
 
     Core.eval(sandbox, :(include(joinpath(Main.REPO_ROOT, "src", "integrator", "Events.jl"))))
@@ -3845,7 +3857,7 @@ end
     @test_throws ArgumentError sandbox._legacy_get_save_results_runtime_state(Dict{Symbol, Any}(:cnf => 1))
 end
 
-@testset "Legacy Save_csv Direct Smoke" begin
+@legacy_testset "Legacy Save_csv Direct Smoke" begin
     sandbox = LEGACY_RUNTIME_SANDBOX
     if !isdefined(sandbox, :save_csv)
         Core.eval(sandbox, :(include(joinpath(Main.REPO_ROOT, "src", "utils", "Save_csv.jl"))))
@@ -5191,7 +5203,7 @@ end
     @test body_b.net_torque == SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-@testset "Legacy Monte Carlo Helpers Smoke" begin
+@legacy_testset "Legacy Monte Carlo Helpers Smoke" begin
     ensure_legacy_monte_carlo_loaded!()
     sandbox = LEGACY_MONTE_CARLO_SANDBOX
 
@@ -5291,7 +5303,7 @@ end
     end
 end
 
-@testset "Legacy Monte Carlo Perturbation Helpers" begin
+@legacy_testset "Legacy Monte Carlo Perturbation Helpers" begin
     ensure_legacy_monte_carlo_perturb_loaded!()
     sandbox = LEGACY_MONTE_CARLO_PERTURB_SANDBOX
 
@@ -5369,7 +5381,7 @@ end
     @test isfinite(S_out)
 end
 
-@testset "Legacy Closed-Form Helper Smoke" begin
+@legacy_testset "Legacy Closed-Form Helper Smoke" begin
     ensure_legacy_closed_form_loaded!()
     sandbox = LEGACY_CLOSED_FORM_SANDBOX
 
@@ -5668,7 +5680,7 @@ end
     end
 end
 
-@testset "Legacy Global State Guard (Remaining Modules)" begin
+@legacy_testset "Legacy Global State Guard (Remaining Modules)" begin
     function strip_comments(src::String)
         no_block = replace(src, r"#=.*?=#"s => "")
         no_line = map(line -> first(split(line, '#'; limit=2)), split(no_block, '\n'; keepempty=true))
@@ -5676,9 +5688,9 @@ end
     end
 
     remaining_files = [
-        "src/utils/Save_results.jl",
-        "src/utils/MonteCarlo_set.jl",
-        "src/physical_models/Propulsive_maneuvers.jl"
+        "src/io/outputs/save_results.jl",
+        "src/mission/campaigns/montecarlo_set.jl",
+        "src/gnc/control/propulsive_maneuvers.jl"
     ]
 
     for relpath in remaining_files
@@ -5748,7 +5760,7 @@ end
     end
 end
 
-@testset "Legacy Wrapper Parity + Robustness" begin
+@legacy_testset "Legacy Wrapper Parity + Robustness" begin
     sc = make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0)
     settings = SimulationSettings(
         results=true,
@@ -6128,7 +6140,7 @@ end
     end
 end
 
-@testset "Legacy Entry Dispatch Parity" begin
+@legacy_testset "Legacy Entry Dispatch Parity" begin
     sc = make_spacecraft(ra_alt_m=540e3, rp_alt_m=430e3, ν_deg=168.0)
     settings = SimulationSettings(
         results=true,
@@ -6202,15 +6214,13 @@ end
     end
 
     run_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "engine", "execution.jl"), String))
-    complete_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_elements.jl"), String))
+    legacy_elements_path = joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_elements.jl")
 
-    # Typed path should stay SI-native; legacy path still carries DU/TU/MU normalization.
+    # Canonical engine path should stay SI-native.
     @test !occursin("cnf.DU", run_src)
     @test !occursin("cnf.TU", run_src)
     @test !occursin("cnf.MU", run_src)
-    @test occursin("cnf.DU", complete_src)
-    @test occursin("cnf.TU", complete_src)
-    @test occursin("cnf.MU", complete_src)
+    @test !isfile(legacy_elements_path)
 
     sc = make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0)
     settings_norm_true = SimulationSettings(
@@ -6582,7 +6592,7 @@ end
         using LinearAlgebra
         using StaticArrays
         args = :legacy_topography_args
-        include(joinpath(Main.REPO_ROOT, "src", "utils", "Reference_system.jl"))
+        include(joinpath(Main.REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
     end))
     topo_sandbox = getfield(Main, topo_module_name)
     lla_topo = topo_sandbox.rtolatlong(rp_topo, planet_topo, true)

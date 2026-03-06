@@ -9,7 +9,7 @@ using CSV
 using DataFrames
 using Statistics
 
-include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
 using .SimulationModel
 
 const quat_mult = SimulationModel.quat_mult

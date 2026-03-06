@@ -9,7 +9,7 @@ if !isdefined(@__MODULE__, :SPICE_PATH)
     const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 end
 if !isdefined(@__MODULE__, :SimulationModel)
-    include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+    include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
 end
 if !isdefined(@__MODULE__, :SM)
     const SM = SimulationModel

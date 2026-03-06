@@ -35,7 +35,7 @@ if myid() == 1
     using Plots
 end
 
-include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
 using .SimulationModel
 
 # run_simulation.jl expects quat_mult in the including scope.

@@ -2,7 +2,7 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
 using SPICE
 
-include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
 using .SimulationModel
 
 # SimulationEngine uses SimulationModel and provides the canonical run_simulation entrypoint.

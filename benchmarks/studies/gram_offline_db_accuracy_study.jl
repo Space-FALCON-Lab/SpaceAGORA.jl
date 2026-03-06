@@ -9,7 +9,7 @@ using CSV
 using DataFrames
 using Serialization
 
-include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
 using .SimulationModel
 
 const EM = SimulationModel.EnvironmentModels

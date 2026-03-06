@@ -11,9 +11,9 @@ using TOML
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
-include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
 using .SimulationModel
-include(joinpath(REPO_ROOT, "src", "utils", "Reference_system.jl"))
+include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
 
 const quat_mult = SimulationModel.quat_mult
 if !isdefined(@__MODULE__, :SimulationEngine)

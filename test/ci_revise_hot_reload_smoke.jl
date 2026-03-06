@@ -5,7 +5,7 @@ using DataFrames
 using SPICE
 using Revise
 
-include(joinpath(REPO_ROOT, "src", "simulation_model", "SimulationModel.jl"))
+include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
 using .SimulationModel
 
 # Revise-based hot-swap workflows require callback invokelatest dispatch.

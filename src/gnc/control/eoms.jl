@@ -1,5 +1,5 @@
-include(joinpath(@__DIR__, "legacy_include_helpers.jl"))
-_sa_include_control_runtime_deps!()
+include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
+_bridge_include_control_runtime_deps!()
 
 # include("Control.jl")
 # include("heatload_control/Utils_timeswitch.jl")
@@ -10,12 +10,12 @@ using Dates
 using AstroTime
 using SPICE
 
-include(joinpath(@__DIR__, "legacy_state_helpers.jl"))
+include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
 
 
 function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval=false, gram_atmosphere=nothing, time_switch_2=0, reevaluation_mode=1; cnf=nothing, solution=nothing)
-    cnf_state = _legacy_get_cnf(args; cnf=cnf)
-    solution_state = _legacy_get_solution(args; cnf=cnf_state, solution=solution)
+    cnf_state = _bridge_get_cnf(args; cnf=cnf)
+    solution_state = _bridge_get_solution(args; cnf=cnf_state, solution=solution)
     gram = nothing
 
     wind_m = false

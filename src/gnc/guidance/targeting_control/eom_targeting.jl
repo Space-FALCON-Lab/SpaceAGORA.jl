@@ -1,5 +1,5 @@
-include(joinpath(@__DIR__, "..", "..", "control", "legacy_include_helpers.jl"))
-_sa_include_targeting_runtime_deps!()
+include(joinpath(@__DIR__, "..", "..", "internal", "bridge_helpers.jl"))
+_bridge_include_targeting_runtime_deps!()
 
 # include("Control.jl")
 # include("heatload_control/Utils_timeswitch.jl")
@@ -16,21 +16,24 @@ using SPICE
 # import .config
 # import .ref_sys
 
-@inline function _legacy_eom_targeting_log_enabled(args)::Bool
+@inline function _compat_eom_targeting_log_enabled(args)::Bool
     if get(ENV, "SPACEAGORA_DEBUG_LEGACY_CONTROL", "0") == "1"
         return true
     end
-    if args isa AbstractDict
-        return Bool(get(args, :print_res, false)) || Bool(get(args, :verbose, false))
+    if hasproperty(args, :simulation_settings) && hasproperty(args.simulation_settings, :verbose)
+        return Bool(getproperty(args.simulation_settings, :verbose))
+    end
+    if hasproperty(args, :verbose)
+        return Bool(getproperty(args, :verbose))
     end
     return false
 end
 
-include(joinpath(@__DIR__, "..", "..", "control", "legacy_state_helpers.jl"))
+include(joinpath(@__DIR__, "..", "..", "internal", "bridge_helpers.jl"))
 
 function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing; cnf=nothing, solution=nothing)
-    cnf_state = _legacy_get_cnf(args; cnf=cnf)
-    solution_state = _legacy_get_solution(args; cnf=cnf_state, solution=solution)
+    cnf_state = _bridge_get_cnf(args; cnf=cnf)
+    solution_state = _bridge_get_solution(args; cnf=cnf_state, solution=solution)
     gram = nothing
 
     wind_m = false
@@ -1045,7 +1048,7 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
     # prob = NonlinearProblem(shooting_residual!, z0, p)
     # sol_NL = solve(prob, NewtonRaphson())
 
-    log_enabled = _legacy_eom_targeting_log_enabled(args)
+    log_enabled = _compat_eom_targeting_log_enabled(args)
     sol_NL = nlsolve((residuals, z) -> shooting_residual!(residuals, z, p, param), z0, show_trace=log_enabled)
 
     if log_enabled

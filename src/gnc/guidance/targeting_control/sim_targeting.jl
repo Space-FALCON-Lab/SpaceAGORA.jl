@@ -1,5 +1,5 @@
-include(joinpath(@__DIR__, "..", "..", "control", "legacy_include_helpers.jl"))
-_sa_include_targeting_runtime_deps!()
+include(joinpath(@__DIR__, "..", "..", "internal", "bridge_helpers.jl"))
+_bridge_include_targeting_runtime_deps!()
 
 # include("Control.jl")
 # include("heatload_control/Utils_timeswitch.jl")
@@ -16,20 +16,23 @@ using SPICE
 # import .config
 # import .ref_sys
 
-@inline function _legacy_sim_targeting_log_enabled(args)::Bool
+@inline function _compat_sim_targeting_log_enabled(args)::Bool
     if get(ENV, "SPACEAGORA_DEBUG_LEGACY_CONTROL", "0") == "1"
         return true
     end
-    if args isa AbstractDict
-        return Bool(get(args, :print_res, false)) || Bool(get(args, :verbose, false))
+    if hasproperty(args, :simulation_settings) && hasproperty(args.simulation_settings, :verbose)
+        return Bool(getproperty(args.simulation_settings, :verbose))
+    end
+    if hasproperty(args, :verbose)
+        return Bool(getproperty(args, :verbose))
     end
     return false
 end
 
-include(joinpath(@__DIR__, "..", "..", "control", "legacy_state_helpers.jl"))
+include(joinpath(@__DIR__, "..", "..", "internal", "bridge_helpers.jl"))
 
 function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
-    cnf_state = _legacy_get_cnf(param[8]; cnf=cnf)
+    cnf_state = _bridge_get_cnf(param[8]; cnf=cnf)
     ip = param[3]
 
     wind_m = false
@@ -218,7 +221,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
             Kn = 1.26 * sqrt(γ) * Mach / (Re + 1e-5)
             if index_phase_aerobraking == 2
                 if (alt < 80000) && (cnf_state.index_warning_alt == 0)
-                    if _legacy_sim_targeting_log_enabled(args)
+                    if _compat_sim_targeting_log_enabled(args)
                         println("WARNING: Altitude < 80 km!")
                     end
                 end
@@ -229,7 +232,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
             end
 
             if Kn < 0.1 && cnf_state.index_warning_flow == 0
-                if _legacy_sim_targeting_log_enabled(args)
+                if _compat_sim_targeting_log_enabled(args)
                     println("WARNING: Transitional flow passage!")
                 end
                 
@@ -359,7 +362,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
                 cnf_state.index_propellant_mass = 0
                 m.engines.T = 0
 
-                if _legacy_sim_targeting_log_enabled(args)
+                if _compat_sim_targeting_log_enabled(args)
                     println("WARNING: No fuel left!")
                 end
             end

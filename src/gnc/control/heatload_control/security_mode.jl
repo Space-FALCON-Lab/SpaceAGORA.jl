@@ -1,10 +1,10 @@
-include(joinpath(@__DIR__, "..", "legacy_include_helpers.jl"))
-_sa_include_heatload_security_deps!()
+include(joinpath(@__DIR__, "..", "..", "internal", "bridge_helpers.jl"))
+_bridge_include_heatload_security_deps!()
 
-include(joinpath(@__DIR__, "..", "legacy_state_helpers.jl"))
+include(joinpath(@__DIR__, "..", "..", "internal", "bridge_helpers.jl"))
 
 function security_mode(ip, m, position, args, t, heat_rate_control=false; cnf=nothing)
-    cnf_state = _legacy_get_cnf(args; cnf=cnf)
+    cnf_state = _bridge_get_cnf(args; cnf=cnf)
     T = m.planet.T
 
     t_cf, h_cf, γ_cf, v_cf = closed_form(args, m, position, T, true, m.aerodynamics.α)

@@ -131,7 +131,7 @@ end
     return replace(token, "|" => "_")
 end
 
-@inline function _legacy_outer_route_signature(f::OuterRouteFeatures)::String
+@inline function _compat_outer_route_signature(f::OuterRouteFeatures)::String
     return join((
         "cat=$(f.category)",
         "sat=$(_route_sat_bucket(f.n_sats))",
@@ -190,7 +190,7 @@ end
         "thermal=$(f.thermal_enabled ? "1" : "0")",
         "eff_cost=$(_route_effector_cost_bucket(f.effector_cost_class))"
     ), "|")
-    legacy = _legacy_outer_route_signature(f)
+    legacy = _compat_outer_route_signature(f)
     return unique(String[full, mid, legacy])
 end
 

@@ -36,7 +36,7 @@ else
 end
 using .SimulationModel
 include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
-include(joinpath(REPO_ROOT, "src", "examples", "typed_example_utils.jl"))
+include(joinpath(REPO_ROOT, "src", "core", "utils", "typed_example_utils.jl"))
 
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const EventTolerance = NamedTuple{

@@ -1,18 +1,22 @@
 
-if !isdefined(@__MODULE__, :_legacy_get_mc_runtime_state)
-    @inline function _legacy_get_mc_runtime_state(args=nothing; cnf=nothing, solution=nothing)
+if !isdefined(@__MODULE__, :_compat_get_mc_runtime_state)
+    @inline function _compat_get_mc_runtime_state(args=nothing; cnf=nothing, solution=nothing)
         cnf_state = if cnf !== nothing
             cnf
-        elseif args isa AbstractDict && haskey(args, :cnf)
-            args[:cnf]
+        elseif args isa NamedTuple && hasproperty(args, :cnf)
+            getproperty(args, :cnf)
+        elseif !(args isa NamedTuple) && hasproperty(args, :cnf)
+            getproperty(args, :cnf)
         else
             nothing
         end
 
         solution_state = if solution !== nothing
             solution
-        elseif args isa AbstractDict && haskey(args, :solution)
-            args[:solution]
+        elseif args isa NamedTuple && hasproperty(args, :solution)
+            getproperty(args, :solution)
+        elseif !(args isa NamedTuple) && hasproperty(args, :solution)
+            getproperty(args, :solution)
         else
             nothing
         end
@@ -38,7 +42,7 @@ function MonteCarlo_setting(args)
 end
 
 function MonteCarlo_setting_passage(mc_index, args)
-    runtime = _legacy_get_mc_runtime_state(args)
+    runtime = _compat_get_mc_runtime_state(args)
     cnf_state = runtime.cnf
     cnf_state.counter_random = 0
 
@@ -59,7 +63,7 @@ function MonteCarlo_setting_passage(mc_index, args)
 end
 
 function MonteCarlo_append(MC, args, count)
-    runtime = _legacy_get_mc_runtime_state(args)
+    runtime = _compat_get_mc_runtime_state(args)
     cnf_state = runtime.cnf
     solution_state = runtime.solution
 

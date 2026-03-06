@@ -1,5 +1,5 @@
-include(joinpath(@__DIR__, "..", "legacy_include_helpers.jl"))
-_sa_include_heatload_utils_deps!()
+include(joinpath(@__DIR__, "..", "..", "internal", "bridge_helpers.jl"))
+_bridge_include_heatload_utils_deps!()
 
 function lambdas(m, aoa, k, t, h, γ, v, coeff, nu_E)
     CD_slope, CL_0, CD_0 = coeff

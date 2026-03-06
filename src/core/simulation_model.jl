@@ -64,19 +64,33 @@ include(joinpath(@__DIR__, "..", "parallel", "policy", "parallel_policy.jl"))
 include(joinpath(@__DIR__, "..", "dynamics", "rotational", "rotational_models.jl"))
 @reexport using .DynamicsRotational
 
+# --- Translational Dynamics ---
+include(joinpath(@__DIR__, "..", "dynamics", "translational", "translational_models.jl"))
+@reexport using .DynamicsTranslational
+
 # --- Dynamic Effectors ---
 include(joinpath(@__DIR__, "..", "dynamics", "models", "dynamic_effectors.jl"))
 @reexport using .DynamicEffectors
 
+# --- IO Owners ---
+include(joinpath(@__DIR__, "..", "io", "config", "io_config.jl"))
+@reexport using .IOConfig
+include(joinpath(@__DIR__, "..", "io", "serialization", "io_serialization.jl"))
+@reexport using .IOSerialization
+include(joinpath(@__DIR__, "..", "io", "logging", "io_logging.jl"))
+@reexport using .IOLogging
+include(joinpath(@__DIR__, "..", "io", "outputs", "io_outputs.jl"))
+@reexport using .IOOutputs
+
 # --- Guidance Effectors ---
-include(joinpath(@__DIR__, "..", "gnc", "guidance", "effectors.jl"))
-@reexport using .GuidanceEffectors
+include(joinpath(@__DIR__, "..", "gnc", "guidance", "guidance_hooks.jl"))
+@reexport using .GuidanceHooks
 # --- Navigation Effectors ---
-include(joinpath(@__DIR__, "..", "gnc", "navigation", "effectors.jl"))
-@reexport using .NavigationEffectors
+include(joinpath(@__DIR__, "..", "gnc", "navigation", "navigation_hooks.jl"))
+@reexport using .NavigationHooks
 # --- Control Effectors ---
-include(joinpath(@__DIR__, "..", "gnc", "control", "effectors.jl"))
-@reexport using .ControlEffectors
+include(joinpath(@__DIR__, "..", "gnc", "control", "control_hooks.jl"))
+@reexport using .ControlHooks
 
 # --- Physical Models ---
 include(joinpath(@__DIR__, "..", "environment", "physical_models.jl"))

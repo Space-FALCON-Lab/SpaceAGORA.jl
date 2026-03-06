@@ -80,26 +80,26 @@ function _gram_track_cache_config()::GramTrackCacheConfig
     mode = _gram_track_cache_mode()
 
     # Backward-compatible global knobs still apply unless regime-specific values are provided.
-    legacy_horizon = _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_HORIZON_S")
-    legacy_alt_tol = _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ALT_TOL_M")
-    legacy_ang_tol_deg = _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ANG_TOL_DEG")
-    legacy_points = _parse_int_env_optional("SPACEAGORA_GRAM_TRACK_CACHE_NPOS")
-    if legacy_points === nothing
-        legacy_points = _parse_int_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_POINTS")
+    compat_horizon = _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_HORIZON_S")
+    compat_alt_tol = _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ALT_TOL_M")
+    compat_ang_tol_deg = _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ANG_TOL_DEG")
+    compat_points = _parse_int_env_optional("SPACEAGORA_GRAM_TRACK_CACHE_NPOS")
+    if compat_points === nothing
+        compat_points = _parse_int_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_POINTS")
     end
 
     entry_horizon_s = max(
         1e-3,
         something(
             _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ENTRY_HORIZON_S"),
-            something(legacy_horizon, 1.0)
+            something(compat_horizon, 1.0)
         )
     )
     orbit_horizon_s = max(
         1e-3,
         something(
             _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ORBIT_HORIZON_S"),
-            something(legacy_horizon, 8.0)
+            something(compat_horizon, 8.0)
         )
     )
     entry_points = max(
@@ -108,7 +108,7 @@ function _gram_track_cache_config()::GramTrackCacheConfig
             _parse_int_env_optional("SPACEAGORA_GRAM_TRACK_CACHE_ENTRY_NPOS"),
             something(
                 _parse_int_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ENTRY_POINTS"),
-                something(legacy_points, 16)
+                something(compat_points, 16)
             )
         )
     )
@@ -118,7 +118,7 @@ function _gram_track_cache_config()::GramTrackCacheConfig
             _parse_int_env_optional("SPACEAGORA_GRAM_TRACK_CACHE_ORBIT_NPOS"),
             something(
                 _parse_int_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ORBIT_POINTS"),
-                something(legacy_points, 48)
+                something(compat_points, 48)
             )
         )
     )
@@ -126,28 +126,28 @@ function _gram_track_cache_config()::GramTrackCacheConfig
         0.0,
         something(
             _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ENTRY_ALT_TOL_M"),
-            something(legacy_alt_tol, 500.0)
+            something(compat_alt_tol, 500.0)
         )
     )
     orbit_alt_tol_m = max(
         0.0,
         something(
             _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ORBIT_ALT_TOL_M"),
-            something(legacy_alt_tol, 3000.0)
+            something(compat_alt_tol, 3000.0)
         )
     )
     entry_ang_tol_rad = deg2rad(max(
         0.0,
         something(
             _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ENTRY_ANG_TOL_DEG"),
-            something(legacy_ang_tol_deg, 0.6)
+            something(compat_ang_tol_deg, 0.6)
         )
     ))
     orbit_ang_tol_rad = deg2rad(max(
         0.0,
         something(
             _parse_float_env_optional("SPACEAGORA_GRAM_SEGMENT_CACHE_ORBIT_ANG_TOL_DEG"),
-            something(legacy_ang_tol_deg, 4.0)
+            something(compat_ang_tol_deg, 4.0)
         )
     ))
     transition_band_m = max(0.0, _parse_float_env("SPACEAGORA_GRAM_SEGMENT_CACHE_TRANSITION_BAND_M", 20e3))

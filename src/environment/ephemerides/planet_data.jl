@@ -1,7 +1,7 @@
 include(joinpath(@__DIR__, "..", "..", "environment", "ephemerides", "planet_shapes.jl"))
 using StaticArrays
 
-@inline function _legacy_parse_planet_id(ip)::Int
+@inline function _compat_parse_planet_id(ip)::Int
     if ip isa Integer
         pid = Int(ip)
         if 0 <= pid <= 7
@@ -27,7 +27,7 @@ using StaticArrays
 end
 
 function planet_data(ip)
-    planet_id = _legacy_parse_planet_id(ip)
+    planet_id = _compat_parse_planet_id(ip)
 
     # try
     #     if haskey(ip, :planet)

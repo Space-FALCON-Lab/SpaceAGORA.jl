@@ -1,4 +1,4 @@
-module GuidanceEffectors
+module GuidanceHooks
     using ..Analysis
 
     using ..ConfigTypes: ODEParams # Get the Planet struct

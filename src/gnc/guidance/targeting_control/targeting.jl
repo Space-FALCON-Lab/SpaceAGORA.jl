@@ -5,37 +5,32 @@ include(joinpath(@__DIR__, "..", "..", "control", "eom_ctrl.jl"))
 
 using Roots
 
-@inline function _legacy_targeting_log_enabled(args)::Bool
+@inline function _compat_targeting_log_enabled(args)::Bool
     if get(ENV, "SPACEAGORA_DEBUG_LEGACY_CONTROL", "0") == "1"
         return true
     end
-    if args isa AbstractDict
-        return Bool(get(args, :print_res, false)) || Bool(get(args, :verbose, false))
+    if hasproperty(args, :simulation_settings) && hasproperty(args.simulation_settings, :verbose)
+        return Bool(getproperty(args.simulation_settings, :verbose))
+    end
+    if hasproperty(args, :verbose)
+        return Bool(getproperty(args, :verbose))
     end
     return false
 end
 
-include(joinpath(@__DIR__, "..", "..", "control", "legacy_state_helpers.jl"))
+include(joinpath(@__DIR__, "..", "..", "internal", "bridge_helpers.jl"))
 
 function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a_tol, r_tol, method, events, in_cond; cnf=nothing)
-    lock(LEGACY_CONTROL_STATE_LOCK)
+    lock(CONTROL_BRIDGE_STATE_LOCK)
     try
         return _target_planning_impl(f!, ip, m, args, param, OE, initial_time, final_time, a_tol, r_tol, method, events, in_cond; cnf=cnf)
     finally
-        unlock(LEGACY_CONTROL_STATE_LOCK)
+        unlock(CONTROL_BRIDGE_STATE_LOCK)
     end
 end
 
 function _target_planning_impl(f!, ip, m, args, param, OE, initial_time, final_time, a_tol, r_tol, method, events, in_cond; cnf=nothing)
-    if args isa AbstractDict
-        local_cnf = _legacy_get_cnf(args; cnf=cnf)
-        try
-            args[:cnf] = local_cnf
-        catch
-            nothing
-        end
-    end
-    cnf_state = _legacy_get_cnf(args; cnf=cnf)
+    cnf_state = _bridge_get_cnf(args; cnf=cnf)
 
     # OE = SVector{7, Float64}([initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m])
     r0, v0 = orbitalelemtorv(OE, m.planet)
@@ -43,7 +38,7 @@ function _target_planning_impl(f!, ip, m, args, param, OE, initial_time, final_t
     # Run simulation
     prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
     sol_max_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
-    log_enabled = _legacy_targeting_log_enabled(args)
+    log_enabled = _compat_targeting_log_enabled(args)
     if log_enabled
         println("m.aero.alpha before deepcopying: ", m.aerodynamics.α)
     end
@@ -138,11 +133,11 @@ end
 
 # function control_solarpanels_targeting(f!, energy_f, ip, m, time_0, OE, args, gram_atmosphere)
 function control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
-    log_enabled = length(param) >= 8 ? _legacy_targeting_log_enabled(param[8]) : false
+    log_enabled = length(param) >= 8 ? _compat_targeting_log_enabled(param[8]) : false
 
     function func_targeting_num_int(t_switch)
 
-        sol = asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=_legacy_get_cnf(param[8]))
+        sol = asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=_bridge_get_cnf(param[8]))
 
         m = param[1]
 
@@ -161,7 +156,7 @@ function control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
 end
 
 function control_solarpanels_targeting_heatload(energy_f, param, OE)
-    log_enabled = length(param) >= 8 ? _legacy_targeting_log_enabled(param[8]) : false
+    log_enabled = length(param) >= 8 ? _compat_targeting_log_enabled(param[8]) : false
 
     function func_targeting_heatload(v_E)
         m = param[1]
@@ -170,7 +165,7 @@ function control_solarpanels_targeting_heatload(energy_f, param, OE)
         args = param[8]
         gram_atmosphere = param[10]
 
-        sol, _ = asim_ctrl_rf(ip, m, time_0, OE, args, v_E, 1.0, false, gram_atmosphere; cnf=_legacy_get_cnf(args))
+        sol, _ = asim_ctrl_rf(ip, m, time_0, OE, args, v_E, 1.0, false, gram_atmosphere; cnf=_bridge_get_cnf(args))
 
         energy_fin = norm(sol[4:6,end])^2/2 - m.planet.μ / norm(sol[1:3,end])
 

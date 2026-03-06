@@ -13,9 +13,9 @@ using ..VehicleThermalModels: getHeatRate
 using ..DynamicEffectors: BaseThrusterModel, AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight, InverseSquaredJ2GravityModel
 using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
 using ..ConfigTypes: SaveData
-using ..ControlEffectors: calcControlEffect!
-using ..GuidanceEffectors: calcGuidanceEffect!
-using ..NavigationEffectors: calcNavigationEffect!
+using ..ControlHooks: calcControlEffect!
+using ..GuidanceHooks: calcGuidanceEffect!
+using ..NavigationHooks: calcNavigationEffect!
 using ..SimConfig: SimulationConfiguration, MissionOrbits
 export SaveField, default_save_fields, get_callbacks
 

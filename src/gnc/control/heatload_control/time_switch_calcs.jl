@@ -1,6 +1,6 @@
-# include(joinpath(@__DIR__, "..", "..", "..", "dynamics", "translational", "aerodynamic_models.jl"))
-include(joinpath(@__DIR__, "..", "legacy_include_helpers.jl"))
-_sa_include_heatload_switch_deps!()
+# include(joinpath(@__DIR__, "..", "..", "..", "dynamics", "coupled", "aerodynamic_wrench_models.jl"))
+include(joinpath(@__DIR__, "..", "..", "internal", "bridge_helpers.jl"))
+_bridge_include_heatload_switch_deps!()
 
 using Roots
 

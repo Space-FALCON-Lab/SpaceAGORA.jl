@@ -1,12 +1,12 @@
-include(joinpath(@__DIR__, "..", "legacy_include_helpers.jl"))
-_sa_include_heatload_second_switch_deps!()
+include(joinpath(@__DIR__, "..", "..", "internal", "bridge_helpers.jl"))
+_bridge_include_heatload_second_switch_deps!()
 
 using Roots
 
-include(joinpath(@__DIR__, "..", "legacy_state_helpers.jl"))
+include(joinpath(@__DIR__, "..", "..", "internal", "bridge_helpers.jl"))
 
 function second_time_switch_recalc_with_integration(ip, m, position, args, t, heat_rate_control, reevaluation_mode, gram_atmosphere=nothing, current_position=0; cnf=nothing)
-    cnf_state = _legacy_get_cnf(args; cnf=cnf)
+    cnf_state = _bridge_get_cnf(args; cnf=cnf)
     time_switch = cnf_state.time_switch_2
 
     function func(t_s)
@@ -63,7 +63,7 @@ function second_time_switch_recalc_with_integration(ip, m, position, args, t, he
 end
 
 function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, current_position=0, reevaluation_mode=0; cnf=nothing)
-    cnf_state = _legacy_get_cnf(args; cnf=cnf)
+    cnf_state = _bridge_get_cnf(args; cnf=cnf)
     # Evaluates past heat load
     aoa_past = cnf_state.α_list
     time_switch_1 = cnf_state.time_switch_1

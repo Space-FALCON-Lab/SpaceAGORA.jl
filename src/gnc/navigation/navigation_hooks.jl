@@ -1,4 +1,4 @@
-module NavigationEffectors
+module NavigationHooks
     export calcNavigationEffect!
 
     """

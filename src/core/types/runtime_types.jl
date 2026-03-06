@@ -51,17 +51,17 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         LegacyThrustDragPassageFiring = 2
     end
 
-    @inline function _legacy_enum_parse(::Type{T}, x::T) where {T <: Enum}
+    @inline function _compat_enum_parse(::Type{T}, x::T) where {T <: Enum}
         return x
     end
-    @inline function _legacy_enum_parse(::Type{LegacyGravityModelCode}, x::Integer)
+    @inline function _compat_enum_parse(::Type{LegacyGravityModelCode}, x::Integer)
         x == 0 && return LegacyGravityConstant
         x == 1 && return LegacyGravityInverseSquared
         x == 2 && return LegacyGravityInverseSquaredJ2
         x == 3 && return LegacyGravityGRAM
         throw(ArgumentError("Invalid gravity model code $x."))
     end
-    @inline function _legacy_enum_parse(::Type{LegacyDensityModelCode}, x::Integer)
+    @inline function _compat_enum_parse(::Type{LegacyDensityModelCode}, x::Integer)
         x == 0 && return LegacyDensityConstant
         x == 1 && return LegacyDensityExponential
         x == 2 && return LegacyDensityNoDensity
@@ -69,18 +69,18 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         x == 4 && return LegacyDensityNRLMSISE
         throw(ArgumentError("Invalid density model code $x."))
     end
-    @inline function _legacy_enum_parse(::Type{LegacyAerodynamicModelCode}, x::Integer)
+    @inline function _compat_enum_parse(::Type{LegacyAerodynamicModelCode}, x::Integer)
         x == 0 && return LegacyAeroCdClConstant
         x == 1 && return LegacyAeroDiffusive
         x == 2 && return LegacyAeroNoBallisticAxial
         throw(ArgumentError("Invalid aerodynamic model code $x."))
     end
-    @inline function _legacy_enum_parse(::Type{LegacyThermalModelCode}, x::Integer)
+    @inline function _compat_enum_parse(::Type{LegacyThermalModelCode}, x::Integer)
         x == 1 && return LegacyThermalConvectiveRadiative
         x == 2 && return LegacyThermalMaxwellian
         throw(ArgumentError("Invalid thermal model code $x."))
     end
-    @inline function _legacy_enum_parse(::Type{LegacyThrustControlCode}, x::Integer)
+    @inline function _compat_enum_parse(::Type{LegacyThrustControlCode}, x::Integer)
         x == 0 && return LegacyThrustNone
         x == 1 && return LegacyThrustAerobrakingManeuver
         x == 2 && return LegacyThrustDragPassageFiring
@@ -133,13 +133,13 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
     )
         return InitialParameters(
             M=M,
-            gm=_legacy_enum_parse(LegacyGravityModelCode, gm),
-            dm=_legacy_enum_parse(LegacyDensityModelCode, dm),
+            gm=_compat_enum_parse(LegacyGravityModelCode, gm),
+            dm=_compat_enum_parse(LegacyDensityModelCode, dm),
             wm=Int64(wm),
-            am=_legacy_enum_parse(LegacyAerodynamicModelCode, am),
-            tm=_legacy_enum_parse(LegacyThermalModelCode, tm),
+            am=_compat_enum_parse(LegacyAerodynamicModelCode, am),
+            tm=_compat_enum_parse(LegacyThermalModelCode, tm),
             cm=Int64(cm),
-            tc=_legacy_enum_parse(LegacyThrustControlCode, tc),
+            tc=_compat_enum_parse(LegacyThrustControlCode, tc),
             mc=Int64(mc)
         )
     end

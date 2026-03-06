@@ -1,4 +1,4 @@
-module ControlEffectors
+module ControlHooks
     using ..Analysis
 
     using ..ConfigTypes: ODEParams # Get the Planet struct
@@ -7,7 +7,7 @@ module ControlEffectors
     using ..StaticArrays        # Get deps from parent
     using ..Kinematics
     using ..DynamicEffectors: BaseThrusterModel
-    using ..GuidanceEffectors: AerobrakingCampaignPropulsiveManeuverGuidanceModel
+    using ..GuidanceHooks: AerobrakingCampaignPropulsiveManeuverGuidanceModel
 
     # Public members to export
     export calcControlForceTorque, calcControlEffect!, calcControlMassFlowRate

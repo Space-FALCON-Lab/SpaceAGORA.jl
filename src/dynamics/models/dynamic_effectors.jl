@@ -20,12 +20,12 @@ module DynamicEffectors
     
     include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl"))
     include(joinpath(@__DIR__, "..", "..", "environment", "gravity", "gravity_models.jl"))
-    include(joinpath(@__DIR__, "..", "..", "dynamics", "translational", "aerodynamic_models.jl"))
+    include(joinpath(@__DIR__, "..", "..", "dynamics", "coupled", "aerodynamic_wrench_models.jl"))
     include(joinpath(@__DIR__, "..", "..", "dynamics", "coupled", "perturbations.jl"))
     
     # Control forces/torques
     export BaseThrusterModel
-    include(joinpath(@__DIR__, "..", "..", "dynamics", "models", "thruster_models.jl"))
+    include(joinpath(@__DIR__, "..", "..", "vehicle", "actuators", "thruster", "thruster_models.jl"))
 
     # Guidance effectors
     export AerobrakingCampaignPropulsiveManeuverGuidanceModel

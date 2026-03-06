@@ -145,9 +145,12 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
 
-                du_view.pos .= sc_view.vel
-                du_view.vel .= forces / sc_view.mass
-                du_view.mass = mass_rate
+                SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
+                    du_view,
+                    sc_view,
+                    forces,
+                    mass_rate,
+                )
 
                 if p.args.mission_configuration.orientation_sim
                     inertia_tensor = spacecraft[i].inertia_tensor
@@ -178,9 +181,12 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
 
-                du_view.pos .= sc_view.vel
-                du_view.vel .= forces / sc_view.mass
-                du_view.mass = mass_rate
+                SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
+                    du_view,
+                    sc_view,
+                    forces,
+                    mass_rate,
+                )
 
                 if p.args.mission_configuration.orientation_sim
                     inertia_tensor = spacecraft[i].inertia_tensor
@@ -223,9 +229,11 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
 
-                du_view.pos .= sc_view.vel
-                du_view.vel .= forces / sc_view.mass
-                du_view.mass = 0.0
+                SimulationModel.DynamicsTranslational.assign_slow_translational_rhs!(
+                    du_view,
+                    sc_view,
+                    forces,
+                )
 
                 if p.args.mission_configuration.orientation_sim
                     inertia_tensor = spacecraft[i].inertia_tensor
@@ -255,9 +263,11 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
 
-                du_view.pos .= sc_view.vel
-                du_view.vel .= forces / sc_view.mass
-                du_view.mass = 0.0
+                SimulationModel.DynamicsTranslational.assign_slow_translational_rhs!(
+                    du_view,
+                    sc_view,
+                    forces,
+                )
 
                 if p.args.mission_configuration.orientation_sim
                     inertia_tensor = spacecraft[i].inertia_tensor
@@ -298,9 +308,12 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
 
-                du_view.pos .= 0.0
-                du_view.vel .= forces / sc_view.mass
-                du_view.mass = mass_rate
+                SimulationModel.DynamicsTranslational.assign_control_only_translational_rhs!(
+                    du_view,
+                    sc_view,
+                    forces,
+                    mass_rate,
+                )
 
                 if p.args.mission_configuration.orientation_sim
                     inertia_tensor = spacecraft[i].inertia_tensor
@@ -330,9 +343,12 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
 
-                du_view.pos .= 0.0
-                du_view.vel .= forces / sc_view.mass
-                du_view.mass = mass_rate
+                SimulationModel.DynamicsTranslational.assign_control_only_translational_rhs!(
+                    du_view,
+                    sc_view,
+                    forces,
+                    mass_rate,
+                )
 
                 if p.args.mission_configuration.orientation_sim
                     inertia_tensor = spacecraft[i].inertia_tensor

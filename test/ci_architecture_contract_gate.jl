@@ -8,6 +8,7 @@ end
 
 spaceagora_src = _read(joinpath("src", "SpaceAGORA.jl"))
 telemetry_src = _read(joinpath("src", "analysis", "verification", "telemetry_verification.jl"))
+rhs_src = _read(joinpath("src", "simulation", "engine", "dynamics_rhs.jl"))
 
 occursin("run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kwargs...)", spaceagora_src) ||
     error("SpaceAGORA.run_simulation is not forwarded to SimulationEngine.")
@@ -30,6 +31,32 @@ for retired in ("control", "physical_models", "guidance", "integrator", "utils",
     isdir(joinpath(REPO_ROOT, "src", retired)) &&
         error("Canonical-ownership contract violation: retired source tree still exists at src/$retired")
 end
+
+# Gravity ownership contract:
+# - canonical gravity owner is environment/gravity
+# - translational folder must not own gravity models
+isfile(joinpath(REPO_ROOT, "src", "environment", "gravity", "gravity_models.jl")) ||
+    error("Canonical-ownership contract violation: missing gravity owner at src/environment/gravity/gravity_models.jl")
+isfile(joinpath(REPO_ROOT, "src", "dynamics", "translational", "gravity_models.jl")) &&
+    error("Canonical-ownership contract violation: gravity model must not be owned by src/dynamics/translational")
+
+# Translational ownership contract:
+# - translational RHS equations are owned by dynamics/translational and consumed by engine RHS.
+for rel in (
+    joinpath("src", "dynamics", "translational", "translational_models.jl"),
+    joinpath("src", "dynamics", "translational", "position_kinematics.jl"),
+    joinpath("src", "dynamics", "translational", "point_mass_dynamics.jl"),
+)
+    isfile(joinpath(REPO_ROOT, rel)) ||
+        error("Canonical-ownership contract violation: missing translational owner file: $rel")
+end
+
+occursin("DynamicsTranslational.assign_full_translational_rhs!", rhs_src) ||
+    error("Engine RHS is not using canonical translational owner for full dynamics path.")
+occursin("DynamicsTranslational.assign_slow_translational_rhs!", rhs_src) ||
+    error("Engine RHS is not using canonical translational owner for slow dynamics path.")
+occursin("DynamicsTranslational.assign_control_only_translational_rhs!", rhs_src) ||
+    error("Engine RHS is not using canonical translational owner for control-only path.")
 
 engine_dir = joinpath(REPO_ROOT, "src", "simulation", "engine")
 for (root, _, files) in walkdir(engine_dir)

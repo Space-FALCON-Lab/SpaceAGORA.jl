@@ -29,7 +29,7 @@ const SE = EngineSandbox.SimulationEngine
         @test SE._solver_maxiters() == 12345
         @test SE._typed_save_bundle_enabled() == false
         @test SE._typed_normalize_warning_enabled() == false
-        @test SE._typed_allow_legacy_normalize() == true
+        @test SE._typed_allow_compat_normalize() == true
         @test SE._gram_per_sat_instances_enabled() == true
     end)
 

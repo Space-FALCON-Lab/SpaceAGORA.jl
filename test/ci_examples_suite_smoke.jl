@@ -4,7 +4,6 @@ const PROJECT_PATH = joinpath(REPO_ROOT, ".AGORA")
 
 function list_examples()
     files = sort(filter(f -> endswith(f, ".jl"), readdir(EXAMPLES_DIR; join=true)))
-    files = filter(f -> basename(f) != "typed_example_utils.jl", files)
     token = strip(get(ENV, "SPACEAGORA_EXAMPLE_FILTER", ""))
     if !isempty(token)
         files = filter(f -> occursin(token, basename(f)), files)

@@ -1,7 +1,7 @@
-if !isdefined(@__MODULE__, :_sa_include_closed_form_core_deps!)
-    include(joinpath(@__DIR__, "legacy_include_helpers.jl"))
+if !isdefined(@__MODULE__, :_bridge_include_closed_form_core_deps!)
+    include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
 end
-_sa_include_closed_form_core_deps!()
+_bridge_include_closed_form_core_deps!()
 
 using LinearAlgebra
 using Statistics

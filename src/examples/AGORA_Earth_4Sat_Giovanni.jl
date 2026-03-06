@@ -3,6 +3,7 @@ if !isdefined(@__MODULE__, :SimulationModel)
 end
 using .SimulationModel
 using Dates
+using LinearAlgebra
 using SPICE
 using StaticArrays
 
@@ -15,7 +16,7 @@ if !isdefined(@__MODULE__, :run_simulation)
     const run_simulation = SimulationEngine.run_simulation
 end
 if !isdefined(@__MODULE__, :run_and_report)
-    include("typed_example_utils.jl")
+    include(joinpath(@__DIR__, "..", "core", "utils", "typed_example_utils.jl"))
 end
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))

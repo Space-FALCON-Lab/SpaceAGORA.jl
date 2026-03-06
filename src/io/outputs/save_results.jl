@@ -1,27 +1,33 @@
 using .SimulationModel: ODEParams, IntermediateSolution, Solution
 
-if !isdefined(@__MODULE__, :_legacy_get_save_results_runtime_state)
-    @inline function _legacy_get_save_results_runtime_state(args=nothing; cnf=nothing, solution=nothing, model=nothing)
+if !isdefined(@__MODULE__, :_compat_get_save_results_runtime_state)
+    @inline function _compat_get_save_results_runtime_state(args=nothing; cnf=nothing, solution=nothing, model=nothing)
         cnf_state = if cnf !== nothing
             cnf
-        elseif args isa AbstractDict && haskey(args, :cnf)
-            args[:cnf]
+        elseif args isa NamedTuple && hasproperty(args, :cnf)
+            getproperty(args, :cnf)
+        elseif !(args isa NamedTuple) && hasproperty(args, :cnf)
+            getproperty(args, :cnf)
         else
             nothing
         end
 
         solution_state = if solution !== nothing
             solution
-        elseif args isa AbstractDict && haskey(args, :solution)
-            args[:solution]
+        elseif args isa NamedTuple && hasproperty(args, :solution)
+            getproperty(args, :solution)
+        elseif !(args isa NamedTuple) && hasproperty(args, :solution)
+            getproperty(args, :solution)
         else
             nothing
         end
 
         model_state = if model !== nothing
             model
-        elseif args isa AbstractDict && haskey(args, :model)
-            args[:model]
+        elseif args isa NamedTuple && hasproperty(args, :model)
+            getproperty(args, :model)
+        elseif !(args isa NamedTuple) && hasproperty(args, :model)
+            getproperty(args, :model)
         else
             nothing
         end
@@ -38,7 +44,7 @@ function save_results(time::Vector{Float64}, ratio::Float64, params::ODEParams)
     initial_time = 0
     solution = params.solution
     cnf = params.cnf
-    runtime = _legacy_get_save_results_runtime_state(nothing; cnf=cnf, solution=solution, model=params.m)
+    runtime = _compat_get_save_results_runtime_state(nothing; cnf=cnf, solution=solution, model=params.m)
 
     if length(solution.orientation.time) == 0
         cnf.prev_step_integrator = 0.0

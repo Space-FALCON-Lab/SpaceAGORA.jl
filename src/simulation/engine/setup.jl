@@ -22,7 +22,7 @@ const _NBODY_EPHEMERIS_REUSE_CACHE = Dict{Any, SimulationModel.NBodyEphemerisCac
 const _PLANET_FRAME_EPHEMERIS_REUSE_CACHE = Dict{Any, SimulationModel.PlanetFrameEphemerisCache}()
 
 @inline _typed_normalize_warning_enabled() = _engine_env_get("SPACEAGORA_WARN_NORMALIZE", "1") == "1"
-@inline _typed_allow_legacy_normalize() = _engine_env_get("SPACEAGORA_ALLOW_TYPED_NORMALIZE", "0") == "1"
+@inline _typed_allow_compat_normalize() = _engine_env_get("SPACEAGORA_ALLOW_TYPED_NORMALIZE", "0") == "1"
 @inline _typed_save_bundle_enabled() = _engine_env_get("SPACEAGORA_SAVE_BUNDLE", "1") == "1"
 @inline _typed_checkpoint_enabled(args) = args.simulation_settings.checkpoint_enabled || args.simulation_settings.resume_from_checkpoint
 

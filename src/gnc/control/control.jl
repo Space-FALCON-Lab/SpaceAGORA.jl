@@ -1,41 +1,44 @@
-include(joinpath(@__DIR__, "legacy_include_helpers.jl"))
-_sa_include_control_entrypoint_deps!()
+include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
+_bridge_include_control_entrypoint_deps!()
 
 using SpecialFunctions
 using Roots
 using Logging
 
-@inline function _legacy_control_log_enabled(args)::Bool
+@inline function _compat_control_log_enabled(args)::Bool
     if get(ENV, "SPACEAGORA_DEBUG_LEGACY_CONTROL", "0") == "1"
         return true
     end
-    if args isa AbstractDict
-        return Bool(get(args, :print_res, false)) || Bool(get(args, :verbose, false))
+    if hasproperty(args, :simulation_settings) && hasproperty(args.simulation_settings, :verbose)
+        return Bool(getproperty(args.simulation_settings, :verbose))
+    end
+    if hasproperty(args, :verbose)
+        return Bool(getproperty(args, :verbose))
     end
     return false
 end
 
-@inline function _legacy_control_strict_exceptions(args)::Bool
+@inline function _compat_control_strict_exceptions(args)::Bool
     if get(ENV, "SPACEAGORA_STRICT_LEGACY_CONTROL_EXCEPTIONS", "0") == "1"
         return true
     end
-    if args isa AbstractDict
-        return Bool(get(args, :strict_legacy_control_exceptions, false))
+    if hasproperty(args, :strict_compat_control_exceptions)
+        return Bool(getproperty(args, :strict_compat_control_exceptions))
     end
     return false
 end
 
-@inline function _legacy_control_exception_fallback(args, location::AbstractString, err, bt, fallback)
-    if _legacy_control_log_enabled(args)
+@inline function _compat_control_exception_fallback(args, location::AbstractString, err, bt, fallback)
+    if _compat_control_log_enabled(args)
         @warn "Legacy control fallback in $(location)." exception=(err, bt)
     end
-    if _legacy_control_strict_exceptions(args)
+    if _compat_control_strict_exceptions(args)
         throw(err)
     end
     return fallback
 end
 
-include(joinpath(@__DIR__, "legacy_state_helpers.jl"))
+include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
 
 function no_control(ip, m, args=0, index_ratio=0, state=0, t=0, position=0, current_position=0, heat_rate_control=true)
     α = m.aerodynamics.α
@@ -68,10 +71,10 @@ function control_struct_load(ip, m, args, S, T_p, q, MonteCarlo=false)
         try
             α = find_zero(f, (0, pi/2), Roots.Bisection())
         catch err
-            α = _legacy_control_exception_fallback(args, "control_struct_load.find_zero", err, catch_backtrace(), min_α)
+            α = _compat_control_exception_fallback(args, "control_struct_load.find_zero", err, catch_backtrace(), min_α)
         end
     else
-        if _legacy_control_log_enabled(args)
+        if _compat_control_log_enabled(args)
             println("Check Controller - Second Check")
         end
     end
@@ -97,7 +100,7 @@ function control_struct_load(ip, m, args, S, T_p, q, MonteCarlo=false)
 end
 
 function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, position=0, current_position=0; cnf=nothing)
-    cnf_state = _legacy_get_cnf(args; cnf=cnf)
+    cnf_state = _bridge_get_cnf(args; cnf=cnf)
     # println(state)
     # α = nothing
     if index_ratio[1] == 1
@@ -152,7 +155,7 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
                 end
 
             catch err
-                if _legacy_control_log_enabled(args)
+                if _compat_control_log_enabled(args)
                     @warn "Legacy control Newton solve failed; trying alternate initial guess." exception=(err, catch_backtrace())
                 end
 
@@ -165,14 +168,14 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
                         α = find_zero((f, df), x_0, Roots.Newton())
                     end
                 catch err_retry
-                    α = _legacy_control_exception_fallback(args, "control_solarpanels_heatrate.find_zero", err_retry, catch_backtrace(), min_α)
+                    α = _compat_control_exception_fallback(args, "control_solarpanels_heatrate.find_zero", err_retry, catch_backtrace(), min_α)
                 # end
                 end
             # end
             end
 
         else
-            if _legacy_control_log_enabled(args)
+            if _compat_control_log_enabled(args)
                 println("Check Controller - Second Check")
             end
         end
@@ -211,16 +214,16 @@ function heat_rate_calc(taf, ρ, T_w, T_p, R, γ, S, angle)
 end
 
 function control_solarpanels_heatload(ip, m, args, index_ratio, state=0, t=0, position=0, current_position=0, gram_atmosphere=nothing, heat_rate_control=false; cnf=nothing)
-    lock(LEGACY_CONTROL_STATE_LOCK)
+    lock(CONTROL_BRIDGE_STATE_LOCK)
     try
         return _control_solarpanels_heatload_impl(ip, m, args, index_ratio, state, t, position, current_position, gram_atmosphere, heat_rate_control; cnf=cnf)
     finally
-        unlock(LEGACY_CONTROL_STATE_LOCK)
+        unlock(CONTROL_BRIDGE_STATE_LOCK)
     end
 end
 
 function _control_solarpanels_heatload_impl(ip, m, args, index_ratio, state=0, t=0, position=0, current_position=0, gram_atmosphere=nothing, heat_rate_control=false; cnf=nothing)
-    cnf_state = _legacy_get_cnf(args; cnf=cnf)
+    cnf_state = _bridge_get_cnf(args; cnf=cnf)
     if args[:flash2_through_integration] == 1
         args[:security_mode] = false
     end
@@ -236,7 +239,7 @@ function _control_solarpanels_heatload_impl(ip, m, args, index_ratio, state=0, t
     if (cnf_state.evaluate_switch_heat_load == false)
         if args[:flash2_through_integration] == 1
             if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 1
-                if _legacy_control_log_enabled(args)
+                if _compat_control_log_enabled(args)
                     println("entering first switch calculation with integration")
                 end
                 cnf_state.time_switch_1, cnf_state.time_switch_2 = switch_calculation_with_integration(ip, m, position, args, t, heat_rate_control, 1, gram_atmosphere, position; cnf=cnf_state)
@@ -306,16 +309,16 @@ function _control_solarpanels_heatload_impl(ip, m, args, index_ratio, state=0, t
 end
 
 function control_solarpanels_openloop(ip, m, args, index_ratio, state, t=0, position=0, current_position=0, heat_rate_control=true, gram_atmosphere=nothing; cnf=nothing)
-    lock(LEGACY_CONTROL_STATE_LOCK)
+    lock(CONTROL_BRIDGE_STATE_LOCK)
     try
         return _control_solarpanels_openloop_impl(ip, m, args, index_ratio, state, t, position, current_position, heat_rate_control, gram_atmosphere; cnf=cnf)
     finally
-        unlock(LEGACY_CONTROL_STATE_LOCK)
+        unlock(CONTROL_BRIDGE_STATE_LOCK)
     end
 end
 
 function _control_solarpanels_openloop_impl(ip, m, args, index_ratio, state, t=0, position=0, current_position=0, heat_rate_control=true, gram_atmosphere=nothing; cnf=nothing)
-    cnf_state = _legacy_get_cnf(args; cnf=cnf)
+    cnf_state = _bridge_get_cnf(args; cnf=cnf)
     control_solarpanels_heatload(ip, m, args, index_ratio, 0, t, position, current_position, gram_atmosphere, heat_rate_control; cnf=cnf_state)
 
     if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 3

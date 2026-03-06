@@ -3,14 +3,13 @@ using DataFrames
 using StaticArrays
 
 if !isdefined(@__MODULE__, :REPO_ROOT)
-    const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
+    const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 end
 if !isdefined(@__MODULE__, :SPICE_PATH)
     const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 end
-if !isdefined(@__MODULE__, :SimulationModel)
-    include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
-end
+isdefined(@__MODULE__, :SimulationModel) ||
+    throw(ErrorException("Not implemented: typed_example_utils.jl requires SimulationModel in including module scope"))
 if !isdefined(@__MODULE__, :SM)
     const SM = SimulationModel
 end

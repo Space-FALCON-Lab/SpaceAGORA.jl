@@ -15,7 +15,7 @@ if !isdefined(@__MODULE__, :run_simulation)
     const run_simulation = SimulationEngine.run_simulation
 end
 if !isdefined(@__MODULE__, :make_example_config)
-    include("typed_example_utils.jl")
+    include(joinpath(@__DIR__, "..", "core", "utils", "typed_example_utils.jl"))
 end
 
 struct BodyRateDamperModel

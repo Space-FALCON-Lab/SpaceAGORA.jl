@@ -1,10 +1,14 @@
-# Compatibility wrapper: canonical path forwarding to legacy implementation.
-include(joinpath(let
-    p = @__DIR__
-    while basename(p) != "src"
-        nextp = dirname(p)
-        nextp == p && error("Could not locate src root from $(@__DIR__)")
-        p = nextp
+
+function event(count_impact, count_apoapsisgreaterpreiapsis)
+    # Impact definition
+    breaker = true
+    if count_impact != 0
+        println("IMPACT!")
+        breaker = false
+    elseif count_apoapsisgreaterpreiapsis != 0
+        breaker = false
+        println("PERIAPSIS GREATER THAN APOAPSIS!")
     end
-    p
-end, "integrator/Events.jl"))
+    
+    return breaker
+end

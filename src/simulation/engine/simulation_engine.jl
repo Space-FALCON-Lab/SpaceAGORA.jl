@@ -3,7 +3,7 @@ module SimulationEngine
 if isdefined(parentmodule(@__MODULE__), :SimulationModel)
     const SimulationModel = getfield(parentmodule(@__MODULE__), :SimulationModel)
 else
-    include(joinpath(@__DIR__, "..", "..", "simulation_model", "SimulationModel.jl"))
+    include(joinpath(@__DIR__, "..", "..", "core", "simulation_model.jl"))
 end
 using .SimulationModel
 const quat_mult = SimulationModel.quat_mult

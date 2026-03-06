@@ -1,10 +1,16 @@
-# Compatibility wrapper: canonical path forwarding to legacy implementation.
-include(joinpath(let
-    p = @__DIR__
-    while basename(p) != "src"
-        nextp = dirname(p)
-        nextp == p && error("Could not locate src root from $(@__DIR__)")
-        p = nextp
-    end
-    p
-end, "simulation_model/ControlEffectors.jl"))
+module ControlEffectors
+    using ..Analysis
+
+    using ..ConfigTypes: ODEParams # Get the Planet struct
+    using ..AbstractTypes: AbstractPlanet, AbstractControlEffectorModel, AbstractThrusterModel
+    using ..LinearAlgebra       # Get deps from parent
+    using ..StaticArrays        # Get deps from parent
+    using ..Kinematics
+    using ..DynamicEffectors: BaseThrusterModel
+    using ..GuidanceEffectors: AerobrakingCampaignPropulsiveManeuverGuidanceModel
+
+    # Public members to export
+    export calcControlForceTorque, calcControlEffect!, calcControlMassFlowRate
+
+    include(joinpath(@__DIR__, "propulsive_maneuvers.jl"))
+end

@@ -1,10 +1,14 @@
-# Compatibility wrapper: canonical path forwarding to legacy implementation.
-include(joinpath(let
-    p = @__DIR__
-    while basename(p) != "src"
-        nextp = dirname(p)
-        nextp == p && error("Could not locate src root from $(@__DIR__)")
-        p = nextp
-    end
-    p
-end, "simulation_model/GuidanceEffectors.jl"))
+module GuidanceEffectors
+    using ..Analysis
+
+    using ..ConfigTypes: ODEParams # Get the Planet struct
+    using ..AbstractTypes: AbstractPlanet, AbstractControlEffectorModel, AbstractGuidanceModel
+    using ..DynamicEffectors: AerobrakingCampaignPropulsiveManeuverGuidanceModel, BaseThrusterModel
+    using ..LinearAlgebra       # Get deps from parent
+    using ..StaticArrays        # Get deps from parent
+    using ..Kinematics
+
+    # Public members to export
+    export calcGuidanceEffect!
+    include(joinpath(@__DIR__, "..", "..", "gnc", "guidance", "thruster_guidance", "thruster_guidance_functions.jl")) 
+end

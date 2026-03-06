@@ -1,10 +1,4 @@
-# Compatibility wrapper: canonical path forwarding to legacy implementation.
-include(joinpath(let
-    p = @__DIR__
-    while basename(p) != "src"
-        nextp = dirname(p)
-        nextp == p && error("Could not locate src root from $(@__DIR__)")
-        p = nextp
-    end
-    p
-end, "guidance/Thruster_guidance_models.jl"))
+@kwdef struct AerobrakingCampaignPropulsiveManeuverGuidanceModel <: AbstractGuidanceModel
+    maneuver_orbit_number::Vector{Int64} # The orbit number at which to perform the propulsive maneuver (e.g., 1 for the first apoapsis, 2 for the second, etc.)
+    maneuver_Δv::Vector{Float64} # The desired Δv for the propulsive maneuver
+end

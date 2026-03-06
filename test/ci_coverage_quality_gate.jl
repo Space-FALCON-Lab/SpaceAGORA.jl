@@ -3,14 +3,9 @@ const SRC_ROOT = joinpath(REPO_ROOT, "src")
 
 using Printf
 
-const EXCLUDED_FROM_MAIN_GATE = Set([
-    # Legacy simulation-elements implementation validated via dedicated smoke tests, not core coverage targets.
-    "src/simulation/execution/simulation_elements.jl",
-])
+const EXCLUDED_FROM_MAIN_GATE = Set{String}()
 
-const LEGACY_MIN_SMOKE_COVERAGE = Dict(
-    "src/simulation/execution/simulation_elements.jl" => 35.0,
-)
+const LEGACY_MIN_SMOKE_COVERAGE = Dict{String, Float64}()
 
 const MIN_MAIN_OVERALL = let raw = get(ENV, "SPACEAGORA_COVERAGE_MIN_OVERALL", "90.0")
     parsed = tryparse(Float64, raw)
@@ -25,10 +20,6 @@ const MIN_MAIN_FILE = let raw = get(ENV, "SPACEAGORA_COVERAGE_MIN_FILE", "80.0")
 end
 
 const MAIN_FILE_MIN_OVERRIDES = Dict(
-    # Legacy heatload-control helper kept for compatibility; currently validated via smoke checks.
-    "src/control/heatload_control/Second_tsw_calcs.jl" => 50.0,
-    # GRAM-heavy behavior is validated in GRAMSuite; SpaceAGORA keeps a thin adapter with smoke coverage.
-    "src/physical_models/Density_models.jl" => 5.0,
     # Adapter-only file is exercised indirectly via config/entrypoint tests.
     "src/simulation/engine/adapters/from_env.jl" => 70.0,
     # Dynamic RHS is branch-heavy across many mission/control combinations.
@@ -37,9 +28,8 @@ const MAIN_FILE_MIN_OVERRIDES = Dict(
 
 const CRITICAL_FILE_MIN_OVERRIDES = Dict(
     "src/simulation/engine/execution.jl" => 90.0,
-    "src/control/Propulsive_maneuvers.jl" => 90.0,
-    "src/utils/Closed_form_solution.jl" => 90.0,
-    "src/utils/Save_results.jl" => 90.0,
+    "src/gnc/control/propulsive_maneuvers.jl" => 90.0,
+    "src/core/interfaces/reference_system.jl" => 90.0,
 )
 
 const COVERAGE_WINDOW_SECONDS = let raw = get(ENV, "SPACEAGORA_COVERAGE_WINDOW_SECONDS", "900")

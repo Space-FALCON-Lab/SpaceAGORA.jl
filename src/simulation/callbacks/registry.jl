@@ -8,7 +8,8 @@ using GRAMSuite
 using ..SimulationModel: SPICE_LOCK, GRAM_LOCK, PlanetFrameEphemerisCache, rot
 using ..ParallelPolicy
 using ..EnvironmentModels
-using ..EnvironmentModels: getDensity, getDensityBatch!, getHeatRate, NoAtmosphereModel
+using ..EnvironmentModels: getDensity, getDensityBatch!, NoAtmosphereModel
+using ..VehicleThermalModels: getHeatRate
 using ..DynamicEffectors: BaseThrusterModel, AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight, InverseSquaredJ2GravityModel
 using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
 using ..ConfigTypes: SaveData

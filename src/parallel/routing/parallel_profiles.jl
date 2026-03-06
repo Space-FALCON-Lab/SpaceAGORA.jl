@@ -1,3 +1,4 @@
+# Canonical aggregator: no behavior ownership.
 module ParallelProfiles
 
 using Dates

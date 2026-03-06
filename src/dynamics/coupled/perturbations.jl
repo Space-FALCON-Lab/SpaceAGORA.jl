@@ -486,6 +486,66 @@ end
     return _interp_vec3_catmull_rom(p0, p1, p2, p3, tau)
 end
 
+@inline function srp_cannonball_accel(
+    pos_ii::SVector{3, Float64},
+    pos_primary_sun::SVector{3, Float64},
+    planet_radius_m::Float64,
+    p_srp_unscaled::Float64,
+    reflection_coefficient::Float64,
+    reference_area_m2::Float64,
+    mass_kg::Float64;
+    AU_m::Float64=149_597_870_700.0
+)::SVector{3, Float64}
+    if !(isfinite(mass_kg) && mass_kg > 0.0)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    if !(isfinite(reference_area_m2) && reference_area_m2 > 0.0)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    if !(isfinite(reflection_coefficient) && reflection_coefficient >= 0.0)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    r_sun_to_sc = pos_ii - pos_primary_sun
+    r_sun_to_sc_mag = norm(r_sun_to_sc)
+    if !(isfinite(r_sun_to_sc_mag) && r_sun_to_sc_mag > 0.0)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    eclipse_ratio = eclipse_area_calc(pos_ii, pos_primary_sun, planet_radius_m)
+    P_srp = p_srp_unscaled * (AU_m / r_sun_to_sc_mag)^2
+    scale = reflection_coefficient * reference_area_m2 * P_srp * eclipse_ratio / mass_kg
+    return scale * normalize(r_sun_to_sc)
+end
+
+function srp(
+    planet,
+    p_srp_unscaled::Float64,
+    reflection_coefficient::Float64,
+    reference_area_m2::Float64,
+    mass_kg::Float64,
+    pos_ii::AbstractVector,
+    et::Float64;
+    AU_m::Float64=149_597_870_700.0
+)
+    pos_ii_sv = SVector{3, Float64}(pos_ii)
+    primary_body_name = _spice_query_name(planet.name)
+    pos_primary_sun_j2000 = lock(SPICE_LOCK) do
+        SVector{3, Float64}(spkpos("sun", et, "J2000", "none", primary_body_name)[1])
+    end
+    pos_primary_sun = SVector{3, Float64}(planet.J2000_to_pci * pos_primary_sun_j2000 * 1e3)
+    return srp_cannonball_accel(
+        pos_ii_sv,
+        pos_primary_sun,
+        planet.Rp_e,
+        p_srp_unscaled,
+        reflection_coefficient,
+        reference_area_m2,
+        mass_kg;
+        AU_m=AU_m
+    )
+end
+
 function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     if model.A == 0.0
         return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
@@ -505,18 +565,17 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
     else
         _srp_sun_position_from_spice_j2000(et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls)
     end
-    pos_primary_sun = planet.J2000_to_pci * pos_primary_sun_j2000 * 1e3
-    r_sun_to_sc = pos_ii - pos_primary_sun
-    r_sun_to_sc_mag = norm(r_sun_to_sc)
-    if r_sun_to_sc_mag <= 0.0
-        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
-    end
-
-    eclipse_ratio = eclipse_area_calc(pos_ii, pos_primary_sun, planet.Rp_e)
-    # Solar radiation pressure at 1 AU [N/m^2]
-    P_1AU = 4.56e-6
-    P_srp = P_1AU * (model.AU_m / r_sun_to_sc_mag)^2
-    force_ii = model.Cr * model.A * P_srp * eclipse_ratio * normalize(r_sun_to_sc)
+    pos_primary_sun = SVector{3, Float64}(planet.J2000_to_pci * pos_primary_sun_j2000 * 1e3)
+    force_ii = srp_cannonball_accel(
+        pos_ii,
+        pos_primary_sun,
+        planet.Rp_e,
+        4.56e-6,
+        model.Cr,
+        model.A,
+        1.0;
+        AU_m=model.AU_m
+    )
 
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end

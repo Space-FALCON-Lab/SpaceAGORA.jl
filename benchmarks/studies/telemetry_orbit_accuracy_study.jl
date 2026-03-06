@@ -1,4 +1,5 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
+include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
 using .TelemetryVerification
 

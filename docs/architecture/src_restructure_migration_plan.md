@@ -21,6 +21,12 @@ Branch baseline: `refactor/src-restructure`
    - `SimulationEngineConfig`
 5. ENV reads are adapter-boundary behavior for engine internals.
 
+## Completeness Contract
+1. Canonical ownership must not regress into silent stubs or legacy wrapper ownership.
+2. Scaffold folders remain in place, but scaffold files must be typed interfaces with explicit `Not implemented:` failures.
+3. Canonical include-chain discipline is enforced for core engine/callback/parallel and new scaffold roots.
+4. See `docs/architecture/src_completeness_contract.md` for categories and allowlisted aggregators.
+
 ## Migration Status Table
 | Area | Status | Notes |
 |---|---|---|
@@ -34,6 +40,8 @@ Branch baseline: `refactor/src-restructure`
 | `performance_runtime_analysis` monolith split | Implemented | Folderized split under `benchmarks/studies/performance_runtime_analysis/` |
 | Naming contract gate | Implemented | Enforced by `test/ci_naming_contract_gate.jl` |
 | Shim retirement | Implemented | Wave 2 removal complete |
+| `src/` completeness contract | Implemented | Enforced by dedicated completeness/inert-term/scaffold gates |
+| Legacy include-guard cleanup (`__legacy_*`) | Implemented | Canonical GNC/solver/report files now use shared include helpers with no `__legacy_*` markers |
 
 ## CI and Quality Gates (Required)
 1. `julia --project=.AGORA test/runtests.jl`
@@ -53,6 +61,10 @@ Additional contract gates:
 5. `julia --project=.AGORA test/ci_no_legacy_ownership_gate.jl`
 6. `julia --project=.AGORA test/ci_no_artifact_files_gate.jl`
 7. `julia --project=.AGORA test/ci_canonical_path_contract_gate.jl`
+8. `julia --project=.AGORA test/ci_src_completeness_contract_gate.jl`
+9. `julia --project=.AGORA test/ci_no_legacy_include_chains_gate.jl`
+10. `julia --project=.AGORA test/ci_no_inert_force_terms_gate.jl`
+11. `julia --project=.AGORA test/ci_scaffold_interface_gate.jl`
 
 ## Wave 2 Retirement Summary
 Removed:

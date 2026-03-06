@@ -1,4 +1,4 @@
-include(joinpath(@__DIR__, "..", "..", "environment", "lighting", "attitude_control_models.jl"))
+include(joinpath(@__DIR__, "..", "..", "gnc", "control", "attitude_control_models.jl"))
 include(joinpath(@__DIR__, "..", "..", "core", "numerics", "quaternion_utils.jl"))
 using Rotations, LinearAlgebra
 using ControlSystemsBase

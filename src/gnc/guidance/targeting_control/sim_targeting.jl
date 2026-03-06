@@ -1,22 +1,5 @@
-if !isdefined(@__MODULE__, :__legacy_density_models_included__)
-    include(joinpath(@__DIR__, "..", "..", "..", "environment", "atmosphere", "density_models.jl"))
-    const __legacy_density_models_included__ = true
-end
-# include(joinpath(@__DIR__, "..", "..", "..", "dynamics", "translational", "aerodynamic_models.jl"))
-# include(joinpath(@__DIR__, "..", "..", "..", "dynamics", "translational", "gravity_models.jl"))
-if !isdefined(@__MODULE__, :__legacy_thermal_models_included__)
-    include(joinpath(@__DIR__, "..", "..", "..", "environment", "thermal", "thermal_models.jl"))
-    const __legacy_thermal_models_included__ = true
-end
-
-if !isdefined(@__MODULE__, :__legacy_reference_system_included__)
-    include(joinpath(@__DIR__, "..", "..", "..", "core", "interfaces", "reference_system.jl"))
-    const __legacy_reference_system_included__ = true
-end
-if !isdefined(@__MODULE__, :__legacy_closed_form_solution_included__)
-    include(joinpath(@__DIR__, "..", "..", "..", "analysis", "reports", "closed_form_solution.jl"))
-    const __legacy_closed_form_solution_included__ = true
-end
+include(joinpath(@__DIR__, "..", "..", "control", "legacy_include_helpers.jl"))
+_sa_include_targeting_runtime_deps!()
 
 # include("Control.jl")
 # include("heatload_control/Utils_timeswitch.jl")
@@ -43,24 +26,7 @@ using SPICE
     return false
 end
 
-if !isdefined(@__MODULE__, :LEGACY_CONTROL_STATE_LOCK)
-    const LEGACY_CONTROL_STATE_LOCK = ReentrantLock()
-end
-
-if !isdefined(@__MODULE__, :_legacy_get_cnf)
-    @inline function _legacy_get_cnf(args=nothing; cnf=nothing)
-        if cnf !== nothing
-            return cnf
-        end
-        if args isa AbstractDict && haskey(args, :cnf)
-            return args[:cnf]
-        end
-        if (@isdefined config) && isdefined(config, :cnf)
-            return getproperty(config, :cnf)
-        end
-        throw(ArgumentError("Legacy control state `cnf` not found. Pass `cnf=` or args[:cnf]."))
-    end
-end
+include(joinpath(@__DIR__, "..", "..", "control", "legacy_state_helpers.jl"))
 
 function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
     cnf_state = _legacy_get_cnf(param[8]; cnf=cnf)

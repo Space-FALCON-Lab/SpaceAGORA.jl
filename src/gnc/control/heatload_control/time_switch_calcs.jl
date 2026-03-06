@@ -1,16 +1,6 @@
 # include(joinpath(@__DIR__, "..", "..", "..", "dynamics", "translational", "aerodynamic_models.jl"))
-if !isdefined(@__MODULE__, :__legacy_utils_timeswitch_included__)
-    include("utils_timeswitch.jl")
-    const __legacy_utils_timeswitch_included__ = true
-end
-if !isdefined(@__MODULE__, :__legacy_closed_form_solution_included__)
-    include(joinpath(@__DIR__, "..", "..", "..", "analysis", "reports", "closed_form_solution.jl"))
-    const __legacy_closed_form_solution_included__ = true
-end
-if !isdefined(@__MODULE__, :__legacy_control_utils_eoms_included__)
-    include(joinpath(@__DIR__, "..", "eoms.jl"))
-    const __legacy_control_utils_eoms_included__ = true
-end
+include(joinpath(@__DIR__, "..", "legacy_include_helpers.jl"))
+_sa_include_heatload_switch_deps!()
 
 using Roots
 

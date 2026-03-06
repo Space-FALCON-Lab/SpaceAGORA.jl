@@ -1,3 +1,4 @@
+## Canonical aggregator: no behavior ownership.
 module SimulationEngine
 
 if isdefined(parentmodule(@__MODULE__), :SimulationModel)
@@ -6,7 +7,6 @@ else
     include(joinpath(@__DIR__, "..", "..", "core", "simulation_model.jl"))
 end
 using .SimulationModel
-const quat_mult = SimulationModel.quat_mult
 using SPICE
 
 include(joinpath(@__DIR__, "config", "parallel_config.jl"))

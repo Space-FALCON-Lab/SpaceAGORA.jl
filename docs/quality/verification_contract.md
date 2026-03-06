@@ -15,6 +15,7 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
 9. `no-legacy-ownership-gate` (`test/ci_no_legacy_ownership_gate.jl`)
 10. `no-artifact-files-gate` (`test/ci_no_artifact_files_gate.jl`)
 11. `canonical-path-contract-gate` (`test/ci_canonical_path_contract_gate.jl`)
+12. `rotational-ownership-gate` (`test/ci_rotational_ownership_gate.jl`)
 
 Additional required smoke checks for this migration track:
 1. `test/ci_clean_depot_smoke.jl`

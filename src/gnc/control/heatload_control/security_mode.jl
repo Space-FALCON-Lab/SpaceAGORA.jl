@@ -1,30 +1,7 @@
-if !isdefined(@__MODULE__, :__legacy_montecarlo_perturbations_included__)
-    include(joinpath(@__DIR__, "..", "..", "..", "mission", "campaigns", "montecarlo_perturbations.jl"))
-    const __legacy_montecarlo_perturbations_included__ = true
-end
-if !isdefined(@__MODULE__, :__legacy_density_models_included__)
-    include(joinpath(@__DIR__, "..", "..", "..", "environment", "atmosphere", "density_models.jl"))
-    const __legacy_density_models_included__ = true
-end
-if !isdefined(@__MODULE__, :__legacy_closed_form_solution_included__)
-    include(joinpath(@__DIR__, "..", "..", "..", "analysis", "reports", "closed_form_solution.jl"))
-    const __legacy_closed_form_solution_included__ = true
-end
+include(joinpath(@__DIR__, "..", "legacy_include_helpers.jl"))
+_sa_include_heatload_security_deps!()
 
-if !isdefined(@__MODULE__, :_legacy_get_cnf)
-    @inline function _legacy_get_cnf(args=nothing; cnf=nothing)
-        if cnf !== nothing
-            return cnf
-        end
-        if args isa AbstractDict && haskey(args, :cnf)
-            return args[:cnf]
-        end
-        if (@isdefined config) && isdefined(config, :cnf)
-            return getproperty(config, :cnf)
-        end
-        throw(ArgumentError("Legacy control state `cnf` not found. Pass `cnf=` or args[:cnf]."))
-    end
-end
+include(joinpath(@__DIR__, "..", "legacy_state_helpers.jl"))
 
 function security_mode(ip, m, position, args, t, heat_rate_control=false; cnf=nothing)
     cnf_state = _legacy_get_cnf(args; cnf=cnf)

@@ -1,13 +1,5 @@
-include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl"))
-include(joinpath(@__DIR__, "..", "..", "core", "numerics", "quaternion_utils.jl"))
-include(joinpath(@__DIR__, "..", "..", "dynamics", "translational", "gravity_models.jl"))
-include(joinpath(@__DIR__, "..", "..", "environment", "atmosphere", "density_models.jl"))
-include(joinpath(@__DIR__, "..", "..", "dynamics", "translational", "aerodynamic_models.jl"))
-include(joinpath(@__DIR__, "..", "..", "environment", "thermal", "thermal_models.jl"))
-include(joinpath(@__DIR__, "..", "..", "dynamics", "coupled", "perturbations.jl"))
-
-include(joinpath(@__DIR__, "..", "..", "gnc", "control", "control.jl"))
-include(joinpath(@__DIR__, "..", "..", "gnc", "control", "propulsive_maneuvers.jl"))
+include(joinpath(@__DIR__, "include_helpers.jl"))
+_sa_include_solver_jacobian_deps!()
 
 using LinearAlgebra
 using OrdinaryDiffEq

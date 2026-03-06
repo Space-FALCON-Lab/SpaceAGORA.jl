@@ -29,10 +29,10 @@ if isdefined(parentmodule(@__MODULE__), :SimulationEngine)
     using ..SimulationEngine
     const SimulationModel = SimulationEngine.SimulationModel
 else
-    include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
-    using .SimulationModel
-    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
-    using .SimulationEngine
+    error(
+        "TelemetryVerification requires SimulationEngine in the parent module. " *
+        "Load src/simulation/engine/simulation_engine.jl before including telemetry_verification.jl."
+    )
 end
 using .SimulationModel
 include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
@@ -1961,7 +1961,7 @@ end
 end
 
 function _generate_plots(summary_csv::String, errors_csv::String, profile::Symbol)::String
-    plot_script = joinpath(@__DIR__, "telemetry_orbit_accuracy_plots.jl")
+    plot_script = joinpath(REPO_ROOT, "src", "analysis", "plotting", "telemetry_orbit_accuracy_plots.jl")
     isfile(plot_script) || throw(ErrorException("Missing plotting script: $plot_script"))
     outdir = _default_plots_outdir(summary_csv, profile)
     cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(joinpath(REPO_ROOT, ".AGORA")) $plot_script --summary=$summary_csv --errors=$errors_csv --outdir=$outdir`

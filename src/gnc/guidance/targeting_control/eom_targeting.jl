@@ -1,22 +1,5 @@
-if !isdefined(@__MODULE__, :__legacy_density_models_included__)
-    include(joinpath(@__DIR__, "..", "..", "..", "environment", "atmosphere", "density_models.jl"))
-    const __legacy_density_models_included__ = true
-end
-# include(joinpath(@__DIR__, "..", "..", "..", "dynamics", "translational", "aerodynamic_models.jl"))
-# include(joinpath(@__DIR__, "..", "..", "..", "dynamics", "translational", "gravity_models.jl"))
-if !isdefined(@__MODULE__, :__legacy_thermal_models_included__)
-    include(joinpath(@__DIR__, "..", "..", "..", "environment", "thermal", "thermal_models.jl"))
-    const __legacy_thermal_models_included__ = true
-end
-
-if !isdefined(@__MODULE__, :__legacy_reference_system_included__)
-    include(joinpath(@__DIR__, "..", "..", "..", "core", "interfaces", "reference_system.jl"))
-    const __legacy_reference_system_included__ = true
-end
-if !isdefined(@__MODULE__, :__legacy_closed_form_solution_included__)
-    include(joinpath(@__DIR__, "..", "..", "..", "analysis", "reports", "closed_form_solution.jl"))
-    const __legacy_closed_form_solution_included__ = true
-end
+include(joinpath(@__DIR__, "..", "..", "control", "legacy_include_helpers.jl"))
+_sa_include_targeting_runtime_deps!()
 
 # include("Control.jl")
 # include("heatload_control/Utils_timeswitch.jl")
@@ -43,42 +26,7 @@ using SPICE
     return false
 end
 
-if !isdefined(@__MODULE__, :LEGACY_CONTROL_STATE_LOCK)
-    const LEGACY_CONTROL_STATE_LOCK = ReentrantLock()
-end
-
-if !isdefined(@__MODULE__, :_legacy_get_cnf)
-    @inline function _legacy_get_cnf(args=nothing; cnf=nothing)
-        if cnf !== nothing
-            return cnf
-        end
-        if args isa AbstractDict && haskey(args, :cnf)
-            return args[:cnf]
-        end
-        if (@isdefined config) && isdefined(config, :cnf)
-            return getproperty(config, :cnf)
-        end
-        throw(ArgumentError("Legacy control state `cnf` not found. Pass `cnf=` or args[:cnf]."))
-    end
-end
-
-if !isdefined(@__MODULE__, :_legacy_get_solution)
-    @inline function _legacy_get_solution(args=nothing; solution=nothing, cnf=nothing)
-        if solution !== nothing
-            return solution
-        end
-        if args isa AbstractDict && haskey(args, :solution)
-            return args[:solution]
-        end
-        if cnf !== nothing && hasproperty(cnf, :solution)
-            return getproperty(cnf, :solution)
-        end
-        if (@isdefined config) && isdefined(config, :solution)
-            return getproperty(config, :solution)
-        end
-        throw(ArgumentError("Legacy solution state `solution` not found. Pass `solution=` or args[:solution]."))
-    end
-end
+include(joinpath(@__DIR__, "..", "..", "control", "legacy_state_helpers.jl"))
 
 function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing; cnf=nothing, solution=nothing)
     cnf_state = _legacy_get_cnf(args; cnf=cnf)
@@ -329,6 +277,7 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
             end
         end
 
+        srp_ii = zeros(3)
         if args[:srp] == true
             p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
             srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, et)
@@ -352,7 +301,7 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
 
         # Total Force
         # Total inertial external force vector on body [N]
-        force_ii = drag_ii + lift_ii + gravity_ii
+        force_ii = drag_ii + lift_ii + gravity_ii + srp_ii
 
         g_ii = norm(gravity_ii) / mass
 

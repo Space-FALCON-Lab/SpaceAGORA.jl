@@ -1,28 +1,5 @@
-if !isdefined(@__MODULE__, :__legacy_closed_form_solution_included__)
-    include(joinpath(@__DIR__, "..", "..", "analysis", "reports", "closed_form_solution.jl"))
-    const __legacy_closed_form_solution_included__ = true
-end
-if !isdefined(@__MODULE__, :__legacy_density_models_included__)
-    include(joinpath(@__DIR__, "..", "..", "environment", "atmosphere", "density_models.jl"))
-    const __legacy_density_models_included__ = true
-end
-# include(joinpath(@__DIR__, "..", "..", "dynamics", "translational", "aerodynamic_models.jl"))
-if !isdefined(@__MODULE__, :__legacy_montecarlo_perturbations_included__)
-    include(joinpath(@__DIR__, "..", "..", "mission", "campaigns", "montecarlo_perturbations.jl"))
-    const __legacy_montecarlo_perturbations_included__ = true
-end
-if !isdefined(@__MODULE__, :__legacy_time_switch_calcs_included__)
-    include(joinpath(@__DIR__, "heatload_control", "time_switch_calcs.jl"))
-    const __legacy_time_switch_calcs_included__ = true
-end
-if !isdefined(@__MODULE__, :__legacy_second_tsw_calcs_included__)
-    include(joinpath(@__DIR__, "heatload_control", "second_tsw_calcs.jl"))
-    const __legacy_second_tsw_calcs_included__ = true
-end
-if !isdefined(@__MODULE__, :__legacy_security_mode_included__)
-    include(joinpath(@__DIR__, "heatload_control", "security_mode.jl"))
-    const __legacy_security_mode_included__ = true
-end
+include(joinpath(@__DIR__, "legacy_include_helpers.jl"))
+_sa_include_control_entrypoint_deps!()
 
 using SpecialFunctions
 using Roots
@@ -58,27 +35,7 @@ end
     return fallback
 end
 
-if !isdefined(@__MODULE__, :LEGACY_CONTROL_STATE_LOCK)
-    const LEGACY_CONTROL_STATE_LOCK = ReentrantLock()
-end
-
-if !isdefined(@__MODULE__, :_legacy_get_cnf)
-    @inline function _legacy_get_cnf(args=nothing; cnf=nothing)
-        if cnf !== nothing
-            return cnf
-        end
-        if args isa AbstractDict && haskey(args, :cnf)
-            return args[:cnf]
-        end
-        if args isa NamedTuple && hasproperty(args, :cnf)
-            return getproperty(args, :cnf)
-        end
-        if (@isdefined config) && isdefined(config, :cnf)
-            return getproperty(config, :cnf)
-        end
-        throw(ArgumentError("Legacy control state `cnf` not found. Pass `cnf=` or args[:cnf]."))
-    end
-end
+include(joinpath(@__DIR__, "legacy_state_helpers.jl"))
 
 function no_control(ip, m, args=0, index_ratio=0, state=0, t=0, position=0, current_position=0, heat_rate_control=true)
     α = m.aerodynamics.α

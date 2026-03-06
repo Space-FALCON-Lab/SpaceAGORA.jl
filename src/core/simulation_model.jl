@@ -1,3 +1,4 @@
+# Canonical aggregator: no behavior ownership.
 module SimulationModel
 
 # --- Top-Level Dependencies ---
@@ -45,8 +46,8 @@ include(joinpath(@__DIR__, "..", "vehicle", "kinematics", "kinematics.jl"))
 include(joinpath(@__DIR__, "..", "vehicle", "actuators", "thruster_effectors.jl"))
 @reexport using .Effectors
 
-# 7. Functions for analysis (get_COM, get_inertia, etc.)
-include(joinpath(@__DIR__, "..", "analysis", "reports", "simulation_model_analysis.jl"))
+# 7. Spacecraft structural analysis helpers (get_COM, get_inertia, etc.)
+include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "spacecraft_analysis.jl"))
 @reexport using .Analysis
 
 # --- Config types ---
@@ -58,6 +59,10 @@ include(joinpath(@__DIR__, "..", "core", "types", "runtime_types.jl"))
 
 # Shared parallel policy used by callbacks and dynamic effectors.
 include(joinpath(@__DIR__, "..", "parallel", "policy", "parallel_policy.jl"))
+
+# --- Rotational Dynamics ---
+include(joinpath(@__DIR__, "..", "dynamics", "rotational", "rotational_models.jl"))
+@reexport using .DynamicsRotational
 
 # --- Dynamic Effectors ---
 include(joinpath(@__DIR__, "..", "dynamics", "models", "dynamic_effectors.jl"))
@@ -76,6 +81,10 @@ include(joinpath(@__DIR__, "..", "gnc", "control", "effectors.jl"))
 # --- Physical Models ---
 include(joinpath(@__DIR__, "..", "environment", "physical_models.jl"))
 @reexport using .EnvironmentModels
+
+# --- Vehicle Thermal Models ---
+include(joinpath(@__DIR__, "..", "vehicle", "thermal", "thermal_models_module.jl"))
+@reexport using .VehicleThermalModels
 
 # --- Integrator Callbacks ---
 include(joinpath(@__DIR__, "..", "simulation", "callbacks", "callbacks.jl"))

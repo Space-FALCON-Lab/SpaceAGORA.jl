@@ -1,11 +1,5 @@
-if !isdefined(@__MODULE__, :__legacy_reference_system_included__)
-    include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl"))
-    const __legacy_reference_system_included__ = true
-end
-if !isdefined(@__MODULE__, :__legacy_ref_system_conf_included__)
-    include(joinpath(@__DIR__, "..", "..", "core", "state", "reference_system_config.jl"))
-    const __legacy_ref_system_conf_included__ = true
-end
+include(joinpath(@__DIR__, "include_helpers.jl"))
+_sa_include_solver_orchestration_deps!()
 
 
 function impact(t, y, m, solution, args)

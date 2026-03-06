@@ -1,7 +1,7 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const DEFAULT_BASE_MANIFEST = joinpath(REPO_ROOT, "test", "telemetry_benchmark_manifest.toml")
 const DEFAULT_OUTDIR = joinpath(REPO_ROOT, "output", "telemetry_tuning", "odyssey")
-const TELEMETRY_STUDY_SCRIPT = joinpath(REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl")
+const TELEMETRY_STUDY_SCRIPT = joinpath(REPO_ROOT, "benchmarks", "studies", "telemetry_orbit_accuracy_study.jl")
 const TUNER_HEARTBEAT_SECONDS = 120.0
 ENV["GKSwstype"] = get(ENV, "GKSwstype", "100")
 
@@ -960,7 +960,7 @@ function _write_report(
         println(io, "## Reproduce Best")
         println(io)
         println(io, "```bash")
-        println(io, "JULIA_NUM_THREADS=$(Threads.nthreads()) julia --project=.AGORA --startup-file=no src/analysis/verification/telemetry_verification.jl --profile=full --manifest=$(best_manifest) --enforce=$(cfg.enforce ? "1" : "0")")
+        println(io, "JULIA_NUM_THREADS=$(Threads.nthreads()) julia --project=.AGORA --startup-file=no benchmarks/studies/telemetry_orbit_accuracy_study.jl --profile=full --manifest=$(best_manifest) --enforce=$(cfg.enforce ? "1" : "0")")
         println(io, "```")
         println(io)
         println(io, "## Artifacts")

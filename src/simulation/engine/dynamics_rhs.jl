@@ -94,6 +94,32 @@ end
     return nothing
 end
 
+@inline function _assign_orientation_rhs!(
+    du_view,
+    sc_view,
+    inertia_tensor::AbstractMatrix{<:Real},
+    torques::AbstractVector{<:Real};
+    propagate_quaternion::Bool,
+    include_gyroscopic::Bool,
+)
+    omega_body = SimulationModel.DynamicsRotational.body_angular_velocity(sc_view.ω)
+    tau_body = SimulationModel.DynamicsRotational.body_torque(torques)
+
+    if propagate_quaternion
+        du_view.q .= SimulationModel.DynamicsRotational.quaternion_derivative(omega_body, sc_view.q)
+    else
+        du_view.q .= 0.0
+    end
+
+    du_view.ω .= SimulationModel.DynamicsRotational.angular_acceleration(
+        omega_body,
+        inertia_tensor,
+        tau_body;
+        include_gyroscopic=include_gyroscopic,
+    )
+    return nothing
+end
+
 function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     sc_state = u.sc
     sc_du = du.sc
@@ -124,11 +150,15 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                 du_view.mass = mass_rate
 
                 if p.args.mission_configuration.orientation_sim
-                    ω_body = SVector{3, Float64}(sc_view.ω)
                     inertia_tensor = spacecraft[i].inertia_tensor
-                    τ_body = SVector{3, Float64}(torques)
-                    du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
-                    du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+                    _assign_orientation_rhs!(
+                        du_view,
+                        sc_view,
+                        inertia_tensor,
+                        torques;
+                        propagate_quaternion=true,
+                        include_gyroscopic=true,
+                    )
                 end
 
                 _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
@@ -153,11 +183,15 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                 du_view.mass = mass_rate
 
                 if p.args.mission_configuration.orientation_sim
-                    ω_body = SVector{3, Float64}(sc_view.ω)
                     inertia_tensor = spacecraft[i].inertia_tensor
-                    τ_body = SVector{3, Float64}(torques)
-                    du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
-                    du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+                    _assign_orientation_rhs!(
+                        du_view,
+                        sc_view,
+                        inertia_tensor,
+                        torques;
+                        propagate_quaternion=true,
+                        include_gyroscopic=true,
+                    )
                 end
 
                 _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
@@ -194,11 +228,15 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                 du_view.mass = 0.0
 
                 if p.args.mission_configuration.orientation_sim
-                    ω_body = SVector{3, Float64}(sc_view.ω)
                     inertia_tensor = spacecraft[i].inertia_tensor
-                    τ_body = SVector{3, Float64}(torques)
-                    du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
-                    du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+                    _assign_orientation_rhs!(
+                        du_view,
+                        sc_view,
+                        inertia_tensor,
+                        torques;
+                        propagate_quaternion=true,
+                        include_gyroscopic=true,
+                    )
                 end
 
                 _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
@@ -222,11 +260,15 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                 du_view.mass = 0.0
 
                 if p.args.mission_configuration.orientation_sim
-                    ω_body = SVector{3, Float64}(sc_view.ω)
                     inertia_tensor = spacecraft[i].inertia_tensor
-                    τ_body = SVector{3, Float64}(torques)
-                    du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
-                    du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+                    _assign_orientation_rhs!(
+                        du_view,
+                        sc_view,
+                        inertia_tensor,
+                        torques;
+                        propagate_quaternion=true,
+                        include_gyroscopic=true,
+                    )
                 end
 
                 _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
@@ -262,9 +304,14 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
 
                 if p.args.mission_configuration.orientation_sim
                     inertia_tensor = spacecraft[i].inertia_tensor
-                    τ_body = SVector{3, Float64}(torques)
-                    du_view.q .= 0.0
-                    du_view.ω .= inertia_tensor \ τ_body
+                    _assign_orientation_rhs!(
+                        du_view,
+                        sc_view,
+                        inertia_tensor,
+                        torques;
+                        propagate_quaternion=false,
+                        include_gyroscopic=false,
+                    )
                 end
 
                 du_view.heat_loads .= 0.0
@@ -289,9 +336,14 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
 
                 if p.args.mission_configuration.orientation_sim
                     inertia_tensor = spacecraft[i].inertia_tensor
-                    τ_body = SVector{3, Float64}(torques)
-                    du_view.q .= 0.0
-                    du_view.ω .= inertia_tensor \ τ_body
+                    _assign_orientation_rhs!(
+                        du_view,
+                        sc_view,
+                        inertia_tensor,
+                        torques;
+                        propagate_quaternion=false,
+                        include_gyroscopic=false,
+                    )
                 end
 
                 du_view.heat_loads .= 0.0

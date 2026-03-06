@@ -14,6 +14,8 @@ occursin("run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(a
 
 !occursin("simulation\", \"execution\", \"run_simulation.jl", telemetry_src) ||
     error("TelemetryVerification still directly includes simulation/execution/run_simulation.jl.")
+!occursin("simulation\", \"engine\", \"simulation_engine.jl", telemetry_src) ||
+    error("TelemetryVerification still directly includes simulation/engine/simulation_engine.jl.")
 
 occursin("SimulationEngine.run_simulation", telemetry_src) ||
     error("TelemetryVerification is not calling SimulationEngine.run_simulation.")

@@ -104,8 +104,8 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const _validate_orientation_inertia! = SimulationEngine._validate_orientation_inertia!
     const _validate_thermal_model_support! = SimulationEngine._validate_thermal_model_support!
 end
-# Simulation entry wrappers.
-include(joinpath(REPO_ROOT, "src", "simulation", "Run.jl"))
+# Simulation campaign entrypoint.
+include(joinpath(REPO_ROOT, "src", "mission", "campaigns", "run.jl"))
 
 struct ConstantDensityModel <: SimulationModel.AbstractDensityModel
     rho::Float64
@@ -1077,7 +1077,7 @@ function ensure_legacy_closed_form_loaded!()
         return
     end
 
-    Core.eval(LEGACY_CLOSED_FORM_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "utils", "Closed_form_solution.jl"))))
+    Core.eval(LEGACY_CLOSED_FORM_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "gnc", "control", "closed_form_solution.jl"))))
     LEGACY_CLOSED_FORM_SANDBOX_LOADED[] = true
 end
 
@@ -6684,6 +6684,41 @@ end
     @test maximum(abs.(qnorm .- 1.0)) < 1e-6
 end
 
+@testset "DynamicsRotational Core Contracts" begin
+    rotational = SimulationModel.DynamicsRotational
+
+    q = normalize(SVector{4, Float64}(0.15, -0.25, 0.35, 0.85))
+    ω = SVector{3, Float64}(0.02, -0.03, 0.01)
+
+    qdot_new = rotational.quaternion_derivative(ω, q)
+    qdot_legacy = 0.5 * SVector{4, Float64}(SimulationModel.quat_mult(SVector{4, Float64}(ω..., 0.0), q))
+    @test isapprox(qdot_new, qdot_legacy; atol=1e-12, rtol=1e-12)
+    @test abs(dot(q, qdot_new)) < 1e-12
+
+    J = SMatrix{3, 3, Float64}(2.0, 0.1, 0.0, 0.1, 3.0, 0.0, 0.0, 0.0, 4.0)
+    τ = SVector{3, Float64}(0.12, -0.08, 0.05)
+    ωdot_new = rotational.angular_acceleration(ω, J, τ; include_gyroscopic=true)
+    ωdot_legacy = J \ (τ - cross(ω, J * ω))
+    @test isapprox(ωdot_new, ωdot_legacy; atol=1e-12, rtol=1e-12)
+
+    ωdot_no_gyro = rotational.angular_acceleration(ω, J, τ; include_gyroscopic=false)
+    @test isapprox(ωdot_no_gyro, J \ τ; atol=1e-12, rtol=1e-12)
+
+    @test rotational.body_torque(MVector{3, Float64}(τ)) == τ
+    @test rotational.body_angular_velocity(MVector{3, Float64}(ω)) == ω
+    @test rotational.combine_torques(τ, -τ) == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    J_spherical = SMatrix{3, 3, Float64}(2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0)
+    ω_any = SVector{3, Float64}(0.3, -0.25, 0.11)
+    ωdot_torque_free = rotational.angular_acceleration(
+        ω_any,
+        J_spherical,
+        SVector{3, Float64}(0.0, 0.0, 0.0);
+        include_gyroscopic=true
+    )
+    @test isapprox(ωdot_torque_free, SVector{3, Float64}(0.0, 0.0, 0.0); atol=1e-12, rtol=0.0)
+end
+
 @testset "Solver Tolerances Apply Quaternion Overrides" begin
     q0 = normalize(SVector{4, Float64}(0.1, -0.2, 0.3, 0.9))
     w0 = SVector{3, Float64}(0.01, -0.015, 0.02)
@@ -7533,6 +7568,49 @@ end
     )
     @test isapprox(none_ratio, 1.0; atol=1e-12, rtol=0.0)
 
+    @testset "SRP Regression Contracts" begin
+        # On/off delta: SRP-enabled model must produce non-zero force while area=0 is zero force.
+        p_srp.shared_buffers.srp_sun_ephemeris_cache[] = SRPSunEphemerisCache(
+            [0.0, 10.0],
+            SVector{3, Float64}[
+                SVector{3, Float64}(149_597_870.7, 0.0, 0.0),
+                SVector{3, Float64}(149_597_870.7, 0.0, 0.0)
+            ]
+        )
+        p_srp.shared_buffers.et_start[] = 0.0
+        p_srp.shared_buffers.current_time[] = 5.0
+        x_srp_regression = Float64[7_000_000.0, 100.0, 50.0, 0.0, 0.0, 0.0, 200.0]
+
+        force_on, _ = calcForceTorque(SolarRadiationPressureModel(1.2, 12.0), x_srp_regression, p_srp, 1)
+        force_off, _ = calcForceTorque(SolarRadiationPressureModel(1.2, 0.0), x_srp_regression, p_srp, 1)
+        @test norm(force_on) > 0.0
+        @test force_off == SVector{3, Float64}(0.0, 0.0, 0.0)
+        @test norm(force_on - force_off) > 0.0
+
+        # Eclipse attenuation: partial eclipse force norm must scale by eclipse ratio.
+        pos_partial = SVector{3, Float64}(6.930027129188876e6, -2.6352977471555886e6, -3.363004422597388e6)
+        sun_partial = SVector{3, Float64}(-9.438128429326639e10, -6.696979722657439e10, 1.7822072441008075e11)
+        partial_ratio_regression = dyn.eclipse_area_calc(pos_partial, sun_partial, EARTH.Rp_e)
+        force_partial = dyn.srp_cannonball_accel(pos_partial, sun_partial, EARTH.Rp_e, 4.56e-6, 1.2, 12.0, 200.0)
+        force_no_eclipse = dyn.srp_cannonball_accel(pos_partial, sun_partial, 0.0, 4.56e-6, 1.2, 12.0, 200.0)
+        @test 0.0 < partial_ratio_regression < 1.0
+        @test norm(force_no_eclipse) > 0.0
+        @test isapprox(norm(force_partial), partial_ratio_regression * norm(force_no_eclipse); atol=0.0, rtol=1e-12)
+
+        # Solver parity: legacy solver helper (`srp`) must match canonical SRP kernel for same geometry.
+        planet = args_srp.environment_model.planet
+        pos_solver = SVector{3, Float64}(x_a[1:3])
+        et_solver = 123.0
+        primary_body_name = dyn._spice_query_name(planet.name)
+        sun_j2000 = lock(SimulationModel.SPICE_LOCK) do
+            SVector{3, Float64}(spkpos("sun", et_solver, "J2000", "none", primary_body_name)[1])
+        end
+        sun_pci = SVector{3, Float64}(planet.J2000_to_pci * sun_j2000 * 1e3)
+        force_kernel = dyn.srp_cannonball_accel(pos_solver, sun_pci, planet.Rp_e, 4.56e-6, 1.2, 12.0, 200.0)
+        force_solver = dyn.srp(planet, 4.56e-6, 1.2, 12.0, 200.0, pos_solver, et_solver)
+        @test isapprox(force_solver, force_kernel; atol=1e-12, rtol=1e-10)
+    end
+
     default_ckpt_settings = SimulationSettings(
         results=true,
         verbose=false,
@@ -7659,7 +7737,16 @@ end
     spacecraft_dynamics!(du0, u0, p, 0.0)
 
     ω = SVector{3, Float64}(u0.sc[1].ω)
-    ωdot_expected = inertia_tensor \ (applied_torque - cross(ω, inertia_tensor * ω))
+    qdot_expected = SimulationModel.DynamicsRotational.quaternion_derivative(ω, SVector{4, Float64}(u0.sc[1].q))
+    ωdot_expected = SimulationModel.DynamicsRotational.angular_acceleration(
+        ω,
+        inertia_tensor,
+        applied_torque;
+        include_gyroscopic=true
+    )
+    ωdot_legacy = inertia_tensor \ (applied_torque - cross(ω, inertia_tensor * ω))
+    @test isapprox(SVector{4, Float64}(du0.sc[1].q), qdot_expected; atol=1e-12, rtol=1e-10)
+    @test isapprox(ωdot_expected, ωdot_legacy; atol=1e-12, rtol=1e-10)
     @test isapprox(SVector{3, Float64}(du0.sc[1].ω), ωdot_expected; atol=1e-12, rtol=1e-10)
 end
 
@@ -8679,6 +8766,7 @@ end
 end
 
 include(joinpath(REPO_ROOT, "test", "coverage_parallel_telemetry_probes.jl"))
+include(joinpath(REPO_ROOT, "test", "coverage_targeted_90_probes.jl"))
 
 @testset "JET Static Analysis" begin
     JET.@test_opt InitialCondition()

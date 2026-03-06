@@ -1,20 +1,7 @@
-if !isdefined(@__MODULE__, :__legacy_density_models_included__)
-    include(joinpath(@__DIR__, "..", "..", "environment", "atmosphere", "density_models.jl"))
-    const __legacy_density_models_included__ = true
+if !isdefined(@__MODULE__, :_sa_include_closed_form_core_deps!)
+    include(joinpath(@__DIR__, "legacy_include_helpers.jl"))
 end
-# include(joinpath(@__DIR__, "..", "..", "dynamics", "translational", "aerodynamic_models.jl"))
-if !isdefined(@__MODULE__, :__legacy_montecarlo_perturbations_included__)
-    include(joinpath(@__DIR__, "..", "..", "mission", "campaigns", "montecarlo_perturbations.jl"))
-    const __legacy_montecarlo_perturbations_included__ = true
-end
-if !isdefined(@__MODULE__, :__legacy_reference_system_included__)
-    include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl"))
-    const __legacy_reference_system_included__ = true
-end
-if !isdefined(@__MODULE__, :__legacy_misc_utils_included__)
-    include(joinpath(@__DIR__, "..", "..", "core", "utils", "misc.jl"))
-    const __legacy_misc_utils_included__ = true
-end
+_sa_include_closed_form_core_deps!()
 
 using LinearAlgebra
 using Statistics

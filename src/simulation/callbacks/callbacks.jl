@@ -1,3 +1,4 @@
+# Canonical aggregator: no behavior ownership.
 module SimulationCallbacks
 include(joinpath(@__DIR__, "registry.jl"))
 include(joinpath(@__DIR__, "save_fields.jl"))

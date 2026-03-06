@@ -14,11 +14,12 @@ module DynamicEffectors
     # Public members to export
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel # Gravity models
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel # N-body gravity + SRP models
+    export srp, srp_cannonball_accel
     export AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight # Aerodynamic models
     export calcForceTorque
     
     include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl"))
-    include(joinpath(@__DIR__, "..", "..", "dynamics", "translational", "gravity_models.jl"))
+    include(joinpath(@__DIR__, "..", "..", "environment", "gravity", "gravity_models.jl"))
     include(joinpath(@__DIR__, "..", "..", "dynamics", "translational", "aerodynamic_models.jl"))
     include(joinpath(@__DIR__, "..", "..", "dynamics", "coupled", "perturbations.jl"))
     

@@ -30,6 +30,14 @@ end
 if !isdefined(@__MODULE__, :run_simulation)
     const run_simulation = SimulationEngine.run_simulation
 end
+if !isdefined(@__MODULE__, :TelemetryVerification)
+    include(joinpath(REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
+end
+if !isdefined(@__MODULE__, :make_example_config)
+    const make_example_config = TelemetryVerification.make_example_config
+    const make_three_body_spacecraft = TelemetryVerification.make_three_body_spacecraft
+    const run_and_report = TelemetryVerification.run_and_report
+end
 if !isdefined(@__MODULE__, :_solver_policy_mode)
     const build_initial_conditions = SimulationEngine.build_initial_conditions
     const _build_solver_tolerances = SimulationEngine._build_solver_tolerances

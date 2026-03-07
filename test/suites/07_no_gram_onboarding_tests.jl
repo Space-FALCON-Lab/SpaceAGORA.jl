@@ -1,6 +1,3 @@
-isdefined(@__MODULE__, :make_example_config) ||
-    include(joinpath(REPO_ROOT, "src", "core", "utils", "typed_example_utils.jl"))
-
 @testset "No-GRAM Onboarding Mode" begin
     @testset "Preset builders choose documented fallback models" begin
         env_none = make_no_gram_environment(planet=:earth, atmosphere=:none, EI_km=120.0)

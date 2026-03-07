@@ -29,8 +29,8 @@ It does not require a local GRAM installation or SPICE kernels.
 Run the baseline no-GRAM examples directly:
 
 ```bash
-julia --project=.AGORA src/examples/AGORA_Earth_NoGRAM.jl
-julia --project=.AGORA src/examples/AGORA_Mars_NoGRAM.jl
+julia --project=.AGORA examples/AGORA_Earth_NoGRAM.jl
+julia --project=.AGORA examples/AGORA_Mars_NoGRAM.jl
 ```
 
 The same mode is available from typed configuration builders through:
@@ -40,6 +40,21 @@ The same mode is available from typed configuration builders through:
 - `make_no_gram_environment`
 
 These presets are intended for onboarding, lightweight studies, and CI smoke coverage. They are not a replacement for GRAM- and SPICE-backed high-fidelity campaigns.
+
+You can also exercise the stable root API without GRAM assets:
+
+```jldoctest; setup = :(using SpaceAGORA)
+julia> profile = parse_parallel_profile("R2")
+R2
+
+julia> cfg = simulation_engine_config_from_env(Dict(
+           "SPACEAGORA_PARALLEL_PROFILE" => parallel_profile_name(profile),
+           "SPACEAGORA_SAVE_BUNDLE" => "0",
+       ));
+
+julia> (cfg.parallel.profile, cfg.artifacts.save_bundle)
+("R2", false)
+```
 
 ## High-fidelity GRAM mode
 
@@ -55,7 +70,7 @@ That path still expects a local GRAM installation under `data/GRAMSuite.jl/GRAM 
 ## Run a minimal example
 
 ```bash
-julia --project=.AGORA src/examples/Earth_Thruster_Test.jl
+julia --project=.AGORA examples/Earth_Thruster_Test.jl
 ```
 
 ## Run the telemetry verification study

@@ -1,17 +1,15 @@
 using Test
 using StaticArrays
 using SPICE
+using SpaceAGORA
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
-
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+const SimulationEngine = SpaceAGORA.SimulationEngine
+const SimulationModel = SimulationEngine.SimulationModel
 using .SimulationModel
+const run_simulation = SpaceAGORA.run_simulation
 
-const quat_mult = SimulationModel.quat_mult
-include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
-const run_simulation = SimulationEngine.run_simulation
-
-include(joinpath(REPO_ROOT, "src", "core", "utils", "typed_example_utils.jl"))
+import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft
 
 lock(SimulationModel.SPICE_LOCK) do
     kclear()

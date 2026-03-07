@@ -47,13 +47,13 @@ git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 For a first run with no GRAM installation and no SPICE kernels, use the no-GRAM examples:
 
 ```bash
-julia --project=.AGORA src/examples/AGORA_Earth_NoGRAM.jl
-julia --project=.AGORA src/examples/AGORA_Mars_NoGRAM.jl
+julia --project=.AGORA examples/AGORA_Earth_NoGRAM.jl
+julia --project=.AGORA examples/AGORA_Mars_NoGRAM.jl
 ```
 
 These use `SimpleEphemeridesModel()` together with `NoAtmosphereModel()` or `ExponentialAtmosphereModel(planet)` so a fresh clone can run end-to-end without licensed atmospheric assets.
 
-Next, follow the instructions above to download the GRAM Suite, which is used for high-fidelity atmospheric modeling. This will include all the GRAM and SPICE files required to properly run the simulations. Example code is provided in ```src/AGORA_*.jl```.
+Next, follow the instructions above to download the GRAM Suite, which is used for high-fidelity atmospheric modeling. This will include all the GRAM and SPICE files required to properly run the simulations. Example code is provided in ```examples/AGORA_*.jl```.
 
 If GRAM is installed properly and the included Docker environment is being used, this code will run as-is. If for some reason you are unable to get access to GRAM, make sure that the following SPICE files are present in the folder designated in the ```directory_Spice``` argument, organized into subfolders ```pck```, ```lsk```, ```spk/planets```, etc.:
 > PCK files

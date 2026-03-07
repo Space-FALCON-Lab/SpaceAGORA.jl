@@ -57,6 +57,10 @@ include(joinpath(@__DIR__, "..", "vehicle", "structure", "structure_models.jl"))
 include(joinpath(@__DIR__, "..", "core", "state", "simulation_configuration.jl"))
 @reexport using .SimConfig
 
+# --- Physical Models ---
+include(joinpath(@__DIR__, "..", "environment", "physical_models.jl"))
+@reexport using .EnvironmentModels
+
 include(joinpath(@__DIR__, "..", "core", "types", "runtime_types.jl"))
 @reexport using .ConfigTypes
 
@@ -98,10 +102,6 @@ include(joinpath(@__DIR__, "..", "gnc", "navigation", "navigation_hooks.jl"))
 # --- Control Effectors ---
 include(joinpath(@__DIR__, "..", "gnc", "control", "control_hooks.jl"))
 @reexport using .ControlHooks
-
-# --- Physical Models ---
-include(joinpath(@__DIR__, "..", "environment", "physical_models.jl"))
-@reexport using .EnvironmentModels
 
 # --- Vehicle Thermal Models ---
 include(joinpath(@__DIR__, "..", "vehicle", "thermal", "thermal_models_module.jl"))

@@ -4,7 +4,7 @@
 module DynamicEffectors
     using ..Structure
 
-    using ..ConfigTypes: ODEParams # Get the Planet struct
+    using ..ConfigTypes: ODEParams, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace # Get the Planet struct
     using ..AbstractTypes: AbstractPlanet, AbstractForceTorqueModel, AbstractThrusterModel, AbstractGuidanceModel
     using ..ParallelPolicy
     using ..LinearAlgebra       # Get deps from parent

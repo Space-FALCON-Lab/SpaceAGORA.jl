@@ -220,18 +220,32 @@ end
     return (use_threads=policy.use_threads, allotment=policy.allotment, mode=mode, policy_applied=true)
 end
 
-@inline function _density_model_for_sat(p, sat_idx::Int)
-    density_models = p.shared_buffers.density_models
+@inline function _density_model_for_sat(
+    density_models::AbstractVector{<:AbstractDensityModel},
+    fallback_model::AbstractDensityModel,
+    sat_idx::Int
+)
     if sat_idx <= length(density_models)
         return density_models[sat_idx]
     end
-    return p.args.environment_model.density_model
+    return fallback_model
 end
 
-@inline function _density_batch_model_for_callback(p, num_sats::Int)
-    density_models = p.shared_buffers.density_models
+@inline function _density_model_for_sat(p, sat_idx::Int)
+    return _density_model_for_sat(
+        p.shared_buffers.density_models,
+        p.args.environment_model.density_model,
+        sat_idx,
+    )
+end
+
+@inline function _density_batch_model_for_callback(
+    density_models::AbstractVector{<:AbstractDensityModel},
+    fallback_model::AbstractDensityModel,
+    num_sats::Int
+)
     if isempty(density_models)
-        return p.args.environment_model.density_model
+        return fallback_model
     end
     if length(density_models) < num_sats
         return nothing
@@ -243,11 +257,31 @@ end
     return first_model
 end
 
-@inline function _gram_isolated_pool_batch_model_for_callback(p, num_sats::Int)
+@inline function _density_batch_model_for_callback(p, num_sats::Int)
+    return _density_batch_model_for_callback(
+        p.shared_buffers.density_models,
+        p.args.environment_model.density_model,
+        num_sats,
+    )
+end
+
+@inline function _gram_isolated_pool_batch_model_for_callback(
+    density_models::AbstractVector{<:AbstractDensityModel},
+    fallback_model::AbstractDensityModel,
+    num_sats::Int
+)
     _gram_isolated_pool_enabled(num_sats) || return nothing
-    isempty(p.shared_buffers.density_models) || return nothing
-    model = p.args.environment_model.density_model
+    isempty(density_models) || return nothing
+    model = fallback_model
     return model isa EnvironmentModels.GRAMAtmosphereModel ? model : nothing
+end
+
+@inline function _gram_isolated_pool_batch_model_for_callback(p, num_sats::Int)
+    return _gram_isolated_pool_batch_model_for_callback(
+        p.shared_buffers.density_models,
+        p.args.environment_model.density_model,
+        num_sats,
+    )
 end
 
 @inline function _gram_batch_elapsed_time(el_time::Float64, idx::Int)::Float64
@@ -287,11 +321,26 @@ end
     )
 end
 
+@inline function _gram_density_cache_for_sat!(
+    caches::Vector{Union{Nothing, GramTrackCache}},
+    sat_idx::Int
+)::GramTrackCache
+    if sat_idx <= length(caches)
+        cache = @inbounds caches[sat_idx]
+        if cache === nothing
+            cache = GramTrackCache()
+            @inbounds caches[sat_idx] = cache
+        end
+        return cache
+    end
+    return GramTrackCache()
+end
+
 function _ensure_gram_isolated_pool!(
     p,
     template_model::EnvironmentModels.GRAMAtmosphereModel,
     workers::Int
-)::Tuple{Vector{Any}, Vector{ReentrantLock}}
+)::Tuple{Vector{EnvironmentModels.GRAMAtmosphereModel}, Vector{ReentrantLock}}
     shared = p.shared_buffers
     models = shared.gram_isolated_pool_models
     locks = shared.gram_isolated_pool_locks
@@ -299,14 +348,6 @@ function _ensure_gram_isolated_pool!(
         return models, locks
     end
     rebuild = length(models) != workers || length(locks) != workers
-    if !rebuild
-        @inbounds for i in 1:workers
-            if !(models[i] isa EnvironmentModels.GRAMAtmosphereModel)
-                rebuild = true
-                break
-            end
-        end
-    end
     if rebuild
         empty!(models)
         empty!(locks)
@@ -380,20 +421,6 @@ function _gram_isolated_pool_batch_eval!(
         end
     end
     return true
-end
-
-mutable struct GramTrackCache
-    valid::Bool
-    t0::Float64
-    t1::Float64
-    index_hint::Int
-    times::Vector{Float64}
-    alts::Vector{Float64}
-    lats::Vector{Float64}
-    lons::Vector{Float64}
-    rhos::Vector{Float64}
-    Ts::Vector{Float64}
-    winds::Vector{SVector{3, Float64}}
 end
 
 
@@ -627,7 +654,7 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
     cache_cfg = _gram_track_cache_config()
     stats_enabled = _gram_runtime_stats_enabled()
     target_include_j2 = _gram_track_cache_target_use_j2() && _uses_j2_gravity_effector(effectors)
-    function update_density_sat!(i::Int, p, u, t, segment_end_t::Float64)
+    function update_density_sat!(i::Int, p, u, t, segment_end_t::Float64, density_model, caches::Vector{Union{Nothing, GramTrackCache}})
         if stats_enabled
             _gram_runtime_stats_update!(s -> begin
                 s.density_calls += 1
@@ -637,7 +664,6 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
         vel = SVector{3, Float64}(u.sc[i].vel)
         rp, _ = r_intor_p!(pos, vel, p.args.environment_model.planet)
         alt, lat, lon = rtolatlong(rp, p.args.environment_model.planet)
-        density_model = _density_model_for_sat(p, i)
         ρ, T, wind_vec = if _gram_track_cache_enabled(cache_cfg, density_model)
             if stats_enabled
                 _gram_runtime_stats_update!(s -> begin
@@ -645,16 +671,7 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                 end)
             end
             cache_horizon_s, cache_alt_tol_m, cache_ang_tol_rad, cache_points = _gram_track_cache_profile(cache_cfg, p, alt)
-            caches = p.shared_buffers.gram_density_cache
-            cache = if i <= length(caches) && caches[i] isa GramTrackCache
-                caches[i]::GramTrackCache
-            else
-                c = GramTrackCache()
-                if i <= length(caches)
-                    caches[i] = c
-                end
-                c
-            end
+            cache = _gram_density_cache_for_sat!(caches, i)
             seg = if stats_enabled
                 seg0 = _gram_track_cache_segment(cache, t)
                 if seg0 === nothing
@@ -745,19 +762,22 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
     function affect!(integrator)
         p = integrator.p
         u = integrator.u
+        density_models = p.shared_buffers.density_models
+        fallback_density_model = p.args.environment_model.density_model
+        gram_density_caches = p.shared_buffers.gram_density_cache
         decision = _density_callback_thread_decision(args, num_sats)
         use_threads = decision.use_threads
         use_batch = false
         batch_model = nothing
         use_gram_isolated_pool = false
         if _density_batch_enabled(num_sats)
-            batch_model = _density_batch_model_for_callback(p, num_sats)
+            batch_model = _density_batch_model_for_callback(density_models, fallback_density_model, num_sats)
             if !(batch_model === nothing) && !_gram_track_cache_enabled(cache_cfg, batch_model)
                 use_batch = true
             end
         end
         if !use_batch
-            gram_pool_model = _gram_isolated_pool_batch_model_for_callback(p, num_sats)
+            gram_pool_model = _gram_isolated_pool_batch_model_for_callback(density_models, fallback_density_model, num_sats)
             if !(gram_pool_model === nothing) && !_gram_track_cache_enabled(cache_cfg, gram_pool_model)
                 use_batch = true
                 batch_model = gram_pool_model
@@ -834,12 +854,28 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                 )
             end
         elseif use_threads
-            ParallelPolicy.threaded_foreach_persistent(:density_callback, num_sats, decision.allotment) do i
-                @inbounds update_density_sat!(i, p, u, integrator.t, segment_end_t)
+            if isempty(density_models)
+                density_model = fallback_density_model
+                ParallelPolicy.threaded_foreach_persistent(:density_callback, num_sats, decision.allotment) do i
+                    @inbounds update_density_sat!(i, p, u, integrator.t, segment_end_t, density_model, gram_density_caches)
+                end
+            else
+                ParallelPolicy.threaded_foreach_persistent(:density_callback, num_sats, decision.allotment) do i
+                    density_model = @inbounds density_models[i]
+                    @inbounds update_density_sat!(i, p, u, integrator.t, segment_end_t, density_model, gram_density_caches)
+                end
             end
         else
-            @inbounds for i in 1:num_sats
-                update_density_sat!(i, p, u, integrator.t, segment_end_t)
+            if isempty(density_models)
+                density_model = fallback_density_model
+                @inbounds for i in 1:num_sats
+                    update_density_sat!(i, p, u, integrator.t, segment_end_t, density_model, gram_density_caches)
+                end
+            else
+                @inbounds for i in 1:num_sats
+                    density_model = density_models[i]
+                    update_density_sat!(i, p, u, integrator.t, segment_end_t, density_model, gram_density_caches)
+                end
             end
         end
         if decision.policy_applied
@@ -855,4 +891,3 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
 
     return DiscreteCallback(condition, affect!, initialize=(cb, u, t, integrator) -> affect!(integrator))
 end
-

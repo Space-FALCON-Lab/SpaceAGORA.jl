@@ -110,6 +110,7 @@ end
 end
 
 function _save_snapshot(save_fields, u, t, integrator)::SaveData
+    # SaveData is a persistence/output boundary; keep runtime logic on typed state and buffers.
     snapshot = SaveData()
     for field in save_fields
         snapshot[field.name] = field.getter(u, t, integrator)

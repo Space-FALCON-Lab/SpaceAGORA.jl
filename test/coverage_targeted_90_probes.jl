@@ -210,14 +210,14 @@ end
         )
         p_batch = ODEParams{2}(args=args_batch)
         empty!(p_batch.shared_buffers.density_models)
-        push!(p_batch.shared_buffers.density_models, NoAtmosphereModel())
+        push!(p_batch.shared_buffers.density_models, surrogate_no_traj)
         @test _TARGET_CALLBACKS._density_batch_model_for_callback(p_batch, 2) === nothing
         empty!(p_batch.shared_buffers.density_models)
-        push!(p_batch.shared_buffers.density_models, NoAtmosphereModel())
-        push!(p_batch.shared_buffers.density_models, _TARGET_ENV.ExponentialAtmosphereModel(1.225, 0.0, 8_500.0))
+        push!(p_batch.shared_buffers.density_models, surrogate_no_traj)
+        push!(p_batch.shared_buffers.density_models, surrogate_traj)
         @test _TARGET_CALLBACKS._density_batch_model_for_callback(p_batch, 2) === nothing
         empty!(p_batch.shared_buffers.density_models)
-        common_model = NoAtmosphereModel()
+        common_model = surrogate_traj
         push!(p_batch.shared_buffers.density_models, common_model)
         push!(p_batch.shared_buffers.density_models, common_model)
         @test _TARGET_CALLBACKS._density_batch_model_for_callback(p_batch, 2) === common_model
@@ -261,7 +261,8 @@ end
 
         empty!(p_gram.shared_buffers.gram_isolated_pool_models)
         empty!(p_gram.shared_buffers.gram_isolated_pool_locks)
-        push!(p_gram.shared_buffers.gram_isolated_pool_models, :invalid_model)
+        push!(p_gram.shared_buffers.gram_isolated_pool_models, gram_model)
+        push!(p_gram.shared_buffers.gram_isolated_pool_locks, ReentrantLock())
         push!(p_gram.shared_buffers.gram_isolated_pool_locks, ReentrantLock())
         _TARGET_CALLBACKS._ensure_gram_isolated_pool!(p_gram, gram_model, 1)
         @test length(p_gram.shared_buffers.gram_isolated_pool_models) == 1
@@ -321,7 +322,7 @@ end
         cache.rhos = [1.23e-6, 1.23e-6]
         cache.Ts = [190.0, 190.0]
         cache.winds = [SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)]
-        push!(p_cache.shared_buffers.gram_density_cache, cache)
+        p_cache.shared_buffers.gram_density_cache[1] = cache
         integrator = (p=p_cache, u=u_cache, t=0.0, sol=(prob=(tspan=(0.0, 120.0),),))
         withenv(
             "SPACEAGORA_GRAM_PROFILE" => "1",

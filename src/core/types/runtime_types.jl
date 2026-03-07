@@ -4,6 +4,7 @@ module ConfigTypes
 # include("core/simulation_model.jl")
 using ..PhysicalModel: SpacecraftModel
 using ..SimConfig: SimulationConfiguration
+using ..EnvironmentModels: GRAMAtmosphereModel, GRAMAtmosphereModelSurrogate
 using StaticArrays
 using AstroTime
 using OrdinaryDiffEq
@@ -12,6 +13,7 @@ using Reexport
 export Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters
 export SaveCache, SaveData
 export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, SpiceRuntimeCounters, SpiceRhsMemo
+export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
 export LegacyGravityModelCode, LegacyDensityModelCode, LegacyAerodynamicModelCode, LegacyThermalModelCode, LegacyThrustControlCode
 export LegacyGravityConstant, LegacyGravityInverseSquared, LegacyGravityInverseSquaredJ2, LegacyGravityGRAM
 export LegacyDensityConstant, LegacyDensityExponential, LegacyDensityNoDensity, LegacyDensityGRAM, LegacyDensityNRLMSISE
@@ -577,6 +579,47 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         closed_form::Closed_form = Closed_form()
     end
 
+    mutable struct GramTrackCache
+        valid::Bool
+        t0::Float64
+        t1::Float64
+        index_hint::Int
+        times::Vector{Float64}
+        alts::Vector{Float64}
+        lats::Vector{Float64}
+        lons::Vector{Float64}
+        rhos::Vector{Float64}
+        Ts::Vector{Float64}
+        winds::Vector{SVector{3, Float64}}
+    end
+
+    struct AeroScratchWorkspace
+        thread_force::Vector{MVector{3, Float64}}
+        thread_cl::Vector{Float64}
+        thread_cd::Vector{Float64}
+        thread_area::Vector{Float64}
+    end
+
+    struct NBodyScratchWorkspace
+        pos_primary_k_all::Vector{SVector{3, Float64}}
+        thread_force::Vector{MVector{3, Float64}}
+    end
+
+    struct HarmonicsScratchWorkspace
+        A::Matrix{Float64}
+        R::Vector{Float64}
+        I::Vector{Float64}
+    end
+
+    const _PerSatDensityModel = Union{GRAMAtmosphereModel, GRAMAtmosphereModelSurrogate}
+    const _HarmonicsWorkspaceMap = Dict{UInt, HarmonicsScratchWorkspace}
+
+    @inline function _typed_nothing_vector(::Type{T}, n::Int) where {T}
+        out = Vector{Union{Nothing, T}}(undef, n)
+        fill!(out, nothing)
+        return out
+    end
+
     # A struct to hold the data shared between the callback and the integrator
     @kwdef struct SharedBuffers{N_sats}
         densities::Vector{Float64} = zeros(Float64, N_sats)
@@ -586,13 +629,13 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         density_batch_latitudes::Vector{Float64} = zeros(Float64, N_sats)
         density_batch_longitudes::Vector{Float64} = zeros(Float64, N_sats)
         heat_rates::Vector{Vector{Float64}} = [Float64[] for _ in 1:N_sats]
-        density_models::Vector{Any} = Any[]
-        gram_density_cache::Vector{Any} = Any[]
-        gram_isolated_pool_models::Vector{Any} = Any[]
+        density_models::Vector{_PerSatDensityModel} = _PerSatDensityModel[]
+        gram_density_cache::Vector{Union{Nothing, GramTrackCache}} = _typed_nothing_vector(GramTrackCache, N_sats)
+        gram_isolated_pool_models::Vector{GRAMAtmosphereModel} = GRAMAtmosphereModel[]
         gram_isolated_pool_locks::Vector{ReentrantLock} = ReentrantLock[]
-        harmonics_workspaces::Vector{Any} = [nothing for _ in 1:N_sats]
-        nbody_workspaces::Vector{Any} = [nothing for _ in 1:N_sats]
-        aero_workspaces::Vector{Any} = [nothing for _ in 1:N_sats]
+        harmonics_workspaces::Vector{Union{Nothing, _HarmonicsWorkspaceMap}} = _typed_nothing_vector(_HarmonicsWorkspaceMap, N_sats)
+        nbody_workspaces::Vector{Union{Nothing, NBodyScratchWorkspace}} = _typed_nothing_vector(NBodyScratchWorkspace, N_sats)
+        aero_workspaces::Vector{Union{Nothing, AeroScratchWorkspace}} = _typed_nothing_vector(AeroScratchWorkspace, N_sats)
         nbody_ephemeris_cache::Base.RefValue{Union{Nothing, NBodyEphemerisCache}} = Ref{Union{Nothing, NBodyEphemerisCache}}(nothing)
         srp_sun_ephemeris_cache::Base.RefValue{Union{Nothing, SRPSunEphemerisCache}} = Ref{Union{Nothing, SRPSunEphemerisCache}}(nothing)
         planet_frame_ephemeris_cache::Base.RefValue{Union{Nothing, PlanetFrameEphemerisCache}} = Ref{Union{Nothing, PlanetFrameEphemerisCache}}(nothing)
@@ -607,6 +650,7 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         effector_cost_samples::Base.RefValue{Int64} = Ref(Int64(0))
     end
 
+    # SaveData is an output/persistence boundary and intentionally remains heterogeneous.
     const SaveData = Dict{Symbol, Any}
     @kwdef struct SaveCache
         # Define fields to store cached data for saving results during the simulation for expensive computations, e.g., drag, lift, density, etc.

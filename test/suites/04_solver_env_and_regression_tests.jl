@@ -494,6 +494,69 @@
     @test length(p_workspace_resize.shared_buffers.harmonics_workspaces) == 1
     @test length(p_workspace_resize.shared_buffers.nbody_workspaces) == 1
     @test length(p_workspace_resize.shared_buffers.aero_workspaces) == 1
+    @test all(isnothing, p_workspace_resize.shared_buffers.harmonics_workspaces)
+    @test all(isnothing, p_workspace_resize.shared_buffers.nbody_workspaces)
+    @test all(isnothing, p_workspace_resize.shared_buffers.aero_workspaces)
+
+    gram_model_instances = SimulationModel.GRAMAtmosphereModel(planet_name="earth")
+    args_density_instances = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=gram_model_instances,
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true
+    )
+    p_density_instances = ODEParams{1}(args=args_density_instances)
+    withenv("SPACEAGORA_GRAM_PER_SAT_INSTANCES" => "on") do
+        SimulationEngine._initialize_density_model_instances!(p_density_instances)
+    end
+    @test length(p_density_instances.shared_buffers.density_models) == 1
+    @test p_density_instances.shared_buffers.density_models[1] isa GRAMAtmosphereModel
+    @test p_density_instances.shared_buffers.density_models[1] !== gram_model_instances
+    SimulationEngine._initialize_density_cache_buffers!(p_density_instances)
+    @test length(p_density_instances.shared_buffers.gram_density_cache) == 1
+    @test p_density_instances.shared_buffers.gram_density_cache[1] === nothing
+    cache_typed = @inferred SimulationModel.SimulationCallbacks._gram_density_cache_for_sat!(
+        p_density_instances.shared_buffers.gram_density_cache,
+        1
+    )
+    @test cache_typed isa GramTrackCache
+    typed_density_models = GRAMAtmosphereModel[gram_model_instances]
+    selected_density_model = @inferred SimulationModel.SimulationCallbacks._density_model_for_sat(
+        typed_density_models,
+        gram_model_instances,
+        1
+    )
+    @test selected_density_model === gram_model_instances
+    pool_models_typed, pool_locks_typed = @inferred SimulationModel.SimulationCallbacks._ensure_gram_isolated_pool!(
+        p_density_instances,
+        gram_model_instances,
+        1
+    )
+    @test pool_models_typed === p_density_instances.shared_buffers.gram_isolated_pool_models
+    @test pool_locks_typed === p_density_instances.shared_buffers.gram_isolated_pool_locks
+    @test length(pool_models_typed) == 1
+    @test pool_models_typed[1] isa GRAMAtmosphereModel
+
+    gram_surrogate_instances = SimulationModel.GRAMAtmosphereModelSurrogate(gram_model_instances, "unused", nothing)
+    args_density_surrogate = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=gram_surrogate_instances,
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true
+    )
+    p_density_surrogate = ODEParams{1}(args=args_density_surrogate)
+    withenv("SPACEAGORA_GRAM_PER_SAT_INSTANCES" => "on") do
+        SimulationEngine._initialize_density_model_instances!(p_density_surrogate)
+    end
+    @test length(p_density_surrogate.shared_buffers.density_models) == 1
+    @test p_density_surrogate.shared_buffers.density_models[1] isa GRAMAtmosphereModelSurrogate
+    @test p_density_surrogate.shared_buffers.density_models[1] !== gram_surrogate_instances
 
     args_srp = build_config(
         spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
@@ -636,9 +699,21 @@
     dyn._ensure_nbody_workspace_capacity!(nbody_ws, 3, 4)
     @test length(nbody_ws.pos_primary_k_all) == 3
     @test length(nbody_ws.thread_force) == 4
-    nbody_ws_oob = dyn._nbody_workspace_for_sat!(p_nbody_srp, 5, 2, 2)
+    nbody_ws_typed = @inferred dyn._nbody_workspace_for_sat!(p_nbody_srp, 1, 2, 2)
+    @test nbody_ws_typed isa NBodyScratchWorkspace
+    @test p_nbody_srp.shared_buffers.nbody_workspaces[1] === nbody_ws_typed
+    nbody_ws_oob = @inferred dyn._nbody_workspace_for_sat!(p_nbody_srp, 5, 2, 2)
     @test length(nbody_ws_oob.pos_primary_k_all) == 2
     @test length(nbody_ws_oob.thread_force) == 2
+
+    aero_ws_typed = @inferred dyn._aero_workspace_for_sat!(p_workspace_resize, 1, 2)
+    @test aero_ws_typed isa AeroScratchWorkspace
+    @test p_workspace_resize.shared_buffers.aero_workspaces[1] === aero_ws_typed
+
+    harmonics_model = GravitationalHarmonicsModel(8, 8, harmonics_file, EARTH)
+    harmonics_ws_typed = @inferred dyn._harmonics_workspace_for_sat!(harmonics_model, p_workspace_resize, 1)
+    @test harmonics_ws_typed isa HarmonicsScratchWorkspace
+    @test p_workspace_resize.shared_buffers.harmonics_workspaces[1] isa Dict{UInt, HarmonicsScratchWorkspace}
 
     nbody_positions = reshape(
         SVector{3, Float64}[

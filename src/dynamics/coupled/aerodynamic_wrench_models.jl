@@ -69,13 +69,6 @@ end
 
 end
 
-struct AeroScratchWorkspace
-    thread_force::Vector{MVector{3, Float64}}
-    thread_cl::Vector{Float64}
-    thread_cd::Vector{Float64}
-    thread_area::Vector{Float64}
-end
-
 @inline function _make_aero_scratch_workspace(n_threads::Int)::AeroScratchWorkspace
     n_threads >= 1 || throw(ArgumentError("Aerodynamic scratch workspace thread count must be >= 1, got $n_threads"))
     thread_force = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_threads]

@@ -70,11 +70,6 @@ struct NBodyGravityModel{P <: AbstractPlanet, NP <: Tuple{Vararg{String}}, NM <:
     planet::P # Planet data for primary body
 end
 
-struct NBodyScratchWorkspace
-    pos_primary_k_all::Vector{SVector{3, Float64}}
-    thread_force::Vector{MVector{3, Float64}}
-end
-
 @inline function _make_nbody_scratch_workspace(n_bodies::Int)::NBodyScratchWorkspace
     n_bodies >= 0 || throw(ArgumentError("NBody scratch workspace size must be >= 0, got $n_bodies"))
     n_workers = 1
@@ -138,12 +133,6 @@ struct GravitationalHarmonicsModel{P <: AbstractPlanet} <: AbstractForceTorqueMo
     N2::Matrix{Float64} # Preallocated N2 array
     sqrt_2n_plus_3::Vector{Float64} # Precalculated sqrt(2n+3) values
     planet::P # Planet data for primary body
-end
-
-struct HarmonicsScratchWorkspace
-    A::Matrix{Float64}
-    R::Vector{Float64}
-    I::Vector{Float64}
 end
 
 @inline function _make_harmonics_scratch_workspace(model::GravitationalHarmonicsModel)::HarmonicsScratchWorkspace

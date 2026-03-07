@@ -56,6 +56,24 @@ end
     @test !isfile(legacy_complete_path)
 end
 
+@testset "SharedBuffers Type Contract" begin
+    shared_buffers_type = SimulationModel.ConfigTypes.SharedBuffers{2}
+
+    @test fieldtype(shared_buffers_type, :density_models) ==
+        Vector{Union{SimulationModel.GRAMAtmosphereModel, SimulationModel.GRAMAtmosphereModelSurrogate}}
+    @test fieldtype(shared_buffers_type, :gram_density_cache) ==
+        Vector{Union{Nothing, SimulationModel.GramTrackCache}}
+    @test fieldtype(shared_buffers_type, :gram_isolated_pool_models) ==
+        Vector{SimulationModel.GRAMAtmosphereModel}
+    @test fieldtype(shared_buffers_type, :harmonics_workspaces) ==
+        Vector{Union{Nothing, Dict{UInt, SimulationModel.HarmonicsScratchWorkspace}}}
+    @test fieldtype(shared_buffers_type, :nbody_workspaces) ==
+        Vector{Union{Nothing, SimulationModel.NBodyScratchWorkspace}}
+    @test fieldtype(shared_buffers_type, :aero_workspaces) ==
+        Vector{Union{Nothing, SimulationModel.AeroScratchWorkspace}}
+    @test SimulationModel.SaveData == Dict{Symbol, Any}
+end
+
 
 
 
@@ -382,4 +400,3 @@ end
     sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
     @test thruster.Δv[1] == 0.0
 end
-

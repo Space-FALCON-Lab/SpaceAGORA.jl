@@ -582,9 +582,9 @@ end
         keplerian=true
     )
     p_density_lookup = ODEParams{1}(args=args_density_lookup)
-    resize!(p_density_lookup.shared_buffers.density_models, 1)
-    p_density_lookup.shared_buffers.density_models[1] = ConstantDensityModel(1e-6, 220.0)
-    @test callbacks._density_model_for_sat(p_density_lookup, 1) isa ConstantDensityModel
+    gram_model_lookup = SimulationModel.GRAMAtmosphereModel(planet_name="earth")
+    push!(p_density_lookup.shared_buffers.density_models, gram_model_lookup)
+    @test callbacks._density_model_for_sat(p_density_lookup, 1) === gram_model_lookup
     @test callbacks._density_model_for_sat(p_density_lookup, 2) isa NoAtmosphereModel
 
     withenv("SPACEAGORA_CB_TEST_FLOAT" => "oops") do
@@ -1285,5 +1285,4 @@ end
         @test_nowarn fetch(t2)
     end
 end
-
 

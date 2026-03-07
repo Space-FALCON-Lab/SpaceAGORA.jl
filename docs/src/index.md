@@ -9,6 +9,7 @@ This documentation site adds generated API reference on top of the repository's 
 - `Overview`: package-level orientation and documentation policy.
 - `Getting Started`: minimal setup and first-run commands.
 - `API Policy`: the stable package surface and what remains internal.
+- `Documentation Policy`: how generated docs, contract docs, and operational docs are kept aligned.
 - `Public API`: generated reference for the stable exported interface.
 - `Distributed and HPC`: supported multi-process patterns, worker bootstrapping, and hint-state guidance.
 - `Extensibility`: how to add a force model, density model, or control hook.

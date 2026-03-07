@@ -7,6 +7,7 @@ const SCAN_ROOTS = (
 )
 
 const FORBIDDEN_PATH_TOKENS = (
+    "SimulationEngine.SimulationModel",
     "src/benchmarks/",
     "src/control/",
     "src/physical_models/",

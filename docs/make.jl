@@ -129,6 +129,7 @@ makedocs(
         "Getting Started" => "getting_started.md",
         "CLI" => "cli.md",
         "Data and Assets" => "assets.md",
+        "Documentation Policy" => "documentation_policy.md",
         "API Policy" => "public_api_policy.md",
         "Public API" => "generated/public_api.md",
         "Distributed and HPC" => "distributed_hpc.md",

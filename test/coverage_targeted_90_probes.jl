@@ -53,6 +53,10 @@ struct CoverageBridgeArgs
     solution
 end
 
+struct CoverageIndexArgs
+    values::Dict{Symbol, Any}
+end
+
 Base.propertynames(::CoverageNoGramBase, private::Bool=false) = ()
 
 Base.propertynames(::CoverageGramOnlyBase, private::Bool=false) = (:gram,)
@@ -87,6 +91,8 @@ function Base.getproperty(::CoverageGramTrajectoryBase, name::Symbol)
     end
     throw(ErrorException("unsupported property"))
 end
+
+Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
 
 @testset "Coverage Targeted >=90 Probes" begin
     @testset "from_env override branch" begin
@@ -366,6 +372,88 @@ end
     @test gh._with_time_switch(runtime_context, 7.5).time_switch == 7.5
     @test gh.CONTROL_BRIDGE_STATE_LOCK isa ReentrantLock
     @test ch.CONTROL_BRIDGE_STATE_LOCK isa ReentrantLock
+
+    spacecraft_args = (;
+        simulation_settings=(verbose=true,),
+        environment_model=(topography=true, EI=111.0),
+        dynamics_model=(spacecraft=[(; dry_mass=66.0)],),
+    )
+    mission = (
+        aerodynamics=(heat_rate_limit=55.0,),
+        body=(dry_mass=77.0,),
+        engines=(ϕ=0.75,),
+    )
+    dict_args = Dict{Symbol, Any}(
+        :EI => 120.0,
+        :AE => 135.0,
+        :body_shape => "Capsule",
+        :heat_load_sol => 2,
+        :max_heat_rate => 88.0,
+        :srp => true,
+        :control_mode => 3,
+        :struct_ctrl => true,
+        :dry_mass => 44.0,
+        :phi => 0.25,
+        :control_in_loop => true,
+        :integrator => "Custom",
+        :drag_passage => true,
+        :topography_model => "Spherical Harmonics",
+    )
+    index_args = CoverageIndexArgs(Dict{Symbol, Any}(:AE => 146.0))
+
+    withenv("SPACEAGORA_DEBUG_LEGACY_CONTROL" => "1") do
+        @test gh._bridge_verbose_enabled() === true
+    end
+    @test gh._bridge_verbose_enabled(spacecraft_args) === true
+    @test gh._bridge_verbose_enabled((; verbose=true)) === true
+    @test gh._bridge_required_field(dict_args, :EI) == 120.0
+    @test gh._bridge_optional_field(dict_args, :missing, 9.0) == 9.0
+    @test gh._bridge_optional_field(index_args, :AE, 0.0) == 146.0
+    @test gh._bridge_aerobraking_topography_enabled(spacecraft_args) === true
+    @test gh._bridge_aerobraking_topography_enabled(dict_args) === true
+    @test gh._bridge_aerobraking_entry_interface_m(spacecraft_args) == 111_000.0
+    @test gh._bridge_aerobraking_entry_interface_m(dict_args) == 120_000.0
+    @test gh._bridge_aerobraking_exit_interface_m((; EI=120.0)) == 120_000.0
+    @test gh._bridge_aerobraking_exit_interface_m(dict_args) == 135_000.0
+    @test gh._bridge_aerobraking_body_shape(dict_args) == "Capsule"
+    @test gh._bridge_aerobraking_heat_load_solution(dict_args) == 2
+    @test gh._bridge_aerobraking_max_heat_rate((;), mission) == 55.0
+    @test gh._bridge_aerobraking_max_heat_rate(dict_args, mission) == 88.0
+    @test gh._bridge_aerobraking_srp_enabled(dict_args) === true
+    @test gh._bridge_aerobraking_control_mode(dict_args) == 3
+    @test gh._bridge_aerobraking_struct_control_enabled(dict_args) === true
+    @test gh._bridge_aerobraking_dry_mass(spacecraft_args, mission) == 66.0
+    @test gh._bridge_aerobraking_dry_mass((;), mission) == 77.0
+    @test gh._bridge_aerobraking_dry_mass(dict_args, mission) == 77.0
+    @test gh._bridge_aerobraking_dry_mass(dict_args, nothing) == 44.0
+    @test gh._bridge_aerobraking_thrust_phi((;), mission) == 0.75
+    @test gh._bridge_aerobraking_thrust_phi(dict_args, mission) == 0.25
+    @test gh._bridge_aerobraking_control_in_loop(dict_args) === true
+    @test gh._bridge_aerobraking_integrator_name(dict_args) == "Custom"
+    @test gh._bridge_aerobraking_drag_passage(dict_args) === true
+
+    settings = gh._make_aerobraking_runtime_settings(dict_args, mission)
+    @test settings.topography_enabled === true
+    @test settings.entry_interface_m == 120_000.0
+    @test settings.exit_interface_m == 135_000.0
+    @test settings.dry_mass == 77.0
+    @test settings.thrust_phi == 0.25
+
+    runtime_context_mission = gh._make_aerobraking_runtime_context(
+        mission=mission,
+        index_phase_aerobraking=1,
+        ip=:ip,
+        aerobraking_phase=2,
+        t_prev=3.0,
+        date_initial=:date,
+        time_0=4.0,
+        args=dict_args,
+        initial_state=:state,
+        gram_atmosphere=:atm,
+        gram=:gram,
+    )
+    @test runtime_context_mission.settings.max_heat_rate == 88.0
+    @test runtime_context_mission.settings.control_mode == 3
 
     @test_throws ArgumentError gh._bridge_get_cnf((;))
     @test_throws ArgumentError gh._bridge_get_solution((;); cnf=nothing)

@@ -396,6 +396,52 @@ jobs:
       - name: Benchmark wrapper parity gate
         run: julia --startup-file=no --project=.AGORA test/ci_benchmark_wrapper_parity_gate.jl
 
+      - name: Docs contract gate
+        run: julia --startup-file=no --project=.AGORA test/ci_docs_contract_gate.jl
+
+      - name: Public API surface gate
+        run: julia --startup-file=no --project=.AGORA test/ci_public_api_surface_gate.jl
+
+      - name: HPC/extensibility docs gate
+        run: julia --startup-file=no --project=.AGORA test/ci_hpc_extensibility_docs_gate.jl
+
+  documentation-release-gate:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      JULIA_NUM_THREADS: "2"
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: Cache Julia artifacts
+        uses: julia-actions/cache@v2
+
+      - name: Instantiate runtime environment
+        run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Instantiate docs environment
+        run: julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
+
+      - name: Build docs
+        run: julia --project=docs docs/make.jl
+
+      - name: Public API surface gate
+        run: julia --startup-file=no --project=.AGORA test/ci_public_api_surface_gate.jl
+
+      - name: HPC/extensibility docs gate
+        run: julia --startup-file=no --project=.AGORA test/ci_hpc_extensibility_docs_gate.jl
+
   ai-review-artifact-gate:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

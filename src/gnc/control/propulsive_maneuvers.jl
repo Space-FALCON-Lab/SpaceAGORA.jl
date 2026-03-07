@@ -108,7 +108,7 @@ end
 end
 
 """
-calcControlMassFlowRate(controlModel::AbstractControlEffectorModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
+    calcControlMassFlowRate(controlModel::AbstractControlEffectorModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
 
 Default control-induced mass-flow model. Control effectors that do not model
 propellant consumption return zero mass flow by default.
@@ -166,11 +166,11 @@ function calcControlForceTorque(controlModel::BaseThrusterModel, u::AbstractVect
 end
 
 """
-calcControlMassFlowRate(controlModel::BaseThrusterModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
+    calcControlMassFlowRate(controlModel::BaseThrusterModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
 
 Return instantaneous propellant mass flow rate (kg/s) from the active burn.
 Uses the applied force magnitude and specific impulse relation:
-`mdot = -T / (Isp * g0)`.
+`\$mdot = -T / (Isp * g0)\$`.
 """
 function calcControlMassFlowRate(controlModel::BaseThrusterModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
     if i < 1 || i > length(controlModel.start_burn_time)

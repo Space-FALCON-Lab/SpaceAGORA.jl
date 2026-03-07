@@ -11,7 +11,9 @@ using ..ParallelPolicy
 using ..EnvironmentModels
 using ..EnvironmentModels: getDensity, getDensityBatch!, NoAtmosphereModel
 using ..VehicleThermalModels: getHeatRate
-using ..DynamicEffectors: BaseThrusterModel, AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight, InverseSquaredJ2GravityModel
+using ..DynamicEffectors.ThrusterModels: BaseThrusterModel
+using ..DynamicEffectors.AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
+using ..DynamicEffectors.GravityEffectors: InverseSquaredJ2GravityModel
 using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
 using ..ConfigTypes: SaveData
 import ..ConfigTypes: GramTrackCache

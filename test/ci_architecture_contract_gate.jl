@@ -7,19 +7,65 @@ function _read(rel)
 end
 
 spaceagora_src = _read(joinpath("src", "SpaceAGORA.jl"))
+engine_src = _read(joinpath("src", "simulation", "engine", "simulation_engine.jl"))
 telemetry_src = _read(joinpath("src", "analysis", "verification", "telemetry_verification.jl"))
 rhs_src = _read(joinpath("src", "simulation", "engine", "dynamics_rhs.jl"))
+force_torque_src = _read(joinpath("src", "dynamics", "coupled", "force_torque_models.jl"))
+guidance_hooks_src = _read(joinpath("src", "gnc", "guidance", "guidance_hooks.jl"))
+control_hooks_src = _read(joinpath("src", "gnc", "control", "control_hooks.jl"))
+callback_registry_src = _read(joinpath("src", "simulation", "callbacks", "registry.jl"))
 
 occursin("run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kwargs...)", spaceagora_src) ||
     error("SpaceAGORA.run_simulation is not forwarded to SimulationEngine.")
+occursin("include(joinpath(@__DIR__, \"core\", \"simulation_model.jl\"))", spaceagora_src) ||
+    error("SpaceAGORA does not include src/core/simulation_model.jl as the canonical sibling module.")
+findfirst("include(joinpath(@__DIR__, \"core\", \"simulation_model.jl\"))", spaceagora_src) <
+    findfirst("include(joinpath(@__DIR__, \"simulation\", \"engine\", \"simulation_engine.jl\"))", spaceagora_src) ||
+    error("SpaceAGORA is not loading SimulationModel before SimulationEngine.")
+occursin("using ..SimulationModel", engine_src) ||
+    error("SimulationEngine is not loading SimulationModel as a sibling module.")
+!occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"core\", \"simulation_model.jl\"))", engine_src) ||
+    error("SimulationEngine still directly includes core/simulation_model.jl.")
 
 !occursin("simulation\", \"execution\", \"run_simulation.jl", telemetry_src) ||
     error("TelemetryVerification still directly includes simulation/execution/run_simulation.jl.")
 !occursin("simulation\", \"engine\", \"simulation_engine.jl", telemetry_src) ||
     error("TelemetryVerification still directly includes simulation/engine/simulation_engine.jl.")
+!occursin("SimulationEngine.SimulationModel", telemetry_src) ||
+    error("TelemetryVerification still references SimulationEngine.SimulationModel.")
 
 occursin("SimulationEngine.run_simulation", telemetry_src) ||
     error("TelemetryVerification is not calling SimulationEngine.run_simulation.")
+
+for child_module in (
+    "module GravityEffectors",
+    "module AerodynamicEffectors",
+    "module PerturbationEffectors",
+    "module ThrusterModels",
+    "module GuidanceModels",
+)
+    occursin(child_module, force_torque_src) ||
+        error("DynamicEffectors split contract violation: missing child module declaration '$child_module'.")
+end
+
+occursin("using ..DynamicEffectors.GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", guidance_hooks_src) ||
+    error("GuidanceHooks is not importing the guidance model from DynamicEffectors.GuidanceModels.")
+occursin("using ..DynamicEffectors.ThrusterModels: BaseThrusterModel", guidance_hooks_src) ||
+    error("GuidanceHooks is not importing BaseThrusterModel from DynamicEffectors.ThrusterModels.")
+occursin("using ..DynamicEffectors.GravityEffectors: aerobraking_gravity_force_ii", guidance_hooks_src) ||
+    error("GuidanceHooks is not importing aerobraking_gravity_force_ii from DynamicEffectors.GravityEffectors.")
+occursin("using ..DynamicEffectors.GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", control_hooks_src) ||
+    error("ControlHooks is not importing the guidance model from DynamicEffectors.GuidanceModels.")
+occursin("using ..DynamicEffectors.ThrusterModels: BaseThrusterModel", control_hooks_src) ||
+    error("ControlHooks is not importing BaseThrusterModel from DynamicEffectors.ThrusterModels.")
+occursin("using ..DynamicEffectors.GravityEffectors: aerobraking_gravity_force_ii", control_hooks_src) ||
+    error("ControlHooks is not importing aerobraking_gravity_force_ii from DynamicEffectors.GravityEffectors.")
+occursin("using ..DynamicEffectors.ThrusterModels: BaseThrusterModel", callback_registry_src) ||
+    error("Callback registry is not importing BaseThrusterModel from DynamicEffectors.ThrusterModels.")
+occursin("using ..DynamicEffectors.AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight", callback_registry_src) ||
+    error("Callback registry is not importing aerodynamic coefficient models from DynamicEffectors.AerodynamicEffectors.")
+occursin("using ..DynamicEffectors.GravityEffectors: InverseSquaredJ2GravityModel", callback_registry_src) ||
+    error("Callback registry is not importing gravity models from DynamicEffectors.GravityEffectors.")
 
 isfile(joinpath(REPO_ROOT, "src", "simulation", "execution", "run_simulation.jl")) &&
     error("Wave 2 contract violation: legacy simulation execution wrapper still exists at src/simulation/execution/run_simulation.jl")

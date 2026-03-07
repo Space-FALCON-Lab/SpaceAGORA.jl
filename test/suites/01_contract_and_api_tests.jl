@@ -53,6 +53,54 @@ end
     @test Core.eval(sandbox, :(isdefined(SimulationEngine, :run_simulation)))
 end
 
+@testset "SimulationModel Sibling-Module Topology Contract" begin
+    spaceagora_src = read(joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"), String)
+    engine_src = read(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"), String)
+    telemetry_src = read(joinpath(REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"), String)
+    legacy_nested_model_path = "SimulationEngine" * ".SimulationModel"
+
+    @test occursin("include(joinpath(@__DIR__, \"core\", \"simulation_model.jl\"))", spaceagora_src)
+    @test findfirst("include(joinpath(@__DIR__, \"core\", \"simulation_model.jl\"))", spaceagora_src) <
+        findfirst("include(joinpath(@__DIR__, \"simulation\", \"engine\", \"simulation_engine.jl\"))", spaceagora_src)
+    @test occursin("using ..SimulationModel", engine_src)
+    @test !occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"core\", \"simulation_model.jl\"))", engine_src)
+    @test !occursin(legacy_nested_model_path, telemetry_src)
+end
+
+@testset "DynamicEffectors Internal Split Contract" begin
+    force_torque_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models.jl"), String)
+    guidance_hooks_src = read(joinpath(REPO_ROOT, "src", "gnc", "guidance", "guidance_hooks.jl"), String)
+    control_hooks_src = read(joinpath(REPO_ROOT, "src", "gnc", "control", "control_hooks.jl"), String)
+    callback_registry_src = read(joinpath(REPO_ROOT, "src", "simulation", "callbacks", "registry.jl"), String)
+
+    for child_module in (
+        "module GravityEffectors",
+        "module AerodynamicEffectors",
+        "module PerturbationEffectors",
+        "module ThrusterModels",
+        "module GuidanceModels",
+    )
+        @test occursin(child_module, force_torque_src)
+    end
+
+    @test occursin("function calcForceTorque end", force_torque_src)
+    @test occursin("using .GravityEffectors: ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel", force_torque_src)
+    @test occursin("using .AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight", force_torque_src)
+    @test occursin("using .PerturbationEffectors: NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel", force_torque_src)
+    @test occursin("using .ThrusterModels: BaseThrusterModel", force_torque_src)
+    @test occursin("using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", force_torque_src)
+
+    @test occursin("using ..DynamicEffectors.GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", guidance_hooks_src)
+    @test occursin("using ..DynamicEffectors.ThrusterModels: BaseThrusterModel", guidance_hooks_src)
+    @test occursin("using ..DynamicEffectors.GravityEffectors: aerobraking_gravity_force_ii", guidance_hooks_src)
+    @test occursin("using ..DynamicEffectors.GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", control_hooks_src)
+    @test occursin("using ..DynamicEffectors.ThrusterModels: BaseThrusterModel", control_hooks_src)
+    @test occursin("using ..DynamicEffectors.GravityEffectors: aerobraking_gravity_force_ii", control_hooks_src)
+    @test occursin("using ..DynamicEffectors.ThrusterModels: BaseThrusterModel", callback_registry_src)
+    @test occursin("using ..DynamicEffectors.AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight", callback_registry_src)
+    @test occursin("using ..DynamicEffectors.GravityEffectors: InverseSquaredJ2GravityModel", callback_registry_src)
+end
+
 @testset "Simulation Filename Canonical Contract" begin
     engine_path = joinpath(REPO_ROOT, "src", "simulation", "engine", "execution.jl")
     legacy_exec_dir = joinpath(REPO_ROOT, "src", "simulation", "execution")
@@ -127,6 +175,8 @@ end
         doc = Core.eval(sandbox, :(Base.Docs.doc(getproperty(SpaceAGORA, $(QuoteNode(sym))))))
         @test doc !== nothing
     end
+
+    @test !Core.eval(sandbox, :(Base.isexported(SpaceAGORA, :SimulationModel)))
 end
 
 @testset "Documenter Strictness Contract" begin
@@ -139,6 +189,7 @@ end
     @test occursin("checkdocs = :exports", docs_make)
     @test occursin("checkdocs_ignored_modules = Module[", docs_make)
     @test occursin("SpaceAGORA.SimulationEngine", docs_make)
+    @test occursin("SpaceAGORA.SimulationModel", docs_make)
     @test occursin("SpaceAGORA.ParallelProfiles", docs_make)
     @test occursin("SpaceAGORA.TelemetryVerification", docs_make)
     @test occursin("SpaceAGORA.SpaceAGORACLI", docs_make)
@@ -236,6 +287,7 @@ end
     spaceagora_src = read(joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"), String)
     precompile_src = read(joinpath(REPO_ROOT, "src", "precompile_workload.jl"), String)
     clean_depot_smoke = read(joinpath(REPO_ROOT, "test", "ci_clean_depot_smoke.jl"), String)
+    legacy_nested_model_path = "SimulationEngine" * ".SimulationModel"
 
     @test get(get(root_project, "deps", Dict()), "PrecompileTools", nothing) == "aea7be01-6a6a-4083-8856-8a6e6704d82a"
     @test get(get(root_project, "compat", Dict()), "PrecompileTools", nothing) == "1"
@@ -253,6 +305,7 @@ end
     @test occursin("run_simulation(engine_config, args; return_solution=true)", precompile_src)
     @test occursin("SimpleEphemeridesModel()", precompile_src)
     @test occursin("ExponentialAtmosphereModel(planet)", precompile_src)
+    @test !occursin(legacy_nested_model_path, precompile_src)
     @test isdefined(SpaceAGORA, :_SPACEAGORA_PRECOMPILE_ENV)
     @test isdefined(SpaceAGORA, :_spaceagora_precompile_args)
     @test isdefined(SpaceAGORA, :_run_spaceagora_precompile_workload)

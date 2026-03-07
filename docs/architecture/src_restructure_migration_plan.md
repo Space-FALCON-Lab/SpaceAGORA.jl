@@ -20,6 +20,10 @@ Branch baseline: `refactor/src-restructure`
    - `ArtifactConfig`
    - `SimulationEngineConfig`
 5. ENV reads are adapter-boundary behavior for engine internals.
+6. Aerobraking GNC split is canonical:
+   - guidance owns `E-EDG`/`T-EDG` strategies under `src/gnc/guidance/aerobraking/*`
+   - control owns tracking/execution under `src/gnc/control/aerobraking/*`
+   - mission owns typed strategy selectors under `src/mission/operations/aerobraking_policy/*`
 
 ## Completeness Contract
 1. Canonical ownership must not regress into silent stubs or legacy wrapper ownership.

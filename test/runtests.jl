@@ -94,7 +94,7 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const _validate_thermal_model_support! = SimulationEngine._validate_thermal_model_support!
 end
 # Simulation campaign entrypoint.
-include(joinpath(REPO_ROOT, "src", "mission", "campaigns", "run.jl"))
+include(joinpath(REPO_ROOT, "src", "simulation", "execution", "run.jl"))
 
 struct ConstantDensityModel <: SimulationModel.AbstractDensityModel
     rho::Float64
@@ -5289,6 +5289,9 @@ end
 
 include(joinpath(REPO_ROOT, "test", "coverage_parallel_telemetry_probes.jl"))
 include(joinpath(REPO_ROOT, "test", "coverage_targeted_90_probes.jl"))
+include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "e_edg_strategy_parity_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "t_edg_strategy_parity_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "mission", "aerobraking_policy_selector_stub_tests.jl"))
 
 @testset "JET Static Analysis" begin
     JET.@test_opt InitialCondition()

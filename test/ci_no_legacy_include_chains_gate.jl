@@ -5,7 +5,7 @@ const SCAN_ROOTS = (
     joinpath(REPO_ROOT, "src", "core"),
     joinpath(REPO_ROOT, "src", "environment"),
     joinpath(REPO_ROOT, "src", "gnc", "control"),
-    joinpath(REPO_ROOT, "src", "gnc", "guidance", "targeting_control"),
+    joinpath(REPO_ROOT, "src", "gnc", "guidance"),
     joinpath(REPO_ROOT, "src", "vehicle", "resources"),
     joinpath(REPO_ROOT, "src", "vehicle", "actuators", "laser_terminal"),
     joinpath(REPO_ROOT, "src", "mission", "constellation", "network"),
@@ -29,21 +29,11 @@ const ALLOWED_RAW_INCLUDE_FILES = Set([
     joinpath("src", "environment", "physical_models.jl"),
     joinpath("src", "environment", "ephemerides", "planet_data.jl"),
     joinpath("src", "environment", "ephemerides", "planets.jl"),
-    joinpath("src", "vehicle", "resources", "resources.jl"),
-    joinpath("src", "gnc", "control", "control.jl"),
-    joinpath("src", "gnc", "control", "eoms.jl"),
-    joinpath("src", "gnc", "control", "eom_ctrl.jl"),
     joinpath("src", "gnc", "control", "control_hooks.jl"),
     joinpath("src", "gnc", "control", "propulsive_maneuvers.jl"),
-    joinpath("src", "gnc", "control", "closed_form_solution.jl"),
-    joinpath("src", "gnc", "control", "bridge_helpers.jl"),
-    joinpath("src", "gnc", "control", "heatload_control", "utils_timeswitch.jl"),
-    joinpath("src", "gnc", "control", "heatload_control", "time_switch_calcs.jl"),
-    joinpath("src", "gnc", "control", "heatload_control", "second_tsw_calcs.jl"),
-    joinpath("src", "gnc", "control", "heatload_control", "security_mode.jl"),
-    joinpath("src", "gnc", "guidance", "targeting_control", "sim_targeting.jl"),
-    joinpath("src", "gnc", "guidance", "targeting_control", "eom_targeting.jl"),
-    joinpath("src", "gnc", "guidance", "targeting_control", "targeting.jl"),
+    joinpath("src", "gnc", "guidance", "guidance_hooks.jl"),
+    joinpath("src", "gnc", "navigation", "navigation_hooks.jl"),
+    joinpath("src", "vehicle", "resources", "resources.jl"),
     joinpath("src", "simulation", "engine", "simulation_engine.jl"),
     joinpath("src", "simulation", "engine", "setup.jl"),
     joinpath("src", "simulation", "callbacks", "callbacks.jl"),
@@ -75,6 +65,12 @@ for root in SCAN_ROOTS
             for rx in FORBIDDEN_REGEXES
                 occursin(rx, active_src) || continue
                 push!(violations, "$rel: contains forbidden cross-layer include chain pattern '$rx'.")
+            end
+
+            if startswith(rel, joinpath("src", "gnc", "guidance", "aerobraking"))
+                if occursin("include(", active_src) && occursin("control", active_src)
+                    push!(violations, "$rel: guidance aerobraking file includes control source directly.")
+                end
             end
 
             has_raw_include = any(occursin(r"^\s*include\(", line) for line in split(active_src, '\n'))

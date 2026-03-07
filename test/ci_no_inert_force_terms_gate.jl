@@ -1,10 +1,10 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
 const SRP_SENSITIVE_FILES = (
-    joinpath("src", "gnc", "control", "eoms.jl"),
-    joinpath("src", "gnc", "control", "eom_ctrl.jl"),
-    joinpath("src", "gnc", "guidance", "targeting_control", "eom_targeting.jl"),
-    joinpath("src", "gnc", "guidance", "targeting_control", "sim_targeting.jl"),
+    joinpath("src", "gnc", "control", "aerobraking", "control_commands.jl"),
+    joinpath("src", "gnc", "control", "aerobraking", "constraint_tracking.jl"),
+    joinpath("src", "gnc", "guidance", "aerobraking", "t_edg", "eom_predictor.jl"),
+    joinpath("src", "gnc", "guidance", "aerobraking", "t_edg", "trajectory_predictor.jl"),
     joinpath("src", "simulation", "solver_orchestration", "implicit_midpoint_jacobian.jl")
 )
 

@@ -21,8 +21,10 @@ for rel in (
     joinpath("src", "gnc", "navigation", "effectors.jl"),
     joinpath("src", "gnc", "control", "bridge_helpers.jl"),
     joinpath("src", "gnc", "control", "bridge_helpers.jl"),
+    joinpath("src", "gnc", "guidance", "targeting_control"),
+    joinpath("src", "gnc", "control", "heatload_control"),
 )
-    isfile(joinpath(REPO_ROOT, rel)) && push!(violations, "$rel: retired file still exists")
+    ispath(joinpath(REPO_ROOT, rel)) && push!(violations, "$rel: retired file or directory still exists")
 end
 
 # 3) Retired hook module names must not appear in src

@@ -7,12 +7,23 @@ const SCAN_ROOTS = (
 )
 
 const FORBIDDEN_PATH_TOKENS = (
+    "src/benchmarks/",
     "src/control/",
     "src/physical_models/",
     "src/guidance/",
+    "src/dynamics/models/",
     "src/integrator/",
     "src/utils/",
     "src/simulation_model/",
+    "src/mission/campaigns/define_mission.jl",
+    "src/mission/campaigns/mission_model.jl",
+    "src/mission/campaigns/initial_cond_calc.jl",
+    "src/mission/campaigns/run.jl",
+    "src/mission/campaigns/set_and_run.jl",
+    "src/vehicle/actuators/thruster_effectors.jl",
+    "src/vehicle/spacecraft/spacecraft_analysis.jl",
+    "src/gnc/guidance/targeting_control/",
+    "src/gnc/control/heatload_control/",
     "src/simulation/execution/simulation_elements.jl",
     "src/simulation/execution/simulation_execution.jl",
     "src/simulation/execution/run_simulation.jl"
@@ -31,6 +42,9 @@ end
     # Historical AI notes are archival and excluded from canonical-path enforcement.
     startswith(rel, joinpath("test", "ai_")) && return true
     startswith(rel, joinpath("test", "ci_")) && endswith(rel, "_gate.jl") && return true
+    rel == joinpath("docs", "architecture", "canonical_topology_contract.md") && return true
+    rel == joinpath("docs", "architecture", "src_completeness_contract.md") && return true
+    rel == joinpath("docs", "architecture", "src_canonical_owner_audit.md") && return true
     return false
 end
 

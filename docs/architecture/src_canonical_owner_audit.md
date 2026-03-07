@@ -26,7 +26,7 @@ Generated on: 2026-03-05T23:28:47.577
 | `src/core/types/runtime_types.jl` | Canonical Owner | **PASS** | 599 | no | no | no |
 | `src/core/utils/misc.jl` | Canonical Owner | **PASS** | 21 | no | no | no |
 | `src/dynamics/coupled/perturbations.jl` | Canonical Owner | **PASS** | 868 | no | no | no |
-| `src/dynamics/models/dynamic_effectors.jl` | Canonical Owner | **PASS** | 28 | no | no | no |
+| `src/dynamics/coupled/force_torque_models.jl` | Canonical Owner | **PASS** | 28 | no | no | no |
 | `src/vehicle/actuators/thruster/thruster_models.jl` | Canonical Owner | **PASS** | 22 | no | no | no |
 | `src/dynamics/coupled/aerodynamic_wrench_models.jl` | Canonical Owner | **PASS** | 966 | no | no | no |
 | `src/environment/gravity/gravity_models.jl` | Canonical Owner | **PASS** | 103 | no | no | no |
@@ -68,8 +68,7 @@ Generated on: 2026-03-05T23:28:47.577
 | `src/gnc/control/heatload_control/security_mode.jl` | Canonical Owner | **PASS** | 22 | no | no | no |
 | `src/gnc/control/heatload_control/time_switch_calcs.jl` | Canonical Owner | **PASS** | 87 | no | no | no |
 | `src/gnc/control/heatload_control/utils_timeswitch.jl` | Canonical Owner | **PASS** | 84 | no | no | no |
-| `src/gnc/control/bridge_helpers.jl` | Canonical Owner | **PASS** | 58 | no | no | no |
-| `src/gnc/control/bridge_helpers.jl` | Canonical Owner | **PASS** | 40 | no | no | no |
+| `src/gnc/internal/bridge_helpers.jl` | Canonical Owner | **PASS** | 58 | no | no | no |
 | `src/gnc/control/propulsive_maneuvers.jl` | Canonical Owner | **PASS** | 299 | no | no | no |
 | `src/gnc/estimation/estimation.jl` | Scaffold Interface | **PASS** | 16 | no | no | no |
 | `src/gnc/guidance/guidance_hooks.jl` | Canonical Owner | **PASS** | 12 | no | no | no |
@@ -81,13 +80,13 @@ Generated on: 2026-03-05T23:28:47.577
 | `src/gnc/navigation/navigation_hooks.jl` | Canonical Owner | **PASS** | 11 | no | no | no |
 | `src/io/outputs/save_csv.jl` | Canonical Owner | **PASS** | 170 | no | no | no |
 | `src/io/outputs/save_results.jl` | Canonical Owner | **PASS** | 408 | no | no | no |
-| `src/mission/campaigns/define_mission.jl` | Canonical Owner | **PASS** | 111 | no | no | no |
-| `src/mission/campaigns/initial_cond_calc.jl` | Canonical Owner | **PASS** | 32 | no | no | no |
-| `src/mission/campaigns/mission_model.jl` | Canonical Owner | **PASS** | 128 | no | no | no |
+| `src/mission/define_mission.jl` | Canonical Owner | **PASS** | 111 | no | no | no |
+| `src/mission/initial_conditions.jl` | Canonical Owner | **PASS** | 32 | no | no | no |
+| `src/mission/mission_model.jl` | Canonical Owner | **PASS** | 128 | no | no | no |
 | `src/mission/campaigns/montecarlo_perturbations.jl` | Canonical Owner | **PASS** | 73 | no | no | no |
 | `src/mission/campaigns/montecarlo_set.jl` | Canonical Owner | **PASS** | 86 | no | no | no |
-| `src/mission/campaigns/run.jl` | Canonical Owner | **PASS** | 14 | no | no | no |
-| `src/mission/campaigns/set_and_run.jl` | Canonical Owner | **PASS** | 24 | no | no | no |
+| `src/simulation/execution/run.jl` | Canonical Owner | **PASS** | 14 | no | no | no |
+| `src/simulation/execution/dispatch.jl` | Canonical Owner | **PASS** | 24 | no | no | no |
 | `src/mission/constellation/network/network.jl` | Scaffold Interface | **PASS** | 20 | no | no | no |
 | `src/mission/operations/attitude_control_plans.jl` | Canonical Owner | **PASS** | 340 | no | no | no |
 | `src/mission/operations/maneuver_plans.jl` | Canonical Owner | **PASS** | 312 | no | no | no |
@@ -128,7 +127,8 @@ Generated on: 2026-03-05T23:28:47.577
 | `src/simulation/solver_orchestration/include_helpers.jl` | Canonical Owner | **PASS** | 26 | no | no | no |
 | `src/simulation/solver_orchestration/integrators.jl` | Canonical Owner | **PASS** | 137 | no | no | no |
 | `src/vehicle/actuators/laser_terminal/laser_terminal.jl` | Scaffold Interface | **PASS** | 16 | no | no | no |
-| `src/vehicle/actuators/thruster_effectors.jl` | Canonical Owner | **PASS** | 98 | no | no | no |
+| `src/vehicle/actuators/actuator_hooks.jl` | Canonical Owner | **PASS** | 26 | no | no | no |
+| `src/vehicle/actuators/thruster/thruster_hooks.jl` | Canonical Owner | **PASS** | 115 | no | no | no |
 | `src/vehicle/kinematics/kinematics.jl` | Canonical Owner | **PASS** | 58 | no | no | no |
 | `src/vehicle/resources/battery/battery_model.jl` | Scaffold Interface | **PASS** | 16 | no | no | no |
 | `src/vehicle/resources/loads/load_model.jl` | Scaffold Interface | **PASS** | 15 | no | no | no |
@@ -138,7 +138,10 @@ Generated on: 2026-03-05T23:28:47.577
 | `src/vehicle/spacecraft/assembly.jl` | Canonical Owner | **PASS** | 79 | no | no | no |
 | `src/vehicle/spacecraft/components.jl` | Canonical Owner | **PASS** | 68 | no | no | no |
 | `src/vehicle/spacecraft/model.jl` | Canonical Owner | **PASS** | 259 | no | no | no |
-| `src/vehicle/spacecraft/spacecraft_analysis.jl` | Canonical Owner | **PASS** | 335 | no | no | no |
+| `src/vehicle/structure/structure_models.jl` | Canonical Owner | **PASS** | 26 | no | no | no |
+| `src/vehicle/structure/assembly_graph.jl` | Canonical Owner | **PASS** | 31 | no | no | no |
+| `src/vehicle/structure/mass_properties.jl` | Canonical Owner | **PASS** | 138 | no | no | no |
+| `src/vehicle/structure/geometry_properties.jl` | Canonical Owner | **PASS** | 135 | no | no | no |
 
 ## Failures
 - None

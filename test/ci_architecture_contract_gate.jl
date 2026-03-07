@@ -27,6 +27,57 @@ isfile(joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_element
     error("Canonical-ownership contract violation: legacy simulation elements file still exists at src/simulation/execution/simulation_elements.jl")
 isfile(joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_execution.jl")) &&
     error("Canonical-ownership contract violation: legacy simulation execution file still exists at src/simulation/execution/simulation_execution.jl")
+isfile(joinpath(REPO_ROOT, "src", "simulation", "execution", "run.jl")) ||
+    error("Canonical-ownership contract violation: missing simulation execution dispatcher at src/simulation/execution/run.jl")
+isfile(joinpath(REPO_ROOT, "src", "simulation", "execution", "dispatch.jl")) ||
+    error("Canonical-ownership contract violation: missing simulation execution dispatcher at src/simulation/execution/dispatch.jl")
+
+run_dispatch_src = _read(joinpath("src", "simulation", "execution", "run.jl"))
+occursin("dispatch.jl", run_dispatch_src) ||
+    error("Canonical-ownership contract violation: simulation/execution/run.jl is not dispatching through dispatch.jl.")
+
+for retired in (
+    joinpath("src", "mission", "campaigns", "run.jl"),
+    joinpath("src", "mission", "campaigns", "set_and_run.jl"),
+    joinpath("src", "mission", "campaigns", "define_mission.jl"),
+    joinpath("src", "mission", "campaigns", "mission_model.jl"),
+    joinpath("src", "mission", "campaigns", "initial_cond_calc.jl"),
+    joinpath("src", "vehicle", "actuators", "thruster_effectors.jl"),
+    joinpath("src", "vehicle", "spacecraft", "spacecraft_analysis.jl")
+)
+    isfile(joinpath(REPO_ROOT, retired)) &&
+        error("Canonical-ownership contract violation: retired file still exists at $retired")
+end
+
+isdir(joinpath(REPO_ROOT, "src", "benchmarks")) &&
+    error("Canonical-ownership contract violation: src/benchmarks must not exist (use top-level benchmarks/).")
+isdir(joinpath(REPO_ROOT, "src", "dynamics", "models")) &&
+    error("Canonical-ownership contract violation: src/dynamics/models must not exist.")
+
+for rel in (
+    joinpath("src", "mission", "define_mission.jl"),
+    joinpath("src", "mission", "mission_model.jl"),
+    joinpath("src", "mission", "initial_conditions.jl"),
+    joinpath("src", "vehicle", "actuators", "actuator_hooks.jl"),
+    joinpath("src", "vehicle", "actuators", "thruster", "thruster_hooks.jl"),
+    joinpath("src", "vehicle", "structure", "structure_models.jl"),
+    joinpath("src", "vehicle", "structure", "assembly_graph.jl"),
+    joinpath("src", "vehicle", "structure", "mass_properties.jl"),
+    joinpath("src", "vehicle", "structure", "geometry_properties.jl"),
+    joinpath("src", "dynamics", "coupled", "force_torque_models.jl"),
+    joinpath("src", "gnc", "guidance", "aerobraking", "interfaces.jl"),
+    joinpath("src", "gnc", "guidance", "aerobraking", "dispatcher.jl"),
+    joinpath("src", "gnc", "guidance", "aerobraking", "e_edg", "e_edg_strategy.jl"),
+    joinpath("src", "gnc", "guidance", "aerobraking", "t_edg", "t_edg_strategy.jl"),
+    joinpath("src", "mission", "operations", "aerobraking_policy", "policy_types.jl"),
+)
+    isfile(joinpath(REPO_ROOT, rel)) ||
+        error("Canonical-ownership contract violation: missing canonical owner file: $rel")
+end
+
+isdir(joinpath(REPO_ROOT, "src", "gnc", "guidance", "targeting_control")) &&
+    error("Canonical-ownership contract violation: retired targeting_control path still exists.")
+
 for retired in ("control", "physical_models", "guidance", "integrator", "utils", "simulation_model")
     isdir(joinpath(REPO_ROOT, "src", retired)) &&
         error("Canonical-ownership contract violation: retired source tree still exists at src/$retired")

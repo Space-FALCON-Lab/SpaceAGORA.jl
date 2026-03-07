@@ -1,8 +1,6 @@
 module EnvironmentModels
     using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
-    using ..Analysis
     using ..Kinematics
-    using ..Effectors
     using ..SimConfig: InitialTime
     using Reexport
 

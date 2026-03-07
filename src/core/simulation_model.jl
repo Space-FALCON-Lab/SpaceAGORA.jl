@@ -13,6 +13,7 @@ const GRAM_LOCK = ReentrantLock()
 
 # --- Utils ---
 include(joinpath(@__DIR__, "..", "core", "numerics", "quaternion_utils.jl"))
+include(joinpath(@__DIR__, "..", "core", "state", "reference_system_config.jl"))
 include(joinpath(@__DIR__, "..", "environment", "ephemerides", "planet_shapes.jl"))
 
 # --- Submodules ---
@@ -42,13 +43,15 @@ include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "assembly.jl"))
 include(joinpath(@__DIR__, "..", "vehicle", "kinematics", "kinematics.jl"))
 @reexport using .Kinematics
 
-# 6. Functions for calculating effectors (thrusters, etc.)
-include(joinpath(@__DIR__, "..", "vehicle", "actuators", "thruster_effectors.jl"))
-@reexport using .Effectors
+# 6. Generic and actuator-specific hook surfaces
+include(joinpath(@__DIR__, "..", "vehicle", "actuators", "actuator_hooks.jl"))
+@reexport using .ActuatorHooks
+include(joinpath(@__DIR__, "..", "vehicle", "actuators", "thruster", "thruster_hooks.jl"))
+@reexport using .ThrusterHooks
 
-# 7. Spacecraft structural analysis helpers (get_COM, get_inertia, etc.)
-include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "spacecraft_analysis.jl"))
-@reexport using .Analysis
+# 7. Spacecraft structural ownership helpers (mass, inertia, geometry)
+include(joinpath(@__DIR__, "..", "vehicle", "structure", "structure_models.jl"))
+@reexport using .Structure
 
 # --- Config types ---
 include(joinpath(@__DIR__, "..", "core", "state", "simulation_configuration.jl"))
@@ -68,8 +71,8 @@ include(joinpath(@__DIR__, "..", "dynamics", "rotational", "rotational_models.jl
 include(joinpath(@__DIR__, "..", "dynamics", "translational", "translational_models.jl"))
 @reexport using .DynamicsTranslational
 
-# --- Dynamic Effectors ---
-include(joinpath(@__DIR__, "..", "dynamics", "models", "dynamic_effectors.jl"))
+# --- Coupled Dynamic Force/Torque Effectors ---
+include(joinpath(@__DIR__, "..", "dynamics", "coupled", "force_torque_models.jl"))
 @reexport using .DynamicEffectors
 
 # --- IO Owners ---
@@ -81,6 +84,10 @@ include(joinpath(@__DIR__, "..", "io", "logging", "io_logging.jl"))
 @reexport using .IOLogging
 include(joinpath(@__DIR__, "..", "io", "outputs", "io_outputs.jl"))
 @reexport using .IOOutputs
+
+# --- Mission Policy Owners ---
+include(joinpath(@__DIR__, "..", "mission", "operations", "aerobraking_policy", "policy_types.jl"))
+@reexport using .AerobrakingPolicy
 
 # --- Guidance Effectors ---
 include(joinpath(@__DIR__, "..", "gnc", "guidance", "guidance_hooks.jl"))

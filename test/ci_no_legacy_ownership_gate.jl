@@ -6,6 +6,9 @@ const RETIRED_DIRS = (
     joinpath(SRC_ROOT, "physical_models"),
     joinpath(SRC_ROOT, "guidance"),
     joinpath(SRC_ROOT, "integrator"),
+    joinpath(SRC_ROOT, "simulation", "events"),
+    joinpath(SRC_ROOT, "simulation", "execution"),
+    joinpath(SRC_ROOT, "simulation", "solver_orchestration"),
     joinpath(SRC_ROOT, "utils"),
     joinpath(SRC_ROOT, "simulation_model")
 )
@@ -19,6 +22,9 @@ const FORBIDDEN_SRC_TOKENS = (
     "src/physical_models/",
     "src/guidance/",
     "src/integrator/",
+    "src/simulation/events/",
+    "src/simulation/execution/",
+    "src/simulation/solver_orchestration/",
     "src/utils/",
     "src/simulation_model/",
     "Compatibility wrapper: canonical path forwarding to legacy implementation."

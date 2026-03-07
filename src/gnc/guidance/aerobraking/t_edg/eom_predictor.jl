@@ -8,7 +8,7 @@ using AstroTime
 using SPICE
 
 # import .config
-# import .ref_sys
+# import .ReferenceSystems
 
 function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing; cnf=nothing, solution=nothing)
     cnf_state = _bridge_get_cnf(args; cnf=cnf)
@@ -91,7 +91,7 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
         # Clock
         current_epoch = date_initial + t0*seconds # Precompute the current epoch
         time_real = DateTime(current_epoch) # date_initial + Second(t0)
-        timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
+        timereal = ReferenceSystems.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
 
         # Timing variables
         el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation
@@ -335,7 +335,7 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
         # # Clock
         # current_epoch = date_initial + t0*seconds # Precompute the current epoch
         # time_real = DateTime(current_epoch) # date_initial + Second(t0)
-        # timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
+        # timereal = ReferenceSystems.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
 
         # # Timing variables
         # el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation
@@ -801,7 +801,7 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
         # # Clock
         # current_epoch = date_initial + t0*seconds # Precompute the current epoch
         # time_real = DateTime(current_epoch) # date_initial + Second(t0)
-        # timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
+        # timereal = ReferenceSystems.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
 
         # # Timing variables
         # el_time = value(seconds(current_epoch - m.initial_condition.DateTimeIC)) # Elapsed time since the beginning of the simulation

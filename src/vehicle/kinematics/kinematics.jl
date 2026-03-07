@@ -2,7 +2,7 @@ module Kinematics
 
 using StaticArrays
 using LinearAlgebra
-using ..PhysicalModel
+using ..SpacecraftModels
 include(joinpath(@__DIR__, "..", "..", "core", "numerics", "quaternion_utils.jl"))
 # Import from the utils module defined in the main file
 # using ..quaternion_utils: rot, dcm_to_quaternion, hat 

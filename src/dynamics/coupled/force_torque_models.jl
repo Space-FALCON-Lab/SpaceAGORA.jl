@@ -4,75 +4,34 @@
 module DynamicEffectors
     function calcForceTorque end
 
-    module GravityEffectors
-        using ...ConfigTypes: ODEParams
-        using ...AbstractTypes: AbstractForceTorqueModel
-        import ..DynamicEffectors: calcForceTorque
+    include(joinpath(@__DIR__, "force_torque_models", "gravity_effectors.jl"))
+    include(joinpath(@__DIR__, "force_torque_models", "aerodynamic_effectors.jl"))
+    include(joinpath(@__DIR__, "force_torque_models", "perturbation_effectors.jl"))
+    include(joinpath(@__DIR__, "force_torque_models", "thruster_models.jl"))
+    include(joinpath(@__DIR__, "force_torque_models", "guidance_models.jl"))
 
-        export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
-        export aerobraking_gravity_force_ii
-
-        include(joinpath(@__DIR__, "..", "..", "environment", "gravity", "gravity_models.jl"))
-    end
-
-    module AerodynamicEffectors
-        using ...Structure
-        using ...ConfigTypes: ODEParams, AeroScratchWorkspace
-        using ...AbstractTypes: AbstractForceTorqueModel
-        using ...ParallelPolicy
-        using ...Kinematics
-        using LinearAlgebra
-        using StaticArrays
-        import ..DynamicEffectors: calcForceTorque
-
-        export AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
-
-        include(joinpath(@__DIR__, "aerodynamic_wrench_models.jl"))
-    end
-
-    module PerturbationEffectors
-        using ...ConfigTypes: ODEParams, NBodyScratchWorkspace, HarmonicsScratchWorkspace
-        using ...AbstractTypes: AbstractPlanet, AbstractForceTorqueModel
-        using ...Planets: Earth, Mars, Venus, Titan
-        using ...ParallelPolicy
-        using ...SimulationModel: SPICE_LOCK, SRPSunEphemerisCache, NBodyEphemerisCache, SpiceRhsMemo
-        using StaticArrays
-        import ..DynamicEffectors: calcForceTorque
-
-        export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
-        export srp, srp_cannonball_accel
-
-        include(joinpath(@__DIR__, "perturbations.jl"))
-    end
-
-    module ThrusterModels
-        using ...AbstractTypes: AbstractThrusterModel
-
-        export BaseThrusterModel
-
-        include(joinpath(@__DIR__, "..", "..", "vehicle", "actuators", "thruster", "thruster_models.jl"))
-    end
-
-    module GuidanceModels
-        using ...AbstractTypes: AbstractGuidanceModel
-
-        export AerobrakingCampaignPropulsiveManeuverGuidanceModel
-
-        include(joinpath(@__DIR__, "..", "..", "gnc", "guidance", "thruster_guidance", "thruster_guidance_models.jl"))
-    end
+    # Gravity helpers still rely on perturbation calculations for legacy aerobraking paths.
+    @eval GravityEffectors using ..PerturbationEffectors
 
     using .GravityEffectors: ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     using .GravityEffectors: aerobraking_gravity_force_ii, calcForceTorque!
     using .AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
+    using .AerodynamicEffectors: _parse_bool_env, _multibody_outer_parallel_hint, collect_and_reset_link_wrenches!
+    using .AerodynamicEffectors: _multibody_parallel_mode, _multibody_thread_threshold, _multibody_max_threads
+    using .AerodynamicEffectors: _threadid_capacity, _multibody_use_threads, _multibody_thread_decision
+    using .AerodynamicEffectors: _make_aero_scratch_workspace, _ensure_aero_workspace_capacity!, _aero_workspace_for_sat!
     using .PerturbationEffectors: NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
-    using .PerturbationEffectors: srp, srp_cannonball_accel
+    using .PerturbationEffectors: srp, srp_cannonball_accel, _spice_query_name
+    using .PerturbationEffectors: _make_nbody_scratch_workspace, _ensure_nbody_workspace_capacity!, _nbody_workspace_for_sat!
+    using .PerturbationEffectors: _make_harmonics_scratch_workspace, _harmonics_workspace_for_sat!
+    using .PerturbationEffectors: _nbody_body_position_from_cache_j2000, _srp_sun_position_from_cache_j2000
+    using .PerturbationEffectors: eclipse_area_calc
     using .ThrusterModels: BaseThrusterModel
     using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
 
-    # Public members to export
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
-    export srp, srp_cannonball_accel
+    export aerobraking_gravity_force_ii, srp, srp_cannonball_accel
     export AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
     export calcForceTorque
     export BaseThrusterModel

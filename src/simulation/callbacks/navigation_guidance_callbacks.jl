@@ -31,19 +31,20 @@ function get_guidance_callbacks(num_sats::Int, args::SimulationConfiguration)::V
     for i in eachindex(guidance_models)
         guidance_model = guidance_models[i]
         guidance_rate = guidance_rates[i]
-        # Implement a callback for this guidance model that triggers at the specified guidance rate and calculates the guidance commands based on the current state and the guidance model
-        # The calculated guidance commands should be stored in the shared buffers for use in the dynamics calculations
         guidance_func = (integrator) -> begin
             if use_invokelatest
-                # Dev mode: keep Revise/hot-reload workflows free of world-age errors.
-                Base.invokelatest(calcGuidanceEffect!, guidance_model, integrator.u, integrator.p, integrator.t, i)
+                @inbounds for sat_idx in 1:num_sats
+                    # Dev mode: keep Revise/hot-reload workflows free of world-age errors.
+                    Base.invokelatest(calcGuidanceEffect!, guidance_model, integrator.u, integrator.p, integrator.t, sat_idx)
+                end
             else
-                # Production mode: direct dispatch avoids invokelatest overhead.
-                calcGuidanceEffect!(guidance_model, integrator.u, integrator.p, integrator.t, i)
+                @inbounds for sat_idx in 1:num_sats
+                    # Production mode: direct dispatch avoids invokelatest overhead.
+                    calcGuidanceEffect!(guidance_model, integrator.u, integrator.p, integrator.t, sat_idx)
+                end
             end
         end
         callbacks[i] = PeriodicCallback(guidance_func, guidance_rate)
     end
     return callbacks
 end
-

@@ -48,6 +48,43 @@ end
     end
 end
 
+@inline function _guidance_maneuver_command(p, i::Int64)
+    if !hasproperty(p, :shared_buffers) || !hasproperty(p.shared_buffers, :maneuver_commands)
+        return nothing
+    end
+
+    commands = p.shared_buffers.maneuver_commands
+    if i < 1 || i > length(commands)
+        return nothing
+    end
+
+    command = commands[i]
+    return command.valid ? command : nothing
+end
+
+@inline function _commanded_maneuver!(controlModel::BaseThrusterModel, p, i::Int64)
+    command = _guidance_maneuver_command(p, i)
+    if command !== nothing
+        controlModel.Δv[i] = command.delta_v_mps
+        controlModel.direction[i] = command.direction_rad
+        return (
+            delta_v_mps=command.delta_v_mps,
+            direction_rad=command.direction_rad,
+            source_orbit=command.source_orbit,
+        )
+    end
+
+    if i < 1 || i > length(controlModel.Δv) || i > length(controlModel.direction)
+        return nothing
+    end
+
+    return (
+        delta_v_mps=Float64(controlModel.Δv[i]),
+        direction_rad=Float64(controlModel.direction[i]),
+        source_orbit=Int64(-1),
+    )
+end
+
 function _trace_maneuver_event!(
     event::String,
     controlModel::BaseThrusterModel,
@@ -107,21 +144,10 @@ end
     return nothing
 end
 
-"""
-    calcControlMassFlowRate(controlModel::AbstractControlEffectorModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
-
-Default control-induced mass-flow model. Control effectors that do not model
-propellant consumption return zero mass flow by default.
-"""
 function calcControlMassFlowRate(controlModel::AbstractControlEffectorModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
     return 0.0
 end
 
-"""
-Fallback mass-flow model for user-defined control effectors that do not subtype
-`AbstractControlEffectorModel`. This keeps legacy/custom examples working while
-defaulting to zero propellant consumption unless explicitly modeled.
-"""
 function calcControlMassFlowRate(controlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
     return 0.0
 end
@@ -165,13 +191,6 @@ function calcControlForceTorque(controlModel::BaseThrusterModel, u::AbstractVect
     return force, torque
 end
 
-"""
-    calcControlMassFlowRate(controlModel::BaseThrusterModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
-
-Return instantaneous propellant mass flow rate (kg/s) from the active burn.
-Uses the applied force magnitude and specific impulse relation:
-`\$mdot = -T / (Isp * g0)\$`.
-"""
 function calcControlMassFlowRate(controlModel::BaseThrusterModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
     if i < 1 || i > length(controlModel.start_burn_time)
         return 0.0
@@ -253,6 +272,9 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
     if !isfinite(mass) || mass <= 0.0
         return
     end
+    maneuver = _commanded_maneuver!(controlModel, p, i)
+    maneuver === nothing && return
+
     # Calculate the current orbital elements from the state vector
     oe = try
         rvtoorbitalelement(pos, vel, p.args.environment_model.planet)
@@ -272,7 +294,7 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
     pre_apoapsis = e <= circular_e_tol || ν < π - 1e-12
     if alt >= p.args.environment_model.EI * 1000 - 1e-6 && pre_apoapsis
         # Calculate the burn time required to achieve the desired Δv based on the current mass and thrust
-        Δv = controlModel.Δv[i]
+        Δv = maneuver.delta_v_mps
         if !isfinite(Δv) || Δv <= 0.0
             return
         end

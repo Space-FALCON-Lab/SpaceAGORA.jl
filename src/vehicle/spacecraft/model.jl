@@ -1,4 +1,4 @@
-module PhysicalModel
+module SpacecraftModels
 
 using StaticArrays
 using LinearAlgebra
@@ -341,4 +341,4 @@ end
         new{T_Effectors}(control_effectors, control_rates)
     end
 end
-end # module Model
+end # module SpacecraftModels

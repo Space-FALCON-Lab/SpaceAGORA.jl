@@ -1,12 +1,8 @@
 ## Canonical aggregator: no behavior ownership.
 module SimulationEngine
 
-isdefined(parentmodule(@__MODULE__), :SimulationModel) ||
-    error(
-        "SimulationEngine requires SimulationModel in the parent module. " *
-        "Load src/core/simulation_model.jl before including simulation_engine.jl."
-    )
 using ..SimulationModel
+import ..RuntimeServices
 using SPICE
 
 include(joinpath(@__DIR__, "config", "parallel_config.jl"))

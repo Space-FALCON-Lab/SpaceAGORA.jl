@@ -4,7 +4,7 @@ using SatelliteToolbox
 using StaticArrays
 using LinearAlgebra
 using GRAMSuite
-using ..SimulationModel: GRAM_LOCK
+using ...RuntimeServices: GRAM_LOCK
 
 struct NoAtmosphereModel <: AbstractDensityModel
 end

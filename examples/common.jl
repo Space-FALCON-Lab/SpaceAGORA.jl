@@ -8,6 +8,9 @@ end
 if !isdefined(@__MODULE__, :SimulationModel)
     const SimulationModel = SpaceAGORA.SimulationModel
 end
+if !isdefined(@__MODULE__, :RuntimeServices)
+    const RuntimeServices = SpaceAGORA.RuntimeServices
+end
 using .SimulationModel
 
 if !isdefined(@__MODULE__, :SM)

@@ -71,7 +71,7 @@ function body_pos_wrt_earth_pci(body_name::String, et::Float64, planet::Abstract
     name = uppercase(body_name)
     if name == "MOON"
         try
-            r_moon_j2000 = lock(SimulationModel.SPICE_LOCK) do
+            r_moon_j2000 = lock(RuntimeServices.SPICE_LOCK) do
                 SVector{3, Float64}(spkpos("MOON", et, "J2000", "NONE", "EARTH")[1]) * 1e3
             end
             return planet.J2000_to_pci * r_moon_j2000
@@ -84,7 +84,7 @@ function body_pos_wrt_earth_pci(body_name::String, et::Float64, planet::Abstract
         end
     end
 
-    r_body_j2000 = lock(SimulationModel.SPICE_LOCK) do
+    r_body_j2000 = lock(RuntimeServices.SPICE_LOCK) do
         SVector{3, Float64}(spkpos(name, et, "J2000", "NONE", "EARTH")[1]) * 1e3
     end
     return planet.J2000_to_pci * r_body_j2000

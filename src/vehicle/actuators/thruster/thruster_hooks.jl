@@ -1,7 +1,7 @@
 module ThrusterHooks
 
 using LinearAlgebra, CSV, DataFrames
-using ..PhysicalModel
+using ..SpacecraftModels
 using ..Components
 using ..Kinematics # We'll need this for rotate_to_body
 

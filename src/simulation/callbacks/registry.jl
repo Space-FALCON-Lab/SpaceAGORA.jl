@@ -5,15 +5,16 @@ using LinearAlgebra
 using SPICE
 using Dates
 using GRAMSuite
-using ..SimulationModel: SPICE_LOCK, GRAM_LOCK, PlanetFrameEphemerisCache, rot
+using ...RuntimeServices: SPICE_LOCK, GRAM_LOCK
+using ..SimulationModel: PlanetFrameEphemerisCache, rot
 using ..SimulationModel: ephemerides_time_seconds, planet_frame_lpi, ephemerides_requires_spice
 using ..ParallelPolicy
 using ..EnvironmentModels
 using ..EnvironmentModels: getDensity, getDensityBatch!, NoAtmosphereModel
 using ..VehicleThermalModels: getHeatRate
-using ..DynamicEffectors.ThrusterModels: BaseThrusterModel
+using ..ThrusterModels: BaseThrusterModel
 using ..DynamicEffectors.AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
-using ..DynamicEffectors.GravityEffectors: InverseSquaredJ2GravityModel
+using ..GravityEffectors: InverseSquaredJ2GravityModel
 using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
 using ..ConfigTypes: SaveData
 import ..ConfigTypes: GramTrackCache

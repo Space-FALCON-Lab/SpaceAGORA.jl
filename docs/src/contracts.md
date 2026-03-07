@@ -11,7 +11,6 @@ The docs build mirrors those contract files into this site so they stay reachabl
 - [GNC aerobraking boundary contract](generated/contracts/architecture/gnc_aerobraking_boundary_contract.md)
 - [Canonical owner audit](generated/contracts/architecture/src_canonical_owner_audit.md)
 - [Completeness contract](generated/contracts/architecture/src_completeness_contract.md)
-- [Restructure migration plan](generated/contracts/architecture/src_restructure_migration_plan.md)
 
 ## Quality
 

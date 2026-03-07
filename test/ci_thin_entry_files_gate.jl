@@ -2,7 +2,11 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
 const THIN_ENTRY_PATHS = [
     joinpath("src", "analysis", "verification", "telemetry_verification.jl"),
+    joinpath("src", "gnc", "guidance", "guidance_models.jl"),
     joinpath("src", "parallel", "policy", "parallel_policy.jl"),
+    joinpath("src", "simulation", "callbacks", "density_callbacks.jl"),
+    joinpath("src", "simulation", "callbacks", "gram_track_cache.jl"),
+    joinpath("src", "dynamics", "coupled", "force_torque_models.jl"),
     joinpath("benchmarks", "studies", "performance_runtime_analysis.jl"),
     joinpath("benchmarks", "studies", "performance_smart_parallel_ladder.jl"),
     joinpath("benchmarks", "studies", "telemetry_hybrid_tuner.jl"),

@@ -6,12 +6,13 @@ using SpaceAGORA
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 const SimulationEngine = SpaceAGORA.SimulationEngine
 const SimulationModel = SpaceAGORA.SimulationModel
+const RuntimeServices = SpaceAGORA.RuntimeServices
 using .SimulationModel
 const run_simulation = SpaceAGORA.run_simulation
 
 import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft
 
-lock(SimulationModel.SPICE_LOCK) do
+lock(RuntimeServices.SPICE_LOCK) do
     kclear()
 end
 

@@ -86,14 +86,14 @@ function aerobraking_gravity_force_ii(
     n_bodies = _gravity_runtime_field(args, :n_bodies, ())
     if !isempty(n_bodies)
         for k in eachindex(n_bodies)
-            force_ii += mass * gravity_n_bodies(et, pos_ii, planet, n_bodies_list[k])
+            force_ii += mass * PerturbationEffectors.gravity_n_bodies(et, pos_ii, planet, n_bodies_list[k])
         end
     end
 
     if _gravity_runtime_field(args, :gravity_harmonics, 0) == 1
         L = Int(_gravity_runtime_field(args, :L, 0))
         M = Int(_gravity_runtime_field(args, :M, 0))
-        force_ii += mass * planet.L_PI' * acc_gravity_pines!(pos_pp, planet.Clm, planet.Slm, L, M, planet.μ, planet.Rp_e, planet)
+        force_ii += mass * planet.L_PI' * PerturbationEffectors.acc_gravity_pines!(pos_pp, planet.Clm, planet.Slm, L, M, planet.μ, planet.Rp_e, planet)
     end
 
     return force_ii

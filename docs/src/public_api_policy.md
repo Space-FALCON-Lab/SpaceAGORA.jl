@@ -23,6 +23,7 @@ API page, it should be treated as internal.
 
 The following modules remain internal implementation detail namespaces:
 
+- `RuntimeServices`
 - `SimulationModel`
 - `SimulationEngine`
 - `ParallelProfiles`

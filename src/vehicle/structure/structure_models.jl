@@ -3,7 +3,7 @@ module Structure
 using StaticArrays
 using LinearAlgebra
 
-using ..PhysicalModel: SpacecraftModel, Link, Joint
+using ..SpacecraftModels: SpacecraftModel, Link, Joint
 using ..Kinematics: rotate_to_inertial
 
 export traverse_bodies,

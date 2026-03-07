@@ -17,7 +17,6 @@ const FILE_TARGETS = [
     joinpath(REPO_ROOT, "src", "gnc", "internal", "bridge_helpers.jl"),
     joinpath(REPO_ROOT, "src", "gnc", "control", "aerobraking", "control_commands.jl"),
     joinpath(REPO_ROOT, "src", "gnc", "control", "aerobraking", "constraint_tracking.jl"),
-    joinpath(REPO_ROOT, "src", "simulation", "solver_orchestration", "implicit_midpoint_jacobian.jl"),
     joinpath(REPO_ROOT, "src", "gnc", "control", "aerobraking", "tracking_executor.jl"),
     joinpath(REPO_ROOT, "src", "gnc", "guidance", "aerobraking", "t_edg", "trajectory_predictor.jl"),
     joinpath(REPO_ROOT, "src", "gnc", "guidance", "aerobraking", "t_edg", "eom_predictor.jl"),
@@ -56,11 +55,6 @@ const FILE_SPECIFIC_FORBIDDEN = Dict(
         r"_compat_",
     ),
     joinpath(REPO_ROOT, "src", "gnc", "control", "aerobraking", "constraint_tracking.jl") => (
-        r"args\s*\[",
-        r"param\[[0-9]+\]",
-        r"_compat_",
-    ),
-    joinpath(REPO_ROOT, "src", "simulation", "solver_orchestration", "implicit_midpoint_jacobian.jl") => (
         r"args\s*\[",
         r"param\[[0-9]+\]",
         r"_compat_",

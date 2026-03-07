@@ -16,9 +16,10 @@ This contract defines how canonical source files are classified and what is forb
      - `src/simulation/callbacks/callbacks.jl`
      - `src/parallel/routing/parallel_profiles.jl`
      - `src/core/simulation_model.jl`
-3. `Scaffold Interface`
+3. `Experimental Interface`
    - Typed contracts for planned subsystems.
-   - Unimplemented behavior must fail explicitly with:
+   - Lives under top-level `experimental/*`, never under `src/*`.
+   - Unimplemented behavior fails explicitly with:
      - `throw(ErrorException("Not implemented: <method>"))`
 4. `Forbidden`
    - Silent stubs such as `*_stub() = nothing`
@@ -34,27 +35,30 @@ This contract defines how canonical source files are classified and what is forb
 1. Benchmark ownership is top-level `benchmarks/*`; `src/benchmarks/*` is forbidden.
 2. Runnable example ownership is top-level `examples/*`; `src/examples/*` is forbidden.
 3. Plotting/report tooling ownership is top-level `scripts/*`; `src/analysis/plotting/*` is forbidden.
-4. `src/analysis/reports`, `src/parallel/state`, `src/parallel/tuning`, and `src/vehicle/sensors` are retired placeholder directories and must not exist.
-5. `src/dynamics/models/*` is retired; coupled dynamics owners live under `src/dynamics/coupled/*`.
-6. Execution dispatch ownership is `src/simulation/execution/run.jl` and `src/simulation/execution/dispatch.jl`.
-7. Mission configuration ownership is `src/mission/initial_conditions.jl`; mission plans and policies live under `src/mission/operations/*`.
-8. Structural analysis ownership is `src/vehicle/structure/*`, not `src/vehicle/spacecraft/*`.
+4. Unfinished subsystem scaffolds belong under top-level `experimental/*`; mirrored `src/*` copies are forbidden.
+5. Only the canonical roots described in this contract are valid ownership
+   locations for plotting, reporting, and parallel support surfaces.
+6. Coupled dynamics owners live under `src/dynamics/coupled/*`.
+7. Simulation execution ownership is `src/simulation/engine/public_api.jl` and `src/simulation/engine/execution.jl`; `src/simulation/events/*`, `src/simulation/execution/*`, and `src/simulation/solver_orchestration/*` are forbidden.
+8. Mission configuration ownership is `src/mission/initial_conditions.jl`; mission plans and policies live under `src/mission/operations/*`.
+9. Structural analysis ownership is `src/vehicle/structure/*`, not `src/vehicle/spacecraft/*`.
 
 ## GNC Aerobraking Boundary
 1. `E-EDG` and `T-EDG` strategy ownership is `src/gnc/guidance/aerobraking/*`.
 2. `src/gnc/control/aerobraking/*` is tracking/execution only and must not define strategy solvers.
 3. Guidance files must not include control source files directly.
 4. Strategy selection contracts are mission-owned in `src/mission/operations/aerobraking_policy/*`.
+5. Propulsive maneuver guidance/control coupling must use typed command buffers; guidance must not mutate thruster runtime state directly.
 
-## Scaffold Interface Set
-1. `src/vehicle/resources/resources.jl`
-2. `src/vehicle/resources/battery/battery_model.jl`
-3. `src/vehicle/resources/solar_array/solar_array_model.jl`
-4. `src/vehicle/resources/power_bus/power_bus_model.jl`
-5. `src/vehicle/resources/loads/load_model.jl`
-6. `src/mission/constellation/network/network.jl`
-7. `src/gnc/estimation/estimation.jl`
-8. `src/vehicle/actuators/laser_terminal/laser_terminal.jl`
+## Experimental Interface Set
+1. `experimental/vehicle/resources/resources.jl`
+2. `experimental/vehicle/resources/battery/battery_model.jl`
+3. `experimental/vehicle/resources/solar_array/solar_array_model.jl`
+4. `experimental/vehicle/resources/power_bus/power_bus_model.jl`
+5. `experimental/vehicle/resources/loads/load_model.jl`
+6. `experimental/mission/constellation/network/network.jl`
+7. `experimental/gnc/estimation/estimation.jl`
+8. `experimental/vehicle/laser_terminal/laser_terminal.jl`
 
 ## Enforced Gates
 1. `test/ci_src_completeness_contract_gate.jl`
@@ -67,4 +71,5 @@ This contract defines how canonical source files are classified and what is forb
 8. `test/ci_vehicle_structure_boundary_gate.jl`
 9. `test/ci_gnc_aerobraking_boundary_gate.jl`
 10. `test/ci_no_guidance_control_cross_include_gate.jl`
-11. `test/ci_aerobraking_strategy_contract_gate.jl`
+11. `test/ci_gnc_typed_command_boundary_gate.jl`
+12. `test/ci_aerobraking_strategy_contract_gate.jl`

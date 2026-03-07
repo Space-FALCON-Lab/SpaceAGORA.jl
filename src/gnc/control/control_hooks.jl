@@ -3,12 +3,12 @@ module ControlHooks
 
     using ..ConfigTypes: ODEParams
     using ..AbstractTypes: AbstractPlanet, AbstractControlEffectorModel, AbstractThrusterModel
-    using ..DynamicEffectors.GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
-    using ..DynamicEffectors.ThrusterModels: BaseThrusterModel
-    using ..DynamicEffectors.GravityEffectors: aerobraking_gravity_force_ii
+    using ..ThrusterModels: BaseThrusterModel
+    using ..CommandTypes: PropulsiveManeuverCommand
+    using ..GravityEffectors: aerobraking_gravity_force_ii
     using ..GuidanceHooks: AerobrakingGuidanceInput, dispatch_aerobraking_guidance
     using ..AerobrakingPolicy: AerobrakingPolicyConfig, DefaultAerobrakingPolicySelector
-    using ..ref_sys
+    using ..ReferenceSystems
     using ..LinearAlgebra
     using ..StaticArrays
     using ..Kinematics

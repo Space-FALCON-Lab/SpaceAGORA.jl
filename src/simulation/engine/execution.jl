@@ -14,7 +14,7 @@
 end
 
 function run_simulation(
-    args;
+    args::SimulationConfiguration;
     isolate_state::Bool=true,
     return_solution::Bool=false,
     return_solver_metadata::Bool=false,

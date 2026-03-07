@@ -1,6 +1,7 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
 const SCAN_ROOTS = (
+    joinpath(REPO_ROOT, "examples"),
     joinpath(REPO_ROOT, "test"),
     joinpath(REPO_ROOT, "docs"),
     joinpath(REPO_ROOT, ".github", "workflows")
@@ -8,6 +9,8 @@ const SCAN_ROOTS = (
 
 const FORBIDDEN_PATH_TOKENS = (
     "SimulationEngine.SimulationModel",
+    "SimulationModel.SPICE_LOCK",
+    "SimulationModel.GRAM_LOCK",
     "src/benchmarks/",
     "src/control/",
     "src/physical_models/",
@@ -25,9 +28,9 @@ const FORBIDDEN_PATH_TOKENS = (
     "src/vehicle/spacecraft/spacecraft_analysis.jl",
     "src/gnc/guidance/targeting_control/",
     "src/gnc/control/heatload_control/",
-    "src/simulation/execution/simulation_elements.jl",
-    "src/simulation/execution/simulation_execution.jl",
-    "src/simulation/execution/run_simulation.jl",
+    "src/simulation/events/",
+    "src/simulation/execution/",
+    "src/simulation/solver_orchestration/",
     "src/examples/",
     "src/analysis/plotting/",
     "src/core/utils/typed_example_utils.jl"

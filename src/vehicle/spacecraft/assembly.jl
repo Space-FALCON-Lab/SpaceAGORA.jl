@@ -2,7 +2,7 @@ module Assembly
 
 using LinearAlgebra
 using StaticArrays
-using ..PhysicalModel
+using ..SpacecraftModels
 using ..Components
 # using ..AbstractTypes
 

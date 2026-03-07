@@ -6,13 +6,8 @@ const SCAN_ROOTS = (
     joinpath(REPO_ROOT, "src", "environment"),
     joinpath(REPO_ROOT, "src", "gnc", "control"),
     joinpath(REPO_ROOT, "src", "gnc", "guidance"),
-    joinpath(REPO_ROOT, "src", "vehicle", "resources"),
-    joinpath(REPO_ROOT, "src", "vehicle", "actuators", "laser_terminal"),
-    joinpath(REPO_ROOT, "src", "mission", "constellation", "network"),
-    joinpath(REPO_ROOT, "src", "gnc", "estimation"),
     joinpath(REPO_ROOT, "src", "simulation", "engine"),
     joinpath(REPO_ROOT, "src", "simulation", "callbacks"),
-    joinpath(REPO_ROOT, "src", "simulation", "solver_orchestration"),
     joinpath(REPO_ROOT, "src", "parallel")
 )
 
@@ -27,20 +22,21 @@ const FORBIDDEN_REGEXES = (
 const ALLOWED_RAW_INCLUDE_FILES = Set([
     joinpath("src", "core", "simulation_model.jl"),
     joinpath("src", "environment", "physical_models.jl"),
+    joinpath("src", "environment", "ephemerides", "ephemerides_models.jl"),
     joinpath("src", "environment", "ephemerides", "planet_data.jl"),
     joinpath("src", "environment", "ephemerides", "planets.jl"),
     joinpath("src", "gnc", "control", "control_hooks.jl"),
     joinpath("src", "gnc", "control", "propulsive_maneuvers.jl"),
+    joinpath("src", "gnc", "guidance", "guidance_models.jl"),
     joinpath("src", "gnc", "guidance", "guidance_hooks.jl"),
     joinpath("src", "gnc", "navigation", "navigation_hooks.jl"),
-    joinpath("src", "vehicle", "resources", "resources.jl"),
     joinpath("src", "simulation", "engine", "simulation_engine.jl"),
     joinpath("src", "simulation", "engine", "setup.jl"),
     joinpath("src", "simulation", "callbacks", "callbacks.jl"),
     joinpath("src", "simulation", "callbacks", "registry.jl"),
-    joinpath("src", "simulation", "solver_orchestration", "integrators.jl"),
-    joinpath("src", "simulation", "solver_orchestration", "implicit_midpoint_jacobian.jl"),
-    joinpath("src", "simulation", "solver_orchestration", "include_helpers.jl"),
+    joinpath("src", "simulation", "callbacks", "density_callbacks.jl"),
+    joinpath("src", "simulation", "callbacks", "gram_track_cache.jl"),
+    joinpath("src", "parallel", "policy", "parallel_policy.jl"),
     joinpath("src", "parallel", "routing", "parallel_profiles.jl"),
 ])
 

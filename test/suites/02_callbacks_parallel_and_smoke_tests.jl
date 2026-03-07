@@ -212,21 +212,34 @@
     end
     @test counting_navigation.hits == [2]
 
-    counting_guidance = CountingGuidanceModel([0])
-    args_guidance = SimulationConfiguration(
-        file_paths=args_base.file_paths,
-        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
-        mission_configuration=args_base.mission_configuration,
-        environment_model=args_base.environment_model,
-        dynamics_model=args_base.dynamics_model,
-        guidance_model=GuidanceModel(guidance_effectors=(counting_guidance,), guidance_rates=[1.0]),
-        navigation_model=args_base.navigation_model,
-        control_model=args_base.control_model,
-        initial_time=args_base.initial_time,
-        integration_tolerances=args_base.integration_tolerances
+    counting_guidance = CountingGuidanceModel([0, 0])
+    args_guidance_base = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+            make_spacecraft(ra_alt_m=550e3, rp_alt_m=500e3, ν_deg=160.0)
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    guidance_cbs = SimulationModel.SimulationCallbacks.get_guidance_callbacks(1, args_guidance)
-    p_guidance = ODEParams{1}(args=args_guidance)
+    args_guidance = SimulationConfiguration(
+        file_paths=args_guidance_base.file_paths,
+        simulation_settings=args_guidance_base.simulation_settings,
+        mission_configuration=args_guidance_base.mission_configuration,
+        environment_model=args_guidance_base.environment_model,
+        dynamics_model=args_guidance_base.dynamics_model,
+        guidance_model=GuidanceModel(guidance_effectors=(counting_guidance,), guidance_rates=[1.0]),
+        navigation_model=args_guidance_base.navigation_model,
+        control_model=args_guidance_base.control_model,
+        initial_time=args_guidance_base.initial_time,
+        integration_tolerances=args_guidance_base.integration_tolerances
+    )
+    guidance_cbs = SimulationModel.SimulationCallbacks.get_guidance_callbacks(2, args_guidance)
+    p_guidance = ODEParams{2}(args=args_guidance)
     u_guidance = build_initial_conditions(args_guidance)
     integrator_guidance = MockCallbackIntegrator(
         p_guidance,
@@ -237,12 +250,12 @@
         Inf
     )
     guidance_cbs[1].affect!.affect!(integrator_guidance)
-    @test counting_guidance.hits == [1]
+    @test counting_guidance.hits == [1, 1]
     withenv("SPACEAGORA_DEV_HOT_RELOAD" => "1") do
-        guidance_cbs_hot = SimulationModel.SimulationCallbacks.get_guidance_callbacks(1, args_guidance)
+        guidance_cbs_hot = SimulationModel.SimulationCallbacks.get_guidance_callbacks(2, args_guidance)
         guidance_cbs_hot[1].affect!.affect!(integrator_guidance)
     end
-    @test counting_guidance.hits == [2]
+    @test counting_guidance.hits == [2, 2]
 
     control_model = CountingControlModel([0, 0])
     args_control = build_config_multi(
@@ -1285,4 +1298,3 @@ end
         @test_nowarn fetch(t2)
     end
 end
-

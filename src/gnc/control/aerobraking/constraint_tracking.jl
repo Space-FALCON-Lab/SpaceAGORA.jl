@@ -5,7 +5,7 @@ using AstroTime
 using SPICE
 
  # import .config
- # import .ref_sys
+ # import .ReferenceSystems
 
 function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_control, gram_atmosphere=nothing; cnf=nothing, solution=nothing)
     cnf_state = _bridge_get_cnf(args; cnf=cnf)
@@ -66,7 +66,7 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
 
         # Clock
         time_real = DateTime(date_initial + t0*seconds) # date_initial + Second(t0)
-        timereal = ref_sys.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
+        timereal = ReferenceSystems.clock(Dates.year(time_real), Dates.month(time_real), Dates.day(time_real), Dates.hour(time_real), Dates.minute(time_real), Dates.second(time_real))
         
         pos_ii = in_cond[1:3]       # Inertial position 
         vel_ii = in_cond[4:6]       # Inertial velocity

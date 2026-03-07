@@ -1,7 +1,7 @@
 module SimConfig
     export SimulationConfiguration, InitialTime, IntegrationTolerances, FilePaths, SimulationSettings, MissionConfiguration, EnvironmentModel, MissionType, MissionTime, MissionOrbits
     using ..AbstractTypes: AbstractPlanet, AbstractDensityModel, AbstractThermalModel, AbstractEphemeridesModel
-    using ..PhysicalModel: DynamicsModel, GuidanceModel, ControlModel, NavigationModel
+    using ..SpacecraftModels: DynamicsModel, GuidanceModel, ControlModel, NavigationModel
     using ..EphemeridesModels: SpiceEphemeridesModel
     using ..Planets: Earth
 

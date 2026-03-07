@@ -829,7 +829,7 @@
         pos_solver = SVector{3, Float64}(x_a[1:3])
         et_solver = 123.0
         primary_body_name = dyn._spice_query_name(planet.name)
-        sun_j2000 = lock(SimulationModel.SPICE_LOCK) do
+        sun_j2000 = lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
             SVector{3, Float64}(spkpos("sun", et_solver, "J2000", "none", primary_body_name)[1])
         end
         sun_pci = SVector{3, Float64}(planet.J2000_to_pci * sun_j2000 * 1e3)

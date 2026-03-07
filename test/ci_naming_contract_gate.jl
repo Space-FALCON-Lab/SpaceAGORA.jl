@@ -9,6 +9,10 @@ const CANONICAL_DIRS = [
 ]
 
 const FILE_RE = r"^[a-z0-9]+(_[a-z0-9]+)*\.jl$"
+const MODULE_NAMING_TARGETS = [
+    joinpath(REPO_ROOT, "src", "core", "state", "reference_system_config.jl"),
+    joinpath(REPO_ROOT, "src", "vehicle", "spacecraft", "model.jl"),
+]
 
 violations = String[]
 
@@ -23,6 +27,15 @@ for dir in CANONICAL_DIRS
             end
         end
     end
+end
+
+for path in MODULE_NAMING_TARGETS
+    isfile(path) || error("Missing module naming target: $(relpath(path, REPO_ROOT))")
+    src = read(path, String)
+    occursin("module ref_sys", src) &&
+        push!(violations, "$(relpath(path, REPO_ROOT)) contains retired snake_case module name 'ref_sys'")
+    occursin("module PhysicalModel", src) &&
+        push!(violations, "$(relpath(path, REPO_ROOT)) contains retired module name 'PhysicalModel'")
 end
 
 if !isempty(violations)

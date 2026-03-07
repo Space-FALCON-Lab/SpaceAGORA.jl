@@ -1,17 +1,6 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 const SRC_ROOT = joinpath(REPO_ROOT, "src")
 
-const SCAFFOLD_INTERFACE_FILES = Set([
-    joinpath("src", "vehicle", "resources", "resources.jl"),
-    joinpath("src", "vehicle", "resources", "battery", "battery_model.jl"),
-    joinpath("src", "vehicle", "resources", "solar_array", "solar_array_model.jl"),
-    joinpath("src", "vehicle", "resources", "power_bus", "power_bus_model.jl"),
-    joinpath("src", "vehicle", "resources", "loads", "load_model.jl"),
-    joinpath("src", "mission", "constellation", "network", "network.jl"),
-    joinpath("src", "gnc", "estimation", "estimation.jl"),
-    joinpath("src", "vehicle", "actuators", "laser_terminal", "laser_terminal.jl")
-])
-
 const CANONICAL_AGGREGATOR_FILES = Set([
     joinpath("src", "simulation", "engine", "simulation_engine.jl"),
     joinpath("src", "simulation", "callbacks", "callbacks.jl"),
@@ -22,8 +11,15 @@ const RETIRED_SOURCE_DIRS = Set([
     joinpath("src", "examples"),
     joinpath("src", "analysis", "plotting"),
     joinpath("src", "analysis", "reports"),
+    joinpath("src", "gnc", "estimation"),
+    joinpath("src", "mission", "constellation"),
     joinpath("src", "parallel", "state"),
     joinpath("src", "parallel", "tuning"),
+    joinpath("src", "simulation", "events"),
+    joinpath("src", "simulation", "execution"),
+    joinpath("src", "simulation", "solver_orchestration"),
+    joinpath("src", "vehicle", "actuators", "laser_terminal"),
+    joinpath("src", "vehicle", "resources"),
     joinpath("src", "vehicle", "sensors"),
 ])
 const RETIRED_SOURCE_FILES = Set([
@@ -81,10 +77,6 @@ for (root, _, files) in walkdir(SRC_ROOT)
         for token in FORBIDDEN_TOKENS
             occursin(token, src) || continue
             push!(violations, "$rel: contains forbidden token '$token'.")
-        end
-
-        if rel in SCAFFOLD_INTERFACE_FILES && !occursin("Not implemented: ", src)
-            push!(violations, "$rel: scaffold interface must throw explicit 'Not implemented:' errors.")
         end
 
         if rel in CANONICAL_AGGREGATOR_FILES && !occursin("# Canonical aggregator: no behavior ownership.", src)

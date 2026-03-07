@@ -1,11 +1,114 @@
 # SpaceAGORA.jl
-The Atmospheric & General Orbit Resource for Analysis (AGORA) tool is the successor to the Python-based [Aerobraking Trajectory Simulator](https://github.com/Space-FALCON-Lab/Aerobraking-Trajectory-Simulator). This simulator can be used to model a wide range of atmospheric and non-atmospheric missions with high-fidelity models of perturbing effects such as third-body gravity, solar radiation pressure, and gravitational harmonics. In addition, this simulator includes the capability to use high-fidelity atmospheric models through the GRAM Suite, with the option to use spherical harmonic topography models to determine altitude. This iteration of the simulator provides order-of-magnitude speed improvements compared to the Python version, as well as the inclusion of a wider range of perturbations and planets. Finally, the simulator provides estimates of several important physical parameters in atmospheric flight, including dynamic pressure, heat rate, heat load, and energy depletion rate. This means it is not only an aerobraking mission simulator, but is also easily extensible to other mission profiles, such as entry and aerocapture. 
 
-Generated API documentation and linked architecture/quality references are published at [space-falcon-lab.github.io/SpaceAGORA.jl](https://space-falcon-lab.github.io/SpaceAGORA.jl).
+## What SpaceAGORA is
 
-## Generated outputs and artifact hygiene
+SpaceAGORA.jl is a Julia toolkit for high-fidelity spacecraft orbit and atmospheric-flight simulation, including aerobraking, entry, and aerocapture scenarios. It supports typed simulation configuration, SciML-based execution through `run_simulation`, optional GRAM-backed atmospheric modeling, SPICE-backed ephemerides and frames, telemetry verification studies, and a package-owned CLI.
 
-Generated runtime reports, telemetry CSVs, and local docs builds are not committed to git. They are regenerated into ignored directories such as `output/`, `docs/build/`, `docs/site/`, and `docs/src/generated/` to avoid leaking host-specific absolute paths, usernames, or machine-local build state.
+Generated API documentation and architecture references are published at [space-falcon-lab.github.io/SpaceAGORA.jl](https://space-falcon-lab.github.io/SpaceAGORA.jl).
+
+The stable package contract is the root `SpaceAGORA` API, matching the repository's public API policy. For most users, the supported root entrypoints are `run_simulation`, `simulation_engine_config_from_env`, `run_cli`, `make_no_gram_planet`, `make_no_gram_density_model`, and `make_no_gram_environment`.
+
+Internal modules such as `SimulationModel`, `SimulationEngine`, `ParallelProfiles`, `TelemetryVerification`, `RuntimeServices`, and `SpaceAGORACLI` are implementation detail namespaces, not the stable user-facing contract. If a symbol is not re-exported from `SpaceAGORA` and documented on the generated Public API page, treat it as internal.
+
+## Quickstart with `.AGORA`
+
+`/.AGORA` is the canonical committed execution environment for examples, benchmarks, tests, and CI. It is tracked in the repository, so there is no bootstrap step that copies the root `Project.toml` or `Manifest.toml` at runtime.
+
+```bash
+git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
+cd SpaceAGORA.jl
+julia --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+```
+
+Operational commands in this repository should continue to use `--project=.AGORA` unless that contract is deliberately changed across the repo.
+
+## No-GRAM first run
+
+SpaceAGORA supports a first-class no-GRAM onboarding path. This mode uses:
+
+- `NoAtmosphereModel()` or `ExponentialAtmosphereModel(planet)`
+- `SimpleEphemeridesModel()`
+- planet constants shipped in the repository
+
+It does not require a local GRAM installation or SPICE kernels.
+
+Run the baseline no-GRAM examples:
+
+```bash
+julia --project=.AGORA examples/AGORA_Earth_NoGRAM.jl
+julia --project=.AGORA examples/AGORA_Mars_NoGRAM.jl
+```
+
+The same onboarding mode is also available from the exported helper builders:
+
+- `make_no_gram_planet`
+- `make_no_gram_density_model`
+- `make_no_gram_environment`
+
+Minimal typed no-GRAM environment example:
+
+```julia
+using SpaceAGORA
+
+env = make_no_gram_environment(
+    planet=:earth,
+    atmosphere=:none,
+    EI_km=120.0,
+    wind=false,
+    topography=false,
+)
+
+env.ephemerides_model isa SimpleEphemeridesModel
+# true
+```
+
+These presets are intended for onboarding, lightweight studies, and CI smoke coverage. They are not a replacement for GRAM- and SPICE-backed high-fidelity campaigns.
+
+For full typed scenario construction and end-to-end `run_simulation(...)` examples, use the docs site rather than treating the README as a package manual.
+
+## High-fidelity GRAM/SPICE mode
+
+Use the GRAM/SPICE-backed path when you need:
+
+- mission-quality atmospheric density and winds
+- SPICE-based body orientation and geometry products
+- third-body gravity
+- solar-radiation-pressure ephemerides
+
+High-fidelity runs expect a local GRAM installation rooted at `data/GRAMSuite.jl/GRAM Suite 2.0`. Treat `data/GRAMSuite.jl/GRAM Suite 2.0/Build/` as generated, host-specific output and rebuild it natively on each machine.
+
+If you are part of the Space-FALCON Lab, use the lab-distributed GRAM assets. Otherwise, request GRAM from NASA here: [software.nasa.gov/software/MFS-33888-1](https://software.nasa.gov/software/MFS-33888-1).
+
+For the current operational setup, keep the repository-root GRAM folder structure intact and ensure the required SPICE assets are available under the expected GRAM/SPICE tree.
+
+## CLI/docs links
+
+Package documentation:
+
+- Docs site: [space-falcon-lab.github.io/SpaceAGORA.jl](https://space-falcon-lab.github.io/SpaceAGORA.jl)
+- Local docs build: `julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'`
+- Build docs: `julia --project=docs docs/make.jl`
+
+CLI entrypoint:
+
+```bash
+./bin/spaceagora
+```
+
+Common commands:
+
+```bash
+./bin/spaceagora run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/cli_run
+./bin/spaceagora telemetry quick --output-dir=output/telemetry_cli --enforce=1
+./bin/spaceagora benchmark runtime-analysis smoke --output-dir=output/perf_cli
+./bin/spaceagora assets check
+```
+
+For interactive scenario construction, asset policy, and the complete stable API surface, use the docs rather than internal modules under `src/`.
+
+## Development notes
+
+Generated runtime reports, telemetry CSVs, and local docs builds are not committed to git. They are regenerated into ignored directories such as `output/`, `docs/build/`, `docs/site/`, and `docs/src/generated/`.
 
 Use the helper script below to regenerate the common local outputs:
 
@@ -17,102 +120,6 @@ julia --project=.AGORA scripts/regenerate_ignored_outputs.jl docs
 
 CI uploads telemetry CSVs as workflow artifacts instead of storing them in the repository.
 
-## `.AGORA` environment policy
+`SpaceAGORA.run_simulation(...; isolate_state=true)` deep-copies the configuration by default so repeated or concurrent runs do not alias mutable state. Treat `isolate_state=false` as an expert-only performance lever.
 
-`/.AGORA` is the canonical committed execution environment for SpaceAGORA examples, benchmarks, tests, and CI. The repository intentionally tracks `.AGORA/Project.toml` and `.AGORA/Manifest.toml`, so a fresh clone already contains the environment definition that operational entrypoints expect.
-
-There is no bootstrap-copy step that synthesizes `.AGORA` from the root `Project.toml` or `Manifest.toml` at runtime. When docs and workflows say `--project=.AGORA`, they mean the committed environment in this repository. The root `Project.toml` remains the package/development environment; operational commands should continue to use `.AGORA` unless that contract is deliberately changed everywhere.
-
-# Setting up the Docker Environment (Currently not working for Apple Silicon Macs)
-To ensure that all the package versions are consistent, a Docker environment has been configured for use with SpaceAGORA.jl. This guarantees consistent results between computers. This is needed for running on Apple Silicon Macs because of how GRAM was compiled. For other virtualization options, see [GRAM Setup](https://github.com/Space-FALCON-Lab/Aerobraking-Trajectory-Simulator/tree/GRAM-updates?tab=readme-ov-file#gram-setup). The process of setting it up is as follows:
-1. Download and sign in to [Docker Desktop](https://www.docker.com/get-started/). If on Linux, follow [these](https://docs.docker.com/desktop/setup/sign-in/) instructions to sign in.
-2. In VSCode, download the Docker and Dev Container extensions
-3. Open the SpaceAGORA.jl directory in VSCode and click on the remote window icon in the bottom left corner
-4. Select "Reopen in container". This will open a window with the SpaceAGORA.jl repository open in the preconfigured Docker environment.
-5. Open a terminal window in VSCode. Start Julia, enter "]" to activate the package environment, and enter ```activate .AGORA```, then ```instantiate```. This will activate the Julia project environment that has been set up and install all the packages needed to run SpaceAGORA.jl
-6. Now, you should be able to run any existing scenario or create and run a new scenario
-
-# GRAM access
-If part of the Space-FALCON Lab, access through the lab's Drive in SpaceAGORA/GRAM. Use the `data/GRAMSuite.jl/GRAM Suite 2.0` folder at the repository root and build the shared library with the scripts in `data/GRAMSuite.jl/GRAM Suite 2.0/simulation/GRAM/`. Treat `data/GRAMSuite.jl/GRAM Suite 2.0/Build/` as generated, host-specific output and rebuild it natively on each machine.
-
-If not part of Space-FALCON lab, GRAM may be requested [here](https://software.nasa.gov/software/MFS-33888-1). Build the suite and keep the full GRAM root available locally (including `Build/`, `SPICE/`, and planetary data folders).
-
-# Getting Started
-Start by cloning this repository:
-
-```cmd
-git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
-```
-
-For a first run with no GRAM installation and no SPICE kernels, use the no-GRAM examples:
-
-```bash
-julia --project=.AGORA examples/AGORA_Earth_NoGRAM.jl
-julia --project=.AGORA examples/AGORA_Mars_NoGRAM.jl
-```
-
-These use `SimpleEphemeridesModel()` together with `NoAtmosphereModel()` or `ExponentialAtmosphereModel(planet)` so a fresh clone can run end-to-end without licensed atmospheric assets.
-
-Next, follow the instructions above to download the GRAM Suite, which is used for high-fidelity atmospheric modeling. This will include all the GRAM and SPICE files required to properly run the simulations. Example code is provided in ```examples/AGORA_*.jl```.
-
-If GRAM is installed properly and the included Docker environment is being used, this code will run as-is. If for some reason you are unable to get access to GRAM, make sure that the following SPICE files are present in the folder designated in the ```directory_Spice``` argument, organized into subfolders ```pck```, ```lsk```, ```spk/planets```, etc.:
-> PCK files
-> * ```pck00011.tpc```: Orientation, size, and shape data
-
-> SPK files
->> Planets
->> * ```de440s.bsp```: Planetary barycenters w.r.t. solar system barycenter
-
->> Satellites
->> * ```sat441.bsp```: Saturn/Titan positions
-
-> LSK files
->> * ```naif0012.tls```: Timing data
-
-The following describes necessary modifications to the example code in several cases:
-> GRAM is not installed properly
-* Change the ```density_model``` argument to ```Constant``` or ```Exponential```. This will change the model used to calculate the atmospheric density at each step from GRAM to either an exponential model or a constant density model.
-* Change the `GRAMAtmosphereModel(...)` setup to use local fallback models only.
-> Docker is not properly set up
-* Change the GRAM root/data/SPICE paths to match your system. They should point to your local `data/GRAMSuite.jl/GRAM Suite 2.0` installation.
-
-# Usage Guide
-This section provides a brief overview of the structure and usage of this simulator. Generally, user interaction with the simulator is through a program similar to those given in the ```AGORA_*.jl``` files. This is where simulation settings and variables are defined and where the run function is called. The user may use this format to easily modify settings or perform a Monte Carlo analysis.
-## Initial Conditions
-The initial conditions are defined either through initial orbital elements or through initial velocity and flight-path angle. If running a full aerobraking campaign, the terminal condition is defined through the desired final apoapsis radius.
-
-## Vehicle Definition
-The spacecraft is modeled either as a box with two flat plates attached, representing the spacecraft main bus with a solar panel on each side, or as a blunted cone, referred to as "Spacecraft" and "Blunted Cone", respectively. In the "Spacecraft" case, the main bus is defined with a length, width, and height, and the solar panels are defined with a length and height. The overall spacecraft is defined with a dry mass, propellant mass, reflection coefficient, and thermal accomodation factor. The engine thrust, used for propulsive maneuvers to change the periapsis altitude, must also be defined. The "Blunted Cone" case is defined similarly, with the length, width, and height parameters being replaced by cone angle, nose radius, and base radius. 
-
-For propulsive maneuvers, a function must be defined in ```utils/maneuver_plans.jl``` with the following input arguments: 
-```julia
-planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, args=nothing
-```
-It must also modify the ```:delta_v``` and ```:phi``` fields of ```args``` and return ```args```. The ```:delta_v``` field specifies the $\Delta V$ of the propulsive maneuver, and the ```:phi``` field specifies the direction in which the thruster is oriented, with $\phi=\pi$ being a raise maneuver, and $\phi=0$ being a lower maneuver.
-
-## Planet
-The planet model is mostly predefined, with the option to specify the models used for different physical characteristics such as atmospheric density and gravity. The planet shape and size are predefined in ```src/environment/ephemerides/planet_data.jl``` (legacy compatibility path: `src/physical_models/Planet_data.jl`). The orientation is determined using the SPICE system for accurate latitude and longitude calculations.
-
-### Density Models
-The atmospheric density calculation can be done using several built-in methods. The most accurate is to use the GRAM Suite, the set up for which is discussed previously. Other models include an exponential atmosphere model and a constant density model.
-
-### Gravity Models
-The nominal gravitational acceleration can also be computed using different built-in functions. First, a constant law sets the gravity to be constant at all altitudes, latitudes, and longitudes. Next, an inverse square law calculates the gravity as a function of altitude. Finally, an inverse square law accounting for the J2 effect determines the gravity as a function of both altitude and latitude.
-
-### Aerodynamic and Thermal Models
-The aerodynamic coefficients are Mach-dependent and use the [Flow of Rarefied Gases](https://books.google.com/books?hl=en&lr=&id=DIIrDgAAQBAJ&oi=fnd&pg=PP1&dq=rarefied+flow+schaaf+and+chambre&ots=PWLd04BJmj&sig=DaKV6gVakAuvKRgQDM3ZE9uFrdQ#v=onepage&q=rarefied%20flow%20schaaf%20and%20chambre&f=false) theory from Shaaf and Chambre, and the thermal model follows the Maxwellian heat transfer theory also from Shaaf and Chambre.
-
-## Perturbing Forces
-The most significant perturbing forces&mdash;third-body gravity, solar radiation pressure (SRP), and gravitational harmonics&mdash;are built into the simulator.
-
-### Third-body Gravity
-The gravitational effect of massive third-bodies is calculated using SPICE to determine the relative positions of each body. The third-bodies to consider are defined using the ```:n_bodies``` field, which is a vector of strings containing the SPICE names (often just the standard names, e.g., "Sun", "Moon") of the bodies to be considered. Additional SPICE files may be required if performing an analysis at destinations other than Venus, Earth, Mars, or Titan.
-
-### Solar Radiation Pressure
-Solar radiation pressure is also calculated using SPICE, this time to determine the relative position of the Sun and the central body. This is important both for determining the direction and magnitude of the SRP, but also in the case of a partial eclipse of the spacecraft, the area receiving sunlight. This is all done behind the scenes, and the only user input required is a flag that indicates whether to consider SRP.
-
-### Gravitational Harmonics
-This is the most complex perturbation, computationally. Very high degree and order models can cause significant performance loss with negligible benefit to the accuracy of the simulation. In the examples, 50th degree and order models were found to be sufficient for most purposes. This requires the user to specify the file from which the spherical harmonic coefficients are drawn and the degree and order (```:L``` and ```:M```, respectively).
-
-## Control
-The simulator currently enables two forms of control: propulsive control, discussed previously, and atmospheric-drag control. As described in [Energy Depletion Guidance for Aerobraking Atmospheric Passes](https://arc.aiaa.org/doi/abs/10.2514/1.G006171), drag-modulation trajectory control is possible through the use of rotating solar panels. This form of control is only available for the "Spacecraft" body type. The goal of this control method is to maximize the energy depletion during the drag passage without exceeding the spacecraft's thermal limits. There are thus three configurations for this type of control: 1) heat rate limited, 2) heat load limited, and 3) heat rate and heat load limited.
+An optional Docker/dev-container setup also exists for environment parity on some machines, but it is not required for first use and is not the primary onboarding path.

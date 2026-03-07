@@ -666,7 +666,7 @@ function _initialize_srp_sun_ephemeris_cache!(p, et_start::Float64, mission_end_
     ets = Vector{Float64}(undef, n_samples)
     positions = Vector{SVector{3, Float64}}(undef, n_samples)
 
-    lock(SimulationModel.SPICE_LOCK) do
+    lock(RuntimeServices.SPICE_LOCK) do
         @inbounds for sample_idx in 1:n_samples
             et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
             ets[sample_idx] = et
@@ -720,7 +720,7 @@ function _initialize_nbody_ephemeris_cache!(p, et_start::Float64, mission_end_s:
     ets = Vector{Float64}(undef, n_samples)
     positions = Matrix{SVector{3, Float64}}(undef, n_samples, n_bodies)
 
-    lock(SimulationModel.SPICE_LOCK) do
+    lock(RuntimeServices.SPICE_LOCK) do
         @inbounds for sample_idx in 1:n_samples
             et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
             ets[sample_idx] = et

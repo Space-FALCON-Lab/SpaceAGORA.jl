@@ -29,6 +29,22 @@ for (root, _, files) in walkdir(guidance_root)
     end
 end
 
+for root_rel in (
+    joinpath("src", "gnc", "guidance"),
+    joinpath("src", "gnc", "control"),
+)
+    root = joinpath(REPO_ROOT, root_rel)
+    for (dir, _, files) in walkdir(root)
+        for file in files
+            endswith(file, ".jl") || continue
+            path = joinpath(dir, file)
+            rel = relpath(path, REPO_ROOT)
+            src = read(path, String)
+            occursin("DynamicEffectors", src) && push!(violations, "$rel: GNC source still depends on DynamicEffectors directly")
+        end
+    end
+end
+
 # Control must not own strategy/planning solver definitions.
 for rel in (
     joinpath("src", "gnc", "control", "aerobraking", "tracking_executor.jl"),

@@ -18,7 +18,6 @@ const CONTRACT_PAGES = [
     ("architecture", "gnc_aerobraking_boundary_contract.md"),
     ("architecture", "src_canonical_owner_audit.md"),
     ("architecture", "src_completeness_contract.md"),
-    ("architecture", "src_restructure_migration_plan.md"),
     ("quality", "api_naming_contract.md"),
     ("quality", "verification_contract.md"),
     ("quality", "performance_runtime_analysis.md"),
@@ -141,7 +140,6 @@ makedocs(
             "generated/contracts/architecture/gnc_aerobraking_boundary_contract.md",
             "generated/contracts/architecture/src_canonical_owner_audit.md",
             "generated/contracts/architecture/src_completeness_contract.md",
-            "generated/contracts/architecture/src_restructure_migration_plan.md",
             "generated/contracts/quality/api_naming_contract.md",
             "generated/contracts/quality/verification_contract.md",
             "generated/contracts/quality/performance_runtime_analysis.md",
@@ -151,6 +149,7 @@ makedocs(
     linkcheck = true,
     checkdocs = :exports,
     checkdocs_ignored_modules = Module[
+        SpaceAGORA.RuntimeServices,
         SpaceAGORA.SimulationModel,
         SpaceAGORA.SimulationEngine,
         SpaceAGORA.ParallelProfiles,

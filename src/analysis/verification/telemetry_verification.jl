@@ -25,12 +25,6 @@ using DataFrames
 using Arrow
 using TOML
 
-if !isdefined(parentmodule(@__MODULE__), :SimulationModel) || !isdefined(parentmodule(@__MODULE__), :SimulationEngine)
-    error(
-        "TelemetryVerification requires SimulationModel and SimulationEngine in the parent module. " *
-        "Load src/core/simulation_model.jl and src/simulation/engine/simulation_engine.jl before including telemetry_verification.jl."
-    )
-end
 using ..SimulationModel
 using ..SimulationEngine
 include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))

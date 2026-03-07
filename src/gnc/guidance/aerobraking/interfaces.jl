@@ -24,10 +24,6 @@ Base.@kwdef struct AerobrakingGuidanceOutput
     security_mode::Bool = false
 end
 
-Base.@kwdef struct AerobrakingControlCommand
-    alpha_command::Float64 = 0.0
-end
-
 function compute_aerobraking_guidance(::AbstractAerobrakingStrategy, ::AerobrakingGuidanceInput)
     throw(MethodError(compute_aerobraking_guidance, (AbstractAerobrakingStrategy, AerobrakingGuidanceInput)))
 end

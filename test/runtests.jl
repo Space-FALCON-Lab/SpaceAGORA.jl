@@ -104,8 +104,6 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const _validate_orientation_inertia! = SimulationEngine._validate_orientation_inertia!
     const _validate_thermal_model_support! = SimulationEngine._validate_thermal_model_support!
 end
-# Simulation campaign entrypoint.
-include(joinpath(REPO_ROOT, "src", "simulation", "execution", "run.jl"))
 
 struct ConstantDensityModel <: SimulationModel.AbstractDensityModel
     rho::Float64
@@ -568,104 +566,6 @@ function run_case_capture_stdout(args::SimulationConfiguration; expect_results_c
             else
                 @test !isfile(results_csv_path)
                 return DataFrame(), output
-            end
-        end
-    end
-end
-
-function run_case_via_execute_analysis(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
-    return mktempdir() do tmp
-        cd(tmp) do
-            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
-            redirect_stdout(devnull) do
-                execute_analysis(args; isolate_state=isolate_state)
-            end
-            if expect_results_csv
-                @test isfile(results_csv_path)
-                return CSV.read(results_csv_path, DataFrame)
-            else
-                @test !isfile(results_csv_path)
-                return DataFrame()
-            end
-        end
-    end
-end
-
-function run_case_via_campaign(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true, state=nothing)
-    return mktempdir() do tmp
-        cd(tmp) do
-            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
-            redirect_stdout(devnull) do
-                if state === nothing
-                    execute_campaign(args; isolate_state=isolate_state)
-                else
-                    execute_campaign(args, state; isolate_state=isolate_state)
-                end
-            end
-            if expect_results_csv
-                @test isfile(results_csv_path)
-                return CSV.read(results_csv_path, DataFrame)
-            else
-                @test !isfile(results_csv_path)
-                return DataFrame()
-            end
-        end
-    end
-end
-
-function run_case_via_execute_campaign(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true, state=nothing)
-    return mktempdir() do tmp
-        cd(tmp) do
-            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
-            redirect_stdout(devnull) do
-                if state === nothing
-                    execute_campaign(args; isolate_state=isolate_state)
-                else
-                    execute_campaign(args, state; isolate_state=isolate_state)
-                end
-            end
-            if expect_results_csv
-                @test isfile(results_csv_path)
-                return CSV.read(results_csv_path, DataFrame)
-            else
-                @test !isfile(results_csv_path)
-                return DataFrame()
-            end
-        end
-    end
-end
-
-function run_case_via_execute_orbital_elements_campaign(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
-    return mktempdir() do tmp
-        cd(tmp) do
-            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
-            redirect_stdout(devnull) do
-                execute_orbital_elements_campaign(args; isolate_state=isolate_state)
-            end
-            if expect_results_csv
-                @test isfile(results_csv_path)
-                return CSV.read(results_csv_path, DataFrame)
-            else
-                @test !isfile(results_csv_path)
-                return DataFrame()
-            end
-        end
-    end
-end
-
-function run_case_via_execute_vgamma_campaign(args::SimulationConfiguration; expect_results_csv::Bool=true, isolate_state::Bool=true)
-    return mktempdir() do tmp
-        cd(tmp) do
-            results_csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
-            redirect_stdout(devnull) do
-                execute_vgamma_campaign(args; isolate_state=isolate_state)
-            end
-            if expect_results_csv
-                @test isfile(results_csv_path)
-                return CSV.read(results_csv_path, DataFrame)
-            else
-                @test !isfile(results_csv_path)
-                return DataFrame()
             end
         end
     end

@@ -1,0 +1,9 @@
+module GuidanceModels
+
+using ..AbstractTypes: AbstractGuidanceModel
+
+export AerobrakingCampaignPropulsiveManeuverGuidanceModel
+
+include(joinpath(@__DIR__, "thruster_guidance", "thruster_guidance_models.jl"))
+
+end # module GuidanceModels

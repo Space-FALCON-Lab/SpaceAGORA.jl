@@ -8,6 +8,7 @@ end
 
 interfaces = _read(joinpath("src", "gnc", "guidance", "aerobraking", "interfaces.jl"))
 dispatcher = _read(joinpath("src", "gnc", "guidance", "aerobraking", "dispatcher.jl"))
+command_types = _read(joinpath("src", "gnc", "command_types.jl"))
 policy_types = _read(joinpath("src", "mission", "operations", "aerobraking_policy", "policy_types.jl"))
 selector_stub = _read(joinpath("src", "mission", "operations", "aerobraking_policy", "selector_stub.jl"))
 
@@ -15,9 +16,15 @@ for token in (
     "abstract type AbstractAerobrakingStrategy",
     "struct AerobrakingGuidanceInput",
     "struct AerobrakingGuidanceOutput",
-    "struct AerobrakingControlCommand",
 )
     occursin(token, interfaces) || error("Missing strategy interface token: $token")
+end
+
+for token in (
+    "struct AerobrakingControlCommand",
+    "struct PropulsiveManeuverCommand",
+)
+    occursin(token, command_types) || error("Missing command-type token: $token")
 end
 
 occursin("dispatch_aerobraking_guidance", dispatcher) ||

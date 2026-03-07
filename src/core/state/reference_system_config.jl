@@ -1,4 +1,4 @@
-module ref_sys
+module ReferenceSystems
     export OE, cartesian, R_RA_DEC, H_LAN_LON, uDuNuE, clock
 
     mutable struct OE

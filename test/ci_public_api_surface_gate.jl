@@ -15,7 +15,7 @@ missing_from_exports = sort!(collect(setdiff(documented, exported)))
 isempty(missing_from_docs) || error("Exported public symbols missing from docs/public_api_symbols.jl: $(missing_from_docs)")
 isempty(missing_from_exports) || error("Documented public symbols missing from SpaceAGORA exports: $(missing_from_exports)")
 
-for internal_name in (:SimulationModel, :SimulationEngine, :ParallelProfiles, :TelemetryVerification, :SpaceAGORACLI)
+for internal_name in (:RuntimeServices, :SimulationModel, :SimulationEngine, :ParallelProfiles, :TelemetryVerification, :SpaceAGORACLI)
     internal_name in exported && error("Internal module $(internal_name) must not be exported from SpaceAGORA")
 end
 

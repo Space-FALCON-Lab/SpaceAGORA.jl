@@ -10,10 +10,12 @@
 - Control files must not define targeting/switch-planning strategy solvers.
 - Strategy selection must be typed and mission-owned (`AerobrakingStrategyKind`, selector contract).
 - DRL integration point is a stub contract only (`DRLPolicyAdapterStub`), with explicit `Not implemented` behavior.
+- Propulsive maneuver coupling must cross the typed command boundary (`PropulsiveManeuverCommand`, `AerobrakingControlCommand`) rather than `DynamicEffectors` or direct thruster-state mutation from guidance.
 
 ## Canonical interfaces
 - `AerobrakingGuidanceInput`
 - `AerobrakingGuidanceOutput`
+- `PropulsiveManeuverCommand`
 - `AerobrakingControlCommand`
 - `AbstractAerobrakingStrategy`
 - `AerobrakingPolicyConfig`

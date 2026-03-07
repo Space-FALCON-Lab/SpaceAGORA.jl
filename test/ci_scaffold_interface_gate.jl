@@ -1,16 +1,16 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
 if !isdefined(@__MODULE__, :Resources)
-    include(joinpath(REPO_ROOT, "src", "vehicle", "resources", "resources.jl"))
+    include(joinpath(REPO_ROOT, "experimental", "vehicle", "resources", "resources.jl"))
 end
 if !isdefined(@__MODULE__, :ConstellationNetwork)
-    include(joinpath(REPO_ROOT, "src", "mission", "constellation", "network", "network.jl"))
+    include(joinpath(REPO_ROOT, "experimental", "mission", "constellation", "network", "network.jl"))
 end
 if !isdefined(@__MODULE__, :Estimation)
-    include(joinpath(REPO_ROOT, "src", "gnc", "estimation", "estimation.jl"))
+    include(joinpath(REPO_ROOT, "experimental", "gnc", "estimation", "estimation.jl"))
 end
 if !isdefined(@__MODULE__, :LaserTerminal)
-    include(joinpath(REPO_ROOT, "src", "vehicle", "actuators", "laser_terminal", "laser_terminal.jl"))
+    include(joinpath(REPO_ROOT, "experimental", "vehicle", "laser_terminal", "laser_terminal.jl"))
 end
 
 function _expect_not_implemented(callable::Function, label::String)

@@ -16,7 +16,7 @@
     end
 
     @testset "Simple ephemerides avoid kernel-dependent runtime" begin
-        lock(SimulationModel.SPICE_LOCK) do
+        lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
             kclear()
         end
 

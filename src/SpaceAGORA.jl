@@ -5,6 +5,7 @@ module SpaceAGORA
 using PrecompileTools: @compile_workload, @setup_workload
 
 include(joinpath(@__DIR__, "parallel", "routing", "parallel_profiles.jl"))
+include(joinpath(@__DIR__, "simulation", "runtime_services.jl"))
 include(joinpath(@__DIR__, "core", "simulation_model.jl"))
 include(joinpath(@__DIR__, "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(@__DIR__, "analysis", "verification", "telemetry_verification.jl"))
@@ -101,9 +102,32 @@ repeated scalar `getDensity` dispatch.
 """
 getDensityBatch!
 
-@doc (@doc SimulationModel.calcControlEffect!) calcControlEffect!
-@doc (@doc SimulationModel.calcControlForceTorque) calcControlForceTorque
-@doc (@doc SimulationModel.calcControlMassFlowRate) calcControlMassFlowRate
+"""
+    calcControlEffect!(model, u, p, t, i)
+
+Stable extension hook for [`AbstractControlEffectorModel`](@ref)
+implementations that update control-related shared state during the simulation
+loop.
+"""
+calcControlEffect!
+
+"""
+    calcControlForceTorque(model, u, p, i, t)
+
+Stable extension hook for [`AbstractControlEffectorModel`](@ref)
+implementations that contribute force and torque terms to the spacecraft
+dynamics.
+"""
+calcControlForceTorque
+
+"""
+    calcControlMassFlowRate(model, u, p, i, t)
+
+Stable extension hook for [`AbstractControlEffectorModel`](@ref)
+implementations that consume propellant. Effectors that do not model propellant
+consumption should return `0.0`.
+"""
+calcControlMassFlowRate
 
 @doc (@doc ParallelProfiles.ParallelProfile) ParallelProfile
 @doc (@doc ParallelProfiles.ParallelProfileConfig) ParallelProfileConfig

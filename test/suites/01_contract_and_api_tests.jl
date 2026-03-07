@@ -1,6 +1,7 @@
 @testset "SimulationModel Export Contract" begin
     sandbox = EXPORT_IMPORT_SANDBOX
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+    @test Core.eval(sandbox, :(isdefined(@__MODULE__, :RuntimeServices)))
     @test_nowarn Core.eval(sandbox, :(using .SimulationModel))
 
     required_public_names = [
@@ -33,6 +34,18 @@
         @test !Core.eval(sandbox, :(isdefined(@__MODULE__, $(QuoteNode(sym)))))
         @test !Core.eval(sandbox, :(Base.isexported(SimulationModel.ControlHooks, $(QuoteNode(sym)))))
     end
+
+    @test !Core.eval(sandbox, :(isdefined(SimulationModel, :SPICE_LOCK)))
+    @test !Core.eval(sandbox, :(isdefined(SimulationModel, :GRAM_LOCK)))
+    @test !Core.eval(sandbox, :(isdefined(SimulationModel, :ref_sys)))
+    @test !Core.eval(sandbox, :(isdefined(SimulationModel, :PhysicalModel)))
+    @test Core.eval(sandbox, :(isdefined(SimulationModel, :ReferenceSystems)))
+    @test Core.eval(sandbox, :(isdefined(SimulationModel, :SpacecraftModels)))
+    @test Core.eval(sandbox, :(isdefined(SimulationModel, :CommandTypes)))
+    @test Core.eval(sandbox, :(isdefined(SimulationModel, :PropulsiveManeuverCommand)))
+    @test Core.eval(sandbox, :(isdefined(SimulationModel, :LegacyGravityModelCode)))
+    @test Core.eval(sandbox, :(isdefined(RuntimeServices, :SPICE_LOCK)))
+    @test Core.eval(sandbox, :(isdefined(RuntimeServices, :GRAM_LOCK)))
 end
 
 @testset "Include-Order + Name Ambiguity Smoke" begin
@@ -49,39 +62,126 @@ end
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
     Core.eval(sandbox, :(const quat_mult = SimulationModel.quat_mult))
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    @test isdefined(sandbox, :RuntimeServices)
     @test isdefined(sandbox, :SimulationEngine)
     @test Core.eval(sandbox, :(isdefined(SimulationEngine, :run_simulation)))
 end
 
 @testset "SimulationModel Sibling-Module Topology Contract" begin
     spaceagora_src = read(joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"), String)
+    runtime_services_src = read(joinpath(REPO_ROOT, "src", "simulation", "runtime_services.jl"), String)
+    simulation_model_src = read(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"), String)
+    reference_system_config_src = read(joinpath(REPO_ROOT, "src", "core", "state", "reference_system_config.jl"), String)
+    spacecraft_model_src = read(joinpath(REPO_ROOT, "src", "vehicle", "spacecraft", "model.jl"), String)
+    legacy_model_codes_src = read(joinpath(REPO_ROOT, "src", "core", "types", "legacy_model_codes.jl"), String)
+    runtime_types_src = read(joinpath(REPO_ROOT, "src", "core", "types", "runtime_types.jl"), String)
+    command_types_src = read(joinpath(REPO_ROOT, "src", "gnc", "command_types.jl"), String)
     engine_src = read(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"), String)
+    engine_public_api_src = read(joinpath(REPO_ROOT, "src", "simulation", "engine", "public_api.jl"), String)
+    engine_execution_src = read(joinpath(REPO_ROOT, "src", "simulation", "engine", "execution.jl"), String)
     telemetry_src = read(joinpath(REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"), String)
+    density_callback_assembly_src = read(joinpath(REPO_ROOT, "src", "simulation", "callbacks", "density_callbacks", "assembly.jl"), String)
     legacy_nested_model_path = "SimulationEngine" * ".SimulationModel"
 
+    @test occursin("include(joinpath(@__DIR__, \"simulation\", \"runtime_services.jl\"))", spaceagora_src)
     @test occursin("include(joinpath(@__DIR__, \"core\", \"simulation_model.jl\"))", spaceagora_src)
+    @test findfirst("include(joinpath(@__DIR__, \"simulation\", \"runtime_services.jl\"))", spaceagora_src) <
+        findfirst("include(joinpath(@__DIR__, \"core\", \"simulation_model.jl\"))", spaceagora_src)
     @test findfirst("include(joinpath(@__DIR__, \"core\", \"simulation_model.jl\"))", spaceagora_src) <
         findfirst("include(joinpath(@__DIR__, \"simulation\", \"engine\", \"simulation_engine.jl\"))", spaceagora_src)
+    @test occursin("module RuntimeServices", runtime_services_src)
+    @test occursin("const SPICE_LOCK = ReentrantLock()", runtime_services_src)
+    @test occursin("const GRAM_LOCK = ReentrantLock()", runtime_services_src)
+    @test !occursin("const SPICE_LOCK", simulation_model_src)
+    @test !occursin("const GRAM_LOCK", simulation_model_src)
+    @test occursin("runtime_services.jl", simulation_model_src)
+    @test occursin("include(joinpath(@__DIR__, \"..\", \"vehicle\", \"spacecraft\", \"model.jl\"))", simulation_model_src)
+    @test occursin("@reexport using .SpacecraftModels", simulation_model_src)
+    @test !occursin("@reexport using .PhysicalModel", simulation_model_src)
+    @test occursin("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"legacy_model_codes.jl\"))", simulation_model_src)
+    @test findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"legacy_model_codes.jl\"))", simulation_model_src) <
+        findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"runtime_types.jl\"))", simulation_model_src)
+    @test occursin("module ReferenceSystems", reference_system_config_src)
+    @test !occursin("module ref_sys", reference_system_config_src)
+    @test occursin("module SpacecraftModels", spacecraft_model_src)
+    @test !occursin("module PhysicalModel", spacecraft_model_src)
+    @test occursin("module LegacyModelCodes", legacy_model_codes_src)
+    @test occursin("using ..LegacyModelCodes:", runtime_types_src)
+    @test occursin("using ..SpacecraftModels: SpacecraftModel", runtime_types_src)
+    @test !occursin("@enum Legacy", runtime_types_src)
+    @test occursin("include(joinpath(@__DIR__, \"..\", \"gnc\", \"command_types.jl\"))", simulation_model_src)
+    @test findfirst("include(joinpath(@__DIR__, \"..\", \"gnc\", \"command_types.jl\"))", simulation_model_src) <
+        findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"runtime_types.jl\"))", simulation_model_src)
+    @test occursin("module CommandTypes", command_types_src)
+    @test occursin("using ..CommandTypes: PropulsiveManeuverCommand", runtime_types_src)
+    @test occursin("maneuver_commands::Vector{PropulsiveManeuverCommand}", runtime_types_src)
     @test occursin("using ..SimulationModel", engine_src)
+    @test occursin("import ..RuntimeServices", engine_src)
+    @test !occursin("isdefined(parentmodule(@__MODULE__), :SimulationModel)", engine_src)
+    @test !occursin("isdefined(parentmodule(@__MODULE__), :RuntimeServices)", engine_src)
     @test !occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"core\", \"simulation_model.jl\"))", engine_src)
+    @test !occursin("include(joinpath(@__DIR__, \"..\", \"runtime_services.jl\"))", engine_src)
+    @test !occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"simulation\", \"runtime_services.jl\"))", engine_src)
+    @test occursin("_require_simulation_configuration", engine_public_api_src)
+    @test occursin("function run_simulation(args; kwargs...)", engine_public_api_src)
+    @test occursin("Base.depwarn", engine_public_api_src)
+    @test occursin("function run_simulation(\n    args::SimulationConfiguration;", engine_execution_src)
+    @test !occursin("function run_simulation(\n    args;", engine_execution_src)
+    @test !occursin("Any[", density_callback_assembly_src)
+    @test occursin("_append_callback", density_callback_assembly_src)
     @test !occursin(legacy_nested_model_path, telemetry_src)
+    @test !occursin("isdefined(parentmodule(@__MODULE__), :SimulationModel)", telemetry_src)
+    @test !occursin("isdefined(parentmodule(@__MODULE__), :SimulationEngine)", telemetry_src)
+end
+
+@testset "Typed Engine Boundary Contract" begin
+    sandbox = Module(:SpaceAGORATypedEngineSandbox)
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"))
+    @test Core.eval(sandbox, :(hasmethod(SpaceAGORA.SimulationEngine.run_simulation, Tuple{SpaceAGORA.SimulationModel.SimulationConfiguration})))
+    @test_logs (:warn, r"typed SimulationConfiguration") @test_throws ArgumentError Core.eval(
+        sandbox,
+        :(SpaceAGORA.SimulationEngine.run_simulation(Dict(:bad => 1)))
+    )
+    @test_logs (:warn, r"typed SimulationConfiguration") @test_throws ArgumentError Core.eval(
+        sandbox,
+        :(SpaceAGORA.run_simulation(Dict(:bad => 1)))
+    )
 end
 
 @testset "DynamicEffectors Internal Split Contract" begin
     force_torque_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models.jl"), String)
+    gravity_effectors_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models", "gravity_effectors.jl"), String)
+    aerodynamic_effectors_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models", "aerodynamic_effectors.jl"), String)
+    perturbation_effectors_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models", "perturbation_effectors.jl"), String)
+    thruster_models_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models", "thruster_models.jl"), String)
+    guidance_models_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models", "guidance_models.jl"), String)
+    top_level_thruster_models_src = read(joinpath(REPO_ROOT, "src", "vehicle", "actuators", "thruster", "thruster_models_module.jl"), String)
+    top_level_guidance_models_src = read(joinpath(REPO_ROOT, "src", "gnc", "guidance", "guidance_models.jl"), String)
+    top_level_gravity_effectors_src = read(joinpath(REPO_ROOT, "src", "environment", "gravity", "gravity_effectors.jl"), String)
+    command_types_src = read(joinpath(REPO_ROOT, "src", "gnc", "command_types.jl"), String)
     guidance_hooks_src = read(joinpath(REPO_ROOT, "src", "gnc", "guidance", "guidance_hooks.jl"), String)
     control_hooks_src = read(joinpath(REPO_ROOT, "src", "gnc", "control", "control_hooks.jl"), String)
     callback_registry_src = read(joinpath(REPO_ROOT, "src", "simulation", "callbacks", "registry.jl"), String)
 
-    for child_module in (
-        "module GravityEffectors",
-        "module AerodynamicEffectors",
-        "module PerturbationEffectors",
-        "module ThrusterModels",
-        "module GuidanceModels",
+    for include_name in (
+        "gravity_effectors.jl",
+        "aerodynamic_effectors.jl",
+        "perturbation_effectors.jl",
+        "thruster_models.jl",
+        "guidance_models.jl",
     )
-        @test occursin(child_module, force_torque_src)
+        @test occursin("\"$include_name\"", force_torque_src)
     end
+    @test occursin("module GravityEffectors", gravity_effectors_src)
+    @test occursin("module AerodynamicEffectors", aerodynamic_effectors_src)
+    @test occursin("module PerturbationEffectors", perturbation_effectors_src)
+    @test occursin("module ThrusterModels", thruster_models_src)
+    @test occursin("module GuidanceModels", guidance_models_src)
+    @test occursin("module ThrusterModels", top_level_thruster_models_src)
+    @test occursin("module GuidanceModels", top_level_guidance_models_src)
+    @test occursin("module GravityEffectors", top_level_gravity_effectors_src)
+    @test occursin("module CommandTypes", command_types_src)
+    @test !occursin(r"^\s+module\s+(GravityEffectors|AerodynamicEffectors|PerturbationEffectors|ThrusterModels|GuidanceModels)"m, force_torque_src)
 
     @test occursin("function calcForceTorque end", force_torque_src)
     @test occursin("using .GravityEffectors: ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel", force_torque_src)
@@ -89,24 +189,47 @@ end
     @test occursin("using .PerturbationEffectors: NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel", force_torque_src)
     @test occursin("using .ThrusterModels: BaseThrusterModel", force_torque_src)
     @test occursin("using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", force_torque_src)
+    @test occursin("using ...ThrusterModels: BaseThrusterModel", thruster_models_src)
+    @test occursin("using ...GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", guidance_models_src)
+    @test occursin("export aerobraking_gravity_force_ii, srp, srp_cannonball_accel", force_torque_src)
 
-    @test occursin("using ..DynamicEffectors.GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", guidance_hooks_src)
-    @test occursin("using ..DynamicEffectors.ThrusterModels: BaseThrusterModel", guidance_hooks_src)
-    @test occursin("using ..DynamicEffectors.GravityEffectors: aerobraking_gravity_force_ii", guidance_hooks_src)
-    @test occursin("using ..DynamicEffectors.GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", control_hooks_src)
-    @test occursin("using ..DynamicEffectors.ThrusterModels: BaseThrusterModel", control_hooks_src)
-    @test occursin("using ..DynamicEffectors.GravityEffectors: aerobraking_gravity_force_ii", control_hooks_src)
-    @test occursin("using ..DynamicEffectors.ThrusterModels: BaseThrusterModel", callback_registry_src)
+    @test occursin("using ..GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", guidance_hooks_src)
+    @test occursin("using ..CommandTypes: PropulsiveManeuverCommand, AerobrakingControlCommand", guidance_hooks_src)
+    @test occursin("using ..GravityEffectors: aerobraking_gravity_force_ii", guidance_hooks_src)
+    @test !occursin("DynamicEffectors", guidance_hooks_src)
+    @test occursin("using ..ThrusterModels: BaseThrusterModel", control_hooks_src)
+    @test occursin("using ..CommandTypes: PropulsiveManeuverCommand", control_hooks_src)
+    @test occursin("using ..GravityEffectors: aerobraking_gravity_force_ii", control_hooks_src)
+    @test !occursin("DynamicEffectors", control_hooks_src)
+    @test occursin("using ..ThrusterModels: BaseThrusterModel", callback_registry_src)
     @test occursin("using ..DynamicEffectors.AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight", callback_registry_src)
-    @test occursin("using ..DynamicEffectors.GravityEffectors: InverseSquaredJ2GravityModel", callback_registry_src)
+    @test occursin("using ..GravityEffectors: InverseSquaredJ2GravityModel", callback_registry_src)
+
+    @test isdefined(SimulationModel, :ConstantGravityModel)
+    @test isdefined(SimulationModel, :NBodyGravityModel)
+    @test isdefined(SimulationModel, :AerodynamicCoefficientConstant)
+    @test isdefined(SimulationModel, :BaseThrusterModel)
+    @test isdefined(SimulationModel, :AerobrakingCampaignPropulsiveManeuverGuidanceModel)
+    @test isdefined(SimulationModel, :PropulsiveManeuverCommand)
+    @test isdefined(SimulationModel, :aerobraking_gravity_force_ii)
+    @test isdefined(SimulationModel.DynamicEffectors, :_spice_query_name)
+    @test isdefined(SimulationModel.DynamicEffectors, :_parse_bool_env)
+    @test isdefined(SimulationModel.DynamicEffectors, :_multibody_outer_parallel_hint)
+    @test isdefined(SimulationModel.DynamicEffectors, :_multibody_use_threads)
+    @test isdefined(SimulationModel.DynamicEffectors, :collect_and_reset_link_wrenches!)
+    @test isdefined(SimulationModel.DynamicEffectors, :_aero_workspace_for_sat!)
+    @test isdefined(SimulationModel.DynamicEffectors, :_nbody_workspace_for_sat!)
+    @test isdefined(SimulationModel.DynamicEffectors, :_harmonics_workspace_for_sat!)
+    @test isdefined(SimulationModel.DynamicEffectors, :_nbody_body_position_from_cache_j2000)
+    @test isdefined(SimulationModel.DynamicEffectors, :_srp_sun_position_from_cache_j2000)
+    @test isdefined(SimulationModel.DynamicEffectors, :eclipse_area_calc)
 end
 
 @testset "Simulation Filename Canonical Contract" begin
     engine_path = joinpath(REPO_ROOT, "src", "simulation", "engine", "execution.jl")
+    legacy_events_dir = joinpath(REPO_ROOT, "src", "simulation", "events")
     legacy_exec_dir = joinpath(REPO_ROOT, "src", "simulation", "execution")
-    legacy_run_path = joinpath(legacy_exec_dir, "run_simulation.jl")
-    legacy_elements_path = joinpath(legacy_exec_dir, "simulation_elements.jl")
-    legacy_execution_path = joinpath(legacy_exec_dir, "simulation_execution.jl")
+    legacy_solver_dir = joinpath(REPO_ROOT, "src", "simulation", "solver_orchestration")
     legacy_aerobraking_path = joinpath(REPO_ROOT, "src", "simulation", "Aerobraking.jl")
     legacy_complete_path = joinpath(REPO_ROOT, "src", "simulation", "Complete_passage.jl")
     legacy_mission_model_path = joinpath(REPO_ROOT, "src", "mission", "mission_model.jl")
@@ -116,9 +239,9 @@ end
     legacy_mc_perturbations_path = joinpath(REPO_ROOT, "src", "mission", "campaigns", "montecarlo_perturbations.jl")
 
     @test isfile(engine_path)
-    @test !isfile(legacy_run_path)
-    @test !isfile(legacy_elements_path)
-    @test !isfile(legacy_execution_path)
+    @test !isdir(legacy_events_dir)
+    @test !isdir(legacy_exec_dir)
+    @test !isdir(legacy_solver_dir)
     @test !isfile(legacy_aerobraking_path)
     @test !isfile(legacy_complete_path)
     @test !isfile(legacy_mission_model_path)
@@ -143,6 +266,8 @@ end
         Vector{Union{Nothing, SimulationModel.NBodyScratchWorkspace}}
     @test fieldtype(shared_buffers_type, :aero_workspaces) ==
         Vector{Union{Nothing, SimulationModel.AeroScratchWorkspace}}
+    @test fieldtype(shared_buffers_type, :maneuver_commands) ==
+        Vector{SimulationModel.PropulsiveManeuverCommand}
     @test SimulationModel.SaveData == Dict{Symbol, Any}
 end
 
@@ -177,6 +302,7 @@ end
     end
 
     @test !Core.eval(sandbox, :(Base.isexported(SpaceAGORA, :SimulationModel)))
+    @test !Core.eval(sandbox, :(Base.isexported(SpaceAGORA, :RuntimeServices)))
 end
 
 @testset "Documenter Strictness Contract" begin
@@ -188,6 +314,7 @@ end
     @test occursin("doctest = true", docs_make)
     @test occursin("checkdocs = :exports", docs_make)
     @test occursin("checkdocs_ignored_modules = Module[", docs_make)
+    @test occursin("SpaceAGORA.RuntimeServices", docs_make)
     @test occursin("SpaceAGORA.SimulationEngine", docs_make)
     @test occursin("SpaceAGORA.SimulationModel", docs_make)
     @test occursin("SpaceAGORA.ParallelProfiles", docs_make)
@@ -226,12 +353,9 @@ end
 
     readme = read(joinpath(REPO_ROOT, "README.md"), String)
     getting_started = read(joinpath(REPO_ROOT, "docs", "src", "getting_started.md"), String)
-    migration_plan = read(joinpath(REPO_ROOT, "docs", "architecture", "src_restructure_migration_plan.md"), String)
-
     @test occursin("canonical committed execution environment", readme)
     @test occursin("canonical committed execution environment", getting_started)
-    @test occursin("canonical committed execution environment", migration_plan)
-    @test occursin("There is no bootstrap-copy step", readme)
+    @test occursin("there is no bootstrap step", lowercase(readme))
 end
 
 @testset "Project Compat Coverage Contract" begin
@@ -635,14 +759,6 @@ end
         maneuver_Δv=[-5.0, 20.0]
     )
 
-    thruster = BaseThrusterModel(
-        thrust=[500.0],
-        direction=[0.0],
-        Δv=[0.0],
-        start_burn_time=[-1.0],
-        stop_burn_time=[-1.0],
-        Isp=[300.0]
-    )
     args = build_config(
         spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
         density_model=NoAtmosphereModel(),
@@ -650,8 +766,6 @@ end
         mission_time=120.0,
         EI_km=120.0,
         dynamic_effectors=(InverseSquaredGravityModel(),),
-        control_effectors=(thruster,),
-        control_rates=[1.0],
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
@@ -660,15 +774,18 @@ end
 
     p.orbit_counter[1] = 3
     sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
-    @test thruster.Δv[1] == 20.0
-    @test isapprox(thruster.direction[1], π; atol=1e-12, rtol=0.0)
+    @test p.shared_buffers.maneuver_commands[1].valid == true
+    @test p.shared_buffers.maneuver_commands[1].delta_v_mps == 20.0
+    @test isapprox(p.shared_buffers.maneuver_commands[1].direction_rad, π; atol=1e-12, rtol=0.0)
 
     p.orbit_counter[1] = 2
     sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
-    @test thruster.Δv[1] == 5.0
-    @test isapprox(thruster.direction[1], 0.0; atol=1e-12, rtol=0.0)
+    @test p.shared_buffers.maneuver_commands[1].valid == true
+    @test p.shared_buffers.maneuver_commands[1].delta_v_mps == 5.0
+    @test isapprox(p.shared_buffers.maneuver_commands[1].direction_rad, 0.0; atol=1e-12, rtol=0.0)
 
     p.orbit_counter[1] = 1
     sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
-    @test thruster.Δv[1] == 0.0
+    @test p.shared_buffers.maneuver_commands[1].valid == true
+    @test p.shared_buffers.maneuver_commands[1].delta_v_mps == 0.0
 end

@@ -8,8 +8,8 @@ using CSV
 using DataFrames
 using Reexport
 
-const SPICE_LOCK = ReentrantLock()
-const GRAM_LOCK = ReentrantLock()
+isdefined(parentmodule(@__MODULE__), :RuntimeServices) ||
+    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "simulation", "runtime_services.jl"))
 
 # --- Utils ---
 include(joinpath(@__DIR__, "..", "core", "numerics", "quaternion_utils.jl"))
@@ -24,6 +24,12 @@ include(joinpath(@__DIR__, "..", "environment", "ephemerides", "planet_shapes.jl
 include(joinpath(@__DIR__, "..", "core", "types", "abstract_types.jl"))
 @reexport using .AbstractTypes
 
+include(joinpath(@__DIR__, "..", "gnc", "command_types.jl"))
+@reexport using .CommandTypes
+
+include(joinpath(@__DIR__, "..", "vehicle", "actuators", "thruster", "thruster_models_module.jl"))
+include(joinpath(@__DIR__, "..", "gnc", "guidance", "guidance_models.jl"))
+
 	include(joinpath(@__DIR__, "..", "environment", "ephemerides", "planets.jl"))
 	@reexport using .Planets
 	include(joinpath(@__DIR__, "..", "environment", "ephemerides", "ephemerides_models.jl"))
@@ -35,7 +41,7 @@ include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "components.jl"))
 
 # 3. Main container structs (Link, Joint, Model)
 include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "model.jl"))
-@reexport using .PhysicalModel
+@reexport using .SpacecraftModels
 
 # 4. Functions for building the model (add_...!)
 include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "assembly.jl"))
@@ -63,6 +69,9 @@ include(joinpath(@__DIR__, "..", "core", "state", "simulation_configuration.jl")
 include(joinpath(@__DIR__, "..", "environment", "physical_models.jl"))
 @reexport using .EnvironmentModels
 
+include(joinpath(@__DIR__, "..", "core", "types", "legacy_model_codes.jl"))
+@reexport using .LegacyModelCodes
+
 include(joinpath(@__DIR__, "..", "core", "types", "runtime_types.jl"))
 @reexport using .ConfigTypes
 
@@ -80,6 +89,7 @@ include(joinpath(@__DIR__, "..", "dynamics", "translational", "translational_mod
 # --- Coupled Dynamic Force/Torque Effectors ---
 include(joinpath(@__DIR__, "..", "dynamics", "coupled", "force_torque_models.jl"))
 @reexport using .DynamicEffectors
+include(joinpath(@__DIR__, "..", "environment", "gravity", "gravity_effectors.jl"))
 
 # --- IO Owners ---
 include(joinpath(@__DIR__, "..", "io", "config", "io_config.jl"))

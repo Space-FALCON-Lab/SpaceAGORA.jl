@@ -110,6 +110,44 @@ end
     @test occursin("mutate shared state", doc_text)
 end
 
+@testset "SpaceAGORA Public Abstract Interface Contract" begin
+    sandbox = Module(:SpaceAGORAAbstractSandbox)
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"))
+
+    for sym in (
+        :AbstractForceTorqueModel,
+        :AbstractDensityModel,
+        :AbstractControlEffectorModel,
+        :AbstractEphemeridesModel,
+        :AbstractThermalModel,
+        :AbstractThrusterModel,
+        :AbstractGuidanceModel,
+    )
+        @test Core.eval(sandbox, :(Base.isexported(SpaceAGORA, $(QuoteNode(sym)))))
+        doc = Core.eval(sandbox, :(Base.Docs.doc(getproperty(SpaceAGORA, $(QuoteNode(sym))))))
+        @test doc !== nothing
+    end
+end
+
+@testset "Documenter Strictness Contract" begin
+    docs_make = read(joinpath(REPO_ROOT, "docs", "make.jl"), String)
+    getting_started = read(joinpath(REPO_ROOT, "docs", "src", "getting_started.md"), String)
+    from_env_src = read(joinpath(REPO_ROOT, "src", "simulation", "engine", "adapters", "from_env.jl"), String)
+
+    @test occursin("modules = [SpaceAGORA]", docs_make)
+    @test occursin("doctest = true", docs_make)
+    @test occursin("checkdocs = :exports", docs_make)
+    @test occursin("checkdocs_ignored_modules = Module[", docs_make)
+    @test occursin("SpaceAGORA.SimulationEngine", docs_make)
+    @test occursin("SpaceAGORA.ParallelProfiles", docs_make)
+    @test occursin("SpaceAGORA.TelemetryVerification", docs_make)
+    @test occursin("SpaceAGORA.SpaceAGORACLI", docs_make)
+    @test occursin("warnonly = false", docs_make)
+    @test occursin("spaceagora_no_gram_example_args", docs_make)
+    @test occursin("```jldoctest", getting_started)
+    @test occursin("```jldoctest", from_env_src)
+end
+
 @testset "Aerobraking Selector Contract" begin
     selector = SimulationModel.DefaultAerobrakingPolicySelector()
     cfg_default = SimulationModel.AerobrakingPolicyConfig()
@@ -190,6 +228,35 @@ end
 
     @test isempty(nonstdlib_deps_without_compat(joinpath(REPO_ROOT, "Project.toml")))
     @test isempty(nonstdlib_deps_without_compat(joinpath(REPO_ROOT, ".AGORA", "Project.toml")))
+end
+
+@testset "Precompilation Contract" begin
+    root_project = TOML.parsefile(joinpath(REPO_ROOT, "Project.toml"))
+    agora_project = TOML.parsefile(joinpath(REPO_ROOT, ".AGORA", "Project.toml"))
+    spaceagora_src = read(joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"), String)
+    precompile_src = read(joinpath(REPO_ROOT, "src", "precompile_workload.jl"), String)
+    clean_depot_smoke = read(joinpath(REPO_ROOT, "test", "ci_clean_depot_smoke.jl"), String)
+
+    @test get(get(root_project, "deps", Dict()), "PrecompileTools", nothing) == "aea7be01-6a6a-4083-8856-8a6e6704d82a"
+    @test get(get(root_project, "compat", Dict()), "PrecompileTools", nothing) == "1"
+    @test get(get(agora_project, "deps", Dict()), "PrecompileTools", nothing) == "aea7be01-6a6a-4083-8856-8a6e6704d82a"
+    @test get(get(agora_project, "compat", Dict()), "PrecompileTools", nothing) == "1"
+
+    @test occursin("__precompile__(true)", spaceagora_src)
+    @test !occursin("__precompile__(false)", spaceagora_src)
+    @test occursin("using PrecompileTools: @compile_workload, @setup_workload", spaceagora_src)
+    @test occursin("include(joinpath(@__DIR__, \"precompile_workload.jl\"))", spaceagora_src)
+
+    @test occursin("@compile_workload", precompile_src)
+    @test occursin("parse_parallel_profile(\"R2\")", precompile_src)
+    @test occursin("simulation_engine_config_from_env", precompile_src)
+    @test occursin("run_simulation(engine_config, args; return_solution=true)", precompile_src)
+    @test occursin("SimpleEphemeridesModel()", precompile_src)
+    @test occursin("ExponentialAtmosphereModel(planet)", precompile_src)
+
+    @test occursin("using SpaceAGORA", clean_depot_smoke)
+    @test !occursin("include(joinpath(REPO_ROOT, \"src\", \"core\", \"simulation_model.jl\"))", clean_depot_smoke)
+    @test !occursin("include(joinpath(REPO_ROOT, \"src\", \"simulation\", \"engine\", \"simulation_engine.jl\"))", clean_depot_smoke)
 end
 
 

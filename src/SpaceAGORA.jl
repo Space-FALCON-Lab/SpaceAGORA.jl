@@ -1,6 +1,8 @@
-__precompile__(false)
+__precompile__(true)
 
 module SpaceAGORA
+
+using PrecompileTools: @compile_workload, @setup_workload
 
 include(joinpath(@__DIR__, "parallel", "routing", "parallel_profiles.jl"))
 include(joinpath(@__DIR__, "simulation", "engine", "simulation_engine.jl"))
@@ -14,6 +16,9 @@ using .ParallelProfiles: reset_outer_route_state!, outer_route_signature, outer_
 using .ParallelProfiles: default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
+using .SimulationEngine.SimulationModel.AbstractTypes: AbstractForceTorqueModel, AbstractDensityModel
+using .SimulationEngine.SimulationModel.AbstractTypes: AbstractControlEffectorModel, AbstractEphemeridesModel
+using .SimulationEngine.SimulationModel.AbstractTypes: AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
 using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
 using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
@@ -24,6 +29,14 @@ using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 @doc (@doc SimulationEngine.ArtifactConfig) ArtifactConfig
 @doc (@doc SimulationEngine.SimulationEngineConfig) SimulationEngineConfig
 @doc (@doc SimulationEngine.simulation_engine_config_from_env) simulation_engine_config_from_env
+
+@doc (@doc SimulationEngine.SimulationModel.AbstractTypes.AbstractForceTorqueModel) AbstractForceTorqueModel
+@doc (@doc SimulationEngine.SimulationModel.AbstractTypes.AbstractDensityModel) AbstractDensityModel
+@doc (@doc SimulationEngine.SimulationModel.AbstractTypes.AbstractControlEffectorModel) AbstractControlEffectorModel
+@doc (@doc SimulationEngine.SimulationModel.AbstractTypes.AbstractEphemeridesModel) AbstractEphemeridesModel
+@doc (@doc SimulationEngine.SimulationModel.AbstractTypes.AbstractThermalModel) AbstractThermalModel
+@doc (@doc SimulationEngine.SimulationModel.AbstractTypes.AbstractThrusterModel) AbstractThrusterModel
+@doc (@doc SimulationEngine.SimulationModel.AbstractTypes.AbstractGuidanceModel) AbstractGuidanceModel
 
 @doc (@doc ParallelProfiles.ParallelProfile) ParallelProfile
 @doc (@doc ParallelProfiles.ParallelProfileConfig) ParallelProfileConfig
@@ -59,6 +72,8 @@ export reset_outer_route_state!, outer_route_signature, outer_route_stats_snapsh
 export default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
 export ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 export simulation_engine_config_from_env
+export AbstractForceTorqueModel, AbstractDensityModel, AbstractControlEffectorModel
+export AbstractEphemeridesModel, AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation
 export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
@@ -119,5 +134,7 @@ Stable CLI entrypoint for SpaceAGORA operational commands:
 This is the package-owned command surface used by the `bin/spaceagora` wrapper.
 """
 run_cli(args...; kwargs...) = SpaceAGORACLI.run_cli(args...; kwargs...)
+
+include(joinpath(@__DIR__, "precompile_workload.jl"))
 
 end # module SpaceAGORA

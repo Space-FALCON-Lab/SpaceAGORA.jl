@@ -1,0 +1,55 @@
+version = 1
+
+[[asset]]
+name = "no_gram_mode"
+scope = "baseline onboarding"
+relative_path = "."
+kind = "builtin"
+required = true
+licensing = "open-repo"
+detail = "Built-in fallback atmosphere models and simple ephemerides are available from the repository."
+
+[[asset]]
+name = "gram_root"
+scope = "high-fidelity atmosphere"
+relative_path = "data/GRAMSuite.jl/GRAM Suite 2.0"
+kind = "directory"
+required = false
+licensing = "licensed-external"
+detail = "Licensed GRAM installation root. Required for GRAM-backed atmospheric studies."
+
+[[asset]]
+name = "spice_directory"
+scope = "high-fidelity ephemerides"
+relative_path = "data/GRAMSuite.jl/GRAM Suite 2.0/SPICE"
+kind = "directory"
+required = false
+licensing = "licensed-external"
+detail = "Machine-local SPICE kernels used by high-fidelity frame, SRP, and N-body workflows."
+
+[[asset]]
+name = "gravity_harmonics_directory"
+scope = "gravity harmonics"
+relative_path = "data/Gravity_harmonics_data"
+kind = "directory"
+required = false
+licensing = "open-repo"
+detail = "Repository data directory for gravity harmonics CSV inputs."
+
+[[asset]]
+name = "topography_harmonics_directory"
+scope = "topography harmonics"
+relative_path = "data/Topography_harmonics_data"
+kind = "directory"
+required = false
+licensing = "open-repo"
+detail = "Repository data directory for topography harmonics inputs."
+
+[[asset]]
+name = "gram_surrogate_directory"
+scope = "GRAM surrogate grids"
+relative_path = "data/GRAM_surrogate"
+kind = "directory"
+required = false
+licensing = "user-provided"
+detail = "Optional surrogate/static-grid bundle for GRAM-accelerated studies."

@@ -2,7 +2,7 @@
 
 julia_version = "1.12.3"
 manifest_format = "2.0"
-project_hash = "e4b4d3a16142b8ccc6e5d01829c1a50759f26a29"
+project_hash = "b77b338245ae77df0185c5d6f7daceb74b7b171b"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -2919,6 +2919,12 @@ deps = ["DataStructures"]
 git-tree-sha1 = "64d974c2e6fdf07f8155b5b2ca2ffa9069b608d9"
 uuid = "a2af1166-a08f-5f64-846c-94a0d3cef48c"
 version = "1.2.2"
+
+[[deps.SpaceAGORA]]
+deps = ["Arrow", "AssociatedLegendrePolynomials", "AstroTime", "CSV", "ComponentArrays", "ControlSystemsBase", "DataFrames", "Dates", "DiffEqBase", "DiffEqCallbacks", "DifferentialEquations", "Distributions", "FiniteDiff", "ForwardDiff", "GRAMSuite", "Interpolations", "LaTeXStrings", "LegendrePolynomials", "LinearAlgebra", "Logging", "LoopVectorization", "MatrixEquations", "NLsolve", "NonlinearSolve", "OrdinaryDiffEq", "PlotlyBase", "PlotlyJS", "Plots", "Polyester", "PreallocationTools", "PrecompileTools", "Printf", "PythonCall", "Quaternions", "Random", "Reexport", "Roots", "Rotations", "SHA", "SPICE", "SatelliteToolbox", "SatelliteToolboxAtmosphericModels", "SatelliteToolboxGeomagneticField", "SatelliteToolboxTransformations", "Serialization", "SparseArrays", "SpecialFunctions", "StaticArrays", "Statistics", "TOML"]
+path = "/Users/josephine/.julia/dev/SpaceAGORA.jl"
+uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
+version = "0.1.0"
 
 [[deps.SpaceIndices]]
 deps = ["Dates", "DelimitedFiles", "Downloads", "JSON", "OptionalData", "Reexport", "Scratch"]

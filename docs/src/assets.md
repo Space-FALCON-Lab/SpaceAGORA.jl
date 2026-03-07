@@ -74,3 +74,41 @@ That command distinguishes:
 - baseline onboarding availability
 - optional high-fidelity assets
 - paths that are missing but non-blocking for no-GRAM mode
+
+## Machine-readable manifest
+
+Canonical manifest:
+
+```text
+data/assets_manifest.toml
+```
+
+This file is the machine-readable asset contract for:
+
+- baseline built-in mode
+- repository-owned open assets
+- user-provided or licensed high-fidelity assets
+
+You can inspect it with either:
+
+```bash
+./bin/spaceagora assets manifest
+julia --project=.AGORA scripts/assets/show_asset_manifest.jl
+```
+
+## Setup and check scripts
+
+Baseline/open-mode bootstrap:
+
+```bash
+julia --project=.AGORA scripts/assets/setup_open_assets.jl
+```
+
+This does not download GRAM or SPICE. It reports the baseline/open asset contract and
+explicitly leaves licensed assets as user-provided.
+
+Direct asset check script:
+
+```bash
+julia --project=.AGORA scripts/assets/check_assets.jl
+```

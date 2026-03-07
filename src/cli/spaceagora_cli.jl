@@ -44,6 +44,8 @@ function _print_usage(io::IO=stdout)
     println(io, "  spaceagora benchmark runtime-analysis [quick|full|smoke] [--output-dir=<dir>] [--print-only]")
     println(io, "  spaceagora benchmark smart-parallel-ladder [quick|full|smoke] [--output-dir=<dir>] [--print-only]")
     println(io, "  spaceagora assets check")
+    println(io, "  spaceagora assets manifest")
+    println(io, "  spaceagora assets setup-open")
     return 0
 end
 
@@ -179,11 +181,19 @@ function run_cli(args::Vector{String}=copy(ARGS); io::IO=stdout, errio::IO=stder
     if cmd in ("help", "--help", "-h")
         return _print_usage(io)
     elseif cmd == "assets"
-        if isempty(tail) || first(tail) != "check"
-            throw(ArgumentError("assets supports only: check"))
+        isempty(tail) && throw(ArgumentError("assets requires a subcommand: check, manifest, or setup-open"))
+        subcmd = first(tail)
+        if subcmd == "check"
+            render_asset_report(check_assets(); io=io)
+            return 0
+        elseif subcmd == "manifest"
+            render_asset_manifest(load_asset_manifest(); io=io)
+            return 0
+        elseif subcmd == "setup-open"
+            setup_open_assets(; io=io)
+            return 0
         end
-        render_asset_report(check_assets(); io=io)
-        return 0
+        throw(ArgumentError("assets supports only: check, manifest, or setup-open"))
     elseif cmd == "run"
         return _run_example(tail; io=io, errio=errio)
     elseif cmd == "telemetry"

@@ -1,3 +1,5 @@
+using TOML
+
 """
     AssetCheckItem
 
@@ -22,6 +24,18 @@ Base.@kwdef struct AssetCheckReport
     items::Vector{AssetCheckItem}
 end
 
+Base.@kwdef struct AssetManifestEntry
+    name::String
+    scope::String
+    relative_path::String
+    kind::String
+    required::Bool
+    licensing::String
+    detail::String = ""
+end
+
+const ASSET_MANIFEST_PATH = joinpath(REPO_ROOT, "data", "assets_manifest.toml")
+
 @inline function _asset_item(name::String, scope::String, path::String; available::Bool, required::Bool, detail::String="")
     return AssetCheckItem(
         name=name,
@@ -33,67 +47,55 @@ end
     )
 end
 
+function load_asset_manifest(; repo_root::String=REPO_ROOT, manifest_path::String=joinpath(repo_root, "data", "assets_manifest.toml"))
+    raw = TOML.parsefile(manifest_path)
+    entries = AssetManifestEntry[]
+    for entry in get(raw, "asset", Any[])
+        push!(entries, AssetManifestEntry(
+            name=String(entry["name"]),
+            scope=String(entry["scope"]),
+            relative_path=String(get(entry, "relative_path", ".")),
+            kind=String(get(entry, "kind", "directory")),
+            required=Bool(get(entry, "required", false)),
+            licensing=String(get(entry, "licensing", "unspecified")),
+            detail=String(get(entry, "detail", "")),
+        ))
+    end
+    return entries
+end
+
+@inline function _manifest_entry_path(repo_root::String, entry::AssetManifestEntry)
+    entry.relative_path in ("", ".") && return repo_root
+    return joinpath(repo_root, splitpath(entry.relative_path)...)
+end
+
+@inline function _manifest_entry_available(repo_root::String, entry::AssetManifestEntry)
+    path = _manifest_entry_path(repo_root, entry)
+    entry.kind == "builtin" && return true
+    entry.kind == "directory" && return isdir(path)
+    entry.kind == "file" && return isfile(path)
+    throw(ArgumentError("Unsupported asset manifest kind '$(entry.kind)' for $(entry.name)."))
+end
+
 """
     check_assets(; repo_root=REPO_ROOT) -> AssetCheckReport
 
 Inspect the standard SpaceAGORA asset roots and return a typed availability report.
 """
-function check_assets(; repo_root::String=REPO_ROOT)::AssetCheckReport
-    gram_root = joinpath(repo_root, "data", "GRAMSuite.jl", "GRAM Suite 2.0")
-    spice_dir = joinpath(gram_root, "SPICE")
-    gravity_dir = joinpath(repo_root, "data", "Gravity_harmonics_data")
-    topography_dir = joinpath(repo_root, "data", "Topography_harmonics_data")
-    surrogate_dir = joinpath(repo_root, "data", "GRAM_surrogate")
-
+function check_assets(; repo_root::String=REPO_ROOT, manifest_path::String=joinpath(repo_root, "data", "assets_manifest.toml"))::AssetCheckReport
+    entries = load_asset_manifest(; repo_root=repo_root, manifest_path=manifest_path)
     items = AssetCheckItem[]
-    push!(items, _asset_item(
-        "no_gram_mode",
-        "baseline onboarding",
-        repo_root;
-        available=true,
-        required=true,
-        detail="Built-in fallback atmosphere models and simple ephemerides are available from the repository."
-    ))
-    push!(items, _asset_item(
-        "gram_root",
-        "high-fidelity atmosphere",
-        gram_root;
-        available=isdir(gram_root),
-        required=false,
-        detail="Licensed GRAM installation root. Required for GRAM-backed atmospheric studies."
-    ))
-    push!(items, _asset_item(
-        "spice_directory",
-        "high-fidelity ephemerides",
-        spice_dir;
-        available=isdir(spice_dir),
-        required=false,
-        detail="Machine-local SPICE kernels used by high-fidelity frame, SRP, and N-body workflows."
-    ))
-    push!(items, _asset_item(
-        "gravity_harmonics_directory",
-        "gravity harmonics",
-        gravity_dir;
-        available=isdir(gravity_dir),
-        required=false,
-        detail="Repository data directory for gravity harmonics CSV inputs."
-    ))
-    push!(items, _asset_item(
-        "topography_harmonics_directory",
-        "topography harmonics",
-        topography_dir;
-        available=isdir(topography_dir),
-        required=false,
-        detail="Repository data directory for topography harmonics inputs."
-    ))
-    push!(items, _asset_item(
-        "gram_surrogate_directory",
-        "GRAM surrogate grids",
-        surrogate_dir;
-        available=isdir(surrogate_dir),
-        required=false,
-        detail="Optional surrogate/static-grid bundle for GRAM-accelerated studies."
-    ))
+    for entry in entries
+        detail = isempty(entry.detail) ? "licensing=$(entry.licensing)" : "$(entry.detail) [licensing=$(entry.licensing)]"
+        push!(items, _asset_item(
+            entry.name,
+            entry.scope,
+            _manifest_entry_path(repo_root, entry);
+            available=_manifest_entry_available(repo_root, entry),
+            required=entry.required,
+            detail=detail,
+        ))
+    end
 
     return AssetCheckReport(repo_root=repo_root, items=items)
 end
@@ -114,4 +116,43 @@ function render_asset_report(report::AssetCheckReport; io::IO=stdout)
         println(io, "  detail: $(item.detail)")
     end
     return nothing
+end
+
+function render_asset_manifest(entries::Vector{AssetManifestEntry}; io::IO=stdout)
+    println(io, "SpaceAGORA asset manifest")
+    println(io, "entries=$(length(entries))")
+    for entry in entries
+        println(io, "- $(entry.name)")
+        println(io, "  scope: $(entry.scope)")
+        println(io, "  kind: $(entry.kind)")
+        println(io, "  relative_path: $(entry.relative_path)")
+        println(io, "  required: $(entry.required)")
+        println(io, "  licensing: $(entry.licensing)")
+        !isempty(entry.detail) && println(io, "  detail: $(entry.detail)")
+    end
+    return nothing
+end
+
+function setup_open_assets(; repo_root::String=REPO_ROOT, io::IO=stdout)
+    entries = load_asset_manifest(; repo_root=repo_root)
+    report = check_assets(; repo_root=repo_root)
+    manifest_path = joinpath(repo_root, "data", "assets_manifest.toml")
+    println(io, "SpaceAGORA open-asset setup")
+    println(io, "No downloads are required for baseline no-GRAM mode.")
+    println(io, "Manifest path: $manifest_path")
+    println(io)
+    println(io, "Baseline/open entries:")
+    for entry in entries
+        entry.licensing == "licensed-external" && continue
+        println(io, "- $(entry.name): $(entry.relative_path)")
+    end
+    println(io)
+    println(io, "Licensed external entries remain user-provided:")
+    for entry in entries
+        entry.licensing == "licensed-external" || continue
+        println(io, "- $(entry.name): $(entry.relative_path)")
+    end
+    println(io)
+    render_asset_report(report; io=io)
+    return report
 end

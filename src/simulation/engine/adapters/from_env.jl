@@ -16,6 +16,17 @@ end
 Build a typed `SimulationEngineConfig` from the supported `SPACEAGORA_*`
 environment variables. This is the adapter boundary for environment-driven
 runtime control.
+
+# Examples
+```jldoctest
+julia> config = simulation_engine_config_from_env(Dict(
+           "SPACEAGORA_PARALLEL_PROFILE" => "R2",
+           "SPACEAGORA_SAVE_BUNDLE" => "0",
+       ));
+
+julia> (config.parallel.profile, config.artifacts.save_bundle)
+("R2", false)
+```
 """
 function simulation_engine_config_from_env(env::AbstractDict{<:Any, <:Any}=ENV)::SimulationEngineConfig
     parallel = ParallelConfig(
@@ -162,3 +173,6 @@ function _with_engine_env_overrides(config::SimulationEngineConfig, f::Function)
         _engine_active_overrides_ref[] = previous_overrides
     end
 end
+
+@inline _with_engine_env_overrides(f::Function, config::SimulationEngineConfig) =
+    _with_engine_env_overrides(config, f)

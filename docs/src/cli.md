@@ -37,6 +37,8 @@ Plot generation is off by default in the CLI path so the telemetry command remai
 
 ```bash
 ./bin/spaceagora assets check
+./bin/spaceagora assets manifest
+./bin/spaceagora assets setup-open
 ```
 
 ## Print-only mode

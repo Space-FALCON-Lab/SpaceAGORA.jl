@@ -4,6 +4,10 @@
         names = Set(item.name for item in report.items)
         @test "no_gram_mode" in names
         @test "gram_root" in names
+        @test isfile(joinpath(REPO_ROOT, "data", "assets_manifest.toml"))
+        @test isfile(joinpath(REPO_ROOT, "scripts", "assets", "check_assets.jl"))
+        @test isfile(joinpath(REPO_ROOT, "scripts", "assets", "show_asset_manifest.jl"))
+        @test isfile(joinpath(REPO_ROOT, "scripts", "assets", "setup_open_assets.jl"))
         text = sprint(io -> SpaceAGORA.render_asset_report(report; io=io))
         @test occursin("no_gram_mode", text)
         @test occursin("gram_root", text)
@@ -52,5 +56,12 @@
         ]; io=io, errio=io) == 0)
         @test occursin("SPACEAGORA_SMART_LADDER_OUTDIR", ladder_text)
         @test occursin("performance_smart_parallel_ladder.jl", ladder_text)
+
+        manifest_text = sprint(io -> @test SpaceAGORA.run_cli(["assets", "manifest"]; io=io, errio=io) == 0)
+        @test occursin("SpaceAGORA asset manifest", manifest_text)
+        @test occursin("data/assets_manifest.toml", read(joinpath(REPO_ROOT, "docs", "src", "assets.md"), String))
+
+        setup_text = sprint(io -> @test SpaceAGORA.run_cli(["assets", "setup-open"]; io=io, errio=io) == 0)
+        @test occursin("No downloads are required for baseline no-GRAM mode", setup_text)
     end
 end

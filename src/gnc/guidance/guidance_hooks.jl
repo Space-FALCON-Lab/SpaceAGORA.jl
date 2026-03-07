@@ -3,7 +3,7 @@ module GuidanceHooks
 
     using ..ConfigTypes: ODEParams, Solution
     using ..AbstractTypes: AbstractPlanet, AbstractControlEffectorModel, AbstractGuidanceModel
-    using ..DynamicEffectors: AerobrakingCampaignPropulsiveManeuverGuidanceModel, BaseThrusterModel
+    using ..DynamicEffectors: AerobrakingCampaignPropulsiveManeuverGuidanceModel, BaseThrusterModel, aerobraking_gravity_force_ii
     using ..AerobrakingPolicy: AbstractAerobrakingPolicySelector, AerobrakingPolicyConfig, E_EDG, T_EDG, select_strategy
     using ..ref_sys
     using ..LinearAlgebra

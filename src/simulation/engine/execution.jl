@@ -30,6 +30,7 @@ function run_simulation(
     _enforce_typed_normalize_policy!(args)
     _validate_orientation_inertia!(args)
     _validate_thermal_model_support!(args)
+    _validate_ephemerides_support!(args)
     try
         SimulationModel.ParallelPolicy.reset_policy_telemetry!()
         if SimulationModel.ParallelPolicy.persistent_hints_state_reset_requested()
@@ -73,23 +74,13 @@ function run_simulation(
         saved_values=saved_values,
         save_fields=save_fields_resolved
     ) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
-    initial_time = args.initial_time
-    start_epoch = from_utc(DateTime(
-            initial_time.year,
-            initial_time.month,
-            initial_time.day,
-            initial_time.hour,
-            initial_time.minute,
-            initial_time.second
-        ))
-    et_start = lock(SimulationModel.SPICE_LOCK) do
-        utc2et(to_utc(start_epoch))
-    end
+    ephemerides_model = args.environment_model.ephemerides_model
+    et_start = SimulationModel.ephemerides_time_seconds(args.initial_time, ephemerides_model)
     p.shared_buffers.et_start[] = et_start
-    lock(SimulationModel.SPICE_LOCK) do
-        args.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_$(args.environment_model.planet.name)", et_start)) * args.environment_model.planet.J2000_to_pci' # Initialize the planet frame at the start of the simulation (will be updated in the callback)
+    args.environment_model.planet.L_PI .= SimulationModel.planet_frame_lpi(args.environment_model.planet, et_start, ephemerides_model)
+    if SimulationModel.ephemerides_requires_spice(ephemerides_model)
+        Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.planet_pxform_runtime_calls, 1)
     end
-    Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.planet_pxform_runtime_calls, 1)
     mission_end = args.mission_configuration.mission_time
     _initialize_nbody_ephemeris_cache!(p, et_start, mission_end)
     _initialize_srp_sun_ephemeris_cache!(p, et_start, mission_end)
@@ -195,7 +186,7 @@ function run_simulation(
         results_data = checkpoint_active ? checkpoint_saved_data : saved_values.saveval
         results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
         # Keep backwards-compatible CSV contract used by existing scripts/tests.
-        csv_path = _write_compat_results_csv!(results_df, args)
+        csv_path = _write_results_csv!(results_df, args)
         if _typed_save_bundle_enabled()
             _write_results_bundle!(results_df, results_times, args; csv_path=csv_path)
         end

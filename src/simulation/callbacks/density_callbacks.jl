@@ -569,11 +569,11 @@ function get_callbacks(
     return CallbackSet(callbacks...)
 end
 
-@inline function _planet_lpi_from_spice(planet, et::Float64, counter::Base.Threads.Atomic{Int64})::SMatrix{3, 3, Float64}
-    Base.Threads.atomic_add!(counter, 1)
-    return lock(SPICE_LOCK) do
-        SMatrix{3, 3, Float64}(pxform("J2000", "IAU_$(planet.name)", et)) * planet.J2000_to_pci'
+@inline function _planet_lpi_from_backend(planet, ephemerides_model, et::Float64, counter::Base.Threads.Atomic{Int64})::SMatrix{3, 3, Float64}
+    if ephemerides_requires_spice(ephemerides_model)
+        Base.Threads.atomic_add!(counter, 1)
     end
+    return planet_frame_lpi(planet, et, ephemerides_model)
 end
 
 @inline function _planet_lpi_from_cache(cache::PlanetFrameEphemerisCache, et::Float64)::Union{Nothing, SMatrix{3, 3, Float64}}
@@ -614,32 +614,23 @@ function update_planet_frame_callback()
     function affect!(integrator)
         p = integrator.p
         planet = p.args.environment_model.planet
+        ephemerides_model = p.args.environment_model.ephemerides_model
         et = et_start[] + integrator.t
         pxform_counter = p.shared_buffers.spice_runtime_counters.planet_pxform_runtime_calls
         cache_entry = p.shared_buffers.planet_frame_ephemeris_cache[]
         l_pi = if cache_entry isa PlanetFrameEphemerisCache
             cached = _planet_lpi_from_cache(cache_entry, et)
-            cached === nothing ? _planet_lpi_from_spice(planet, et, pxform_counter) : cached
+            cached === nothing ? _planet_lpi_from_backend(planet, ephemerides_model, et, pxform_counter) : cached
         else
-            _planet_lpi_from_spice(planet, et, pxform_counter)
+            _planet_lpi_from_backend(planet, ephemerides_model, et, pxform_counter)
         end
         planet.L_PI .= l_pi
     end
 
     function init_affect!(cb, u, t, integrator)
         p = integrator.p
-        initial_time = p.args.initial_time
-        start_epoch = from_utc(DateTime(
-            initial_time.year,
-            initial_time.month,
-            initial_time.day,
-            initial_time.hour,
-            initial_time.minute,
-            initial_time.second
-        ))
-        lock(SPICE_LOCK) do
-            et_start[] = utc2et(to_utc(start_epoch))
-        end
+        ephemerides_model = p.args.environment_model.ephemerides_model
+        et_start[] = ephemerides_time_seconds(p.args.initial_time, ephemerides_model)
         affect!(integrator) # Call the affect! function at the start of the simulation to initialize the planet frame
     end
 

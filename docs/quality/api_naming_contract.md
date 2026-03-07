@@ -15,6 +15,9 @@ Stable root exports:
 3. `run_verification_cli(...)`
 4. `run_study(...)`
 
+Only `SpaceAGORA` root exports are stable public API. Direct helper access through `SimulationModel`
+is internal and may change without compatibility guarantees.
+
 ## Canonical File Ownership
 1. Engine public API: `src/simulation/engine/public_api.jl`
 2. Engine runtime execution: `src/simulation/engine/execution.jl`

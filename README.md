@@ -3,6 +3,26 @@ The Atmospheric & General Orbit Resource for Analysis (AGORA) tool is the succes
 
 Generated API documentation and linked architecture/quality references are published at [space-falcon-lab.github.io/SpaceAGORA.jl](https://space-falcon-lab.github.io/SpaceAGORA.jl).
 
+## Generated outputs and artifact hygiene
+
+Generated runtime reports, telemetry CSVs, and local docs builds are not committed to git. They are regenerated into ignored directories such as `output/`, `docs/build/`, `docs/site/`, and `docs/src/generated/` to avoid leaking host-specific absolute paths, usernames, or machine-local build state.
+
+Use the helper script below to regenerate the common local outputs:
+
+```bash
+julia --project=.AGORA scripts/regenerate_ignored_outputs.jl runtime-analysis quick
+julia --project=.AGORA scripts/regenerate_ignored_outputs.jl telemetry quick
+julia --project=.AGORA scripts/regenerate_ignored_outputs.jl docs
+```
+
+CI uploads telemetry CSVs as workflow artifacts instead of storing them in the repository.
+
+## `.AGORA` environment policy
+
+`/.AGORA` is the canonical committed execution environment for SpaceAGORA examples, benchmarks, tests, and CI. The repository intentionally tracks `.AGORA/Project.toml` and `.AGORA/Manifest.toml`, so a fresh clone already contains the environment definition that operational entrypoints expect.
+
+There is no bootstrap-copy step that synthesizes `.AGORA` from the root `Project.toml` or `Manifest.toml` at runtime. When docs and workflows say `--project=.AGORA`, they mean the committed environment in this repository. The root `Project.toml` remains the package/development environment; operational commands should continue to use `.AGORA` unless that contract is deliberately changed everywhere.
+
 # Setting up the Docker Environment (Currently not working for Apple Silicon Macs)
 To ensure that all the package versions are consistent, a Docker environment has been configured for use with SpaceAGORA.jl. This guarantees consistent results between computers. This is needed for running on Apple Silicon Macs because of how GRAM was compiled. For other virtualization options, see [GRAM Setup](https://github.com/Space-FALCON-Lab/Aerobraking-Trajectory-Simulator/tree/GRAM-updates?tab=readme-ov-file#gram-setup). The process of setting it up is as follows:
 1. Download and sign in to [Docker Desktop](https://www.docker.com/get-started/). If on Linux, follow [these](https://docs.docker.com/desktop/setup/sign-in/) instructions to sign in.
@@ -23,6 +43,15 @@ Start by cloning this repository:
 ```cmd
 git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 ```
+
+For a first run with no GRAM installation and no SPICE kernels, use the no-GRAM examples:
+
+```bash
+julia --project=.AGORA src/examples/AGORA_Earth_NoGRAM.jl
+julia --project=.AGORA src/examples/AGORA_Mars_NoGRAM.jl
+```
+
+These use `SimpleEphemeridesModel()` together with `NoAtmosphereModel()` or `ExponentialAtmosphereModel(planet)` so a fresh clone can run end-to-end without licensed atmospheric assets.
 
 Next, follow the instructions above to download the GRAM Suite, which is used for high-fidelity atmospheric modeling. This will include all the GRAM and SPICE files required to properly run the simulations. Example code is provided in ```src/AGORA_*.jl```.
 

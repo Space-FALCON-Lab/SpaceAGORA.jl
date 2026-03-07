@@ -392,12 +392,14 @@ function build_config(;
     simulation_settings::SimulationSettings=SimulationSettings(results=true, verbose=false, generate_plots=false, normalize=false),
     tolerances::IntegrationTolerances=IntegrationTolerances(),
     initial_time::SimulationModel.InitialTime=SimulationModel.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+    ephemerides_model=SpiceEphemeridesModel(),
     planet=EARTH
 )
     environment_model = EnvironmentModel(
         planet=planet,
         EI=EI_km,
         density_model=density_model,
+        ephemerides_model=ephemerides_model,
         thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
         topography=false,
         wind=false
@@ -436,12 +438,14 @@ function build_config_multi(;
     simulation_settings::SimulationSettings=SimulationSettings(results=true, verbose=false, generate_plots=false, normalize=false),
     tolerances::IntegrationTolerances=IntegrationTolerances(),
     initial_time::SimulationModel.InitialTime=SimulationModel.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+    ephemerides_model=SpiceEphemeridesModel(),
     planet=EARTH
 )
     environment_model = EnvironmentModel(
         planet=planet,
         EI=EI_km,
         density_model=density_model,
+        ephemerides_model=ephemerides_model,
         thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
         topography=false,
         wind=false
@@ -725,3 +729,4 @@ include(joinpath(REPO_ROOT, "test", "suites", "03_persistence_units_and_rotation
 include(joinpath(REPO_ROOT, "test", "suites", "04_solver_env_and_regression_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "suites", "05_thruster_control_and_quality_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "suites", "06_monolith_split_runtime_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "suites", "07_no_gram_onboarding_tests.jl"))

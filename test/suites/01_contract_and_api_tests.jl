@@ -9,6 +9,9 @@
         :InitialTime,
         :MissionConfiguration,
         :EnvironmentModel,
+        :SimpleEphemeridesModel,
+        :SpiceEphemeridesModel,
+        :make_no_gram_environment,
         :IntegrationTolerances,
         :ControlModel,
         :GuidanceModel,
@@ -18,6 +21,17 @@
 
     for sym in required_public_names
         @test Core.eval(sandbox, :(isdefined(@__MODULE__, $(QuoteNode(sym)))))
+    end
+
+    for sym in (
+        :asim_ctrl,
+        :asim_ctrl_plot,
+        :control_solarpanels_heatrate,
+        :control_solarpanels_heatload,
+        :control_solarpanels_openloop,
+    )
+        @test !Core.eval(sandbox, :(isdefined(@__MODULE__, $(QuoteNode(sym)))))
+        @test !Core.eval(sandbox, :(Base.isexported(SimulationModel.ControlHooks, $(QuoteNode(sym)))))
     end
 end
 
@@ -47,6 +61,11 @@ end
     legacy_execution_path = joinpath(legacy_exec_dir, "simulation_execution.jl")
     legacy_aerobraking_path = joinpath(REPO_ROOT, "src", "simulation", "Aerobraking.jl")
     legacy_complete_path = joinpath(REPO_ROOT, "src", "simulation", "Complete_passage.jl")
+    legacy_mission_model_path = joinpath(REPO_ROOT, "src", "mission", "mission_model.jl")
+    legacy_define_mission_path = joinpath(REPO_ROOT, "src", "mission", "define_mission.jl")
+    legacy_save_results_path = joinpath(REPO_ROOT, "src", "io", "outputs", "save_results.jl")
+    legacy_mc_set_path = joinpath(REPO_ROOT, "src", "mission", "campaigns", "montecarlo_set.jl")
+    legacy_mc_perturbations_path = joinpath(REPO_ROOT, "src", "mission", "campaigns", "montecarlo_perturbations.jl")
 
     @test isfile(engine_path)
     @test !isfile(legacy_run_path)
@@ -54,6 +73,11 @@ end
     @test !isfile(legacy_execution_path)
     @test !isfile(legacy_aerobraking_path)
     @test !isfile(legacy_complete_path)
+    @test !isfile(legacy_mission_model_path)
+    @test !isfile(legacy_define_mission_path)
+    @test !isfile(legacy_save_results_path)
+    @test !isfile(legacy_mc_set_path)
+    @test !isfile(legacy_mc_perturbations_path)
 end
 
 @testset "SharedBuffers Type Contract" begin
@@ -72,6 +96,100 @@ end
     @test fieldtype(shared_buffers_type, :aero_workspaces) ==
         Vector{Union{Nothing, SimulationModel.AeroScratchWorkspace}}
     @test SimulationModel.SaveData == Dict{Symbol, Any}
+end
+
+@testset "SpaceAGORA run_simulation Doc Contract" begin
+    sandbox = Module(:SpaceAGORADocSandbox)
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"))
+    doc = Core.eval(sandbox, :(Base.Docs.doc(SpaceAGORA.run_simulation)))
+    doc_text = sprint(show, MIME"text/plain"(), doc)
+
+    @test occursin("isolate_state", doc_text)
+    @test occursin("deep-copies the simulation configuration", doc_text)
+    @test occursin("concurrent", doc_text)
+    @test occursin("mutate shared state", doc_text)
+end
+
+@testset "Aerobraking Selector Contract" begin
+    selector = SimulationModel.DefaultAerobrakingPolicySelector()
+    cfg_default = SimulationModel.AerobrakingPolicyConfig()
+    cfg_targeting = SimulationModel.AerobrakingPolicyConfig(default_strategy=SimulationModel.T_EDG)
+    input = SimulationModel.GuidanceHooks.AerobrakingGuidanceInput(
+        ip=nothing,
+        mission=nothing,
+        args=Dict{Symbol, Any}(:aerobraking_strategy => "e_edg"),
+    )
+
+    @test SimulationModel.select_strategy(selector, cfg_default, input) == SimulationModel.E_EDG
+    @test SimulationModel.select_strategy(selector, cfg_targeting, input) == SimulationModel.T_EDG
+end
+
+@testset ".AGORA Environment Contract" begin
+    agora_project = joinpath(REPO_ROOT, ".AGORA", "Project.toml")
+    agora_manifest = joinpath(REPO_ROOT, ".AGORA", "Manifest.toml")
+
+    @test isfile(agora_project)
+    @test isfile(agora_manifest)
+
+    tracked = read(`sh -lc "cd '$REPO_ROOT' && git ls-files .AGORA/Project.toml .AGORA/Manifest.toml"`, String)
+    @test occursin(".AGORA/Project.toml", tracked)
+    @test occursin(".AGORA/Manifest.toml", tracked)
+
+    readme = read(joinpath(REPO_ROOT, "README.md"), String)
+    getting_started = read(joinpath(REPO_ROOT, "docs", "src", "getting_started.md"), String)
+    migration_plan = read(joinpath(REPO_ROOT, "docs", "architecture", "src_restructure_migration_plan.md"), String)
+
+    @test occursin("canonical committed execution environment", readme)
+    @test occursin("canonical committed execution environment", getting_started)
+    @test occursin("canonical committed execution environment", migration_plan)
+    @test occursin("There is no bootstrap-copy step", readme)
+end
+
+@testset "Project Compat Coverage Contract" begin
+    stdlibs = Set([
+        "Artifacts",
+        "Base64",
+        "Dates",
+        "DelimitedFiles",
+        "Distributed",
+        "FileWatching",
+        "InteractiveUtils",
+        "LibCURL",
+        "LibGit2",
+        "Libdl",
+        "LinearAlgebra",
+        "Logging",
+        "Markdown",
+        "Mmap",
+        "Pkg",
+        "Printf",
+        "Profile",
+        "Random",
+        "REPL",
+        "SHA",
+        "Serialization",
+        "SharedArrays",
+        "Sockets",
+        "SparseArrays",
+        "Statistics",
+        "SuiteSparse",
+        "TOML",
+        "Tar",
+        "Test",
+        "UUIDs",
+        "Unicode"
+    ])
+
+    function nonstdlib_deps_without_compat(project_path::String)
+        project = TOML.parsefile(project_path)
+        deps = Set(String.(keys(get(project, "deps", Dict()))))
+        compat = Set(String.(keys(get(project, "compat", Dict()))))
+        delete!(compat, "julia")
+        return sort(collect(setdiff(setdiff(deps, stdlibs), compat)))
+    end
+
+    @test isempty(nonstdlib_deps_without_compat(joinpath(REPO_ROOT, "Project.toml")))
+    @test isempty(nonstdlib_deps_without_compat(joinpath(REPO_ROOT, ".AGORA", "Project.toml")))
 end
 
 
@@ -152,6 +270,7 @@ end
             planet=EARTH,
             EI=120.0,
             density_model=NoAtmosphereModel(),
+            ephemerides_model=SpiceEphemeridesModel(),
             thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=EARTH),
             topography=true,
             topo_degree=8,
@@ -159,11 +278,17 @@ end
             wind=false
         )
         @test env_ok.EI == 120.0
+        @test env_ok.ephemerides_model isa SpiceEphemeridesModel
+
+        env_no_gram = make_no_gram_environment(planet=:mars, atmosphere=:exponential, EI_km=140.0)
+        @test env_no_gram.ephemerides_model isa SimpleEphemeridesModel
+        @test env_no_gram.density_model isa ExponentialAtmosphereModel
 
         @test_throws ArgumentError EnvironmentModel(
             planet=EARTH,
             EI=-1.0,
             density_model=NoAtmosphereModel(),
+            ephemerides_model=SpiceEphemeridesModel(),
             thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=EARTH),
             topography=false,
             topo_degree=8,
@@ -175,6 +300,7 @@ end
             planet=EARTH,
             EI=120.0,
             density_model=NoAtmosphereModel(),
+            ephemerides_model=SpiceEphemeridesModel(),
             thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=EARTH),
             topography=true,
             topo_degree=-1,
@@ -186,6 +312,7 @@ end
             planet=EARTH,
             EI=120.0,
             density_model=NoAtmosphereModel(),
+            ephemerides_model=SpiceEphemeridesModel(),
             thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=EARTH),
             topography=true,
             topo_degree=8,

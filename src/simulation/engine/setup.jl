@@ -22,7 +22,7 @@ const _NBODY_EPHEMERIS_REUSE_CACHE = Dict{Any, SimulationModel.NBodyEphemerisCac
 const _PLANET_FRAME_EPHEMERIS_REUSE_CACHE = Dict{Any, SimulationModel.PlanetFrameEphemerisCache}()
 
 @inline _typed_normalize_warning_enabled() = _engine_env_get("SPACEAGORA_WARN_NORMALIZE", "1") == "1"
-@inline _typed_allow_compat_normalize() = _engine_env_get("SPACEAGORA_ALLOW_TYPED_NORMALIZE", "0") == "1"
+@inline _typed_allow_legacy_normalize() = _engine_env_get("SPACEAGORA_ALLOW_TYPED_NORMALIZE", "0") == "1"
 @inline _typed_save_bundle_enabled() = _engine_env_get("SPACEAGORA_SAVE_BUNDLE", "1") == "1"
 @inline _typed_checkpoint_enabled(args) = args.simulation_settings.checkpoint_enabled || args.simulation_settings.resume_from_checkpoint
 
@@ -53,6 +53,25 @@ function _validate_thermal_model_support!(args)
             "Thermal model $(nameof(typeof(thermal_model))) must implement " *
             "getHeatRate(model, S, T, ρ, v, α)::Float64."
         ))
+    end
+    return nothing
+end
+
+function _validate_ephemerides_support!(args)
+    ephemerides_model = args.environment_model.ephemerides_model
+    if ephemerides_model isa SimulationModel.SimpleEphemeridesModel
+        if _has_active_nbody_effector(args.dynamics_model.dynamic_effectors)
+            throw(ArgumentError(
+                "SimpleEphemeridesModel does not support active N-body gravity effectors. " *
+                "Use SpiceEphemeridesModel() for high-fidelity third-body runs."
+            ))
+        end
+        if _has_active_srp_effector(args.dynamics_model.dynamic_effectors)
+            throw(ArgumentError(
+                "SimpleEphemeridesModel does not support solar-radiation-pressure ephemerides. " *
+                "Use SpiceEphemeridesModel() for SRP-enabled runs."
+            ))
+        end
     end
     return nothing
 end
@@ -199,10 +218,11 @@ end
     )
 end
 
-@inline function _planet_frame_ephemeris_reuse_key(planet, et_start::Float64, mission_end_s::Float64, dt_s::Float64)
+@inline function _planet_frame_ephemeris_reuse_key(planet, ephemerides_model, et_start::Float64, mission_end_s::Float64, dt_s::Float64)
     return (
         :planet_frame,
         string(planet.name),
+        SimulationModel.ephemerides_cache_key(ephemerides_model),
         _planet_transform_key(planet),
         _cache_time_key(et_start),
         _cache_time_key(mission_end_s),
@@ -752,31 +772,31 @@ function _initialize_planet_frame_ephemeris_cache!(p, et_start::Float64, mission
     end
 
     planet = p.args.environment_model.planet
+    ephemerides_model = p.args.environment_model.ephemerides_model
     if _ephemeris_reuse_enabled()
-        reuse_key = _planet_frame_ephemeris_reuse_key(planet, et_start, mission_end_s, dt_s)
+        reuse_key = _planet_frame_ephemeris_reuse_key(planet, ephemerides_model, et_start, mission_end_s, dt_s)
         reused = _ephemeris_reuse_lookup(_PLANET_FRAME_EPHEMERIS_REUSE_CACHE, reuse_key)
         if reused isa SimulationModel.PlanetFrameEphemerisCache
             p.shared_buffers.planet_frame_ephemeris_cache[] = reused
             return nothing
         end
     end
-    frame_name = "IAU_$(planet.name)"
     ets = Vector{Float64}(undef, n_samples)
     quaternions = Vector{SVector{4, Float64}}(undef, n_samples)
 
-    lock(SimulationModel.SPICE_LOCK) do
-        @inbounds for sample_idx in 1:n_samples
-            et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
-            ets[sample_idx] = et
-            l_pi = SMatrix{3, 3, Float64}(pxform("J2000", frame_name, et)) * planet.J2000_to_pci'
-            quaternions[sample_idx] = SimulationModel.dcm_to_quaternion(l_pi)
+    @inbounds for sample_idx in 1:n_samples
+        et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
+        ets[sample_idx] = et
+        l_pi = SimulationModel.planet_frame_lpi(planet, et, ephemerides_model)
+        quaternions[sample_idx] = SimulationModel.dcm_to_quaternion(l_pi)
+        if SimulationModel.ephemerides_requires_spice(ephemerides_model)
             Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.planet_pxform_cache_build_calls, 1)
         end
     end
 
     cache_value = SimulationModel.PlanetFrameEphemerisCache(ets, quaternions)
     if _ephemeris_reuse_enabled()
-        reuse_key = _planet_frame_ephemeris_reuse_key(planet, et_start, mission_end_s, dt_s)
+        reuse_key = _planet_frame_ephemeris_reuse_key(planet, ephemerides_model, et_start, mission_end_s, dt_s)
         cache_value = _ephemeris_reuse_store!(_PLANET_FRAME_EPHEMERIS_REUSE_CACHE, reuse_key, cache_value, _ephemeris_reuse_max_entries())
     end
     p.shared_buffers.planet_frame_ephemeris_cache[] = cache_value

@@ -19,6 +19,8 @@ Optional output directory:
 julia --startup-file=no --project=.AGORA benchmarks/studies/performance_runtime_analysis.jl --profile=quick --outdir=/absolute/path/to/output
 ```
 
+The study measures `deepcopy(case.args_template)` separately and then runs the solve with `isolate_state=false`. Reported copy/setup metrics therefore represent the setup cost avoided when expert callers disable isolation. Keep `isolate_state=true` as the default for correctness; only treat `false` as a throughput lever when the configuration instance is single-use and not shared across concurrent or state-mutating runs.
+
 ## Parallel Backend Selection
 ```bash
 SPACEAGORA_PERF_PARALLEL_BACKEND=threads julia --startup-file=no --project=.AGORA benchmarks/studies/performance_runtime_analysis.jl quick
@@ -49,3 +51,5 @@ Default output root: `output/performance/`
 4. `runtime_per_orbit_summary_<profile>_<timestamp>.csv`
 5. `runtime_report_<profile>_<timestamp>.md`
 6. `runtime_plot_*_<profile>_<timestamp>.png`
+
+These runtime-analysis outputs are intended to stay local under ignored `output/` paths. If they are needed in CI, publish them as workflow artifacts rather than committing machine-specific report files to the repository.

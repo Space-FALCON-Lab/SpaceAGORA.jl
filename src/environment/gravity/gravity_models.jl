@@ -23,6 +23,82 @@ end
     gravity_gradient::Bool = false
 end
 
+@inline function _gravity_runtime_field(args, name::Symbol, default)
+    if args !== nothing && hasproperty(args, name)
+        return getproperty(args, name)
+    end
+    if args !== nothing && applicable(get, args, name, default)
+        return get(args, name, default)
+    end
+    if args !== nothing && applicable(getindex, args, name)
+        return getindex(args, name)
+    end
+    return default
+end
+
+@inline function _inverse_squared_gravity_accel(pos_ii::SVector{3, Float64}, planet)::SVector{3, Float64}
+    r = norm(pos_ii)
+    return -planet.μ / r^2 * normalize(pos_ii)
+end
+
+@inline function _inverse_squared_j2_gravity_accel(pos_ii::SVector{3, Float64}, planet)::SVector{3, Float64}
+    r = norm(pos_ii)
+    μ = planet.μ
+    J2 = planet.J2
+    Rp_m = planet.Rp_m
+    x, y, z = pos_ii
+    r_squared = r^2
+    gravity_ii_mag_spherical = -μ / r_squared
+    pos_ii_hat = normalize(pos_ii)
+    j2_term = SVector{3, Float64}(
+        x / r * (5 * z^2 / r_squared - 1),
+        y / r * (5 * z^2 / r_squared - 1),
+        z / r * (5 * z^2 / r_squared - 3),
+    )
+    return gravity_ii_mag_spherical * pos_ii_hat + 3 / 2 * J2 * μ * Rp_m^2 / r^4 * j2_term
+end
+
+function aerobraking_gravity_force_ii(
+    gm_code::Integer,
+    mass::Float64,
+    pos_ii::SVector{3, Float64},
+    vel_ii::SVector{3, Float64},
+    pos_pp::SVector{3, Float64},
+    lat::Float64,
+    lon::Float64,
+    alt::Float64,
+    planet,
+    et::Float64,
+    args,
+    gram_atmosphere,
+    gram,
+    n_bodies_list,
+)::SVector{3, Float64}
+    gravity_ii = if gm_code == 2
+        _inverse_squared_j2_gravity_accel(pos_ii, planet)
+    else
+        # The legacy gm=0/1/3 aerobraking paths all reduced to inverse-squared gravity.
+        _inverse_squared_gravity_accel(pos_ii, planet)
+    end
+
+    force_ii = mass * gravity_ii
+
+    n_bodies = _gravity_runtime_field(args, :n_bodies, ())
+    if !isempty(n_bodies)
+        for k in eachindex(n_bodies)
+            force_ii += mass * gravity_n_bodies(et, pos_ii, planet, n_bodies_list[k])
+        end
+    end
+
+    if _gravity_runtime_field(args, :gravity_harmonics, 0) == 1
+        L = Int(_gravity_runtime_field(args, :L, 0))
+        M = Int(_gravity_runtime_field(args, :M, 0))
+        force_ii += mass * planet.L_PI' * acc_gravity_pines!(pos_pp, planet.Clm, planet.Slm, L, M, planet.μ, planet.Rp_e, planet)
+    end
+
+    return force_ii
+end
+
 # Calculate force/torque functions
 # Model is the gravity model struct and x is the state vector from Complete_passage
 function calcForceTorque!(model::ConstantGravityModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}

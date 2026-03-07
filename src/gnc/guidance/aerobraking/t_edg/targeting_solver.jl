@@ -1,18 +1,5 @@
 using Roots
 
-@inline function _compat_targeting_log_enabled(args)::Bool
-    if get(ENV, "SPACEAGORA_DEBUG_LEGACY_CONTROL", "0") == "1"
-        return true
-    end
-    if hasproperty(args, :simulation_settings) && hasproperty(args.simulation_settings, :verbose)
-        return Bool(getproperty(args.simulation_settings, :verbose))
-    end
-    if hasproperty(args, :verbose)
-        return Bool(getproperty(args, :verbose))
-    end
-    return false
-end
-
 function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a_tol, r_tol, method, events, in_cond; cnf=nothing)
     lock(CONTROL_BRIDGE_STATE_LOCK)
     try
@@ -24,6 +11,7 @@ end
 
 function _target_planning_impl(f!, ip, m, args, param, OE, initial_time, final_time, a_tol, r_tol, method, events, in_cond; cnf=nothing)
     cnf_state = _bridge_get_cnf(args; cnf=cnf)
+    ra_fin_orbit = _bridge_required_field(args, :ra_fin_orbit)
 
     # OE = SVector{7, Float64}([initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m])
     r0, v0 = orbitalelemtorv(OE, m.planet)
@@ -31,7 +19,7 @@ function _target_planning_impl(f!, ip, m, args, param, OE, initial_time, final_t
     # Run simulation
     prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
     sol_max_dratio = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
-    log_enabled = _compat_targeting_log_enabled(args)
+    log_enabled = _bridge_verbose_enabled(args)
     if log_enabled
         println("m.aero.alpha before deepcopying: ", m.aerodynamics.α)
     end
@@ -56,7 +44,7 @@ function _target_planning_impl(f!, ip, m, args, param, OE, initial_time, final_t
     # println(" ")
     # println(m_temp)
 
-    param_temp = (m_temp, param[2], ip_temp, param[4:end]...)
+    param_temp = merge(param, (mission=m_temp, ip=ip_temp))
 
     # param_temp[1] = m_temp
     # param_temp[3] = ip_temp
@@ -82,7 +70,7 @@ function _target_planning_impl(f!, ip, m, args, param, OE, initial_time, final_t
 
     # println("Current periapsis: ", r_p - m.planet.Rp_e)
 
-    target_energy = -m.planet.μ / (args[:ra_fin_orbit] + r_p) # change to current periapsis
+    target_energy = -m.planet.μ / (ra_fin_orbit + r_p) # change to current periapsis
 
     if log_enabled
         println("Target energy: ", target_energy)
@@ -126,13 +114,13 @@ end
 
 # function control_solarpanels_targeting(f!, energy_f, ip, m, time_0, OE, args, gram_atmosphere)
 function control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
-    log_enabled = length(param) >= 8 ? _compat_targeting_log_enabled(param[8]) : false
+    log_enabled = _bridge_verbose_enabled(param.args)
 
     function func_targeting_num_int(t_switch)
 
-        sol = asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=_bridge_get_cnf(param[8]))
+        sol = asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=_bridge_get_cnf(param))
 
-        m = param[1]
+        m = param.mission
 
         energy_fin = norm(sol[4:6,end])^2/2 - m.planet.μ / norm(sol[1:3,end])
 
@@ -149,16 +137,16 @@ function control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
 end
 
 function control_solarpanels_targeting_heatload(energy_f, param, OE)
-    log_enabled = length(param) >= 8 ? _compat_targeting_log_enabled(param[8]) : false
+    log_enabled = _bridge_verbose_enabled(param.args)
 
     function func_targeting_heatload(v_E)
-        m = param[1]
-        ip = param[3]
-        time_0 = param[7]
-        args = param[8]
-        gram_atmosphere = param[10]
+        m = param.mission
+        ip = param.ip
+        time_0 = param.time_0
+        args = param.args
+        gram_atmosphere = param.gram_atmosphere
 
-        sol, _ = _control_asim_ctrl_rf(ip, m, time_0, OE, args, v_E, 1.0, false, gram_atmosphere; cnf=_bridge_get_cnf(args))
+        sol, _ = _control_asim_ctrl_rf(ip, m, time_0, OE, args, v_E, 1.0, false, gram_atmosphere; cnf=_bridge_get_cnf(param))
 
         energy_fin = norm(sol[4:6,end])^2/2 - m.planet.μ / norm(sol[1:3,end])
 
@@ -358,6 +346,8 @@ function control_solarpanels_targeting_closed_form(energy_target, ip, m, positio
 end
 
 function func_e(nu_E_var, m, args, coeff, position, heat_rate_control, approx_sol, energy_target, initial_guess=false, approx_calc=false)
+        multiplicative_factor_heatload = _bridge_required_field(args, :multiplicative_factor_heatload)
+        max_heat_rate = _bridge_required_field(args, :max_heat_rate)
         
         k_cf = 1.0
         
@@ -382,11 +372,11 @@ function func_e(nu_E_var, m, args, coeff, position, heat_rate_control, approx_so
             S = sqrt(m.planet.γ/2) * M
             ρ = density_exp(h_cf, m.planet)[1]  # density calculated through exponential density
 
-            heat_rate = heat_rate_calc(args[:multiplicative_factor_heatload] * m.aerodynamics.thermal_accomodation_factor, ρ, T, T, m.planet.R, m.planet.γ, S, aoa_cf)
+            heat_rate = heat_rate_calc(multiplicative_factor_heatload * m.aerodynamics.thermal_accomodation_factor, ρ, T, T, m.planet.R, m.planet.γ, S, aoa_cf)
 
             if heat_rate_control == true # Account for max heat rate possible
-                index_hr = heat_rate .> args[:max_heat_rate]
-                heat_rate[index_hr] .= args[:max_heat_rate]
+                index_hr = heat_rate .> max_heat_rate
+                heat_rate[index_hr] .= max_heat_rate
             end
 
             E_fin = norm(v_cf[end])^2/2 - m.planet.μ / (m.planet.Rp_e + h_cf[end]) 

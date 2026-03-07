@@ -10,19 +10,6 @@ using SPICE
 # import .config
 # import .ref_sys
 
-@inline function _compat_eom_targeting_log_enabled(args)::Bool
-    if get(ENV, "SPACEAGORA_DEBUG_LEGACY_CONTROL", "0") == "1"
-        return true
-    end
-    if hasproperty(args, :simulation_settings) && hasproperty(args.simulation_settings, :verbose)
-        return Bool(getproperty(args.simulation_settings, :verbose))
-    end
-    if hasproperty(args, :verbose)
-        return Bool(getproperty(args, :verbose))
-    end
-    return false
-end
-
 function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f, v_E, k_cf, heat_rate_control, gram_atmosphere=nothing; cnf=nothing, solution=nothing)
     cnf_state = _bridge_get_cnf(args; cnf=cnf)
     solution_state = _bridge_get_solution(args; cnf=cnf_state, solution=solution)
@@ -37,8 +24,6 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
     if ip.mc == 1
         MonteCarlo = true
     end
-
-    version = args[:Gram_version]
 
     r0, v0 = orbitalelemtorv(OE, m.planet)
 
@@ -85,18 +70,20 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
 
         # param = get_tmp(param, first(in_cond) * t0)
 
-        m = param[1]
-        index_phase_aerobraking = param[2]
-        ip = param[3]
-        aerobraking_phase = param[4]
-        t_prev = param[5]
-        date_initial = param[6]
-        time_0 = param[7]
-        args = param[8]
-        initial_state = param[9]
-        gram_atmosphere = param[10]
-        gram = param[11]
-        k_cf = param[12]
+        context = param
+        m = context.mission
+        index_phase_aerobraking = context.index_phase_aerobraking
+        ip = context.ip
+        aerobraking_phase = context.aerobraking_phase
+        t_prev = context.t_prev
+        date_initial = context.date_initial
+        time_0 = context.time_0
+        args = context.args
+        initial_state = context.initial_state
+        gram_atmosphere = context.gram_atmosphere
+        gram = context.gram
+        k_cf = context.control_gain
+        settings = context.settings
 
         # println("date_initial: ", date_initial)
         # println("t0: ", t0)
@@ -135,12 +122,6 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
 
         # Orbital Elements
         OE = rvtoorbitalelement(pos_ii, vel_ii, mass, m.planet)
-
-        # Timing variables
-        el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))) # Elapsed time since the beginning of the simulation
-        current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
-        time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
-        et = utc2et(time_real_utc) # Current time in Ephemeris Time
 
         # Angular Momentum Calculations
         h_ii = cross(pos_ii, vel_ii)        # Inertial angular momentum vector[m ^ 2 / s]
@@ -227,12 +208,12 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
         heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
 
         # Add the control for the heat rate if flash == 3
-        if heat_rate_control == true && heat_rate > args[:max_heat_rate]
+        if heat_rate_control == true && heat_rate > settings.max_heat_rate
             state = [T_p, ρ, S]
             index_ratio = [1]
             aoa_hr = _control_solarpanels_heatrate(ip, m, args, index_ratio, state; cnf=cnf_state)
 
-            if args[:struct_ctrl] == 1
+            if settings.struct_control_enabled
                 α_struct = control_struct_load(ip, m, args, S, T_p, q, MonteCarlo)
 
                 aoa = min(aoa_hr, α_struct) # limit the angle of attack to the structural load control
@@ -242,7 +223,7 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
                 heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
             else
                 aoa = aoa_hr
-                heat_rate = args[:max_heat_rate]  
+                heat_rate = settings.max_heat_rate
             end
 
             # heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
@@ -255,25 +236,25 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
         #         -sin(rot_angle) cos(rot_angle)  0.0; 
         #         0.0             0.0             1.0]    # rotation matrix
 
-        if ip.gm == 0
-            gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 1
-            gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 2
-            gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 3
-            gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
-        end
-
-        if length(args[:n_bodies]) != 0
-
-            for k = 1:length(args[:n_bodies])  
-                gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, cnf_state.n_bodies_list[k])
-            end
-        end
+        gravity_ii = aerobraking_gravity_force_ii(
+            Int(ip.gm),
+            Float64(mass),
+            pos_ii,
+            vel_ii,
+            pos_pp,
+            lat,
+            lon,
+            alt,
+            m.planet,
+            et,
+            args,
+            gram_atmosphere,
+            gram,
+            cnf_state.n_bodies_list,
+        )
 
         srp_ii = zeros(3)
-        if args[:srp] == true
+        if settings.srp_enabled
             p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
             srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, et)
         end
@@ -743,10 +724,9 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
 
     ## EVENTS
     function out_drag_pass_condition(y, t, integrator)
-        m = integrator.p[1]
-        args = integrator.p[8]
-
-        norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
+        mission = integrator.p.mission
+        settings = integrator.p.settings
+        return norm(y[1:3]) - mission.planet.Rp_e - settings.exit_interface_m
     end
     function out_drag_pass_affect!(integrator)
         # println("entered out_drag_passage_affect! in Eoms.jl")
@@ -764,8 +744,8 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
         vf = p[4]
         γf = p[5]
 
-        m = param[1]
-        time_0 = param[7]
+        m = param.mission
+        time_0 = param.time_0
 
         lambdav_0 = z[1]
         lambdagamma_0 = z[2]
@@ -1033,14 +1013,31 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
 
     z0 = [-500, 80000, 9]
 
-    param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
+    param = _with_control_gain(
+        _make_aerobraking_runtime_context(
+            mission=m,
+            index_phase_aerobraking=index_phase_aerobraking,
+            ip=ip,
+            aerobraking_phase=aerobraking_phase,
+            t_prev=t_prev,
+            date_initial=date_initial,
+            time_0=time_0,
+            args=args,
+            initial_state=initial_state,
+            gram_atmosphere=gram_atmosphere,
+            gram=gram,
+            cnf=cnf_state,
+            solution=solution_state,
+        ),
+        k_cf,
+    )
 
     p = (r0, v0, hf, vf, γf, v_E)
 
     # prob = NonlinearProblem(shooting_residual!, z0, p)
     # sol_NL = solve(prob, NewtonRaphson())
 
-    log_enabled = _compat_eom_targeting_log_enabled(args)
+    log_enabled = _bridge_verbose_enabled(args)
     sol_NL = nlsolve((residuals, z) -> shooting_residual!(residuals, z, p, param), z0, show_trace=log_enabled)
 
     if log_enabled

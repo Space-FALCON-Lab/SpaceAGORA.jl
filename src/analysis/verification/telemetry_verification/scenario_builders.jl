@@ -214,6 +214,7 @@ function _with_environment_wind(args::SimulationConfiguration, include_wind::Boo
         planet=env.planet,
         EI=env.EI,
         density_model=env.density_model,
+        ephemerides_model=env.ephemerides_model,
         thermal_model=env.thermal_model,
         topography=env.topography,
         topo_degree=env.topo_degree,

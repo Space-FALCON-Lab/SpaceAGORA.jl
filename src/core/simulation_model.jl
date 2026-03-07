@@ -24,8 +24,10 @@ include(joinpath(@__DIR__, "..", "environment", "ephemerides", "planet_shapes.jl
 include(joinpath(@__DIR__, "..", "core", "types", "abstract_types.jl"))
 @reexport using .AbstractTypes
 
-include(joinpath(@__DIR__, "..", "environment", "ephemerides", "planets.jl"))
-@reexport using .Planets
+	include(joinpath(@__DIR__, "..", "environment", "ephemerides", "planets.jl"))
+	@reexport using .Planets
+	include(joinpath(@__DIR__, "..", "environment", "ephemerides", "ephemerides_models.jl"))
+	@reexport using .EphemeridesModels
 
 # 2. Simple hardware data structs
 include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "components.jl"))
@@ -103,9 +105,13 @@ include(joinpath(@__DIR__, "..", "gnc", "navigation", "navigation_hooks.jl"))
 include(joinpath(@__DIR__, "..", "gnc", "control", "control_hooks.jl"))
 @reexport using .ControlHooks
 
-# --- Vehicle Thermal Models ---
-include(joinpath(@__DIR__, "..", "vehicle", "thermal", "thermal_models_module.jl"))
-@reexport using .VehicleThermalModels
+	# --- Vehicle Thermal Models ---
+	include(joinpath(@__DIR__, "..", "vehicle", "thermal", "thermal_models_module.jl"))
+	@reexport using .VehicleThermalModels
+
+	# --- No-GRAM onboarding presets ---
+	include(joinpath(@__DIR__, "..", "core", "state", "no_gram_presets.jl"))
+	@reexport using .NoGramPresets
 
 # --- Integrator Callbacks ---
 include(joinpath(@__DIR__, "..", "simulation", "callbacks", "callbacks.jl"))

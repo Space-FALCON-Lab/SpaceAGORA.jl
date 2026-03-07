@@ -121,8 +121,8 @@ end
         bundle_prefix = SimulationModel.IOConfig._results_bundle_prefix(args_default_ckpt)
         @test bundle_prefix == joinpath(results_dir, "simulation_results")
 
-        compat_csv = SimulationModel.IOConfig._compat_results_csv_path(args_default_ckpt)
-        @test compat_csv == joinpath(results_dir, "simulation_results.csv")
+        results_csv = SimulationModel.IOConfig._results_csv_path(args_default_ckpt)
+        @test results_csv == joinpath(results_dir, "simulation_results.csv")
 
         collision_csv = SimulationModel.IOConfig._collision_results_csv_path(args_default_ckpt)
         @test startswith(collision_csv, joinpath(results_dir, "simulation_results."))
@@ -973,4 +973,3 @@ end
     @test reltol_ω_no_orient == tols_ω_no_orient.reltol_orbit
     @test abstol_ω_no_orient == tols_ω_no_orient.abstol_orbit
 end
-

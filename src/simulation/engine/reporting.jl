@@ -1,4 +1,4 @@
-function _warn_compat_normalize_flag!(args)
+function _warn_legacy_normalize_flag!(args)
     if !args.simulation_settings.normalize || !_typed_normalize_warning_enabled()
         return nothing
     end
@@ -14,8 +14,8 @@ function _enforce_typed_normalize_policy!(args)
     if !args.simulation_settings.normalize
         return nothing
     end
-    if _typed_allow_compat_normalize()
-        _warn_compat_normalize_flag!(args)
+    if _typed_allow_legacy_normalize()
+        _warn_legacy_normalize_flag!(args)
         return nothing
     end
     throw(ArgumentError(
@@ -64,4 +64,3 @@ function _debug_print_nan_parameter_paths!(x, path::AbstractString="p")
     end
     return nothing
 end
-

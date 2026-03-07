@@ -22,8 +22,6 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
         MonteCarlo = true
     end
 
-    version = args[:Gram_version]
-
     r0, v0 = orbitalelemtorv(OE, m.planet)
 
     # Clock
@@ -51,18 +49,20 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
     # println("k_cf outside integrator: ", k_cf)
 
     function f_ctrl!(y_dot, in_cond, param, t0)
-        m = param[1]
-        index_phase_aerobraking = param[2]
-        ip = param[3]
-        aerobraking_phase = param[4]
-        t_prev = param[5]
-        date_initial = param[6]
-        time_0 = param[7]
-        args = param[8]
-        initial_state = param[9]
-        gram_atmosphere = param[10]
-        gram = param[11]
-        k_cf = param[12]
+        context = param
+        m = context.mission
+        index_phase_aerobraking = context.index_phase_aerobraking
+        ip = context.ip
+        aerobraking_phase = context.aerobraking_phase
+        t_prev = context.t_prev
+        date_initial = context.date_initial
+        time_0 = context.time_0
+        args = context.args
+        initial_state = context.initial_state
+        gram_atmosphere = context.gram_atmosphere
+        gram = context.gram
+        k_cf = context.control_gain
+        settings = context.settings
 
         # Clock
         time_real = DateTime(date_initial + t0*seconds) # date_initial + Second(t0)
@@ -90,12 +90,6 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
 
         # Orbital Elements
         OE = rvtoorbitalelement(pos_ii, vel_ii, mass, m.planet)
-
-        # Timing variables
-        el_time = value(seconds((date_initial + t0*seconds) - from_utc(DateTime(args[:year], args[:month], args[:day], args[:hours], args[:minutes], args[:secs])))) # Elapsed time since the beginning of the simulation
-        current_time =  value(seconds(date_initial + t0*seconds - TAIEpoch(2000, 1, 1, 12, 0, 0.0))) # current time in seconds since J2000
-        time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
-        et = utc2et(time_real_utc) # Current time in Ephemeris Time
 
         # Angular Momentum Calculations
         h_ii = cross(pos_ii, vel_ii)        # Inertial angular momentum vector[m ^ 2 / s]
@@ -158,13 +152,13 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
 
         lambda_switch = (k_cf * 2.0 * m.body.mass * vel_ii_mag) ./ (area_tot * CD_slope * pi)
 
-        if args[:heat_load_sol] == 0
+        if settings.heat_load_solution == 0
             if lambdav_ii < lambda_switch
                 aoa = 0.0001
             else
                 aoa = m.aerodynamics.α
             end
-        elseif args[:heat_load_sol] == 1
+        elseif settings.heat_load_solution == 1
             if lambdav_ii < lambda_switch
                 aoa = m.aerodynamics.α
             else
@@ -180,11 +174,11 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
         heat_rate_control = true
 
         # Add the control for the heat rate if flash == 3
-        if heat_rate_control == true && heat_rate > args[:max_heat_rate]
+        if heat_rate_control == true && heat_rate > settings.max_heat_rate
             state = [T_p, ρ, S]
             index_ratio = [1]
             aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state; cnf=cnf_state)
-            heat_rate = args[:max_heat_rate]
+            heat_rate = settings.max_heat_rate
         end
 
         # Convert wind to pp(PCPF) frame
@@ -206,26 +200,26 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
         #         -sin(rot_angle) cos(rot_angle)  0.0; 
         #         0.0             0.0             1.0]    # rotation matrix
         
-        if ip.gm == 0
-            gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 1
-            gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 2
-            gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 3
-            gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
-        end
-
-        if length(args[:n_bodies]) != 0
-
-            for k = 1:length(args[:n_bodies])  
-                gravity_ii += mass * gravity_n_bodies(et, pos_ii, m.planet, cnf_state.n_bodies_list[k])
-            end
-        end
+        gravity_ii = aerobraking_gravity_force_ii(
+            Int(ip.gm),
+            Float64(mass),
+            pos_ii,
+            vel_ii,
+            pos_pp,
+            lat,
+            lon,
+            alt,
+            m.planet,
+            et,
+            args,
+            gram_atmosphere,
+            gram,
+            cnf_state.n_bodies_list,
+        )
 
 
         srp_ii = zeros(3)
-        if args[:srp] == true
+        if settings.srp_enabled
             p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
             srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, et)
         end
@@ -277,10 +271,9 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
 
     ## EVENTS
     function out_drag_pass_condition(y, t, integrator)
-        m = integrator.p[1]
-        args = integrator.p[8]
-
-        norm(y[1:3]) - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
+        mission = integrator.p.mission
+        settings = integrator.p.settings
+        return norm(y[1:3]) - mission.planet.Rp_e - settings.exit_interface_m
     end
     function out_drag_pass_affect!(integrator)
         # println("entered out_drag_passage_affect! in Eoms.jl")
@@ -290,8 +283,8 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
     out_drag_pass = ContinuousCallback(out_drag_pass_condition, out_drag_pass_affect!, nothing)
 
     function time_switch_func_condition(y, t, integrator)
-        m = integrator.p[1]
-        k_cf = integrator.p[12]
+        mission = integrator.p.mission
+        control_gain = integrator.p.control_gain
 
         # CL_90, CD_90 = aerodynamic_coefficient_fM(pi/2, m.body, T, S, m.aerodynamics, 0)
         # CL_0, CD_0 = aerodynamic_coefficient_fM(0, m.body, T, S, m.aerodynamics, 0)
@@ -303,7 +296,7 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
         vel_ii = y[4:6]
         vel_ii_mag = norm(vel_ii)
 
-        lambda_switch = (k_cf * 2 * m.body.mass * vel_ii_mag) ./ (m.body.area_tot * CD_slope * pi)
+        lambda_switch = (control_gain * 2 * mission.body.mass * vel_ii_mag) ./ (mission.body.area_tot * CD_slope * pi)
         lambda_switch - y[7]
     end
     function time_switch_func_affect!(integrator)
@@ -356,7 +349,24 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
         initial_time, final_time = time_0, time_0 + 1500
 
         # Parameter Definition
-        param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
+        param = _with_control_gain(
+            _make_aerobraking_runtime_context(
+                mission=m,
+                index_phase_aerobraking=index_phase_aerobraking,
+                ip=ip,
+                aerobraking_phase=aerobraking_phase,
+                t_prev=t_prev,
+                date_initial=date_initial,
+                time_0=time_0,
+                args=args,
+                initial_state=initial_state,
+                gram_atmosphere=gram_atmosphere,
+                gram=gram,
+                cnf=cnf_state,
+                solution=solution_state,
+            ),
+            k_cf,
+        )
 
         method = Tsit5()
         a_tol = 1e-7
@@ -412,7 +422,24 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
     initial_time, final_time = time_0, time_0 + 1500
 
     # Parameter Definition
-    param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
+    param = _with_control_gain(
+        _make_aerobraking_runtime_context(
+            mission=m,
+            index_phase_aerobraking=index_phase_aerobraking,
+            ip=ip,
+            aerobraking_phase=aerobraking_phase,
+            t_prev=t_prev,
+            date_initial=date_initial,
+            time_0=time_0,
+            args=args,
+            initial_state=initial_state,
+            gram_atmosphere=gram_atmosphere,
+            gram=gram,
+            cnf=cnf_state,
+            solution=solution_state,
+        ),
+        k_cf,
+    )
 
     method = Tsit5()
     a_tol = 1e-9
@@ -444,7 +471,24 @@ function asim_ctrl_plot(ip, m, time_0, OE, args, k_cf, rf, vf, idx, heat_rate_co
     initial_time, final_time = sol.t[end], 0
 
     # Parameter Definition
-    param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram, k_cf)
+    param = _with_control_gain(
+        _make_aerobraking_runtime_context(
+            mission=m,
+            index_phase_aerobraking=index_phase_aerobraking,
+            ip=ip,
+            aerobraking_phase=aerobraking_phase,
+            t_prev=t_prev,
+            date_initial=date_initial,
+            time_0=time_0,
+            args=args,
+            initial_state=initial_state,
+            gram_atmosphere=gram_atmosphere,
+            gram=gram,
+            cnf=cnf_state,
+            solution=solution_state,
+        ),
+        k_cf,
+    )
 
     method = Tsit5()
     a_tol = 1e-9

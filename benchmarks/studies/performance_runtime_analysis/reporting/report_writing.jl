@@ -149,6 +149,16 @@ function write_report(
         select!(ci_rows_sorted, Not(:_total_sort))
     end
 
+    state_isolation_rows = summary_df[.!ismissing.(summary_df.copy_time_share), :]
+    state_isolation_table = DataFrame()
+    if nrow(state_isolation_rows) > 0
+        state_isolation_table = copy(state_isolation_rows)
+        sort!(state_isolation_table, :copy_time_share, rev=true)
+        if nrow(state_isolation_table) > 5
+            state_isolation_table = state_isolation_table[1:5, :]
+        end
+    end
+
     split_pass_count = 0
     split_total = 0
     split_any_fail = false
@@ -202,6 +212,8 @@ function write_report(
         else
             println(io, "- This `quick` profile report is for development/CI/regression and should not be used for paper-grade scalability claims.")
         end
+        println(io, "- Copy/setup metrics are measured by timing `deepcopy(case.args_template)` separately and then solving with `isolate_state=false`.")
+        println(io, "- Those copy metrics therefore approximate the setup overhead avoided when expert callers disable state isolation.")
         println(io, "- Mission-time sweep excludes `entry` cases by design because multipliers are based on baseline orbital periods.")
         println(io, "- Entry behavior is covered separately by the `Entry-Duration Sweep` section using atmospheric-interface counts.")
         println(io)
@@ -259,6 +271,26 @@ function write_report(
         println(io, "- Plot artifacts generated: `$(length(plot_paths))`.")
         if nrow(failed_groups) > 0
             println(io, "- Solver failures detected in `$(nrow(failed_groups))` scenario groups; timings only use successful runs.")
+        end
+        println(io)
+
+        println(io, "## State Isolation Overhead")
+        println(io)
+        println(io, "- These rows rank successful scenarios by the share of mean wall time spent in the default deep-copy isolation step.")
+        println(io, "- High `copy_time_share` rows are the main candidates for evaluating `isolate_state=false` when the caller owns a single-use configuration instance.")
+        if nrow(state_isolation_table) == 0
+            println(io, "- No successful scenarios produced copy-overhead metrics.")
+        else
+            println(io, "| Scenario | Category | Mean Copy (s) | Mean Solve (s) | Mean Total (s) | Copy Time Share | Copy MB | Copy Bytes Share | Copy Allocs | Solve Allocs | Copy Alloc Share |")
+            println(io, "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+            for row in eachrow(state_isolation_table)
+                println(
+                    io,
+                    "| $(row.scenario) | $(row.category) | $(_fmt(row.copy_time_mean_s)) | $(_fmt(row.solve_time_mean_s)) | " *
+                    "$(_fmt(row.total_time_mean_s)) | $(_fmt(row.copy_time_share)) | $(_fmt(row.copy_bytes_mean_mb)) | " *
+                    "$(_fmt(row.copy_bytes_share)) | $(_fmt(row.copy_alloc_mean)) | $(_fmt(row.solve_alloc_mean)) | $(_fmt(row.copy_alloc_share)) |"
+                )
+            end
         end
         if !isempty(plot_paths)
             println(io)
@@ -487,4 +519,3 @@ function write_report(
         end
     end
 end
-

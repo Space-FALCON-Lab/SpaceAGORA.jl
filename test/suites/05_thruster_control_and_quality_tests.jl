@@ -712,6 +712,7 @@ end
 end
 
 include(joinpath(REPO_ROOT, "test", "coverage_parallel_telemetry_probes.jl"))
+include(joinpath(REPO_ROOT, "test", "coverage_runtime_boundary_probes.jl"))
 include(joinpath(REPO_ROOT, "test", "coverage_targeted_90_probes.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "e_edg_strategy_parity_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "t_edg_strategy_parity_tests.jl"))

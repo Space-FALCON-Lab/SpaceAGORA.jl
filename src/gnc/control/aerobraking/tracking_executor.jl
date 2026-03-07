@@ -2,34 +2,21 @@ using SpecialFunctions
 using Roots
 using Logging
 
-@inline function _compat_control_log_enabled(args)::Bool
-    if get(ENV, "SPACEAGORA_DEBUG_LEGACY_CONTROL", "0") == "1"
-        return true
-    end
-    if hasproperty(args, :simulation_settings) && hasproperty(args.simulation_settings, :verbose)
-        return Bool(getproperty(args.simulation_settings, :verbose))
-    end
-    if hasproperty(args, :verbose)
-        return Bool(getproperty(args, :verbose))
-    end
-    return false
-end
-
-@inline function _compat_control_strict_exceptions(args)::Bool
+@inline function _control_strict_exceptions(args)::Bool
     if get(ENV, "SPACEAGORA_STRICT_LEGACY_CONTROL_EXCEPTIONS", "0") == "1"
         return true
     end
-    if hasproperty(args, :strict_compat_control_exceptions)
-        return Bool(getproperty(args, :strict_compat_control_exceptions))
+    if args !== nothing && hasproperty(args, :strict_control_exceptions)
+        return Bool(getproperty(args, :strict_control_exceptions))
     end
     return false
 end
 
-@inline function _compat_control_exception_fallback(args, location::AbstractString, err, bt, fallback)
-    if _compat_control_log_enabled(args)
+@inline function _control_exception_fallback(args, location::AbstractString, err, bt, fallback)
+    if _bridge_verbose_enabled(args)
         @warn "Legacy control fallback in $(location)." exception=(err, bt)
     end
-    if _compat_control_strict_exceptions(args)
+    if _control_strict_exceptions(args)
         throw(err)
     end
     return fallback
@@ -52,7 +39,7 @@ function control_struct_load(ip, m, args, S, T_p, q, MonteCarlo=false)
 
     drag_max = q * aerodynamic_coefficient_fM(max_α, m.body, T_p, S, m.aerodynamics, MonteCarlo)[2] * area_tot
     drag_min = q * aerodynamic_coefficient_fM(min_α, m.body, T_p, S, m.aerodynamics, MonteCarlo)[2] * area_tot
-    drag_limit = args[:max_dyn_press] * CD90 * area_tot
+    drag_limit = _bridge_required_field(args, :max_dyn_press) * CD90 * area_tot
 
     f(x) = q * aerodynamic_coefficient_fM(x, m.body, T_p, S, m.aerodynamics, MonteCarlo)[2] * area_tot - drag_limit
 
@@ -66,10 +53,10 @@ function control_struct_load(ip, m, args, S, T_p, q, MonteCarlo=false)
         try
             α = find_zero(f, (0, pi/2), Roots.Bisection())
         catch err
-            α = _compat_control_exception_fallback(args, "control_struct_load.find_zero", err, catch_backtrace(), min_α)
+            α = _control_exception_fallback(args, "control_struct_load.find_zero", err, catch_backtrace(), min_α)
         end
     else
-        if _compat_control_log_enabled(args)
+        if _bridge_verbose_enabled(args)
             println("Check Controller - Second Check")
         end
     end
@@ -102,12 +89,6 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
         T_p = state[1]
         ρ = state[2]
         S = state[3]
-
-        if length(args) != 0
-            if Bool(get(args, :montecarlo, false))
-                ρ, T_p, S = monte_carlo_guidance_environment(ρ, T_p, S, args)
-            end
-        end
 
         T_w = T_p
 
@@ -150,8 +131,8 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
                 end
 
             catch err
-                if _compat_control_log_enabled(args)
-                    @warn "Legacy control Newton solve failed; trying alternate initial guess." exception=(err, catch_backtrace())
+                if _bridge_verbose_enabled(args)
+                    @warn "Control Newton solve failed; trying alternate initial guess." exception=(err, catch_backtrace())
                 end
 
             # if α < 0 || α > pi/2
@@ -163,14 +144,14 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
                         α = find_zero((f, df), x_0, Roots.Newton())
                     end
                 catch err_retry
-                    α = _compat_control_exception_fallback(args, "control_solarpanels_heatrate.find_zero", err_retry, catch_backtrace(), min_α)
+                    α = _control_exception_fallback(args, "control_solarpanels_heatrate.find_zero", err_retry, catch_backtrace(), min_α)
                 # end
                 end
             # end
             end
 
         else
-            if _compat_control_log_enabled(args)
+            if _bridge_verbose_enabled(args)
                 println("Check Controller - Second Check")
             end
         end
@@ -219,6 +200,7 @@ end
 
 function _control_solarpanels_heatload_impl(ip, m, args, index_ratio, state=0, t=0, position=0, current_position=0, gram_atmosphere=nothing, heat_rate_control=false; cnf=nothing)
     cnf_state = _bridge_get_cnf(args; cnf=cnf)
+    heat_load_sol = _bridge_required_field(args, :heat_load_sol)
     policy_selector = DefaultAerobrakingPolicySelector()
     policy_config = AerobrakingPolicyConfig()
     guidance_input = AerobrakingGuidanceInput(
@@ -241,13 +223,13 @@ function _control_solarpanels_heatload_impl(ip, m, args, index_ratio, state=0, t
 
     # println("Time Switches: ", cnf_state.time_switch_1, " , ", cnf_state.time_switch_2)
 
-    if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 3
+    if heat_load_sol == 0 || heat_load_sol == 3
         if (t > cnf_state.time_switch_1) && (t < cnf_state.time_switch_2)
             α = 0
         else
             α = m.aerodynamics.α
         end
-    elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 2
+    elseif heat_load_sol == 1 || heat_load_sol == 2
         if (t > cnf_state.time_switch_1) && (t < cnf_state.time_switch_2)
             α = m.aerodynamics.α
         else
@@ -286,15 +268,16 @@ end
 
 function _control_solarpanels_openloop_impl(ip, m, args, index_ratio, state, t=0, position=0, current_position=0, heat_rate_control=true, gram_atmosphere=nothing; cnf=nothing)
     cnf_state = _bridge_get_cnf(args; cnf=cnf)
+    heat_load_sol = _bridge_required_field(args, :heat_load_sol)
     control_solarpanels_heatload(ip, m, args, index_ratio, 0, t, position, current_position, gram_atmosphere, heat_rate_control; cnf=cnf_state)
 
-    if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 3
+    if heat_load_sol == 0 || heat_load_sol == 3
         if t >= cnf_state.time_switch_1 && t <= cnf_state.time_switch_2
             α = 0
         else
             α = control_solarpanels_heatrate(ip, m, args, index_ratio, state, t; cnf=cnf_state)
         end
-    elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 2
+    elseif heat_load_sol == 1 || heat_load_sol == 2
         if t >= cnf_state.time_switch_1 && t <= cnf_state.time_switch_2
             α = control_solarpanels_heatrate(ip, m, args, index_ratio, state, t; cnf=cnf_state)
         else

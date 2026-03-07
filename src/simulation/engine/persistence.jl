@@ -1,5 +1,5 @@
 @inline _results_bundle_prefix(args) = SimulationModel.IOConfig._results_bundle_prefix(args)
-@inline _compat_results_csv_path(args) = SimulationModel.IOConfig._compat_results_csv_path(args)
+@inline _results_csv_path(args) = SimulationModel.IOConfig._results_csv_path(args)
 @inline _collision_results_csv_path(args) = SimulationModel.IOConfig._collision_results_csv_path(args)
 
 @inline _atomic_write_file(path::String, writer::Function; force::Bool=true) =
@@ -18,8 +18,8 @@
 @inline _build_results_dataframe(times::Vector{Float64}, saved_data::Vector, save_fields, args)::DataFrame =
     SimulationModel.IOOutputs._build_results_dataframe(times, saved_data, save_fields, args)
 
-@inline _write_compat_results_csv!(results_df::DataFrame, args)::String =
-    SimulationModel.IOOutputs._write_compat_results_csv!(results_df, args)
+@inline _write_results_csv!(results_df::DataFrame, args)::String =
+    SimulationModel.IOOutputs._write_results_csv!(results_df, args)
 
 @inline function _write_results_bundle!(
     results_df::DataFrame,

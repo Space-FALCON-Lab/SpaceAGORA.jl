@@ -15,6 +15,10 @@ struct ExponentialAtmosphereModel <: AbstractDensityModel
     H::Float64
 end
 
+@inline function ExponentialAtmosphereModel(planet::AbstractPlanet)
+    return ExponentialAtmosphereModel(Float64(planet.ρ_ref), Float64(planet.h_ref), Float64(planet.H))
+end
+
 """
 SpaceAGORA wrapper around `GRAMSuite.GRAMAtmosphereModel` that preserves
 `AbstractDensityModel` dispatch compatibility.
@@ -166,6 +170,10 @@ function getDensity(model::ExponentialAtmosphereModel, h::Float64, lat::Float64,
     T = 200.0
     wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
     return rho, T, wind_vec
+end
+
+@inline function getDensity(model::ExponentialAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
+    return getDensity(model, h, lat, lon, el_time, wind)
 end
 
 @inline function _batch_elapsed_time(el_time::Float64, idx::Int)::Float64

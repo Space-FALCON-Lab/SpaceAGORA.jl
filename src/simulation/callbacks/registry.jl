@@ -6,6 +6,7 @@ using SPICE
 using Dates
 using GRAMSuite
 using ..SimulationModel: SPICE_LOCK, GRAM_LOCK, PlanetFrameEphemerisCache, rot
+using ..SimulationModel: ephemerides_time_seconds, planet_frame_lpi, ephemerides_requires_spice
 using ..ParallelPolicy
 using ..EnvironmentModels
 using ..EnvironmentModels: getDensity, getDensityBatch!, NoAtmosphereModel

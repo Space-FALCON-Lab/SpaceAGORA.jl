@@ -7,7 +7,7 @@ using Random
     return joinpath(args.simulation_settings.results_directory, "simulation_results")
 end
 
-@inline function _compat_results_csv_path(args)::String
+@inline function _results_csv_path(args)::String
     return joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
 end
 
@@ -33,7 +33,7 @@ end
 end
 
 export _results_bundle_prefix
-export _compat_results_csv_path
+export _results_csv_path
 export _collision_results_csv_path
 export _checkpoint_directory
 export _checkpoint_paths

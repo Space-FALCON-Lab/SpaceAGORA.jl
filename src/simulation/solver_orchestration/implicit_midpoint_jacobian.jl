@@ -15,30 +15,67 @@ import .config
 import .ref_sys
 import .quaternion_utils
 
+@inline function _solver_jacobian_runtime_context(param)
+    if param isa NamedTuple
+        return param
+    end
+    (
+        mission,
+        index_phase_aerobraking,
+        ip,
+        aerobraking_phase,
+        _unused_t_prev,
+        date_initial,
+        time_0,
+        args,
+        initial_state,
+        gram_atmosphere,
+        gram,
+        numberofpassage,
+        orientation_sim,
+        rest...,
+    ) = param
+    return (
+        mission=mission,
+        index_phase_aerobraking=index_phase_aerobraking,
+        ip=ip,
+        aerobraking_phase=aerobraking_phase,
+        date_initial=date_initial,
+        time_0=time_0,
+        args=args,
+        initial_state=initial_state,
+        gram_atmosphere=gram_atmosphere,
+        gram=gram,
+        numberofpassage=numberofpassage,
+        orientation_sim=orientation_sim,
+        settings=_make_aerobraking_runtime_settings(args, mission),
+    )
+end
+
 function f_jac(J, u, param, t0)
+    context = _solver_jacobian_runtime_context(param)
     q1, q2, q3, q4 = u[9:12]
     ω1, ω2, ω3 = u[13:15]
-    m_ref = param[1]
-    index_phase_aerobraking = param[2]
-    ip = param[3]
-    aerobraking_phase = param[4]
-    # t_prev = param[5]
-    date_initial = param[6]
-    time_0 = param[7]
-    args = param[8]
-    initial_state = param[9]
-    gram_atmosphere = param[10]
-    gram = param[11]
-    numberofpassage = param[12]
-    orientation_sim = param[13]
-    args = param[16]
-    ip = param[17]
+    m_ref = context.mission
+    index_phase_aerobraking = context.index_phase_aerobraking
+    ip = context.ip
+    aerobraking_phase = context.aerobraking_phase
+    date_initial = context.date_initial
+    time_0 = context.time_0
+    args = context.args
+    initial_state = context.initial_state
+    gram_atmosphere = context.gram_atmosphere
+    gram = context.gram
+    numberofpassage = context.numberofpassage
+    orientation_sim = context.orientation_sim
+    settings = context.settings
+    t_prev = m_ref.initial_condition.time_rot
 
     MonteCarlo = Bool(ip.mc)
     wind_m = Bool(ip.wm)
     OE = SVector{7, Float64}([initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m])
 
-    if (OE[1] > (m_ref.planet.Rp_e*1e-3 + args[:EI])*1e3) && (args[:drag_passage] == false) && (args[:body_shape] == "Spacecraft")
+    if OE[1] > (m_ref.planet.Rp_e + settings.entry_interface_m) && !settings.drag_passage && settings.body_shape == "Spacecraft"
         index_steps_EOM = 3
     else
         index_steps_EOM = 1
@@ -123,7 +160,7 @@ function f_jac(J, u, param, t0)
             γ_pp = -γ_pp # Adjust the angle if the dot product is negative
         end
 
-        alt,lat,lon = rtolatlong(pos_pp, m.planet, args[:topography_model] == "Spherical Harmonics" && norm(pos_ii) - m.planet.Rp_e < args[:EI] * 1e3) # Planet-relative altitude, latitude, and longitude
+        alt,lat,lon = rtolatlong(pos_pp, m.planet, settings.topography_enabled && norm(pos_ii) - m.planet.Rp_e < settings.entry_interface_m) # Planet-relative altitude, latitude, and longitude
 
         uD, uN, uE = latlongtoNED([alt, lat, lon])
         vN = dot(vel_pp, uN)
@@ -144,9 +181,9 @@ function f_jac(J, u, param, t0)
         end
 
         p = 0.0
-        if args[:body_shape] == "Spacecraft"
+        if settings.body_shape == "Spacecraft"
             length_car = config.get_spacecraft_length(m.body, m.body.roots[1]) # Length of the spacecraft
-        elseif args[:body_shape] == "Blunted Cone"
+        elseif settings.body_shape == "Blunted Cone"
             length_car = m.body.base_radius * 2.0
         end
 
@@ -160,7 +197,7 @@ function f_jac(J, u, param, t0)
 
         if (index_phase_aerobraking == 2 || index_phase_aerobraking == 1.75 || index_phase_aerobraking == 2.25) && config.cnf.drag_state && length(config.cnf.initial_position_closed_form) != 0
             # evaluates the closed form solution the first time at EI km
-            if abs(pos_ii_mag - m.planet.Rp_e - args[:EI] * 1.0e3) <= 1.0e-2 && (args[:control_mode] == 2 || args[:control_mode] == 3) && config.cnf.time_switch_1 == 0
+            if abs(pos_ii_mag - m.planet.Rp_e - settings.entry_interface_m) <= 1.0e-2 && (settings.control_mode == 2 || settings.control_mode == 3) && config.cnf.time_switch_1 == 0
                 if ip.cm == 3
                     control_solarpanels_openloop(ip, m, args, [1,0], [T_p, ρ, S], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, 0, true, gram_atmosphere)
                 elseif ip.cm == 2
@@ -173,7 +210,7 @@ function f_jac(J, u, param, t0)
             end
 
             if index_phase_aerobraking == 2
-                if Bool(args[:control_in_loop])
+                if settings.control_in_loop
                     state_flesh1 = [[T_p, ρ, S]]
                     if ip.cm == 3
                         α = control_solarpanels_openloop(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE, true, gram_atmosphere)
@@ -185,7 +222,7 @@ function f_jac(J, u, param, t0)
                     elseif ip.cm == 0
                         α = no_control(ip, m, args, [1,1], config.cnf.state_flesh1[1], t0 - config.cnf.time_IEI, config.cnf.initial_position_closed_form, OE)
                     end
-                elseif args[:control_in_loop] == false && args[:integrator] == "Julia"
+                elseif !settings.control_in_loop && settings.integrator_name == "Julia"
                     if config.controller.count_controller != config.controller.count_prev_controller && config.controller.stored_state == 0 && t0 != config.controller.prev_time
                         # push!(config.cnf.state_flesh1, [T_p, ρ, S]) # might have to change to push!
 
@@ -232,26 +269,22 @@ function f_jac(J, u, param, t0)
         vel_pp_rw_hat = normalize(vel_pp_rw) # Wind-relative velocity unit vector in the planet-relative frame
         q = 0.5 * ρ * norm(vel_pp_rw)^2 # Dynamic pressure in the planet-relative frame
 
-        gravity_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize gravity vector
-        # Nominal gravity calculation
-        if ip.gm == 0
-            gravity_ii += mass * gravity_const(pos_ii_mag, pos_ii, m.planet)
-        elseif ip.gm == 1
-            gravity_ii += mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet)
-        elseif ip.gm == 2
-            gravity_ii += mass * (args[:gravity_harmonics] == 1 ? gravity_invsquared(pos_ii_mag, pos_ii, m.planet) : gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet))
-        elseif ip.gm == 3
-            gravity_ii += mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
-        end
-
-        if length(args[:n_bodies]) != 0
-            for k = 1:length(args[:n_bodies])  
-                gravity_ii += mass * gravity_n_bodies(config.cnf.et, pos_ii, m.planet, config.cnf.n_bodies_list[k])
-            end
-        end
-        if args[:gravity_harmonics] == 1
-            gravity_ii += mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_e, m.planet)
-        end
+        gravity_ii = MVector{3, Float64}(aerobraking_gravity_force_ii(
+            Int(ip.gm),
+            Float64(mass),
+            pos_ii,
+            vel_ii,
+            pos_pp,
+            lat,
+            lon,
+            alt,
+            m.planet,
+            config.cnf.et,
+            args,
+            gram_atmosphere,
+            gram,
+            config.cnf.n_bodies_list,
+        ))
 
         srp_ii = MVector{3, Float64}(zeros(3)) # solar radiation pressure vector
         if orientation_sim
@@ -260,7 +293,7 @@ function f_jac(J, u, param, t0)
                 Rot[i] .= config.rotate_to_inertial(m.body, b, root_index) # Rotation matrix from the root body to the spacecraft link
             end
         end
-        if args[:srp] == true
+        if settings.srp_enabled
             # sun_earth_vector = m.planet.J2000_to_pci * SVector{3, Float64}(spkpos("SUN", config.cnf.et, "J2000", "NONE", uppercase(m.planet.name))[1])
             for (i, b) in enumerate(bodies)
                 mass_body = b.m # Mass of the spacecraft link
@@ -387,7 +420,7 @@ function f_jac(J, u, param, t0)
 
         # Rodrigues rotation formula to rotate thrust vector of angle phi around angular vector from D direction
         D_L_per_pp_hat = cross(drag_pp_hat, lift_pp_hat)
-        thrust_pp_hat = normalize(drag_pp_hat * cos(args[:phi]) + cross(D_L_per_pp_hat, drag_pp_hat) * sin(args[:phi]) + D_L_per_pp_hat * dot(D_L_per_pp_hat, drag_pp_hat) * (1 - cos(args[:phi])))
+        thrust_pp_hat = normalize(drag_pp_hat * cos(settings.thrust_phi) + cross(D_L_per_pp_hat, drag_pp_hat) * sin(settings.thrust_phi) + D_L_per_pp_hat * dot(D_L_per_pp_hat, drag_pp_hat) * (1 - cos(settings.thrust_phi)))
         #these two ways give the same direction
         thrust_pp = thrust_pp_mag * thrust_pp_hat
         thrust_ii = m.planet.L_PI' * thrust_pp

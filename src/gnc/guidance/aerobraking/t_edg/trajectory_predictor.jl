@@ -10,22 +10,9 @@ using SPICE
 # import .config
 # import .ref_sys
 
-@inline function _compat_sim_targeting_log_enabled(args)::Bool
-    if get(ENV, "SPACEAGORA_DEBUG_LEGACY_CONTROL", "0") == "1"
-        return true
-    end
-    if hasproperty(args, :simulation_settings) && hasproperty(args.simulation_settings, :verbose)
-        return Bool(getproperty(args.simulation_settings, :verbose))
-    end
-    if hasproperty(args, :verbose)
-        return Bool(getproperty(args, :verbose))
-    end
-    return false
-end
-
 function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
-    cnf_state = _bridge_get_cnf(param[8]; cnf=cnf)
-    ip = param[3]
+    cnf_state = _bridge_get_cnf(param; cnf=cnf)
+    ip = param.ip
 
     wind_m = false
     if ip.wm == 1
@@ -39,18 +26,20 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
 
     function f_ctrl_rf!(y_dot, in_cond, param, t0)
 
-        m = param[1]
-        index_phase_aerobraking = param[2]
-        ip = param[3]
-        aerobraking_phase = param[4]
-        t_prev = param[5]
-        date_initial = param[6]
-        time_0 = param[7]
-        args = param[8]
-        initial_state = param[9]
-        gram_atmosphere = param[10]
-        gram = param[11]
-        t_switch = param[12]
+        context = param
+        m = context.mission
+        index_phase_aerobraking = context.index_phase_aerobraking
+        ip = context.ip
+        aerobraking_phase = context.aerobraking_phase
+        t_prev = context.t_prev
+        date_initial = context.date_initial
+        time_0 = context.time_0
+        args = context.args
+        initial_state = context.initial_state
+        gram_atmosphere = context.gram_atmosphere
+        gram = context.gram
+        t_switch = context.time_switch
+        settings = context.settings
         
         ## Counters
         # Counter for all along the simulation of all passages
@@ -139,7 +128,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
         ## Derived Quantity Calculations
 
         # Compute latitude and longitude
-        LatLong = rtolatlong(pos_pp, m.planet, args[:topography_model] == "Spherical Harmonics" && norm(pos_ii) - m.planet.Rp_e < args[:EI] * 1e3)
+        LatLong = rtolatlong(pos_pp, m.planet, settings.topography_enabled && norm(pos_ii) - m.planet.Rp_e < settings.entry_interface_m)
         
         lat = LatLong[2]
         lon = LatLong[3]
@@ -156,7 +145,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
         # end
 
         if aerobraking_phase == 2 || aerobraking_phase == 0
-            if args[:control_mode] == 1
+            if settings.control_mode == 1
                 x = 120
             else
                 x = 140
@@ -194,9 +183,9 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
 
         # Define output.txt containing density data
         p = 0.0
-        if args[:body_shape] == "Spacecraft"
+        if settings.body_shape == "Spacecraft"
             length_car = m.body.length_SA + m.body.length_SC
-        elseif args[:body_shape] == "Blunted Cone"
+        elseif settings.body_shape == "Blunted Cone"
             length_car = m.body.base_radius * 2
         end
 
@@ -213,7 +202,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
             Kn = 1.26 * sqrt(γ) * Mach / (Re + 1e-5)
             if index_phase_aerobraking == 2
                 if (alt < 80000) && (cnf_state.index_warning_alt == 0)
-                    if _compat_sim_targeting_log_enabled(args)
+                    if _bridge_verbose_enabled(args)
                         println("WARNING: Altitude < 80 km!")
                     end
                 end
@@ -224,7 +213,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
             end
 
             if Kn < 0.1 && cnf_state.index_warning_flow == 0
-                if _compat_sim_targeting_log_enabled(args)
+                if _bridge_verbose_enabled(args)
                     println("WARNING: Transitional flow passage!")
                 end
                 
@@ -263,7 +252,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
         # Dynamic Pressure, CHANGE THE VELOCITY WITH THE WIND VELOCITY
         q = 0.5 * ρ * norm(vel_pp_rw)^2               # dynamic pressure based on wind, Pa
 
-        if args[:struct_ctrl] == 1
+        if settings.struct_control_enabled
             α_struct = control_struct_load(ip, m, args, S, T_p, q, MonteCarlo)
 
             cnf_state.α = min(cnf_state.α, α_struct) # limit the angle of attack to the structural load control
@@ -296,31 +285,27 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
             heat_rate = 0.0
         end
                
-        # Nominal gravity calculation
-        if ip.gm == 0
-            gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 1
-            gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 2
-            gravity_ii = mass * (args[:gravity_harmonics] == 1 ? gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii) : gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii))
-        elseif ip.gm == 3
-            gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
-        end
-
-        if length(args[:n_bodies]) != 0
-            for k = 1:length(args[:n_bodies])  
-                gravity_ii += mass * gravity_n_bodies(cnf_state.et, pos_ii, m.planet, cnf_state.n_bodies_list[k])
-            end
-        end
+        gravity_ii = aerobraking_gravity_force_ii(
+            Int(ip.gm),
+            Float64(mass),
+            pos_ii,
+            vel_ii,
+            pos_pp,
+            lat,
+            lon,
+            alt,
+            m.planet,
+            cnf_state.et,
+            args,
+            gram_atmosphere,
+            gram,
+            cnf_state.n_bodies_list,
+        )
 
         srp_ii = zeros(3) # solar radiation pressure vector
-        if args[:srp] == true
+        if settings.srp_enabled
             p_srp_unscaled = 4.56e-6  # N / m ^ 2, solar radiation pressure at 1 AU
             srp_ii = mass * srp(m.planet, p_srp_unscaled, m.aerodynamics.reflection_coefficient, m.body.area_tot, m.body.mass, pos_ii, cnf_state.et)
-        end
-
-        if args[:gravity_harmonics] == 1
-            gravity_ii += mass * m.planet.L_PI' * acc_gravity_pines!(pos_pp, m.planet.Clm, m.planet.Slm, args[:L], args[:M], m.planet.μ, m.planet.Rp_e, m.planet)
         end
 
         bank_angle = deg2rad(0.0)
@@ -350,11 +335,11 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
 
         # Check if propellant mass is greater than 0 kg
         if cnf_state.index_propellant_mass == 1
-            if mass - args[:dry_mass] <= 0.5
+            if mass - settings.dry_mass <= 0.5
                 cnf_state.index_propellant_mass = 0
                 m.engines.T = 0
 
-                if _compat_sim_targeting_log_enabled(args)
+                if _bridge_verbose_enabled(args)
                     println("WARNING: No fuel left!")
                 end
             end
@@ -373,7 +358,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
 
         # Rodrigues rotation formula to rotate thrust vector of angle phi around angular vector from D direction
         D_L_per_pp_hat = cross(drag_pp_hat, lift_pp_hat)
-        thrust_pp_hat =  drag_pp_hat * cos(args[:phi]) + cross(D_L_per_pp_hat, drag_pp_hat) * sin(args[:phi]) + D_L_per_pp_hat * dot(D_L_per_pp_hat, drag_pp_hat) * (1 - cos(args[:phi]))
+        thrust_pp_hat =  drag_pp_hat * cos(settings.thrust_phi) + cross(D_L_per_pp_hat, drag_pp_hat) * sin(settings.thrust_phi) + D_L_per_pp_hat * dot(D_L_per_pp_hat, drag_pp_hat) * (1 - cos(settings.thrust_phi))
         #these two ways give the same direction
         thrust_pp = thrust_pp_mag * thrust_pp_hat
         thrust_ii = m.planet.L_PI' * thrust_pp
@@ -393,18 +378,18 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
 
     ## EVENTS
     function out_drag_passage_condition(y, t, integrator)
-        m = integrator.p[1]
-        args = integrator.p[8]
+        mission = integrator.p.mission
+        settings = integrator.p.settings
 
-        if abs(norm(y[1:3]) * cnf_state.DU - m.planet.Rp_e - args[:AE]*1e3) <= 1e-5 
-            if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 2
-                cnf_state.α = m.aerodynamics.α
-            elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 3
+        if abs(norm(y[1:3]) * cnf_state.DU - mission.planet.Rp_e - settings.exit_interface_m) <= 1e-5
+            if settings.heat_load_solution == 0 || settings.heat_load_solution == 2
+                cnf_state.α = mission.aerodynamics.α
+            elseif settings.heat_load_solution == 1 || settings.heat_load_solution == 3
                 cnf_state.α = 0.0
             end
         end
 
-        norm(y[1:3]) * cnf_state.DU - m.planet.Rp_e - args[:AE]*1e3  # upcrossing
+        return norm(y[1:3]) * cnf_state.DU - mission.planet.Rp_e - settings.exit_interface_m
     end
     function out_drag_passage_affect!(integrator)
         terminate!(integrator)
@@ -414,7 +399,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
     # # Time initialization
     initial_time, final_time = time_0 / cnf_state.TU, (time_0 + 1e8) / cnf_state.TU
 
-    param = (param..., t_switch)
+    param = _with_time_switch(param, t_switch)
 
     method = Tsit5()
     a_tol = 1e-9

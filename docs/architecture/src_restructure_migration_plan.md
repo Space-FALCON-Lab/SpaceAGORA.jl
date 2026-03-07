@@ -13,14 +13,16 @@ Branch baseline: `refactor/src-restructure`
 1. Canonical simulation entrypoint is `SimulationEngine.run_simulation`.
 2. `SpaceAGORA.run_simulation` is the stable root forwarder.
 3. Verification consumes simulation engine APIs and does not own engine source.
-4. Typed runtime configuration is centered on:
+4. Direct `SimulationModel` helper access is internal; compatibility is only promised at the `SpaceAGORA` root API.
+5. Typed runtime configuration is centered on:
    - `ParallelConfig`
    - `SolverConfig`
    - `RuntimePolicyConfig`
    - `ArtifactConfig`
    - `SimulationEngineConfig`
-5. ENV reads are adapter-boundary behavior for engine internals.
-6. Aerobraking GNC split is canonical:
+6. ENV reads are adapter-boundary behavior for engine internals.
+7. `/.AGORA` is the canonical committed execution environment for examples, benchmarks, tests, and CI.
+8. Aerobraking GNC split is canonical:
    - guidance owns `E-EDG`/`T-EDG` strategies under `src/gnc/guidance/aerobraking/*`
    - control owns tracking/execution under `src/gnc/control/aerobraking/*`
    - mission owns typed strategy selectors under `src/mission/operations/aerobraking_policy/*`

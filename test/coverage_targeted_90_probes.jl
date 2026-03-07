@@ -53,16 +53,6 @@ struct CoverageBridgeArgs
     solution
 end
 
-if !isdefined(@__MODULE__, :CoverageBridgeConfigProbe)
-    @eval module CoverageBridgeConfigProbe
-        const config = (
-            cnf=(time_switch_1=11.0, time_switch_2=12.0),
-            solution=(orientation=(; time=[42.0]),),
-        )
-        include(joinpath(@__DIR__, "..", "src", "gnc", "internal", "bridge_helpers.jl"))
-    end
-end
-
 Base.propertynames(::CoverageNoGramBase, private::Bool=false) = ()
 
 Base.propertynames(::CoverageGramOnlyBase, private::Bool=false) = (:gram,)
@@ -344,7 +334,7 @@ end
 
     cnf = (time_switch_1 = 1.0, time_switch_2 = 2.0)
     solution = (orientation = (; time = Float64[]),)
-    args = (; cnf = cnf, solution = solution)
+    args = (; cnf = cnf, solution = solution, EI = 120.0, dry_mass = 1.0)
     object_args = CoverageBridgeArgs(cnf, solution)
 
     @test gh._bridge_get_cnf(args) === cnf
@@ -356,12 +346,26 @@ end
     @test gh._bridge_get_cnf(object_args) === cnf
     @test gh._bridge_get_solution(object_args) === solution
     @test gh._bridge_get_solution((;); cnf=(solution=solution,)) === solution
+    runtime_context = gh._make_aerobraking_runtime_context(
+        mission=:mission,
+        index_phase_aerobraking=2,
+        ip=:ip,
+        aerobraking_phase=3,
+        t_prev=4.0,
+        date_initial=:date,
+        time_0=5.0,
+        args=args,
+        initial_state=:state,
+        gram_atmosphere=:atm,
+        gram=:gram,
+        cnf=cnf,
+        solution=solution,
+    )
+    @test runtime_context.cnf === cnf
+    @test gh._with_control_gain(runtime_context, 1.5).control_gain == 1.5
+    @test gh._with_time_switch(runtime_context, 7.5).time_switch == 7.5
     @test gh.CONTROL_BRIDGE_STATE_LOCK isa ReentrantLock
     @test ch.CONTROL_BRIDGE_STATE_LOCK isa ReentrantLock
-
-    probe = CoverageBridgeConfigProbe
-    @test probe._bridge_get_cnf((;)) === probe.config.cnf
-    @test probe._bridge_get_solution((;); cnf=nothing) === probe.config.solution
 
     @test_throws ArgumentError gh._bridge_get_cnf((;))
     @test_throws ArgumentError gh._bridge_get_solution((;); cnf=nothing)

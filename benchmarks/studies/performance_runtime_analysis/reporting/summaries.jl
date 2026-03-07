@@ -306,7 +306,9 @@ function summarize_results(raw_df::DataFrame)::DataFrame
     metric_cols = [
         :samples,
         :copy_time_mean_s,
+        :copy_bytes_mean_mb,
         :solve_time_mean_s,
+        :solve_bytes_mean_mb,
         :total_time_mean_s,
         :copy_compile_time_mean_s,
         :solve_compile_time_mean_s,
@@ -315,10 +317,13 @@ function summarize_results(raw_df::DataFrame)::DataFrame
         :solve_gc_time_mean_s,
         :gc_time_mean_s,
         :setup_share,
+        :copy_time_share,
         :solve_share,
         :compile_share,
         :gc_share,
         :compile_gc_share,
+        :copy_bytes_share,
+        :copy_alloc_share,
         :total_time_median_s,
         :total_time_std_s,
         :total_time_min_s,
@@ -370,7 +375,9 @@ function summarize_results(raw_df::DataFrame)::DataFrame
             groupby(success_df, keys),
             nrow => :samples,
             :copy_time_s => (v -> _safe_stat(v, mean)) => :copy_time_mean_s,
+            :copy_bytes_mb => (v -> _safe_stat(v, mean)) => :copy_bytes_mean_mb,
             :solve_time_s => (v -> _safe_stat(v, mean)) => :solve_time_mean_s,
+            :solve_bytes_mb => (v -> _safe_stat(v, mean)) => :solve_bytes_mean_mb,
             :total_time_s => (v -> _safe_stat(v, mean)) => :total_time_mean_s,
             :copy_compile_time_s => (v -> _safe_stat(v, mean)) => :copy_compile_time_mean_s,
             :solve_compile_time_s => (v -> _safe_stat(v, mean)) => :solve_compile_time_mean_s,
@@ -437,6 +444,7 @@ function summarize_results(raw_df::DataFrame)::DataFrame
         _safe_share(row.copy_time_mean_s, row.total_time_mean_s)
         for row in eachrow(summary)
     ]
+    summary[!, :copy_time_share] = copy(summary.setup_share)
     summary[!, :solve_share] = [
         _safe_share(row.solve_time_mean_s, row.total_time_mean_s)
         for row in eachrow(summary)
@@ -451,6 +459,14 @@ function summarize_results(raw_df::DataFrame)::DataFrame
     ]
     summary[!, :compile_gc_share] = [
         _safe_share(_sum_nonmissing(row.compile_time_mean_s, row.gc_time_mean_s), row.total_time_mean_s)
+        for row in eachrow(summary)
+    ]
+    summary[!, :copy_bytes_share] = [
+        _safe_share(row.copy_bytes_mean_mb, row.total_bytes_mean_mb)
+        for row in eachrow(summary)
+    ]
+    summary[!, :copy_alloc_share] = [
+        _safe_share(row.copy_alloc_mean, _sum_nonmissing(row.copy_alloc_mean, row.solve_alloc_mean))
         for row in eachrow(summary)
     ]
 
@@ -598,4 +614,3 @@ end
     c = clamp(c, -1.0, 1.0)
     return 2.0 * acos(c)
 end
-

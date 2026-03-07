@@ -33,5 +33,9 @@ occursin("DRLPolicyAdapterStub", selector_stub) ||
     error("Missing DRLPolicyAdapterStub selector contract")
 occursin("Not implemented: DRLPolicyAdapterStub.select_strategy", selector_stub) ||
     error("DRLPolicyAdapterStub must have explicit Not implemented behavior")
+!occursin("AbstractDict", selector_stub) ||
+    error("DefaultAerobrakingPolicySelector must not inspect AbstractDict fallback inputs")
+!occursin(":aerobraking_strategy", selector_stub) ||
+    error("DefaultAerobrakingPolicySelector must not read strategy tokens from input.args")
 
 println("aerobraking_strategy_contract_gate_ok")

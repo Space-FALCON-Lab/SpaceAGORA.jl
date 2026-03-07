@@ -93,8 +93,8 @@ function _build_results_dataframe(times::Vector{Float64}, saved_data::Vector, sa
     return results_df
 end
 
-function _write_compat_results_csv!(results_df::DataFrame, args)::String
-    primary_path = IOConfig._compat_results_csv_path(args)
+function _write_results_csv!(results_df::DataFrame, args)::String
+    primary_path = IOConfig._results_csv_path(args)
     started_s = time()
     existed_before = isfile(primary_path)
     try
@@ -171,7 +171,7 @@ end
 export _append_saved_segment!
 export _append_series_columns!
 export _build_results_dataframe
-export _write_compat_results_csv!
+export _write_results_csv!
 export _write_results_bundle!
 
 end # module IOOutputs

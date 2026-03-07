@@ -103,17 +103,20 @@ function make_example_config(;
     initial_time::SM.InitialTime,
     dynamic_effectors::Tuple=(SM.InverseSquaredJ2GravityModel(),),
     density_model::SM.AbstractDensityModel=SM.NoAtmosphereModel(),
+    ephemerides_model::SM.AbstractEphemeridesModel=SM.SpiceEphemeridesModel(),
     orientation_sim::Bool=false,
     keplerian::Bool=true,
     EI_km::Float64=300.0,
-    verbose::Bool=true
+    verbose::Bool=true,
+    results::Bool=true,
+    results_directory::String=joinpath(REPO_ROOT, "output")
 )
     return SM.SimulationConfiguration(
         simulation_settings=SM.SimulationSettings(
-            results=true,
+            results=results,
             verbose=verbose,
             generate_plots=false,
-            results_directory=joinpath(REPO_ROOT, "output"),
+            results_directory=results_directory,
             normalize=false
         ),
         mission_configuration=SM.MissionConfiguration(
@@ -128,6 +131,7 @@ function make_example_config(;
             planet=planet,
             EI=EI_km,
             density_model=density_model,
+            ephemerides_model=ephemerides_model,
             thermal_model=SM.MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
             topography=false,
             wind=false

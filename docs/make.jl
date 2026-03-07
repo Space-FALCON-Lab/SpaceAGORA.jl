@@ -74,7 +74,7 @@ missing_public_api = undocumented_public_api_specs(SpaceAGORA)
 
 DocMeta.setdocmeta!(SpaceAGORA, :DocTestSetup, quote
     using SpaceAGORA
-    const SimulationModel = SpaceAGORA.SimulationEngine.SimulationModel
+    const SimulationModel = SpaceAGORA.SimulationModel
     import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft
 
     function spaceagora_no_gram_example_args()

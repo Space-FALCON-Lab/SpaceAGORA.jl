@@ -25,16 +25,14 @@ using DataFrames
 using Arrow
 using TOML
 
-if isdefined(parentmodule(@__MODULE__), :SimulationEngine)
-    using ..SimulationEngine
-    const SimulationModel = SimulationEngine.SimulationModel
-else
+if !isdefined(parentmodule(@__MODULE__), :SimulationModel) || !isdefined(parentmodule(@__MODULE__), :SimulationEngine)
     error(
-        "TelemetryVerification requires SimulationEngine in the parent module. " *
-        "Load src/simulation/engine/simulation_engine.jl before including telemetry_verification.jl."
+        "TelemetryVerification requires SimulationModel and SimulationEngine in the parent module. " *
+        "Load src/core/simulation_model.jl and src/simulation/engine/simulation_engine.jl before including telemetry_verification.jl."
     )
 end
-using .SimulationModel
+using ..SimulationModel
+using ..SimulationEngine
 include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
 
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")

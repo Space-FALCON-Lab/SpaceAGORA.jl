@@ -2,9 +2,9 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
 using SPICE
 using SpaceAGORA
-using SpaceAGORA.SimulationEngine.SimulationModel
+using SpaceAGORA.SimulationModel
 
-const SimulationModel = SpaceAGORA.SimulationEngine.SimulationModel
+const SimulationModel = SpaceAGORA.SimulationModel
 const quat_mult = SimulationModel.quat_mult
 const run_simulation = SpaceAGORA.run_simulation
 

@@ -6,7 +6,7 @@ if !isdefined(@__MODULE__, :SimulationEngine)
     const SimulationEngine = SpaceAGORA.SimulationEngine
 end
 if !isdefined(@__MODULE__, :SimulationModel)
-    const SimulationModel = SimulationEngine.SimulationModel
+    const SimulationModel = SpaceAGORA.SimulationModel
 end
 using .SimulationModel
 

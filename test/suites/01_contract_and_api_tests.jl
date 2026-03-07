@@ -253,10 +253,35 @@ end
     @test occursin("run_simulation(engine_config, args; return_solution=true)", precompile_src)
     @test occursin("SimpleEphemeridesModel()", precompile_src)
     @test occursin("ExponentialAtmosphereModel(planet)", precompile_src)
+    @test isdefined(SpaceAGORA, :_SPACEAGORA_PRECOMPILE_ENV)
+    @test isdefined(SpaceAGORA, :_spaceagora_precompile_args)
+    @test isdefined(SpaceAGORA, :_run_spaceagora_precompile_workload)
+
+    precompile_args = SpaceAGORA._spaceagora_precompile_args()
+    @test nameof(typeof(precompile_args.environment_model.density_model)) == :ExponentialAtmosphereModel
+    @test nameof(typeof(precompile_args.environment_model.ephemerides_model)) == :SimpleEphemeridesModel
+    @test precompile_args.simulation_settings.results === false
+    @test SpaceAGORA._SPACEAGORA_PRECOMPILE_ENV["SPACEAGORA_PARALLEL_PROFILE"] == "R2"
+
+    precompile_solution = SpaceAGORA._run_spaceagora_precompile_workload(workspace=tempdir())
+    @test precompile_solution !== nothing
+    @test last(precompile_solution.t) > first(precompile_solution.t)
 
     @test occursin("using SpaceAGORA", clean_depot_smoke)
     @test !occursin("include(joinpath(REPO_ROOT, \"src\", \"core\", \"simulation_model.jl\"))", clean_depot_smoke)
     @test !occursin("include(joinpath(REPO_ROOT, \"src\", \"simulation\", \"engine\", \"simulation_engine.jl\"))", clean_depot_smoke)
+end
+
+@testset "Dependabot Contract" begin
+    dependabot_path = joinpath(REPO_ROOT, ".github", "dependabot.yml")
+    @test isfile(dependabot_path)
+    dependabot_src = read(dependabot_path, String)
+    @test occursin("version: 2", dependabot_src)
+    @test occursin("package-ecosystem: \"github-actions\"", dependabot_src)
+    @test occursin("package-ecosystem: \"julia\"", dependabot_src)
+    @test occursin("directory: \"/\"", dependabot_src)
+    @test occursin("directory: \"/.AGORA\"", dependabot_src)
+    @test occursin("directory: \"/docs\"", dependabot_src)
 end
 
 

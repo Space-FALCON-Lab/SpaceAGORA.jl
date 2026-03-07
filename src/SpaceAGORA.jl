@@ -5,6 +5,7 @@ module SpaceAGORA
 using PrecompileTools: @compile_workload, @setup_workload
 
 include(joinpath(@__DIR__, "parallel", "routing", "parallel_profiles.jl"))
+include(joinpath(@__DIR__, "core", "simulation_model.jl"))
 include(joinpath(@__DIR__, "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(@__DIR__, "analysis", "verification", "telemetry_verification.jl"))
 include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
@@ -16,9 +17,9 @@ using .ParallelProfiles: reset_outer_route_state!, outer_route_signature, outer_
 using .ParallelProfiles: default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
-using .SimulationEngine.SimulationModel.AbstractTypes: AbstractForceTorqueModel, AbstractDensityModel
-using .SimulationEngine.SimulationModel.AbstractTypes: AbstractControlEffectorModel, AbstractEphemeridesModel
-using .SimulationEngine.SimulationModel.AbstractTypes: AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
+using .SimulationModel.AbstractTypes: AbstractForceTorqueModel, AbstractDensityModel
+using .SimulationModel.AbstractTypes: AbstractControlEffectorModel, AbstractEphemeridesModel
+using .SimulationModel.AbstractTypes: AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
 using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
 using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
@@ -30,13 +31,13 @@ using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 @doc (@doc SimulationEngine.SimulationEngineConfig) SimulationEngineConfig
 @doc (@doc SimulationEngine.simulation_engine_config_from_env) simulation_engine_config_from_env
 
-@doc (@doc SimulationEngine.SimulationModel.AbstractTypes.AbstractForceTorqueModel) AbstractForceTorqueModel
-@doc (@doc SimulationEngine.SimulationModel.AbstractTypes.AbstractDensityModel) AbstractDensityModel
-@doc (@doc SimulationEngine.SimulationModel.AbstractTypes.AbstractControlEffectorModel) AbstractControlEffectorModel
-@doc (@doc SimulationEngine.SimulationModel.AbstractTypes.AbstractEphemeridesModel) AbstractEphemeridesModel
-@doc (@doc SimulationEngine.SimulationModel.AbstractTypes.AbstractThermalModel) AbstractThermalModel
-@doc (@doc SimulationEngine.SimulationModel.AbstractTypes.AbstractThrusterModel) AbstractThrusterModel
-@doc (@doc SimulationEngine.SimulationModel.AbstractTypes.AbstractGuidanceModel) AbstractGuidanceModel
+@doc (@doc SimulationModel.AbstractTypes.AbstractForceTorqueModel) AbstractForceTorqueModel
+@doc (@doc SimulationModel.AbstractTypes.AbstractDensityModel) AbstractDensityModel
+@doc (@doc SimulationModel.AbstractTypes.AbstractControlEffectorModel) AbstractControlEffectorModel
+@doc (@doc SimulationModel.AbstractTypes.AbstractEphemeridesModel) AbstractEphemeridesModel
+@doc (@doc SimulationModel.AbstractTypes.AbstractThermalModel) AbstractThermalModel
+@doc (@doc SimulationModel.AbstractTypes.AbstractThrusterModel) AbstractThrusterModel
+@doc (@doc SimulationModel.AbstractTypes.AbstractGuidanceModel) AbstractGuidanceModel
 
 @doc (@doc ParallelProfiles.ParallelProfile) ParallelProfile
 @doc (@doc ParallelProfiles.ParallelProfileConfig) ParallelProfileConfig

@@ -5,7 +5,7 @@ using SpaceAGORA
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 const SimulationEngine = SpaceAGORA.SimulationEngine
-const SimulationModel = SimulationEngine.SimulationModel
+const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
 const run_simulation = SpaceAGORA.run_simulation
 

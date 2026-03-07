@@ -1,3 +1,9 @@
+"""
+    SolverConfig
+
+Typed runtime configuration for solver selection, split-IMEX settings, and
+multirate integration policy.
+"""
 Base.@kwdef struct SolverConfig
     mode::String = ""
     maxiters::Union{Nothing, Int} = nothing

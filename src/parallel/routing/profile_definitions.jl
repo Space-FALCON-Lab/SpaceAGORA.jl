@@ -1,3 +1,9 @@
+"""
+    ParallelProfile
+
+Enumeration of the supported high-level parallel execution profiles used to
+configure outer-routing and inner callback/RHS policy.
+"""
 @enum ParallelProfile begin
     R0
     R1_a
@@ -11,6 +17,12 @@ end
 # Backward-compatible alias for historical profile naming.
 const R4_full_auto = R5
 
+"""
+    ParallelProfileConfig
+
+Resolved configuration for a `ParallelProfile`, including outer backend
+selection and inner callback/RHS policy settings.
+"""
 Base.@kwdef struct ParallelProfileConfig
     profile::ParallelProfile
     label::String
@@ -30,6 +42,11 @@ Base.@kwdef struct ParallelProfileConfig
     persistent_state_persist::Bool = false
 end
 
+"""
+    parallel_profile_name(profile) -> String
+
+Return the canonical string label for a `ParallelProfile`.
+"""
 @inline function parallel_profile_name(profile::ParallelProfile)::String
     if profile == R0
         return "R0"
@@ -53,6 +70,12 @@ end
     return replace(token, " " => "")
 end
 
+"""
+    parse_parallel_profile(raw) -> ParallelProfile
+
+Parse a string, symbol, or profile value into a canonical `ParallelProfile`.
+Legacy aliases are accepted where still supported.
+"""
 function parse_parallel_profile(raw::AbstractString)::ParallelProfile
     token = _normalize_profile_token(raw)
     if token in ("r0", "serial", "r0_true_serial", "true_serial")
@@ -88,6 +111,12 @@ end
 parse_parallel_profile(raw::Symbol)::ParallelProfile = parse_parallel_profile(String(raw))
 parse_parallel_profile(profile::ParallelProfile)::ParallelProfile = profile
 
+"""
+    profile_config(profile) -> ParallelProfileConfig
+
+Resolve a `ParallelProfile` into its full parallel routing and scheduling
+configuration.
+"""
 function profile_config(profile_in)::ParallelProfileConfig
     profile = parse_parallel_profile(profile_in)
     if profile == R0
@@ -188,4 +217,3 @@ function profile_config(profile_in)::ParallelProfileConfig
         persistent_state_persist=true
     )
 end
-

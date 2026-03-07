@@ -50,6 +50,12 @@ end
     return isempty(existing) ? fallback : existing
 end
 
+"""
+    profile_env_pairs(profile; preserve_existing=true, outer_parallel_active=false)
+
+Return the `SPACEAGORA_*` environment variable pairs implied by a parallel
+profile configuration.
+"""
 function profile_env_pairs(
     profile_in;
     preserve_existing::Bool=true,
@@ -159,6 +165,13 @@ function profile_env_pairs(
     ]
 end
 
+"""
+    with_parallel_profile(f, profile; kwargs...)
+    with_parallel_profile(profile, f; kwargs...)
+
+Execute `f` with the environment variables implied by the selected parallel
+profile applied via `withenv`.
+"""
 function with_parallel_profile(
     f::Function,
     profile_in;
@@ -188,4 +201,3 @@ function with_parallel_profile(
         outer_parallel_active=outer_parallel_active
     )
 end
-

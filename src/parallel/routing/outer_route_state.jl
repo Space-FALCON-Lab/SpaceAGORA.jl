@@ -1,3 +1,9 @@
+"""
+    OuterRouteFeatures
+
+Feature vector describing a simulation workload for outer parallel-route
+selection.
+"""
 Base.@kwdef struct OuterRouteFeatures
     category::String = "deterministic"
     n_sats::Int = 1
@@ -24,6 +30,12 @@ Base.@kwdef struct OuterRouteFeatures
     montecarlo_samples::Int = 0
 end
 
+"""
+    OuterRouteTuning
+
+Tunable thresholds and adaptive-selection parameters for outer parallel-route
+policy.
+"""
 Base.@kwdef struct OuterRouteTuning
     inner_sat_threshold::Int = 8
     inner_link_threshold::Int = 12
@@ -49,11 +61,22 @@ Base.@kwdef mutable struct OuterRouteStats
     elapsed_sq_sum_s::Float64 = 0.0
 end
 
+"""
+    OuterRouteState
+
+Mutable state used to accumulate historical routing outcomes for adaptive outer
+parallel-route selection.
+"""
 Base.@kwdef mutable struct OuterRouteState
     lock::ReentrantLock = ReentrantLock()
     history::Dict{String, Dict{Symbol, OuterRouteStats}} = Dict{String, Dict{Symbol, OuterRouteStats}}()
 end
 
+"""
+    reset_outer_route_state!(state)
+
+Clear all accumulated adaptive outer-route history from `state`.
+"""
 function reset_outer_route_state!(state::OuterRouteState)
     lock(state.lock) do
         empty!(state.history)
@@ -209,4 +232,3 @@ function load_outer_route_state!(
     end
     return (path=path_s, signatures=length(loaded_signatures), rows=loaded_rows)
 end
-

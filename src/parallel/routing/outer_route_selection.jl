@@ -145,6 +145,12 @@ end
     ), "|")
 end
 
+"""
+    outer_route_signature(features) -> String
+
+Return the canonical routing signature used to bucket simulation workloads for
+outer-route policy and feedback.
+"""
 @inline function outer_route_signature(f::OuterRouteFeatures)::String
     return join((
         "cat=$(f.category)",
@@ -231,6 +237,12 @@ function _outer_route_stats_snapshot_internal(
     end
 end
 
+"""
+    outer_route_stats_snapshot(state, signature) -> Dict
+
+Return the aggregated routing statistics currently stored for a workload
+signature.
+"""
 function outer_route_stats_snapshot(
     state::OuterRouteState,
     signature::String
@@ -291,6 +303,12 @@ end
     return _threads_or_none(threads_available)
 end
 
+"""
+    default_outer_route(features; kwargs...) -> Symbol
+
+Choose the default outer parallel route for a workload before adaptive
+historical feedback is considered.
+"""
 function default_outer_route(
     f::OuterRouteFeatures;
     tuning::OuterRouteTuning=OuterRouteTuning(),
@@ -344,6 +362,12 @@ function default_outer_route(
     return _threads_or_none(threads_available)
 end
 
+"""
+    outer_route_candidates(features; kwargs...) -> Vector{Symbol}
+
+Return the feasible outer parallel routes for a workload under the current
+tuning and machine assumptions.
+"""
 function outer_route_candidates(
     f::OuterRouteFeatures;
     tuning::OuterRouteTuning=OuterRouteTuning(),
@@ -502,6 +526,12 @@ end
     return (route=best_route, confidence_s=best_width, regret_s=regret_s)
 end
 
+"""
+    select_outer_route!(state, features; kwargs...) -> Symbol
+
+Select the outer parallel route for a workload, using adaptive history from
+`state` when enabled.
+"""
 function select_outer_route!(
     state::OuterRouteState,
     f::OuterRouteFeatures;
@@ -578,4 +608,3 @@ function select_outer_route!(
     end
     return chosen
 end
-

@@ -188,6 +188,13 @@ Base.@kwdef struct StudyConfig
     generate_plots::Bool
 end
 
+"""
+    VerificationRequest
+
+Typed request for the telemetry verification study entrypoint. It controls the
+profile, output paths, manifest path, enforcement mode, and optional plot
+generation.
+"""
 Base.@kwdef struct VerificationRequest
     profile::Symbol = Symbol(lowercase(get(ENV, "SPACEAGORA_TELEMETRY_PROFILE", "quick")))
     out_summary::String = abspath(get(ENV, "SPACEAGORA_TELEMETRY_OUT_SUMMARY", joinpath(DEFAULT_OUTPUT_DIR, "telemetry_orbit_accuracy_summary.csv")))
@@ -197,6 +204,12 @@ Base.@kwdef struct VerificationRequest
     generate_plots::Bool = _safe_parse_bool(get(ENV, "SPACEAGORA_TELEMETRY_PLOTS", "1"), true)
 end
 
+"""
+    VerificationResult
+
+Structured result returned by telemetry verification runs, including the summary
+table, pointwise error table, emitted artifact paths, and total runtime.
+"""
 Base.@kwdef struct VerificationResult
     summary::DataFrame
     errors::DataFrame
@@ -2509,10 +2522,21 @@ function _run_verification(cfg::StudyConfig)::VerificationResult
     )
 end
 
+"""
+    run_verification(request::VerificationRequest) -> VerificationResult
+
+Run the telemetry verification study using an explicit typed request.
+"""
 function run_verification(request::VerificationRequest)::VerificationResult
     return _run_verification(_study_config(request))
 end
 
+"""
+    run_verification_cli([args=copy(ARGS)]) -> VerificationResult
+
+CLI-oriented verification entrypoint that parses command-line arguments and runs
+the telemetry verification study.
+"""
 function run_verification_cli(args::Vector{String}=copy(ARGS))::VerificationResult
     cfg = parse_cli(args)
     request = _request_from_study_config(cfg)
@@ -2527,6 +2551,12 @@ function run_verification_cli(args::Vector{String}=copy(ARGS))::VerificationResu
     return run_verification(request)
 end
 
+"""
+    run_study()
+
+Convenience wrapper used by script-style entrypoints. It runs the telemetry
+verification CLI flow and returns the summary and error tables.
+"""
 function run_study()
     result = run_verification_cli(copy(ARGS))
     return (summary=result.summary, errors=result.errors)

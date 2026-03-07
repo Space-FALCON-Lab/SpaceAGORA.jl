@@ -1,3 +1,9 @@
+"""
+    record_outer_route_feedback!(state, features; route, successes, failures, kwargs...) -> Nothing
+
+Record observed execution feedback for a selected outer route so future adaptive
+route selection can use empirical runtime and success statistics.
+"""
 function record_outer_route_feedback!(
     state::OuterRouteState,
     f::OuterRouteFeatures;
@@ -50,4 +56,3 @@ function record_outer_route_feedback!(
     end
     return nothing
 end
-

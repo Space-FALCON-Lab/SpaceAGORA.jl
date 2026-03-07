@@ -1,3 +1,10 @@
+"""
+    ParallelConfig
+
+Typed runtime configuration for simulation parallelism policy. This groups the
+parallel profile name and the callback/RHS routing modes that would otherwise be
+read from environment variables.
+"""
 Base.@kwdef struct ParallelConfig
     profile::String = ""
     outer_parallel_active::Bool = false

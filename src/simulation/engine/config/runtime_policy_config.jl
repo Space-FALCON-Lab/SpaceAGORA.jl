@@ -1,3 +1,9 @@
+"""
+    RuntimePolicyConfig
+
+Typed runtime configuration for execution-time policy switches such as cache
+usage, normalization warnings, and GRAM instance behavior.
+"""
 Base.@kwdef struct RuntimePolicyConfig
     warn_normalize::Bool = true
     allow_typed_normalize::Bool = false

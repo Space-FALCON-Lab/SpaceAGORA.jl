@@ -10,6 +10,13 @@ function _parse_bool(raw, default::Bool)
     return default
 end
 
+"""
+    simulation_engine_config_from_env([env=ENV]) -> SimulationEngineConfig
+
+Build a typed `SimulationEngineConfig` from the supported `SPACEAGORA_*`
+environment variables. This is the adapter boundary for environment-driven
+runtime control.
+"""
 function simulation_engine_config_from_env(env::AbstractDict{<:Any, <:Any}=ENV)::SimulationEngineConfig
     parallel = ParallelConfig(
         profile=String(get(env, "SPACEAGORA_PARALLEL_PROFILE", "")),

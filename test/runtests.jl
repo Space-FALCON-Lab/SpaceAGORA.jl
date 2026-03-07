@@ -724,3 +724,4 @@ include(joinpath(REPO_ROOT, "test", "suites", "02_callbacks_parallel_and_smoke_t
 include(joinpath(REPO_ROOT, "test", "suites", "03_persistence_units_and_rotational_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "suites", "04_solver_env_and_regression_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "suites", "05_thruster_control_and_quality_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "suites", "06_monolith_split_runtime_tests.jl"))

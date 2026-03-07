@@ -1,0 +1,136 @@
+function _orbit_rows_errors(
+    cfg::OrbitEventsScenarioConfig,
+    args::SimulationConfiguration,
+    results_df::DataFrame,
+    max_points::Int;
+    bias_by_event::Dict{String, Float64}=Dict{String, Float64}()
+)
+    extrema = _extract_extrema_series(results_df, args.environment_model.planet, cfg.orbit_altitude_mode)
+    tele_peri = _load_telemetry_curve(cfg.telemetry_peri_path, max_points)
+    tele_apo = _load_telemetry_curve(cfg.telemetry_apo_path, max_points)
+    peri_bias = get(bias_by_event, "peri", 0.0)
+    apo_bias = get(bias_by_event, "apo", 0.0)
+    peri_step = length(tele_peri.orbit) >= 2 ? median(diff(tele_peri.orbit)) : 1.0
+    apo_step = length(tele_apo.orbit) >= 2 ? median(diff(tele_apo.orbit)) : 1.0
+    peri_sim_axis = tele_peri.orbit[1] .+ peri_step .* collect(0:(length(extrema.peri.altitude)-1))
+    apo_sim_axis = tele_apo.orbit[1] .+ apo_step .* collect(0:(length(extrema.apo.altitude)-1))
+    peri_summary, peri_errors = _compare_orbit_curve(
+        cfg.name,
+        "peri",
+        tele_peri.orbit,
+        tele_peri.altitude,
+        extrema.peri.altitude .+ peri_bias;
+        sim_axis=peri_sim_axis
+    )
+    apo_summary, apo_errors = _compare_orbit_curve(
+        cfg.name,
+        "apo",
+        tele_apo.orbit,
+        tele_apo.altitude,
+        extrema.apo.altitude .+ apo_bias;
+        sim_axis=apo_sim_axis
+    )
+    return [peri_summary, apo_summary], [peri_errors, apo_errors]
+end
+
+function _time_aligned_rows_errors(
+    cfg::TimeAlignedScenarioConfig,
+    args::SimulationConfiguration,
+    results_df::DataFrame,
+    telemetry;
+    bias_by_event::Dict{String, Float64}=Dict{String, Float64}()
+)
+    if cfg.comparison_mode == :orbit_events
+        tele_speed_kmps = sqrt.(telemetry.vx_kmps .^ 2 .+ telemetry.vy_kmps .^ 2 .+ telemetry.vz_kmps .^ 2)
+        tele_extrema = _extract_extrema_from_time_aligned_telemetry(
+            telemetry.time_s,
+            telemetry.altitude_km,
+            cfg.extrema_min_separation_s;
+            speed_kmps=tele_speed_kmps
+        )
+        sim_extrema = _extract_extrema_series(results_df, args.environment_model.planet, cfg.orbit_altitude_mode)
+        peri_bias = get(bias_by_event, "peri", 0.0)
+        apo_bias = get(bias_by_event, "apo", 0.0)
+        peri_speed_bias = get(bias_by_event, "peri_speed", 0.0)
+        apo_speed_bias = get(bias_by_event, "apo_speed", 0.0)
+
+        peri_summary, peri_errors = _compare_orbit_curve(
+            cfg.name,
+            "peri",
+            tele_extrema.peri.orbit,
+            tele_extrema.peri.altitude,
+            sim_extrema.peri.altitude .+ peri_bias
+        )
+        apo_summary, apo_errors = _compare_orbit_curve(
+            cfg.name,
+            "apo",
+            tele_extrema.apo.orbit,
+            tele_extrema.apo.altitude,
+            sim_extrema.apo.altitude .+ apo_bias
+        )
+
+        peri_speed_summary, peri_speed_errors = _compare_orbit_curve(
+            cfg.name,
+            "peri_speed",
+            tele_extrema.peri.orbit,
+            tele_extrema.peri.speed_kmps,
+            sim_extrema.peri.speed_kmps .+ peri_speed_bias
+        )
+        apo_speed_summary, apo_speed_errors = _compare_orbit_curve(
+            cfg.name,
+            "apo_speed",
+            tele_extrema.apo.orbit,
+            tele_extrema.apo.speed_kmps,
+            sim_extrema.apo.speed_kmps .+ apo_speed_bias
+        )
+
+        return [peri_summary, apo_summary, peri_speed_summary, apo_speed_summary], [peri_errors, apo_errors, peri_speed_errors, apo_speed_errors]
+    end
+
+    sim_time = _to_float_vector(results_df.time, "sim-time")
+    sim_x_m = _require_column(results_df, ["sc1_pos_1", "sc1_position_1"], "sim-position-x")
+    sim_y_m = _require_column(results_df, ["sc1_pos_2", "sc1_position_2"], "sim-position-y")
+    sim_z_m = _require_column(results_df, ["sc1_pos_3", "sc1_position_3"], "sim-position-z")
+
+    sim_x_km = sim_x_m .* 1e-3 .+ get(bias_by_event, "state_x_time", 0.0)
+    sim_y_km = sim_y_m .* 1e-3 .+ get(bias_by_event, "state_y_time", 0.0)
+    sim_z_km = sim_z_m .* 1e-3 .+ get(bias_by_event, "state_z_time", 0.0)
+    sim_r_m = sqrt.(sim_x_m .^ 2 .+ sim_y_m .^ 2 .+ sim_z_m .^ 2)
+    sim_altitude_km = (sim_r_m .- args.environment_model.planet.Rp_e) .* 1e-3 .+ get(bias_by_event, "altitude_time", 0.0)
+
+    altitude_summary, altitude_errors = _compare_time_series(
+        cfg.name,
+        "altitude_time",
+        telemetry.time_s,
+        telemetry.altitude_km,
+        sim_time,
+        sim_altitude_km
+    )
+    x_summary, x_errors = _compare_time_series(
+        cfg.name,
+        "state_x_time",
+        telemetry.time_s,
+        telemetry.x_km,
+        sim_time,
+        sim_x_km
+    )
+    y_summary, y_errors = _compare_time_series(
+        cfg.name,
+        "state_y_time",
+        telemetry.time_s,
+        telemetry.y_km,
+        sim_time,
+        sim_y_km
+    )
+    z_summary, z_errors = _compare_time_series(
+        cfg.name,
+        "state_z_time",
+        telemetry.time_s,
+        telemetry.z_km,
+        sim_time,
+        sim_z_km
+    )
+    return [altitude_summary, x_summary, y_summary, z_summary], [altitude_errors, x_errors, y_errors, z_errors]
+end
+
+@inline _tolerances_for(cfg::OrbitEventsScenarioConfig, profile::Symbol) = profile == :quick ? cfg.tolerances_quick : cfg.tolerances_full

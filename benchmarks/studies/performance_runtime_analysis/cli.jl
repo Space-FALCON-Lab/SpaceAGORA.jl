@@ -3,14 +3,17 @@ function parse_cli()
     outdir = get(ENV, "SPACEAGORA_PERF_OUTDIR", DEFAULT_OUTPUT_DIR)
 
     for arg in ARGS
-        if arg in ("quick", "full")
+        if arg == "smoke"
+            profile_name = "quick"
+            ENV["SPACEAGORA_PERF_SMOKE"] = "1"
+        elseif arg in ("quick", "full")
             profile_name = arg
         elseif startswith(arg, "--profile=")
             profile_name = lowercase(split(arg, "=", limit=2)[2])
         elseif startswith(arg, "--outdir=")
             outdir = split(arg, "=", limit=2)[2]
         else
-            throw(ArgumentError("Unknown argument '$arg'. Supported: [quick|full], --profile=..., --outdir=..."))
+            throw(ArgumentError("Unknown argument '$arg'. Supported: [quick|full|smoke], --profile=..., --outdir=..."))
         end
     end
 
@@ -32,6 +35,7 @@ function main()
 
     println("Performance runtime analysis profile: $(spec.name)")
     println("Output directory: $outdir")
+    println("Smoke mode: $(_perf_smoke_mode() ? "on" : "off")")
     println("Solver mode default: $(solver_mode_default)")
     println("Solver mode effective: $(solver_mode_effective)")
     println(

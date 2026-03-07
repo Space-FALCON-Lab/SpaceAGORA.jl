@@ -1,18 +1,12 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
 using SPICE
+using SpaceAGORA
+using SpaceAGORA.SimulationEngine.SimulationModel
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
-using .SimulationModel
-
-# SimulationEngine uses SimulationModel and provides the canonical run_simulation entrypoint.
+const SimulationModel = SpaceAGORA.SimulationEngine.SimulationModel
 const quat_mult = SimulationModel.quat_mult
-if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
-end
-if !isdefined(@__MODULE__, :run_simulation)
-    const run_simulation = SimulationEngine.run_simulation
-end
+const run_simulation = SpaceAGORA.run_simulation
 
 spice_path = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 planet = Earth("", spice_path)

@@ -1,4 +1,4 @@
-const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
+const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const DEFAULT_SUMMARY = joinpath(REPO_ROOT, "output", "telemetry_orbit_accuracy_summary.csv")
 const DEFAULT_ERRORS = joinpath(REPO_ROOT, "output", "telemetry_orbit_accuracy_errors.csv")
 const DEFAULT_OUTDIR = joinpath(REPO_ROOT, "output", "telemetry_plots")

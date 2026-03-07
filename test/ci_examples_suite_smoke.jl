@@ -1,9 +1,10 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
-const EXAMPLES_DIR = joinpath(REPO_ROOT, "src", "examples")
+const EXAMPLES_DIR = joinpath(REPO_ROOT, "examples")
 const PROJECT_PATH = joinpath(REPO_ROOT, ".AGORA")
 
 function list_examples()
     files = sort(filter(f -> endswith(f, ".jl"), readdir(EXAMPLES_DIR; join=true)))
+    files = filter(f -> basename(f) != "common.jl", files)
     token = strip(get(ENV, "SPACEAGORA_EXAMPLE_FILTER", ""))
     if !isempty(token)
         files = filter(f -> occursin(token, basename(f)), files)
@@ -18,7 +19,7 @@ function run_example(example_path::String)
     text = ""
 
     mktempdir() do tmp
-        cmd = `$(Base.julia_cmd()) --startup-file=no --depwarn=error --project=$(PROJECT_PATH) $(example_path)`
+        cmd = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=existing --depwarn=error --project=$(PROJECT_PATH) $(example_path)`
         cmd = Cmd(cmd; dir=tmp)
         cmd = addenv(
             cmd,

@@ -44,11 +44,11 @@ These presets are intended for onboarding, lightweight studies, and CI smoke cov
 You can also exercise the stable root API without GRAM assets:
 
 ```jldoctest; setup = :(using SpaceAGORA)
-julia> profile = parse_parallel_profile("R2")
-R2
+julia> profile = parallel_profile_name(parse_parallel_profile("R2"))
+"R2"
 
 julia> cfg = simulation_engine_config_from_env(Dict(
-           "SPACEAGORA_PARALLEL_PROFILE" => parallel_profile_name(profile),
+           "SPACEAGORA_PARALLEL_PROFILE" => profile,
            "SPACEAGORA_SAVE_BUNDLE" => "0",
        ));
 

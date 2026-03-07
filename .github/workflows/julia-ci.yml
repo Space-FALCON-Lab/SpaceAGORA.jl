@@ -46,7 +46,7 @@ jobs:
 
       - name: Depwarn smoke (Earth thruster example)
         if: matrix.julia-version == '1.12'
-        run: julia --depwarn=error --project=.AGORA src/examples/Earth_Thruster_Test.jl
+        run: julia --compiled-modules=existing --depwarn=error --project=.AGORA examples/Earth_Thruster_Test.jl
 
   tests:
     if: (github.event_name == 'pull_request' || github.ref == 'refs/heads/main') && always()
@@ -164,7 +164,7 @@ jobs:
         run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
 
       - name: README example command
-        run: julia --startup-file=no --project=.AGORA src/examples/Earth_Thruster_Test.jl
+        run: julia --startup-file=no --compiled-modules=existing --project=.AGORA examples/Earth_Thruster_Test.jl
 
   example-suite-smoke:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'

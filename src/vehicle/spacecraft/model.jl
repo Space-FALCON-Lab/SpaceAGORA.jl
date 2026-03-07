@@ -10,31 +10,82 @@ using ..Components
 export Link, Joint, SpacecraftModel, DynamicsModel, InitialCondition, GuidanceModel, NavigationModel, ControlModel
 
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
+const DEFAULT_INITIAL_CONDITION_Q = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
+const DEFAULT_INITIAL_CONDITION_ANG_VEL = SVector{3, Float64}(0.0, 0.0, 0.0)
 
-@kwdef struct InitialCondition
-    a::Float64 = 0.0 # Semimajor axis (m)
-    e::Float64 = 0.0 # Eccentricity (nd)
-    i::Float64 = 0.0 # Inclination (rad)
-    ω::Float64 = 0.0 # Argument of periapsis (rad)
-    Ω::Float64 = 0.0 # RAAN (rad)
-    ν::Float64 = 0.0 # True anomaly (rad)
-    q::SVector{4, Float64} = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0) # Initial orientation quaternion (x, y, z, w)
-    ang_vel::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 0.0) # Initial angular velocity (rad/s)
+struct InitialCondition
+    a::Float64 # Semimajor axis (m)
+    e::Float64 # Eccentricity (nd)
+    i::Float64 # Inclination (rad)
+    ω::Float64 # Argument of periapsis (rad)
+    Ω::Float64 # RAAN (rad)
+    ν::Float64 # True anomaly (rad)
+    q::SVector{4, Float64} # Initial orientation quaternion (x, y, z, w)
+    ang_vel::SVector{3, Float64} # Initial angular velocity (rad/s)
 
-    function InitialCondition(a=0.0, e=0.0, i=0.0, ω=0.0, Ω=0.0, ν=0.0, q=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), ang_vel=SVector{3, Float64}(0.0, 0.0, 0.0))
-        new(a, e, deg2rad(i), deg2rad(ω), deg2rad(Ω), deg2rad(ν), q, ang_vel)
+    function InitialCondition(
+        a::Float64,
+        e::Float64,
+        i::Float64,
+        ω::Float64,
+        Ω::Float64,
+        ν::Float64,
+        q::SVector{4, Float64},
+        ang_vel::SVector{3, Float64},
+        ::Val{:radians}
+    )
+        return new(a, e, i, ω, Ω, ν, q, ang_vel)
     end
-end # struct InitialCondition
+end
 
- # Convenience constructors
-function InitialCondition(;ra::Float64=0.0, rp::Float64=0.0, i::Float64=0.0, ω::Float64=0.0, Ω::Float64=0.0, ν::Float64=180.0)
-    if ra == 0.0 && rp == 0.0
-        return InitialCondition(0.0, 0.0, i, ω, Ω, ν, SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0))
+function InitialCondition(
+    a,
+    e,
+    i,
+    ω,
+    Ω,
+    ν,
+    q=DEFAULT_INITIAL_CONDITION_Q,
+    ang_vel=DEFAULT_INITIAL_CONDITION_ANG_VEL
+)
+    return InitialCondition(
+        Float64(a),
+        Float64(e),
+        deg2rad(Float64(i)),
+        deg2rad(Float64(ω)),
+        deg2rad(Float64(Ω)),
+        deg2rad(Float64(ν)),
+        q,
+        ang_vel,
+        Val(:radians)
+    )
+end
+
+function InitialCondition(;
+    a::Float64=0.0,
+    e::Float64=0.0,
+    ra::Union{Nothing, Float64}=nothing,
+    rp::Union{Nothing, Float64}=nothing,
+    i::Float64=0.0,
+    ω::Float64=0.0,
+    Ω::Float64=0.0,
+    ν::Union{Nothing, Float64}=nothing,
+    q::SVector{4, Float64}=DEFAULT_INITIAL_CONDITION_Q,
+    ang_vel::SVector{3, Float64}=DEFAULT_INITIAL_CONDITION_ANG_VEL
+)
+    if (ra === nothing) != (rp === nothing)
+        throw(ArgumentError("InitialCondition keyword construction requires both ra and rp when using apsides inputs."))
     end
 
-    a = (ra + rp) / 2.0
-    e = (ra - rp) / (ra + rp)
-    return InitialCondition(a, e, i, ω, Ω, ν, SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0)) # Set true anomaly to 180 degrees by default
+    if ra !== nothing
+        a = (ra + rp) / 2.0
+        e = (ra - rp) / (ra + rp)
+        ν_eff = ν === nothing ? 180.0 : ν
+        return InitialCondition(a, e, i, ω, Ω, ν_eff, q, ang_vel)
+    end
+
+    ν_eff = ν === nothing ? 0.0 : ν
+    return InitialCondition(a, e, i, ω, Ω, ν_eff, q, ang_vel)
 end
 
 # --- CRITICAL REFACTOR 1 ---

@@ -26,7 +26,10 @@ const FORBIDDEN_PATH_TOKENS = (
     "src/gnc/control/heatload_control/",
     "src/simulation/execution/simulation_elements.jl",
     "src/simulation/execution/simulation_execution.jl",
-    "src/simulation/execution/run_simulation.jl"
+    "src/simulation/execution/run_simulation.jl",
+    "src/examples/",
+    "src/analysis/plotting/",
+    "src/core/utils/typed_example_utils.jl"
 )
 
 @inline function _should_scan(path::String)::Bool
@@ -45,6 +48,9 @@ end
     rel == joinpath("docs", "architecture", "canonical_topology_contract.md") && return true
     rel == joinpath("docs", "architecture", "src_completeness_contract.md") && return true
     rel == joinpath("docs", "architecture", "src_canonical_owner_audit.md") && return true
+    rel == joinpath("docs", "src", "generated", "contracts", "architecture", "canonical_topology_contract.md") && return true
+    rel == joinpath("docs", "src", "generated", "contracts", "architecture", "src_completeness_contract.md") && return true
+    rel == joinpath("docs", "src", "generated", "contracts", "architecture", "src_canonical_owner_audit.md") && return true
     return false
 end
 

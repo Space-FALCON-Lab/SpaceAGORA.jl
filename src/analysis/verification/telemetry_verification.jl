@@ -36,12 +36,12 @@ else
 end
 using .SimulationModel
 include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
-include(joinpath(REPO_ROOT, "src", "core", "utils", "typed_example_utils.jl"))
 
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 
 include(joinpath(@__DIR__, "telemetry_verification", "types.jl"))
 include(joinpath(@__DIR__, "telemetry_verification", "manifest_parsing.jl"))
+include(joinpath(@__DIR__, "telemetry_verification", "example_support.jl"))
 include(joinpath(@__DIR__, "telemetry_verification", "scenario_builders.jl"))
 include(joinpath(@__DIR__, "telemetry_verification", "telemetry_loading.jl"))
 include(joinpath(@__DIR__, "telemetry_verification", "comparison_metrics.jl"))

@@ -53,10 +53,21 @@ isdir(joinpath(REPO_ROOT, "src", "benchmarks")) &&
     error("Canonical-ownership contract violation: src/benchmarks must not exist (use top-level benchmarks/).")
 isdir(joinpath(REPO_ROOT, "src", "dynamics", "models")) &&
     error("Canonical-ownership contract violation: src/dynamics/models must not exist.")
+for retired_dir in (
+    joinpath("src", "examples"),
+    joinpath("src", "analysis", "plotting"),
+    joinpath("src", "analysis", "reports"),
+    joinpath("src", "parallel", "state"),
+    joinpath("src", "parallel", "tuning"),
+    joinpath("src", "vehicle", "sensors"),
+)
+    isdir(joinpath(REPO_ROOT, retired_dir)) &&
+        error("Canonical-ownership contract violation: retired source directory still exists at $retired_dir")
+end
+isfile(joinpath(REPO_ROOT, "src", "core", "utils", "typed_example_utils.jl")) &&
+    error("Canonical-ownership contract violation: retired example helper still exists at src/core/utils/typed_example_utils.jl")
 
 for rel in (
-    joinpath("src", "mission", "define_mission.jl"),
-    joinpath("src", "mission", "mission_model.jl"),
     joinpath("src", "mission", "initial_conditions.jl"),
     joinpath("src", "vehicle", "actuators", "actuator_hooks.jl"),
     joinpath("src", "vehicle", "actuators", "thruster", "thruster_hooks.jl"),

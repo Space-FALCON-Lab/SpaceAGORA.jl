@@ -1,5 +1,5 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
-const EXAMPLES_DIR = joinpath(REPO_ROOT, "src", "examples")
+const EXAMPLES_DIR = joinpath(REPO_ROOT, "examples")
 const PROJECT_PATH = joinpath(REPO_ROOT, ".AGORA")
 
 using CSV
@@ -106,7 +106,7 @@ function run_case(case::RegressionCase)
     isfile(example_path) || error("Missing example: $(case.file)")
 
     mktempdir() do tmp
-        cmd = `$(Base.julia_cmd()) --startup-file=no --depwarn=error --project=$(PROJECT_PATH) $(example_path)`
+        cmd = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=existing --depwarn=error --project=$(PROJECT_PATH) $(example_path)`
         cmd = Cmd(cmd; dir=tmp)
         cmd = addenv(
             cmd,

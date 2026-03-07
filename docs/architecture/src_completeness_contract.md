@@ -32,10 +32,13 @@ This contract defines how canonical source files are classified and what is forb
 
 ## Topology Boundary
 1. Benchmark ownership is top-level `benchmarks/*`; `src/benchmarks/*` is forbidden.
-2. `src/dynamics/models/*` is retired; coupled dynamics owners live under `src/dynamics/coupled/*`.
-3. Execution dispatch ownership is `src/simulation/execution/run.jl` and `src/simulation/execution/dispatch.jl`.
-4. Mission definition ownership is `src/mission/{define_mission,mission_model,initial_conditions}.jl`.
-5. Structural analysis ownership is `src/vehicle/structure/*`, not `src/vehicle/spacecraft/*`.
+2. Runnable example ownership is top-level `examples/*`; `src/examples/*` is forbidden.
+3. Plotting/report tooling ownership is top-level `scripts/*`; `src/analysis/plotting/*` is forbidden.
+4. `src/analysis/reports`, `src/parallel/state`, `src/parallel/tuning`, and `src/vehicle/sensors` are retired placeholder directories and must not exist.
+5. `src/dynamics/models/*` is retired; coupled dynamics owners live under `src/dynamics/coupled/*`.
+6. Execution dispatch ownership is `src/simulation/execution/run.jl` and `src/simulation/execution/dispatch.jl`.
+7. Mission configuration ownership is `src/mission/initial_conditions.jl`; mission plans and policies live under `src/mission/operations/*`.
+8. Structural analysis ownership is `src/vehicle/structure/*`, not `src/vehicle/spacecraft/*`.
 
 ## GNC Aerobraking Boundary
 1. `E-EDG` and `T-EDG` strategy ownership is `src/gnc/guidance/aerobraking/*`.

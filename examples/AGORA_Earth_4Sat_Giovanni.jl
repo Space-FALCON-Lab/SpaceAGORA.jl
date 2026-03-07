@@ -1,26 +1,10 @@
-if !isdefined(@__MODULE__, :SimulationModel)
-    include("../core/simulation_model.jl")
-end
-using .SimulationModel
+include(joinpath(@__DIR__, "common.jl"))
 using Dates
 using LinearAlgebra
 using SPICE
 using StaticArrays
 
-# run_simulation.jl expects quat_mult in the including scope.
-const quat_mult = SimulationModel.quat_mult
-if !isdefined(@__MODULE__, :SimulationEngine)
-    include("../simulation/engine/simulation_engine.jl")
-end
-if !isdefined(@__MODULE__, :run_simulation)
-    const run_simulation = SimulationEngine.run_simulation
-end
-if !isdefined(@__MODULE__, :run_and_report)
-    include(joinpath(@__DIR__, "..", "core", "utils", "typed_example_utils.jl"))
-end
 
-const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
 const MISSION_TIME_SEC = 24.0 * 3600.0
 

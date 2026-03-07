@@ -1,4 +1,4 @@
-include(joinpath(@__DIR__, "..", "..", "core", "utils", "misc.jl"))
+include(joinpath(@__DIR__, "..", "..", "src", "core", "utils", "misc.jl"))
 
 using .SimulationModel
 

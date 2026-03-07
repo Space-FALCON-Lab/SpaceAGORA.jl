@@ -48,6 +48,21 @@ end
 struct CoverageGramTrajectoryBase
 end
 
+struct CoverageBridgeArgs
+    cnf
+    solution
+end
+
+if !isdefined(@__MODULE__, :CoverageBridgeConfigProbe)
+    @eval module CoverageBridgeConfigProbe
+        const config = (
+            cnf=(time_switch_1=11.0, time_switch_2=12.0),
+            solution=(orientation=(; time=[42.0]),),
+        )
+        include(joinpath(@__DIR__, "..", "src", "gnc", "internal", "bridge_helpers.jl"))
+    end
+end
+
 Base.propertynames(::CoverageNoGramBase, private::Bool=false) = ()
 
 Base.propertynames(::CoverageGramOnlyBase, private::Bool=false) = (:gram,)
@@ -320,4 +335,47 @@ end
         @test isapprox(p_cache.shared_buffers.densities[1], 1.23e-6; atol=1e-12, rtol=0.0)
         @test isapprox(p_cache.shared_buffers.temperatures[1], 190.0; atol=1e-12, rtol=0.0)
     end
+end
+
+@testset "GNC Bridge Helper Probes" begin
+    gh = SimulationModel.GuidanceHooks
+    ch = SimulationModel.ControlHooks
+
+    cnf = (time_switch_1 = 1.0, time_switch_2 = 2.0)
+    solution = (orientation = (; time = Float64[]),)
+    args = (; cnf = cnf, solution = solution)
+    object_args = CoverageBridgeArgs(cnf, solution)
+
+    @test gh._bridge_get_cnf(args) === cnf
+    @test gh._bridge_get_solution(args; cnf=cnf) === solution
+    @test ch._bridge_get_cnf(args) === cnf
+    @test ch._bridge_get_solution(args; cnf=cnf) === solution
+    @test gh._bridge_get_cnf(nothing; cnf=cnf) === cnf
+    @test gh._bridge_get_solution(nothing; solution=solution) === solution
+    @test gh._bridge_get_cnf(object_args) === cnf
+    @test gh._bridge_get_solution(object_args) === solution
+    @test gh._bridge_get_solution((;); cnf=(solution=solution,)) === solution
+    @test gh.CONTROL_BRIDGE_STATE_LOCK isa ReentrantLock
+    @test ch.CONTROL_BRIDGE_STATE_LOCK isa ReentrantLock
+
+    probe = CoverageBridgeConfigProbe
+    @test probe._bridge_get_cnf((;)) === probe.config.cnf
+    @test probe._bridge_get_solution((;); cnf=nothing) === probe.config.solution
+
+    @test_throws ArgumentError gh._bridge_get_cnf((;))
+    @test_throws ArgumentError gh._bridge_get_solution((;); cnf=nothing)
+    @test_throws ArgumentError ch._bridge_get_cnf((;))
+    @test_throws ArgumentError ch._bridge_get_solution((;); cnf=nothing)
+end
+
+@testset "Point Mass Dynamics Branch Probes" begin
+    translational = SimulationModel.DynamicsTranslational
+
+    zero_acc = translational.acceleration_from_force(SVector(1.0, -2.0, 3.0), 0.0)
+    @test zero_acc == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    inf_acc = translational.acceleration_from_force(SVector(1.0, -2.0, 3.0), Inf)
+    @test inf_acc == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    @test translational.mass_derivative(NaN) == 0.0
 end

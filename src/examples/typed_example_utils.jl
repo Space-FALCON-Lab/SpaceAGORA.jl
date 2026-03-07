@@ -100,7 +100,7 @@ end
 function make_example_config(;
     planet::SM.AbstractPlanet,
     spacecraft::SM.SpacecraftModel,
-    # mission_time::Float64,
+    mission_time::Union{Nothing, Float64}=nothing,
     orbits::Int64=50,
     initial_time::SM.InitialTime,
     dynamic_effectors::Tuple=(SM.InverseSquaredJ2GravityModel(),),
@@ -110,6 +110,9 @@ function make_example_config(;
     EI_km::Float64=300.0,
     verbose::Bool=true
 )
+    # `mission_time` is accepted for callsite compatibility with telemetry/config builders.
+    # Mission-time ownership is finalized by scenario-specific wrappers.
+    _ = mission_time
     return SM.SimulationConfiguration(
         simulation_settings=SM.SimulationSettings(
             results=true,

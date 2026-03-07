@@ -824,6 +824,15 @@ end
     throw(ArgumentError("Unsupported N-body primary planet '$planet_name'"))
 end
 
+@inline function _spice_body_id(body_name::String)::Int64
+    try
+        query_name = SimulationModel.DynamicEffectors._spice_query_name(body_name)
+        return Int64(bodn2c(uppercase(strip(query_name))))
+    catch err
+        throw(ArgumentError("Unable to resolve SPICE ID for body name $(repr(body_name)): $(sprint(showerror, err))"))
+    end
+end
+
 struct ScaledAerodynamicCoefficientfM <: AbstractForceTorqueModel
     model::AerodynamicCoefficientfM
     cd_scale::Float64
@@ -872,11 +881,13 @@ function _scenario_dynamic_effectors(
     end
 
     if !isempty(cfg.nbody_bodies)
+        body_ids = Tuple(_spice_body_id(name) for name in cfg.nbody_bodies)
+        primary_body_id = _spice_body_id(_nbody_primary_name(cfg.planet_name))
         push!(
             effectors,
             NBodyGravityModel(
-                body_names=Tuple(cfg.nbody_bodies),
-                primary_body_name=_nbody_primary_name(cfg.planet_name),
+                body_ids=body_ids,
+                primary_body_id=primary_body_id,
                 planet=planet
             )
         )

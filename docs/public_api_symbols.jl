@@ -14,44 +14,54 @@ const PUBLIC_API_SECTIONS = [
     (
         title = "Runtime Configuration",
         items = [
-            (owner = :SimulationEngine, symbol = :ParallelConfig, rendered = "SpaceAGORA.SimulationEngine.ParallelConfig"),
-            (owner = :SimulationEngine, symbol = :SolverConfig, rendered = "SpaceAGORA.SimulationEngine.SolverConfig"),
-            (owner = :SimulationEngine, symbol = :RuntimePolicyConfig, rendered = "SpaceAGORA.SimulationEngine.RuntimePolicyConfig"),
-            (owner = :SimulationEngine, symbol = :ArtifactConfig, rendered = "SpaceAGORA.SimulationEngine.ArtifactConfig"),
-            (owner = :SimulationEngine, symbol = :SimulationEngineConfig, rendered = "SpaceAGORA.SimulationEngine.SimulationEngineConfig"),
-            (owner = :SimulationEngine, symbol = :simulation_engine_config_from_env, rendered = "SpaceAGORA.SimulationEngine.simulation_engine_config_from_env")
+            (owner = :SimulationEngine, symbol = :ParallelConfig, rendered = "SpaceAGORA.ParallelConfig"),
+            (owner = :SimulationEngine, symbol = :SolverConfig, rendered = "SpaceAGORA.SolverConfig"),
+            (owner = :SimulationEngine, symbol = :RuntimePolicyConfig, rendered = "SpaceAGORA.RuntimePolicyConfig"),
+            (owner = :SimulationEngine, symbol = :ArtifactConfig, rendered = "SpaceAGORA.ArtifactConfig"),
+            (owner = :SimulationEngine, symbol = :SimulationEngineConfig, rendered = "SpaceAGORA.SimulationEngineConfig"),
+            (owner = :SimulationEngine, symbol = :simulation_engine_config_from_env, rendered = "SpaceAGORA.simulation_engine_config_from_env")
         ]
     ),
     (
         title = "Parallel Profiles and Routing",
         items = [
-            (owner = :ParallelProfiles, symbol = :ParallelProfile, rendered = "SpaceAGORA.ParallelProfiles.ParallelProfile"),
-            (owner = :ParallelProfiles, symbol = :ParallelProfileConfig, rendered = "SpaceAGORA.ParallelProfiles.ParallelProfileConfig"),
-            (owner = :ParallelProfiles, symbol = :parse_parallel_profile, rendered = "SpaceAGORA.ParallelProfiles.parse_parallel_profile"),
-            (owner = :ParallelProfiles, symbol = :parallel_profile_name, rendered = "SpaceAGORA.ParallelProfiles.parallel_profile_name"),
-            (owner = :ParallelProfiles, symbol = :profile_config, rendered = "SpaceAGORA.ParallelProfiles.profile_config"),
-            (owner = :ParallelProfiles, symbol = :profile_env_pairs, rendered = "SpaceAGORA.ParallelProfiles.profile_env_pairs"),
-            (owner = :ParallelProfiles, symbol = :with_parallel_profile, rendered = "SpaceAGORA.ParallelProfiles.with_parallel_profile"),
-            (owner = :ParallelProfiles, symbol = :OuterRouteFeatures, rendered = "SpaceAGORA.ParallelProfiles.OuterRouteFeatures"),
-            (owner = :ParallelProfiles, symbol = :OuterRouteTuning, rendered = "SpaceAGORA.ParallelProfiles.OuterRouteTuning"),
-            (owner = :ParallelProfiles, symbol = :OuterRouteState, rendered = "SpaceAGORA.ParallelProfiles.OuterRouteState"),
-            (owner = :ParallelProfiles, symbol = :reset_outer_route_state!, rendered = "SpaceAGORA.ParallelProfiles.reset_outer_route_state!"),
-            (owner = :ParallelProfiles, symbol = :outer_route_signature, rendered = "SpaceAGORA.ParallelProfiles.outer_route_signature"),
-            (owner = :ParallelProfiles, symbol = :outer_route_stats_snapshot, rendered = "SpaceAGORA.ParallelProfiles.outer_route_stats_snapshot"),
-            (owner = :ParallelProfiles, symbol = :default_outer_route, rendered = "SpaceAGORA.ParallelProfiles.default_outer_route"),
-            (owner = :ParallelProfiles, symbol = :outer_route_candidates, rendered = "SpaceAGORA.ParallelProfiles.outer_route_candidates"),
-            (owner = :ParallelProfiles, symbol = :select_outer_route!, rendered = "SpaceAGORA.ParallelProfiles.select_outer_route!"),
-            (owner = :ParallelProfiles, symbol = :record_outer_route_feedback!, rendered = "SpaceAGORA.ParallelProfiles.record_outer_route_feedback!")
+            (owner = :ParallelProfiles, symbol = :ParallelProfile, rendered = "SpaceAGORA.ParallelProfile"),
+            (owner = :ParallelProfiles, symbol = :ParallelProfileConfig, rendered = "SpaceAGORA.ParallelProfileConfig"),
+            (owner = :ParallelProfiles, symbol = :parse_parallel_profile, rendered = "SpaceAGORA.parse_parallel_profile"),
+            (owner = :ParallelProfiles, symbol = :parallel_profile_name, rendered = "SpaceAGORA.parallel_profile_name"),
+            (owner = :ParallelProfiles, symbol = :profile_config, rendered = "SpaceAGORA.profile_config"),
+            (owner = :ParallelProfiles, symbol = :profile_env_pairs, rendered = "SpaceAGORA.profile_env_pairs"),
+            (owner = :ParallelProfiles, symbol = :with_parallel_profile, rendered = "SpaceAGORA.with_parallel_profile"),
+            (owner = :ParallelProfiles, symbol = :OuterRouteFeatures, rendered = "SpaceAGORA.OuterRouteFeatures"),
+            (owner = :ParallelProfiles, symbol = :OuterRouteTuning, rendered = "SpaceAGORA.OuterRouteTuning"),
+            (owner = :ParallelProfiles, symbol = :OuterRouteState, rendered = "SpaceAGORA.OuterRouteState"),
+            (owner = :ParallelProfiles, symbol = :reset_outer_route_state!, rendered = "SpaceAGORA.reset_outer_route_state!"),
+            (owner = :ParallelProfiles, symbol = :outer_route_signature, rendered = "SpaceAGORA.outer_route_signature"),
+            (owner = :ParallelProfiles, symbol = :outer_route_stats_snapshot, rendered = "SpaceAGORA.outer_route_stats_snapshot"),
+            (owner = :ParallelProfiles, symbol = :default_outer_route, rendered = "SpaceAGORA.default_outer_route"),
+            (owner = :ParallelProfiles, symbol = :outer_route_candidates, rendered = "SpaceAGORA.outer_route_candidates"),
+            (owner = :ParallelProfiles, symbol = :select_outer_route!, rendered = "SpaceAGORA.select_outer_route!"),
+            (owner = :ParallelProfiles, symbol = :record_outer_route_feedback!, rendered = "SpaceAGORA.record_outer_route_feedback!")
         ]
     ),
     (
         title = "Verification",
         items = [
-            (owner = :TelemetryVerification, symbol = :VerificationRequest, rendered = "SpaceAGORA.TelemetryVerification.VerificationRequest"),
-            (owner = :TelemetryVerification, symbol = :VerificationResult, rendered = "SpaceAGORA.TelemetryVerification.VerificationResult"),
-            (owner = :TelemetryVerification, symbol = :run_verification, rendered = "SpaceAGORA.TelemetryVerification.run_verification"),
-            (owner = :TelemetryVerification, symbol = :run_verification_cli, rendered = "SpaceAGORA.TelemetryVerification.run_verification_cli"),
-            (owner = :TelemetryVerification, symbol = :run_study, rendered = "SpaceAGORA.TelemetryVerification.run_study")
+            (owner = :TelemetryVerification, symbol = :VerificationRequest, rendered = "SpaceAGORA.VerificationRequest"),
+            (owner = :TelemetryVerification, symbol = :VerificationResult, rendered = "SpaceAGORA.VerificationResult"),
+            (owner = :TelemetryVerification, symbol = :run_verification, rendered = "SpaceAGORA.run_verification"),
+            (owner = :TelemetryVerification, symbol = :run_verification_cli, rendered = "SpaceAGORA.run_verification_cli"),
+            (owner = :TelemetryVerification, symbol = :run_study, rendered = "SpaceAGORA.run_study")
+        ]
+    ),
+    (
+        title = "CLI and Assets",
+        items = [
+            (owner = :SpaceAGORACLI, symbol = :AssetCheckItem, rendered = "SpaceAGORA.AssetCheckItem"),
+            (owner = :SpaceAGORACLI, symbol = :AssetCheckReport, rendered = "SpaceAGORA.AssetCheckReport"),
+            (owner = :SpaceAGORA, symbol = :check_assets, rendered = "SpaceAGORA.check_assets"),
+            (owner = :SpaceAGORA, symbol = :render_asset_report, rendered = "SpaceAGORA.render_asset_report"),
+            (owner = :SpaceAGORA, symbol = :run_cli, rendered = "SpaceAGORA.run_cli")
         ]
     )
 ]
@@ -65,6 +75,8 @@ const PUBLIC_API_SECTIONS = [
         return getproperty(spaceagora, :ParallelProfiles)
     elseif owner === :TelemetryVerification
         return getproperty(spaceagora, :TelemetryVerification)
+    elseif owner === :SpaceAGORACLI
+        return getproperty(spaceagora, :SpaceAGORACLI)
     end
     error("Unsupported public API owner: $(owner)")
 end
@@ -89,7 +101,7 @@ function render_public_api_markdown(spaceagora::Module)::String
     io = IOBuffer()
     println(io, "# Public API")
     println(io)
-    println(io, "This page documents the stable exported interface. Symbols below are available from `SpaceAGORA`; the rendered docstrings come from their canonical owner modules.")
+    println(io, "This page documents the stable exported interface available from `SpaceAGORA`.")
     println(io)
     for section in PUBLIC_API_SECTIONS
         println(io, "## $(section.title)")

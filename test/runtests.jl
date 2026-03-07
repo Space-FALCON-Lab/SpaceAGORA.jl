@@ -33,6 +33,9 @@ end
 if !isdefined(@__MODULE__, :TelemetryVerification)
     include(joinpath(REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
 end
+if !isdefined(@__MODULE__, :SpaceAGORA)
+    include(joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"))
+end
 if !isdefined(@__MODULE__, :make_example_config)
     const make_example_config = TelemetryVerification.make_example_config
     const make_three_body_spacecraft = TelemetryVerification.make_three_body_spacecraft
@@ -738,3 +741,4 @@ include(joinpath(REPO_ROOT, "test", "suites", "04_solver_env_and_regression_test
 include(joinpath(REPO_ROOT, "test", "suites", "05_thruster_control_and_quality_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "suites", "06_monolith_split_runtime_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "suites", "07_no_gram_onboarding_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "suites", "08_cli_and_assets_tests.jl"))

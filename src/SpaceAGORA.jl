@@ -17,9 +17,13 @@ using .ParallelProfiles: reset_outer_route_state!, outer_route_signature, outer_
 using .ParallelProfiles: default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
-using .SimulationModel.AbstractTypes: AbstractForceTorqueModel, AbstractDensityModel
+using .SimulationModel.AbstractTypes: AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel
 using .SimulationModel.AbstractTypes: AbstractControlEffectorModel, AbstractEphemeridesModel
 using .SimulationModel.AbstractTypes: AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
+using .SimulationModel: NoAtmosphereModel, ExponentialAtmosphereModel, SimpleEphemeridesModel
+using .SimulationModel: make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
+using .SimulationModel: calcForceTorque, getDensity, getDensityBatch!
+using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
 using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
@@ -32,12 +36,74 @@ using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 @doc (@doc SimulationEngine.simulation_engine_config_from_env) simulation_engine_config_from_env
 
 @doc (@doc SimulationModel.AbstractTypes.AbstractForceTorqueModel) AbstractForceTorqueModel
+@doc (@doc SimulationModel.AbstractTypes.AbstractPlanet) AbstractPlanet
 @doc (@doc SimulationModel.AbstractTypes.AbstractDensityModel) AbstractDensityModel
 @doc (@doc SimulationModel.AbstractTypes.AbstractControlEffectorModel) AbstractControlEffectorModel
 @doc (@doc SimulationModel.AbstractTypes.AbstractEphemeridesModel) AbstractEphemeridesModel
 @doc (@doc SimulationModel.AbstractTypes.AbstractThermalModel) AbstractThermalModel
 @doc (@doc SimulationModel.AbstractTypes.AbstractThrusterModel) AbstractThrusterModel
 @doc (@doc SimulationModel.AbstractTypes.AbstractGuidanceModel) AbstractGuidanceModel
+
+"""
+    NoAtmosphereModel()
+
+Density-model constructor for no-atmosphere baseline runs and no-GRAM onboarding
+scenarios.
+"""
+NoAtmosphereModel
+
+"""
+    ExponentialAtmosphereModel(planet)
+    ExponentialAtmosphereModel(rho_ref, h_ref, H)
+
+Analytic density-model constructor for baseline runs that should not depend on
+GRAM assets. The `planet` convenience form uses the built-in reference density
+and scale-height constants for the chosen body.
+"""
+ExponentialAtmosphereModel
+
+"""
+    SimpleEphemeridesModel(; reference_epoch_seconds=0.0, prime_meridian_at_reference_rad=0.0)
+
+Analytic ephemerides/frame backend for onboarding and open-data runs that should
+not depend on local SPICE kernels.
+"""
+SimpleEphemeridesModel
+
+@doc (@doc SimulationModel.make_no_gram_planet) make_no_gram_planet
+@doc (@doc SimulationModel.make_no_gram_density_model) make_no_gram_density_model
+@doc (@doc SimulationModel.make_no_gram_environment) make_no_gram_environment
+
+"""
+    calcForceTorque(model, x, p, i) -> (force_n, torque_n_m)
+
+Stable extension hook for custom [`AbstractForceTorqueModel`](@ref)
+implementations. Extend this method for package or user models that contribute
+translational and rotational wrench terms to the simulation RHS.
+"""
+calcForceTorque
+
+"""
+    getDensity(model, h, lat, lon, el_time, wind[, p]) -> (rho, temperature, wind_vec)
+
+Stable extension hook for custom [`AbstractDensityModel`](@ref)
+implementations. The scalar form returns density, temperature, and wind for a
+single atmosphere query.
+"""
+getDensity
+
+"""
+    getDensityBatch!(rhos, Ts, winds, model, hs, lats, lons, el_time, wind, p)
+
+Optional batch extension hook for [`AbstractDensityModel`](@ref)
+implementations that can answer many atmosphere queries more efficiently than
+repeated scalar `getDensity` dispatch.
+"""
+getDensityBatch!
+
+@doc (@doc SimulationModel.calcControlEffect!) calcControlEffect!
+@doc (@doc SimulationModel.calcControlForceTorque) calcControlForceTorque
+@doc (@doc SimulationModel.calcControlMassFlowRate) calcControlMassFlowRate
 
 @doc (@doc ParallelProfiles.ParallelProfile) ParallelProfile
 @doc (@doc ParallelProfiles.ParallelProfileConfig) ParallelProfileConfig
@@ -73,8 +139,12 @@ export reset_outer_route_state!, outer_route_signature, outer_route_stats_snapsh
 export default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
 export ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 export simulation_engine_config_from_env
-export AbstractForceTorqueModel, AbstractDensityModel, AbstractControlEffectorModel
+export AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractControlEffectorModel
 export AbstractEphemeridesModel, AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
+export NoAtmosphereModel, ExponentialAtmosphereModel, SimpleEphemeridesModel
+export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
+export calcForceTorque, getDensity, getDensityBatch!
+export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation
 export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli

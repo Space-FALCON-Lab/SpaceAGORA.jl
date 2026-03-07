@@ -129,7 +129,10 @@ makedocs(
         "Getting Started" => "getting_started.md",
         "CLI" => "cli.md",
         "Data and Assets" => "assets.md",
+        "API Policy" => "public_api_policy.md",
         "Public API" => "generated/public_api.md",
+        "Distributed and HPC" => "distributed_hpc.md",
+        "Extensibility" => "extensibility.md",
         "Architecture & Quality Contracts" => Any[
             "contracts.md",
             "generated/contracts/architecture/canonical_topology_contract.md",
@@ -147,6 +150,7 @@ makedocs(
     linkcheck = true,
     checkdocs = :exports,
     checkdocs_ignored_modules = Module[
+        SpaceAGORA.SimulationModel,
         SpaceAGORA.SimulationEngine,
         SpaceAGORA.ParallelProfiles,
         SpaceAGORA.TelemetryVerification,

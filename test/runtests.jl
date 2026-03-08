@@ -107,6 +107,12 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const _srp_ephemeris_cache_max_samples = SimulationEngine._srp_ephemeris_cache_max_samples
     const _validate_orientation_inertia! = SimulationEngine._validate_orientation_inertia!
     const _validate_thermal_model_support! = SimulationEngine._validate_thermal_model_support!
+    const build_state_sample = SimulationEngine.build_state_sample
+    const sample_planet_frame = SimulationEngine.sample_planet_frame
+    const sample_atmosphere = SimulationEngine.sample_atmosphere
+    const sample_environment = SimulationEngine.sample_environment
+    const _evaluate_dynamic_effector = SimulationEngine._evaluate_dynamic_effector
+    const _wrench_method_available = SimulationEngine._wrench_method_available
 end
 
 struct ConstantDensityModel <: SimulationModel.AbstractDensityModel
@@ -148,6 +154,14 @@ end
 
 struct ConstantForceModel <: SimulationModel.AbstractForceTorqueModel
     force::SVector{3, Float64}
+end
+
+struct WrenchOnlyForceModel <: SimulationModel.AbstractForceTorqueModel
+    force::SVector{3, Float64}
+    torque::SVector{3, Float64}
+end
+
+struct AtmosphereProbeWrenchModel <: SimulationModel.AbstractForceTorqueModel
 end
 
 struct ThrowingOrbitPlanet <: SimulationModel.AbstractPlanet
@@ -274,6 +288,30 @@ function SimulationModel.calcForceTorque(
     i::Int64
 )
     return model.force, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+function SimulationModel.wrench(
+    model::WrenchOnlyForceModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
+)
+    return model.force, model.torque
+end
+
+function SimulationModel.environment_requirements(::AtmosphereProbeWrenchModel)
+    return EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
+end
+
+function SimulationModel.wrench(
+    model::AtmosphereProbeWrenchModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
+)
+    env.atmosphere === nothing && error("expected atmosphere sample")
+    env.planet_frame === nothing && error("expected planet-frame sample")
+    return SVector{3, Float64}(env.atmosphere.rho_kg_m3, env.planet_frame.alt_m, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
 function SimulationModel.ControlHooks.rvtoorbitalelement(

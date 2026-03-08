@@ -18,10 +18,13 @@ const RESULTS_BUNDLE_SCHEMA_VERSION = "1"
 const CHECKPOINT_SCHEMA_VERSION = "1"
 const NBODY_EPHEMERIS_CACHE_SCHEMA_VERSION = "1"
 const _EPHEMERIS_REUSE_LOCK = ReentrantLock()
-const _SRP_EPHEMERIS_REUSE_CACHE = Dict{Any, SimulationModel.SRPSunEphemerisCache}()
-const _NBODY_EPHEMERIS_REUSE_CACHE = Dict{Any, SimulationModel.NBodyEphemerisCache}()
-const _PLANET_FRAME_EPHEMERIS_REUSE_CACHE = Dict{Any, SimulationModel.PlanetFrameEphemerisCache}()
-const _NBODY_EPHEMERIS_PREWARMED_CACHE = Dict{Any, SimulationModel.NBodyEphemerisCache}()
+const SRPEphemerisReuseKey = Tuple{String, Int64, Int64, Int64}
+const NBodyEphemerisReuseKey = Tuple{String, String, Int64, Int64, Int64}
+const PlanetFrameEphemerisReuseKey = Tuple{String, String, NTuple{9, Int64}, Int64, Int64, Int64}
+const _SRP_EPHEMERIS_REUSE_CACHE = Dict{SRPEphemerisReuseKey, SimulationModel.SRPSunEphemerisCache}()
+const _NBODY_EPHEMERIS_REUSE_CACHE = Dict{NBodyEphemerisReuseKey, SimulationModel.NBodyEphemerisCache}()
+const _PLANET_FRAME_EPHEMERIS_REUSE_CACHE = Dict{PlanetFrameEphemerisReuseKey, SimulationModel.PlanetFrameEphemerisCache}()
+const _NBODY_EPHEMERIS_PREWARMED_CACHE = Dict{NBodyEphemerisReuseKey, SimulationModel.NBodyEphemerisCache}()
 
 @inline _typed_normalize_warning_enabled() = _engine_env_get("SPACEAGORA_WARN_NORMALIZE", "1") == "1"
 @inline _typed_allow_transition_normalize() = _engine_env_get("SPACEAGORA_ALLOW_TYPED_NORMALIZE", "0") == "1"
@@ -199,9 +202,20 @@ end
     return ntuple(i -> round(Int64, planet.J2000_to_pci[i] * 1e12), 9)
 end
 
-@inline function _srp_ephemeris_reuse_key(primary_body_name::String, et_start::Float64, mission_end_s::Float64, dt_s::Float64)
+@inline function _body_query_names_reuse_key(body_query_names::AbstractVector{String})::String
+    return join(body_query_names, '\0')
+end
+
+@inline function _ephemerides_model_reuse_key(ephemerides_model)::String
+    cache_key = SimulationModel.ephemerides_cache_key(ephemerides_model)
+    if cache_key == (:spice,)
+        return "spice"
+    end
+    return "simple:$(cache_key[2]):$(cache_key[3])"
+end
+
+@inline function _srp_ephemeris_reuse_key(primary_body_name::String, et_start::Float64, mission_end_s::Float64, dt_s::Float64)::SRPEphemerisReuseKey
     return (
-        :srp,
         primary_body_name,
         _cache_time_key(et_start),
         _cache_time_key(mission_end_s),
@@ -209,22 +223,20 @@ end
     )
 end
 
-@inline function _nbody_ephemeris_reuse_key(primary_body_name::String, body_query_names::Vector{String}, et_start::Float64, mission_end_s::Float64, dt_s::Float64)
+@inline function _nbody_ephemeris_reuse_key(primary_body_name::String, body_query_names::Vector{String}, et_start::Float64, mission_end_s::Float64, dt_s::Float64)::NBodyEphemerisReuseKey
     return (
-        :nbody,
         primary_body_name,
-        Tuple(body_query_names),
+        _body_query_names_reuse_key(body_query_names),
         _cache_time_key(et_start),
         _cache_time_key(mission_end_s),
         _cache_time_key(dt_s)
     )
 end
 
-@inline function _planet_frame_ephemeris_reuse_key(planet, ephemerides_model, et_start::Float64, mission_end_s::Float64, dt_s::Float64)
+@inline function _planet_frame_ephemeris_reuse_key(planet, ephemerides_model, et_start::Float64, mission_end_s::Float64, dt_s::Float64)::PlanetFrameEphemerisReuseKey
     return (
-        :planet_frame,
         string(planet.name),
-        SimulationModel.ephemerides_cache_key(ephemerides_model),
+        _ephemerides_model_reuse_key(ephemerides_model),
         _planet_transform_key(planet),
         _cache_time_key(et_start),
         _cache_time_key(mission_end_s),
@@ -232,13 +244,13 @@ end
     )
 end
 
-@inline function _ephemeris_reuse_lookup(cache::Dict{Any, T}, key) where {T}
+@inline function _ephemeris_reuse_lookup(cache::AbstractDict{K, T}, key::K) where {K, T}
     return lock(_EPHEMERIS_REUSE_LOCK) do
         get(cache, key, nothing)
     end
 end
 
-@inline function _ephemeris_reuse_store!(cache::Dict{Any, T}, key, value::T, max_entries::Int)::T where {T}
+@inline function _ephemeris_reuse_store!(cache::AbstractDict{K, T}, key::K, value::T, max_entries::Int)::T where {K, T}
     return lock(_EPHEMERIS_REUSE_LOCK) do
         existing = get(cache, key, nothing)
         if existing !== nothing
@@ -256,7 +268,7 @@ end
     end
 end
 
-@inline function _ephemeris_explicit_cache_store!(cache::Dict{Any, T}, key, value::T; replace::Bool=false)::T where {T}
+@inline function _ephemeris_explicit_cache_store!(cache::AbstractDict{K, T}, key::K, value::T; replace::Bool=false)::T where {K, T}
     return lock(_EPHEMERIS_REUSE_LOCK) do
         if !replace
             existing = get(cache, key, nothing)

@@ -18,23 +18,25 @@ function _compute_stage_heat_rates!(
 )
     links = p.args.dynamics_model.spacecraft[sat_idx].links
     heat_rates = _heat_rate_buffer_for_sat!(p, sat_idx)
-    env_state = use_buffered_density ?
-        _buffered_stage_environment_state(x, p, sat_idx, t) :
-        _stage_environment_state(x, p, sat_idx, t; write_buffers=true)
+    engine = _simulation_engine_module()
+    planet_frame = engine.sample_planet_frame(x, p, sat_idx, t)
+    atmosphere = use_buffered_density ?
+        engine.sample_buffered_atmosphere(x, p, sat_idx, t) :
+        engine.sample_atmosphere(x, p, sat_idx, t; write_buffers=false)
 
-    rho = env_state.rho
-    T = env_state.T
-    wind = env_state.wind
+    rho = atmosphere.rho_kg_m3
+    T = atmosphere.temperature_k
+    wind = atmosphere.wind_pp
     if !isfinite(rho) || !isfinite(T) || rho <= 0.0 || T <= 0.0
         return heat_rates
     end
 
     planet = p.args.environment_model.planet
     thermal_model = p.args.environment_model.thermal_model
-    uD, uN, uE = latlongtoNED((env_state.alt, env_state.lat, env_state.lon))
+    uD, uN, uE = latlongtoNED((planet_frame.alt_m, planet_frame.lat_rad, planet_frame.lon_rad))
     wE, wN, wU = wind
     wind_pp = wN * uN + wE * uE - wU * uD
-    vel_pp_rw = env_state.vel_pp + wind_pp
+    vel_pp_rw = planet_frame.vel_pp + wind_pp
     v = norm(vel_pp_rw)
     sound_velocity = sqrt(planet.γ * planet.R * T)
     if !isfinite(v) || !isfinite(sound_velocity) || v <= 0.0 || sound_velocity <= 0.0

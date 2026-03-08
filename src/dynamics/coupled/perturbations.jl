@@ -462,6 +462,28 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
+@inline environment_requirements(model::NBodyGravityModel) = EffectorEnvironmentRequirements(third_body_names=model.body_names)
+
+@inline function wrench(
+    model::NBodyGravityModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    third_bodies = env.third_bodies
+    third_bodies === nothing && throw(ArgumentError("NBodyGravityModel wrench requires env.third_bodies."))
+    force_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+    @inbounds for k in eachindex(third_bodies.positions_ii)
+        pos_primary_k = third_bodies.positions_ii[k]
+        pos_spacecraft_k = pos_primary_k - x.pos_ii
+        pos_spacecraft_k_mag = norm(pos_spacecraft_k)
+        force_ii .+= x.mass_kg * model.body_mus[k] * (
+            (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
+        )
+    end
+    return SVector{3, Float64}(force_ii), SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
 @inline function _spice_rhs_memo_reset_if_stale!(
     memo::SpiceRhsMemo,
     et::Float64,
@@ -796,6 +818,66 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
+@inline environment_requirements(model::SolarRadiationPressureModel) = EffectorEnvironmentRequirements(solar=(model.direct || model.albedo))
+
+@inline function wrench(
+    model::SolarRadiationPressureModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    if model.A == 0.0
+        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    pos_primary_sun = if model.direct || model.albedo
+        solar = env.solar
+        solar === nothing && throw(ArgumentError("SolarRadiationPressureModel wrench requires env.solar."))
+        solar.sun_pos_ii
+    else
+        SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    accel_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+    if model.direct
+        accel_ii .+= srp_cannonball_accel(
+            x.pos_ii,
+            pos_primary_sun,
+            env.planet.Rp_e,
+            4.56e-6,
+            model.Cr,
+            model.A,
+            x.mass_kg;
+            AU_m=model.AU_m
+        )
+    end
+    if model.albedo
+        accel_ii .+= planetary_albedo_accel(
+            x.pos_ii,
+            pos_primary_sun,
+            env.planet.Rp_e,
+            4.56e-6,
+            model.Cr,
+            model.A,
+            x.mass_kg,
+            model.planet_albedo;
+            AU_m=model.AU_m
+        )
+    end
+    if model.ir
+        accel_ii .+= planetary_ir_accel(
+            x.pos_ii,
+            env.planet.Rp_e,
+            model.Cr,
+            model.A,
+            x.mass_kg,
+            model.planet_ir_flux_w_m2,
+        )
+    end
+
+    return x.mass_kg * SVector{3, Float64}(accel_ii), SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
 @inline function _srp_sun_position_from_spice_j2000_m(
     et::Float64,
     primary_body_name::String,
@@ -985,6 +1067,93 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
     # cnf.gravity_harmonics_ii .= force_ii
 
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+@inline environment_requirements(::GravitationalHarmonicsModel) = EffectorEnvironmentRequirements(planet_frame=true)
+
+@inline function wrench(
+    model::GravitationalHarmonicsModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    planet_frame = env.planet_frame
+    planet_frame === nothing && throw(ArgumentError("GravitationalHarmonicsModel wrench requires env.planet_frame."))
+
+    workspace = _make_harmonics_scratch_workspace(model)
+    A = workspace.A
+    R = workspace.R
+    I = workspace.I
+
+    rVec_cart = planet_frame.pos_pp
+    RE = model.planet.Rp_e
+    r = norm(rVec_cart)
+    s, n, u = normalize(rVec_cart)
+    L = model.L
+    M = model.M
+    @fastmath begin
+        A[2, 1] = u * sqrt_3
+        @inbounds @simd for degree = 1:L+1
+            idx = degree + 1
+            A[idx + 1, idx] = u * model.sqrt_2n_plus_3[degree] * A[idx, idx]
+        end
+        @inbounds for order = 0:M+1
+            j = order + 1
+            @inbounds for degree = order+2:L+1
+                idx = degree + 1
+                A[idx, j] = u * model.N1[idx, j] * A[idx - 1, j] - model.N2[idx, j] * A[idx - 2, j]
+            end
+            if order == 0
+                R[j] = 1.0
+                I[j] = 0.0
+            else
+                R_term = R[j - 1]
+                I_term = I[j - 1]
+                R[j] = s * R_term - n * I_term
+                I[j] = s * I_term + n * R_term
+            end
+        end
+
+        ρ = RE / r
+        ρ_np1 = -model.planet.μ / r * ρ
+        a1 = a2 = a3 = a4 = 0.0
+        @inbounds for degree = 1:L
+            idx = degree + 1
+            ρ_np1 *= ρ
+            sum1 = 0.0
+            sum2 = 0.0
+            sum3 = 0.0
+            sum4 = 0.0
+            @inbounds for order = 0:min(degree, M)
+                j = order + 1
+                C = model.C[idx, j]
+                S = model.S[idx, j]
+                if order == 0
+                    R_term = 0.0
+                    I_term = 0.0
+                else
+                    R_term = R[j - 1]
+                    I_term = I[j - 1]
+                end
+                D = (C * R[j] + S * I[j]) * sqrt_2
+                E = ifelse(order == 0, 0.0, (C * R_term + S * I_term) * sqrt_2)
+                F = ifelse(order == 0, 0.0, (S * R_term - C * I_term) * sqrt_2)
+
+                sum1 += order * A[idx, j] * E
+                sum2 += order * A[idx, j] * F
+                sum3 += model.VR01[idx, j] * A[idx, j + 1] * D
+                sum4 += model.VR11[idx, j] * A[idx + 1, j + 1] * D
+            end
+            rr = ρ_np1 / RE
+            a1 += rr * sum1
+            a2 += rr * sum2
+            a3 += rr * sum3
+            a4 -= rr * sum4
+        end
+        force_pp = x.mass_kg * SVector{3, Float64}(-a1 - s * a4, -a2 - n * a4, -a3 - u * a4)
+        force_ii = planet_frame.l_pi' * force_pp
+        return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
 end
 
 """

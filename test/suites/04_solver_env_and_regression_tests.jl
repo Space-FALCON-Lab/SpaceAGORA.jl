@@ -413,7 +413,7 @@
         @test_throws ArgumentError _ephemeris_reuse_max_entries()
     end
 
-    reuse_cache = Dict{Any, SRPSunEphemerisCache}()
+    reuse_cache = Dict{Symbol, SRPSunEphemerisCache}()
     reuse_value_a = SRPSunEphemerisCache([0.0], SVector{3, Float64}[SVector{3, Float64}(1.0, 0.0, 0.0)])
     reuse_value_b = SRPSunEphemerisCache([0.0], SVector{3, Float64}[SVector{3, Float64}(2.0, 0.0, 0.0)])
     @test _ephemeris_reuse_store!(reuse_cache, :k1, reuse_value_a, 0) === reuse_value_a
@@ -423,6 +423,86 @@
     _ephemeris_reuse_store!(reuse_cache, :k2, reuse_value_b, 1)
     @test !haskey(reuse_cache, :k1)
     @test haskey(reuse_cache, :k2)
+
+    @test SimulationEngine._srp_ephemeris_reuse_key("earth", 0.0, 10.0, 1.0) isa SimulationEngine.SRPEphemerisReuseKey
+    @test SimulationEngine._nbody_ephemeris_reuse_key("earth", ["moon", "sun"], 0.0, 10.0, 1.0) isa SimulationEngine.NBodyEphemerisReuseKey
+    @test SimulationEngine._planet_frame_ephemeris_reuse_key(EARTH, SpiceEphemeridesModel(), 0.0, 10.0, 1.0) isa SimulationEngine.PlanetFrameEphemerisReuseKey
+    @test _wrench_method_available(WrenchOnlyForceModel(SVector{3, Float64}(1.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)))
+    @test !_wrench_method_available(ConstantForceModel(SVector{3, Float64}(1.0, 0.0, 0.0)))
+
+    q0_wrench = normalize(SVector{4, Float64}(0.1, -0.2, 0.3, 0.9))
+    ω0_wrench = SVector{3, Float64}(0.0, 0.0, 0.0)
+    sc_wrench = make_spacecraft(
+        ra_alt_m=500e3,
+        rp_alt_m=500e3,
+        i_deg=35.0,
+        ω_deg=40.0,
+        Ω_deg=10.0,
+        ν_deg=175.0,
+        orientation_state=(q0_wrench, ω0_wrench)
+    )
+    sc_wrench.inertia_tensor = SMatrix{3, 3, Float64}(2.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 4.0)
+    legacy_force = SVector{3, Float64}(1.0, 2.0, 3.0)
+    typed_force = SVector{3, Float64}(4.0, 5.0, 6.0)
+    typed_torque = SVector{3, Float64}(0.2, -0.1, 0.3)
+    args_wrench_mix = build_config(
+        spacecraft=sc_wrench,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=true,
+        mission_time=30.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            ConstantForceModel(legacy_force),
+            WrenchOnlyForceModel(typed_force, typed_torque),
+        ),
+        keplerian=true
+    )
+    u0_wrench_mix = build_initial_conditions(args_wrench_mix)
+    du0_wrench_mix = copy(u0_wrench_mix)
+    du0_wrench_mix .= 0.0
+    p_wrench_mix = ODEParams{1}(args=args_wrench_mix)
+    spacecraft_dynamics!(du0_wrench_mix, u0_wrench_mix, p_wrench_mix, 0.0)
+    expected_force_mix = legacy_force + typed_force
+    @test isapprox(SVector{3, Float64}(du0_wrench_mix.sc[1].vel), expected_force_mix / u0_wrench_mix.sc[1].mass; atol=1e-12, rtol=1e-10)
+    @test isapprox(
+        SVector{3, Float64}(du0_wrench_mix.sc[1].ω),
+        args_wrench_mix.dynamics_model.spacecraft[1].inertia_tensor \ typed_torque;
+        atol=1e-12,
+        rtol=1e-10
+    )
+
+    env_empty = sample_environment(
+        EffectorEnvironmentRequirements(),
+        WrenchOnlyForceModel(typed_force, typed_torque),
+        u0_wrench_mix.sc[1],
+        p_wrench_mix,
+        1,
+        0.0;
+        write_buffers=false,
+    )
+    @test env_empty.planet === EARTH
+    @test env_empty.planet_frame === nothing
+    @test env_empty.atmosphere === nothing
+    @test env_empty.solar === nothing
+    @test env_empty.third_bodies === nothing
+
+    args_probe = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=300e3, rp_alt_m=300e3, ν_deg=180.0),
+        density_model=ExponentialAtmosphereModel(EARTH),
+        orientation_sim=false,
+        mission_time=30.0,
+        EI_km=120.0,
+        dynamic_effectors=(AtmosphereProbeWrenchModel(),),
+        keplerian=true
+    )
+    u0_probe = build_initial_conditions(args_probe)
+    p_probe = ODEParams{1}(args=args_probe)
+    state_probe = build_state_sample(u0_probe.sc[1], args_probe.dynamics_model.spacecraft[1], false)
+    req_probe = environment_requirements(AtmosphereProbeWrenchModel())
+    env_probe = sample_environment(req_probe, AtmosphereProbeWrenchModel(), u0_probe.sc[1], p_probe, 1, 0.0; write_buffers=false)
+    force_probe, torque_probe = _evaluate_dynamic_effector(AtmosphereProbeWrenchModel(), u0_probe.sc[1], state_probe, p_probe, 1, 0.0)
+    @test force_probe == SVector{3, Float64}(env_probe.atmosphere.rho_kg_m3, env_probe.planet_frame.alt_m, 0.0)
+    @test torque_probe == SVector{3, Float64}(0.0, 0.0, 0.0)
 
     withenv("SPACEAGORA_SOLVER_MAXITERS" => "1000") do
         sol = _solve_with_explicit_solver(prob_simple, solver_args, Tsit5(), 1e-8, 1e-8)
@@ -1263,6 +1343,69 @@ end
     @test isapprox(SVector{4, Float64}(du0.sc[1].q), qdot_expected; atol=1e-12, rtol=1e-10)
     @test isapprox(ωdot_expected, ωdot_legacy; atol=1e-12, rtol=1e-10)
     @test isapprox(SVector{3, Float64}(du0.sc[1].ω), ωdot_expected; atol=1e-12, rtol=1e-10)
+end
+
+@testset "Gravity-Gradient Torque Couples Into Rotational RHS" begin
+    θ = deg2rad(45.0)
+    q0 = normalize(SVector{4, Float64}(0.0, 0.0, sin(θ / 2), cos(θ / 2)))
+    ω0 = SVector{3, Float64}(0.0, 0.0, 0.0)
+    pos_ii = SVector{3, Float64}(EARTH.Rp_e + 500e3, 0.0, 0.0)
+    inertia_tensor = SMatrix{3, 3, Float64}(2.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 4.0)
+
+    r_hat_body = normalize(SimulationModel.rot(q0) * pos_ii)
+    τ_expected = 3.0 * EARTH.μ / norm(pos_ii)^3 * cross(r_hat_body, inertia_tensor * r_hat_body)
+    ωdot_expected = inertia_tensor \ τ_expected
+    @test norm(τ_expected) > 0.0
+
+    function gravity_gradient_ωdot(effector)
+        sc = make_spacecraft(
+            ra_alt_m=500e3,
+            rp_alt_m=500e3,
+            i_deg=35.0,
+            ω_deg=40.0,
+            Ω_deg=10.0,
+            ν_deg=175.0,
+            orientation_state=(q0, ω0)
+        )
+        sc.inertia_tensor = inertia_tensor
+
+        args = build_config(
+            spacecraft=sc,
+            density_model=NoAtmosphereModel(),
+            orientation_sim=true,
+            mission_time=10.0,
+            EI_km=120.0,
+            dynamic_effectors=(effector,),
+            keplerian=true
+        )
+
+        u0 = build_initial_conditions(args)
+        u0.sc[1].pos .= pos_ii
+        u0.sc[1].vel .= 0.0
+        u0.sc[1].q .= q0
+        u0.sc[1].ω .= ω0
+
+        du0 = copy(u0)
+        du0 .= 0.0
+        p = ODEParams{1}(args=args)
+        spacecraft_dynamics!(du0, u0, p, 0.0)
+        return SVector{3, Float64}(du0.sc[1].ω)
+    end
+
+    @test isapprox(
+        gravity_gradient_ωdot(InverseSquaredGravityModel(gravity_gradient=false)),
+        SVector{3, Float64}(0.0, 0.0, 0.0);
+        atol=1e-12,
+        rtol=1e-10
+    )
+
+    for effector in (
+        ConstantGravityModel(gravity_gradient=true),
+        InverseSquaredGravityModel(gravity_gradient=true),
+        InverseSquaredJ2GravityModel(gravity_gradient=true),
+    )
+        @test isapprox(gravity_gradient_ωdot(effector), ωdot_expected; atol=1e-12, rtol=1e-10)
+    end
 end
 
 @testset "Orientation Simulation Rejects Invalid Inertia Tensor" begin

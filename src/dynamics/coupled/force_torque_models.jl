@@ -3,6 +3,7 @@
 """
 module DynamicEffectors
     function calcForceTorque end
+    using ..EffectorSampling: wrench, environment_requirements
 
     include(joinpath(@__DIR__, "force_torque_models", "gravity_effectors.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "aerodynamic_effectors.jl"))
@@ -14,7 +15,7 @@ module DynamicEffectors
     @eval GravityEffectors using ..PerturbationEffectors
 
     using .GravityEffectors: ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
-    using .GravityEffectors: aerobraking_gravity_force_ii, calcForceTorque!
+    using .GravityEffectors: aerobraking_gravity_force_ii
     using .AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
     using .AerodynamicEffectors: _parse_bool_env, _multibody_outer_parallel_hint, collect_and_reset_link_wrenches!
     using .AerodynamicEffectors: _multibody_parallel_mode, _multibody_thread_threshold, _multibody_max_threads
@@ -35,6 +36,7 @@ module DynamicEffectors
     export aerobraking_gravity_force_ii, srp, srp_cannonball_accel, planetary_albedo_accel, planetary_ir_accel
     export AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
     export calcForceTorque
+    export wrench, environment_requirements
     export BaseThrusterModel
     export AerobrakingCampaignPropulsiveManeuverGuidanceModel
 end

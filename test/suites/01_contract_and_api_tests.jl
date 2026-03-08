@@ -186,6 +186,7 @@ end
     @test !occursin(r"^\s+module\s+(GravityEffectors|AerodynamicEffectors|PerturbationEffectors|ThrusterModels|GuidanceModels)"m, force_torque_src)
 
     @test occursin("function calcForceTorque end", force_torque_src)
+    @test occursin("using ..EffectorSampling: wrench, environment_requirements", force_torque_src)
     @test occursin("using .GravityEffectors: ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel", force_torque_src)
     @test occursin("using .AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight", force_torque_src)
     @test occursin("using .PerturbationEffectors: NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel", force_torque_src)
@@ -213,6 +214,10 @@ end
     @test isdefined(SimulationModel, :BaseThrusterModel)
     @test isdefined(SimulationModel, :AerobrakingCampaignPropulsiveManeuverGuidanceModel)
     @test isdefined(SimulationModel, :PropulsiveManeuverCommand)
+    @test isdefined(SimulationModel, :StateSample)
+    @test isdefined(SimulationModel, :EnvironmentSample)
+    @test isdefined(SimulationModel, :wrench)
+    @test isdefined(SimulationModel, :environment_requirements)
     @test isdefined(SimulationModel, :aerobraking_gravity_force_ii)
     @test isdefined(SimulationModel.DynamicEffectors, :_spice_query_name)
     @test isdefined(SimulationModel.DynamicEffectors, :_parse_bool_env)
@@ -305,6 +310,27 @@ end
 
     @test !Core.eval(sandbox, :(Base.isexported(SpaceAGORA, :SimulationModel)))
     @test !Core.eval(sandbox, :(Base.isexported(SpaceAGORA, :RuntimeServices)))
+end
+
+@testset "Typed Effector Sampling Public Contract" begin
+    sandbox = Module(:SpaceAGORAWrenchSandbox)
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"))
+
+    for sym in (
+        :StateSample,
+        :PlanetFrameSample,
+        :AtmosphereSample,
+        :SolarEphemerisSample,
+        :ThirdBodyEphemerisSample,
+        :EnvironmentSample,
+        :EffectorEnvironmentRequirements,
+        :wrench,
+        :environment_requirements,
+    )
+        @test Core.eval(sandbox, :(Base.isexported(SpaceAGORA, $(QuoteNode(sym)))))
+        doc = Core.eval(sandbox, :(Base.Docs.doc(getproperty(SpaceAGORA, $(QuoteNode(sym))))))
+        @test doc !== nothing
+    end
 end
 
 @testset "Documenter Strictness Contract" begin

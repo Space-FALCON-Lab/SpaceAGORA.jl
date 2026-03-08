@@ -23,6 +23,8 @@ include(joinpath(@__DIR__, "..", "environment", "ephemerides", "planet_shapes.jl
 # 1. Core abstract types
 include(joinpath(@__DIR__, "..", "core", "types", "abstract_types.jl"))
 @reexport using .AbstractTypes
+include(joinpath(@__DIR__, "..", "core", "types", "effector_sampling.jl"))
+@reexport using .EffectorSampling
 
 include(joinpath(@__DIR__, "..", "gnc", "command_types.jl"))
 @reexport using .CommandTypes

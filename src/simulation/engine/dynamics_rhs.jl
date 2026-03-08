@@ -1,14 +1,39 @@
+@inline function _evaluate_dynamic_effector(
+    effector,
+    sc_view,
+    state_sample,
+    p,
+    sat_idx::Int,
+    t::Float64,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    if _wrench_method_available(effector)
+        state_sample === nothing && error("wrench-based effector evaluation requires a typed StateSample.")
+        req = SimulationModel.environment_requirements(effector)
+        env = sample_environment(req, effector, sc_view, p, sat_idx, t; write_buffers=false)
+        return SimulationModel.wrench(effector, state_sample, env, t)
+    end
+    return SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)
+end
+
 @inline function _accumulate_dynamic_effectors!(
     forces::MVector{3, Float64},
     torques::MVector{3, Float64},
     sc_view,
     p,
     sat_idx::Int,
+    t::Float64,
     dynamic_effectors::Tuple,
     effector_decision
 )
     effector_started_ns = time_ns()
     n_effectors = length(dynamic_effectors)
+    needs_state_sample = any(_wrench_method_available(effector) for effector in dynamic_effectors)
+    state_sample = if needs_state_sample
+        spacecraft = p.args.dynamics_model.spacecraft[sat_idx]
+        build_state_sample(sc_view, spacecraft, p.args.mission_configuration.orientation_sim)
+    else
+        nothing
+    end
     if effector_decision.use_threads
         reduced = SimulationModel.ParallelPolicy.threaded_reduce(
             n_effectors,
@@ -16,7 +41,7 @@
             () -> MVector{6, Float64}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
             (local_sum, eff_idx) -> begin
                 effector = dynamic_effectors[eff_idx]
-                force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)
+                force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
                 local_sum[1] += force[1]
                 local_sum[2] += force[2]
                 local_sum[3] += force[3]
@@ -36,7 +61,7 @@
         torques .= SVector{3, Float64}(reduced[4], reduced[5], reduced[6])
     else
         @inbounds for effector in dynamic_effectors
-            force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)
+            force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
             forces .+= force
             torques .+= torque
         end
@@ -55,6 +80,23 @@
         )
     end
     return nothing
+end
+
+@inline function _accumulate_dynamic_effectors!(
+    forces::MVector{3, Float64},
+    torques::MVector{3, Float64},
+    sc_view,
+    p,
+    sat_idx::Int,
+    dynamic_effectors::Tuple,
+    effector_decision
+)
+    t = if p === nothing
+        0.0
+    else
+        Float64(p.shared_buffers.current_time[])
+    end
+    return _accumulate_dynamic_effectors!(forces, torques, sc_view, p, sat_idx, t, dynamic_effectors, effector_decision)
 end
 
 @inline function _accumulate_control_effectors!(
@@ -128,7 +170,6 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
     spacecraft = dynamics_model.spacecraft
     debug_control = p.shared_buffers.debug_control[]
     p.shared_buffers.current_time[] = t
-    atmosphere_from_dynamic_effectors = SimulationModel.SimulationCallbacks._uses_atmospheric_dynamic_effector(dynamic_effectors)
     effector_decision = _dynamic_effector_thread_decision(p.args, p, dynamic_effectors, length(spacecraft))
     use_rhs_batch = _rhs_batch_parallel_enabled(length(spacecraft))
     if use_rhs_batch
@@ -143,14 +184,14 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                 du_view = sc_du[i]
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
+                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
                     i,
                     t;
-                    use_buffered_density=atmosphere_from_dynamic_effectors,
+                    use_buffered_density=false,
                 )
 
                 SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
@@ -186,14 +227,14 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                 du_view = sc_du[i]
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
+                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
                     i,
                     t;
-                    use_buffered_density=atmosphere_from_dynamic_effectors,
+                    use_buffered_density=false,
                 )
 
                 SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
@@ -228,7 +269,6 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
     dynamic_effectors = dynamics_model.dynamic_effectors
     spacecraft = dynamics_model.spacecraft
     p.shared_buffers.current_time[] = t
-    atmosphere_from_dynamic_effectors = SimulationModel.SimulationCallbacks._uses_atmospheric_dynamic_effector(dynamic_effectors)
     effector_decision = _dynamic_effector_thread_decision(p.args, p, dynamic_effectors, length(spacecraft))
     use_rhs_batch = _rhs_batch_parallel_enabled(length(spacecraft))
     if use_rhs_batch
@@ -243,13 +283,13 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                 du_view = sc_du[i]
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
+                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
                     i,
                     t;
-                    use_buffered_density=atmosphere_from_dynamic_effectors,
+                    use_buffered_density=false,
                 )
 
                 SimulationModel.DynamicsTranslational.assign_slow_translational_rhs!(
@@ -284,13 +324,13 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                 du_view = sc_du[i]
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
+                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
                     i,
                     t;
-                    use_buffered_density=atmosphere_from_dynamic_effectors,
+                    use_buffered_density=false,
                 )
 
                 SimulationModel.DynamicsTranslational.assign_slow_translational_rhs!(

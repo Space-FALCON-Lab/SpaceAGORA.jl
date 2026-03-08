@@ -60,6 +60,8 @@ For model authors, the stable extension contract is:
 
 - subtype the documented abstract interfaces exported by `SpaceAGORA`
 - implement the matching exported hook functions such as:
+  - `wrench`
+  - `environment_requirements`
   - `calcForceTorque`
   - `getDensity`
   - `getDensityBatch!`

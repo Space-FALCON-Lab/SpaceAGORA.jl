@@ -33,13 +33,26 @@ are intentionally working on SpaceAGORA internals.
 Stable interface:
 
 - `SpaceAGORA.AbstractForceTorqueModel`
+- `SpaceAGORA.wrench`
+- `SpaceAGORA.environment_requirements`
 - `SpaceAGORA.calcForceTorque`
 
-Required method:
+Preferred additive methods:
+
+```julia
+SpaceAGORA.environment_requirements(model) -> SpaceAGORA.EffectorEnvironmentRequirements
+SpaceAGORA.wrench(model, x::SpaceAGORA.StateSample, env::SpaceAGORA.EnvironmentSample, t::Float64) -> (force_ii, torque_body)
+```
+
+Compatibility method:
 
 ```julia
 SpaceAGORA.calcForceTorque(model, x, p, i) -> (force_n, torque_n_m)
 ```
+
+Use `wrench` for new work when possible. The engine owns stage-consistent
+sampling and passes typed state/environment data into the effector. Keep
+`calcForceTorque` only for compatibility or when migrating existing models.
 
 Registration:
 

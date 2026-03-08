@@ -22,11 +22,13 @@ import .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_ca
 using .SimulationModel.AbstractTypes: AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel
 using .SimulationModel.AbstractTypes: AbstractControlEffectorModel, AbstractEphemeridesModel
 using .SimulationModel.AbstractTypes: AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
+using .SimulationModel: StateSample, PlanetFrameSample, AtmosphereSample, SolarEphemerisSample
+using .SimulationModel: ThirdBodyEphemerisSample, EnvironmentSample, EffectorEnvironmentRequirements
 using .SimulationModel: NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
 using .SimulationModel: NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 using .SimulationModel: SimpleEphemeridesModel
 using .SimulationModel: make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
-using .SimulationModel: calcForceTorque, getDensity, getDensityBatch!
+using .SimulationModel: calcForceTorque, wrench, environment_requirements, getDensity, getDensityBatch!
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
@@ -46,6 +48,13 @@ using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 @doc (@doc SimulationModel.AbstractTypes.AbstractThermalModel) AbstractThermalModel
 @doc (@doc SimulationModel.AbstractTypes.AbstractThrusterModel) AbstractThrusterModel
 @doc (@doc SimulationModel.AbstractTypes.AbstractGuidanceModel) AbstractGuidanceModel
+@doc (@doc SimulationModel.StateSample) StateSample
+@doc (@doc SimulationModel.PlanetFrameSample) PlanetFrameSample
+@doc (@doc SimulationModel.AtmosphereSample) AtmosphereSample
+@doc (@doc SimulationModel.SolarEphemerisSample) SolarEphemerisSample
+@doc (@doc SimulationModel.ThirdBodyEphemerisSample) ThirdBodyEphemerisSample
+@doc (@doc SimulationModel.EnvironmentSample) EnvironmentSample
+@doc (@doc SimulationModel.EffectorEnvironmentRequirements) EffectorEnvironmentRequirements
 
 """
     NoAtmosphereModel()
@@ -123,6 +132,27 @@ implementations. Extend this method for package or user models that contribute
 translational and rotational wrench terms to the simulation RHS.
 """
 calcForceTorque
+
+"""
+    wrench(model, x::StateSample, env::EnvironmentSample, t::Float64) -> (force_ii, torque_body)
+
+Preferred additive extension hook for custom [`AbstractForceTorqueModel`](@ref)
+implementations. The engine owns stage-consistent sampling and caching, then
+passes a typed state/environment bundle into `wrench`.
+
+Return inertial-frame force and body-frame torque in SI units. Implementations
+should behave as pure functions of `(model, x, env, t)`.
+"""
+wrench
+
+"""
+    environment_requirements(model) -> EffectorEnvironmentRequirements
+
+Preferred additive declaration hook for the sampled environment capabilities a
+[`wrench`](@ref) implementation requires. The default requests no sampled
+environment fields.
+"""
+environment_requirements
 
 """
     getDensity(model, h, lat, lon, el_time, wind[, p]) -> (rho, temperature, wind_vec)
@@ -206,11 +236,13 @@ export simulation_engine_config_from_env
 export prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 export AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractControlEffectorModel
 export AbstractEphemeridesModel, AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
+export StateSample, PlanetFrameSample, AtmosphereSample, SolarEphemerisSample
+export ThirdBodyEphemerisSample, EnvironmentSample, EffectorEnvironmentRequirements
 export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
 export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 export SimpleEphemeridesModel
 export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
-export calcForceTorque, getDensity, getDensityBatch!
+export calcForceTorque, wrench, environment_requirements, getDensity, getDensityBatch!
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation

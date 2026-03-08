@@ -44,29 +44,25 @@ end
 end
 
 @inline function _stage_environment_kinematics(x, p, t::Float64)
+    engine = _simulation_engine_module()
     pos_ii, vel_ii = _extract_pos_vel(x)
-    planet = p.args.environment_model.planet
-    l_pi = _planet_lpi_at(p, t)
-    pos_pp, vel_pp = _planet_relative_state(pos_ii, vel_ii, planet, l_pi)
-    alt, lat, lon = rtolatlong(pos_pp, planet)
+    planet_frame = engine.sample_planet_frame(x, p, 1, t)
     return (
-        l_pi=l_pi,
+        l_pi=planet_frame.l_pi,
         pos_ii=pos_ii,
         vel_ii=vel_ii,
-        pos_pp=pos_pp,
-        vel_pp=vel_pp,
-        alt=alt,
-        lat=lat,
-        lon=lon,
+        pos_pp=planet_frame.pos_pp,
+        vel_pp=planet_frame.vel_pp,
+        alt=planet_frame.alt_m,
+        lat=planet_frame.lat_rad,
+        lon=planet_frame.lon_rad,
     )
 end
 
 @inline function _buffered_stage_environment_state(x, p, sat_idx::Int, t::Float64)
     kin = _stage_environment_kinematics(x, p, t)
-    rho = sat_idx <= length(p.shared_buffers.densities) ? p.shared_buffers.densities[sat_idx] : 0.0
-    T = sat_idx <= length(p.shared_buffers.temperatures) ? p.shared_buffers.temperatures[sat_idx] : p.args.environment_model.planet.T_ref
-    wind_vec = sat_idx <= length(p.shared_buffers.winds) ? p.shared_buffers.winds[sat_idx] : SVector{3, Float64}(0.0, 0.0, 0.0)
-    return merge(kin, (rho=rho, T=T, wind=wind_vec))
+    atmosphere = _simulation_engine_module().sample_buffered_atmosphere(x, p, sat_idx, t)
+    return merge(kin, (rho=atmosphere.rho_kg_m3, T=atmosphere.temperature_k, wind=atmosphere.wind_pp))
 end
 
 function _density_state_from_kinematics!(
@@ -178,33 +174,9 @@ function _density_state_from_kinematics!(
 end
 
 function _stage_environment_state(x, p, sat_idx::Int, t::Float64; write_buffers::Bool=true)
-    cache_cfg = _gram_track_cache_config()
-    stats_enabled = _gram_runtime_stats_enabled()
-    target_include_j2 = _gram_track_cache_target_use_j2() && _uses_j2_gravity_effector(p.args.dynamics_model.dynamic_effectors)
-    density_model = _density_model_for_sat(p, sat_idx)
-    caches = p.shared_buffers.gram_density_cache
     kin = _stage_environment_kinematics(x, p, t)
-    current_mass_kg = _extract_mass_kg(x)
-    rho, T, wind_vec = _density_state_from_kinematics!(
-        p,
-        sat_idx,
-        kin.pos_ii,
-        kin.vel_ii,
-        current_mass_kg,
-        kin.alt,
-        kin.lat,
-        kin.lon,
-        t,
-        density_model,
-        cache_cfg,
-        stats_enabled,
-        target_include_j2,
-        caches
-    )
-    if write_buffers
-        _write_density_buffers!(p, sat_idx, rho, T, wind_vec)
-    end
-    return merge(kin, (rho=rho, T=T, wind=wind_vec))
+    atmosphere = _simulation_engine_module().sample_atmosphere(x, p, sat_idx, t; write_buffers=write_buffers)
+    return merge(kin, (rho=atmosphere.rho_kg_m3, T=atmosphere.temperature_k, wind=atmosphere.wind_pp))
 end
 
 function get_density_callback(num_sats::Int, args::SimulationConfiguration)
@@ -215,7 +187,7 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
     cache_cfg = _gram_track_cache_config()
     stats_enabled = _gram_runtime_stats_enabled()
     function update_density_sat!(i::Int, p, u, t)
-        _stage_environment_state(u.sc[i], p, i, t; write_buffers=true)
+        _simulation_engine_module().sample_atmosphere(u.sc[i], p, i, t; write_buffers=true)
         return nothing
     end
 

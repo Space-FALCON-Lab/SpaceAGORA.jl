@@ -54,10 +54,18 @@ function simulation_engine_config_from_env(env::AbstractDict{<:Any, <:Any}=ENV):
         nothing
     end
 
+    raw_backbone_dt = strip(String(get(env, "SPACEAGORA_GRAVITY_BACKBONE_DT_S", "")))
+    backbone_dt = isempty(raw_backbone_dt) ? nothing : try
+        parse(Float64, raw_backbone_dt)
+    catch
+        nothing
+    end
+
     solver = SolverConfig(
         mode=String(get(env, "SPACEAGORA_SOLVER_MODE", "")),
         maxiters=maxiters,
         split_imex_solver=String(get(env, "SPACEAGORA_SPLIT_IMEX_SOLVER", "kencarp4")),
+        gravity_backbone_dt_s=backbone_dt,
         multirate_fast_substeps=try
             parse(Int, String(get(env, "SPACEAGORA_MULTIRATE_FAST_SUBSTEPS", "8")))
         catch
@@ -134,6 +142,7 @@ function _engine_env_overrides(config::SimulationEngineConfig)::Dict{String, Str
     !isempty(config.parallel.profile) && (overrides["SPACEAGORA_PARALLEL_PROFILE"] = config.parallel.profile)
     !isempty(config.solver.mode) && (overrides["SPACEAGORA_SOLVER_MODE"] = config.solver.mode)
     !(config.solver.maxiters === nothing) && (overrides["SPACEAGORA_SOLVER_MAXITERS"] = string(config.solver.maxiters))
+    !(config.solver.gravity_backbone_dt_s === nothing) && (overrides["SPACEAGORA_GRAVITY_BACKBONE_DT_S"] = string(config.solver.gravity_backbone_dt_s))
     !(config.solver.multirate_slow_dt_s === nothing) && (overrides["SPACEAGORA_MULTIRATE_SLOW_DT_S"] = string(config.solver.multirate_slow_dt_s))
 
     merge!(overrides, config.env_overrides)

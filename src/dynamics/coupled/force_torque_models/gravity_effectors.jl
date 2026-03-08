@@ -3,6 +3,7 @@ module GravityEffectors
     using ...AbstractTypes: AbstractForceTorqueModel
     using ...EffectorSampling: StateSample, EnvironmentSample, EffectorEnvironmentRequirements
     using ...SimulationModel: rot
+    import ...EffectorSampling: gravity_backbone_structure, gravity_backbone_acceleration_ii
     import ..DynamicEffectors: calcForceTorque, wrench, environment_requirements
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel

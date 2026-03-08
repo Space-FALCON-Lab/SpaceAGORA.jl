@@ -200,6 +200,17 @@ end
     return force_ii, torque_body
 end
 
+@inline gravity_backbone_structure(::ConstantGravityModel) = :position_only_static_gravity
+
+@inline function gravity_backbone_acceleration_ii(
+    model::ConstantGravityModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::SVector{3, Float64}
+    return _inverse_squared_gravity_accel(x.pos_ii, env.planet)
+end
+
 function calcForceTorque(model::InverseSquaredGravityModel, x::ComponentVector, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     pos_ii = SVector{3, Float64}(x.pos)
     mass = x.mass
@@ -219,6 +230,17 @@ end
     force_ii = x.mass_kg * gravity_ii
     torque_body = _gravity_gradient_torque_body(model, x, env.planet)
     return force_ii, torque_body
+end
+
+@inline gravity_backbone_structure(::InverseSquaredGravityModel) = :position_only_static_gravity
+
+@inline function gravity_backbone_acceleration_ii(
+    model::InverseSquaredGravityModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::SVector{3, Float64}
+    return _inverse_squared_gravity_accel(x.pos_ii, env.planet)
 end
 
 function calcForceTorque(model::InverseSquaredJ2GravityModel, x::ComponentVector, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
@@ -245,6 +267,20 @@ end
     force_ii = x.mass_kg * gravity_ii
     torque_body = _gravity_gradient_torque_body(model, x, env.planet)
     return force_ii, torque_body
+end
+
+@inline gravity_backbone_structure(::InverseSquaredJ2GravityModel) = :position_only_static_gravity
+
+@inline function gravity_backbone_acceleration_ii(
+    model::InverseSquaredJ2GravityModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::SVector{3, Float64}
+    planet_frame = env.planet_frame
+    planet_frame === nothing && throw(ArgumentError("InverseSquaredJ2GravityModel gravity-backbone acceleration requires env.planet_frame."))
+    gravity_pp = _inverse_squared_j2_gravity_accel(planet_frame.pos_pp, env.planet)
+    return planet_frame.l_pi' * gravity_pp
 end
 
 """

@@ -36,11 +36,7 @@ function _spaceagora_precompile_args()
     )
 end
 
-const _SPACEAGORA_PRECOMPILE_ENV = Dict(
-    "SPACEAGORA_PARALLEL_PROFILE" => "R2",
-    "SPACEAGORA_SAVE_BUNDLE" => "0",
-    "SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0",
-)
+const _SPACEAGORA_PRECOMPILE_ENV = Dict("SPACEAGORA_PARALLEL_PROFILE" => "R2", "SPACEAGORA_SAVE_BUNDLE" => "0", "SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0")
 
 function _run_spaceagora_precompile_workload(; workspace::AbstractString=tempdir())
     parse_parallel_profile("R2")
@@ -54,7 +50,5 @@ function _run_spaceagora_precompile_workload(; workspace::AbstractString=tempdir
 end
 
 @setup_workload begin
-    @compile_workload begin
-        _run_spaceagora_precompile_workload()
-    end
+    @compile_workload _run_spaceagora_precompile_workload()
 end

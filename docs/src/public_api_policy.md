@@ -62,6 +62,9 @@ For model authors, the stable extension contract is:
 - implement the matching exported hook functions such as:
   - `wrench`
   - `environment_requirements`
+  - `solver_partition`
+  - `gravity_backbone_structure`
+  - `gravity_backbone_acceleration_ii`
   - `calcForceTorque`
   - `getDensity`
   - `getDensityBatch!`
@@ -71,6 +74,15 @@ For model authors, the stable extension contract is:
 
 This lets extension code stay rooted in `SpaceAGORA.*` rather than reaching into
 internal modules.
+
+Solver-side policy note:
+
+- `split_imex` now means the atmosphere-implicit IMEX partition
+- `multirate` still means the control-focused split
+- `solver_partition` is the public hook that places dynamic effectors on the implicit or explicit IMEX side
+- `gravity_backbone_split` is the public gravity-only translational backbone foundation
+- `gravity_backbone_structure` and `gravity_backbone_acceleration_ii` are the public hooks for that mode
+- the current `heat_loads` state remains explicit because it is an accumulated heat-rate integral, not a thermal-capacitance model
 
 ## Documentation enforcement
 

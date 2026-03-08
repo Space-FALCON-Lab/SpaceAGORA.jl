@@ -136,6 +136,9 @@ end
 @inline environment_requirements(::AerodynamicCoefficientConstant) = EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
 @inline environment_requirements(::AerodynamicCoefficientfM) = EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
 @inline environment_requirements(::AerodynamicCoefficientNoBallisticFlight) = EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
+@inline solver_partition(::AerodynamicCoefficientConstant) = :implicit
+@inline solver_partition(::AerodynamicCoefficientfM) = :implicit
+@inline solver_partition(::AerodynamicCoefficientNoBallisticFlight) = :implicit
 
 @inline function _constant_drag_coefficient(alpha_rad::Float64)::Float64
     return 2 * (2.2 - 0.8) / pi * alpha_rad + 0.8

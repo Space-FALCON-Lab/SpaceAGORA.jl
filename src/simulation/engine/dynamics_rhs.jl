@@ -15,6 +15,37 @@
     return SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)
 end
 
+@inline function _solver_partition_validated(effector)::Symbol
+    partition = SimulationModel.solver_partition(effector)
+    if partition === :implicit || partition === :explicit
+        return partition
+    end
+    throw(ArgumentError(
+        "solver_partition($(nameof(typeof(effector)))) must return :implicit or :explicit, got $(repr(partition))."
+    ))
+end
+
+@inline _effector_in_partition(effector, partition::Symbol)::Bool =
+    _solver_partition_validated(effector) === partition
+
+@inline function _partition_needs_state_sample(
+    dynamic_effectors::Tuple,
+    partition::Symbol,
+)::Bool
+    return any(_effector_in_partition(effector, partition) && _wrench_method_available(effector) for effector in dynamic_effectors)
+end
+
+@inline function _partition_selected_count(
+    dynamic_effectors::Tuple,
+    partition::Symbol,
+)::Int
+    count = 0
+    @inbounds for effector in dynamic_effectors
+        count += _effector_in_partition(effector, partition) ? 1 : 0
+    end
+    return count
+end
+
 @inline function _accumulate_dynamic_effectors!(
     forces::MVector{3, Float64},
     torques::MVector{3, Float64},
@@ -82,6 +113,65 @@ end
     return nothing
 end
 
+@inline function _accumulate_dynamic_effectors_partitioned!(
+    forces::MVector{3, Float64},
+    torques::MVector{3, Float64},
+    sc_view,
+    p,
+    sat_idx::Int,
+    t::Float64,
+    dynamic_effectors::Tuple,
+    effector_decision,
+    partition::Symbol,
+)
+    selected_count = _partition_selected_count(dynamic_effectors, partition)
+    selected_count == 0 && return nothing
+
+    state_sample = if _partition_needs_state_sample(dynamic_effectors, partition)
+        spacecraft = p.args.dynamics_model.spacecraft[sat_idx]
+        build_state_sample(sc_view, spacecraft, p.args.mission_configuration.orientation_sim)
+    else
+        nothing
+    end
+
+    if effector_decision.use_threads && selected_count > 1
+        reduced = SimulationModel.ParallelPolicy.threaded_reduce(
+            length(dynamic_effectors),
+            effector_decision.allotment,
+            () -> MVector{6, Float64}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            (local_sum, eff_idx) -> begin
+                effector = dynamic_effectors[eff_idx]
+                _effector_in_partition(effector, partition) || return nothing
+                force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
+                local_sum[1] += force[1]
+                local_sum[2] += force[2]
+                local_sum[3] += force[3]
+                local_sum[4] += torque[1]
+                local_sum[5] += torque[2]
+                local_sum[6] += torque[3]
+                return nothing
+            end,
+            (dest, src) -> begin
+                @inbounds for i in 1:6
+                    dest[i] += src[i]
+                end
+                return nothing
+            end
+        )
+        forces .= SVector{3, Float64}(reduced[1], reduced[2], reduced[3])
+        torques .= SVector{3, Float64}(reduced[4], reduced[5], reduced[6])
+        return nothing
+    end
+
+    @inbounds for effector in dynamic_effectors
+        _effector_in_partition(effector, partition) || continue
+        force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
+        forces .+= force
+        torques .+= torque
+    end
+    return nothing
+end
+
 @inline function _accumulate_dynamic_effectors!(
     forces::MVector{3, Float64},
     torques::MVector{3, Float64},
@@ -132,6 +222,56 @@ end
     n_copy = min(length(heat_rates), length(du_heat))
     @inbounds for j in 1:n_copy
         du_heat[j] = heat_rates[j]
+    end
+    return nothing
+end
+
+@inline function _gravity_backbone_state_sample(q_state, dq_state, p, sat_idx::Int)::StateSample
+    spacecraft = p.args.dynamics_model.spacecraft[sat_idx]
+    pos_ii = SVector{3, Float64}(q_state.sc[sat_idx].pos)
+    vel_ii = SVector{3, Float64}(dq_state.sc[sat_idx].vel)
+    mass_kg = spacecraft.dry_mass + spacecraft.prop_mass
+    return StateSample(pos_ii, vel_ii, mass_kg; spacecraft=spacecraft)
+end
+
+function spacecraft_dynamics_gravity_backbone!(ddu, dq, q, p, t::Float64)
+    q_state = q.sc
+    dq_state = dq.sc
+    ddu_state = ddu.sc
+    dynamic_effectors = p.args.dynamics_model.dynamic_effectors
+    p.shared_buffers.current_time[] = t
+    use_rhs_batch = _rhs_batch_parallel_enabled(length(q_state))
+    if use_rhs_batch
+        minbatch = max(1, Int(ceil(length(q_state) / Polyester.num_cores())))
+        @batch minbatch=minbatch for i in eachindex(q_state)
+            if !p.is_active[i]
+                ddu_state[i].vel .= 0.0
+                continue
+            end
+            state_sample = _gravity_backbone_state_sample(q, dq, p, i)
+            accel_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+            @inbounds for effector in dynamic_effectors
+                req = SimulationModel.environment_requirements(effector)
+                env = sample_environment(req, effector, state_sample, p, i, t; write_buffers=false)
+                accel_ii .+= SimulationModel.gravity_backbone_acceleration_ii(effector, state_sample, env, t)
+            end
+            ddu_state[i].vel .= accel_ii
+        end
+    else
+        @inbounds for i in eachindex(q_state)
+            if !p.is_active[i]
+                ddu_state[i].vel .= 0.0
+                continue
+            end
+            state_sample = _gravity_backbone_state_sample(q, dq, p, i)
+            accel_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+            @inbounds for effector in dynamic_effectors
+                req = SimulationModel.environment_requirements(effector)
+                env = sample_environment(req, effector, state_sample, p, i, t; write_buffers=false)
+                accel_ii .+= SimulationModel.gravity_backbone_acceleration_ii(effector, state_sample, env, t)
+            end
+            ddu_state[i].vel .= accel_ii
+        end
     end
     return nothing
 end
@@ -356,6 +496,187 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
         end
     end
 end # function spacecraft_dynamics_slow!
+
+function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::ComponentVector, p, t::Float64)
+    sc_state = u.sc
+    sc_du = du.sc
+    dynamics_model = p.args.dynamics_model
+    dynamic_effectors = dynamics_model.dynamic_effectors
+    spacecraft = dynamics_model.spacecraft
+    p.shared_buffers.current_time[] = t
+    effector_decision = _dynamic_effector_thread_decision(p.args, p, dynamic_effectors, length(spacecraft))
+    use_rhs_batch = _rhs_batch_parallel_enabled(length(spacecraft))
+    if use_rhs_batch
+        minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
+        @batch minbatch=minbatch for i in eachindex(sc_state)
+            if !p.is_active[i]
+                sc_du[i] .= 0.0
+                continue
+            end
+            @views begin
+                sc_view = sc_state[i]
+                du_view = sc_du[i]
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+                _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :implicit)
+
+                SimulationModel.DynamicsTranslational.assign_force_only_translational_rhs!(
+                    du_view,
+                    sc_view,
+                    forces,
+                )
+
+                if p.args.mission_configuration.orientation_sim
+                    inertia_tensor = spacecraft[i].inertia_tensor
+                    _assign_orientation_rhs!(
+                        du_view,
+                        sc_view,
+                        inertia_tensor,
+                        torques;
+                        propagate_quaternion=false,
+                        include_gyroscopic=false,
+                    )
+                end
+
+                du_view.heat_loads .= 0.0
+            end
+        end
+    else
+        @inbounds for i in eachindex(sc_state)
+            if !p.is_active[i]
+                sc_du[i] .= 0.0
+                continue
+            end
+            @views begin
+                sc_view = sc_state[i]
+                du_view = sc_du[i]
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+                _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :implicit)
+
+                SimulationModel.DynamicsTranslational.assign_force_only_translational_rhs!(
+                    du_view,
+                    sc_view,
+                    forces,
+                )
+
+                if p.args.mission_configuration.orientation_sim
+                    inertia_tensor = spacecraft[i].inertia_tensor
+                    _assign_orientation_rhs!(
+                        du_view,
+                        sc_view,
+                        inertia_tensor,
+                        torques;
+                        propagate_quaternion=false,
+                        include_gyroscopic=false,
+                    )
+                end
+
+                du_view.heat_loads .= 0.0
+            end
+        end
+    end
+end # function spacecraft_dynamics_implicit_atmosphere!
+
+function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::ComponentVector, p, t::Float64)
+    sc_state = u.sc
+    sc_du = du.sc
+    dynamics_model = p.args.dynamics_model
+    dynamic_effectors = dynamics_model.dynamic_effectors
+    spacecraft = dynamics_model.spacecraft
+    debug_control = p.shared_buffers.debug_control[]
+    p.shared_buffers.current_time[] = t
+    effector_decision = _dynamic_effector_thread_decision(p.args, p, dynamic_effectors, length(spacecraft))
+    use_rhs_batch = _rhs_batch_parallel_enabled(length(spacecraft))
+    if use_rhs_batch
+        minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
+        @batch minbatch=minbatch for i in eachindex(sc_state)
+            if !p.is_active[i]
+                sc_du[i] .= 0.0
+                continue
+            end
+            @views begin
+                sc_view = sc_state[i]
+                du_view = sc_du[i]
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+                _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :explicit)
+                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
+                    p,
+                    sc_view,
+                    i,
+                    t;
+                    use_buffered_density=false,
+                )
+
+                SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
+                    du_view,
+                    sc_view,
+                    forces,
+                    mass_rate,
+                )
+
+                if p.args.mission_configuration.orientation_sim
+                    inertia_tensor = spacecraft[i].inertia_tensor
+                    _assign_orientation_rhs!(
+                        du_view,
+                        sc_view,
+                        inertia_tensor,
+                        torques;
+                        propagate_quaternion=true,
+                        include_gyroscopic=true,
+                    )
+                end
+
+                _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
+            end
+        end
+    else
+        @inbounds for i in eachindex(sc_state)
+            if !p.is_active[i]
+                sc_du[i] .= 0.0
+                continue
+            end
+            @views begin
+                sc_view = sc_state[i]
+                du_view = sc_du[i]
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+                _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :explicit)
+                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
+                    p,
+                    sc_view,
+                    i,
+                    t;
+                    use_buffered_density=false,
+                )
+
+                SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
+                    du_view,
+                    sc_view,
+                    forces,
+                    mass_rate,
+                )
+
+                if p.args.mission_configuration.orientation_sim
+                    inertia_tensor = spacecraft[i].inertia_tensor
+                    _assign_orientation_rhs!(
+                        du_view,
+                        sc_view,
+                        inertia_tensor,
+                        torques;
+                        propagate_quaternion=true,
+                        include_gyroscopic=true,
+                    )
+                end
+
+                _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
+            end
+        end
+    end
+end # function spacecraft_dynamics_explicit_remainder!
 
 function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     sc_state = u.sc

@@ -35,12 +35,18 @@ Stable interface:
 - `SpaceAGORA.AbstractForceTorqueModel`
 - `SpaceAGORA.wrench`
 - `SpaceAGORA.environment_requirements`
+- `SpaceAGORA.solver_partition`
+- `SpaceAGORA.gravity_backbone_structure`
+- `SpaceAGORA.gravity_backbone_acceleration_ii`
 - `SpaceAGORA.calcForceTorque`
 
 Preferred additive methods:
 
 ```julia
 SpaceAGORA.environment_requirements(model) -> SpaceAGORA.EffectorEnvironmentRequirements
+SpaceAGORA.solver_partition(model) -> :explicit | :implicit
+SpaceAGORA.gravity_backbone_structure(model) -> :unsupported | :position_only_static_gravity
+SpaceAGORA.gravity_backbone_acceleration_ii(model, x::SpaceAGORA.StateSample, env::SpaceAGORA.EnvironmentSample, t::Float64) -> accel_ii
 SpaceAGORA.wrench(model, x::SpaceAGORA.StateSample, env::SpaceAGORA.EnvironmentSample, t::Float64) -> (force_ii, torque_body)
 ```
 
@@ -53,6 +59,19 @@ SpaceAGORA.calcForceTorque(model, x, p, i) -> (force_n, torque_n_m)
 Use `wrench` for new work when possible. The engine owns stage-consistent
 sampling and passes typed state/environment data into the effector. Keep
 `calcForceTorque` only for compatibility or when migrating existing models.
+Override `solver_partition` only if the effector should move to the implicit
+side of `split_imex`; the default is `:explicit`.
+Override the gravity-backbone hooks only if the effector is a strict
+position-only static-gravity term suitable for the foundation
+`gravity_backbone_split` mode.
+
+Solver partition contract:
+
+- `split_imex` is the atmosphere-implicit IMEX path
+- `multirate` remains the control-focused split path
+- `gravity_backbone_split` is a gravity-only translational backbone foundation, not yet a general gravity-plus-kicks mode
+- force returned by `wrench` is inertial-frame and torque is body-frame
+- the current heat-load state is an accumulated heat-rate integral and stays explicit
 
 Registration:
 

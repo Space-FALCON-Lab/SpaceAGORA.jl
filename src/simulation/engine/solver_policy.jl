@@ -58,6 +58,8 @@ end
         return :tsit5
     elseif mode in ("symplectic", "kahanli8", "verlet")
         return :symplectic
+    elseif mode in ("gravity_backbone_split", "gravity-backbone-split", "gravity_backbone", "gravity-backbone")
+        return :gravity_backbone_split
     elseif mode in ("auto_stiff", "auto-stiff", "autostiff", "auto")
         return :auto_stiff
     elseif mode in ("rodas5p", "rodas", "stiff")
@@ -68,7 +70,7 @@ end
         return :multirate
     end
     throw(ArgumentError(
-        "Unsupported SPACEAGORA_SOLVER_MODE='$mode'. Use one of: tsit5, symplectic, auto_stiff, rodas5p, split_imex, multirate."
+        "Unsupported SPACEAGORA_SOLVER_MODE='$mode'. Use one of: tsit5, symplectic, gravity_backbone_split, auto_stiff, rodas5p, split_imex, multirate."
     ))
 end
 
@@ -118,6 +120,22 @@ end
     return dt
 end
 
+@inline function _gravity_backbone_fixed_dt_s(args)::Float64
+    raw = strip(_engine_env_get("SPACEAGORA_GRAVITY_BACKBONE_DT_S", ""))
+    dt = if isempty(raw)
+        args.integration_tolerances.dt_max_orbit
+    else
+        parsed = try
+            parse(Float64, raw)
+        catch
+            throw(ArgumentError("SPACEAGORA_GRAVITY_BACKBONE_DT_S must be a number, got '$raw'."))
+        end
+        parsed
+    end
+    dt > 0.0 || throw(ArgumentError("SPACEAGORA_GRAVITY_BACKBONE_DT_S must be > 0.0, got $dt."))
+    return dt
+end
+
 @inline function _symplectic_conservative_eligible(args)::Bool
     args.mission_configuration.orientation_sim && return false
     length(args.dynamics_model.spacecraft) == 1 || return false
@@ -128,6 +146,36 @@ end
     length(effectors) == 1 || return false
     return first(effectors) isa SimulationModel.InverseSquaredGravityModel
 end
+
+@inline function _gravity_backbone_structure_validated(effector)::Symbol
+    structure = SimulationModel.gravity_backbone_structure(effector)
+    if structure === :unsupported || structure === :position_only_static_gravity
+        return structure
+    end
+    throw(ArgumentError(
+        "gravity_backbone_structure($(nameof(typeof(effector)))) must return :unsupported or :position_only_static_gravity, got $(repr(structure))."
+    ))
+end
+
+@inline function _gravity_backbone_reject_reason(args)::Union{Nothing, String}
+    args.mission_configuration.orientation_sim && return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires orientation_sim=false."
+    isempty(args.control_model.control_effectors) || return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires no control effectors."
+    isempty(args.guidance_model.guidance_effectors) || return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires no guidance effectors."
+    isempty(args.navigation_model.navigation_effectors) || return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires no navigation effectors."
+    effectors = args.dynamics_model.dynamic_effectors
+    isempty(effectors) && return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires at least one supported gravity effector."
+    @inbounds for effector in effectors
+        structure = _gravity_backbone_structure_validated(effector)
+        structure === :position_only_static_gravity || return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split does not support $(nameof(typeof(effector)))."
+        req = SimulationModel.environment_requirements(effector)
+        req.atmosphere && return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split rejects atmosphere-dependent effectors."
+        req.solar && return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split rejects solar/SRP-dependent effectors."
+        isempty(req.third_body_names) || return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split rejects third-body/ephemeris-dependent effectors."
+    end
+    return nothing
+end
+
+@inline _gravity_backbone_eligible(args)::Bool = isnothing(_gravity_backbone_reject_reason(args))
 
 @inline function _split_imex_solver_spec()
     mode = lowercase(strip(_engine_env_get("SPACEAGORA_SPLIT_IMEX_SOLVER", "kencarp4")))
@@ -383,6 +431,21 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
         sol = _solve_with_fixed_step_solver(prob, KahanLi8(), _symplectic_fixed_dt_s(args))
         return sol, (
             solver="KahanLi8(Symplectic)",
+            initial_solver="KahanLi8",
+            fallback_used=false,
+            trigger_retcode=missing
+        )
+    end
+
+    if mode == :gravity_backbone_split
+        reject_reason = _gravity_backbone_reject_reason(args)
+        isnothing(reject_reason) || throw(ArgumentError(reject_reason))
+        _is_partitioned_second_order_problem(prob) || throw(ArgumentError(
+            "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires a SecondOrderODEProblem built over translational position/velocity states."
+        ))
+        sol = _solve_with_fixed_step_solver(prob, KahanLi8(), _gravity_backbone_fixed_dt_s(args))
+        return sol, (
+            solver="KahanLi8(GravityBackbone)",
             initial_solver="KahanLi8",
             fallback_used=false,
             trigger_retcode=missing

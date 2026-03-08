@@ -15,6 +15,7 @@ include(joinpath(@__DIR__, "adapters", "from_env.jl"))
 include(joinpath(@__DIR__, "adapters", "from_simulation_configuration.jl"))
 
 include(joinpath(@__DIR__, "effector_sampling.jl"))
+include(joinpath(@__DIR__, "state_access.jl"))
 include(joinpath(@__DIR__, "setup.jl"))
 include(joinpath(@__DIR__, "solver_policy.jl"))
 include(joinpath(@__DIR__, "dynamics_rhs.jl"))

@@ -8,6 +8,9 @@
     withenv("SPACEAGORA_SOLVER_MODE" => "symplectic") do
         @test _solver_policy_mode() == :symplectic
     end
+    withenv("SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split") do
+        @test _solver_policy_mode() == :gravity_backbone_split
+    end
     withenv("SPACEAGORA_SOLVER_MODE" => "rodas") do
         @test _solver_policy_mode() == :rodas5p
     end
@@ -196,6 +199,19 @@
         @test_throws ArgumentError _symplectic_fixed_dt_s(args_eff_single)
     end
 
+    withenv("SPACEAGORA_GRAVITY_BACKBONE_DT_S" => nothing) do
+        @test _gravity_backbone_fixed_dt_s(args_eff_single) == args_eff_single.integration_tolerances.dt_max_orbit
+    end
+    withenv("SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "5.0") do
+        @test _gravity_backbone_fixed_dt_s(args_eff_single) == 5.0
+    end
+    withenv("SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "bad") do
+        @test_throws ArgumentError _gravity_backbone_fixed_dt_s(args_eff_single)
+    end
+    withenv("SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "0.0") do
+        @test_throws ArgumentError _gravity_backbone_fixed_dt_s(args_eff_single)
+    end
+
     withenv("SPACEAGORA_SPLIT_IMEX_SOLVER" => nothing) do
         split_solver = _split_imex_solver_spec()
         @test split_solver.label == "KenCarp4"
@@ -275,6 +291,63 @@
         @test meta.initial_solver == "KenCarp47"
     end
 
+    args_split_gravity = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=30.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true
+    )
+    u0_split_gravity = build_initial_conditions(args_split_gravity)
+    p_split_gravity = ODEParams{1}(args=args_split_gravity)
+    _initialize_heat_rate_buffers!(p_split_gravity)
+
+    withenv("SPACEAGORA_SOLVER_MODE" => "split_imex") do
+        prob_split = _build_typed_solver_problem(u0_split_gravity, (0.0, 1.0), p_split_gravity, CallbackSet())
+        @test hasproperty(prob_split.f, :f1)
+        @test hasproperty(prob_split.f, :f2)
+        du_implicit = copy(u0_split_gravity)
+        du_explicit = copy(u0_split_gravity)
+        du_implicit .= 0.0
+        du_explicit .= 0.0
+        prob_split.f.f1(du_implicit, u0_split_gravity, p_split_gravity, 0.0)
+        prob_split.f.f2(du_explicit, u0_split_gravity, p_split_gravity, 0.0)
+        @test all(==(0.0), du_implicit.sc[1].pos)
+        @test all(==(0.0), du_implicit.sc[1].vel)
+        @test du_implicit.sc[1].mass == 0.0
+        @test isapprox(
+            SVector{3, Float64}(du_explicit.sc[1].pos),
+            SVector{3, Float64}(u0_split_gravity.sc[1].vel);
+            atol=1e-12,
+            rtol=1e-10
+        )
+        @test norm(SVector{3, Float64}(du_explicit.sc[1].vel)) > 0.0
+    end
+
+    withenv("SPACEAGORA_SOLVER_MODE" => "multirate") do
+        prob_multirate = _build_typed_solver_problem(u0_split_gravity, (0.0, 1.0), p_split_gravity, CallbackSet())
+        @test hasproperty(prob_multirate.f, :f1)
+        @test hasproperty(prob_multirate.f, :f2)
+        du_slow = copy(u0_split_gravity)
+        du_fast = copy(u0_split_gravity)
+        du_slow .= 0.0
+        du_fast .= 0.0
+        prob_multirate.f.f1(du_slow, u0_split_gravity, p_split_gravity, 0.0)
+        prob_multirate.f.f2(du_fast, u0_split_gravity, p_split_gravity, 0.0)
+        @test isapprox(
+            SVector{3, Float64}(du_slow.sc[1].pos),
+            SVector{3, Float64}(u0_split_gravity.sc[1].vel);
+            atol=1e-12,
+            rtol=1e-10
+        )
+        @test norm(SVector{3, Float64}(du_slow.sc[1].vel)) > 0.0
+        @test all(==(0.0), du_fast.sc[1].pos)
+        @test all(==(0.0), du_fast.sc[1].vel)
+        @test du_fast.sc[1].mass == 0.0
+    end
+
     withenv("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => "6") do
         @test _multirate_fast_substeps() == 6
     end
@@ -329,6 +402,11 @@
     )
     @test _symplectic_conservative_eligible(args_symplectic) == true
     @test _symplectic_conservative_eligible(args_eff_single) == false
+    @test SimulationModel.gravity_backbone_structure(ConstantGravityModel()) == :position_only_static_gravity
+    @test SimulationModel.gravity_backbone_structure(InverseSquaredGravityModel()) == :position_only_static_gravity
+    @test SimulationModel.gravity_backbone_structure(InverseSquaredJ2GravityModel()) == :position_only_static_gravity
+    @test _gravity_backbone_structure_validated(InverseSquaredGravityModel()) == :position_only_static_gravity
+    @test_throws ArgumentError _gravity_backbone_structure_validated(InvalidBackboneStructureModel())
 
     kepler_second_order! = function (ddu, du, u, p, t)
         r = norm(u)
@@ -351,6 +429,125 @@
     end
     withenv("SPACEAGORA_SOLVER_MODE" => "symplectic", "SPACEAGORA_SOLVER_MAXITERS" => nothing) do
         @test_throws ArgumentError _solve_with_solver_policy(prob_simple, args_symplectic, 1e-8, 1e-8)
+    end
+
+    args_backbone = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel()
+    )
+    @test _gravity_backbone_eligible(args_backbone) == true
+    @test isnothing(_gravity_backbone_reject_reason(args_backbone))
+
+    args_backbone_orient = build_config(
+        spacecraft=make_spacecraft(
+            ra_alt_m=500e3,
+            rp_alt_m=500e3,
+            orientation_state=(normalize(SVector{4, Float64}(0.1, -0.2, 0.3, 0.9)), SVector{3, Float64}(0.0, 0.0, 0.0))
+        ),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=true,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel()
+    )
+    @test occursin("orientation_sim=false", _gravity_backbone_reject_reason(args_backbone_orient))
+
+    args_backbone_control = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        control_effectors=(TimedTangentialThrusterModel(1.0, 1.0, 0.0, 10.0),),
+        control_rates=[1.0],
+        keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel()
+    )
+    @test occursin("no control effectors", _gravity_backbone_reject_reason(args_backbone_control))
+
+    args_backbone_guidance = SimulationConfiguration(
+        simulation_settings=args_backbone.simulation_settings,
+        mission_configuration=args_backbone.mission_configuration,
+        environment_model=args_backbone.environment_model,
+        dynamics_model=args_backbone.dynamics_model,
+        guidance_model=GuidanceModel(guidance_effectors=(CountingGuidanceModel([0]),), guidance_rates=[1.0]),
+        navigation_model=args_backbone.navigation_model,
+        control_model=args_backbone.control_model,
+        initial_time=args_backbone.initial_time,
+        integration_tolerances=args_backbone.integration_tolerances
+    )
+    @test occursin("no guidance effectors", _gravity_backbone_reject_reason(args_backbone_guidance))
+
+    args_backbone_navigation = SimulationConfiguration(
+        simulation_settings=args_backbone.simulation_settings,
+        mission_configuration=args_backbone.mission_configuration,
+        environment_model=args_backbone.environment_model,
+        dynamics_model=args_backbone.dynamics_model,
+        guidance_model=args_backbone.guidance_model,
+        navigation_model=NavigationModel(navigation_effectors=(CountingNavigationModel([0]),), navigation_rates=[1.0]),
+        control_model=args_backbone.control_model,
+        initial_time=args_backbone.initial_time,
+        integration_tolerances=args_backbone.integration_tolerances
+    )
+    @test occursin("no navigation effectors", _gravity_backbone_reject_reason(args_backbone_navigation))
+
+    args_backbone_solar = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(SolarBackboneModel(),),
+        keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel()
+    )
+    @test occursin("solar/SRP-dependent", _gravity_backbone_reject_reason(args_backbone_solar))
+
+    args_backbone_custom = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=2.0,
+        EI_km=120.0,
+        dynamic_effectors=(BackboneCustomGravityModel(SVector{3, Float64}(1.0e-6, 0.0, 0.0)),),
+        keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel()
+    )
+    @test _gravity_backbone_eligible(args_backbone_custom) == true
+
+    u0_backbone = build_initial_conditions(args_backbone)
+    p_backbone = ODEParams{1}(args=args_backbone)
+    _initialize_heat_rate_buffers!(p_backbone)
+    callbacks_backbone = CallbackSet()
+    withenv("SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split") do
+        prob_backbone = _build_typed_solver_problem(u0_backbone, (0.0, 30.0), p_backbone, callbacks_backbone)
+        @test getproperty(prob_backbone, :problem_type) isa SecondOrderODEProblem
+        q0_backbone, dq0_backbone = _gravity_backbone_initial_states(u0_backbone, args_backbone)
+        ddu_backbone = copy(dq0_backbone)
+        ddu_backbone .= 0.0
+        spacecraft_dynamics_gravity_backbone!(ddu_backbone, dq0_backbone, q0_backbone, p_backbone, 0.0)
+        @test norm(SVector{3, Float64}(ddu_backbone.sc[1].vel)) > 0.0
+    end
+
+    withenv(
+        "SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split",
+        "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "2.0",
+        "SPACEAGORA_SOLVER_MAXITERS" => nothing
+    ) do
+        prob_backbone = _build_typed_solver_problem(u0_backbone, (0.0, 30.0), p_backbone, callbacks_backbone)
+        sol_backbone, meta_backbone = _solve_with_solver_policy(prob_backbone, args_backbone, 1e-8, 1e-8)
+        @test string(sol_backbone.retcode) == "Success"
+        @test meta_backbone.solver == "KahanLi8(GravityBackbone)"
+        @test _is_gravity_backbone_state(sol_backbone.u[end])
     end
 
     multirate_subprob = _split_subproblem(split_prob_simple, split_prob_simple.f.f1, [1.0], (0.0, 0.5))
@@ -429,6 +626,15 @@
     @test SimulationEngine._planet_frame_ephemeris_reuse_key(EARTH, SpiceEphemeridesModel(), 0.0, 10.0, 1.0) isa SimulationEngine.PlanetFrameEphemerisReuseKey
     @test _wrench_method_available(WrenchOnlyForceModel(SVector{3, Float64}(1.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)))
     @test !_wrench_method_available(ConstantForceModel(SVector{3, Float64}(1.0, 0.0, 0.0)))
+    @test SimulationModel.solver_partition(AerodynamicCoefficientConstant()) == :implicit
+    @test SimulationModel.solver_partition(AerodynamicCoefficientfM()) == :implicit
+    @test SimulationModel.solver_partition(AerodynamicCoefficientNoBallisticFlight()) == :implicit
+    @test SimulationModel.solver_partition(InverseSquaredGravityModel()) == :explicit
+    @test SimulationModel.solver_partition(SolarRadiationPressureModel(1.2, 12.0, 500.0)) == :explicit
+    @test SimulationModel.solver_partition(NBodyGravityModel(body_names=("moon",), primary_body_name="Earth")) == :explicit
+    @test _solver_partition_validated(AerodynamicCoefficientfM()) == :implicit
+    @test _solver_partition_validated(ConstantForceModel(SVector{3, Float64}(1.0, 0.0, 0.0))) == :explicit
+    @test_throws ArgumentError _solver_partition_validated(InvalidPartitionForceModel())
 
     q0_wrench = normalize(SVector{4, Float64}(0.1, -0.2, 0.3, 0.9))
     ω0_wrench = SVector{3, Float64}(0.0, 0.0, 0.0)
@@ -911,6 +1117,7 @@
     @test harmonics_ws_typed isa HarmonicsScratchWorkspace
     @test p_workspace_resize.shared_buffers.harmonics_workspaces[1] isa Dict{UInt, HarmonicsScratchWorkspace}
     @test harmonics_model.coefficient_normalization == :full
+    @test SimulationModel.solver_partition(harmonics_model) == :explicit
 
     @testset "Harmonics Normalization Conversion And Reference Parity" begin
         mktempdir() do tmp
@@ -1465,6 +1672,119 @@ end
     @test all(==(0.0), du0.sc[1].heat_loads)
 end
 
+@testset "Atmosphere-Implicit Split RHS Recombines To Full RHS" begin
+    q0_split = normalize(SVector{4, Float64}(0.15, -0.1, 0.25, 0.95))
+    ω0_split = SVector{3, Float64}(0.01, -0.015, 0.02)
+    sc_split = make_spacecraft(
+        ra_alt_m=220e3,
+        rp_alt_m=100e3,
+        i_deg=35.0,
+        ω_deg=40.0,
+        Ω_deg=10.0,
+        ν_deg=0.0,
+        orientation_state=(q0_split, ω0_split)
+    )
+    explicit_torque = SVector{3, Float64}(0.12, -0.08, 0.05)
+    args_split = build_config(
+        spacecraft=sc_split,
+        density_model=ExponentialAtmosphereModel(EARTH),
+        orientation_sim=true,
+        mission_time=10.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            AerodynamicCoefficientfM(),
+            ConstantTorqueModel(explicit_torque),
+        ),
+        keplerian=true
+    )
+    args_split.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(I(3))
+
+    u0_split = build_initial_conditions(args_split)
+    du_full = copy(u0_split)
+    du_implicit = copy(u0_split)
+    du_explicit = copy(u0_split)
+    du_sum = copy(u0_split)
+    du_full .= 0.0
+    du_implicit .= 0.0
+    du_explicit .= 0.0
+    du_sum .= 0.0
+    p_split = ODEParams{1}(args=args_split)
+    _initialize_heat_rate_buffers!(p_split)
+
+    spacecraft_dynamics!(du_full, u0_split, p_split, 0.0)
+    spacecraft_dynamics_implicit_atmosphere!(du_implicit, u0_split, p_split, 0.0)
+    spacecraft_dynamics_explicit_remainder!(du_explicit, u0_split, p_split, 0.0)
+    du_sum .= du_implicit .+ du_explicit
+
+    @test isapprox(du_sum.sc[1].pos, du_full.sc[1].pos; atol=1e-12, rtol=1e-10)
+    @test isapprox(du_sum.sc[1].vel, du_full.sc[1].vel; atol=1e-12, rtol=1e-10)
+    @test isapprox(du_sum.sc[1].mass, du_full.sc[1].mass; atol=1e-12, rtol=1e-10)
+    @test isapprox(du_sum.sc[1].q, du_full.sc[1].q; atol=1e-12, rtol=1e-10)
+    @test isapprox(du_sum.sc[1].ω, du_full.sc[1].ω; atol=1e-12, rtol=1e-10)
+    @test isapprox(du_sum.sc[1].heat_loads, du_full.sc[1].heat_loads; atol=1e-12, rtol=1e-10)
+
+    @test all(==(0.0), du_implicit.sc[1].pos)
+    @test du_implicit.sc[1].mass == 0.0
+    @test all(==(0.0), du_implicit.sc[1].q)
+    @test all(==(0.0), du_implicit.sc[1].heat_loads)
+    @test norm(SVector{3, Float64}(du_implicit.sc[1].vel)) > 0.0
+    @test norm(SVector{3, Float64}(du_implicit.sc[1].ω)) > 0.0
+
+    @test isapprox(
+        SVector{3, Float64}(du_explicit.sc[1].pos),
+        SVector{3, Float64}(u0_split.sc[1].vel);
+        atol=1e-12,
+        rtol=1e-10
+    )
+    @test du_explicit.sc[1].mass == 0.0
+    @test any(>(0.0), du_explicit.sc[1].heat_loads)
+
+    args_split_no_aero = build_config(
+        spacecraft=sc_split,
+        density_model=ExponentialAtmosphereModel(EARTH),
+        orientation_sim=true,
+        mission_time=10.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            ConstantTorqueModel(explicit_torque),
+        ),
+        keplerian=true
+    )
+    args_split_no_aero.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(I(3))
+    u0_split_no_aero = build_initial_conditions(args_split_no_aero)
+    du_explicit_no_aero = copy(u0_split_no_aero)
+    du_explicit_no_aero .= 0.0
+    p_split_no_aero = ODEParams{1}(args=args_split_no_aero)
+    _initialize_heat_rate_buffers!(p_split_no_aero)
+    spacecraft_dynamics_explicit_remainder!(du_explicit_no_aero, u0_split_no_aero, p_split_no_aero, 0.0)
+    @test isapprox(du_explicit.sc[1].ω, du_explicit_no_aero.sc[1].ω; atol=1e-12, rtol=1e-10)
+end
+
+@testset "Split IMEX Allows Zero Implicit Partition" begin
+    args_zero_implicit = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=30.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true
+    )
+    u0_zero_implicit = build_initial_conditions(args_zero_implicit)
+    p_zero_implicit = ODEParams{1}(args=args_zero_implicit)
+    _initialize_heat_rate_buffers!(p_zero_implicit)
+    split_prob_zero_implicit = withenv("SPACEAGORA_SOLVER_MODE" => "split_imex") do
+        _build_typed_solver_problem(u0_zero_implicit, (0.0, 30.0), p_zero_implicit, CallbackSet())
+    end
+    withenv("SPACEAGORA_SOLVER_MODE" => "split_imex", "SPACEAGORA_SOLVER_MAXITERS" => nothing) do
+        sol_zero_implicit, meta_zero_implicit = _solve_with_solver_policy(split_prob_zero_implicit, args_zero_implicit, 1e-8, 1e-8)
+        @test string(sol_zero_implicit.retcode) == "Success"
+        @test meta_zero_implicit.solver == "KenCarp4(IMEX)"
+    end
+end
+
 @testset "Heat Load Derivative Uses Thermal Model" begin
     sc = make_single_link_spacecraft(
         ra_alt_m=220e3,
@@ -1583,6 +1903,60 @@ end
     @test a_rel_drift < 1e-5
 end
 
+@testset "Gravity Backbone Improves Long-Horizon Two-Body Energy Drift" begin
+    ra_alt_m = 1_400e3
+    rp_alt_m = 400e3
+    sc = make_spacecraft(
+        ra_alt_m=ra_alt_m,
+        rp_alt_m=rp_alt_m,
+        i_deg=28.0,
+        ω_deg=15.0,
+        Ω_deg=25.0,
+        ν_deg=40.0
+    )
+    a0 = 0.5 * ((EARTH.Rp_e + ra_alt_m) + (EARTH.Rp_e + rp_alt_m))
+    period_s = 2pi * sqrt(a0^3 / EARTH.μ)
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=15.0 * period_s,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel(),
+        tolerances=IntegrationTolerances(
+            reltol_orbit=1e-5,
+            abstol_orbit=1e-5,
+            dt_max_orbit=120.0
+        )
+    )
+
+    df_tsit = DataFrame()
+    df_backbone = DataFrame()
+    tsit_time = @elapsed begin
+        df_tsit = withenv("SPACEAGORA_SOLVER_MODE" => "tsit5") do
+            run_case_silent(args)
+        end
+    end
+    backbone_time = @elapsed begin
+        df_backbone = withenv(
+            "SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split",
+            "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "20.0"
+        ) do
+            run_case_silent(args)
+        end
+    end
+
+    eps_tsit = specific_energy(df_tsit, EARTH.μ)
+    eps_backbone = specific_energy(df_backbone, EARTH.μ)
+    drift_tsit = maximum(abs.((eps_tsit .- first(eps_tsit)) ./ first(eps_tsit)))
+    drift_backbone = maximum(abs.((eps_backbone .- first(eps_backbone)) ./ first(eps_backbone)))
+
+    @info "gravity_backbone_benchmark" case="two_body_long_horizon" tsit5_seconds=tsit_time gravity_backbone_seconds=backbone_time tsit5_energy_drift=drift_tsit gravity_backbone_energy_drift=drift_backbone
+    @test drift_backbone < drift_tsit
+end
+
 @testset "J2 Secular Rates Match Standard First-Order Drift" begin
     sc = make_spacecraft(
         ra_alt_m=2_000e3,
@@ -1650,6 +2024,79 @@ end
     @test signbit(ωdot_measured) == signbit(ωdot_expected)
     @test isapprox(Ωdot_measured, Ωdot_expected; rtol=0.10, atol=0.0)
     @test isapprox(ωdot_measured, ωdot_expected; rtol=0.15, atol=0.0)
+end
+
+@testset "Gravity Backbone J2 Preserves Secular Drift Trend" begin
+    sc = make_spacecraft(
+        ra_alt_m=2_000e3,
+        rp_alt_m=400e3,
+        i_deg=45.0,
+        ω_deg=20.0,
+        Ω_deg=15.0,
+        ν_deg=40.0
+    )
+    a0 = 0.5 * ((EARTH.Rp_e + 2_000e3) + (EARTH.Rp_e + 400e3))
+    period_s = 2pi * sqrt(a0^3 / EARTH.μ)
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=6.0 * period_s,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredJ2GravityModel(),),
+        keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel(),
+        tolerances=IntegrationTolerances(
+            reltol_orbit=1e-8,
+            abstol_orbit=1e-8,
+            dt_max_orbit=30.0
+        )
+    )
+
+    df = withenv(
+        "SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split",
+        "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "5.0"
+    ) do
+        run_case_silent(args)
+    end
+
+    times = Float64.(df.time)
+    Ω_series = Vector{Float64}(undef, nrow(df))
+    ω_series = Vector{Float64}(undef, nrow(df))
+    @inbounds for idx in 1:nrow(df)
+        pos = SVector{3, Float64}(
+            Float64(df.sc1_pos_1[idx]),
+            Float64(df.sc1_pos_2[idx]),
+            Float64(df.sc1_pos_3[idx])
+        )
+        vel = SVector{3, Float64}(
+            Float64(df.sc1_vel_1[idx]),
+            Float64(df.sc1_vel_2[idx]),
+            Float64(df.sc1_vel_3[idx])
+        )
+        oe = rvtoorbitalelement(pos, vel, EARTH)
+        Ω_series[idx] = Float64(oe[4])
+        ω_series[idx] = Float64(oe[5])
+    end
+
+    oe0 = rvtoorbitalelement(
+        SVector{3, Float64}(Float64(df.sc1_pos_1[1]), Float64(df.sc1_pos_2[1]), Float64(df.sc1_pos_3[1])),
+        SVector{3, Float64}(Float64(df.sc1_vel_1[1]), Float64(df.sc1_vel_2[1]), Float64(df.sc1_vel_3[1])),
+        EARTH
+    )
+    Ωdot_expected, ωdot_expected = SimulationModel.GravityEffectors.j2_secular_rates(
+        Float64(oe0[1]),
+        Float64(oe0[2]),
+        Float64(oe0[3]),
+        EARTH
+    )
+
+    Ωdot_measured = linear_regression_slope(times, unwrap_angle_series(Ω_series))
+    ωdot_measured = linear_regression_slope(times, unwrap_angle_series(ω_series))
+    @test signbit(Ωdot_measured) == signbit(Ωdot_expected)
+    @test signbit(ωdot_measured) == signbit(ωdot_expected)
+    @test isapprox(Ωdot_measured, Ωdot_expected; rtol=0.20, atol=0.0)
+    @test isapprox(ωdot_measured, ωdot_expected; rtol=0.25, atol=0.0)
 end
 
 @testset "AGORA Earth Regression (Golden)" begin

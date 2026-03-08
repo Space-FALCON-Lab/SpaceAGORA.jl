@@ -28,7 +28,8 @@ using .SimulationModel: NoAtmosphereModel, ExponentialAtmosphereModel, Piecewise
 using .SimulationModel: NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 using .SimulationModel: SimpleEphemeridesModel
 using .SimulationModel: make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
-using .SimulationModel: calcForceTorque, wrench, environment_requirements, getDensity, getDensityBatch!
+using .SimulationModel: calcForceTorque, wrench, environment_requirements, solver_partition
+using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleration_ii, getDensity, getDensityBatch!
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
@@ -155,6 +156,41 @@ environment fields.
 environment_requirements
 
 """
+    solver_partition(model) -> Symbol
+
+Optional additive declaration hook for `split_imex` solver partitioning of
+dynamic effectors.
+
+Return `:implicit` to place the effector on the atmosphere-implicit IMEX side,
+or `:explicit` to keep it on the non-stiff explicit side. The default is
+`:explicit`.
+"""
+solver_partition
+
+"""
+    gravity_backbone_structure(model) -> Symbol
+
+Optional additive declaration hook for the `gravity_backbone_split` solver
+mode.
+
+Return `:position_only_static_gravity` for effectors that can participate in
+the gravity-only translational backbone, or `:unsupported` otherwise. The
+default is `:unsupported`.
+"""
+gravity_backbone_structure
+
+"""
+    gravity_backbone_acceleration_ii(model, x::StateSample, env::EnvironmentSample, t::Float64) -> accel_ii
+
+Optional additive acceleration hook for `gravity_backbone_split`.
+
+Implementations must return inertial-frame translational acceleration in SI
+units for effectors that declare
+[`gravity_backbone_structure`](@ref) == `:position_only_static_gravity`.
+"""
+gravity_backbone_acceleration_ii
+
+"""
     getDensity(model, h, lat, lon, el_time, wind[, p]) -> (rho, temperature, wind_vec)
 
 Stable extension hook for custom [`AbstractDensityModel`](@ref)
@@ -242,7 +278,8 @@ export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosp
 export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 export SimpleEphemeridesModel
 export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
-export calcForceTorque, wrench, environment_requirements, getDensity, getDensityBatch!
+export calcForceTorque, wrench, environment_requirements, solver_partition
+export gravity_backbone_structure, gravity_backbone_acceleration_ii, getDensity, getDensityBatch!
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation

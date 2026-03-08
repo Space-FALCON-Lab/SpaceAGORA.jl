@@ -2,6 +2,9 @@ using StaticArrays
 using LinearAlgebra
 
 @inline function _extract_sample_pos_vel(x)
+    if hasproperty(x, :pos_ii) && hasproperty(x, :vel_ii)
+        return x.pos_ii, x.vel_ii
+    end
     if hasproperty(x, :pos) && hasproperty(x, :vel)
         return SVector{3, Float64}(x.pos), SVector{3, Float64}(x.vel)
     end
@@ -9,6 +12,9 @@ using LinearAlgebra
 end
 
 @inline function _extract_sample_mass_kg(x)::Float64
+    if hasproperty(x, :mass_kg)
+        return Float64(x.mass_kg)
+    end
     if hasproperty(x, :mass)
         return Float64(x.mass)
     end

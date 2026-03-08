@@ -1,6 +1,25 @@
 @inline function _build_typed_solver_problem(u0, tspan, p, callbacks)
     mode = _solver_policy_mode()
-    if mode == :split_imex || mode == :multirate
+    if mode == :gravity_backbone_split
+        q0, dq0 = _gravity_backbone_initial_states(u0, p.args)
+        return SecondOrderODEProblem(
+            spacecraft_dynamics_gravity_backbone!,
+            dq0,
+            q0,
+            tspan,
+            p,
+            callback=callbacks
+        )
+    elseif mode == :split_imex
+        return SplitODEProblem(
+            spacecraft_dynamics_implicit_atmosphere!,
+            spacecraft_dynamics_explicit_remainder!,
+            u0,
+            tspan,
+            p,
+            callback=callbacks
+        )
+    elseif mode == :multirate
         return SplitODEProblem(
             spacecraft_dynamics_slow!,
             spacecraft_dynamics_fast_control!,
@@ -24,6 +43,7 @@ function run_simulation(
     # Isolate mutable campaign/model state by default so repeated/concurrent runs
     # do not alias shared in-memory objects.
     args = isolate_state ? deepcopy(args) : args
+    solver_mode = _solver_policy_mode()
 
     # Typed pipeline is SI-native (meters, seconds, kilograms). The
     # `simulation_settings.normalize` field is legacy-only and rejected by default.
@@ -97,6 +117,15 @@ function run_simulation(
         if ckpt === nothing
             @warn "resume_from_checkpoint=true but no checkpoint file was found; starting from initial conditions."
         else
+            if solver_mode == :gravity_backbone_split
+                ckpt.solver_mode == "gravity_backbone_split" || throw(ArgumentError(
+                    "gravity_backbone_split can only resume from checkpoints written by SPACEAGORA_SOLVER_MODE=gravity_backbone_split."
+                ))
+            elseif ckpt.solver_mode == "gravity_backbone_split"
+                throw(ArgumentError(
+                    "Checkpoint was written by gravity_backbone_split and cannot be resumed with solver mode $(solver_mode)."
+                ))
+            end
             t_start = ckpt.t
             u_start = ckpt.u
             if args.simulation_settings.verbose
@@ -111,8 +140,9 @@ function run_simulation(
     # println(p)
     # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
     p.shared_buffers.solve_segment_end_time[] = mission_end
-    prob_debug = ODEProblem(spacecraft_dynamics!, u_start, (t_start, mission_end), p, callback=callbacks)
-    if p.shared_buffers.debug_initial_derivative[]
+    prob_debug_state = solver_mode == :gravity_backbone_split ? initial_conditions : u_start
+    prob_debug = ODEProblem(spacecraft_dynamics!, prob_debug_state, (t_start, mission_end), p, callback=callbacks)
+    if p.shared_buffers.debug_initial_derivative[] && solver_mode != :gravity_backbone_split
         # 1. Manually evaluate the derivative at the start
         du_test = copy(prob_debug.u0)
         try
@@ -141,9 +171,15 @@ function run_simulation(
 
             throw(ErrorException("Initial derivative contains NaN; aborting solve in debug mode."))
         end
+    elseif p.shared_buffers.debug_initial_derivative[] && solver_mode == :gravity_backbone_split
+        @warn "Initial derivative debug is not supported for gravity_backbone_split; skipping first-order RHS debug probe."
     end
 
-    reltol_tol, abstol_tol = _build_solver_tolerances(u_start, args)
+    reltol_tol, abstol_tol = if solver_mode == :gravity_backbone_split
+        args.integration_tolerances.reltol_orbit, args.integration_tolerances.abstol_orbit
+    else
+        _build_solver_tolerances(u_start, args)
+    end
     last_sol = nothing
     solver_trace = NamedTuple[]
     checkpoint_saved_times = Float64[]
@@ -169,7 +205,7 @@ function run_simulation(
             last_sol = seg_sol
             t_cursor = Float64(seg_sol.t[end])
             u_cursor = deepcopy(seg_sol.u[end])
-            _write_checkpoint!(args, t_cursor, u_cursor)
+            _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode))
         end
 
     elseif t_start < mission_end

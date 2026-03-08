@@ -12,5 +12,6 @@ export mass_derivative
 export assign_full_translational_rhs!
 export assign_slow_translational_rhs!
 export assign_control_only_translational_rhs!
+export assign_force_only_translational_rhs!
 
 end # module DynamicsTranslational

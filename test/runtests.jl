@@ -68,6 +68,10 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const _split_imex_solver_spec = SimulationEngine._split_imex_solver_spec
     const _symplectic_conservative_eligible = SimulationEngine._symplectic_conservative_eligible
     const _symplectic_fixed_dt_s = SimulationEngine._symplectic_fixed_dt_s
+    const _gravity_backbone_fixed_dt_s = SimulationEngine._gravity_backbone_fixed_dt_s
+    const _gravity_backbone_eligible = SimulationEngine._gravity_backbone_eligible
+    const _gravity_backbone_reject_reason = SimulationEngine._gravity_backbone_reject_reason
+    const _gravity_backbone_structure_validated = SimulationEngine._gravity_backbone_structure_validated
     const _auto_stiff_switched = SimulationEngine._auto_stiff_switched
     const _solve_with_explicit_solver = SimulationEngine._solve_with_explicit_solver
     const _solve_with_multirate_solver = SimulationEngine._solve_with_multirate_solver
@@ -111,8 +115,19 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const sample_planet_frame = SimulationEngine.sample_planet_frame
     const sample_atmosphere = SimulationEngine.sample_atmosphere
     const sample_environment = SimulationEngine.sample_environment
+    const _build_typed_solver_problem = SimulationEngine._build_typed_solver_problem
     const _evaluate_dynamic_effector = SimulationEngine._evaluate_dynamic_effector
+    const _solver_partition_validated = SimulationEngine._solver_partition_validated
     const _wrench_method_available = SimulationEngine._wrench_method_available
+    const spacecraft_dynamics_gravity_backbone! = SimulationEngine.spacecraft_dynamics_gravity_backbone!
+    const spacecraft_dynamics_implicit_atmosphere! = SimulationEngine.spacecraft_dynamics_implicit_atmosphere!
+    const spacecraft_dynamics_explicit_remainder! = SimulationEngine.spacecraft_dynamics_explicit_remainder!
+    const _is_gravity_backbone_state = SimulationEngine._is_gravity_backbone_state
+    const _state_position_ii = SimulationEngine._state_position_ii
+    const _state_velocity_ii = SimulationEngine._state_velocity_ii
+    const _state_mass_kg = SimulationEngine._state_mass_kg
+    const _state_heat_loads = SimulationEngine._state_heat_loads
+    const _gravity_backbone_initial_states = SimulationEngine._gravity_backbone_initial_states
 end
 
 struct ConstantDensityModel <: SimulationModel.AbstractDensityModel
@@ -162,6 +177,24 @@ struct WrenchOnlyForceModel <: SimulationModel.AbstractForceTorqueModel
 end
 
 struct AtmosphereProbeWrenchModel <: SimulationModel.AbstractForceTorqueModel
+end
+
+struct ImplicitLegacyForceModel <: SimulationModel.AbstractForceTorqueModel
+    force::SVector{3, Float64}
+    torque::SVector{3, Float64}
+end
+
+struct InvalidPartitionForceModel <: SimulationModel.AbstractForceTorqueModel
+end
+
+struct BackboneCustomGravityModel <: SimulationModel.AbstractForceTorqueModel
+    accel::SVector{3, Float64}
+end
+
+struct InvalidBackboneStructureModel <: SimulationModel.AbstractForceTorqueModel
+end
+
+struct SolarBackboneModel <: SimulationModel.AbstractForceTorqueModel
 end
 
 struct ThrowingOrbitPlanet <: SimulationModel.AbstractPlanet
@@ -297,6 +330,52 @@ function SimulationModel.wrench(
     t::Float64
 )
     return model.force, model.torque
+end
+
+SimulationModel.solver_partition(::ImplicitLegacyForceModel) = :implicit
+SimulationModel.solver_partition(::InvalidPartitionForceModel) = :bad_partition
+SimulationModel.gravity_backbone_structure(::BackboneCustomGravityModel) = :position_only_static_gravity
+SimulationModel.gravity_backbone_structure(::InvalidBackboneStructureModel) = :bad_structure
+SimulationModel.gravity_backbone_structure(::SolarBackboneModel) = :position_only_static_gravity
+
+function SimulationModel.gravity_backbone_acceleration_ii(
+    model::BackboneCustomGravityModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
+)
+    return model.accel
+end
+
+function SimulationModel.gravity_backbone_acceleration_ii(
+    model::SolarBackboneModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
+)
+    return SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+function SimulationModel.environment_requirements(::SolarBackboneModel)
+    return EffectorEnvironmentRequirements(solar=true)
+end
+
+function SimulationModel.calcForceTorque(
+    model::ImplicitLegacyForceModel,
+    x::AbstractVector{Float64},
+    p::ODEParams,
+    i::Int64
+)
+    return model.force, model.torque
+end
+
+function SimulationModel.calcForceTorque(
+    model::InvalidPartitionForceModel,
+    x::AbstractVector{Float64},
+    p::ODEParams,
+    i::Int64
+)
+    return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
 function SimulationModel.environment_requirements(::AtmosphereProbeWrenchModel)

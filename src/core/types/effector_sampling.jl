@@ -10,7 +10,10 @@ export StateSample,
     EnvironmentSample,
     EffectorEnvironmentRequirements,
     wrench,
-    environment_requirements
+    environment_requirements,
+    solver_partition,
+    gravity_backbone_structure,
+    gravity_backbone_acceleration_ii
 
 """
     StateSample
@@ -154,5 +157,39 @@ inertial frame and torque is expressed in the body frame. Implementations should
 behave as pure functions of `(model, x, env, t)`.
 """
 function wrench end
+
+"""
+    solver_partition(model) -> Symbol
+
+Optional additive declaration for solver-side IMEX partitioning of dynamic
+effectors.
+
+Return `:implicit` to place the effector on the stiff implicit side of
+`split_imex`, or `:explicit` to keep it on the non-stiff explicit side. The
+default is `:explicit`.
+"""
+@inline solver_partition(::Any) = :explicit
+
+"""
+    gravity_backbone_structure(model) -> Symbol
+
+Optional additive declaration for the gravity-backbone solver mode.
+
+Return `:position_only_static_gravity` for effectors that can participate in the
+gravity-only translational backbone, or `:unsupported` otherwise. The default is
+`:unsupported`.
+"""
+@inline gravity_backbone_structure(::Any) = :unsupported
+
+"""
+    gravity_backbone_acceleration_ii(model, x::StateSample, env::EnvironmentSample, t::Float64)
+
+Optional additive acceleration hook for the gravity-backbone solver mode.
+
+Implementations must return inertial-frame translational acceleration in SI
+units for effectors that declare
+[`gravity_backbone_structure`](@ref) == `:position_only_static_gravity`.
+"""
+function gravity_backbone_acceleration_ii end
 
 end # module EffectorSampling

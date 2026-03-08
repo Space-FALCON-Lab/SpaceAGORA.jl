@@ -110,6 +110,7 @@ function run_simulation(
     # println("ODE parameters:")
     # println(p)
     # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
+    p.shared_buffers.solve_segment_end_time[] = mission_end
     prob_debug = ODEProblem(spacecraft_dynamics!, u_start, (t_start, mission_end), p, callback=callbacks)
     if p.shared_buffers.debug_initial_derivative[]
         # 1. Manually evaluate the derivative at the start
@@ -157,6 +158,7 @@ function run_simulation(
             t_next = min(t_cursor + interval, mission_end)
             empty!(saved_values.t)
             empty!(saved_values.saveval)
+            p.shared_buffers.solve_segment_end_time[] = t_next
             prob = _build_typed_solver_problem(u_cursor, (t_cursor, t_next), p, callbacks)
             seg_sol, solve_meta = _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
             push!(solver_trace, solve_meta)
@@ -171,6 +173,7 @@ function run_simulation(
         end
 
     elseif t_start < mission_end
+        p.shared_buffers.solve_segment_end_time[] = mission_end
         prob = _build_typed_solver_problem(u_start, (t_start, mission_end), p, callbacks)
         sol, solve_meta = _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
         push!(solver_trace, solve_meta)

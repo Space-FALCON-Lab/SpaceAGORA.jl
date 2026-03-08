@@ -4,6 +4,7 @@ module AerodynamicEffectors
     using ...AbstractTypes: AbstractForceTorqueModel
     using ...ParallelPolicy
     using ...Kinematics
+    import ...SimulationModel
     using ...SimulationModel: rot
     using LinearAlgebra
     using StaticArrays

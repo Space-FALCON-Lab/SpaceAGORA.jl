@@ -1,5 +1,11 @@
 @testset "No-GRAM Onboarding Mode" begin
     @testset "Preset builders choose documented fallback models" begin
+        env_default = make_no_gram_environment()
+        @test env_default.planet isa Earth
+        @test env_default.density_model isa NoAtmosphereModel
+        @test env_default.ephemerides_model isa SimpleEphemeridesModel
+        @test env_default.wind == false
+
         env_none = make_no_gram_environment(planet=:earth, atmosphere=:none, EI_km=120.0)
         @test env_none.planet isa Earth
         @test env_none.density_model isa NoAtmosphereModel

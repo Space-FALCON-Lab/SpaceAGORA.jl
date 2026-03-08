@@ -178,16 +178,11 @@ function get_drag_state_callback(num_sats::Int)
 end
 
 function get_quaternion_projection_callback(num_sats::Int, args::SimulationConfiguration)
-    tol_q = max(1e-12, args.integration_tolerances.abstol_quaternion)
+    correction_tol = max(32 * eps(Float64), args.integration_tolerances.abstol_quaternion)
     condition(u, t, integrator) = begin
         p = integrator.p
         @inbounds for i in 1:num_sats
-            if !p.is_active[i]
-                continue
-            end
-            q = u.sc[i].q
-            qnorm2 = dot(q, q)
-            if !isfinite(qnorm2) || abs(qnorm2 - 1.0) > tol_q
+            if p.is_active[i]
                 return true
             end
         end
@@ -204,16 +199,11 @@ function get_quaternion_projection_callback(num_sats::Int, args::SimulationConfi
             end
             q = u.sc[i].q
             qnorm2 = dot(q, q)
-            if !(isfinite(qnorm2) && qnorm2 > eps(Float64))
-                # Keep attitude state finite if a pathological quaternion is encountered.
-                q .= (0.0, 0.0, 0.0, 1.0)
-                corrected = true
-                continue
-            end
-            if abs(qnorm2 - 1.0) > tol_q
-                q ./= sqrt(qnorm2)
+            if !(isfinite(qnorm2) && qnorm2 > eps(Float64)) || abs(qnorm2 - 1.0) > correction_tol
                 corrected = true
             end
+            # Keep accepted-step attitude states on the unit-quaternion manifold.
+            q .= _simulation_model_module.project_unit_quaternion(q)
         end
         if corrected && callback_verbose(integrator)
             println("Quaternion projection applied at time $(integrator.t) seconds.")

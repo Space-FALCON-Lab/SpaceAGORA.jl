@@ -5,6 +5,9 @@
     withenv("SPACEAGORA_SOLVER_MODE" => "auto") do
         @test _solver_policy_mode() == :auto_stiff
     end
+    withenv("SPACEAGORA_SOLVER_MODE" => "symplectic") do
+        @test _solver_policy_mode() == :symplectic
+    end
     withenv("SPACEAGORA_SOLVER_MODE" => "rodas") do
         @test _solver_policy_mode() == :rodas5p
     end
@@ -180,6 +183,19 @@
         @test_throws ArgumentError _solver_maxiters()
     end
 
+    withenv("SPACEAGORA_SYMPLECTIC_DT_S" => nothing) do
+        @test _symplectic_fixed_dt_s(args_eff_single) == args_eff_single.integration_tolerances.dt_max_orbit
+    end
+    withenv("SPACEAGORA_SYMPLECTIC_DT_S" => "4.0") do
+        @test _symplectic_fixed_dt_s(args_eff_single) == 4.0
+    end
+    withenv("SPACEAGORA_SYMPLECTIC_DT_S" => "bad") do
+        @test_throws ArgumentError _symplectic_fixed_dt_s(args_eff_single)
+    end
+    withenv("SPACEAGORA_SYMPLECTIC_DT_S" => "0.0") do
+        @test_throws ArgumentError _symplectic_fixed_dt_s(args_eff_single)
+    end
+
     withenv("SPACEAGORA_SPLIT_IMEX_SOLVER" => nothing) do
         split_solver = _split_imex_solver_spec()
         @test split_solver.label == "KenCarp4"
@@ -299,6 +315,42 @@
     end
     withenv("SPACEAGORA_MULTIRATE_FAST_SOLVER" => "unsupported") do
         @test_throws ArgumentError _multirate_fast_solver_spec()
+    end
+
+    args_symplectic = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel()
+    )
+    @test _symplectic_conservative_eligible(args_symplectic) == true
+    @test _symplectic_conservative_eligible(args_eff_single) == false
+
+    kepler_second_order! = function (ddu, du, u, p, t)
+        r = norm(u)
+        @. ddu = -p.μ * u / r^3
+    end
+    r0_sym = [EARTH.Rp_e + 500e3, 0.0, 0.0]
+    v0_sym = [0.0, sqrt(EARTH.μ / r0_sym[1]), 0.0]
+    prob_symplectic = SecondOrderODEProblem(kepler_second_order!, v0_sym, r0_sym, (0.0, 120.0), (μ=EARTH.μ,))
+
+    withenv(
+        "SPACEAGORA_SOLVER_MODE" => "symplectic",
+        "SPACEAGORA_SYMPLECTIC_DT_S" => "2.0",
+        "SPACEAGORA_SOLVER_MAXITERS" => nothing
+    ) do
+        sol, meta = _solve_with_solver_policy(prob_symplectic, args_symplectic, 1e-8, 1e-8)
+        @test string(sol.retcode) == "Success"
+        @test meta.solver == "KahanLi8(Symplectic)"
+        @test meta.initial_solver == "KahanLi8"
+        @test meta.fallback_used == false
+    end
+    withenv("SPACEAGORA_SOLVER_MODE" => "symplectic", "SPACEAGORA_SOLVER_MAXITERS" => nothing) do
+        @test_throws ArgumentError _solve_with_solver_policy(prob_simple, args_symplectic, 1e-8, 1e-8)
     end
 
     multirate_subprob = _split_subproblem(split_prob_simple, split_prob_simple.f.f1, [1.0], (0.0, 0.5))
@@ -470,6 +522,8 @@
         @test _mission_is_long_for_effector_threads(args_orbit_mission)
     end
     @test _has_active_srp_effector((SolarRadiationPressureModel(1.2, 10.0),))
+    @test _has_active_srp_effector((SolarRadiationPressureModel(1.2, 10.0; direct=false, albedo=true),))
+    @test !_has_active_srp_effector((SolarRadiationPressureModel(1.2, 10.0; direct=false, albedo=false, ir=true),))
 
     args_eff_unsupported = build_config(
         spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
@@ -600,6 +654,11 @@
         cache_a = p_srp_reuse_a.shared_buffers.srp_sun_ephemeris_cache[]
         @test cache_a isa SRPSunEphemerisCache
         @test p_srp_reuse_a.shared_buffers.spice_runtime_counters.srp_spkpos_cache_build_calls[] == 2
+        primary_body_name = SimulationModel.DynamicEffectors._spice_query_name(args_srp.environment_model.planet.name)
+        raw_sun_j2000_km = lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
+            SVector{3, Float64}(spkpos("sun", cache_a.ets[1], "J2000", "none", primary_body_name)[1])
+        end
+        @test cache_a.positions_j2000_m[1] == raw_sun_j2000_km * 1.0e3
         _initialize_srp_sun_ephemeris_cache!(p_srp_reuse_b, 0.0, 10.0)
         cache_b = p_srp_reuse_b.shared_buffers.srp_sun_ephemeris_cache[]
         @test cache_b === cache_a
@@ -630,6 +689,63 @@
         @test_logs (:warn, r"N-body ephemeris cache disabled") _initialize_nbody_ephemeris_cache!(p_nbody, 0.0, 10.0)
     end
     @test p_nbody.shared_buffers.nbody_ephemeris_cache[] === nothing
+    _reset_spice_runtime_counters!(p_nbody)
+    withenv(
+        "SPACEAGORA_NBODY_EPHEMERIS_CACHE" => "1",
+        "SPACEAGORA_NBODY_EPHEMERIS_CACHE_DT_S" => "10.0",
+        "SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES" => "100"
+    ) do
+        _initialize_nbody_ephemeris_cache!(p_nbody, 0.0, 10.0)
+        cache = p_nbody.shared_buffers.nbody_ephemeris_cache[]
+        @test cache isa NBodyEphemerisCache
+        @test p_nbody.shared_buffers.spice_runtime_counters.nbody_spkpos_cache_build_calls[] == 2
+        raw_moon_j2000_km = lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
+            SVector{3, Float64}(spkpos(cache.body_query_names[1], cache.ets[1], "J2000", "none", cache.primary_body_name)[1])
+        end
+        @test cache.positions_j2000_m[1, 1] == raw_moon_j2000_km * 1.0e3
+    end
+
+    et_start_nbody = SimulationModel.ephemerides_time_seconds(args_nbody.initial_time, args_nbody.environment_model.ephemerides_model)
+    _clear_ephemeris_reuse_cache!()
+    withenv(
+        "SPACEAGORA_NBODY_EPHEMERIS_CACHE_DT_S" => "10.0",
+        "SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES" => "100",
+        "SPACEAGORA_EPHEMERIS_CACHE_REUSE" => "0"
+    ) do
+        cache_prewarmed = SpaceAGORA.prewarm_nbody_ephemeris_cache(args_nbody; dt_s=10.0, mission_end_s=10.0)
+        @test cache_prewarmed.primary_body_name == "earth_barycenter"
+        @test cache_prewarmed.body_query_names == ["moon"]
+        @test length(cache_prewarmed.ets) == 2
+        @test size(cache_prewarmed.positions_j2000_m) == (2, 1)
+        @test cache_prewarmed.ets[1] == et_start_nbody
+    end
+    _clear_ephemeris_reuse_cache!()
+
+    mktempdir() do tmp
+        cache_path = joinpath(tmp, "nbody_ephemeris_cache.bin")
+        withenv(
+            "SPACEAGORA_NBODY_EPHEMERIS_CACHE_DT_S" => "10.0",
+            "SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES" => "100",
+            "SPACEAGORA_EPHEMERIS_CACHE_REUSE" => "0"
+        ) do
+            cache_saved = SpaceAGORA.prewarm_nbody_ephemeris_cache(args_nbody; dt_s=10.0, mission_end_s=10.0, save_path=cache_path)
+            @test isfile(cache_path)
+            _clear_ephemeris_reuse_cache!()
+
+            cache_loaded = SpaceAGORA.load_nbody_ephemeris_cache!(cache_path)
+            @test cache_loaded.primary_body_name == cache_saved.primary_body_name
+            @test cache_loaded.body_query_names == cache_saved.body_query_names
+            @test cache_loaded.ets == cache_saved.ets
+            @test cache_loaded.positions_j2000_m == cache_saved.positions_j2000_m
+        end
+
+        bad_cache_path = joinpath(tmp, "bad_nbody_ephemeris_cache.bin")
+        open(bad_cache_path, "w") do io
+            serialize(io, Dict(:invalid => true))
+        end
+        @test_throws ArgumentError SpaceAGORA.load_nbody_ephemeris_cache!(bad_cache_path)
+    end
+    _clear_ephemeris_reuse_cache!()
 
     p_planet_frame = ODEParams{1}(args=args_srp)
     _initialize_planet_frame_cache_buffer!(p_planet_frame)
@@ -714,6 +830,101 @@
     harmonics_ws_typed = @inferred dyn._harmonics_workspace_for_sat!(harmonics_model, p_workspace_resize, 1)
     @test harmonics_ws_typed isa HarmonicsScratchWorkspace
     @test p_workspace_resize.shared_buffers.harmonics_workspaces[1] isa Dict{UInt, HarmonicsScratchWorkspace}
+    @test harmonics_model.coefficient_normalization == :full
+
+    @testset "Harmonics Normalization Conversion And Reference Parity" begin
+        mktempdir() do tmp
+            max_degree = 4
+            max_order = 4
+            base_coeffs = Dict(
+                (2, 0) => (-4.8416945732e-4, 0.0),
+                (2, 1) => (-3.1034310672e-10, 1.4107575094e-9),
+                (2, 2) => (2.4393734159e-6, -1.4002940118e-6),
+                (3, 0) => (9.5716475834e-7, 0.0),
+                (3, 1) => (2.0304620109e-6, 2.4821193046e-7),
+                (4, 0) => (5.3996586664e-7, 0.0),
+                (4, 2) => (3.5098919076e-7, -1.8722151127e-7)
+            )
+            coeff_at(l, m) = get(base_coeffs, (l, m), (0.0, 0.0))
+
+            coeff_full_path = joinpath(tmp, "harmonics_full.csv")
+            coeff_schmidt_path = joinpath(tmp, "harmonics_schmidt.csv")
+            coeff_unnorm_path = joinpath(tmp, "harmonics_unnorm.csv")
+
+            write_gravity_harmonics_csv(coeff_full_path, max_degree, max_order) do l, m
+                coeff_at(l, m)
+            end
+            write_gravity_harmonics_csv(coeff_schmidt_path, max_degree, max_order) do l, m
+                c_full, s_full = coeff_at(l, m)
+                scale = sqrt(2.0 * l + 1.0)
+                return c_full * scale, s_full * scale
+            end
+            write_gravity_harmonics_csv(coeff_unnorm_path, max_degree, max_order) do l, m
+                c_full, s_full = coeff_at(l, m)
+                scale = harmonics_full_normalization_factor(l, m)
+                return c_full * scale, s_full * scale
+            end
+
+            model_full = GravitationalHarmonicsModel(max_degree, max_order, coeff_full_path, EARTH; coefficient_normalization=:full)
+            model_full_alias = GravitationalHarmonicsModel(max_degree, max_order, coeff_full_path, EARTH; coefficient_normalization=:fully_normalized)
+            model_schmidt = GravitationalHarmonicsModel(max_degree, max_order, coeff_schmidt_path, EARTH; coefficient_normalization=:schmidt)
+            model_unnorm = GravitationalHarmonicsModel(max_degree, max_order, coeff_unnorm_path, EARTH; coefficient_normalization=:unnormalized)
+
+            @test model_full.coefficient_normalization == :full
+            @test model_full_alias.coefficient_normalization == :full
+            @test model_schmidt.coefficient_normalization == :schmidt
+            @test model_unnorm.coefficient_normalization == :unnormalized
+            @test_throws ArgumentError GravitationalHarmonicsModel(max_degree, max_order, coeff_full_path, EARTH; coefficient_normalization=:bogus)
+            @test isapprox(model_full_alias.C, model_full.C; atol=0.0, rtol=0.0)
+            @test isapprox(model_full_alias.S, model_full.S; atol=0.0, rtol=0.0)
+            @test isapprox(model_schmidt.C, model_full.C; atol=1e-15, rtol=0.0)
+            @test isapprox(model_schmidt.S, model_full.S; atol=1e-15, rtol=0.0)
+            @test isapprox(model_unnorm.C, model_full.C; atol=1e-15, rtol=0.0)
+            @test isapprox(model_unnorm.S, model_full.S; atol=1e-15, rtol=0.0)
+
+            coeff_gfc_path = joinpath(tmp, "harmonics_reference.gfc")
+            write_icgem_from_harmonics_model(coeff_gfc_path, model_full; model_name="SpaceAGORA_Test_Harmonics")
+            ref_model = SatelliteToolboxGravityModels.GravityModels.load(SatelliteToolboxGravityModels.IcgemFile, coeff_gfc_path)
+            @test SatelliteToolboxGravityModels.GravityModels.coefficient_norm(ref_model) == :full
+
+            args_harmonics_compare = build_config(
+                spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+                density_model=NoAtmosphereModel(),
+                orientation_sim=false,
+                mission_time=60.0,
+                EI_km=120.0,
+                dynamic_effectors=(InverseSquaredGravityModel(),),
+                keplerian=true,
+                ephemerides_model=SimpleEphemeridesModel()
+            )
+            p_harmonics_compare = ODEParams{1}(args=args_harmonics_compare)
+            _initialize_harmonics_workspace_buffers!(p_harmonics_compare)
+
+            sample_positions_pp = (
+                SVector{3, Float64}(EARTH.Rp_e + 450e3, 0.0, 0.0),
+                SVector{3, Float64}(4.8e6, 2.1e6, 1.7e6),
+                SVector{3, Float64}(-3.9e6, 5.2e6, 2.4e6)
+            )
+            for pos_pp in sample_positions_pp
+                state = ComponentVector(pos=collect(pos_pp), vel=[0.0, 0.0, 0.0], mass=200.0)
+                force_pp, torque_pp = calcForceTorque(model_full, state, p_harmonics_compare, 1)
+                acc_pp = force_pp / state.mass
+                ref_total_pp = SVector{3, Float64}(
+                    SatelliteToolboxGravityModels.GravityModels.gravitational_acceleration(
+                        ref_model,
+                        collect(pos_pp);
+                        max_degree=model_full.L,
+                        max_order=model_full.M
+                    )
+                )
+                ref_central_pp = -EARTH.μ / norm(pos_pp)^3 * pos_pp
+                ref_perturbation_pp = ref_total_pp - ref_central_pp
+
+                @test torque_pp == SVector{3, Float64}(0.0, 0.0, 0.0)
+                @test isapprox(acc_pp, ref_perturbation_pp; atol=1e-12, rtol=1e-9)
+            end
+        end
+    end
 
     nbody_positions = reshape(
         SVector{3, Float64}[
@@ -732,11 +943,11 @@
         [0.0, 5.0, 10.0, 15.0],
         nbody_positions
     )
-    @test dyn._nbody_body_position_from_cache_j2000(nbody_cache, -1.0, "moon_barycenter", "earth_barycenter") === nothing
-    @test dyn._nbody_body_position_from_cache_j2000(nbody_cache, NaN, "moon_barycenter", "earth_barycenter") isa SVector{3, Float64}
-    @test dyn._nbody_body_position_from_cache_j2000(nbody_cache, 15.0, "moon_barycenter", "earth_barycenter") == nbody_positions[4, 1]
-    @test dyn._nbody_body_position_from_cache_j2000(nbody_cache, 2.5, "moon_barycenter", "earth_barycenter") == SVector{3, Float64}(1.5, 0.0, 0.0)
-    nbody_interp_catmull = dyn._nbody_body_position_from_cache_j2000(nbody_cache, 7.5, "moon_barycenter", "earth_barycenter")
+    @test dyn._nbody_body_position_from_cache_j2000_m(nbody_cache, -1.0, "moon_barycenter", "earth_barycenter") === nothing
+    @test dyn._nbody_body_position_from_cache_j2000_m(nbody_cache, NaN, "moon_barycenter", "earth_barycenter") isa SVector{3, Float64}
+    @test dyn._nbody_body_position_from_cache_j2000_m(nbody_cache, 15.0, "moon_barycenter", "earth_barycenter") == nbody_positions[4, 1]
+    @test dyn._nbody_body_position_from_cache_j2000_m(nbody_cache, 2.5, "moon_barycenter", "earth_barycenter") == SVector{3, Float64}(1.5, 0.0, 0.0)
+    nbody_interp_catmull = dyn._nbody_body_position_from_cache_j2000_m(nbody_cache, 7.5, "moon_barycenter", "earth_barycenter")
     @test nbody_interp_catmull isa SVector{3, Float64}
 
     srp_cache = SRPSunEphemerisCache(
@@ -748,11 +959,11 @@
             SVector{3, Float64}(4.0, 0.0, 0.0)
         ]
     )
-    @test dyn._srp_sun_position_from_cache_j2000(srp_cache, -1.0) === nothing
-    @test dyn._srp_sun_position_from_cache_j2000(srp_cache, NaN) isa SVector{3, Float64}
-    @test dyn._srp_sun_position_from_cache_j2000(srp_cache, 15.0) == srp_cache.positions_j2000[end]
-    @test dyn._srp_sun_position_from_cache_j2000(srp_cache, 2.5) == SVector{3, Float64}(1.5, 0.0, 0.0)
-    srp_interp_catmull = dyn._srp_sun_position_from_cache_j2000(srp_cache, 7.5)
+    @test dyn._srp_sun_position_from_cache_j2000_m(srp_cache, -1.0) === nothing
+    @test dyn._srp_sun_position_from_cache_j2000_m(srp_cache, NaN) isa SVector{3, Float64}
+    @test dyn._srp_sun_position_from_cache_j2000_m(srp_cache, 15.0) == srp_cache.positions_j2000_m[end]
+    @test dyn._srp_sun_position_from_cache_j2000_m(srp_cache, 2.5) == SVector{3, Float64}(1.5, 0.0, 0.0)
+    srp_interp_catmull = dyn._srp_sun_position_from_cache_j2000_m(srp_cache, 7.5)
     @test srp_interp_catmull isa SVector{3, Float64}
 
     force_zero_srp, torque_zero_srp = calcForceTorque(SolarRadiationPressureModel(1.2, 0.0), x_a, p_nbody_srp, 1)
@@ -781,7 +992,9 @@
         SVector{3, Float64}(0.0, 0.0, -1.5e11),
         EARTH.Rp_e
     )
-    @test 0.0 < annular_ratio < 1.0
+    annular_a = asin(695000e3 / 1.5e11)
+    annular_b = asin(EARTH.Rp_e / 1.0e10)
+    @test isapprox(annular_ratio, 1.0 - annular_b^2 / annular_a^2; atol=0.0, rtol=1e-12)
     partial_ratio = dyn.eclipse_area_calc(
         SVector{3, Float64}(6.930027129188876e6, -2.6352977471555886e6, -3.363004422597388e6),
         SVector{3, Float64}(-9.438128429326639e10, -6.696979722657439e10, 1.7822072441008075e11),
@@ -796,12 +1009,20 @@
     @test isapprox(none_ratio, 1.0; atol=1e-12, rtol=0.0)
 
     @testset "SRP Regression Contracts" begin
-        # On/off delta: SRP-enabled model must produce non-zero force while area=0 is zero force.
+        function _shadow_geometry_for_apparent_separation(c_rad::Float64; r_sat_m::Float64=10.0 * EARTH.Rp_e, r_sun_m::Float64=149_597_870_700.0)
+            return (
+                SVector{3, Float64}(-r_sat_m * cos(c_rad), r_sat_m * sin(c_rad), 0.0),
+                SVector{3, Float64}(r_sun_m, 0.0, 0.0),
+            )
+        end
+
+        # Direct 1 AU cannonball case: force magnitude should match P0 * Cr * A when the solver
+        # evaluates the SRP effector with a live spacecraft mass.
         p_srp.shared_buffers.srp_sun_ephemeris_cache[] = SRPSunEphemerisCache(
             [0.0, 10.0],
             SVector{3, Float64}[
-                SVector{3, Float64}(149_597_870.7, 0.0, 0.0),
-                SVector{3, Float64}(149_597_870.7, 0.0, 0.0)
+                SVector{3, Float64}(149_604_870_700.0, 100.0, 50.0),
+                SVector{3, Float64}(149_604_870_700.0, 100.0, 50.0)
             ]
         )
         p_srp.shared_buffers.et_start[] = 0.0
@@ -810,32 +1031,89 @@
 
         force_on, _ = calcForceTorque(SolarRadiationPressureModel(1.2, 12.0), x_srp_regression, p_srp, 1)
         force_off, _ = calcForceTorque(SolarRadiationPressureModel(1.2, 0.0), x_srp_regression, p_srp, 1)
+        expected_force_mag = 4.56e-6 * 1.2 * 12.0
         @test norm(force_on) > 0.0
         @test force_off == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test norm(force_on - force_off) > 0.0
+        @test isapprox(norm(force_on), expected_force_mag; atol=0.0, rtol=1e-12)
 
         # Eclipse attenuation: partial eclipse force norm must scale by eclipse ratio.
         pos_partial = SVector{3, Float64}(6.930027129188876e6, -2.6352977471555886e6, -3.363004422597388e6)
         sun_partial = SVector{3, Float64}(-9.438128429326639e10, -6.696979722657439e10, 1.7822072441008075e11)
         partial_ratio_regression = dyn.eclipse_area_calc(pos_partial, sun_partial, EARTH.Rp_e)
-        force_partial = dyn.srp_cannonball_accel(pos_partial, sun_partial, EARTH.Rp_e, 4.56e-6, 1.2, 12.0, 200.0)
-        force_no_eclipse = dyn.srp_cannonball_accel(pos_partial, sun_partial, 0.0, 4.56e-6, 1.2, 12.0, 200.0)
+        accel_partial = dyn.srp_cannonball_accel(pos_partial, sun_partial, EARTH.Rp_e, 4.56e-6, 1.2, 12.0, 200.0)
+        accel_no_eclipse = dyn.srp_cannonball_accel(pos_partial, sun_partial, 0.0, 4.56e-6, 1.2, 12.0, 200.0)
         @test 0.0 < partial_ratio_regression < 1.0
-        @test norm(force_no_eclipse) > 0.0
-        @test isapprox(norm(force_partial), partial_ratio_regression * norm(force_no_eclipse); atol=0.0, rtol=1e-12)
+        @test norm(accel_no_eclipse) > 0.0
+        @test isapprox(norm(accel_partial), partial_ratio_regression * norm(accel_no_eclipse); atol=0.0, rtol=1e-12)
+
+        # Eclipse transition geometry should move monotonically from total -> partial -> none.
+        transition_r_sat = 10.0 * EARTH.Rp_e
+        transition_r_sun = 149_597_870_700.0
+        apparent_sun = asin(695000e3 / transition_r_sun)
+        apparent_planet = asin(EARTH.Rp_e / transition_r_sat)
+        transition_eps = 1.0e-4
+        pos_total, sun_total = _shadow_geometry_for_apparent_separation(apparent_planet - apparent_sun - transition_eps; r_sat_m=transition_r_sat, r_sun_m=transition_r_sun)
+        pos_just_partial, sun_just_partial = _shadow_geometry_for_apparent_separation(apparent_planet - apparent_sun + transition_eps; r_sat_m=transition_r_sat, r_sun_m=transition_r_sun)
+        pos_just_shadowed, sun_just_shadowed = _shadow_geometry_for_apparent_separation(apparent_planet + apparent_sun - transition_eps; r_sat_m=transition_r_sat, r_sun_m=transition_r_sun)
+        pos_none, sun_none = _shadow_geometry_for_apparent_separation(apparent_planet + apparent_sun + transition_eps; r_sat_m=transition_r_sat, r_sun_m=transition_r_sun)
+        ratio_total = dyn.eclipse_area_calc(pos_total, sun_total, EARTH.Rp_e)
+        ratio_just_partial = dyn.eclipse_area_calc(pos_just_partial, sun_just_partial, EARTH.Rp_e)
+        ratio_just_shadowed = dyn.eclipse_area_calc(pos_just_shadowed, sun_just_shadowed, EARTH.Rp_e)
+        ratio_none_transition = dyn.eclipse_area_calc(pos_none, sun_none, EARTH.Rp_e)
+        @test ratio_total == 0.0
+        @test 0.0 < ratio_just_partial < 1.0
+        @test 0.0 < ratio_just_shadowed < 1.0
+        @test isapprox(ratio_none_transition, 1.0; atol=1e-12, rtol=0.0)
+        @test ratio_just_partial < ratio_just_shadowed
+
+        # Planetary albedo and IR remain separate additive terms. Albedo should vanish on the
+        # nightside while IR remains available there.
+        pos_dayside = SVector{3, Float64}(8.0e6, 0.0, 0.0)
+        pos_nightside = SVector{3, Float64}(-8.0e6, 0.0, 0.0)
+        sun_dayside = SVector{3, Float64}(149_597_870_700.0, 0.0, 0.0)
+        accel_direct_dayside = dyn.srp_cannonball_accel(pos_dayside, sun_dayside, EARTH.Rp_e, 4.56e-6, 1.2, 12.0, 200.0)
+        accel_albedo_dayside = dyn.planetary_albedo_accel(pos_dayside, sun_dayside, EARTH.Rp_e, 4.56e-6, 1.2, 12.0, 200.0, 0.3)
+        accel_albedo_nightside = dyn.planetary_albedo_accel(pos_nightside, sun_dayside, EARTH.Rp_e, 4.56e-6, 1.2, 12.0, 200.0, 0.3)
+        accel_ir_nightside = dyn.planetary_ir_accel(pos_nightside, EARTH.Rp_e, 1.2, 12.0, 200.0, 237.0)
+        @test norm(accel_direct_dayside) > 0.0
+        @test norm(accel_albedo_dayside) > 0.0
+        @test isapprox(norm(accel_albedo_nightside), 0.0; atol=1e-20, rtol=0.0)
+        @test norm(accel_ir_nightside) > 0.0
+
+        p_srp.shared_buffers.srp_sun_ephemeris_cache[] = SRPSunEphemerisCache(
+            [0.0, 10.0],
+            SVector{3, Float64}[sun_dayside, sun_dayside]
+        )
+        x_dayside = Float64[8.0e6, 0.0, 0.0, 0.0, 0.0, 0.0, 200.0]
+        force_total, _ = calcForceTorque(
+            SolarRadiationPressureModel(1.2, 12.0; direct=true, albedo=true, ir=true, planet_albedo=0.3, planet_ir_flux_w_m2=237.0),
+            x_dayside,
+            p_srp,
+            1
+        )
+        expected_total_force = 200.0 * (accel_direct_dayside + accel_albedo_dayside + dyn.planetary_ir_accel(pos_dayside, EARTH.Rp_e, 1.2, 12.0, 200.0, 237.0))
+        @test isapprox(force_total, expected_total_force; atol=1e-12, rtol=1e-12)
+
+        x_nightside = Float64[-8.0e6, 0.0, 0.0, 0.0, 0.0, 0.0, 200.0]
+        force_ir_only, _ = calcForceTorque(
+            SolarRadiationPressureModel(1.2, 12.0; direct=false, albedo=false, ir=true, planet_ir_flux_w_m2=237.0),
+            x_nightside,
+            p_srp,
+            1
+        )
+        @test isapprox(force_ir_only, 200.0 * accel_ir_nightside; atol=1e-12, rtol=1e-12)
 
         # Solver parity: legacy solver helper (`srp`) must match canonical SRP kernel for same geometry.
         planet = args_srp.environment_model.planet
         pos_solver = SVector{3, Float64}(x_a[1:3])
         et_solver = 123.0
         primary_body_name = dyn._spice_query_name(planet.name)
-        sun_j2000 = lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
-            SVector{3, Float64}(spkpos("sun", et_solver, "J2000", "none", primary_body_name)[1])
-        end
-        sun_pci = SVector{3, Float64}(planet.J2000_to_pci * sun_j2000 * 1e3)
-        force_kernel = dyn.srp_cannonball_accel(pos_solver, sun_pci, planet.Rp_e, 4.56e-6, 1.2, 12.0, 200.0)
-        force_solver = dyn.srp(planet, 4.56e-6, 1.2, 12.0, 200.0, pos_solver, et_solver)
-        @test isapprox(force_solver, force_kernel; atol=1e-12, rtol=1e-10)
+        sun_j2000_m = SimulationModel.EphemeridesModels.spice_position_j2000_m("sun", et_solver, primary_body_name)
+        sun_pci = SVector{3, Float64}(planet.J2000_to_pci * sun_j2000_m)
+        accel_kernel = dyn.srp_cannonball_accel(pos_solver, sun_pci, planet.Rp_e, 4.56e-6, 1.2, 12.0, 200.0)
+        accel_solver = dyn.srp(planet, 4.56e-6, 1.2, 12.0, 200.0, pos_solver, et_solver)
+        @test isapprox(accel_solver, accel_kernel; atol=1e-12, rtol=1e-10)
     end
 
     default_ckpt_settings = SimulationSettings(
@@ -912,7 +1190,7 @@
 
     args_heat_copy = build_config(
         spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
-        density_model=NoAtmosphereModel(),
+        density_model=ConstantDensityModel(1.0e-9, 220.0),
         orientation_sim=false,
         mission_time=10.0,
         EI_km=120.0,
@@ -924,9 +1202,19 @@
     du_heat_copy .= 0.0
     p_heat_copy = ODEParams{1}(args=args_heat_copy)
     _initialize_heat_rate_buffers!(p_heat_copy)
-    p_heat_copy.shared_buffers.heat_rates[1] = Float64[1.25, 9.0]
+    expected_heat_rates = copy(
+        SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
+            p_heat_copy,
+            u_heat_copy.sc[1],
+            1,
+            0.0;
+            use_buffered_density=false,
+        )
+    )
     spacecraft_dynamics!(du_heat_copy, u_heat_copy, p_heat_copy, 0.0)
-    @test du_heat_copy.sc[1].heat_loads[1] == 1.25
+    @test all(isfinite, expected_heat_rates)
+    @test any(>(0.0), expected_heat_rates)
+    @test du_heat_copy.sc[1].heat_loads == expected_heat_rates
 
     @test_throws ArgumentError _resolve_component_tolerance(-1.0, 1.0, "unit_test_tol")
 end
@@ -1036,20 +1324,20 @@ end
 
 @testset "Heat Load Derivative Uses Thermal Model" begin
     sc = make_single_link_spacecraft(
-        ra_alt_m=500e3,
-        rp_alt_m=500e3,
+        ra_alt_m=220e3,
+        rp_alt_m=100e3,
         i_deg=35.0,
         ω_deg=40.0,
         Ω_deg=10.0,
-        ν_deg=175.0
+        ν_deg=0.0
     )
     args = build_config(
         spacecraft=sc,
-        density_model=NoAtmosphereModel(),
+        density_model=ExponentialAtmosphereModel(EARTH),
         orientation_sim=false,
         mission_time=10.0,
         EI_km=120.0,
-        dynamic_effectors=(InverseSquaredGravityModel(),),
+        dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
         keplerian=true
     )
     args.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(I(3))
@@ -1059,13 +1347,14 @@ end
     du0 .= 0.0
     p = ODEParams{1}(args=args)
     _initialize_heat_rate_buffers!(p)
-    p.shared_buffers.densities[1] = 1.0e-6
-    p.shared_buffers.temperatures[1] = 250.0
-    p.shared_buffers.winds[1] = SVector{3, Float64}(0.0, 0.0, 0.0)
-    thermal_cb = SimulationModel.SimulationCallbacks.get_thermal_callback(1, args)
-    thermal_cb.affect!((p=p, u=u0, t=0.0))
     spacecraft_dynamics!(du0, u0, p, 0.0)
+    drag_force, drag_torque = SimulationModel.calcForceTorque(AerodynamicCoefficientfM(), u0.sc[1], p, 1)
 
+    @test p.shared_buffers.densities[1] > 0.0
+    @test isfinite(p.shared_buffers.temperatures[1])
+    @test all(isfinite, p.shared_buffers.winds[1])
+    @test norm(drag_force) > 0.0
+    @test all(isfinite, drag_torque)
     @test all(isfinite, p.shared_buffers.heat_rates[1])
     @test any(>(0.0), p.shared_buffers.heat_rates[1])
     @test all(isfinite, du0.sc[1].heat_loads)
@@ -1102,6 +1391,122 @@ end
     df = run_case(args)
     eps = specific_energy(df, EARTH.μ)
     @test last(eps) < first(eps) - 1e5
+end
+
+@testset "Two-Body Kepler Invariants Stay Constant" begin
+    ra_alt_m = 1_800e3
+    rp_alt_m = 400e3
+    sc = make_spacecraft(
+        ra_alt_m=ra_alt_m,
+        rp_alt_m=rp_alt_m,
+        i_deg=28.0,
+        ω_deg=15.0,
+        Ω_deg=25.0,
+        ν_deg=40.0
+    )
+    ra_m = EARTH.Rp_e + ra_alt_m
+    rp_m = EARTH.Rp_e + rp_alt_m
+    a0 = 0.5 * (ra_m + rp_m)
+    period_s = 2pi * sqrt(a0^3 / EARTH.μ)
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=2.5 * period_s,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel(),
+        tolerances=IntegrationTolerances(
+            reltol_orbit=1e-9,
+            abstol_orbit=1e-9,
+            dt_max_orbit=10.0
+        )
+    )
+
+    df = run_case_silent(args)
+    eps = specific_energy(df, EARTH.μ)
+    hmag = specific_angular_momentum_magnitude(df)
+    a_series = -EARTH.μ ./ (2.0 .* eps)
+
+    eps0 = first(eps)
+    h0 = first(hmag)
+    a_rel_drift = maximum(abs.((a_series .- a_series[1]) ./ a0))
+    eps_rel_drift = maximum(abs.((eps .- eps0) ./ eps0))
+    h_rel_drift = maximum(abs.((hmag .- h0) ./ h0))
+
+    @test eps_rel_drift < 1e-5
+    @test h_rel_drift < 1e-5
+    @test a_rel_drift < 1e-5
+end
+
+@testset "J2 Secular Rates Match Standard First-Order Drift" begin
+    sc = make_spacecraft(
+        ra_alt_m=2_000e3,
+        rp_alt_m=400e3,
+        i_deg=45.0,
+        ω_deg=25.0,
+        Ω_deg=40.0,
+        ν_deg=20.0
+    )
+    args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=86_400.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredJ2GravityModel(),),
+        keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel(),
+        tolerances=IntegrationTolerances(
+            reltol_orbit=1e-9,
+            abstol_orbit=1e-9,
+            dt_max_orbit=10.0
+        )
+    )
+
+    df = run_case_silent(args)
+    times = Float64.(df.time)
+    Ω_series = Vector{Float64}(undef, nrow(df))
+    ω_series = Vector{Float64}(undef, nrow(df))
+
+    @inbounds for idx in 1:nrow(df)
+        pos = SVector{3, Float64}(
+            Float64(df.sc1_pos_1[idx]),
+            Float64(df.sc1_pos_2[idx]),
+            Float64(df.sc1_pos_3[idx])
+        )
+        vel = SVector{3, Float64}(
+            Float64(df.sc1_vel_1[idx]),
+            Float64(df.sc1_vel_2[idx]),
+            Float64(df.sc1_vel_3[idx])
+        )
+        oe = rvtoorbitalelement(pos, vel, EARTH)
+        Ω_series[idx] = Float64(oe[4])
+        ω_series[idx] = Float64(oe[5])
+    end
+
+    oe0 = rvtoorbitalelement(
+        SVector{3, Float64}(Float64(df.sc1_pos_1[1]), Float64(df.sc1_pos_2[1]), Float64(df.sc1_pos_3[1])),
+        SVector{3, Float64}(Float64(df.sc1_vel_1[1]), Float64(df.sc1_vel_2[1]), Float64(df.sc1_vel_3[1])),
+        EARTH
+    )
+    Ωdot_expected, ωdot_expected = SimulationModel.GravityEffectors.j2_secular_rates(
+        Float64(oe0[1]),
+        Float64(oe0[2]),
+        Float64(oe0[3]),
+        EARTH
+    )
+
+    Ωdot_measured = linear_regression_slope(times, unwrap_angle_series(Ω_series))
+    ωdot_measured = linear_regression_slope(times, unwrap_angle_series(ω_series))
+
+    # Vallado / Montenbruck-Gill first-order secular rates describe the drift trend.
+    # Compare slopes with moderate tolerance because the integrated elements are osculating, not mean.
+    @test signbit(Ωdot_measured) == signbit(Ωdot_expected)
+    @test signbit(ωdot_measured) == signbit(ωdot_expected)
+    @test isapprox(Ωdot_measured, Ωdot_expected; rtol=0.10, atol=0.0)
+    @test isapprox(ωdot_measured, ωdot_expected; rtol=0.15, atol=0.0)
 end
 
 @testset "AGORA Earth Regression (Golden)" begin

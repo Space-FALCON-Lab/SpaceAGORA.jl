@@ -56,6 +56,8 @@ end
     mode = lowercase(strip(_engine_env_get("SPACEAGORA_SOLVER_MODE", "tsit5")))
     if mode in ("tsit5", "default")
         return :tsit5
+    elseif mode in ("symplectic", "kahanli8", "verlet")
+        return :symplectic
     elseif mode in ("auto_stiff", "auto-stiff", "autostiff", "auto")
         return :auto_stiff
     elseif mode in ("rodas5p", "rodas", "stiff")
@@ -66,7 +68,7 @@ end
         return :multirate
     end
     throw(ArgumentError(
-        "Unsupported SPACEAGORA_SOLVER_MODE='$mode'. Use one of: tsit5, auto_stiff, rodas5p, split_imex, multirate."
+        "Unsupported SPACEAGORA_SOLVER_MODE='$mode'. Use one of: tsit5, symplectic, auto_stiff, rodas5p, split_imex, multirate."
     ))
 end
 
@@ -98,6 +100,33 @@ end
     end
     parsed > 0 || throw(ArgumentError("SPACEAGORA_SOLVER_MAXITERS must be > 0, got $parsed."))
     return parsed
+end
+
+@inline function _symplectic_fixed_dt_s(args)::Float64
+    raw = strip(_engine_env_get("SPACEAGORA_SYMPLECTIC_DT_S", ""))
+    dt = if isempty(raw)
+        args.integration_tolerances.dt_max_orbit
+    else
+        parsed = try
+            parse(Float64, raw)
+        catch
+            throw(ArgumentError("SPACEAGORA_SYMPLECTIC_DT_S must be a number, got '$raw'."))
+        end
+        parsed
+    end
+    dt > 0.0 || throw(ArgumentError("SPACEAGORA_SYMPLECTIC_DT_S must be > 0.0, got $dt."))
+    return dt
+end
+
+@inline function _symplectic_conservative_eligible(args)::Bool
+    args.mission_configuration.orientation_sim && return false
+    length(args.dynamics_model.spacecraft) == 1 || return false
+    isempty(args.control_model.control_effectors) || return false
+    isempty(args.guidance_model.guidance_effectors) || return false
+    isempty(args.navigation_model.navigation_effectors) || return false
+    effectors = args.dynamics_model.dynamic_effectors
+    length(effectors) == 1 || return false
+    return first(effectors) isa SimulationModel.InverseSquaredGravityModel
 end
 
 @inline function _split_imex_solver_spec()
@@ -186,6 +215,19 @@ end
         dtmax=dtmax_use,
         maxiters=maxiters
     )
+end
+
+@inline function _solve_with_fixed_step_solver(prob, alg, dt_s::Float64)
+    maxiters = _solver_maxiters()
+    if maxiters === nothing
+        return solve(prob, alg; dt=dt_s)
+    end
+    return solve(prob, alg; dt=dt_s, maxiters=maxiters)
+end
+
+@inline function _is_partitioned_second_order_problem(prob)::Bool
+    hasproperty(prob, :problem_type) || return false
+    return getproperty(prob, :problem_type) isa SecondOrderODEProblem
 end
 
 @inline function _split_subproblem(prob, f, u, tspan)
@@ -331,6 +373,22 @@ end
 
 function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
     mode = _solver_policy_mode()
+    if mode == :symplectic
+        _symplectic_conservative_eligible(args) || throw(ArgumentError(
+            "SPACEAGORA_SOLVER_MODE=symplectic currently requires a single-spacecraft, translational-only inverse-squared gravity configuration with no control/guidance/navigation effectors."
+        ))
+        _is_partitioned_second_order_problem(prob) || throw(ArgumentError(
+            "SPACEAGORA_SOLVER_MODE=symplectic requires a partitioned SecondOrderODEProblem. The typed run_simulation path still builds a first-order ODEProblem, so use tsit5/auto_stiff there until a partitioned runtime path is added."
+        ))
+        sol = _solve_with_fixed_step_solver(prob, KahanLi8(), _symplectic_fixed_dt_s(args))
+        return sol, (
+            solver="KahanLi8(Symplectic)",
+            initial_solver="KahanLi8",
+            fallback_used=false,
+            trigger_retcode=missing
+        )
+    end
+
     if mode == :rodas5p
         sol = _solve_with_explicit_solver(prob, args, Rodas5P(autodiff=AutoFiniteDiff()), reltol_tol, abstol_tol)
         return sol, (

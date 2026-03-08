@@ -37,8 +37,11 @@ end
     make_no_gram_density_model(planet, atmosphere)
 
 Construct the documented first-class no-GRAM atmosphere model for a baseline
-run. `atmosphere=:none` yields `NoAtmosphereModel()` and
-`atmosphere=:exponential` yields an `ExponentialAtmosphereModel(planet)`.
+run. The minimal quickstart baseline uses `atmosphere=:none`, which yields
+`NoAtmosphereModel()`. `atmosphere=:none` yields `NoAtmosphereModel()` and
+`atmosphere=:exponential` yields an `ExponentialAtmosphereModel(planet)`. Pass a
+prebuilt `AbstractDensityModel` instance directly to use a custom analytic
+model such as `PiecewiseExponentialAtmosphereModel(...)`.
 """
 @inline function make_no_gram_density_model(planet::AbstractPlanet, density_model::AbstractDensityModel)
     return density_model
@@ -58,15 +61,17 @@ end
     make_no_gram_density_model(planet, Symbol(strip(lowercase(atmosphere))))
 
 """
-    make_no_gram_environment(; planet=:mars, atmosphere=:exponential, EI_km=120.0, wind=false, topography=false)
+    make_no_gram_environment(; planet=:earth, atmosphere=:none, EI_km=120.0, wind=false, topography=false)
 
 Build a first-class no-GRAM environment configuration that does not depend on
-GRAM assets or SPICE kernels. This uses `SimpleEphemeridesModel()` and only the
-documented fallback atmosphere models.
+GRAM assets or SPICE kernels. The default is the minimal quickstart baseline:
+Earth, `NoAtmosphereModel()`, and `SimpleEphemeridesModel()`. Use explicit
+arguments to opt into other documented fallback atmospheres such as
+`ExponentialAtmosphereModel(planet)`.
 """
 function make_no_gram_environment(;
-    planet::Union{AbstractPlanet, Symbol, AbstractString}=:mars,
-    atmosphere::Union{AbstractDensityModel, Symbol, AbstractString}=:exponential,
+    planet::Union{AbstractPlanet, Symbol, AbstractString}=:earth,
+    atmosphere::Union{AbstractDensityModel, Symbol, AbstractString}=:none,
     EI_km::Real=120.0,
     wind::Bool=false,
     topography::Bool=false,

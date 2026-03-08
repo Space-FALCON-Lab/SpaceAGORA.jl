@@ -35,6 +35,11 @@
     p = ODEParams{1}(args=args)
     u = build_initial_conditions(args).sc[1]
 
+    _burn_plan(p_, sat_idx) = p_.shared_buffers.maneuver_burn_plans[sat_idx]
+    _clear_burn_plan!(p_, sat_idx) = (p_.shared_buffers.maneuver_burn_plans[sat_idx] = PropulsiveBurnPlan())
+    _expected_burn_duration(mass_kg, thrust_n, isp_s, delta_v_mps) =
+        mass_kg * isp_s * 9.80665 * (1.0 - exp(-delta_v_mps / (isp_s * 9.80665))) / thrust_n
+
     @testset "calcControlForceTorque" begin
         model = make_base_thruster_model(thrust=2.0, direction=0.0, start_burn_time=50.0, stop_burn_time=150.0)
 
@@ -109,32 +114,44 @@
     @testset "calcControlEffect!" begin
         model = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         state = build_initial_conditions(args)
+        _clear_burn_plan!(p, 1)
         calcControlEffect!(model, state, p, 100.0, 1)
-        @test isfinite(model.start_burn_time[1])
-        @test isfinite(model.stop_burn_time[1])
-        @test model.start_burn_time[1] < model.stop_burn_time[1]
-        expected_burn_duration = state.sc[1].mass * model.Δv[1] / model.thrust[1]
+        plan = _burn_plan(p, 1)
+        @test plan.valid
+        @test isfinite(plan.start_burn_s)
+        @test isfinite(plan.stop_burn_s)
+        @test plan.start_burn_s < plan.stop_burn_s
+        @test model.start_burn_time[1] == -1.0
+        @test model.stop_burn_time[1] == -1.0
+        expected_burn_duration = _expected_burn_duration(state.sc[1].mass, model.thrust[1], model.Isp[1], model.Δv[1])
         @test isapprox(
-            model.stop_burn_time[1] - model.start_burn_time[1],
+            plan.stop_burn_s - plan.start_burn_s,
             expected_burn_duration;
             atol=1e-9,
             rtol=0.0
         )
+        @test isapprox(plan.commanded_impulse_n_s, model.thrust[1] * expected_burn_duration; atol=1e-9, rtol=0.0)
 
         # Pre-ignition tracking: a future scheduled window should be retimed.
         model_track = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=10_000.0, stop_burn_time=11_000.0)
+        _clear_burn_plan!(p, 1)
         calcControlEffect!(model_track, state, p, 100.0, 1)
-        @test model_track.start_burn_time[1] != 10_000.0
-        @test model_track.stop_burn_time[1] != 11_000.0
+        plan_track = _burn_plan(p, 1)
+        @test plan_track.valid
+        @test plan_track.start_burn_s != 10_000.0
+        @test plan_track.stop_burn_s != 11_000.0
+        @test model_track.start_burn_time[1] == 10_000.0
+        @test model_track.stop_burn_time[1] == 11_000.0
 
         # Post-ignition lock: once burn start time has been reached, keep fixed.
-        s_sched = model.start_burn_time[1]
-        e_sched = model.stop_burn_time[1]
-        calcControlEffect!(model, state, p, 120.0, 1)
-        @test model.start_burn_time[1] == s_sched
-        @test model.stop_burn_time[1] == e_sched
+        s_sched = plan.start_burn_s
+        e_sched = plan.stop_burn_s
+        calcControlEffect!(model, state, p, s_sched + 1e-6, 1)
+        plan_locked = _burn_plan(p, 1)
+        @test plan_locked.start_burn_s == s_sched
+        @test plan_locked.stop_burn_s == e_sched
 
-        sc_ineligible = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=210.0)
+        sc_ineligible = make_spacecraft(ra_alt_m=600e3, rp_alt_m=400e3, ν_deg=210.0)
         args_ineligible = build_config(
             spacecraft=sc_ineligible,
             density_model=NoAtmosphereModel(),
@@ -147,14 +164,14 @@
         p_ineligible = ODEParams{1}(args=args_ineligible)
         state_ineligible = build_initial_conditions(args_ineligible)
         model_ineligible = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=11.0, stop_burn_time=22.0)
+        _clear_burn_plan!(p_ineligible, 1)
         calcControlEffect!(model_ineligible, state_ineligible, p_ineligible, 100.0, 1)
-        @test model_ineligible.start_burn_time[1] == -1.0 || model_ineligible.start_burn_time[1] > 100.0
-        @test model_ineligible.stop_burn_time[1] == -1.0 || model_ineligible.stop_burn_time[1] > model_ineligible.start_burn_time[1]
+        @test !_burn_plan(p_ineligible, 1).valid
 
         model_zero_thrust = make_base_thruster_model(thrust=0.0, Δv=20.0, start_burn_time=33.0, stop_burn_time=44.0)
+        _clear_burn_plan!(p, 1)
         calcControlEffect!(model_zero_thrust, state, p, 100.0, 1)
-        @test model_zero_thrust.start_burn_time[1] == -1.0
-        @test model_zero_thrust.stop_burn_time[1] == -1.0
+        @test !_burn_plan(p, 1).valid
 
         sc_edge_block = make_spacecraft(ra_alt_m=600e3, rp_alt_m=400e3, ν_deg=180.0)
         r_edge_block, _ = orbitalelemtorv(sc_edge_block.initial_condition, EARTH)
@@ -171,9 +188,9 @@
         p_edge_block = ODEParams{1}(args=args_edge_block)
         state_edge_block = build_initial_conditions(args_edge_block)
         model_edge_block = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
+        _clear_burn_plan!(p_edge_block, 1)
         calcControlEffect!(model_edge_block, state_edge_block, p_edge_block, 100.0, 1)
-        @test model_edge_block.start_burn_time[1] == -1.0
-        @test model_edge_block.stop_burn_time[1] == -1.0
+        @test !_burn_plan(p_edge_block, 1).valid
 
         sc_edge_allow = make_spacecraft(ra_alt_m=600e3, rp_alt_m=400e3, ν_deg=170.0)
         r_edge_allow, _ = orbitalelemtorv(sc_edge_allow.initial_condition, EARTH)
@@ -190,9 +207,9 @@
         p_edge_allow = ODEParams{1}(args=args_edge_allow)
         state_edge_allow = build_initial_conditions(args_edge_allow)
         model_edge_allow = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
+        _clear_burn_plan!(p_edge_allow, 1)
         calcControlEffect!(model_edge_allow, state_edge_allow, p_edge_allow, 100.0, 1)
-        @test model_edge_allow.start_burn_time[1] != -1.0
-        @test model_edge_allow.stop_burn_time[1] != -1.0
+        @test _burn_plan(p_edge_allow, 1).valid
 
         sc_circular = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=330.0)
         args_circular = build_config(
@@ -207,9 +224,9 @@
         p_circular = ODEParams{1}(args=args_circular)
         state_circular = build_initial_conditions(args_circular)
         model_circular = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
+        _clear_burn_plan!(p_circular, 1)
         calcControlEffect!(model_circular, state_circular, p_circular, 100.0, 1)
-        @test model_circular.start_burn_time[1] != -1.0
-        @test model_circular.stop_burn_time[1] != -1.0
+        @test _burn_plan(p_circular, 1).valid
 
         state_hyperbolic = build_initial_conditions(args)
         rmag = norm(SVector{3, Float64}(state_hyperbolic.sc[1].pos))
@@ -217,7 +234,9 @@
         vhat = normalize(SVector{3, Float64}(state_hyperbolic.sc[1].vel))
         state_hyperbolic.sc[1].vel .= (1.2 * escape_speed) .* vhat
         model_hyperbolic = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=91.0, stop_burn_time=92.0)
+        _clear_burn_plan!(p, 1)
         @test_nowarn calcControlEffect!(model_hyperbolic, state_hyperbolic, p, 100.0, 1)
+        @test !_burn_plan(p, 1).valid
         @test model_hyperbolic.start_burn_time[1] == -1.0
         @test model_hyperbolic.stop_burn_time[1] == -1.0
 
@@ -227,15 +246,21 @@
         v_near_parabolic = 0.999999 * sqrt(2.0 * EARTH.μ / rmag_parabolic)
         state_near_parabolic.sc[1].vel .= v_near_parabolic .* vhat_parabolic
         model_near_parabolic = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=95.0, stop_burn_time=96.0)
+        _clear_burn_plan!(p, 1)
         @test_nowarn calcControlEffect!(model_near_parabolic, state_near_parabolic, p, 100.0, 1)
-        @test isfinite(model_near_parabolic.start_burn_time[1])
-        @test isfinite(model_near_parabolic.stop_burn_time[1])
+        @test _burn_plan(p, 1).valid
+        @test isfinite(_burn_plan(p, 1).start_burn_s)
+        @test isfinite(_burn_plan(p, 1).stop_burn_s)
+        @test model_near_parabolic.start_burn_time[1] == -1.0
+        @test model_near_parabolic.stop_burn_time[1] == -1.0
 
         state_singular = build_initial_conditions(args)
         state_singular.sc[1].pos .= 0.0
         state_singular.sc[1].vel .= 0.0
         model_singular = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=93.0, stop_burn_time=94.0)
+        _clear_burn_plan!(p, 1)
         @test_nowarn calcControlEffect!(model_singular, state_singular, p, 100.0, 1)
+        @test !_burn_plan(p, 1).valid
         @test model_singular.start_burn_time[1] == -1.0
         @test model_singular.stop_burn_time[1] == -1.0
 
@@ -243,9 +268,29 @@
         state_tiny_a.sc[1].pos .= SVector{3, Float64}(1.0, 0.0, 0.0)
         state_tiny_a.sc[1].vel .= SVector{3, Float64}(0.0, 0.1, 0.0)
         model_tiny_a = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=97.0, stop_burn_time=98.0)
+        _clear_burn_plan!(p, 1)
         @test_nowarn calcControlEffect!(model_tiny_a, state_tiny_a, p, 100.0, 1)
-        @test isfinite(model_tiny_a.start_burn_time[1])
-        @test isfinite(model_tiny_a.stop_burn_time[1])
+        @test !_burn_plan(p, 1).valid
+        @test model_tiny_a.start_burn_time[1] == -1.0
+        @test model_tiny_a.stop_burn_time[1] == -1.0
+
+        sc_budget = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=120.0)
+        sc_budget.prop_mass = 5.0
+        args_budget = build_config(
+            spacecraft=sc_budget,
+            density_model=NoAtmosphereModel(),
+            orientation_sim=false,
+            mission_time=600.0,
+            EI_km=120.0,
+            dynamic_effectors=(InverseSquaredGravityModel(),),
+            keplerian=true
+        )
+        p_budget = ODEParams{1}(args=args_budget)
+        state_budget = build_initial_conditions(args_budget)
+        model_budget = make_base_thruster_model(thrust=2.0, Δv=400.0, start_burn_time=-1.0, stop_burn_time=-1.0)
+        _clear_burn_plan!(p_budget, 1)
+        calcControlEffect!(model_budget, state_budget, p_budget, 100.0, 1)
+        @test !_burn_plan(p_budget, 1).valid
 
         sc_multi_1 = make_spacecraft(ra_alt_m=650e3, rp_alt_m=450e3, ν_deg=120.0)
         sc_multi_2 = make_spacecraft(ra_alt_m=700e3, rp_alt_m=500e3, ν_deg=150.0)
@@ -268,19 +313,27 @@
             stop_burn_time=[-3.0, -4.0],
             Isp=[300.0, 300.0]
         )
+        _clear_burn_plan!(p_multi, 1)
+        _clear_burn_plan!(p_multi, 2)
         calcControlEffect!(model_multi, state_multi, p_multi, 100.0, 1)
-        @test model_multi.start_burn_time[1] != -1.0
-        @test model_multi.stop_burn_time[1] != -3.0
+        @test _burn_plan(p_multi, 1).valid
+        @test !_burn_plan(p_multi, 2).valid
+        @test model_multi.start_burn_time[1] == -1.0
+        @test model_multi.stop_burn_time[1] == -3.0
         @test model_multi.start_burn_time[2] == -2.0
         @test model_multi.stop_burn_time[2] == -4.0
 
-        s1 = model_multi.start_burn_time[1]
-        e1 = model_multi.stop_burn_time[1]
+        s1 = _burn_plan(p_multi, 1).start_burn_s
+        e1 = _burn_plan(p_multi, 1).stop_burn_s
         calcControlEffect!(model_multi, state_multi, p_multi, 100.0, 2)
-        @test model_multi.start_burn_time[1] == s1
-        @test model_multi.stop_burn_time[1] == e1
-        @test model_multi.start_burn_time[2] != -2.0
-        @test model_multi.stop_burn_time[2] != -4.0
+        @test _burn_plan(p_multi, 1).valid
+        @test _burn_plan(p_multi, 1).start_burn_s == s1
+        @test _burn_plan(p_multi, 1).stop_burn_s == e1
+        @test _burn_plan(p_multi, 2).valid
+        @test model_multi.start_burn_time[1] == -1.0
+        @test model_multi.stop_burn_time[1] == -3.0
+        @test model_multi.start_burn_time[2] == -2.0
+        @test model_multi.stop_burn_time[2] == -4.0
 
         model_oob = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         @test_nowarn calcControlEffect!(model_oob, state, p, 100.0, 2)
@@ -335,15 +388,18 @@
                 state_trace = build_initial_conditions(args)
                 p_trace = ODEParams{1}(args=args)
 
+                _clear_burn_plan!(p_trace, 1)
                 calcControlEffect!(model_trace, state_trace, p_trace, 100.0, 1)
-                s_trace = model_trace.start_burn_time[1]
-                e_trace = model_trace.stop_burn_time[1]
+                s_trace = _burn_plan(p_trace, 1).start_burn_s
+                e_trace = _burn_plan(p_trace, 1).stop_burn_s
                 @test s_trace < e_trace
 
                 calcControlEffect!(model_trace, state_trace, p_trace, s_trace + 1e-6, 1)
                 calcControlEffect!(model_trace, state_trace, p_trace, e_trace + 1.0, 1)
-                @test !(model_trace.start_burn_time[1] == s_trace && model_trace.stop_burn_time[1] == e_trace)
-                @test model_trace.start_burn_time[1] == -1.0 || model_trace.stop_burn_time[1] > model_trace.start_burn_time[1]
+                trace_plan_after = _burn_plan(p_trace, 1)
+                @test !trace_plan_after.valid ||
+                      trace_plan_after.start_burn_s != s_trace ||
+                      trace_plan_after.stop_burn_s != e_trace
 
                 @test isfile(trace_csv)
                 trace_text = read(trace_csv, String)
@@ -691,9 +747,8 @@ end
     df = run_case_silent(args; isolate_state=false)
 
     for sat_idx in 1:2
-        s = shared_thruster.start_burn_time[sat_idx]
-        e = shared_thruster.stop_burn_time[sat_idx]
-        @test (s == -1.0 && e == -1.0) || (isfinite(s) && isfinite(e) && e > s)
+        @test shared_thruster.start_burn_time[sat_idx] == -1.0
+        @test shared_thruster.stop_burn_time[sat_idx] == -1.0
     end
 
     mass1 = Vector{Float64}(df.sc1_mass)

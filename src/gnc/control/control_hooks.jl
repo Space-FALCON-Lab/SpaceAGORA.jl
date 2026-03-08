@@ -4,7 +4,7 @@ module ControlHooks
     using ..ConfigTypes: ODEParams
     using ..AbstractTypes: AbstractPlanet, AbstractControlEffectorModel, AbstractThrusterModel
     using ..ThrusterModels: BaseThrusterModel
-    using ..CommandTypes: PropulsiveManeuverCommand
+    using ..CommandTypes: PropulsiveManeuverCommand, PropulsiveBurnPlan
     using ..GravityEffectors: aerobraking_gravity_force_ii
     using ..GuidanceHooks: AerobrakingGuidanceInput, dispatch_aerobraking_guidance
     using ..AerobrakingPolicy: AerobrakingPolicyConfig, DefaultAerobrakingPolicySelector

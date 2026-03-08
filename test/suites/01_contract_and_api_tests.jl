@@ -11,6 +11,8 @@
         :MissionConfiguration,
         :EnvironmentModel,
         :SimpleEphemeridesModel,
+        :PiecewiseExponentialAtmosphereModel,
+        :NRLMSISE00AtmosphereModel,
         :SpiceEphemeridesModel,
         :make_no_gram_environment,
         :IntegrationTolerances,
@@ -73,7 +75,7 @@ end
     simulation_model_src = read(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"), String)
     reference_system_config_src = read(joinpath(REPO_ROOT, "src", "core", "state", "reference_system_config.jl"), String)
     spacecraft_model_src = read(joinpath(REPO_ROOT, "src", "vehicle", "spacecraft", "model.jl"), String)
-    legacy_model_codes_src = read(joinpath(REPO_ROOT, "src", "core", "types", "legacy_model_codes.jl"), String)
+    legacy_model_codes_src = read(joinpath(REPO_ROOT, "src", "core", "types", "compat_model_codes.jl"), String)
     runtime_types_src = read(joinpath(REPO_ROOT, "src", "core", "types", "runtime_types.jl"), String)
     command_types_src = read(joinpath(REPO_ROOT, "src", "gnc", "command_types.jl"), String)
     engine_src = read(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"), String)
@@ -98,8 +100,8 @@ end
     @test occursin("include(joinpath(@__DIR__, \"..\", \"vehicle\", \"spacecraft\", \"model.jl\"))", simulation_model_src)
     @test occursin("@reexport using .SpacecraftModels", simulation_model_src)
     @test !occursin("@reexport using .PhysicalModel", simulation_model_src)
-    @test occursin("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"legacy_model_codes.jl\"))", simulation_model_src)
-    @test findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"legacy_model_codes.jl\"))", simulation_model_src) <
+    @test occursin("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src)
+    @test findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src) <
         findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"runtime_types.jl\"))", simulation_model_src)
     @test occursin("module ReferenceSystems", reference_system_config_src)
     @test !occursin("module ref_sys", reference_system_config_src)
@@ -220,8 +222,8 @@ end
     @test isdefined(SimulationModel.DynamicEffectors, :_aero_workspace_for_sat!)
     @test isdefined(SimulationModel.DynamicEffectors, :_nbody_workspace_for_sat!)
     @test isdefined(SimulationModel.DynamicEffectors, :_harmonics_workspace_for_sat!)
-    @test isdefined(SimulationModel.DynamicEffectors, :_nbody_body_position_from_cache_j2000)
-    @test isdefined(SimulationModel.DynamicEffectors, :_srp_sun_position_from_cache_j2000)
+    @test isdefined(SimulationModel.DynamicEffectors, :_nbody_body_position_from_cache_j2000_m)
+    @test isdefined(SimulationModel.DynamicEffectors, :_srp_sun_position_from_cache_j2000_m)
     @test isdefined(SimulationModel.DynamicEffectors, :eclipse_area_calc)
 end
 
@@ -549,9 +551,167 @@ end
         @test env_ok.EI == 120.0
         @test env_ok.ephemerides_model isa SpiceEphemeridesModel
 
+        env_no_gram_default = make_no_gram_environment()
+        @test env_no_gram_default.ephemerides_model isa SimpleEphemeridesModel
+        @test env_no_gram_default.density_model isa NoAtmosphereModel
+        @test env_no_gram_default.planet isa Earth
+
         env_no_gram = make_no_gram_environment(planet=:mars, atmosphere=:exponential, EI_km=140.0)
         @test env_no_gram.ephemerides_model isa SimpleEphemeridesModel
         @test env_no_gram.density_model isa ExponentialAtmosphereModel
+
+        exp_model = ExponentialAtmosphereModel(1.0e-4, 120.0e3, 12.0e3)
+        @test exp_model.temperature_k == 200.0
+        @test exp_model.valid_min_altitude_m == 120.0e3
+        @test exp_model.valid_max_altitude_m == 180.0e3
+
+        nrl_model = NRLMSISE00AtmosphereModel()
+        @test nrl_model.f107a == 150.0
+        @test nrl_model.f107 == 150.0
+        @test nrl_model.ap == 4.0
+        @test nrl_model.valid_min_altitude_m == 0.0
+        @test nrl_model.valid_max_altitude_m == 1_000.0e3
+
+        dt_nrl = DateTime(2024, 1, 1, 0, 0, 0)
+        j2000_dt = DateTime(2000, 1, 1, 12, 0, 0)
+        el_time_nrl = Dates.value(dt_nrl - j2000_dt) / 1000.0
+        p_nrl = (
+            args=(
+                initial_time=InitialTime(year=2024, month=1, day=1, hour=0, minute=0, second=0.0),
+                environment_model=(planet=EARTH,),
+            ),
+        )
+
+        fixed_nrl = NRLMSISE00AtmosphereModel(f107a=120.0, f107=130.0, ap=6.0)
+        expected_nrl_fixed = SatelliteToolbox.AtmosphericModels.nrlmsise00(
+            dt_nrl, 400.0e3, 0.1, 0.2, 120.0, 130.0, 6.0
+        )
+        rho_nrl_fixed, T_nrl_fixed, wind_nrl_fixed = getDensity(fixed_nrl, 400.0e3, 0.1, 0.2, el_time_nrl, false)
+        @test isapprox(rho_nrl_fixed, expected_nrl_fixed.total_density; atol=0.0, rtol=1e-12)
+        @test isapprox(T_nrl_fixed, expected_nrl_fixed.temperature; atol=0.0, rtol=1e-12)
+        @test wind_nrl_fixed == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+        rho_nrl_rel, T_nrl_rel, wind_nrl_rel = getDensity(fixed_nrl, 400.0e3, 0.1, 0.2, 0.0, false, p_nrl)
+        @test isapprox(rho_nrl_rel, expected_nrl_fixed.total_density; atol=0.0, rtol=1e-12)
+        @test isapprox(T_nrl_rel, expected_nrl_fixed.temperature; atol=0.0, rtol=1e-12)
+        @test wind_nrl_rel == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+        provider_hits = Ref(0)
+        provider_nrl = NRLMSISE00AtmosphereModel(
+            index_provider=(instant, h, lat, lon) -> begin
+                provider_hits[] += 1
+                return (f107a=95.0, f107=105.0, ap=[8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0])
+            end
+        )
+        expected_nrl_provider = SatelliteToolbox.AtmosphericModels.nrlmsise00(
+            dt_nrl, 400.0e3, 0.1, 0.2, 95.0, 105.0, [8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0]
+        )
+        rho_nrl_provider, T_nrl_provider, wind_nrl_provider = getDensity(provider_nrl, 400.0e3, 0.1, 0.2, el_time_nrl, false)
+        @test provider_hits[] == 1
+        @test isapprox(rho_nrl_provider, expected_nrl_provider.total_density; atol=0.0, rtol=1e-12)
+        @test isapprox(T_nrl_provider, expected_nrl_provider.temperature; atol=0.0, rtol=1e-12)
+        @test wind_nrl_provider == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+        space_indices_nrl = NRLMSISE00AtmosphereModel(use_space_indices=true)
+        @test space_indices_nrl.index_provider isa SimulationModel.EnvironmentModels.NRLMSISE00SpaceIndicesProvider
+        low_altitude_indices = space_indices_nrl.index_provider(dt_nrl, 70.0e3, 0.1, 0.2)
+        @test low_altitude_indices == (f107a=150.0, f107=150.0, ap=4.0)
+
+        helper_calls = Tuple{Symbol, DateTime}[]
+        helper_instant = DateTime(2024, 1, 2, 10, 30, 0)
+        function fake_space_indices_lookup(index, instant::DateTime)
+            index_sym = if index isa Val{:F10adj_avg_center81}
+                :F10adj_avg_center81
+            elseif index isa Val{:F10adj}
+                :F10adj
+            elseif index isa Val{:Ap_daily}
+                :Ap_daily
+            elseif index isa Val{:Ap}
+                :Ap
+            else
+                error("Unexpected index lookup in test: $index")
+            end
+            push!(helper_calls, (index_sym, instant))
+            if index_sym === :F10adj_avg_center81
+                return 177.0
+            elseif index_sym === :F10adj
+                return 166.0
+            elseif index_sym === :Ap_daily
+                return 99
+            end
+            day = Date(instant)
+            if day == Date(2024, 1, 2)
+                return (21, 22, 23, 24, 25, 26, 27, 28)
+            elseif day == Date(2024, 1, 1)
+                return (11, 12, 13, 14, 15, 16, 17, 18)
+            elseif day == Date(2023, 12, 31)
+                return (1, 2, 3, 4, 5, 6, 7, 8)
+            end
+            error("Unexpected Ap lookup date in test: $day")
+        end
+
+        helper_indices = SimulationModel.EnvironmentModels._nrlmsise_space_indices_indices(
+            fake_space_indices_lookup,
+            helper_instant
+        )
+        @test helper_indices.f107a == 177.0
+        @test helper_indices.f107 == 166.0
+        @test helper_indices.ap == SVector{7, Float64}(99.0, 24.0, 23.0, 22.0, 21.0, 14.5, 4.5)
+        @test (Symbol(:F10adj_avg_center81), helper_instant) in helper_calls
+        @test (Symbol(:F10adj), helper_instant - Day(1)) in helper_calls
+        @test SimulationModel.EnvironmentModels._nrlmsise_ap_slot_index(helper_instant) == 4
+
+        @test_throws ArgumentError NRLMSISE00AtmosphereModel(ap=[1.0, 2.0])
+        @test_throws ArgumentError NRLMSISE00AtmosphereModel(
+            use_space_indices=true,
+            index_provider=(instant) -> (f107a=1.0, f107=1.0, ap=1.0)
+        )
+        @test_throws ArgumentError NRLMSISE00AtmosphereModel(space_indices_force_download=true)
+        @test_throws ArgumentError NRLMSISE00AtmosphereModel(valid_min_altitude_m=1.0, valid_max_altitude_m=0.0)
+
+        ρ_mid = 1.225 * exp(-20.0e3 / 8.5e3)
+        piecewise = PiecewiseExponentialAtmosphereModel(
+            [0.0, 20.0e3, 60.0e3],
+            [1.225, ρ_mid],
+            [8.5e3, 12.0e3];
+            temperature_k=210.0
+        )
+        @test piecewise.valid_min_altitude_m == 0.0
+        @test piecewise.valid_max_altitude_m == 60.0e3
+
+        ρ_piece_low, T_piece_low, wind_piece_low = getDensity(piecewise, 10.0e3, 0.0, 0.0, 0.0, false)
+        @test isapprox(ρ_piece_low, 1.225 * exp(-10.0e3 / 8.5e3); atol=0.0, rtol=1e-12)
+        @test T_piece_low == 210.0
+        @test wind_piece_low == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+        ρ_piece_high, T_piece_high, wind_piece_high = getDensity(piecewise, 30.0e3, 0.0, 0.0, 0.0, false)
+        @test isapprox(ρ_piece_high, ρ_mid * exp(-(30.0e3 - 20.0e3) / 12.0e3); atol=0.0, rtol=1e-12)
+        @test T_piece_high == 210.0
+        @test wind_piece_high == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+        rhos_piece = zeros(3)
+        Ts_piece = zeros(3)
+        winds_piece = [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:3]
+        getDensityBatch!(
+            rhos_piece,
+            Ts_piece,
+            winds_piece,
+            piecewise,
+            [10.0e3, 30.0e3, 80.0e3],
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            0.0,
+            false,
+            nothing
+        )
+        @test isapprox(rhos_piece[1], ρ_piece_low; atol=0.0, rtol=1e-12)
+        @test isapprox(rhos_piece[2], ρ_piece_high; atol=0.0, rtol=1e-12)
+        @test isapprox(rhos_piece[3], ρ_mid * exp(-(80.0e3 - 20.0e3) / 12.0e3); atol=0.0, rtol=1e-12)
+        @test all(==(210.0), Ts_piece)
+        @test all(==(SVector{3, Float64}(0.0, 0.0, 0.0)), winds_piece)
+
+        @test_throws ArgumentError PiecewiseExponentialAtmosphereModel([0.0], [1.0], [8.5e3])
+        @test_throws ArgumentError PiecewiseExponentialAtmosphereModel([0.0, 20.0e3, 10.0e3], [1.0, 0.1], [8.5e3, 7.0e3])
 
         @test_throws ArgumentError EnvironmentModel(
             planet=EARTH,
@@ -644,6 +804,7 @@ end
     harmonics_l20 = GravitationalHarmonicsModel(20, 20, harmonics_file, EARTH)
     @test size(harmonics_l20.C) == (21, 21)
     @test size(harmonics_l20.S) == (21, 21)
+    @test harmonics_l20.coefficient_normalization == :full
     @test_throws ArgumentError GravitationalHarmonicsModel(10, 11, harmonics_file, EARTH)
 
     child_link = Link(root=false, q=MVector{4, Float64}(sin(pi / 4), 0.0, 0.0, cos(pi / 4)))

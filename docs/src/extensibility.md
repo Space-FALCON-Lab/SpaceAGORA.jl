@@ -1,5 +1,22 @@
 # Extensibility
 
+Use this page when you are adding new models or control hooks to SpaceAGORA.
+
+This page is for extension authors who want to stay on the stable root package
+surface instead of binding new work to package implementation details.
+
+Shortest successful starting point:
+
+```text
+templates/force_torque_model_template.jl
+```
+
+What to read next:
+
+- [Public API](generated/public_api.md)
+- [Concepts](user/concepts.md)
+- [Maintainer Overview](maintainer/index.md)
+
 SpaceAGORA now exposes a minimal stable extension contract from the root package.
 
 The rule is simple:

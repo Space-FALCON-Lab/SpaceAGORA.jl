@@ -69,6 +69,19 @@ function write_effector_methods(path::String; thrust_mag::Float64, mass_rate::Fl
     write(path, src)
 end
 
+function wait_for_distinct_mtime!(path::String; timeout_s::Float64=2.5)
+    baseline = stat(path).mtime
+    deadline = time() + timeout_s
+    while time() < deadline
+        sleep(0.05)
+        Base.Filesystem.touch(path)
+        if stat(path).mtime > baseline
+            return nothing
+        end
+    end
+    error("Timed out waiting for a distinct mtime for $path before Revise reload")
+end
+
 function run_once()::DataFrame
     root = Link{0}(root=true, m=120.0, ref_area=1.0)
     ic = InitialCondition(planet.Rp_e + 500e3, 0.0, 0.0, 0.0, 0.0, 0.0)
@@ -144,8 +157,9 @@ mktempdir() do tmp
     m1 = Float64(df1.sc1_mass[end])
 
     # Ensure file timestamp changes before revising.
-    sleep(0.2)
+    wait_for_distinct_mtime!(methods_path)
     write_effector_methods(methods_path; thrust_mag=0.2, mass_rate=-0.05)
+    Base.Filesystem.touch(methods_path)
     Revise.revise()
 
     df2 = run_once()

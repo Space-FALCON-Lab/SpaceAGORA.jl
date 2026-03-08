@@ -128,6 +128,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
     spacecraft = dynamics_model.spacecraft
     debug_control = p.shared_buffers.debug_control[]
     p.shared_buffers.current_time[] = t
+    atmosphere_from_dynamic_effectors = SimulationModel.SimulationCallbacks._uses_atmospheric_dynamic_effector(dynamic_effectors)
     effector_decision = _dynamic_effector_thread_decision(p.args, p, dynamic_effectors, length(spacecraft))
     use_rhs_batch = _rhs_batch_parallel_enabled(length(spacecraft))
     if use_rhs_batch
@@ -144,6 +145,13 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
+                    p,
+                    sc_view,
+                    i,
+                    t;
+                    use_buffered_density=atmosphere_from_dynamic_effectors,
+                )
 
                 SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
                     du_view,
@@ -164,7 +172,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                     )
                 end
 
-                _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+                _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
             end
         end
     else
@@ -180,6 +188,13 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
+                    p,
+                    sc_view,
+                    i,
+                    t;
+                    use_buffered_density=atmosphere_from_dynamic_effectors,
+                )
 
                 SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
                     du_view,
@@ -200,7 +215,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                     )
                 end
 
-                _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+                _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
             end
         end
     end
@@ -213,6 +228,7 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
     dynamic_effectors = dynamics_model.dynamic_effectors
     spacecraft = dynamics_model.spacecraft
     p.shared_buffers.current_time[] = t
+    atmosphere_from_dynamic_effectors = SimulationModel.SimulationCallbacks._uses_atmospheric_dynamic_effector(dynamic_effectors)
     effector_decision = _dynamic_effector_thread_decision(p.args, p, dynamic_effectors, length(spacecraft))
     use_rhs_batch = _rhs_batch_parallel_enabled(length(spacecraft))
     if use_rhs_batch
@@ -228,6 +244,13 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
+                heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
+                    p,
+                    sc_view,
+                    i,
+                    t;
+                    use_buffered_density=atmosphere_from_dynamic_effectors,
+                )
 
                 SimulationModel.DynamicsTranslational.assign_slow_translational_rhs!(
                     du_view,
@@ -247,7 +270,7 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                     )
                 end
 
-                _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+                _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
             end
         end
     else
@@ -262,6 +285,13 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
+                heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
+                    p,
+                    sc_view,
+                    i,
+                    t;
+                    use_buffered_density=atmosphere_from_dynamic_effectors,
+                )
 
                 SimulationModel.DynamicsTranslational.assign_slow_translational_rhs!(
                     du_view,
@@ -281,7 +311,7 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                     )
                 end
 
-                _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+                _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
             end
         end
     end
@@ -411,7 +441,7 @@ function build_initial_conditions(args)::ComponentVector
         sc_view.heat_loads .= 0.0  
         
         if args.mission_configuration.orientation_sim
-            sc_view.q .= spacecraft.initial_condition.q
+            sc_view.q .= SimulationModel.project_unit_quaternion(spacecraft.initial_condition.q)
             sc_view.ω .= spacecraft.initial_condition.ang_vel
         end
     end

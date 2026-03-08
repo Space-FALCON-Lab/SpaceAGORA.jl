@@ -1002,12 +1002,49 @@ end
     @test T_exp == 200.0
     @test wind_exp == SVector{3, Float64}(0.0, 0.0, 0.0)
 
-    poly_model = env_models.PolynomialFitAtmosphereModel([0.0, -1.0])
-    @test_throws MethodError env_models.getDensity(poly_model, [120e3, 130e3], 0.0, 0.0, 0.0, false, p_density_helpers)
+    poly_model = env_models.PolynomialFitAtmosphereModel(
+        [0.0, -1.0];
+        valid_min_altitude_m=100e3,
+        valid_max_altitude_m=200e3
+    )
+    @test_throws ArgumentError env_models.PolynomialFitAtmosphereModel(
+        [0.0, -1.0];
+        valid_min_altitude_m=200e3,
+        valid_max_altitude_m=100e3
+    )
+    @test poly_model.valid_min_altitude_m == 100e3
+    @test poly_model.valid_max_altitude_m == 200e3
+
+    poly_planet = env_models.PolynomialFitAtmosphereModel(args_density_helpers.environment_model.planet)
+    @test poly_planet.valid_min_altitude_m == 50e3
+    @test poly_planet.valid_max_altitude_m == 2_000e3
     rho_scalar, T_scalar, wind_scalar = env_models.getDensity(poly_model, 120e3, 0.0, 0.0, 0.0, false, p_density_helpers)
     @test isfinite(rho_scalar)
     @test T_scalar == args_density_helpers.environment_model.planet.T_ref
     @test wind_scalar == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    rho_vec, T_vec, wind_vec = env_models.getDensity(poly_model, [80e3, 120e3, 250e3], 0.0, 0.0, 0.0, false, p_density_helpers)
+    @test rho_vec isa Vector{Float64}
+    @test length(rho_vec) == 3
+    @test all(isfinite, rho_vec)
+    @test T_vec == args_density_helpers.environment_model.planet.T_ref
+    @test wind_vec == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    rho_at_min, _, _ = env_models.getDensity(poly_model, 100e3, 0.0, 0.0, 0.0, false, p_density_helpers)
+    rho_below_min, _, _ = env_models.getDensity(poly_model, 80e3, 0.0, 0.0, 0.0, false, p_density_helpers)
+    rho_at_max, _, _ = env_models.getDensity(poly_model, 200e3, 0.0, 0.0, 0.0, false, p_density_helpers)
+    rho_above_max, _, _ = env_models.getDensity(poly_model, 250e3, 0.0, 0.0, 0.0, false, p_density_helpers)
+    @test rho_below_min == rho_at_min
+    @test rho_above_max == rho_at_max
+
+    poly_overflow = env_models.PolynomialFitAtmosphereModel(
+        [1.0e6];
+        valid_min_altitude_m=100e3,
+        valid_max_altitude_m=200e3
+    )
+    rho_overflow, _, _ = env_models.getDensity(poly_overflow, 150e3, 0.0, 0.0, 0.0, false, p_density_helpers)
+    @test isfinite(rho_overflow)
+    @test rho_overflow > 0.0
 
     hs_batch = [120e3, 130e3, 140e3]
     lats_batch = [0.0, 0.05, -0.02]

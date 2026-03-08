@@ -1,16 +1,46 @@
-# Data and Assets
+# Assets and Modes
 
-SpaceAGORA now supports two operational modes:
+Use this page when you need to decide whether your machine is ready to run
+SpaceAGORA and which operating mode to choose.
 
-## 1. No-GRAM baseline mode
+This page is for users setting up local runs, deciding between no-GRAM and
+higher-fidelity workflows, or checking whether required data is present.
 
-This path is intended for onboarding and CI smoke coverage.
+Shortest successful command:
 
-It uses:
+```bash
+./bin/spaceagora assets check
+```
+
+What to read next:
+
+- [Quickstart](user/quickstart.md)
+- [Installation & Environment](user/installation_environment.md)
+- [First Simulation](user/first_simulation.md)
+
+## Choose a mode
+
+### No-GRAM baseline mode
+
+Use this mode when you want onboarding, smoke coverage, or a lightweight local
+run.
+
+The default minimal quickstart path uses:
 
 - `NoAtmosphereModel()`
-- `ExponentialAtmosphereModel(planet)`
 - `SimpleEphemeridesModel()`
+
+Optional open fallback atmosphere for no-GRAM runs:
+
+- `ExponentialAtmosphereModel(planet)`
+- `PiecewiseExponentialAtmosphereModel(h_breaks_m, rho_refs, Hs; ...)`
+- `NRLMSISE00AtmosphereModel(; f107a, f107, ap, index_provider=..., use_space_indices=false)`
+
+Notes:
+
+- `ExponentialAtmosphereModel(planet)` is a single-scale-height, zero-wind approximation intended for a limited altitude band near its reference altitude. Its advisory validity range defaults to `[h_ref, h_ref + 5H]`.
+- `PiecewiseExponentialAtmosphereModel(...)` is the multi-layer option for bounded studies that need a better altitude-shape fit while still avoiding GRAM assets.
+- `NRLMSISE00AtmosphereModel(...)` accepts fixed geophysical indices, a callable provider, or `use_space_indices=true` to fetch CelesTrak F10.7 and Ap indices through `SpaceIndices`. Call `init_nrlmsise_space_indices!()` before long runs if you want the dataset prewarmed outside the solver. The documented standard NRLMSISE-00 validity band remains roughly `0 km` to `1000 km`.
 
 It does not require:
 
@@ -18,11 +48,14 @@ It does not require:
 - local SPICE kernels
 - GRAM surrogate grids
 
-## 2. High-fidelity mode
+### High-fidelity mode
 
-This path depends on machine-local or user-provided assets.
+Use this mode when you need mission-quality atmosphere, SPICE-backed geometry,
+or other higher-fidelity environment inputs.
 
-### GRAM
+It depends on machine-local or user-provided assets.
+
+#### GRAM
 
 Expected root:
 
@@ -30,9 +63,10 @@ Expected root:
 data/GRAMSuite.jl/GRAM Suite 2.0
 ```
 
-This is a licensed external dependency. SpaceAGORA does not treat GRAM as part of the baseline open onboarding path.
+This is a licensed external dependency. SpaceAGORA does not treat GRAM as part
+of the baseline open onboarding path.
 
-### SPICE kernels
+#### SPICE kernels
 
 Expected under:
 
@@ -40,18 +74,20 @@ Expected under:
 data/GRAMSuite.jl/GRAM Suite 2.0/SPICE
 ```
 
-These are used for high-fidelity frame orientation, SRP geometry, and N-body ephemerides.
+These are used for high-fidelity frame orientation, SRP geometry, and N-body
+ephemerides.
 
-### Gravity and topography harmonics
+#### Gravity and topography harmonics
 
 Expected under:
 
 - `data/Gravity_harmonics_data`
 - `data/Topography_harmonics_data`
 
-These are optional and only required for studies or missions that enable those models.
+These are optional and only required for studies or missions that enable those
+models.
 
-### GRAM surrogate/static-grid bundle
+#### GRAM surrogate/static-grid bundle
 
 Expected under:
 
@@ -59,21 +95,24 @@ Expected under:
 data/GRAM_surrogate
 ```
 
-This bundle is optional. It accelerates selected GRAM-backed workflows but is not required for the no-GRAM baseline mode.
+This bundle is optional. It accelerates selected GRAM-backed workflows but is
+not required for the no-GRAM baseline mode.
 
-## Asset check
+## Check the current machine
 
-Use the package-owned CLI to inspect the current machine state:
-
-```bash
-./bin/spaceagora assets check
-```
-
-That command distinguishes:
+The package-owned asset check distinguishes:
 
 - baseline onboarding availability
 - optional high-fidelity assets
 - paths that are missing but non-blocking for no-GRAM mode
+
+Useful commands:
+
+```bash
+./bin/spaceagora assets check
+./bin/spaceagora assets manifest
+./bin/spaceagora assets setup-open
+```
 
 ## Machine-readable manifest
 
@@ -83,7 +122,7 @@ Canonical manifest:
 data/assets_manifest.toml
 ```
 
-This file is the machine-readable asset contract for:
+This file is the machine-readable asset source of truth for:
 
 - baseline built-in mode
 - repository-owned open assets
@@ -104,8 +143,8 @@ Baseline/open-mode bootstrap:
 julia --project=.AGORA scripts/assets/setup_open_assets.jl
 ```
 
-This does not download GRAM or SPICE. It reports the baseline/open asset contract and
-explicitly leaves licensed assets as user-provided.
+This does not download GRAM or SPICE. It reports the baseline/open asset
+contract and explicitly leaves licensed assets as user-provided.
 
 Direct asset check script:
 

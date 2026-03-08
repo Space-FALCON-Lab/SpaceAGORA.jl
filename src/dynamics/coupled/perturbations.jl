@@ -1,4 +1,3 @@
-using SPICE
 using LoopVectorization
 using AssociatedLegendrePolynomials
 using LinearAlgebra
@@ -6,6 +5,7 @@ using SatelliteToolbox
 using SatelliteToolboxGeomagneticField
 using CSV
 using DataFrames
+using SpecialFunctions: loggamma
 include(joinpath(@__DIR__, "..", "..", "core", "numerics", "quaternion_utils.jl"))
 include(joinpath(@__DIR__, "..", "..", "environment", "ephemerides", "planet_data.jl"))
 # import .config
@@ -116,11 +116,60 @@ end
     return workspace
 end
 
+@inline function _canonical_harmonics_normalization(normalization)::Symbol
+    norm = Symbol(normalization)
+    if norm === :full || norm === :fully_normalized
+        return :full
+    elseif norm === :schmidt || norm === :schmidt_quasi_normalized || norm === :schmidt_quasinormalized
+        return :schmidt
+    elseif norm === :unnormalized || norm === :none
+        return :unnormalized
+    end
+    throw(ArgumentError(
+        "Unsupported gravitational harmonics normalization '$normalization'. " *
+        "Supported values are :full (or :fully_normalized), :schmidt, and :unnormalized."
+    ))
+end
+
+@inline function _fully_normalized_legendre_scale(l::Int, m::Int)::Float64
+    l >= 0 || throw(ArgumentError("Degree must be >= 0, got $l."))
+    0 <= m <= l || throw(ArgumentError("Order must satisfy 0 <= m <= l, got l=$l, m=$m."))
+    δ0m = (m == 0) ? 1.0 : 0.0
+    ratio = exp(0.5 * (loggamma(l - m + 1) - loggamma(l + m + 1)))
+    return sqrt((2.0 - δ0m) * (2.0 * l + 1.0)) * ratio
+end
+
+@inline function _convert_harmonics_coefficients_to_full!(
+    C::AbstractMatrix{Float64},
+    S::AbstractMatrix{Float64},
+    L::Int,
+    M::Int,
+    normalization::Symbol
+)::Nothing
+    norm = _canonical_harmonics_normalization(normalization)
+    norm === :full && return nothing
+
+    @inbounds for l in 0:L
+        i = l + 1
+        for m in 0:min(M, l)
+            j = m + 1
+            scale = if norm === :schmidt
+                sqrt(2.0 * l + 1.0)
+            else
+                _fully_normalized_legendre_scale(l, m)
+            end
+            C[i, j] /= scale
+            S[i, j] /= scale
+        end
+    end
+    return nothing
+end
+
 struct GravitationalHarmonicsModel{P <: AbstractPlanet} <: AbstractForceTorqueModel
     L::Int64 # Degree
     M::Int64 # Order
-    C::Matrix{Float64} # Cosine coefficients
-    S::Matrix{Float64} # Sine coefficients
+    C::Matrix{Float64} # Cosine coefficients stored in fully normalized form
+    S::Matrix{Float64} # Sine coefficients stored in fully normalized form
     A::Matrix{Float64} # Preallocated ALF array
     R::Vector{Float64} # Preallocated real terms powers
     I::Vector{Float64} # Preallocated imaginary terms vector
@@ -129,6 +178,7 @@ struct GravitationalHarmonicsModel{P <: AbstractPlanet} <: AbstractForceTorqueMo
     N1::Matrix{Float64} # Preallocated N1 array
     N2::Matrix{Float64} # Preallocated N2 array
     sqrt_2n_plus_3::Vector{Float64} # Precalculated sqrt(2n+3) values
+    coefficient_normalization::Symbol # Canonicalized source normalization keyword
     planet::P # Planet data for primary body
 end
 
@@ -179,16 +229,34 @@ struct SolarRadiationPressureModel <: AbstractForceTorqueModel
     Cr::Float64 # Reflectivity coefficient
     A::Float64  # Cross-sectional area in m^2
     AU_m::Float64 # Astronomical unit in meters
+    direct::Bool
+    albedo::Bool
+    ir::Bool
+    planet_albedo::Float64
+    planet_ir_flux_w_m2::Float64
 end
 
-function SolarRadiationPressureModel(Cr::Real, A::Real, AU_m::Real=149_597_870_700.0)
+function SolarRadiationPressureModel(
+    Cr::Real,
+    A::Real,
+    AU_m::Real=149_597_870_700.0;
+    direct::Bool=true,
+    albedo::Bool=false,
+    ir::Bool=false,
+    planet_albedo::Real=0.3,
+    planet_ir_flux_w_m2::Real=237.0,
+)
     Cr_f = Float64(Cr)
     A_f = Float64(A)
     AU_f = Float64(AU_m)
+    planet_albedo_f = Float64(planet_albedo)
+    planet_ir_flux_f = Float64(planet_ir_flux_w_m2)
     Cr_f >= 0.0 || throw(ArgumentError("SolarRadiationPressureModel.Cr must be >= 0, got $Cr_f."))
     A_f >= 0.0 || throw(ArgumentError("SolarRadiationPressureModel.A must be >= 0 m^2, got $A_f."))
     AU_f > 0.0 || throw(ArgumentError("SolarRadiationPressureModel.AU_m must be > 0 m, got $AU_f."))
-    return SolarRadiationPressureModel(Cr_f, A_f, AU_f)
+    0.0 <= planet_albedo_f <= 1.0 || throw(ArgumentError("SolarRadiationPressureModel.planet_albedo must be in [0, 1], got $planet_albedo_f."))
+    planet_ir_flux_f >= 0.0 || throw(ArgumentError("SolarRadiationPressureModel.planet_ir_flux_w_m2 must be >= 0, got $planet_ir_flux_f."))
+    return SolarRadiationPressureModel(Cr_f, A_f, AU_f, direct, albedo, ir, planet_albedo_f, planet_ir_flux_f)
 end
 
 function NBodyGravityModel(;
@@ -219,13 +287,32 @@ function NBodyGravityModel(body_names::Vector{String}, primary_body_name::String
     return NBodyGravityModel(body_names=Tuple(body_names), primary_body_name=primary_body_name, planet=planet)
 end
 
-function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::String, planet::P) where P <: AbstractPlanet
+"""
+    GravitationalHarmonicsModel(L, M, coefficients_file, planet; coefficient_normalization=:full)
+
+Load degree/order-limited spherical-harmonics gravity coefficients from `coefficients_file`.
+The CSV coefficients are converted at load time into the fully normalized convention expected
+by the Pines recurrence used in `calcForceTorque`.
+
+Accepted `coefficient_normalization` values are:
+- `:full` or `:fully_normalized`
+- `:schmidt`
+- `:unnormalized`
+"""
+function GravitationalHarmonicsModel(
+    L::Int64,
+    M::Int64,
+    coefficients_file::String,
+    planet::P;
+    coefficient_normalization::Symbol=:full
+) where P <: AbstractPlanet
     if L < 0 || M < 0
         throw(ArgumentError("Gravitational harmonics degree/order must be non-negative, got L=$L, M=$M."))
     end
     if M > L
         throw(ArgumentError("Gravitational harmonics order must satisfy M <= L, got L=$L, M=$M."))
     end
+    normalized_source = _canonical_harmonics_normalization(coefficient_normalization)
 
     harmonics_data = CSV.File(coefficients_file)
     total_data_size = size(harmonics_data, 1)
@@ -249,6 +336,7 @@ function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::Stri
         C[l, m] = harmonics_data.C[i]
         S[l, m] = harmonics_data.S[i]
     end
+    _convert_harmonics_coefficients_to_full!(C, S, L, M, normalized_source)
 
     N1 = zeros(Float64, L+4, L+4)
     N2 = zeros(Float64, L+4, L+4)
@@ -302,6 +390,7 @@ function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::Stri
         N1,
         N2,
         sqrt_2n_plus_3,
+        normalized_source,
         planet
     )
 end
@@ -326,13 +415,13 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
     spice_rhs_memo = param.shared_buffers.spice_rhs_memo
     for (k, body_name) in pairs(model.body_names)
         body_name_spice = _spice_query_name(body_name)
-        pos_primary_body = if nbody_cache_entry isa NBodyEphemerisCache
-            cached = _nbody_body_position_from_cache_j2000(nbody_cache_entry, et, body_name_spice, primary_body_name)
-            cached === nothing ? _nbody_body_position_from_spice_j2000(body_name_spice, et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls) : cached
+        pos_primary_body_j2000_m = if nbody_cache_entry isa NBodyEphemerisCache
+            cached = _nbody_body_position_from_cache_j2000_m(nbody_cache_entry, et, body_name_spice, primary_body_name)
+            cached === nothing ? _nbody_body_position_from_spice_j2000_m(body_name_spice, et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls) : cached
         else
-            _nbody_body_position_from_spice_j2000(body_name_spice, et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls)
+            _nbody_body_position_from_spice_j2000_m(body_name_spice, et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls)
         end
-        pos_primary_k_all[k] = model.planet.J2000_to_pci * pos_primary_body * 1e3
+        pos_primary_k_all[k] = model.planet.J2000_to_pci * pos_primary_body_j2000_m
     end
 
     started_ns = time_ns()
@@ -381,12 +470,12 @@ end
     if memo.et != et || memo.primary_body_name != primary_body_name
         memo.et = et
         memo.primary_body_name = primary_body_name
-        empty!(memo.body_positions_j2000)
+        empty!(memo.body_positions_j2000_m)
     end
     return nothing
 end
 
-@inline function _nbody_body_position_from_spice_j2000(
+@inline function _nbody_body_position_from_spice_j2000_m(
     body_name_spice::String,
     et::Float64,
     primary_body_name::String,
@@ -395,23 +484,21 @@ end
     counter::Base.Threads.Atomic{Int64}
 )::SVector{3, Float64}
     return memo_enabled ?
-        _nbody_body_position_from_spice_memoized_j2000(body_name_spice, et, primary_body_name, memo, counter) :
-        _nbody_body_position_from_spice_direct_j2000(body_name_spice, et, primary_body_name, counter)
+        _nbody_body_position_from_spice_memoized_j2000_m(body_name_spice, et, primary_body_name, memo, counter) :
+        _nbody_body_position_from_spice_direct_j2000_m(body_name_spice, et, primary_body_name, counter)
 end
 
-@inline function _nbody_body_position_from_spice_direct_j2000(
+@inline function _nbody_body_position_from_spice_direct_j2000_m(
     body_name_spice::String,
     et::Float64,
     primary_body_name::String,
     counter::Base.Threads.Atomic{Int64}
 )::SVector{3, Float64}
     Base.Threads.atomic_add!(counter, 1)
-    return lock(SPICE_LOCK) do
-        SVector{3, Float64}(spkpos(body_name_spice, et, "J2000", "none", primary_body_name)[1])
-    end
+    return spice_position_j2000_m(body_name_spice, et, primary_body_name)
 end
 
-@inline function _nbody_body_position_from_spice_memoized_j2000(
+@inline function _nbody_body_position_from_spice_memoized_j2000_m(
     body_name_spice::String,
     et::Float64,
     primary_body_name::String,
@@ -420,19 +507,17 @@ end
 )::SVector{3, Float64}
     return lock(memo.lock) do
         _spice_rhs_memo_reset_if_stale!(memo, et, primary_body_name)
-        if haskey(memo.body_positions_j2000, body_name_spice)
-            return memo.body_positions_j2000[body_name_spice]
+        if haskey(memo.body_positions_j2000_m, body_name_spice)
+            return memo.body_positions_j2000_m[body_name_spice]
         end
         Base.Threads.atomic_add!(counter, 1)
-        position = lock(SPICE_LOCK) do
-            SVector{3, Float64}(spkpos(body_name_spice, et, "J2000", "none", primary_body_name)[1])
-        end
-        memo.body_positions_j2000[body_name_spice] = position
+        position = spice_position_j2000_m(body_name_spice, et, primary_body_name)
+        memo.body_positions_j2000_m[body_name_spice] = position
         return position
     end
 end
 
-@inline function _nbody_body_position_from_cache_j2000(
+@inline function _nbody_body_position_from_cache_j2000_m(
     cache::NBodyEphemerisCache,
     et::Float64,
     body_name_spice::String,
@@ -453,22 +538,22 @@ end
     if idx <= 0
         return nothing
     elseif idx >= n_samples
-        return cache.positions_j2000[n_samples, body_idx]
+        return cache.positions_j2000_m[n_samples, body_idx]
     end
 
     et0 = ets[idx]
     et1 = ets[idx + 1]
     if et1 <= et0
-        return cache.positions_j2000[idx, body_idx]
+        return cache.positions_j2000_m[idx, body_idx]
     end
     tau = (et - et0) / (et1 - et0)
-    p1 = cache.positions_j2000[idx, body_idx]
-    p2 = cache.positions_j2000[idx + 1, body_idx]
+    p1 = cache.positions_j2000_m[idx, body_idx]
+    p2 = cache.positions_j2000_m[idx + 1, body_idx]
     if idx <= 1 || (idx + 2) > n_samples
         return _interp_vec3_linear(p1, p2, tau)
     end
-    p0 = cache.positions_j2000[idx - 1, body_idx]
-    p3 = cache.positions_j2000[idx + 2, body_idx]
+    p0 = cache.positions_j2000_m[idx - 1, body_idx]
+    p3 = cache.positions_j2000_m[idx + 2, body_idx]
     return _interp_vec3_catmull_rom(p0, p1, p2, p3, tau)
 end
 
@@ -500,8 +585,122 @@ end
 
     eclipse_ratio = eclipse_area_calc(pos_ii, pos_primary_sun, planet_radius_m)
     P_srp = p_srp_unscaled * (AU_m / r_sun_to_sc_mag)^2
-    scale = reflection_coefficient * reference_area_m2 * P_srp * eclipse_ratio / mass_kg
-    return scale * normalize(r_sun_to_sc)
+    return _cannonball_radiation_accel(
+        r_sun_to_sc,
+        P_srp * eclipse_ratio,
+        reflection_coefficient,
+        reference_area_m2,
+        mass_kg,
+    )
+end
+
+@inline function _cannonball_radiation_accel(
+    direction_ii::SVector{3, Float64},
+    pressure_n_m2::Float64,
+    reflection_coefficient::Float64,
+    reference_area_m2::Float64,
+    mass_kg::Float64,
+)::SVector{3, Float64}
+    if !(isfinite(mass_kg) && mass_kg > 0.0)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    if !(isfinite(reference_area_m2) && reference_area_m2 > 0.0)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    if !(isfinite(reflection_coefficient) && reflection_coefficient >= 0.0)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    if !(isfinite(pressure_n_m2) && pressure_n_m2 > 0.0)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    direction_mag = norm(direction_ii)
+    if !(isfinite(direction_mag) && direction_mag > 0.0)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    scale = reflection_coefficient * reference_area_m2 * pressure_n_m2 / mass_kg / direction_mag
+    return scale * direction_ii
+end
+
+@inline function _lambert_phase_function(alpha_rad::Float64)::Float64
+    if !isfinite(alpha_rad)
+        return 0.0
+    end
+    α = clamp(alpha_rad, 0.0, π)
+    return max(0.0, (sin(α) + (π - α) * cos(α)) / π)
+end
+
+@inline function planetary_albedo_accel(
+    pos_ii::SVector{3, Float64},
+    pos_primary_sun::SVector{3, Float64},
+    planet_radius_m::Float64,
+    p_srp_unscaled::Float64,
+    reflection_coefficient::Float64,
+    reference_area_m2::Float64,
+    mass_kg::Float64,
+    planet_albedo::Float64;
+    AU_m::Float64=149_597_870_700.0
+)::SVector{3, Float64}
+    if !(isfinite(planet_radius_m) && planet_radius_m > 0.0)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    if !(isfinite(planet_albedo) && planet_albedo > 0.0)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    spacecraft_range_m = norm(pos_ii)
+    sun_range_m = norm(pos_primary_sun)
+    if !(isfinite(spacecraft_range_m) && spacecraft_range_m > planet_radius_m)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    if !(isfinite(sun_range_m) && sun_range_m > 0.0)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    cos_alpha = clamp(dot(pos_primary_sun, pos_ii) / (sun_range_m * spacecraft_range_m), -1.0, 1.0)
+    phase = _lambert_phase_function(acos(cos_alpha))
+    if phase <= 0.0
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    P_solar_at_planet = p_srp_unscaled * (AU_m / sun_range_m)^2
+    pressure = P_solar_at_planet * planet_albedo * phase * (planet_radius_m / spacecraft_range_m)^2
+    return _cannonball_radiation_accel(
+        pos_ii,
+        pressure,
+        reflection_coefficient,
+        reference_area_m2,
+        mass_kg,
+    )
+end
+
+@inline function planetary_ir_accel(
+    pos_ii::SVector{3, Float64},
+    planet_radius_m::Float64,
+    reflection_coefficient::Float64,
+    reference_area_m2::Float64,
+    mass_kg::Float64,
+    planet_ir_flux_w_m2::Float64,
+)::SVector{3, Float64}
+    if !(isfinite(planet_radius_m) && planet_radius_m > 0.0)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    if !(isfinite(planet_ir_flux_w_m2) && planet_ir_flux_w_m2 > 0.0)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    spacecraft_range_m = norm(pos_ii)
+    if !(isfinite(spacecraft_range_m) && spacecraft_range_m > planet_radius_m)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    pressure = (planet_ir_flux_w_m2 / 299_792_458.0) * (planet_radius_m / spacecraft_range_m)^2
+    return _cannonball_radiation_accel(
+        pos_ii,
+        pressure,
+        reflection_coefficient,
+        reference_area_m2,
+        mass_kg,
+    )
 end
 
 function srp(
@@ -516,10 +715,8 @@ function srp(
 )
     pos_ii_sv = SVector{3, Float64}(pos_ii)
     primary_body_name = _spice_query_name(planet.name)
-    pos_primary_sun_j2000 = lock(SPICE_LOCK) do
-        SVector{3, Float64}(spkpos("sun", et, "J2000", "none", primary_body_name)[1])
-    end
-    pos_primary_sun = SVector{3, Float64}(planet.J2000_to_pci * pos_primary_sun_j2000 * 1e3)
+    pos_primary_sun_j2000_m = spice_position_j2000_m("sun", et, primary_body_name)
+    pos_primary_sun = SVector{3, Float64}(planet.J2000_to_pci * pos_primary_sun_j2000_m)
     return srp_cannonball_accel(
         pos_ii_sv,
         pos_primary_sun,
@@ -539,34 +736,67 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
 
     planet = param.args.environment_model.planet
     pos_ii = hasproperty(x, :pos) ? SVector{3, Float64}(x.pos) : SVector{3, Float64}(x[1:3])
+    mass = hasproperty(x, :mass) ? x.mass : x[7]
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
     primary_body_name = _spice_query_name(planet.name)
     spice_rhs_memo_enabled = param.shared_buffers.spice_rhs_memo_enabled[]
     spice_rhs_memo = param.shared_buffers.spice_rhs_memo
 
-    cache_entry = param.shared_buffers.srp_sun_ephemeris_cache[]
-    pos_primary_sun_j2000 = if cache_entry isa SRPSunEphemerisCache
-        cached = _srp_sun_position_from_cache_j2000(cache_entry, et)
-        cached === nothing ? _srp_sun_position_from_spice_j2000(et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls) : cached
+    pos_primary_sun = if model.direct || model.albedo
+        cache_entry = param.shared_buffers.srp_sun_ephemeris_cache[]
+        pos_primary_sun_j2000_m = if cache_entry isa SRPSunEphemerisCache
+            cached = _srp_sun_position_from_cache_j2000_m(cache_entry, et)
+            cached === nothing ? _srp_sun_position_from_spice_j2000_m(et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls) : cached
+        else
+            _srp_sun_position_from_spice_j2000_m(et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls)
+        end
+        SVector{3, Float64}(planet.J2000_to_pci * pos_primary_sun_j2000_m)
     else
-        _srp_sun_position_from_spice_j2000(et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls)
+        SVector{3, Float64}(0.0, 0.0, 0.0)
     end
-    pos_primary_sun = SVector{3, Float64}(planet.J2000_to_pci * pos_primary_sun_j2000 * 1e3)
-    force_ii = srp_cannonball_accel(
-        pos_ii,
-        pos_primary_sun,
-        planet.Rp_e,
-        4.56e-6,
-        model.Cr,
-        model.A,
-        1.0;
-        AU_m=model.AU_m
-    )
 
+    accel_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+    if model.direct
+        accel_ii .+= srp_cannonball_accel(
+            pos_ii,
+            pos_primary_sun,
+            planet.Rp_e,
+            4.56e-6,
+            model.Cr,
+            model.A,
+            mass;
+            AU_m=model.AU_m
+        )
+    end
+    if model.albedo
+        accel_ii .+= planetary_albedo_accel(
+            pos_ii,
+            pos_primary_sun,
+            planet.Rp_e,
+            4.56e-6,
+            model.Cr,
+            model.A,
+            mass,
+            model.planet_albedo;
+            AU_m=model.AU_m
+        )
+    end
+    if model.ir
+        accel_ii .+= planetary_ir_accel(
+            pos_ii,
+            planet.Rp_e,
+            model.Cr,
+            model.A,
+            mass,
+            model.planet_ir_flux_w_m2,
+        )
+    end
+
+    force_ii = mass * SVector{3, Float64}(accel_ii)
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-@inline function _srp_sun_position_from_spice_j2000(
+@inline function _srp_sun_position_from_spice_j2000_m(
     et::Float64,
     primary_body_name::String,
     memo_enabled::Bool,
@@ -574,22 +804,20 @@ end
     counter::Base.Threads.Atomic{Int64}
 )::SVector{3, Float64}
     return memo_enabled ?
-        _srp_sun_position_from_spice_memoized_j2000(et, primary_body_name, memo, counter) :
-        _srp_sun_position_from_spice_direct_j2000(et, primary_body_name, counter)
+        _srp_sun_position_from_spice_memoized_j2000_m(et, primary_body_name, memo, counter) :
+        _srp_sun_position_from_spice_direct_j2000_m(et, primary_body_name, counter)
 end
 
-@inline function _srp_sun_position_from_spice_direct_j2000(
+@inline function _srp_sun_position_from_spice_direct_j2000_m(
     et::Float64,
     primary_body_name::String,
     counter::Base.Threads.Atomic{Int64}
 )::SVector{3, Float64}
     Base.Threads.atomic_add!(counter, 1)
-    return lock(SPICE_LOCK) do
-        SVector{3, Float64}(spkpos("sun", et, "J2000", "none", primary_body_name)[1])
-    end
+    return spice_position_j2000_m("sun", et, primary_body_name)
 end
 
-@inline function _srp_sun_position_from_spice_memoized_j2000(
+@inline function _srp_sun_position_from_spice_memoized_j2000_m(
     et::Float64,
     primary_body_name::String,
     memo::SpiceRhsMemo,
@@ -598,19 +826,17 @@ end
     sun_query_name = "sun"
     return lock(memo.lock) do
         _spice_rhs_memo_reset_if_stale!(memo, et, primary_body_name)
-        if haskey(memo.body_positions_j2000, sun_query_name)
-            return memo.body_positions_j2000[sun_query_name]
+        if haskey(memo.body_positions_j2000_m, sun_query_name)
+            return memo.body_positions_j2000_m[sun_query_name]
         end
         Base.Threads.atomic_add!(counter, 1)
-        position = lock(SPICE_LOCK) do
-            SVector{3, Float64}(spkpos(sun_query_name, et, "J2000", "none", primary_body_name)[1])
-        end
-        memo.body_positions_j2000[sun_query_name] = position
+        position = spice_position_j2000_m(sun_query_name, et, primary_body_name)
+        memo.body_positions_j2000_m[sun_query_name] = position
         return position
     end
 end
 
-@inline function _srp_sun_position_from_cache_j2000(cache::SRPSunEphemerisCache, et::Float64)::Union{Nothing, SVector{3, Float64}}
+@inline function _srp_sun_position_from_cache_j2000_m(cache::SRPSunEphemerisCache, et::Float64)::Union{Nothing, SVector{3, Float64}}
     ets = cache.ets
     n_samples = length(ets)
     n_samples >= 2 || return nothing
@@ -622,22 +848,22 @@ end
     if idx <= 0
         return nothing
     elseif idx >= n_samples
-        return cache.positions_j2000[n_samples]
+        return cache.positions_j2000_m[n_samples]
     end
 
     et0 = ets[idx]
     et1 = ets[idx + 1]
     if et1 <= et0
-        return cache.positions_j2000[idx]
+        return cache.positions_j2000_m[idx]
     end
     tau = (et - et0) / (et1 - et0)
-    p1 = cache.positions_j2000[idx]
-    p2 = cache.positions_j2000[idx + 1]
+    p1 = cache.positions_j2000_m[idx]
+    p2 = cache.positions_j2000_m[idx + 1]
     if idx <= 1 || (idx + 2) > n_samples
         return _interp_vec3_linear(p1, p2, tau)
     end
-    p0 = cache.positions_j2000[idx - 1]
-    p3 = cache.positions_j2000[idx + 2]
+    p0 = cache.positions_j2000_m[idx - 1]
+    p3 = cache.positions_j2000_m[idx + 2]
     return _interp_vec3_catmull_rom(p0, p1, p2, p3, tau)
 end
 
@@ -666,6 +892,13 @@ end
     )
 end
 
+"""
+    calcForceTorque(model::GravitationalHarmonicsModel, x, param, i)
+
+Compute the non-central spherical-harmonics gravity perturbation using coefficients stored in
+the model's internal fully normalized convention. The inverse-square central term is handled
+separately by the base gravity effector and is intentionally not included here.
+"""
 function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     # cnf = param.cnf
     
@@ -900,9 +1133,7 @@ function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64
     if c < b - a # Total eclipse condition
         return 0.0 # If the satellite is in total eclipse, return 0.0
     elseif c < a - b # Annular eclipse condition
-        A_sun = π * a^2 # Apparent area of the Sun
-        A_planet = π * b^2 # Apparent area of the planet
-        return b^2 / a^2 # Shadow fraction
+        return 1.0 - b^2 / a^2 # Exposed sun fraction
     elseif c < a + b # Partial eclipse condition
         x = (c^2 + a^2 - b^2) / (2 * c)
         y = √(max(a^2 - x^2, 0.0))

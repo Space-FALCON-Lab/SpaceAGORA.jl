@@ -69,19 +69,8 @@ end
     return mod(ν, 2pi)
 end
 
-@inline function _gram_j2_rates(a::Float64, e::Float64, i::Float64, n::Float64, planet)::Tuple{Float64, Float64}
-    if !isfinite(planet.J2) || planet.J2 == 0.0
-        return 0.0, 0.0
-    end
-    p = a * (1.0 - e^2)
-    if !isfinite(p) || p <= 0.0
-        return 0.0, 0.0
-    end
-    scale = planet.J2 * (planet.Rp_e / p)^2
-    Ωdot = -1.5 * n * scale * cos(i)
-    ωdot = 0.75 * n * scale * (5.0 * cos(i)^2 - 1.0)
-    return Ωdot, ωdot
-end
+@inline _gram_j2_rates(a::Float64, e::Float64, i::Float64, n::Float64, planet)::Tuple{Float64, Float64} =
+    j2_secular_rates(a, e, i, planet)
 
 function _gram_kepler_target(
     pos::SVector{3, Float64},

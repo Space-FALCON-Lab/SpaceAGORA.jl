@@ -127,6 +127,7 @@ end
 @inline density_model_threadsafe(::AbstractDensityModel)::Bool = false
 @inline density_model_threadsafe(::NoAtmosphereModel)::Bool = true
 @inline density_model_threadsafe(::EnvironmentModels.ExponentialAtmosphereModel)::Bool = true
+@inline density_model_threadsafe(::EnvironmentModels.PiecewiseExponentialAtmosphereModel)::Bool = true
 @inline density_model_threadsafe(::EnvironmentModels.PolynomialFitAtmosphereModel)::Bool = true
 # GRAM C-wrapper calls are serialized inside getDensity via RuntimeServices.GRAM_LOCK.
 @inline density_model_threadsafe(::EnvironmentModels.GRAMAtmosphereModel)::Bool = true

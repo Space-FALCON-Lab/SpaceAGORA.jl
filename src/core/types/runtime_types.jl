@@ -17,7 +17,7 @@ using ..LegacyModelCodes:
     LegacyThermalConvectiveRadiative,
     LegacyThrustNone,
     _compat_enum_parse
-using ..CommandTypes: PropulsiveManeuverCommand
+using ..CommandTypes: PropulsiveManeuverCommand, PropulsiveBurnPlan
 using StaticArrays
 using AstroTime
 using OrdinaryDiffEq
@@ -464,7 +464,7 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
 
     struct SRPSunEphemerisCache
         ets::Vector{Float64}
-        positions_j2000::Vector{SVector{3, Float64}}
+        positions_j2000_m::Vector{SVector{3, Float64}}
     end
 
     struct NBodyEphemerisCache
@@ -472,7 +472,7 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
         body_query_names::Vector{String}
         body_index_by_name::Dict{String, Int}
         ets::Vector{Float64}
-        positions_j2000::Matrix{SVector{3, Float64}}
+        positions_j2000_m::Matrix{SVector{3, Float64}}
     end
 
     struct PlanetFrameEphemerisCache
@@ -493,7 +493,7 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
         lock::ReentrantLock = ReentrantLock()
         et::Float64 = NaN
         primary_body_name::String = ""
-        body_positions_j2000::Dict{String, SVector{3, Float64}} = Dict{String, SVector{3, Float64}}()
+        body_positions_j2000_m::Dict{String, SVector{3, Float64}} = Dict{String, SVector{3, Float64}}()
     end
 
     @kwdef mutable struct Solution
@@ -566,11 +566,13 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
         srp_sun_ephemeris_cache::Base.RefValue{Union{Nothing, SRPSunEphemerisCache}} = Ref{Union{Nothing, SRPSunEphemerisCache}}(nothing)
         planet_frame_ephemeris_cache::Base.RefValue{Union{Nothing, PlanetFrameEphemerisCache}} = Ref{Union{Nothing, PlanetFrameEphemerisCache}}(nothing)
         maneuver_commands::Vector{PropulsiveManeuverCommand} = [PropulsiveManeuverCommand() for _ in 1:N_sats]
+        maneuver_burn_plans::Vector{PropulsiveBurnPlan} = [PropulsiveBurnPlan() for _ in 1:N_sats]
         spice_runtime_counters::SpiceRuntimeCounters = SpiceRuntimeCounters()
         spice_rhs_memo_enabled::Base.RefValue{Bool} = Ref(true)
         spice_rhs_memo::SpiceRhsMemo = SpiceRhsMemo()
         current_time::Base.RefValue{Float64} = Ref(0.0)
         et_start::Base.RefValue{Float64} = Ref(0.0)
+        solve_segment_end_time::Base.RefValue{Float64} = Ref(NaN)
         debug_control::Base.RefValue{Bool} = Ref(false)
         debug_initial_derivative::Base.RefValue{Bool} = Ref(false)
         effector_cost_ns_per_item::Base.RefValue{Float64} = Ref(NaN)

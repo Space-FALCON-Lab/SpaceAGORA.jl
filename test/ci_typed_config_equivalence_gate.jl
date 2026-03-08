@@ -3,6 +3,8 @@ using Test
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
 module EngineSandbox
+include(joinpath(Main.REPO_ROOT, "src", "simulation", "runtime_services.jl"))
+include(joinpath(Main.REPO_ROOT, "src", "core", "simulation_model.jl"))
 include(joinpath(Main.REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
 end
 
@@ -29,7 +31,7 @@ const SE = EngineSandbox.SimulationEngine
         @test SE._solver_maxiters() == 12345
         @test SE._typed_save_bundle_enabled() == false
         @test SE._typed_normalize_warning_enabled() == false
-        @test SE._typed_allow_legacy_normalize() == true
+        @test SE._typed_allow_transition_normalize() == true
         @test SE._gram_per_sat_instances_enabled() == true
     end)
 

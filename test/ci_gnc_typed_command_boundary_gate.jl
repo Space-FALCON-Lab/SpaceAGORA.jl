@@ -48,10 +48,18 @@ occursin("p.shared_buffers.maneuver_commands[i] = command", guidance_thruster_sr
     error("Typed-command boundary violation: guidance thruster logic is not writing maneuver commands into shared_buffers.")
 occursin("commands = p.shared_buffers.maneuver_commands", control_propulsive_src) ||
     error("Typed-command boundary violation: control propulsive maneuvers are not reading the typed maneuver command buffer.")
-occursin("controlModel.Δv[i] = command.delta_v_mps", control_propulsive_src) ||
+occursin("PropulsiveBurnPlan(", control_propulsive_src) ||
+    error("Typed-command boundary violation: control propulsive maneuvers are not constructing a separate typed burn plan.")
+occursin("maneuver_burn_plans", control_propulsive_src) ||
+    error("Typed-command boundary violation: control propulsive maneuvers are not storing actuation state in the maneuver_burn_plans buffer.")
+occursin("command.delta_v_mps", control_propulsive_src) ||
     error("Typed-command boundary violation: control propulsive maneuvers are not consuming command.delta_v_mps.")
-occursin("controlModel.direction[i] = command.direction_rad", control_propulsive_src) ||
+occursin("command.direction_rad", control_propulsive_src) ||
     error("Typed-command boundary violation: control propulsive maneuvers are not consuming command.direction_rad.")
+occursin("controlModel.Δv[i] = command.delta_v_mps", control_propulsive_src) &&
+    error("Typed-command boundary violation: control propulsive maneuvers are still copying guidance delta-v into BaseThrusterModel state.")
+occursin("controlModel.direction[i] = command.direction_rad", control_propulsive_src) &&
+    error("Typed-command boundary violation: control propulsive maneuvers are still copying guidance direction into BaseThrusterModel state.")
 
 const GUIDANCE_ROOT = joinpath(REPO_ROOT, "src", "gnc", "guidance")
 const CONTROL_ROOT = joinpath(REPO_ROOT, "src", "gnc", "control")

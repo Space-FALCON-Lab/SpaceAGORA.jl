@@ -1,5 +1,23 @@
 # Public API Policy
 
+Use this page when you need to know which package surface is stable and which
+parts of the repository can still move.
+
+This page is for maintainers and extension authors. If you only want to run
+SpaceAGORA, use the User Guide and the generated Public API page instead.
+
+Shortest stable package example:
+
+```julia
+using SpaceAGORA
+```
+
+What to read next:
+
+- [Public API](generated/public_api.md)
+- [Extensibility](extensibility.md)
+- [Maintainer Overview](maintainer/index.md)
+
 SpaceAGORA now treats the root `SpaceAGORA` module as the only stable package
 surface.
 

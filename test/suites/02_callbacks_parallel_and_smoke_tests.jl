@@ -180,6 +180,17 @@
     quat_proj_cb.affect!(integrator_orient)
     @test isapprox(norm(integrator_orient.u.sc[1].q), 1.0; atol=1e-12, rtol=0.0)
 
+    u_orient_unit = build_initial_conditions(args_orient)
+    integrator_orient_unit = MockCallbackIntegrator(
+        p_orient,
+        u_orient_unit,
+        0.0,
+        MockCallbackOpts(1.0, 1e-8, 1e-8),
+        1,
+        Inf
+    )
+    @test quat_proj_cb.condition(u_orient_unit, 0.0, integrator_orient_unit) == true
+
     counting_navigation = CountingNavigationModel([0])
     args_navigation = SimulationConfiguration(
         file_paths=args_base.file_paths,

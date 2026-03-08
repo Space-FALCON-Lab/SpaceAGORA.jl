@@ -11,7 +11,7 @@ runtime_services_src = _read(joinpath("src", "simulation", "runtime_services.jl"
 simulation_model_src = _read(joinpath("src", "core", "simulation_model.jl"))
 reference_system_config_src = _read(joinpath("src", "core", "state", "reference_system_config.jl"))
 spacecraft_model_src = _read(joinpath("src", "vehicle", "spacecraft", "model.jl"))
-legacy_model_codes_src = _read(joinpath("src", "core", "types", "legacy_model_codes.jl"))
+legacy_model_codes_src = _read(joinpath("src", "core", "types", "compat_model_codes.jl"))
 runtime_types_src = _read(joinpath("src", "core", "types", "runtime_types.jl"))
 command_types_src = _read(joinpath("src", "gnc", "command_types.jl"))
 top_level_thruster_models_src = _read(joinpath("src", "vehicle", "actuators", "thruster", "thruster_models_module.jl"))
@@ -70,9 +70,9 @@ occursin("@reexport using .SpacecraftModels", simulation_model_src) ||
     error("SimulationModel is not reexporting the canonical SpacecraftModels owner.")
 !occursin("@reexport using .PhysicalModel", simulation_model_src) ||
     error("SimulationModel still reexports the retired PhysicalModel owner.")
-occursin("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"legacy_model_codes.jl\"))", simulation_model_src) ||
-    error("SimulationModel does not include src/core/types/legacy_model_codes.jl before runtime types.")
-findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"legacy_model_codes.jl\"))", simulation_model_src) <
+occursin("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src) ||
+    error("SimulationModel does not include src/core/types/compat_model_codes.jl before runtime types.")
+findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src) <
     findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"runtime_types.jl\"))", simulation_model_src) ||
     error("SimulationModel is not loading LegacyModelCodes before ConfigTypes.")
 occursin("module ReferenceSystems", reference_system_config_src) ||
@@ -84,7 +84,7 @@ occursin("module SpacecraftModels", spacecraft_model_src) ||
 !occursin("module PhysicalModel", spacecraft_model_src) ||
     error("Spacecraft model owner still uses the retired PhysicalModel module name.")
 occursin("module LegacyModelCodes", legacy_model_codes_src) ||
-    error("Legacy model selector enums were not split into src/core/types/legacy_model_codes.jl.")
+    error("Legacy model selector enums were not split into src/core/types/compat_model_codes.jl.")
 occursin("using ..LegacyModelCodes:", runtime_types_src) ||
     error("ConfigTypes is not importing legacy model codes from LegacyModelCodes.")
 occursin("using ..SpacecraftModels: SpacecraftModel", runtime_types_src) ||

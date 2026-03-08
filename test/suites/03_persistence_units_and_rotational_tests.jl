@@ -779,7 +779,7 @@ end
 end
 
 @testset "Quaternion Norm Invariant" begin
-    q0 = normalize(SVector{4, Float64}(0.1, -0.2, 0.3, 0.9))
+    q0 = 2.3 * normalize(SVector{4, Float64}(0.1, -0.2, 0.3, 0.9))
     w0 = SVector{3, Float64}(0.01, -0.015, 0.02)
     sc = make_spacecraft(
         ra_alt_m=500e3,
@@ -806,6 +806,9 @@ end
             dt_max_orbit=5.0
         )
     )
+
+    u0 = build_initial_conditions(args)
+    @test isapprox(norm(SVector{4, Float64}(u0.sc[1].q)), 1.0; atol=1e-12, rtol=0.0)
 
     df = run_case(args)
     qnorm = sqrt.(df.sc1_q_1.^2 .+ df.sc1_q_2.^2 .+ df.sc1_q_3.^2 .+ df.sc1_q_4.^2)
@@ -845,6 +848,110 @@ end
         include_gyroscopic=true
     )
     @test isapprox(ωdot_torque_free, SVector{3, Float64}(0.0, 0.0, 0.0); atol=1e-12, rtol=0.0)
+end
+
+@testset "Torque-Free Rigid-Body Regression Cases" begin
+    function make_torque_free_spacecraft(
+        inertia_tensor::SMatrix{3, 3, Float64},
+        q0::SVector{4, Float64},
+        w0::SVector{3, Float64};
+        id::Int64=1
+    )
+        root = Link{0}(root=true, m=500.0, ref_area=12.0, inertia=inertia_tensor)
+        ic = InitialCondition(
+            ra=EARTH.Rp_e + 500e3,
+            rp=EARTH.Rp_e + 500e3,
+            i=0.0,
+            ω=0.0,
+            Ω=0.0,
+            ν=0.0,
+            q=q0,
+            ang_vel=w0
+        )
+        return SpacecraftModel(
+            joints=Joint[],
+            links=[root],
+            root=root,
+            prop_mass=0.0,
+            inertia_tensor=inertia_tensor,
+            initial_condition=ic,
+            id=id
+        )
+    end
+
+    function run_torque_free_case(
+        spacecraft::SpacecraftModel;
+        mission_time::Float64,
+        dt_max_orbit::Float64=0.5
+    )
+        args = build_config(
+            spacecraft=spacecraft,
+            density_model=NoAtmosphereModel(),
+            orientation_sim=true,
+            mission_time=mission_time,
+            EI_km=120.0,
+            dynamic_effectors=(InverseSquaredGravityModel(),),
+            keplerian=true,
+            simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+            tolerances=IntegrationTolerances(
+                reltol_orbit=1e-10,
+                abstol_orbit=1e-10,
+                reltol_quaternion=1e-10,
+                abstol_quaternion=1e-10,
+                reltol_angular_rate=1e-10,
+                abstol_angular_rate=1e-10,
+                dt_max_orbit=dt_max_orbit
+            ),
+            ephemerides_model=SimpleEphemeridesModel()
+        )
+        return run_simulation(args; return_solution=true)
+    end
+
+    withenv("SPACEAGORA_SOLVER_MODE" => "tsit5") do
+        J_axis = SMatrix{3, 3, Float64}(8.0, 0.0, 0.0, 0.0, 12.0, 0.0, 0.0, 0.0, 20.0)
+        q_axis0 = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
+        ω_axis0 = SVector{3, Float64}(0.0, 0.0, 0.2)
+        sol_axis = run_torque_free_case(
+            make_torque_free_spacecraft(J_axis, q_axis0, ω_axis0);
+            mission_time=40.0,
+            dt_max_orbit=0.2
+        )
+
+        @test length(sol_axis.t) > 10
+        for (t, state) in zip(sol_axis.t, sol_axis.u)
+            q_state = SimulationModel.project_unit_quaternion(state.sc[1].q)
+            ω_state = SVector{3, Float64}(state.sc[1].ω)
+            q_expected = SVector{4, Float64}(0.0, 0.0, sin(0.5 * ω_axis0[3] * Float64(t)), cos(0.5 * ω_axis0[3] * Float64(t)))
+
+            @test isapprox(ω_state, ω_axis0; atol=1e-9, rtol=1e-9)
+            @test abs(dot(q_state, q_expected)) > 1.0 - 5e-8
+        end
+
+        J_free = SMatrix{3, 3, Float64}(8.0, 0.0, 0.0, 0.0, 11.0, 0.0, 0.0, 0.0, 15.0)
+        q_free0 = normalize(SVector{4, Float64}(0.2, -0.3, 0.1, 0.92))
+        ω_free0 = SVector{3, Float64}(0.19, -0.27, 0.31)
+        sol_free = run_torque_free_case(
+            make_torque_free_spacecraft(J_free, q_free0, ω_free0);
+            mission_time=180.0
+        )
+
+        energies = Float64[]
+        angular_momentum_norms = Float64[]
+        quaternion_norm_errors = Float64[]
+        for state in sol_free.u
+            ω_state = SVector{3, Float64}(state.sc[1].ω)
+            push!(energies, 0.5 * dot(ω_state, J_free * ω_state))
+            push!(angular_momentum_norms, norm(J_free * ω_state))
+            push!(quaternion_norm_errors, abs(norm(SVector{4, Float64}(state.sc[1].q)) - 1.0))
+        end
+
+        energy_drift = (maximum(energies) - minimum(energies)) / abs(first(energies))
+        angular_momentum_drift = (maximum(angular_momentum_norms) - minimum(angular_momentum_norms)) / first(angular_momentum_norms)
+
+        @test energy_drift < 1e-7
+        @test angular_momentum_drift < 1e-7
+        @test maximum(quaternion_norm_errors) < 1e-10
+    end
 end
 
 @testset "Solver Tolerances Apply Quaternion Overrides" begin

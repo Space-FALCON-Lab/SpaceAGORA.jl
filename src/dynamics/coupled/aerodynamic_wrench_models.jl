@@ -265,18 +265,25 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     spacecraft = param.args.dynamics_model.spacecraft[i]
     bodies = spacecraft.links # Include the root body of the spacecraft
     root_index = 1
-    ρ = param.shared_buffers.densities[i] # Atmospheric density at the current altitude from the shared buffer updated by the callback function
-    T = param.shared_buffers.temperatures[i] # Atmospheric temperature at the current altitude from the shared buffer updated by the callback function
-    wind = param.shared_buffers.winds[i] # Atmospheric wind vector at the current altitude from the shared buffer updated by the callback function
+    env_state = SimulationModel.SimulationCallbacks._stage_environment_state(
+        x,
+        param,
+        i,
+        param.shared_buffers.current_time[];
+        write_buffers=true,
+    )
+    rho = env_state.rho
+    T = env_state.T
+    wind = env_state.wind
 
     # Skip expensive aerodynamic geometry when the flow is effectively vacuum.
-    if !isfinite(ρ) || ρ <= eps(Float64)
+    if !isfinite(rho) || rho <= eps(Float64)
         return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     end
 
     sound_velocity = sqrt(planet.γ * planet.R * T) # Speed of sound at the current altitude based on the temperature from the shared buffer updated by the callback function
-    pos_ii = SVector{3, Float64}(x.pos)
-    vel_ii = SVector{3, Float64}(x.vel)
+    pos_ii = env_state.pos_ii
+    vel_ii = env_state.vel_ii
 
     h_ii = cross(pos_ii, vel_ii)    # Inertial angular momentum vector [m ^ 2 / s]
 
@@ -285,7 +292,8 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     # Inertial to planet relative transformation
     # println("pos_ii: ", pos_ii, " vel_ii: ", vel_ii, " alt: ", norm(pos_ii) - planet.Rp_e, " m, vel_mag: ", norm(vel_ii), " m/s")
     # println("planet.L_PI: ", planet.L_PI)
-    pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, planet) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
+    pos_pp = env_state.pos_pp
+    vel_pp = env_state.vel_pp
     pos_pp_mag = norm(pos_pp) # Magnitude of the planet relative position
 
     vel_pp_mag = norm(vel_pp)
@@ -297,7 +305,7 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     h_pp_hat = normalize(h_pp) # Unit vector of the planet relative angular momentum
     
     bank_angle = deg2rad(0.0)
-    alt,lat,lon = rtolatlong(pos_pp, planet, false) # Get the altitude, latitude, and longitude for the current position, used for density lookup and aerodynamic coefficient calculation
+    alt,lat,lon = env_state.alt, env_state.lat, env_state.lon
 
     uD, uN, uE = latlongtoNED((alt, lat, lon))
     wE, wN, wU = wind # positive to the east , m / s
@@ -313,8 +321,8 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     # lift_pp_hat /= norm(lift_pp_hat) # Normalize the lift vector in planet relative frame
     drag_pp_hat = -vel_pp_rw_hat # Planet relative drag force direction
     cross_pp_hat = cross(drag_pp_hat, lift_pp_hat) # Cross product of the drag and lift vectors in planet relative frame
-    q = 0.5 * ρ * vel_pp_mag^2 # Dynamic pressure in planet relative frame, using the density from the shared buffer updated by the callback function
-    L_PI_t = planet.L_PI'
+    q = 0.5 * rho * vel_pp_mag^2 # Dynamic pressure in planet relative frame, using the stage-consistent density value
+    L_PI_t = env_state.l_pi'
     vel_pi = orientation_sim ? L_PI_t * vel_pp_rw : SVector{3, Float64}(0.0, 0.0, 0.0)
     lift_scale = q * cos(bank_angle)
 

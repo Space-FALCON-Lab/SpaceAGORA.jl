@@ -1,5 +1,23 @@
 # Documentation Policy
 
+Use this page when you are changing the docs site, the generated API surface,
+or the process rules that keep documentation current.
+
+This page is for maintainers. If you are trying to run SpaceAGORA or find a
+command, go back to the User Guide.
+
+Quickest maintainer check:
+
+```bash
+julia --project=docs docs/make.jl
+```
+
+What to read next:
+
+- [Maintainer Overview](maintainer/index.md)
+- [API Policy](public_api_policy.md)
+- [Contracts](contracts.md)
+
 SpaceAGORA uses three documentation layers, and each one has a different owner.
 
 ## 1. Generated API docs

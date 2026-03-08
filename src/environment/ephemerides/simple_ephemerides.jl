@@ -7,6 +7,26 @@ end
 end
 
 const _J2000_UTC = DateTime(2000, 1, 1, 12, 0, 0)
+const _SPICE_POSITION_KM_TO_M = 1.0e3
+
+@inline function _spice_position_j2000_m_unlocked(
+    target::AbstractString,
+    et::Float64,
+    observer::AbstractString
+)::SVector{3, Float64}
+    # NAIF SPK position outputs are in km; convert once at the SPICE boundary.
+    return SVector{3, Float64}(spkpos(target, et, "J2000", "none", observer)[1]) * _SPICE_POSITION_KM_TO_M
+end
+
+@inline function spice_position_j2000_m(
+    target::AbstractString,
+    et::Float64,
+    observer::AbstractString
+)::SVector{3, Float64}
+    return lock(SPICE_LOCK) do
+        _spice_position_j2000_m_unlocked(target, et, observer)
+    end
+end
 
 @inline ephemerides_requires_spice(::SpiceEphemeridesModel)::Bool = true
 @inline ephemerides_requires_spice(::SimpleEphemeridesModel)::Bool = false

@@ -82,14 +82,53 @@ function Base.getproperty(::CoverageGramNoTrajectoryBase, name::Symbol)
     throw(ErrorException("unsupported property"))
 end
 
-Base.propertynames(::CoverageGramTrajectoryBase, private::Bool=false) = (:gram, :gram_atmosphere)
+function _coverage_generate_trajectory(
+    gram_atmosphere;
+    initial_height,
+    initial_latitude,
+    initial_longitude,
+    initial_elapsed_time,
+    delta_height,
+    delta_latitude,
+    delta_longitude,
+    delta_elapsed_time,
+    n_points,
+    update_initial_perturbations=true
+)
+    step_count = max(2, n_points)
+    return [(
+        position=(
+            height=initial_height + (k - 1) * delta_height,
+            latitude=initial_latitude + (k - 1) * delta_latitude,
+            longitude=initial_longitude + (k - 1) * delta_longitude,
+            elapsedTime=initial_elapsed_time + (k - 1) * delta_elapsed_time
+        ),
+        dynamics=(density=1.23e-6, temperature=190.0),
+        winds=(perturbedEWWind=0.0, perturbedNSWind=0.0, perturbedVerticalWind=0.0)
+    ) for k in 1:step_count]
+end
+
+Base.propertynames(::CoverageGramTrajectoryBase, private::Bool=false) = (:planet_name, :gram, :gram_atmosphere)
 function Base.getproperty(::CoverageGramTrajectoryBase, name::Symbol)
-    if name === :gram
-        return (; generate_trajectory=true)
+    if name === :planet_name
+        return "earth"
+    elseif name === :gram
+        return (; generate_trajectory=_coverage_generate_trajectory)
     elseif name === :gram_atmosphere
         return :atm
     end
     throw(ErrorException("unsupported property"))
+end
+
+function SimulationModel.EnvironmentModels._gram_point_density(
+    ::CoverageGramTrajectoryBase,
+    h::Float64,
+    lat::Float64,
+    lon::Float64,
+    el_time::Float64,
+    wind::Bool
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    return 1.23e-6, 190.0, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
 Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]

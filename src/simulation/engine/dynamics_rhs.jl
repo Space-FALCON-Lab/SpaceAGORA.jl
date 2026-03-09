@@ -234,6 +234,79 @@ end
     return StateSample(pos_ii, vel_ii, mass_kg; spacecraft=spacecraft)
 end
 
+@inline function _gravity_backbone_state_sample(u_state, p, sat_idx::Int)::StateSample
+    return _gravity_backbone_state_sample(
+        _gravity_backbone_position_state(u_state),
+        _gravity_backbone_velocity_state(u_state),
+        p,
+        sat_idx,
+    )
+end
+
+@inline function _gravity_backbone_core_acceleration(
+    dynamic_effectors::Tuple,
+    state_sample::StateSample,
+    p,
+    sat_idx::Int,
+    t::Float64,
+)::SVector{3, Float64}
+    accel_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+    @inbounds for effector in dynamic_effectors
+        _gravity_backbone_structure_validated(effector) === :position_only_static_gravity || continue
+        req = SimulationModel.environment_requirements(effector)
+        env = sample_environment(req, effector, state_sample, p, sat_idx, t; write_buffers=false)
+        accel_ii .+= SimulationModel.gravity_backbone_acceleration_ii(effector, state_sample, env, t)
+    end
+    return SVector{3, Float64}(accel_ii)
+end
+
+@inline function _gravity_backbone_kick_acceleration(
+    dynamic_effectors::Tuple,
+    state_sample::StateSample,
+    p,
+    sat_idx::Int,
+    t::Float64,
+)::SVector{3, Float64}
+    accel_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+    @inbounds for effector in dynamic_effectors
+        _gravity_backbone_kick_structure_validated(effector) === :velocity_kick_explicit || continue
+        req = SimulationModel.environment_requirements(effector)
+        env = sample_environment(req, effector, state_sample, p, sat_idx, t; write_buffers=false)
+        accel_ii .+= SimulationModel.gravity_backbone_kick_acceleration_ii(effector, state_sample, env, t)
+    end
+    return SVector{3, Float64}(accel_ii)
+end
+
+function _gravity_backbone_half_kick!(u_state, p, t::Float64, half_dt::Float64)
+    half_dt > 0.0 || return nothing
+    dynamic_effectors = p.args.dynamics_model.dynamic_effectors
+    vel_state = _gravity_backbone_velocity_state(u_state)
+    p.shared_buffers.current_time[] = t
+    use_rhs_batch = _rhs_batch_parallel_enabled(length(vel_state.sc))
+
+    if use_rhs_batch
+        minbatch = max(1, Int(ceil(length(vel_state.sc) / Polyester.num_cores())))
+        @batch minbatch=minbatch for i in eachindex(vel_state.sc)
+            if !p.is_active[i]
+                continue
+            end
+            state_sample = _gravity_backbone_state_sample(u_state, p, i)
+            accel_ii = _gravity_backbone_kick_acceleration(dynamic_effectors, state_sample, p, i, t)
+            vel_state.sc[i].vel .+= half_dt .* accel_ii
+        end
+    else
+        @inbounds for i in eachindex(vel_state.sc)
+            if !p.is_active[i]
+                continue
+            end
+            state_sample = _gravity_backbone_state_sample(u_state, p, i)
+            accel_ii = _gravity_backbone_kick_acceleration(dynamic_effectors, state_sample, p, i, t)
+            vel_state.sc[i].vel .+= half_dt .* accel_ii
+        end
+    end
+    return nothing
+end
+
 function spacecraft_dynamics_gravity_backbone!(ddu, dq, q, p, t::Float64)
     q_state = q.sc
     dq_state = dq.sc
@@ -249,13 +322,7 @@ function spacecraft_dynamics_gravity_backbone!(ddu, dq, q, p, t::Float64)
                 continue
             end
             state_sample = _gravity_backbone_state_sample(q, dq, p, i)
-            accel_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
-            @inbounds for effector in dynamic_effectors
-                req = SimulationModel.environment_requirements(effector)
-                env = sample_environment(req, effector, state_sample, p, i, t; write_buffers=false)
-                accel_ii .+= SimulationModel.gravity_backbone_acceleration_ii(effector, state_sample, env, t)
-            end
-            ddu_state[i].vel .= accel_ii
+            ddu_state[i].vel .= _gravity_backbone_core_acceleration(dynamic_effectors, state_sample, p, i, t)
         end
     else
         @inbounds for i in eachindex(q_state)
@@ -264,13 +331,7 @@ function spacecraft_dynamics_gravity_backbone!(ddu, dq, q, p, t::Float64)
                 continue
             end
             state_sample = _gravity_backbone_state_sample(q, dq, p, i)
-            accel_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
-            @inbounds for effector in dynamic_effectors
-                req = SimulationModel.environment_requirements(effector)
-                env = sample_environment(req, effector, state_sample, p, i, t; write_buffers=false)
-                accel_ii .+= SimulationModel.gravity_backbone_acceleration_ii(effector, state_sample, env, t)
-            end
-            ddu_state[i].vel .= accel_ii
+            ddu_state[i].vel .= _gravity_backbone_core_acceleration(dynamic_effectors, state_sample, p, i, t)
         end
     end
     return nothing

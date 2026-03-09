@@ -395,6 +395,124 @@ end
     end
 end
 
+@testset "Gravity Backbone Kick Checkpoint Resume Parity" begin
+    sc = make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0)
+    baseline_args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=90.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            NBodyGravityModel(["moon"], "Earth", SPICE_PATH),
+            SolarRadiationPressureModel(1.2, 12.0; direct=true, albedo=true, ir=true),
+        ),
+        keplerian=true,
+        ephemerides_model=SpiceEphemeridesModel(),
+        simulation_settings=SimulationSettings(
+            results=true,
+            verbose=false,
+            generate_plots=false,
+            results_directory="output",
+            save_csv=true,
+            normalize=false
+        ),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-8, abstol_orbit=1e-8, dt_max_orbit=20.0)
+    )
+
+    df_full = withenv(
+        "SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split",
+        "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "2.0"
+    ) do
+        run_case_silent(baseline_args)
+    end
+    @test all(abs.(Float64.(df_full.sc1_heat_rate)) .< 1e-12)
+    @test all(abs.(Float64.(df_full.sc1_heat_load)) .< 1e-12)
+
+    checkpoint_dir = joinpath("output", "checkpoints")
+    phase1_args = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=45.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            NBodyGravityModel(["moon"], "Earth", SPICE_PATH),
+            SolarRadiationPressureModel(1.2, 12.0; direct=true, albedo=true, ir=true),
+        ),
+        keplerian=true,
+        ephemerides_model=SpiceEphemeridesModel(),
+        simulation_settings=SimulationSettings(
+            results=true,
+            verbose=false,
+            generate_plots=false,
+            results_directory="output",
+            save_csv=true,
+            normalize=false,
+            checkpoint_enabled=true,
+            checkpoint_interval_s=15.0,
+            checkpoint_directory=checkpoint_dir,
+            resume_from_checkpoint=false
+        ),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-8, abstol_orbit=1e-8, dt_max_orbit=20.0)
+    )
+
+    resume_args = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=90.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            NBodyGravityModel(["moon"], "Earth", SPICE_PATH),
+            SolarRadiationPressureModel(1.2, 12.0; direct=true, albedo=true, ir=true),
+        ),
+        keplerian=true,
+        ephemerides_model=SpiceEphemeridesModel(),
+        simulation_settings=SimulationSettings(
+            results=true,
+            verbose=false,
+            generate_plots=false,
+            results_directory="output",
+            save_csv=true,
+            normalize=false,
+            checkpoint_enabled=true,
+            checkpoint_interval_s=15.0,
+            checkpoint_directory=checkpoint_dir,
+            resume_from_checkpoint=true
+        ),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-8, abstol_orbit=1e-8, dt_max_orbit=20.0)
+    )
+
+    mktempdir() do tmp
+        cd(tmp) do
+            withenv(
+                "SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split",
+                "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "2.0"
+            ) do
+                run_simulation(phase1_args)
+                run_simulation(resume_args)
+            end
+
+            df_resume = CSV.read(joinpath("output", "simulation_results.csv"), DataFrame)
+            @test nrow(df_resume) >= 2
+            @test all(abs.(Float64.(df_resume.sc1_heat_rate)) .< 1e-12)
+            @test all(abs.(Float64.(df_resume.sc1_heat_load)) .< 1e-12)
+
+            p_full = SVector{3, Float64}(Float64(df_full.sc1_pos_1[end]), Float64(df_full.sc1_pos_2[end]), Float64(df_full.sc1_pos_3[end]))
+            v_full = SVector{3, Float64}(Float64(df_full.sc1_vel_1[end]), Float64(df_full.sc1_vel_2[end]), Float64(df_full.sc1_vel_3[end]))
+            p_resume = SVector{3, Float64}(Float64(df_resume.sc1_pos_1[end]), Float64(df_resume.sc1_pos_2[end]), Float64(df_resume.sc1_pos_3[end]))
+            v_resume = SVector{3, Float64}(Float64(df_resume.sc1_vel_1[end]), Float64(df_resume.sc1_vel_2[end]), Float64(df_resume.sc1_vel_3[end]))
+
+            @test norm(p_resume - p_full) < 25.0
+            @test norm(v_resume - v_full) < 2.5e-2
+        end
+    end
+end
+
 @testset "Checkpoint Guards + Missing Resume + Bundle Toggle" begin
     base_spacecraft() = make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0)
     base_settings(; kwargs...) = SimulationSettings(

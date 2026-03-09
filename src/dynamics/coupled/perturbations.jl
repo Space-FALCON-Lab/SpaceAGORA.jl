@@ -464,6 +464,25 @@ end
 
 @inline environment_requirements(model::NBodyGravityModel) = EffectorEnvironmentRequirements(third_body_names=model.body_names)
 
+@inline gravity_backbone_kick_structure(::NBodyGravityModel) = :velocity_kick_explicit
+
+@inline function _nbody_acceleration_ii(
+    model::NBodyGravityModel,
+    x::StateSample,
+    third_bodies::ThirdBodyEphemerisSample,
+)::SVector{3, Float64}
+    accel_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+    @inbounds for k in eachindex(third_bodies.positions_ii)
+        pos_primary_k = third_bodies.positions_ii[k]
+        pos_spacecraft_k = pos_primary_k - x.pos_ii
+        pos_spacecraft_k_mag = norm(pos_spacecraft_k)
+        accel_ii .+= model.body_mus[k] * (
+            (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
+        )
+    end
+    return SVector{3, Float64}(accel_ii)
+end
+
 @inline function wrench(
     model::NBodyGravityModel,
     x::StateSample,
@@ -472,16 +491,19 @@ end
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     third_bodies = env.third_bodies
     third_bodies === nothing && throw(ArgumentError("NBodyGravityModel wrench requires env.third_bodies."))
-    force_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
-    @inbounds for k in eachindex(third_bodies.positions_ii)
-        pos_primary_k = third_bodies.positions_ii[k]
-        pos_spacecraft_k = pos_primary_k - x.pos_ii
-        pos_spacecraft_k_mag = norm(pos_spacecraft_k)
-        force_ii .+= x.mass_kg * model.body_mus[k] * (
-            (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
-        )
-    end
-    return SVector{3, Float64}(force_ii), SVector{3, Float64}(0.0, 0.0, 0.0)
+    accel_ii = _nbody_acceleration_ii(model, x, third_bodies)
+    return x.mass_kg * accel_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+@inline function gravity_backbone_kick_acceleration_ii(
+    model::NBodyGravityModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::SVector{3, Float64}
+    third_bodies = env.third_bodies
+    third_bodies === nothing && throw(ArgumentError("NBodyGravityModel gravity_backbone kick requires env.third_bodies."))
+    return _nbody_acceleration_ii(model, x, third_bodies)
 end
 
 @inline function _spice_rhs_memo_reset_if_stale!(
@@ -777,6 +799,25 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
         SVector{3, Float64}(0.0, 0.0, 0.0)
     end
 
+    accel_ii = _srp_total_acceleration_ii(model, planet, pos_ii, pos_primary_sun, mass)
+    force_ii = mass * SVector{3, Float64}(accel_ii)
+    return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+@inline environment_requirements(model::SolarRadiationPressureModel) = EffectorEnvironmentRequirements(solar=(model.direct || model.albedo))
+@inline gravity_backbone_kick_structure(::SolarRadiationPressureModel) = :velocity_kick_explicit
+
+@inline function _srp_total_acceleration_ii(
+    model::SolarRadiationPressureModel,
+    planet,
+    pos_ii::SVector{3, Float64},
+    pos_primary_sun::SVector{3, Float64},
+    mass_kg::Float64,
+)::SVector{3, Float64}
+    if model.A == 0.0
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
     accel_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
     if model.direct
         accel_ii .+= srp_cannonball_accel(
@@ -786,7 +827,7 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
             4.56e-6,
             model.Cr,
             model.A,
-            mass;
+            mass_kg;
             AU_m=model.AU_m
         )
     end
@@ -798,7 +839,7 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
             4.56e-6,
             model.Cr,
             model.A,
-            mass,
+            mass_kg,
             model.planet_albedo;
             AU_m=model.AU_m
         )
@@ -809,16 +850,12 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
             planet.Rp_e,
             model.Cr,
             model.A,
-            mass,
+            mass_kg,
             model.planet_ir_flux_w_m2,
         )
     end
-
-    force_ii = mass * SVector{3, Float64}(accel_ii)
-    return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
+    return SVector{3, Float64}(accel_ii)
 end
-
-@inline environment_requirements(model::SolarRadiationPressureModel) = EffectorEnvironmentRequirements(solar=(model.direct || model.albedo))
 
 @inline function wrench(
     model::SolarRadiationPressureModel,
@@ -838,44 +875,24 @@ end
         SVector{3, Float64}(0.0, 0.0, 0.0)
     end
 
-    accel_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
-    if model.direct
-        accel_ii .+= srp_cannonball_accel(
-            x.pos_ii,
-            pos_primary_sun,
-            env.planet.Rp_e,
-            4.56e-6,
-            model.Cr,
-            model.A,
-            x.mass_kg;
-            AU_m=model.AU_m
-        )
-    end
-    if model.albedo
-        accel_ii .+= planetary_albedo_accel(
-            x.pos_ii,
-            pos_primary_sun,
-            env.planet.Rp_e,
-            4.56e-6,
-            model.Cr,
-            model.A,
-            x.mass_kg,
-            model.planet_albedo;
-            AU_m=model.AU_m
-        )
-    end
-    if model.ir
-        accel_ii .+= planetary_ir_accel(
-            x.pos_ii,
-            env.planet.Rp_e,
-            model.Cr,
-            model.A,
-            x.mass_kg,
-            model.planet_ir_flux_w_m2,
-        )
-    end
+    accel_ii = _srp_total_acceleration_ii(model, env.planet, x.pos_ii, pos_primary_sun, x.mass_kg)
+    return x.mass_kg * accel_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
 
-    return x.mass_kg * SVector{3, Float64}(accel_ii), SVector{3, Float64}(0.0, 0.0, 0.0)
+@inline function gravity_backbone_kick_acceleration_ii(
+    model::SolarRadiationPressureModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::SVector{3, Float64}
+    pos_primary_sun = if model.direct || model.albedo
+        solar = env.solar
+        solar === nothing && throw(ArgumentError("SolarRadiationPressureModel gravity_backbone kick requires env.solar."))
+        solar.sun_pos_ii
+    else
+        SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    return _srp_total_acceleration_ii(model, env.planet, x.pos_ii, pos_primary_sun, x.mass_kg)
 end
 
 @inline function _srp_sun_position_from_spice_j2000_m(

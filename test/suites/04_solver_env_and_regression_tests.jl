@@ -407,6 +407,10 @@
     @test SimulationModel.gravity_backbone_structure(InverseSquaredJ2GravityModel()) == :position_only_static_gravity
     @test _gravity_backbone_structure_validated(InverseSquaredGravityModel()) == :position_only_static_gravity
     @test_throws ArgumentError _gravity_backbone_structure_validated(InvalidBackboneStructureModel())
+    @test SimulationModel.gravity_backbone_kick_structure(SolarRadiationPressureModel(1.2, 12.0)) == :velocity_kick_explicit
+    @test SimulationModel.gravity_backbone_kick_structure(NBodyGravityModel(body_names=("moon",), primary_body_name="Earth")) == :velocity_kick_explicit
+    @test _gravity_backbone_kick_structure_validated(SolarRadiationPressureModel(1.2, 12.0)) == :velocity_kick_explicit
+    @test_throws ArgumentError _gravity_backbone_kick_structure_validated(InvalidBackboneKickStructureModel())
 
     kepler_second_order! = function (ddu, du, u, p, t)
         r = norm(u)
@@ -500,7 +504,7 @@
     )
     @test occursin("no navigation effectors", _gravity_backbone_reject_reason(args_backbone_navigation))
 
-    args_backbone_solar = build_config(
+    args_backbone_bad_core_solar = build_config(
         spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
         density_model=NoAtmosphereModel(),
         orientation_sim=false,
@@ -510,7 +514,59 @@
         keplerian=true,
         ephemerides_model=SimpleEphemeridesModel()
     )
-    @test occursin("solar/SRP-dependent", _gravity_backbone_reject_reason(args_backbone_solar))
+    @test occursin("solar/SRP-dependent gravity core", _gravity_backbone_reject_reason(args_backbone_bad_core_solar))
+
+    args_backbone_srp = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(), SolarRadiationPressureModel(1.2, 12.0; direct=true, albedo=true, ir=true)),
+        keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel()
+    )
+    @test _gravity_backbone_eligible(args_backbone_srp) == true
+
+    args_backbone_nbody = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(), NBodyGravityModel(body_names=("moon",), primary_body_name="Earth")),
+        keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel()
+    )
+    @test _gravity_backbone_eligible(args_backbone_nbody) == true
+
+    args_backbone_srp_nbody = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            NBodyGravityModel(body_names=("moon",), primary_body_name="Earth"),
+            SolarRadiationPressureModel(1.2, 12.0; direct=true, albedo=true, ir=true),
+        ),
+        keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel()
+    )
+    @test _gravity_backbone_eligible(args_backbone_srp_nbody) == true
+
+    args_backbone_bad_kick_capability = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(), PlanetFrameKickModel()),
+        keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel()
+    )
+    @test occursin("planet-frame-dependent perturbation kicks", _gravity_backbone_reject_reason(args_backbone_bad_kick_capability))
 
     args_backbone_custom = build_config(
         spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
@@ -548,6 +604,91 @@
         @test string(sol_backbone.retcode) == "Success"
         @test meta_backbone.solver == "KahanLi8(GravityBackbone)"
         @test _is_gravity_backbone_state(sol_backbone.u[end])
+    end
+
+    args_backbone_kicks = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=8.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            NBodyGravityModel(body_names=("moon",), primary_body_name="Earth"),
+            SolarRadiationPressureModel(1.2, 12.0; direct=true, albedo=true, ir=true),
+        ),
+        keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel()
+    )
+    u0_backbone_kicks = build_initial_conditions(args_backbone_kicks)
+    p_backbone_kicks = ODEParams{1}(args=args_backbone_kicks)
+    _initialize_heat_rate_buffers!(p_backbone_kicks)
+    _initialize_nbody_ephemeris_cache_buffer!(p_backbone_kicks)
+    _initialize_srp_sun_cache_buffer!(p_backbone_kicks)
+    _initialize_planet_frame_cache_buffer!(p_backbone_kicks)
+    _initialize_spice_rhs_memo_mode!(p_backbone_kicks)
+    _reset_spice_rhs_memo!(p_backbone_kicks)
+    _reset_spice_runtime_counters!(p_backbone_kicks)
+    p_backbone_kicks.shared_buffers.et_start[] = SimulationModel.ephemerides_time_seconds(
+        args_backbone_kicks.initial_time,
+        args_backbone_kicks.environment_model.ephemerides_model,
+    )
+    _initialize_nbody_ephemeris_cache!(p_backbone_kicks, p_backbone_kicks.shared_buffers.et_start[], args_backbone_kicks.mission_configuration.mission_time)
+    _initialize_srp_sun_ephemeris_cache!(p_backbone_kicks, p_backbone_kicks.shared_buffers.et_start[], args_backbone_kicks.mission_configuration.mission_time)
+
+    withenv(
+        "SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split",
+        "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "2.0",
+        "SPACEAGORA_SOLVER_MAXITERS" => nothing
+    ) do
+        callbacks_backbone_kicks = CallbackSet()
+        prob_backbone_kicks = _build_typed_solver_problem(u0_backbone_kicks, (0.0, 2.0), p_backbone_kicks, callbacks_backbone_kicks)
+        sol_backbone_kicks, meta_backbone_kicks = _solve_with_solver_policy(prob_backbone_kicks, args_backbone_kicks, 1e-8, 1e-8)
+        @test string(sol_backbone_kicks.retcode) == "Success"
+        @test meta_backbone_kicks.solver == "KahanLi8(GravityBackbone+Kicks)"
+        @test length(sol_backbone_kicks.t) == 2
+        @test _is_gravity_backbone_state(sol_backbone_kicks.u[end])
+
+        manual_state = deepcopy(prob_backbone_kicks.u0)
+        _gravity_backbone_half_kick!(manual_state, p_backbone_kicks, 0.0, 1.0)
+        core_prob = remake(prob_backbone_kicks; u0=manual_state, tspan=(0.0, 2.0))
+        core_sol = solve(core_prob, KahanLi8(); dt=2.0)
+        @test string(core_sol.retcode) == "Success"
+        manual_state = deepcopy(core_sol.u[end])
+        _gravity_backbone_half_kick!(manual_state, p_backbone_kicks, 2.0, 1.0)
+
+        final_state = sol_backbone_kicks.u[end]
+        @test _state_position_ii(final_state, 1) ≈ _state_position_ii(manual_state, 1) atol=1e-8 rtol=1e-8
+        @test _state_velocity_ii(final_state, 1) ≈ _state_velocity_ii(manual_state, 1) atol=1e-10 rtol=1e-8
+    end
+
+    args_backbone_kicks_run = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=6.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            NBodyGravityModel(["moon"], "Earth", SPICE_PATH),
+            SolarRadiationPressureModel(1.2, 12.0),
+        ),
+        keplerian=true,
+        ephemerides_model=SpiceEphemeridesModel(),
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, save_csv=false, normalize=false)
+    )
+
+    withenv(
+        "SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split",
+        "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "2.0"
+    ) do
+        backbone_result = run_simulation(args_backbone_kicks_run; return_solution=true, return_solver_metadata=true)
+        @test backbone_result.solution !== nothing
+        @test backbone_result.solver_mode == "gravity_backbone_split"
+        @test length(backbone_result.solution.t) >= 2
+        @test _is_gravity_backbone_state(backbone_result.solution.u[end])
+        @test backbone_result.solver_trace[end].solver == "KahanLi8(GravityBackbone+Kicks)"
+        @test backbone_result.solution.t[end] ≈ 6.0 atol=1e-8 rtol=0.0
     end
 
     multirate_subprob = _split_subproblem(split_prob_simple, split_prob_simple.f.f1, [1.0], (0.0, 0.5))

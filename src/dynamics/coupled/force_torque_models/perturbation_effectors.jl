@@ -9,6 +9,7 @@ module PerturbationEffectors
     using ..AerodynamicEffectors: _multibody_thread_decision
     using StaticArrays
     import ..DynamicEffectors: calcForceTorque, wrench, environment_requirements
+    import ...EffectorSampling: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
     export srp, srp_cannonball_accel, planetary_albedo_accel, planetary_ir_accel

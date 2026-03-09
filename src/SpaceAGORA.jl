@@ -29,7 +29,9 @@ using .SimulationModel: NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 using .SimulationModel: SimpleEphemeridesModel
 using .SimulationModel: make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
 using .SimulationModel: calcForceTorque, wrench, environment_requirements, solver_partition
-using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleration_ii, getDensity, getDensityBatch!
+using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleration_ii
+using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
+using .SimulationModel: getDensity, getDensityBatch!
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
@@ -191,6 +193,30 @@ units for effectors that declare
 gravity_backbone_acceleration_ii
 
 """
+    gravity_backbone_kick_structure(model) -> Symbol
+
+Optional additive declaration hook for explicit translational perturbation kicks
+in `gravity_backbone_split`.
+
+Return `:velocity_kick_explicit` for effectors that should be applied as
+explicit velocity kicks around the gravity core, or `:unsupported` otherwise.
+The default is `:unsupported`.
+"""
+gravity_backbone_kick_structure
+
+"""
+    gravity_backbone_kick_acceleration_ii(model, x::StateSample, env::EnvironmentSample, t::Float64) -> accel_ii
+
+Optional additive acceleration hook for explicit velocity kicks in
+`gravity_backbone_split`.
+
+Implementations must return inertial-frame translational acceleration in SI
+units for effectors that declare
+[`gravity_backbone_kick_structure`](@ref) == `:velocity_kick_explicit`.
+"""
+gravity_backbone_kick_acceleration_ii
+
+"""
     getDensity(model, h, lat, lon, el_time, wind[, p]) -> (rho, temperature, wind_vec)
 
 Stable extension hook for custom [`AbstractDensityModel`](@ref)
@@ -279,7 +305,9 @@ export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 export SimpleEphemeridesModel
 export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
 export calcForceTorque, wrench, environment_requirements, solver_partition
-export gravity_backbone_structure, gravity_backbone_acceleration_ii, getDensity, getDensityBatch!
+export gravity_backbone_structure, gravity_backbone_acceleration_ii
+export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
+export getDensity, getDensityBatch!
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation

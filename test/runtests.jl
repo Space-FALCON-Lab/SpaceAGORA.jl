@@ -72,6 +72,7 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const _gravity_backbone_eligible = SimulationEngine._gravity_backbone_eligible
     const _gravity_backbone_reject_reason = SimulationEngine._gravity_backbone_reject_reason
     const _gravity_backbone_structure_validated = SimulationEngine._gravity_backbone_structure_validated
+    const _gravity_backbone_kick_structure_validated = SimulationEngine._gravity_backbone_kick_structure_validated
     const _auto_stiff_switched = SimulationEngine._auto_stiff_switched
     const _solve_with_explicit_solver = SimulationEngine._solve_with_explicit_solver
     const _solve_with_multirate_solver = SimulationEngine._solve_with_multirate_solver
@@ -100,6 +101,7 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const _initialize_planet_frame_ephemeris_cache! = SimulationEngine._initialize_planet_frame_ephemeris_cache!
     const _initialize_srp_sun_cache_buffer! = SimulationEngine._initialize_srp_sun_cache_buffer!
     const _initialize_srp_sun_ephemeris_cache! = SimulationEngine._initialize_srp_sun_ephemeris_cache!
+    const _initialize_spice_rhs_memo_mode! = SimulationEngine._initialize_spice_rhs_memo_mode!
     const _mission_is_long_for_effector_threads = SimulationEngine._mission_is_long_for_effector_threads
     const _nbody_ephemeris_cache_dt_s = SimulationEngine._nbody_ephemeris_cache_dt_s
     const _nbody_ephemeris_cache_max_samples = SimulationEngine._nbody_ephemeris_cache_max_samples
@@ -120,6 +122,7 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const _solver_partition_validated = SimulationEngine._solver_partition_validated
     const _wrench_method_available = SimulationEngine._wrench_method_available
     const spacecraft_dynamics_gravity_backbone! = SimulationEngine.spacecraft_dynamics_gravity_backbone!
+    const _gravity_backbone_half_kick! = SimulationEngine._gravity_backbone_half_kick!
     const spacecraft_dynamics_implicit_atmosphere! = SimulationEngine.spacecraft_dynamics_implicit_atmosphere!
     const spacecraft_dynamics_explicit_remainder! = SimulationEngine.spacecraft_dynamics_explicit_remainder!
     const _is_gravity_backbone_state = SimulationEngine._is_gravity_backbone_state
@@ -195,6 +198,12 @@ struct InvalidBackboneStructureModel <: SimulationModel.AbstractForceTorqueModel
 end
 
 struct SolarBackboneModel <: SimulationModel.AbstractForceTorqueModel
+end
+
+struct InvalidBackboneKickStructureModel <: SimulationModel.AbstractForceTorqueModel
+end
+
+struct PlanetFrameKickModel <: SimulationModel.AbstractForceTorqueModel
 end
 
 struct ThrowingOrbitPlanet <: SimulationModel.AbstractPlanet
@@ -337,6 +346,8 @@ SimulationModel.solver_partition(::InvalidPartitionForceModel) = :bad_partition
 SimulationModel.gravity_backbone_structure(::BackboneCustomGravityModel) = :position_only_static_gravity
 SimulationModel.gravity_backbone_structure(::InvalidBackboneStructureModel) = :bad_structure
 SimulationModel.gravity_backbone_structure(::SolarBackboneModel) = :position_only_static_gravity
+SimulationModel.gravity_backbone_kick_structure(::InvalidBackboneKickStructureModel) = :bad_structure
+SimulationModel.gravity_backbone_kick_structure(::PlanetFrameKickModel) = :velocity_kick_explicit
 
 function SimulationModel.gravity_backbone_acceleration_ii(
     model::BackboneCustomGravityModel,
@@ -358,6 +369,19 @@ end
 
 function SimulationModel.environment_requirements(::SolarBackboneModel)
     return EffectorEnvironmentRequirements(solar=true)
+end
+
+function SimulationModel.environment_requirements(::PlanetFrameKickModel)
+    return EffectorEnvironmentRequirements(planet_frame=true)
+end
+
+function SimulationModel.gravity_backbone_kick_acceleration_ii(
+    model::PlanetFrameKickModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
+)
+    return SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
 function SimulationModel.calcForceTorque(

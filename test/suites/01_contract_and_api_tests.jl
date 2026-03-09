@@ -219,6 +219,8 @@ end
     @test isdefined(SimulationModel, :wrench)
     @test isdefined(SimulationModel, :environment_requirements)
     @test isdefined(SimulationModel, :solver_partition)
+    @test isdefined(SimulationModel, :gravity_backbone_kick_structure)
+    @test isdefined(SimulationModel, :gravity_backbone_kick_acceleration_ii)
     @test isdefined(SimulationModel, :aerobraking_gravity_force_ii)
     @test isdefined(SimulationModel.DynamicEffectors, :_spice_query_name)
     @test isdefined(SimulationModel.DynamicEffectors, :_parse_bool_env)
@@ -330,6 +332,8 @@ end
         :solver_partition,
         :gravity_backbone_structure,
         :gravity_backbone_acceleration_ii,
+        :gravity_backbone_kick_structure,
+        :gravity_backbone_kick_acceleration_ii,
     )
         @test Core.eval(sandbox, :(Base.isexported(SpaceAGORA, $(QuoteNode(sym)))))
         doc = Core.eval(sandbox, :(Base.Docs.doc(getproperty(SpaceAGORA, $(QuoteNode(sym))))))

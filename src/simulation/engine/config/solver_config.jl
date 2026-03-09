@@ -5,9 +5,10 @@ Typed runtime configuration for solver selection, split-IMEX settings, and
 multirate integration policy.
 
 `split_imex` uses the atmosphere-implicit IMEX partition. `multirate` keeps
-the control-focused split path. `gravity_backbone_split` is a strict
-gravity-only translational backbone mode built on a fixed-step symplectic core;
-it is a numerical-foundation mode, not a general weak-kick split yet.
+the control-focused split path. `gravity_backbone_split` is a translational
+fixed-step gravity-backbone split mode built on a symplectic gravity core with
+explicit SRP / N-body velocity kicks; it is not a fully symplectic whole-system
+solve.
 """
 Base.@kwdef struct SolverConfig
     mode::String = ""

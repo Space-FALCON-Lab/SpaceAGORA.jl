@@ -61,15 +61,16 @@ sampling and passes typed state/environment data into the effector. Keep
 `calcForceTorque` only for compatibility or when migrating existing models.
 Override `solver_partition` only if the effector should move to the implicit
 side of `split_imex`; the default is `:explicit`.
-Override the gravity-backbone hooks only if the effector is a strict
-position-only static-gravity term suitable for the foundation
-`gravity_backbone_split` mode.
+Override the gravity-backbone hooks only if the effector should participate in
+`gravity_backbone_split`, either as a strict position-only static-gravity core
+term or as an explicit translational velocity kick.
 
 Solver partition contract:
 
 - `split_imex` is the atmosphere-implicit IMEX path
 - `multirate` remains the control-focused split path
-- `gravity_backbone_split` is a gravity-only translational backbone foundation, not yet a general gravity-plus-kicks mode
+- `gravity_backbone_split` is a fixed-step gravity-backbone split mode with a symplectic gravity core plus explicit SRP / N-body velocity kicks
+- `gravity_backbone_split` remains translational-only; it is not a fully symplectic whole-system solve
 - force returned by `wrench` is inertial-frame and torque is body-frame
 - the current heat-load state is an accumulated heat-rate integral and stays explicit
 

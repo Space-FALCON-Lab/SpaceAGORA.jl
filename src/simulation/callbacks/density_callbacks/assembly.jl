@@ -150,7 +150,9 @@ function get_callbacks(
     if !backbone_mode && _requires_quaternion_projection_callback(args)
         callbacks = _append_callback(callbacks, get_quaternion_projection_callback(num_sats, args))
     end
-    callbacks = _append_callback(callbacks, get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values))
+    if !backbone_mode
+        callbacks = _append_callback(callbacks, get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values))
+    end
 
     return CallbackSet(callbacks...)
 end

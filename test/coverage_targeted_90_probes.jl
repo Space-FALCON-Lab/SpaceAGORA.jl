@@ -145,6 +145,173 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
         end
     end
 
+    @testset "from_env parser and restore branches" begin
+        @test SimulationEngine._env_bool(true) == "1"
+        @test SimulationEngine._env_bool(false) == "0"
+        @test SimulationEngine._parse_bool(nothing, true) === true
+        @test SimulationEngine._parse_bool(" yes ", false) === true
+        @test SimulationEngine._parse_bool(" OFF ", true) === false
+        @test SimulationEngine._parse_bool("maybe", false) === false
+
+        env_invalid = Dict{String, String}(
+            "SPACEAGORA_PARALLEL_PROFILE" => "R7",
+            "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "yes",
+            "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "off",
+            "SPACEAGORA_EFFECTOR_PARALLEL" => "on",
+            "SPACEAGORA_RHS_BATCH_PARALLEL" => "off",
+            "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "serial",
+            "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "parallel",
+            "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => "auto",
+            "SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split",
+            "SPACEAGORA_SOLVER_MAXITERS" => "not_an_int",
+            "SPACEAGORA_SPLIT_IMEX_SOLVER" => "kencarp58",
+            "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "not_a_float",
+            "SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => "not_an_int",
+            "SPACEAGORA_MULTIRATE_SLOW_DT_S" => "   ",
+            "SPACEAGORA_MULTIRATE_SLOW_SOLVER" => "vern9",
+            "SPACEAGORA_MULTIRATE_FAST_SOLVER" => "rodas5p",
+            "SPACEAGORA_WARN_NORMALIZE" => "maybe",
+            "SPACEAGORA_ALLOW_TYPED_NORMALIZE" => "1",
+            "SPACEAGORA_GRAM_PER_SAT_INSTANCES" => "0",
+            "SPACEAGORA_SRP_EPHEMERIS_CACHE" => "false",
+            "SPACEAGORA_NBODY_EPHEMERIS_CACHE" => "true",
+            "SPACEAGORA_PLANET_FRAME_CACHE" => "no",
+            "SPACEAGORA_SPICE_RHS_MEMO" => "yes",
+            "SPACEAGORA_SAVE_BUNDLE" => "off",
+            "SPACEAGORA_WARN_DEPRECATED_CONFIG" => "on"
+        )
+        cfg_invalid = SimulationEngine.simulation_engine_config_from_env(env_invalid)
+        @test cfg_invalid.parallel.profile == "R7"
+        @test cfg_invalid.parallel.outer_parallel_active === true
+        @test cfg_invalid.parallel.parallel_policy_adaptive === false
+        @test cfg_invalid.parallel.effector_parallel_mode == "on"
+        @test cfg_invalid.solver.mode == "gravity_backbone_split"
+        @test cfg_invalid.solver.maxiters === nothing
+        @test cfg_invalid.solver.split_imex_solver == "kencarp58"
+        @test cfg_invalid.solver.gravity_backbone_dt_s === nothing
+        @test cfg_invalid.solver.multirate_fast_substeps == 8
+        @test cfg_invalid.solver.multirate_slow_dt_s === nothing
+        @test cfg_invalid.solver.multirate_slow_solver == "vern9"
+        @test cfg_invalid.solver.multirate_fast_solver == "rodas5p"
+        @test cfg_invalid.runtime_policy.warn_normalize === true
+        @test cfg_invalid.runtime_policy.allow_typed_normalize === true
+        @test cfg_invalid.runtime_policy.gram_per_sat_instances === false
+        @test cfg_invalid.runtime_policy.srp_ephemeris_cache === false
+        @test cfg_invalid.runtime_policy.nbody_ephemeris_cache === true
+        @test cfg_invalid.runtime_policy.planet_frame_cache === false
+        @test cfg_invalid.runtime_policy.spice_rhs_memo === true
+        @test cfg_invalid.artifacts.save_bundle === false
+        @test cfg_invalid.artifacts.warn_deprecated_config === true
+
+        env_valid = Dict{String, String}(
+            "SPACEAGORA_SOLVER_MAXITERS" => "321",
+            "SPACEAGORA_MULTIRATE_SLOW_DT_S" => "17.5",
+            "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "4.25",
+            "SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => "12"
+        )
+        cfg_valid = SimulationEngine.simulation_engine_config_from_env(env_valid)
+        @test cfg_valid.solver.maxiters == 321
+        @test cfg_valid.solver.multirate_slow_dt_s == 17.5
+        @test cfg_valid.solver.gravity_backbone_dt_s == 4.25
+        @test cfg_valid.solver.multirate_fast_substeps == 12
+
+        withenv("SPACEAGORA_UNIT_TEST_ENV_KEY" => "present") do
+            prev_overrides = SimulationEngine._engine_active_overrides_ref[]
+            try
+                SimulationEngine._engine_active_overrides_ref[] = nothing
+                @test SimulationEngine._engine_env_get("SPACEAGORA_UNIT_TEST_ENV_KEY", "fallback") == "present"
+                @test SimulationEngine._engine_env_haskey("SPACEAGORA_UNIT_TEST_ENV_KEY") === true
+                @test SimulationEngine._engine_env_haskey("SPACEAGORA_UNIT_TEST_MISSING_KEY") === false
+            finally
+                SimulationEngine._engine_active_overrides_ref[] = prev_overrides
+            end
+        end
+
+        config = SimulationEngine.SimulationEngineConfig(
+            parallel=SimulationEngine.ParallelConfig(
+                profile="R9",
+                outer_parallel_active=true,
+                parallel_policy_adaptive=true,
+                effector_parallel_mode="on",
+                rhs_batch_parallel_mode="off",
+                density_callback_parallel_mode="serial",
+                control_callback_parallel_mode="parallel",
+                thermal_callback_parallel_mode="manual"
+            ),
+            solver=SimulationEngine.SolverConfig(
+                mode="gravity_backbone_split",
+                maxiters=123,
+                split_imex_solver="kencarp47",
+                gravity_backbone_dt_s=6.5,
+                multirate_fast_substeps=11,
+                multirate_slow_dt_s=14.0,
+                multirate_slow_solver="vern9",
+                multirate_fast_solver="rodas5p"
+            ),
+            runtime_policy=SimulationEngine.RuntimePolicyConfig(
+                warn_normalize=false,
+                allow_typed_normalize=true,
+                gram_per_sat_instances=true,
+                srp_ephemeris_cache=false,
+                nbody_ephemeris_cache=false,
+                planet_frame_cache=false,
+                spice_rhs_memo=false
+            ),
+            artifacts=SimulationEngine.ArtifactConfig(
+                save_bundle=false,
+                warn_deprecated_config=false
+            ),
+            env_overrides=Dict(
+                "SPACEAGORA_SOLVER_MODE" => "from_env_override",
+                "SPACEAGORA_CUSTOM_TEST_KEY" => "custom"
+            )
+        )
+        overrides = SimulationEngine._engine_env_overrides(config)
+        @test overrides["SPACEAGORA_PARALLEL_PROFILE"] == "R9"
+        @test overrides["SPACEAGORA_OUTER_PARALLEL_ACTIVE"] == "1"
+        @test overrides["SPACEAGORA_PARALLEL_POLICY_ADAPTIVE"] == "1"
+        @test overrides["SPACEAGORA_WARN_NORMALIZE"] == "0"
+        @test overrides["SPACEAGORA_ALLOW_TYPED_NORMALIZE"] == "1"
+        @test overrides["SPACEAGORA_GRAVITY_BACKBONE_DT_S"] == "6.5"
+        @test overrides["SPACEAGORA_MULTIRATE_SLOW_DT_S"] == "14.0"
+        @test overrides["SPACEAGORA_SOLVER_MAXITERS"] == "123"
+        @test overrides["SPACEAGORA_SOLVER_MODE"] == "from_env_override"
+        @test overrides["SPACEAGORA_CUSTOM_TEST_KEY"] == "custom"
+
+        withenv(
+            "SPACEAGORA_SOLVER_MODE" => "previous_mode",
+            "SPACEAGORA_CUSTOM_TEST_KEY" => nothing
+        ) do
+            prev_config = SimulationEngine._engine_active_config_ref[]
+            prev_overrides = SimulationEngine._engine_active_overrides_ref[]
+            result = SimulationEngine._with_engine_env_overrides(() -> begin
+                @test SimulationEngine._engine_active_config_ref[] === config
+                @test SimulationEngine._engine_active_overrides_ref[] isa Dict{String, String}
+                @test ENV["SPACEAGORA_SOLVER_MODE"] == "from_env_override"
+                @test ENV["SPACEAGORA_CUSTOM_TEST_KEY"] == "custom"
+                @test SimulationEngine._engine_env_get("SPACEAGORA_SOLVER_MODE") == "from_env_override"
+                return :ok
+            end, config)
+            @test result === :ok
+            @test ENV["SPACEAGORA_SOLVER_MODE"] == "previous_mode"
+            @test !haskey(ENV, "SPACEAGORA_CUSTOM_TEST_KEY")
+            @test SimulationEngine._engine_active_config_ref[] === prev_config
+            @test SimulationEngine._engine_active_overrides_ref[] === prev_overrides
+        end
+
+        withenv("SPACEAGORA_SAVE_BUNDLE" => "1") do
+            prev_config = SimulationEngine._engine_active_config_ref[]
+            prev_overrides = SimulationEngine._engine_active_overrides_ref[]
+            @test_throws ErrorException SimulationEngine._with_engine_env_overrides(config) do
+                @test ENV["SPACEAGORA_SAVE_BUNDLE"] == "0"
+                error("from_env coverage throw")
+            end
+            @test ENV["SPACEAGORA_SAVE_BUNDLE"] == "1"
+            @test SimulationEngine._engine_active_config_ref[] === prev_config
+            @test SimulationEngine._engine_active_overrides_ref[] === prev_overrides
+        end
+    end
+
     @testset "thermal contact branch" begin
         model = MaxwellianHeat(
             thermal_accomodation_factor=1.0,

@@ -13,7 +13,9 @@ export StateSample,
     environment_requirements,
     solver_partition,
     gravity_backbone_structure,
-    gravity_backbone_acceleration_ii
+    gravity_backbone_acceleration_ii,
+    gravity_backbone_kick_structure,
+    gravity_backbone_kick_acceleration_ii
 
 """
     StateSample
@@ -191,5 +193,29 @@ units for effectors that declare
 [`gravity_backbone_structure`](@ref) == `:position_only_static_gravity`.
 """
 function gravity_backbone_acceleration_ii end
+
+"""
+    gravity_backbone_kick_structure(model) -> Symbol
+
+Optional additive declaration for explicit perturbation kicks in
+`gravity_backbone_split`.
+
+Return `:velocity_kick_explicit` for translational perturbations that should be
+applied as explicit velocity kicks around the gravity core, or `:unsupported`
+otherwise. The default is `:unsupported`.
+"""
+@inline gravity_backbone_kick_structure(::Any) = :unsupported
+
+"""
+    gravity_backbone_kick_acceleration_ii(model, x::StateSample, env::EnvironmentSample, t::Float64)
+
+Optional additive acceleration hook for explicit velocity kicks in
+`gravity_backbone_split`.
+
+Implementations must return inertial-frame translational acceleration in SI
+units for effectors that declare
+[`gravity_backbone_kick_structure`](@ref) == `:velocity_kick_explicit`.
+"""
+function gravity_backbone_kick_acceleration_ii end
 
 end # module EffectorSampling

@@ -80,8 +80,9 @@ Solver-side policy note:
 - `split_imex` now means the atmosphere-implicit IMEX partition
 - `multirate` still means the control-focused split
 - `solver_partition` is the public hook that places dynamic effectors on the implicit or explicit IMEX side
-- `gravity_backbone_split` is the public gravity-only translational backbone foundation
-- `gravity_backbone_structure` and `gravity_backbone_acceleration_ii` are the public hooks for that mode
+- `gravity_backbone_split` is the public fixed-step gravity-backbone split mode with a symplectic gravity core plus explicit SRP / N-body velocity kicks
+- `gravity_backbone_structure` / `gravity_backbone_acceleration_ii` declare gravity-core participation
+- `gravity_backbone_kick_structure` / `gravity_backbone_kick_acceleration_ii` declare explicit translational kick participation
 - the current `heat_loads` state remains explicit because it is an accumulated heat-rate integral, not a thermal-capacitance model
 
 ## Documentation enforcement

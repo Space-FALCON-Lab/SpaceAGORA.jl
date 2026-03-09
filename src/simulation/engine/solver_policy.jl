@@ -157,6 +157,30 @@ end
     ))
 end
 
+@inline function _gravity_backbone_kick_structure_validated(effector)::Symbol
+    structure = SimulationModel.gravity_backbone_kick_structure(effector)
+    if structure === :unsupported || structure === :velocity_kick_explicit
+        return structure
+    end
+    throw(ArgumentError(
+        "gravity_backbone_kick_structure($(nameof(typeof(effector)))) must return :unsupported or :velocity_kick_explicit, got $(repr(structure))."
+    ))
+end
+
+@inline function _gravity_backbone_has_kicks(args)::Bool
+    @inbounds for effector in args.dynamics_model.dynamic_effectors
+        if _gravity_backbone_kick_structure_validated(effector) === :velocity_kick_explicit
+            return true
+        end
+    end
+    return false
+end
+
+@inline function _gravity_backbone_time_reached(t_now::Float64, t_target::Float64)::Bool
+    tol = max(1e-9, 64 * eps(Float64) * max(1.0, abs(t_target)))
+    return abs(t_now - t_target) <= tol
+end
+
 @inline function _gravity_backbone_reject_reason(args)::Union{Nothing, String}
     args.mission_configuration.orientation_sim && return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires orientation_sim=false."
     isempty(args.control_model.control_effectors) || return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires no control effectors."
@@ -164,14 +188,26 @@ end
     isempty(args.navigation_model.navigation_effectors) || return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires no navigation effectors."
     effectors = args.dynamics_model.dynamic_effectors
     isempty(effectors) && return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires at least one supported gravity effector."
+    has_core = false
     @inbounds for effector in effectors
-        structure = _gravity_backbone_structure_validated(effector)
-        structure === :position_only_static_gravity || return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split does not support $(nameof(typeof(effector)))."
+        core_structure = _gravity_backbone_structure_validated(effector)
+        kick_structure = _gravity_backbone_kick_structure_validated(effector)
+        if core_structure === :position_only_static_gravity
+            has_core = true
+        elseif kick_structure !== :velocity_kick_explicit
+            return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split does not support $(nameof(typeof(effector)))."
+        end
         req = SimulationModel.environment_requirements(effector)
-        req.atmosphere && return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split rejects atmosphere-dependent effectors."
-        req.solar && return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split rejects solar/SRP-dependent effectors."
-        isempty(req.third_body_names) || return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split rejects third-body/ephemeris-dependent effectors."
+        if core_structure === :position_only_static_gravity
+            req.atmosphere && return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split rejects atmosphere-dependent effectors."
+            req.solar && return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split rejects solar/SRP-dependent gravity core effectors."
+            isempty(req.third_body_names) || return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split rejects third-body/ephemeris-dependent gravity core effectors."
+        else
+            req.atmosphere && return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split rejects atmosphere-dependent effectors."
+            req.planet_frame && return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split does not support planet-frame-dependent perturbation kicks."
+        end
     end
+    has_core || return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires at least one supported gravity core effector."
     return nothing
 end
 
@@ -419,6 +455,89 @@ function _solve_with_multirate_solver(prob, args, reltol_tol, abstol_tol)
     )
 end
 
+function _solve_with_gravity_backbone_solver(prob, args)
+    t_start = Float64(first(prob.tspan))
+    t_end = Float64(last(prob.tspan))
+    alg = KahanLi8()
+    solver_label = _gravity_backbone_has_kicks(args) ? "KahanLi8(GravityBackbone+Kicks)" : "KahanLi8(GravityBackbone)"
+
+    if t_end <= t_start
+        sol = DiffEqBase.build_solution(
+            prob,
+            alg,
+            Float64[t_start],
+            [deepcopy(prob.u0)];
+            retcode=SciMLBase.ReturnCode.Success,
+        )
+        return sol, solver_label
+    end
+
+    dt_s = _gravity_backbone_fixed_dt_s(args)
+    t_cursor = t_start
+    u_cursor = deepcopy(prob.u0)
+    solution_ts = Float64[t_cursor]
+    solution_us = [deepcopy(u_cursor)]
+    final_retcode = SciMLBase.ReturnCode.Success
+
+    while t_cursor < t_end
+        t_next = min(t_cursor + dt_s, t_end)
+        segment_dt = t_next - t_cursor
+        if !(isfinite(segment_dt) && segment_dt > 0.0)
+            break
+        end
+        half_dt = 0.5 * segment_dt
+
+        if half_dt > 0.0
+            _gravity_backbone_half_kick!(u_cursor, prob.p, t_cursor, half_dt)
+        end
+
+        core_prob = remake(prob; u0=u_cursor, tspan=(t_cursor, t_next))
+        core_sol = _solve_with_fixed_step_solver(core_prob, alg, segment_dt)
+        reached_t = Float64(core_sol.t[end])
+        u_cursor = deepcopy(core_sol.u[end])
+        final_retcode = core_sol.retcode
+
+        if !SciMLBase.successful_retcode(core_sol.retcode)
+            if reached_t > solution_ts[end]
+                push!(solution_ts, reached_t)
+                push!(solution_us, deepcopy(u_cursor))
+            end
+            break
+        end
+
+        if string(core_sol.retcode) != "Success"
+            if reached_t > solution_ts[end]
+                push!(solution_ts, reached_t)
+                push!(solution_us, deepcopy(u_cursor))
+            end
+            break
+        end
+
+        if half_dt > 0.0
+            _gravity_backbone_half_kick!(u_cursor, prob.p, reached_t, half_dt)
+        end
+
+        t_cursor = reached_t
+        if t_cursor > solution_ts[end]
+            push!(solution_ts, t_cursor)
+            push!(solution_us, deepcopy(u_cursor))
+        else
+            solution_us[end] = deepcopy(u_cursor)
+        end
+
+        _gravity_backbone_time_reached(t_cursor, t_next) || break
+    end
+
+    sol = DiffEqBase.build_solution(
+        prob,
+        alg,
+        solution_ts,
+        solution_us;
+        retcode=final_retcode,
+    )
+    return sol, solver_label
+end
+
 function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
     mode = _solver_policy_mode()
     if mode == :symplectic
@@ -443,9 +562,9 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
         _is_partitioned_second_order_problem(prob) || throw(ArgumentError(
             "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires a SecondOrderODEProblem built over translational position/velocity states."
         ))
-        sol = _solve_with_fixed_step_solver(prob, KahanLi8(), _gravity_backbone_fixed_dt_s(args))
+        sol, solver_label = _solve_with_gravity_backbone_solver(prob, args)
         return sol, (
-            solver="KahanLi8(GravityBackbone)",
+            solver=solver_label,
             initial_solver="KahanLi8",
             fallback_used=false,
             trigger_retcode=missing

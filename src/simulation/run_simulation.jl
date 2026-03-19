@@ -935,7 +935,8 @@ end
 @inline function _multirate_solver_spec(env_name::String, default_mode::String)
     mode = lowercase(strip(get(ENV, env_name, default_mode)))
     if mode in ("tsit5", "tsit", "default")
-        return (alg=Tsit5(), label="Tsit5", auto_switch_capable=false)
+        # return (alg=Tsit5(), label="Tsit5", auto_switch_capable=false)
+        return (alg=DP8(), label="DP8", auto_switch_capable=false)
     elseif mode in ("auto_stiff", "auto-stiff", "autostiff", "auto")
         return (
             alg=AutoTsit5(Rodas5P(autodiff=AutoFiniteDiff())),
@@ -959,13 +960,15 @@ end
     maxiters = _solver_maxiters()
     dtmax_use = isnothing(dtmax_override) ? args.integration_tolerances.dt_max_orbit : dtmax_override
     dtmax_use > 0.0 || throw(ArgumentError("Solver dtmax must be > 0.0, got $dtmax_use."))
+    println("Solving with $(typeof(alg)) (maxiters=$(maxiters === nothing ? "default" : string(maxiters))), dtmax=$(round(dtmax_use; digits=3)) s)...")
     if maxiters === nothing
         return solve(
             prob,
             alg;
             reltol=reltol_tol,
             abstol=abstol_tol,
-            dtmax=dtmax_use
+            dtmax=dtmax_use,
+            saveat=args.mission_configuration.data_rate
         )
     end
     return solve(
@@ -974,7 +977,8 @@ end
         reltol=reltol_tol,
         abstol=abstol_tol,
         dtmax=dtmax_use,
-        maxiters=maxiters
+        maxiters=maxiters,
+        saveat=args.mission_configuration.data_rate
     )
 end
 
@@ -1167,7 +1171,8 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
         )
     end
 
-    tsit_sol = _solve_with_explicit_solver(prob, args, Tsit5(), reltol_tol, abstol_tol)
+    # tsit_sol = _solve_with_explicit_solver(prob, args, Tsit5(), reltol_tol, abstol_tol)
+    tsit_sol = _solve_with_explicit_solver(prob, args, DP8(), reltol_tol, abstol_tol)
     return tsit_sol, (
         solver="Tsit5",
         initial_solver="Tsit5",
@@ -1595,7 +1600,7 @@ function run_simulation(
     end
     Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.planet_pxform_runtime_calls, 1)
     # mission_end = args.mission_configuration.mission_time
-    mission_end = 1.0e9
+    mission_end = args.mission_configuration.mission_type == MissionTime ? args.mission_configuration.mission_time : 1.0e9
     # _initialize_nbody_ephemeris_cache!(p, et_start, mission_end)
     _initialize_srp_sun_ephemeris_cache!(p, et_start, mission_end)
     _initialize_planet_frame_ephemeris_cache!(p, et_start, mission_end)

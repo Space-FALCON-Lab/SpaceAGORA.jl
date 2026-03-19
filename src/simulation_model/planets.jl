@@ -19,14 +19,14 @@ module Planets
     @kwdef struct Earth <: AbstractPlanet
         name::String = "Earth" # Name of the planet
         spice_id::Int = 399 # NAIF SPICE ID
-        Rp_e::Float64 = 6.3781e6 # Equatorial radius in meters
+        Rp_e::Float64 = 6.3781363e6 # Equatorial radius in meters
         Rp_p::Float64 = 6.3568e6 # Polar radius in meters
         Rp_m::Float64 = 6.371e6  # Mean radius in meters
         mass::Float64  = 5.972e24 # Mass in kg
         p::Float64 = 101325.0 # Surface pressure in Pascals
         k::Float64 = 1.83e-4 # Chapman heating coefficient, kg^0.5/m
         ω::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 7.2921066e-5) # Angular velocity vector in rad/s
-        μ::Float64 = 3.986004418e14 # Standard gravitational parameter in m^3/s^2
+        μ::Float64 = 3.986004415e14 # Standard gravitational parameter in m^3/s^2
         J2::Float64 = 1.08263e-3 # J2 coefficient
         g_ref::Float64 = 9.80665 # Standard gravity in m/s^2
         ρ_ref::Float64 = 1.225 # Sea level atmospheric density in kg/m^3
@@ -176,8 +176,10 @@ module Planets
         earth = Earth(spice_id=_lookup_spice_id("Earth"))
         # TopographyHarmonicsWorkspace!(topo_harmonics_file, earth)
         _furnsh_required(spice_path, "pck/pck00011.tpc")
+        _furnsh_required(spice_path, "pck/earth_latest_high_prec.bpc")
         _furnsh_required(spice_path, "lsk/naif0012.tls")
         _furnsh_first_existing(spice_path, ("spk/planets/de440s.bsp", "spk/planets/de440_GRAM.bsp"))
+        _furnsh_required(spice_path, "tf/earth_assoc_itrf93.tf")
         # calc_J2000_to_pci_rotation_matrix!(earth.α, earth.δ, earth)
         return earth
     end

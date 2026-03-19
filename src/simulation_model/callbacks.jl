@@ -1,5 +1,4 @@
 module SimulationCallbacks
-include("../utils/Reference_system.jl") # Get the reference system types for the callback
 
 using DifferentialEquations
 using LinearAlgebra
@@ -17,8 +16,10 @@ using ..ConfigTypes: SaveData, ODEParams
 using ..ControlEffectors: calcControlEffect!
 using ..GuidanceEffectors: calcGuidanceEffect!
 using ..NavigationEffectors: calcNavigationEffect!
-using ..SimConfig: SimulationConfiguration, MissionOrbits
+using ..SimConfig: SimulationConfiguration, MissionOrbits, MissionType
 export SaveField, default_save_fields, get_callbacks
+include("../utils/Reference_system.jl") # Get the reference system types for the callback
+
 
 @inline callback_verbose(integrator) = integrator.p.args.simulation_settings.verbose
 @inline callback_use_invokelatest() = get(ENV, "SPACEAGORA_DEV_HOT_RELOAD", "0") == "1"
@@ -2040,7 +2041,7 @@ function get_orbit_end_callback(num_sats::Int)
 
         p.orbit_counter[idx] += 1 # Increment the orbit counter in the shared buffers
         completed_orbits = p.orbit_counter[idx] - 1
-        target_orbits = p.args.mission_configuration.number_of_orbits
+        target_orbits = p.args.mission_configuration.mission_type == MissionOrbits ? p.args.mission_configuration.number_of_orbits : Inf
         # Check for orbit completion and log it (placeholder logic)
         if callback_verbose(integrator)
             println("Orbit $(completed_orbits) completed by Satellite $idx at time $(integrator.t) seconds!")
@@ -2233,7 +2234,9 @@ function get_data_saving_callback(
     function save_func(u, t, integrator)
         return _save_snapshot(save_fields, u, t, integrator)
     end
-    return SavingCallback(save_func, saved_values; save_everystep=true)
+    data_rate = args.mission_configuration.data_rate
+    data_rate > 0.0 || throw(ArgumentError("mission_configuration.data_rate must be > 0.0, got $data_rate."))
+    return SavingCallback(save_func, saved_values; saveat=data_rate, save_everystep=false)
 end
 
 function get_navigation_callbacks(num_sats::Int, args::SimulationConfiguration)::Vector{DiscreteCallback}

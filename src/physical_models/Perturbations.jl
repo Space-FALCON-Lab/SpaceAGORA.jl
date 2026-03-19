@@ -37,7 +37,7 @@ const _SPICE_BARYCENTER_BODIES = ("mercury", "venus", "earth", "mars", "jupiter"
 const _THIRD_BODY_MU = Dict{String, Float64}(
     "sun" => 1.3271244002331e20,
     "mercury" => 2.2032e13,
-    "venus" => 3.24858592e14,
+    "venus" => 3.248585926e14,
     "earth" => 3.986004418e14,
     "moon" => 4.9028005821478e12,
     "mars" => 4.2828314e13,
@@ -323,7 +323,6 @@ end
 """
     calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
 """
-const J2000_frame_id = 1
 function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     pos_ii = hasproperty(x, :pos) ? SVector{3, Float64}(x.pos) : SVector{3, Float64}(x[1:3])
     mass = hasproperty(x, :mass) ? x.mass : x[7]
@@ -635,10 +634,43 @@ end
 end
 
 function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    # cnf = param.cnf
+    et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
     
-    rVec_cart = SVector{3, Float64}(x.pos)
+    # Transform from J2000 inertial frame to Earth-fixed ITRF93 frame using SPICE frame system
+    # Both cnmfrm and pxform must be inside the lock to maintain SPICE call stack consistency
+    L_PI = lock(SPICE_LOCK) do
+        _, frame_name = cnmfrm("Earth")
+        SMatrix{3, 3, Float64}(pxform("J2000", frame_name, et)) * model.planet.J2000_to_pci'
+    end
+    rVec_cart = L_PI * SVector{3, Float64}(x.pos) # convert from inertial to planet-fixed ITRF93 frame for gravity calculation
     mass = x.mass               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
+
+    # For zonal J2-only harmonics, use the closed-form perturbation to ensure
+    # consistency with the dedicated inverse-squared+J2 gravity model.
+    if model.L == 2 && model.M == 0
+        C20 = model.C[3, 1]
+        if isfinite(C20) && C20 != 0.0
+            x_pp, y_pp, z_pp = rVec_cart
+            r = norm(rVec_cart)
+            r2 = r * r
+            r4 = r2 * r2
+            z2 = z_pp * z_pp
+
+            μ = param.args.environment_model.planet.μ
+            Rp_e = param.args.environment_model.planet.Rp_e
+            # In the harmonics path, prefer the coefficients-file C20 so J2-only
+            # behavior is consistent with the selected gravity field dataset.
+            J2 = -sqrt(5.0) * C20
+
+            common = 1.5 * J2 * μ * Rp_e^2 / r4
+            gx_pp = common * (x_pp / r) * (5.0 * z2 / r2 - 1.0)
+            gy_pp = common * (y_pp / r) * (5.0 * z2 / r2 - 1.0)
+            gz_pp = common * (z_pp / r) * (5.0 * z2 / r2 - 3.0)
+
+            g_ii = L_PI' * SVector{3, Float64}(gx_pp, gy_pp, gz_pp)
+            return mass * g_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
+        end
+    end
 
     workspace = _harmonics_workspace_for_sat!(model, param, i)
     A = workspace.A
@@ -647,10 +679,15 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
 
     RE = param.args.environment_model.planet.Rp_e
     r = norm(rVec_cart)
-    s,t,u=normalize(rVec_cart)
+    inv_r = 1.0 / r
+    s = rVec_cart[1] * inv_r
+    t = rVec_cart[2] * inv_r
+    u = rVec_cart[3] * inv_r
     L = model.L
     M = model.M
-    @fastmath begin
+
+    # @fastmath begin
+        A[1, 1] = 1.0
         A[2, 1] = u * sqrt_3
         # Fill the off diagonal elements of A
         @inbounds @simd for n = 1:L+1
@@ -675,8 +712,8 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
             end
         end
 
-        ρ = RE/r
-        ρ_np1 = -model.planet.μ/r * ρ
+        ρ = RE * inv_r
+        ρ_np1 = -model.planet.μ * inv_r * ρ
         a1 = a2 = a3 = a4 = 0.0
         @inbounds for l = 1:L
             i = l + 1
@@ -685,20 +722,24 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
             sum2 = 0.0
             sum3 = 0.0
             sum4 = 0.0
-            @inbounds for m = 0:min(l, M)
+            mmax = min(l, M)
+
+            # m = 0 contribution only affects D-dependent sums; m*E/F terms are identically zero.
+            C0 = model.C[i, 1]
+            S0 = model.S[i, 1]
+            D0 = (C0 * R[1] + S0 * I[1]) * sqrt_2
+            sum3 += model.VR01[i, 1] * A[i, 2] * D0
+            sum4 += model.VR11[i, 1] * A[i + 1, 2] * D0
+
+            @inbounds for m = 1:mmax
                 j = m + 1
                 C = model.C[i, j]
                 S = model.S[i, j]
-                if m == 0
-                    R_term = 0.0
-                    I_term = 0.0
-                else
-                    R_term = R[j - 1]
-                    I_term = I[j - 1]
-                end
-                D = (model.C[i, j] * R[j] + model.S[i, j] * I[j]) * sqrt_2
-                E = ifelse(m == 0, 0.0, (C * R_term + S * I_term) * sqrt_2)
-                F = ifelse(m == 0, 0.0, (S * R_term - C * I_term) * sqrt_2)
+                R_term = R[j - 1]
+                I_term = I[j - 1]
+                D = (C * R[j] + S * I[j]) * sqrt_2
+                E = (C * R_term + S * I_term) * sqrt_2
+                F = (S * R_term - C * I_term) * sqrt_2
 
                 # Avv00, Avv01, Avv11 = A[i, j], model.VR01[i, j] * A[i, j+1], model.VR11[i, j] * A[i+1, j+1]
 
@@ -713,9 +754,9 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
             a3 += rr * sum3
             a4 -= rr * sum4
         end
-    end
+    # end
 
-    force_ii = mass * SVector{3, Float64}(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4) # Store gravity in config for other uses
+    force_ii = mass * L_PI' * SVector{3, Float64}(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4) # Store gravity in config for other uses
 
     # cnf.gravity_harmonics_ii .= force_ii
 

@@ -120,6 +120,7 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     srp_enabled::Bool = false
     srp_cr::Float64 = 1.3
     srp_area_m2::Float64 = 0.0
+    drag_enabled::Bool = true
     include_wind::Bool = false
     orbit_altitude_mode::Symbol = :vacuum
     maneuver_orbit_numbers::Vector{Int64} = Int64[]
@@ -165,6 +166,7 @@ Base.@kwdef struct TimeAlignedScenarioConfig <: AbstractScenarioConfig
     srp_enabled::Bool = false
     srp_cr::Float64 = 1.3
     srp_area_m2::Float64 = 0.0
+    drag_enabled::Bool = true
     include_wind::Bool = false
     orbit_altitude_mode::Symbol = :vacuum
     comparison_mode::Symbol = :time_aligned_state
@@ -600,6 +602,7 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
         srp_enabled = _optional_bool(tbl, "srp_enabled", false)
         srp_cr = _optional_float(tbl, "srp_cr", 1.3)
         srp_area_m2 = _optional_float(tbl, "srp_area_m2", 0.0)
+        drag_enabled = _optional_bool(tbl, "drag_enabled", true)
         include_wind = _optional_bool(tbl, "include_wind", false)
         orbit_altitude_mode = _parse_orbit_altitude_mode(_optional_str(tbl, "orbit_altitude_mode", "vacuum"), context)
         maneuver = _parse_maneuver_config(tbl, context)
@@ -637,6 +640,7 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 srp_enabled=srp_enabled,
                 srp_cr=srp_cr,
                 srp_area_m2=srp_area_m2,
+                drag_enabled=drag_enabled,
                 include_wind=include_wind,
                 orbit_altitude_mode=orbit_altitude_mode,
                 maneuver_orbit_numbers=maneuver.orbit_numbers,
@@ -691,6 +695,7 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 srp_enabled=srp_enabled,
                 srp_cr=srp_cr,
                 srp_area_m2=srp_area_m2,
+                drag_enabled=drag_enabled,
                 include_wind=include_wind,
                 orbit_altitude_mode=orbit_altitude_mode,
                 comparison_mode=comparison_mode,
@@ -804,7 +809,10 @@ end
     if degree <= 0
         return 0
     end
-    if order <= 0
+    if order == 0
+        return 0
+    end
+    if order < 0
         return degree
     end
     return min(order, degree)
@@ -823,6 +831,36 @@ end
     end
     throw(ArgumentError("Unsupported N-body primary planet '$planet_name'"))
 end
+
+@inline function _nbody_body_id(body_name::String)::Int64
+    key = lowercase(strip(body_name))
+    if key == "sun"
+        return 10
+    elseif key == "moon"
+        return 301
+    elseif key == "mercury"
+        return 1
+    elseif key == "venus"
+        return 2
+    elseif key == "earth"
+        return 399
+    elseif key == "mars"
+        return 4
+    elseif key == "jupiter"
+        return 5
+    elseif key == "saturn"
+        return 6
+    elseif key == "uranus"
+        return 7
+    elseif key == "neptune"
+        return 8
+    elseif key == "pluto"
+        return 9
+    end
+    throw(ArgumentError("Unsupported N-body body '$body_name'."))
+end
+
+@inline _nbody_body_ids(body_names::Vector{String}) = Tuple(_nbody_body_id(name) for name in body_names)
 
 struct ScaledAerodynamicCoefficientfM <: AbstractForceTorqueModel
     model::AerodynamicCoefficientfM
@@ -875,8 +913,8 @@ function _scenario_dynamic_effectors(
         push!(
             effectors,
             NBodyGravityModel(
-                body_names=Tuple(cfg.nbody_bodies),
-                primary_body_name=_nbody_primary_name(cfg.planet_name),
+                body_ids=_nbody_body_ids(cfg.nbody_bodies),
+                primary_body_id=Int64(planet.spice_id),
                 planet=planet
             )
         )
@@ -889,11 +927,13 @@ function _scenario_dynamic_effectors(
         push!(effectors, SolarRadiationPressureModel(cr_value, area_m2))
     end
 
-    aero = AerodynamicCoefficientfM()
-    if isapprox(cd_scale, 1.0; rtol=0.0, atol=1e-12)
-        push!(effectors, aero)
-    else
-        push!(effectors, ScaledAerodynamicCoefficientfM(aero, cd_scale))
+    if cfg.drag_enabled
+        aero = AerodynamicCoefficientfM()
+        if isapprox(cd_scale, 1.0; rtol=0.0, atol=1e-12)
+            push!(effectors, aero)
+        else
+            push!(effectors, ScaledAerodynamicCoefficientfM(aero, cd_scale))
+        end
     end
     return Tuple(effectors)
 end
@@ -1179,10 +1219,18 @@ end
 
 function _with_study_settings(args::SimulationConfiguration; quick::Bool=false)::SimulationConfiguration
     hf = _has_high_fidelity_effectors(args)
-    rel_orbit = min(quick ? 5e-7 : 1e-7, STRICT_REL_ORBIT)
-    abs_orbit = min(quick ? 5e-9 : 1e-9, STRICT_ABS_ORBIT)
-    rel_atm = min(quick ? 1e-6 : 1e-7, STRICT_REL_ATM)
-    abs_atm = min(quick ? 1e-8 : 1e-9, STRICT_ABS_ATM)
+    rel_orbit_base = min(quick ? 5e-7 : 1e-7, STRICT_REL_ORBIT)
+    abs_orbit_base = min(quick ? 5e-9 : 1e-9, STRICT_ABS_ORBIT)
+    rel_atm_base = min(quick ? 1e-6 : 1e-7, STRICT_REL_ATM)
+    abs_atm_base = min(quick ? 1e-8 : 1e-9, STRICT_ABS_ATM)
+    rel_orbit_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_RELTOL_ORBIT")
+    abs_orbit_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_ABSTOL_ORBIT")
+    rel_atm_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_RELTOL_ATM")
+    abs_atm_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_ABSTOL_ATM")
+    rel_orbit = rel_orbit_env === nothing ? rel_orbit_base : min(rel_orbit_env, STRICT_REL_ORBIT)
+    abs_orbit = abs_orbit_env === nothing ? abs_orbit_base : min(abs_orbit_env, STRICT_ABS_ORBIT)
+    rel_atm = rel_atm_env === nothing ? rel_atm_base : min(rel_atm_env, STRICT_REL_ATM)
+    abs_atm = abs_atm_env === nothing ? abs_atm_base : min(abs_atm_env, STRICT_ABS_ATM)
     dt_orbit_base = min(quick ? (hf ? 180.0 : 240.0) : (hf ? 60.0 : 120.0), STRICT_DT_ORBIT)
     dt_atm_base = min(quick ? (hf ? 2.0 : 5.0) : (hf ? 0.2 : 0.5), STRICT_DT_ATM)
     dt_orbit_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_DT_MAX_ORBIT")

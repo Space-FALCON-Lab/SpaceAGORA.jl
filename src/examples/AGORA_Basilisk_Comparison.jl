@@ -48,12 +48,12 @@ end
 function oe_getter(u, t, integrator)
     n = length(u.sc)
     planet = integrator.p.args.environment_model.planet
-    out = Vector{NamedTuple{(:a, :e, :i, :omega, :OMEGA, :nu), Tuple{Float64, Float64, Float64, Float64, Float64, Float64}}}(undef, n)
+    out = Vector{NamedTuple{(:a, :e, :i, :OMEGA, :omega, :nu), Tuple{Float64, Float64, Float64, Float64, Float64, Float64}}}(undef, n)
     @inbounds for i in 1:n
         pos = SVector{3,Float64}(u.sc[i].pos)
         vel = SVector{3,Float64}(u.sc[i].vel)
         out_temp = rvtoorbitalelement(pos, vel, planet)
-        out[i] = (a=out_temp[1], e=out_temp[2], i=out_temp[3], omega=out_temp[4], OMEGA=out_temp[5], nu=out_temp[6])
+        out[i] = (a=out_temp[1], e=out_temp[2], i=out_temp[3], OMEGA=out_temp[4], omega=out_temp[5], nu=out_temp[6])
     end
     out
 end
@@ -62,15 +62,15 @@ function density_getter(u, t, integrator)
     return Vector{Float64}(integrator.p.shared_buffers.densities)
 end
 
-planet = Venus("", SPICE_PATH)
+planet = Earth("", SPICE_PATH)
 
 ic = InitialCondition(
-    ra=planet.Rp_e + 66_597e3,
-    rp=planet.Rp_e + 186_600.0,
-    i=89.876,
-    ω=75.505,
-    Ω=104.115,
-    ν=180.1
+    a=6941490.352739325,
+    e=0.0007408798101263455,
+    i=28.53729148097649,
+    Ω=91.9860502548152,
+    ω=313.4645491179871,
+    ν=358.3883146354033
 )
 
 spacecraft = make_three_body_spacecraft(
@@ -84,30 +84,33 @@ spacecraft = make_three_body_spacecraft(
     id=102,
 )
 
-thruster = BaseThrusterModel(thrust=[40.0], direction=[deg2rad(180.0)], Δv=[0.0], Isp=[300.0], start_burn_time=[0.0], stop_burn_time=[-0.1])
-thruster_guidance = AerobrakingCampaignPropulsiveManeuverGuidanceModel(
-    maneuver_orbit_number=[4, 35, 40, 44],
-    maneuver_Δv=[0.428, -0.177, -0.07, -0.05]
-)
-density_model = GRAMAtmosphereModel(planet_name="venus")
+# thruster = BaseThrusterModel(thrust=[4.0], direction=[deg2rad(180.0)], Δv=[0.0], Isp=[300.0], start_burn_time=[0.0], stop_burn_time=[-0.1])
+# thruster_guidance = AerobrakingCampaignPropulsiveManeuverGuidanceModel(
+#     maneuver_orbit_number=[5, 36, 41, 45],
+#     maneuver_Δv=[0.428, -0.177, -0.07, -0.05]
+# )
+# density_model = GRAMAtmosphereModel(planet_name="venus")
+density_model = ConstantDensityModel(1e-20, 300.0) # Very low density to effectively disable atmospheric effects
 
 dynamic_effectors = (
     InverseSquaredJ2GravityModel(),
     # AerodynamicCoefficientfM(),
-    NBodyGravityModel(body_ids=(10,), primary_body_id=planet.spice_id),
+    # NBodyGravityModel(body_ids=(10,), primary_body_id=planet.spice_id),
 )
-guidance = GuidanceModel(guidance_effectors=(thruster_guidance,), guidance_rates=[30.0])
+# guidance = GuidanceModel(guidance_effectors=(thruster_guidance,), guidance_rates=[30.0])
+# guidance = GuidanceModel()
+# control_model = ControlModel()
 base_args = make_example_config(
     planet=planet,
     spacecraft=spacecraft,
     # mission_time=3_600.0*18.0*50.0, # 50 orbits
-    orbits=50,
-    initial_time=InitialTime(year=2014, month=5, day=19, hour=4, minute=7, second=32.0),
+    orbits=4,
+    initial_time=InitialTime(year=2014, month=5, day=19, hour=14, minute=7, second=32.0),
     dynamic_effectors=dynamic_effectors,
     density_model=density_model,
     orientation_sim=false,
     keplerian=false,
-    EI_km=500.0
+    EI_km=250.0
 )
 args = SimulationConfiguration(
     file_paths=base_args.file_paths,
@@ -117,15 +120,15 @@ args = SimulationConfiguration(
     dynamics_model=base_args.dynamics_model,
     guidance_model=base_args.guidance_model,
     navigation_model=base_args.navigation_model,
-    control_model=ControlModel(control_effectors=(thruster,), control_rates=[30.0]),
+    control_model=base_args.control_model,
     initial_time=base_args.initial_time,
     integration_tolerances=IntegrationTolerances(
-        reltol_orbit=1e-9,
-        abstol_orbit=1e-11,
+        reltol_orbit=1e-8,
+        abstol_orbit=1e-8,
         dt_max_orbit=10.0,
-        reltol_atmosphere=1e-9,
-        abstol_atmosphere=1e-11,
-        dt_max_atmosphere=1.0
+        reltol_atmosphere=1e-8,
+        abstol_atmosphere=1e-8,
+        dt_max_atmosphere=0.5
     )
 )
 

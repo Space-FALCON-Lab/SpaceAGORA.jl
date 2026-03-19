@@ -26,15 +26,40 @@ const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
     end
 end # struct InitialCondition
 
- # Convenience constructors
-function InitialCondition(;ra::Float64=0.0, rp::Float64=0.0, i::Float64=0.0, ω::Float64=0.0, Ω::Float64=0.0, ν::Float64=180.0)
-    if ra == 0.0 && rp == 0.0
-        return InitialCondition(0.0, 0.0, i, ω, Ω, ν, SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0))
+# Convenience constructor supporting both (a,e) and (ra,rp) forms.
+function InitialCondition(;
+    a::Union{Nothing, Float64}=nothing,
+    e::Union{Nothing, Float64}=nothing,
+    ra::Union{Nothing, Float64}=nothing,
+    rp::Union{Nothing, Float64}=nothing,
+    i::Float64=0.0,
+    ω::Float64=0.0,
+    Ω::Float64=0.0,
+    ν::Float64=180.0,
+    q::SVector{4, Float64}=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0),
+    ang_vel::SVector{3, Float64}=SVector{3, Float64}(0.0, 0.0, 0.0),
+)
+    has_ae = (a !== nothing) || (e !== nothing)
+    has_rarp = (ra !== nothing) || (rp !== nothing)
+    if has_ae && has_rarp
+        throw(ArgumentError("Specify either (a,e) or (ra,rp), not both."))
     end
 
-    a = (ra + rp) / 2.0
-    e = (ra - rp) / (ra + rp)
-    return InitialCondition(a, e, i, ω, Ω, ν, SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0)) # Set true anomaly to 180 degrees by default
+    if has_rarp
+        ra_val = something(ra, 0.0)
+        rp_val = something(rp, 0.0)
+        if ra_val == 0.0 && rp_val == 0.0
+            return InitialCondition(0.0, 0.0, i, ω, Ω, ν, q, ang_vel)
+        end
+        if (ra_val + rp_val) == 0.0
+            throw(ArgumentError("ra + rp must be non-zero."))
+        end
+        a_val = (ra_val + rp_val) / 2.0
+        e_val = (ra_val - rp_val) / (ra_val + rp_val)
+        return InitialCondition(a_val, e_val, i, ω, Ω, ν, q, ang_vel)
+    end
+
+    return InitialCondition(something(a, 0.0), something(e, 0.0), i, ω, Ω, ν, q, ang_vel)
 end
 
 # --- CRITICAL REFACTOR 1 ---

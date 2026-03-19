@@ -112,6 +112,7 @@ module SimConfig
         mission_time::Float64 = 90.0*60.0*20.0*10.0 # Total mission time in seconds (if mission_type is "Time")
         orientation_sim::Bool = false # Whether to simulate orientation dynamics (if false, only position and velocity are simulated)
         num_steps_to_save::Int = 1000 # Number of time steps to store in memory during the simulation before writing to a file
+        data_rate::Float64 = 10.0 # Fixed data output rate, used in saveat argument in solve
 
         function MissionConfiguration(
             mission_type::MissionType,
@@ -119,7 +120,8 @@ module SimConfig
             number_of_orbits::Integer,
             mission_time::Real,
             orientation_sim::Bool,
-            num_steps_to_save::Integer
+            num_steps_to_save::Integer,
+            data_rate::Float64=10.0
         )
             number_of_orbits > 0 || throw(ArgumentError("MissionConfiguration.number_of_orbits must be > 0; got $number_of_orbits."))
             mission_time > 0 || throw(ArgumentError("MissionConfiguration.mission_time must be > 0; got $mission_time."))
@@ -130,7 +132,8 @@ module SimConfig
                 Int(number_of_orbits),
                 Float64(mission_time),
                 orientation_sim,
-                Int(num_steps_to_save)
+                Int(num_steps_to_save),
+                data_rate
             )
         end
     end # struct MissionConfiguration
@@ -142,7 +145,8 @@ module SimConfig
         number_of_orbits::Integer=1,
         mission_time::Real=90.0*60.0*20.0*10.0,
         orientation_sim::Bool=false,
-        num_steps_to_save::Integer=1000
+        num_steps_to_save::Integer=1000,
+        data_rate::Float64=10.0
     )
         return MissionConfiguration(
             _parse_mission_type(mission_type),
@@ -150,7 +154,8 @@ module SimConfig
             number_of_orbits,
             mission_time,
             orientation_sim,
-            num_steps_to_save
+            num_steps_to_save,
+            data_rate
         )
     end
 

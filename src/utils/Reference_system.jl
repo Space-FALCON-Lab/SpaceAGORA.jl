@@ -37,28 +37,45 @@ function r_pintor_i(r_p::SVector{3, Float64}, v_p::SVector{3, Float64}, planet::
     return r_i, v_i
 end
 
-function orbitalelemtorv(oe::SVector{7, Float64}, planet)
+function orbitalelemtorv(oe::SVector{7, Float64}, planet::T)::Tuple{SVector{3, Float64}, SVector{3, Float64}} where T
     # From orbital element to ECI (Planet Centered Inertial)
 
     a, e, i, Ω, ω, vi = oe[1], oe[2], oe[3], oe[4], oe[5], oe[6]
 
-    p = a*(1 - e^2)
+    p = a*(1 - e*e)
     h = sqrt(planet.μ * p)
 
-    r_x = (h^2) / planet.μ * (1 / (1 + e * cos(vi))) * SVector{3, Float64}([cos(vi); sin(vi); 0])
-    v_x = planet.μ / h * SVector{3, Float64}([-sin(vi); e + cos(vi); 0])
+    r = p / (1 + e * cos(vi))
+    θ = ω + vi
+    sinω, cosω = sin(ω), cos(ω)
+    sinΩ, cosΩ = sin(Ω), cos(Ω)
+    sini, cosi = sin(i), cos(i)
+    cosθ, sinθ = cos(θ), sin(θ)
+    rVec1 = r * (cosθ * cosΩ - cosi * sinθ * sinΩ)
+    rVec2 = r * (cosθ * sinΩ + cosi * sinθ * cosΩ)
+    rVec3 = r * (sinθ * sini)
+    rVec = SVector{3, Float64}(rVec1, rVec2, rVec3)
+
+    # r_x = (h^2) / planet.μ * (1 / (1 + e * cos(vi))) * SVector{3, Float64}([cos(vi); sin(vi); 0])
+    # v_x = planet.μ / h * SVector{3, Float64}([-sin(vi); e + cos(vi); 0])
     
-    Q = SMatrix{3, 3, Float64}([-sin(Ω)*cos(i)*sin(ω)+cos(Ω)*cos(ω) cos(Ω)*cos(i)*sin(ω)+sin(Ω)*cos(ω) sin(i)*sin(ω); 
-         -sin(Ω)*cos(i)*cos(ω)-cos(Ω)*sin(ω) cos(Ω)*cos(i)*cos(ω)-sin(Ω)*sin(ω) sin(i)*cos(ω);
-          sin(Ω)*sin(i) -cos(Ω)*sin(i) cos(i)])
+    vVec1 = -planet.μ / h * (cosΩ * (e*sinω + sinθ) + cosi*(e*cosω+cosθ)*sinΩ)
+    vVec2 = -planet.μ / h * (sinΩ * (e*sinω + sinθ) - cosi*(e*cosω+cosθ)*cosΩ)
+    vVec3 = planet.μ / h * (e*cosω + cosθ) * sini
+    vVec = SVector{3, Float64}(vVec1, vVec2, vVec3)
 
-    R = Q' * r_x
-    V = Q' * v_x
+    # Q = SMatrix{3, 3, Float64}([-sinΩ*cosi*sinω+cosΩ*cosω cosΩ*cosi*sinω+sinΩ*cosω sini*sinω; 
+    #      -sinΩ*cosi*cosω-cosΩ*sinω cosΩ*cosi*cosω-sinΩ*sinω sini*cosω;
+    #       sinΩ*sini -cosΩ*sini cosi])
 
-    return collect(R), collect(V)
+    # R = Q' * r_x
+    # V = Q' * v_x
+
+    # return collect(R), collect(V)
+    return rVec, vVec
 end
 
-function orbitalelemtorv(oe, planet)
+function orbitalelemtorv(oe::T, planet::P)::Tuple{SVector{3, Float64}, SVector{3, Float64}} where {T, P}
     # Overload for InitialCondition struct
     a, e, i, Ω, ω, ν = oe.a, oe.e, oe.i, oe.Ω, oe.ω, oe.ν
     return orbitalelemtorv(SVector{7, Float64}([a, e, i, Ω, ω, ν, 0.0]), planet)

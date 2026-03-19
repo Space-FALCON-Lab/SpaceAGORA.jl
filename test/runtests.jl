@@ -8562,6 +8562,7 @@ end
 end
 
 include(joinpath(REPO_ROOT, "test", "coverage_parallel_telemetry_probes.jl"))
+include(joinpath(REPO_ROOT, "test", "gmat_scenario_matrix.jl"))
 
 @testset "JET Static Analysis" begin
     JET.@test_opt InitialCondition()

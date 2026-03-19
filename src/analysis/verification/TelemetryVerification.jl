@@ -832,35 +832,14 @@ end
     throw(ArgumentError("Unsupported N-body primary planet '$planet_name'"))
 end
 
-@inline function _nbody_body_id(body_name::String)::Int64
-    key = lowercase(strip(body_name))
-    if key == "sun"
-        return 10
-    elseif key == "moon"
-        return 301
-    elseif key == "mercury"
-        return 1
-    elseif key == "venus"
-        return 2
-    elseif key == "earth"
-        return 399
-    elseif key == "mars"
-        return 4
-    elseif key == "jupiter"
-        return 5
-    elseif key == "saturn"
-        return 6
-    elseif key == "uranus"
-        return 7
-    elseif key == "neptune"
-        return 8
-    elseif key == "pluto"
-        return 9
+@inline function _spice_body_id(body_name::String)::Int64
+    try
+        query_name = SimulationModel.DynamicEffectors._spice_query_name(body_name)
+        return Int64(bodn2c(uppercase(strip(query_name))))
+    catch err
+        throw(ArgumentError("Unable to resolve SPICE ID for body name $(repr(body_name)): $(sprint(showerror, err))"))
     end
-    throw(ArgumentError("Unsupported N-body body '$body_name'."))
 end
-
-@inline _nbody_body_ids(body_names::Vector{String}) = Tuple(_nbody_body_id(name) for name in body_names)
 
 struct ScaledAerodynamicCoefficientfM <: AbstractForceTorqueModel
     model::AerodynamicCoefficientfM
@@ -910,11 +889,13 @@ function _scenario_dynamic_effectors(
     end
 
     if !isempty(cfg.nbody_bodies)
+        body_ids = Tuple(_spice_body_id(name) for name in cfg.nbody_bodies)
+        primary_body_id = _spice_body_id(_nbody_primary_name(cfg.planet_name))
         push!(
             effectors,
             NBodyGravityModel(
-                body_ids=_nbody_body_ids(cfg.nbody_bodies),
-                primary_body_id=Int64(planet.spice_id),
+                body_ids=body_ids,
+                primary_body_id=primary_body_id,
                 planet=planet
             )
         )

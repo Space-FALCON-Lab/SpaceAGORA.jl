@@ -120,10 +120,10 @@ function make_example_config(;
             normalize=false
         ),
         mission_configuration=SM.MissionConfiguration(
-            mission_type=SM.MissionOrbits,
+            mission_type=SM.MissionTime,
             keplerian=keplerian,
-            number_of_orbits=orbits,
-            # mission_time=mission_time,
+            # number_of_orbits=orbits,
+            mission_time=mission_time,
             orientation_sim=orientation_sim,
             num_steps_to_save=1000,
             data_rate=data_rate

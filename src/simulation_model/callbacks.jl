@@ -1,22 +1,25 @@
 module SimulationCallbacks
-include("../utils/Reference_system.jl") # Get the reference system types for the callback
 
 using DifferentialEquations
 using LinearAlgebra
 using SPICE
 using Dates
+using GRAMSuite
+using ComponentArrays
 using ..SimulationModel: SPICE_LOCK, GRAM_LOCK, PlanetFrameEphemerisCache, rot
 using ..ParallelPolicy
 using ..EnvironmentModels
-using ..EnvironmentModels: getDensity, getHeatRate, NoAtmosphereModel
+using ..EnvironmentModels: getDensity, getDensityBatch!, getHeatRate, NoAtmosphereModel
 using ..DynamicEffectors: BaseThrusterModel, AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight, InverseSquaredJ2GravityModel
 using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
-using ..ConfigTypes: SaveData
+using ..ConfigTypes: SaveData, ODEParams
 using ..ControlEffectors: calcControlEffect!
 using ..GuidanceEffectors: calcGuidanceEffect!
 using ..NavigationEffectors: calcNavigationEffect!
-using ..SimConfig: SimulationConfiguration, MissionOrbits
+using ..SimConfig: SimulationConfiguration, MissionOrbits, MissionType
 export SaveField, default_save_fields, get_callbacks
+include("../utils/Reference_system.jl") # Get the reference system types for the callback
+
 
 @inline callback_verbose(integrator) = integrator.p.args.simulation_settings.verbose
 @inline callback_use_invokelatest() = get(ENV, "SPACEAGORA_DEV_HOT_RELOAD", "0") == "1"
@@ -256,6 +259,46 @@ end
     return _parse_bool_env("SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER", false)
 end
 
+@inline function _density_batch_mode()::Symbol
+    return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_DENSITY_BATCH_PARALLEL")
+end
+
+@inline function _density_batch_threshold()::Int
+    return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_DENSITY_BATCH_THRESHOLD", 2)
+end
+
+@inline function _density_batch_enabled(num_sats::Int)::Bool
+    mode = _density_batch_mode()
+    if mode == :off
+        return false
+    elseif mode == :on
+        return num_sats > 0
+    end
+    return num_sats >= _density_batch_threshold()
+end
+
+@inline function _gram_isolated_pool_mode()::Symbol
+    return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_GRAM_ISOLATED_POOL"; default="off")
+end
+
+@inline function _gram_isolated_pool_threshold()::Int
+    return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD", 4)
+end
+
+@inline function _gram_isolated_pool_max_workers()::Int
+    return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS", max(1, Threads.nthreads()))
+end
+
+@inline function _gram_isolated_pool_enabled(num_items::Int)::Bool
+    mode = _gram_isolated_pool_mode()
+    if mode == :off
+        return false
+    elseif mode == :on
+        return num_items > 0
+    end
+    return Threads.nthreads() > 1 && num_items >= _gram_isolated_pool_threshold()
+end
+
 @inline function _control_callback_parallel_mode()::Symbol
     return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_CONTROL_CALLBACK_PARALLEL")
 end
@@ -306,6 +349,18 @@ end
 @inline _is_gram_density_model(model)::Bool =
     model isa EnvironmentModels.GRAMAtmosphereModel ||
     model isa EnvironmentModels.GRAMAtmosphereModelSurrogate
+
+@inline function _gram_track_trajectory_supported(density_model)::Bool
+    _is_gram_density_model(density_model) || return false
+    hasproperty(density_model, :gram) || return false
+    hasproperty(density_model, :gram_atmosphere) || return false
+    gram_driver = try
+        getproperty(density_model, :gram)
+    catch
+        return false
+    end
+    return hasproperty(gram_driver, :generate_trajectory)
+end
 
 @inline function _density_callback_thread_decision(args::SimulationConfiguration, num_sats::Int)
     mode = _density_callback_parallel_mode()
@@ -385,6 +440,160 @@ end
         return density_models[sat_idx]
     end
     return p.args.environment_model.density_model
+end
+
+@inline function _density_batch_model_for_callback(p, num_sats::Int)
+    density_models = p.shared_buffers.density_models
+    if isempty(density_models)
+        return p.args.environment_model.density_model
+    end
+    if length(density_models) < num_sats
+        return nothing
+    end
+    first_model = density_models[1]
+    @inbounds for i in 2:num_sats
+        density_models[i] === first_model || return nothing
+    end
+    return first_model
+end
+
+@inline function _gram_isolated_pool_batch_model_for_callback(p, num_sats::Int)
+    _gram_isolated_pool_enabled(num_sats) || return nothing
+    isempty(p.shared_buffers.density_models) || return nothing
+    model = p.args.environment_model.density_model
+    return model isa EnvironmentModels.GRAMAtmosphereModel ? model : nothing
+end
+
+@inline function _gram_batch_elapsed_time(el_time::Float64, idx::Int)::Float64
+    return el_time
+end
+
+@inline function _gram_batch_elapsed_time(el_time::AbstractVector{<:Real}, idx::Int)::Float64
+    return Float64(el_time[idx])
+end
+
+@inline function _gram_isolated_pool_density_state(
+    model::EnvironmentModels.GRAMAtmosphereModel,
+    h::Float64,
+    lat::Float64,
+    lon::Float64,
+    el_time::Float64,
+    wind::Bool,
+    p,
+    model_lock::ReentrantLock
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    EI = p.args.environment_model.EI * 1e3
+    drag_state = h - EI <= 0.0
+    if h > 2000.0e3
+        return 0.0, p.args.environment_model.planet.T_ref, SVector{3, Float64}(0.0, 0.0, 0.0)
+    elseif !drag_state && !p.args.mission_configuration.keplerian
+        return EnvironmentModels.density_polyfit(h, p)
+    end
+    return GRAMSuite.density_state(
+        model.core,
+        h,
+        lat,
+        lon,
+        el_time,
+        wind;
+        lock_obj=model_lock,
+        vacuum_temperature=p.args.environment_model.planet.T_ref
+    )
+end
+
+function _ensure_gram_isolated_pool!(
+    p,
+    template_model::EnvironmentModels.GRAMAtmosphereModel,
+    workers::Int
+)::Tuple{Vector{Any}, Vector{ReentrantLock}}
+    shared = p.shared_buffers
+    models = shared.gram_isolated_pool_models
+    locks = shared.gram_isolated_pool_locks
+    if workers <= 0
+        return models, locks
+    end
+    rebuild = length(models) != workers || length(locks) != workers
+    if !rebuild
+        @inbounds for i in 1:workers
+            if !(models[i] isa EnvironmentModels.GRAMAtmosphereModel)
+                rebuild = true
+                break
+            end
+        end
+    end
+    if rebuild
+        empty!(models)
+        empty!(locks)
+        sizehint!(models, workers)
+        sizehint!(locks, workers)
+        @inbounds for _ in 1:workers
+            push!(models, deepcopy(template_model))
+            push!(locks, ReentrantLock())
+        end
+    end
+    return models, locks
+end
+
+@inline function _gram_isolated_pool_batch_eval!(
+    rhos::AbstractVector{Float64},
+    Ts::AbstractVector{Float64},
+    winds::AbstractVector{SVector{3, Float64}},
+    density_model,
+    hs::AbstractVector{<:Real},
+    lats::AbstractVector{<:Real},
+    lons::AbstractVector{<:Real},
+    el_time::Union{Float64, AbstractVector{<:Real}},
+    wind::Bool,
+    p;
+    allotment_hint::Int=max(1, Threads.nthreads())
+)::Bool
+    return false
+end
+
+function _gram_isolated_pool_batch_eval!(
+    rhos::AbstractVector{Float64},
+    Ts::AbstractVector{Float64},
+    winds::AbstractVector{SVector{3, Float64}},
+    density_model::EnvironmentModels.GRAMAtmosphereModel,
+    hs::AbstractVector{<:Real},
+    lats::AbstractVector{<:Real},
+    lons::AbstractVector{<:Real},
+    el_time::Union{Float64, AbstractVector{<:Real}},
+    wind::Bool,
+    p;
+    allotment_hint::Int=max(1, Threads.nthreads())
+)::Bool
+    n = length(hs)
+    _gram_isolated_pool_enabled(n) || return false
+    length(rhos) == n || return false
+    length(Ts) == n || return false
+    length(winds) == n || return false
+    length(lats) == n || return false
+    length(lons) == n || return false
+    if el_time isa AbstractVector{<:Real}
+        length(el_time) == n || return false
+    end
+
+    max_allotment = min(max(1, allotment_hint), _gram_isolated_pool_max_workers())
+    workers = ParallelPolicy.thread_worker_count(n, max_allotment)
+    workers > 1 || return false
+
+    models, locks = _ensure_gram_isolated_pool!(p, density_model, workers)
+    ParallelPolicy.threaded_foreach_worker(n, workers) do worker_id, idx
+        model_i = models[worker_id]::EnvironmentModels.GRAMAtmosphereModel
+        lock_i = locks[worker_id]
+        h = Float64(hs[idx])
+        lat = Float64(lats[idx])
+        lon = Float64(lons[idx])
+        t_i = _gram_batch_elapsed_time(el_time, idx)
+        rho_i, T_i, wind_i = _gram_isolated_pool_density_state(model_i, h, lat, lon, t_i, wind, p, lock_i)
+        @inbounds begin
+            rhos[idx] = rho_i
+            Ts[idx] = T_i
+            winds[idx] = wind_i
+        end
+    end
+    return true
 end
 
 mutable struct GramTrackCache
@@ -1151,8 +1360,9 @@ function _gram_track_cache_refresh!(
         end
 
         gram_traj_built = false
-        if _is_gram_density_model(density_model) &&
-           isdefined(density_model.gram, :generate_trajectory)
+        if _gram_track_trajectory_supported(density_model)
+            gram_driver = getproperty(density_model, :gram)
+            gram_atmosphere = getproperty(density_model, :gram_atmosphere)
             denom = max(1, n - 1)
             Δalt_km = (target_alt - alt) * 1e-3 / denom
             Δlat_deg = rad2deg(_angle_delta_rad(lat, target_lat)) / denom
@@ -1160,8 +1370,8 @@ function _gram_track_cache_refresh!(
             Δt = dt_segment / denom
 
             gen_track = () -> Base.invokelatest(
-                density_model.gram.generate_trajectory,
-                density_model.gram_atmosphere;
+                getproperty(gram_driver, :generate_trajectory),
+                gram_atmosphere;
                 initial_height=alt * 1e-3,
                 initial_latitude=rad2deg(lat),
                 initial_longitude=rad2deg(lon),
@@ -1192,14 +1402,35 @@ function _gram_track_cache_refresh!(
                 pos_k = pos + vel * (t_k - t)
                 rp_k, _ = r_intor_p!(pos_k, vel, planet)
                 alt_k, lat_k, lon_k = rtolatlong(rp_k, planet)
-                ρ_k, T_k, wind_k = getDensity(density_model, alt_k, lat_k, lon_k, t_k, true, p)
                 cache.times[k] = t_k
                 cache.alts[k] = alt_k
                 cache.lats[k] = lat_k
                 cache.lons[k] = lon_k
-                cache.rhos[k] = ρ_k
-                cache.Ts[k] = T_k
-                cache.winds[k] = wind_k
+            end
+            if !_gram_isolated_pool_batch_eval!(
+                cache.rhos,
+                cache.Ts,
+                cache.winds,
+                density_model,
+                cache.alts,
+                cache.lats,
+                cache.lons,
+                cache.times,
+                true,
+                p
+            )
+                getDensityBatch!(
+                    cache.rhos,
+                    cache.Ts,
+                    cache.winds,
+                    density_model,
+                    cache.alts,
+                    cache.lats,
+                    cache.lons,
+                    cache.times,
+                    true,
+                    p
+                )
             end
         end
         cache.valid = true
@@ -1350,9 +1581,9 @@ function get_callbacks(
         push!(callbacks, get_thermal_callback(num_sats, args))
     end
 
-    if _requires_orbit_end_callback(args)
-        push!(callbacks, get_orbit_end_callback(num_sats))
-    end
+    # if _requires_orbit_end_callback(args)
+    push!(callbacks, get_orbit_end_callback(num_sats))
+    # end
 
     if _requires_entry_end_callback(effectors, args)
         push!(callbacks, get_entry_end_callback(num_sats, args))
@@ -1365,11 +1596,11 @@ function get_callbacks(
     append!(callbacks, get_navigation_callbacks(num_sats, args))
     append!(callbacks, get_control_callbacks(num_sats, args))
     append!(callbacks, get_guidance_callbacks(num_sats, args))
+    push!(callbacks, get_periapsis_save_callback(num_sats))
     if _requires_quaternion_projection_callback(args)
         push!(callbacks, get_quaternion_projection_callback(num_sats, args))
     end
     push!(callbacks, get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values))
-
     return CallbackSet(callbacks...)
 end
 
@@ -1458,7 +1689,7 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
     cache_cfg = _gram_track_cache_config()
     stats_enabled = _gram_runtime_stats_enabled()
     target_include_j2 = _gram_track_cache_target_use_j2() && _uses_j2_gravity_effector(effectors)
-    function update_density_sat!(i::Int, p, u, t, segment_end_t::Float64)
+    function update_density_sat!(i::Int, p::ODEParams, u::ComponentVector, t::Float64, segment_end_t::Float64)
         if stats_enabled
             _gram_runtime_stats_update!(s -> begin
                 s.density_calls += 1
@@ -1578,6 +1809,25 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
         u = integrator.u
         decision = _density_callback_thread_decision(args, num_sats)
         use_threads = decision.use_threads
+        use_batch = false
+        batch_model = nothing
+        use_gram_isolated_pool = false
+        if _density_batch_enabled(num_sats)
+            batch_model = _density_batch_model_for_callback(p, num_sats)
+            if !(batch_model === nothing) && !_gram_track_cache_enabled(cache_cfg, batch_model)
+                use_batch = true
+            end
+        end
+        if !use_batch
+            gram_pool_model = _gram_isolated_pool_batch_model_for_callback(p, num_sats)
+            if !(gram_pool_model === nothing) && !_gram_track_cache_enabled(cache_cfg, gram_pool_model)
+                use_batch = true
+                batch_model = gram_pool_model
+                use_gram_isolated_pool = true
+            end
+        elseif batch_model isa EnvironmentModels.GRAMAtmosphereModel
+            use_gram_isolated_pool = true
+        end
         started_ns = time_ns()
         segment_end_t = try
             Float64(integrator.sol.prob.tspan[2])
@@ -1585,7 +1835,67 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
             integrator.t + cache_cfg.orbit_horizon_s
         end
 
-        if use_threads
+        if use_batch
+            if stats_enabled
+                _gram_runtime_stats_update!(s -> begin
+                    s.density_calls += num_sats
+                    s.direct_calls += num_sats
+                end)
+            end
+            alts = p.shared_buffers.density_batch_altitudes
+            lats = p.shared_buffers.density_batch_latitudes
+            lons = p.shared_buffers.density_batch_longitudes
+            if use_threads
+                ParallelPolicy.threaded_foreach_persistent(:density_callback, num_sats, decision.allotment) do i
+                    @inbounds begin
+                        pos = SVector{3, Float64}(u.sc[i].pos)
+                        vel = SVector{3, Float64}(u.sc[i].vel)
+                        rp, _ = r_intor_p!(pos, vel, p.args.environment_model.planet)
+                        alt, lat, lon = rtolatlong(rp, p.args.environment_model.planet)
+                        alts[i] = alt
+                        lats[i] = lat
+                        lons[i] = lon
+                    end
+                end
+            else
+                @inbounds for i in 1:num_sats
+                    pos = SVector{3, Float64}(u.sc[i].pos)
+                    vel = SVector{3, Float64}(u.sc[i].vel)
+                    rp, _ = r_intor_p!(pos, vel, p.args.environment_model.planet)
+                    alt, lat, lon = rtolatlong(rp, p.args.environment_model.planet)
+                    alts[i] = alt
+                    lats[i] = lat
+                    lons[i] = lon
+                end
+            end
+            pooled = use_gram_isolated_pool && _gram_isolated_pool_batch_eval!(
+                p.shared_buffers.densities,
+                p.shared_buffers.temperatures,
+                p.shared_buffers.winds,
+                batch_model,
+                alts,
+                lats,
+                lons,
+                Float64(integrator.t),
+                true,
+                p;
+                allotment_hint=decision.allotment
+            )
+            if !pooled
+                getDensityBatch!(
+                    p.shared_buffers.densities,
+                    p.shared_buffers.temperatures,
+                    p.shared_buffers.winds,
+                    batch_model,
+                    alts,
+                    lats,
+                    lons,
+                    Float64(integrator.t),
+                    true,
+                    p
+                )
+            end
+        elseif use_threads
             ParallelPolicy.threaded_foreach_persistent(:density_callback, num_sats, decision.allotment) do i
                 @inbounds update_density_sat!(i, p, u, integrator.t, segment_end_t)
             end
@@ -1723,6 +2033,7 @@ function get_orbit_end_callback(num_sats::Int)
             vel = SVector{3, Float64}(u.sc[i].vel)
             out[i] = -dot(pos, vel)
         end
+        # println("Orbit end callback condition evaluated at time $(integrator.t) seconds with outputs: $(out)")
     end
 
     function affect!(integrator, idx::Int64)
@@ -1730,7 +2041,7 @@ function get_orbit_end_callback(num_sats::Int)
 
         p.orbit_counter[idx] += 1 # Increment the orbit counter in the shared buffers
         completed_orbits = p.orbit_counter[idx] - 1
-        target_orbits = p.args.mission_configuration.number_of_orbits
+        target_orbits = p.args.mission_configuration.mission_type == MissionOrbits ? p.args.mission_configuration.number_of_orbits : Inf
         # Check for orbit completion and log it (placeholder logic)
         if callback_verbose(integrator)
             println("Orbit $(completed_orbits) completed by Satellite $idx at time $(integrator.t) seconds!")
@@ -1923,7 +2234,9 @@ function get_data_saving_callback(
     function save_func(u, t, integrator)
         return _save_snapshot(save_fields, u, t, integrator)
     end
-    return SavingCallback(save_func, saved_values; save_everystep=true)
+    data_rate = args.mission_configuration.data_rate
+    data_rate > 0.0 || throw(ArgumentError("mission_configuration.data_rate must be > 0.0, got $data_rate."))
+    return SavingCallback(save_func, saved_values; saveat=data_rate, save_everystep=false)
 end
 
 function get_navigation_callbacks(num_sats::Int, args::SimulationConfiguration)::Vector{DiscreteCallback}
@@ -2036,7 +2349,7 @@ function get_periapsis_save_callback(num_sats::Int)
     function condition!(out, u, t, integrator)
         @inbounds for i in 1:num_sats
             OE = rvtoorbitalelement(SVector{3, Float64}(u.sc[i].pos), SVector{3, Float64}(u.sc[i].vel), integrator.p.args.environment_model.planet)
-            out[i] = OE[6] # Return the true anomaly (ν) which is zero at periapsis
+            out[i] = OE[6] - π # Return the true anomaly minus pi (ν) which switches from positive to negative at periapsis (ν = 0)
         end
     end
 
@@ -2049,7 +2362,7 @@ function get_periapsis_save_callback(num_sats::Int)
         end
         # Save the state at periapsis to a file or data structure as needed
     end
-
-    return VectorContinuousCallback(condition!, affect!, nothing, num_sats)
+    # out = zeros(num_sats) # Output array to store the condition for each satellite
+    return VectorContinuousCallback(condition!, nothing, affect!, num_sats)
 end
 end # module

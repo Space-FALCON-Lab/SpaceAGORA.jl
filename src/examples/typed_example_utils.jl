@@ -100,7 +100,9 @@ end
 function make_example_config(;
     planet::SM.AbstractPlanet,
     spacecraft::SM.SpacecraftModel,
-    mission_time::Float64,
+    # mission_time::Float64=1.0e6,
+    orbits::Int64=50,
+    data_rate::Float64=10.0,
     initial_time::SM.InitialTime,
     dynamic_effectors::Tuple=(SM.InverseSquaredJ2GravityModel(),),
     density_model::SM.AbstractDensityModel=SM.NoAtmosphereModel(),
@@ -120,10 +122,11 @@ function make_example_config(;
         mission_configuration=SM.MissionConfiguration(
             mission_type=SM.MissionTime,
             keplerian=keplerian,
-            number_of_orbits=1,
+            # number_of_orbits=orbits,
             mission_time=mission_time,
             orientation_sim=orientation_sim,
-            num_steps_to_save=1000
+            num_steps_to_save=1000,
+            data_rate=data_rate
         ),
         environment_model=SM.EnvironmentModel(
             planet=planet,
@@ -149,9 +152,63 @@ function make_example_config(;
     )
 end
 
-function run_and_report(args::SM.SimulationConfiguration)
+function make_example_config(;
+    planet::SM.AbstractPlanet,
+    spacecraft::SM.SpacecraftModel,
+    mission_time::Float64=1.0e6,
+    data_rate::Float64=10.0,
+    initial_time::SM.InitialTime,
+    dynamic_effectors::Tuple=(SM.InverseSquaredJ2GravityModel(),),
+    density_model::SM.AbstractDensityModel=SM.NoAtmosphereModel(),
+    orientation_sim::Bool=false,
+    keplerian::Bool=true,
+    EI_km::Float64=300.0,
+    verbose::Bool=true
+)
+    return SM.SimulationConfiguration(
+        simulation_settings=SM.SimulationSettings(
+            results=true,
+            verbose=verbose,
+            generate_plots=false,
+            results_directory=joinpath(REPO_ROOT, "output"),
+            normalize=false
+        ),
+        mission_configuration=SM.MissionConfiguration(
+            mission_type=SM.MissionTime,
+            keplerian=keplerian,
+            # number_of_orbits=orbits,
+            mission_time=mission_time,
+            orientation_sim=orientation_sim,
+            num_steps_to_save=1000,
+            data_rate=data_rate
+        ),
+        environment_model=SM.EnvironmentModel(
+            planet=planet,
+            EI=EI_km,
+            density_model=density_model,
+            thermal_model=SM.MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
+            topography=false,
+            wind=false
+        ),
+        dynamics_model=SM.DynamicsModel([spacecraft], dynamic_effectors),
+        guidance_model=SM.GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
+        navigation_model=SM.NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
+        control_model=SM.ControlModel(control_effectors=(), control_rates=Float64[]),
+        initial_time=initial_time,
+        integration_tolerances=SM.IntegrationTolerances(
+            reltol_orbit=1e-8,
+            abstol_orbit=1e-8,
+            dt_max_orbit=20.0,
+            reltol_atmosphere=1e-8,
+            abstol_atmosphere=1e-8,
+            dt_max_atmosphere=0.2
+        )
+    )
+end
+
+function run_and_report(args::SM.SimulationConfiguration; save_fields=nothing)
     args_eff = _example_smoke_args(args)
-    t = @elapsed run_simulation(args_eff)
+    t = @elapsed run_simulation(args_eff; save_fields=save_fields)
     csv_path = joinpath(args_eff.simulation_settings.results_directory, "simulation_results.csv")
     if args_eff.simulation_settings.results && isfile(csv_path)
         df = CSV.read(csv_path, DataFrame)

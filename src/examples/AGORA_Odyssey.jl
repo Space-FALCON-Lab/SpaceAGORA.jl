@@ -69,16 +69,48 @@ function SimulationModel.calcControlEffect!(
     return nothing
 end
 
+function geo_getter(u, t, integrator)
+    n = length(u.sc)
+    planet = integrator.p.args.environment_model.planet
+    out = Vector{NamedTuple{(:alt_m, :lat_rad, :lon_rad), Tuple{Float64, Float64, Float64}}}(undef, n)
+    @inbounds for i in 1:n
+        pos = SVector{3,Float64}(u.sc[i].pos)
+        vel = SVector{3,Float64}(u.sc[i].vel)
+        rp, _ = r_intor_p!(pos, vel, planet)
+        alt, lat, lon = rtolatlong(rp, planet)
+        out[i] = (alt_m=alt, lat_rad=lat, lon_rad=lon)
+    end
+    out
+end
+
+function oe_getter(u, t, integrator)
+    n = length(u.sc)
+    planet = integrator.p.args.environment_model.planet
+    out = Vector{NamedTuple{(:a, :e, :i, :omega, :OMEGA, :nu), Tuple{Float64, Float64, Float64, Float64, Float64, Float64}}}(undef, n)
+    @inbounds for i in 1:n
+        pos = SVector{3,Float64}(u.sc[i].pos)
+        vel = SVector{3,Float64}(u.sc[i].vel)
+        out_temp = rvtoorbitalelement(pos, vel, planet)
+        out[i] = (a=out_temp[1], e=out_temp[2], i=out_temp[3], omega=out_temp[4], OMEGA=out_temp[5], nu=out_temp[6])
+    end
+    out
+end
+
+function density_getter(u, t, integrator)
+    return Vector{Float64}(integrator.p.shared_buffers.densities)
+end
+
+
 planet = Mars("", SPICE_PATH)
 smoke_mode = get(ENV, "SPACEAGORA_EXAMPLE_SMOKE", "0") == "1"
 
 ic = InitialCondition(
     ra=28_559.615e3,
-    rp=planet.Rp_e + 87_000.0,
+    rp=planet.Rp_e + 95_000.0,
     i=93.522,
     ω=109.7454,
     Ω=28.1517,
-    ν=175.0
+    ν=180.1
 )
 
 spacecraft = make_three_body_spacecraft(
@@ -88,50 +120,66 @@ spacecraft = make_three_body_spacecraft(
     panel_mass_each=10.0,
     panel_offset_y=2.6 / 2.0 + 3.89 / 4.0,
     ic=ic,
-    prop_mass=50.0,
+    prop_mass=60.0,
     id=100
 )
 
-mars_harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "Mars50c.csv")
+mars_harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "GMM3.csv")
 dynamic_effectors = smoke_mode ? (InverseSquaredGravityModel(),) : (
     InverseSquaredGravityModel(),
     GravitationalHarmonicsModel(20, 20, mars_harmonics_file, planet),
-    AerodynamicCoefficientfM()
+    AerodynamicCoefficientfM(),
+    NBodyGravityModel(body_names=("Sun",), primary_body_name=planet.name),
 )
 # density_model = smoke_mode ? NoAtmosphereModel() : ConstantDensityModel(2e-8, 180.0)
-density_model = NoAtmosphereModel()
-# density_model = GRAMAtmosphereModel(planet_name="mars")
+# density_model = NoAtmosphereModel()
+density_model = GRAMAtmosphereModel(planet_name="mars")
 base_args = make_example_config(
     planet=planet,
     spacecraft=spacecraft,
-    mission_time=3_600.0*100.0,
+    # mission_time=3_600.0*18.0*50.0, # 50 orbits
+    orbits=100,
     initial_time=InitialTime(year=2001, month=11, day=6, hour=19, minute=0, second=32.0),
     dynamic_effectors=dynamic_effectors,
     density_model=density_model,
     orientation_sim=false,
     keplerian=smoke_mode,
-    EI_km=125.0
+    EI_km=160.0
 )
 
-thruster = TimedVelocityThrusterModel(4.0, 900.0, 1_200.0)
+# thruster = TimedVelocityThrusterModel(4.0, 900.0, 1_200.0)
+thruster = BaseThrusterModel(thrust=[4.0], direction=[deg2rad(180.0)], Δv=[0.0], Isp=[300.0], start_burn_time=[0.0], stop_burn_time=[-0.1])
+thruster_guidance = AerobrakingCampaignPropulsiveManeuverGuidanceModel(
+    maneuver_orbit_number=[7, 14, 26, 30, 35, 47, 54, 69, 72, 80, 87, 110, 128, 161, 179, 195, 211, 223, 239, 251, 263, 274, 287, 299, 311],
+    maneuver_Δv=[0.15, -0.15, -0.1, -0.1, -0.2, -0.2, 0.3, -0.15, -0.15, -0.15, 0.15, 0.15, 1.0, 0.84, 0.6, 0.84, 0.6, 0.6, 1.2, 1.0, 1.2, 1.2, 1.0, 1.0, 1.2]
+)
+guidance = GuidanceModel(guidance_effectors=(thruster_guidance,), guidance_rates=[30.0])
 args = SimulationConfiguration(
     file_paths=base_args.file_paths,
     simulation_settings=base_args.simulation_settings,
     mission_configuration=base_args.mission_configuration,
     environment_model=base_args.environment_model,
     dynamics_model=base_args.dynamics_model,
-    guidance_model=base_args.guidance_model,
+    guidance_model=guidance,
     navigation_model=base_args.navigation_model,
     control_model=ControlModel(control_effectors=(thruster,), control_rates=[30.0]),
     initial_time=base_args.initial_time,
     integration_tolerances=IntegrationTolerances(
         reltol_orbit=1e-8,
         abstol_orbit=1e-8,
-        dt_max_orbit=20.0,
+        dt_max_orbit=30.0,
         reltol_atmosphere=1e-8,
         abstol_atmosphere=1e-8,
-        dt_max_atmosphere=0.2
+        dt_max_atmosphere=0.5
     )
 )
+save_fields = vcat(
+    default_save_fields(args),   # keep existing fields
+    [
+        SaveField(:geo, geo_getter; per_satellite=true, column_prefix="geo"),
+        SaveField(:orbital_elements, oe_getter; per_satellite=true, column_prefix="oe"),
+        SaveField(:density, density_getter; per_satellite=true, column_prefix="density")
+    ]
+)
 
-run_and_report(args)
+run_and_report(args; save_fields=save_fields)

@@ -115,7 +115,9 @@ function Base.deepcopy_internal(model::GRAMAtmosphereModel, stackdict::IdDict)
         return stackdict[model]
     end
 
-    copied = GRAMAtmosphereModel(deepcopy(model.core))
+    copied = lock(GRAM_LOCK) do
+        GRAMAtmosphereModel(deepcopy(model.core))
+    end
     stackdict[model] = copied
     return copied
 end
@@ -125,11 +127,13 @@ function Base.deepcopy_internal(model::GRAMAtmosphereModelSurrogate, stackdict::
         return stackdict[model]
     end
 
-    copied = GRAMAtmosphereModelSurrogate(
-        deepcopy(model.base_model),
-        model.surrogate_file,
-        model.point_fallback_below_m
-    )
+    copied = lock(GRAM_LOCK) do
+        GRAMAtmosphereModelSurrogate(
+            deepcopy(model.base_model),
+            model.surrogate_file,
+            model.point_fallback_below_m
+        )
+    end
     stackdict[model] = copied
     return copied
 end
@@ -162,6 +166,180 @@ function getDensity(model::ExponentialAtmosphereModel, h::Float64, lat::Float64,
     T = 200.0
     wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
     return rho, T, wind_vec
+end
+
+@inline function _batch_elapsed_time(el_time::Float64, idx::Int)::Float64
+    return el_time
+end
+
+@inline function _batch_elapsed_time(el_time::AbstractVector{<:Real}, idx::Int)::Float64
+    return Float64(el_time[idx])
+end
+
+@inline function _validate_density_batch_lengths(
+    rhos::AbstractVector{Float64},
+    Ts::AbstractVector{Float64},
+    winds::AbstractVector{SVector{3, Float64}},
+    hs::AbstractVector{<:Real},
+    lats::AbstractVector{<:Real},
+    lons::AbstractVector{<:Real},
+    el_time::Union{Float64, AbstractVector{<:Real}}
+)::Int
+    n = length(hs)
+    length(rhos) == n || throw(ArgumentError("getDensityBatch!: rhos length $(length(rhos)) must match hs length $n."))
+    length(Ts) == n || throw(ArgumentError("getDensityBatch!: Ts length $(length(Ts)) must match hs length $n."))
+    length(winds) == n || throw(ArgumentError("getDensityBatch!: winds length $(length(winds)) must match hs length $n."))
+    length(lats) == n || throw(ArgumentError("getDensityBatch!: lats length $(length(lats)) must match hs length $n."))
+    length(lons) == n || throw(ArgumentError("getDensityBatch!: lons length $(length(lons)) must match hs length $n."))
+    if el_time isa AbstractVector{<:Real}
+        length(el_time) == n || throw(ArgumentError("getDensityBatch!: el_time vector length $(length(el_time)) must match hs length $n."))
+    end
+    return n
+end
+
+@inline function _density_scalar_for_batch(
+    model,
+    h::Float64,
+    lat::Float64,
+    lon::Float64,
+    el_time::Float64,
+    wind::Bool,
+    p
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    return getDensity(model, h, lat, lon, el_time, wind, p)
+end
+
+@inline function _density_scalar_for_batch(
+    model::ExponentialAtmosphereModel,
+    h::Float64,
+    lat::Float64,
+    lon::Float64,
+    el_time::Float64,
+    wind::Bool,
+    p
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    return getDensity(model, h, lat, lon, el_time, wind)
+end
+
+@inline function _density_scalar_for_batch(
+    model::NRLMSISE00AtmosphereModel,
+    h::Float64,
+    lat::Float64,
+    lon::Float64,
+    el_time::Float64,
+    wind::Bool,
+    p
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    return getDensity(model, h, lat, lon, el_time, wind)
+end
+
+function getDensityBatch!(
+    rhos::AbstractVector{Float64},
+    Ts::AbstractVector{Float64},
+    winds::AbstractVector{SVector{3, Float64}},
+    model::NoAtmosphereModel,
+    hs::AbstractVector{<:Real},
+    lats::AbstractVector{<:Real},
+    lons::AbstractVector{<:Real},
+    el_time::Union{Float64, AbstractVector{<:Real}},
+    wind::Bool,
+    p::params
+)::Nothing where params
+    n = _validate_density_batch_lengths(rhos, Ts, winds, hs, lats, lons, el_time)
+    T_ref = p.args.environment_model.planet.T_ref
+    zero_wind = SVector{3, Float64}(0.0, 0.0, 0.0)
+    @inbounds for i in 1:n
+        rhos[i] = 0.0
+        Ts[i] = T_ref
+        winds[i] = zero_wind
+    end
+    return nothing
+end
+
+function getDensityBatch!(
+    rhos::AbstractVector{Float64},
+    Ts::AbstractVector{Float64},
+    winds::AbstractVector{SVector{3, Float64}},
+    model::ExponentialAtmosphereModel,
+    hs::AbstractVector{<:Real},
+    lats::AbstractVector{<:Real},
+    lons::AbstractVector{<:Real},
+    el_time::Union{Float64, AbstractVector{<:Real}},
+    wind::Bool,
+    p::params
+)::Nothing where params
+    n = _validate_density_batch_lengths(rhos, Ts, winds, hs, lats, lons, el_time)
+    zero_wind = SVector{3, Float64}(0.0, 0.0, 0.0)
+    @inbounds for i in 1:n
+        h = Float64(hs[i])
+        rhos[i] = model.ρ_ref * exp((model.h_ref - h) / model.H)
+        Ts[i] = 200.0
+        winds[i] = zero_wind
+    end
+    return nothing
+end
+
+function getDensityBatch!(
+    rhos::AbstractVector{Float64},
+    Ts::AbstractVector{Float64},
+    winds::AbstractVector{SVector{3, Float64}},
+    model::PolynomialFitAtmosphereModel,
+    hs::AbstractVector{<:Real},
+    lats::AbstractVector{<:Real},
+    lons::AbstractVector{<:Real},
+    el_time::Union{Float64, AbstractVector{<:Real}},
+    wind::Bool,
+    p::params
+)::Nothing where params
+    n = _validate_density_batch_lengths(rhos, Ts, winds, hs, lats, lons, el_time)
+    coeffs = model.polyfit_coeffs
+    T_ref = p.args.environment_model.planet.T_ref
+    zero_wind = SVector{3, Float64}(0.0, 0.0, 0.0)
+    if isempty(coeffs)
+        @inbounds for i in 1:n
+            rhos[i] = 1.0
+            Ts[i] = T_ref
+            winds[i] = zero_wind
+        end
+        return nothing
+    end
+    @inbounds for i in 1:n
+        h_km = Float64(hs[i]) * 1e-3
+        exponent = coeffs[1]
+        for j in 2:length(coeffs)
+            exponent = muladd(exponent, h_km, coeffs[j])
+        end
+        rhos[i] = exp(exponent)
+        Ts[i] = T_ref
+        winds[i] = zero_wind
+    end
+    return nothing
+end
+
+function getDensityBatch!(
+    rhos::AbstractVector{Float64},
+    Ts::AbstractVector{Float64},
+    winds::AbstractVector{SVector{3, Float64}},
+    model::AbstractDensityModel,
+    hs::AbstractVector{<:Real},
+    lats::AbstractVector{<:Real},
+    lons::AbstractVector{<:Real},
+    el_time::Union{Float64, AbstractVector{<:Real}},
+    wind::Bool,
+    p::params
+)::Nothing where params
+    n = _validate_density_batch_lengths(rhos, Ts, winds, hs, lats, lons, el_time)
+    @inbounds for i in 1:n
+        h = Float64(hs[i])
+        lat = Float64(lats[i])
+        lon = Float64(lons[i])
+        t_i = _batch_elapsed_time(el_time, i)
+        rho_i, T_i, wind_i = _density_scalar_for_batch(model, h, lat, lon, t_i, wind, p)
+        rhos[i] = rho_i
+        Ts[i] = T_i
+        winds[i] = wind_i
+    end
+    return nothing
 end
 
 function getDensity(model::PolynomialFitAtmosphereModel, h::Union{Float64, Vector{Float64}}, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params

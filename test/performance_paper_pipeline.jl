@@ -20,10 +20,13 @@ Base.@kwdef struct ModeRunArtifacts
     elapsed_s::Float64
     bench_elapsed_s::Float64
     orbit_elapsed_s::Float64
+    entry_duration_elapsed_s::Float64
     raw_path::String
     summary_path::String
     orbit_raw_path::String
     orbit_summary_path::String
+    entry_duration_raw_path::String
+    entry_duration_summary_path::String
     report_path::String
     stage_timing_path::String = ""
     hardware_info_path::String = ""
@@ -121,16 +124,21 @@ function run_mode(
     summary_df = DataFrame()
     orbit_raw_df = DataFrame()
     orbit_summary_df = DataFrame()
+    entry_duration_raw_df = DataFrame()
+    entry_duration_summary_df = DataFrame()
+    density_backend_breakdown_df = DataFrame()
     bench_elapsed_s = 0.0
     split_gate_elapsed_s = 0.0
     split_gate_df = nothing
     split_gate_csv_path = nothing
     split_gate_report_path = nothing
     orbit_elapsed_s = 0.0
+    entry_duration_elapsed_s = 0.0
     withenv("SPACEAGORA_PERF_PARALLEL_BACKEND" => backend) do
         bench_started_ns = time_ns()
         raw_df = run_benchmarks(config.profile, cases, planet)
         summary_df = summarize_results(raw_df)
+        density_backend_breakdown_df = summarize_density_backend_breakdown(raw_df)
         bench_elapsed_s = (time_ns() - bench_started_ns) / 1e9
 
         if _split_rollout_enabled()
@@ -146,18 +154,38 @@ function run_mode(
         orbit_raw_df = run_per_orbit_for_scenarios(config.profile, cases, planet)
         orbit_summary_df = summarize_per_orbit_results(orbit_raw_df)
         orbit_elapsed_s = (time_ns() - orbit_started_ns) / 1e9
+
+        entry_duration_started_ns = time_ns()
+        entry_duration_raw_df = run_entry_duration_sweep(config.profile, cases, planet)
+        entry_duration_summary_df = summarize_entry_duration_results(entry_duration_raw_df)
+        entry_duration_elapsed_s = (time_ns() - entry_duration_started_ns) / 1e9
     end
-    elapsed_s = bench_elapsed_s + split_gate_elapsed_s + orbit_elapsed_s
+    elapsed_s = bench_elapsed_s + split_gate_elapsed_s + orbit_elapsed_s + entry_duration_elapsed_s
 
     raw_path = joinpath(mode_outdir, "runtime_raw_$(config.profile.name)_$(mode)_$(stamp).csv")
     summary_path = joinpath(mode_outdir, "runtime_summary_$(config.profile.name)_$(mode)_$(stamp).csv")
     orbit_raw_path = joinpath(mode_outdir, "runtime_per_orbit_raw_$(config.profile.name)_$(mode)_$(stamp).csv")
     orbit_summary_path = joinpath(mode_outdir, "runtime_per_orbit_summary_$(config.profile.name)_$(mode)_$(stamp).csv")
+    entry_duration_raw_path = joinpath(mode_outdir, "runtime_entry_duration_raw_$(config.profile.name)_$(mode)_$(stamp).csv")
+    entry_duration_summary_path = joinpath(mode_outdir, "runtime_entry_duration_summary_$(config.profile.name)_$(mode)_$(stamp).csv")
     stage_timing_path = joinpath(mode_outdir, "runtime_stage_timing_$(config.profile.name)_$(mode)_$(stamp).csv")
     hardware_info_path = joinpath(mode_outdir, "runtime_hardware_info_$(config.profile.name)_$(mode)_$(stamp).csv")
     report_path = joinpath(mode_outdir, "runtime_report_$(config.profile.name)_$(mode)_$(stamp).md")
     plot_stamp = "$(mode)_$(stamp)"
-    plot_paths = generate_runtime_plots(mode_outdir, config.profile, plot_stamp, raw_df, summary_df, orbit_summary_df)
+    hw = _runtime_hardware_snapshot()
+    inner_hint_layer_df = _inner_hint_layer_report_df(config.profile, hw)
+    plot_paths = generate_runtime_plots(
+        mode_outdir,
+        config.profile,
+        plot_stamp,
+        raw_df,
+        summary_df,
+        orbit_summary_df,
+        entry_duration_summary_df;
+        split_gate_df=split_gate_df,
+        inner_hint_layer_df=inner_hint_layer_df,
+        density_backend_breakdown_df=density_backend_breakdown_df
+    )
 
     stage_names = ["run_benchmarks"]
     stage_elapsed = [bench_elapsed_s]
@@ -166,11 +194,12 @@ function run_mode(
         push!(stage_elapsed, split_gate_elapsed_s)
     end
     push!(stage_names, "run_per_orbit")
+    push!(stage_names, "run_entry_duration_sweep")
     push!(stage_names, "total")
     push!(stage_elapsed, orbit_elapsed_s)
+    push!(stage_elapsed, entry_duration_elapsed_s)
     push!(stage_elapsed, elapsed_s)
     stage_timing_df = DataFrame(stage=stage_names, elapsed_s=stage_elapsed)
-    hw = _runtime_hardware_snapshot()
     hardware_info_df = DataFrame([
         (
             profile=config.profile.name,
@@ -190,6 +219,8 @@ function run_mode(
     CSV.write(summary_path, summary_df)
     CSV.write(orbit_raw_path, orbit_raw_df)
     CSV.write(orbit_summary_path, orbit_summary_df)
+    CSV.write(entry_duration_raw_path, entry_duration_raw_df)
+    CSV.write(entry_duration_summary_path, entry_duration_summary_df)
     CSV.write(stage_timing_path, stage_timing_df)
     CSV.write(hardware_info_path, hardware_info_df)
     write_report(
@@ -197,17 +228,20 @@ function run_mode(
         config.profile,
         raw_df,
         summary_df,
-        orbit_summary_df;
+        orbit_summary_df,
+        entry_duration_summary_df;
         plot_paths=plot_paths,
         split_gate_df=split_gate_df,
         split_gate_csv_path=split_gate_csv_path,
         split_gate_report_path=split_gate_report_path,
-        stage_timing_df=stage_timing_df
+        stage_timing_df=stage_timing_df,
+        entry_duration_summary_csv_path=entry_duration_summary_path
     )
 
     println(
         "[paper-pipeline] mode=$(mode) completed in $(round(elapsed_s; digits=3)) s " *
-        "(run_benchmarks=$(round(bench_elapsed_s; digits=3)) s, split_gate=$(round(split_gate_elapsed_s; digits=3)) s, mission_time_sweep=$(round(orbit_elapsed_s; digits=3)) s, plots=$(length(plot_paths)))"
+        "(run_benchmarks=$(round(bench_elapsed_s; digits=3)) s, split_gate=$(round(split_gate_elapsed_s; digits=3)) s, " *
+        "mission_time_sweep=$(round(orbit_elapsed_s; digits=3)) s, entry_duration_sweep=$(round(entry_duration_elapsed_s; digits=3)) s, plots=$(length(plot_paths)))"
     )
 
     return ModeRunArtifacts(
@@ -216,10 +250,13 @@ function run_mode(
         elapsed_s=elapsed_s,
         bench_elapsed_s=bench_elapsed_s,
         orbit_elapsed_s=orbit_elapsed_s,
+        entry_duration_elapsed_s=entry_duration_elapsed_s,
         raw_path=raw_path,
         summary_path=summary_path,
         orbit_raw_path=orbit_raw_path,
         orbit_summary_path=orbit_summary_path,
+        entry_duration_raw_path=entry_duration_raw_path,
+        entry_duration_summary_path=entry_duration_summary_path,
         report_path=report_path,
         stage_timing_path=stage_timing_path,
         hardware_info_path=hardware_info_path,
@@ -340,7 +377,9 @@ function build_mode_overview(artifacts::Vector{ModeRunArtifacts})::DataFrame
         bench_elapsed = artifact.bench_elapsed_s
         split_elapsed = artifact.split_gate_elapsed_s
         orbit_elapsed = artifact.orbit_elapsed_s
+        entry_duration_elapsed = artifact.entry_duration_elapsed_s
         orbit_share = elapsed_total > 0.0 ? (100.0 * orbit_elapsed / elapsed_total) : missing
+        entry_duration_share = elapsed_total > 0.0 ? (100.0 * entry_duration_elapsed / elapsed_total) : missing
         split_gate_total = 0
         split_gate_pass = 0
         if !(artifact.split_gate_df === nothing) && (:pass_all in names(artifact.split_gate_df))
@@ -358,7 +397,9 @@ function build_mode_overview(artifacts::Vector{ModeRunArtifacts})::DataFrame
             bench_elapsed_s=bench_elapsed,
             split_gate_elapsed_s=split_elapsed,
             orbit_elapsed_s=orbit_elapsed,
+            entry_duration_elapsed_s=entry_duration_elapsed,
             orbit_share_pct=orbit_share,
+            entry_duration_share_pct=entry_duration_share,
             rows_raw=nrow(raw_df),
             rows_summary=nrow(summary_df),
             failed_rows=failures,
@@ -533,9 +574,10 @@ function generate_pipeline_comparison_plots(
         bench = Float64.(overview_df.bench_elapsed_s)
         split_gate = _has_column(overview_df, :split_gate_elapsed_s) ? Float64.(overview_df.split_gate_elapsed_s) : zeros(length(bench))
         orbit = Float64.(overview_df.orbit_elapsed_s)
-        stage_values = [bench, split_gate, orbit]
-        stage_labels = ["run_benchmarks", "split_rollout_gate", "per_orbit"]
-        stage_colors = ["#4b86b4", "#6b5ca5", "#d97706"]
+        entry_duration = _has_column(overview_df, :entry_duration_elapsed_s) ? Float64.(overview_df.entry_duration_elapsed_s) : zeros(length(bench))
+        stage_values = [bench, split_gate, orbit, entry_duration]
+        stage_labels = ["run_benchmarks", "split_rollout_gate", "per_orbit", "entry_duration_sweep"]
+        stage_colors = ["#4b86b4", "#6b5ca5", "#d97706", "#2f855a"]
         stage_maxima = [maximum([abs(v) for v in vals if isfinite(v)]; init=0.0) for vals in stage_values]
         global_stage_max = maximum(stage_maxima; init=0.0)
         stage_eps = max(1e-9, 1e-4 * global_stage_max)
@@ -731,6 +773,16 @@ function write_pipeline_report(
             println(io, "- Machine labels observed: `$(join(unique_machines, ", "))`")
         end
         println(io)
+        println(io, "## Claim Scope")
+        println(io)
+        if config.profile.name == "full"
+            println(io, "- `full` profile outputs are intended for main paper claims.")
+        else
+            println(io, "- `quick` profile outputs are development/CI/regression evidence only; not main paper-claim evidence.")
+        end
+        println(io, "- Mission-time sweep excludes `entry` scenarios by design (baseline-orbit multipliers are not entry-comparable).")
+        println(io, "- Entry behavior is represented by the dedicated entry-duration sweep artifacts per mode.")
+        println(io)
 
         println(io, "## Mode Overview")
         println(io)
@@ -815,10 +867,13 @@ function write_pipeline_report(
             println(io, "- run_benchmarks elapsed: `$(round(artifact.bench_elapsed_s; digits=3)) s`")
             println(io, "- split rollout gate elapsed: `$(round(artifact.split_gate_elapsed_s; digits=3)) s`")
             println(io, "- mission-time-sweep elapsed: `$(round(artifact.orbit_elapsed_s; digits=3)) s`")
+            println(io, "- entry-duration-sweep elapsed: `$(round(artifact.entry_duration_elapsed_s; digits=3)) s`")
             println(io, "- Raw: `$(artifact.raw_path)`")
             println(io, "- Summary: `$(artifact.summary_path)`")
             println(io, "- Mission-time-sweep raw: `$(artifact.orbit_raw_path)`")
             println(io, "- Mission-time-sweep summary: `$(artifact.orbit_summary_path)`")
+            println(io, "- Entry-duration-sweep raw: `$(artifact.entry_duration_raw_path)`")
+            println(io, "- Entry-duration-sweep summary: `$(artifact.entry_duration_summary_path)`")
             if !isempty(artifact.stage_timing_path)
                 println(io, "- Stage timing: `$(artifact.stage_timing_path)`")
             end

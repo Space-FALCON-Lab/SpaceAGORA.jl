@@ -582,9 +582,14 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         densities::Vector{Float64} = zeros(Float64, N_sats)
         temperatures::Vector{Float64} = ones(Float64, N_sats)
         winds::Vector{SVector{3,Float64}} = [SVector{3,Float64}(0.0, 0.0, 0.0) for _ in 1:N_sats]
+        density_batch_altitudes::Vector{Float64} = zeros(Float64, N_sats)
+        density_batch_latitudes::Vector{Float64} = zeros(Float64, N_sats)
+        density_batch_longitudes::Vector{Float64} = zeros(Float64, N_sats)
         heat_rates::Vector{Vector{Float64}} = [Float64[] for _ in 1:N_sats]
         density_models::Vector{Any} = Any[]
         gram_density_cache::Vector{Any} = Any[]
+        gram_isolated_pool_models::Vector{Any} = Any[]
+        gram_isolated_pool_locks::Vector{ReentrantLock} = ReentrantLock[]
         harmonics_workspaces::Vector{Any} = [nothing for _ in 1:N_sats]
         nbody_workspaces::Vector{Any} = [nothing for _ in 1:N_sats]
         aero_workspaces::Vector{Any} = [nothing for _ in 1:N_sats]
@@ -598,6 +603,8 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         et_start::Base.RefValue{Float64} = Ref(0.0)
         debug_control::Base.RefValue{Bool} = Ref(false)
         debug_initial_derivative::Base.RefValue{Bool} = Ref(false)
+        effector_cost_ns_per_item::Base.RefValue{Float64} = Ref(NaN)
+        effector_cost_samples::Base.RefValue{Int64} = Ref(Int64(0))
     end
 
     const SaveData = Dict{Symbol, Any}

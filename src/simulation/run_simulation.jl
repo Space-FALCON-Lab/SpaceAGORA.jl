@@ -100,6 +100,17 @@ end
     return parsed
 end
 
+@inline function _parse_unit_float_env(name::String, default::Float64)::Float64
+    raw = strip(get(ENV, name, string(default)))
+    parsed = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("$name must be a floating-point value, got '$raw'"))
+    end
+    (0.0 < parsed <= 1.0) || throw(ArgumentError("$name must satisfy 0.0 < value <= 1.0, got $parsed"))
+    return parsed
+end
+
 @inline function _parse_nonnegative_int_env(name::String, default::Int)::Int
     raw = strip(get(ENV, name, string(default)))
     parsed = try
@@ -245,6 +256,28 @@ end
     return SimulationModel.ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_EFFECTOR_PARALLEL"; default="auto")
 end
 
+@inline function _rhs_batch_parallel_mode()::Symbol
+    return SimulationModel.ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_RHS_BATCH_PARALLEL"; default="auto")
+end
+
+@inline function _profile_forces_serial_rhs()::Bool
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_PARALLEL_PROFILE", "")))
+    return raw in ("r0", "serial", "r0_true_serial", "true_serial")
+end
+
+@inline function _rhs_batch_parallel_enabled(num_spacecraft::Int)::Bool
+    if _profile_forces_serial_rhs()
+        return false
+    end
+    mode = _rhs_batch_parallel_mode()
+    if mode == :off
+        return false
+    elseif mode == :on
+        return true
+    end
+    return num_spacecraft > 1 && Polyester.num_cores() > 1
+end
+
 @inline function _effector_thread_threshold()::Int
     return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_THREAD_THRESHOLD", 2)
 end
@@ -263,6 +296,26 @@ end
 
 @inline function _effector_heavy_only()::Bool
     return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_EFFECTOR_PARALLEL_HEAVY_ONLY", true)
+end
+
+@inline function _effector_cost_ns_per_item_default()::Float64
+    return _parse_positive_float_env("SPACEAGORA_EFFECTOR_COST_NS_PER_ITEM_DEFAULT", 2.5e4)
+end
+
+@inline function _effector_cost_min_samples()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_COST_MIN_SAMPLES", 4)
+end
+
+@inline function _effector_cost_ema_alpha()::Float64
+    return _parse_unit_float_env("SPACEAGORA_EFFECTOR_COST_EMA_ALPHA", 0.2)
+end
+
+@inline function _effector_work_ns_per_worker_threshold()::Float64
+    return _parse_positive_float_env("SPACEAGORA_EFFECTOR_WORK_NS_PER_WORKER_THRESHOLD", 4.0e4)
+end
+
+@inline function _effector_outer_work_scale()::Float64
+    return _parse_positive_float_env("SPACEAGORA_EFFECTOR_OUTER_WORK_SCALE", 1.5)
 end
 
 @inline function _effector_long_mission_threshold_s()::Float64
@@ -302,7 +355,65 @@ end
     return mission_cfg.mission_time >= _effector_long_mission_threshold_s()
 end
 
-@inline function _dynamic_effector_thread_decision(args::SimulationConfiguration, dynamic_effectors::Tuple, num_sats::Int)
+@inline function _effector_shared_buffers(p)
+    if p === nothing || !hasproperty(p, :shared_buffers)
+        return nothing
+    end
+    return getproperty(p, :shared_buffers)
+end
+
+@inline function _effector_observed_cost_ns_per_item(shared_buffers)::Float64
+    default_cost = _effector_cost_ns_per_item_default()
+    shared_buffers === nothing && return default_cost
+    if !(hasproperty(shared_buffers, :effector_cost_ns_per_item) && hasproperty(shared_buffers, :effector_cost_samples))
+        return default_cost
+    end
+    samples = Int(getproperty(shared_buffers, :effector_cost_samples)[])
+    estimate = Float64(getproperty(shared_buffers, :effector_cost_ns_per_item)[])
+    if samples >= _effector_cost_min_samples() && isfinite(estimate) && estimate > 0.0
+        return estimate
+    end
+    return default_cost
+end
+
+@inline function _effector_satellite_share_budget(num_sats::Int, budget::Int)::Int
+    sat_concurrency = max(1, min(max(1, num_sats), max(1, budget)))
+    return max(1, fld(max(1, budget), sat_concurrency))
+end
+
+@inline function _update_effector_cost_model!(
+    shared_buffers,
+    n_effectors::Int,
+    elapsed_ns::Int64,
+    allotment::Int
+)::Nothing
+    shared_buffers === nothing && return nothing
+    if !(hasproperty(shared_buffers, :effector_cost_ns_per_item) && hasproperty(shared_buffers, :effector_cost_samples))
+        return nothing
+    end
+    n_effectors > 0 || return nothing
+    wall_elapsed = max(1.0, Float64(elapsed_ns))
+    # Scale by allotment to keep a rough "work per effector" estimate across serial/threaded samples.
+    sample_ns_per_item = wall_elapsed * max(1, allotment) / max(1, n_effectors)
+    α = _effector_cost_ema_alpha()
+    estimate_ref = getproperty(shared_buffers, :effector_cost_ns_per_item)
+    samples_ref = getproperty(shared_buffers, :effector_cost_samples)
+    previous = Float64(estimate_ref[])
+    estimate_ref[] = if isfinite(previous) && previous > 0.0
+        (1.0 - α) * previous + α * sample_ns_per_item
+    else
+        sample_ns_per_item
+    end
+    samples_ref[] = min(typemax(Int64), samples_ref[] + Int64(1))
+    return nothing
+end
+
+@inline function _dynamic_effector_thread_decision(
+    args::SimulationConfiguration,
+    p,
+    dynamic_effectors::Tuple,
+    num_sats::Int
+)
     mode = _effector_parallel_mode()
     n_effectors = length(dynamic_effectors)
     if n_effectors <= 1
@@ -312,12 +423,22 @@ end
         return (use_threads=false, allotment=1, mode=mode, policy_applied=false)
     end
 
-    single_sat = num_sats == 1
-    single_body = single_sat && length(args.dynamics_model.spacecraft[1].links) <= 1
-    heavy_work = _mission_is_long_for_effector_threads(args)
-    if mode == :auto && (!single_sat || !single_body || !heavy_work)
-        return (use_threads=false, allotment=1, mode=mode, policy_applied=false)
+    outer_active = _effector_outer_parallel_hint()
+    allow_with_outer = _effector_allow_with_outer()
+    budget = SimulationModel.ParallelPolicy.effective_inner_thread_budget()
+    share_budget = _effector_satellite_share_budget(num_sats, budget)
+    if outer_active && allow_with_outer
+        share_budget = max(1, fld(share_budget, 2))
     end
+    inner_floor = (!outer_active && num_sats > 1 && budget > 1) ? min(2, budget) : 1
+    max_allotment = min(_effector_max_threads(), budget, max(share_budget, inner_floor))
+
+    shared_buffers = _effector_shared_buffers(p)
+    per_effector_cost_ns = _effector_observed_cost_ns_per_item(shared_buffers)
+    estimated_work_ns = per_effector_cost_ns * n_effectors
+    work_per_worker_ns = estimated_work_ns / max(1, max_allotment)
+    target_ns = _effector_work_ns_per_worker_threshold() * (outer_active ? _effector_outer_work_scale() : 1.0)
+    heavy_work = work_per_worker_ns >= target_ns
 
     policy = SimulationModel.ParallelPolicy.thread_policy_decision(
         n_effectors;
@@ -325,13 +446,21 @@ end
         threshold=_effector_thread_threshold(),
         heavy_work=heavy_work,
         heavy_only=_effector_heavy_only(),
-        outer_active=_effector_outer_parallel_hint(),
-        allow_with_outer=_effector_allow_with_outer(),
+        outer_active=outer_active,
+        allow_with_outer=allow_with_outer,
         source=:dynamic_effectors
     )
-    allotment = min(policy.allotment, _effector_max_threads())
+    allotment = min(policy.allotment, max_allotment)
     use_threads = policy.use_threads && allotment > 1
     return (use_threads=use_threads, allotment=use_threads ? allotment : 1, mode=mode, policy_applied=true)
+end
+
+@inline function _dynamic_effector_thread_decision(
+    args::SimulationConfiguration,
+    dynamic_effectors::Tuple,
+    num_sats::Int
+)
+    return _dynamic_effector_thread_decision(args, nothing, dynamic_effectors, num_sats)
 end
 
 function _initialize_density_model_instances!(p)
@@ -362,6 +491,12 @@ function _initialize_density_cache_buffers!(p)
         resize!(caches, n_sats)
     end
     fill!(caches, nothing)
+    return nothing
+end
+
+function _initialize_gram_isolated_pool_buffers!(p)
+    empty!(p.shared_buffers.gram_isolated_pool_models)
+    empty!(p.shared_buffers.gram_isolated_pool_locks)
     return nothing
 end
 
@@ -800,7 +935,8 @@ end
 @inline function _multirate_solver_spec(env_name::String, default_mode::String)
     mode = lowercase(strip(get(ENV, env_name, default_mode)))
     if mode in ("tsit5", "tsit", "default")
-        return (alg=Tsit5(), label="Tsit5", auto_switch_capable=false)
+        # return (alg=Tsit5(), label="Tsit5", auto_switch_capable=false)
+        return (alg=DP8(), label="DP8", auto_switch_capable=false)
     elseif mode in ("auto_stiff", "auto-stiff", "autostiff", "auto")
         return (
             alg=AutoTsit5(Rodas5P(autodiff=AutoFiniteDiff())),
@@ -824,13 +960,15 @@ end
     maxiters = _solver_maxiters()
     dtmax_use = isnothing(dtmax_override) ? args.integration_tolerances.dt_max_orbit : dtmax_override
     dtmax_use > 0.0 || throw(ArgumentError("Solver dtmax must be > 0.0, got $dtmax_use."))
+    println("Solving with $(typeof(alg)) (maxiters=$(maxiters === nothing ? "default" : string(maxiters))), dtmax=$(round(dtmax_use; digits=3)) s)...")
     if maxiters === nothing
         return solve(
             prob,
             alg;
             reltol=reltol_tol,
             abstol=abstol_tol,
-            dtmax=dtmax_use
+            dtmax=dtmax_use,
+            saveat=args.mission_configuration.data_rate
         )
     end
     return solve(
@@ -839,7 +977,8 @@ end
         reltol=reltol_tol,
         abstol=abstol_tol,
         dtmax=dtmax_use,
-        maxiters=maxiters
+        maxiters=maxiters,
+        saveat=args.mission_configuration.data_rate
     )
 end
 
@@ -1032,7 +1171,8 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
         )
     end
 
-    tsit_sol = _solve_with_explicit_solver(prob, args, Tsit5(), reltol_tol, abstol_tol)
+    # tsit_sol = _solve_with_explicit_solver(prob, args, Tsit5(), reltol_tol, abstol_tol)
+    tsit_sol = _solve_with_explicit_solver(prob, args, DP8(), reltol_tol, abstol_tol)
     return tsit_sol, (
         solver="Tsit5",
         initial_solver="Tsit5",
@@ -1401,6 +1541,9 @@ function run_simulation(
     _validate_thermal_model_support!(args)
     try
         SimulationModel.ParallelPolicy.reset_policy_telemetry!()
+        if SimulationModel.ParallelPolicy.persistent_hints_state_reset_requested()
+            SimulationModel.ParallelPolicy.reset_persistent_hint_state!()
+        end
     catch
     end
 
@@ -1416,6 +1559,7 @@ function run_simulation(
     _initialize_heat_rate_buffers!(p)
     _initialize_density_model_instances!(p)
     _initialize_density_cache_buffers!(p)
+    _initialize_gram_isolated_pool_buffers!(p)
     _initialize_harmonics_workspace_buffers!(p)
     _initialize_nbody_workspace_buffers!(p)
     _initialize_aero_workspace_buffers!(p)
@@ -1455,8 +1599,9 @@ function run_simulation(
         args.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_$(args.environment_model.planet.name)", et_start)) * args.environment_model.planet.J2000_to_pci' # Initialize the planet frame at the start of the simulation (will be updated in the callback)
     end
     Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.planet_pxform_runtime_calls, 1)
-    mission_end = args.mission_configuration.mission_time
-    _initialize_nbody_ephemeris_cache!(p, et_start, mission_end)
+    # mission_end = args.mission_configuration.mission_time
+    mission_end = args.mission_configuration.mission_type == MissionTime ? args.mission_configuration.mission_time : 1.0e9
+    # _initialize_nbody_ephemeris_cache!(p, et_start, mission_end)
     _initialize_srp_sun_ephemeris_cache!(p, et_start, mission_end)
     _initialize_planet_frame_ephemeris_cache!(p, et_start, mission_end)
     checkpoint_active = _typed_checkpoint_enabled(args)
@@ -1600,9 +1745,10 @@ end
     effector_decision
 )
     effector_started_ns = time_ns()
+    n_effectors = length(dynamic_effectors)
     if effector_decision.use_threads
         reduced = SimulationModel.ParallelPolicy.threaded_reduce(
-            length(dynamic_effectors),
+            n_effectors,
             effector_decision.allotment,
             () -> MVector{6, Float64}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
             (local_sum, eff_idx) -> begin
@@ -1632,13 +1778,17 @@ end
             torques .+= torque
         end
     end
+    elapsed_ns = Int64(time_ns() - effector_started_ns)
+    if effector_decision.policy_applied && sat_idx == 1
+        _update_effector_cost_model!(p.shared_buffers, n_effectors, elapsed_ns, effector_decision.allotment)
+    end
     if effector_decision.policy_applied
         SimulationModel.ParallelPolicy.record_policy_observation!(
             :dynamic_effectors;
             mode=effector_decision.mode,
-            num_items=length(dynamic_effectors),
+            num_items=n_effectors,
             use_threads=effector_decision.use_threads,
-            elapsed_ns=(time_ns() - effector_started_ns)
+            elapsed_ns=elapsed_ns
         )
     end
     return nothing
@@ -1689,34 +1839,66 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
     spacecraft = dynamics_model.spacecraft
     debug_control = p.shared_buffers.debug_control[]
     p.shared_buffers.current_time[] = t
-    effector_decision = _dynamic_effector_thread_decision(p.args, dynamic_effectors, length(spacecraft))
-    minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores()))
-    @batch minbatch=minbatch for i in eachindex(sc_state)
-        if !p.is_active[i]
-            sc_du[i] .= 0.0
-            continue
-        end
-        @views begin
-            sc_view = sc_state[i]
-            du_view = sc_du[i]
-            forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-            torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-            _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
-            mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
-
-            du_view.pos .= sc_view.vel
-            du_view.vel .= forces / sc_view.mass
-            du_view.mass = mass_rate
-
-            if p.args.mission_configuration.orientation_sim
-                ω_body = SVector{3, Float64}(sc_view.ω)
-                inertia_tensor = spacecraft[i].inertia_tensor
-                τ_body = SVector{3, Float64}(torques)
-                du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
-                du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+    effector_decision = _dynamic_effector_thread_decision(p.args, p, dynamic_effectors, length(spacecraft))
+    use_rhs_batch = _rhs_batch_parallel_enabled(length(spacecraft))
+    if use_rhs_batch
+        minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
+        @batch minbatch=minbatch for i in eachindex(sc_state)
+            if !p.is_active[i]
+                sc_du[i] .= 0.0
+                continue
             end
+            @views begin
+                sc_view = sc_state[i]
+                du_view = sc_du[i]
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
+                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
 
-            _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+                du_view.pos .= sc_view.vel
+                du_view.vel .= forces / sc_view.mass
+                du_view.mass = mass_rate
+
+                if p.args.mission_configuration.orientation_sim
+                    ω_body = SVector{3, Float64}(sc_view.ω)
+                    inertia_tensor = spacecraft[i].inertia_tensor
+                    τ_body = SVector{3, Float64}(torques)
+                    du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
+                    du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+                end
+
+                _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+            end
+        end
+    else
+        @inbounds for i in eachindex(sc_state)
+            if !p.is_active[i]
+                sc_du[i] .= 0.0
+                continue
+            end
+            @views begin
+                sc_view = sc_state[i]
+                du_view = sc_du[i]
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
+                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+
+                du_view.pos .= sc_view.vel
+                du_view.vel .= forces / sc_view.mass
+                du_view.mass = mass_rate
+
+                if p.args.mission_configuration.orientation_sim
+                    ω_body = SVector{3, Float64}(sc_view.ω)
+                    inertia_tensor = spacecraft[i].inertia_tensor
+                    τ_body = SVector{3, Float64}(torques)
+                    du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
+                    du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+                end
+
+                _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+            end
         end
     end
 end # function spacecraft_dynamics!
@@ -1728,33 +1910,64 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
     dynamic_effectors = dynamics_model.dynamic_effectors
     spacecraft = dynamics_model.spacecraft
     p.shared_buffers.current_time[] = t
-    effector_decision = _dynamic_effector_thread_decision(p.args, dynamic_effectors, length(spacecraft))
-    minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores()))
-    @batch minbatch=minbatch for i in eachindex(sc_state)
-        if !p.is_active[i]
-            sc_du[i] .= 0.0
-            continue
-        end
-        @views begin
-            sc_view = sc_state[i]
-            du_view = sc_du[i]
-            forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-            torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-            _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
-
-            du_view.pos .= sc_view.vel
-            du_view.vel .= forces / sc_view.mass
-            du_view.mass = 0.0
-
-            if p.args.mission_configuration.orientation_sim
-                ω_body = SVector{3, Float64}(sc_view.ω)
-                inertia_tensor = spacecraft[i].inertia_tensor
-                τ_body = SVector{3, Float64}(torques)
-                du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
-                du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+    effector_decision = _dynamic_effector_thread_decision(p.args, p, dynamic_effectors, length(spacecraft))
+    use_rhs_batch = _rhs_batch_parallel_enabled(length(spacecraft))
+    if use_rhs_batch
+        minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
+        @batch minbatch=minbatch for i in eachindex(sc_state)
+            if !p.is_active[i]
+                sc_du[i] .= 0.0
+                continue
             end
+            @views begin
+                sc_view = sc_state[i]
+                du_view = sc_du[i]
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
 
-            _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+                du_view.pos .= sc_view.vel
+                du_view.vel .= forces / sc_view.mass
+                du_view.mass = 0.0
+
+                if p.args.mission_configuration.orientation_sim
+                    ω_body = SVector{3, Float64}(sc_view.ω)
+                    inertia_tensor = spacecraft[i].inertia_tensor
+                    τ_body = SVector{3, Float64}(torques)
+                    du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
+                    du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+                end
+
+                _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+            end
+        end
+    else
+        @inbounds for i in eachindex(sc_state)
+            if !p.is_active[i]
+                sc_du[i] .= 0.0
+                continue
+            end
+            @views begin
+                sc_view = sc_state[i]
+                du_view = sc_du[i]
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, dynamic_effectors, effector_decision)
+
+                du_view.pos .= sc_view.vel
+                du_view.vel .= forces / sc_view.mass
+                du_view.mass = 0.0
+
+                if p.args.mission_configuration.orientation_sim
+                    ω_body = SVector{3, Float64}(sc_view.ω)
+                    inertia_tensor = spacecraft[i].inertia_tensor
+                    τ_body = SVector{3, Float64}(torques)
+                    du_view.q .= 0.5 * quat_mult(SVector{4, Float64}(ω_body..., 0.0), sc_view.q)
+                    du_view.ω .= inertia_tensor \ (τ_body - cross(ω_body, inertia_tensor * ω_body))
+                end
+
+                _assign_heat_rate_derivative!(du_view.heat_loads, p.shared_buffers.heat_rates[i])
+            end
         end
     end
 end # function spacecraft_dynamics_slow!
@@ -1765,31 +1978,61 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
     spacecraft = p.args.dynamics_model.spacecraft
     debug_control = p.shared_buffers.debug_control[]
     p.shared_buffers.current_time[] = t
-    minbatch = Int(ceil(length(spacecraft) / Polyester.num_cores()))
-    @batch minbatch=minbatch for i in eachindex(sc_state)
-        if !p.is_active[i]
-            sc_du[i] .= 0.0
-            continue
-        end
-        @views begin
-            sc_view = sc_state[i]
-            du_view = sc_du[i]
-            forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-            torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-            mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
-
-            du_view.pos .= 0.0
-            du_view.vel .= forces / sc_view.mass
-            du_view.mass = mass_rate
-
-            if p.args.mission_configuration.orientation_sim
-                inertia_tensor = spacecraft[i].inertia_tensor
-                τ_body = SVector{3, Float64}(torques)
-                du_view.q .= 0.0
-                du_view.ω .= inertia_tensor \ τ_body
+    use_rhs_batch = _rhs_batch_parallel_enabled(length(spacecraft))
+    if use_rhs_batch
+        minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
+        @batch minbatch=minbatch for i in eachindex(sc_state)
+            if !p.is_active[i]
+                sc_du[i] .= 0.0
+                continue
             end
+            @views begin
+                sc_view = sc_state[i]
+                du_view = sc_du[i]
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
 
-            du_view.heat_loads .= 0.0
+                du_view.pos .= 0.0
+                du_view.vel .= forces / sc_view.mass
+                du_view.mass = mass_rate
+
+                if p.args.mission_configuration.orientation_sim
+                    inertia_tensor = spacecraft[i].inertia_tensor
+                    τ_body = SVector{3, Float64}(torques)
+                    du_view.q .= 0.0
+                    du_view.ω .= inertia_tensor \ τ_body
+                end
+
+                du_view.heat_loads .= 0.0
+            end
+        end
+    else
+        @inbounds for i in eachindex(sc_state)
+            if !p.is_active[i]
+                sc_du[i] .= 0.0
+                continue
+            end
+            @views begin
+                sc_view = sc_state[i]
+                du_view = sc_du[i]
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+
+                du_view.pos .= 0.0
+                du_view.vel .= forces / sc_view.mass
+                du_view.mass = mass_rate
+
+                if p.args.mission_configuration.orientation_sim
+                    inertia_tensor = spacecraft[i].inertia_tensor
+                    τ_body = SVector{3, Float64}(torques)
+                    du_view.q .= 0.0
+                    du_view.ω .= inertia_tensor \ τ_body
+                end
+
+                du_view.heat_loads .= 0.0
+            end
         end
     end
 end # function spacecraft_dynamics_fast_control!

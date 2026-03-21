@@ -62,20 +62,23 @@ function calcForceTorque(model::InverseSquaredJ2GravityModel, x::ComponentVector
         # cnf = param.cnf
 
     pos_ii = SVector{3, Float64}(x.pos) # Position in inertial frame, change to x.r if using StructArrays in Complete_passage
+    pos_pp = param.args.environment_model.planet.L_PI * pos_ii # Position in planet-fixed frame
     mass = x.mass               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
-    r = norm(pos_ii)
+    r = norm(pos_pp)
     μ = param.args.environment_model.planet.μ
     J2 = param.args.environment_model.planet.J2
-    Rp_m = param.args.environment_model.planet.Rp_m
+    Rp_e = param.args.environment_model.planet.Rp_e
 
     pos_ii_hat = normalize(pos_ii)
-    r_squared = r^2
+    r_squared = r*r
+    r_fourth = r_squared*r_squared
+    z_squared = pos_pp[3]*pos_pp[3]
     gravity_ii_mag_spherical = -μ / r_squared
 
-    x,y,z = pos_ii
+    x,y,z = pos_pp
 
-    gravity_ii = gravity_ii_mag_spherical * pos_ii_hat + 3/2 * J2 * μ * Rp_m^2 / r^4 * [x/r*(5*z^2/r_squared - 1), y/r*(5*z^2/r_squared - 1), z/r*(5*z^2/r_squared - 3)]
-
+    gravity_pp = 1.5 * J2 * μ * Rp_e^2 / r_fourth * [x/r*(5*z_squared/r_squared - 1), y/r*(5*z_squared/r_squared - 1), z/r*(5*z_squared/r_squared - 3)]
+    gravity_ii = gravity_ii_mag_spherical * pos_ii_hat + param.args.environment_model.planet.L_PI' * gravity_pp # Convert back to inertial frame
     # cnf.gravity_cent_ii = mass * gravity_ii # Store gravity in config for other uses
 
     force_ii = mass * gravity_ii

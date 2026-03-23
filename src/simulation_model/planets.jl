@@ -57,7 +57,7 @@ module Planets
         p::Float64 = 636.0 # Surface pressure in Pascals
         k::Float64 = 1.898e-4 # Chapman heating coefficient, kg^0.5/m
         ω::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 7.08823596e-5) # Angular velocity vector in rad/s
-        μ::Float64 = 4.2828314e13 # Standard gravitational parameter in m^3/s^2
+        μ::Float64 = 4.2828314258067e13 # Standard gravitational parameter in m^3/s^2
         J2::Float64 = 1.96045e-3 # J2 coefficient
         g_ref::Float64 = 3.72076 # Standard gravity in m/s^2
         ρ_ref::Float64 = 8.7489231e-7 # Sea level atmospheric density in kg/m^3
@@ -71,7 +71,10 @@ module Planets
         Lz::Float64 = -4.5e-3 # Vertical temperature gradient in K/m for calculating temperature at altitude
         α::Float64 = deg2rad(317.68143) # Right-ascension of north pole
         δ::Float64 = deg2rad(52.88650) # Declination of north pole
-        J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}([0.67330 0.7394 0.0; -0.5896 0.5369 0.6034; 0.4462 -0.4062 0.7974]) # Rotation matrix from J2000 to planet-centered inertial frame # Rotation matrix from J2000 to planet-centered inertial frame
+        # J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}([0.67330 0.7394 0.0; -0.5896 0.5369 0.6034; 0.4462 -0.4062 0.7974]) # Rotation matrix from J2000 to planet-centered inertial frame # Rotation matrix from J2000 to planet-centered inertial frame
+        J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}(
+            pxform("J2000", "IAU_MARS", 0.0) # Use SPICE to compute the rotation matrix for Mars at epoch (time=0.0 since it's a fixed rotation)
+        )
         L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]) # Rotation matrix from planet-centered inertial frame to planet-centered, planet-fixed frame, function of time
         topography_workspace::TopographyHarmonicsWorkspace = TopographyHarmonicsWorkspace() # Workspace for calculating topography harmonics
         polyfit_coeffs::SVector{21, Float64} = SVector{21, Float64}(-3.691310097181554e-58, 5.819173546214448e-54, -3.9285937578286423e-50, 1.4222601230188116e-46, -2.606951392190571e-43, 3.2943551967480965e-41, 9.394166176413728e-37, -1.7651753457891617e-33, -5.79069281873952e-31, 8.639557954110502e-27, -1.991207114225621e-23, 2.7207390647640917e-20, -2.5611296697872007e-17, 1.7386922029136165e-14, -8.619727907575625e-12, 3.1040218147963276e-09, -7.949080301839893e-07, 0.00013834108975291533, -0.014729001168514675, 0.6707044510751348, -19.414578139119545)
@@ -87,7 +90,7 @@ module Planets
         p::Float64 = 9.2e6 # Surface pressure in Pascals
         k::Float64 = 1.896e-4 # Chapman heating coefficient, kg^0.5/m
         ω::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, -2.99e-7) # Angular velocity vector in rad/s
-        μ::Float64 = 3.24858592e14 # Standard gravitational parameter in m^3/s^2
+        μ::Float64 = 3.2485859882646e14 # Standard gravitational parameter in m^3/s^2
         J2::Float64 = 4.458e-6 # J2 coefficient
         g_ref::Float64 = 8.87 # Standard gravity in m/s^2
         ρ_ref::Float64 = 65.0 # Sea level atmospheric density in kg/m^3
@@ -101,10 +104,13 @@ module Planets
         Lz::Float64 = -10.7e-3 # Vertical temperature gradient in K/m
         α::Float64 = deg2rad(272.76) # Right-ascension of north pole
         δ::Float64 = deg2rad(67.16) # Declination of north pole
+        # J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}(
+        #     [0.9988399975 0.0481524597 0.0;
+        #      -0.0443769404 0.9205233406 0.3881590739;
+        #      0.0186908142 -0.3877088084 0.92159239]
+        # )
         J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}(
-            [0.9988399975 0.0481524597 0.0;
-             -0.0443769404 0.9205233406 0.3881590739;
-             0.0186908142 -0.3877088084 0.92159239]
+            pxform("J2000", "IAU_VENUS", 0.0) # Use SPICE to compute the rotation matrix for Venus at epoch (time=0.0 since it's a fixed rotation)
         )
         L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
         topography_workspace::TopographyHarmonicsWorkspace = TopographyHarmonicsWorkspace()
@@ -135,10 +141,13 @@ module Planets
         Lz::Float64 = -1.352e-3 # Vertical temperature gradient in K/m
         α::Float64 = deg2rad(39.4827) # Right-ascension of north pole
         δ::Float64 = deg2rad(83.4279) # Declination of north pole
+        # J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}(
+        #     [-0.6358452054 0.7718166069 0.0;
+        #      -0.7667447037 -0.6316668225 0.1144534171;
+        #      0.0883370481 0.0727746565 0.9934286161]
+        # )
         J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}(
-            [-0.6358452054 0.7718166069 0.0;
-             -0.7667447037 -0.6316668225 0.1144534171;
-             0.0883370481 0.0727746565 0.9934286161]
+            pxform("J2000", "IAU_TITAN", 0.0) # Use SPICE to compute the rotation matrix for Titan at epoch (time=0.0 since it's a fixed rotation)
         )
         L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
         topography_workspace::TopographyHarmonicsWorkspace = TopographyHarmonicsWorkspace()

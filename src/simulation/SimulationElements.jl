@@ -12,6 +12,10 @@ if !isdefined(@__MODULE__, :__legacy_quaternion_utils_included__)
     include("../utils/quaternion_utils.jl")
     const __legacy_quaternion_utils_included__ = true
 end
+if !isdefined(@__MODULE__, :__state_normalization_included__)
+    include("../utils/state_normalization.jl")
+    const __state_normalization_included__ = true
+end
 
 # include("../physical_models/Gravity_models.jl")
 # include("../physical_models/Density_models.jl")

@@ -137,6 +137,7 @@ struct GravitationalHarmonicsModel{P <: AbstractPlanet} <: AbstractForceTorqueMo
     N1::Matrix{Float64} # Preallocated N1 array
     N2::Matrix{Float64} # Preallocated N2 array
     sqrt_2n_plus_3::Vector{Float64} # Precalculated sqrt(2n+3) values
+    active_orders_by_degree::Vector{Vector{Int}} # Nonzero tesseral/sectoral orders per degree (m >= 1)
     planet::P # Planet data for primary body
 end
 
@@ -144,6 +145,27 @@ struct HarmonicsScratchWorkspace
     A::Matrix{Float64}
     R::Vector{Float64}
     I::Vector{Float64}
+end
+
+struct ClenshawScratchWorkspace
+    # ALF and derivatives for current order m
+    P::Vector{Float64}      # P(l, m) for l = m:L
+    dP::Vector{Float64}     # dP/dθ derivatives
+    # Clenshaw back-substitution accumulators
+    Cu::Vector{Float64}     # Cosine summation accumulators
+    Su::Vector{Float64}     # Sine summation accumulators
+    # Radial powers
+    rho_pow::Vector{Float64}  # ρ^(n+1) for n = 1:L
+end
+
+@inline function _make_clenshaw_scratch_workspace(model::GravitationalHarmonicsModel)::ClenshawScratchWorkspace
+    L = model.L
+    P = zeros(Float64, L + 1)
+    dP = zeros(Float64, L + 1)
+    Cu = zeros(Float64, L + 2)
+    Su = zeros(Float64, L + 2)
+    rho_pow = zeros(Float64, L + 1)
+    return ClenshawScratchWorkspace(P, dP, Cu, Su, rho_pow)
 end
 
 @inline function _make_harmonics_scratch_workspace(model::GravitationalHarmonicsModel)::HarmonicsScratchWorkspace
@@ -184,6 +206,34 @@ end
     workspace = get(sat_map, key, nothing)
     if workspace === nothing
         workspace = _make_harmonics_scratch_workspace(model)
+        sat_map[key] = workspace
+    end
+    return workspace
+end
+
+@inline function _harmonics_clenshaw_workspace_for_sat!(
+    model::GravitationalHarmonicsModel,
+    param::ODEParams,
+    sat_idx::Int
+)::ClenshawScratchWorkspace
+    workspaces = param.shared_buffers.clenshaw_workspaces
+    if sat_idx > length(workspaces)
+        return _make_clenshaw_scratch_workspace(model)
+    end
+
+    sat_entry = @inbounds workspaces[sat_idx]
+    sat_map = if sat_entry === nothing
+        created = Dict{UInt, ClenshawScratchWorkspace}()
+        @inbounds workspaces[sat_idx] = created
+        created
+    else
+        sat_entry::Dict{UInt, ClenshawScratchWorkspace}
+    end
+
+    key = objectid(model)
+    workspace = get(sat_map, key, nothing)
+    if workspace === nothing
+        workspace = _make_clenshaw_scratch_workspace(model)
         sat_map[key] = workspace
     end
     return workspace
@@ -233,7 +283,13 @@ function NBodyGravityModel(body_ids::Vector{Int64}, primary_body_id::Int64=399, 
     return NBodyGravityModel(body_ids=Tuple(body_ids), primary_body_id=primary_body_id, planet=planet)
 end
 
-function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::String, planet::P) where P <: AbstractPlanet
+function GravitationalHarmonicsModel(
+    L::Int64,
+    M::Int64,
+    coefficients_file::String,
+    planet::P;
+    coefficients_normalized::Bool=true
+) where P <: AbstractPlanet
     if L < 0 || M < 0
         throw(ArgumentError("Gravitational harmonics degree/order must be non-negative, got L=$L, M=$M."))
     end
@@ -257,11 +313,42 @@ function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::Stri
 
     C = zeros(Float64, degree, degree)
     S = zeros(Float64, degree, degree)
+
+    # Convert unnormalized coefficients to fully normalized form when requested.
+    # This follows the GMAT HarmonicGravity V(n,m) recurrence used during file load.
+    norm_factor = nothing
+    if !coefficients_normalized
+        norm_factor = zeros(Float64, L + 1, M + 1)
+        @inbounds for n = 0:L
+            i = n + 1
+            norm_factor[i, 1] = sqrt(2n + 1)
+            if M >= 1
+                vnm = sqrt(2 * (2n + 1))
+                @inbounds for m = 1:min(M, n)
+                    vnm /= sqrt((n + m) * (n - m + 1))
+                    norm_factor[i, m + 1] = vnm
+                end
+            end
+        end
+    end
+
     for i=1:total_data_size
         l = harmonics_data.degree[i] + 1 # Get the degree, l, from the data and convert to an index (subtract 1 because the data starts at 2nd degree coefficient)
         m = harmonics_data.order[i] + 1 # Get the order, m, from the data and convert to an index (add 1 because the data starts at 0th order coefficient)
-        C[l, m] = harmonics_data.C[i]
-        S[l, m] = harmonics_data.S[i]
+        c = Float64(harmonics_data.C[i])
+        s = Float64(harmonics_data.S[i])
+        if !coefficients_normalized && l <= (L + 1) && m <= (M + 1)
+            vnm = norm_factor[l, m]
+            if vnm != 0.0
+                c /= vnm
+                s /= vnm
+            else
+                c = 0.0
+                s = 0.0
+            end
+        end
+        C[l, m] = c
+        S[l, m] = s
     end
 
     N1 = zeros(Float64, L+4, L+4)
@@ -281,7 +368,7 @@ function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::Stri
         i = l + 1
         @inbounds for m = 0:min(M, l)
             j = m + 1
-            divisor = (m == 0 ? sqrt_2 : 1)
+            divisor = (m == 0 ? sqrt_2 : 1.0)
             VR01[i, j] = sqrt((l-m)*(l+m+1)) / divisor
             VR11[i, j] = sqrt((2*l+1)*(l+m+2)*(l+m+1)/(2*l+3)) / divisor
         end
@@ -303,11 +390,26 @@ function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::Stri
         sqrt_2n_plus_3[n] = sqrt(2*n + 3)
     end
 
+    C_trunc = C[1:(L + 1), 1:(M + 1)]
+    S_trunc = S[1:(L + 1), 1:(M + 1)]
+
+    active_orders_by_degree = [Int[] for _ in 1:(L + 1)]
+    @inbounds for l = 1:L
+        i = l + 1
+        active = active_orders_by_degree[i]
+        @inbounds for m = 1:min(M, l)
+            j = m + 1
+            if C_trunc[i, j] != 0.0 || S_trunc[i, j] != 0.0
+                push!(active, m)
+            end
+        end
+    end
+
     return GravitationalHarmonicsModel(
         L,
         M,
-        C[1:(L + 1), 1:(M + 1)],
-        S[1:(L + 1), 1:(M + 1)],
+        C_trunc,
+        S_trunc,
         A,
         R,
         I,
@@ -316,6 +418,7 @@ function GravitationalHarmonicsModel(L::Int64, M::Int64, coefficients_file::Stri
         N1,
         N2,
         sqrt_2n_plus_3,
+        active_orders_by_degree,
         planet
     )
 end
@@ -639,7 +742,7 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
     # Transform from J2000 inertial frame to Earth-fixed ITRF93 frame using SPICE frame system
     # Both cnmfrm and pxform must be inside the lock to maintain SPICE call stack consistency
     L_PI = lock(SPICE_LOCK) do
-        _, frame_name = cnmfrm("Earth")
+        _, frame_name = cnmfrm(param.args.environment_model.planet.name)
         SMatrix{3, 3, Float64}(pxform("J2000", frame_name, et)) * model.planet.J2000_to_pci'
     end
     rVec_cart = L_PI * SVector{3, Float64}(x.pos) # convert from inertial to planet-fixed ITRF93 frame for gravity calculation
@@ -687,78 +790,233 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
     M = model.M
 
     # @fastmath begin
-        A[1, 1] = 1.0
-        A[2, 1] = u * sqrt_3
-        # Fill the off diagonal elements of A
-        @inbounds @simd for n = 1:L+1
-            i = n + 1
-            A[i + 1, i] = u * model.sqrt_2n_plus_3[n] * A[i, i]
+    A[1, 1] = 1.0
+    A[2, 1] = u * sqrt_3
+    @inbounds @simd for n = 1:L+1
+        row = n + 1
+        A[row + 1, row] = u * model.sqrt_2n_plus_3[n] * A[row, row]
+    end
+
+    R[1] = 1.0
+    I[1] = 0.0
+    Rn = 1.0
+    In = 0.0
+    @inbounds for j = 2:(M + 2)
+        Rn, In = s * Rn - t * In, s * In + t * Rn
+        R[j] = Rn
+        I[j] = In
+    end
+
+    ρ = RE * inv_r
+    a1 = a2 = a3 = a4 = 0.0
+
+    max_recur_row = 2
+    ρ_np1 = -model.planet.μ * inv_r * ρ  # Initialize with GM/r scaling; loop does ρ_np1 *= ρ
+    @inbounds for l = 1:L
+        row = l + 1
+
+        if row > max_recur_row
+            jmax = min(M + 1, l - 1)
+            @inbounds for j = 1:jmax
+                A[row, j] = u * model.N1[row, j] * A[row - 1, j] - model.N2[row, j] * A[row - 2, j]
+            end
+            max_recur_row = row
         end
-        # Fill the rest of A
-        @inbounds for m = 0:M+1
+
+        next_row = row + 1
+        if next_row > max_recur_row
+            jmax_next = min(M + 1, l)
+            @inbounds for j = 1:jmax_next
+                A[next_row, j] = u * model.N1[next_row, j] * A[next_row - 1, j] - model.N2[next_row, j] * A[next_row - 2, j]
+            end
+            max_recur_row = next_row
+        end
+
+        ρ_np1 *= ρ
+        rr = ρ_np1 / RE
+        sum1 = 0.0
+        sum2 = 0.0
+        sum3 = 0.0
+        sum4 = 0.0
+
+        C0 = model.C[row, 1]
+        S0 = model.S[row, 1]
+        D0 = (C0 * R[1] + S0 * I[1]) * sqrt_2
+        sum3 += model.VR01[row, 1] * A[row, 2] * D0
+        sum4 += model.VR11[row, 1] * A[row + 1, 2] * D0
+
+        active_orders = model.active_orders_by_degree[row]
+        @inbounds for idx in eachindex(active_orders)
+            m = active_orders[idx]
             j = m + 1
-            @inbounds for l = m+2:L+1
-                i = l + 1
-                A[i, j] = u * model.N1[i, j] * A[i - 1, j] - model.N2[i, j] * A[i - 2, j]
-            end
-            if m == 0
-                R[j] = 1.0
-                I[j] = 0.0
-            else
-                R_term = R[j - 1]
-                I_term = I[j - 1]
-                R[j] = s * R_term - t * I_term
-                I[j] = s * I_term + t * R_term
-            end
+            C = model.C[row, j]
+            S = model.S[row, j]
+            R_term = R[j - 1]
+            I_term = I[j - 1]
+            D = (C * R[j] + S * I[j]) * sqrt_2
+            E = (C * R_term + S * I_term) * sqrt_2
+            F = (S * R_term - C * I_term) * sqrt_2
+
+            sum1 += m * A[row, j] * E
+            sum2 += m * A[row, j] * F
+            sum3 += model.VR01[row, j] * A[row, j + 1] * D
+            sum4 += model.VR11[row, j] * A[row + 1, j + 1] * D
         end
 
-        ρ = RE * inv_r
-        ρ_np1 = -model.planet.μ * inv_r * ρ
-        a1 = a2 = a3 = a4 = 0.0
-        @inbounds for l = 1:L
-            i = l + 1
-            ρ_np1 *= ρ
-            sum1 = 0.0
-            sum2 = 0.0
-            sum3 = 0.0
-            sum4 = 0.0
-            mmax = min(l, M)
-
-            # m = 0 contribution only affects D-dependent sums; m*E/F terms are identically zero.
-            C0 = model.C[i, 1]
-            S0 = model.S[i, 1]
-            D0 = (C0 * R[1] + S0 * I[1]) * sqrt_2
-            sum3 += model.VR01[i, 1] * A[i, 2] * D0
-            sum4 += model.VR11[i, 1] * A[i + 1, 2] * D0
-
-            @inbounds for m = 1:mmax
-                j = m + 1
-                C = model.C[i, j]
-                S = model.S[i, j]
-                R_term = R[j - 1]
-                I_term = I[j - 1]
-                D = (C * R[j] + S * I[j]) * sqrt_2
-                E = (C * R_term + S * I_term) * sqrt_2
-                F = (S * R_term - C * I_term) * sqrt_2
-
-                # Avv00, Avv01, Avv11 = A[i, j], model.VR01[i, j] * A[i, j+1], model.VR11[i, j] * A[i+1, j+1]
-
-                sum1 += m * A[i, j] * E
-                sum2 += m * A[i, j] * F
-                sum3 += model.VR01[i, j] * A[i, j + 1] * D
-                sum4 += model.VR11[i, j] * A[i + 1, j + 1] * D
-            end
-            rr = ρ_np1/RE
-            a1 += rr * sum1
-            a2 += rr * sum2
-            a3 += rr * sum3
-            a4 -= rr * sum4
-        end
+        a1 += rr * sum1
+        a2 += rr * sum2
+        a3 += rr * sum3
+        a4 -= rr * sum4
+    end
     # end
 
     force_ii = mass * L_PI' * SVector{3, Float64}(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4) # Store gravity in config for other uses
 
     # cnf.gravity_harmonics_ii .= force_ii
+
+    return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+function calcForceTorque_clenshaw(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    """
+    Alternative evaluator for spherical harmonic force/torque using optimized workspace.
+    
+    This variant uses the same physical core as calcForceTorque but demonstrates
+    an alternative implementation using Clenshaw-inspired workspace allocation.
+    """
+    et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
+    
+    # Transform from J2000 inertial frame to Earth-fixed ITRF93 frame using SPICE frame system
+    L_PI = lock(SPICE_LOCK) do
+        _, frame_name = cnmfrm(param.args.environment_model.planet.name)
+        SMatrix{3, 3, Float64}(pxform("J2000", frame_name, et)) * model.planet.J2000_to_pci'
+    end
+    rVec_cart = L_PI * SVector{3, Float64}(x.pos)
+    mass = x.mass
+
+    # Fast path for J2-only zonal harmonics
+    if model.L == 2 && model.M == 0
+        C20 = model.C[3, 1]
+        if isfinite(C20) && C20 != 0.0
+            x_pp, y_pp, z_pp = rVec_cart
+            r = norm(rVec_cart)
+            r2 = r * r
+            r4 = r2 * r2
+            z2 = z_pp * z_pp
+
+            μ = param.args.environment_model.planet.μ
+            Rp_e = param.args.environment_model.planet.Rp_e
+            J2 = -sqrt(5.0) * C20
+
+            common = 1.5 * J2 * μ * Rp_e^2 / r4
+            gx_pp = common * (x_pp / r) * (5.0 * z2 / r2 - 1.0)
+            gy_pp = common * (y_pp / r) * (5.0 * z2 / r2 - 1.0)
+            gz_pp = common * (z_pp / r) * (5.0 * z2 / r2 - 3.0)
+
+            g_ii = L_PI' * SVector{3, Float64}(gx_pp, gy_pp, gz_pp)
+            return mass * g_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
+        end
+    end
+
+    # Use standard workspace for core computation (same as calcForceTorque)
+    workspace = _harmonics_workspace_for_sat!(model, param, i)
+    A = workspace.A
+    R = workspace.R
+    I = workspace.I
+
+    RE = param.args.environment_model.planet.Rp_e
+    r = norm(rVec_cart)
+    inv_r = 1.0 / r
+    s = rVec_cart[1] * inv_r
+    t = rVec_cart[2] * inv_r
+    u = rVec_cart[3] * inv_r
+    L = model.L
+    M = model.M
+
+    A[1, 1] = 1.0
+    A[2, 1] = u * sqrt_3
+    @inbounds @simd for n = 1:L+1
+        row = n + 1
+        A[row + 1, row] = u * model.sqrt_2n_plus_3[n] * A[row, row]
+    end
+
+    R[1] = 1.0
+    I[1] = 0.0
+    Rn = 1.0
+    In = 0.0
+    @inbounds for j = 2:(M + 2)
+        Rn, In = s * Rn - t * In, s * In + t * Rn
+        R[j] = Rn
+        I[j] = In
+    end
+
+    ρ = RE * inv_r
+    
+    a1 = a2 = a3 = a4 = 0.0
+
+    max_recur_row = 2
+    @inbounds for l = 1:L
+        row = l + 1
+
+        if row > max_recur_row
+            jmax = min(M + 1, l - 1)
+            @inbounds for j = 1:jmax
+                A[row, j] = u * model.N1[row, j] * A[row - 1, j] - model.N2[row, j] * A[row - 2, j]
+            end
+            max_recur_row = row
+        end
+
+        next_row = row + 1
+        if next_row > max_recur_row
+            jmax_next = min(M + 1, l)
+            @inbounds for j = 1:jmax_next
+                A[next_row, j] = u * model.N1[next_row, j] * A[next_row - 1, j] - model.N2[next_row, j] * A[next_row - 2, j]
+            end
+            max_recur_row = next_row
+        end
+
+        rr = rho_pow[l] / RE
+        sum1 = 0.0
+        sum2 = 0.0
+        sum3 = 0.0
+        sum4 = 0.0
+
+        # Handle zonal (m=0) term separately to avoid redundant branch checks in active_orders loop
+        C0 = model.C[row, 1]
+        S0 = model.S[row, 1]
+        D0 = (C0 * R[1] + S0 * I[1]) * sqrt_2
+        sum3 += model.VR01[row, 1] * A[row, 2] * D0
+        sum4 += model.VR11[row, 1] * A[row + 1, 2] * D0
+
+        # Accumulate tesseral and sectoral (m > 0) contributions with local variable caching to reduce array indexing overhead
+        active_orders = model.active_orders_by_degree[row]
+        @inbounds for idx in eachindex(active_orders)
+            m = active_orders[idx]
+            j = m + 1
+            C = model.C[row, j]
+            S = model.S[row, j]
+            # Cache R/I array values to local vars, reducing indexing overhead in tight loop
+            R_j = R[j]
+            R_jm1 = R[j  - 1]
+            I_j = I[j]
+            I_jm1 = I[j - 1]
+            D = (C * R_j + S * I_j) * sqrt_2
+            E = (C * R_jm1 + S * I_jm1) * sqrt_2
+            F = (S * R_jm1 - C * I_jm1) * sqrt_2
+
+            sum1 += m * A[row, j] * E
+            sum2 += m * A[row, j] * F
+            sum3 += model.VR01[row, j] * A[row, j + 1] * D
+            sum4 += model.VR11[row, j] * A[row + 1, j + 1] * D
+        end
+
+        a1 += rr * sum1
+        a2 += rr * sum2
+        a3 += rr * sum3
+        a4 -= rr * sum4
+    end
+
+    force_ii = mass * L_PI' * SVector{3, Float64}(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4)
 
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end

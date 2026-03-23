@@ -591,6 +591,7 @@ export LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassag
         gram_isolated_pool_models::Vector{Any} = Any[]
         gram_isolated_pool_locks::Vector{ReentrantLock} = ReentrantLock[]
         harmonics_workspaces::Vector{Any} = [nothing for _ in 1:N_sats]
+        clenshaw_workspaces::Vector{Any} = [nothing for _ in 1:N_sats]
         nbody_workspaces::Vector{Any} = [nothing for _ in 1:N_sats]
         aero_workspaces::Vector{Any} = [nothing for _ in 1:N_sats]
         nbody_ephemeris_cache::Base.RefValue{Union{Nothing, NBodyEphemerisCache}} = Ref{Union{Nothing, NBodyEphemerisCache}}(nothing)

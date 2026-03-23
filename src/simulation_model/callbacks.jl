@@ -1560,6 +1560,48 @@ function _callback_tolerances_for_phase(template_reltol, template_abstol, args::
     return reltol_new, abstol_new
 end
 
+function get_state_normalization_callback(num_sats::Int, args::SimulationConfiguration)
+    """
+    Create a callback to normalize integration states (e.g., quaternions) during propagation.
+    
+    This callback ensures that quaternions remain unit-normalized to maintain the
+    proper attitude constraint and prevent numerical drift in orientation representation.
+    """
+    if !args.mission_configuration.orientation_sim
+        return nothing  # No state normalization needed if not simulating orientation
+    end
+    
+    quaternion_tolerance = args.simulation_settings.a_tol_quaternion
+    normalize_every_step = get(ENV, "SPACEAGORA_NORMALIZE_EVERY_STEP", "0") == "1"
+    
+    function quaternion_condition(u, t, integrator)
+        # Check if any satellite's quaternion deviates significantly from unit norm
+        @inbounds for i in 1:num_sats
+            q_norm = norm(u.sc[i].q)
+            if abs(q_norm - 1.0) > quaternion_tolerance || normalize_every_step
+                return true
+            end
+        end
+        return false
+    end
+    
+    function quaternion_affect!(integrator)
+        # Normalize quaternions for satellites with significant deviation
+        @inbounds for i in 1:num_sats
+            q_current = integrator.u.sc[i].q
+            q_norm = norm(q_current)
+            if q_norm > 0.0
+                integrator.u.sc[i].q = q_current ./ q_norm
+            else
+                # Degenerate case: set to identity quaternion
+                integrator.u.sc[i].q = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
+            end
+        end
+    end
+    
+    return DiscreteCallback(quaternion_condition, quaternion_affect!)
+end
+
 function get_callbacks(
     num_sats::Int,
     effectors::Tuple,
@@ -1572,6 +1614,12 @@ function get_callbacks(
         get_impact_callback(num_sats),
         update_planet_frame_callback()
     ]
+
+    # Add state normalization callback for orientation simulations
+    state_norm_callback = get_state_normalization_callback(num_sats, args)
+    if state_norm_callback !== nothing
+        push!(callbacks, state_norm_callback)
+    end
 
     if _requires_density_callback(effectors, args)
         push!(callbacks, get_density_callback(num_sats, effectors, args))

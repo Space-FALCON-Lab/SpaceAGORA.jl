@@ -276,8 +276,12 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
     maneuver === nothing && return
 
     # Calculate the current orbital elements from the state vector
+    # State is in J2000; convert to PCI (body-equatorial) for rvtoorbitalelement
     oe = try
-        rvtoorbitalelement(pos, vel, p.args.environment_model.planet)
+        planet = p.args.environment_model.planet
+        pos_pci = planet.J2000_to_pci * pos
+        vel_pci = planet.J2000_to_pci * vel
+        rvtoorbitalelement(pos_pci, vel_pci, planet)
     catch err
         _control_effector_exception_fallback(p, i, err, catch_backtrace())
         return

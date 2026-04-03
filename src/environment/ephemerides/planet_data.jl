@@ -38,13 +38,13 @@ function planet_data(ip)
     # end
 
     if planet_id == 0 # Earth
-        Rp_e = 6.3781e6            # equatorial radius, m
+        Rp_e = 6.3781363e6            # equatorial radius, m
         Rp_p = 6.3568e6            # polar radius, m
         Rp_m = 6.3710e6            # volumetric mean radius, m
         mass = 5.97219e24          # mass, kg
         g_ref = 9.798              # acceleration due to gravity, m/s²
         ρ_ref = 1.225              # density, kg/m³
-        μ = 3.98600436000000e14#3.986004418e14              # gravitational parameter, m³/s²
+        μ = 3.986004415000000e14#3.986004418e14              # gravitational parameter, m³/s²
         h_ref = 0 * 1e3            # reference altitude, m
         H = 8.5 * 1e3              # scale height, m
         R = 287.1                  # specific gas constant, J/(kg·K)
@@ -64,13 +64,13 @@ function planet_data(ip)
         polyfit_coeffs = [-1.7539409645214832e-57, 2.735656076315809e-53, -1.8243490769488347e-49, 6.504765617793163e-46, -1.1637408657034938e-42, 8.044884138893168e-41, 4.264962263039017e-36, -7.651115834387683e-33, -3.188248308052816e-30, 3.8370830656820503e-26, -8.557502178008995e-23, 1.137879849173412e-19, -1.0408232216096158e-16, 6.834085016894604e-14, -3.2506596548183e-11, 1.1089006707870246e-08, -2.639423772958483e-06, 0.0004165844083994442, -0.03967261693733797, 1.8349343859319074, -38.14918904018883]
         name = "earth"
     elseif planet_id == 1 # Mars
-        Rp_e = 3.3962e6 #3.3962    # equatorial radius, m
+        Rp_e = 3.397e6            # equatorial radius, m
         Rp_p = 3.3762e6 #3.3762    # polar radius, m
         Rp_m = 3.3895e6            # volumetric mean radius, m
         mass = 6.4169e23           # mass, kg
         g_ref = 3.73               # acceleration due to gravity, m/s²
         ρ_ref = 8.7489231e-07      # density, kg/m³
-        μ = 4.28283140000000e13 # 4.2828314258067e13              # gravitational parameter, m³/s²
+        μ = 4.2828314258067e13            # gravitational parameter, m³/s²
         h_ref = 90 * 1e3           # reference altitude, m
         H = 6.308278108 * 1e3      # scale height, m
         R = 188.92                 # specific gas constant, J/(kg·K)
@@ -90,13 +90,13 @@ function planet_data(ip)
         polyfit_coeffs = [-3.691310097181554e-58, 5.819173546214448e-54, -3.9285937578286423e-50, 1.4222601230188116e-46, -2.606951392190571e-43, 3.2943551967480965e-41, 9.394166176413728e-37, -1.7651753457891617e-33, -5.79069281873952e-31, 8.639557954110502e-27, -1.991207114225621e-23, 2.7207390647640917e-20, -2.5611296697872007e-17, 1.7386922029136165e-14, -8.619727907575625e-12, 3.1040218147963276e-09, -7.949080301839893e-07, 0.00013834108975291533, -0.014729001168514675, 0.6707044510751348, -19.414578139119545]
         name = "mars"
     elseif planet_id == 2 # Venus
-        Rp_e = 6.0518e6            # equatorial radius, m
-        Rp_p = 6.0518e6            # polar radius, m
-        Rp_m = 6.0518e6            # volumetric mean radius, m
+        Rp_e = 6.0519e6            # equatorial radius, m
+        Rp_p = 6.0519e6            # polar radius, m
+        Rp_m = 6.0519e6            # volumetric mean radius, m
         mass = 4.8685e24           # mass, kg
         g_ref = 8.87               # acceleration due to gravity, m/s²
         ρ_ref = 65.0               # density, kg/m³
-        μ = 3.24858592e14          # gravitational parameter, m³/s²
+        μ = 3.2485859882646e14          # gravitational parameter, m³/s²
         h_ref = 0 * 1e3            # reference altitude, m
         H = 15.9 * 1e3             # scale height, m
         R = 188.92                 # specific gas constant, J/(kg·K)
@@ -116,13 +116,13 @@ function planet_data(ip)
         polyfit_coeffs = [1.295014716586507e-57, -1.920381283790201e-53, 1.2024671159968765e-49, -3.931503383921753e-46, 5.985870736864543e-43, 2.115956905107091e-40, -2.4659597875857534e-36, 3.0591710987549437e-33, 3.951465781537392e-30, -1.8949093746237393e-26, 3.123829612747949e-23, -2.928033666820754e-20, 1.5168683041510048e-17, -1.5135241597177884e-15, -3.865230229956326e-12, 3.1328117105612896e-09, -1.2501690556294552e-06, 0.00028978339946121796, -0.03741075092352375, 2.149847471180469, -43.08275565785116]
         name = "venus"
     elseif planet_id == 3 # Sun
-        Rp_e = 6.9634e8            # equatorial radius, m
-        Rp_p = 6.9634e8            # polar radius, m
-        Rp_m = 6.9634e8            # volumetric mean radius, m
+        Rp_e = 6.95990e8            # equatorial radius, m
+        Rp_p = 6.95990e8            # polar radius, m
+        Rp_m = 6.95990e8            # volumetric mean radius, m
         mass = 1.9891e30           # mass, kg
         g_ref = 274                # m/s^2
         ρ_ref = 0
-        μ = 1.3271244002331e20       # gravitational parameter, m^3/s^2
+        μ = 1.3271244001799e20       # gravitational parameter, m^3/s^2
         h_ref = 0
         H = 0
         R = 0

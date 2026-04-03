@@ -237,7 +237,9 @@ function get_data_saving_callback(
     function save_func(u, t, integrator)
         return _save_snapshot(save_fields, u, t, integrator)
     end
-    return SavingCallback(save_func, saved_values; save_everystep=true)
+    data_rate = args.mission_configuration.data_rate
+    data_rate > 0.0 || throw(ArgumentError("mission_configuration.data_rate must be > 0.0, got $data_rate."))
+    return SavingCallback(save_func, saved_values; saveat=data_rate, save_everystep=false)
 end
 
 
@@ -245,7 +247,11 @@ function get_periapsis_save_callback(num_sats::Int)
     # Implement a callback to save the state of the simulation at periapsis for each orbit, which can be useful for analyzing the changes in the orbit after each pass through the atmosphere
     function condition!(out, u, t, integrator)
         @inbounds for i in 1:num_sats
-            OE = rvtoorbitalelement(SVector{3, Float64}(u.sc[i].pos), SVector{3, Float64}(u.sc[i].vel), integrator.p.args.environment_model.planet)
+            planet = integrator.p.args.environment_model.planet
+            # State is in J2000; convert to PCI (body-equatorial) for rvtoorbitalelement
+            pos_pci = planet.J2000_to_pci * SVector{3, Float64}(u.sc[i].pos)
+            vel_pci = planet.J2000_to_pci * SVector{3, Float64}(u.sc[i].vel)
+            OE = rvtoorbitalelement(pos_pci, vel_pci, planet)
             out[i] = OE[6] # Return the true anomaly (ν) which is zero at periapsis
         end
     end

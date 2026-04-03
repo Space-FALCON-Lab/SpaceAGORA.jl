@@ -1,7 +1,7 @@
 module PerturbationEffectors
     using ...ConfigTypes: ODEParams, NBodyScratchWorkspace, HarmonicsScratchWorkspace
     using ...AbstractTypes: AbstractPlanet, AbstractForceTorqueModel
-    using ...Planets: Earth, Mars, Venus, Titan
+    using ...Planets: Earth, Mars, Venus, Moon, Titan
     using ...ParallelPolicy
     using ....RuntimeServices: SPICE_LOCK
     using ...SimulationModel: SRPSunEphemerisCache, NBodyEphemerisCache, SpiceRhsMemo

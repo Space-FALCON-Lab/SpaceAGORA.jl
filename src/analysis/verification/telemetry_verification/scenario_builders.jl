@@ -11,6 +11,8 @@ end
         return Venus("", SPICE_PATH)
     elseif key == "earth"
         return Earth("", SPICE_PATH)
+    elseif key == "moon"
+        return Moon("", SPICE_PATH)
     end
     throw(ArgumentError("Unsupported planet '$planet_name' in telemetry benchmark."))
 end
@@ -28,7 +30,10 @@ end
     if degree <= 0
         return 0
     end
-    if order <= 0
+    if order == 0
+        return 0
+    end
+    if order < 0
         return degree
     end
     return min(order, degree)
@@ -42,10 +47,42 @@ end
         return "Mars"
     elseif key == "venus"
         return "Venus"
+    elseif key == "moon"
+        return "Moon"
     elseif key == "titan"
         return "Titan"
     end
     throw(ArgumentError("Unsupported N-body primary planet '$planet_name'"))
+end
+
+@inline function _telemetry_j2_source_for_scenario(scenario_name::String)::Symbol
+    default_raw = lowercase(strip(get(ENV, "SPACEAGORA_TELEMETRY_J2_SOURCE_DEFAULT", "file_c20")))
+    default_source = default_raw in ("planet", "planet_j2") ? :planet_j2 : :file_c20
+
+    scenario_set_raw = strip(get(ENV, "SPACEAGORA_TELEMETRY_J2_SOURCE_PLANET_SCENARIOS", ""))
+    isempty(scenario_set_raw) && return default_source
+
+    names = Set{String}()
+    for tok in split(scenario_set_raw, ',')
+        t = lowercase(strip(tok))
+        isempty(t) || push!(names, t)
+    end
+    return lowercase(strip(scenario_name)) in names ? :planet_j2 : default_source
+end
+
+@inline function _telemetry_coefficients_normalized_for_scenario(scenario_name::String)::Bool
+    default_raw = lowercase(strip(get(ENV, "SPACEAGORA_TELEMETRY_HARMONICS_NORMALIZED_DEFAULT", "true")))
+    default_normalized = !(default_raw in ("0", "false", "no", "off"))
+
+    scenario_set_raw = strip(get(ENV, "SPACEAGORA_TELEMETRY_HARMONICS_UNNORMALIZED_SCENARIOS", ""))
+    isempty(scenario_set_raw) && return default_normalized
+
+    names = Set{String}()
+    for tok in split(scenario_set_raw, ',')
+        t = lowercase(strip(tok))
+        isempty(t) || push!(names, t)
+    end
+    return lowercase(strip(scenario_name)) in names ? false : default_normalized
 end
 
 struct ScaledAerodynamicCoefficientfM <: AbstractForceTorqueModel
@@ -90,7 +127,9 @@ function _scenario_dynamic_effectors(
                 cfg.gravity_harmonics_degree,
                 _harmonics_order(cfg.gravity_harmonics_degree, cfg.gravity_harmonics_order),
                 harmonics_file,
-                planet
+                planet;
+                coefficients_normalized=_telemetry_coefficients_normalized_for_scenario(cfg.name),
+                j2_source=_telemetry_j2_source_for_scenario(cfg.name)
             )
         )
     end
@@ -113,13 +152,21 @@ function _scenario_dynamic_effectors(
         push!(effectors, SolarRadiationPressureModel(cr_value, area_m2))
     end
 
-    aero = AerodynamicCoefficientfM()
-    if isapprox(cd_scale, 1.0; rtol=0.0, atol=1e-12)
-        push!(effectors, aero)
-    else
-        push!(effectors, ScaledAerodynamicCoefficientfM(aero, cd_scale))
+    if cfg.drag_enabled
+        aero = AerodynamicCoefficientfM()
+        if isapprox(cd_scale, 1.0; rtol=0.0, atol=1e-12)
+            push!(effectors, aero)
+        else
+            push!(effectors, ScaledAerodynamicCoefficientfM(aero, cd_scale))
+        end
     end
     return Tuple(effectors)
+end
+
+@inline function _scenario_density_model(cfg::AbstractScenarioConfig)
+    return cfg.drag_enabled ?
+        _make_required_gram_density_model(cfg.planet_name, cfg.initial_time, cfg.atmosphere_truth) :
+        SimulationModel.NoAtmosphereModel()
 end
 
 Base.@kwdef struct _GRAMOfflineSurrogateFallbackBase
@@ -195,7 +242,7 @@ function _make_required_gram_density_model(
     end
 end
 
-@inline function _make_spacecraft(cfg::SpacecraftConfig, ic::InitialCondition)
+@inline function _make_spacecraft(cfg::SpacecraftConfig, ic::AbstractInitialCondition)
     return make_three_body_spacecraft(
         bus_dims=cfg.bus_dims,
         panel_dims=cfg.panel_dims,
@@ -295,7 +342,8 @@ function _with_orbit_mission(
         number_of_orbits=target_orbits,
         mission_time=mission_time_s,
         orientation_sim=mc.orientation_sim,
-        num_steps_to_save=mc.num_steps_to_save
+        num_steps_to_save=mc.num_steps_to_save,
+        data_rate=mc.data_rate
     )
     return SimulationConfiguration(
         file_paths=args.file_paths,
@@ -336,7 +384,7 @@ function _make_orbit_args(
         cd_scale=cd_scale,
         cr_override=cr_override
     )
-    density_model = _make_required_gram_density_model(cfg.planet_name, cfg.initial_time, cfg.atmosphere_truth)
+    density_model = _scenario_density_model(cfg)
 
     period_s = _period_seconds(planet, cfg.ra_m, rp_m)
     mission_time_s = target_orbits * period_s
@@ -361,7 +409,7 @@ end
 function _make_time_aligned_args(
     cfg::TimeAlignedScenarioConfig,
     mission_time_s::Float64,
-    ic::InitialCondition;
+    ic::AbstractInitialCondition;
     cd_scale::Float64=1.0,
     cr_override::Union{Nothing, Float64}=nothing
 )::SimulationConfiguration
@@ -374,7 +422,7 @@ function _make_time_aligned_args(
         cd_scale=cd_scale,
         cr_override=cr_override
     )
-    density_model = _make_required_gram_density_model(cfg.planet_name, cfg.initial_time, cfg.atmosphere_truth)
+    density_model = _scenario_density_model(cfg)
 
     base = make_example_config(
         planet=planet,
@@ -431,7 +479,8 @@ function _with_study_settings(args::SimulationConfiguration; quick::Bool=false):
             number_of_orbits=args.mission_configuration.number_of_orbits,
             mission_time=args.mission_configuration.mission_time,
             orientation_sim=args.mission_configuration.orientation_sim,
-            num_steps_to_save=2000
+            num_steps_to_save=2000,
+            data_rate=args.mission_configuration.data_rate
         ),
         environment_model=args.environment_model,
         dynamics_model=args.dynamics_model,

@@ -91,7 +91,10 @@ function _gram_kepler_target(
     include_j2::Bool = true
 )::Union{Nothing, Tuple{Float64, Float64, Float64}}
     try
-        oe = rvtoorbitalelement(pos, vel, planet)
+        # State is in J2000; convert to PCI (body-equatorial) for rvtoorbitalelement
+        pos_pci = planet.J2000_to_pci * pos
+        vel_pci = planet.J2000_to_pci * vel
+        oe = rvtoorbitalelement(pos_pci, vel_pci, planet)
         a, e, i, Ω, ω, ν = Float64(oe[1]), Float64(oe[2]), Float64(oe[3]), Float64(oe[4]), Float64(oe[5]), Float64(oe[6])
         if !isfinite(dt) || dt <= 1e-6 || !isfinite(a) || !isfinite(e) || !isfinite(ν) || a <= 0.0 || e < 0.0 || e >= 1.0
             return nothing
@@ -114,9 +117,10 @@ function _gram_kepler_target(
         end
 
         oe_target = SVector{7, Float64}(a, e, i, Ω1, ω1, ν1, 0.0)
-        r_target_vec, v_target_vec = orbitalelemtorv(oe_target, planet)
-        r_target_i = SVector{3, Float64}(Float64.(r_target_vec))
-        v_target_i = SVector{3, Float64}(Float64.(v_target_vec))
+        # orbitalelemtorv gives PCI; convert to J2000 before r_intor_p! (which expects J2000)
+        r_pci_vec, v_pci_vec = orbitalelemtorv(oe_target, planet)
+        r_target_i = planet.J2000_to_pci' * SVector{3, Float64}(Float64.(r_pci_vec))
+        v_target_i = planet.J2000_to_pci' * SVector{3, Float64}(Float64.(v_pci_vec))
         r_target_p, _ = r_intor_p!(r_target_i, v_target_i, planet)
         alt_target, lat_target, lon_target = rtolatlong(r_target_p, planet)
         return alt_target, lat_target, lon_target
@@ -132,7 +136,9 @@ function _gram_periapsis_target(
     include_j2::Bool = true
 )::Union{Nothing, Tuple{Float64, Float64, Float64, Float64}}
     try
-        oe = rvtoorbitalelement(pos, vel, planet)
+        pos_pci = planet.J2000_to_pci * pos
+        vel_pci = planet.J2000_to_pci * vel
+        oe = rvtoorbitalelement(pos_pci, vel_pci, planet)
         a, e, ν = Float64(oe[1]), Float64(oe[2]), Float64(oe[6])
         if !isfinite(a) || !isfinite(e) || !isfinite(ν) || a <= 0.0 || e < 0.0 || e >= 1.0
             return nothing
@@ -167,7 +173,9 @@ function _gram_orbit_period_target(
     include_j2::Bool = true
 )::Union{Nothing, Tuple{Float64, Float64, Float64, Float64}}
     try
-        oe = rvtoorbitalelement(pos, vel, planet)
+        pos_pci = planet.J2000_to_pci * pos
+        vel_pci = planet.J2000_to_pci * vel
+        oe = rvtoorbitalelement(pos_pci, vel_pci, planet)
         a, e = Float64(oe[1]), Float64(oe[2])
         if !isfinite(a) || !isfinite(e) || a <= 0.0 || e < 0.0 || e >= 1.0
             return nothing

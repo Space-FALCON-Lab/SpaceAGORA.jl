@@ -30,7 +30,8 @@ function _example_smoke_args(args::SM.SimulationConfiguration)
         number_of_orbits=max(1, min(mc.number_of_orbits, 1)),
         mission_time=_example_smoke_mission_time(mc.mission_time),
         orientation_sim=mc.orientation_sim,
-        num_steps_to_save=max(50, min(mc.num_steps_to_save, 200))
+        num_steps_to_save=max(50, min(mc.num_steps_to_save, 200)),
+        data_rate=mc.data_rate
     )
     ss_smoke = SM.SimulationSettings(
         results=keep_results,
@@ -63,7 +64,7 @@ function make_three_body_spacecraft(;
     bus_mass::Float64,
     panel_mass_each::Float64,
     panel_offset_y::Float64,
-    ic::SM.InitialCondition,
+    ic::SM.AbstractInitialCondition,
     prop_mass::Float64=0.0,
     id::Int64=1
 )

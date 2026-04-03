@@ -46,15 +46,21 @@ end
     ]
 end
 
+@inline function _spice_body_fixed_frame(planet)::String
+    return planet.name == "Moon" ? "MOON_PA_DE421" : "IAU_$(planet.name)"
+end
+
 @inline function planet_frame_lpi(planet, et::Float64, ::SpiceEphemeridesModel)::SMatrix{3, 3, Float64}
     return lock(SPICE_LOCK) do
-        SMatrix{3, 3, Float64}(pxform("J2000", "IAU_$(planet.name)", et)) * planet.J2000_to_pci'
+        # pxform("J2000", frame_name, et) gives J2000→PCPF directly
+        SMatrix{3, 3, Float64}(pxform("J2000", _spice_body_fixed_frame(planet), et))
     end
 end
 
 @inline function planet_frame_lpi(planet, et::Float64, model::SimpleEphemeridesModel)::SMatrix{3, 3, Float64}
     θ = model.prime_meridian_at_reference_rad + planet.ω[3] * (et - model.reference_epoch_seconds)
-    return _rotation_about_spin_axis(θ)
+    # _rotation_about_spin_axis(θ) is PCI→PCPF; compose with J2000→PCI to get J2000→PCPF
+    return _rotation_about_spin_axis(θ) * planet.J2000_to_pci
 end
 
 @inline ephemerides_cache_key(::SpiceEphemeridesModel) = (:spice,)

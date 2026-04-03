@@ -84,6 +84,7 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     srp_enabled::Bool = false
     srp_cr::Float64 = 1.3
     srp_area_m2::Float64 = 0.0
+    drag_enabled::Bool = true
     include_wind::Bool = false
     orbit_altitude_mode::Symbol = :vacuum
     maneuver_orbit_numbers::Vector{Int64} = Int64[]
@@ -106,12 +107,19 @@ Base.@kwdef struct TimeAlignedScenarioConfig <: AbstractScenarioConfig
     telemetry_x_col::String
     telemetry_y_col::String
     telemetry_z_col::String
-    telemetry_sma_col::String
-    telemetry_ecc_col::String
-    telemetry_inc_col::String
-    telemetry_aop_col::String
-    telemetry_raan_col::String
-    telemetry_ta_col::String
+    telemetry_sma_col::Union{Nothing, String} = nothing
+    telemetry_ecc_col::Union{Nothing, String} = nothing
+    telemetry_inc_col::Union{Nothing, String} = nothing
+    telemetry_aop_col::Union{Nothing, String} = nothing
+    telemetry_raan_col::Union{Nothing, String} = nothing
+    telemetry_ta_col::Union{Nothing, String} = nothing
+    # Optional: Cartesian IC columns. When all six are present, CartesianInitialCondition is used instead of Keplerian.
+    telemetry_x_ic_col::Union{Nothing, String} = nothing
+    telemetry_y_ic_col::Union{Nothing, String} = nothing
+    telemetry_z_ic_col::Union{Nothing, String} = nothing
+    telemetry_vx_ic_col::Union{Nothing, String} = nothing
+    telemetry_vy_ic_col::Union{Nothing, String} = nothing
+    telemetry_vz_ic_col::Union{Nothing, String} = nothing
     max_points_quick::Int
     max_points_full::Int
     min_eval_points::Int
@@ -129,6 +137,7 @@ Base.@kwdef struct TimeAlignedScenarioConfig <: AbstractScenarioConfig
     srp_enabled::Bool = false
     srp_cr::Float64 = 1.3
     srp_area_m2::Float64 = 0.0
+    drag_enabled::Bool = true
     include_wind::Bool = false
     orbit_altitude_mode::Symbol = :vacuum
     comparison_mode::Symbol = :time_aligned_state
@@ -179,4 +188,3 @@ Base.@kwdef struct VerificationResult
     enforce::Bool
     total_runtime_s::Float64
 end
-

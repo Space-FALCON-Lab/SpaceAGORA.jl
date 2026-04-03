@@ -44,9 +44,10 @@ end
     planet = integrator.p.args.environment_model.planet
     periapsis_altitudes = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        pos = SVector{3, Float64}(u.sc[i].pos)
-        vel = SVector{3, Float64}(u.sc[i].vel)
-        oe = rvtoorbitalelement(pos, vel, planet)
+        # State is in J2000; convert to PCI (body-equatorial) for rvtoorbitalelement
+        pos_pci = planet.J2000_to_pci * SVector{3, Float64}(u.sc[i].pos)
+        vel_pci = planet.J2000_to_pci * SVector{3, Float64}(u.sc[i].vel)
+        oe = rvtoorbitalelement(pos_pci, vel_pci, planet)
         periapsis_altitudes[i] = oe[1] * (1.0 - oe[2]) - planet.Rp_e
     end
     return periapsis_altitudes

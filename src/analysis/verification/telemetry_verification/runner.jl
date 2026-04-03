@@ -1,4 +1,9 @@
-function _run_simulation_dataframe(args::SimulationConfiguration, scenario_name::String, truth::AtmosphereTruthConfig, profile::Symbol)
+function _run_simulation_dataframe(
+    args::SimulationConfiguration,
+    scenario_name::String,
+    truth::AtmosphereTruthConfig,
+    profile::Symbol
+)
     return mktempdir() do tmp
         cfg_run = SimulationConfiguration(
             file_paths=args.file_paths,
@@ -93,6 +98,15 @@ function _run_simulation_dataframe(args::SimulationConfiguration, scenario_name:
 end
 
 function _initial_condition_from_time_aligned_telemetry(telemetry)
+    if telemetry.x_ic_km !== nothing
+        return CartesianInitialCondition(
+            [telemetry.x_ic_km * 1e3, telemetry.y_ic_km * 1e3, telemetry.z_ic_km * 1e3],
+            [telemetry.vx_ic_kmps * 1e3, telemetry.vy_ic_kmps * 1e3, telemetry.vz_ic_kmps * 1e3]
+        )
+    end
+    all(isfinite, (telemetry.sma_km, telemetry.ecc, telemetry.inc_deg, telemetry.aop_deg, telemetry.raan_deg, telemetry.ta_deg)) || throw(
+        ArgumentError("Time-aligned telemetry is missing both Cartesian ICs and finite Keplerian initial-condition fields.")
+    )
     sma_m = telemetry.sma_km * 1e3
     ra_m = sma_m * (1.0 + telemetry.ecc)
     rp_m = sma_m * (1.0 - telemetry.ecc)
@@ -430,4 +444,3 @@ end
 if abspath(PROGRAM_FILE) == abspath(@__FILE__)
     run_verification_cli(copy(ARGS))
 end
-

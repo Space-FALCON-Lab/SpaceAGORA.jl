@@ -4,7 +4,8 @@ module Planets
     using StaticArrays
     using CSV
     using SPICE
-    export Earth, Mars, Venus, Titan
+    export Earth, Mars, Venus, Moon, Titan
+    const SPICE_LOCK = parentmodule(parentmodule(@__MODULE__)).RuntimeServices.SPICE_LOCK
     δ(i, j) = ==(i, j)
 
     @kwdef mutable struct TopographyHarmonicsWorkspace
@@ -18,14 +19,15 @@ module Planets
 
     @kwdef struct Earth <: AbstractPlanet
         name::String = "Earth" # Name of the planet
-        Rp_e::Float64 = 6.3781e6 # Equatorial radius in meters
-        Rp_p::Float64 = 6.3568e6 # Polar radius in meters
-        Rp_m::Float64 = 6.371e6  # Mean radius in meters
+        Rp_e::Float64 = 6.3781366e6 # Equatorial radius in meters (SPICE pck00011)
+        Rp_p::Float64 = 6.3567519e6 # Polar radius in meters (SPICE pck00011)
+        Rp_m::Float64 = 6.371008366666667e6  # Mean radius in meters (SPICE pck00011)
         mass::Float64  = 5.972e24 # Mass in kg
         p::Float64 = 101325.0 # Surface pressure in Pascals
         k::Float64 = 1.83e-4 # Chapman heating coefficient, kg^0.5/m
         ω::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 7.2921066e-5) # Angular velocity vector in rad/s
-        μ::Float64 = 3.986004418e14 # Standard gravitational parameter in m^3/s^2
+        # μ::Float64 = 3.986004415e14 # Standard gravitational parameter in m^3/s^2, GMAT default value
+        μ::Float64 = 3.98600436e14 # Standard gravitational parameter in m^3/s^2, DE421 value ends with 233 after 436
         J2::Float64 = 1.08263e-3 # J2 coefficient
         g_ref::Float64 = 9.80665 # Standard gravity in m/s^2
         ρ_ref::Float64 = 1.225 # Sea level atmospheric density in kg/m^3
@@ -48,14 +50,14 @@ module Planets
 
     @kwdef struct Mars <: AbstractPlanet
         name::String = "Mars" # Name of the planet
-        Rp_e::Float64 = 3.3962e6 # Equatorial radius in meters
+        Rp_e::Float64 = 3.396190e6 # Equatorial radius in meters
         Rp_p::Float64 = 3.3762e6 # Polar radius in meters
         Rp_m::Float64 = 3.3895e6 # Mean radius in meters
         mass::Float64  = 0.64171e24 # Mass in kg
         p::Float64 = 636.0 # Surface pressure in Pascals
         k::Float64 = 1.898e-4 # Chapman heating coefficient, kg^0.5/m
         ω::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 7.08823596e-5) # Angular velocity vector in rad/s
-        μ::Float64 = 4.2828314e13 # Standard gravitational parameter in m^3/s^2
+        μ::Float64 = 4.2828314e13 # Standard gravitational parameter in m^3/s^2, last 6 digits: 258067
         J2::Float64 = 1.96045e-3 # J2 coefficient
         g_ref::Float64 = 3.72076 # Standard gravity in m/s^2
         ρ_ref::Float64 = 8.7489231e-7 # Sea level atmospheric density in kg/m^3
@@ -69,7 +71,9 @@ module Planets
         Lz::Float64 = -4.5e-3 # Vertical temperature gradient in K/m for calculating temperature at altitude
         α::Float64 = deg2rad(317.68143) # Right-ascension of north pole
         δ::Float64 = deg2rad(52.88650) # Declination of north pole
-        J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}([0.67330 0.7394 0.0; -0.5896 0.5369 0.6034; 0.4462 -0.4062 0.7974]) # Rotation matrix from J2000 to planet-centered inertial frame # Rotation matrix from J2000 to planet-centered inertial frame
+        J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}(
+            [0.67330 0.7394 0.0; -0.5896 0.5369 0.6034; 0.4462 -0.4062 0.7974]
+        ) # Rotation matrix from J2000 to planet-centered inertial frame # Rotation matrix from J2000 to planet-centered inertial frame
         L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]) # Rotation matrix from planet-centered inertial frame to planet-centered, planet-fixed frame, function of time
         topography_workspace::TopographyHarmonicsWorkspace = TopographyHarmonicsWorkspace() # Workspace for calculating topography harmonics
         polyfit_coeffs::SVector{21, Float64} = SVector{21, Float64}(-3.691310097181554e-58, 5.819173546214448e-54, -3.9285937578286423e-50, 1.4222601230188116e-46, -2.606951392190571e-43, 3.2943551967480965e-41, 9.394166176413728e-37, -1.7651753457891617e-33, -5.79069281873952e-31, 8.639557954110502e-27, -1.991207114225621e-23, 2.7207390647640917e-20, -2.5611296697872007e-17, 1.7386922029136165e-14, -8.619727907575625e-12, 3.1040218147963276e-09, -7.949080301839893e-07, 0.00013834108975291533, -0.014729001168514675, 0.6707044510751348, -19.414578139119545)
@@ -84,7 +88,7 @@ module Planets
         p::Float64 = 9.2e6 # Surface pressure in Pascals
         k::Float64 = 1.896e-4 # Chapman heating coefficient, kg^0.5/m
         ω::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, -2.99e-7) # Angular velocity vector in rad/s
-        μ::Float64 = 3.24858592e14 # Standard gravitational parameter in m^3/s^2
+        μ::Float64 = 3.24858599e14 # Standard gravitational parameter in m^3/s^2
         J2::Float64 = 4.458e-6 # J2 coefficient
         g_ref::Float64 = 8.87 # Standard gravity in m/s^2
         ρ_ref::Float64 = 65.0 # Sea level atmospheric density in kg/m^3
@@ -141,6 +145,37 @@ module Planets
         polyfit_coeffs::Vector{Float64} = [1.7989756686197253e-58, -2.7298975030491325e-54, 1.7620522402686604e-50, -6.025021166267467e-47, 1.0056316643424087e-43, 9.494104496406468e-42, -3.8472088727076255e-37, 6.051435602297366e-34, 4.074478639170247e-31, -3.244699052533356e-27, 6.66877802035039e-24, -8.360025139024445e-21, 7.301165978344981e-18, -4.650857357165472e-15, 2.1978197729328097e-12, -7.705014392936314e-10, 1.9713879988437584e-7, -3.551889476633975e-5, 0.004248542489215875, -0.3277965440319509, 8.128293001726805]
     end # struct Titan
 
+    @kwdef struct Moon <: AbstractPlanet
+        name::String = "Moon"
+        Rp_e::Float64 = 1.7374e6
+        Rp_p::Float64 = 1.7360e6
+        Rp_m::Float64 = 1.7374e6
+        mass::Float64 = 7.346e22
+        p::Float64 = 0.0
+        k::Float64 = 0.0
+        ω::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 2.6617e-6)
+        μ::Float64 = 4.902799 #8005821478e12
+        J2::Float64 = 2.027e-4
+        g_ref::Float64 = 1.62
+        ρ_ref::Float64 = 0.0
+        h_ref::Float64 = 0.0
+        H::Float64 = 0.0
+        R::Float64 = 0.0
+        T_ref::Float64 = 0.0
+        γ::Float64 = 0.0
+        T::Float64 = 0.0
+        μ_fluid::Float64 = 0.0
+        Lz::Float64 = 0.0
+        α::Float64 = 0.0
+        δ::Float64 = 0.0
+        J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}(
+            [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]
+        )
+        L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
+        topography_workspace::TopographyHarmonicsWorkspace = TopographyHarmonicsWorkspace()
+        polyfit_coeffs::Vector{Float64} = [0.0]
+    end # struct Moon
+
     @inline function _furnsh_required(spice_path::String, relpath::String)
         kernel_path = joinpath(spice_path, relpath)
         isfile(kernel_path) || throw(ArgumentError("Required SPICE kernel not found: $kernel_path"))
@@ -159,46 +194,157 @@ module Planets
         throw(ArgumentError("Unable to find required SPICE kernel in $(spice_path). Tried: $(join(relpaths, ", "))"))
     end
 
+    @inline function _spice_body_pool_name(planet_name::String)::String
+        return planet_name == "Moon" ? "MOON" : uppercase(planet_name)
+    end
+
+    @inline function _spice_body_radii_m(planet_name::String)::NTuple{3, Float64}
+        radii_km = lock(SPICE_LOCK) do
+            bodvrd(_spice_body_pool_name(planet_name), "RADII")
+        end
+        return (radii_km[1] * 1e3, radii_km[2] * 1e3, radii_km[3] * 1e3)
+    end
+
+    @inline function _spice_body_gm_m3s2(planet_name::String)::Float64
+        gm_km3s2 = lock(SPICE_LOCK) do
+            bodvrd(_spice_body_pool_name(planet_name), "GM")
+        end
+        return gm_km3s2[1] * 1e9
+    end
+
+    function _gravity_constants_kernel_if_available(spice_path::String)
+        for relpath in (
+            "pck/de_403_masses.tpc",
+            "spk/planets/de_403_masses.tpc",
+            "pck/gm_de440.tpc",
+            "pck/gm_de441.tpc",
+            "pck/gm_de431.tpc",
+            "pck/gm_de430.tpc"
+        )
+            kernel_path = joinpath(spice_path, relpath)
+            if isfile(kernel_path)
+                furnsh(kernel_path)
+                return kernel_path
+            end
+        end
+        return nothing
+    end
+
+    function _spice_backed_planet_kwargs(planet_name::String)
+        rp_e, rp_p_2, rp_p = _spice_body_radii_m(planet_name)
+        kwargs = Dict{Symbol, Any}(
+            :Rp_e => rp_e,
+            :Rp_p => rp_p,
+            :Rp_m => (rp_e + rp_p_2 + rp_p) / 3.0,
+            :J2000_to_pci => _spice_j2000_to_pci(planet_name)
+        )
+        try
+            kwargs[:μ] = _spice_body_gm_m3s2(planet_name)
+        catch
+            # GM constants require a dedicated kernel in addition to the standard PCK.
+        end
+        return kwargs
+    end
+
+    @inline function _planetary_kernel_override_relpath()::String
+        return strip(get(ENV, "SPACEAGORA_SPICE_PLANETARY_KERNEL_RELPATH", ""))
+    end
+
+    function _furnsh_planetary_kernel(spice_path::String)
+        override_relpath = _planetary_kernel_override_relpath()
+        if !isempty(override_relpath)
+            return _furnsh_required(spice_path, override_relpath)
+        end
+        return _furnsh_first_existing(
+            spice_path,
+            (
+                "spk/planets/de430.bsp",
+                "spk/planets/de421.bsp",
+                "spk/planets/de442s.bsp",
+                "spk/planets/de442.bsp",
+                "spk/planets/de440s.bsp",
+                "spk/planets/de440_GRAM.bsp"
+            )
+        )
+    end
+
+    @inline function _spice_body_fixed_frame(planet_name::String)::String
+        return planet_name == "Moon" ? "MOON_PA_DE421" : lock(SPICE_LOCK) do
+            _, resolved_frame = cnmfrm(planet_name)
+            # println("Resolved body-fixed frame for $planet_name: $resolved_frame")
+            resolved_frame
+        end
+    end
+
+    @inline function _spice_j2000_to_pci(planet_name::String)::SMatrix{3, 3, Float64}
+        frame_name = _spice_body_fixed_frame(planet_name)
+        return lock(SPICE_LOCK) do
+            SMatrix{3, 3, Float64}(pxform("J2000", frame_name, 0.0))
+        end
+    end
+
     # Constructors
     function Earth(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        earth = Earth()
-        # TopographyHarmonicsWorkspace!(topo_harmonics_file, earth)
-        _furnsh_required(spice_path, "pck/pck00011.tpc")
+        _furnsh_required(spice_path, "pck/pck00010.tpc")
         _furnsh_required(spice_path, "lsk/naif0012.tls")
-        _furnsh_first_existing(spice_path, ("spk/planets/de440s.bsp", "spk/planets/de440_GRAM.bsp"))
-        # calc_J2000_to_pci_rotation_matrix!(earth.α, earth.δ, earth)
+        _furnsh_planetary_kernel(spice_path)
+        _gravity_constants_kernel_if_available(spice_path)
+        # ITRF93 high-precision Earth orientation kernels (required for harmonics frame transforms)
+        _furnsh_first_existing(spice_path, ("pck/earth_latest_high_prec.bpc", "pck/earth_200101_990628_predict.bpc"))
+        _furnsh_first_existing(
+            spice_path,
+            (
+                "tf/earth_assoc_itrf93.tf",
+                # "fk/planets/earth_assoc_itrf93.tf",
+                # "fk/planets/earth_fixed.tf"
+            )
+        )
+        earth = Earth(; _spice_backed_planet_kwargs("Earth")...)
+        # TopographyHarmonicsWorkspace!(topo_harmonics_file, earth)
         return earth
     end
 
     function Mars(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        mars = Mars()
-        # TopographyHarmonicsWorkspace!(topo_harmonics_file, mars)
-        _furnsh_required(spice_path, "pck/pck00011.tpc")
+        _furnsh_required(spice_path, "pck/pck00010.tpc")
+        # _furnsh_required(spice_path, "pck/mars_iau2000_m2_quadratic_patch.tpc")
         _furnsh_required(spice_path, "lsk/naif0012.tls")
-        _furnsh_first_existing(spice_path, ("spk/planets/de440s.bsp", "spk/planets/de440_GRAM.bsp"))
-        # calc_J2000_to_pci_rotation_matrix!(mars.α, mars.δ, mars)
+        _furnsh_planetary_kernel(spice_path)
+        _gravity_constants_kernel_if_available(spice_path)
+        mars = Mars(; _spice_backed_planet_kwargs("Mars")...)
+        # TopographyHarmonicsWorkspace!(topo_harmonics_file, mars)
         return mars
     end
 
     function Venus(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        venus = Venus()
-        # TopographyHarmonicsWorkspace!(topo_harmonics_file, venus)
-        _furnsh_required(spice_path, "pck/pck00011.tpc")
+        _furnsh_required(spice_path, "pck/pck00010.tpc")
         _furnsh_required(spice_path, "lsk/naif0012.tls")
-        _furnsh_first_existing(spice_path, ("spk/planets/de440s.bsp", "spk/planets/de440_GRAM.bsp"))
-        # calc_J2000_to_pci_rotation_matrix!(venus.α, venus.δ, venus)
+        _furnsh_planetary_kernel(spice_path)
+        _gravity_constants_kernel_if_available(spice_path)
+        venus = Venus(; _spice_backed_planet_kwargs("Venus")...)
+        # TopographyHarmonicsWorkspace!(topo_harmonics_file, venus)
         return venus
     end
 
     function Titan(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        titan = Titan()
-        # TopographyHarmonicsWorkspace!(topo_harmonics_file, titan)
-        _furnsh_required(spice_path, "pck/pck00011.tpc")
+        _furnsh_required(spice_path, "pck/pck00010.tpc")
         _furnsh_required(spice_path, "lsk/naif0012.tls")
-        _furnsh_first_existing(spice_path, ("spk/planets/de440s.bsp", "spk/planets/de440_GRAM.bsp"))
+        _furnsh_planetary_kernel(spice_path)
+        _gravity_constants_kernel_if_available(spice_path)
         _furnsh_first_existing(spice_path, ("spk/satellites/sat441.bsp", "spk/satellites/sat441_GRAM.bsp"))
-        # calc_J2000_to_pci_rotation_matrix!(titan.α, titan.δ, titan)
+        titan = Titan(; _spice_backed_planet_kwargs("Titan")...)
+        # TopographyHarmonicsWorkspace!(topo_harmonics_file, titan)
         return titan
+    end
+
+    function Moon(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
+        _furnsh_required(spice_path, "pck/pck00010.tpc")
+        _furnsh_required(spice_path, "lsk/naif0012.tls")
+        _furnsh_planetary_kernel(spice_path)
+        _gravity_constants_kernel_if_available(spice_path)
+        _furnsh_required(spice_path, "spk/satellites/SPICELunaCurrentKernel.bpc")
+        _furnsh_required(spice_path, "tf/SPICELunaFrameKernel.tf")
+        moon = Moon(; _spice_backed_planet_kwargs("Moon")...)
+        return moon
     end
 
     # Helper functions

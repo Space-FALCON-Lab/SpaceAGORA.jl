@@ -403,7 +403,16 @@ function build_initial_conditions(args)::ComponentVector
     for i in eachindex(args.dynamics_model.spacecraft)
         spacecraft = args.dynamics_model.spacecraft[i]
         sc_view = state.sc[i]
-        r0, v0 = orbitalelemtorv(spacecraft.initial_condition, args.environment_model.planet)
+        ic = spacecraft.initial_condition
+        r0, v0 = if ic isa CartesianInitialCondition
+            collect(ic.pos), collect(ic.vel)   # assumed J2000 frame
+        else
+            # orbitalelemtorv gives PCI (body-equatorial / MME2000); convert to J2000
+            r_pci, v_pci = orbitalelemtorv(ic, args.environment_model.planet)
+            pci_to_j2000 = args.environment_model.planet.J2000_to_pci'
+            collect(pci_to_j2000 * SVector{3, Float64}(r_pci)),
+            collect(pci_to_j2000 * SVector{3, Float64}(v_pci))
+        end
         sc_view.pos .= r0
         sc_view.vel .= v0
         # sc_view.mass .= spacecraft.dry_mass + spacecraft.prop_mass

@@ -64,9 +64,11 @@ end
         return :split_imex
     elseif mode in ("multirate", "multirate_split", "split_multirate", "mr")
         return :multirate
+    elseif mode in ("dp8", "dormandprince8", "dop8")
+        return :dp8
     end
     throw(ArgumentError(
-        "Unsupported SPACEAGORA_SOLVER_MODE='$mode'. Use one of: tsit5, auto_stiff, rodas5p, split_imex, multirate."
+        "Unsupported SPACEAGORA_SOLVER_MODE='$mode'. Use one of: tsit5, dp8, auto_stiff, rodas5p, split_imex, multirate."
     ))
 end
 
@@ -156,9 +158,11 @@ end
         return (alg=Rodas5P(autodiff=AutoFiniteDiff()), label="Rodas5P", auto_switch_capable=false)
     elseif mode in ("kencarp4", "ken4")
         return (alg=KenCarp4(autodiff=AutoFiniteDiff()), label="KenCarp4", auto_switch_capable=false)
+    elseif mode in ("dp8", "dormandprince8", "dop8")
+        return (alg=DP8(), label="DP8", auto_switch_capable=false)
     end
     throw(ArgumentError(
-        "Unsupported $(env_name)='$mode'. Use one of: tsit5, auto_stiff, rodas5p, kencarp4."
+        "Unsupported $(env_name)='$mode'. Use one of: tsit5, dp8, auto_stiff, rodas5p, kencarp4."
     ))
 end
 
@@ -374,6 +378,16 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
             initial_solver=multirate_meta.slow_solver,
             fallback_used=switched,
             trigger_retcode=switched ? "internal_autoswitch" : missing
+        )
+    end
+
+    if mode == :dp8
+        sol = _solve_with_explicit_solver(prob, args, DP8(), reltol_tol, abstol_tol)
+        return sol, (
+            solver="DP8",
+            initial_solver="DP8",
+            fallback_used=false,
+            trigger_retcode=missing
         )
     end
 

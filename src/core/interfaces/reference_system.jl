@@ -9,32 +9,21 @@ using SatelliteToolbox
 # eop_iau2000a = fetch_iers_eop(Val(:IAU2000A))
 
 function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet::T)::Tuple{SVector{3, Float64}, SVector{3, Float64}} where T
-    # From PCI (planet centered inertial) to PCPF (planet centered/planet fixed)
-
-    # rot_angle = norm(planet.ω) * (t + t_prev)
-    # et = utc2et(to_utc(DateTime(date_initial + t0*seconds)))
-    # current_time = value(seconds(date_initial + t0*seconds - from_utc(DateTime(2000, 1, 1, 12, 0, 0.0)))) # current time in seconds since J2000
-    # et = utc2et(to_utc(current_time)) # convert to Julian Ephemeris Time (ET)
-    # primary_body_name = planet.name
-    # planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(primary_body_name), et))*planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
-    
-    # L_pi = [cos(rot_angle) sin(rot_angle) 0; 
-    #         -sin(rot_angle) cos(rot_angle) 0; 
-    #         0 0 1]
+    # From J2000 inertial to PCPF (planet centered/planet fixed)
+    # planet.L_PI is J2000→PCPF; planet.ω is defined in PCI so convert to J2000 for the Coriolis term
+    ω_j2000 = planet.J2000_to_pci' * planet.ω
     r_p = SVector{3, Float64}(planet.L_PI * r_i)
-
-    v_p = SVector{3, Float64}(planet.L_PI * (v_i - cross(planet.ω, r_i)))
-
+    v_p = SVector{3, Float64}(planet.L_PI * (v_i - cross(ω_j2000, r_i)))
     return r_p, v_p
 end
 
 function r_pintor_i(r_p::SVector{3, Float64}, v_p::SVector{3, Float64}, planet::T)::Tuple{SVector{3, Float64}, SVector{3, Float64}} where T
-    # From PCPF (planet centered/planet fixed) to PCI (planet centered inertial)
-
-    r_i = planet.L_PI' * r_p
-    v_i = planet.L_PI' * SVector{3, Float64}(v_p + cross(planet.ω, r_p))
-
-    return r_i, v_i
+    # From PCPF (planet centered/planet fixed) to J2000 inertial
+    # planet.L_PI' is PCPF→J2000; planet.ω converted to J2000 for Coriolis term
+    ω_j2000 = planet.J2000_to_pci' * planet.ω
+    r_j2000 = SVector{3, Float64}(planet.L_PI' * r_p)
+    v_j2000 = SVector{3, Float64}(planet.L_PI' * v_p + cross(ω_j2000, r_j2000))
+    return r_j2000, v_j2000
 end
 
 function orbitalelemtorv(oe::SVector{7, Float64}, planet)
@@ -63,6 +52,7 @@ function orbitalelemtorv(oe, planet)
     a, e, i, Ω, ω, ν = oe.a, oe.e, oe.i, oe.Ω, oe.ω, oe.ν
     return orbitalelemtorv(SVector{7, Float64}([a, e, i, Ω, ω, ν, 0.0]), planet)
 end
+
 
 @inline function _wrap_2pi(θ::Float64)::Float64
     θw = mod(θ, 2pi)
@@ -256,11 +246,14 @@ function latlongtoOE(LATLONGH, planet, γ, α, v)
     # Form the velocity in ECEF:
     v_ecef = v_N * N_ecef + v_E * E_ecef + v_Z * Z_ecef
 
-    # Convert to ECI using your transformation matrix:
-    v_eci = planet.L_PI' * v_ecef
+    # Convert velocity from PCPF to J2000, then to PCI for rvtoorbitalelement
+    v_eci_j2000 = planet.L_PI' * v_ecef
     # v_vec = SVector{3, Float64}([v*cos(γ)*cos(α), v*cos(γ)*sin(α), v*sin(γ)])
 
-    OE = rvtoorbitalelement(r_i, v_eci, 0, planet)[1:6]
+    # rvtoorbitalelement expects PCI (body-equatorial) frame; convert J2000→PCI
+    r_pci = SVector{3, Float64}(planet.J2000_to_pci * r_i)
+    v_pci = SVector{3, Float64}(planet.J2000_to_pci * v_eci_j2000)
+    OE = rvtoorbitalelement(r_pci, v_pci, 0, planet)[1:6]
     return OE
 end
 

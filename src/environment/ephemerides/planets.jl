@@ -27,7 +27,7 @@ module Planets
         k::Float64 = 1.83e-4 # Chapman heating coefficient, kg^0.5/m
         ω::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 7.2921066e-5) # Angular velocity vector in rad/s
         # μ::Float64 = 3.986004415e14 # Standard gravitational parameter in m^3/s^2, GMAT default value
-        μ::Float64 = 3.98600436e14 # Standard gravitational parameter in m^3/s^2, DE421 value ends with 233 after 436
+        μ::Float64 = 3.98600436233e14 # Standard gravitational parameter in m^3/s^2, DE421 value ends with 233 after 436
         J2::Float64 = 1.08263e-3 # J2 coefficient
         g_ref::Float64 = 9.80665 # Standard gravity in m/s^2
         ρ_ref::Float64 = 1.225 # Sea level atmospheric density in kg/m^3
@@ -214,8 +214,8 @@ module Planets
 
     function _gravity_constants_kernel_if_available(spice_path::String)
         for relpath in (
-            "pck/de_403_masses.tpc",
-            "spk/planets/de_403_masses.tpc",
+            # "pck/de_403_masses.tpc",
+            # "spk/planets/de_403_masses.tpc",
             "pck/gm_de440.tpc",
             "pck/gm_de441.tpc",
             "pck/gm_de431.tpc",
@@ -271,7 +271,7 @@ module Planets
     @inline function _spice_body_fixed_frame(planet_name::String)::String
         return planet_name == "Moon" ? "MOON_PA_DE421" : lock(SPICE_LOCK) do
             _, resolved_frame = cnmfrm(planet_name)
-            # println("Resolved body-fixed frame for $planet_name: $resolved_frame")
+            println("Resolved body-fixed frame for $planet_name: $resolved_frame")
             resolved_frame
         end
     end
@@ -285,7 +285,7 @@ module Planets
 
     # Constructors
     function Earth(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        _furnsh_required(spice_path, "pck/pck00010.tpc")
+        _furnsh_required(spice_path, "pck/pck00011.tpc")
         _furnsh_required(spice_path, "lsk/naif0012.tls")
         _furnsh_planetary_kernel(spice_path)
         _gravity_constants_kernel_if_available(spice_path)
@@ -299,7 +299,7 @@ module Planets
                 # "fk/planets/earth_fixed.tf"
             )
         )
-        earth = Earth(; _spice_backed_planet_kwargs("Earth")...)
+        earth = Earth(J2000_to_pci=_spice_j2000_to_pci("Earth"))
         # TopographyHarmonicsWorkspace!(topo_harmonics_file, earth)
         return earth
     end
@@ -337,7 +337,7 @@ module Planets
     end
 
     function Moon(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        _furnsh_required(spice_path, "pck/pck00010.tpc")
+        _furnsh_required(spice_path, "pck/pck00011.tpc")
         _furnsh_required(spice_path, "lsk/naif0012.tls")
         _furnsh_planetary_kernel(spice_path)
         _gravity_constants_kernel_if_available(spice_path)

@@ -47,13 +47,13 @@ end
 end
 
 @inline function _spice_body_fixed_frame(planet)::String
-    return planet.name == "Moon" ? "MOON_PA_DE421" : "IAU_$(planet.name)"
+    return planet.name == "Moon" ? "MOON_PA_DE421" : (planet.name == "Earth" ? "ITRF93" : "IAU_" * uppercase(planet.name))
 end
 
 @inline function planet_frame_lpi(planet, et::Float64, ::SpiceEphemeridesModel)::SMatrix{3, 3, Float64}
     return lock(SPICE_LOCK) do
-        # pxform("J2000", frame_name, et) gives J2000→PCPF directly
-        SMatrix{3, 3, Float64}(pxform("J2000", _spice_body_fixed_frame(planet), et))
+        # pxform gives J2000->body-fixed; compose with PCI->J2000 to recover PCI->body-fixed.
+        SMatrix{3, 3, Float64}(pxform("J2000", _spice_body_fixed_frame(planet), et)) * planet.J2000_to_pci'
     end
 end
 

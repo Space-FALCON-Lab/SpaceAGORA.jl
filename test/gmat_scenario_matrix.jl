@@ -32,7 +32,8 @@ const _GMAT_EXAMPLES_DIR = joinpath(
     "Basilisk_Examples_Full"
 )
 
-const _GMAT_HARMONICS_EARTH_FILE = "data/Gravity_harmonics_data/GGM03S.csv"
+# const _GMAT_HARMONICS_EARTH_FILE = "data/Gravity_harmonics_data/GGM03S.csv" # For Basilisk validation
+const _GMAT_HARMONICS_EARTH_FILE = "data/Gravity_harmonics_data/EarthGGM05C.csv" # For internal GMAT parity, matches the file used in the GMAT scenarios
 const _GMAT_HARMONICS_MARS_FILE = "data/Gravity_harmonics_data/GGM2B.csv"
 const _GMAT_HARMONICS_VENUS_FILE = "data/Gravity_harmonics_data/MGNP180U.csv"
 const _GMAT_HARMONICS_MOON_FILE = "data/Gravity_harmonics_data/LP165P.csv"

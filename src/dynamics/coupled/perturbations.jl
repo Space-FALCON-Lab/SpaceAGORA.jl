@@ -797,14 +797,12 @@ end
 function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
 
-    # Transform from J2000 inertial frame to planet-fixed frame using SPICE frame system
-    # Both cnmfrm and pxform must be inside the lock to maintain SPICE call stack consistency
+    # Transform from J2000 inertial to planet-fixed by composing SPICE body-fixed with PCI->J2000.
     L_PI = lock(SPICE_LOCK) do
-        frame_name = param.args.environment_model.planet.name == "Moon" ? "MOON_PA_DE421" : begin
-            _, resolved_frame = cnmfrm(param.args.environment_model.planet.name)
-            resolved_frame
-        end
-        SMatrix{3, 3, Float64}(pxform("J2000", frame_name, et))
+        frame_name = param.args.environment_model.planet.name == "Moon" ?
+            "MOON_PA_DE421" :
+            (param.args.environment_model.planet.name == "Earth" ? "ITRF93" : "IAU_" * uppercase(param.args.environment_model.planet.name))
+        SMatrix{3, 3, Float64}(pxform("J2000", frame_name, et)) * param.args.environment_model.planet.J2000_to_pci'
     end
     rVec_cart = L_PI * SVector{3, Float64}(x.pos) # convert from inertial to planet-fixed frame for gravity calculation
     mass = x.mass

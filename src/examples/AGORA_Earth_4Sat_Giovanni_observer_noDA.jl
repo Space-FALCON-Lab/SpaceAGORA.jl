@@ -908,7 +908,9 @@ function SimulationModel.calcNavigationEffect!(
     sat_idx::Int
 )
     # Execute one distributed navigation fusion cycle per nav tick.
-    sat_idx == model.observer_idxs[1] || return nothing
+    # Run on the last observer callback so sensor/local-track effectors
+    # have already populated this tick's measurements for all observers.
+    sat_idx == model.observer_idxs[end] || return nothing
     _update_neighbors!(model.nav.comms, u, p)
 
     observer_set = Set(model.observer_idxs) 
@@ -929,24 +931,24 @@ function SimulationModel.calcNavigationEffect!(
     P_upd_buf = Dict{Tuple{Int, Int}, Matrix{Float64}}()     
     x_pred_buf = Dict{Tuple{Int, Int}, SVector{6, Float64}}()
     P_pred_buf = Dict{Tuple{Int, Int}, Matrix{Float64}}()    
-    touched = Set{Tuple{Int, Int}}()                          
-    slot_init_done = Set{Int}()
-
-    # STEP 1/4: Observer-local loop.
-    # Each observer iterates only over its own local tracks.
+    touched = Set{Tuple{Int, Int}}()
+    all_active_slots = Set{Int}()
     for observer_id in model.observer_idxs
-        # Only consider tracks in this observer's local catalog.
         for slot_id in keys(model.nav.local_tracks[observer_id])
             slot_id in model.track_slots || continue
+            push!(all_active_slots, slot_id)
+        end
+    end
 
-            # STEP 1a: IOD attempt for this local track if still uninitialized.
+    # STEP 1/4: IOD attempt pass (observer-centric, all observers first).
+    for observer_id in model.observer_idxs
+        for slot_id in keys(model.nav.local_tracks[observer_id])
+            slot_id in model.track_slots || continue
             if !model.iod_initialized[observer_id, slot_id]
-                # Check if we can even attempt IOD for this track based on local measures; if not, mark as not ready and skip.
                 if !_can_seed_iod_from_local_consecutive_measures(model.nav, observer_id, slot_id)
                     model.iod_triangulation_ready[observer_id, slot_id] = false
                     model.iod_used_neighbors[observer_id, slot_id] = 0
                 else
-                    # Select valid neighbors for IOD.
                     valid_neighbors = _select_iod_neighbors(
                         model.nav,
                         observer_id,
@@ -957,7 +959,6 @@ function SimulationModel.calcNavigationEffect!(
                     if length(valid_neighbors) < model.min_neighbor_count
                         model.iod_triangulation_ready[observer_id, slot_id] = false
                     else
-                        # Build and solve IOD equations using this observer's track and valid neighbors' tracks.
                         nodes_idx = vcat([observer_id], valid_neighbors)
                         nodes = NamedTuple[]
                         A_rows = Matrix{Float64}(undef, 0, 3)
@@ -1009,91 +1010,94 @@ function SimulationModel.calcNavigationEffect!(
                     end
                 end
             end
+        end
+    end
 
-            # STEP 1b: Slot-level IOD consensus init.
-            # Assumes same slot across observers corresponds to same object.
-            # needs to be updated with DA-enabled cross-track matching based on miss distance/MD on IOD estimates
-            if !(slot_id in slot_init_done)
-                _initialize_slot_filter_from_iod_consensus!(model, slot_id, neighbor_map, t, u)
-                push!(slot_init_done, slot_id)
+    # STEP 2/4: Initialize filter from IOD consensus once per active slot.
+    # Assumes same slot across observers corresponds to same object.
+    # needs to be updated with DA-enabled cross-track matching based on miss distance/MD on IOD estimates
+    for slot_id in all_active_slots
+        _initialize_slot_filter_from_iod_consensus!(model, slot_id, neighbor_map, t, u)
+    end
+
+    # STEP 3/4: Slot-wise DEKF update/predict pass with a common consensus set.
+    for slot_id in all_active_slots
+        observers_with_slot = [obs for obs in model.observer_idxs if haskey(model.nav.local_tracks[obs], slot_id)]
+        isempty(observers_with_slot) && continue
+
+        u_local = Dict{Int, Any}()
+        uhat_local = Dict{Int, Any}()
+        U_local = Dict{Int, Any}()
+        has_valid_local_measure = Dict{Int, Bool}()
+
+        # Build local information terms once per (observer, slot).
+        for observer_id in observers_with_slot
+            if !model.filter_initialized[observer_id, slot_id]
+                u_local[observer_id] = zeros(6)
+                uhat_local[observer_id] = zeros(6)
+                U_local[observer_id] = zeros(6, 6)
+                has_valid_local_measure[observer_id] = false
+                continue
             end
-            model.filter_initialized[observer_id, slot_id] || continue
 
-            # STEP 2/4: Gather local information terms for this observer and matched neighbor tracks.
-            matched_track_by_observer = _cross_track_match_for_consensus(
+            x_prior = _is_finite_state(x_prior_snap[observer_id, slot_id]) ? x_prior_snap[observer_id, slot_id] : model.state_pred[observer_id, slot_id]
+            observer_pos = SVector{3, Float64}(u.sc[observer_id].pos)
+            measurement = _latest_track_measure(model.nav, observer_id, slot_id, t)
+            if measurement === nothing
+                u_local[observer_id] = zeros(6)
+                uhat_local[observer_id] = zeros(6)
+                U_local[observer_id] = zeros(6, 6)
+                has_valid_local_measure[observer_id] = false
+                continue
+            end
+
+            u_i, uhat_i, U_i, valid_i = _build_local_information_terms(
                 model,
-                observer_id,
-                slot_id,
-                get(neighbor_map, observer_id, Int[])
+                x_prior,
+                observer_pos,
+                measurement.los_unit
             )
-            # get all observers that have a matched track for this slot (including self)
-            participants_all = collect(keys(matched_track_by_observer))
-            # For each participant, build local information terms if valid; otherwise, use zeros and mark as invalid.
-            u_local = Dict{Int, Any}()
-            uhat_local = Dict{Int, Any}()
-            U_local = Dict{Int, Any}()
-            has_valid_local_measure = Dict{Int, Bool}()
-            for participant_id in participants_all
-                (participant_id in model.observer_idxs) || continue
-                participant_slot_id = get(matched_track_by_observer, participant_id, slot_id)
-                if !model.filter_initialized[participant_id, participant_slot_id]
-                    u_local[participant_id] = zeros(6)
-                    uhat_local[participant_id] = zeros(6)
-                    U_local[participant_id] = zeros(6, 6)
-                    has_valid_local_measure[participant_id] = false
-                    continue
-                end
-                x_prior = _is_finite_state(x_prior_snap[participant_id, participant_slot_id]) ? x_prior_snap[participant_id, participant_slot_id] : model.state_pred[participant_id, participant_slot_id]
-                observer_pos = SVector{3, Float64}(u.sc[participant_id].pos)
-                measurement = _latest_track_measure(model.nav, participant_id, participant_slot_id, t)
-                if measurement === nothing
-                    u_local[participant_id] = zeros(6)
-                    uhat_local[participant_id] = zeros(6)
-                    U_local[participant_id] = zeros(6, 6)
-                    has_valid_local_measure[participant_id] = false
-                    continue
-                end
-                u_i, uhat_i, U_i, valid_i = _build_local_information_terms(
-                    model,
-                    x_prior,
-                    observer_pos,
-                    measurement.los_unit
-                )
-                u_local[participant_id] = u_i
-                uhat_local[participant_id] = uhat_i
-                U_local[participant_id] = U_i
-                has_valid_local_measure[participant_id] = valid_i
-            end
+            u_local[observer_id] = u_i
+            uhat_local[observer_id] = uhat_i
+            U_local[observer_id] = U_i
+            has_valid_local_measure[observer_id] = valid_i
+        end
 
-            # Keep only observers that have both:
-            # - initialized filter on this slot
-            # - valid measurement at this tick
-            consensus_participants = Int[]
-            for participant_id in keys(has_valid_local_measure)
-                participant_slot_id = get(matched_track_by_observer, participant_id, slot_id)
-                if model.filter_initialized[participant_id, participant_slot_id] && get(has_valid_local_measure, participant_id, false)
-                    push!(consensus_participants, participant_id)
-                end
-            end
-            participant_set = Set(consensus_participants)
+        consensus_participants = [
+            observer_id for observer_id in observers_with_slot
+            if model.filter_initialized[observer_id, slot_id] && get(has_valid_local_measure, observer_id, false)
+        ]
+        participant_set = Set(consensus_participants)
 
-            # STEP 3/4: For current observer-track, either:
-            # - run correction+prediction if it participates in consensus
-            # - or prediction-only if it does not.
+        has_consensus = !isempty(consensus_participants)
+        z_cons = Dict{Int, Any}()
+        zhat_cons = Dict{Int, Any}()
+        S_cons = Dict{Int, Any}()
+        if has_consensus
+            participant_neighbor_map = Dict{Int, Vector{Int}}(
+                observer_id => [n for n in get(neighbor_map, observer_id, Int[]) if n in participant_set]
+                for observer_id in consensus_participants
+            )
+            u_part = Dict{Int, Any}(observer_id => u_local[observer_id] for observer_id in consensus_participants)
+            uhat_part = Dict{Int, Any}(observer_id => uhat_local[observer_id] for observer_id in consensus_participants)
+            U_part = Dict{Int, Any}(observer_id => U_local[observer_id] for observer_id in consensus_participants)
+            z_cons = _low_pass_consensus(u_part, consensus_participants, participant_neighbor_map, model.num_consensus_iter)
+            zhat_cons = _low_pass_consensus(uhat_part, consensus_participants, participant_neighbor_map, model.num_consensus_iter)
+            S_cons = _low_pass_consensus(U_part, consensus_participants, participant_neighbor_map, model.num_consensus_iter)
+            model.last_no_measure_warning_t[slot_id] = NaN
+        elseif !isfinite(model.last_no_measure_warning_t[slot_id]) || abs(t - model.last_no_measure_warning_t[slot_id]) > NAVIGATION_DT_TOL_SEC
+            @warn "DEKF correction skipped: no valid LOS for slot $(slot_id) at t=$(round(t; digits=3)) s."
+            model.last_no_measure_warning_t[slot_id] = t
+        end
+
+        # Apply correction/prediction for every initialized observer on this slot.
+        for observer_id in observers_with_slot
+            model.filter_initialized[observer_id, slot_id] || continue
             key = (observer_id, slot_id)
-            if observer_id in participant_set
-                participant_neighbor_map = Dict{Int, Vector{Int}}(
-                    participant_id => [n for n in get(neighbor_map, participant_id, Int[]) if n in participant_set] for participant_id in consensus_participants
-                )
-                u_part = Dict{Int, Any}(participant_id => u_local[participant_id] for participant_id in consensus_participants)
-                uhat_part = Dict{Int, Any}(participant_id => uhat_local[participant_id] for participant_id in consensus_participants)
-                U_part = Dict{Int, Any}(participant_id => U_local[participant_id] for participant_id in consensus_participants)
-                z_cons = _low_pass_consensus(u_part, consensus_participants, participant_neighbor_map, model.num_consensus_iter)
-                zhat_cons = _low_pass_consensus(uhat_part, consensus_participants, participant_neighbor_map, model.num_consensus_iter)
-                S_cons = _low_pass_consensus(U_part, consensus_participants, participant_neighbor_map, model.num_consensus_iter)
+            P_prior = _is_finite_cov(P_prior_snap[observer_id, slot_id]) ? P_prior_snap[observer_id, slot_id] : model.covariance_pred[observer_id, slot_id]
+            x_prior = _is_finite_state(x_prior_snap[observer_id, slot_id]) ? x_prior_snap[observer_id, slot_id] : model.state_pred[observer_id, slot_id]
 
-                P_prior = _is_finite_cov(P_prior_snap[observer_id, slot_id]) ? P_prior_snap[observer_id, slot_id] : model.covariance_pred[observer_id, slot_id]
-                x_prior = _is_finite_state(x_prior_snap[observer_id, slot_id]) ? x_prior_snap[observer_id, slot_id] : model.state_pred[observer_id, slot_id]
+            if has_consensus && (observer_id in participant_set)
                 S_i = S_cons[observer_id]
                 P_upd = _symmetrize_psd(inv(inv(P_prior) + S_i))
                 x_upd = x_prior + P_upd * (z_cons[observer_id] - zhat_cons[observer_id])
@@ -1104,14 +1108,9 @@ function SimulationModel.calcNavigationEffect!(
                 P_upd_buf[key] = P_upd
                 x_pred_buf[key] = x_pred
                 P_pred_buf[key] = P_pred
-                model.last_no_measure_warning_t[slot_id] = NaN
             else
-                if !isfinite(model.last_no_measure_warning_t[slot_id]) || abs(t - model.last_no_measure_warning_t[slot_id]) > NAVIGATION_DT_TOL_SEC
-                    @warn "DEKF correction skipped: no valid LOS for slot $(slot_id) at t=$(round(t; digits=3)) s."
-                    model.last_no_measure_warning_t[slot_id] = t
-                end
-                x_upd = _is_finite_state(x_prior_snap[observer_id, slot_id]) ? x_prior_snap[observer_id, slot_id] : model.state_pred[observer_id, slot_id]
-                P_upd = _is_finite_cov(P_prior_snap[observer_id, slot_id]) ? P_prior_snap[observer_id, slot_id] : model.covariance_pred[observer_id, slot_id]
+                x_upd = x_prior
+                P_upd = P_prior
                 x_pred = _propagate_keplerian(SVector{6, Float64}(x_upd), model.μ, NAVIGATION_RATE_SEC)
                 F = _compute_process_jacobian(SVector{6, Float64}(x_upd), model.μ, NAVIGATION_RATE_SEC)
                 P_pred = _symmetrize_psd(F * P_upd * F' + num_agents * Matrix(Q))

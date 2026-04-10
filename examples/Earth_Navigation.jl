@@ -19,6 +19,7 @@ const EKF_CONSENSUS_ITERS = 30
 const EKF_PROCESS_Q_DIAG = SVector{6, Float64}(5e-1, 5e-1, 5e-1, 5e-3, 5e-3, 5e-3)
 const NAN_LOS = SVector{3, Float64}(NaN, NaN, NaN)
 const NAN_STATE6 = SVector{6, Float64}(ntuple(_ -> NaN, 6))
+@inline _nan_cov6() = fill(NaN, 6, 6)
 
 Base.@kwdef mutable struct LOSMeasurement
     t::Float64
@@ -301,13 +302,22 @@ function _compute_state_covariance(
     return HtH_inv * H' * Cov_e * H * HtH_inv
 end
 
+# Local track memory for each observer and slot, storing the latest two LOS measures and associated context for seeding and fusion.
 Base.@kwdef mutable struct LocalTrack
     slot::Int
     last_meas::Union{Nothing, LOSMeasurement}
     prev_meas::Union{Nothing, LOSMeasurement}
+    status::Symbol
+    seed_ready::Bool
     has_measure_now::Bool
     last_update_t::Float64
+    association_score_now::Float64
+    state_estimate_now::SVector{6, Float64}
+    covariance_estimate_now::Matrix{Float64}
+    observer_pos_now::SVector{3, Float64}
+    observer_pos_prev::SVector{3, Float64}
 end
+
 
 Base.@kwdef mutable struct ObserverNavigationModel
     sensor::OpticalLOSSensorModel
@@ -318,18 +328,22 @@ Base.@kwdef mutable struct ObserverNavigationModel
     raw_count_now::Vector{Int}
     assigned_count_now::Vector{Int}
     unassigned_count_now::Vector{Int}
+    tentative_created_now::Vector{Int} # Count of new tentative tracks created from orphans at current nav tick, for logging/analysis only.
+    next_local_slot::Vector{Int}       # counter for assigning new local slot IDs to orphan measurements.
+    tentative_slot_by_truth::Vector{Dict{Int, Int}} # maps oracle truth target ID to local slot ID for orphans, for template-based orphan handling. TODO(DA): replace with local-track-based mapping using association context.
 end
 
 Base.@kwdef struct AssociationCandidate
     measurement_idx::Int
     measurement::LOSMeasurement
-    slot_id::Int
+    slot_id::Int # In noDA template, this is the truth-based candidate slot ID. TODO(DA): replace with local-track-based candidate slot ID using association context.
     local_score::Float64
     passed_local_gate::Bool
 end
 
 Base.@kwdef struct AssociationDecision
     selected_by_slot::Dict{Int, LOSMeasurement}
+    selected_measurement_idxs::Vector{Int}
     rejected_count::Int
 end
 
@@ -340,6 +354,7 @@ function ObserverNavigationModel(
     track_slots::Vector{Int},
     num_sats::Int
 )
+    local_slot_seed = max(maximum(track_slots), num_sats) + 1
     return ObserverNavigationModel(
         sensor=sensor,
         comms=comms,
@@ -348,13 +363,15 @@ function ObserverNavigationModel(
         local_tracks=[Dict{Int, LocalTrack}() for _ in 1:num_sats],
         raw_count_now=zeros(Int, num_sats),
         assigned_count_now=zeros(Int, num_sats),
-        unassigned_count_now=zeros(Int, num_sats)
+        unassigned_count_now=zeros(Int, num_sats),
+        tentative_created_now=zeros(Int, num_sats),
+        next_local_slot=fill(local_slot_seed, num_sats),
+        tentative_slot_by_truth=[Dict{Int, Int}() for _ in 1:num_sats]
     )
 end
 
 
 # Create (if needed) and return the local track object for this observer/slot pair.
-# Single allocation point for local track entries in noDA mode.
 @inline function _ensure_local_track!(
     model::ObserverNavigationModel,
     observer_id::Int,
@@ -367,11 +384,102 @@ end
             slot=slot_id,
             last_meas=nothing,
             prev_meas=nothing,
+            # Every new local track starts as tentative.
+            # Status upgrades happen later through local association / IOD / filter init.
+            status=:tentative,
+            seed_ready=false,
             has_measure_now=false,
-            last_update_t=t
+            last_update_t=t,
+            association_score_now=NaN,
+            state_estimate_now=NAN_STATE6,
+            covariance_estimate_now=_nan_cov6(),
+            observer_pos_now=NAN_LOS,
+            observer_pos_prev=NAN_LOS
         )
     end
     return tracks[slot_id]
+end
+
+# Assigns a new local slot ID for an orphan measurement for this observer, and increments the counter for the next assignment. 
+@inline function _next_local_slot!(model::ObserverNavigationModel, observer_id::Int)::Int
+    slot_id = model.next_local_slot[observer_id]
+    model.next_local_slot[observer_id] += 1
+    return slot_id
+end
+
+# checks if new orphan meas for this observer corresponds to an existing local slot based on oracle truth target ID, or assigns a new local slot if it's truly orphan. 
+@inline function _template_orphan_measurement_to_local_slot(
+    model::ObserverNavigationModel,
+    observer_id::Int,
+    measurement::LOSMeasurement
+)::Int
+    # TODO(DA): replace truth-based mapping + gate with local geometric association.
+    per_obs_map = model.tentative_slot_by_truth[observer_id]
+    truth_target = measurement.target
+    if haskey(per_obs_map, truth_target)
+        candidate_slot = per_obs_map[truth_target]
+        if _template_orphan_same_track_gate(model, observer_id, candidate_slot, measurement)
+            return candidate_slot
+        end
+    end
+    slot_id = _next_local_slot!(model, observer_id) # Assign new local slot ID for this orphan measurement.
+    per_obs_map[truth_target] = slot_id # Map oracle truth target ID to local slot ID for consistent handling of future measurements of the same target.
+    return slot_id
+end
+
+@inline function _template_orphan_same_track_gate(
+    model::ObserverNavigationModel,
+    observer_id::Int,
+    slot_id::Int,
+    measurement::LOSMeasurement
+)::Bool
+    # TODO(DA): replace oracle same-target gate with angle/omega consistency test.
+    tracks = model.local_tracks[observer_id]
+    haskey(tracks, slot_id) || return false
+    tr = tracks[slot_id]
+    tr.last_meas === nothing && return true
+    return tr.last_meas.target == measurement.target
+end
+
+# Checks if the local track for this observer/slot has enough self-consistent measurements to be ready for seeding IOD, based on the template's oracle truth-based consistency check. 
+@inline function _template_orphan_self_consistency_seed_ready(
+    model::ObserverNavigationModel,
+    observer_id::Int,
+    slot_id::Int
+)::Bool
+    # After association, seed readiness is only "has two consecutive local measures".
+    return _track_has_two_measures(model, observer_id, slot_id)
+end
+
+@inline function _refresh_track_tick_context!(
+    track::LocalTrack,
+    observer_pos::SVector{3, Float64}
+)
+    track.has_measure_now = false
+    track.association_score_now = NaN
+    track.observer_pos_prev = track.observer_pos_now
+    track.observer_pos_now = observer_pos
+end
+
+# Commit the given measurement to the local track for this observer/slot.
+@inline function _commit_measurement_to_track!(
+    track::LocalTrack,
+    measurement::LOSMeasurement,
+    t::Float64;
+    score::Float64=NaN,
+    status_if_committed::Symbol=:assigned,
+    observer_pos::Union{Nothing, SVector{3, Float64}}=nothing
+)
+    track.prev_meas = track.last_meas
+    track.last_meas = measurement
+    track.has_measure_now = true
+    track.last_update_t = t
+    track.association_score_now = score
+    track.status = status_if_committed
+    if observer_pos !== nothing
+        track.observer_pos_prev = track.observer_pos_now
+        track.observer_pos_now = observer_pos
+    end
 end
 
 # True when the track has two finite LOS samples separated by one nav tick.
@@ -392,6 +500,7 @@ end
     return _is_consecutive_measure_pair(last.t, prev.t)
 end
 
+# Returns LOS rate computed from the latest two measures for this track if they are consecutive and valid, otherwise returns nothing.
 @inline function _track_los_rate(
     model::ObserverNavigationModel,
     observer_id::Int,
@@ -461,17 +570,21 @@ function _cross_track_match_for_consensus(
     local_slot_id::Int,
     neighbor_ids::Vector{Int}
 )::Dict{Int, Int}
+    # Template (global-ID): build full observer group for the same slot.
+    # `neighbor_ids` remains in signature for future DA-based matching.
     matched_slot_by_observer = Dict{Int, Int}()
     matched_slot_by_observer[observer_id] = local_slot_id
-    for neighbor_id in neighbor_ids
-        neighbor_tracks = fusion_model.nav.local_tracks[neighbor_id]
-        if haskey(neighbor_tracks, local_slot_id)
-            matched_slot_by_observer[neighbor_id] = local_slot_id
+    for candidate_observer in fusion_model.observer_idxs
+        candidate_observer == observer_id && continue
+        candidate_tracks = fusion_model.nav.local_tracks[candidate_observer]
+        if haskey(candidate_tracks, local_slot_id)
+            matched_slot_by_observer[candidate_observer] = local_slot_id
         end
     end
     return matched_slot_by_observer
 end
 
+# Build association candidates for all local measurements for this observer, with local gating results, to be used in collaborative disambiguation and selection of one measurement per slot.
 function _build_association_candidates_mask(
     model::ObserverNavigationModel,
     observer_id::Int,
@@ -523,11 +636,13 @@ end
     return best
 end
 
+# Resolve association candidates to select at most one measurement per slot, based on local gating and collaborative disambiguation, and return the selected measurements along with the count of rejected candidates.
 function _resolve_association_mask(
     model::ObserverNavigationModel,
     observer_id::Int,
     candidates::Vector{AssociationCandidate}
 )::AssociationDecision
+    # Group candidates by measurement index.
     candidates_by_measurement = Dict{Int, Vector{AssociationCandidate}}()
     for c in candidates
         bucket = get!(candidates_by_measurement, c.measurement_idx, AssociationCandidate[])
@@ -570,11 +685,70 @@ function _resolve_association_mask(
         end
     end
 
+    selected_measurement_idxs = unique([c.measurement_idx for c in selected_candidates])
+
     return AssociationDecision(
         selected_by_slot=selected_by_slot,
+        selected_measurement_idxs=selected_measurement_idxs,
         rejected_count=rejected_count
     )
 end
+
+# Commit the selected measurements to their associated local tracks, creating/updating tracks as needed, and update the assigned count for logging/analysis.
+function _commit_assigned_measurements_to_local_tracks!(
+    model::ObserverNavigationModel,
+    observer_id::Int,
+    selected_by_slot::Dict{Int, LOSMeasurement},
+    t::Float64,
+    observer_pos::SVector{3, Float64}
+)
+    for (slot_id, measurement) in selected_by_slot
+        track = _ensure_local_track!(model, observer_id, slot_id, t)
+        _commit_measurement_to_track!(
+            track,
+            measurement,
+            t;
+            score=measurement.range_m,
+            status_if_committed=:assigned,
+            observer_pos=observer_pos
+        )
+        model.assigned_count_now[observer_id] += 1
+    end
+end
+
+# For measurements that were not selected for assignment to any existing track, create or update tentative local tracks as needed.
+function _create_or_update_tentative_tracks_from_orphans!(
+    model::ObserverNavigationModel,
+    observer_id::Int,
+    raw_measurements::Vector{LOSMeasurement},
+    selected_measurement_idxs::Vector{Int},
+    t::Float64,
+    observer_pos::SVector{3, Float64}
+)::Int
+    selected_idx_set = Set(selected_measurement_idxs)
+    orphan_count = 0
+    for (measurement_idx, measurement) in pairs(raw_measurements)
+        measurement_idx in selected_idx_set && continue
+        orphan_count += 1
+        slot_id = _template_orphan_measurement_to_local_slot(model, observer_id, measurement)
+        track = _ensure_local_track!(model, observer_id, slot_id, t)
+        _commit_measurement_to_track!(
+            track,
+            measurement,
+            t;
+            score=NaN,
+            status_if_committed=:tentative,
+            observer_pos=observer_pos
+        )
+        track.seed_ready = _template_orphan_self_consistency_seed_ready(model, observer_id, slot_id)
+        if track.seed_ready
+            track.status = :seed_ready
+        end
+        model.tentative_created_now[observer_id] += 1
+    end
+    return orphan_count
+end
+
 
 function SimulationModel.calcNavigationEffect!(
     model::ObserverNavigationModel,
@@ -583,14 +757,15 @@ function SimulationModel.calcNavigationEffect!(
     t::Float64,
     sat_idx::Int
 )   
-    # only for obsservers
+    # Only for observers.
     sat_idx in model.observer_idxs || return nothing
     observer_id = sat_idx
+    observer_pos = SVector{3, Float64}(u.sc[observer_id].pos)
 
-    # Clear "measured this tick" flags for this observer local catalog.
+    # Refresh per-tick local-track context for this observer.
     observer_tracks = model.local_tracks[observer_id]
     for track in values(observer_tracks)
-        track.has_measure_now = false
+        _refresh_track_tick_context!(track, observer_pos)
     end
 
     # Raw detections at this navigation tick.
@@ -598,30 +773,35 @@ function SimulationModel.calcNavigationEffect!(
     model.raw_count_now[observer_id] = length(raw_measurements)
     model.assigned_count_now[observer_id] = 0
     model.unassigned_count_now[observer_id] = 0
+    model.tentative_created_now[observer_id] = 0
 
     # DA bridge pipeline:
     # 1) Build candidates.
     # 2) Resolve one selected measurement per slot (if any) through local and collaborative disambiguation.
-    # 3) keep track of orphan measurements that fail association for initialize new tracks.
+    # 3) Turn orphan measurements into tentative local tracks.
     # 4) Commit selected assignments to local track memory.
     # Current behavior is intentionally equivalent to noDA label-based assignment.
     candidates = _build_association_candidates_mask(model, observer_id, raw_measurements)
     decision = _resolve_association_mask(model, observer_id, candidates)
-    model.unassigned_count_now[observer_id] = decision.rejected_count
 
-    # TODO(DA): For unassigned/orphan measurements, create tentative local tracks.
-    # Keep iod_initialized=false and filter_initialized=false for these tracks.
-    # Promote a tentative track only when IOD readiness conditions are met.
+    _commit_assigned_measurements_to_local_tracks!(
+        model,
+        observer_id,
+        decision.selected_by_slot,
+        t,
+        observer_pos
+    )
 
-    # Update local track memory with selected measurements.
-    for (slot_id, measurement) in decision.selected_by_slot
-        track = _ensure_local_track!(model, observer_id, slot_id, t) # Create track if it doesn't exist.
-        track.prev_meas = track.last_meas
-        track.last_meas = measurement
-        track.has_measure_now = true
-        track.last_update_t = t
-        model.assigned_count_now[observer_id] += 1
-    end
+    orphan_count = _create_or_update_tentative_tracks_from_orphans!(
+        model,
+        observer_id,
+        raw_measurements,
+        decision.selected_measurement_idxs,
+        t,
+        observer_pos
+    )
+    model.unassigned_count_now[observer_id] = orphan_count
+
     return nothing
 end
 
@@ -684,6 +864,89 @@ function DistributedFusionModel(
         last_update_t=fill(NaN, num_sats, num_sats),
         last_no_measure_warning_t=fill(NaN, num_sats)
     )
+end
+
+@inline function _slot_capacity(model::DistributedFusionModel)::Int
+    return size(model.filter_initialized, 2)
+end
+
+function _ensure_fusion_slot_capacity!(
+    model::DistributedFusionModel,
+    slot_id::Int
+)
+    slot_id <= _slot_capacity(model) && return nothing
+
+    n_rows = size(model.filter_initialized, 1)
+    old_cols = _slot_capacity(model)
+    new_cols = slot_id
+
+    new_iod_state = fill(NAN_STATE6, n_rows, new_cols)
+    new_iod_state[:, 1:old_cols] = model.iod_estimate_state
+    model.iod_estimate_state = new_iod_state
+
+    new_iod_cov = [_nan_cov6() for _ in 1:n_rows, _ in 1:new_cols]
+    for i in 1:n_rows
+        for j in 1:old_cols
+            new_iod_cov[i, j] = copy(model.iod_estimate_covariance[i, j])
+        end
+    end
+    model.iod_estimate_covariance = new_iod_cov
+
+    new_iod_time = fill(NaN, n_rows, new_cols)
+    new_iod_time[:, 1:old_cols] = model.iod_estimate_time_s
+    model.iod_estimate_time_s = new_iod_time
+
+    new_iod_neighbors = zeros(Int, n_rows, new_cols)
+    new_iod_neighbors[:, 1:old_cols] = model.iod_used_neighbors
+    model.iod_used_neighbors = new_iod_neighbors
+
+    new_iod_ready = falses(n_rows, new_cols)
+    new_iod_ready[:, 1:old_cols] = model.iod_triangulation_ready
+    model.iod_triangulation_ready = new_iod_ready
+
+    new_iod_init = falses(n_rows, new_cols)
+    new_iod_init[:, 1:old_cols] = model.iod_initialized
+    model.iod_initialized = new_iod_init
+
+    new_state = fill(NAN_STATE6, n_rows, new_cols)
+    new_state[:, 1:old_cols] = model.state
+    model.state = new_state
+
+    new_cov = [_nan_cov6() for _ in 1:n_rows, _ in 1:new_cols]
+    for i in 1:n_rows
+        for j in 1:old_cols
+            new_cov[i, j] = copy(model.covariance[i, j])
+        end
+    end
+    model.covariance = new_cov
+
+    new_state_pred = fill(NAN_STATE6, n_rows, new_cols)
+    new_state_pred[:, 1:old_cols] = model.state_pred
+    model.state_pred = new_state_pred
+
+    new_cov_pred = [_nan_cov6() for _ in 1:n_rows, _ in 1:new_cols]
+    for i in 1:n_rows
+        for j in 1:old_cols
+            new_cov_pred[i, j] = copy(model.covariance_pred[i, j])
+        end
+    end
+    model.covariance_pred = new_cov_pred
+
+    new_filter_init = falses(n_rows, new_cols)
+    new_filter_init[:, 1:old_cols] = model.filter_initialized
+    model.filter_initialized = new_filter_init
+
+    new_last_update = fill(NaN, n_rows, new_cols)
+    new_last_update[:, 1:old_cols] = model.last_update_t
+    model.last_update_t = new_last_update
+
+    old_warn_len = length(model.last_no_measure_warning_t)
+    resize!(model.last_no_measure_warning_t, new_cols)
+    for idx in (old_warn_len + 1):new_cols
+        model.last_no_measure_warning_t[idx] = NaN
+    end
+
+    return nothing
 end
 
 @inline function _measurement_jacobian(x::SVector{6, Float64}, r_agent::SVector{3, Float64})
@@ -790,18 +1053,24 @@ end
     return size(P, 1) == 6 && size(P, 2) == 6 && all(isfinite, P)
 end
 
-function _initialize_slot_filter_from_iod_consensus!(
+
+function _initialize_group_filter_from_iod_consensus!(
     model::DistributedFusionModel,
-    slot::Int,
+    slot_match_by_observer::Dict{Int, Int},
     neighbor_map::Dict{Int, Vector{Int}},
     t::Float64,
     u
 )
+    # Reapplied patch: initialize DEKF by matched local-track groups (observer, slot).
+    for slot_id in values(slot_match_by_observer)
+        _ensure_fusion_slot_capacity!(model, slot_id)
+    end
+
     active = Int[]
-    for observer_id in model.observer_idxs
-        if model.iod_initialized[observer_id, slot] &&
-           _is_finite_state(model.iod_estimate_state[observer_id, slot]) &&
-           _is_finite_cov(model.iod_estimate_covariance[observer_id, slot])
+    for (observer_id, slot_id) in slot_match_by_observer
+        if model.iod_initialized[observer_id, slot_id] &&
+           _is_finite_state(model.iod_estimate_state[observer_id, slot_id]) &&
+           _is_finite_cov(model.iod_estimate_covariance[observer_id, slot_id])
             push!(active, observer_id)
         end
     end
@@ -811,31 +1080,45 @@ function _initialize_slot_filter_from_iod_consensus!(
     active_neighbor_map = Dict{Int, Vector{Int}}(
         observer_id => [n for n in get(neighbor_map, observer_id, Int[]) if n in active_set] for observer_id in active
     )
-    x_local = Dict{Int, Any}(observer_id => model.iod_estimate_state[observer_id, slot] for observer_id in active)
-    P_local = Dict{Int, Any}(observer_id => model.iod_estimate_covariance[observer_id, slot] for observer_id in active)
+    x_local = Dict{Int, Any}(observer_id => model.iod_estimate_state[observer_id, slot_match_by_observer[observer_id]] for observer_id in active)
+    P_local = Dict{Int, Any}(observer_id => model.iod_estimate_covariance[observer_id, slot_match_by_observer[observer_id]] for observer_id in active)
 
     x_cons = _low_pass_consensus(x_local, active, active_neighbor_map, model.num_consensus_iter)
     P_cons = _low_pass_consensus(P_local, active, active_neighbor_map, model.num_consensus_iter)
 
-    target_true = SVector{6, Float64}(
-        SVector{3, Float64}(u.sc[slot].pos)...,
-        SVector{3, Float64}(u.sc[slot].vel)...
-    )
     for observer_id in active
-        model.filter_initialized[observer_id, slot] && continue
-        model.state[observer_id, slot] = SVector{6, Float64}(x_cons[observer_id])
-        model.covariance[observer_id, slot] = _symmetrize_psd(Matrix(P_cons[observer_id]))
-        model.state_pred[observer_id, slot] = model.state[observer_id, slot]
-        model.covariance_pred[observer_id, slot] = model.covariance[observer_id, slot]
-        model.filter_initialized[observer_id, slot] = true
-        model.last_update_t[observer_id, slot] = t
+        slot_id = slot_match_by_observer[observer_id]
+        model.filter_initialized[observer_id, slot_id] && continue
+        model.state[observer_id, slot_id] = SVector{6, Float64}(x_cons[observer_id])
+        model.covariance[observer_id, slot_id] = _symmetrize_psd(Matrix(P_cons[observer_id]))
+        model.state_pred[observer_id, slot_id] = model.state[observer_id, slot_id]
+        model.covariance_pred[observer_id, slot_id] = model.covariance[observer_id, slot_id]
+        model.filter_initialized[observer_id, slot_id] = true
+        model.last_update_t[observer_id, slot_id] = t
+        tracks = model.nav.local_tracks[observer_id]
+        if haskey(tracks, slot_id)
+            track = tracks[slot_id]
+            track.seed_ready = true
+            track.status = :filter_initialized
+            track.state_estimate_now = model.state[observer_id, slot_id]
+            track.covariance_estimate_now = copy(model.covariance[observer_id, slot_id])
+        end
 
-        err = model.state[observer_id, slot] - target_true
-        println("DEKF init (IOD+consensus) | slot=$(slot) | obs=$(observer_id) | t=$(round(t; digits=3)) s")
-        println("  state = ", model.state[observer_id, slot])
-        println("  cov(6x6) = ")
-        show(stdout, "text/plain", model.covariance[observer_id, slot])
-        println("\n  |err_r|= $(round(norm(err[1:3]); digits=3)) m, |err_v|= $(round(norm(err[4:6]); digits=6)) m/s\n")
+        # NOTE: truth usage below is diagnostics only; runtime decision logic is not affected.
+        if 1 <= slot_id <= length(u.sc)
+            target_true = SVector{6, Float64}(
+                SVector{3, Float64}(u.sc[slot_id].pos)...,
+                SVector{3, Float64}(u.sc[slot_id].vel)...
+            )
+            err = model.state[observer_id, slot_id] - target_true
+            println("DEKF init (IOD+consensus) | slot=$(slot_id) | obs=$(observer_id) | t=$(round(t; digits=3)) s")
+            println("  state = ", model.state[observer_id, slot_id])
+            println("  cov(6x6) = ")
+            show(stdout, "text/plain", model.covariance[observer_id, slot_id])
+            println("\n  |err_r|= $(round(norm(err[1:3]); digits=3)) m, |err_v|= $(round(norm(err[4:6]); digits=6)) m/s\n")
+        else
+            println("DEKF init (IOD+consensus) | slot=$(slot_id) | obs=$(observer_id) | t=$(round(t; digits=3)) s")
+        end
     end
     return nothing
 end
@@ -920,79 +1203,91 @@ function SimulationModel.calcNavigationEffect!(
     x_pred_buf = Dict{Tuple{Int, Int}, SVector{6, Float64}}()
     P_pred_buf = Dict{Tuple{Int, Int}, Matrix{Float64}}()    
     touched = Set{Tuple{Int, Int}}()
-    all_active_slots = Set{Int}()
+    all_active_tracks = Tuple{Int, Int}[]
     for observer_id in model.observer_idxs
         for slot_id in keys(model.nav.local_tracks[observer_id])
-            slot_id in model.track_slots || continue
-            push!(all_active_slots, slot_id)
+            _ensure_fusion_slot_capacity!(model, slot_id)
+            push!(all_active_tracks, (observer_id, slot_id))
         end
     end
 
     # STEP 1/4: IOD attempt pass (observer-centric, all observers first).
-    for observer_id in model.observer_idxs
-        for slot_id in keys(model.nav.local_tracks[observer_id])
-            slot_id in model.track_slots || continue
-            if !model.iod_initialized[observer_id, slot_id]
-                if !_can_seed_iod_from_local_consecutive_measures(model.nav, observer_id, slot_id)
+    for (observer_id, slot_id) in all_active_tracks
+        if !model.iod_initialized[observer_id, slot_id]
+            if !_can_seed_iod_from_local_consecutive_measures(model.nav, observer_id, slot_id)
+                model.iod_triangulation_ready[observer_id, slot_id] = false
+                model.iod_used_neighbors[observer_id, slot_id] = 0
+                tracks = model.nav.local_tracks[observer_id]
+                if haskey(tracks, slot_id)
+                    tracks[slot_id].seed_ready = false
+                    tracks[slot_id].status = :tentative
+                end
+            else
+                tracks = model.nav.local_tracks[observer_id]
+                if haskey(tracks, slot_id)
+                    tracks[slot_id].seed_ready = true
+                    tracks[slot_id].status = :seed_ready
+                end
+                valid_neighbors = _select_iod_neighbors(
+                    model.nav,
+                    observer_id,
+                    slot_id,
+                    get(neighbor_map, observer_id, Int[])
+                )
+                model.iod_used_neighbors[observer_id, slot_id] = length(valid_neighbors)
+                if length(valid_neighbors) < model.min_neighbor_count
                     model.iod_triangulation_ready[observer_id, slot_id] = false
-                    model.iod_used_neighbors[observer_id, slot_id] = 0
                 else
-                    valid_neighbors = _select_iod_neighbors(
-                        model.nav,
-                        observer_id,
-                        slot_id,
-                        get(neighbor_map, observer_id, Int[])
-                    )
-                    model.iod_used_neighbors[observer_id, slot_id] = length(valid_neighbors)
-                    if length(valid_neighbors) < model.min_neighbor_count
-                        model.iod_triangulation_ready[observer_id, slot_id] = false
-                    else
-                        nodes_idx = vcat([observer_id], valid_neighbors)
-                        nodes = NamedTuple[]
-                        A_rows = Matrix{Float64}(undef, 0, 3)
-                        b_rows = Float64[]
-                        dA_rows = Matrix{Float64}(undef, 0, 3)
-                        db_rows = Float64[]
-                        for idx in nodes_idx
-                            meas = _latest_track_measure(model.nav, idx, slot_id, t)
-                            meas === nothing && continue
-                            tracks = model.nav.local_tracks[idx]
-                            haskey(tracks, slot_id) || continue
-                            tr = tracks[slot_id]
-                            tr.prev_meas === nothing && continue
-                            l = meas.los_unit
-                            l_prev = tr.prev_meas.los_unit
-                            lrate = _track_los_rate(model.nav, idx, slot_id)
-                            lrate === nothing && continue
-                            l_unit = _safe_unit(l)
-                            l_prev_unit = _safe_unit(l_prev)
-                            (l_unit === nothing || l_prev_unit === nothing) && continue
-                            r = SVector{3, Float64}(u.sc[idx].pos)
-                            v = SVector{3, Float64}(u.sc[idx].vel)
-                            eq = _build_agent_equations(r, v, l_unit, lrate)
-                            eq === nothing && continue
-                            A_rows = vcat(A_rows, eq.A)
-                            append!(b_rows, eq.b)
-                            dA_rows = vcat(dA_rows, eq.dA)
-                            append!(db_rows, eq.db)
-                            push!(nodes, (r=r, v=v, los=l_unit, los_rate=lrate))
-                        end
-                        if length(nodes) >= 2
-                            H = [A_rows zeros(size(A_rows, 1), 3); dA_rows A_rows]
-                            y = vcat(b_rows, db_rows)
-                            if size(H, 1) >= 6
-                                z_est = pinv(H) * y
-                                x_est = SVector{3, Float64}(z_est[1], z_est[2], z_est[3])
-                                x_dot_est = SVector{3, Float64}(z_est[4], z_est[5], z_est[6])
-                                cov = _compute_state_covariance(nodes, x_est, x_dot_est, model.sigma_theta_rad, NAVIGATION_RATE_SEC)
-                                if cov !== nothing
-                                    model.iod_estimate_state[observer_id, slot_id] = SVector{6, Float64}(z_est)
-                                    model.iod_estimate_covariance[observer_id, slot_id] = copy(cov)
-                                    model.iod_estimate_time_s[observer_id, slot_id] = t
-                                    model.iod_triangulation_ready[observer_id, slot_id] = true
-                                    model.iod_initialized[observer_id, slot_id] = true
-                                    println("IOD init | slot=$(slot_id) | obs=$(observer_id) | t=$(round(t; digits=3)) s")
+                    nodes_idx = vcat([observer_id], valid_neighbors)
+                    nodes = NamedTuple[]
+                    A_rows = Matrix{Float64}(undef, 0, 3)
+                    b_rows = Float64[]
+                    dA_rows = Matrix{Float64}(undef, 0, 3)
+                    db_rows = Float64[]
+                    for idx in nodes_idx
+                        meas = _latest_track_measure(model.nav, idx, slot_id, t)
+                        meas === nothing && continue
+                        tracks = model.nav.local_tracks[idx]
+                        haskey(tracks, slot_id) || continue
+                        tr = tracks[slot_id]
+                        tr.prev_meas === nothing && continue
+                        l = meas.los_unit
+                        l_prev = tr.prev_meas.los_unit
+                        lrate = _track_los_rate(model.nav, idx, slot_id)
+                        lrate === nothing && continue
+                        l_unit = _safe_unit(l)
+                        l_prev_unit = _safe_unit(l_prev)
+                        (l_unit === nothing || l_prev_unit === nothing) && continue
+                        r = SVector{3, Float64}(u.sc[idx].pos)
+                        v = SVector{3, Float64}(u.sc[idx].vel)
+                        eq = _build_agent_equations(r, v, l_unit, lrate)
+                        eq === nothing && continue
+                        A_rows = vcat(A_rows, eq.A)
+                        append!(b_rows, eq.b)
+                        dA_rows = vcat(dA_rows, eq.dA)
+                        append!(db_rows, eq.db)
+                        push!(nodes, (r=r, v=v, los=l_unit, los_rate=lrate))
+                    end
+                    if length(nodes) >= 2
+                        H = [A_rows zeros(size(A_rows, 1), 3); dA_rows A_rows]
+                        y = vcat(b_rows, db_rows)
+                        if size(H, 1) >= 6
+                            z_est = pinv(H) * y
+                            x_est = SVector{3, Float64}(z_est[1], z_est[2], z_est[3])
+                            x_dot_est = SVector{3, Float64}(z_est[4], z_est[5], z_est[6])
+                            cov = _compute_state_covariance(nodes, x_est, x_dot_est, model.sigma_theta_rad, NAVIGATION_RATE_SEC)
+                            if cov !== nothing
+                                model.iod_estimate_state[observer_id, slot_id] = SVector{6, Float64}(z_est)
+                                model.iod_estimate_covariance[observer_id, slot_id] = copy(cov)
+                                model.iod_estimate_time_s[observer_id, slot_id] = t
+                                model.iod_triangulation_ready[observer_id, slot_id] = true
+                                model.iod_initialized[observer_id, slot_id] = true
+                                if haskey(tracks, slot_id)
+                                    tracks[slot_id].status = :iod_initialized
+                                    tracks[slot_id].state_estimate_now = model.iod_estimate_state[observer_id, slot_id]
+                                    tracks[slot_id].covariance_estimate_now = copy(model.iod_estimate_covariance[observer_id, slot_id])
                                 end
+                                println("IOD init | slot=$(slot_id) | obs=$(observer_id) | t=$(round(t; digits=3)) s")
                             end
                         end
                     end
@@ -1001,25 +1296,49 @@ function SimulationModel.calcNavigationEffect!(
         end
     end
 
-    # STEP 2/4: Initialize filter from IOD consensus once per active slot.
-    # Assumes same slot across observers corresponds to same object.
-    # needs to be updated with DA-enabled cross-track matching based on miss distance/MD on IOD estimates
-    for slot_id in all_active_slots
-        _initialize_slot_filter_from_iod_consensus!(model, slot_id, neighbor_map, t, u)
-    end
+    # STEP 2/4 + 3/4: process local tracks by matched groups and avoid duplicate work.
+    # TODO(DA): _cross_track_match_for_consensus currently relies on global slot identity.
+    processed_tracks = Set{Tuple{Int, Int}}()
+    for seed_key in all_active_tracks
+        seed_key in processed_tracks && continue
+        observer_id_seed, slot_id_seed = seed_key
 
-    # STEP 3/4: Slot-wise DEKF update/predict pass with a common consensus set.
-    for slot_id in all_active_slots
-        observers_with_slot = [obs for obs in model.observer_idxs if haskey(model.nav.local_tracks[obs], slot_id)]
-        isempty(observers_with_slot) && continue
+        matched_slot_by_observer = _cross_track_match_for_consensus(
+            model,
+            observer_id_seed,
+            slot_id_seed,
+            get(neighbor_map, observer_id_seed, Int[])
+        )
+
+        # Keep only valid local tracks for this tick's group.
+        group_pairs = Tuple{Int, Int}[]
+        for (observer_id, slot_id) in matched_slot_by_observer
+            (observer_id in model.observer_idxs) || continue
+            haskey(model.nav.local_tracks[observer_id], slot_id) || continue
+            _ensure_fusion_slot_capacity!(model, slot_id)
+            push!(group_pairs, (observer_id, slot_id))
+        end
+        if !(seed_key in group_pairs)
+            push!(group_pairs, seed_key)
+        end
+        group_pairs = unique(group_pairs)
+        isempty(group_pairs) && continue
+
+        for pair in group_pairs
+            push!(processed_tracks, pair)
+        end
+
+        # Initialize filters for this matched group from IOD consensus (group-scoped).
+        group_slot_match = Dict{Int, Int}(observer_id => slot_id for (observer_id, slot_id) in group_pairs)
+        _initialize_group_filter_from_iod_consensus!(model, group_slot_match, neighbor_map, t, u)
 
         u_local = Dict{Int, Any}()
         uhat_local = Dict{Int, Any}()
         U_local = Dict{Int, Any}()
         has_valid_local_measure = Dict{Int, Bool}()
 
-        # Build local information terms once per (observer, slot).
-        for observer_id in observers_with_slot
+        # Build local information terms once per (observer, local-track) group member.
+        for (observer_id, slot_id) in group_pairs
             if !model.filter_initialized[observer_id, slot_id]
                 u_local[observer_id] = zeros(6)
                 uhat_local[observer_id] = zeros(6)
@@ -1052,7 +1371,7 @@ function SimulationModel.calcNavigationEffect!(
         end
 
         consensus_participants = [
-            observer_id for observer_id in observers_with_slot
+            observer_id for (observer_id, slot_id) in group_pairs
             if model.filter_initialized[observer_id, slot_id] && get(has_valid_local_measure, observer_id, false)
         ]
         participant_set = Set(consensus_participants)
@@ -1072,14 +1391,20 @@ function SimulationModel.calcNavigationEffect!(
             z_cons = _low_pass_consensus(u_part, consensus_participants, participant_neighbor_map, model.num_consensus_iter)
             zhat_cons = _low_pass_consensus(uhat_part, consensus_participants, participant_neighbor_map, model.num_consensus_iter)
             S_cons = _low_pass_consensus(U_part, consensus_participants, participant_neighbor_map, model.num_consensus_iter)
-            model.last_no_measure_warning_t[slot_id] = NaN
-        elseif !isfinite(model.last_no_measure_warning_t[slot_id]) || abs(t - model.last_no_measure_warning_t[slot_id]) > NAVIGATION_DT_TOL_SEC
-            @warn "DEKF correction skipped: no valid LOS for slot $(slot_id) at t=$(round(t; digits=3)) s."
-            model.last_no_measure_warning_t[slot_id] = t
+            for (_, slot_id) in group_pairs
+                model.last_no_measure_warning_t[slot_id] = NaN
+            end
+        else
+            for (_, slot_id) in group_pairs
+                if !isfinite(model.last_no_measure_warning_t[slot_id]) || abs(t - model.last_no_measure_warning_t[slot_id]) > NAVIGATION_DT_TOL_SEC
+                    @warn "DEKF correction skipped: no valid LOS for slot $(slot_id) at t=$(round(t; digits=3)) s."
+                    model.last_no_measure_warning_t[slot_id] = t
+                end
+            end
         end
 
-        # Apply correction/prediction for every initialized observer on this slot.
-        for observer_id in observers_with_slot
+        # Apply correction/prediction for every initialized observer/local-track in this matched group.
+        for (observer_id, slot_id) in group_pairs
             model.filter_initialized[observer_id, slot_id] || continue
             key = (observer_id, slot_id)
             P_prior = _is_finite_cov(P_prior_snap[observer_id, slot_id]) ? P_prior_snap[observer_id, slot_id] : model.covariance_pred[observer_id, slot_id]
@@ -1120,6 +1445,15 @@ function SimulationModel.calcNavigationEffect!(
         model.state_pred[sid, slot] = x_pred_buf[key]
         model.covariance_pred[sid, slot] = P_pred_buf[key]
         model.last_update_t[sid, slot] = t
+        tracks = model.nav.local_tracks[sid]
+        if haskey(tracks, slot)
+            track = tracks[slot]
+            track.state_estimate_now = model.state[sid, slot]
+            track.covariance_estimate_now = copy(model.covariance[sid, slot])
+            if model.filter_initialized[sid, slot]
+                track.status = :filter_initialized
+            end
+        end
     end
     return nothing
 end
@@ -1324,8 +1658,8 @@ target_defs = (
     (a_m=target_a_m, i_deg=target_primary_i_deg, M_deg=target_primary_mean_anomaly_deg),
     # symmetric inclination with respect to observer orbit
     (a_m=target_a_m, i_deg=target_secondary_i_deg, M_deg=target_secondary_mean_anomaly_deg)
-    #(a_m=target_a_m, i_deg=85.5, M_deg=target_secondary_mean_anomaly_deg),
-    #(a_m=target_a_m, i_deg=84.5, M_deg=target_secondary_mean_anomaly_deg)
+    # (a_m=target_a_m, i_deg=85.5, M_deg=target_secondary_mean_anomaly_deg),
+    # (a_m=target_a_m, i_deg=84.5, M_deg=target_secondary_mean_anomaly_deg)
 )
 
 # Create spacecraft models for all observers and targets.
@@ -1465,7 +1799,8 @@ extra_save_fields = SaveField[]
 obs_metrics = (
     ("obs_raw_now", () -> observer_nav.raw_count_now),
     ("obs_assigned_now", () -> observer_nav.assigned_count_now),
-    ("obs_unassigned_now", () -> observer_nav.unassigned_count_now)
+    ("obs_unassigned_now", () -> observer_nav.unassigned_count_now),
+    ("obs_tentative_created_now", () -> observer_nav.tentative_created_now)
 )
 for (metric_name, metric_getter) in obs_metrics
     let name = metric_name, getter = metric_getter

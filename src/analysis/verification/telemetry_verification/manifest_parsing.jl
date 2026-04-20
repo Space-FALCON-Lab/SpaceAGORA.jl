@@ -163,6 +163,18 @@ end
     ))
 end
 
+@inline function _parse_reference_frame(raw::String, context::String)::Symbol
+    key = lowercase(strip(raw))
+    if key in ("inertial", "j2000", "eci", "earthmj2000eq")
+        return :inertial
+    elseif key in ("planet_fixed", "fixed", "ecef", "itrf", "itrf93")
+        return :planet_fixed
+    end
+    throw(ArgumentError(
+        "Unsupported reference frame '$raw' in $context; use inertial|planet_fixed."
+    ))
+end
+
 function _parse_maneuver_config(tbl, context::String)
     if !haskey(tbl, "maneuvers")
         return (
@@ -497,6 +509,14 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 drag_enabled=drag_enabled,
                 include_wind=include_wind,
                 orbit_altitude_mode=orbit_altitude_mode,
+                cartesian_ic_frame=_parse_reference_frame(
+                    _optional_str(tbl, "cartesian_ic_frame", "inertial"),
+                    "$context.cartesian_ic_frame"
+                ),
+                comparison_frame=_parse_reference_frame(
+                    _optional_str(tbl, "comparison_frame", "inertial"),
+                    "$context.comparison_frame"
+                ),
                 comparison_mode=comparison_mode,
                 extrema_min_separation_s=extrema_min_separation_s,
                 atmosphere_truth=atmosphere_truth,

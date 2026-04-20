@@ -7,7 +7,9 @@
     dynamic_effectors::Tuple,
     effector_decision
 )
-    effector_started_ns = time_ns()
+    # Only pay the time_ns() syscall overhead when telemetry is actually needed.
+    needs_timing = effector_decision.policy_applied
+    effector_started_ns = needs_timing ? time_ns() : UInt64(0)
     n_effectors = length(dynamic_effectors)
     if effector_decision.use_threads
         reduced = SimulationModel.ParallelPolicy.threaded_reduce(
@@ -32,8 +34,15 @@
                 return nothing
             end
         )
-        forces .= SVector{3, Float64}(reduced[1], reduced[2], reduced[3])
-        torques .= SVector{3, Float64}(reduced[4], reduced[5], reduced[6])
+        # Unpack reduced MVector directly into forces/torques without an intermediate SVector.
+        @inbounds begin
+            forces[1] = reduced[1]
+            forces[2] = reduced[2]
+            forces[3] = reduced[3]
+            torques[1] = reduced[4]
+            torques[2] = reduced[5]
+            torques[3] = reduced[6]
+        end
     else
         @inbounds for effector in dynamic_effectors
             force, torque = SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)
@@ -41,11 +50,11 @@
             torques .+= torque
         end
     end
-    elapsed_ns = Int64(time_ns() - effector_started_ns)
-    if effector_decision.policy_applied && sat_idx == 1
-        _update_effector_cost_model!(p.shared_buffers, n_effectors, elapsed_ns, effector_decision.allotment)
-    end
-    if effector_decision.policy_applied
+    if needs_timing
+        elapsed_ns = Int64(time_ns() - effector_started_ns)
+        if sat_idx == 1
+            _update_effector_cost_model!(p.shared_buffers, n_effectors, elapsed_ns, effector_decision.allotment)
+        end
         SimulationModel.ParallelPolicy.record_policy_observation!(
             :dynamic_effectors;
             mode=effector_decision.mode,
@@ -407,11 +416,9 @@ function build_initial_conditions(args)::ComponentVector
         r0, v0 = if ic isa CartesianInitialCondition
             collect(ic.pos), collect(ic.vel)   # assumed J2000 frame
         else
-            # orbitalelemtorv gives PCI (body-equatorial / MME2000); convert to J2000
-            r_pci, v_pci = orbitalelemtorv(ic, args.environment_model.planet)
-            pci_to_j2000 = args.environment_model.planet.J2000_to_pci'
-            collect(pci_to_j2000 * SVector{3, Float64}(r_pci)),
-            collect(pci_to_j2000 * SVector{3, Float64}(v_pci))
+            # Orbit-element initial conditions are propagated directly in J2000.
+            r_j2000, v_j2000 = orbitalelemtorv(ic, args.environment_model.planet)
+            collect(r_j2000), collect(v_j2000)
         end
         sc_view.pos .= r0
         sc_view.vel .= v0

@@ -5,25 +5,108 @@ using AstroTime
 using StaticArrays
 using SatelliteToolboxTransformations
 using SatelliteToolbox
+using SPICE
+
+function _spice_lock()
+    mod = @__MODULE__
+    while true
+        if isdefined(mod, :RuntimeServices)
+            return getproperty(mod, :RuntimeServices).SPICE_LOCK
+        end
+        parent = parentmodule(mod)
+        parent === mod && break
+        mod = parent
+    end
+    error("RuntimeServices.SPICE_LOCK not found in module ancestry for reference_system.jl")
+end
+
+function _simulation_model_module()
+    mod = @__MODULE__
+    while true
+        if isdefined(mod, :ephemerides_requires_spice) && isdefined(mod, :planet_frame_lpi)
+            return mod
+        end
+        parent = parentmodule(mod)
+        parent === mod && break
+        mod = parent
+    end
+    error("SimulationModel ephemerides helpers not found in module ancestry for reference_system.jl")
+end
 
 # eop_iau2000a = fetch_iers_eop(Val(:IAU2000A))
 
+@inline function _j2000_to_body_fixed_state(
+    r_i::SVector{3, Float64},
+    v_i::SVector{3, Float64},
+    planet,
+    et::Float64
+)::SVector{6, Float64}
+    state = SVector{6, Float64}(r_i[1], r_i[2], r_i[3], v_i[1], v_i[2], v_i[3])
+    return lock(_spice_lock()) do
+        xform = SMatrix{6, 6, Float64}(sxform("J2000", _spice_body_fixed_frame(planet), et))
+        xform * state
+    end
+end
+
 function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet::T)::Tuple{SVector{3, Float64}, SVector{3, Float64}} where T
-    # From J2000 inertial to PCPF (planet centered/planet fixed)
-    # planet.L_PI is J2000→PCPF; planet.ω is defined in PCI so convert to J2000 for the Coriolis term
-    ω_j2000 = planet.J2000_to_pci' * planet.ω
+    # Legacy fallback when the caller does not have an explicit ephemeris time.
+    # From J2000 inertial to PCPF (planet centered/planet fixed).
+    # The internal inertial frame is J2000, so the planetary spin vector is used directly.
+    ω_j2000 = planet.ω
     r_p = SVector{3, Float64}(planet.L_PI * r_i)
     v_p = SVector{3, Float64}(planet.L_PI * (v_i - cross(ω_j2000, r_i)))
     return r_p, v_p
 end
 
 function r_pintor_i(r_p::SVector{3, Float64}, v_p::SVector{3, Float64}, planet::T)::Tuple{SVector{3, Float64}, SVector{3, Float64}} where T
-    # From PCPF (planet centered/planet fixed) to J2000 inertial
-    # planet.L_PI' is PCPF→J2000; planet.ω converted to J2000 for Coriolis term
-    ω_j2000 = planet.J2000_to_pci' * planet.ω
+    # From PCPF (planet centered/planet fixed) to J2000 inertial.
+    ω_j2000 = planet.ω
     r_j2000 = SVector{3, Float64}(planet.L_PI' * r_p)
     v_j2000 = SVector{3, Float64}(planet.L_PI' * v_p + cross(ω_j2000, r_j2000))
     return r_j2000, v_j2000
+end
+
+@inline function _spice_body_fixed_frame(planet)::String
+    return planet.name == "Moon" ? "MOON_PA_DE421" : (planet.name == "Earth" ? "ITRF93" : "IAU_" * uppercase(planet.name))
+end
+
+@inline function _planet_flattening(planet)::Float64
+    return (planet.Rp_e - planet.Rp_p) / planet.Rp_e
+end
+
+function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet, et::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    state_fixed = _j2000_to_body_fixed_state(r_i, v_i, planet, et)
+    return SVector{3, Float64}(state_fixed[1], state_fixed[2], state_fixed[3]),
+        SVector{3, Float64}(state_fixed[4], state_fixed[5], state_fixed[6])
+end
+
+function r_intor_p!(
+    r_i::SVector{3, Float64},
+    v_i::SVector{3, Float64},
+    planet,
+    et::Float64,
+    ephemerides_model
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    sim_model = _simulation_model_module()
+    if getproperty(sim_model, :ephemerides_requires_spice)(ephemerides_model)
+        return r_intor_p!(r_i, v_i, planet, et)
+    end
+
+    l_pi = getproperty(sim_model, :planet_frame_lpi)(planet, et, ephemerides_model)
+    ω_j2000 = planet.ω
+    r_p = SVector{3, Float64}(l_pi * r_i)
+    v_p = SVector{3, Float64}(l_pi * (v_i - cross(ω_j2000, r_i)))
+    return r_p, v_p
+end
+
+function r_pintor_i(r_p::SVector{3, Float64}, v_p::SVector{3, Float64}, planet, et::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    state = SVector{6, Float64}(r_p[1], r_p[2], r_p[3], v_p[1], v_p[2], v_p[3])
+    state_inertial = lock(_spice_lock()) do
+        xform = SMatrix{6, 6, Float64}(sxform(_spice_body_fixed_frame(planet), "J2000", et))
+        xform * state
+    end
+    return SVector{3, Float64}(state_inertial[1], state_inertial[2], state_inertial[3]),
+        SVector{3, Float64}(state_inertial[4], state_inertial[5], state_inertial[6])
 end
 
 function orbitalelemtorv(oe::SVector{7, Float64}, planet)
@@ -246,14 +329,12 @@ function latlongtoOE(LATLONGH, planet, γ, α, v)
     # Form the velocity in ECEF:
     v_ecef = v_N * N_ecef + v_E * E_ecef + v_Z * Z_ecef
 
-    # Convert velocity from PCPF to J2000, then to PCI for rvtoorbitalelement
+    # Convert velocity from PCPF to J2000 for rvtoorbitalelement.
     v_eci_j2000 = planet.L_PI' * v_ecef
     # v_vec = SVector{3, Float64}([v*cos(γ)*cos(α), v*cos(γ)*sin(α), v*sin(γ)])
 
-    # rvtoorbitalelement expects PCI (body-equatorial) frame; convert J2000→PCI
-    r_pci = SVector{3, Float64}(planet.J2000_to_pci * r_i)
-    v_pci = SVector{3, Float64}(planet.J2000_to_pci * v_eci_j2000)
-    OE = rvtoorbitalelement(r_pci, v_pci, 0, planet)[1:6]
+    # rvtoorbitalelement now works directly in J2000.
+    OE = rvtoorbitalelement(r_i, v_eci_j2000, 0, planet)[1:6]
     return OE
 end
 
@@ -263,33 +344,20 @@ function rtolatlong(r_p::SVector{3, Float64}, planet, spherical_harmonic_topogra
     y_p = r_p[2]
     z_p = r_p[3]
 
-    f = (planet.Rp_e - planet.Rp_p) / planet.Rp_e
-    e = 1 - (1 - f)^2 # ellipticity (NOTE =  considered as square)
-    r = sqrt(x_p^2 + y_p^2)
+    f = _planet_flattening(planet)
+    e2 = 1 - (1 - f)^2
+    ep2 = e2 / (1 - e2)
+    p_xy = sqrt(x_p^2 + y_p^2)
 
-    # Calculate initial guesses for reduced latitude (latr) and planet-detic latitude (latd)
-    latr = atan(z_p / ((1-f)*r)) # reduced latitude
-    latd = atan((z_p + (e*(1-f)*planet.Rp_e*sin(latr)^3)/(1 - e)) / (r - e*planet.Rp_e*cos(latr)^3))
-
-    # Recalculate reduced latitude based on planet-detic latitude
-    latr2 = atan((1 - f)*sin(latd) / cos(latd))
-    diff = latr - latr2
-
-    # Iterate until reduced latitude converges
-    while diff > 1e-10
-        latr = latr2
-        latd = atan((z_p + (e*(1-f)*planet.Rp_e*sin(latr)^3) / (1 - e)) / (r - e*planet.Rp_e*cos(latr)^3))
-        latr2 = atan((1 - f)*sin(latd) / cos(latd))
-        diff = latr - latr2
-    end
-    lat = latd
+    θ = atan(z_p * planet.Rp_e, p_xy * planet.Rp_p)
+    lat = atan(z_p + ep2 * planet.Rp_p * sin(θ)^3, p_xy - e2 * planet.Rp_e * cos(θ)^3)
 
     #Calculate longitude
     lon = atan(y_p, x_p)
     # Calculate Altitude
     if !spherical_harmonic_topography
-        N = planet.Rp_e / sqrt(1 - e*sin(lat)^2)
-        alt = r*cos(lat) + (z_p + e*N*sin(lat)^2)*sin(lat) - N
+        N = planet.Rp_e / sqrt(1 - e2*sin(lat)^2)
+        alt = p_xy*cos(lat) + (z_p + e2*N*sin(lat)^2)*sin(lat) - N
     else
         alt = norm(r_p) - planet.topography_function(args, 
                                                     planet.Clm_topo, 
@@ -300,6 +368,10 @@ function rtolatlong(r_p::SVector{3, Float64}, planet, spherical_harmonic_topogra
     end
     
     return SVector{3, Float64}([alt, lat, lon])
+end
+
+function rtolatlong(r_p::SVector{3, Float64}, planet, ephemerides_model)
+    return rtolatlong(r_p, planet)
 end
 function rtolatlongrad(r_p, planet)
     # Same as previous function, but returns radius instead of altitude and planetocentric latitude and longitude

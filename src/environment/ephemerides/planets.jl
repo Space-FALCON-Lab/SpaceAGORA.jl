@@ -6,6 +6,7 @@ module Planets
     using SPICE
     export Earth, Mars, Venus, Moon, Titan
     const SPICE_LOCK = parentmodule(parentmodule(@__MODULE__)).RuntimeServices.SPICE_LOCK
+    const MARS_MU_M3S2 = 0.4282837285418775e5 * 1e9
     δ(i, j) = ==(i, j)
 
     @kwdef mutable struct TopographyHarmonicsWorkspace
@@ -41,8 +42,7 @@ module Planets
         Lz::Float64 = -9.8e-3 # Vertical temperature gradient in K/m for calculating temperature at altitude
         α::Float64 = 0.0 # Right-ascension of north pole relative to J2000 in degrees
         δ::Float64 = 0.0 # Declination of north pole relative to J2000 in degrees
-        J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}([1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]) # Rotation matrix from J2000 to planet-centered inertial frame
-        L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]) # Rotation matrix from planet-centered inertial frame to planet-centered, planet-fixed frame, function of time
+        L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}(zeros(3, 3)) # Rotation matrix from J2000 to planet-fixed frame, function of time
         topography_workspace::TopographyHarmonicsWorkspace = TopographyHarmonicsWorkspace() # Workspace for calculating topography harmonics
         polyfit_coeffs::Vector{Float64} = [-1.7539409645214832e-57, 2.735656076315809e-53, -1.8243490769488347e-49, 6.504765617793163e-46, -1.1637408657034938e-42, 8.044884138893168e-41, 4.264962263039017e-36, -7.651115834387683e-33, -3.188248308052816e-30, 3.8370830656820503e-26, -8.557502178008995e-23, 1.137879849173412e-19, -1.0408232216096158e-16, 6.834085016894604e-14, -3.2506596548183e-11, 1.1089006707870246e-08, -2.639423772958483e-06, 0.0004165844083994442, -0.03967261693733797, 1.8349343859319074, -38.14918904018883]
         topography_function::Function = Earth_elevation! # Function to calculate elevation based on topography
@@ -57,7 +57,7 @@ module Planets
         p::Float64 = 636.0 # Surface pressure in Pascals
         k::Float64 = 1.898e-4 # Chapman heating coefficient, kg^0.5/m
         ω::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 7.08823596e-5) # Angular velocity vector in rad/s
-        μ::Float64 = 4.2828314e13 # Standard gravitational parameter in m^3/s^2, last 6 digits: 258067
+        μ::Float64 = MARS_MU_M3S2 # Standard gravitational parameter in m^3/s^2
         J2::Float64 = 1.96045e-3 # J2 coefficient
         g_ref::Float64 = 3.72076 # Standard gravity in m/s^2
         ρ_ref::Float64 = 8.7489231e-7 # Sea level atmospheric density in kg/m^3
@@ -71,10 +71,7 @@ module Planets
         Lz::Float64 = -4.5e-3 # Vertical temperature gradient in K/m for calculating temperature at altitude
         α::Float64 = deg2rad(317.68143) # Right-ascension of north pole
         δ::Float64 = deg2rad(52.88650) # Declination of north pole
-        J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}(
-            [0.67330 0.7394 0.0; -0.5896 0.5369 0.6034; 0.4462 -0.4062 0.7974]
-        ) # Rotation matrix from J2000 to planet-centered inertial frame # Rotation matrix from J2000 to planet-centered inertial frame
-        L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]) # Rotation matrix from planet-centered inertial frame to planet-centered, planet-fixed frame, function of time
+        L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}(zeros(3, 3)) # Rotation matrix from J2000 to planet-fixed frame, function of time
         topography_workspace::TopographyHarmonicsWorkspace = TopographyHarmonicsWorkspace() # Workspace for calculating topography harmonics
         polyfit_coeffs::SVector{21, Float64} = SVector{21, Float64}(-3.691310097181554e-58, 5.819173546214448e-54, -3.9285937578286423e-50, 1.4222601230188116e-46, -2.606951392190571e-43, 3.2943551967480965e-41, 9.394166176413728e-37, -1.7651753457891617e-33, -5.79069281873952e-31, 8.639557954110502e-27, -1.991207114225621e-23, 2.7207390647640917e-20, -2.5611296697872007e-17, 1.7386922029136165e-14, -8.619727907575625e-12, 3.1040218147963276e-09, -7.949080301839893e-07, 0.00013834108975291533, -0.014729001168514675, 0.6707044510751348, -19.414578139119545)
     end # struct Mars
@@ -102,12 +99,7 @@ module Planets
         Lz::Float64 = -10.7e-3 # Vertical temperature gradient in K/m
         α::Float64 = deg2rad(272.76) # Right-ascension of north pole
         δ::Float64 = deg2rad(67.16) # Declination of north pole
-        J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}(
-            [0.9988399975 0.0481524597 0.0;
-             -0.0443769404 0.9205233406 0.3881590739;
-             0.0186908142 -0.3877088084 0.92159239]
-        )
-        L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
+        L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}(zeros(3, 3))
         topography_workspace::TopographyHarmonicsWorkspace = TopographyHarmonicsWorkspace()
         polyfit_coeffs::Vector{Float64} = [1.295014716586507e-57, -1.920381283790201e-53, 1.2024671159968765e-49, -3.931503383921753e-46, 5.985870736864543e-43, 2.115956905107091e-40, -2.4659597875857534e-36, 3.0591710987549437e-33, 3.951465781537392e-30, -1.8949093746237393e-26, 3.123829612747949e-23, -2.928033666820754e-20, 1.5168683041510048e-17, -1.5135241597177884e-15, -3.865230229956326e-12, 3.1328117105612896e-9, -1.2501690556294552e-6, 0.00028978339946121796, -0.03741075092352375, 2.149847471180469, -43.08275565785116]
     end # struct Venus
@@ -135,12 +127,7 @@ module Planets
         Lz::Float64 = -1.352e-3 # Vertical temperature gradient in K/m
         α::Float64 = deg2rad(39.4827) # Right-ascension of north pole
         δ::Float64 = deg2rad(83.4279) # Declination of north pole
-        J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}(
-            [-0.6358452054 0.7718166069 0.0;
-             -0.7667447037 -0.6316668225 0.1144534171;
-             0.0883370481 0.0727746565 0.9934286161]
-        )
-        L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
+        L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}(zeros(3, 3))
         topography_workspace::TopographyHarmonicsWorkspace = TopographyHarmonicsWorkspace()
         polyfit_coeffs::Vector{Float64} = [1.7989756686197253e-58, -2.7298975030491325e-54, 1.7620522402686604e-50, -6.025021166267467e-47, 1.0056316643424087e-43, 9.494104496406468e-42, -3.8472088727076255e-37, 6.051435602297366e-34, 4.074478639170247e-31, -3.244699052533356e-27, 6.66877802035039e-24, -8.360025139024445e-21, 7.301165978344981e-18, -4.650857357165472e-15, 2.1978197729328097e-12, -7.705014392936314e-10, 1.9713879988437584e-7, -3.551889476633975e-5, 0.004248542489215875, -0.3277965440319509, 8.128293001726805]
     end # struct Titan
@@ -168,10 +155,7 @@ module Planets
         Lz::Float64 = 0.0
         α::Float64 = 0.0
         δ::Float64 = 0.0
-        J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}(
-            [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]
-        )
-        L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
+        L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}(zeros(3, 3))
         topography_workspace::TopographyHarmonicsWorkspace = TopographyHarmonicsWorkspace()
         polyfit_coeffs::Vector{Float64} = [0.0]
     end # struct Moon
@@ -235,13 +219,16 @@ module Planets
         kwargs = Dict{Symbol, Any}(
             :Rp_e => rp_e,
             :Rp_p => rp_p,
-            :Rp_m => (rp_e + rp_p_2 + rp_p) / 3.0,
-            :J2000_to_pci => _spice_j2000_to_pci(planet_name)
+            :Rp_m => (rp_e + rp_p_2 + rp_p) / 3.0
         )
-        try
-            kwargs[:μ] = _spice_body_gm_m3s2(planet_name)
-        catch
-            # GM constants require a dedicated kernel in addition to the standard PCK.
+        if planet_name == "Mars"
+            kwargs[:μ] = MARS_MU_M3S2
+        else
+            try
+                kwargs[:μ] = _spice_body_gm_m3s2(planet_name)
+            catch
+                # GM constants require a dedicated kernel in addition to the standard PCK.
+            end
         end
         return kwargs
     end
@@ -268,18 +255,37 @@ module Planets
         )
     end
 
+    @inline function _furnsh_mars_system_kernel(spice_path::String)
+        return _furnsh_first_existing(
+            spice_path,
+            (
+                "spk/satellites/mar097_GRAM.bsp",
+                "spk/satellites/mar097.bsp",
+            )
+        )
+    end
+
+    function _furnsh_mars_pck(spice_path::String)
+        # Always try to load a modern generic text PCK first so the standard
+        # Mars frame constants are available from the starter-pack bundle.
+        for relpath in ("pck/pck00011.tpc", "pck/pck00010.tpc")
+            kernel_path = joinpath(spice_path, relpath)
+            if isfile(kernel_path)
+                furnsh(kernel_path)
+                return kernel_path
+            end
+        end
+
+        # Backward-compatible fallback for older SPICE bundles that only ship the
+        # pck00008 Mars data plus the local quadratic M2 correction patch.
+        _furnsh_required(spice_path, "pck/pck00008.tpc")
+        return _furnsh_required(spice_path, "pck/mars_iau2000_m2_quadratic_patch.tpc")
+    end
+
     @inline function _spice_body_fixed_frame(planet_name::String)::String
         return planet_name == "Moon" ? "MOON_PA_DE421" : lock(SPICE_LOCK) do
             _, resolved_frame = cnmfrm(planet_name)
-            println("Resolved body-fixed frame for $planet_name: $resolved_frame")
             resolved_frame
-        end
-    end
-
-    @inline function _spice_j2000_to_pci(planet_name::String)::SMatrix{3, 3, Float64}
-        frame_name = _spice_body_fixed_frame(planet_name)
-        return lock(SPICE_LOCK) do
-            SMatrix{3, 3, Float64}(pxform("J2000", frame_name, 0.0))
         end
     end
 
@@ -299,16 +305,16 @@ module Planets
                 # "fk/planets/earth_fixed.tf"
             )
         )
-        earth = Earth(J2000_to_pci=_spice_j2000_to_pci("Earth"))
+        earth = Earth()
         # TopographyHarmonicsWorkspace!(topo_harmonics_file, earth)
         return earth
     end
 
     function Mars(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        _furnsh_required(spice_path, "pck/pck00010.tpc")
-        # _furnsh_required(spice_path, "pck/mars_iau2000_m2_quadratic_patch.tpc")
+        _furnsh_mars_pck(spice_path)
         _furnsh_required(spice_path, "lsk/naif0012.tls")
         _furnsh_planetary_kernel(spice_path)
+        _furnsh_mars_system_kernel(spice_path)
         _gravity_constants_kernel_if_available(spice_path)
         mars = Mars(; _spice_backed_planet_kwargs("Mars")...)
         # TopographyHarmonicsWorkspace!(topo_harmonics_file, mars)
@@ -316,7 +322,7 @@ module Planets
     end
 
     function Venus(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        _furnsh_required(spice_path, "pck/pck00010.tpc")
+        _furnsh_required(spice_path, "pck/pck00011.tpc")
         _furnsh_required(spice_path, "lsk/naif0012.tls")
         _furnsh_planetary_kernel(spice_path)
         _gravity_constants_kernel_if_available(spice_path)
@@ -413,11 +419,4 @@ module Planets
         return Clm_topo, Slm_topo
     end
 
-    calc_J2000_to_pci_rotation_matrix!(α::Float64, δ::Float64, planet::P) where P <: AbstractPlanet = begin
-        σ1 = sqrt(cos(δ)^4 + cos(δ)^2*sin(δ)^2)
-        planet.J2000_to_pci .= SMatrix{3, 3, Float64}([-sin(α) cos(α) 0;
-                        -cos(δ)*cos(α)*sin(δ)/σ1 -cos(δ)*sin(α)*sin(δ)/σ1 cos(δ)^2/σ1;
-                        cos(δ)*cos(α) cos(δ)*sin(α) sin(δ)])
-    end
-   
 end # module Planets

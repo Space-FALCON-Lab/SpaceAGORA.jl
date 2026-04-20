@@ -8,6 +8,37 @@
     return out
 end
 
+@inline function _planet_fixed_frame_name(planet_name::String)::String
+    return lowercase(strip(planet_name)) == "earth" ? "ITRF93" : "IAU_" * uppercase(strip(planet_name))
+end
+
+function _initial_time_et(initial_time::InitialTime)::Float64
+    utc = @sprintf(
+        "%04d-%02d-%02dT%02d:%02d:%09.6f",
+        Int(initial_time.year),
+        Int(initial_time.month),
+        Int(initial_time.day),
+        Int(initial_time.hour),
+        Int(initial_time.minute),
+        Float64(initial_time.second)
+    )
+    return utc2et(utc)
+end
+
+function _transform_state(from_frame::String, to_frame::String, et::Float64, r_m::SVector{3, Float64}, v_mps::SVector{3, Float64})
+    xform = SMatrix{6, 6, Float64}(sxform(from_frame, to_frame, et))
+    state = xform * SVector{6, Float64}(r_m[1], r_m[2], r_m[3], v_mps[1], v_mps[2], v_mps[3])
+    return SVector{3, Float64}(state[1], state[2], state[3]), SVector{3, Float64}(state[4], state[5], state[6])
+end
+
+@inline function _planet_fixed_to_j2000_state(planet_name::String, et::Float64, r_m::SVector{3, Float64}, v_mps::SVector{3, Float64})
+    return _transform_state(_planet_fixed_frame_name(planet_name), "J2000", et, r_m, v_mps)
+end
+
+@inline function _j2000_to_planet_fixed_state(planet_name::String, et::Float64, r_m::SVector{3, Float64}, v_mps::SVector{3, Float64})
+    return _transform_state("J2000", _planet_fixed_frame_name(planet_name), et, r_m, v_mps)
+end
+
 @inline function _require_column(df::DataFrame, candidates::Vector{String}, context::String)::Vector{Float64}
     for col in candidates
         if col in names(df)

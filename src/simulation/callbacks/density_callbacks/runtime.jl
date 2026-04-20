@@ -2,6 +2,8 @@ function get_density_callback(num_sats::Int, args::SimulationConfiguration)
     return get_density_callback(num_sats, args.dynamics_model.dynamic_effectors, args)
 end
 
+@inline _density_callback_et(p, t::Float64) = p.shared_buffers.et_start[] + t
+
 function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationConfiguration)
     cache_cfg = _gram_track_cache_config()
     stats_enabled = _gram_runtime_stats_enabled()
@@ -14,8 +16,9 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
         end
         pos = SVector{3, Float64}(u.sc[i].pos)
         vel = SVector{3, Float64}(u.sc[i].vel)
-        rp, _ = r_intor_p!(pos, vel, p.args.environment_model.planet)
-        alt, lat, lon = rtolatlong(rp, p.args.environment_model.planet)
+        et = _density_callback_et(p, Float64(t))
+        rp, _ = r_intor_p!(pos, vel, p.args.environment_model.planet, et, p.args.environment_model.ephemerides_model)
+        alt, lat, lon = rtolatlong(rp, p.args.environment_model.planet, p.args.environment_model.ephemerides_model)
         ρ, T, wind_vec = if _gram_track_cache_enabled(cache_cfg, density_model)
             if stats_enabled
                 _gram_runtime_stats_update!(s -> begin
@@ -160,8 +163,9 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                     @inbounds begin
                         pos = SVector{3, Float64}(u.sc[i].pos)
                         vel = SVector{3, Float64}(u.sc[i].vel)
-                        rp, _ = r_intor_p!(pos, vel, p.args.environment_model.planet)
-                        alt, lat, lon = rtolatlong(rp, p.args.environment_model.planet)
+                        et = _density_callback_et(p, Float64(integrator.t))
+                        rp, _ = r_intor_p!(pos, vel, p.args.environment_model.planet, et, p.args.environment_model.ephemerides_model)
+                        alt, lat, lon = rtolatlong(rp, p.args.environment_model.planet, p.args.environment_model.ephemerides_model)
                         alts[i] = alt
                         lats[i] = lat
                         lons[i] = lon
@@ -171,8 +175,9 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                 @inbounds for i in 1:num_sats
                     pos = SVector{3, Float64}(u.sc[i].pos)
                     vel = SVector{3, Float64}(u.sc[i].vel)
-                    rp, _ = r_intor_p!(pos, vel, p.args.environment_model.planet)
-                    alt, lat, lon = rtolatlong(rp, p.args.environment_model.planet)
+                    et = _density_callback_et(p, Float64(integrator.t))
+                    rp, _ = r_intor_p!(pos, vel, p.args.environment_model.planet, et, p.args.environment_model.ephemerides_model)
+                    alt, lat, lon = rtolatlong(rp, p.args.environment_model.planet, p.args.environment_model.ephemerides_model)
                     alts[i] = alt
                     lats[i] = lat
                     lons[i] = lon

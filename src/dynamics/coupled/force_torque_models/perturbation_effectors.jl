@@ -4,7 +4,7 @@ module PerturbationEffectors
     using ...Planets: Earth, Mars, Venus, Moon, Titan
     using ...ParallelPolicy
     using ....RuntimeServices: SPICE_LOCK
-    using ...SimulationModel: SRPSunEphemerisCache, NBodyEphemerisCache, SpiceRhsMemo
+    using ...SimulationModel: SRPSunEphemerisCache, NBodyEphemerisCache, SpiceRhsMemo, planet_frame_lpi
     using ..AerodynamicEffectors: _multibody_thread_decision
     using StaticArrays
     import ..DynamicEffectors: calcForceTorque

@@ -27,6 +27,11 @@ struct GRAMAtmosphereModel <: AbstractDensityModel
     core::GRAMSuite.GRAMAtmosphereModel
 end
 
+@kwdef struct ConstantDensityModel <: AbstractDensityModel
+    density_kg_m3::Float64
+    temperature_k::Float64
+end
+
 """
 Surrogate model wrapper kept shape-compatible with the previous implementation,
 including the ability to provide a non-GRAM base model for custom point fallback.
@@ -312,12 +317,7 @@ function getDensityBatch!(
         return nothing
     end
     @inbounds for i in 1:n
-        h_km = Float64(hs[i]) * 1e-3
-        exponent = coeffs[1]
-        for j in 2:length(coeffs)
-            exponent = muladd(exponent, h_km, coeffs[j])
-        end
-        rhos[i] = exp(exponent)
+        rhos[i] = exp(_polyfit_horner(coeffs, Float64(hs[i]) * 1e-3))
         Ts[i] = T_ref
         winds[i] = zero_wind
     end
@@ -350,37 +350,33 @@ function getDensityBatch!(
     return nothing
 end
 
+@inline function _polyfit_horner(coeffs::AbstractVector{Float64}, h_km::Float64)::Float64
+    # Horner's method: avoids all power allocations and repeated exponentiation.
+    # Coefficients are stored highest-degree first (same convention as before).
+    isempty(coeffs) && return 0.0
+    acc = coeffs[1]
+    @inbounds for k in 2:length(coeffs)
+        acc = muladd(acc, h_km, coeffs[k])
+    end
+    return acc
+end
+
 function getDensity(model::PolynomialFitAtmosphereModel, h::Union{Float64, Vector{Float64}}, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
+    T_ref = p.args.environment_model.planet.T_ref
+    zero_wind = SVector{3, Float64}(0.0, 0.0, 0.0)
+    coeffs = model.polyfit_coeffs
+
     if !(h isa Float64)
-        polyfit = model.polyfit_coeffs
-        power = zeros(length(polyfit), length(h))
-        h_km = h .* 1e-3
-        for i in eachindex(polyfit)
-            power[i, :] = h_km .^ (length(polyfit) - i)
-        end
-
-        exponent = zeros(length(h_km))
-        @inbounds for j in eachindex(h_km)
-            exponent[j] = sum(polyfit .* power[:, j])
-        end
-
-        rho = exp.(exponent)
-        T = p.args.environment_model.planet.T_ref
-        wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
-        return rho, T, wind_vec
+        # Batch path — return only the first element per the scalar contract;
+        # callers that need the full array should use getDensityBatch! instead.
+        h_km = Float64(h[1]) * 1e-3
+        rho = exp(_polyfit_horner(coeffs, h_km))
+        return rho, T_ref, zero_wind
     end
 
-    polyfit = model.polyfit_coeffs
-    power = MVector{length(polyfit)}(zeros(length(polyfit)))
     h_km = h * 1e-3
-    @inbounds for i in eachindex(polyfit)
-        power[i] = h_km ^ (length(polyfit) - i)
-    end
-    exponent = sum(polyfit .* power)
-    rho = exp(exponent)
-    T = p.args.environment_model.planet.T_ref
-    wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
-    return rho, T, wind_vec
+    rho = exp(_polyfit_horner(coeffs, h_km))
+    return rho, T_ref, zero_wind
 end
 
 function _gram_point_density(
@@ -427,6 +423,7 @@ function getDensity(model::GRAMAtmosphereModel, h::Float64, lat::Float64, lon::F
     elseif !drag_state && !p.args.mission_configuration.keplerian
         rho, T, wind_vec = density_polyfit(h, p)
     else
+        # println("GRAM density altitude = $(h) m ($(h / 1e3) km)")
         rho, T, wind_vec = GRAMSuite.density_state(
             model.core,
             h,
@@ -440,6 +437,10 @@ function getDensity(model::GRAMAtmosphereModel, h::Float64, lat::Float64, lon::F
     end
 
     return rho, T, wind_vec
+end
+
+function getDensity(model::ConstantDensityModel, altitude_m::Float64, latitude_deg::Float64, longitude_deg::Float64, et::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
+    return model.density_kg_m3, model.temperature_k, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
 function getDensity(model::GRAMAtmosphereModelSurrogate, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
@@ -456,6 +457,7 @@ function getDensity(model::GRAMAtmosphereModelSurrogate, h::Float64, lat::Float6
     point_fallback = model.base_model isa GRAMAtmosphereModel ? nothing :
         (m, h_i, lat_i, lon_i, t_i, w_i) -> _gram_point_density(m, h_i, lat_i, lon_i, t_i, w_i)
 
+    println("GRAM density altitude = $(h) m ($(h / 1e3) km)")
     return GRAMSuite.surrogate_density_state(
         base_model,
         model.surrogate_file,
@@ -487,8 +489,11 @@ function getDensity(model::NRLMSISE00AtmosphereModel, h::Float64, lat::Float64, 
 end
 
 function density_polyfit(h::Float64, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
+    # Avoid allocating a PolynomialFitAtmosphereModel wrapper on every call;
+    # call Horner's evaluator directly against the planet's coefficient vector.
     coeffs = p.args.environment_model.planet.polyfit_coeffs
-    poly_model = PolynomialFitAtmosphereModel(vec(coeffs))
-    rho, T, wind_vec = getDensity(poly_model, h, 0.0, 0.0, 0.0, false, p)
-    return rho, T, wind_vec
+    T_ref = p.args.environment_model.planet.T_ref
+    h_km = h * 1e-3
+    rho = exp(_polyfit_horner(coeffs, h_km))
+    return rho, T_ref, SVector{3, Float64}(0.0, 0.0, 0.0)
 end

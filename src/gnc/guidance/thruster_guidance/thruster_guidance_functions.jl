@@ -16,7 +16,7 @@ function calcGuidanceEffect!(guidanceAlg::AerobrakingCampaignPropulsiveManeuverG
         PropulsiveManeuverCommand(
             valid=true,
             delta_v_mps=abs(delta_v_cmd),
-            direction_rad=(delta_v_cmd > 0.0 ? π : 0.0),
+            direction_rad=(delta_v_cmd > 0.0 ? 0.0 : π),
             source_orbit=orbit_counter
         )
     end

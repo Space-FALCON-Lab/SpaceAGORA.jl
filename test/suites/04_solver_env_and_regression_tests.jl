@@ -832,8 +832,8 @@
         sun_j2000 = lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
             SVector{3, Float64}(spkpos("sun", et_solver, "J2000", "none", primary_body_name)[1])
         end
-        sun_pci = SVector{3, Float64}(planet.J2000_to_pci * sun_j2000 * 1e3)
-        force_kernel = dyn.srp_cannonball_accel(pos_solver, sun_pci, planet.Rp_e, 4.56e-6, 1.2, 12.0, 200.0)
+        sun_j2000_m = SVector{3, Float64}(sun_j2000 * 1e3)
+        force_kernel = dyn.srp_cannonball_accel(pos_solver, sun_j2000_m, planet.Rp_e, 4.56e-6, 1.2, 12.0, 200.0)
         force_solver = dyn.srp(planet, 4.56e-6, 1.2, 12.0, 200.0, pos_solver, et_solver)
         @test isapprox(force_solver, force_kernel; atol=1e-12, rtol=1e-10)
     end

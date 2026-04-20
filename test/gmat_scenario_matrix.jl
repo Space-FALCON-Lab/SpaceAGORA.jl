@@ -5,6 +5,7 @@ using CSV
 using DataFrames
 using Statistics
 using LinearAlgebra
+using Dates
 using Plots
 using StaticArrays
 
@@ -31,6 +32,12 @@ const _GMAT_EXAMPLES_DIR = joinpath(
     "telemetry",
     "Basilisk_Examples_Full"
 )
+const _STK_RESULTS_DIR = joinpath(
+    _GMAT_REPO_ROOT,
+    "data",
+    "telemetry",
+    "stk_results"
+)
 
 # const _GMAT_HARMONICS_EARTH_FILE = "data/Gravity_harmonics_data/GGM03S.csv" # For Basilisk validation
 const _GMAT_HARMONICS_EARTH_FILE = "data/Gravity_harmonics_data/EarthGGM05C.csv" # For internal GMAT parity, matches the file used in the GMAT scenarios
@@ -45,6 +52,8 @@ const _GMAT_PLANETARY_KERNEL_CANDIDATES = (
     "spk/planets/de430.bsp",
 )
 const _CYGNSS_48HR_TELEMETRY_FEATHER = joinpath(_GMAT_REPO_ROOT, "data", "telemetry", "CYGNSS", "cygnss_data_48hr.feather")
+const _CYGNSS_96HR_TELEMETRY_FEATHER = joinpath(_GMAT_REPO_ROOT, "data", "telemetry", "CYGNSS", "cyg04_nasa_pvt_96hr.feather")
+const _CYGNSS_CYG04_96HR_TELEMETRY_FEATHER = joinpath(_GMAT_REPO_ROOT, "data", "telemetry", "CYGNSS", "cyg04_nasa_pvt_96hr.feather")
 const _CYGNSS_GMAT_COMPARISON_PATH = let
     basilisk_path = joinpath(_GMAT_EXAMPLES_DIR, "Sim_CYGNSS_Comparison.feather")
     isfile(basilisk_path) ? basilisk_path : joinpath(_GMAT_REPO_ROOT, "data", "telemetry", "GMAT_Examples", "Sim_CYGNSS_Comparison.feather")
@@ -53,6 +62,8 @@ const _GMAT_MATRIX_EXCLUDED_FILES = Set([
     "Sim_CYGNSS_Comparison.feather",
     "Sim_Hubble_Comp.feather"
 ])
+const _CYGNSS_96HR_J2000_CACHE = Ref{Any}(nothing)
+const _CYGNSS_CYG04_96HR_INERTIAL_CACHE = Ref{Any}(nothing)
 
 const TEST_MODE::Symbol = :quick
 
@@ -109,6 +120,142 @@ end
     # naming throughout this matrix remains "moon_*".
     stem = replace(stem, r"^luna_" => "moon_")
     return stem
+end
+
+function _initial_time_dict(initial_time::SM.InitialTime)::Dict{String, Any}
+    return Dict{String, Any}(
+        "year" => Int(initial_time.year),
+        "month" => Int(initial_time.month),
+        "day" => Int(initial_time.day),
+        "hour" => Int(initial_time.hour),
+        "minute" => Int(initial_time.minute),
+        "second" => Float64(initial_time.second)
+    )
+end
+
+function _initial_time_from_unix(unix_seconds::Float64)::SM.InitialTime
+    dt = unix2datetime(unix_seconds)
+    return SM.InitialTime(
+        year=Int32(year(dt)),
+        month=Int16(month(dt)),
+        day=Int16(day(dt)),
+        hour=Int16(hour(dt)),
+        minute=Int16(minute(dt)),
+        second=Float32(second(dt) + millisecond(dt) / 1.0e3)
+    )
+end
+
+function _load_cygnss_96hr_j2000_series()
+    cached = _CYGNSS_96HR_J2000_CACHE[]
+    cached !== nothing && return cached
+
+    # Ensure the leapseconds and Earth orientation kernels are in the pool
+    # before calling utc2et/sxform on the 96hr ECEF telemetry.
+    TV._planet_from_name("earth")
+
+    df = DataFrame(Arrow.Table(_CYGNSS_96HR_TELEMETRY_FEATHER))
+    @test nrow(df) > 0
+
+    t_unix = Float64.(df[!, "pvt_unix_seconds"])
+    x_ecef_km = Float64.(df[!, "sc_pos_x_pvt_m"]) .* 1.0e-3
+    y_ecef_km = Float64.(df[!, "sc_pos_y_pvt_m"]) .* 1.0e-3
+    z_ecef_km = Float64.(df[!, "sc_pos_z_pvt_m"]) .* 1.0e-3
+    vx_ecef_kmps = Float64.(df[!, "sc_vel_x_pvt_mps"]) .* 1.0e-3
+    vy_ecef_kmps = Float64.(df[!, "sc_vel_y_pvt_mps"]) .* 1.0e-3
+    vz_ecef_kmps = Float64.(df[!, "sc_vel_z_pvt_mps"]) .* 1.0e-3
+
+    perm = sortperm(t_unix)
+    t_unix = t_unix[perm]
+    x_ecef_km = x_ecef_km[perm]
+    y_ecef_km = y_ecef_km[perm]
+    z_ecef_km = z_ecef_km[perm]
+    vx_ecef_kmps = vx_ecef_kmps[perm]
+    vy_ecef_kmps = vy_ecef_kmps[perm]
+    vz_ecef_kmps = vz_ecef_kmps[perm]
+
+    t_rel = t_unix .- t_unix[1]
+    initial_time = _initial_time_from_unix(t_unix[1])
+    et0 = TV._initial_time_et(initial_time)
+
+    n = length(t_rel)
+    x_j2000_km = Vector{Float64}(undef, n)
+    y_j2000_km = Vector{Float64}(undef, n)
+    z_j2000_km = Vector{Float64}(undef, n)
+    vx_j2000_kmps = Vector{Float64}(undef, n)
+    vy_j2000_kmps = Vector{Float64}(undef, n)
+    vz_j2000_kmps = Vector{Float64}(undef, n)
+
+    @inbounds for i in eachindex(t_rel)
+        r_j2000_m, v_j2000_mps = TV._transform_state(
+            "ITRF93",
+            "J2000",
+            et0 + t_rel[i],
+            SVector{3, Float64}(x_ecef_km[i], y_ecef_km[i], z_ecef_km[i]) .* 1.0e3,
+            SVector{3, Float64}(vx_ecef_kmps[i], vy_ecef_kmps[i], vz_ecef_kmps[i]) .* 1.0e3
+        )
+        x_j2000_km[i] = r_j2000_m[1] * 1.0e-3
+        y_j2000_km[i] = r_j2000_m[2] * 1.0e-3
+        z_j2000_km[i] = r_j2000_m[3] * 1.0e-3
+        vx_j2000_kmps[i] = v_j2000_mps[1] * 1.0e-3
+        vy_j2000_kmps[i] = v_j2000_mps[2] * 1.0e-3
+        vz_j2000_kmps[i] = v_j2000_mps[3] * 1.0e-3
+    end
+
+    series = (
+        initial_time=initial_time,
+        t_rel=t_rel,
+        x_km=x_j2000_km,
+        y_km=y_j2000_km,
+        z_km=z_j2000_km,
+        vx_kmps=vx_j2000_kmps,
+        vy_kmps=vy_j2000_kmps,
+        vz_kmps=vz_j2000_kmps
+    )
+    _CYGNSS_96HR_J2000_CACHE[] = series
+    return series
+end
+
+function _load_cygnss_cyg04_96hr_inertial_series()
+    cached = _CYGNSS_CYG04_96HR_INERTIAL_CACHE[]
+    cached !== nothing && return cached
+
+    TV._planet_from_name("earth")
+
+    df = DataFrame(Arrow.Table(_CYGNSS_CYG04_96HR_TELEMETRY_FEATHER))
+    @test nrow(df) > 0
+
+    t_unix = Float64.(df[!, "pvt_unix_seconds"])
+    t_native = Float64.(df[!, "time"])
+    x_km = Float64.(df[!, "pos_ii_1"]) .* 1.0e-3
+    y_km = Float64.(df[!, "pos_ii_2"]) .* 1.0e-3
+    z_km = Float64.(df[!, "pos_ii_3"]) .* 1.0e-3
+    vx_kmps = Float64.(df[!, "vel_ii_1"]) .* 1.0e-3
+    vy_kmps = Float64.(df[!, "vel_ii_2"]) .* 1.0e-3
+    vz_kmps = Float64.(df[!, "vel_ii_3"]) .* 1.0e-3
+
+    perm = sortperm(t_unix)
+    t_unix = t_unix[perm]
+    t_native = t_native[perm]
+    x_km = x_km[perm]
+    y_km = y_km[perm]
+    z_km = z_km[perm]
+    vx_kmps = vx_kmps[perm]
+    vy_kmps = vy_kmps[perm]
+    vz_kmps = vz_kmps[perm]
+
+    series = (
+        initial_time=_initial_time_from_unix(t_unix[1]),
+        t_rel=t_native .- t_native[1],
+        t_abs=t_native,
+        x_km=x_km,
+        y_km=y_km,
+        z_km=z_km,
+        vx_kmps=vx_kmps,
+        vy_kmps=vy_kmps,
+        vz_kmps=vz_kmps
+    )
+    _CYGNSS_CYG04_96HR_INERTIAL_CACHE[] = series
+    return series
 end
 
 function _gmat_matrix_expected_scenario_names()::Set{String}
@@ -424,6 +571,156 @@ function _build_cygnss_48hr_reference(outdir::String, stem::String)
     )
 end
 
+function _build_cygnss_96hr_reference(outdir::String, stem::String)
+    series = _load_cygnss_96hr_j2000_series()
+    t_rel = series.t_rel
+    x_km = series.x_km
+    y_km = series.y_km
+    z_km = series.z_km
+    vx_kmps = series.vx_kmps
+    vy_kmps = series.vy_kmps
+    vz_kmps = series.vz_kmps
+    planet = TV._planet_from_name("earth")
+    r_km = sqrt.(x_km .^ 2 .+ y_km .^ 2 .+ z_km .^ 2)
+    alt_km = r_km .- planet.Rp_e * 1.0e-3
+
+    oe0 = TV.rvtoorbitalelement(
+        SVector{3, Float64}(x_km[1], y_km[1], z_km[1]) .* 1.0e3,
+        SVector{3, Float64}(vx_kmps[1], vy_kmps[1], vz_kmps[1]) .* 1.0e3,
+        planet
+    )
+    sma_km  = oe0[1] * 1.0e-3
+    ecc     = oe0[2]
+    inc_deg  = rad2deg(oe0[3])
+    raan_deg = rad2deg(oe0[4])
+    aop_deg  = rad2deg(oe0[5])
+    ta_deg   = rad2deg(oe0[6])
+
+    telemetry_df = DataFrame(
+        time_s=t_rel,
+        altitude_km=alt_km,
+        x_km=x_km,
+        y_km=y_km,
+        z_km=z_km,
+        sma_km=fill(sma_km, length(t_rel)),
+        ecc=fill(ecc, length(t_rel)),
+        inc_deg=fill(inc_deg, length(t_rel)),
+        aop_deg=fill(aop_deg, length(t_rel)),
+        raan_deg=fill(raan_deg, length(t_rel)),
+        ta_deg=fill(ta_deg, length(t_rel)),
+        x_ic_km=fill(x_km[1], length(t_rel)),
+        y_ic_km=fill(y_km[1], length(t_rel)),
+        z_ic_km=fill(z_km[1], length(t_rel)),
+        vx_ic_kmps=fill(vx_kmps[1], length(t_rel)),
+        vy_ic_kmps=fill(vy_kmps[1], length(t_rel)),
+        vz_ic_kmps=fill(vz_kmps[1], length(t_rel))
+    )
+
+    telemetry_path = joinpath(outdir, "$(stem)_time_aligned.arrow")
+    Arrow.write(telemetry_path, telemetry_df)
+
+    return (
+        telemetry_path=telemetry_path,
+        t0_s=t_rel[1],
+        tf_s=t_rel[end],
+        initial_time=series.initial_time,
+        x_ic_km=x_km[1],
+        y_ic_km=y_km[1],
+        z_ic_km=z_km[1],
+        vx_ic_kmps=vx_kmps[1],
+        vy_ic_kmps=vy_kmps[1],
+        vz_ic_kmps=vz_kmps[1],
+        sma_km=sma_km,
+        ecc=ecc,
+        inc_deg=inc_deg,
+        aop_deg=aop_deg,
+        raan_deg=raan_deg,
+        ta_deg=ta_deg
+    )
+end
+
+function _build_cygnss_cyg04_96hr_inertial_reference(outdir::String, stem::String)
+    series = _load_cygnss_cyg04_96hr_inertial_series()
+    # t_abs: seconds since 2025-06-06T00:00:00 (same epoch as the 48hr IC).
+    # Using t_abs as the time axis aligns the comparison with the propagation
+    # started from the 48hr IC at t=0.
+    t_abs = series.t_abs
+    x_km = series.x_km
+    y_km = series.y_km
+    z_km = series.z_km
+
+    planet = TV._planet_from_name("earth")
+    r_km = sqrt.(x_km .^ 2 .+ y_km .^ 2 .+ z_km .^ 2)
+    alt_km = r_km .- planet.Rp_e * 1.0e-3
+
+    # Use the 48hr IC: the cygnss_data_48hr.feather velocity is orbit-determined
+    # and gives a much more accurate initial orbital energy than the raw GPS
+    # Doppler velocity in the CYG04 file.  A ~0.6 m/s along-track error in the
+    # CYG04 raw velocity shifts the SMA by ~1 km, producing ~120 km along-track
+    # drift at 48 hours even though the reference positions agree to < 2 m.
+    df48 = DataFrame(Arrow.Table(_CYGNSS_48HR_TELEMETRY_FEATHER))
+    sort!(df48, _required_column(df48, ["TIME OFFSET", "time"]))
+    x_ic_km   = Float64(df48[!, _required_column(df48, ["OBS4.ENG_PVT.DDMI_PVT_SCPOS_X (m)", "pos_ii_1"])][1]) * 1.0e-3
+    y_ic_km   = Float64(df48[!, _required_column(df48, ["OBS4.ENG_PVT.DDMI_PVT_SCPOS_Y (m)", "pos_ii_2"])][1]) * 1.0e-3
+    z_ic_km   = Float64(df48[!, _required_column(df48, ["OBS4.ENG_PVT.DDMI_PVT_SCPOS_Z (m)", "pos_ii_3"])][1]) * 1.0e-3
+    vx_ic_kmps = Float64(df48[!, _required_column(df48, ["OBS4.ENG_PVT.DDMI_PVT_SCVEL_X (m/s)", "vel_ii_1"])][1]) * 1.0e-3
+    vy_ic_kmps = Float64(df48[!, _required_column(df48, ["OBS4.ENG_PVT.DDMI_PVT_SCVEL_Y (m/s)", "vel_ii_2"])][1]) * 1.0e-3
+    vz_ic_kmps = Float64(df48[!, _required_column(df48, ["OBS4.ENG_PVT.DDMI_PVT_SCVEL_Z (m/s)", "vel_ii_3"])][1]) * 1.0e-3
+
+    oe0 = TV.rvtoorbitalelement(
+        SVector{3, Float64}(x_ic_km, y_ic_km, z_ic_km) .* 1.0e3,
+        SVector{3, Float64}(vx_ic_kmps, vy_ic_kmps, vz_ic_kmps) .* 1.0e3,
+        planet
+    )
+    sma_km = oe0[1] * 1.0e-3
+    ecc = oe0[2]
+    inc_deg = rad2deg(oe0[3])
+    raan_deg = rad2deg(oe0[4])
+    aop_deg = rad2deg(oe0[5])
+    ta_deg = rad2deg(oe0[6])
+
+    telemetry_df = DataFrame(
+        time_s=t_abs,
+        altitude_km=alt_km,
+        x_km=x_km,
+        y_km=y_km,
+        z_km=z_km,
+        sma_km=fill(sma_km, length(t_abs)),
+        ecc=fill(ecc, length(t_abs)),
+        inc_deg=fill(inc_deg, length(t_abs)),
+        aop_deg=fill(aop_deg, length(t_abs)),
+        raan_deg=fill(raan_deg, length(t_abs)),
+        ta_deg=fill(ta_deg, length(t_abs)),
+        x_ic_km=fill(x_ic_km, length(t_abs)),
+        y_ic_km=fill(y_ic_km, length(t_abs)),
+        z_ic_km=fill(z_ic_km, length(t_abs)),
+        vx_ic_kmps=fill(vx_ic_kmps, length(t_abs)),
+        vy_ic_kmps=fill(vy_ic_kmps, length(t_abs)),
+        vz_ic_kmps=fill(vz_ic_kmps, length(t_abs))
+    )
+
+    telemetry_path = joinpath(outdir, "$(stem)_time_aligned.arrow")
+    Arrow.write(telemetry_path, telemetry_df)
+
+    return (
+        telemetry_path=telemetry_path,
+        t0_s=t_abs[1],
+        tf_s=t_abs[end],
+        x_ic_km=x_ic_km,
+        y_ic_km=y_ic_km,
+        z_ic_km=z_ic_km,
+        vx_ic_kmps=vx_ic_kmps,
+        vy_ic_kmps=vy_ic_kmps,
+        vz_ic_kmps=vz_ic_kmps,
+        sma_km=sma_km,
+        ecc=ecc,
+        inc_deg=inc_deg,
+        aop_deg=aop_deg,
+        raan_deg=raan_deg,
+        ta_deg=ta_deg
+    )
+end
+
 @inline function _mod360(x::Float64)::Float64
     y = mod(x, 360.0)
     return y < 0.0 ? y + 360.0 : y
@@ -542,6 +839,19 @@ end
     return joinpath(_GMAT_EXAMPLES_DIR, _scenario_basilisk_file_name(scenario_name))
 end
 
+@inline function _scenario_stk_file_name(scenario_name::String)::String
+    parts = split(scenario_name, "_")
+    @test length(parts) == 3
+    body = parts[1] == "moon" ? "Luna" : uppercasefirst(parts[1])
+    jtag = uppercase(parts[2])
+    tbtag = parts[3] == "tbtrue" ? "TB1" : "TB0"
+    return "Sim_$(body)_$(jtag)_$(tbtag).csv"
+end
+
+@inline function _scenario_stk_path(scenario_name::String)::String
+    return joinpath(_STK_RESULTS_DIR, _scenario_stk_file_name(scenario_name))
+end
+
 @inline function _default_matrix_initial_time()::SM.InitialTime
     return SM.InitialTime(
         year=2026,
@@ -551,6 +861,117 @@ end
         minute=0,
         second=0.0
     )
+end
+
+function _matrix_initial_conditions(scenario_name::String)
+    planet = first(split(scenario_name, "_"; limit=2))
+    if planet == "earth"
+        return (
+            sma_km=7000.0,
+            ecc=1.0e-5,
+            inc_deg=28.5,
+            aop_deg=0.0,
+            raan_deg=45.0,
+            ta_deg=0.0
+        )
+    elseif planet == "mars"
+        return (
+            sma_km=3999.999999970649,
+            ecc=0.001999999999785415,
+            inc_deg=45.00000000009245,
+            aop_deg=360.0,
+            raan_deg=360.0,
+            ta_deg=90.00000010508394
+        )
+    elseif planet == "venus"
+        return (
+            sma_km=7000.0,
+            ecc=0.001,
+            inc_deg=30.0,
+            aop_deg=0.0,
+            raan_deg=0.0,
+            ta_deg=180.0
+        )
+    elseif planet == "moon"
+        return (
+            sma_km=5000.0,
+            ecc=0.6,
+            inc_deg=42.0,
+            aop_deg=0.0,
+            raan_deg=0.0,
+            ta_deg=0.0
+        )
+    end
+    error("Unsupported matrix scenario planet in $scenario_name")
+end
+
+function _matrix_scenario_overrides(scenario_name::String)::Dict{String, Any}
+    parts = split(scenario_name, "_")
+    @test length(parts) == 3
+    planet, gravity_tag, tb_tag = parts
+
+    gravity_degree, gravity_order = if gravity_tag == "j0"
+        (0, 0)
+    elseif gravity_tag == "j2"
+        planet == "earth" ? (2, 0) : (2, 2)
+    elseif gravity_tag == "j50"
+        (50, 50)
+    else
+        error("Unsupported gravity tag in $scenario_name")
+    end
+
+    nbody_bodies = if tb_tag == "tbtrue"
+        if planet == "earth"
+            Any["sun", "moon"]
+        elseif planet in ("mars", "venus")
+            Any["sun"]
+        elseif planet == "moon"
+            Any["sun", "earth"]
+        else
+            Any[]
+        end
+    else
+        Any[]
+    end
+
+    harmonics_file = if planet == "earth"
+        _GMAT_HARMONICS_EARTH_FILE
+    elseif planet == "mars"
+        _GMAT_HARMONICS_MARS_FILE
+    elseif planet == "venus"
+        _GMAT_HARMONICS_VENUS_FILE
+    elseif planet == "moon"
+        _GMAT_HARMONICS_MOON_FILE
+    else
+        error("Unsupported planet in $scenario_name")
+    end
+
+    overrides = Dict{String, Any}(
+        "planet" => planet,
+        "gravity_model" => "inverse_squared",
+        "gravity_harmonics_degree" => gravity_degree,
+        "gravity_harmonics_order" => gravity_order,
+        "gravity_harmonics_file" => harmonics_file,
+        "nbody_bodies" => nbody_bodies,
+        "orbit_altitude_mode" => "oblate"
+    )
+
+    if scenario_name == "earth_j0_tbtrue"
+        merge!(overrides, Dict{String, Any}(
+            "srp_enabled" => false,
+            "srp_area_m2" => 5.0,
+            "srp_cr" => 1.35
+        ))
+    end
+
+    if planet == "moon"
+        merge!(overrides, Dict{String, Any}(
+            "drag_enabled" => false,
+            "include_wind" => false
+        ))
+    end
+
+    return overrides
 end
 
 function _scenario_planet_fixed_position_rmse(errors::DataFrame, scenario_name::String)
@@ -611,67 +1032,37 @@ end
 const _GMAT_MATRIX_SUMMARY_CACHE = Ref{Union{Nothing, DataFrame}}(nothing)
 const _GMAT_MATRIX_RESULT_CACHE = Ref{Union{Nothing, TV.VerificationResult}}(nothing)
 const _GMAT_MATRIX_CACHE_KEY = Ref{String}("")
+const _STK_MATRIX_SUMMARY_CACHE = Ref{Union{Nothing, DataFrame}}(nothing)
+const _STK_MATRIX_RESULT_CACHE = Ref{Union{Nothing, TV.VerificationResult}}(nothing)
+const _STK_MATRIX_CACHE_KEY = Ref{String}("")
 const _CYGNSS_48HR_SUMMARY_CACHE = Ref{Union{Nothing, DataFrame}}(nothing)
 const _CYGNSS_48HR_RESULT_CACHE = Ref{Union{Nothing, TV.VerificationResult}}(nothing)
 const _CYGNSS_48HR_TIMESPAN_CACHE = Ref{Union{Nothing, NamedTuple{(:t0_s, :tf_s), Tuple{Float64, Float64}}}}(nothing)
 const _CYGNSS_GMAT_SUMMARY_CACHE = Ref{Union{Nothing, DataFrame}}(nothing)
 const _CYGNSS_GMAT_RESULT_CACHE = Ref{Union{Nothing, TV.VerificationResult}}(nothing)
 const _CYGNSS_GMAT_TIMESPAN_CACHE = Ref{Union{Nothing, NamedTuple{(:t0_s, :tf_s), Tuple{Float64, Float64}}}}(nothing)
+const _CYGNSS_96HR_SUMMARY_CACHE = Ref{Union{Nothing, DataFrame}}(nothing)
+const _CYGNSS_96HR_RESULT_CACHE = Ref{Union{Nothing, TV.VerificationResult}}(nothing)
+const _CYGNSS_96HR_TIMESPAN_CACHE = Ref{Union{Nothing, NamedTuple{(:t0_s, :tf_s), Tuple{Float64, Float64}}}}(nothing)
+const _CYGNSS_CYG04_96HR_SUMMARY_CACHE = Ref{Union{Nothing, DataFrame}}(nothing)
+const _CYGNSS_CYG04_96HR_RESULT_CACHE = Ref{Union{Nothing, TV.VerificationResult}}(nothing)
+const _CYGNSS_CYG04_96HR_TIMESPAN_CACHE = Ref{Union{Nothing, NamedTuple{(:t0_s, :tf_s), Tuple{Float64, Float64}}}}(nothing)
 
-function _run_gmat_scenario_matrix_result_once()::TV.VerificationResult
+function _run_reference_scenario_matrix_result_once(
+    path_resolver::Function,
+    result_cache::Base.RefValue{Union{Nothing, TV.VerificationResult}},
+    summary_cache::Base.RefValue{Union{Nothing, DataFrame}},
+    cache_key_ref::Base.RefValue{String}
+)::TV.VerificationResult
     cache_key = _gmat_matrix_cache_key()
-    if _GMAT_MATRIX_RESULT_CACHE[] !== nothing && _GMAT_MATRIX_CACHE_KEY[] == cache_key
-        return _GMAT_MATRIX_RESULT_CACHE[]
+    if result_cache[] !== nothing && cache_key_ref[] == cache_key
+        return result_cache[]
     end
 
-    earth_j2_csv = _scenario_basilisk_path("earth_j2_tbfalse")
-    earth_j0_csv = _scenario_basilisk_path("earth_j0_tbfalse")
-    earth_j50_tbfalse_csv = _scenario_basilisk_path("earth_j50_tbfalse")
-    earth_j50_tbtrue_csv = _scenario_basilisk_path("earth_j50_tbtrue")
-    earth_j2_tbtrue_csv = _scenario_basilisk_path("earth_j2_tbtrue")
-    earth_j0_tbtrue_csv = _scenario_basilisk_path("earth_j0_tbtrue")
-    mars_j2_csv = _scenario_basilisk_path("mars_j2_tbfalse")
-    mars_j0_csv = _scenario_basilisk_path("mars_j0_tbfalse")
-    mars_j2_tbtrue_csv = _scenario_basilisk_path("mars_j2_tbtrue")
-    mars_j0_tbtrue_csv = _scenario_basilisk_path("mars_j0_tbtrue")
-    mars_j50_tbfalse_csv = _scenario_basilisk_path("mars_j50_tbfalse")
-    mars_j50_tbtrue_csv = _scenario_basilisk_path("mars_j50_tbtrue")
-    venus_j2_csv = _scenario_basilisk_path("venus_j2_tbfalse")
-    venus_j0_csv = _scenario_basilisk_path("venus_j0_tbfalse")
-    venus_j2_tbtrue_csv = _scenario_basilisk_path("venus_j2_tbtrue")
-    venus_j0_tbtrue_csv = _scenario_basilisk_path("venus_j0_tbtrue")
-    venus_j50_tbfalse_csv = _scenario_basilisk_path("venus_j50_tbfalse")
-    venus_j50_tbtrue_csv = _scenario_basilisk_path("venus_j50_tbtrue")
-    moon_j2_csv = _scenario_basilisk_path("moon_j2_tbfalse")
-    moon_j0_csv = _scenario_basilisk_path("moon_j0_tbfalse")
-    moon_j2_tbtrue_csv = _scenario_basilisk_path("moon_j2_tbtrue")
-    moon_j0_tbtrue_csv = _scenario_basilisk_path("moon_j0_tbtrue")
-    moon_j50_tbfalse_csv = _scenario_basilisk_path("moon_j50_tbfalse")
-    moon_j50_tbtrue_csv = _scenario_basilisk_path("moon_j50_tbtrue")
-    @test isfile(earth_j2_csv)
-    @test isfile(earth_j0_csv)
-    @test isfile(earth_j50_tbfalse_csv)
-    @test isfile(earth_j50_tbtrue_csv)
-    @test isfile(earth_j2_tbtrue_csv)
-    @test isfile(earth_j0_tbtrue_csv)
-    @test isfile(mars_j2_csv)
-    @test isfile(mars_j0_csv)
-    @test isfile(mars_j2_tbtrue_csv)
-    @test isfile(mars_j0_tbtrue_csv)
-    @test isfile(mars_j50_tbfalse_csv)
-    @test isfile(mars_j50_tbtrue_csv)
-    @test isfile(venus_j2_csv)
-    @test isfile(venus_j0_csv)
-    @test isfile(venus_j2_tbtrue_csv)
-    @test isfile(venus_j0_tbtrue_csv)
-    @test isfile(venus_j50_tbfalse_csv)
-    @test isfile(venus_j50_tbtrue_csv)
-    @test isfile(moon_j2_csv)
-    @test isfile(moon_j0_csv)
-    @test isfile(moon_j2_tbtrue_csv)
-    @test isfile(moon_j0_tbtrue_csv)
-    @test isfile(moon_j50_tbfalse_csv)
-    @test isfile(moon_j50_tbtrue_csv)
+    active_scenarios = sort!(collect(_active_gmat_expected_scenario_names()))
+    for scenario_name in active_scenarios
+        @test isfile(path_resolver(scenario_name))
+    end
     @test isfile(joinpath(TV.SPICE_PATH, _gmat_planetary_kernel_relpath()))
     @test isfile(joinpath(_GMAT_REPO_ROOT, _GMAT_HARMONICS_EARTH_FILE))
     @test isfile(joinpath(_GMAT_REPO_ROOT, _GMAT_HARMONICS_MARS_FILE))
@@ -679,644 +1070,46 @@ function _run_gmat_scenario_matrix_result_once()::TV.VerificationResult
     @test isfile(joinpath(_GMAT_REPO_ROOT, _GMAT_HARMONICS_MOON_FILE))
 
     result = mktempdir() do tmp
-        earth_ic = (
-            sma_km=7000.0,
-            ecc=1.0e-5,
-            inc_deg=28.5,
-            aop_deg=0.0,
-            raan_deg=45.0,
-            ta_deg=0.0
-        )
+        trajectories = Dict{String, Any}()
+        initial_state_logs = String[]
+        for scenario_name in active_scenarios
+            csv_path = path_resolver(scenario_name)
+            ic = _matrix_initial_conditions(scenario_name)
+            traj = _build_time_aligned_reference(
+                csv_path,
+                _scenario_planet_name(scenario_name),
+                tmp,
+                scenario_name;
+                sma_km=ic.sma_km,
+                ecc=ic.ecc,
+                inc_deg=ic.inc_deg,
+                aop_deg=ic.aop_deg,
+                raan_deg=ic.raan_deg,
+                ta_deg=ic.ta_deg
+            )
+            trajectories[scenario_name] = traj
 
-        traj_j2 = _build_time_aligned_reference(
-            earth_j2_csv,
-            "earth",
-            tmp,
-            "earth_j2_tbfalse";
-            sma_km=earth_ic.sma_km,
-            ecc=earth_ic.ecc,
-            inc_deg=earth_ic.inc_deg,
-            aop_deg=earth_ic.aop_deg,
-            raan_deg=earth_ic.raan_deg,
-            ta_deg=earth_ic.ta_deg
-        )
-        traj_j0 = _build_time_aligned_reference(
-            earth_j0_csv,
-            "earth",
-            tmp,
-            "earth_j0_tbfalse";
-            sma_km=earth_ic.sma_km,
-            ecc=earth_ic.ecc,
-            inc_deg=earth_ic.inc_deg,
-            aop_deg=earth_ic.aop_deg,
-            raan_deg=earth_ic.raan_deg,
-            ta_deg=earth_ic.ta_deg
-        )
-        traj_j50_tbfalse = _build_time_aligned_reference(
-            earth_j50_tbfalse_csv,
-            "earth",
-            tmp,
-            "earth_j50_tbfalse";
-            sma_km=earth_ic.sma_km,
-            ecc=earth_ic.ecc,
-            inc_deg=earth_ic.inc_deg,
-            aop_deg=earth_ic.aop_deg,
-            raan_deg=earth_ic.raan_deg,
-            ta_deg=earth_ic.ta_deg
-        )
-        traj_j50_tbtrue = _build_time_aligned_reference(
-            earth_j50_tbtrue_csv,
-            "earth",
-            tmp,
-            "earth_j50_tbtrue";
-            sma_km=earth_ic.sma_km,
-            ecc=earth_ic.ecc,
-            inc_deg=earth_ic.inc_deg,
-            aop_deg=earth_ic.aop_deg,
-            raan_deg=earth_ic.raan_deg,
-            ta_deg=earth_ic.ta_deg
-        )
-        traj_j2_tbtrue = _build_time_aligned_reference(
-            earth_j2_tbtrue_csv,
-            "earth",
-            tmp,
-            "earth_j2_tbtrue";
-            sma_km=earth_ic.sma_km,
-            ecc=earth_ic.ecc,
-            inc_deg=earth_ic.inc_deg,
-            aop_deg=earth_ic.aop_deg,
-            raan_deg=earth_ic.raan_deg,
-            ta_deg=earth_ic.ta_deg
-        )
-        traj_j0_tbtrue = _build_time_aligned_reference(
-            earth_j0_tbtrue_csv,
-            "earth",
-            tmp,
-            "earth_j0_tbtrue";
-            sma_km=earth_ic.sma_km,
-            ecc=earth_ic.ecc,
-            inc_deg=earth_ic.inc_deg,
-            aop_deg=earth_ic.aop_deg,
-            raan_deg=earth_ic.raan_deg,
-            ta_deg=earth_ic.ta_deg
-        )
+            if startswith(scenario_name, "earth_")
+                push!(
+                    initial_state_logs,
+                    "$scenario_name=($(traj.x_ic_km),$(traj.y_ic_km),$(traj.z_ic_km),$(traj.vx_ic_kmps),$(traj.vy_ic_kmps),$(traj.vz_ic_kmps))"
+                )
+            end
+        end
 
-        mars_ic = (
-            sma_km=3999.999999970649,
-            ecc=0.001999999999785415,
-            inc_deg=45.00000000009245,
-            aop_deg=360.0,
-            raan_deg=360.0,
-            ta_deg=90.00000010508394
-        )
-        venus_ic = (
-            sma_km=7000.0,
-            ecc=0.001,
-            inc_deg=30.0,
-            aop_deg=0.0,
-            raan_deg=0.0,
-            ta_deg=180.0
-        )
-        moon_ic = (
-            sma_km=5000.0,
-            ecc=0.6,
-            inc_deg=42.0,
-            aop_deg=0.0,
-            raan_deg=0.0,
-            ta_deg=0.0
-        )
+        if !isempty(initial_state_logs)
+            println(
+                "SpaceAGORA initial Cartesian states from reference [x_km,y_km,z_km,vx_kmps,vy_kmps,vz_kmps]: " *
+                join(initial_state_logs, "; ")
+            )
+        end
 
-        traj_mars_j2_tbfalse = _build_time_aligned_reference(
-            mars_j2_csv,
-            "mars",
-            tmp,
-            "mars_j2_tbfalse";
-            sma_km=mars_ic.sma_km,
-            ecc=mars_ic.ecc,
-            inc_deg=mars_ic.inc_deg,
-            aop_deg=mars_ic.aop_deg,
-            raan_deg=mars_ic.raan_deg,
-            ta_deg=mars_ic.ta_deg
-        )
-        traj_mars_j0_tbfalse = _build_time_aligned_reference(
-            mars_j0_csv,
-            "mars",
-            tmp,
-            "mars_j0_tbfalse";
-            sma_km=mars_ic.sma_km,
-            ecc=mars_ic.ecc,
-            inc_deg=mars_ic.inc_deg,
-            aop_deg=mars_ic.aop_deg,
-            raan_deg=mars_ic.raan_deg,
-            ta_deg=mars_ic.ta_deg
-        )
-        traj_mars_j2_tbtrue = _build_time_aligned_reference(
-            mars_j2_tbtrue_csv,
-            "mars",
-            tmp,
-            "mars_j2_tbtrue";
-            sma_km=mars_ic.sma_km,
-            ecc=mars_ic.ecc,
-            inc_deg=mars_ic.inc_deg,
-            aop_deg=mars_ic.aop_deg,
-            raan_deg=mars_ic.raan_deg,
-            ta_deg=mars_ic.ta_deg
-        )
-        traj_mars_j0_tbtrue = _build_time_aligned_reference(
-            mars_j0_tbtrue_csv,
-            "mars",
-            tmp,
-            "mars_j0_tbtrue";
-            sma_km=mars_ic.sma_km,
-            ecc=mars_ic.ecc,
-            inc_deg=mars_ic.inc_deg,
-            aop_deg=mars_ic.aop_deg,
-            raan_deg=mars_ic.raan_deg,
-            ta_deg=mars_ic.ta_deg
-        )
-        traj_mars_j50_tbfalse = _build_time_aligned_reference(
-            mars_j50_tbfalse_csv,
-            "mars",
-            tmp,
-            "mars_j50_tbfalse";
-            sma_km=mars_ic.sma_km,
-            ecc=mars_ic.ecc,
-            inc_deg=mars_ic.inc_deg,
-            aop_deg=mars_ic.aop_deg,
-            raan_deg=mars_ic.raan_deg,
-            ta_deg=mars_ic.ta_deg
-        )
-        traj_mars_j50_tbtrue = _build_time_aligned_reference(
-            mars_j50_tbtrue_csv,
-            "mars",
-            tmp,
-            "mars_j50_tbtrue";
-            sma_km=mars_ic.sma_km,
-            ecc=mars_ic.ecc,
-            inc_deg=mars_ic.inc_deg,
-            aop_deg=mars_ic.aop_deg,
-            raan_deg=mars_ic.raan_deg,
-            ta_deg=mars_ic.ta_deg
-        )
-        traj_venus_j2_tbfalse = _build_time_aligned_reference(
-            venus_j2_csv,
-            "venus",
-            tmp,
-            "venus_j2_tbfalse";
-            sma_km=venus_ic.sma_km,
-            ecc=venus_ic.ecc,
-            inc_deg=venus_ic.inc_deg,
-            aop_deg=venus_ic.aop_deg,
-            raan_deg=venus_ic.raan_deg,
-            ta_deg=venus_ic.ta_deg
-        )
-        traj_venus_j0_tbfalse = _build_time_aligned_reference(
-            venus_j0_csv,
-            "venus",
-            tmp,
-            "venus_j0_tbfalse";
-            sma_km=venus_ic.sma_km,
-            ecc=venus_ic.ecc,
-            inc_deg=venus_ic.inc_deg,
-            aop_deg=venus_ic.aop_deg,
-            raan_deg=venus_ic.raan_deg,
-            ta_deg=venus_ic.ta_deg
-        )
-        traj_venus_j2_tbtrue = _build_time_aligned_reference(
-            venus_j2_tbtrue_csv,
-            "venus",
-            tmp,
-            "venus_j2_tbtrue";
-            sma_km=venus_ic.sma_km,
-            ecc=venus_ic.ecc,
-            inc_deg=venus_ic.inc_deg,
-            aop_deg=venus_ic.aop_deg,
-            raan_deg=venus_ic.raan_deg,
-            ta_deg=venus_ic.ta_deg
-        )
-        traj_venus_j0_tbtrue = _build_time_aligned_reference(
-            venus_j0_tbtrue_csv,
-            "venus",
-            tmp,
-            "venus_j0_tbtrue";
-            sma_km=venus_ic.sma_km,
-            ecc=venus_ic.ecc,
-            inc_deg=venus_ic.inc_deg,
-            aop_deg=venus_ic.aop_deg,
-            raan_deg=venus_ic.raan_deg,
-            ta_deg=venus_ic.ta_deg
-        )
-        traj_venus_j50_tbfalse = _build_time_aligned_reference(
-            venus_j50_tbfalse_csv,
-            "venus",
-            tmp,
-            "venus_j50_tbfalse";
-            sma_km=venus_ic.sma_km,
-            ecc=venus_ic.ecc,
-            inc_deg=venus_ic.inc_deg,
-            aop_deg=venus_ic.aop_deg,
-            raan_deg=venus_ic.raan_deg,
-            ta_deg=venus_ic.ta_deg
-        )
-        traj_venus_j50_tbtrue = _build_time_aligned_reference(
-            venus_j50_tbtrue_csv,
-            "venus",
-            tmp,
-            "venus_j50_tbtrue";
-            sma_km=venus_ic.sma_km,
-            ecc=venus_ic.ecc,
-            inc_deg=venus_ic.inc_deg,
-            aop_deg=venus_ic.aop_deg,
-            raan_deg=venus_ic.raan_deg,
-            ta_deg=venus_ic.ta_deg
-        )
-        traj_moon_j2_tbfalse = _build_time_aligned_reference(
-            moon_j2_csv,
-            "moon",
-            tmp,
-            "moon_j2_tbfalse";
-            sma_km=moon_ic.sma_km,
-            ecc=moon_ic.ecc,
-            inc_deg=moon_ic.inc_deg,
-            aop_deg=moon_ic.aop_deg,
-            raan_deg=moon_ic.raan_deg,
-            ta_deg=moon_ic.ta_deg
-        )
-        traj_moon_j0_tbfalse = _build_time_aligned_reference(
-            moon_j0_csv,
-            "moon",
-            tmp,
-            "moon_j0_tbfalse";
-            sma_km=moon_ic.sma_km,
-            ecc=moon_ic.ecc,
-            inc_deg=moon_ic.inc_deg,
-            aop_deg=moon_ic.aop_deg,
-            raan_deg=moon_ic.raan_deg,
-            ta_deg=moon_ic.ta_deg
-        )
-        traj_moon_j2_tbtrue = _build_time_aligned_reference(
-            moon_j2_tbtrue_csv,
-            "moon",
-            tmp,
-            "moon_j2_tbtrue";
-            sma_km=moon_ic.sma_km,
-            ecc=moon_ic.ecc,
-            inc_deg=moon_ic.inc_deg,
-            aop_deg=moon_ic.aop_deg,
-            raan_deg=moon_ic.raan_deg,
-            ta_deg=moon_ic.ta_deg
-        )
-        traj_moon_j0_tbtrue = _build_time_aligned_reference(
-            moon_j0_tbtrue_csv,
-            "moon",
-            tmp,
-            "moon_j0_tbtrue";
-            sma_km=moon_ic.sma_km,
-            ecc=moon_ic.ecc,
-            inc_deg=moon_ic.inc_deg,
-            aop_deg=moon_ic.aop_deg,
-            raan_deg=moon_ic.raan_deg,
-            ta_deg=moon_ic.ta_deg
-        )
-        traj_moon_j50_tbfalse = _build_time_aligned_reference(
-            moon_j50_tbfalse_csv,
-            "moon",
-            tmp,
-            "moon_j50_tbfalse";
-            sma_km=moon_ic.sma_km,
-            ecc=moon_ic.ecc,
-            inc_deg=moon_ic.inc_deg,
-            aop_deg=moon_ic.aop_deg,
-            raan_deg=moon_ic.raan_deg,
-            ta_deg=moon_ic.ta_deg
-        )
-        traj_moon_j50_tbtrue = _build_time_aligned_reference(
-            moon_j50_tbtrue_csv,
-            "moon",
-            tmp,
-            "moon_j50_tbtrue";
-            sma_km=moon_ic.sma_km,
-            ecc=moon_ic.ecc,
-            inc_deg=moon_ic.inc_deg,
-            aop_deg=moon_ic.aop_deg,
-            raan_deg=moon_ic.raan_deg,
-            ta_deg=moon_ic.ta_deg
-        )
-
-        println(
-            "SpaceAGORA initial Cartesian states from GMAT [x_km,y_km,z_km,vx_kmps,vy_kmps,vz_kmps]: " *
-            "earth_j2_tbfalse=($(traj_j2.x_ic_km),$(traj_j2.y_ic_km),$(traj_j2.z_ic_km),$(traj_j2.vx_ic_kmps),$(traj_j2.vy_ic_kmps),$(traj_j2.vz_ic_kmps)); " *
-            "earth_j0_tbfalse=($(traj_j0.x_ic_km),$(traj_j0.y_ic_km),$(traj_j0.z_ic_km),$(traj_j0.vx_ic_kmps),$(traj_j0.vy_ic_kmps),$(traj_j0.vz_ic_kmps)); " *
-            "earth_j50_tbfalse=($(traj_j50_tbfalse.x_ic_km),$(traj_j50_tbfalse.y_ic_km),$(traj_j50_tbfalse.z_ic_km),$(traj_j50_tbfalse.vx_ic_kmps),$(traj_j50_tbfalse.vy_ic_kmps),$(traj_j50_tbfalse.vz_ic_kmps)); " *
-            "earth_j2_tbtrue=($(traj_j2_tbtrue.x_ic_km),$(traj_j2_tbtrue.y_ic_km),$(traj_j2_tbtrue.z_ic_km),$(traj_j2_tbtrue.vx_ic_kmps),$(traj_j2_tbtrue.vy_ic_kmps),$(traj_j2_tbtrue.vz_ic_kmps)); " *
-            "earth_j0_tbtrue=($(traj_j0_tbtrue.x_ic_km),$(traj_j0_tbtrue.y_ic_km),$(traj_j0_tbtrue.z_ic_km),$(traj_j0_tbtrue.vx_ic_kmps),$(traj_j0_tbtrue.vy_ic_kmps),$(traj_j0_tbtrue.vz_ic_kmps))"
-        )
-
-        baseline = _base_scenario_dict("earth_j0_tbfalse", traj_j0.telemetry_path)
-        merge!(baseline, Dict{String, Any}(
-            "planet" => "earth",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 0,
-            "gravity_harmonics_order" => 0,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_EARTH_FILE,
-            "nbody_bodies" => Any[],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        j2_tbfalse = _base_scenario_dict("earth_j2_tbfalse", traj_j2.telemetry_path)
-        merge!(j2_tbfalse, Dict{String, Any}(
-            "planet" => "earth",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 2,
-            "gravity_harmonics_order" => 0,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_EARTH_FILE,
-            "nbody_bodies" => Any[],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        j2_tbtrue = _base_scenario_dict("earth_j2_tbtrue", traj_j2_tbtrue.telemetry_path)
-        merge!(j2_tbtrue, Dict{String, Any}(
-            "planet" => "earth",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 2,
-            "gravity_harmonics_order" => 0,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_EARTH_FILE,
-            "nbody_bodies" => Any["sun", "moon"],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        j50_tbfalse = _base_scenario_dict("earth_j50_tbfalse", traj_j50_tbfalse.telemetry_path)
-        merge!(j50_tbfalse, Dict{String, Any}(
-            "planet" => "earth",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 50,
-            "gravity_harmonics_order" => 50,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_EARTH_FILE,
-            "nbody_bodies" => Any[],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        j50_tbtrue = _base_scenario_dict("earth_j50_tbtrue", traj_j50_tbtrue.telemetry_path)
-        merge!(j50_tbtrue, Dict{String, Any}(
-            "planet" => "earth",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 50,
-            "gravity_harmonics_order" => 50,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_EARTH_FILE,
-            "nbody_bodies" => Any["sun", "moon"],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        j0_tbtrue = _base_scenario_dict("earth_j0_tbtrue", traj_j0_tbtrue.telemetry_path)
-        merge!(j0_tbtrue, Dict{String, Any}(
-            "planet" => "earth",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 0,
-            "gravity_harmonics_order" => 0,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_EARTH_FILE,
-            "nbody_bodies" => Any["sun", "moon"],
-            "orbit_altitude_mode" => "oblate",
-            "srp_enabled" => false, # intentionally disable SRP for this case to isolate the effect of third bodies vs SRP in the j2_tbtrue case
-            "srp_area_m2" => 5.0,
-            "srp_cr" => 1.35
-        ))
-
-        mars_j0_tbfalse = _base_scenario_dict("mars_j0_tbfalse", traj_mars_j0_tbfalse.telemetry_path)
-        merge!(mars_j0_tbfalse, Dict{String, Any}(
-            "planet" => "mars",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 0,
-            "gravity_harmonics_order" => 0,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_MARS_FILE,
-            "nbody_bodies" => Any[],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        mars_j2_tbfalse = _base_scenario_dict("mars_j2_tbfalse", traj_mars_j2_tbfalse.telemetry_path)
-        merge!(mars_j2_tbfalse, Dict{String, Any}(
-            "planet" => "mars",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 2,
-            "gravity_harmonics_order" => 2,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_MARS_FILE,
-            "nbody_bodies" => Any[],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        mars_j0_tbtrue = _base_scenario_dict("mars_j0_tbtrue", traj_mars_j0_tbtrue.telemetry_path)
-        merge!(mars_j0_tbtrue, Dict{String, Any}(
-            "planet" => "mars",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 0,
-            "gravity_harmonics_order" => 0,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_MARS_FILE,
-            "nbody_bodies" => Any["sun"],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        mars_j2_tbtrue = _base_scenario_dict("mars_j2_tbtrue", traj_mars_j2_tbtrue.telemetry_path)
-        merge!(mars_j2_tbtrue, Dict{String, Any}(
-            "planet" => "mars",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 2,
-            "gravity_harmonics_order" => 2,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_MARS_FILE,
-            "nbody_bodies" => Any["sun"],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        venus_j0_tbfalse = _base_scenario_dict("venus_j0_tbfalse", traj_venus_j0_tbfalse.telemetry_path)
-        merge!(venus_j0_tbfalse, Dict{String, Any}(
-            "planet" => "venus",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 0,
-            "gravity_harmonics_order" => 0,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_VENUS_FILE,
-            "nbody_bodies" => Any[],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        venus_j2_tbfalse = _base_scenario_dict("venus_j2_tbfalse", traj_venus_j2_tbfalse.telemetry_path)
-        merge!(venus_j2_tbfalse, Dict{String, Any}(
-            "planet" => "venus",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 2,
-            "gravity_harmonics_order" => 2,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_VENUS_FILE,
-            "nbody_bodies" => Any[],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        venus_j0_tbtrue = _base_scenario_dict("venus_j0_tbtrue", traj_venus_j0_tbtrue.telemetry_path)
-        merge!(venus_j0_tbtrue, Dict{String, Any}(
-            "planet" => "venus",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 0,
-            "gravity_harmonics_order" => 0,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_VENUS_FILE,
-            "nbody_bodies" => Any["sun"],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        venus_j2_tbtrue = _base_scenario_dict("venus_j2_tbtrue", traj_venus_j2_tbtrue.telemetry_path)
-        merge!(venus_j2_tbtrue, Dict{String, Any}(
-            "planet" => "venus",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 2,
-            "gravity_harmonics_order" => 2,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_VENUS_FILE,
-            "nbody_bodies" => Any["sun"],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        mars_j50_tbfalse = _base_scenario_dict("mars_j50_tbfalse", traj_mars_j50_tbfalse.telemetry_path)
-        merge!(mars_j50_tbfalse, Dict{String, Any}(
-            "planet" => "mars",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 50,
-            "gravity_harmonics_order" => 50,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_MARS_FILE,
-            "nbody_bodies" => Any[],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        mars_j50_tbtrue = _base_scenario_dict("mars_j50_tbtrue", traj_mars_j50_tbtrue.telemetry_path)
-        merge!(mars_j50_tbtrue, Dict{String, Any}(
-            "planet" => "mars",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 50,
-            "gravity_harmonics_order" => 50,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_MARS_FILE,
-            "nbody_bodies" => Any["sun"],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        venus_j50_tbfalse = _base_scenario_dict("venus_j50_tbfalse", traj_venus_j50_tbfalse.telemetry_path)
-        merge!(venus_j50_tbfalse, Dict{String, Any}(
-            "planet" => "venus",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 50,
-            "gravity_harmonics_order" => 50,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_VENUS_FILE,
-            "nbody_bodies" => Any[],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        venus_j50_tbtrue = _base_scenario_dict("venus_j50_tbtrue", traj_venus_j50_tbtrue.telemetry_path)
-        merge!(venus_j50_tbtrue, Dict{String, Any}(
-            "planet" => "venus",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 50,
-            "gravity_harmonics_order" => 50,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_VENUS_FILE,
-            "nbody_bodies" => Any["sun"],
-            "orbit_altitude_mode" => "oblate"
-        ))
-
-        moon_j0_tbfalse = _base_scenario_dict("moon_j0_tbfalse", traj_moon_j0_tbfalse.telemetry_path)
-        merge!(moon_j0_tbfalse, Dict{String, Any}(
-            "planet" => "moon",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 0,
-            "gravity_harmonics_order" => 0,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_MOON_FILE,
-            "nbody_bodies" => Any[],
-            "orbit_altitude_mode" => "oblate",
-            "drag_enabled" => false,
-            "include_wind" => false
-        ))
-
-        moon_j2_tbfalse = _base_scenario_dict("moon_j2_tbfalse", traj_moon_j2_tbfalse.telemetry_path)
-        merge!(moon_j2_tbfalse, Dict{String, Any}(
-            "planet" => "moon",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 2,
-            "gravity_harmonics_order" => 2,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_MOON_FILE,
-            "nbody_bodies" => Any[],
-            "orbit_altitude_mode" => "oblate",
-            "drag_enabled" => false,
-            "include_wind" => false
-        ))
-
-        moon_j0_tbtrue = _base_scenario_dict("moon_j0_tbtrue", traj_moon_j0_tbtrue.telemetry_path)
-        merge!(moon_j0_tbtrue, Dict{String, Any}(
-            "planet" => "moon",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 0,
-            "gravity_harmonics_order" => 0,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_MOON_FILE,
-            "nbody_bodies" => Any["sun", "earth"],
-            "orbit_altitude_mode" => "oblate",
-            "drag_enabled" => false,
-            "include_wind" => false
-        ))
-
-        moon_j2_tbtrue = _base_scenario_dict("moon_j2_tbtrue", traj_moon_j2_tbtrue.telemetry_path)
-        merge!(moon_j2_tbtrue, Dict{String, Any}(
-            "planet" => "moon",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 2,
-            "gravity_harmonics_order" => 2,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_MOON_FILE,
-            "nbody_bodies" => Any["sun", "earth"],
-            "orbit_altitude_mode" => "oblate",
-            "drag_enabled" => false,
-            "include_wind" => false
-        ))
-
-        moon_j50_tbfalse = _base_scenario_dict("moon_j50_tbfalse", traj_moon_j50_tbfalse.telemetry_path)
-        merge!(moon_j50_tbfalse, Dict{String, Any}(
-            "planet" => "moon",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 50,
-            "gravity_harmonics_order" => 50,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_MOON_FILE,
-            "nbody_bodies" => Any[],
-            "orbit_altitude_mode" => "oblate",
-            "drag_enabled" => false,
-            "include_wind" => false
-        ))
-
-        moon_j50_tbtrue = _base_scenario_dict("moon_j50_tbtrue", traj_moon_j50_tbtrue.telemetry_path)
-        merge!(moon_j50_tbtrue, Dict{String, Any}(
-            "planet" => "moon",
-            "gravity_model" => "inverse_squared",
-            "gravity_harmonics_degree" => 50,
-            "gravity_harmonics_order" => 50,
-            "gravity_harmonics_file" => _GMAT_HARMONICS_MOON_FILE,
-            "nbody_bodies" => Any["sun", "earth"],
-            "orbit_altitude_mode" => "oblate",
-            "drag_enabled" => false,
-            "include_wind" => false
-        ))
-
-        scenarios = _filter_gmat_scenarios(Dict{String, Any}[
-            baseline,
-            j2_tbfalse,
-            j2_tbtrue,
-            j0_tbtrue,
-            j50_tbfalse,
-            j50_tbtrue,
-            mars_j0_tbfalse,
-            mars_j2_tbfalse,
-            mars_j0_tbtrue,
-            mars_j2_tbtrue,
-            mars_j50_tbfalse,
-            mars_j50_tbtrue,
-            venus_j0_tbfalse,
-            venus_j2_tbfalse,
-            venus_j0_tbtrue,
-            venus_j2_tbtrue,
-            venus_j50_tbfalse,
-            venus_j50_tbtrue,
-            moon_j0_tbfalse,
-            moon_j2_tbfalse,
-            moon_j0_tbtrue,
-            moon_j2_tbtrue,
-            moon_j50_tbfalse,
-            moon_j50_tbtrue
-        ])
+        scenarios = Dict{String, Any}[]
+        for scenario_name in active_scenarios
+            scenario = _base_scenario_dict(scenario_name, trajectories[scenario_name].telemetry_path)
+            merge!(scenario, _matrix_scenario_overrides(scenario_name))
+            push!(scenarios, scenario)
+        end
 
         manifest_path = joinpath(tmp, "gmat_scenario_matrix_manifest.toml")
         open(manifest_path, "w") do io
@@ -1341,14 +1134,36 @@ function _run_gmat_scenario_matrix_result_once()::TV.VerificationResult
         end
     end
 
-    _GMAT_MATRIX_RESULT_CACHE[] = result
-    _GMAT_MATRIX_SUMMARY_CACHE[] = result.summary
-    _GMAT_MATRIX_CACHE_KEY[] = cache_key
+    result_cache[] = result
+    summary_cache[] = result.summary
+    cache_key_ref[] = cache_key
     return result
+end
+
+function _run_gmat_scenario_matrix_result_once()::TV.VerificationResult
+    return _run_reference_scenario_matrix_result_once(
+        _scenario_basilisk_path,
+        _GMAT_MATRIX_RESULT_CACHE,
+        _GMAT_MATRIX_SUMMARY_CACHE,
+        _GMAT_MATRIX_CACHE_KEY
+    )
 end
 
 function _run_gmat_scenario_matrix_once()::DataFrame
     return _run_gmat_scenario_matrix_result_once().summary
+end
+
+function _run_stk_scenario_matrix_result_once()::TV.VerificationResult
+    return _run_reference_scenario_matrix_result_once(
+        _scenario_stk_path,
+        _STK_MATRIX_RESULT_CACHE,
+        _STK_MATRIX_SUMMARY_CACHE,
+        _STK_MATRIX_CACHE_KEY
+    )
+end
+
+function _run_stk_scenario_matrix_once()::DataFrame
+    return _run_stk_scenario_matrix_result_once().summary
 end
 
 function _run_cygnss_48hr_result_once()::TV.VerificationResult
@@ -1412,6 +1227,125 @@ end
 
 function _run_cygnss_48hr_once()::DataFrame
     return _run_cygnss_48hr_result_once().summary
+end
+
+function _run_cygnss_96hr_result_once()::TV.VerificationResult
+    if _CYGNSS_96HR_RESULT_CACHE[] !== nothing
+        return _CYGNSS_96HR_RESULT_CACHE[]
+    end
+
+    @test isfile(_CYGNSS_96HR_TELEMETRY_FEATHER)
+
+    result = mktempdir() do tmp
+        traj = _build_cygnss_96hr_reference(tmp, "cygnss_96hr_pvt")
+        _CYGNSS_96HR_TIMESPAN_CACHE[] = (t0_s=traj.t0_s, tf_s=traj.tf_s)
+
+        scenario = _base_scenario_dict("cygnss_96hr_pvt", traj.telemetry_path)
+        merge!(scenario, Dict{String, Any}(
+            "planet" => "earth",
+            "gravity_model" => "inverse_squared",
+            "gravity_harmonics_degree" => 50,
+            "gravity_harmonics_order" => 50,
+            "gravity_harmonics_file" => _GMAT_HARMONICS_EARTH_FILE,
+            "nbody_bodies" => Any[],
+            "orbit_altitude_mode" => "oblate",
+            "drag_enabled" => false,
+            "include_wind" => false,
+            "max_points_quick" => 500000,
+            "max_points_full" => 500000,
+            "initial_time" => _initial_time_dict(traj.initial_time)
+        ))
+
+        manifest_path = joinpath(tmp, "cygnss_96hr_manifest.toml")
+        open(manifest_path, "w") do io
+            TOML.print(io, Dict{String, Any}("scenarios" => Any[scenario]))
+        end
+
+        req = TV.VerificationRequest(
+            profile=TEST_MODE,
+            out_summary=joinpath(tmp, "summary.csv"),
+            out_errors=joinpath(tmp, "errors.csv"),
+            manifest_path=manifest_path,
+            enforce=false,
+            generate_plots=false
+        )
+
+        solver_env = _telemetry_solver_env_overrides()
+        return withenv(pairs(solver_env)...) do
+            TV.run_verification(req)
+        end
+    end
+
+    _CYGNSS_96HR_RESULT_CACHE[] = result
+    _CYGNSS_96HR_SUMMARY_CACHE[] = result.summary
+    return result
+end
+
+function _run_cygnss_96hr_once()::DataFrame
+    return _run_cygnss_96hr_result_once().summary
+end
+
+function _run_cygnss_cyg04_96hr_result_once()::TV.VerificationResult
+    if _CYGNSS_CYG04_96HR_RESULT_CACHE[] !== nothing
+        return _CYGNSS_CYG04_96HR_RESULT_CACHE[]
+    end
+
+    @test isfile(_CYGNSS_CYG04_96HR_TELEMETRY_FEATHER)
+
+    result = mktempdir() do tmp
+        traj = _build_cygnss_cyg04_96hr_inertial_reference(tmp, "cyg04_96hr_inertial")
+        _CYGNSS_CYG04_96HR_TIMESPAN_CACHE[] = (t0_s=traj.t0_s, tf_s=traj.tf_s)
+
+        scenario = _base_scenario_dict("cyg04_96hr_inertial", traj.telemetry_path)
+        merge!(scenario, Dict{String, Any}(
+            "planet" => "earth",
+            "gravity_model" => "inverse_squared",
+            "gravity_harmonics_degree" => 50,
+            "gravity_harmonics_order" => 50,
+            "gravity_harmonics_file" => _GMAT_HARMONICS_EARTH_FILE,
+            "nbody_bodies" => Any[],
+            "orbit_altitude_mode" => "oblate",
+            "drag_enabled" => false,
+            "include_wind" => false,
+            "max_points_quick" => 500000,
+            "max_points_full" => 500000,
+            "initial_time" => Dict{String, Any}(
+                "year" => 2025,
+                "month" => 6,
+                "day" => 6,
+                "hour" => 0,
+                "minute" => 0,
+                "second" => 0.0
+            )
+        ))
+
+        manifest_path = joinpath(tmp, "cyg04_96hr_inertial_manifest.toml")
+        open(manifest_path, "w") do io
+            TOML.print(io, Dict{String, Any}("scenarios" => Any[scenario]))
+        end
+
+        req = TV.VerificationRequest(
+            profile=TEST_MODE,
+            out_summary=joinpath(tmp, "summary.csv"),
+            out_errors=joinpath(tmp, "errors.csv"),
+            manifest_path=manifest_path,
+            enforce=false,
+            generate_plots=false
+        )
+
+        solver_env = _telemetry_solver_env_overrides()
+        return withenv(pairs(solver_env)...) do
+            TV.run_verification(req)
+        end
+    end
+
+    _CYGNSS_CYG04_96HR_RESULT_CACHE[] = result
+    _CYGNSS_CYG04_96HR_SUMMARY_CACHE[] = result.summary
+    return result
+end
+
+function _run_cygnss_cyg04_96hr_once()::DataFrame
+    return _run_cygnss_cyg04_96hr_result_once().summary
 end
 
 function _run_cygnss_gmat_csv_result_once()::TV.VerificationResult
@@ -1647,8 +1581,113 @@ function _extract_position_error_series(errors::DataFrame, scenario_name::String
     )
 end
 
+function _iqr_inlier_mask(values::Vector{Float64}; whisker_scale::Float64=1.5)
+    finite_idx = findall(isfinite, values)
+    isempty(finite_idx) && return falses(length(values))
+
+    finite_vals = values[finite_idx]
+    q1 = quantile(finite_vals, 0.25)
+    q3 = quantile(finite_vals, 0.75)
+    iqr = q3 - q1
+    if !isfinite(iqr) || iqr <= 0.0
+        mask = falses(length(values))
+        mask[finite_idx] .= true
+        return mask
+    end
+
+    lo = q1 - whisker_scale * iqr
+    hi = q3 + whisker_scale * iqr
+    mask = falses(length(values))
+    @inbounds for i in eachindex(values)
+        v = values[i]
+        mask[i] = isfinite(v) && lo <= v <= hi
+    end
+    return mask
+end
+
+function _filter_position_series_for_plot(series)
+    mask = _iqr_inlier_mask(series.total_pos_err)
+    sum(mask) >= 2 || (mask .= true)
+    return (
+        t_s=series.t_s[mask],
+        ex=series.ex[mask],
+        ey=series.ey[mask],
+        ez=series.ez[mask],
+        total_pos_err=series.total_pos_err[mask],
+        running_total_rmse=sqrt.(cumsum(series.total_pos_err[mask] .^ 2) ./ collect(1:sum(mask))),
+        total_rmse=series.total_rmse,
+        inlier_count=sum(mask),
+        total_count=length(mask)
+    )
+end
+
+function _plot_cygnss_rtn_from_reference(
+    errors::DataFrame,
+    scenario_name::String,
+    outpath::String,
+    ref_series;
+    title::String
+)::String
+    rows = errors[errors.scenario .== scenario_name, :]
+    xrow = sort(rows[rows.event .== "state_x_time", :], :idx)
+    yrow = sort(rows[rows.event .== "state_y_time", :], :idx)
+    zrow = sort(rows[rows.event .== "state_z_time", :], :idx)
+
+    n = min(nrow(xrow), nrow(yrow), nrow(zrow))
+    n >= 2 || error("Need at least two aligned CYGNSS error samples for RTN plotting.")
+
+    t_s = Float64.(xrow.telemetry_axis[1:n])
+    t_hr = t_s ./ 3600.0
+    ex = Float64.(xrow.error_km[1:n])
+    ey = Float64.(yrow.error_km[1:n])
+    ez = Float64.(zrow.error_km[1:n])
+
+    rx = _interp_series_linear(ref_series.t_rel, ref_series.x_km, t_s)
+    ry = _interp_series_linear(ref_series.t_rel, ref_series.y_km, t_s)
+    rz = _interp_series_linear(ref_series.t_rel, ref_series.z_km, t_s)
+    vx = _interp_series_linear(ref_series.t_rel, ref_series.vx_kmps, t_s)
+    vy = _interp_series_linear(ref_series.t_rel, ref_series.vy_kmps, t_s)
+    vz = _interp_series_linear(ref_series.t_rel, ref_series.vz_kmps, t_s)
+
+    er = zeros(n)
+    et = zeros(n)
+    en = zeros(n)
+    for i in 1:n
+        r = [rx[i], ry[i], rz[i]]
+        v = [vx[i], vy[i], vz[i]]
+        e = [ex[i], ey[i], ez[i]]
+        rhat = r / norm(r)
+        h = cross(r, v)
+        nhat = h / norm(h)
+        that = cross(nhat, rhat)
+        er[i] = dot(e, rhat)
+        et[i] = dot(e, that)
+        en[i] = dot(e, nhat)
+    end
+
+    total_pos_err = sqrt.(er .^ 2 .+ et .^ 2 .+ en .^ 2)
+    total_rmse = sqrt(mean(total_pos_err .^ 2))
+    mask = _iqr_inlier_mask(total_pos_err)
+    sum(mask) >= 2 || (mask .= true)
+    t_hr = t_hr[mask]
+    er = er[mask]
+    et = et[mask]
+    en = en[mask]
+    total_pos_err = total_pos_err[mask]
+    running_total_rmse = sqrt.(cumsum(total_pos_err .^ 2) ./ collect(1:length(total_pos_err)))
+    p = plot(t_hr, er, label="R error", xlabel="Time (hr)", ylabel="Error (km)", title=title, lw=1.2, alpha=0.9, legend=:topright)
+    plot!(p, t_hr, et, label="T error", lw=1.2, alpha=0.9)
+    plot!(p, t_hr, en, label="N error", lw=1.2, alpha=0.9)
+    plot!(p, t_hr, running_total_rmse, label="filtered running RMSE", lw=2.0, color=:black)
+    hline!(p, [total_rmse], label="total RMSE", linestyle=:dash, color=:black)
+
+    mkpath(dirname(outpath))
+    savefig(p, outpath)
+    return outpath
+end
+
 function _plot_cygnss_error_timeseries(errors::DataFrame, outpath::String)::String
-    series = _extract_position_error_series(errors, "cygnss_48hr_pvt")
+    series = _filter_position_series_for_plot(_extract_position_error_series(errors, "cygnss_48hr_pvt"))
     t_hr = series.t_s ./ 3600.0
 
     p = plot(
@@ -1664,7 +1703,7 @@ function _plot_cygnss_error_timeseries(errors::DataFrame, outpath::String)::Stri
     )
     plot!(p, t_hr, series.ey, label="y error", lw=1.2, alpha=0.9)
     plot!(p, t_hr, series.ez, label="z error", lw=1.2, alpha=0.9)
-    plot!(p, t_hr, series.running_total_rmse, label="total running RMSE", lw=2.0, color=:black)
+    plot!(p, t_hr, series.running_total_rmse, label="filtered running RMSE", lw=2.0, color=:black)
     hline!(p, [series.total_rmse], label="total RMSE", linestyle=:dash, color=:black)
 
     mkpath(dirname(outpath))
@@ -1679,7 +1718,7 @@ function _plot_position_error_timeseries(
     title::String="Position Error Time Series",
     time_unit::Symbol=:hr
 )::String
-    series = _extract_position_error_series(errors, scenario_name)
+    series = _filter_position_series_for_plot(_extract_position_error_series(errors, scenario_name))
     t_s = series.t_s
     t_axis, x_label = if time_unit == :s
         (t_s, "Time (s)")
@@ -1713,8 +1752,8 @@ function _plot_cygnss_reference_error_comparison(
     gmat_errors::DataFrame,
     outpath::String
 )::String
-    cygnss_series = _extract_position_error_series(cygnss_errors, "cygnss_48hr_pvt")
-    gmat_series = _extract_position_error_series(gmat_errors, "cygnss_48hr_gmat_csv")
+    cygnss_series = _filter_position_series_for_plot(_extract_position_error_series(cygnss_errors, "cygnss_48hr_pvt"))
+    gmat_series = _filter_position_series_for_plot(_extract_position_error_series(gmat_errors, "cygnss_48hr_gmat_csv"))
 
     t0_s = max(cygnss_series.t_s[1], gmat_series.t_s[1])
     tf_s = min(cygnss_series.t_s[end], gmat_series.t_s[end])
@@ -1779,94 +1818,33 @@ function _interp_series_linear(x::Vector{Float64}, y::Vector{Float64}, xq::Vecto
 end
 
 function _plot_cygnss_error_timeseries_rtn(errors::DataFrame, outpath::String)::String
-    rows = errors[errors.scenario .== "cygnss_48hr_pvt", :]
-    xrow = sort(rows[rows.event .== "state_x_time", :], :idx)
-    yrow = sort(rows[rows.event .== "state_y_time", :], :idx)
-    zrow = sort(rows[rows.event .== "state_z_time", :], :idx)
-
-    n = min(nrow(xrow), nrow(yrow), nrow(zrow))
-    n >= 2 || error("Need at least two aligned CYGNSS error samples for RTN plotting.")
-
-    t_s = Float64.(xrow.telemetry_axis[1:n])
-    t_hr = t_s ./ 3600.0
-    ex = Float64.(xrow.error_km[1:n])
-    ey = Float64.(yrow.error_km[1:n])
-    ez = Float64.(zrow.error_km[1:n])
-
-    telem = DataFrame(Arrow.Table(_CYGNSS_48HR_TELEMETRY_FEATHER))
-    time_col = _required_column(telem, ["TIME OFFSET", "time"])
-    x_col = _required_column(telem, ["OBS4.ENG_PVT.DDMI_PVT_SCPOS_X (m)", "pos_ii_1"])
-    y_col = _required_column(telem, ["OBS4.ENG_PVT.DDMI_PVT_SCPOS_Y (m)", "pos_ii_2"])
-    z_col = _required_column(telem, ["OBS4.ENG_PVT.DDMI_PVT_SCPOS_Z (m)", "pos_ii_3"])
-    vx_col = _required_column(telem, ["OBS4.ENG_PVT.DDMI_PVT_SCVEL_X (m/s)", "vel_ii_1"])
-    vy_col = _required_column(telem, ["OBS4.ENG_PVT.DDMI_PVT_SCVEL_Y (m/s)", "vel_ii_2"])
-    vz_col = _required_column(telem, ["OBS4.ENG_PVT.DDMI_PVT_SCVEL_Z (m/s)", "vel_ii_3"])
-
-    t_tel = Float64.(telem[!, time_col])
-    rx_tel = Float64.(telem[!, x_col]) .* 1.0e-3
-    ry_tel = Float64.(telem[!, y_col]) .* 1.0e-3
-    rz_tel = Float64.(telem[!, z_col]) .* 1.0e-3
-    vx_tel = Float64.(telem[!, vx_col]) .* 1.0e-3
-    vy_tel = Float64.(telem[!, vy_col]) .* 1.0e-3
-    vz_tel = Float64.(telem[!, vz_col]) .* 1.0e-3
-
-    perm = sortperm(t_tel)
-    t_tel = t_tel[perm]
-    rx_tel = rx_tel[perm]
-    ry_tel = ry_tel[perm]
-    rz_tel = rz_tel[perm]
-    vx_tel = vx_tel[perm]
-    vy_tel = vy_tel[perm]
-    vz_tel = vz_tel[perm]
-
-    rx = _interp_series_linear(t_tel, rx_tel, t_s)
-    ry = _interp_series_linear(t_tel, ry_tel, t_s)
-    rz = _interp_series_linear(t_tel, rz_tel, t_s)
-    vx = _interp_series_linear(t_tel, vx_tel, t_s)
-    vy = _interp_series_linear(t_tel, vy_tel, t_s)
-    vz = _interp_series_linear(t_tel, vz_tel, t_s)
-
-    er = zeros(n)
-    et = zeros(n)
-    en = zeros(n)
-    for i in 1:n
-        r = [rx[i], ry[i], rz[i]]
-        v = [vx[i], vy[i], vz[i]]
-        e = [ex[i], ey[i], ez[i]]
-
-        rhat = r / norm(r)
-        h = cross(r, v)
-        nhat = h / norm(h)
-        that = cross(nhat, rhat)
-
-        er[i] = dot(e, rhat)
-        et[i] = dot(e, that)
-        en[i] = dot(e, nhat)
-    end
-
-    total_pos_err = sqrt.(er .^ 2 .+ et .^ 2 .+ en .^ 2)
-    running_total_rmse = sqrt.(cumsum(total_pos_err .^ 2) ./ collect(1:n))
-    total_rmse = sqrt(mean(total_pos_err .^ 2))
-
-    p = plot(
-        t_hr,
-        er,
-        label="R error",
-        xlabel="Time (hr)",
-        ylabel="Error (km)",
-        title="CYGNSS 48hr Position Error Time Series (RTN)",
-        lw=1.2,
-        alpha=0.9,
-        legend=:topright
+    return _plot_cygnss_rtn_from_reference(
+        errors,
+        "cygnss_48hr_pvt",
+        outpath,
+        _load_cygnss_cyg04_96hr_inertial_series();
+        title="CYGNSS 48hr Position Error Time Series (RTN)"
     )
-    plot!(p, t_hr, et, label="T error", lw=1.2, alpha=0.9)
-    plot!(p, t_hr, en, label="N error", lw=1.2, alpha=0.9)
-    plot!(p, t_hr, running_total_rmse, label="total running RMSE", lw=2.0, color=:black)
-    hline!(p, [total_rmse], label="total RMSE", linestyle=:dash, color=:black)
+end
 
-    mkpath(dirname(outpath))
-    savefig(p, outpath)
-    return outpath
+function _plot_cygnss_96hr_error_timeseries_rtn(errors::DataFrame, outpath::String; title::String="CYGNSS 96hr Position Error Time Series (RTN)")::String
+    return _plot_cygnss_rtn_from_reference(
+        errors,
+        "cygnss_96hr_pvt",
+        outpath,
+        _load_cygnss_96hr_j2000_series();
+        title=title
+    )
+end
+
+function _plot_cyg04_96hr_error_timeseries_rtn(errors::DataFrame, outpath::String; title::String="CYG04 96hr Position Error Time Series (RTN)")::String
+    return _plot_cygnss_rtn_from_reference(
+        errors,
+        "cyg04_96hr_inertial",
+        outpath,
+        _load_cygnss_cyg04_96hr_inertial_series();
+        title=title
+    )
 end
 
 @inline function _wrap_pm180(x_deg::Float64)::Float64
@@ -1895,12 +1873,15 @@ function _unwrap_deg(series::Vector{Float64})::Vector{Float64}
     return out
 end
 
-function _plot_cygnss_orbital_elements(
+function _plot_cygnss_orbital_elements_from_reference(
     errors::DataFrame,
+    scenario_name::String,
+    ref_series,
     outpath_elements::String,
-    outpath_errors::String
+    outpath_errors::String;
+    title_suffix::String=""
 )::Tuple{String, String}
-    rows = errors[errors.scenario .== "cygnss_48hr_pvt", :]
+    rows = errors[errors.scenario .== scenario_name, :]
     xrow = sort(rows[rows.event .== "state_x_time", :], :idx)
     yrow = sort(rows[rows.event .== "state_y_time", :], :idx)
     zrow = sort(rows[rows.event .== "state_z_time", :], :idx)
@@ -1911,50 +1892,22 @@ function _plot_cygnss_orbital_elements(
     t_s = Float64.(xrow.telemetry_axis[1:n])
     t_hr = t_s ./ 3600.0
 
-    telem = DataFrame(Arrow.Table(_CYGNSS_48HR_TELEMETRY_FEATHER))
-    time_col = _required_column(telem, ["TIME OFFSET", "time"])
-    x_col = _required_column(telem, ["OBS4.ENG_PVT.DDMI_PVT_SCPOS_X (m)", "pos_ii_1"])
-    y_col = _required_column(telem, ["OBS4.ENG_PVT.DDMI_PVT_SCPOS_Y (m)", "pos_ii_2"])
-    z_col = _required_column(telem, ["OBS4.ENG_PVT.DDMI_PVT_SCPOS_Z (m)", "pos_ii_3"])
-    vx_col = _required_column(telem, ["OBS4.ENG_PVT.DDMI_PVT_SCVEL_X (m/s)", "vel_ii_1"])
-    vy_col = _required_column(telem, ["OBS4.ENG_PVT.DDMI_PVT_SCVEL_Y (m/s)", "vel_ii_2"])
-    vz_col = _required_column(telem, ["OBS4.ENG_PVT.DDMI_PVT_SCVEL_Z (m/s)", "vel_ii_3"])
-
-    t_tel = Float64.(telem[!, time_col])
-    rx_tel = Float64.(telem[!, x_col]) .* 1.0e-3
-    ry_tel = Float64.(telem[!, y_col]) .* 1.0e-3
-    rz_tel = Float64.(telem[!, z_col]) .* 1.0e-3
-    vx_tel = Float64.(telem[!, vx_col]) .* 1.0e-3
-    vy_tel = Float64.(telem[!, vy_col]) .* 1.0e-3
-    vz_tel = Float64.(telem[!, vz_col]) .* 1.0e-3
-
-    perm = sortperm(t_tel)
-    t_tel = t_tel[perm]
-    rx_tel = rx_tel[perm]
-    ry_tel = ry_tel[perm]
-    rz_tel = rz_tel[perm]
-    vx_tel = vx_tel[perm]
-    vy_tel = vy_tel[perm]
-    vz_tel = vz_tel[perm]
-
-    # Interpolate position/velocity to error times
-    rx = _interp_series_linear(t_tel, rx_tel, t_s)
-    ry = _interp_series_linear(t_tel, ry_tel, t_s)
-    rz = _interp_series_linear(t_tel, rz_tel, t_s)
-    vx = _interp_series_linear(t_tel, vx_tel, t_s)
-    vy = _interp_series_linear(t_tel, vy_tel, t_s)
-    vz = _interp_series_linear(t_tel, vz_tel, t_s)
+    rx = _interp_series_linear(ref_series.t_rel, ref_series.x_km, t_s)
+    ry = _interp_series_linear(ref_series.t_rel, ref_series.y_km, t_s)
+    rz = _interp_series_linear(ref_series.t_rel, ref_series.z_km, t_s)
+    vx = _interp_series_linear(ref_series.t_rel, ref_series.vx_kmps, t_s)
+    vy = _interp_series_linear(ref_series.t_rel, ref_series.vy_kmps, t_s)
+    vz = _interp_series_linear(ref_series.t_rel, ref_series.vz_kmps, t_s)
 
     planet = TV._planet_from_name("earth")
 
-    # Compute orbital elements from reference state (telemetry r/v)
     sma_ref_sim = similar(t_s)
     ecc_ref_sim = similar(t_s)
     inc_ref_sim = similar(t_s)
     aop_ref_sim = similar(t_s)
     raan_ref_sim = similar(t_s)
     ta_ref_sim = similar(t_s)
-    
+
     for i in 1:n
         r = SVector{3, Float64}(rx[i], ry[i], rz[i]) .* 1.0e3
         v = SVector{3, Float64}(vx[i], vy[i], vz[i]) .* 1.0e3
@@ -1976,7 +1929,6 @@ function _plot_cygnss_orbital_elements(
         end
     end
 
-    # Simulated position with errors applied
     ex = Float64.(xrow.error_km[1:n])
     ey = Float64.(yrow.error_km[1:n])
     ez = Float64.(zrow.error_km[1:n])
@@ -1984,7 +1936,6 @@ function _plot_cygnss_orbital_elements(
     ry_sim = ry .+ ey
     rz_sim = rz .+ ez
 
-    # Compute orbital elements from simulated state
     sma_sim = similar(t_s)
     ecc_sim = similar(t_s)
     inc_sim = similar(t_s)
@@ -2018,7 +1969,6 @@ function _plot_cygnss_orbital_elements(
     finite_ref >= max(2, Int(floor(0.95 * n))) || error("Too many non-finite reference orbital element samples: $finite_ref / $n")
     finite_sim >= max(2, Int(floor(0.95 * n))) || error("Too many non-finite simulated orbital element samples: $finite_sim / $n")
 
-    # Wrap angular elements for display in canonical 0..360 degree range.
     raan_ref_wrap = mod.(raan_ref_sim, 360.0)
     aop_ref_wrap = mod.(aop_ref_sim, 360.0)
     ta_ref_wrap = mod.(ta_ref_sim, 360.0)
@@ -2026,7 +1976,6 @@ function _plot_cygnss_orbital_elements(
     aop_sim_wrap = mod.(aop_sim, 360.0)
     ta_sim_wrap = mod.(ta_sim, 360.0)
 
-    # Compute orbital element errors as shortest signed angular differences.
     da = sma_sim .- sma_ref_sim
     de = ecc_sim .- ecc_ref_sim
     di = inc_sim .- inc_ref_sim
@@ -2034,23 +1983,44 @@ function _plot_cygnss_orbital_elements(
     dW = _wrap_pm180.(raan_sim_wrap .- raan_ref_wrap)
     df = _wrap_pm180.(ta_sim_wrap .- ta_ref_wrap)
 
-    # Elements plot: 3 x 2
+    pos_err = sqrt.(ex .^ 2 .+ ey .^ 2 .+ ez .^ 2)
+    mask = _iqr_inlier_mask(pos_err)
+    sum(mask) >= 2 || (mask .= true)
+    t_hr = t_hr[mask]
+    sma_ref_sim = sma_ref_sim[mask]
+    ecc_ref_sim = ecc_ref_sim[mask]
+    inc_ref_sim = inc_ref_sim[mask]
+    aop_ref_wrap = aop_ref_wrap[mask]
+    raan_ref_wrap = raan_ref_wrap[mask]
+    ta_ref_wrap = ta_ref_wrap[mask]
+    sma_sim = sma_sim[mask]
+    ecc_sim = ecc_sim[mask]
+    inc_sim = inc_sim[mask]
+    aop_sim_wrap = aop_sim_wrap[mask]
+    raan_sim_wrap = raan_sim_wrap[mask]
+    ta_sim_wrap = ta_sim_wrap[mask]
+    da = da[mask]
+    de = de[mask]
+    di = di[mask]
+    dw = dw[mask]
+    dW = dW[mask]
+    df = df[mask]
+
     layout_3x2 = @layout [a b; c d; e f]
-    pe1 = plot(t_hr, sma_sim, label="simulated", xlabel="Time (hr)", ylabel="SMA (km)", title="Semi-Major Axis", legend=:best, lw=1.2)
+    pe1 = plot(t_hr, sma_sim, label="simulated", xlabel="Time (hr)", ylabel="SMA (km)", title="Semi-Major Axis$title_suffix", legend=:best, lw=1.2)
     plot!(pe1, t_hr, sma_ref_sim, label="reference", lw=1.2, alpha=0.75)
-    pe2 = plot(t_hr, ecc_sim, label="simulated", xlabel="Time (hr)", ylabel="Ecc", title="Eccentricity", legend=:best, lw=1.2)
+    pe2 = plot(t_hr, ecc_sim, label="simulated", xlabel="Time (hr)", ylabel="Ecc", title="Eccentricity$title_suffix", legend=:best, lw=1.2)
     plot!(pe2, t_hr, ecc_ref_sim, label="reference", lw=1.2, alpha=0.75)
-    pe3 = plot(t_hr, inc_sim, label="simulated", xlabel="Time (hr)", ylabel="Inc (deg)", title="Inclination", legend=:best, lw=1.2)
+    pe3 = plot(t_hr, inc_sim, label="simulated", xlabel="Time (hr)", ylabel="Inc (deg)", title="Inclination$title_suffix", legend=:best, lw=1.2)
     plot!(pe3, t_hr, inc_ref_sim, label="reference", lw=1.2, alpha=0.75)
-    pe4 = plot(t_hr, aop_sim_wrap, label="simulated", xlabel="Time (hr)", ylabel="AoP (deg)", title="Argument of Perigee", legend=:best, lw=1.2, ylim=(0.0, 360.0))
+    pe4 = plot(t_hr, aop_sim_wrap, label="simulated", xlabel="Time (hr)", ylabel="AoP (deg)", title="Argument of Perigee$title_suffix", legend=:best, lw=1.2, ylim=(0.0, 360.0))
     plot!(pe4, t_hr, aop_ref_wrap, label="reference", lw=1.2, alpha=0.75)
-    pe5 = plot(t_hr, raan_sim_wrap, label="simulated", xlabel="Time (hr)", ylabel="RAAN (deg)", title="RAAN", legend=:best, lw=1.2, ylim=(0.0, 360.0))
+    pe5 = plot(t_hr, raan_sim_wrap, label="simulated", xlabel="Time (hr)", ylabel="RAAN (deg)", title="RAAN$title_suffix", legend=:best, lw=1.2, ylim=(0.0, 360.0))
     plot!(pe5, t_hr, raan_ref_wrap, label="reference", lw=1.2, alpha=0.75)
-    pe6 = plot(t_hr, ta_sim_wrap, label="simulated", xlabel="Time (hr)", ylabel="TA (deg)", title="True Anomaly", legend=:best, lw=1.2, ylim=(0.0, 360.0))
+    pe6 = plot(t_hr, ta_sim_wrap, label="simulated", xlabel="Time (hr)", ylabel="TA (deg)", title="True Anomaly$title_suffix", legend=:best, lw=1.2, ylim=(0.0, 360.0))
     plot!(pe6, t_hr, ta_ref_wrap, label="reference", lw=1.2, alpha=0.75)
     p_elements = plot(pe1, pe2, pe3, pe4, pe5, pe6, layout=layout_3x2, size=(1500, 1100))
 
-    # Errors plot: 3 x 2
     per1 = plot(t_hr, da, xlabel="Time (hr)", ylabel="Delta SMA (km)", title="SMA Error", lw=1.2, legend=false, color=:red)
     hline!(per1, [0.0], linestyle=:dash, color=:black, alpha=0.5)
     per2 = plot(t_hr, de, xlabel="Time (hr)", ylabel="Delta Ecc", title="Eccentricity Error", lw=1.2, legend=false, color=:red)
@@ -2070,6 +2040,49 @@ function _plot_cygnss_orbital_elements(
     mkpath(dirname(outpath_errors))
     savefig(p_errors, outpath_errors)
     return (outpath_elements, outpath_errors)
+end
+
+function _plot_cygnss_orbital_elements(
+    errors::DataFrame,
+    outpath_elements::String,
+    outpath_errors::String
+)::Tuple{String, String}
+    return _plot_cygnss_orbital_elements_from_reference(
+        errors,
+        "cygnss_48hr_pvt",
+        _load_cygnss_cyg04_96hr_inertial_series(),
+        outpath_elements,
+        outpath_errors
+    )
+end
+
+function _plot_cygnss_96hr_orbital_elements(
+    errors::DataFrame,
+    outpath_elements::String,
+    outpath_errors::String
+)::Tuple{String, String}
+    return _plot_cygnss_orbital_elements_from_reference(
+        errors,
+        "cygnss_96hr_pvt",
+        _load_cygnss_96hr_j2000_series(),
+        outpath_elements,
+        outpath_errors
+    )
+end
+
+function _plot_cyg04_96hr_orbital_elements(
+    errors::DataFrame,
+    outpath_elements::String,
+    outpath_errors::String
+)::Tuple{String, String}
+    return _plot_cygnss_orbital_elements_from_reference(
+        errors,
+        "cyg04_96hr_inertial",
+        _load_cygnss_cyg04_96hr_inertial_series(),
+        outpath_elements,
+        outpath_errors;
+        title_suffix=" (CYG04)"
+    )
 end
 
 function _plot_gmat_matrix_error_timeseries(errors::DataFrame, outpath::String)::String
@@ -2153,6 +2166,8 @@ end
     return maximum(abs.(qnorm .- 1.0))
 end
 
+if !_parse_bool_env("SPACEAGORA_SKIP_GMAT_MATRIX", false)
+
 @testset "GMAT Early vs Full Error" begin
     result = _run_gmat_scenario_matrix_result_once()
     scenario_names = unique(String.(result.summary.scenario))
@@ -2225,8 +2240,50 @@ catch err
     end
 end
 
+try
+    @testset "STK Strict Acceptance All Cases" begin
+        summary = _run_stk_scenario_matrix_once()
+        profile = TEST_MODE
+        scenario_names = unique(String.(summary.scenario))
+        expected_scenarios = _active_gmat_expected_scenario_names()
+
+        @test Set(scenario_names) == expected_scenarios
+
+        for scenario_name in scenario_names
+            rows = summary[summary.scenario .== scenario_name, :]
+            @test nrow(rows) == 4
+
+            xrow = rows[rows.event .== "state_x_time", :]
+            yrow = rows[rows.event .== "state_y_time", :]
+            zrow = rows[rows.event .== "state_z_time", :]
+            @test nrow(xrow) == 1
+            @test nrow(yrow) == 1
+            @test nrow(zrow) == 1
+
+            println("$scenario_name STK trajectory error [km]: rmse=(x=$(xrow.rmse_km[1]), y=$(yrow.rmse_km[1]), z=$(zrow.rmse_km[1])) max_abs=(x=$(xrow.max_abs_km[1]), y=$(yrow.max_abs_km[1]), z=$(zrow.max_abs_km[1]))")
+
+            @test sqrt(xrow.rmse_km[1]^2 + yrow.rmse_km[1]^2 + zrow.rmse_km[1]^2) < _strict_position_rmse_limit_km(scenario_name, profile)
+        end
+
+        result = _run_stk_scenario_matrix_result_once()
+        matrix_plot_path = joinpath(_GMAT_REPO_ROOT, "output", "stk_matrix", "stk_matrix_error_timeseries.png")
+        _plot_gmat_matrix_error_timeseries(result.errors, matrix_plot_path)
+        @test isfile(matrix_plot_path)
+        println("STK matrix error timeseries plot: $(matrix_plot_path)")
+    end
+catch err
+    if err isa Test.TestSetException
+        println("STK Strict Acceptance All Cases reported failures; continuing with remaining testsets.")
+        Base.display_error(stderr, err, catch_backtrace())
+    else
+        rethrow(err)
+    end
+end
+
+end # SPACEAGORA_SKIP_GMAT_MATRIX (GMAT Early vs Full Error)
+
 @testset "CYGNSS Telemetry Folder Data" begin
-    cygnss_feather_path = joinpath(_GMAT_REPO_ROOT, "data", "telemetry", "CYGNSS", "cygnss_data_48hr.feather")
+    cygnss_feather_path = _CYGNSS_48HR_TELEMETRY_FEATHER
     @test isfile(cygnss_feather_path)
 
     cygnss_feather = DataFrame(Arrow.Table(cygnss_feather_path))
@@ -2249,7 +2306,7 @@ end
     vy = Float64.(cygnss_feather[!, vy_col])
     vz = Float64.(cygnss_feather[!, vz_col])
 
-    @test !any(ismissing, cygnss_feather[!, time_col])
+    @test all(isfinite, t)
     @test !any(ismissing, cygnss_feather[!, x_col])
     @test !any(ismissing, cygnss_feather[!, y_col])
     @test !any(ismissing, cygnss_feather[!, z_col])
@@ -2268,7 +2325,7 @@ end
     @test maximum(v) < 8.0e3
 end
 
-@testset "CYGNSS 48hr Orbit Simulation" begin
+@testset "CYGNSS Legacy 48hr Entry Point" begin
     result = _run_cygnss_48hr_result_once()
     summary = result.summary
     errors = result.errors
@@ -2276,7 +2333,6 @@ end
     @test all(summary.scenario .== "cygnss_48hr_pvt")
     @test all(in.(summary.event, Ref(["altitude_time", "state_x_time", "state_y_time", "state_z_time"])))
 
-    # Validate that the telemetry span is approximately 48 hours.
     span = _CYGNSS_48HR_TIMESPAN_CACHE[]
     @test span !== nothing
     sim_span_s = span.tf_s - span.t0_s
@@ -2291,7 +2347,7 @@ end
     @test all(isfinite.(Float64.(summary.max_abs_km)))
 
     plot_path = joinpath(_GMAT_REPO_ROOT, "output", "cygnss", "cygnss_48hr_error_timeseries.png")
-    _plot_cygnss_error_timeseries(errors, plot_path)
+    _plot_position_error_timeseries(errors, "cygnss_48hr_pvt", plot_path; title="CYGNSS 96hr Position Error Time Series")
     @test isfile(plot_path)
     plot_path_rtn = joinpath(_GMAT_REPO_ROOT, "output", "cygnss", "cygnss_48hr_error_timeseries_rtn.png")
     _plot_cygnss_error_timeseries_rtn(errors, plot_path_rtn)
@@ -2313,6 +2369,52 @@ end
     println("cygnss_48hr orbital element errors plot: $(plot_path_oe_err)")
     println("cygnss_48hr reference comparison plot: $(gmat_comparison_plot_path)")
     println("cygnss_48hr_pvt_position max error [km]: $(max(Float64.(summary[summary.event .== "state_x_time", :].max_abs_km[1]), Float64.(summary[summary.event .== "state_y_time", :].max_abs_km[1]), Float64.(summary[summary.event .== "state_z_time", :].max_abs_km[1])))")
+    @test pos_rmse < 1.0e4
+end
+
+@testset "CYGNSS 96hr Orbit Simulation" begin
+    result = _run_cygnss_cyg04_96hr_result_once()
+    summary = result.summary
+    errors = result.errors
+    @test nrow(summary) == 4
+    @test all(summary.scenario .== "cyg04_96hr_inertial")
+    @test all(in.(summary.event, Ref(["altitude_time", "state_x_time", "state_y_time", "state_z_time"])))
+
+    # Validate that the telemetry span is approximately 96 hours.
+    span = _CYGNSS_CYG04_96HR_TIMESPAN_CACHE[]
+    @test span !== nothing
+    sim_span_s = span.tf_s - span.t0_s
+    @test abs(sim_span_s - 96.0 * 3600.0) <= 10.0
+
+    # Ensure the verification run used the full telemetry horizon.
+    telemetry_end_s = maximum(Float64.(summary.telemetry_axis_end))
+    @test abs(telemetry_end_s - span.tf_s) <= 1.0
+
+    @test all(summary.n_sim .>= summary.min_eval_points)
+    @test all(isfinite.(Float64.(summary.rmse_km)))
+    @test all(isfinite.(Float64.(summary.max_abs_km)))
+
+    plot_path = joinpath(_GMAT_REPO_ROOT, "output", "cygnss", "cygnss_96hr_error_timeseries.png")
+    _plot_position_error_timeseries(errors, "cyg04_96hr_inertial", plot_path; title="CYGNSS 96hr Position Error Time Series")
+    @test isfile(plot_path)
+
+    plot_path_rtn = joinpath(_GMAT_REPO_ROOT, "output", "cygnss", "cygnss_96hr_error_timeseries_rtn.png")
+    _plot_cyg04_96hr_error_timeseries_rtn(errors, plot_path_rtn)
+    @test isfile(plot_path_rtn)
+
+    plot_path_oe = joinpath(_GMAT_REPO_ROOT, "output", "cygnss", "cygnss_96hr_orbital_elements.png")
+    plot_path_oe_err = joinpath(_GMAT_REPO_ROOT, "output", "cygnss", "cygnss_96hr_orbital_element_errors.png")
+    _plot_cyg04_96hr_orbital_elements(errors, plot_path_oe, plot_path_oe_err)
+    @test isfile(plot_path_oe)
+    @test isfile(plot_path_oe_err)
+
+    pos_rmse = _scenario_rmse(summary, "cyg04_96hr_inertial")
+    println("cyg04_96hr_inertial mean position-axis RMSE [km]: $(pos_rmse)")
+    println("cygnss_96hr error plot: $(plot_path)")
+    println("cygnss_96hr RTN error plot: $(plot_path_rtn)")
+    println("cygnss_96hr orbital elements plot: $(plot_path_oe)")
+    println("cygnss_96hr orbital element errors plot: $(plot_path_oe_err)")
+    println("cyg04_96hr_inertial_position max error [km]: $(max(Float64.(summary[summary.event .== "state_x_time", :].max_abs_km[1]), Float64.(summary[summary.event .== "state_y_time", :].max_abs_km[1]), Float64.(summary[summary.event .== "state_z_time", :].max_abs_km[1])))")
     @test pos_rmse < 1.0e4
 end
 
@@ -2514,7 +2616,7 @@ end
         scenarios_cfg = TV._load_scenarios_from_manifest(manifest_path)
         cfg           = only(scenarios_cfg)
         telemetry_cfg = TV._load_time_aligned_telemetry(cfg, 200000)
-        ic            = TV._initial_condition_from_time_aligned_telemetry(telemetry_cfg)
+        ic            = TV._initial_condition_from_time_aligned_telemetry(cfg, telemetry_cfg)
         mission_s     = max(telemetry_cfg.time_s[end] - telemetry_cfg.time_s[1], 1.0)
 
         args = TV._make_time_aligned_args(cfg, mission_s, ic)
@@ -2638,3 +2740,86 @@ end
         println("cygnss drag tangential timeseries plot: $(tang_plot_path)")
     end
 end
+
+# ---------------------------------------------------------------------------
+# SpaceAGORA Examples Export
+# ---------------------------------------------------------------------------
+
+function _export_spaceagora_examples(result::TV.VerificationResult, outdir::String)
+    mkpath(outdir)
+
+    for scenario_name in sort!(collect(_active_gmat_expected_scenario_names()))
+        errors = result.errors
+
+        # Filter to x/y/z position events for this scenario, sorted by idx
+        rows = errors[(errors.scenario .== scenario_name) .& in.(errors.event, Ref(["state_x_time", "state_y_time", "state_z_time"])), :]
+        xrows = sort(rows[rows.event .== "state_x_time", :], :idx)
+        yrows = sort(rows[rows.event .== "state_y_time", :], :idx)
+        zrows = sort(rows[rows.event .== "state_z_time", :], :idx)
+
+        n = min(nrow(xrows), nrow(yrows), nrow(zrows))
+        n >= 2 || continue
+
+        t_s  = Float64.(xrows.telemetry_axis[1:n])
+        x_km = Float64.(xrows.sim_interp_value_km[1:n])
+        y_km = Float64.(yrows.sim_interp_value_km[1:n])
+        z_km = Float64.(zrows.sim_interp_value_km[1:n])
+
+        vx_km_s = _differentiate_position_series(x_km, t_s)
+        vy_km_s = _differentiate_position_series(y_km, t_s)
+        vz_km_s = _differentiate_position_series(z_km, t_s)
+
+        planet = TV._planet_from_name(_scenario_planet_name(scenario_name))
+
+        sma_km = Vector{Float64}(undef, n)
+        ecc    = Vector{Float64}(undef, n)
+        inc_deg = Vector{Float64}(undef, n)
+
+        for i in 1:n
+            r = SVector{3, Float64}(x_km[i], y_km[i], z_km[i]) .* 1.0e3
+            v = SVector{3, Float64}(vx_km_s[i], vy_km_s[i], vz_km_s[i]) .* 1.0e3
+            try
+                oe = TV.rvtoorbitalelement(r, v, planet)
+                sma_km[i]  = oe[1] * 1.0e-3
+                ecc[i]     = oe[2]
+                inc_deg[i] = rad2deg(oe[3])
+            catch
+                sma_km[i]  = NaN
+                ecc[i]     = NaN
+                inc_deg[i] = NaN
+            end
+        end
+
+        df = DataFrame(
+            ElapsedSecs = t_s,
+            SMA         = sma_km,
+            ECC         = ecc,
+            INC         = inc_deg,
+            X           = x_km,
+            Y           = y_km,
+            Z           = z_km,
+            VX          = vx_km_s,
+            VY          = vy_km_s,
+            VZ          = vz_km_s,
+        )
+
+        fname = _scenario_basilisk_file_name(scenario_name)
+        Arrow.write(joinpath(outdir, fname), df)
+    end
+end
+
+if !_parse_bool_env("SPACEAGORA_SKIP_GMAT_MATRIX", false)
+
+@testset "SpaceAGORA Examples Export" begin
+    result = _run_gmat_scenario_matrix_result_once()
+    outdir = joinpath(_GMAT_REPO_ROOT, "data", "telemetry", "SpaceAGORA_Examples")
+    _export_spaceagora_examples(result, outdir)
+    for scenario_name in sort!(collect(_active_gmat_expected_scenario_names()))
+        fname = _scenario_basilisk_file_name(scenario_name)
+        fpath = joinpath(outdir, fname)
+        @test isfile(fpath)
+        println("SpaceAGORA exported: $fpath")
+    end
+end
+
+end # SPACEAGORA_SKIP_GMAT_MATRIX (SpaceAGORA Examples Export)

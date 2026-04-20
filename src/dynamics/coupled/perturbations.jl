@@ -31,14 +31,15 @@ const M_HAT_ECEF = SVector{3, Float64}(
 const sqrt_2 = sqrt(2.0)
 const sqrt_3 = sqrt(3.0)
 const _J2_COMPARE_LOG_COUNT = Base.Threads.Atomic{Int}(0)
+const _MARS_MU_M3S2 = 0.4282837285418775e5 * 1e9
 const _SPICE_FORCE_BARYCENTER_BODIES = ("mars",)
 const _THIRD_BODY_MU = Dict{String, Float64}(
-    "sun" => 1.3271244002331e20,
+    "sun" => 1.32712440041279419e20,
     "mercury" => 2.2032e13,
     "venus" => 3.248585926e14,
     "earth" => 3.986004418e14,
     "moon" => 4.9028005821478e12,
-    "mars" => 4.2828314258067e13,
+    "mars" => _MARS_MU_M3S2,
     "jupiter" => 1.26686534e17,
     "saturn" => 3.7931187e16,
     "uranus" => 5.793939e15,
@@ -61,6 +62,19 @@ end
     μ = get(_THIRD_BODY_MU, key, NaN)
     isfinite(μ) || throw(ArgumentError("Unsupported third body '$name' for NBodyGravityModel. Add its GM to _THIRD_BODY_MU in Perturbations.jl."))
     return μ
+end
+
+@inline function _spice_lock()
+    mod = @__MODULE__
+    while true
+        if isdefined(mod, :RuntimeServices)
+            return getproperty(mod, :RuntimeServices).SPICE_LOCK
+        end
+        parent = parentmodule(mod)
+        parent === mod && break
+        mod = parent
+    end
+    error("RuntimeServices.SPICE_LOCK not found in module ancestry for perturbations.jl")
 end
 
 # N-body gravity perturbation model
@@ -143,6 +157,10 @@ end
     if file_name == "lp165p.csv"
         # LP165P is conventionally distributed with a 1738.0 km lunar reference radius.
         return 1.7380e6
+    end
+    if planet.name == "Mars"
+        # Mars gravity field files used by this project are referenced to 3396.0 km.
+        return 3.3960e6
     end
     return planet.Rp_e
 end
@@ -473,8 +491,9 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
             pos_primary_k = pos_primary_k_all[k]
             pos_spacecraft_k = pos_primary_k - pos_ii
             pos_spacecraft_k_mag = norm(pos_spacecraft_k)
-            thread_force[worker_id] .+= mass * model.body_mus[k] * (
-                (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
+            pos_primary_k_mag = norm(pos_primary_k)
+            @fastmath thread_force[worker_id] .+= mass * model.body_mus[k] * (
+                (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / (pos_primary_k_mag * pos_primary_k_mag * pos_primary_k_mag))
             )
         end
         @inbounds for worker_id in 1:n_workers
@@ -485,8 +504,9 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
             pos_primary_k = pos_primary_k_all[k]
             pos_spacecraft_k = pos_primary_k - pos_ii
             pos_spacecraft_k_mag = norm(pos_spacecraft_k)
-            force_ii += mass * model.body_mus[k] * (
-                (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
+            pos_primary_k_mag = norm(pos_primary_k)
+            @fastmath force_ii += mass * model.body_mus[k] * (
+                (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / (pos_primary_k_mag * pos_primary_k_mag * pos_primary_k_mag))
             )
         end
     end
@@ -534,7 +554,7 @@ end
     counter::Base.Threads.Atomic{Int64}
 )::SVector{3, Float64}
     Base.Threads.atomic_add!(counter, 1)
-    return lock(SPICE_LOCK) do
+    return lock(_spice_lock()) do
         SVector{3, Float64}(spkpos(body_name_spice, et, "J2000", "none", primary_body_name)[1])
     end
 end
@@ -552,7 +572,7 @@ end
             return memo.body_positions_j2000[body_name_spice]
         end
         Base.Threads.atomic_add!(counter, 1)
-        position = lock(SPICE_LOCK) do
+        position = lock(_spice_lock()) do
             SVector{3, Float64}(spkpos(body_name_spice, et, "J2000", "none", primary_body_name)[1])
         end
         memo.body_positions_j2000[body_name_spice] = position
@@ -644,7 +664,7 @@ function srp(
 )
     pos_ii_sv = SVector{3, Float64}(pos_ii)
     primary_body_name = _spice_query_name(planet.name)
-    pos_primary_sun_j2000 = lock(SPICE_LOCK) do
+    pos_primary_sun_j2000 = lock(_spice_lock()) do
         SVector{3, Float64}(spkpos("sun", et, "J2000", "none", primary_body_name)[1])
     end
     pos_primary_sun = SVector{3, Float64}(pos_primary_sun_j2000 * 1e3)
@@ -712,7 +732,7 @@ end
     counter::Base.Threads.Atomic{Int64}
 )::SVector{3, Float64}
     Base.Threads.atomic_add!(counter, 1)
-    return lock(SPICE_LOCK) do
+    return lock(_spice_lock()) do
         SVector{3, Float64}(spkpos("sun", et, "J2000", "none", primary_body_name)[1])
     end
 end
@@ -730,7 +750,7 @@ end
             return memo.body_positions_j2000[sun_query_name]
         end
         Base.Threads.atomic_add!(counter, 1)
-        position = lock(SPICE_LOCK) do
+        position = lock(_spice_lock()) do
             SVector{3, Float64}(spkpos(sun_query_name, et, "J2000", "none", primary_body_name)[1])
         end
         memo.body_positions_j2000[sun_query_name] = position
@@ -797,13 +817,8 @@ end
 function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
 
-    # Transform from J2000 inertial to planet-fixed by composing SPICE body-fixed with PCI->J2000.
-    L_PI = lock(SPICE_LOCK) do
-        frame_name = param.args.environment_model.planet.name == "Moon" ?
-            "MOON_PA_DE421" :
-            (param.args.environment_model.planet.name == "Earth" ? "ITRF93" : "IAU_" * uppercase(param.args.environment_model.planet.name))
-        SMatrix{3, 3, Float64}(pxform("J2000", frame_name, et)) * param.args.environment_model.planet.J2000_to_pci'
-    end
+    # Transform from J2000 inertial to planet-fixed using the configured ephemerides model.
+    L_PI = planet_frame_lpi(model.planet, et, param.args.environment_model.ephemerides_model)
     rVec_cart = L_PI * SVector{3, Float64}(x.pos) # convert from inertial to planet-fixed frame for gravity calculation
     mass = x.mass
 
@@ -812,7 +827,7 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
     R = workspace.R
     I = workspace.I
 
-    RE = param.args.environment_model.planet.Rp_e
+    RE = model.reference_radius_m
     r = norm(rVec_cart)
     inv_r = 1.0 / r
     s = rVec_cart[1] * inv_r
@@ -821,18 +836,21 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
     L = model.L
     M = model.M
 
-    A[1, 1] = 1.0
+    # NOTE: A[1,1] is already initialised to 1.0 in _make_harmonics_scratch_workspace.
+    # We only need to refresh the sub-diagonal entries that depend on the current
+    # position (u = z/r changes every call).
     A[2, 1] = u * sqrt_3
-    @inbounds @simd for n = 1:L+1
+    @inbounds @fastmath for n = 1:L+1
         row = n + 1
         A[row + 1, row] = u * model.sqrt_2n_plus_3[n] * A[row, row]
     end
 
+    # Longitude trig recurrence: R[j] = Re[(s+it)^(j-1)], I[j] = Im[(s+it)^(j-1)]
     R[1] = 1.0
     I[1] = 0.0
     Rn = 1.0
     In = 0.0
-    @inbounds for j = 2:(M + 2)
+    @inbounds @fastmath for j = 2:(M + 2)
         Rn, In = s * Rn - t * In, s * In + t * Rn
         R[j] = Rn
         I[j] = In
@@ -843,7 +861,7 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
 
     max_recur_row = 2
     ρ_np1 = -model.planet.μ * inv_r * ρ
-    @inbounds for l = 1:L
+    @inbounds @fastmath for l = 1:L
         row = l + 1
 
         if row > max_recur_row
@@ -871,25 +889,28 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
         sum4 = 0.0
 
         C0 = model.C[row, 1]
-        S0 = model.S[row, 1]
-        D0 = (C0 * R[1] + S0 * I[1]) * sqrt_2
+        # I[1] == 0.0 always; R[1] == 1.0 always — exploit this to save two multiplies.
+        D0 = C0 * sqrt_2
         sum3 += model.VR01[row, 1] * A[row, 2] * D0
         sum4 += model.VR11[row, 1] * A[row + 1, 2] * D0
 
         active_orders = model.active_orders_by_degree[row]
-        @inbounds for idx in eachindex(active_orders)
+        @inbounds @fastmath for idx in eachindex(active_orders)
             m = active_orders[idx]
             j = m + 1
             C = model.C[row, j]
             S = model.S[row, j]
             R_term = R[j - 1]
             I_term = I[j - 1]
-            D = (C * R[j] + S * I[j]) * sqrt_2
+            Rj  = R[j]
+            Ij  = I[j]
+            D = (C * Rj  + S * Ij)  * sqrt_2
             E = (C * R_term + S * I_term) * sqrt_2
             F = (S * R_term - C * I_term) * sqrt_2
 
-            sum1 += m * A[row, j] * E
-            sum2 += m * A[row, j] * F
+            mA = m * A[row, j]
+            sum1 += mA * E
+            sum2 += mA * F
             sum3 += model.VR01[row, j] * A[row, j + 1] * D
             sum4 += model.VR11[row, j] * A[row + 1, j + 1] * D
         end
@@ -1058,23 +1079,27 @@ function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64
         return 1.0
     end
 
-    if dot(r_sun, r_sat) >= 0 # check the cos of the angle between the satellite and the Sun. If positive (angle less than 90 degrees), the satellite is not in eclipse
+    # Precompute dot product and reciprocals used multiple times below.
+    dot_rs_rsat = dot(r_sun, r_sat)
+    if dot_rs_rsat >= 0 # check the cos of the angle between the satellite and the Sun. If positive (angle less than 90 degrees), the satellite is not in eclipse
         return 1.0 # If the satellite is not in eclipse, return 1.0
     end
+    inv_r_sun_norm = 1.0 / r_sun_norm
+    inv_r_sat_norm = 1.0 / r_sat_norm
     # Eclipse conditions
-    f1 = asin(_clamp_unit((rs + rp) / r_sun_norm)) # Penumbra angle
-    f2 = asin(_clamp_unit((rs - rp) / r_sun_norm)) # Umbra angle
-    s0 = -dot(r_sat, r_sun) / r_sun_norm # Plane-axis intersection and planet center distance
+    f1 = asin(_clamp_unit((rs + rp) * inv_r_sun_norm)) # Penumbra angle
+    f2 = asin(_clamp_unit((rs - rp) * inv_r_sun_norm)) # Umbra angle
+    s0 = -dot_rs_rsat * inv_r_sun_norm # Plane-axis intersection and planet center distance
     c1 = s0 + rp * sin(f1) # Distance from fundamental plane to cone vertex V1
     c2 = s0 - rp * sin(f2) # Distance from fundamental plane to cone vertex V2
     l1 = c1*tan(f1) # Radius of penumbra cone in fundamental plane
     l2 = c2*tan(f2) # Radius of umbra cone in fundamental plane
     l = √(max(r_sat_norm^2 - s0^2, 0.0)) # Distance from fundamental plane to satellite
-    
+
     # Apparent radii of sun, planet, and apparent separation of sun and planet, respectively
-    a = asin(_clamp_unit(rs / r_sun_norm)) # Apparent radius of the Sun
-    b = asin(_clamp_unit(rp / r_sat_norm)) # Apparent radius of the planet
-    c = acos(_clamp_unit(-dot(r_sun, r_sat) / (r_sun_norm * r_sat_norm))) # Apparent separation of the Sun and planet
+    a = asin(_clamp_unit(rs * inv_r_sun_norm)) # Apparent radius of the Sun
+    b = asin(_clamp_unit(rp * inv_r_sat_norm)) # Apparent radius of the planet
+    c = acos(_clamp_unit(-dot_rs_rsat * inv_r_sun_norm * inv_r_sat_norm)) # Apparent separation of the Sun and planet
     if c < b - a # Total eclipse condition
         return 0.0 # If the satellite is in total eclipse, return 0.0
     elseif c < a - b # Annular eclipse condition

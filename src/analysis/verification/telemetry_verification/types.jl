@@ -140,6 +140,8 @@ Base.@kwdef struct TimeAlignedScenarioConfig <: AbstractScenarioConfig
     drag_enabled::Bool = true
     include_wind::Bool = false
     orbit_altitude_mode::Symbol = :vacuum
+    cartesian_ic_frame::Symbol = :inertial
+    comparison_frame::Symbol = :inertial
     comparison_mode::Symbol = :time_aligned_state
     extrema_min_separation_s::Float64 = 500.0
     atmosphere_truth::AtmosphereTruthConfig = AtmosphereTruthConfig()

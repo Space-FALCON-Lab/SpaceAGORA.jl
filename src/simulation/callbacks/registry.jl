@@ -1,6 +1,7 @@
 include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl")) # Get the reference system types for the callback
 
 using DifferentialEquations
+using DiffEqBase
 using LinearAlgebra
 using SPICE
 using Dates
@@ -53,7 +54,17 @@ end
 const _gram_runtime_stats = Ref{GramRuntimeStats}(GramRuntimeStats())
 const _gram_runtime_stats_lock = ReentrantLock()
 
-@inline _gram_runtime_stats_enabled() = _parse_bool_env("SPACEAGORA_GRAM_PROFILE", false)
+# Memoised: read once, then return the cached value on every subsequent call.
+# This avoids ENV string lookup + lowercase + comparison on every callback step.
+const _GRAM_RUNTIME_STATS_ENABLED_CACHE = Ref{Union{Nothing, Bool}}(nothing)
+
+@inline function _gram_runtime_stats_enabled()::Bool
+    v = _GRAM_RUNTIME_STATS_ENABLED_CACHE[]
+    v === nothing || return v
+    result = _parse_bool_env("SPACEAGORA_GRAM_PROFILE", false)
+    _GRAM_RUNTIME_STATS_ENABLED_CACHE[] = result
+    return result
+end
 
 function _gram_runtime_stats_reset!()
     lock(_gram_runtime_stats_lock) do

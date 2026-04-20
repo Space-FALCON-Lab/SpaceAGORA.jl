@@ -98,7 +98,7 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
         current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
         time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
         et = utc2et(time_real_utc) # Current time in Ephemeris Time
-        m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+        m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), et)) # Construct a rotation matrix from J2000 to planet-fixed frame
         
         pos_ii = SVector{3, Float64}(in_cond[1:3])       # Inertial position 
         vel_ii = SVector{3, Float64}(in_cond[4:6])       # Inertial velocity
@@ -230,7 +230,7 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
         end
 
         # Rotation Calculation
-        L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci'
+        L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)
         # rot_angle = norm(ω_planet) * t0     # rad
         # L_PI = [cos(rot_angle)  sin(rot_angle)  0.0;
         #         -sin(rot_angle) cos(rot_angle)  0.0; 
@@ -342,7 +342,7 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
         # current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
         # time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
         # config.cnf.et = utc2et(time_real_utc) # Current time in Ephemeris Time
-        # m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), config.cnf.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+        # Planet-fixed rotation is updated elsewhere in the modern pipeline.
         
 
         # # Assign state
@@ -808,7 +808,7 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
         # current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
         # time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
         # et = utc2et(time_real_utc) # Current time in Ephemeris Time
-        # m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+        # Planet-fixed rotation is updated elsewhere in the modern pipeline.
         
         # pos_ii = SVector{3, Float64}(sol[1:3,end])       # Inertial position 
         # vel_ii = SVector{3, Float64}(sol[4:6,end])       # Inertial velocity
@@ -944,7 +944,7 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
         # end
 
         # # Rotation Calculation
-        # L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci'
+        # Planet-fixed rotation is updated elsewhere in the modern pipeline.
         # # rot_angle = norm(ω_planet) * t0     # rad
         # # L_PI = [cos(rot_angle)  sin(rot_angle)  0.0;
         # #         -sin(rot_angle) cos(rot_angle)  0.0; 

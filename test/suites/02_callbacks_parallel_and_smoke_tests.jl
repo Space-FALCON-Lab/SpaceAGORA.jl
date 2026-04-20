@@ -67,6 +67,41 @@
         args_orbits
     )
 
+    thruster_control = make_base_thruster_model(
+        thrust=2.0,
+        Δv=20.0,
+        start_burn_time=-1.0,
+        stop_burn_time=-1.0,
+        Isp=300.0
+    )
+    args_control = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        control_effectors=(thruster_control,),
+        control_rates=[1.0],
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    control_cbs = SimulationModel.SimulationCallbacks.get_control_callbacks(1, args_control)
+    p_control = ODEParams{1}(args=args_control)
+    u_control = build_initial_conditions(args_control)
+    integrator_control = MockCallbackIntegrator(
+        p_control,
+        u_control,
+        0.0,
+        MockCallbackOpts(1.0, 1e-8, 1e-8),
+        1,
+        Inf
+    )
+    control_cbs[1].affect!(integrator_control)
+    @test isfinite(thruster_control.start_burn_time[1])
+    @test isfinite(thruster_control.stop_burn_time[1])
+    @test integrator_control.tstop_max >= thruster_control.start_burn_time[1]
+
     orbit_cb = SimulationModel.SimulationCallbacks.get_orbit_end_callback(1)
     p_orbit = ODEParams{1}(args=args_orbits)
     u_orbit = build_initial_conditions(args_orbits)

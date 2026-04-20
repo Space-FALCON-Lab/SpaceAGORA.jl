@@ -17,9 +17,11 @@ function get_thermal_callback(num_sats::Int, args::SimulationConfiguration)
 
         planet = p.args.environment_model.planet
         thermal_model = p.args.environment_model.thermal_model
+        ephemerides_model = p.args.environment_model.ephemerides_model
         pos_ii = SVector{3, Float64}(u.sc[i].pos)
         vel_ii = SVector{3, Float64}(u.sc[i].vel)
-        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, planet)
+        et = p.shared_buffers.et_start[] + p.shared_buffers.current_time[]
+        pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, planet, et, ephemerides_model)
         alt_lat_lon = rtolatlong(pos_pp, planet)
         uD, uN, uE = latlongtoNED(alt_lat_lon)
         wE, wN, wU = wind
@@ -73,4 +75,3 @@ function get_thermal_callback(num_sats::Int, args::SimulationConfiguration)
 
     return DiscreteCallback(condition, affect!, initialize=(cb, u, t, integrator) -> affect!(integrator))
 end
-

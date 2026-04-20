@@ -62,7 +62,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
         current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
         time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
         cnf_state.et = utc2et(time_real_utc) # Current time in Ephemeris Time
-        m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), cnf_state.et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+        m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), cnf_state.et)) # Construct a rotation matrix from J2000 to planet-fixed frame
         
 
         # Assign state

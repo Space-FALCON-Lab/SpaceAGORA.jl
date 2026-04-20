@@ -21,6 +21,7 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
 using .SimulationModel
 include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
+include(joinpath(REPO_ROOT, "src", "mission", "operations", "maneuver_plans.jl"))
 
 # SimulationEngine uses SimulationModel and provides canonical runtime entrypoints.
 const quat_mult = SimulationModel.quat_mult

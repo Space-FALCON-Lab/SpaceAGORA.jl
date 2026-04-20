@@ -52,7 +52,7 @@ function get_orbit_end_callback(num_sats::Int)
 
         # MissionOrbits should end when every active satellite reaches the requested
         # number of completed orbits, analogous to drag-passage event termination.
-        if completed_orbits >= target_orbits
+        if p.args.mission_configuration.mission_type == MissionOrbits && completed_orbits >= target_orbits
             all_active_reached_target = true
             @inbounds for sat_idx in eachindex(p.orbit_counter)
                 if p.is_active[sat_idx] && (p.orbit_counter[sat_idx] - 1) < target_orbits
@@ -155,6 +155,7 @@ function get_drag_state_callback(num_sats::Int)
         )
         integrator.opts.reltol = reltol_new # Adjust tolerances when exiting the atmosphere
         integrator.opts.abstol = abstol_new
+        schedule_event_driven_thruster_controls!(integrator, idx)
     end
 
     function affect_downcrossing!(integrator, idx::Int64)
@@ -248,10 +249,7 @@ function get_periapsis_save_callback(num_sats::Int)
     function condition!(out, u, t, integrator)
         @inbounds for i in 1:num_sats
             planet = integrator.p.args.environment_model.planet
-            # State is in J2000; convert to PCI (body-equatorial) for rvtoorbitalelement
-            pos_pci = planet.J2000_to_pci * SVector{3, Float64}(u.sc[i].pos)
-            vel_pci = planet.J2000_to_pci * SVector{3, Float64}(u.sc[i].vel)
-            OE = rvtoorbitalelement(pos_pci, vel_pci, planet)
+            OE = rvtoorbitalelement(SVector{3, Float64}(u.sc[i].pos), SVector{3, Float64}(u.sc[i].vel), planet)
             out[i] = OE[6] # Return the true anomaly (ν) which is zero at periapsis
         end
     end

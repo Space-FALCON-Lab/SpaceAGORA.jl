@@ -91,6 +91,27 @@ function _time_aligned_rows_errors(
     sim_x_m = _require_column(results_df, ["sc1_pos_1", "sc1_position_1"], "sim-position-x")
     sim_y_m = _require_column(results_df, ["sc1_pos_2", "sc1_position_2"], "sim-position-y")
     sim_z_m = _require_column(results_df, ["sc1_pos_3", "sc1_position_3"], "sim-position-z")
+    sim_vx_mps = _require_column(results_df, ["sc1_vel_1", "sc1_velocity_1"], "sim-velocity-x")
+    sim_vy_mps = _require_column(results_df, ["sc1_vel_2", "sc1_velocity_2"], "sim-velocity-y")
+    sim_vz_mps = _require_column(results_df, ["sc1_vel_3", "sc1_velocity_3"], "sim-velocity-z")
+
+    if cfg.comparison_frame == :planet_fixed
+        et0 = _initial_time_et(args.initial_time)
+        @inbounds for i in eachindex(sim_time)
+            pos_fixed_m, vel_fixed_mps = _j2000_to_planet_fixed_state(
+                cfg.planet_name,
+                et0 + sim_time[i],
+                SVector{3, Float64}(sim_x_m[i], sim_y_m[i], sim_z_m[i]),
+                SVector{3, Float64}(sim_vx_mps[i], sim_vy_mps[i], sim_vz_mps[i])
+            )
+            sim_x_m[i] = pos_fixed_m[1]
+            sim_y_m[i] = pos_fixed_m[2]
+            sim_z_m[i] = pos_fixed_m[3]
+            sim_vx_mps[i] = vel_fixed_mps[1]
+            sim_vy_mps[i] = vel_fixed_mps[2]
+            sim_vz_mps[i] = vel_fixed_mps[3]
+        end
+    end
 
     sim_x_km = sim_x_m .* 1e-3 .+ get(bias_by_event, "state_x_time", 0.0)
     sim_y_km = sim_y_m .* 1e-3 .+ get(bias_by_event, "state_y_time", 0.0)

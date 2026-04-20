@@ -23,7 +23,14 @@ function _gram_track_cache_fill_from_trajectory!(
         cache.times[k] = Float64(pos.elapsedTime)
         cache.alts[k] = Float64(pos.height) * 1e3
         cache.lats[k] = deg2rad(Float64(pos.latitude))
-        cache.lons[k] = atan(sin(deg2rad(Float64(pos.longitude))), cos(deg2rad(Float64(pos.longitude))))
+        lon_rad = deg2rad(Float64(pos.longitude))
+        # Normalise to (-π, π] without trig — just a conditional add/subtract.
+        if lon_rad > π
+            lon_rad -= 2π
+        elseif lon_rad ≤ -π
+            lon_rad += 2π
+        end
+        cache.lons[k] = lon_rad
         cache.rhos[k] = Float64(dyn.density)
         cache.Ts[k] = Float64(dyn.temperature)
         cache.winds[k] = SVector{3, Float64}(
@@ -34,6 +41,17 @@ function _gram_track_cache_fill_from_trajectory!(
     end
 
     return nothing
+end
+
+@inline function _gram_kepler_or_linear_target(
+    pos::SVector{3, Float64},
+    vel::SVector{3, Float64},
+    planet,
+    dt::Float64,
+    include_j2::Bool
+)::Tuple{Float64, Float64, Float64}
+    target = _gram_kepler_target(pos, vel, planet, dt; include_j2=include_j2)
+    return target === nothing ? _gram_linear_target(pos, vel, planet, dt) : target
 end
 
 function _gram_track_cache_refresh!(
@@ -60,19 +78,15 @@ function _gram_track_cache_refresh!(
     refresh_t0_ns = stats_enabled ? time_ns() : 0
     try
         planet = p.args.environment_model.planet
+        ephemerides_model = p.args.environment_model.ephemerides_model
         base_horizon_s = max(1e-3, horizon_s)
         include_j2 = target_include_j2
         EI_m = p.args.environment_model.EI * 1e3
         in_atm_band = alt <= EI_m + max(0.0, transition_band_m)
         mission_is_orbit = p.args.mission_configuration.mission_type == MissionOrbits
 
-        target_for_dt = function (dt::Float64)
-            target = _gram_kepler_target(pos, vel, planet, dt; include_j2=include_j2)
-            return target === nothing ? _gram_linear_target(pos, vel, planet, dt) : target
-        end
-
         dt_segment = base_horizon_s
-        target_alt, target_lat, target_lon = target_for_dt(dt_segment)
+        target_alt, target_lat, target_lon = _gram_kepler_or_linear_target(pos, vel, planet, dt_segment, include_j2)
 
         if _gram_track_cache_periapsis_split_enabled() && in_atm_band
             # Drag passage: build the cache segment to periapsis when possible.
@@ -113,7 +127,7 @@ function _gram_track_cache_refresh!(
                     dt_to_end = segment_end_t - t
                     if dt_to_end > 1e-6
                         dt_segment = max(1e-3, dt_to_end)
-                        target_alt, target_lat, target_lon = target_for_dt(dt_segment)
+                        target_alt, target_lat, target_lon = _gram_kepler_or_linear_target(pos, vel, planet, dt_segment, include_j2)
                     end
                 end
             end
@@ -130,7 +144,7 @@ function _gram_track_cache_refresh!(
                 dt_to_end = segment_end_t - t
                 if dt_to_end > 1e-6
                     dt_segment = max(1e-3, dt_to_end)
-                    target_alt, target_lat, target_lon = target_for_dt(dt_segment)
+                    target_alt, target_lat, target_lon = _gram_kepler_or_linear_target(pos, vel, planet, dt_segment, include_j2)
                     used_tspan_endpoint = true
                 end
             end
@@ -217,9 +231,10 @@ function _gram_track_cache_refresh!(
             @inbounds for k in 1:n
                 x = (k - 1) / (n - 1)
                 t_k = t + x * dt_segment
+                et_k = p.shared_buffers.et_start[] + t_k
                 pos_k = pos + vel * (t_k - t)
-                rp_k, _ = r_intor_p!(pos_k, vel, planet)
-                alt_k, lat_k, lon_k = rtolatlong(rp_k, planet)
+                rp_k, _ = r_intor_p!(pos_k, vel, planet, et_k, ephemerides_model)
+                alt_k, lat_k, lon_k = rtolatlong(rp_k, planet, ephemerides_model)
                 cache.times[k] = t_k
                 cache.alts[k] = alt_k
                 cache.lats[k] = lat_k

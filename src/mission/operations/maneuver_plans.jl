@@ -1,5 +1,52 @@
 # import .config
 
+@inline function _legacy_phi_to_signed_maneuver_delta_v(delta_v::Real, phi::Real)::Float64
+    dv = Float64(delta_v)
+    abs(dv) <= 0.0 && return 0.0
+
+    phi_norm = mod2pi(Float64(phi))
+    if isapprox(phi_norm, 0.0; atol=1e-12, rtol=0.0) || isapprox(phi_norm, 2π; atol=1e-12, rtol=0.0)
+        return -abs(dv)
+    elseif isapprox(phi_norm, π; atol=1e-12, rtol=0.0)
+        return abs(dv)
+    end
+
+    throw(ArgumentError(
+        "Unsupported firing-plan phi=$(phi) rad. Main-branch typed maneuvers only support phi=0 (periapsis lower/retrograde) or phi=π (periapsis raise/prograde)."
+    ))
+end
+
+function odyssey_campaign_maneuvers(
+    orbit_range;
+    planet=nothing,
+    ra::Float64=0.0,
+    rp::Float64=0.0,
+    firing_plan::Function=Odyssey_firing_plan
+)
+    maneuver_orbit_number = Int64[]
+    maneuver_Δv = Float64[]
+
+    for orbit in orbit_range
+        orbit_i = Int64(orbit)
+        args = Dict{Symbol, Float64}(:delta_v => 0.0, :phi => 0.0)
+        firing_plan(planet, ra, rp, orbit_i, args)
+
+        delta_v = get(args, :delta_v, 0.0)
+        !isfinite(delta_v) && throw(ArgumentError("Odyssey firing plan returned non-finite Δv for orbit $(orbit_i)."))
+        abs(delta_v) <= 0.0 && continue
+
+        phi = get(args, :phi, 0.0)
+        signed_delta_v = _legacy_phi_to_signed_maneuver_delta_v(delta_v, phi)
+        push!(maneuver_orbit_number, orbit_i)
+        push!(maneuver_Δv, signed_delta_v)
+    end
+
+    return (
+        maneuver_orbit_number=maneuver_orbit_number,
+        maneuver_Δv=maneuver_Δv
+    )
+end
+
 function Odyssey_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, args=nothing)
     if numberofpassage == 7
         args[:delta_v] = 0.15

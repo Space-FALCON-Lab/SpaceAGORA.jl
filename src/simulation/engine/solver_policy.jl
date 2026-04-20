@@ -29,24 +29,21 @@ function _build_solver_tolerances(u_state::ComponentVector, args)
     abstol_state = copy(u_state)
     reltol_state .= tol.reltol_orbit
     abstol_state .= tol.abstol_orbit
+    orientation_sim = args.mission_configuration.orientation_sim
+    reltol_q = tol.reltol_quaternion
+    abstol_q = tol.abstol_quaternion
+    # Single pass over all spacecraft to set mass, heat load, and (when enabled)
+    # orientation tolerances — avoids iterating the spacecraft array 2–3 times.
     @inbounds for i in eachindex(reltol_state.sc)
         reltol_state.sc[i].mass = reltol_mass
         abstol_state.sc[i].mass = abstol_mass
         reltol_state.sc[i].heat_loads .= reltol_heat
         abstol_state.sc[i].heat_loads .= abstol_heat
-    end
-
-    if args.mission_configuration.orientation_sim
-        @inbounds for i in eachindex(reltol_state.sc)
+        if orientation_sim
             reltol_state.sc[i].ω .= reltol_ω
             abstol_state.sc[i].ω .= abstol_ω
-        end
-    end
-
-    if args.mission_configuration.orientation_sim
-        @inbounds for i in eachindex(reltol_state.sc)
-        reltol_state.sc[i].q .= tol.reltol_quaternion
-        abstol_state.sc[i].q .= tol.abstol_quaternion
+            reltol_state.sc[i].q .= reltol_q
+            abstol_state.sc[i].q .= abstol_q
         end
     end
     return reltol_state, abstol_state
@@ -73,8 +70,14 @@ end
 end
 
 @inline function _retcode_is_stiff_symptom(retcode)::Bool
-    rc = string(retcode)
-    return rc in ("Unstable", "DtLessThanMin", "MaxIters", "InitialFailure")
+    # Convert once to Symbol (zero-allocation for Symbol/ReturnCode inputs,
+    # one allocation for String inputs — but String inputs are test-only).
+    # This avoids the heap String allocation of `string(retcode) in (...)`.
+    sym = Symbol(retcode)
+    return sym === :Unstable     ||
+           sym === :DtLessThanMin ||
+           sym === :MaxIters      ||
+           sym === :InitialFailure
 end
 
 @inline function _auto_stiff_switched(sol)::Bool

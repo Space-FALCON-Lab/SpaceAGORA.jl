@@ -52,15 +52,15 @@ end
 
 @inline function planet_frame_lpi(planet, et::Float64, ::SpiceEphemeridesModel)::SMatrix{3, 3, Float64}
     return lock(SPICE_LOCK) do
-        # pxform gives J2000->body-fixed; compose with PCI->J2000 to recover PCI->body-fixed.
-        SMatrix{3, 3, Float64}(pxform("J2000", _spice_body_fixed_frame(planet), et)) * planet.J2000_to_pci'
+        SMatrix{3, 3, Float64}(pxform("J2000", _spice_body_fixed_frame(planet), et))
     end
 end
 
 @inline function planet_frame_lpi(planet, et::Float64, model::SimpleEphemeridesModel)::SMatrix{3, 3, Float64}
     θ = model.prime_meridian_at_reference_rad + planet.ω[3] * (et - model.reference_epoch_seconds)
-    # _rotation_about_spin_axis(θ) is PCI→PCPF; compose with J2000→PCI to get J2000→PCPF
-    return _rotation_about_spin_axis(θ) * planet.J2000_to_pci
+    # With J2000 as the internal inertial frame, the spin-axis rotation is the
+    # direct J2000→PCPF transform for the simple ephemeris model.
+    return _rotation_about_spin_axis(θ)
 end
 
 @inline ephemerides_cache_key(::SpiceEphemeridesModel) = (:spice,)

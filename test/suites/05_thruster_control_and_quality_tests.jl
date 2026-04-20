@@ -113,13 +113,33 @@
         @test isfinite(model.start_burn_time[1])
         @test isfinite(model.stop_burn_time[1])
         @test model.start_burn_time[1] < model.stop_burn_time[1]
-        expected_burn_duration = state.sc[1].mass * model.Δv[1] / model.thrust[1]
+        expected_burn_duration = SimulationModel.ControlHooks._constant_thrust_burn_duration_s(
+            state.sc[1].mass,
+            model.Δv[1],
+            model.thrust[1],
+            model.Isp[1]
+        )
         @test isapprox(
             model.stop_burn_time[1] - model.start_burn_time[1],
             expected_burn_duration;
             atol=1e-9,
             rtol=0.0
         )
+        @test expected_burn_duration < state.sc[1].mass * model.Δv[1] / model.thrust[1]
+
+        model_signed_prograde = make_base_thruster_model(thrust=2.0, direction=π, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
+        calcControlEffect!(model_signed_prograde, state, p, 100.0, 1)
+        @test model_signed_prograde.Δv[1] == 20.0
+        @test isapprox(model_signed_prograde.direction[1], 0.0; atol=1e-12, rtol=0.0)
+        @test isfinite(model_signed_prograde.start_burn_time[1])
+        @test isfinite(model_signed_prograde.stop_burn_time[1])
+
+        model_signed_retrograde = make_base_thruster_model(thrust=2.0, direction=0.0, Δv=-20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
+        calcControlEffect!(model_signed_retrograde, state, p, 100.0, 1)
+        @test model_signed_retrograde.Δv[1] == 20.0
+        @test isapprox(model_signed_retrograde.direction[1], π; atol=1e-12, rtol=0.0)
+        @test isfinite(model_signed_retrograde.start_burn_time[1])
+        @test isfinite(model_signed_retrograde.stop_burn_time[1])
 
         # Pre-ignition tracking: a future scheduled window should be retimed.
         model_track = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=10_000.0, stop_burn_time=11_000.0)
@@ -369,6 +389,16 @@
         withenv("SPACEAGORA_STRICT_CONTROL_EXCEPTIONS" => "1") do
             @test_throws ErrorException helper(p_dummy, 1, err_eff, stacktrace())
         end
+
+        burn_helper = SimulationModel.ControlHooks._constant_thrust_burn_duration_s
+        @test burn_helper(100.0, 0.0, 2.0, 300.0) == 0.0
+        @test isapprox(
+            burn_helper(100.0, 20.0, 2.0, 300.0),
+            100.0 * 300.0 * 9.80665 / 2.0 * (1.0 - exp(-20.0 / (300.0 * 9.80665)));
+            atol=1e-12,
+            rtol=0.0
+        )
+        @test isnan(burn_helper(100.0, 20.0, 2.0, 0.0))
     end
 
     @testset "schmitt_trigger" begin

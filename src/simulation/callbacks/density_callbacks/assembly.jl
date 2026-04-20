@@ -20,8 +20,16 @@ end
     return _uses_atmospheric_dynamic_effector(effectors) || !(args.environment_model.density_model isa NoAtmosphereModel)
 end
 
+@inline function _requires_guidance_orbit_counter(args::SimulationConfiguration)::Bool
+    @inbounds for guidance_model in args.guidance_model.guidance_effectors
+        hasproperty(guidance_model, :maneuver_orbit_number) && return true
+    end
+    return false
+end
+
 @inline function _requires_orbit_end_callback(args::SimulationConfiguration)::Bool
-    return args.mission_configuration.mission_type == MissionOrbits
+    return args.mission_configuration.mission_type == MissionOrbits ||
+           _requires_guidance_orbit_counter(args)
 end
 
 @inline function _entry_target_count()::Int

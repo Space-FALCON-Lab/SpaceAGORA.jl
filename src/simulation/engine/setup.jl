@@ -193,10 +193,6 @@ end
     return round(Int64, x * 1e6)
 end
 
-@inline function _planet_transform_key(planet)::NTuple{9, Int64}
-    return ntuple(i -> round(Int64, planet.J2000_to_pci[i] * 1e12), 9)
-end
-
 @inline function _srp_ephemeris_reuse_key(primary_body_name::String, et_start::Float64, mission_end_s::Float64, dt_s::Float64)
     return (
         :srp,
@@ -223,7 +219,6 @@ end
         :planet_frame,
         string(planet.name),
         SimulationModel.ephemerides_cache_key(ephemerides_model),
-        _planet_transform_key(planet),
         _cache_time_key(et_start),
         _cache_time_key(mission_end_s),
         _cache_time_key(dt_s)

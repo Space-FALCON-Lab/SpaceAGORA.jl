@@ -67,27 +67,27 @@ end
 
 const _moon_fallback_warned = Ref(false)
 
-function body_pos_wrt_earth_pci(body_name::String, et::Float64, planet::AbstractPlanet)::SVector{3, Float64}
+function body_pos_wrt_earth_j2000(body_name::String, et::Float64, planet::AbstractPlanet)::SVector{3, Float64}
     name = uppercase(body_name)
     if name == "MOON"
         try
             r_moon_j2000 = lock(RuntimeServices.SPICE_LOCK) do
                 SVector{3, Float64}(spkpos("MOON", et, "J2000", "NONE", "EARTH")[1]) * 1e3
             end
-            return planet.J2000_to_pci * r_moon_j2000
+            return r_moon_j2000
         catch
             if !_moon_fallback_warned[]
                 _moon_fallback_warned[] = true
                 @warn "MOON SPICE ephemeris is unavailable; using analytic lunar orbit fallback for third-body acceleration."
             end
-            return planet.J2000_to_pci * moon_pos_analytic_j2000(et)
+            return moon_pos_analytic_j2000(et)
         end
     end
 
     r_body_j2000 = lock(RuntimeServices.SPICE_LOCK) do
         SVector{3, Float64}(spkpos(name, et, "J2000", "NONE", "EARTH")[1]) * 1e3
     end
-    return planet.J2000_to_pci * r_body_j2000
+    return r_body_j2000
 end
 
 struct SunMoonThirdBodyModel{P <: AbstractPlanet} <: AbstractForceTorqueModel
@@ -116,7 +116,7 @@ function SimulationModel.calcForceTorque(
     @inbounds for k in eachindex(model.body_names)
         body_name = model.body_names[k]
         μ_k = model.body_mus[k]
-        r_primary_k = body_pos_wrt_earth_pci(body_name, et, model.planet)
+        r_primary_k = body_pos_wrt_earth_j2000(body_name, et, model.planet)
         r_sc_k = r_primary_k - pos_sc
         a_tb .+= μ_k * (r_sc_k / norm(r_sc_k)^3 - r_primary_k / norm(r_primary_k)^3)
     end
@@ -140,7 +140,7 @@ function SimulationModel.calcForceTorque(
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     pos_sc = SVector{3, Float64}(x.pos)
     et = p.shared_buffers.et_start[] + p.shared_buffers.current_time[]
-    r_sun = body_pos_wrt_earth_pci("SUN", et, model.planet)
+    r_sun = body_pos_wrt_earth_j2000("SUN", et, model.planet)
     r_sc_to_sun = r_sun - pos_sc
     d_sc_sun = norm(r_sc_to_sun)
     u_sun_to_sc = -r_sc_to_sun / d_sc_sun

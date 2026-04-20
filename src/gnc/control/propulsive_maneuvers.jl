@@ -65,11 +65,17 @@ end
 @inline function _commanded_maneuver!(controlModel::BaseThrusterModel, p, i::Int64)
     command = _guidance_maneuver_command(p, i)
     if command !== nothing
-        controlModel.Δv[i] = command.delta_v_mps
-        controlModel.direction[i] = command.direction_rad
+        delta_v_mps = Float64(command.delta_v_mps)
+        direction_rad = Float64(command.direction_rad)
+        if isfinite(delta_v_mps) && delta_v_mps < 0.0
+            delta_v_mps = abs(delta_v_mps)
+            direction_rad = π
+        end
+        controlModel.Δv[i] = delta_v_mps
+        controlModel.direction[i] = direction_rad
         return (
-            delta_v_mps=command.delta_v_mps,
-            direction_rad=command.direction_rad,
+            delta_v_mps=delta_v_mps,
+            direction_rad=direction_rad,
             source_orbit=command.source_orbit,
         )
     end
@@ -78,11 +84,52 @@ end
         return nothing
     end
 
+    delta_v_cmd = Float64(controlModel.Δv[i])
+    direction_rad = Float64(controlModel.direction[i])
+    if isfinite(delta_v_cmd)
+        if delta_v_cmd > 0.0
+            direction_rad = 0.0
+        elseif delta_v_cmd < 0.0
+            delta_v_cmd = abs(delta_v_cmd)
+            direction_rad = π
+        end
+        controlModel.Δv[i] = delta_v_cmd
+        controlModel.direction[i] = direction_rad
+    end
+
     return (
-        delta_v_mps=Float64(controlModel.Δv[i]),
-        direction_rad=Float64(controlModel.direction[i]),
+        delta_v_mps=delta_v_cmd,
+        direction_rad=direction_rad,
         source_orbit=Int64(-1),
     )
+end
+
+@inline function _constant_thrust_burn_duration_s(
+    mass_kg::Float64,
+    delta_v_mps::Float64,
+    thrust_n::Float64,
+    isp_s::Float64
+)::Float64
+    if !(isfinite(mass_kg) && mass_kg > 0.0)
+        return NaN
+    end
+    if !(isfinite(delta_v_mps) && delta_v_mps >= 0.0)
+        return NaN
+    end
+    if delta_v_mps == 0.0
+        return 0.0
+    end
+    if !(isfinite(thrust_n) && thrust_n > 0.0)
+        return NaN
+    end
+    if !(isfinite(isp_s) && isp_s > 0.0)
+        return NaN
+    end
+
+    g0 = 9.80665
+    exhaust_velocity = isp_s * g0
+    mass_fraction_used = 1.0 - exp(-delta_v_mps / exhaust_velocity)
+    return (mass_kg * exhaust_velocity / thrust_n) * mass_fraction_used
 end
 
 function _trace_maneuver_event!(
@@ -276,12 +323,9 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
     maneuver === nothing && return
 
     # Calculate the current orbital elements from the state vector
-    # State is in J2000; convert to PCI (body-equatorial) for rvtoorbitalelement
     oe = try
         planet = p.args.environment_model.planet
-        pos_pci = planet.J2000_to_pci * pos
-        vel_pci = planet.J2000_to_pci * vel
-        rvtoorbitalelement(pos_pci, vel_pci, planet)
+        rvtoorbitalelement(pos, vel, planet)
     catch err
         _control_effector_exception_fallback(p, i, err, catch_backtrace())
         return
@@ -303,11 +347,11 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
             return
         end
         thrust_mag = controlModel.thrust[i]
-        # Calculate the burn duration for a constant-thrust impulsive approximation.
+        isp_s = controlModel.Isp[i]
         if thrust_mag <= 0.0 || !isfinite(thrust_mag)
             return
         end
-        burn_time = mass * Δv / thrust_mag
+        burn_time = _constant_thrust_burn_duration_s(mass, Δv, thrust_mag, isp_s)
         if !isfinite(burn_time) || burn_time < 0.0
             return
         end

@@ -65,12 +65,13 @@ function make_three_body_spacecraft(;
     panel_mass_each::Float64,
     panel_offset_y::Float64,
     ic::SM.AbstractInitialCondition,
+    reflection_coefficient::Float64=1.0,
     prop_mass::Float64=0.0,
     id::Int64=1
 )
-    main_bus = SM.Link{0}(root=true, m=bus_mass, dims=MVector{3, Float64}(bus_dims...), ref_area=bus_dims[1] * bus_dims[3])
-    left_panel = SM.Link{0}(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, -panel_offset_y, 0.0))
-    right_panel = SM.Link{0}(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, panel_offset_y, 0.0))
+    main_bus = SM.Link{0}(root=true, m=bus_mass, dims=MVector{3, Float64}(bus_dims...), ref_area=bus_dims[1] * bus_dims[3], reflection_coefficient=reflection_coefficient)
+    left_panel = SM.Link{0}(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, -panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient)
+    right_panel = SM.Link{0}(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient)
 
     return SM.SpacecraftModel(
         SM.Joint[],

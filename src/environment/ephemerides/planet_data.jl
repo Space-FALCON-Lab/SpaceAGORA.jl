@@ -70,7 +70,7 @@ function planet_data(ip)
         mass = 6.4169e23           # mass, kg
         g_ref = 3.73               # acceleration due to gravity, m/s²
         ρ_ref = 8.7489231e-07      # density, kg/m³
-        μ = 4.2828314258067e13            # gravitational parameter, m³/s²
+        μ = 0.4282837285418775e5 * 1e9    # gravitational parameter, m³/s²
         h_ref = 90 * 1e3           # reference altitude, m
         H = 6.308278108 * 1e3      # scale height, m
         R = 188.92                 # specific gas constant, J/(kg·K)
@@ -242,19 +242,9 @@ function planet_data(ip)
         name = "titan"
     end
 
-    # Derived in data/References/J2000_to_pci.mlx(.m)
-    # Converts from J2000 to Planet Centered Inertial (PCI) 
-    # frame based on the planet's North pole of rotation
-    # α = Right ascension of the north pole of rotation, radians
-    # δ = Declination of the north pole of rotation, radians
-    if name == "earth"
-        J2000_to_pci = SMatrix{3, 3, Float64}([1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0])
-    else
-        σ1 = sqrt(cos(δ)^4 + cos(δ)^2*sin(δ)^2)
-        J2000_to_pci = SMatrix{3, 3, Float64}([-sin(α) cos(α) 0;
-                        -cos(δ)*cos(α)*sin(δ)/σ1 -cos(δ)*sin(α)*sin(δ)/σ1 cos(δ)^2/σ1;
-                        cos(δ)*cos(α) cos(δ)*sin(α) sin(δ)])   
-    end 
+    # Legacy compatibility placeholder retained for the old positional Planet constructor.
+    # The J2000-only pipeline keeps this as identity.
+    J2000_identity = SMatrix{3, 3, Float64}([1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0])
     if !isdefined(@__MODULE__, :Planet)
         throw(ArgumentError("Legacy planet_data requires a legacy Planet type in scope. Typed pipeline should use SimulationModel.Planets (Earth/Mars/Venus/Titan)."))
     end
@@ -279,7 +269,7 @@ function planet_data(ip)
                             Lz, 
                             α, 
                             δ, 
-                            J2000_to_pci,
+                            J2000_identity,
                             MMatrix{3, 3, Float64}(zeros(3,3)), 
                             zeros(3, 3), 
                             zeros(3, 3), 

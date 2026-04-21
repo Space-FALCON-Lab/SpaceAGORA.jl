@@ -383,8 +383,14 @@ end
     return GRAMSuite.gram_default_surrogate_file(planet)
 end
 
-function GRAMAtmosphereModel(; kwargs...)
-    return GRAMAtmosphereModel(GRAMSuite.GRAMAtmosphereModel(; kwargs...))
+function GRAMAtmosphereModel(;
+    gram_density_channel::Union{Symbol, AbstractString}=:nominal,
+    kwargs...
+)
+    return GRAMAtmosphereModel(GRAMSuite.GRAMAtmosphereModel(;
+        gram_density_channel=gram_density_channel,
+        kwargs...,
+    ))
 end
 
 function GRAMAtmosphereModelSurrogate(;

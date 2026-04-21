@@ -23,11 +23,29 @@ function _spice_lock()
     error("RuntimeServices.SPICE_LOCK not found in module ancestry for reference_system.jl")
 end
 
-function _simulation_model_module()
+function _ephemerides_helpers_module()
     mod = @__MODULE__
     while true
-        if isdefined(mod, :ephemerides_requires_spice) && isdefined(mod, :planet_frame_lpi)
-            return mod
+        candidates = Module[mod]
+        if isdefined(mod, :SimulationModel)
+            sim_model = getproperty(mod, :SimulationModel)
+            sim_model isa Module && push!(candidates, sim_model)
+        end
+        if isdefined(mod, :EphemeridesModels)
+            eph_mod = getproperty(mod, :EphemeridesModels)
+            eph_mod isa Module && push!(candidates, eph_mod)
+        end
+
+        for candidate in candidates
+            if isdefined(candidate, :ephemerides_requires_spice) && isdefined(candidate, :planet_frame_lpi)
+                return candidate
+            end
+            if isdefined(candidate, :EphemeridesModels)
+                eph_mod = getproperty(candidate, :EphemeridesModels)
+                if eph_mod isa Module && isdefined(eph_mod, :ephemerides_requires_spice) && isdefined(eph_mod, :planet_frame_lpi)
+                    return eph_mod
+                end
+            end
         end
         parent = parentmodule(mod)
         parent === mod && break
@@ -117,12 +135,12 @@ function r_intor_p!(
     et::Float64,
     ephemerides_model
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    sim_model = _simulation_model_module()
-    if getproperty(sim_model, :ephemerides_requires_spice)(ephemerides_model)
+    eph_mod = _ephemerides_helpers_module()
+    if Base.invokelatest(getfield(eph_mod, :ephemerides_requires_spice), ephemerides_model)
         return r_intor_p!(r_i, v_i, planet, et)
     end
 
-    l_pi = getproperty(sim_model, :planet_frame_lpi)(planet, et, ephemerides_model)
+    l_pi = Base.invokelatest(getfield(eph_mod, :planet_frame_lpi), planet, et, ephemerides_model)
     ω_j2000 = planet.ω
     r_p = SVector{3, Float64}(l_pi * r_i)
     v_p = SVector{3, Float64}(l_pi * (v_i - cross(ω_j2000, r_i)))

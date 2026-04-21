@@ -562,7 +562,7 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
         else
             _nbody_body_position_from_spice_j2000_m(body_name_spice, et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls)
         end
-        pos_primary_k_all[k] = model.planet.J2000_to_pci * pos_primary_body_j2000_m
+        pos_primary_k_all[k] = model.planet.L_PI * pos_primary_body_j2000_m
     end
 
     started_ns = time_ns()
@@ -903,7 +903,7 @@ function srp(
     pos_ii_sv = SVector{3, Float64}(pos_ii)
     primary_body_name = _spice_query_name(planet.name)
     pos_primary_sun_j2000_m = spice_position_j2000_m("sun", et, primary_body_name)
-    pos_primary_sun = SVector{3, Float64}(planet.J2000_to_pci * pos_primary_sun_j2000_m)
+    pos_primary_sun = SVector{3, Float64}(planet.L_PI * pos_primary_sun_j2000_m)
     return srp_cannonball_accel(
         pos_ii_sv,
         pos_primary_sun,
@@ -937,7 +937,7 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
         else
             _srp_sun_position_from_spice_j2000_m(et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls)
         end
-        SVector{3, Float64}(planet.J2000_to_pci * pos_primary_sun_j2000_m)
+        SVector{3, Float64}(planet.L_PI * pos_primary_sun_j2000_m)
     else
         SVector{3, Float64}(0.0, 0.0, 0.0)
     end

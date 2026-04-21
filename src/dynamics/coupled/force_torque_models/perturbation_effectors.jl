@@ -2,10 +2,11 @@ module PerturbationEffectors
     using ...ConfigTypes: ODEParams, NBodyScratchWorkspace, HarmonicsScratchWorkspace
     using ...AbstractTypes: AbstractPlanet, AbstractForceTorqueModel
     using ...EffectorSampling: StateSample, EnvironmentSample, ThirdBodyEphemerisSample, EffectorEnvironmentRequirements
-    using ...Planets: Earth, Mars, Venus, Titan
+    using ...Planets: Earth, Mars, Venus, Moon, Titan
     using ...EphemeridesModels: spice_position_j2000_m
     using ...ParallelPolicy
-    using ...SimulationModel: SRPSunEphemerisCache, NBodyEphemerisCache, SpiceRhsMemo
+    using ....RuntimeServices: SPICE_LOCK
+    using ...SimulationModel: SRPSunEphemerisCache, NBodyEphemerisCache, SpiceRhsMemo, planet_frame_lpi
     using ..AerodynamicEffectors: _multibody_thread_decision
     using StaticArrays
     import ..DynamicEffectors: calcForceTorque, wrench, environment_requirements

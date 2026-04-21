@@ -78,7 +78,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         current_time =  value(seconds(current_epoch - m.initial_condition.DateTimeJ2000)) # current time in seconds since J2000
         time_real_utc = to_utc(time_real) # Current time in UTC as a DateTime object
         et = utc2et(time_real_utc) # Current time in Ephemeris Time
-        m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), et))*m.planet.J2000_to_pci' # Construct a rotation matrix from J2000 (Planet-fixed frame 0.0 seconds past the J2000 epoch) to planet-fixed frame
+        m.planet.L_PI .= SMatrix{3, 3, Float64}(pxform("J2000", "IAU_"*uppercase(m.planet.name), et)) # Construct a rotation matrix from J2000 to planet-fixed frame
         
         pos_ii = SVector{3, Float64}(in_cond[1:3])       # Inertial position 
         vel_ii = SVector{3, Float64}(in_cond[4:6])       # Inertial velocity
@@ -214,7 +214,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         q = 0.5 * ρ * norm(vel_pp_rw)^2            # base on wind - relative velocity
 
         # Rotation Calculation
-        L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)*m.planet.J2000_to_pci'
+        L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)
         # rot_angle = norm(ω_planet) * t0     # rad
         # L_PI = [cos(rot_angle)  sin(rot_angle)  0.0;
         #         -sin(rot_angle) cos(rot_angle)  0.0; 

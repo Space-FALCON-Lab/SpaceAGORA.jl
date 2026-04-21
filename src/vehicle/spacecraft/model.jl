@@ -7,13 +7,15 @@ using LinearAlgebra
 # using ..AbstractTypes
 using ..Components
 
-export Link, Joint, SpacecraftModel, DynamicsModel, InitialCondition, GuidanceModel, NavigationModel, ControlModel
+export Link, Joint, SpacecraftModel, DynamicsModel, InitialCondition, CartesianInitialCondition, AbstractInitialCondition, GuidanceModel, NavigationModel, ControlModel
 
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 const DEFAULT_INITIAL_CONDITION_Q = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
 const DEFAULT_INITIAL_CONDITION_ANG_VEL = SVector{3, Float64}(0.0, 0.0, 0.0)
 
-struct InitialCondition
+abstract type AbstractInitialCondition end
+
+struct InitialCondition <: AbstractInitialCondition
     a::Float64 # Semimajor axis (m)
     e::Float64 # Eccentricity (nd)
     i::Float64 # Inclination (rad)
@@ -86,6 +88,27 @@ function InitialCondition(;
 
     ν_eff = ν === nothing ? 0.0 : ν
     return InitialCondition(a, e, i, ω, Ω, ν_eff, q, ang_vel)
+end
+
+struct CartesianInitialCondition <: AbstractInitialCondition
+    pos::SVector{3, Float64}     # ECI position (m)
+    vel::SVector{3, Float64}     # ECI velocity (m/s)
+    q::SVector{4, Float64}       # Initial orientation quaternion (x, y, z, w)
+    ang_vel::SVector{3, Float64} # Initial angular velocity (rad/s)
+end
+
+function CartesianInitialCondition(
+    pos,
+    vel;
+    q::SVector{4, Float64}=DEFAULT_INITIAL_CONDITION_Q,
+    ang_vel::SVector{3, Float64}=DEFAULT_INITIAL_CONDITION_ANG_VEL
+)
+    return CartesianInitialCondition(
+        SVector{3, Float64}(pos),
+        SVector{3, Float64}(vel),
+        q,
+        ang_vel
+    )
 end
 
 # --- CRITICAL REFACTOR 1 ---
@@ -230,7 +253,7 @@ mutable struct SpacecraftModel
     inertia_tensor::SMatrix{3, 3, Float64} # Inertia tensor of the spacecraft in the body frame
     n_reaction_wheels::Int64 # Number of reaction wheels in the spacecraft model
     n_thrusters::Int64 # Number of thrusters in the spacecraft model
-    initial_condition::InitialCondition # Initial conditions for the simulation (orbit, attitude, etc.)
+    initial_condition::AbstractInitialCondition # Initial conditions for the simulation (orbit, attitude, etc.)
     id::Int64 # Unique identifier for the spacecraft (useful for multi-spacecraft simulations)
     # dynamic_effectors::T_Effectors # List of dynamic effector models (gravity, drag, etc.)
 
@@ -258,7 +281,7 @@ function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::Abstr
                             inertia_tensor::SMatrix{3,3,Float64}=SMatrix{3, 3, Float64}(zeros(3,3)),
                             n_reaction_wheels::Int64=0,
                             n_thrusters::Int64=0,
-                            initial_condition::InitialCondition=InitialCondition(),
+                            initial_condition::AbstractInitialCondition=InitialCondition(),
                             id::Int64=1)
     joints_vec = Vector{Joint}(joints)
     links_vec = Vector{Link}(links)

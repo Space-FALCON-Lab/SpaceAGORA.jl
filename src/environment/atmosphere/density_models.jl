@@ -143,6 +143,11 @@ struct GRAMAtmosphereModel <: AbstractDensityModel
     core::GRAMSuite.GRAMAtmosphereModel
 end
 
+@kwdef struct ConstantDensityModel <: AbstractDensityModel
+    density_kg_m3::Float64
+    temperature_k::Float64
+end
+
 """
 Surrogate model wrapper kept shape-compatible with the previous implementation,
 including the ability to provide a non-GRAM base model for custom point fallback.
@@ -926,6 +931,7 @@ function getDensity(model::GRAMAtmosphereModel, h::Float64, lat::Float64, lon::F
     elseif !drag_state && !p.args.mission_configuration.keplerian
         rho, T, wind_vec = density_polyfit(h, p)
     else
+        # println("GRAM density altitude = $(h) m ($(h / 1e3) km)")
         rho, T, wind_vec = GRAMSuite.density_state(
             model.core,
             h,
@@ -939,6 +945,10 @@ function getDensity(model::GRAMAtmosphereModel, h::Float64, lat::Float64, lon::F
     end
 
     return rho, T, wind_vec
+end
+
+function getDensity(model::ConstantDensityModel, altitude_m::Float64, latitude_deg::Float64, longitude_deg::Float64, et::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
+    return model.density_kg_m3, model.temperature_k, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
 function getDensity(model::GRAMAtmosphereModelSurrogate, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
@@ -955,6 +965,7 @@ function getDensity(model::GRAMAtmosphereModelSurrogate, h::Float64, lat::Float6
     point_fallback = model.base_model isa GRAMAtmosphereModel ? nothing :
         (m, h_i, lat_i, lon_i, t_i, w_i) -> _gram_point_density(m, h_i, lat_i, lon_i, t_i, w_i)
 
+    println("GRAM density altitude = $(h) m ($(h / 1e3) km)")
     return GRAMSuite.surrogate_density_state(
         base_model,
         model.surrogate_file,

@@ -103,10 +103,8 @@ function _gram_kepler_target(
         end
 
         oe_target = SVector{7, Float64}(a, e, i, Ω1, ω1, ν1, 0.0)
-        r_target_vec, v_target_vec = orbitalelemtorv(oe_target, planet)
-        r_target_i = SVector{3, Float64}(Float64.(r_target_vec))
-        v_target_i = SVector{3, Float64}(Float64.(v_target_vec))
-        r_target_p, _ = r_intor_p!(r_target_i, v_target_i, planet)
+        r_target_i, v_target_i = orbitalelemtorv(oe_target, planet)
+        r_target_p, _ = r_intor_p!(SVector{3, Float64}(Float64.(r_target_i)), SVector{3, Float64}(Float64.(v_target_i)), planet)
         alt_target, lat_target, lon_target = rtolatlong(r_target_p, planet)
         return alt_target, lat_target, lon_target
     catch
@@ -269,6 +267,10 @@ function _gram_entry_target_allen_eggers(
     n_steps = clamp(n_steps, 2, _gram_entry_target_max_steps())
     Δτ = dt / n_steps
 
+    # Pre-compute degree-to-radian constants used for clamping.
+    _89deg  = deg2rad(89.0)
+    _899deg = deg2rad(89.9)
+
     @inbounds for _ in 1:n_steps
         r = max(1.0, planet.Rp_e + h)
         cosγ = cos(γ)
@@ -289,12 +291,28 @@ function _gram_entry_target_allen_eggers(
         lat_dot = v * cosγ * cosχ / r
         lon_dot = v * cosγ * sinχ / (r * coslat) - planet.ω[3]
 
-        v = max(1e-3, v + v_dot * Δτ)
-        γ = clamp(γ + γ_dot * Δτ, -deg2rad(89.0), deg2rad(89.0))
-        χ = atan(sin(χ + χ_dot * Δτ), cos(χ + χ_dot * Δτ))
-        h += h_dot * Δτ
-        lat = clamp(lat + lat_dot * Δτ, -deg2rad(89.9), deg2rad(89.9))
-        lon = atan(sin(lon + lon_dot * Δτ), cos(lon + lon_dot * Δτ))
+        v   = max(1e-3, v + v_dot * Δτ)
+        γ   = clamp(γ + γ_dot * Δτ, -_89deg, _89deg)
+        lat = clamp(lat + lat_dot * Δτ, -_899deg, _899deg)
+        h  += h_dot * Δτ
+
+        # Wrap χ and lon to (-π, π] without trig when the increment is small.
+        # Full atan2 fallback only when the value drifts outside (-π, π].
+        χ_new = χ + χ_dot * Δτ
+        if χ_new > π
+            χ_new -= 2π
+        elseif χ_new ≤ -π
+            χ_new += 2π
+        end
+        χ = χ_new
+
+        lon_new = lon + lon_dot * Δτ
+        if lon_new > π
+            lon_new -= 2π
+        elseif lon_new ≤ -π
+            lon_new += 2π
+        end
+        lon = lon_new
     end
 
     return h, lat, lon

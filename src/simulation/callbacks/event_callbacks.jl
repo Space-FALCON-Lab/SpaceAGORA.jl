@@ -55,7 +55,7 @@ function get_orbit_end_callback(num_sats::Int)
 
         # MissionOrbits should end when every active satellite reaches the requested
         # number of completed orbits, analogous to drag-passage event termination.
-        if completed_orbits >= target_orbits
+        if p.args.mission_configuration.mission_type == MissionOrbits && completed_orbits >= target_orbits
             all_active_reached_target = true
             @inbounds for sat_idx in eachindex(p.orbit_counter)
                 if p.is_active[sat_idx] && (p.orbit_counter[sat_idx] - 1) < target_orbits
@@ -158,6 +158,7 @@ function get_drag_state_callback(num_sats::Int)
         )
         integrator.opts.reltol = reltol_new # Adjust tolerances when exiting the atmosphere
         integrator.opts.abstol = abstol_new
+        schedule_event_driven_thruster_controls!(integrator, idx)
     end
 
     function affect_downcrossing!(integrator, idx::Int64)
@@ -231,7 +232,9 @@ function get_data_saving_callback(
     function save_func(u, t, integrator)
         return _save_snapshot(save_fields, u, t, integrator)
     end
-    return SavingCallback(save_func, saved_values; save_everystep=true)
+    data_rate = args.mission_configuration.data_rate
+    data_rate > 0.0 || throw(ArgumentError("mission_configuration.data_rate must be > 0.0, got $data_rate."))
+    return SavingCallback(save_func, saved_values; saveat=data_rate, save_everystep=false)
 end
 
 

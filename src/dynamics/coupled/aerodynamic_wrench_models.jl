@@ -120,6 +120,49 @@ end
     return workspace
 end
 
+@inline function _simulation_model_module_for_aero()
+    mod = @__MODULE__
+    while true
+        if isdefined(mod, :planet_frame_lpi)
+            return mod
+        end
+        parent = parentmodule(mod)
+        parent === mod && break
+        mod = parent
+    end
+    error("SimulationModel.planet_frame_lpi not found in module ancestry for aerodynamic_wrench_models.jl")
+end
+
+@inline function _store_vector_cache!(
+    cache::Vector{SVector{3, Float64}},
+    sat_idx::Int,
+    value::SVector{3, Float64}
+)::Nothing
+    if length(cache) < sat_idx
+        resize!(cache, sat_idx)
+        @inbounds for idx in eachindex(cache)
+            if !isassigned(cache, idx)
+                cache[idx] = SVector{3, Float64}(0.0, 0.0, 0.0)
+            end
+        end
+    end
+    @inbounds cache[sat_idx] = value
+    return nothing
+end
+
+@inline function _store_aero_caches!(
+    param::ODEParams,
+    sat_idx::Int,
+    drag_ii::SVector{3, Float64},
+    lift_ii::SVector{3, Float64},
+    cross_ii::SVector{3, Float64}
+)::Nothing
+    _store_vector_cache!(param.save_cache.drag_cache, sat_idx, drag_ii)
+    _store_vector_cache!(param.save_cache.lift_cache, sat_idx, lift_ii)
+    _store_vector_cache!(param.save_cache.cross_cache, sat_idx, cross_ii)
+    return nothing
+end
+
 function collect_and_reset_link_wrenches!(bodies)
     # Collect into fresh vectors to avoid aliasing when there is only one link.
     force_acc = MVector{3, Float64}(0.0, 0.0, 0.0)
@@ -297,7 +340,7 @@ function calcForceTorque(model::AerodynamicCoefficientConstant, x::AbstractVecto
     h_pp_hat = normalize(h_pp) # Unit vector of the planet relative angular momentum
     
     bank_angle = deg2rad(0.0)
-        
+
     lift_pp_hat = normalize(cross(h_pp_hat, vel_pp_rw_hat))
     # lift_pp_hat /= norm(lift_pp_hat) # Normalize the lift vector in planet relative frame
     drag_pp_hat = -vel_pp_rw_hat # Planet relative drag force direction
@@ -351,7 +394,7 @@ function calcForceTorque(model::AerodynamicCoefficientConstant, x::AbstractVecto
         # if montecarlo == true
         #     CL_body, CD_body = monte_carlo_aerodynamics(CL_body, CD_body, args)
         # end
-        
+
         drag_pp_body = q * CD_body * b.ref_area * drag_pp_hat                       # Planet relative drag force vector
         lift_pp_body = q * CL_body * b.ref_area * lift_pp_hat * cos(bank_angle)     # Planet relative lift force vector
 
@@ -397,6 +440,7 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     # cnf = param.cnf
     # orientation_sim = param.orientation_sim
     planet = param.args.environment_model.planet
+    ephemerides_model = param.args.environment_model.ephemerides_model
     orientation_sim = param.args.mission_configuration.orientation_sim
     # bodies, root_index = traverse_bodies(m.body, m.body.roots[1]) # Get all bodies in the simulation
     spacecraft = param.args.dynamics_model.spacecraft[i]
@@ -415,6 +459,7 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
 
     # Skip expensive aerodynamic geometry when the flow is effectively vacuum.
     if !isfinite(rho) || rho <= eps(Float64)
+        _store_aero_caches!(param, i, SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
         return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     end
 
@@ -450,15 +495,18 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     vel_pp_rw = vel_pp + wind_pp                  # relative wind vector, m / s
     vel_pp_rw_mag = norm(vel_pp_rw)
     if vel_pp_rw_mag <= eps(Float64)
+        _store_aero_caches!(param, i, SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
         return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     end
+    mach = vel_pp_rw_mag / sound_velocity # Mach number of the flow at the current altitude
+    S = sqrt(planet.γ * 0.5) * mach # Molecular speed ratio
     vel_pp_rw_hat = vel_pp_rw / vel_pp_rw_mag     # relative wind unit vector
     vel_pp_rw_inv_mag = inv(vel_pp_rw_mag)
     lift_pp_hat = normalize(cross(h_pp_hat, vel_pp_rw_hat))
     # lift_pp_hat /= norm(lift_pp_hat) # Normalize the lift vector in planet relative frame
     drag_pp_hat = -vel_pp_rw_hat # Planet relative drag force direction
     cross_pp_hat = cross(drag_pp_hat, lift_pp_hat) # Cross product of the drag and lift vectors in planet relative frame
-    q = 0.5 * rho * vel_pp_mag^2 # Dynamic pressure in planet relative frame, using the stage-consistent density value
+    q = 0.5 * rho * vel_pp_rw_mag^2 # Dynamic pressure in planet relative frame, using the stage-consistent density value
     L_PI_t = env_state.l_pi'
     vel_pi = orientation_sim ? L_PI_t * vel_pp_rw : SVector{3, Float64}(0.0, 0.0, 0.0)
     lift_scale = q * cos(bank_angle)
@@ -513,10 +561,13 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
         lift_body = L_PI_t * lift_pp_body   # Inertial lift force vector
         force_body = drag_body + lift_body + cross_body
 
-        return force_body, CL_body * b.ref_area, CD_body * b.ref_area, b.ref_area
+        return force_body, drag_body, lift_body, cross_body, CL_body * b.ref_area, CD_body * b.ref_area, b.ref_area
     end
 
     force_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+    drag_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+    lift_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+    cross_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
 
     # Determine angle of attack (α) and sideslip angle (β)
     # Vehicle Aerodynamic Forces
@@ -525,19 +576,28 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     if use_threads
         workspace = _aero_workspace_for_sat!(param, i, n_workers)
         thread_force = workspace.thread_force
+        thread_drag = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_workers]
+        thread_lift = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_workers]
+        thread_cross = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_workers]
         thread_cl = workspace.thread_cl
         thread_cd = workspace.thread_cd
         thread_area = workspace.thread_area
         @inbounds for worker_id in 1:n_workers
             thread_force[worker_id] .= 0.0
+            thread_drag[worker_id] .= 0.0
+            thread_lift[worker_id] .= 0.0
+            thread_cross[worker_id] .= 0.0
             thread_cl[worker_id] = 0.0
             thread_cd[worker_id] = 0.0
             thread_area[worker_id] = 0.0
         end
 
         ParallelPolicy.threaded_foreach_worker(length(bodies), decision.allotment) do worker_id, idx
-            force_body, cl_area, cd_area, area = compute_link_wrench!(idx)
+            force_body, drag_body, lift_body, cross_body, cl_area, cd_area, area = compute_link_wrench!(idx)
             thread_force[worker_id] .+= force_body
+            thread_drag[worker_id] .+= drag_body
+            thread_lift[worker_id] .+= lift_body
+            thread_cross[worker_id] .+= cross_body
             thread_cl[worker_id] += cl_area
             thread_cd[worker_id] += cd_area
             thread_area[worker_id] += area
@@ -545,14 +605,20 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
 
         @inbounds for worker_id in 1:n_workers
             force_ii .+= thread_force[worker_id]
+            drag_ii .+= thread_drag[worker_id]
+            lift_ii .+= thread_lift[worker_id]
+            cross_ii .+= thread_cross[worker_id]
             CL += thread_cl[worker_id]
             CD += thread_cd[worker_id]
             total_area += thread_area[worker_id]
         end
     else
         @inbounds for idx in eachindex(bodies)
-            force_body, cl_area, cd_area, area = compute_link_wrench!(idx)
+            force_body, drag_body, lift_body, cross_body, cl_area, cd_area, area = compute_link_wrench!(idx)
             force_ii .+= force_body
+            drag_ii .+= drag_body
+            lift_ii .+= lift_body
+            cross_ii .+= cross_body
             CL += cl_area
             CD += cd_area
             total_area += area
@@ -584,6 +650,8 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     # cnf.β_body = β
     # cnf.α_body = α
 
+    _store_aero_caches!(param, i, SVector{3, Float64}(drag_ii), SVector{3, Float64}(lift_ii), SVector{3, Float64}(cross_ii))
+    # println("Force_ii: ", force_ii, " Drag_ii: ", drag_ii, " vel_ii: ", vel_ii, " CL: ", CL, " CD: ", CD, " Alt: ", alt, " Lat: ", lat, " Lon: ", lon)
     return SVector{3, Float64}(force_ii), SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
@@ -592,6 +660,7 @@ function calcForceTorque(model::AerodynamicCoefficientNoBallisticFlight, x::Abst
     # cnf = param.cnf
     # orientation_sim = param.orientation_sim
     planet = param.args.environment_model.planet
+    ephemerides_model = param.args.environment_model.ephemerides_model
     orientation_sim = param.args.mission_configuration.orientation_sim
     # bodies, root_index = traverse_bodies(m.body, m.body.roots[1]) # Get all bodies in the simulation
     spacecraft = param.args.dynamics_model.spacecraft[i]
@@ -606,7 +675,9 @@ function calcForceTorque(model::AerodynamicCoefficientNoBallisticFlight, x::Abst
     h_ii_mag = norm(h_ii)           # Magnitude of the inertial angular momentum [m ^ 2 / s]
 
     # Inertial to planet relative transformation
-    pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, planet) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
+    et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
+    println("ephemerides_model: ", ephemerides_model)
+    pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, planet, et, ephemerides_model) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
     pos_pp_mag = norm(pos_pp) # Magnitude of the planet relative position
 
     vel_pp_mag = norm(vel_pp)

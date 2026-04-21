@@ -1,4 +1,9 @@
-function _run_simulation_dataframe(args::SimulationConfiguration, scenario_name::String, truth::AtmosphereTruthConfig, profile::Symbol)
+function _run_simulation_dataframe(
+    args::SimulationConfiguration,
+    scenario_name::String,
+    truth::AtmosphereTruthConfig,
+    profile::Symbol
+)
     return mktempdir() do tmp
         cfg_run = SimulationConfiguration(
             file_paths=args.file_paths,
@@ -92,7 +97,22 @@ function _run_simulation_dataframe(args::SimulationConfiguration, scenario_name:
     end
 end
 
-function _initial_condition_from_time_aligned_telemetry(telemetry)
+function _initial_condition_from_time_aligned_telemetry(cfg::TimeAlignedScenarioConfig, telemetry)
+    if telemetry.x_ic_km !== nothing
+        r_m = SVector{3, Float64}(telemetry.x_ic_km, telemetry.y_ic_km, telemetry.z_ic_km) .* 1e3
+        v_mps = SVector{3, Float64}(telemetry.vx_ic_kmps, telemetry.vy_ic_kmps, telemetry.vz_ic_kmps) .* 1e3
+        if cfg.cartesian_ic_frame == :planet_fixed
+            et0 = _initial_time_et(cfg.initial_time)
+            r_m, v_mps = _planet_fixed_to_j2000_state(cfg.planet_name, et0, r_m, v_mps)
+        end
+        return CartesianInitialCondition(
+            collect(r_m),
+            collect(v_mps)
+        )
+    end
+    all(isfinite, (telemetry.sma_km, telemetry.ecc, telemetry.inc_deg, telemetry.aop_deg, telemetry.raan_deg, telemetry.ta_deg)) || throw(
+        ArgumentError("Time-aligned telemetry is missing both Cartesian ICs and finite Keplerian initial-condition fields.")
+    )
     sma_m = telemetry.sma_km * 1e3
     ra_m = sma_m * (1.0 + telemetry.ecc)
     rp_m = sma_m * (1.0 - telemetry.ecc)
@@ -188,14 +208,14 @@ function _run_single_scenario(cfg::TimeAlignedScenarioConfig, profile::Symbol)
     final_is_quick = profile == :quick
     final_points = final_is_quick ? cfg.max_points_quick : cfg.max_points_full
     final_telemetry = _load_time_aligned_telemetry(cfg, final_points)
-    final_ic = _initial_condition_from_time_aligned_telemetry(final_telemetry)
+    final_ic = _initial_condition_from_time_aligned_telemetry(cfg, final_telemetry)
     final_mission_time_s = max(final_telemetry.time_s[end] - final_telemetry.time_s[1], 1.0)
 
     eval_profile = (use_calibration && cal.search_on_quick_subset && profile == :full) ? :quick : profile
     eval_is_quick = eval_profile == :quick
     eval_points = eval_is_quick ? cfg.max_points_quick : cfg.max_points_full
     eval_telemetry = _load_time_aligned_telemetry(cfg, eval_points)
-    eval_ic = _initial_condition_from_time_aligned_telemetry(eval_telemetry)
+    eval_ic = _initial_condition_from_time_aligned_telemetry(cfg, eval_telemetry)
     eval_mission_time_s = max(eval_telemetry.time_s[end] - eval_telemetry.time_s[1], 1.0)
 
     cd_candidates = (use_calibration && cal.fit_cd_scale) ?
@@ -430,4 +450,3 @@ end
 if abspath(PROGRAM_FILE) == abspath(@__FILE__)
     run_verification_cli(copy(ARGS))
 end
-

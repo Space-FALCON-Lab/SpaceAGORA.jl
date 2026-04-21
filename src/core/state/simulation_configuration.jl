@@ -113,6 +113,7 @@ module SimConfig
         mission_time::Float64 # Total mission time in seconds (if mission_type is "Time")
         orientation_sim::Bool # Whether to simulate orientation dynamics (if false, only position and velocity are simulated)
         num_steps_to_save::Int # Number of time steps to store in memory during the simulation before writing to a file
+        data_rate::Float64 # Fixed data output rate in seconds, used for saveat in solve
 
         function MissionConfiguration(
             mission_type::MissionType,
@@ -120,18 +121,21 @@ module SimConfig
             number_of_orbits::Integer,
             mission_time::Real,
             orientation_sim::Bool,
-            num_steps_to_save::Integer
+            num_steps_to_save::Integer,
+            data_rate::Float64=10.0
         )
             number_of_orbits > 0 || throw(ArgumentError("MissionConfiguration.number_of_orbits must be > 0; got $number_of_orbits."))
             mission_time > 0 || throw(ArgumentError("MissionConfiguration.mission_time must be > 0; got $mission_time."))
             num_steps_to_save > 0 || throw(ArgumentError("MissionConfiguration.num_steps_to_save must be > 0; got $num_steps_to_save."))
+            data_rate > 0.0 || throw(ArgumentError("MissionConfiguration.data_rate must be > 0.0; got $data_rate."))
             return new(
                 mission_type,
                 keplerian,
                 Int(number_of_orbits),
                 Float64(mission_time),
                 orientation_sim,
-                Int(num_steps_to_save)
+                Int(num_steps_to_save),
+                data_rate
             )
         end
     end # struct MissionConfiguration
@@ -142,7 +146,8 @@ module SimConfig
         number_of_orbits::Integer=1,
         mission_time::Real=90.0*60.0*20.0*10.0,
         orientation_sim::Bool=false,
-        num_steps_to_save::Integer=1000
+        num_steps_to_save::Integer=1000,
+        data_rate::Float64=10.0
     )
         return MissionConfiguration(
             _parse_mission_type(mission_type),
@@ -150,7 +155,8 @@ module SimConfig
             number_of_orbits,
             mission_time,
             orientation_sim,
-            num_steps_to_save
+            num_steps_to_save,
+            data_rate
         )
     end
 

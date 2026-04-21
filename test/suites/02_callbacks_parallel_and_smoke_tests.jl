@@ -67,6 +67,41 @@
         args_orbits
     )
 
+    thruster_control = make_base_thruster_model(
+        thrust=2.0,
+        Δv=20.0,
+        start_burn_time=-1.0,
+        stop_burn_time=-1.0,
+        Isp=300.0
+    )
+    args_control = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        control_effectors=(thruster_control,),
+        control_rates=[1.0],
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    control_cbs = SimulationModel.SimulationCallbacks.get_control_callbacks(1, args_control)
+    p_control = ODEParams{1}(args=args_control)
+    u_control = build_initial_conditions(args_control)
+    integrator_control = MockCallbackIntegrator(
+        p_control,
+        u_control,
+        0.0,
+        MockCallbackOpts(1.0, 1e-8, 1e-8),
+        1,
+        Inf
+    )
+    control_cbs[1].affect!(integrator_control)
+    @test isfinite(thruster_control.start_burn_time[1])
+    @test isfinite(thruster_control.stop_burn_time[1])
+    @test integrator_control.tstop_max >= thruster_control.start_burn_time[1]
+
     orbit_cb = SimulationModel.SimulationCallbacks.get_orbit_end_callback(1)
     p_orbit = ODEParams{1}(args=args_orbits)
     u_orbit = build_initial_conditions(args_orbits)
@@ -1268,10 +1303,22 @@ end
     @test venus.μ > 0.0
     @test titan.μ > 0.0
 
+    earth = Earth("", SPICE_PATH)
+    moon = Moon("", SPICE_PATH)
+    earth_radii_km = lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
+        bodvrd("EARTH", "RADII")
+    end
+    moon_radii_km = lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
+        bodvrd("MOON", "RADII")
+    end
+    @test isapprox(earth.Rp_e, earth_radii_km[1] * 1e3; atol=1e-6, rtol=0.0)
+    @test isapprox(earth.Rp_p, earth_radii_km[3] * 1e3; atol=1e-6, rtol=0.0)
+    @test isapprox(moon.Rp_e, moon_radii_km[1] * 1e3; atol=1e-6, rtol=0.0)
+    @test isapprox(moon.Rp_p, moon_radii_km[3] * 1e3; atol=1e-6, rtol=0.0)
+
     mktempdir() do tmp
         topo_file = joinpath(tmp, "topo_harmonics.csv")
         write(topo_file, "degree,order,C,S\n0,0,1.0,0.0\n1,0,0.1,0.0\n1,1,0.05,0.02\n")
-        earth = Earth("", SPICE_PATH)
         SimulationModel.Planets.TopographyHarmonicsWorkspace!(topo_file, earth)
         @test size(earth.topography_workspace.Clm) == (2, 2)
         @test size(earth.topography_workspace.Slm) == (2, 2)

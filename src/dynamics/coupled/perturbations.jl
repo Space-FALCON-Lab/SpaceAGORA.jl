@@ -30,14 +30,16 @@ const M_HAT_ECEF = SVector{3, Float64}(
 )
 const sqrt_2 = sqrt(2.0)
 const sqrt_3 = sqrt(3.0)
-const _SPICE_BARYCENTER_BODIES = ("mercury", "venus", "earth", "mars", "jupiter", "saturn", "uranus", "neptune", "pluto")
+const _J2_COMPARE_LOG_COUNT = Base.Threads.Atomic{Int}(0)
+const _MARS_MU_M3S2 = 0.4282837285418775e5 * 1e9
+const _SPICE_FORCE_BARYCENTER_BODIES = ("mars",)
 const _THIRD_BODY_MU = Dict{String, Float64}(
-    "sun" => 1.3271244002331e20,
+    "sun" => 1.32712440041279419e20,
     "mercury" => 2.2032e13,
-    "venus" => 3.24858592e14,
+    "venus" => 3.248585926e14,
     "earth" => 3.986004418e14,
     "moon" => 4.9028005821478e12,
-    "mars" => 4.2828314e13,
+    "mars" => _MARS_MU_M3S2,
     "jupiter" => 1.26686534e17,
     "saturn" => 3.7931187e16,
     "uranus" => 5.793939e15,
@@ -50,13 +52,29 @@ const _THIRD_BODY_MU = Dict{String, Float64}(
 @inline _mu_lookup_name(name::String) = replace(_canonical_spice_name(name), "_barycenter" => "")
 @inline function _spice_query_name(name::String)
     key = _canonical_spice_name(name)
-    return (endswith(key, "_barycenter") || !(key in _SPICE_BARYCENTER_BODIES)) ? key : key * "_barycenter"
+    if endswith(key, "_barycenter")
+        return key
+    end
+    return key in _SPICE_FORCE_BARYCENTER_BODIES ? key * "_barycenter" : key
 end
 @inline function _resolve_third_body_mu(name::String)::Float64
     key = _mu_lookup_name(name)
     μ = get(_THIRD_BODY_MU, key, NaN)
     isfinite(μ) || throw(ArgumentError("Unsupported third body '$name' for NBodyGravityModel. Add its GM to _THIRD_BODY_MU in Perturbations.jl."))
     return μ
+end
+
+@inline function _spice_lock()
+    mod = @__MODULE__
+    while true
+        if isdefined(mod, :RuntimeServices)
+            return getproperty(mod, :RuntimeServices).SPICE_LOCK
+        end
+        parent = parentmodule(mod)
+        parent === mod && break
+        mod = parent
+    end
+    error("RuntimeServices.SPICE_LOCK not found in module ancestry for perturbations.jl")
 end
 
 # N-body gravity perturbation model
@@ -179,7 +197,22 @@ struct GravitationalHarmonicsModel{P <: AbstractPlanet} <: AbstractForceTorqueMo
     N2::Matrix{Float64} # Preallocated N2 array
     sqrt_2n_plus_3::Vector{Float64} # Precalculated sqrt(2n+3) values
     coefficient_normalization::Symbol # Canonicalized source normalization keyword
+    active_orders_by_degree::Vector{Vector{Int}} # Nonzero tesseral/sectoral orders per degree (m >= 1)
+    reference_radius_m::Float64 # Reference radius associated with the harmonics coefficients
     planet::P # Planet data for primary body
+end
+
+@inline function _infer_harmonics_reference_radius_m(coefficients_file::String, planet::AbstractPlanet)::Float64
+    file_name = lowercase(basename(coefficients_file))
+    if file_name == "lp165p.csv"
+        # LP165P is conventionally distributed with a 1738.0 km lunar reference radius.
+        return 1.7380e6
+    end
+    if planet.name == "Mars"
+        # Mars gravity field files used by this project are referenced to 3396.0 km.
+        return 3.3960e6
+    end
+    return planet.Rp_e
 end
 
 @inline function _make_harmonics_scratch_workspace(model::GravitationalHarmonicsModel)::HarmonicsScratchWorkspace
@@ -279,6 +312,8 @@ function NBodyGravityModel(body_names::Vector{String}, primary_body_name::String
         Mars("", spice_path)
     elseif pname == "venus"
         Venus("", spice_path)
+    elseif pname == "moon"
+        Moon("", spice_path)
     elseif pname == "titan"
         Titan("", spice_path)
     else
@@ -304,7 +339,10 @@ function GravitationalHarmonicsModel(
     M::Int64,
     coefficients_file::String,
     planet::P;
-    coefficient_normalization::Symbol=:full
+    coefficient_normalization::Symbol=:full,
+    coefficients_normalized::Bool=true,
+    j2_source::Symbol=:file_c20,
+    reference_radius_m::Union{Nothing, Float64}=nothing
 ) where P <: AbstractPlanet
     if L < 0 || M < 0
         throw(ArgumentError("Gravitational harmonics degree/order must be non-negative, got L=$L, M=$M."))
@@ -314,27 +352,113 @@ function GravitationalHarmonicsModel(
     end
     normalized_source = _canonical_harmonics_normalization(coefficient_normalization)
 
-    harmonics_data = CSV.File(coefficients_file)
-    total_data_size = size(harmonics_data, 1)
-    degree = harmonics_data.degree[end] + 1
-    if L + 1 > degree
+    # Use CSV.Rows for streaming/lazy reading instead of materializing entire file.
+    # This is critical for large files like Venus MGNP180U.csv (16K+ rows).
+    # We process rows on-the-fly and skip those beyond our requested degree/order.
+
+    # First: Quick structure validation using CSV.File to detect headers (minimal overhead for small inspection)
+    test_parse = CSV.File(coefficients_file; delim=',', stripwhitespace=true, ignorerepeated=true, limit=1)
+    has_degree_header = hasproperty(test_parse, :degree)
+
+    # Now do the expensive iteration with streaming to avoid materializing full columns
+    C_dict = Dict{Tuple{Int,Int}, Float64}()  # Temporary storage - only entries we need
+    S_dict = Dict{Tuple{Int,Int}, Float64}()
+    max_degree_file = 0
+
+    # Parse the entire file row-by-row using CSV.Rows (lazy evaluation)
+    open(coefficients_file) do io
+        rows = CSV.Rows(io; delim=',', stripwhitespace=true, ignorerepeated=true)
+        for (row_num, row) in enumerate(rows)
+            # Skip header row if it exists
+            if row_num == 1 && has_degree_header
+                continue
+            end
+
+            try
+                # Extract values by column position (works for both header and headerless files)
+                l = Int(floor(parse(Float64, string(row[1])))) + 1  # degree (0-based in file)
+                m = Int(floor(parse(Float64, string(row[2])))) + 1  # order (0-based in file)
+                c = parse(Float64, string(row[3]))
+                s = parse(Float64, string(row[4]))
+
+                # Track max degree found
+                max_degree_file = max(max_degree_file, l)
+
+                # Only store coefficients within requested range
+                if l <= L + 1 && m <= M + 1
+                    C_dict[(l, m)] = c
+                    S_dict[(l, m)] = s
+                end
+            catch
+                # Skip rows with parsing errors
+                continue
+            end
+        end
+    end
+
+    if max_degree_file == 0
+        throw(ArgumentError("No valid harmonic coefficients found in $coefficients_file"))
+    end
+
+    if L + 1 > max_degree_file
         throw(ArgumentError(
-            "Requested harmonics degree L=$L exceeds coefficients file support (max degree=$(degree - 1))."
+            "Requested harmonics degree L=$L exceeds coefficients file support (max degree=$(max_degree_file - 1))."
         ))
     end
-    if M + 1 > degree
+    if M + 1 > max_degree_file
         throw(ArgumentError(
-            "Requested harmonics order M=$M exceeds coefficients file support (max order=$(degree - 1))."
+            "Requested harmonics order M=$M exceeds coefficients file support (max order=$(max_degree_file - 1))."
         ))
     end
 
+    # Cap the degree to only what we need to reduce memory allocation.
+    # This is critical for files like Venus MGNP180U.csv which has degree 180 but we often only use degree 50.
+    degree = L + 1
+
     C = zeros(Float64, degree, degree)
     S = zeros(Float64, degree, degree)
-    for i=1:total_data_size
-        l = harmonics_data.degree[i] + 1 # Get the degree, l, from the data and convert to an index (subtract 1 because the data starts at 2nd degree coefficient)
-        m = harmonics_data.order[i] + 1 # Get the order, m, from the data and convert to an index (add 1 because the data starts at 0th order coefficient)
-        C[l, m] = harmonics_data.C[i]
-        S[l, m] = harmonics_data.S[i]
+
+    # Convert unnormalized coefficients to fully normalized form when requested.
+    # This follows the GMAT HarmonicGravity V(n,m) recurrence used during file load.
+    norm_factor = nothing
+    if !coefficients_normalized
+        norm_factor = zeros(Float64, L + 1, M + 1)
+        @inbounds for n = 0:L
+            i = n + 1
+            norm_factor[i, 1] = sqrt(2n + 1)
+            if M >= 1
+                vnm = sqrt(2 * (2n + 1))
+                @inbounds for m = 1:min(M, n)
+                    vnm /= sqrt((n + m) * (n - m + 1))
+                    norm_factor[i, m + 1] = vnm
+                end
+            end
+        end
+    end
+
+    # Transfer coefficients from dict to matrices, applying normalization if needed
+    for ((l, m), c) in pairs(C_dict)
+        s = S_dict[(l, m)]
+        if !coefficients_normalized
+            vnm = norm_factor[l, m]
+            if vnm != 0.0
+                c /= vnm
+                s /= vnm
+            else
+                c = 0.0
+                s = 0.0
+            end
+        end
+        C[l, m] = c
+        S[l, m] = s
+    end
+
+    if !(j2_source in (:file_c20, :planet_j2))
+        throw(ArgumentError("Unsupported j2_source=$(j2_source). Expected :file_c20 or :planet_j2."))
+    end
+    if j2_source == :planet_j2 && L >= 2
+        C[3, 1] = -planet.J2 / sqrt(5.0)
+        S[3, 1] = 0.0
     end
     _convert_harmonics_coefficients_to_full!(C, S, L, M, normalized_source)
 
@@ -377,11 +501,26 @@ function GravitationalHarmonicsModel(
         sqrt_2n_plus_3[n] = sqrt(2*n + 3)
     end
 
+    C_trunc = C[1:(L + 1), 1:(M + 1)]
+    S_trunc = S[1:(L + 1), 1:(M + 1)]
+
+    active_orders_by_degree = [Int[] for _ in 1:(L + 1)]
+    @inbounds for l = 1:L
+        i = l + 1
+        active = active_orders_by_degree[i]
+        @inbounds for m = 1:min(M, l)
+            j = m + 1
+            if C_trunc[i, j] != 0.0 || S_trunc[i, j] != 0.0
+                push!(active, m)
+            end
+        end
+    end
+
     return GravitationalHarmonicsModel(
         L,
         M,
-        C[1:(L + 1), 1:(M + 1)],
-        S[1:(L + 1), 1:(M + 1)],
+        C_trunc,
+        S_trunc,
         A,
         R,
         I,
@@ -391,6 +530,8 @@ function GravitationalHarmonicsModel(
         N2,
         sqrt_2n_plus_3,
         normalized_source,
+        active_orders_by_degree,
+        reference_radius_m === nothing ? _infer_harmonics_reference_radius_m(coefficients_file, planet) : reference_radius_m,
         planet
     )
 end
@@ -434,8 +575,9 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
             pos_primary_k = pos_primary_k_all[k]
             pos_spacecraft_k = pos_primary_k - pos_ii
             pos_spacecraft_k_mag = norm(pos_spacecraft_k)
-            thread_force[worker_id] .+= mass * model.body_mus[k] * (
-                (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
+            pos_primary_k_mag = norm(pos_primary_k)
+            @fastmath thread_force[worker_id] .+= mass * model.body_mus[k] * (
+                (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / (pos_primary_k_mag * pos_primary_k_mag * pos_primary_k_mag))
             )
         end
         @inbounds for worker_id in 1:n_workers
@@ -446,8 +588,9 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
             pos_primary_k = pos_primary_k_all[k]
             pos_spacecraft_k = pos_primary_k - pos_ii
             pos_spacecraft_k_mag = norm(pos_spacecraft_k)
-            force_ii += mass * model.body_mus[k] * (
-                (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / norm(pos_primary_k)^3)
+            pos_primary_k_mag = norm(pos_primary_k)
+            @fastmath force_ii += mass * model.body_mus[k] * (
+                (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / (pos_primary_k_mag * pos_primary_k_mag * pos_primary_k_mag))
             )
         end
     end
@@ -798,7 +941,6 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
     else
         SVector{3, Float64}(0.0, 0.0, 0.0)
     end
-
     accel_ii = _srp_total_acceleration_ii(model, planet, pos_ii, pos_primary_sun, mass)
     force_ii = mass * SVector{3, Float64}(accel_ii)
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
@@ -999,89 +1141,140 @@ the model's internal fully normalized convention. The inverse-square central ter
 separately by the base gravity effector and is intentionally not included here.
 """
 function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    # cnf = param.cnf
-    
-    rVec_cart = SVector{3, Float64}(x.pos)
-    mass = x.mass               # Mass of the spacecraft, change to x.m if using StructArrays in Complete_passage
+    et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
+
+    # Transform from J2000 inertial to planet-fixed using the configured ephemerides model.
+    L_PI = planet_frame_lpi(model.planet, et, param.args.environment_model.ephemerides_model)
+    rVec_cart = L_PI * SVector{3, Float64}(x.pos) # convert from inertial to planet-fixed frame for gravity calculation
+    mass = x.mass
 
     workspace = _harmonics_workspace_for_sat!(model, param, i)
     A = workspace.A
     R = workspace.R
     I = workspace.I
 
-    RE = param.args.environment_model.planet.Rp_e
+    RE = model.reference_radius_m
     r = norm(rVec_cart)
-    s,t,u=normalize(rVec_cart)
+    inv_r = 1.0 / r
+    s = rVec_cart[1] * inv_r
+    t = rVec_cart[2] * inv_r
+    u = rVec_cart[3] * inv_r
     L = model.L
     M = model.M
-    @fastmath begin
-        A[2, 1] = u * sqrt_3
-        # Fill the off diagonal elements of A
-        @inbounds @simd for n = 1:L+1
-            i = n + 1
-            A[i + 1, i] = u * model.sqrt_2n_plus_3[n] * A[i, i]
-        end
-        # Fill the rest of A
-        @inbounds for m = 0:M+1
-            j = m + 1
-            @inbounds for l = m+2:L+1
-                i = l + 1
-                A[i, j] = u * model.N1[i, j] * A[i - 1, j] - model.N2[i, j] * A[i - 2, j]
-            end
-            if m == 0
-                R[j] = 1.0
-                I[j] = 0.0
-            else
-                R_term = R[j - 1]
-                I_term = I[j - 1]
-                R[j] = s * R_term - t * I_term
-                I[j] = s * I_term + t * R_term
-            end
-        end
 
-        ρ = RE/r
-        ρ_np1 = -model.planet.μ/r * ρ
-        a1 = a2 = a3 = a4 = 0.0
-        @inbounds for l = 1:L
-            i = l + 1
-            ρ_np1 *= ρ
-            sum1 = 0.0
-            sum2 = 0.0
-            sum3 = 0.0
-            sum4 = 0.0
-            @inbounds for m = 0:min(l, M)
-                j = m + 1
-                C = model.C[i, j]
-                S = model.S[i, j]
-                if m == 0
-                    R_term = 0.0
-                    I_term = 0.0
-                else
-                    R_term = R[j - 1]
-                    I_term = I[j - 1]
-                end
-                D = (model.C[i, j] * R[j] + model.S[i, j] * I[j]) * sqrt_2
-                E = ifelse(m == 0, 0.0, (C * R_term + S * I_term) * sqrt_2)
-                F = ifelse(m == 0, 0.0, (S * R_term - C * I_term) * sqrt_2)
-
-                # Avv00, Avv01, Avv11 = A[i, j], model.VR01[i, j] * A[i, j+1], model.VR11[i, j] * A[i+1, j+1]
-
-                sum1 += m * A[i, j] * E
-                sum2 += m * A[i, j] * F
-                sum3 += model.VR01[i, j] * A[i, j + 1] * D
-                sum4 += model.VR11[i, j] * A[i + 1, j + 1] * D
-            end
-            rr = ρ_np1/RE
-            a1 += rr * sum1
-            a2 += rr * sum2
-            a3 += rr * sum3
-            a4 -= rr * sum4
-        end
+    # NOTE: A[1,1] is already initialised to 1.0 in _make_harmonics_scratch_workspace.
+    # We only need to refresh the sub-diagonal entries that depend on the current
+    # position (u = z/r changes every call).
+    A[2, 1] = u * sqrt_3
+    @inbounds @fastmath for n = 1:L+1
+        row = n + 1
+        A[row + 1, row] = u * model.sqrt_2n_plus_3[n] * A[row, row]
     end
 
-    force_ii = mass * SVector{3, Float64}(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4) # Store gravity in config for other uses
+    # Longitude trig recurrence: R[j] = Re[(s+it)^(j-1)], I[j] = Im[(s+it)^(j-1)]
+    R[1] = 1.0
+    I[1] = 0.0
+    Rn = 1.0
+    In = 0.0
+    @inbounds @fastmath for j = 2:(M + 2)
+        Rn, In = s * Rn - t * In, s * In + t * Rn
+        R[j] = Rn
+        I[j] = In
+    end
 
-    # cnf.gravity_harmonics_ii .= force_ii
+    ρ = RE * inv_r
+    a1 = a2 = a3 = a4 = 0.0
+
+    max_recur_row = 2
+    ρ_np1 = -model.planet.μ * inv_r * ρ
+    @inbounds @fastmath for l = 1:L
+        row = l + 1
+
+        if row > max_recur_row
+            jmax = min(max(M, 1) + 1, l - 1)
+            @inbounds for j = 1:jmax
+                A[row, j] = u * model.N1[row, j] * A[row - 1, j] - model.N2[row, j] * A[row - 2, j]
+            end
+            max_recur_row = row
+        end
+
+        next_row = row + 1
+        if next_row > max_recur_row
+            jmax_next = min(max(M, 1) + 1, l)
+            @inbounds for j = 1:jmax_next
+                A[next_row, j] = u * model.N1[next_row, j] * A[next_row - 1, j] - model.N2[next_row, j] * A[next_row - 2, j]
+            end
+            max_recur_row = next_row
+        end
+
+        ρ_np1 *= ρ
+        rr = ρ_np1 / RE
+        sum1 = 0.0
+        sum2 = 0.0
+        sum3 = 0.0
+        sum4 = 0.0
+
+        C0 = model.C[row, 1]
+        # I[1] == 0.0 always; R[1] == 1.0 always — exploit this to save two multiplies.
+        D0 = C0 * sqrt_2
+        sum3 += model.VR01[row, 1] * A[row, 2] * D0
+        sum4 += model.VR11[row, 1] * A[row + 1, 2] * D0
+
+        active_orders = model.active_orders_by_degree[row]
+        @inbounds @fastmath for idx in eachindex(active_orders)
+            m = active_orders[idx]
+            j = m + 1
+            C = model.C[row, j]
+            S = model.S[row, j]
+            R_term = R[j - 1]
+            I_term = I[j - 1]
+            Rj  = R[j]
+            Ij  = I[j]
+            D = (C * Rj  + S * Ij)  * sqrt_2
+            E = (C * R_term + S * I_term) * sqrt_2
+            F = (S * R_term - C * I_term) * sqrt_2
+
+            mA = m * A[row, j]
+            sum1 += mA * E
+            sum2 += mA * F
+            sum3 += model.VR01[row, j] * A[row, j + 1] * D
+            sum4 += model.VR11[row, j] * A[row + 1, j + 1] * D
+        end
+
+        a1 += rr * sum1
+        a2 += rr * sum2
+        a3 += rr * sum3
+        a4 -= rr * sum4
+    end
+
+    g_pp_generic = SVector{3, Float64}(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4)
+    force_ii = mass * L_PI' * g_pp_generic
+
+    compare_j2 = lowercase(strip(get(ENV, "SPACEAGORA_DEBUG_COMPARE_J2", "0"))) in ("1", "true", "yes", "on")
+    if compare_j2 && model.L == 2 && model.M == 0
+        C20 = model.C[3, 1]
+        if isfinite(C20) && C20 != 0.0
+            x_pp, y_pp, z_pp = rVec_cart
+            r2 = r * r
+            r4 = r2 * r2
+            z2 = z_pp * z_pp
+            J2 = -sqrt(5.0) * C20
+
+            common = 1.5 * model.planet.μ * J2 * RE^2 / r4
+            g_pp_analytic = SVector{3, Float64}(
+                common * (x_pp / r) * (5.0 * z2 / r2 - 1.0),
+                common * (y_pp / r) * (5.0 * z2 / r2 - 1.0),
+                common * (z_pp / r) * (5.0 * z2 / r2 - 3.0)
+            )
+
+            Δg_pp = g_pp_generic - g_pp_analytic
+            rel = norm(Δg_pp) / max(norm(g_pp_analytic), 1e-30)
+            prev = Base.Threads.atomic_add!(_J2_COMPARE_LOG_COUNT, 1)
+            if prev < 20
+                @info "J2 generic-vs-analytic comparison" sat=i et=et r_m=r c20=C20 j2=J2 g_generic_pp=norm(g_pp_generic) g_analytic_pp=norm(g_pp_analytic) delta_pp=norm(Δg_pp) rel_pp=rel
+            end
+        end
+    end
 
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
@@ -1299,23 +1492,27 @@ function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64
         return 1.0
     end
 
-    if dot(r_sun, r_sat) >= 0 # check the cos of the angle between the satellite and the Sun. If positive (angle less than 90 degrees), the satellite is not in eclipse
+    # Precompute dot product and reciprocals used multiple times below.
+    dot_rs_rsat = dot(r_sun, r_sat)
+    if dot_rs_rsat >= 0 # check the cos of the angle between the satellite and the Sun. If positive (angle less than 90 degrees), the satellite is not in eclipse
         return 1.0 # If the satellite is not in eclipse, return 1.0
     end
+    inv_r_sun_norm = 1.0 / r_sun_norm
+    inv_r_sat_norm = 1.0 / r_sat_norm
     # Eclipse conditions
-    f1 = asin(_clamp_unit((rs + rp) / r_sun_norm)) # Penumbra angle
-    f2 = asin(_clamp_unit((rs - rp) / r_sun_norm)) # Umbra angle
-    s0 = -dot(r_sat, r_sun) / r_sun_norm # Plane-axis intersection and planet center distance
+    f1 = asin(_clamp_unit((rs + rp) * inv_r_sun_norm)) # Penumbra angle
+    f2 = asin(_clamp_unit((rs - rp) * inv_r_sun_norm)) # Umbra angle
+    s0 = -dot_rs_rsat * inv_r_sun_norm # Plane-axis intersection and planet center distance
     c1 = s0 + rp * sin(f1) # Distance from fundamental plane to cone vertex V1
     c2 = s0 - rp * sin(f2) # Distance from fundamental plane to cone vertex V2
     l1 = c1*tan(f1) # Radius of penumbra cone in fundamental plane
     l2 = c2*tan(f2) # Radius of umbra cone in fundamental plane
     l = √(max(r_sat_norm^2 - s0^2, 0.0)) # Distance from fundamental plane to satellite
-    
+
     # Apparent radii of sun, planet, and apparent separation of sun and planet, respectively
-    a = asin(_clamp_unit(rs / r_sun_norm)) # Apparent radius of the Sun
-    b = asin(_clamp_unit(rp / r_sat_norm)) # Apparent radius of the planet
-    c = acos(_clamp_unit(-dot(r_sun, r_sat) / (r_sun_norm * r_sat_norm))) # Apparent separation of the Sun and planet
+    a = asin(_clamp_unit(rs * inv_r_sun_norm)) # Apparent radius of the Sun
+    b = asin(_clamp_unit(rp * inv_r_sat_norm)) # Apparent radius of the planet
+    c = acos(_clamp_unit(-dot_rs_rsat * inv_r_sun_norm * inv_r_sat_norm)) # Apparent separation of the Sun and planet
     if c < b - a # Total eclipse condition
         return 0.0 # If the satellite is in total eclipse, return 0.0
     elseif c < a - b # Annular eclipse condition

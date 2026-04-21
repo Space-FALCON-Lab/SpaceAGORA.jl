@@ -29,24 +29,21 @@ function _build_solver_tolerances(u_state::ComponentVector, args)
     abstol_state = copy(u_state)
     reltol_state .= tol.reltol_orbit
     abstol_state .= tol.abstol_orbit
+    orientation_sim = args.mission_configuration.orientation_sim
+    reltol_q = tol.reltol_quaternion
+    abstol_q = tol.abstol_quaternion
+    # Single pass over all spacecraft to set mass, heat load, and (when enabled)
+    # orientation tolerances — avoids iterating the spacecraft array 2–3 times.
     @inbounds for i in eachindex(reltol_state.sc)
         reltol_state.sc[i].mass = reltol_mass
         abstol_state.sc[i].mass = abstol_mass
         reltol_state.sc[i].heat_loads .= reltol_heat
         abstol_state.sc[i].heat_loads .= abstol_heat
-    end
-
-    if args.mission_configuration.orientation_sim
-        @inbounds for i in eachindex(reltol_state.sc)
+        if orientation_sim
             reltol_state.sc[i].ω .= reltol_ω
             abstol_state.sc[i].ω .= abstol_ω
-        end
-    end
-
-    if args.mission_configuration.orientation_sim
-        @inbounds for i in eachindex(reltol_state.sc)
-        reltol_state.sc[i].q .= tol.reltol_quaternion
-        abstol_state.sc[i].q .= tol.abstol_quaternion
+            reltol_state.sc[i].q .= reltol_q
+            abstol_state.sc[i].q .= abstol_q
         end
     end
     return reltol_state, abstol_state
@@ -68,15 +65,23 @@ end
         return :split_imex
     elseif mode in ("multirate", "multirate_split", "split_multirate", "mr")
         return :multirate
+    elseif mode in ("dp8", "dormandprince8", "dop8")
+        return :dp8
     end
     throw(ArgumentError(
-        "Unsupported SPACEAGORA_SOLVER_MODE='$mode'. Use one of: tsit5, symplectic, gravity_backbone_split, auto_stiff, rodas5p, split_imex, multirate."
+        "Unsupported SPACEAGORA_SOLVER_MODE='$mode'. Use one of: tsit5, symplectic, gravity_backbone_split, dp8, auto_stiff, rodas5p, split_imex, multirate."
     ))
 end
 
 @inline function _retcode_is_stiff_symptom(retcode)::Bool
-    rc = string(retcode)
-    return rc in ("Unstable", "DtLessThanMin", "MaxIters", "InitialFailure")
+    # Convert once to Symbol (zero-allocation for Symbol/ReturnCode inputs,
+    # one allocation for String inputs — but String inputs are test-only).
+    # This avoids the heap String allocation of `string(retcode) in (...)`.
+    sym = Symbol(retcode)
+    return sym === :Unstable     ||
+           sym === :DtLessThanMin ||
+           sym === :MaxIters      ||
+           sym === :InitialFailure
 end
 
 @inline function _auto_stiff_switched(sol)::Bool
@@ -269,9 +274,11 @@ end
         return (alg=Rodas5P(autodiff=AutoFiniteDiff()), label="Rodas5P", auto_switch_capable=false)
     elseif mode in ("kencarp4", "ken4")
         return (alg=KenCarp4(autodiff=AutoFiniteDiff()), label="KenCarp4", auto_switch_capable=false)
+    elseif mode in ("dp8", "dormandprince8", "dop8")
+        return (alg=DP8(), label="DP8", auto_switch_capable=false)
     end
     throw(ArgumentError(
-        "Unsupported $(env_name)='$mode'. Use one of: tsit5, auto_stiff, rodas5p, kencarp4."
+        "Unsupported $(env_name)='$mode'. Use one of: tsit5, dp8, auto_stiff, rodas5p, kencarp4."
     ))
 end
 
@@ -614,6 +621,16 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
             initial_solver=multirate_meta.slow_solver,
             fallback_used=switched,
             trigger_retcode=switched ? "internal_autoswitch" : missing
+        )
+    end
+
+    if mode == :dp8
+        sol = _solve_with_explicit_solver(prob, args, DP8(), reltol_tol, abstol_tol)
+        return sol, (
+            solver="DP8",
+            initial_solver="DP8",
+            fallback_used=false,
+            trigger_retcode=missing
         )
     end
 

@@ -1,3 +1,6 @@
+const _EARTH_HIGH_PREC_BODY_FIXED_FRAME = "ITRF93"
+const _EARTH_FALLBACK_BODY_FIXED_FRAME = "IAU_EARTH"
+
 @inline function _to_float_vector(values, context::String)::Vector{Float64}
     out = Vector{Float64}(undef, length(values))
     @inbounds for i in eachindex(values)
@@ -6,6 +9,55 @@
         out[i] = Float64(v)
     end
     return out
+end
+
+@inline function _planet_fixed_frame_name(planet_name::String)::String
+    return lowercase(strip(planet_name)) == "earth" ? _EARTH_HIGH_PREC_BODY_FIXED_FRAME : "IAU_" * uppercase(strip(planet_name))
+end
+
+@inline function _planet_fixed_frame_fallback_name(planet_name::String)::Union{Nothing, String}
+    return lowercase(strip(planet_name)) == "earth" ? _EARTH_FALLBACK_BODY_FIXED_FRAME : nothing
+end
+
+function _initial_time_et(initial_time::InitialTime)::Float64
+    utc = @sprintf(
+        "%04d-%02d-%02dT%02d:%02d:%09.6f",
+        Int(initial_time.year),
+        Int(initial_time.month),
+        Int(initial_time.day),
+        Int(initial_time.hour),
+        Int(initial_time.minute),
+        Float64(initial_time.second)
+    )
+    return utc2et(utc)
+end
+
+function _transform_state(from_frame::String, to_frame::String, et::Float64, r_m::SVector{3, Float64}, v_mps::SVector{3, Float64})
+    xform = SMatrix{6, 6, Float64}(sxform(from_frame, to_frame, et))
+    state = xform * SVector{6, Float64}(r_m[1], r_m[2], r_m[3], v_mps[1], v_mps[2], v_mps[3])
+    return SVector{3, Float64}(state[1], state[2], state[3]), SVector{3, Float64}(state[4], state[5], state[6])
+end
+
+@inline function _planet_fixed_to_j2000_state(planet_name::String, et::Float64, r_m::SVector{3, Float64}, v_mps::SVector{3, Float64})
+    from_frame = _planet_fixed_frame_name(planet_name)
+    fallback = _planet_fixed_frame_fallback_name(planet_name)
+    try
+        return _transform_state(from_frame, "J2000", et, r_m, v_mps)
+    catch
+        fallback === nothing && rethrow()
+        return _transform_state(fallback, "J2000", et, r_m, v_mps)
+    end
+end
+
+@inline function _j2000_to_planet_fixed_state(planet_name::String, et::Float64, r_m::SVector{3, Float64}, v_mps::SVector{3, Float64})
+    to_frame = _planet_fixed_frame_name(planet_name)
+    fallback = _planet_fixed_frame_fallback_name(planet_name)
+    try
+        return _transform_state("J2000", to_frame, et, r_m, v_mps)
+    catch
+        fallback === nothing && rethrow()
+        return _transform_state("J2000", fallback, et, r_m, v_mps)
+    end
 end
 
 @inline function _require_column(df::DataFrame, candidates::Vector{String}, context::String)::Vector{Float64}
@@ -166,12 +218,55 @@ function _load_time_aligned_telemetry(cfg::TimeAlignedScenarioConfig, max_points
     x_km = _require_column(df, [cfg.telemetry_x_col], "telemetry-x")
     y_km = _require_column(df, [cfg.telemetry_y_col], "telemetry-y")
     z_km = _require_column(df, [cfg.telemetry_z_col], "telemetry-z")
-    sma_km = _require_column(df, [cfg.telemetry_sma_col], "telemetry-sma")
-    ecc = _require_column(df, [cfg.telemetry_ecc_col], "telemetry-ecc")
-    inc_deg = _require_column(df, [cfg.telemetry_inc_col], "telemetry-inc")
-    aop_deg = _require_column(df, [cfg.telemetry_aop_col], "telemetry-aop")
-    raan_deg = _require_column(df, [cfg.telemetry_raan_col], "telemetry-raan")
-    ta_deg = _require_column(df, [cfg.telemetry_ta_col], "telemetry-ta")
+    n_rows = nrow(df)
+
+    has_keplerian_ic = !any(isnothing, (
+        cfg.telemetry_sma_col, cfg.telemetry_ecc_col, cfg.telemetry_inc_col,
+        cfg.telemetry_aop_col, cfg.telemetry_raan_col, cfg.telemetry_ta_col
+    ))
+    has_partial_keplerian_ic = any(!isnothing, (
+        cfg.telemetry_sma_col, cfg.telemetry_ecc_col, cfg.telemetry_inc_col,
+        cfg.telemetry_aop_col, cfg.telemetry_raan_col, cfg.telemetry_ta_col
+    ))
+    if has_partial_keplerian_ic && !has_keplerian_ic
+        throw(ArgumentError(
+            "Time-aligned scenario $(cfg.name) must provide either all six Keplerian telemetry columns or none of them."
+        ))
+    end
+
+    sma_km = has_keplerian_ic ? _require_column(df, [cfg.telemetry_sma_col], "telemetry-sma") : fill(NaN, n_rows)
+    ecc = has_keplerian_ic ? _require_column(df, [cfg.telemetry_ecc_col], "telemetry-ecc") : fill(NaN, n_rows)
+    inc_deg = has_keplerian_ic ? _require_column(df, [cfg.telemetry_inc_col], "telemetry-inc") : fill(NaN, n_rows)
+    aop_deg = has_keplerian_ic ? _require_column(df, [cfg.telemetry_aop_col], "telemetry-aop") : fill(NaN, n_rows)
+    raan_deg = has_keplerian_ic ? _require_column(df, [cfg.telemetry_raan_col], "telemetry-raan") : fill(NaN, n_rows)
+    ta_deg = has_keplerian_ic ? _require_column(df, [cfg.telemetry_ta_col], "telemetry-ta") : fill(NaN, n_rows)
+
+    # Optional Cartesian IC columns (read before sorting, IC always from row 1 of sorted data)
+    has_cartesian_ic = !any(isnothing, (
+        cfg.telemetry_x_ic_col, cfg.telemetry_y_ic_col, cfg.telemetry_z_ic_col,
+        cfg.telemetry_vx_ic_col, cfg.telemetry_vy_ic_col, cfg.telemetry_vz_ic_col
+    ))
+    has_partial_cartesian_ic = any(!isnothing, (
+        cfg.telemetry_x_ic_col, cfg.telemetry_y_ic_col, cfg.telemetry_z_ic_col,
+        cfg.telemetry_vx_ic_col, cfg.telemetry_vy_ic_col, cfg.telemetry_vz_ic_col
+    ))
+    if has_partial_cartesian_ic && !has_cartesian_ic
+        throw(ArgumentError(
+            "Time-aligned scenario $(cfg.name) must provide either all six Cartesian IC telemetry columns or none of them."
+        ))
+    end
+    if !(has_cartesian_ic || has_keplerian_ic)
+        throw(ArgumentError(
+            "Time-aligned scenario $(cfg.name) must provide either Cartesian IC telemetry columns or Keplerian telemetry columns."
+        ))
+    end
+
+    x_ic_km_col  = has_cartesian_ic ? _require_column(df, [cfg.telemetry_x_ic_col],  "telemetry-x_ic")  : nothing
+    y_ic_km_col  = has_cartesian_ic ? _require_column(df, [cfg.telemetry_y_ic_col],  "telemetry-y_ic")  : nothing
+    z_ic_km_col  = has_cartesian_ic ? _require_column(df, [cfg.telemetry_z_ic_col],  "telemetry-z_ic")  : nothing
+    vx_ic_col    = has_cartesian_ic ? _require_column(df, [cfg.telemetry_vx_ic_col], "telemetry-vx_ic") : nothing
+    vy_ic_col    = has_cartesian_ic ? _require_column(df, [cfg.telemetry_vy_ic_col], "telemetry-vy_ic") : nothing
+    vz_ic_col    = has_cartesian_ic ? _require_column(df, [cfg.telemetry_vz_ic_col], "telemetry-vz_ic") : nothing
 
     perm = sortperm(time_s)
     time_s = time_s[perm]
@@ -214,12 +309,18 @@ function _load_time_aligned_telemetry(cfg::TimeAlignedScenarioConfig, max_points
         vx_kmps=_differentiate_series(x_km, time_s),
         vy_kmps=_differentiate_series(y_km, time_s),
         vz_kmps=_differentiate_series(z_km, time_s),
-        sma_km=sma_km[1],
-        ecc=ecc[1],
-        inc_deg=inc_deg[1],
-        aop_deg=aop_deg[1],
-        raan_deg=raan_deg[1],
-        ta_deg=ta_deg[1]
+        sma_km=has_keplerian_ic ? sma_km[1] : NaN,
+        ecc=has_keplerian_ic ? ecc[1] : NaN,
+        inc_deg=has_keplerian_ic ? inc_deg[1] : NaN,
+        aop_deg=has_keplerian_ic ? aop_deg[1] : NaN,
+        raan_deg=has_keplerian_ic ? raan_deg[1] : NaN,
+        ta_deg=has_keplerian_ic ? ta_deg[1] : NaN,
+        x_ic_km=has_cartesian_ic ? Float64(x_ic_km_col[perm[1]]) : nothing,
+        y_ic_km=has_cartesian_ic ? Float64(y_ic_km_col[perm[1]]) : nothing,
+        z_ic_km=has_cartesian_ic ? Float64(z_ic_km_col[perm[1]]) : nothing,
+        vx_ic_kmps=has_cartesian_ic ? Float64(vx_ic_col[perm[1]]) : nothing,
+        vy_ic_kmps=has_cartesian_ic ? Float64(vy_ic_col[perm[1]]) : nothing,
+        vz_ic_kmps=has_cartesian_ic ? Float64(vz_ic_col[perm[1]]) : nothing
     )
 end
 

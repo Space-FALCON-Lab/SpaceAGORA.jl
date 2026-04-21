@@ -100,9 +100,17 @@ end
 @inline function _commanded_maneuver(controlModel::BaseThrusterModel, p, i::Int64)
     command = _guidance_maneuver_command(p, i)
     if command !== nothing
+        delta_v_mps = Float64(command.delta_v_mps)
+        direction_rad = Float64(command.direction_rad)
+        if isfinite(delta_v_mps) && delta_v_mps < 0.0
+            delta_v_mps = abs(delta_v_mps)
+            direction_rad = π
+        end
+        controlModel.Δv[i] = delta_v_mps
+        controlModel.direction[i] = direction_rad
         return (
-            delta_v_mps=command.delta_v_mps,
-            direction_rad=command.direction_rad,
+            delta_v_mps=delta_v_mps,
+            direction_rad=direction_rad,
             source_orbit=command.source_orbit,
         )
     end
@@ -111,9 +119,22 @@ end
         return nothing
     end
 
+    delta_v_cmd = Float64(controlModel.Δv[i])
+    direction_rad = Float64(controlModel.direction[i])
+    if isfinite(delta_v_cmd)
+        if delta_v_cmd > 0.0
+            direction_rad = 0.0
+        elseif delta_v_cmd < 0.0
+            delta_v_cmd = abs(delta_v_cmd)
+            direction_rad = π
+        end
+        controlModel.Δv[i] = delta_v_cmd
+        controlModel.direction[i] = direction_rad
+    end
+
     return (
-        delta_v_mps=Float64(controlModel.Δv[i]),
-        direction_rad=Float64(controlModel.direction[i]),
+        delta_v_mps=delta_v_cmd,
+        direction_rad=direction_rad,
         source_orbit=Int64(-1),
     )
 end
@@ -126,11 +147,15 @@ end
 end
 
 @inline function _effective_burn_window(controlModel::BaseThrusterModel, p, i::Int64)
+    start_time, stop_time = _model_burn_window(controlModel, i)
+    if isfinite(start_time) && isfinite(stop_time) && stop_time > start_time
+        return start_time, stop_time
+    end
     plan = _active_burn_plan(p, i)
     if plan !== nothing
         return plan.start_burn_s, plan.stop_burn_s
     end
-    return _model_burn_window(controlModel, i)
+    return start_time, stop_time
 end
 
 @inline function _effective_direction_rad(controlModel::BaseThrusterModel, p, i::Int64)::Float64
@@ -219,6 +244,34 @@ function _validated_burn_plan(
         commanded_impulse_n_s=commanded_impulse_n_s,
         propellant_required_kg=propellant_required_kg,
     )
+end
+
+@inline function _constant_thrust_burn_duration_s(
+    mass_kg::Float64,
+    delta_v_mps::Float64,
+    thrust_n::Float64,
+    isp_s::Float64
+)::Float64
+    if !(isfinite(mass_kg) && mass_kg > 0.0)
+        return NaN
+    end
+    if !(isfinite(delta_v_mps) && delta_v_mps >= 0.0)
+        return NaN
+    end
+    if delta_v_mps == 0.0
+        return 0.0
+    end
+    if !(isfinite(thrust_n) && thrust_n > 0.0)
+        return NaN
+    end
+    if !(isfinite(isp_s) && isp_s > 0.0)
+        return NaN
+    end
+
+    g0 = 9.80665
+    exhaust_velocity = isp_s * g0
+    mass_fraction_used = 1.0 - exp(-delta_v_mps / exhaust_velocity)
+    return (mass_kg * exhaust_velocity / thrust_n) * mass_fraction_used
 end
 
 function _trace_maneuver_event!(
@@ -373,8 +426,11 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
     trace_key = _maneuver_trace_key(controlModel, i)
 
     active_plan = _active_burn_plan(p, i)
-    start_time, stop_time = if active_plan === nothing
-        _model_burn_window(controlModel, i)
+    model_start_time, model_stop_time = _model_burn_window(controlModel, i)
+    start_time, stop_time = if isfinite(model_start_time) && isfinite(model_stop_time) && model_stop_time > model_start_time
+        model_start_time, model_stop_time
+    elseif active_plan === nothing
+        model_start_time, model_stop_time
     else
         active_plan.start_burn_s, active_plan.stop_burn_s
     end
@@ -396,12 +452,9 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
         # Burn completed: clear the schedule so future campaign maneuvers can be planned.
         if t > stop_time + 1e-9
             _trace_maneuver_event!("schedule_clear", controlModel, p, i, t; start_burn_s=start_time, stop_burn_s=stop_time)
-            if active_plan === nothing
-                controlModel.start_burn_time[i] = -1.0
-                controlModel.stop_burn_time[i] = -1.0
-            else
-                _clear_burn_plan!(p, i)
-            end
+            controlModel.start_burn_time[i] = -1.0
+            controlModel.stop_burn_time[i] = -1.0
+            _clear_burn_plan!(p, i)
             _MANEUVER_TRACE_BURN_ACTIVE[trace_key] = false
             pop!(_MANEUVER_TRACE_LAST_WINDOW, trace_key, nothing)
         end
@@ -417,7 +470,8 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
 
     # Calculate the current orbital elements from the state vector
     oe = try
-        rvtoorbitalelement(pos, vel, p.args.environment_model.planet)
+        planet = p.args.environment_model.planet
+        rvtoorbitalelement(pos, vel, planet)
     catch err
         _control_effector_exception_fallback(p, i, err, catch_backtrace())
         return
@@ -438,6 +492,11 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
         if plan === nothing
             return
         end
+        burn_time = _constant_thrust_burn_duration_s(mass, plan.delta_v_mps, plan.thrust_n, plan.isp_s)
+        if !isfinite(burn_time) || burn_time < 0.0
+            return
+        end
+
         # Estimate the time of apoapsis and set the burn to be symmetric about that time
         ψ = 2*atan(sqrt((1-e)/(1+e))*tan(ν_wrapped/2))
 
@@ -452,8 +511,10 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
             return
         end
         # Calculate start/end time as symmetric about the apoapsis time
-        start_burn_time = apoapsis_time - plan.commanded_impulse_n_s / plan.thrust_n / 2
-        stop_burn_time = apoapsis_time + plan.commanded_impulse_n_s / plan.thrust_n / 2
+        start_burn_time = apoapsis_time - burn_time / 2
+        stop_burn_time = apoapsis_time + burn_time / 2
+        controlModel.start_burn_time[i] = start_burn_time
+        controlModel.stop_burn_time[i] = stop_burn_time
         new_plan = PropulsiveBurnPlan(
             valid=true,
             delta_v_mps=plan.delta_v_mps,

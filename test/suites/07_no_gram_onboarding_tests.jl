@@ -69,6 +69,21 @@
         @test !all(iszero, mars_lpi0)
     end
 
+    @testset "Earth starter-pack SPICE kernels fall back cleanly" begin
+        lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
+            kclear()
+        end
+
+        spice_path = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
+        earth = @test_nowarn Earth("", spice_path)
+        et = ephemerides_time_seconds(
+            InitialTime(year=2024, month=1, day=1, hour=0, minute=0, second=0.0),
+            SpiceEphemeridesModel()
+        )
+        l_pi = @test_nowarn planet_frame_lpi(earth, et, SpiceEphemeridesModel())
+        @test !all(iszero, l_pi)
+    end
+
     @testset "Simple ephemerides reject unsupported high-fidelity effectors" begin
         planet = Earth()
         spacecraft = make_spacecraft(ra_alt_m=500e3, rp_alt_m=400e3, ν_deg=175.0)

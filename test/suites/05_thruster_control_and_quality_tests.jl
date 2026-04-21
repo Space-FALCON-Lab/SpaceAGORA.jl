@@ -121,8 +121,10 @@
         @test isfinite(plan.start_burn_s)
         @test isfinite(plan.stop_burn_s)
         @test plan.start_burn_s < plan.stop_burn_s
-        @test model.start_burn_time[1] == -1.0
-        @test model.stop_burn_time[1] == -1.0
+        @test isfinite(model.start_burn_time[1])
+        @test isfinite(model.stop_burn_time[1])
+        @test model.start_burn_time[1] == plan.start_burn_s
+        @test model.stop_burn_time[1] == plan.stop_burn_s
         expected_burn_duration = _expected_burn_duration(state.sc[1].mass, model.thrust[1], model.Isp[1], model.Δv[1])
         @test isapprox(
             plan.stop_burn_s - plan.start_burn_s,
@@ -131,6 +133,31 @@
             rtol=0.0
         )
         @test isapprox(plan.commanded_impulse_n_s, model.thrust[1] * expected_burn_duration; atol=1e-9, rtol=0.0)
+        @test expected_burn_duration < state.sc[1].mass * model.Δv[1] / model.thrust[1]
+
+        model_signed_prograde = make_base_thruster_model(thrust=2.0, direction=π, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
+        _clear_burn_plan!(p, 1)
+        calcControlEffect!(model_signed_prograde, state, p, 100.0, 1)
+        @test model_signed_prograde.Δv[1] == 20.0
+        @test isapprox(model_signed_prograde.direction[1], 0.0; atol=1e-12, rtol=0.0)
+        signed_prograde_plan = _burn_plan(p, 1)
+        @test signed_prograde_plan.valid
+        @test isfinite(signed_prograde_plan.start_burn_s)
+        @test isfinite(signed_prograde_plan.stop_burn_s)
+        @test model_signed_prograde.start_burn_time[1] == signed_prograde_plan.start_burn_s
+        @test model_signed_prograde.stop_burn_time[1] == signed_prograde_plan.stop_burn_s
+
+        model_signed_retrograde = make_base_thruster_model(thrust=2.0, direction=0.0, Δv=-20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
+        _clear_burn_plan!(p, 1)
+        calcControlEffect!(model_signed_retrograde, state, p, 100.0, 1)
+        @test model_signed_retrograde.Δv[1] == 20.0
+        @test isapprox(model_signed_retrograde.direction[1], π; atol=1e-12, rtol=0.0)
+        signed_retrograde_plan = _burn_plan(p, 1)
+        @test signed_retrograde_plan.valid
+        @test isfinite(signed_retrograde_plan.start_burn_s)
+        @test isfinite(signed_retrograde_plan.stop_burn_s)
+        @test model_signed_retrograde.start_burn_time[1] == signed_retrograde_plan.start_burn_s
+        @test model_signed_retrograde.stop_burn_time[1] == signed_retrograde_plan.stop_burn_s
 
         # Pre-ignition tracking: a future scheduled window should be retimed.
         model_track = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=10_000.0, stop_burn_time=11_000.0)
@@ -140,8 +167,8 @@
         @test plan_track.valid
         @test plan_track.start_burn_s != 10_000.0
         @test plan_track.stop_burn_s != 11_000.0
-        @test model_track.start_burn_time[1] == 10_000.0
-        @test model_track.stop_burn_time[1] == 11_000.0
+        @test model_track.start_burn_time[1] == plan_track.start_burn_s
+        @test model_track.stop_burn_time[1] == plan_track.stop_burn_s
 
         # Post-ignition lock: once burn start time has been reached, keep fixed.
         s_sched = plan.start_burn_s
@@ -251,8 +278,8 @@
         @test _burn_plan(p, 1).valid
         @test isfinite(_burn_plan(p, 1).start_burn_s)
         @test isfinite(_burn_plan(p, 1).stop_burn_s)
-        @test model_near_parabolic.start_burn_time[1] == -1.0
-        @test model_near_parabolic.stop_burn_time[1] == -1.0
+        @test model_near_parabolic.start_burn_time[1] == _burn_plan(p, 1).start_burn_s
+        @test model_near_parabolic.stop_burn_time[1] == _burn_plan(p, 1).stop_burn_s
 
         state_singular = build_initial_conditions(args)
         state_singular.sc[1].pos .= 0.0
@@ -318,8 +345,8 @@
         calcControlEffect!(model_multi, state_multi, p_multi, 100.0, 1)
         @test _burn_plan(p_multi, 1).valid
         @test !_burn_plan(p_multi, 2).valid
-        @test model_multi.start_burn_time[1] == -1.0
-        @test model_multi.stop_burn_time[1] == -3.0
+        @test model_multi.start_burn_time[1] == _burn_plan(p_multi, 1).start_burn_s
+        @test model_multi.stop_burn_time[1] == _burn_plan(p_multi, 1).stop_burn_s
         @test model_multi.start_burn_time[2] == -2.0
         @test model_multi.stop_burn_time[2] == -4.0
 
@@ -330,10 +357,10 @@
         @test _burn_plan(p_multi, 1).start_burn_s == s1
         @test _burn_plan(p_multi, 1).stop_burn_s == e1
         @test _burn_plan(p_multi, 2).valid
-        @test model_multi.start_burn_time[1] == -1.0
-        @test model_multi.stop_burn_time[1] == -3.0
-        @test model_multi.start_burn_time[2] == -2.0
-        @test model_multi.stop_burn_time[2] == -4.0
+        @test model_multi.start_burn_time[1] == s1
+        @test model_multi.stop_burn_time[1] == e1
+        @test model_multi.start_burn_time[2] == _burn_plan(p_multi, 2).start_burn_s
+        @test model_multi.stop_burn_time[2] == _burn_plan(p_multi, 2).stop_burn_s
 
         model_oob = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         @test_nowarn calcControlEffect!(model_oob, state, p, 100.0, 2)
@@ -425,6 +452,16 @@
         withenv("SPACEAGORA_STRICT_CONTROL_EXCEPTIONS" => "1") do
             @test_throws ErrorException helper(p_dummy, 1, err_eff, stacktrace())
         end
+
+        burn_helper = SimulationModel.ControlHooks._constant_thrust_burn_duration_s
+        @test burn_helper(100.0, 0.0, 2.0, 300.0) == 0.0
+        @test isapprox(
+            burn_helper(100.0, 20.0, 2.0, 300.0),
+            100.0 * 300.0 * 9.80665 / 2.0 * (1.0 - exp(-20.0 / (300.0 * 9.80665)));
+            atol=1e-12,
+            rtol=0.0
+        )
+        @test isnan(burn_helper(100.0, 20.0, 2.0, 0.0))
     end
 
     @testset "schmitt_trigger" begin

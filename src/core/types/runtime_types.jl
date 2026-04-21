@@ -26,7 +26,7 @@ using Reexport
 export Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters
 export SaveCache, SaveData
 export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, SpiceRuntimeCounters, SpiceRhsMemo
-export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
+export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace, ClenshawScratchWorkspace
     @kwdef struct Mission
         e::Int64 = 0
         d::Int64 = 0
@@ -93,7 +93,7 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
     #     Lz::Float64 = 0.0
     #     α::Float64 = 0.0
     #     δ::Float64 = 0.0
-    #     J2000_to_pci::SMatrix{3, 3, Float64} = SMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
+    #     inertial_frame::Symbol = :J2000
     #     L_PI::MMatrix{3, 3, Float64} = MMatrix{3, 3, Float64}([0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0])
     #     Clm::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
     #     Slm::Matrix{Float64} = [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
@@ -588,6 +588,7 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
         heat_rate_cache::Vector{Float64} = []
         drag_cache::Vector{SVector{3,Float64}} = []
         lift_cache::Vector{SVector{3,Float64}} = []
+        cross_cache::Vector{SVector{3,Float64}} = []
         # Add more fields as needed to store the relevant data for saving results
     end
 

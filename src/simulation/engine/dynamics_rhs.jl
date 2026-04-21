@@ -56,7 +56,9 @@ end
     dynamic_effectors::Tuple,
     effector_decision
 )
-    effector_started_ns = time_ns()
+    # Only pay the time_ns() syscall overhead when telemetry is actually needed.
+    needs_timing = effector_decision.policy_applied
+    effector_started_ns = needs_timing ? time_ns() : UInt64(0)
     n_effectors = length(dynamic_effectors)
     needs_state_sample = any(_wrench_method_available(effector) for effector in dynamic_effectors)
     state_sample = if needs_state_sample
@@ -88,8 +90,15 @@ end
                 return nothing
             end
         )
-        forces .= SVector{3, Float64}(reduced[1], reduced[2], reduced[3])
-        torques .= SVector{3, Float64}(reduced[4], reduced[5], reduced[6])
+        # Unpack reduced MVector directly into forces/torques without an intermediate SVector.
+        @inbounds begin
+            forces[1] = reduced[1]
+            forces[2] = reduced[2]
+            forces[3] = reduced[3]
+            torques[1] = reduced[4]
+            torques[2] = reduced[5]
+            torques[3] = reduced[6]
+        end
     else
         @inbounds for effector in dynamic_effectors
             force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
@@ -97,11 +106,11 @@ end
             torques .+= torque
         end
     end
-    elapsed_ns = Int64(time_ns() - effector_started_ns)
-    if effector_decision.policy_applied && sat_idx == 1
-        _update_effector_cost_model!(p.shared_buffers, n_effectors, elapsed_ns, effector_decision.allotment)
-    end
-    if effector_decision.policy_applied
+    if needs_timing
+        elapsed_ns = Int64(time_ns() - effector_started_ns)
+        if sat_idx == 1
+            _update_effector_cost_model!(p.shared_buffers, n_effectors, elapsed_ns, effector_decision.allotment)
+        end
         SimulationModel.ParallelPolicy.record_policy_observation!(
             :dynamic_effectors;
             mode=effector_decision.mode,
@@ -855,7 +864,14 @@ function build_initial_conditions(args)::ComponentVector
     for i in eachindex(args.dynamics_model.spacecraft)
         spacecraft = args.dynamics_model.spacecraft[i]
         sc_view = state.sc[i]
-        r0, v0 = orbitalelemtorv(spacecraft.initial_condition, args.environment_model.planet)
+        ic = spacecraft.initial_condition
+        r0, v0 = if ic isa CartesianInitialCondition
+            collect(ic.pos), collect(ic.vel)   # assumed J2000 frame
+        else
+            # Orbit-element initial conditions are propagated directly in J2000.
+            r_j2000, v_j2000 = orbitalelemtorv(ic, args.environment_model.planet)
+            collect(r_j2000), collect(v_j2000)
+        end
         sc_view.pos .= r0
         sc_view.vel .= v0
         # sc_view.mass .= spacecraft.dry_mass + spacecraft.prop_mass

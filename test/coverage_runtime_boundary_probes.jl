@@ -49,7 +49,7 @@
         @test snapshot_probe.bytes >= 0
         @test snapshot_allocs >= 0
         @test snapshot_probe.value isa SimulationModel.SaveData
-        @test all(haskey(snapshot_probe.value, key) for key in (:position, :velocity, :mass, :drag, :periapsis_altitude, :heat_rate, :heat_load))
+        @test all(haskey(snapshot_probe.value, key) for key in (:position, :velocity, :altitude, :latitude_deg, :longitude_deg, :mass, :wind, :drag, :lift, :cross, :periapsis_altitude, :heat_rate, :heat_load))
     end
 
     @testset "Parallel Policy Channel Boundary Probe" begin

@@ -1,18 +1,19 @@
 using LinearAlgebra
 using StaticArrays
-using SparseArrays
 
 const IDENTITY_QUATERNION = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
 
 ### Quaternion Function ###
-# Quaternion multiplication
-function quat_mult(q::AbstractVector, p::AbstractVector)
-    q0, qv = q[4], q[1:3]
-    p0, pv = p[4], p[1:3]
-
-    s = q0*p0 - dot(qv, pv)
-    v = q0*pv + p0*qv + cross(qv, pv)
-    return [v; s]
+# Quaternion multiplication (scalar-last convention: q = [qx, qy, qz, qw]).
+# Returns SVector to avoid heap allocation.
+@inline function quat_mult(q::AbstractVector, p::AbstractVector)
+    q0 = q[4]; q1 = q[1]; q2 = q[2]; q3 = q[3]
+    p0 = p[4]; p1 = p[1]; p2 = p[2]; p3 = p[3]
+    s  = q0*p0 - q1*p1 - q2*p2 - q3*p3
+    v1 = q0*p1 + p0*q1 + q2*p3 - q3*p2
+    v2 = q0*p2 + p0*q2 + q3*p1 - q1*p3
+    v3 = q0*p3 + p0*q3 + q1*p2 - q2*p1
+    return SVector{4, Float64}(v1, v2, v3, s)
 end
 
 @inline function quaternion_norm_error(q::AbstractVector{<:Real})::Float64
@@ -34,102 +35,99 @@ end
 end
 
 ## skew matrix
-hatIs = [1; 1; 2; 2; 3; 3]
-hatJs = [2; 3; 1; 3; 1; 2]
-function hat(ω::AbstractVector{<:Float64})::SMatrix{3, 3, Float64}
+@inline function hat(ω::AbstractVector{<:Float64})::SMatrix{3, 3, Float64}
     """
     skew matrix, The matrix equivalent of cross product
-    params: 
+    params:
     ω -> vector ∈ R³
     return:
-    [ω]x 
+    [ω]x
     """
-
-    # Vs = [-ω[3]; ω[2]; ω[3]; -ω[1]; -ω[2]; ω[1]]
-    return SMatrix{3, 3, Float64}([0 -ω[3] ω[2];
-                                   ω[3] 0 -ω[1];
-                                   -ω[2] ω[1] 0])
-    # return [0 -ω[3] ω[2]
-    #     ω[3] 0 -ω[1]
-    #     -ω[2] ω[1] 0]
+    w1 = ω[1]; w2 = ω[2]; w3 = ω[3]
+    # Column-major: col1=[0,w3,-w2], col2=[-w3,0,w1], col3=[w2,-w1,0]
+    return SMatrix{3, 3, Float64}(0, w3, -w2, -w3, 0, w1, w2, -w1, 0)
 end
 
-function L!(Lmat, Q)
-    Lmat .= [Q[1] -Q[2:4]'; Q[2:4] Q[1]*I+hat(Q[2:4])]
-end
-
-## Left
-lIs = [1; 1; 1; 1; 2; 2; 2; 2; 3; 3; 3; 3; 4; 4; 4; 4]
-lJs = [1; 2; 3; 4; 1; 2; 3; 4; 1; 2; 3; 4; 1; 2; 3; 4]
-function L(Q)
+## Left — scalar-first convention: Q[1] is scalar, Q[2:4] are vector components.
+# Replaces sparse(lIs,lJs,Vs) with a stack-allocated SMatrix (no GC pressure).
+@inline function L(Q)
     """
     Left Multiply quaternion
     q2 ⨂ q1 -> L(q2)q1
     params:
-    Q -> unit quaternion
-    returns: 
-    L(Q) -> 4x4 matrix
+    Q -> unit quaternion (scalar-first)
+    returns:
+    L(Q) -> 4x4 SMatrix
     """
-    # Lmat = zeros(eltype(Q), 4, 4)
-    # L!(Lmat, Q)
-    tmp = hat(Q[2:4])
-    Vs = [Q[1]; -Q[2]; -Q[3]; -Q[4]; Q[2]; Q[1]; tmp[1, 2]; tmp[1, 3]; Q[3]; tmp[2, 1]; Q[1]; tmp[2, 3]; Q[4]; tmp[3, 1]; tmp[3,2]; Q[1]]
-    return sparse(lIs, lJs, Vs)
-    # return [Q[1] -Q[2:4]'; Q[2:4] Q[1]*I+hat(Q[2:4])]
+    s = Q[1]; a = Q[2]; b = Q[3]; c = Q[4]
+    # Column-major layout: col1=[s,a,b,c], col2=[-a,s,c,-b], col3=[-b,-c,s,a], col4=[-c,b,-a,s]
+    return SMatrix{4,4,Float64}(
+         s, a, b, c,
+        -a, s, c,-b,
+        -b,-c, s, a,
+        -c, b,-a, s
+    )
 end
 
-function R!(Rmat, Q)
-    Rmat .= [Q[1] -Q[2:4]'; Q[2:4] Q[1]*I-hat(Q[2:4])]
+function L!(Lmat, Q)
+    Lmat .= L(Q)
 end
-## Right
-function R(Q)
+
+## Right — scalar-first convention: Q[1] is scalar, Q[2:4] are vector components.
+@inline function R(Q)
     """
     Right Multiply quaternion
     q2 ⨂ q1 -> R(q1)q2
     params:
-    Q -> unit quaternion
-    returns: 
-    R(Q) -> 4x4 matrix
+    Q -> unit quaternion (scalar-first)
+    returns:
+    R(Q) -> 4x4 SMatrix
     """
-    # Rmat = zeros(eltype(Q), 4, 4)
-    # R!(Rmat, Q)
-    # s = @view Q[1]
-    # v = @view Q[2:4]
-    tmp = -hat(Q[1:3])
-    Vs = [Q[1]; -Q[2]; -Q[3]; -Q[4]; Q[2]; Q[1]; tmp[1, 2]; tmp[1, 3]; Q[3]; tmp[2, 1]; Q[1]; tmp[2, 3]; Q[4]; tmp[3, 1]; tmp[3,2]; Q[1]]
-    return sparse(lIs, lJs, Vs)
-    # return [Q[1] -Q[2:4]'; Q[2:4] Q[1]*I-hat(Q[2:4])]
+    s = Q[1]; a = Q[2]; b = Q[3]; c = Q[4]
+    # Column-major layout: col1=[s,a,b,c], col2=[-a,s,-c,b], col3=[-b,c,s,-a], col4=[-c,-b,a,s]
+    return SMatrix{4,4,Float64}(
+         s, a, b, c,
+        -a, s,-c, b,
+        -b, c, s,-a,
+        -c,-b, a, s
+    )
 end
 
-function rot(q::AbstractVector{<:Float64})::SMatrix{3, 3, Float64}
+function R!(Rmat, Q)
+    Rmat .= R(Q)
+end
+
+# Rotation matrix from quaternion (scalar-last: q = [qx,qy,qz,qw]).
+# Uses column-major SMatrix constructor to avoid a temporary matrix allocation.
+@inline function rot(q::AbstractVector{<:Float64})::SMatrix{3, 3, Float64}
     """
     Convert quaternion to rotation matrix
     """
-    q1, q2, q3, q4 = q
-    q1q1 = q1*q1
-    q2q2 = q2*q2
-    q3q3 = q3*q3
-    q4q4 = q4*q4
-    q1q2 = q1*q2
-    q1q3 = q1*q3
-    q1q4 = q1*q4
-    q2q3 = q2*q3
-    q2q4 = q2*q4
-    q3q4 = q3*q4
-    return SMatrix{3, 3, Float64}([q1q1-q2q2-q3q3+q4q4 2*(q1q2+q3q4) 2*(q1q3-q2q4);
-                                    2*(q1q2-q3q4) -q1q1+q2q2-q3q3+q4q4 2*(q2q3+q1q4);
-                                    2*(q1q3+q2q4) 2*(q2q3-q1q4) -q1q1-q2q2+q3q3+q4q4])
+    q1, q2, q3, q4 = q[1], q[2], q[3], q[4]
+    q1q1 = q1*q1; q2q2 = q2*q2; q3q3 = q3*q3; q4q4 = q4*q4
+    q1q2 = q1*q2; q1q3 = q1*q3; q1q4 = q1*q4
+    q2q3 = q2*q3; q2q4 = q2*q4; q3q4 = q3*q4
+    # Column-major entries (col1, col2, col3):
+    return SMatrix{3, 3, Float64}(
+        q1q1-q2q2-q3q3+q4q4, 2*(q1q2-q3q4),          2*(q1q3+q2q4),
+        2*(q1q2+q3q4),        -q1q1+q2q2-q3q3+q4q4,   2*(q2q3-q1q4),
+        2*(q1q3-q2q4),         2*(q2q3+q1q4),          -q1q1-q2q2+q3q3+q4q4
+    )
 end
 
-function error_quaternion(current::SVector{4, Float64}, target::SVector{4, Float64})
-
-    q = current[4]
-    q_bar = current[1:3]'
-    q_bar_cross = hat(SVector{3, Float64}(q_bar))
-    q_matrix = SMatrix{4, 4, Float64}(Float64[q*I(3)-q_bar_cross q_bar'; -q_bar q])
-
-    qd = SVector{4, Float64}(Float64[-target[1:3]; target[4]])
-    return normalize(q_matrix * qd)
+# Builds the attitude-error quaternion (scalar-last convention) without slice allocations.
+@inline function error_quaternion(current::SVector{4, Float64}, target::SVector{4, Float64})
+    a, b, c, s = current[1], current[2], current[3], current[4]
+    # q_matrix = [s*I(3) - hat([a,b,c]), [a,b,c]'; -[a,b,c], s] (column-major)
+    q_matrix = SMatrix{4, 4, Float64}(
+         s, -c,  b, -a,
+         c,  s, -a, -b,
+        -b,  a,  s, -c,
+         a,  b,  c,  s
+    )
+    qd = SVector{4, Float64}(-target[1], -target[2], -target[3], target[4])
+    result = q_matrix * qd
+    return result / norm(result)
 end
 
 ## take angle components (4, 3)
@@ -171,45 +169,36 @@ function Q̄(q1, q2)
 end
 
 
-function phi_from_q(q)
+@inline function phi_from_q(q)
     """
     axis angle from quaternion (scalar last)
-    params: 
+    params:
     q -> unit quaternion
-    returns: 
-    ϕ -> axis (r) * angle (θ) 
+    returns:
+    ϕ -> axis (r) * angle (θ)
     """
-    # cayley_map(q)
-    v = @view q[1:3]
-    # v = SVector(q[2], q[3], q[4])
-    s = q[4]
-    normv = norm(v)
-
-    # if isapprox(normv, 0, atol=eps())
-    r = v / (normv + eps())
-    θ = (2 * atan(normv, s))
-    return r * θ
-    # end
-
-    # return zeros(3)
+    v1, v2, v3, s = q[1], q[2], q[3], q[4]
+    normv = sqrt(v1*v1 + v2*v2 + v3*v3)
+    inv_n = 1.0 / (normv + eps())
+    θ = 2 * atan(normv, s)
+    return SVector{3, Float64}(v1*inv_n*θ, v2*inv_n*θ, v3*inv_n*θ)
 end
 
-function q_from_phi(ϕ)
+@inline function q_from_phi(ϕ)
     """
     quaternion from axis angle (scalar last)
-    params: 
-    ϕ -> axis (r) * angle (θ) 
-    returns: 
+    params:
+    ϕ -> axis (r) * angle (θ)
+    returns:
     q -> unit quaternion
     """
-
     θ = norm(ϕ)
-
     if θ == 0.0
-        return SVector{4, Float64}([0.0, 0.0, 0.0, 1.0])
+        return SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
     else
-        r = ϕ / θ
-        return SVector{4, Float64}([r*sin(θ/2); cos(θ/2)])
+        inv_θ = 1.0 / θ
+        sθ2 = sin(θ * 0.5)
+        return SVector{4, Float64}(ϕ[1]*inv_θ*sθ2, ϕ[2]*inv_θ*sθ2, ϕ[3]*inv_θ*sθ2, cos(θ * 0.5))
     end
 end
 
@@ -316,32 +305,40 @@ function dcm_to_quaternion(dcm::SMatrix{3, 3, Float64})
     end
 end
 
-function Ψ(q::SVector{4, Float64})
+@inline function Ψ(q::SVector{4, Float64})
     """
-    Convert quaternion to Euler angles in 3-2-1 sequence.
+    Attitude kinematics matrix Ψ = [s*I(3) - [v]×; -vᵀ] (scalar-last: q=[v,s]).
 
     # Arguments
-    - `q`: A quaternion represented as a StaticVector{4, Float64}.
+    - `q`: unit quaternion [qx,qy,qz,qw].
 
     # Returns
-    - A StaticVector{3, Float64} containing the Euler angles (roll, pitch, yaw).
+    - SMatrix{4, 3, Float64}
     """
-    return SMatrix{4, 3, Float64}([q[4]*I(3) - hat(q[1:3]); -q[1:3]'])
+    a, b, c, s = q[1], q[2], q[3], q[4]
+    # Column-major: col1=[s,-c,b,-a], col2=[c,s,-a,-b], col3=[-b,a,s,-c]
+    return SMatrix{4, 3, Float64}(
+         s, -c,  b, -a,
+         c,  s, -a, -b,
+        -b,  a,  s, -c
+    )
 end
 
-function Ξ(q::SVector{4, Float64})
+@inline function Ξ(q::SVector{4, Float64})
     """
-    Convert quaternion to kinematics matrix Ξ.
+    Attitude kinematics matrix Ξ = [s*I(3) + [v]×; -vᵀ] (scalar-last: q=[v,s]).
 
     # Arguments
-    - `q`: A quaternion represented as a StaticVector{4, Float64}.
+    - `q`: unit quaternion [qx,qy,qz,qw].
 
     # Returns
-    - A StaticMatrix{4, 3, Float64} containing the quaternion kinematics matrix.
+    - SMatrix{4, 3, Float64}
     """
-    # return SMatrix{4, 3, Float64}([q[4]*I(3) + hat(q[1:3]); -q[1:3]'])
-    return SMatrix{4, 3, Float64}([q[4] -q[3] q[2];
-                                    q[3] q[4] -q[1];
-                                    -q[2] q[1] q[4];
-                                    -q[1] -q[2] -q[3]])
+    a, b, c, s = q[1], q[2], q[3], q[4]
+    # Column-major: col1=[s,c,-b,-a], col2=[-c,s,a,-b], col3=[b,-a,s,-c]
+    return SMatrix{4, 3, Float64}(
+         s,  c, -b, -a,
+        -c,  s,  a, -b,
+         b, -a,  s, -c
+    )
 end

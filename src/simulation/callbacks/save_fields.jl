@@ -40,6 +40,36 @@ end
     return drags
 end
 
+@inline function _save_lift(num_sats::Int, u, t, integrator)
+    p = integrator.p
+    lift_cache = p.save_cache.lift_cache
+    lifts = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        lifts[i] = i <= length(lift_cache) ? lift_cache[i] : SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    return lifts
+end
+
+@inline function _save_cross(num_sats::Int, u, t, integrator)
+    p = integrator.p
+    cross_cache = p.save_cache.cross_cache
+    crosses = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        crosses[i] = i <= length(cross_cache) ? cross_cache[i] : SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    return crosses
+end
+
+@inline function _save_wind(num_sats::Int, u, t, integrator)
+    p = integrator.p
+    shared_winds = p.shared_buffers.winds
+    winds = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        winds[i] = i <= length(shared_winds) ? shared_winds[i] : SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    return winds
+end
+
 @inline function _save_periapsis_altitude(num_sats::Int, u, t, integrator)
     planet = integrator.p.args.environment_model.planet
     periapsis_altitudes = Vector{Float64}(undef, num_sats)
@@ -50,6 +80,48 @@ end
         periapsis_altitudes[i] = oe[1] * (1.0 - oe[2]) - planet.Rp_e
     end
     return periapsis_altitudes
+end
+
+@inline function _save_altitude(num_sats::Int, u, t, integrator)
+    planet = integrator.p.args.environment_model.planet
+    et = integrator.p.shared_buffers.et_start[] + Float64(t)
+    ephemerides_model = integrator.p.args.environment_model.ephemerides_model
+    altitudes = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        pos = SVector{3, Float64}(u.sc[i].pos)
+        vel = SVector{3, Float64}(u.sc[i].vel)
+        rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
+        altitudes[i] = rtolatlong(rp, planet, ephemerides_model)[1]
+    end
+    return altitudes
+end
+
+@inline function _save_latitude_deg(num_sats::Int, u, t, integrator)
+    planet = integrator.p.args.environment_model.planet
+    et = integrator.p.shared_buffers.et_start[] + Float64(t)
+    ephemerides_model = integrator.p.args.environment_model.ephemerides_model
+    latitudes_deg = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        pos = SVector{3, Float64}(u.sc[i].pos)
+        vel = SVector{3, Float64}(u.sc[i].vel)
+        rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
+        latitudes_deg[i] = rad2deg(rtolatlong(rp, planet, ephemerides_model)[2])
+    end
+    return latitudes_deg
+end
+
+@inline function _save_longitude_deg(num_sats::Int, u, t, integrator)
+    planet = integrator.p.args.environment_model.planet
+    et = integrator.p.shared_buffers.et_start[] + Float64(t)
+    ephemerides_model = integrator.p.args.environment_model.ephemerides_model
+    longitudes_deg = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        pos = SVector{3, Float64}(u.sc[i].pos)
+        vel = SVector{3, Float64}(u.sc[i].vel)
+        rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
+        longitudes_deg[i] = rad2deg(rtolatlong(rp, planet, ephemerides_model)[3])
+    end
+    return longitudes_deg
 end
 
 @inline function _save_heat_rate(num_sats::Int, u, t, integrator)
@@ -92,8 +164,14 @@ function default_save_fields(args::SimulationConfiguration)
     fields = SaveField[
         SaveField(:position, (u, t, integrator) -> _save_positions(num_sats, u, t, integrator); per_satellite=true, column_prefix="pos"),
         SaveField(:velocity, (u, t, integrator) -> _save_velocities(num_sats, u, t, integrator); per_satellite=true, column_prefix="vel"),
+        SaveField(:altitude, (u, t, integrator) -> _save_altitude(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:latitude_deg, (u, t, integrator) -> _save_latitude_deg(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:longitude_deg, (u, t, integrator) -> _save_longitude_deg(num_sats, u, t, integrator); per_satellite=true),
         SaveField(:mass, (u, t, integrator) -> _save_mass(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:wind, (u, t, integrator) -> _save_wind(num_sats, u, t, integrator); per_satellite=true),
         SaveField(:drag, (u, t, integrator) -> _save_drag(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:lift, (u, t, integrator) -> _save_lift(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:cross, (u, t, integrator) -> _save_cross(num_sats, u, t, integrator); per_satellite=true),
         SaveField(:periapsis_altitude, (u, t, integrator) -> _save_periapsis_altitude(num_sats, u, t, integrator); per_satellite=true),
         SaveField(:heat_rate, (u, t, integrator) -> _save_heat_rate(num_sats, u, t, integrator); per_satellite=true),
         SaveField(:heat_load, (u, t, integrator) -> _save_heat_load(num_sats, u, t, integrator); per_satellite=true)

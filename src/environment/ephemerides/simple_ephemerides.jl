@@ -8,6 +8,8 @@ end
 
 const _J2000_UTC = DateTime(2000, 1, 1, 12, 0, 0)
 const _SPICE_POSITION_KM_TO_M = 1.0e3
+const _EARTH_HIGH_PREC_BODY_FIXED_FRAME = "ITRF93"
+const _EARTH_FALLBACK_BODY_FIXED_FRAME = "IAU_EARTH"
 
 @inline function _spice_position_j2000_m_unlocked(
     target::AbstractString,
@@ -66,14 +68,31 @@ end
     ]
 end
 
-@inline function planet_frame_lpi(planet, et::Float64, ::SpiceEphemeridesModel)::SMatrix{3, 3, Float64}
+@inline function _spice_body_fixed_frame(planet)::String
+    return planet.name == "Moon" ? "MOON_PA_DE421" : (planet.name == "Earth" ? _EARTH_HIGH_PREC_BODY_FIXED_FRAME : "IAU_" * uppercase(planet.name))
+end
+
+function _spice_planet_frame_lpi(planet, et::Float64)::SMatrix{3, 3, Float64}
     return lock(SPICE_LOCK) do
-        SMatrix{3, 3, Float64}(pxform("J2000", "IAU_$(planet.name)", et)) * planet.J2000_to_pci'
+        if planet.name == "Earth"
+            try
+                return SMatrix{3, 3, Float64}(pxform("J2000", _EARTH_HIGH_PREC_BODY_FIXED_FRAME, et))
+            catch
+                return SMatrix{3, 3, Float64}(pxform("J2000", _EARTH_FALLBACK_BODY_FIXED_FRAME, et))
+            end
+        end
+        return SMatrix{3, 3, Float64}(pxform("J2000", _spice_body_fixed_frame(planet), et))
     end
+end
+
+@inline function planet_frame_lpi(planet, et::Float64, ::SpiceEphemeridesModel)::SMatrix{3, 3, Float64}
+    return _spice_planet_frame_lpi(planet, et)
 end
 
 @inline function planet_frame_lpi(planet, et::Float64, model::SimpleEphemeridesModel)::SMatrix{3, 3, Float64}
     θ = model.prime_meridian_at_reference_rad + planet.ω[3] * (et - model.reference_epoch_seconds)
+    # With J2000 as the internal inertial frame, the spin-axis rotation is the
+    # direct J2000→PCPF transform for the simple ephemeris model.
     return _rotation_about_spin_axis(θ)
 end
 

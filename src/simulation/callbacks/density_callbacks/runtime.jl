@@ -183,11 +183,33 @@ function get_density_callback(num_sats::Int, args::SimulationConfiguration)
     return get_density_callback(num_sats, args.dynamics_model.dynamic_effectors, args)
 end
 
+@inline _density_callback_et(p, t::Float64) = p.shared_buffers.et_start[] + t
+
 function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationConfiguration)
     cache_cfg = _gram_track_cache_config()
     stats_enabled = _gram_runtime_stats_enabled()
-    function update_density_sat!(i::Int, p, u, t)
-        _simulation_engine_module().sample_atmosphere(u.sc[i], p, i, t; write_buffers=true)
+    target_include_j2 = _gram_track_cache_target_use_j2() && _uses_j2_gravity_effector(effectors)
+    function update_density_sat!(i::Int, p, u, t::Float64)
+        density_model = _density_model_for_sat(p, i)
+        caches = p.shared_buffers.gram_density_cache
+        kin = _stage_environment_kinematics(u.sc[i], p, Float64(t))
+        rho, T, wind_vec = _density_state_from_kinematics!(
+            p,
+            i,
+            kin.pos_ii,
+            kin.vel_ii,
+            _extract_mass_kg(u.sc[i]),
+            kin.alt,
+            kin.lat,
+            kin.lon,
+            Float64(t),
+            density_model,
+            cache_cfg,
+            stats_enabled,
+            target_include_j2,
+            caches,
+        )
+        _write_density_buffers!(p, i, rho, T, wind_vec)
         return nothing
     end
 

@@ -1007,16 +1007,76 @@ end
     sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
     @test p.shared_buffers.maneuver_commands[1].valid == true
     @test p.shared_buffers.maneuver_commands[1].delta_v_mps == 20.0
-    @test isapprox(p.shared_buffers.maneuver_commands[1].direction_rad, π; atol=1e-12, rtol=0.0)
+    @test isapprox(p.shared_buffers.maneuver_commands[1].direction_rad, 0.0; atol=1e-12, rtol=0.0)
 
     p.orbit_counter[1] = 2
     sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
     @test p.shared_buffers.maneuver_commands[1].valid == true
     @test p.shared_buffers.maneuver_commands[1].delta_v_mps == 5.0
-    @test isapprox(p.shared_buffers.maneuver_commands[1].direction_rad, 0.0; atol=1e-12, rtol=0.0)
+    @test isapprox(p.shared_buffers.maneuver_commands[1].direction_rad, π; atol=1e-12, rtol=0.0)
 
     p.orbit_counter[1] = 1
     sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
     @test p.shared_buffers.maneuver_commands[1].valid == true
     @test p.shared_buffers.maneuver_commands[1].delta_v_mps == 0.0
+end
+
+@testset "Odyssey Maneuver Schedule Bridge" begin
+    maneuvers = odyssey_campaign_maneuvers(1:20)
+
+    @test !(1 in maneuvers.maneuver_orbit_number)
+    @test 7 in maneuvers.maneuver_orbit_number
+    @test 14 in maneuvers.maneuver_orbit_number
+
+    idx7 = findfirst(==(7), maneuvers.maneuver_orbit_number)
+    idx14 = findfirst(==(14), maneuvers.maneuver_orbit_number)
+    @test idx7 !== nothing
+    @test idx14 !== nothing
+    @test maneuvers.maneuver_Δv[idx7] > 0.0
+    @test maneuvers.maneuver_Δv[idx14] < 0.0
+
+    guidance_model = AerobrakingCampaignPropulsiveManeuverGuidanceModel(
+        maneuver_orbit_number=maneuvers.maneuver_orbit_number,
+        maneuver_Δv=maneuvers.maneuver_Δv
+    )
+    thruster = BaseThrusterModel(
+        thrust=[4.0],
+        direction=[0.0],
+        Δv=[0.0],
+        start_burn_time=[-1.0],
+        stop_burn_time=[-1.0],
+        Isp=[300.0]
+    )
+    @test length(guidance_model.maneuver_orbit_number) == length(guidance_model.maneuver_Δv)
+    @test length(thruster.thrust) == 1
+
+    ensure_guidance_sandbox_loaded!()
+    sandbox = GUIDANCE_SANDBOX
+    sandbox_guidance = sandbox.AerobrakingCampaignPropulsiveManeuverGuidanceModel(
+        maneuver_orbit_number=maneuvers.maneuver_orbit_number,
+        maneuver_Δv=maneuvers.maneuver_Δv
+    )
+
+    args = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p = ODEParams{1}(args=args)
+    u = ComponentVector(pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], mass=1.0, heat_loads=[0.0])
+
+    p.orbit_counter[1] = 7
+    sandbox.calcGuidanceEffect!(sandbox_guidance, u, p, 0.0, 1)
+    @test p.shared_buffers.maneuver_commands[1].delta_v_mps > 0.0
+    @test isapprox(p.shared_buffers.maneuver_commands[1].direction_rad, 0.0; atol=1e-12, rtol=0.0)
+
+    p.orbit_counter[1] = 14
+    sandbox.calcGuidanceEffect!(sandbox_guidance, u, p, 0.0, 1)
+    @test p.shared_buffers.maneuver_commands[1].delta_v_mps > 0.0
+    @test isapprox(p.shared_buffers.maneuver_commands[1].direction_rad, π; atol=1e-12, rtol=0.0)
 end

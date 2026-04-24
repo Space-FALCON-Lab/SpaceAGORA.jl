@@ -1,5 +1,11 @@
 @testset "No-GRAM Onboarding Mode" begin
     @testset "Preset builders choose documented fallback models" begin
+        env_default = make_no_gram_environment()
+        @test env_default.planet isa Earth
+        @test env_default.density_model isa NoAtmosphereModel
+        @test env_default.ephemerides_model isa SimpleEphemeridesModel
+        @test env_default.wind == false
+
         env_none = make_no_gram_environment(planet=:earth, atmosphere=:none, EI_km=120.0)
         @test env_none.planet isa Earth
         @test env_none.density_model isa NoAtmosphereModel
@@ -61,6 +67,21 @@
         mars_et0 = ephemerides_time_seconds(mars_args.initial_time, mars_args.environment_model.ephemerides_model)
         mars_lpi0 = planet_frame_lpi(mars_args.environment_model.planet, mars_et0, mars_args.environment_model.ephemerides_model)
         @test !all(iszero, mars_lpi0)
+    end
+
+    @testset "Earth starter-pack SPICE kernels fall back cleanly" begin
+        lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
+            kclear()
+        end
+
+        spice_path = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
+        earth = @test_nowarn Earth("", spice_path)
+        et = ephemerides_time_seconds(
+            InitialTime(year=2024, month=1, day=1, hour=0, minute=0, second=0.0),
+            SpiceEphemeridesModel()
+        )
+        l_pi = @test_nowarn planet_frame_lpi(earth, et, SpiceEphemeridesModel())
+        @test !all(iszero, l_pi)
     end
 
     @testset "Simple ephemerides reject unsupported high-fidelity effectors" begin

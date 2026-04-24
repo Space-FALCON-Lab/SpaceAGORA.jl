@@ -186,9 +186,8 @@ function _load_cygnss_96hr_j2000_series()
     vz_j2000_kmps = Vector{Float64}(undef, n)
 
     @inbounds for i in eachindex(t_rel)
-        r_j2000_m, v_j2000_mps = TV._transform_state(
-            "ITRF93",
-            "J2000",
+        r_j2000_m, v_j2000_mps = TV._planet_fixed_to_j2000_state(
+            "earth",
             et0 + t_rel[i],
             SVector{3, Float64}(x_ecef_km[i], y_ecef_km[i], z_ecef_km[i]) .* 1.0e3,
             SVector{3, Float64}(vx_ecef_kmps[i], vy_ecef_kmps[i], vz_ecef_kmps[i]) .* 1.0e3

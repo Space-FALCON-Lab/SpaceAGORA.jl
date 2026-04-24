@@ -18,12 +18,20 @@ using .ParallelProfiles: reset_outer_route_state!, outer_route_signature, outer_
 using .ParallelProfiles: default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
+import .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 using .SimulationModel.AbstractTypes: AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel
 using .SimulationModel.AbstractTypes: AbstractControlEffectorModel, AbstractEphemeridesModel
 using .SimulationModel.AbstractTypes: AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
-using .SimulationModel: NoAtmosphereModel, ExponentialAtmosphereModel, SimpleEphemeridesModel
+using .SimulationModel: StateSample, PlanetFrameSample, AtmosphereSample, SolarEphemerisSample
+using .SimulationModel: ThirdBodyEphemerisSample, EnvironmentSample, EffectorEnvironmentRequirements
+using .SimulationModel: NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
+using .SimulationModel: NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
+using .SimulationModel: SimpleEphemeridesModel
 using .SimulationModel: make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
-using .SimulationModel: calcForceTorque, getDensity, getDensityBatch!
+using .SimulationModel: calcForceTorque, wrench, environment_requirements, solver_partition
+using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleration_ii
+using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
+using .SimulationModel: getDensity, getDensityBatch!
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
@@ -35,7 +43,6 @@ using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 @doc (@doc SimulationEngine.ArtifactConfig) ArtifactConfig
 @doc (@doc SimulationEngine.SimulationEngineConfig) SimulationEngineConfig
 @doc (@doc SimulationEngine.simulation_engine_config_from_env) simulation_engine_config_from_env
-
 @doc (@doc SimulationModel.AbstractTypes.AbstractForceTorqueModel) AbstractForceTorqueModel
 @doc (@doc SimulationModel.AbstractTypes.AbstractPlanet) AbstractPlanet
 @doc (@doc SimulationModel.AbstractTypes.AbstractDensityModel) AbstractDensityModel
@@ -44,6 +51,13 @@ using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 @doc (@doc SimulationModel.AbstractTypes.AbstractThermalModel) AbstractThermalModel
 @doc (@doc SimulationModel.AbstractTypes.AbstractThrusterModel) AbstractThrusterModel
 @doc (@doc SimulationModel.AbstractTypes.AbstractGuidanceModel) AbstractGuidanceModel
+@doc (@doc SimulationModel.StateSample) StateSample
+@doc (@doc SimulationModel.PlanetFrameSample) PlanetFrameSample
+@doc (@doc SimulationModel.AtmosphereSample) AtmosphereSample
+@doc (@doc SimulationModel.SolarEphemerisSample) SolarEphemerisSample
+@doc (@doc SimulationModel.ThirdBodyEphemerisSample) ThirdBodyEphemerisSample
+@doc (@doc SimulationModel.EnvironmentSample) EnvironmentSample
+@doc (@doc SimulationModel.EffectorEnvironmentRequirements) EffectorEnvironmentRequirements
 
 """
     NoAtmosphereModel()
@@ -55,13 +69,51 @@ NoAtmosphereModel
 
 """
     ExponentialAtmosphereModel(planet)
-    ExponentialAtmosphereModel(rho_ref, h_ref, H)
+    ExponentialAtmosphereModel(rho_ref, h_ref, H; temperature_k=200.0, valid_min_altitude_m=h_ref, valid_max_altitude_m=h_ref + 5H)
 
-Analytic density-model constructor for baseline runs that should not depend on
-GRAM assets. The `planet` convenience form uses the built-in reference density
-and scale-height constants for the chosen body.
+Single-scale-height analytic density-model constructor for baseline runs that
+should not depend on GRAM assets. The `planet` convenience form uses the
+built-in reference density and scale-height constants for the chosen body. This
+model assumes zero winds and constant temperature, and its validity-range
+keywords are advisory only; evaluation extrapolates the same exponential
+outside the documented band.
 """
 ExponentialAtmosphereModel
+
+"""
+    PiecewiseExponentialAtmosphereModel(h_breaks_m, rho_refs, Hs; h_refs=h_breaks_m[1:end-1], temperature_k=200.0, valid_min_altitude_m=first(h_breaks_m), valid_max_altitude_m=last(h_breaks_m))
+
+Multi-layer analytic density-model constructor for bounded no-GRAM studies that
+need more shape than a single scale height. The model assumes zero winds and
+constant temperature and uses the nearest configured layer to extrapolate
+outside the advisory validity band.
+"""
+PiecewiseExponentialAtmosphereModel
+
+"""
+    NRLMSISE00AtmosphereModel(; f107a=150.0, f107=150.0, ap=4.0, index_provider=nothing, use_space_indices=false, space_indices_force_download=false, include_anomalous_oxygen=true, valid_min_altitude_m=0.0, valid_max_altitude_m=1000e3)
+
+NRLMSISE-00 atmosphere-model constructor for runs that need empirical
+thermospheric density without GRAM. Use fixed `f107a`, `f107`, and `ap` values
+or provide `index_provider`, a callable that returns `(f107a, f107, ap)` for a
+requested instant. Set `use_space_indices=true` to use the built-in
+CelesTrak-backed F10.7/Ap dataset path, optionally prewarmed through
+[`init_nrlmsise_space_indices!`](@ref). The standard NRLMSISE-00 validity band
+is approximately `0 m` to `1000 km`; the validity fields document that range
+but do not clamp evaluation.
+"""
+NRLMSISE00AtmosphereModel
+
+"""
+    init_nrlmsise_space_indices!(; force_download=false)
+
+Initialize or refresh the CelesTrak space-weather dataset used by
+`NRLMSISE00AtmosphereModel(use_space_indices=true)`.
+
+Call this before long runs if you want any dataset download or refresh to
+happen before the first atmosphere evaluation.
+"""
+init_nrlmsise_space_indices!
 
 """
     SimpleEphemeridesModel(; reference_epoch_seconds=0.0, prime_meridian_at_reference_rad=0.0)
@@ -83,6 +135,86 @@ implementations. Extend this method for package or user models that contribute
 translational and rotational wrench terms to the simulation RHS.
 """
 calcForceTorque
+
+"""
+    wrench(model, x::StateSample, env::EnvironmentSample, t::Float64) -> (force_ii, torque_body)
+
+Preferred additive extension hook for custom [`AbstractForceTorqueModel`](@ref)
+implementations. The engine owns stage-consistent sampling and caching, then
+passes a typed state/environment bundle into `wrench`.
+
+Return inertial-frame force and body-frame torque in SI units. Implementations
+should behave as pure functions of `(model, x, env, t)`.
+"""
+wrench
+
+"""
+    environment_requirements(model) -> EffectorEnvironmentRequirements
+
+Preferred additive declaration hook for the sampled environment capabilities a
+[`wrench`](@ref) implementation requires. The default requests no sampled
+environment fields.
+"""
+environment_requirements
+
+"""
+    solver_partition(model) -> Symbol
+
+Optional additive declaration hook for `split_imex` solver partitioning of
+dynamic effectors.
+
+Return `:implicit` to place the effector on the atmosphere-implicit IMEX side,
+or `:explicit` to keep it on the non-stiff explicit side. The default is
+`:explicit`.
+"""
+solver_partition
+
+"""
+    gravity_backbone_structure(model) -> Symbol
+
+Optional additive declaration hook for the `gravity_backbone_split` solver
+mode.
+
+Return `:position_only_static_gravity` for effectors that can participate in
+the gravity-only translational backbone, or `:unsupported` otherwise. The
+default is `:unsupported`.
+"""
+gravity_backbone_structure
+
+"""
+    gravity_backbone_acceleration_ii(model, x::StateSample, env::EnvironmentSample, t::Float64) -> accel_ii
+
+Optional additive acceleration hook for `gravity_backbone_split`.
+
+Implementations must return inertial-frame translational acceleration in SI
+units for effectors that declare
+[`gravity_backbone_structure`](@ref) == `:position_only_static_gravity`.
+"""
+gravity_backbone_acceleration_ii
+
+"""
+    gravity_backbone_kick_structure(model) -> Symbol
+
+Optional additive declaration hook for explicit translational perturbation kicks
+in `gravity_backbone_split`.
+
+Return `:velocity_kick_explicit` for effectors that should be applied as
+explicit velocity kicks around the gravity core, or `:unsupported` otherwise.
+The default is `:unsupported`.
+"""
+gravity_backbone_kick_structure
+
+"""
+    gravity_backbone_kick_acceleration_ii(model, x::StateSample, env::EnvironmentSample, t::Float64) -> accel_ii
+
+Optional additive acceleration hook for explicit velocity kicks in
+`gravity_backbone_split`.
+
+Implementations must return inertial-frame translational acceleration in SI
+units for effectors that declare
+[`gravity_backbone_kick_structure`](@ref) == `:velocity_kick_explicit`.
+"""
+gravity_backbone_kick_acceleration_ii
 
 """
     getDensity(model, h, lat, lon, el_time, wind[, p]) -> (rho, temperature, wind_vec)
@@ -163,11 +295,19 @@ export reset_outer_route_state!, outer_route_signature, outer_route_stats_snapsh
 export default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
 export ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 export simulation_engine_config_from_env
+export prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 export AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractControlEffectorModel
 export AbstractEphemeridesModel, AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
-export NoAtmosphereModel, ExponentialAtmosphereModel, SimpleEphemeridesModel
+export StateSample, PlanetFrameSample, AtmosphereSample, SolarEphemerisSample
+export ThirdBodyEphemerisSample, EnvironmentSample, EffectorEnvironmentRequirements
+export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
+export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
+export SimpleEphemeridesModel
 export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
-export calcForceTorque, getDensity, getDensityBatch!
+export calcForceTorque, wrench, environment_requirements, solver_partition
+export gravity_backbone_structure, gravity_backbone_acceleration_ii
+export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
+export getDensity, getDensityBatch!
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation
@@ -200,6 +340,33 @@ true
 """
 run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kwargs...)
 run_simulation(config::SimulationEngineConfig, args...; kwargs...) = SimulationEngine.run_simulation(config, args...; kwargs...)
+
+"""
+    prewarm_nbody_ephemeris_cache(args; dt_s=nothing, mission_end_s=nothing, save_path=nothing) -> cache
+    prewarm_nbody_ephemeris_cache(config, args; dt_s=nothing, mission_end_s=nothing, save_path=nothing) -> cache
+
+Precompute and register a process-local N-body SPICE ephemeris cache for later
+[`run_simulation`](@ref) calls. This is intended for Monte Carlo campaigns that
+reuse the same third-body set, start epoch, mission span, and cache sample
+spacing across many runs. The returned cache is keyed by the same deterministic
+boundary that the runtime setup already uses.
+
+If `save_path` is provided, the cache is also serialized to disk so other Julia
+worker processes can call [`load_nbody_ephemeris_cache!`](@ref) and reuse the
+same precomputed ephemeris without rebuilding it from SPICE.
+"""
+prewarm_nbody_ephemeris_cache(args...; kwargs...) = SimulationEngine.prewarm_nbody_ephemeris_cache(args...; kwargs...)
+
+"""
+    load_nbody_ephemeris_cache!(path; replace=true) -> cache
+
+Load a serialized N-body ephemeris cache created by
+[`prewarm_nbody_ephemeris_cache`](@ref) and register it in the current Julia
+process so later [`run_simulation`](@ref) calls can reuse it. This is intended
+for multi-process Monte Carlo campaigns where each worker should load the same
+precomputed SPICE cache once before running many trajectories.
+"""
+load_nbody_ephemeris_cache!(args...; kwargs...) = SimulationEngine.load_nbody_ephemeris_cache!(args...; kwargs...)
 
 """
     check_assets(; repo_root=pwd()) -> AssetCheckReport

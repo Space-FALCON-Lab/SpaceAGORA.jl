@@ -1,3 +1,5 @@
+import GRAMSuite
+
 @testset "CLI and Asset Surface" begin
     @testset "Asset report covers baseline and optional roots" begin
         report = SpaceAGORA.check_assets(repo_root=REPO_ROOT)
@@ -63,5 +65,66 @@
 
         setup_text = sprint(io -> @test SpaceAGORA.run_cli(["assets", "setup-open"]; io=io, errio=io) == 0)
         @test occursin("No downloads are required for baseline no-GRAM mode", setup_text)
+    end
+
+    @testset "Earth GRAM density channels" begin
+        withenv(
+            "SPACEAGORA_GRAM_STATIC_GRID" => "0",
+            "SPACEAGORA_GRAM_OFFLINE_SURROGATE" => "off",
+        ) do
+            it = InitialTime(year=2026, month=3, day=20, hour=12, minute=0, second=0.0)
+            kwargs = (
+                planet_name="earth",
+                initial_time=it,
+                earth_daily_f10=120.0,
+                earth_mean_f10=120.0,
+                earth_ap=10.0,
+            )
+            low_model = GRAMAtmosphereModel(; kwargs..., gram_density_channel=:low)
+            nominal_model = GRAMAtmosphereModel(; kwargs..., gram_density_channel=:nominal)
+            high_model = GRAMAtmosphereModel(; kwargs..., gram_density_channel=:high)
+
+            h_m = 200.0e3
+            lat_rad = deg2rad(0.0)
+            lon_rad = deg2rad(0.0)
+            rho_low, _, _ = GRAMSuite.point_density_state(low_model.core, h_m, lat_rad, lon_rad, 0.0, false)
+            rho_nominal, _, _ = GRAMSuite.point_density_state(nominal_model.core, h_m, lat_rad, lon_rad, 0.0, false)
+            rho_high, _, _ = GRAMSuite.point_density_state(high_model.core, h_m, lat_rad, lon_rad, 0.0, false)
+
+            @test rho_low <= rho_nominal <= rho_high
+        end
+    end
+
+    @testset "VLEO drag trade smoke" begin
+        study_path = joinpath(REPO_ROOT, "benchmarks", "studies", "vleo_drag_trade.jl")
+        if !isdefined(@__MODULE__, :run_vleo_drag_trade)
+            include(study_path)
+        end
+
+        route_state = SpaceAGORA.OuterRouteState()
+        features = _case_outer_features(150.0, 350.0)
+        @test _select_case_outer_route(:auto, route_state, features) == :process
+
+        mktempdir() do tmp
+            result = run_vleo_drag_trade(smoke=true, out_dir=tmp, generate_plots=true, outer_route=:none)
+            @test isfile(result.cases_csv_path)
+            @test isfile(result.summary_csv_path)
+            @test isfile(result.report_path)
+            @test isfile(result.outer_route_state_path)
+            @test length(result.plot_paths) == 4
+            @test all(isfile, result.plot_paths)
+
+            cases_df = CSV.read(result.cases_csv_path, DataFrame)
+            @test nrow(cases_df) == 3
+            @test Set(String.(cases_df.channel)) == Set(["low", "nominal", "high"])
+            @test Set(String.(cases_df.outer_route)) == Set(["none"])
+            @test all(Float64.(cases_df.drag_impulse_ns) .> 0.0)
+            @test all(Float64.(cases_df.required_reboost_dv_mps) .> 0.0)
+
+            report_text = read(result.report_path, String)
+            @test occursin("AerodynamicCoefficientfM()", report_text)
+            @test occursin("2026-03-20 12:00:00 UTC", report_text)
+            @test occursin("Starlink-like", report_text)
+        end
     end
 end

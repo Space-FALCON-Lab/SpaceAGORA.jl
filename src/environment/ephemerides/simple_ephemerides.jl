@@ -7,6 +7,28 @@ end
 end
 
 const _J2000_UTC = DateTime(2000, 1, 1, 12, 0, 0)
+const _SPICE_POSITION_KM_TO_M = 1.0e3
+const _EARTH_HIGH_PREC_BODY_FIXED_FRAME = "ITRF93"
+const _EARTH_FALLBACK_BODY_FIXED_FRAME = "IAU_EARTH"
+
+@inline function _spice_position_j2000_m_unlocked(
+    target::AbstractString,
+    et::Float64,
+    observer::AbstractString
+)::SVector{3, Float64}
+    # NAIF SPK position outputs are in km; convert once at the SPICE boundary.
+    return SVector{3, Float64}(spkpos(target, et, "J2000", "none", observer)[1]) * _SPICE_POSITION_KM_TO_M
+end
+
+@inline function spice_position_j2000_m(
+    target::AbstractString,
+    et::Float64,
+    observer::AbstractString
+)::SVector{3, Float64}
+    return lock(SPICE_LOCK) do
+        _spice_position_j2000_m_unlocked(target, et, observer)
+    end
+end
 
 @inline ephemerides_requires_spice(::SpiceEphemeridesModel)::Bool = true
 @inline ephemerides_requires_spice(::SimpleEphemeridesModel)::Bool = false
@@ -47,13 +69,24 @@ end
 end
 
 @inline function _spice_body_fixed_frame(planet)::String
-    return planet.name == "Moon" ? "MOON_PA_DE421" : (planet.name == "Earth" ? "ITRF93" : "IAU_" * uppercase(planet.name))
+    return planet.name == "Moon" ? "MOON_PA_DE421" : (planet.name == "Earth" ? _EARTH_HIGH_PREC_BODY_FIXED_FRAME : "IAU_" * uppercase(planet.name))
+end
+
+function _spice_planet_frame_lpi(planet, et::Float64)::SMatrix{3, 3, Float64}
+    return lock(SPICE_LOCK) do
+        if planet.name == "Earth"
+            try
+                return SMatrix{3, 3, Float64}(pxform("J2000", _EARTH_HIGH_PREC_BODY_FIXED_FRAME, et))
+            catch
+                return SMatrix{3, 3, Float64}(pxform("J2000", _EARTH_FALLBACK_BODY_FIXED_FRAME, et))
+            end
+        end
+        return SMatrix{3, 3, Float64}(pxform("J2000", _spice_body_fixed_frame(planet), et))
+    end
 end
 
 @inline function planet_frame_lpi(planet, et::Float64, ::SpiceEphemeridesModel)::SMatrix{3, 3, Float64}
-    return lock(SPICE_LOCK) do
-        SMatrix{3, 3, Float64}(pxform("J2000", _spice_body_fixed_frame(planet), et))
-    end
+    return _spice_planet_frame_lpi(planet, et)
 end
 
 @inline function planet_frame_lpi(planet, et::Float64, model::SimpleEphemeridesModel)::SMatrix{3, 3, Float64}

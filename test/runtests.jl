@@ -11,7 +11,9 @@ using DiffEqBase
 using DiffEqCallbacks
 using OrdinaryDiffEq
 using Quaternions
+using SatelliteToolboxGravityModels
 using SPICE
+using SpecialFunctions: loggamma
 using TOML
 using JET
 using Aqua
@@ -65,6 +67,13 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const _dynamic_effector_thread_decision = SimulationEngine._dynamic_effector_thread_decision
     const _retcode_is_stiff_symptom = SimulationEngine._retcode_is_stiff_symptom
     const _split_imex_solver_spec = SimulationEngine._split_imex_solver_spec
+    const _symplectic_conservative_eligible = SimulationEngine._symplectic_conservative_eligible
+    const _symplectic_fixed_dt_s = SimulationEngine._symplectic_fixed_dt_s
+    const _gravity_backbone_fixed_dt_s = SimulationEngine._gravity_backbone_fixed_dt_s
+    const _gravity_backbone_eligible = SimulationEngine._gravity_backbone_eligible
+    const _gravity_backbone_reject_reason = SimulationEngine._gravity_backbone_reject_reason
+    const _gravity_backbone_structure_validated = SimulationEngine._gravity_backbone_structure_validated
+    const _gravity_backbone_kick_structure_validated = SimulationEngine._gravity_backbone_kick_structure_validated
     const _auto_stiff_switched = SimulationEngine._auto_stiff_switched
     const _solve_with_explicit_solver = SimulationEngine._solve_with_explicit_solver
     const _solve_with_multirate_solver = SimulationEngine._solve_with_multirate_solver
@@ -93,6 +102,7 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const _initialize_planet_frame_ephemeris_cache! = SimulationEngine._initialize_planet_frame_ephemeris_cache!
     const _initialize_srp_sun_cache_buffer! = SimulationEngine._initialize_srp_sun_cache_buffer!
     const _initialize_srp_sun_ephemeris_cache! = SimulationEngine._initialize_srp_sun_ephemeris_cache!
+    const _initialize_spice_rhs_memo_mode! = SimulationEngine._initialize_spice_rhs_memo_mode!
     const _mission_is_long_for_effector_threads = SimulationEngine._mission_is_long_for_effector_threads
     const _nbody_ephemeris_cache_dt_s = SimulationEngine._nbody_ephemeris_cache_dt_s
     const _nbody_ephemeris_cache_max_samples = SimulationEngine._nbody_ephemeris_cache_max_samples
@@ -104,6 +114,24 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const _srp_ephemeris_cache_max_samples = SimulationEngine._srp_ephemeris_cache_max_samples
     const _validate_orientation_inertia! = SimulationEngine._validate_orientation_inertia!
     const _validate_thermal_model_support! = SimulationEngine._validate_thermal_model_support!
+    const build_state_sample = SimulationEngine.build_state_sample
+    const sample_planet_frame = SimulationEngine.sample_planet_frame
+    const sample_atmosphere = SimulationEngine.sample_atmosphere
+    const sample_environment = SimulationEngine.sample_environment
+    const _build_typed_solver_problem = SimulationEngine._build_typed_solver_problem
+    const _evaluate_dynamic_effector = SimulationEngine._evaluate_dynamic_effector
+    const _solver_partition_validated = SimulationEngine._solver_partition_validated
+    const _wrench_method_available = SimulationEngine._wrench_method_available
+    const spacecraft_dynamics_gravity_backbone! = SimulationEngine.spacecraft_dynamics_gravity_backbone!
+    const _gravity_backbone_half_kick! = SimulationEngine._gravity_backbone_half_kick!
+    const spacecraft_dynamics_implicit_atmosphere! = SimulationEngine.spacecraft_dynamics_implicit_atmosphere!
+    const spacecraft_dynamics_explicit_remainder! = SimulationEngine.spacecraft_dynamics_explicit_remainder!
+    const _is_gravity_backbone_state = SimulationEngine._is_gravity_backbone_state
+    const _state_position_ii = SimulationEngine._state_position_ii
+    const _state_velocity_ii = SimulationEngine._state_velocity_ii
+    const _state_mass_kg = SimulationEngine._state_mass_kg
+    const _state_heat_loads = SimulationEngine._state_heat_loads
+    const _gravity_backbone_initial_states = SimulationEngine._gravity_backbone_initial_states
 end
 
 struct ConstantDensityModel <: SimulationModel.AbstractDensityModel
@@ -145,6 +173,38 @@ end
 
 struct ConstantForceModel <: SimulationModel.AbstractForceTorqueModel
     force::SVector{3, Float64}
+end
+
+struct WrenchOnlyForceModel <: SimulationModel.AbstractForceTorqueModel
+    force::SVector{3, Float64}
+    torque::SVector{3, Float64}
+end
+
+struct AtmosphereProbeWrenchModel <: SimulationModel.AbstractForceTorqueModel
+end
+
+struct ImplicitLegacyForceModel <: SimulationModel.AbstractForceTorqueModel
+    force::SVector{3, Float64}
+    torque::SVector{3, Float64}
+end
+
+struct InvalidPartitionForceModel <: SimulationModel.AbstractForceTorqueModel
+end
+
+struct BackboneCustomGravityModel <: SimulationModel.AbstractForceTorqueModel
+    accel::SVector{3, Float64}
+end
+
+struct InvalidBackboneStructureModel <: SimulationModel.AbstractForceTorqueModel
+end
+
+struct SolarBackboneModel <: SimulationModel.AbstractForceTorqueModel
+end
+
+struct InvalidBackboneKickStructureModel <: SimulationModel.AbstractForceTorqueModel
+end
+
+struct PlanetFrameKickModel <: SimulationModel.AbstractForceTorqueModel
 end
 
 struct ThrowingOrbitPlanet <: SimulationModel.AbstractPlanet
@@ -273,6 +333,91 @@ function SimulationModel.calcForceTorque(
     return model.force, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
+function SimulationModel.wrench(
+    model::WrenchOnlyForceModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
+)
+    return model.force, model.torque
+end
+
+SimulationModel.solver_partition(::ImplicitLegacyForceModel) = :implicit
+SimulationModel.solver_partition(::InvalidPartitionForceModel) = :bad_partition
+SimulationModel.gravity_backbone_structure(::BackboneCustomGravityModel) = :position_only_static_gravity
+SimulationModel.gravity_backbone_structure(::InvalidBackboneStructureModel) = :bad_structure
+SimulationModel.gravity_backbone_structure(::SolarBackboneModel) = :position_only_static_gravity
+SimulationModel.gravity_backbone_kick_structure(::InvalidBackboneKickStructureModel) = :bad_structure
+SimulationModel.gravity_backbone_kick_structure(::PlanetFrameKickModel) = :velocity_kick_explicit
+
+function SimulationModel.gravity_backbone_acceleration_ii(
+    model::BackboneCustomGravityModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
+)
+    return model.accel
+end
+
+function SimulationModel.gravity_backbone_acceleration_ii(
+    model::SolarBackboneModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
+)
+    return SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+function SimulationModel.environment_requirements(::SolarBackboneModel)
+    return EffectorEnvironmentRequirements(solar=true)
+end
+
+function SimulationModel.environment_requirements(::PlanetFrameKickModel)
+    return EffectorEnvironmentRequirements(planet_frame=true)
+end
+
+function SimulationModel.gravity_backbone_kick_acceleration_ii(
+    model::PlanetFrameKickModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
+)
+    return SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+function SimulationModel.calcForceTorque(
+    model::ImplicitLegacyForceModel,
+    x::AbstractVector{Float64},
+    p::ODEParams,
+    i::Int64
+)
+    return model.force, model.torque
+end
+
+function SimulationModel.calcForceTorque(
+    model::InvalidPartitionForceModel,
+    x::AbstractVector{Float64},
+    p::ODEParams,
+    i::Int64
+)
+    return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+function SimulationModel.environment_requirements(::AtmosphereProbeWrenchModel)
+    return EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
+end
+
+function SimulationModel.wrench(
+    model::AtmosphereProbeWrenchModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
+)
+    env.atmosphere === nothing && error("expected atmosphere sample")
+    env.planet_frame === nothing && error("expected planet-frame sample")
+    return SVector{3, Float64}(env.atmosphere.rho_kg_m3, env.planet_frame.alt_m, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
 function SimulationModel.ControlHooks.rvtoorbitalelement(
     pos::SVector{3, Float64},
     vel::SVector{3, Float64},
@@ -290,6 +435,95 @@ function specific_energy(df::DataFrame, mu::Float64)
     r = sqrt.(df.sc1_pos_1.^2 .+ df.sc1_pos_2.^2 .+ df.sc1_pos_3.^2)
     v2 = df.sc1_vel_1.^2 .+ df.sc1_vel_2.^2 .+ df.sc1_vel_3.^2
     return 0.5 .* v2 .- mu ./ r
+end
+
+function specific_angular_momentum_magnitude(df::DataFrame)
+    h1 = df.sc1_pos_2 .* df.sc1_vel_3 .- df.sc1_pos_3 .* df.sc1_vel_2
+    h2 = df.sc1_pos_3 .* df.sc1_vel_1 .- df.sc1_pos_1 .* df.sc1_vel_3
+    h3 = df.sc1_pos_1 .* df.sc1_vel_2 .- df.sc1_pos_2 .* df.sc1_vel_1
+    return sqrt.(h1.^2 .+ h2.^2 .+ h3.^2)
+end
+
+function unwrap_angle_series(values::AbstractVector{<:Real})
+    n = length(values)
+    n == 0 && return Float64[]
+    out = Vector{Float64}(undef, n)
+    out[1] = Float64(values[1])
+    @inbounds for i in 2:n
+        prev = Float64(values[i - 1])
+        cur = Float64(values[i])
+        Δ = atan(sin(cur - prev), cos(cur - prev))
+        out[i] = out[i - 1] + Δ
+    end
+    return out
+end
+
+function linear_regression_slope(xs::AbstractVector{<:Real}, ys::AbstractVector{<:Real})
+    length(xs) == length(ys) || throw(ArgumentError("linear_regression_slope requires vectors of equal length."))
+    length(xs) >= 2 || throw(ArgumentError("linear_regression_slope requires at least two samples."))
+    x̄ = sum(xs) / length(xs)
+    ȳ = sum(ys) / length(ys)
+    num = 0.0
+    den = 0.0
+    @inbounds for i in eachindex(xs, ys)
+        dx = Float64(xs[i]) - x̄
+        dy = Float64(ys[i]) - ȳ
+        num += dx * dy
+        den += dx * dx
+    end
+    den > 0.0 || throw(ArgumentError("linear_regression_slope requires non-degenerate x samples."))
+    return num / den
+end
+
+function harmonics_full_normalization_factor(l::Int, m::Int)::Float64
+    l >= 0 || throw(ArgumentError("Degree must be >= 0, got $l."))
+    0 <= m <= l || throw(ArgumentError("Order must satisfy 0 <= m <= l, got l=$l, m=$m."))
+    δ0m = (m == 0) ? 1.0 : 0.0
+    ratio = exp(0.5 * (loggamma(l - m + 1) - loggamma(l + m + 1)))
+    return sqrt((2.0 - δ0m) * (2.0 * l + 1.0)) * ratio
+end
+
+function write_gravity_harmonics_csv(
+    coeff_fn::Function,
+    path::AbstractString,
+    max_degree::Int,
+    max_order::Int
+)
+    open(path, "w") do io
+        println(io, "degree,order,C,S")
+        for l in 0:max_degree
+            for m in 0:min(max_order, l)
+                C, S = coeff_fn(l, m)
+                println(io, string(l, ",", m, ",", C, ",", S))
+            end
+        end
+    end
+    return path
+end
+
+function write_icgem_from_harmonics_model(
+    path::AbstractString,
+    model::SimulationModel.DynamicEffectors.GravitationalHarmonicsModel;
+    model_name::AbstractString="SpaceAGORA_Test"
+)
+    open(path, "w") do io
+        println(io, "product_type gravity_field")
+        println(io, "modelname ", model_name)
+        println(io, "earth_gravity_constant ", model.planet.μ)
+        println(io, "radius ", model.planet.Rp_e)
+        println(io, "max_degree ", model.L)
+        println(io, "errors no")
+        println(io, "norm fully_normalized")
+        println(io, "end_of_head")
+        for l in 0:model.L
+            for m in 0:min(model.M, l)
+                i = l + 1
+                j = m + 1
+                println(io, "gfc ", l, " ", m, " ", model.C[i, j], " ", model.S[i, j])
+            end
+        end
+    end
+    return path
 end
 
 function make_spacecraft(;

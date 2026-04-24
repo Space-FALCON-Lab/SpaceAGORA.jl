@@ -17,7 +17,7 @@ end
 @inline function _save_positions(num_sats::Int, u, t, integrator)
     positions = Vector{SVector{3, Float64}}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        positions[i] = SVector{3, Float64}(u.sc[i].pos)
+        positions[i] = _simulation_engine_module()._state_position_ii(u, i)
     end
     return positions
 end
@@ -25,7 +25,7 @@ end
 @inline function _save_velocities(num_sats::Int, u, t, integrator)
     velocities = Vector{SVector{3, Float64}}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        velocities[i] = SVector{3, Float64}(u.sc[i].vel)
+        velocities[i] = _simulation_engine_module()._state_velocity_ii(u, i)
     end
     return velocities
 end
@@ -74,7 +74,9 @@ end
     planet = integrator.p.args.environment_model.planet
     periapsis_altitudes = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        oe = rvtoorbitalelement(SVector{3, Float64}(u.sc[i].pos), SVector{3, Float64}(u.sc[i].vel), planet)
+        pos = _simulation_engine_module()._state_position_ii(u, i)
+        vel = _simulation_engine_module()._state_velocity_ii(u, i)
+        oe = rvtoorbitalelement(pos, vel, planet)
         periapsis_altitudes[i] = oe[1] * (1.0 - oe[2]) - planet.Rp_e
     end
     return periapsis_altitudes
@@ -134,7 +136,7 @@ end
 @inline function _save_heat_load(num_sats::Int, u, t, integrator)
     heat_loads = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        heat_loads[i] = sum(u.sc[i].heat_loads)
+        heat_loads[i] = sum(_simulation_engine_module()._state_heat_loads(u, integrator.p.args, i))
     end
     return heat_loads
 end
@@ -142,7 +144,7 @@ end
 @inline function _save_mass(num_sats::Int, u, t, integrator)
     masses = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        masses[i] = Float64(u.sc[i].mass)
+        masses[i] = _simulation_engine_module()._state_mass_kg(u, integrator.p.args, i)
     end
     return masses
 end
@@ -150,7 +152,9 @@ end
 @inline function _save_quaternion(num_sats::Int, u, t, integrator)
     quaternions = Vector{SVector{4, Float64}}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        quaternions[i] = SVector{4, Float64}(u.sc[i].q)
+        q = _simulation_engine_module()._state_quaternion(u, i)
+        q === nothing && throw(ArgumentError("Quaternion save field requires orientation state."))
+        quaternions[i] = q
     end
     return quaternions
 end

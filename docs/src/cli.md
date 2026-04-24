@@ -1,12 +1,31 @@
 # CLI
 
-SpaceAGORA now exposes a package-owned CLI surface through:
+Use this page when you want the stable command-line surface instead of calling
+Julia scripts directly.
+
+This page is for users and operators who prefer packaged commands for examples,
+verification studies, benchmarks, and asset inspection.
+
+Shortest successful command:
+
+```bash
+./bin/spaceagora assets check
+```
+
+What to read next:
+
+- [Quickstart](user/quickstart.md)
+- [Recipes](user/recipes.md)
+- [Assets and Modes](assets.md)
+
+SpaceAGORA exposes a package-owned CLI surface through:
 
 ```bash
 ./bin/spaceagora
 ```
 
-The wrapper keeps execution on the committed `/.AGORA` environment by default and forwards into `SpaceAGORA.run_cli(...)`.
+The wrapper keeps execution on the committed `/.AGORA` environment by default
+and forwards into `SpaceAGORA.run_cli(...)`.
 
 ## Commands
 
@@ -24,7 +43,9 @@ Use `--smoke` to force the example smoke configuration.
 ./bin/spaceagora telemetry quick --output-dir=output/telemetry_cli --enforce=1
 ```
 
-Plot generation is off by default in the CLI path so the telemetry command remains usable even when plotting assets/scripts are unavailable. Enable it explicitly with `--plots=1`.
+Plot generation is off by default in the CLI path so the telemetry command
+remains usable even when plotting assets/scripts are unavailable. Enable it
+explicitly with `--plots=1`.
 
 ### Run benchmark launchers
 
@@ -43,4 +64,5 @@ Plot generation is off by default in the CLI path so the telemetry command remai
 
 ## Print-only mode
 
-Every execution command supports `--print-only` so you can inspect the resolved launcher, environment, and project without running the workload.
+Every execution command supports `--print-only` so you can inspect the resolved
+launcher, environment, and project without running the workload.

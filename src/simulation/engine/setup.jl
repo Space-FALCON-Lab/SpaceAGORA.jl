@@ -15,14 +15,19 @@ using TOML
 
 const _normalize_warning_emitted = Ref(false)
 const RESULTS_BUNDLE_SCHEMA_VERSION = "1"
-const CHECKPOINT_SCHEMA_VERSION = "2"
+const CHECKPOINT_SCHEMA_VERSION = "1"
+const NBODY_EPHEMERIS_CACHE_SCHEMA_VERSION = "1"
 const _EPHEMERIS_REUSE_LOCK = ReentrantLock()
-const _SRP_EPHEMERIS_REUSE_CACHE = Dict{Any, SimulationModel.SRPSunEphemerisCache}()
-const _NBODY_EPHEMERIS_REUSE_CACHE = Dict{Any, SimulationModel.NBodyEphemerisCache}()
-const _PLANET_FRAME_EPHEMERIS_REUSE_CACHE = Dict{Any, SimulationModel.PlanetFrameEphemerisCache}()
+const SRPEphemerisReuseKey = Tuple{String, Int64, Int64, Int64}
+const NBodyEphemerisReuseKey = Tuple{String, String, Int64, Int64, Int64}
+const PlanetFrameEphemerisReuseKey = Tuple{String, String, NTuple{9, Int64}, Int64, Int64, Int64}
+const _SRP_EPHEMERIS_REUSE_CACHE = Dict{SRPEphemerisReuseKey, SimulationModel.SRPSunEphemerisCache}()
+const _NBODY_EPHEMERIS_REUSE_CACHE = Dict{NBodyEphemerisReuseKey, SimulationModel.NBodyEphemerisCache}()
+const _PLANET_FRAME_EPHEMERIS_REUSE_CACHE = Dict{PlanetFrameEphemerisReuseKey, SimulationModel.PlanetFrameEphemerisCache}()
+const _NBODY_EPHEMERIS_PREWARMED_CACHE = Dict{NBodyEphemerisReuseKey, SimulationModel.NBodyEphemerisCache}()
 
 @inline _typed_normalize_warning_enabled() = _engine_env_get("SPACEAGORA_WARN_NORMALIZE", "1") == "1"
-@inline _typed_allow_legacy_normalize() = _engine_env_get("SPACEAGORA_ALLOW_TYPED_NORMALIZE", "0") == "1"
+@inline _typed_allow_transition_normalize() = _engine_env_get("SPACEAGORA_ALLOW_TYPED_NORMALIZE", "0") == "1"
 @inline _typed_save_bundle_enabled() = _engine_env_get("SPACEAGORA_SAVE_BUNDLE", "1") == "1"
 @inline _typed_checkpoint_enabled(args) = args.simulation_settings.checkpoint_enabled || args.simulation_settings.resume_from_checkpoint
 
@@ -193,9 +198,24 @@ end
     return round(Int64, x * 1e6)
 end
 
-@inline function _srp_ephemeris_reuse_key(primary_body_name::String, et_start::Float64, mission_end_s::Float64, dt_s::Float64)
+@inline function _planet_transform_key(planet)::NTuple{9, Int64}
+    return ntuple(i -> round(Int64, planet.L_PI[i] * 1e12), 9)
+end
+
+@inline function _body_query_names_reuse_key(body_query_names::AbstractVector{String})::String
+    return join(body_query_names, '\0')
+end
+
+@inline function _ephemerides_model_reuse_key(ephemerides_model)::String
+    cache_key = SimulationModel.ephemerides_cache_key(ephemerides_model)
+    if cache_key == (:spice,)
+        return "spice"
+    end
+    return "simple:$(cache_key[2]):$(cache_key[3])"
+end
+
+@inline function _srp_ephemeris_reuse_key(primary_body_name::String, et_start::Float64, mission_end_s::Float64, dt_s::Float64)::SRPEphemerisReuseKey
     return (
-        :srp,
         primary_body_name,
         _cache_time_key(et_start),
         _cache_time_key(mission_end_s),
@@ -203,35 +223,34 @@ end
     )
 end
 
-@inline function _nbody_ephemeris_reuse_key(primary_body_name::String, body_query_names::Vector{String}, et_start::Float64, mission_end_s::Float64, dt_s::Float64)
+@inline function _nbody_ephemeris_reuse_key(primary_body_name::String, body_query_names::Vector{String}, et_start::Float64, mission_end_s::Float64, dt_s::Float64)::NBodyEphemerisReuseKey
     return (
-        :nbody,
         primary_body_name,
-        Tuple(body_query_names),
+        _body_query_names_reuse_key(body_query_names),
         _cache_time_key(et_start),
         _cache_time_key(mission_end_s),
         _cache_time_key(dt_s)
     )
 end
 
-@inline function _planet_frame_ephemeris_reuse_key(planet, ephemerides_model, et_start::Float64, mission_end_s::Float64, dt_s::Float64)
+@inline function _planet_frame_ephemeris_reuse_key(planet, ephemerides_model, et_start::Float64, mission_end_s::Float64, dt_s::Float64)::PlanetFrameEphemerisReuseKey
     return (
-        :planet_frame,
         string(planet.name),
-        SimulationModel.ephemerides_cache_key(ephemerides_model),
+        _ephemerides_model_reuse_key(ephemerides_model),
+        _planet_transform_key(planet),
         _cache_time_key(et_start),
         _cache_time_key(mission_end_s),
         _cache_time_key(dt_s)
     )
 end
 
-@inline function _ephemeris_reuse_lookup(cache::Dict{Any, T}, key) where {T}
+@inline function _ephemeris_reuse_lookup(cache::AbstractDict{K, T}, key::K) where {K, T}
     return lock(_EPHEMERIS_REUSE_LOCK) do
         get(cache, key, nothing)
     end
 end
 
-@inline function _ephemeris_reuse_store!(cache::Dict{Any, T}, key, value::T, max_entries::Int)::T where {T}
+@inline function _ephemeris_reuse_store!(cache::AbstractDict{K, T}, key::K, value::T, max_entries::Int)::T where {K, T}
     return lock(_EPHEMERIS_REUSE_LOCK) do
         existing = get(cache, key, nothing)
         if existing !== nothing
@@ -249,22 +268,43 @@ end
     end
 end
 
+@inline function _ephemeris_explicit_cache_store!(cache::AbstractDict{K, T}, key::K, value::T; replace::Bool=false)::T where {K, T}
+    return lock(_EPHEMERIS_REUSE_LOCK) do
+        if !replace
+            existing = get(cache, key, nothing)
+            if existing !== nothing
+                return existing
+            end
+        end
+        cache[key] = value
+        return value
+    end
+end
+
 function _clear_ephemeris_reuse_cache!()
     lock(_EPHEMERIS_REUSE_LOCK) do
         empty!(_SRP_EPHEMERIS_REUSE_CACHE)
         empty!(_NBODY_EPHEMERIS_REUSE_CACHE)
         empty!(_PLANET_FRAME_EPHEMERIS_REUSE_CACHE)
+        empty!(_NBODY_EPHEMERIS_PREWARMED_CACHE)
     end
     return nothing
 end
 
 @inline function _has_active_srp_effector(dynamic_effectors::Tuple)::Bool
     @inbounds for effector in dynamic_effectors
-        if effector isa SimulationModel.SolarRadiationPressureModel && effector.A > 0.0
+        if effector isa SimulationModel.SolarRadiationPressureModel &&
+           effector.A > 0.0 &&
+           (effector.direct || effector.albedo)
             return true
         end
     end
     return false
+end
+
+@inline function _is_nbody_effector_like(effector)::Bool
+    return effector isa SimulationModel.NBodyGravityModel ||
+           (hasproperty(effector, :body_names) && hasproperty(effector, :primary_body_name))
 end
 
 @inline function _effector_parallel_mode()::Symbol
@@ -581,7 +621,7 @@ end
     lock(memo.lock) do
         memo.et = NaN
         memo.primary_body_name = ""
-        empty!(memo.body_positions_j2000)
+        empty!(memo.body_positions_j2000_m)
     end
     return nothing
 end
@@ -609,7 +649,7 @@ end
 
 @inline function _has_active_nbody_effector(dynamic_effectors::Tuple)::Bool
     @inbounds for effector in dynamic_effectors
-        if effector isa SimulationModel.NBodyGravityModel && !isempty(effector.body_names)
+        if _is_nbody_effector_like(effector) && !isempty(effector.body_names)
             return true
         end
     end
@@ -620,7 +660,7 @@ function _collect_nbody_query_names(dynamic_effectors::Tuple)::Vector{String}
     names = String[]
     seen = Set{String}()
     @inbounds for effector in dynamic_effectors
-        if !(effector isa SimulationModel.NBodyGravityModel)
+        if !_is_nbody_effector_like(effector)
             continue
         end
         for body_name in effector.body_names
@@ -632,6 +672,266 @@ function _collect_nbody_query_names(dynamic_effectors::Tuple)::Vector{String}
         end
     end
     return names
+end
+
+@inline function _ephemerides_time_seconds_flexible(initial_time, ephemerides_model)::Float64
+    if applicable(SimulationModel.ephemerides_time_seconds, initial_time, ephemerides_model)
+        return SimulationModel.ephemerides_time_seconds(initial_time, ephemerides_model)
+    end
+
+    model_name = nameof(typeof(ephemerides_model))
+    if model_name == :SpiceEphemeridesModel
+        start_epoch = SimulationModel.EphemeridesModels.from_utc(
+            SimulationModel.EphemeridesModels._initial_time_datetime(initial_time)
+        )
+        return lock(RuntimeServices.SPICE_LOCK) do
+            utc2et(SimulationModel.EphemeridesModels.to_utc(start_epoch))
+        end
+    elseif model_name == :SimpleEphemeridesModel
+        start_time = SimulationModel.EphemeridesModels._initial_time_datetime(initial_time)
+        elapsed_ms = Dates.value(start_time - SimulationModel.EphemeridesModels._J2000_UTC)
+        return Float64(ephemerides_model.reference_epoch_seconds) + elapsed_ms / 1000.0
+    end
+
+    throw(MethodError(SimulationModel.ephemerides_time_seconds, (initial_time, ephemerides_model)))
+end
+
+@inline function _nbody_ephemeris_cache_sample_count(mission_end_s::Float64, dt_s::Float64)::Int
+    return max(2, Int(ceil(mission_end_s / dt_s)) + 1)
+end
+
+function _nbody_ephemeris_body_index_by_name(body_query_names::Vector{String})::Dict{String, Int}
+    body_index_by_name = Dict{String, Int}()
+    @inbounds for (idx, body_name) in pairs(body_query_names)
+        body_index_by_name[body_name] = idx
+    end
+    return body_index_by_name
+end
+
+function _nbody_ephemeris_cache_from_samples(
+    primary_body_name::String,
+    body_query_names::Vector{String},
+    ets::Vector{Float64},
+    positions_j2000_m::Matrix{SVector{3, Float64}}
+)::SimulationModel.NBodyEphemerisCache
+    body_index_by_name = _nbody_ephemeris_body_index_by_name(body_query_names)
+    return SimulationModel.NBodyEphemerisCache(
+        primary_body_name,
+        body_query_names,
+        body_index_by_name,
+        ets,
+        positions_j2000_m
+    )
+end
+
+@inline function _increment_atomic_counter!(counter)
+    counter === nothing && return nothing
+    Base.Threads.atomic_add!(counter, 1)
+    return nothing
+end
+
+function _build_nbody_ephemeris_cache(
+    primary_body_name::String,
+    body_query_names::Vector{String},
+    et_start::Float64,
+    mission_end_s::Float64,
+    dt_s::Float64;
+    counter=nothing
+)::SimulationModel.NBodyEphemerisCache
+    n_samples = _nbody_ephemeris_cache_sample_count(mission_end_s, dt_s)
+    n_bodies = length(body_query_names)
+    ets = Vector{Float64}(undef, n_samples)
+    positions = Matrix{SVector{3, Float64}}(undef, n_samples, n_bodies)
+
+    lock(RuntimeServices.SPICE_LOCK) do
+        @inbounds for sample_idx in 1:n_samples
+            et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
+            ets[sample_idx] = et
+            for body_idx in 1:n_bodies
+                body_query = body_query_names[body_idx]
+                positions[sample_idx, body_idx] = SimulationModel.EphemeridesModels._spice_position_j2000_m_unlocked(body_query, et, primary_body_name)
+                _increment_atomic_counter!(counter)
+            end
+        end
+    end
+
+    return _nbody_ephemeris_cache_from_samples(primary_body_name, copy(body_query_names), ets, positions)
+end
+
+@inline function _prewarmed_nbody_ephemeris_lookup(primary_body_name::String, body_query_names::Vector{String}, et_start::Float64, mission_end_s::Float64, dt_s::Float64)
+    reuse_key = _nbody_ephemeris_reuse_key(primary_body_name, body_query_names, et_start, mission_end_s, dt_s)
+    return _ephemeris_reuse_lookup(_NBODY_EPHEMERIS_PREWARMED_CACHE, reuse_key)
+end
+
+@inline function _register_prewarmed_nbody_ephemeris_cache!(
+    primary_body_name::String,
+    body_query_names::Vector{String},
+    et_start::Float64,
+    mission_end_s::Float64,
+    dt_s::Float64,
+    cache::SimulationModel.NBodyEphemerisCache;
+    replace::Bool=false
+)::SimulationModel.NBodyEphemerisCache
+    reuse_key = _nbody_ephemeris_reuse_key(primary_body_name, body_query_names, et_start, mission_end_s, dt_s)
+    return _ephemeris_explicit_cache_store!(_NBODY_EPHEMERIS_PREWARMED_CACHE, reuse_key, cache; replace=replace)
+end
+
+function _nbody_ephemeris_cache_payload(
+    cache::SimulationModel.NBodyEphemerisCache,
+    et_start::Float64,
+    mission_end_s::Float64,
+    dt_s::Float64
+)
+    return (
+        schema_version=NBODY_EPHEMERIS_CACHE_SCHEMA_VERSION,
+        created_utc=string(now(UTC)),
+        primary_body_name=cache.primary_body_name,
+        body_query_names=copy(cache.body_query_names),
+        et_start=Float64(et_start),
+        mission_end_s=Float64(mission_end_s),
+        dt_s=Float64(dt_s),
+        ets=copy(cache.ets),
+        positions_j2000_m=copy(cache.positions_j2000_m),
+    )
+end
+
+function _write_nbody_ephemeris_cache_file!(
+    path::String,
+    cache::SimulationModel.NBodyEphemerisCache,
+    et_start::Float64,
+    mission_end_s::Float64,
+    dt_s::Float64
+)::String
+    payload = _nbody_ephemeris_cache_payload(cache, et_start, mission_end_s, dt_s)
+    _atomic_write_file(path, tmp -> open(tmp, "w") do io
+        serialize(io, payload)
+    end)
+    return path
+end
+
+@inline function _payload_field(payload, field::Symbol)
+    hasproperty(payload, field) || throw(ArgumentError("N-body ephemeris cache payload missing required field $(repr(field))."))
+    return getproperty(payload, field)
+end
+
+function _cache_from_nbody_ephemeris_payload(payload)
+    payload isa NamedTuple || throw(ArgumentError("N-body ephemeris cache payload must be a NamedTuple serialized by SpaceAGORA."))
+
+    schema_version = String(_payload_field(payload, :schema_version))
+    schema_version == NBODY_EPHEMERIS_CACHE_SCHEMA_VERSION || throw(ArgumentError(
+        "Unsupported N-body ephemeris cache schema_version=$(repr(schema_version)); expected $(repr(NBODY_EPHEMERIS_CACHE_SCHEMA_VERSION))."
+    ))
+
+    primary_body_name = String(_payload_field(payload, :primary_body_name))
+    body_query_names = String[String(name) for name in _payload_field(payload, :body_query_names)]
+    et_start = Float64(_payload_field(payload, :et_start))
+    mission_end_s = Float64(_payload_field(payload, :mission_end_s))
+    dt_s = Float64(_payload_field(payload, :dt_s))
+    ets = Vector{Float64}(_payload_field(payload, :ets))
+    positions_j2000_m = Matrix{SVector{3, Float64}}(_payload_field(payload, :positions_j2000_m))
+
+    isfinite(et_start) || throw(ArgumentError("Serialized N-body ephemeris cache et_start must be finite."))
+    (isfinite(mission_end_s) && mission_end_s > 0.0) || throw(ArgumentError("Serialized N-body ephemeris cache mission_end_s must be > 0."))
+    (isfinite(dt_s) && dt_s > 0.0) || throw(ArgumentError("Serialized N-body ephemeris cache dt_s must be > 0."))
+    isempty(body_query_names) && throw(ArgumentError("Serialized N-body ephemeris cache must include at least one body_query_name."))
+    length(ets) >= 2 || throw(ArgumentError("Serialized N-body ephemeris cache must include at least two samples."))
+    size(positions_j2000_m, 1) == length(ets) || throw(ArgumentError("Serialized N-body ephemeris cache positions sample count does not match ets length."))
+    size(positions_j2000_m, 2) == length(body_query_names) || throw(ArgumentError("Serialized N-body ephemeris cache body count does not match body_query_names length."))
+
+    cache = _nbody_ephemeris_cache_from_samples(primary_body_name, body_query_names, ets, positions_j2000_m)
+    return (
+        cache=cache,
+        et_start=et_start,
+        mission_end_s=mission_end_s,
+        dt_s=dt_s,
+    )
+end
+
+function _load_nbody_ephemeris_cache!(path::String; replace::Bool=true)::SimulationModel.NBodyEphemerisCache
+    payload = open(path, "r") do io
+        deserialize(io)
+    end
+    loaded = _cache_from_nbody_ephemeris_payload(payload)
+    cache = _register_prewarmed_nbody_ephemeris_cache!(
+        loaded.cache.primary_body_name,
+        loaded.cache.body_query_names,
+        loaded.et_start,
+        loaded.mission_end_s,
+        loaded.dt_s,
+        loaded.cache;
+        replace=replace
+    )
+    return cache
+end
+
+function _prewarm_nbody_ephemeris_cache(
+    args;
+    dt_s::Union{Nothing, Real}=nothing,
+    mission_end_s::Union{Nothing, Real}=nothing,
+    save_path::Union{Nothing, AbstractString}=nothing
+)::SimulationModel.NBodyEphemerisCache
+    _validate_ephemerides_support!(args)
+    _has_active_nbody_effector(args.dynamics_model.dynamic_effectors) || throw(ArgumentError(
+        "prewarm_nbody_ephemeris_cache requires at least one active NBodyGravityModel with non-empty body_names."
+    ))
+
+    resolved_dt_s = isnothing(dt_s) ? _nbody_ephemeris_cache_dt_s() : Float64(dt_s)
+    (isfinite(resolved_dt_s) && resolved_dt_s > 0.0) || throw(ArgumentError("dt_s must be > 0.0, got $(repr(dt_s))."))
+    resolved_mission_end_s = isnothing(mission_end_s) ? args.mission_configuration.mission_time : Float64(mission_end_s)
+    (isfinite(resolved_mission_end_s) && resolved_mission_end_s > 0.0) || throw(ArgumentError("mission_end_s must be > 0.0, got $(repr(mission_end_s))."))
+
+    n_samples = _nbody_ephemeris_cache_sample_count(resolved_mission_end_s, resolved_dt_s)
+    max_samples = _nbody_ephemeris_cache_max_samples()
+    if n_samples > max_samples
+        throw(ArgumentError(
+            "N-body ephemeris prewarm requires samples=$n_samples, which exceeds SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES=$max_samples. " *
+            "Increase the max-samples policy or choose a larger dt_s / shorter mission_end_s."
+        ))
+    end
+
+    body_query_names = _collect_nbody_query_names(args.dynamics_model.dynamic_effectors)
+    isempty(body_query_names) && throw(ArgumentError(
+        "prewarm_nbody_ephemeris_cache requires at least one third body to cache."
+    ))
+
+    ephemerides_model = args.environment_model.ephemerides_model
+    et_start = _ephemerides_time_seconds_flexible(args.initial_time, ephemerides_model)
+    primary_body_name = SimulationModel.DynamicEffectors._spice_query_name(args.environment_model.planet.name)
+
+    cache = _prewarmed_nbody_ephemeris_lookup(primary_body_name, body_query_names, et_start, resolved_mission_end_s, resolved_dt_s)
+    if !(cache isa SimulationModel.NBodyEphemerisCache)
+        reused = _ephemeris_reuse_lookup(
+            _NBODY_EPHEMERIS_REUSE_CACHE,
+            _nbody_ephemeris_reuse_key(primary_body_name, body_query_names, et_start, resolved_mission_end_s, resolved_dt_s)
+        )
+        if reused isa SimulationModel.NBodyEphemerisCache
+            cache = _register_prewarmed_nbody_ephemeris_cache!(
+                primary_body_name,
+                body_query_names,
+                et_start,
+                resolved_mission_end_s,
+                resolved_dt_s,
+                reused
+            )
+        else
+            cache = _build_nbody_ephemeris_cache(primary_body_name, body_query_names, et_start, resolved_mission_end_s, resolved_dt_s)
+            cache = _register_prewarmed_nbody_ephemeris_cache!(
+                primary_body_name,
+                body_query_names,
+                et_start,
+                resolved_mission_end_s,
+                resolved_dt_s,
+                cache
+            )
+        end
+    end
+
+    if save_path !== nothing
+        path_str = String(save_path)
+        isempty(strip(path_str)) && throw(ArgumentError("save_path must not be empty when provided."))
+        _write_nbody_ephemeris_cache_file!(path_str, cache, et_start, resolved_mission_end_s, resolved_dt_s)
+    end
+    return cache
 end
 
 function _initialize_srp_sun_ephemeris_cache!(p, et_start::Float64, mission_end_s::Float64)
@@ -665,7 +965,7 @@ function _initialize_srp_sun_ephemeris_cache!(p, et_start::Float64, mission_end_
         @inbounds for sample_idx in 1:n_samples
             et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
             ets[sample_idx] = et
-            positions[sample_idx] = SVector{3, Float64}(spkpos("sun", et, "J2000", "none", primary_body_name)[1])
+            positions[sample_idx] = SimulationModel.EphemeridesModels._spice_position_j2000_m_unlocked("sun", et, primary_body_name)
             Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.srp_spkpos_cache_build_calls, 1)
         end
     end
@@ -695,7 +995,7 @@ function _initialize_nbody_ephemeris_cache!(p, et_start::Float64, mission_end_s:
     isempty(body_query_names) && return nothing
 
     dt_s = _nbody_ephemeris_cache_dt_s()
-    n_samples = max(2, Int(ceil(mission_end_s / dt_s)) + 1)
+    n_samples = _nbody_ephemeris_cache_sample_count(mission_end_s, dt_s)
     max_samples = _nbody_ephemeris_cache_max_samples()
     if n_samples > max_samples
         @warn "N-body ephemeris cache disabled: required samples=$n_samples exceeds SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES=$max_samples."
@@ -703,6 +1003,11 @@ function _initialize_nbody_ephemeris_cache!(p, et_start::Float64, mission_end_s:
     end
 
     primary_body_name = SimulationModel.DynamicEffectors._spice_query_name(p.args.environment_model.planet.name)
+    prewarmed = _prewarmed_nbody_ephemeris_lookup(primary_body_name, body_query_names, et_start, mission_end_s, dt_s)
+    if prewarmed isa SimulationModel.NBodyEphemerisCache
+        p.shared_buffers.nbody_ephemeris_cache[] = prewarmed
+        return nothing
+    end
     if _ephemeris_reuse_enabled()
         reuse_key = _nbody_ephemeris_reuse_key(primary_body_name, body_query_names, et_start, mission_end_s, dt_s)
         reused = _ephemeris_reuse_lookup(_NBODY_EPHEMERIS_REUSE_CACHE, reuse_key)
@@ -712,32 +1017,13 @@ function _initialize_nbody_ephemeris_cache!(p, et_start::Float64, mission_end_s:
         end
     end
     n_bodies = length(body_query_names)
-    ets = Vector{Float64}(undef, n_samples)
-    positions = Matrix{SVector{3, Float64}}(undef, n_samples, n_bodies)
-
-    lock(RuntimeServices.SPICE_LOCK) do
-        @inbounds for sample_idx in 1:n_samples
-            et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
-            ets[sample_idx] = et
-            for body_idx in 1:n_bodies
-                body_query = body_query_names[body_idx]
-                positions[sample_idx, body_idx] = SVector{3, Float64}(spkpos(body_query, et, "J2000", "none", primary_body_name)[1])
-                Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.nbody_spkpos_cache_build_calls, 1)
-            end
-        end
-    end
-
-    body_index_by_name = Dict{String, Int}()
-    @inbounds for (idx, body_name) in pairs(body_query_names)
-        body_index_by_name[body_name] = idx
-    end
-
-    cache_value = SimulationModel.NBodyEphemerisCache(
+    cache_value = _build_nbody_ephemeris_cache(
         primary_body_name,
         body_query_names,
-        body_index_by_name,
-        ets,
-        positions
+        et_start,
+        mission_end_s,
+        dt_s;
+        counter=p.shared_buffers.spice_runtime_counters.nbody_spkpos_cache_build_calls
     )
     if _ephemeris_reuse_enabled()
         reuse_key = _nbody_ephemeris_reuse_key(primary_body_name, body_query_names, et_start, mission_end_s, dt_s)

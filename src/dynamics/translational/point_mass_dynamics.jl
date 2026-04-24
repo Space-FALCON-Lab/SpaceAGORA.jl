@@ -53,3 +53,14 @@ end
     du_view.mass = mass_derivative(mass_rate)
     return nothing
 end
+
+@inline function assign_force_only_translational_rhs!(
+    du_view,
+    sc_view,
+    net_force::AbstractVector{<:Real},
+)
+    du_view.pos .= zero_position_derivative()
+    du_view.vel .= acceleration_from_force(net_force, sc_view.mass)
+    du_view.mass = 0.0
+    return nothing
+end

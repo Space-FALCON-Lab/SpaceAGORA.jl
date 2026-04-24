@@ -3,7 +3,7 @@ function get_impact_callback(num_sats::Int)
         p = integrator.p
         Rp_e = p.args.environment_model.planet.Rp_e
         @inbounds for i in 1:num_sats
-            out[i] = norm(u.sc[i].pos) - Rp_e
+            out[i] = norm(_simulation_engine_module()._state_position_ii(u, i)) - Rp_e
         end
     end
 
@@ -14,6 +14,9 @@ function get_impact_callback(num_sats::Int)
                 println("Impact detected for satellite $idx at time $(integrator.t) seconds!")
             end
             p.is_active[idx] = false
+            if _simulation_engine_module()._is_gravity_backbone_state(integrator.u)
+                integrator.u.x[1].sc[idx].vel .= 0.0
+            end
             if all(p.is_active .== false)
                 if callback_verbose(integrator)
                     println("All satellites have impacted. Stopping simulation.")
@@ -33,8 +36,8 @@ function get_orbit_end_callback(num_sats::Int)
         # At apoapsis, dot(r,v) crosses + -> -, so -dot(r,v) crosses - -> + (upcrossing),
         # which matches the single affect! handler below.
         @inbounds for i in 1:num_sats
-            pos = SVector{3, Float64}(u.sc[i].pos)
-            vel = SVector{3, Float64}(u.sc[i].vel)
+            pos = _simulation_engine_module()._state_position_ii(u, i)
+            vel = _simulation_engine_module()._state_velocity_ii(u, i)
             out[i] = -dot(pos, vel)
         end
     end
@@ -88,7 +91,7 @@ function get_entry_end_callback(num_sats::Int, args::SimulationConfiguration)
                 out[i] = 1.0
                 continue
             end
-            alt = norm(u.sc[i].pos) - planet.Rp_e
+            alt = norm(_simulation_engine_module()._state_position_ii(u, i)) - planet.Rp_e
             out[i] = alt - entry_interface_m
         end
     end
@@ -133,8 +136,8 @@ end
 function get_drag_state_callback(num_sats::Int)
     # out = zeros(num_sats) # Output array to store the condition for each satellite
     condition!(out, u, t, integrator) = begin
-        @inbounds for i in 1:length(u.sc)
-            alt = norm(u.sc[i].pos) - integrator.p.args.environment_model.planet.Rp_e
+        @inbounds for i in 1:num_sats
+            alt = norm(_simulation_engine_module()._state_position_ii(u, i)) - integrator.p.args.environment_model.planet.Rp_e
             # println("Satellite $i altitude: $(alt) meters at time $(integrator.t) seconds")
             out[i] = alt - integrator.p.args.environment_model.EI*1e3 # Positive when above the atmosphere, negative when in the atmosphere
         end
@@ -179,16 +182,11 @@ function get_drag_state_callback(num_sats::Int)
 end
 
 function get_quaternion_projection_callback(num_sats::Int, args::SimulationConfiguration)
-    tol_q = max(1e-12, args.integration_tolerances.abstol_quaternion)
+    correction_tol = max(32 * eps(Float64), args.integration_tolerances.abstol_quaternion)
     condition(u, t, integrator) = begin
         p = integrator.p
         @inbounds for i in 1:num_sats
-            if !p.is_active[i]
-                continue
-            end
-            q = u.sc[i].q
-            qnorm2 = dot(q, q)
-            if !isfinite(qnorm2) || abs(qnorm2 - 1.0) > tol_q
+            if p.is_active[i]
                 return true
             end
         end
@@ -203,18 +201,14 @@ function get_quaternion_projection_callback(num_sats::Int, args::SimulationConfi
             if !p.is_active[i]
                 continue
             end
-            q = u.sc[i].q
+            q = _simulation_engine_module()._state_quaternion(u, i)
+            q === nothing && continue
             qnorm2 = dot(q, q)
-            if !(isfinite(qnorm2) && qnorm2 > eps(Float64))
-                # Keep attitude state finite if a pathological quaternion is encountered.
-                q .= (0.0, 0.0, 0.0, 1.0)
-                corrected = true
-                continue
-            end
-            if abs(qnorm2 - 1.0) > tol_q
-                q ./= sqrt(qnorm2)
+            if !(isfinite(qnorm2) && qnorm2 > eps(Float64)) || abs(qnorm2 - 1.0) > correction_tol
                 corrected = true
             end
+            # Keep accepted-step attitude states on the unit-quaternion manifold.
+            u.sc[i].q .= _simulation_model_module.project_unit_quaternion(q)
         end
         if corrected && callback_verbose(integrator)
             println("Quaternion projection applied at time $(integrator.t) seconds.")
@@ -290,8 +284,11 @@ function get_periapsis_save_callback(num_sats::Int)
     # Implement a callback to save the state of the simulation at periapsis for each orbit, which can be useful for analyzing the changes in the orbit after each pass through the atmosphere
     function condition!(out, u, t, integrator)
         @inbounds for i in 1:num_sats
-            planet = integrator.p.args.environment_model.planet
-            OE = rvtoorbitalelement(SVector{3, Float64}(u.sc[i].pos), SVector{3, Float64}(u.sc[i].vel), planet)
+            OE = rvtoorbitalelement(
+                _simulation_engine_module()._state_position_ii(u, i),
+                _simulation_engine_module()._state_velocity_ii(u, i),
+                integrator.p.args.environment_model.planet
+            )
             out[i] = OE[6] # Return the true anomaly (ν) which is zero at periapsis
         end
     end

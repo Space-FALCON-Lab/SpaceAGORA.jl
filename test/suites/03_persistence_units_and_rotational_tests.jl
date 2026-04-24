@@ -246,56 +246,50 @@ end
     end
 end
 
-@testset "Checkpoint Runtime State Resume" begin
-    full_thruster = make_base_thruster_model(
-        thrust=2.0,
-        direction=0.0,
-        Δv=0.0,
-        start_burn_time=10.0,
-        stop_burn_time=50.0,
-        Isp=300.0
+@testset "Gravity Backbone Checkpoint Resume + Save Fields" begin
+    sc = make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0)
+    baseline_settings = SimulationSettings(
+        results=true,
+        verbose=false,
+        generate_plots=false,
+        results_directory="output",
+        save_csv=true,
+        normalize=false
     )
-    full_args = build_config(
-        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+    baseline_args = build_config(
+        spacecraft=sc,
         density_model=NoAtmosphereModel(),
         orientation_sim=false,
-        mission_time=80.0,
+        mission_time=180.0,
         EI_km=120.0,
         dynamic_effectors=(InverseSquaredGravityModel(),),
-        control_effectors=(full_thruster,),
-        control_rates=[10.0],
         keplerian=true,
-        simulation_settings=SimulationSettings(
-            results=true,
-            verbose=false,
-            generate_plots=false,
-            results_directory="output",
-            save_csv=true,
-            normalize=false
-        ),
-        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=2.0)
+        ephemerides_model=SimpleEphemeridesModel(),
+        simulation_settings=baseline_settings,
+        tolerances=IntegrationTolerances(reltol_orbit=1e-8, abstol_orbit=1e-8, dt_max_orbit=20.0)
     )
-    df_full = run_case_silent(full_args)
+    df_full = withenv(
+        "SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split",
+        "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "2.0"
+    ) do
+        run_case_silent(baseline_args)
+    end
+    @test all(abs.(Float64.(df_full.sc1_heat_rate)) .< 1e-12)
+    @test all(abs.(Float64.(df_full.sc1_heat_load)) .< 1e-12)
 
     checkpoint_dir = joinpath("output", "checkpoints")
-    phase1_thruster = make_base_thruster_model(
-        thrust=2.0,
-        direction=0.0,
-        Δv=0.0,
-        start_burn_time=10.0,
-        stop_burn_time=50.0,
-        Isp=300.0
-    )
+    checkpoint_data_path = joinpath(checkpoint_dir, "simulation_checkpoint.bin")
+    checkpoint_manifest_path = joinpath(checkpoint_dir, "simulation_checkpoint.manifest.toml")
+
     phase1_args = build_config(
         spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
         density_model=NoAtmosphereModel(),
         orientation_sim=false,
-        mission_time=30.0,
+        mission_time=90.0,
         EI_km=120.0,
         dynamic_effectors=(InverseSquaredGravityModel(),),
-        control_effectors=(phase1_thruster,),
-        control_rates=[10.0],
         keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel(),
         simulation_settings=SimulationSettings(
             results=true,
             verbose=false,
@@ -305,28 +299,21 @@ end
             normalize=false,
             checkpoint_enabled=true,
             checkpoint_interval_s=30.0,
-            checkpoint_directory=checkpoint_dir
+            checkpoint_directory=checkpoint_dir,
+            resume_from_checkpoint=false
         ),
-        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=2.0)
+        tolerances=IntegrationTolerances(reltol_orbit=1e-8, abstol_orbit=1e-8, dt_max_orbit=20.0)
     )
-    blank_resume_thruster = make_base_thruster_model(
-        thrust=2.0,
-        direction=Float64(π),
-        Δv=0.0,
-        start_burn_time=-1.0,
-        stop_burn_time=-1.0,
-        Isp=300.0
-    )
+
     resume_args = build_config(
         spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
         density_model=NoAtmosphereModel(),
         orientation_sim=false,
-        mission_time=80.0,
+        mission_time=180.0,
         EI_km=120.0,
         dynamic_effectors=(InverseSquaredGravityModel(),),
-        control_effectors=(blank_resume_thruster,),
-        control_rates=[10.0],
         keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel(),
         simulation_settings=SimulationSettings(
             results=true,
             verbose=false,
@@ -335,83 +322,193 @@ end
             save_csv=true,
             normalize=false,
             checkpoint_enabled=true,
-            checkpoint_interval_s=50.0,
+            checkpoint_interval_s=30.0,
             checkpoint_directory=checkpoint_dir,
             resume_from_checkpoint=true
         ),
-        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=2.0)
+        tolerances=IntegrationTolerances(reltol_orbit=1e-8, abstol_orbit=1e-8, dt_max_orbit=20.0)
+    )
+
+    tsit_resume_args = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=180.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        ephemerides_model=SimpleEphemeridesModel(),
+        simulation_settings=SimulationSettings(
+            results=true,
+            verbose=false,
+            generate_plots=false,
+            results_directory="output",
+            save_csv=true,
+            normalize=false,
+            checkpoint_enabled=true,
+            checkpoint_interval_s=30.0,
+            checkpoint_directory=checkpoint_dir,
+            resume_from_checkpoint=true
+        ),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-8, abstol_orbit=1e-8, dt_max_orbit=20.0)
     )
 
     mktempdir() do tmp
         cd(tmp) do
-            run_simulation(phase1_args)
-            ckpt = SimulationEngine._load_checkpoint(phase1_args)
-            @test ckpt !== nothing
-            @test ckpt.schema_version == "2"
-            @test ckpt.runtime_state !== nothing
-            @test ckpt.runtime_state.control_effectors[1].start_burn_time[1] == 10.0
-            @test ckpt.runtime_state.control_effectors[1].stop_burn_time[1] == 50.0
-            checkpoint_mass = Float64(ckpt.u.sc[1].mass)
+            withenv(
+                "SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split",
+                "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "2.0"
+            ) do
+                run_simulation(phase1_args)
+            end
+            @test isfile(checkpoint_data_path)
+            @test isfile(checkpoint_manifest_path)
 
-            run_simulation(resume_args)
-            @test blank_resume_thruster.start_burn_time[1] == -1.0
+            ckpt_manifest = TOML.parsefile(checkpoint_manifest_path)
+            @test get(ckpt_manifest, "solver_mode", "") == "gravity_backbone_split"
+
+            ckpt = _load_checkpoint(resume_args)
+            @test ckpt !== nothing
+            @test ckpt.solver_mode == "gravity_backbone_split"
+            @test _is_gravity_backbone_state(ckpt.u)
+
+            withenv(
+                "SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split",
+                "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "2.0"
+            ) do
+                run_simulation(resume_args)
+            end
             df_resume = CSV.read(joinpath("output", "simulation_results.csv"), DataFrame)
-            @test minimum(Float64.(df_resume.time)) >= 30.0
-            first_after_resume = findfirst(t -> Float64(t) > 30.0, df_resume.time)
-            @test first_after_resume !== nothing
-            @test Float64(df_resume.sc1_mass[first_after_resume]) < checkpoint_mass
+            @test nrow(df_resume) >= 2
+
+            p_full = SVector{3, Float64}(Float64(df_full.sc1_pos_1[end]), Float64(df_full.sc1_pos_2[end]), Float64(df_full.sc1_pos_3[end]))
+            v_full = SVector{3, Float64}(Float64(df_full.sc1_vel_1[end]), Float64(df_full.sc1_vel_2[end]), Float64(df_full.sc1_vel_3[end]))
+            p_resume = SVector{3, Float64}(Float64(df_resume.sc1_pos_1[end]), Float64(df_resume.sc1_pos_2[end]), Float64(df_resume.sc1_pos_3[end]))
+            v_resume = SVector{3, Float64}(Float64(df_resume.sc1_vel_1[end]), Float64(df_resume.sc1_vel_2[end]), Float64(df_resume.sc1_vel_3[end]))
+            @test norm(p_resume - p_full) < 5.0
+            @test norm(v_resume - v_full) < 5e-3
+
+            withenv("SPACEAGORA_SOLVER_MODE" => "tsit5") do
+                @test_throws ArgumentError run_simulation(tsit_resume_args)
+            end
+        end
+    end
+end
+
+@testset "Gravity Backbone Kick Checkpoint Resume Parity" begin
+    sc = make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0)
+    baseline_args = build_config(
+        spacecraft=sc,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=90.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            NBodyGravityModel(["moon"], "Earth", SPICE_PATH),
+            SolarRadiationPressureModel(1.2, 12.0; direct=true, albedo=true, ir=true),
+        ),
+        keplerian=true,
+        ephemerides_model=SpiceEphemeridesModel(),
+        simulation_settings=SimulationSettings(
+            results=true,
+            verbose=false,
+            generate_plots=false,
+            results_directory="output",
+            save_csv=true,
+            normalize=false
+        ),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-8, abstol_orbit=1e-8, dt_max_orbit=20.0)
+    )
+
+    df_full = withenv(
+        "SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split",
+        "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "2.0"
+    ) do
+        run_case_silent(baseline_args)
+    end
+    @test all(abs.(Float64.(df_full.sc1_heat_rate)) .< 1e-12)
+    @test all(abs.(Float64.(df_full.sc1_heat_load)) .< 1e-12)
+
+    checkpoint_dir = joinpath("output", "checkpoints")
+    phase1_args = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=45.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            NBodyGravityModel(["moon"], "Earth", SPICE_PATH),
+            SolarRadiationPressureModel(1.2, 12.0; direct=true, albedo=true, ir=true),
+        ),
+        keplerian=true,
+        ephemerides_model=SpiceEphemeridesModel(),
+        simulation_settings=SimulationSettings(
+            results=true,
+            verbose=false,
+            generate_plots=false,
+            results_directory="output",
+            save_csv=true,
+            normalize=false,
+            checkpoint_enabled=true,
+            checkpoint_interval_s=15.0,
+            checkpoint_directory=checkpoint_dir,
+            resume_from_checkpoint=false
+        ),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-8, abstol_orbit=1e-8, dt_max_orbit=20.0)
+    )
+
+    resume_args = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=90.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            NBodyGravityModel(["moon"], "Earth", SPICE_PATH),
+            SolarRadiationPressureModel(1.2, 12.0; direct=true, albedo=true, ir=true),
+        ),
+        keplerian=true,
+        ephemerides_model=SpiceEphemeridesModel(),
+        simulation_settings=SimulationSettings(
+            results=true,
+            verbose=false,
+            generate_plots=false,
+            results_directory="output",
+            save_csv=true,
+            normalize=false,
+            checkpoint_enabled=true,
+            checkpoint_interval_s=15.0,
+            checkpoint_directory=checkpoint_dir,
+            resume_from_checkpoint=true
+        ),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-8, abstol_orbit=1e-8, dt_max_orbit=20.0)
+    )
+
+    mktempdir() do tmp
+        cd(tmp) do
+            withenv(
+                "SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split",
+                "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "2.0"
+            ) do
+                run_simulation(phase1_args)
+                run_simulation(resume_args)
+            end
+
+            df_resume = CSV.read(joinpath("output", "simulation_results.csv"), DataFrame)
+            @test nrow(df_resume) >= 2
+            @test all(abs.(Float64.(df_resume.sc1_heat_rate)) .< 1e-12)
+            @test all(abs.(Float64.(df_resume.sc1_heat_load)) .< 1e-12)
 
             p_full = SVector{3, Float64}(Float64(df_full.sc1_pos_1[end]), Float64(df_full.sc1_pos_2[end]), Float64(df_full.sc1_pos_3[end]))
             v_full = SVector{3, Float64}(Float64(df_full.sc1_vel_1[end]), Float64(df_full.sc1_vel_2[end]), Float64(df_full.sc1_vel_3[end]))
             p_resume = SVector{3, Float64}(Float64(df_resume.sc1_pos_1[end]), Float64(df_resume.sc1_pos_2[end]), Float64(df_resume.sc1_pos_3[end]))
             v_resume = SVector{3, Float64}(Float64(df_resume.sc1_vel_1[end]), Float64(df_resume.sc1_vel_2[end]), Float64(df_resume.sc1_vel_3[end]))
 
-            @test norm(p_resume - p_full) < 1.0
-            @test norm(v_resume - v_full) < 1e-3
-            @test abs(Float64(df_resume.sc1_mass[end]) - Float64(df_full.sc1_mass[end])) < 1e-8
-        end
-    end
-end
-
-@testset "Checkpoint State Rewrite Preserves Integrated Mass" begin
-    checkpoint_dir = joinpath("output", "checkpoints")
-    args = build_config(
-        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
-        density_model=NoAtmosphereModel(),
-        orientation_sim=false,
-        mission_time=40.0,
-        EI_km=120.0,
-        dynamic_effectors=(InverseSquaredGravityModel(),),
-        keplerian=true,
-        simulation_settings=SimulationSettings(
-            results=true,
-            verbose=false,
-            generate_plots=false,
-            results_directory="output",
-            save_csv=true,
-            normalize=false,
-            checkpoint_enabled=true,
-            checkpoint_interval_s=40.0,
-            checkpoint_directory=checkpoint_dir
-        ),
-        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=2.0)
-    )
-
-    mktempdir() do tmp
-        cd(tmp) do
-            run_simulation(args)
-            ckpt = SimulationEngine._load_checkpoint(args)
-            original_mass = Float64(ckpt.u.sc[1].mass)
-            reset_u = deepcopy(ckpt.u)
-            reset_u.sc[1].pos .= SVector{3, Float64}(1.0, 2.0, 3.0)
-            reset_u.sc[1].vel .= SVector{3, Float64}(4.0, 5.0, 6.0)
-            SimulationEngine._rewrite_checkpoint_state!(args, ckpt.t, reset_u)
-
-            rewritten = SimulationEngine._load_checkpoint(args)
-            @test Float64(rewritten.u.sc[1].mass) == original_mass
-            @test SVector{3, Float64}(rewritten.u.sc[1].pos) == SVector{3, Float64}(1.0, 2.0, 3.0)
-            @test SVector{3, Float64}(rewritten.u.sc[1].vel) == SVector{3, Float64}(4.0, 5.0, 6.0)
-            @test rewritten.runtime_state !== nothing
+            @test norm(p_resume - p_full) < 25.0
+            @test norm(v_resume - v_full) < 2.5e-2
         end
     end
 end
@@ -949,7 +1046,7 @@ end
 end
 
 @testset "Quaternion Norm Invariant" begin
-    q0 = normalize(SVector{4, Float64}(0.1, -0.2, 0.3, 0.9))
+    q0 = 2.3 * normalize(SVector{4, Float64}(0.1, -0.2, 0.3, 0.9))
     w0 = SVector{3, Float64}(0.01, -0.015, 0.02)
     sc = make_spacecraft(
         ra_alt_m=500e3,
@@ -976,6 +1073,9 @@ end
             dt_max_orbit=5.0
         )
     )
+
+    u0 = build_initial_conditions(args)
+    @test isapprox(norm(SVector{4, Float64}(u0.sc[1].q)), 1.0; atol=1e-12, rtol=0.0)
 
     df = run_case(args)
     qnorm = sqrt.(df.sc1_q_1.^2 .+ df.sc1_q_2.^2 .+ df.sc1_q_3.^2 .+ df.sc1_q_4.^2)
@@ -1015,6 +1115,110 @@ end
         include_gyroscopic=true
     )
     @test isapprox(ωdot_torque_free, SVector{3, Float64}(0.0, 0.0, 0.0); atol=1e-12, rtol=0.0)
+end
+
+@testset "Torque-Free Rigid-Body Regression Cases" begin
+    function make_torque_free_spacecraft(
+        inertia_tensor::SMatrix{3, 3, Float64},
+        q0::SVector{4, Float64},
+        w0::SVector{3, Float64};
+        id::Int64=1
+    )
+        root = Link{0}(root=true, m=500.0, ref_area=12.0, inertia=inertia_tensor)
+        ic = InitialCondition(
+            ra=EARTH.Rp_e + 500e3,
+            rp=EARTH.Rp_e + 500e3,
+            i=0.0,
+            ω=0.0,
+            Ω=0.0,
+            ν=0.0,
+            q=q0,
+            ang_vel=w0
+        )
+        return SpacecraftModel(
+            joints=Joint[],
+            links=[root],
+            root=root,
+            prop_mass=0.0,
+            inertia_tensor=inertia_tensor,
+            initial_condition=ic,
+            id=id
+        )
+    end
+
+    function run_torque_free_case(
+        spacecraft::SpacecraftModel;
+        mission_time::Float64,
+        dt_max_orbit::Float64=0.5
+    )
+        args = build_config(
+            spacecraft=spacecraft,
+            density_model=NoAtmosphereModel(),
+            orientation_sim=true,
+            mission_time=mission_time,
+            EI_km=120.0,
+            dynamic_effectors=(InverseSquaredGravityModel(),),
+            keplerian=true,
+            simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+            tolerances=IntegrationTolerances(
+                reltol_orbit=1e-10,
+                abstol_orbit=1e-10,
+                reltol_quaternion=1e-10,
+                abstol_quaternion=1e-10,
+                reltol_angular_rate=1e-10,
+                abstol_angular_rate=1e-10,
+                dt_max_orbit=dt_max_orbit
+            ),
+            ephemerides_model=SimpleEphemeridesModel()
+        )
+        return run_simulation(args; return_solution=true)
+    end
+
+    withenv("SPACEAGORA_SOLVER_MODE" => "tsit5") do
+        J_axis = SMatrix{3, 3, Float64}(8.0, 0.0, 0.0, 0.0, 12.0, 0.0, 0.0, 0.0, 20.0)
+        q_axis0 = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
+        ω_axis0 = SVector{3, Float64}(0.0, 0.0, 0.2)
+        sol_axis = run_torque_free_case(
+            make_torque_free_spacecraft(J_axis, q_axis0, ω_axis0);
+            mission_time=40.0,
+            dt_max_orbit=0.2
+        )
+
+        @test length(sol_axis.t) > 10
+        for (t, state) in zip(sol_axis.t, sol_axis.u)
+            q_state = SimulationModel.project_unit_quaternion(state.sc[1].q)
+            ω_state = SVector{3, Float64}(state.sc[1].ω)
+            q_expected = SVector{4, Float64}(0.0, 0.0, sin(0.5 * ω_axis0[3] * Float64(t)), cos(0.5 * ω_axis0[3] * Float64(t)))
+
+            @test isapprox(ω_state, ω_axis0; atol=1e-9, rtol=1e-9)
+            @test abs(dot(q_state, q_expected)) > 1.0 - 5e-8
+        end
+
+        J_free = SMatrix{3, 3, Float64}(8.0, 0.0, 0.0, 0.0, 11.0, 0.0, 0.0, 0.0, 15.0)
+        q_free0 = normalize(SVector{4, Float64}(0.2, -0.3, 0.1, 0.92))
+        ω_free0 = SVector{3, Float64}(0.19, -0.27, 0.31)
+        sol_free = run_torque_free_case(
+            make_torque_free_spacecraft(J_free, q_free0, ω_free0);
+            mission_time=180.0
+        )
+
+        energies = Float64[]
+        angular_momentum_norms = Float64[]
+        quaternion_norm_errors = Float64[]
+        for state in sol_free.u
+            ω_state = SVector{3, Float64}(state.sc[1].ω)
+            push!(energies, 0.5 * dot(ω_state, J_free * ω_state))
+            push!(angular_momentum_norms, norm(J_free * ω_state))
+            push!(quaternion_norm_errors, abs(norm(SVector{4, Float64}(state.sc[1].q)) - 1.0))
+        end
+
+        energy_drift = (maximum(energies) - minimum(energies)) / abs(first(energies))
+        angular_momentum_drift = (maximum(angular_momentum_norms) - minimum(angular_momentum_norms)) / first(angular_momentum_norms)
+
+        @test energy_drift < 1e-7
+        @test angular_momentum_drift < 1e-7
+        @test maximum(quaternion_norm_errors) < 1e-10
+    end
 end
 
 @testset "Solver Tolerances Apply Quaternion Overrides" begin

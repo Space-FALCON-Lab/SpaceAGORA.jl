@@ -1,5 +1,23 @@
 # Distributed and HPC
 
+Use this page when you are running SpaceAGORA benchmark or study workflows with
+process workers or scheduler launchers.
+
+This page is for operators and advanced users who need reproducible multi-process
+execution, worker-project setup, or scheduler examples.
+
+Shortest successful example:
+
+```bash
+scripts/hpc/local_process_runtime_analysis.sh
+```
+
+What to read next:
+
+- [CLI](cli.md)
+- [Recipes](user/recipes.md)
+- [Maintainer Overview](maintainer/index.md)
+
 SpaceAGORA's supported distributed execution surface today is centered on
 multi-process benchmark and study workflows, plus deterministic parallel-policy
 hint persistence.
@@ -41,7 +59,8 @@ Recommended practice:
 1. Set a stable `SPACEAGORA_PARALLEL_PROFILE`.
 2. Set a stable `SPACEAGORA_PERF_MACHINE_LABEL`.
 3. Set an explicit `SPACEAGORA_PARALLEL_POLICY_STATE_PATH` so repeated jobs
-   reuse the same hint file intentionally instead of relying on the default path.
+   reuse the same hint file intentionally instead of relying on the default
+   path.
 4. Use `SPACEAGORA_PARALLEL_POLICY_STATE_RESET=1` only for cold-start studies.
 
 That keeps route and hint decisions reproducible across repeated benchmark runs.

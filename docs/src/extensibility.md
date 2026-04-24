@@ -1,5 +1,22 @@
 # Extensibility
 
+Use this page when you are adding new models or control hooks to SpaceAGORA.
+
+This page is for extension authors who want to stay on the stable root package
+surface instead of binding new work to package implementation details.
+
+Shortest successful starting point:
+
+```text
+templates/force_torque_model_template.jl
+```
+
+What to read next:
+
+- [Public API](generated/public_api.md)
+- [Concepts](user/concepts.md)
+- [Maintainer Overview](maintainer/index.md)
+
 SpaceAGORA now exposes a minimal stable extension contract from the root package.
 
 The rule is simple:
@@ -16,13 +33,46 @@ are intentionally working on SpaceAGORA internals.
 Stable interface:
 
 - `SpaceAGORA.AbstractForceTorqueModel`
+- `SpaceAGORA.wrench`
+- `SpaceAGORA.environment_requirements`
+- `SpaceAGORA.solver_partition`
+- `SpaceAGORA.gravity_backbone_structure`
+- `SpaceAGORA.gravity_backbone_acceleration_ii`
 - `SpaceAGORA.calcForceTorque`
 
-Required method:
+Preferred additive methods:
+
+```julia
+SpaceAGORA.environment_requirements(model) -> SpaceAGORA.EffectorEnvironmentRequirements
+SpaceAGORA.solver_partition(model) -> :explicit | :implicit
+SpaceAGORA.gravity_backbone_structure(model) -> :unsupported | :position_only_static_gravity
+SpaceAGORA.gravity_backbone_acceleration_ii(model, x::SpaceAGORA.StateSample, env::SpaceAGORA.EnvironmentSample, t::Float64) -> accel_ii
+SpaceAGORA.wrench(model, x::SpaceAGORA.StateSample, env::SpaceAGORA.EnvironmentSample, t::Float64) -> (force_ii, torque_body)
+```
+
+Compatibility method:
 
 ```julia
 SpaceAGORA.calcForceTorque(model, x, p, i) -> (force_n, torque_n_m)
 ```
+
+Use `wrench` for new work when possible. The engine owns stage-consistent
+sampling and passes typed state/environment data into the effector. Keep
+`calcForceTorque` only for compatibility or when migrating existing models.
+Override `solver_partition` only if the effector should move to the implicit
+side of `split_imex`; the default is `:explicit`.
+Override the gravity-backbone hooks only if the effector should participate in
+`gravity_backbone_split`, either as a strict position-only static-gravity core
+term or as an explicit translational velocity kick.
+
+Solver partition contract:
+
+- `split_imex` is the atmosphere-implicit IMEX path
+- `multirate` remains the control-focused split path
+- `gravity_backbone_split` is a fixed-step gravity-backbone split mode with a symplectic gravity core plus explicit SRP / N-body velocity kicks
+- `gravity_backbone_split` remains translational-only; it is not a fully symplectic whole-system solve
+- force returned by `wrench` is inertial-frame and torque is body-frame
+- the current heat-load state is an accumulated heat-rate integral and stays explicit
 
 Registration:
 

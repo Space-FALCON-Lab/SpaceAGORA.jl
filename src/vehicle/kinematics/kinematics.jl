@@ -36,7 +36,7 @@ function rotate_link(body::Link, q::SVector{4, Float64})
     """
     @assert !body.root "Cannot rotate a root body directly"
     # Update the orientation of the body
-    body.q .= q # Set the new orientation quaternion
+    body.q .= project_unit_quaternion(q)
 end
 
 function rotate_link(body::Link, dcm::SMatrix{3, 3, Float64})

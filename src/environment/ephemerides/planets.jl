@@ -178,6 +178,17 @@ module Planets
         throw(ArgumentError("Unable to find required SPICE kernel in $(spice_path). Tried: $(join(relpaths, ", "))"))
     end
 
+    function _furnsh_first_existing_if_available(spice_path::String, relpaths::NTuple{N, String}) where {N}
+        for relpath in relpaths
+            kernel_path = joinpath(spice_path, relpath)
+            if isfile(kernel_path)
+                furnsh(kernel_path)
+                return kernel_path
+            end
+        end
+        return nothing
+    end
+
     @inline function _spice_body_pool_name(planet_name::String)::String
         return planet_name == "Moon" ? "MOON" : uppercase(planet_name)
     end
@@ -295,9 +306,14 @@ module Planets
         _furnsh_required(spice_path, "lsk/naif0012.tls")
         _furnsh_planetary_kernel(spice_path)
         _gravity_constants_kernel_if_available(spice_path)
-        # ITRF93 high-precision Earth orientation kernels (required for harmonics frame transforms)
-        _furnsh_first_existing(spice_path, ("pck/earth_latest_high_prec.bpc", "pck/earth_200101_990628_predict.bpc"))
-        _furnsh_first_existing(
+        # The starter-pack SPICE bundle shipped in-repo may omit the high-precision
+        # Earth orientation kernels. When they are absent, runtime frame transforms
+        # fall back to the generic IAU_EARTH frame from pck00011.tpc.
+        _furnsh_first_existing_if_available(
+            spice_path,
+            ("pck/earth_latest_high_prec.bpc", "pck/earth_200101_990628_predict.bpc")
+        )
+        _furnsh_first_existing_if_available(
             spice_path,
             (
                 "tf/earth_assoc_itrf93.tf",

@@ -7,6 +7,9 @@ using SatelliteToolboxTransformations
 using SatelliteToolbox
 using SPICE
 
+const _EARTH_HIGH_PREC_BODY_FIXED_FRAME = "ITRF93"
+const _EARTH_FALLBACK_BODY_FIXED_FRAME = "IAU_EARTH"
+
 function _spice_lock()
     mod = @__MODULE__
     while true
@@ -20,11 +23,29 @@ function _spice_lock()
     error("RuntimeServices.SPICE_LOCK not found in module ancestry for reference_system.jl")
 end
 
-function _simulation_model_module()
+function _ephemerides_helpers_module()
     mod = @__MODULE__
     while true
-        if isdefined(mod, :ephemerides_requires_spice) && isdefined(mod, :planet_frame_lpi)
-            return mod
+        candidates = Module[mod]
+        if isdefined(mod, :SimulationModel)
+            sim_model = getproperty(mod, :SimulationModel)
+            sim_model isa Module && push!(candidates, sim_model)
+        end
+        if isdefined(mod, :EphemeridesModels)
+            eph_mod = getproperty(mod, :EphemeridesModels)
+            eph_mod isa Module && push!(candidates, eph_mod)
+        end
+
+        for candidate in candidates
+            if isdefined(candidate, :ephemerides_requires_spice) && isdefined(candidate, :planet_frame_lpi)
+                return candidate
+            end
+            if isdefined(candidate, :EphemeridesModels)
+                eph_mod = getproperty(candidate, :EphemeridesModels)
+                if eph_mod isa Module && isdefined(eph_mod, :ephemerides_requires_spice) && isdefined(eph_mod, :planet_frame_lpi)
+                    return eph_mod
+                end
+            end
         end
         parent = parentmodule(mod)
         parent === mod && break
@@ -34,19 +55,6 @@ function _simulation_model_module()
 end
 
 # eop_iau2000a = fetch_iers_eop(Val(:IAU2000A))
-
-@inline function _j2000_to_body_fixed_state(
-    r_i::SVector{3, Float64},
-    v_i::SVector{3, Float64},
-    planet,
-    et::Float64
-)::SVector{6, Float64}
-    state = SVector{6, Float64}(r_i[1], r_i[2], r_i[3], v_i[1], v_i[2], v_i[3])
-    return lock(_spice_lock()) do
-        xform = SMatrix{6, 6, Float64}(sxform("J2000", _spice_body_fixed_frame(planet), et))
-        xform * state
-    end
-end
 
 function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet::T)::Tuple{SVector{3, Float64}, SVector{3, Float64}} where T
     # Legacy fallback when the caller does not have an explicit ephemeris time.
@@ -67,7 +75,47 @@ function r_pintor_i(r_p::SVector{3, Float64}, v_p::SVector{3, Float64}, planet::
 end
 
 @inline function _spice_body_fixed_frame(planet)::String
-    return planet.name == "Moon" ? "MOON_PA_DE421" : (planet.name == "Earth" ? "ITRF93" : "IAU_" * uppercase(planet.name))
+    return planet.name == "Moon" ? "MOON_PA_DE421" : (planet.name == "Earth" ? _EARTH_HIGH_PREC_BODY_FIXED_FRAME : "IAU_" * uppercase(planet.name))
+end
+
+@inline function _body_fixed_state_xform(from_frame::String, to_frame::String, et::Float64)::SMatrix{6, 6, Float64}
+    return lock(_spice_lock()) do
+        SMatrix{6, 6, Float64}(sxform(from_frame, to_frame, et))
+    end
+end
+
+function _j2000_to_body_fixed_state(
+    r_i::SVector{3, Float64},
+    v_i::SVector{3, Float64},
+    planet,
+    et::Float64
+)::SVector{6, Float64}
+    state = SVector{6, Float64}(r_i[1], r_i[2], r_i[3], v_i[1], v_i[2], v_i[3])
+    if planet.name == "Earth"
+        try
+            return _body_fixed_state_xform("J2000", _EARTH_HIGH_PREC_BODY_FIXED_FRAME, et) * state
+        catch
+            return _body_fixed_state_xform("J2000", _EARTH_FALLBACK_BODY_FIXED_FRAME, et) * state
+        end
+    end
+    return _body_fixed_state_xform("J2000", _spice_body_fixed_frame(planet), et) * state
+end
+
+function _body_fixed_to_j2000_state(
+    r_p::SVector{3, Float64},
+    v_p::SVector{3, Float64},
+    planet,
+    et::Float64
+)::SVector{6, Float64}
+    state = SVector{6, Float64}(r_p[1], r_p[2], r_p[3], v_p[1], v_p[2], v_p[3])
+    if planet.name == "Earth"
+        try
+            return _body_fixed_state_xform(_EARTH_HIGH_PREC_BODY_FIXED_FRAME, "J2000", et) * state
+        catch
+            return _body_fixed_state_xform(_EARTH_FALLBACK_BODY_FIXED_FRAME, "J2000", et) * state
+        end
+    end
+    return _body_fixed_state_xform(_spice_body_fixed_frame(planet), "J2000", et) * state
 end
 
 @inline function _planet_flattening(planet)::Float64
@@ -87,12 +135,12 @@ function r_intor_p!(
     et::Float64,
     ephemerides_model
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    sim_model = _simulation_model_module()
-    if getproperty(sim_model, :ephemerides_requires_spice)(ephemerides_model)
+    eph_mod = _ephemerides_helpers_module()
+    if Base.invokelatest(getfield(eph_mod, :ephemerides_requires_spice), ephemerides_model)
         return r_intor_p!(r_i, v_i, planet, et)
     end
 
-    l_pi = getproperty(sim_model, :planet_frame_lpi)(planet, et, ephemerides_model)
+    l_pi = Base.invokelatest(getfield(eph_mod, :planet_frame_lpi), planet, et, ephemerides_model)
     ω_j2000 = planet.ω
     r_p = SVector{3, Float64}(l_pi * r_i)
     v_p = SVector{3, Float64}(l_pi * (v_i - cross(ω_j2000, r_i)))
@@ -100,11 +148,7 @@ function r_intor_p!(
 end
 
 function r_pintor_i(r_p::SVector{3, Float64}, v_p::SVector{3, Float64}, planet, et::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    state = SVector{6, Float64}(r_p[1], r_p[2], r_p[3], v_p[1], v_p[2], v_p[3])
-    state_inertial = lock(_spice_lock()) do
-        xform = SMatrix{6, 6, Float64}(sxform(_spice_body_fixed_frame(planet), "J2000", et))
-        xform * state
-    end
+    state_inertial = _body_fixed_to_j2000_state(r_p, v_p, planet, et)
     return SVector{3, Float64}(state_inertial[1], state_inertial[2], state_inertial[3]),
         SVector{3, Float64}(state_inertial[4], state_inertial[5], state_inertial[6])
 end

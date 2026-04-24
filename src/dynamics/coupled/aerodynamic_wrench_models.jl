@@ -176,6 +176,143 @@ function collect_and_reset_link_wrenches!(bodies)
     return SVector{3, Float64}(force_acc), SVector{3, Float64}(torque_acc)
 end
 
+@inline environment_requirements(::AerodynamicCoefficientConstant) = EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
+@inline environment_requirements(::AerodynamicCoefficientfM) = EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
+@inline environment_requirements(::AerodynamicCoefficientNoBallisticFlight) = EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
+@inline solver_partition(::AerodynamicCoefficientConstant) = :implicit
+@inline solver_partition(::AerodynamicCoefficientfM) = :implicit
+@inline solver_partition(::AerodynamicCoefficientNoBallisticFlight) = :implicit
+
+@inline function _constant_drag_coefficient(alpha_rad::Float64)::Float64
+    return 2 * (2.2 - 0.8) / pi * alpha_rad + 0.8
+end
+
+@inline function _aero_link_angles(
+    spacecraft,
+    body,
+    root_index::Int,
+    orientation_sim::Bool,
+    vel_pi::SVector{3, Float64},
+    θ_body::Float64,
+)::Tuple{Float64, Float64, Union{Nothing, SMatrix{3, 3, Float64, 9}}}
+    if orientation_sim
+        R = rotate_to_inertial(spacecraft, body, root_index)
+        body_frame_velocity = R' * vel_pi
+        α_body = atan(body_frame_velocity[1], body_frame_velocity[3])
+        β_body = atan(body_frame_velocity[2], hypot(body_frame_velocity[1], body_frame_velocity[3]))
+        return α_body, β_body, SMatrix{3, 3, Float64, 9}(R)
+    end
+    α_body = body.root ? (pi / 2) : atan((rot(body.q) * SVector{3, Float64}(1.0, 0.0, 0.0))[1], (rot(body.q) * SVector{3, Float64}(1.0, 0.0, 0.0))[3])
+    return α_body, 0.0, nothing
+end
+
+function _aero_pure_wrench(
+    coefficient_mode::Symbol,
+    x::StateSample,
+    env::EnvironmentSample,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    x.spacecraft === nothing && throw(ArgumentError("Aerodynamic wrench evaluation requires StateSample.spacecraft."))
+    planet_frame = env.planet_frame
+    atmosphere = env.atmosphere
+    planet_frame === nothing && throw(ArgumentError("Aerodynamic wrench evaluation requires env.planet_frame."))
+    atmosphere === nothing && throw(ArgumentError("Aerodynamic wrench evaluation requires env.atmosphere."))
+
+    rho = atmosphere.rho_kg_m3
+    T = atmosphere.temperature_k
+    wind = atmosphere.wind_pp
+    if !isfinite(rho) || rho <= eps(Float64) || !isfinite(T) || T <= 0.0
+        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    spacecraft = x.spacecraft
+    bodies = spacecraft.links
+    root_index = 1
+    orientation_sim = x.q_ib !== nothing
+    planet = env.planet
+
+    sound_velocity = sqrt(planet.γ * planet.R * T)
+    vel_pp = planet_frame.vel_pp
+    vel_pp_mag = norm(vel_pp)
+    mach = vel_pp_mag / sound_velocity
+    S = sqrt(planet.γ * 0.5) * mach
+    h_pp = cross(planet_frame.pos_pp, vel_pp)
+    h_pp_mag = norm(h_pp)
+    if !isfinite(h_pp_mag) || h_pp_mag <= eps(Float64)
+        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    bank_angle = deg2rad(0.0)
+    uD, uN, uE = latlongtoNED((planet_frame.alt_m, planet_frame.lat_rad, planet_frame.lon_rad))
+    wE, wN, wU = wind
+    wind_pp = wN * uN + wE * uE - wU * uD
+    vel_pp_rw = vel_pp + wind_pp
+    vel_pp_rw_mag = norm(vel_pp_rw)
+    if vel_pp_rw_mag <= eps(Float64)
+        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    vel_pp_rw_hat = vel_pp_rw / vel_pp_rw_mag
+    h_pp_hat = h_pp / h_pp_mag
+    lift_pp_hat = normalize(cross(h_pp_hat, vel_pp_rw_hat))
+    drag_pp_hat = -vel_pp_rw_hat
+    cross_pp_hat = cross(drag_pp_hat, lift_pp_hat)
+    q = 0.5 * rho * vel_pp_mag^2
+    l_pi_t = planet_frame.l_pi'
+    vel_pi = orientation_sim ? l_pi_t * vel_pp_rw : SVector{3, Float64}(0.0, 0.0, 0.0)
+    lift_scale = q * cos(bank_angle)
+    θ_body = acos(clamp(vel_pp_rw[1] / vel_pp_rw_mag, -1.0, 1.0))
+
+    force_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+    torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+    @inbounds for body in bodies
+        α_body, β_body, R_body_to_inertial = _aero_link_angles(spacecraft, body, root_index, orientation_sim, vel_pi, θ_body)
+        CL_body, CD_body, CS_body = if coefficient_mode == :fm
+            coeffs = aerodynamic_coefficient_fM(body, T, S, α_body, β_body, θ_body)
+            coeffs[1], coeffs[2], coeffs[3]
+        else
+            0.0, _constant_drag_coefficient(α_body), 0.0
+        end
+
+        drag_pp_body = q * CD_body * body.ref_area * drag_pp_hat
+        lift_pp_body = lift_scale * CL_body * body.ref_area * lift_pp_hat
+        cross_pp_body = orientation_sim ? (q * CS_body * body.ref_area * cross_pp_hat) : SVector{3, Float64}(0.0, 0.0, 0.0)
+        force_body = l_pi_t * (drag_pp_body + lift_pp_body + cross_pp_body)
+        force_ii .+= force_body
+        if orientation_sim && !(R_body_to_inertial === nothing)
+            torque_body .+= cross(SVector{3, Float64}(body.r), R_body_to_inertial' * force_body)
+        end
+    end
+
+    return SVector{3, Float64}(force_ii), SVector{3, Float64}(torque_body)
+end
+
+@inline function wrench(
+    model::AerodynamicCoefficientConstant,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    return _aero_pure_wrench(:constant, x, env)
+end
+
+@inline function wrench(
+    model::AerodynamicCoefficientfM,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    return _aero_pure_wrench(:fm, x, env)
+end
+
+@inline function wrench(
+    model::AerodynamicCoefficientNoBallisticFlight,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    return _aero_pure_wrench(:constant, x, env)
+end
+
 # Calculate force/torque functions
 function calcForceTorque(model::AerodynamicCoefficientConstant, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     m = param.m
@@ -203,7 +340,7 @@ function calcForceTorque(model::AerodynamicCoefficientConstant, x::AbstractVecto
     h_pp_hat = normalize(h_pp) # Unit vector of the planet relative angular momentum
     
     bank_angle = deg2rad(0.0)
-        
+
     lift_pp_hat = normalize(cross(h_pp_hat, vel_pp_rw_hat))
     # lift_pp_hat /= norm(lift_pp_hat) # Normalize the lift vector in planet relative frame
     drag_pp_hat = -vel_pp_rw_hat # Planet relative drag force direction
@@ -257,7 +394,7 @@ function calcForceTorque(model::AerodynamicCoefficientConstant, x::AbstractVecto
         # if montecarlo == true
         #     CL_body, CD_body = monte_carlo_aerodynamics(CL_body, CD_body, args)
         # end
-        
+
         drag_pp_body = q * CD_body * b.ref_area * drag_pp_hat                       # Planet relative drag force vector
         lift_pp_body = q * CL_body * b.ref_area * lift_pp_hat * cos(bank_angle)     # Planet relative lift force vector
 
@@ -309,19 +446,26 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     spacecraft = param.args.dynamics_model.spacecraft[i]
     bodies = spacecraft.links # Include the root body of the spacecraft
     root_index = 1
-    ρ = param.shared_buffers.densities[i] # Atmospheric density at the current altitude from the shared buffer updated by the callback function
-    T = param.shared_buffers.temperatures[i] # Atmospheric temperature at the current altitude from the shared buffer updated by the callback function
-    wind = param.shared_buffers.winds[i] # Atmospheric wind vector at the current altitude from the shared buffer updated by the callback function
+    env_state = SimulationModel.SimulationCallbacks._stage_environment_state(
+        x,
+        param,
+        i,
+        param.shared_buffers.current_time[];
+        write_buffers=true,
+    )
+    rho = env_state.rho
+    T = env_state.T
+    wind = env_state.wind
 
     # Skip expensive aerodynamic geometry when the flow is effectively vacuum.
-    if !isfinite(ρ) || ρ <= eps(Float64)
+    if !isfinite(rho) || rho <= eps(Float64)
         _store_aero_caches!(param, i, SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
         return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     end
 
     sound_velocity = sqrt(planet.γ * planet.R * T) # Speed of sound at the current altitude based on the temperature from the shared buffer updated by the callback function
-    pos_ii = SVector{3, Float64}(x.pos)
-    vel_ii = SVector{3, Float64}(x.vel)
+    pos_ii = env_state.pos_ii
+    vel_ii = env_state.vel_ii
 
     h_ii = cross(pos_ii, vel_ii)    # Inertial angular momentum vector [m ^ 2 / s]
 
@@ -330,15 +474,20 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     # Inertial to planet relative transformation
     # println("pos_ii: ", pos_ii, " vel_ii: ", vel_ii, " alt: ", norm(pos_ii) - planet.Rp_e, " m, vel_mag: ", norm(vel_ii), " m/s")
     # println("planet.L_PI: ", planet.L_PI)
-    et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
-    pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, planet, et, ephemerides_model) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
+    pos_pp = env_state.pos_pp
+    vel_pp = env_state.vel_pp
+    pos_pp_mag = norm(pos_pp) # Magnitude of the planet relative position
+
+    vel_pp_mag = norm(vel_pp)
+    mach = vel_pp_mag / sound_velocity # Mach number of the flow at the current altitude
+    S = sqrt(planet.γ * 0.5) * mach # Molecular speed ratio
     h_pp = cross(pos_pp, vel_pp)
     
     h_pp_mag = norm(h_pp)
     h_pp_hat = normalize(h_pp) # Unit vector of the planet relative angular momentum
     
     bank_angle = deg2rad(0.0)
-    alt,lat,lon = rtolatlong(pos_pp, planet, false) # Get the altitude, latitude, and longitude for the current position, used for density lookup and aerodynamic coefficient calculation
+    alt,lat,lon = env_state.alt, env_state.lat, env_state.lon
 
     uD, uN, uE = latlongtoNED((alt, lat, lon))
     wE, wN, wU = wind # positive to the east , m / s
@@ -357,9 +506,8 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     # lift_pp_hat /= norm(lift_pp_hat) # Normalize the lift vector in planet relative frame
     drag_pp_hat = -vel_pp_rw_hat # Planet relative drag force direction
     cross_pp_hat = cross(drag_pp_hat, lift_pp_hat) # Cross product of the drag and lift vectors in planet relative frame
-    q = 0.5 * ρ * vel_pp_rw_mag^2 # Dynamic pressure in planet relative frame, using the density from the shared buffer updated by the callback function
-    sim_model = _simulation_model_module_for_aero()
-    L_PI_t = getproperty(sim_model, :planet_frame_lpi)(planet, et, ephemerides_model)'
+    q = 0.5 * rho * vel_pp_rw_mag^2 # Dynamic pressure in planet relative frame, using the stage-consistent density value
+    L_PI_t = env_state.l_pi'
     vel_pi = orientation_sim ? L_PI_t * vel_pp_rw : SVector{3, Float64}(0.0, 0.0, 0.0)
     lift_scale = q * cos(bank_angle)
 
@@ -408,7 +556,7 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
             cross_pp_body = zero_vec # Planet relative cross force vector
             cross_body = zero_vec # Inertial cross force vector
         end
-        
+
         drag_body = L_PI_t * drag_pp_body   # Inertial drag force vector
         lift_body = L_PI_t * lift_pp_body   # Inertial lift force vector
         force_body = drag_body + lift_body + cross_body
@@ -719,6 +867,17 @@ end
 # end
 
 function aerodynamic_coefficient_fM(body, T::Float64, S::Float64)
+    return aerodynamic_coefficient_fM(body, T, S, body.α, body.β, body.θ)
+end
+
+function aerodynamic_coefficient_fM(
+    body,
+    T::Float64,
+    S::Float64,
+    α_input::Float64,
+    β_input::Float64,
+    θ_input::Float64,
+)
     """
     Calculate the aerodynamic coefficients for a blunt body in ballistic flight using the F.M. model.
         Angle of attack and side slip are calculated as angles between CA (normal to flat plate), and wind-relative velocity vector.
@@ -736,9 +895,9 @@ function aerodynamic_coefficient_fM(body, T::Float64, S::Float64)
     - Equations are from Hart et al. (2017, https://doi.org/10.2514/1.A33606), for a rectangular prism. 
     """
 
-    α = body.α
-    β = body.β
-    θ = body.θ
+    α = α_input
+    β = β_input
+    θ = θ_input
     # Adjust angles to match model assumptions
     α -= π/2
     σ = body.reflection_coefficient

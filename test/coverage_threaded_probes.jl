@@ -43,6 +43,11 @@ mutable struct ProbeGuidanceModel <: SimulationModel.AbstractTypes.AbstractGuida
     hits::Vector{Int}
 end
 
+struct ProbeImplicitForceModel <: SimulationModel.AbstractForceTorqueModel
+    force::SVector{3, Float64}
+    torque::SVector{3, Float64}
+end
+
 function SimulationModel.calcControlEffect!(
     model::ProbeControlModel,
     u::ComponentVector,
@@ -63,6 +68,17 @@ function SimulationModel.calcGuidanceEffect!(
 )
     model.hits[i] += 1
     return nothing
+end
+
+SimulationModel.solver_partition(::ProbeImplicitForceModel) = :implicit
+
+function SimulationModel.calcForceTorque(
+    model::ProbeImplicitForceModel,
+    x::AbstractVector{Float64},
+    p::ODEParams,
+    i::Int64
+)
+    return model.force, model.torque
 end
 
 function SimulationModel.EnvironmentModels.getDensity(
@@ -358,6 +374,27 @@ end
     end
     @test all(isfinite, p_density.shared_buffers.densities)
 
+    p_density_models = ODEParams{4}(args=thread_safe_args)
+    u_density_models = build_initial_conditions(thread_safe_args)
+    append!(p_density_models.shared_buffers.density_models, fill(GRAMAtmosphereModel(planet_name="earth"), 4))
+    integrator_density_models = MockCallbackIntegrator(
+        p_density_models,
+        u_density_models,
+        0.0,
+        MockCallbackOpts(1.0, 1e-8, 1e-8),
+        1,
+        Inf
+    )
+    withenv(
+        "SPACEAGORA_DENSITY_BATCH_PARALLEL" => "off",
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "on",
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1"
+    ) do
+        density_cb = callbacks.get_density_callback(4, thread_safe_args)
+        density_cb.affect!(integrator_density_models)
+    end
+    @test all(isfinite, p_density_models.shared_buffers.densities)
+
     # Guidance invokelatest branch.
     probe_guidance = ProbeGuidanceModel([0])
     args_guidance = build_config(
@@ -511,6 +548,25 @@ end
     put!(req_err, :stop)
     wait(worker_err)
 
+    req_dynamic = Channel{Any}(1)
+    done_dynamic = Channel{Any}(1)
+    worker_dynamic = Threads.@spawn policy._persistent_foreach_worker_loop(1, req_dynamic, done_dynamic)
+    next_index = Base.Threads.Atomic{Int}(1)
+    put!(
+        req_dynamic,
+        (
+            num_items=5,
+            active_workers=2,
+            scheduler=:dynamic,
+            chunk=2,
+            next_index=next_index,
+            f=identity,
+        )
+    )
+    @test take!(done_dynamic) === nothing
+    put!(req_dynamic, :stop)
+    wait(worker_dynamic)
+
     pool_direct = policy._create_persistent_foreach_pool(2)
     @test pool_direct.workers >= 2
     policy._shutdown_persistent_foreach_pool!(pool_direct)
@@ -601,6 +657,35 @@ end
         )
         @test reduced_dynamic[] == sum(1:9)
     end
+
+    args_partition = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            ProbeImplicitForceModel(SVector{3, Float64}(1.0, 0.0, 0.0), SVector{3, Float64}(0.0, 1.0, 0.0)),
+            ProbeImplicitForceModel(SVector{3, Float64}(2.0, 0.0, 0.0), SVector{3, Float64}(0.0, 2.0, 0.0)),
+        )
+    )
+    p_partition = ODEParams{1}(args=args_partition)
+    u_partition = build_initial_conditions(args_partition)
+    f_partition = MVector{3, Float64}(0.0, 0.0, 0.0)
+    τ_partition = MVector{3, Float64}(0.0, 0.0, 0.0)
+    SimulationEngine._accumulate_dynamic_effectors_partitioned!(
+        f_partition,
+        τ_partition,
+        u_partition.sc[1],
+        p_partition,
+        1,
+        0.0,
+        args_partition.dynamics_model.dynamic_effectors,
+        (use_threads=true, allotment=2, policy_applied=false, mode=:on),
+        :implicit
+    )
+    @test f_partition == MVector{3, Float64}(3.0, 0.0, 0.0)
+    @test τ_partition == MVector{3, Float64}(0.0, 3.0, 0.0)
 
     policy.reset_policy_telemetry!()
     withenv(
@@ -1002,12 +1087,49 @@ end
     @test T_exp == 200.0
     @test wind_exp == SVector{3, Float64}(0.0, 0.0, 0.0)
 
-    poly_model = env_models.PolynomialFitAtmosphereModel([0.0, -1.0])
-    @test_throws MethodError env_models.getDensity(poly_model, [120e3, 130e3], 0.0, 0.0, 0.0, false, p_density_helpers)
+    poly_model = env_models.PolynomialFitAtmosphereModel(
+        [0.0, -1.0];
+        valid_min_altitude_m=100e3,
+        valid_max_altitude_m=200e3
+    )
+    @test_throws ArgumentError env_models.PolynomialFitAtmosphereModel(
+        [0.0, -1.0];
+        valid_min_altitude_m=200e3,
+        valid_max_altitude_m=100e3
+    )
+    @test poly_model.valid_min_altitude_m == 100e3
+    @test poly_model.valid_max_altitude_m == 200e3
+
+    poly_planet = env_models.PolynomialFitAtmosphereModel(args_density_helpers.environment_model.planet)
+    @test poly_planet.valid_min_altitude_m == 50e3
+    @test poly_planet.valid_max_altitude_m == 2_000e3
     rho_scalar, T_scalar, wind_scalar = env_models.getDensity(poly_model, 120e3, 0.0, 0.0, 0.0, false, p_density_helpers)
     @test isfinite(rho_scalar)
     @test T_scalar == args_density_helpers.environment_model.planet.T_ref
     @test wind_scalar == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    rho_vec, T_vec, wind_vec = env_models.getDensity(poly_model, [80e3, 120e3, 250e3], 0.0, 0.0, 0.0, false, p_density_helpers)
+    @test rho_vec isa Vector{Float64}
+    @test length(rho_vec) == 3
+    @test all(isfinite, rho_vec)
+    @test T_vec == args_density_helpers.environment_model.planet.T_ref
+    @test wind_vec == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    rho_at_min, _, _ = env_models.getDensity(poly_model, 100e3, 0.0, 0.0, 0.0, false, p_density_helpers)
+    rho_below_min, _, _ = env_models.getDensity(poly_model, 80e3, 0.0, 0.0, 0.0, false, p_density_helpers)
+    rho_at_max, _, _ = env_models.getDensity(poly_model, 200e3, 0.0, 0.0, 0.0, false, p_density_helpers)
+    rho_above_max, _, _ = env_models.getDensity(poly_model, 250e3, 0.0, 0.0, 0.0, false, p_density_helpers)
+    @test rho_below_min == rho_at_min
+    @test rho_above_max == rho_at_max
+
+    poly_overflow = env_models.PolynomialFitAtmosphereModel(
+        [1.0e6];
+        valid_min_altitude_m=100e3,
+        valid_max_altitude_m=200e3
+    )
+    rho_overflow, _, _ = env_models.getDensity(poly_overflow, 150e3, 0.0, 0.0, 0.0, false, p_density_helpers)
+    @test isfinite(rho_overflow)
+    @test rho_overflow > 0.0
 
     hs_batch = [120e3, 130e3, 140e3]
     lats_batch = [0.0, 0.05, -0.02]

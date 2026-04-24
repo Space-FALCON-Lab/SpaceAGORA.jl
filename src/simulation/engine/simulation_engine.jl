@@ -14,6 +14,8 @@ include(joinpath(@__DIR__, "config", "simulation_engine_config.jl"))
 include(joinpath(@__DIR__, "adapters", "from_env.jl"))
 include(joinpath(@__DIR__, "adapters", "from_simulation_configuration.jl"))
 
+include(joinpath(@__DIR__, "effector_sampling.jl"))
+include(joinpath(@__DIR__, "state_access.jl"))
 include(joinpath(@__DIR__, "setup.jl"))
 include(joinpath(@__DIR__, "solver_policy.jl"))
 include(joinpath(@__DIR__, "dynamics_rhs.jl"))
@@ -30,5 +32,7 @@ export ArtifactConfig
 export SimulationEngineConfig
 export simulation_engine_config_from_env
 export run_simulation
+export prewarm_nbody_ephemeris_cache
+export load_nbody_ephemeris_cache!
 
 end # module SimulationEngine

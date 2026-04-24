@@ -23,6 +23,8 @@ include(joinpath(@__DIR__, "..", "environment", "ephemerides", "planet_shapes.jl
 # 1. Core abstract types
 include(joinpath(@__DIR__, "..", "core", "types", "abstract_types.jl"))
 @reexport using .AbstractTypes
+include(joinpath(@__DIR__, "..", "core", "types", "effector_sampling.jl"))
+@reexport using .EffectorSampling
 
 include(joinpath(@__DIR__, "..", "gnc", "command_types.jl"))
 @reexport using .CommandTypes
@@ -69,7 +71,7 @@ include(joinpath(@__DIR__, "..", "core", "state", "simulation_configuration.jl")
 include(joinpath(@__DIR__, "..", "environment", "physical_models.jl"))
 @reexport using .EnvironmentModels
 
-include(joinpath(@__DIR__, "..", "core", "types", "legacy_model_codes.jl"))
+include(joinpath(@__DIR__, "..", "core", "types", "compat_model_codes.jl"))
 @reexport using .LegacyModelCodes
 
 include(joinpath(@__DIR__, "..", "core", "types", "runtime_types.jl"))

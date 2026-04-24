@@ -120,16 +120,21 @@ function get_callbacks(
     save_fields=nothing
 )::CallbackSet
     save_fields_resolved = _resolve_save_fields(save_fields, args)
-    callbacks = (
-        get_impact_callback(num_sats),
-        update_planet_frame_callback(),
-    )
+    backbone_mode = _simulation_engine_module()._solver_policy_mode() == :gravity_backbone_split
+    callbacks = if backbone_mode
+        (get_impact_callback(num_sats),)
+    else
+        (
+            get_impact_callback(num_sats),
+            update_planet_frame_callback(),
+        )
+    end
 
-    if _requires_density_callback(effectors, args)
+    if !backbone_mode && _requires_density_callback(effectors, args)
         callbacks = _append_callback(callbacks, get_density_callback(num_sats, effectors, args))
     end
 
-    if _requires_thermal_callback(effectors, args)
+    if !backbone_mode && _requires_thermal_callback(effectors, args)
         callbacks = _append_callback(callbacks, get_thermal_callback(num_sats, args))
     end
 
@@ -137,24 +142,25 @@ function get_callbacks(
         callbacks = _append_callback(callbacks, get_orbit_end_callback(num_sats))
     end
 
-    if _requires_entry_end_callback(effectors, args)
+    if !backbone_mode && _requires_entry_end_callback(effectors, args)
         callbacks = _append_callback(callbacks, get_entry_end_callback(num_sats, args))
     end
 
-    if _requires_drag_state_callback(effectors, args)
+    if !backbone_mode && _requires_drag_state_callback(effectors, args)
         callbacks = _append_callback(callbacks, get_drag_state_callback(num_sats))
     end
 
-    callbacks = _append_callbacks(callbacks, get_navigation_callbacks(num_sats, args))
-    callbacks = _append_callbacks(callbacks, get_control_callbacks(num_sats, args))
-    callbacks = _append_callbacks(callbacks, get_guidance_callbacks(num_sats, args))
-    if _requires_quaternion_projection_callback(args)
+    if !backbone_mode
+        callbacks = _append_callbacks(callbacks, get_navigation_callbacks(num_sats, args))
+        callbacks = _append_callbacks(callbacks, get_control_callbacks(num_sats, args))
+        callbacks = _append_callbacks(callbacks, get_guidance_callbacks(num_sats, args))
+    end
+    if !backbone_mode && _requires_quaternion_projection_callback(args)
         callbacks = _append_callback(callbacks, get_quaternion_projection_callback(num_sats, args))
     end
-    if args.simulation_settings.verbose && _progress_interval_s() > 0.0
-        callbacks = _append_callback(callbacks, get_progress_callback(num_sats, args))
+    if !backbone_mode
+        callbacks = _append_callback(callbacks, get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values))
     end
-    callbacks = _append_callback(callbacks, get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values))
 
     return CallbackSet(callbacks...)
 end

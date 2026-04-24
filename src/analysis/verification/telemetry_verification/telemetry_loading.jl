@@ -1,3 +1,6 @@
+const _EARTH_HIGH_PREC_BODY_FIXED_FRAME = "ITRF93"
+const _EARTH_FALLBACK_BODY_FIXED_FRAME = "IAU_EARTH"
+
 @inline function _to_float_vector(values, context::String)::Vector{Float64}
     out = Vector{Float64}(undef, length(values))
     @inbounds for i in eachindex(values)
@@ -9,7 +12,11 @@
 end
 
 @inline function _planet_fixed_frame_name(planet_name::String)::String
-    return lowercase(strip(planet_name)) == "earth" ? "ITRF93" : "IAU_" * uppercase(strip(planet_name))
+    return lowercase(strip(planet_name)) == "earth" ? _EARTH_HIGH_PREC_BODY_FIXED_FRAME : "IAU_" * uppercase(strip(planet_name))
+end
+
+@inline function _planet_fixed_frame_fallback_name(planet_name::String)::Union{Nothing, String}
+    return lowercase(strip(planet_name)) == "earth" ? _EARTH_FALLBACK_BODY_FIXED_FRAME : nothing
 end
 
 function _initial_time_et(initial_time::InitialTime)::Float64
@@ -32,11 +39,25 @@ function _transform_state(from_frame::String, to_frame::String, et::Float64, r_m
 end
 
 @inline function _planet_fixed_to_j2000_state(planet_name::String, et::Float64, r_m::SVector{3, Float64}, v_mps::SVector{3, Float64})
-    return _transform_state(_planet_fixed_frame_name(planet_name), "J2000", et, r_m, v_mps)
+    from_frame = _planet_fixed_frame_name(planet_name)
+    fallback = _planet_fixed_frame_fallback_name(planet_name)
+    try
+        return _transform_state(from_frame, "J2000", et, r_m, v_mps)
+    catch
+        fallback === nothing && rethrow()
+        return _transform_state(fallback, "J2000", et, r_m, v_mps)
+    end
 end
 
 @inline function _j2000_to_planet_fixed_state(planet_name::String, et::Float64, r_m::SVector{3, Float64}, v_mps::SVector{3, Float64})
-    return _transform_state("J2000", _planet_fixed_frame_name(planet_name), et, r_m, v_mps)
+    to_frame = _planet_fixed_frame_name(planet_name)
+    fallback = _planet_fixed_frame_fallback_name(planet_name)
+    try
+        return _transform_state("J2000", to_frame, et, r_m, v_mps)
+    catch
+        fallback === nothing && rethrow()
+        return _transform_state("J2000", fallback, et, r_m, v_mps)
+    end
 end
 
 @inline function _require_column(df::DataFrame, candidates::Vector{String}, context::String)::Vector{Float64}

@@ -31,16 +31,13 @@ function _sha256_hex(path::String)::String
     end
 end
 
-function _checkpoint_payload(
-    t::Float64,
-    u_state,
-    checkpoint_schema_version;
-    runtime_state=nothing
-)
-    base = (
+function _write_checkpoint!(args, t::Float64, u_state, checkpoint_schema_version; solver_mode::Union{Nothing, String}=nothing)
+    paths = IOConfig._checkpoint_paths(args)
+    payload = (
         schema_version=checkpoint_schema_version,
         created_utc=string(now(UTC)),
         t=t,
+        solver_mode=solver_mode,
         u=deepcopy(u_state)
     )
     runtime_state === nothing && return base
@@ -59,6 +56,7 @@ function _write_checkpoint_payload!(args, payload)
         "schema_version" => schema_version,
         "created_utc" => haskey(payload, :created_utc) ? string(payload[:created_utc]) : string(now(UTC)),
         "time_s" => t,
+        "solver_mode" => solver_mode,
         "data_path" => paths.data,
         "data_size_bytes" => filesize(paths.data),
         "data_sha256" => _sha256_hex(paths.data)
@@ -85,13 +83,11 @@ function _load_checkpoint(args)
     if !haskey(payload, :t) || !haskey(payload, :u)
         throw(ArgumentError("Checkpoint payload missing required keys (:t, :u)."))
     end
-    runtime_state = haskey(payload, :runtime_state) ? payload[:runtime_state] : nothing
-    schema_version = haskey(payload, :schema_version) ? string(payload[:schema_version]) : "unknown"
+    solver_mode = haskey(payload, :solver_mode) ? payload[:solver_mode] : nothing
     return (
         t=Float64(payload[:t]),
         u=payload[:u],
-        runtime_state=runtime_state,
-        schema_version=schema_version,
+        solver_mode=solver_mode === nothing ? nothing : String(solver_mode),
         data_path=paths.data,
         manifest_path=paths.manifest
     )

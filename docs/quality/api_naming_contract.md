@@ -42,7 +42,7 @@ Removed in Wave 2:
 ## Naming Rules (Canonical Folders)
 1. File names: `lower_snake_case.jl`
 2. Module/type names: `CamelCase`
-3. Internal helper modules must not use retired snake_case names such as `ref_sys`; the canonical reference-system module name is `ReferenceSystems`.
+3. Internal helper modules must not use retired `snake_case` names such as `ref_sys`; the canonical reference-system module name is `ReferenceSystems`.
 4. Internal helper modules must not use retired mixed-case names such as `PhysicalModel`; the canonical spacecraft-container module name is `SpacecraftModels`.
 5. Function names: `snake_case`
 6. New canonical EOM identifiers use `eom` naming.

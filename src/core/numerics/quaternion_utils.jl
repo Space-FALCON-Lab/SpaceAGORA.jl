@@ -1,6 +1,8 @@
 using LinearAlgebra
 using StaticArrays
 
+const IDENTITY_QUATERNION = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
+
 ### Quaternion Function ###
 # Quaternion multiplication (scalar-last convention: q = [qx, qy, qz, qw]).
 # Returns SVector to avoid heap allocation.
@@ -12,6 +14,24 @@ using StaticArrays
     v2 = q0*p2 + p0*q2 + q3*p1 - q1*p3
     v3 = q0*p3 + p0*q3 + q1*p2 - q2*p1
     return SVector{4, Float64}(v1, v2, v3, s)
+end
+
+@inline function quaternion_norm_error(q::AbstractVector{<:Real})::Float64
+    q_unit = SVector{4, Float64}(Float64(q[1]), Float64(q[2]), Float64(q[3]), Float64(q[4]))
+    qnorm2 = dot(q_unit, q_unit)
+    if !isfinite(qnorm2)
+        return Inf
+    end
+    return abs(qnorm2 - 1.0)
+end
+
+@inline function project_unit_quaternion(q::AbstractVector{<:Real})::SVector{4, Float64}
+    q_unit = SVector{4, Float64}(Float64(q[1]), Float64(q[2]), Float64(q[3]), Float64(q[4]))
+    qnorm2 = dot(q_unit, q_unit)
+    if !(isfinite(qnorm2) && qnorm2 > eps(Float64))
+        return IDENTITY_QUATERNION
+    end
+    return q_unit / sqrt(qnorm2)
 end
 
 ## skew matrix

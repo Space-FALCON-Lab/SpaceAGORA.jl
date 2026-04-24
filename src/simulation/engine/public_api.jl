@@ -31,3 +31,25 @@ function run_simulation(args; kwargs...)
     typed_args = _require_simulation_configuration(args)
     return run_simulation(typed_args; kwargs...)
 end
+
+function prewarm_nbody_ephemeris_cache(config::SimulationEngineConfig, args; kwargs...)
+    return _with_engine_env_overrides(config, () -> prewarm_nbody_ephemeris_cache(args; kwargs...))
+end
+
+function prewarm_nbody_ephemeris_cache(
+    args;
+    dt_s::Union{Nothing, Real}=nothing,
+    mission_end_s::Union{Nothing, Real}=nothing,
+    save_path::Union{Nothing, AbstractString}=nothing
+)
+    return _prewarm_nbody_ephemeris_cache(
+        args;
+        dt_s=dt_s,
+        mission_end_s=mission_end_s,
+        save_path=save_path
+    )
+end
+
+function load_nbody_ephemeris_cache!(path::AbstractString; replace::Bool=true)
+    return _load_nbody_ephemeris_cache!(String(path); replace=replace)
+end

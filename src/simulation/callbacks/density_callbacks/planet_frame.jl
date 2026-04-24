@@ -37,29 +37,41 @@ end
     return rot(q_interp)
 end
 
+@inline function _planet_lpi_at(p, t::Float64)::SMatrix{3, 3, Float64}
+    planet = p.args.environment_model.planet
+    ephemerides_model = p.args.environment_model.ephemerides_model
+    et = p.shared_buffers.et_start[] + t
+    pxform_counter = p.shared_buffers.spice_runtime_counters.planet_pxform_runtime_calls
+    cache_entry = p.shared_buffers.planet_frame_ephemeris_cache[]
+    return if cache_entry isa PlanetFrameEphemerisCache
+        cached = _planet_lpi_from_cache(cache_entry, et)
+        cached === nothing ? _planet_lpi_from_backend(planet, ephemerides_model, et, pxform_counter) : cached
+    else
+        _planet_lpi_from_backend(planet, ephemerides_model, et, pxform_counter)
+    end
+end
+
+@inline function _planet_relative_state(
+    pos_ii::SVector{3, Float64},
+    vel_ii::SVector{3, Float64},
+    planet,
+    l_pi::SMatrix{3, 3, Float64}
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    pos_pp = SVector{3, Float64}(l_pi * pos_ii)
+    vel_pp = SVector{3, Float64}(l_pi * (vel_ii - cross(planet.ω, pos_ii)))
+    return pos_pp, vel_pp
+end
+
 function update_planet_frame_callback()
     condition(u, t, integrator) = true
-    et_start = Ref{Float64}(0.0) # Store the start epoch in a Ref so it can be updated in the affect! function
     function affect!(integrator)
         p = integrator.p
-        planet = p.args.environment_model.planet
-        ephemerides_model = p.args.environment_model.ephemerides_model
-        et = et_start[] + integrator.t
-        pxform_counter = p.shared_buffers.spice_runtime_counters.planet_pxform_runtime_calls
-        cache_entry = p.shared_buffers.planet_frame_ephemeris_cache[]
-        l_pi = if cache_entry isa PlanetFrameEphemerisCache
-            cached = _planet_lpi_from_cache(cache_entry, et)
-            cached === nothing ? _planet_lpi_from_backend(planet, ephemerides_model, et, pxform_counter) : cached
-        else
-            _planet_lpi_from_backend(planet, ephemerides_model, et, pxform_counter)
-        end
-        planet.L_PI .= l_pi
+        p.args.environment_model.planet.L_PI .= _planet_lpi_at(p, integrator.t)
     end
 
     function init_affect!(cb, u, t, integrator)
         p = integrator.p
-        ephemerides_model = p.args.environment_model.ephemerides_model
-        et_start[] = ephemerides_time_seconds(p.args.initial_time, ephemerides_model)
+        p.shared_buffers.et_start[] = ephemerides_time_seconds(p.args.initial_time, p.args.environment_model.ephemerides_model)
         affect!(integrator) # Call the affect! function at the start of the simulation to initialize the planet frame
     end
 

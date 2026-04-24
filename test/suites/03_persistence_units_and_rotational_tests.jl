@@ -564,7 +564,11 @@ end
             @test isfile(joinpath("output", "simulation_results.csv"))
 
             df = CSV.read(joinpath("output", "simulation_results.csv"), DataFrame)
-            @test nrow(df) > 10
+            expected_rows = Int(floor(
+                args_resume_missing.mission_configuration.mission_time /
+                args_resume_missing.mission_configuration.data_rate
+            )) + 1
+            @test nrow(df) >= expected_rows
             @test abs(Float64(df.time[end]) - 60.0) < 1e-8
 
             ckpt_manifest_path = joinpath("output", "checkpoints", "simulation_checkpoint.manifest.toml")

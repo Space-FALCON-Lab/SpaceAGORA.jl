@@ -213,11 +213,8 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
         return nothing
     end
 
-    # Logic for when the callback should trigger
-    # Returning true means it runs at every integration step
     condition(u, t, integrator) = true
 
-    # Logic for what happens when it triggers
     function affect!(integrator)
         p = integrator.p
         u = integrator.u
@@ -247,6 +244,8 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
         started_ns = time_ns()
 
         if use_batch
+            # Batch calls are only used when the active density path can evaluate
+            # all spacecraft together without per-satellite cache state.
             if stats_enabled
                 _gram_runtime_stats_update!(s -> begin
                     s.density_calls += num_sats
@@ -301,24 +300,12 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                 )
             end
         elseif use_threads
-            if isempty(density_models)
-                ParallelPolicy.threaded_foreach_persistent(:density_callback, num_sats, decision.allotment) do i
-                    @inbounds update_density_sat!(i, p, u, Float64(integrator.t))
-                end
-            else
-                ParallelPolicy.threaded_foreach_persistent(:density_callback, num_sats, decision.allotment) do i
-                    @inbounds update_density_sat!(i, p, u, Float64(integrator.t))
-                end
+            ParallelPolicy.threaded_foreach_persistent(:density_callback, num_sats, decision.allotment) do i
+                @inbounds update_density_sat!(i, p, u, Float64(integrator.t))
             end
         else
-            if isempty(density_models)
-                @inbounds for i in 1:num_sats
-                    update_density_sat!(i, p, u, Float64(integrator.t))
-                end
-            else
-                @inbounds for i in 1:num_sats
-                    update_density_sat!(i, p, u, Float64(integrator.t))
-                end
+            @inbounds for i in 1:num_sats
+                update_density_sat!(i, p, u, Float64(integrator.t))
             end
         end
         if decision.policy_applied

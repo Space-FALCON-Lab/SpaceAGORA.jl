@@ -88,8 +88,8 @@ end
     ephemerides_model = integrator.p.args.environment_model.ephemerides_model
     altitudes = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        pos = SVector{3, Float64}(u.sc[i].pos)
-        vel = SVector{3, Float64}(u.sc[i].vel)
+        pos = _simulation_engine_module()._state_position_ii(u, i)
+        vel = _simulation_engine_module()._state_velocity_ii(u, i)
         rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
         altitudes[i] = rtolatlong(rp, planet, ephemerides_model)[1]
     end
@@ -102,8 +102,8 @@ end
     ephemerides_model = integrator.p.args.environment_model.ephemerides_model
     latitudes_deg = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        pos = SVector{3, Float64}(u.sc[i].pos)
-        vel = SVector{3, Float64}(u.sc[i].vel)
+        pos = _simulation_engine_module()._state_position_ii(u, i)
+        vel = _simulation_engine_module()._state_velocity_ii(u, i)
         rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
         latitudes_deg[i] = rad2deg(rtolatlong(rp, planet, ephemerides_model)[2])
     end
@@ -116,8 +116,8 @@ end
     ephemerides_model = integrator.p.args.environment_model.ephemerides_model
     longitudes_deg = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        pos = SVector{3, Float64}(u.sc[i].pos)
-        vel = SVector{3, Float64}(u.sc[i].vel)
+        pos = _simulation_engine_module()._state_position_ii(u, i)
+        vel = _simulation_engine_module()._state_velocity_ii(u, i)
         rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
         longitudes_deg[i] = rad2deg(rtolatlong(rp, planet, ephemerides_model)[3])
     end

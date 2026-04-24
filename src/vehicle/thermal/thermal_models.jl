@@ -87,9 +87,7 @@ function heatrate_convective_radiative(S, T, m, ρ, v, α)
     """
 
     q_conv = heatrate_convective(S, T, m, ρ, v, α)
-    q_rad  = heatrate_radiative(S, T, m, ρ, v, α)
-
-    return q_conv # + q_rad
+    return q_conv
 end
 
 function getHeatRate(model::MaxwellianHeat, S::Float64, T::Float64, ρ::Float64, v::Float64, α::Float64)::Float64
@@ -106,12 +104,6 @@ function getHeatRate(model::MaxwellianHeat, S::Float64, T::Float64, ρ::Float64,
     T_r = T + (γ/(γ + 1)) * r_prime * (T_0 - T)
     T_p = T
     T_w = T_p
-
-    # heat_rate = (m.aerodynamics.thermal_accomodation_factor * ρ * m.planet.R * T_p) * 
-    #             (sqrt(m.planet.R * T_p / (2 * pi))) * 
-    #             ((S^2 + (γ) / (γ - 1) - (γ + 1) / (2 * (γ - 1)) * (T_w / T_p)) * 
-    #             (exp(-(S * sin(α))^2) + sqrt(pi) * (S * sin(α)) * 
-    #             (1 + erf(S * sin(α)))) - 0.5 * exp(-(S * sin(α))^2)) * 1e-4  # W/cm^2
     
     heat_rate = (model.thermal_accomodation_factor * ρ * model.planet.R * T_p) * 
                 (sqrt(model.planet.R * T_p / (2 * pi))) * (

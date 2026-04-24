@@ -4,8 +4,6 @@ using StaticArrays
 using LinearAlgebra
 using ..SpacecraftModels
 include(joinpath(@__DIR__, "..", "..", "core", "numerics", "quaternion_utils.jl"))
-# Import from the utils module defined in the main file
-# using ..quaternion_utils: rot, dcm_to_quaternion, hat 
 
 export rotate_to_inertial, rotate_to_body, rotate_link
 
@@ -16,6 +14,7 @@ function rotate_to_inertial(model::SpacecraftModel, body::Link, root_index::Int)
     if body.root
         return rot(body.q)' # Rotation matrix from quaternion
     else
+        # Child link attitudes are stored relative to the root body frame.
         return rot(model.root.q)' * rot(body.q)' # Rotation matrix from quaternion
     end
 end
@@ -54,7 +53,6 @@ function rotate_link(body::Link, axis::SVector{3, Float64}, θ::Float64)
     """
     @assert !body.root "Cannot rotate a root body directly"
     if norm(axis) <= 1e-6
-        # @warn "Rotation axis norm is too small, using default axis (0, 1, 0)"
         axis = SVector{3, Float64}(0.0, 1.0, 0.0) # Default axis if norm is too small
     end
     axis = axis / norm(axis) # Normalize the rotation axis

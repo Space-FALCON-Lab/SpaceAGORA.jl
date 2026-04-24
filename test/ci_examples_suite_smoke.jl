@@ -3,8 +3,9 @@ const EXAMPLES_DIR = joinpath(REPO_ROOT, "examples")
 const PROJECT_PATH = joinpath(REPO_ROOT, ".AGORA")
 
 function list_examples()
+    helper_files = Set(["common.jl", "aerobraking_mission_plot_utils.jl"])
     files = sort(filter(f -> endswith(f, ".jl"), readdir(EXAMPLES_DIR; join=true)))
-    files = filter(f -> basename(f) != "common.jl", files)
+    files = filter(f -> !(basename(f) in helper_files), files)
     token = strip(get(ENV, "SPACEAGORA_EXAMPLE_FILTER", ""))
     if !isempty(token)
         files = filter(f -> occursin(token, basename(f)), files)
@@ -18,12 +19,14 @@ function run_example(example_path::String)
     has_nan = false
     text = ""
 
+    # Isolate each example's transient outputs so smoke runs do not share cwd state.
     mktempdir() do tmp
         cmd = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=existing --depwarn=error --project=$(PROJECT_PATH) $(example_path)`
         cmd = Cmd(cmd; dir=tmp)
         cmd = addenv(
             cmd,
             "SPACEAGORA_EXAMPLE_SMOKE" => "1",
+            "SPACEAGORA_EXAMPLE_SMOKE_RESULTS" => "1",
             "SPACEAGORA_EXAMPLE_SMOKE_MISSION_TIME" => "120.0",
             "SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0",
             "SPACEAGORA_WARN_NORMALIZE" => "0"

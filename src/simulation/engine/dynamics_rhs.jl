@@ -830,19 +830,17 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
 end # function spacecraft_dynamics_fast_control!
 
 function build_initial_conditions(args)::ComponentVector
-    # 1. Build the structure (Axis) based on each spacecraft's unique body count
-    # This identifies exactly how many heat_load slots each SC needs
+    # Each spacecraft can have a different body count, so the state layout has
+    # to be sized per spacecraft before we pack the global ComponentVector.
     sc_shapes = map(args.dynamics_model.spacecraft) do sc
-        # Get the number of bodies for this specific spacecraft
         n_bodies = length(sc.links)
         mass = sc.dry_mass + sc.prop_mass
-        # Create the initial state for this spacecraft with the correct size for heat_loads
         if args.mission_configuration.orientation_sim
             return (
                 pos = zeros(3), 
                 vel = zeros(3), 
                 mass = mass, 
-                heat_loads = zeros(n_bodies), # Variable size!
+                heat_loads = zeros(n_bodies),
                 q = Float64[0.0, 0.0, 0.0, 1.0], 
                 ω = zeros(3)
             )
@@ -856,11 +854,8 @@ function build_initial_conditions(args)::ComponentVector
         end
     end
 
-    # 2. Pack everything into one ComponentVector
-    # Julia allocates ONE flat array and calculates all offsets automatically
-    state = ComponentVector(sc = sc_shapes) # Add more components here as needed in the future (e.g., separate orientation state if not using quaternions, etc.)
+    state = ComponentVector(sc = sc_shapes)
 
-    # 3. Fill the values (The logic remains the same)
     for i in eachindex(args.dynamics_model.spacecraft)
         spacecraft = args.dynamics_model.spacecraft[i]
         sc_view = state.sc[i]
@@ -874,8 +869,6 @@ function build_initial_conditions(args)::ComponentVector
         end
         sc_view.pos .= r0
         sc_view.vel .= v0
-        # sc_view.mass .= spacecraft.dry_mass + spacecraft.prop_mass
-        # Note: heat_loads is already the correct size for this specific i!
         sc_view.heat_loads .= 0.0  
         
         if args.mission_configuration.orientation_sim

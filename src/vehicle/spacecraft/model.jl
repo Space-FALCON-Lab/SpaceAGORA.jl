@@ -3,8 +3,6 @@ module SpacecraftModels
 using StaticArrays
 using LinearAlgebra
 
-# Import types defined in our other files
-# using ..AbstractTypes
 using ..Components
 
 export Link, Joint, SpacecraftModel, DynamicsModel, InitialCondition, CartesianInitialCondition, AbstractInitialCondition, GuidanceModel, NavigationModel, ControlModel
@@ -111,10 +109,6 @@ function CartesianInitialCondition(
     )
 end
 
-# --- CRITICAL REFACTOR 1 ---
-# Link is now parametric on N_RW (number of reaction wheels).
-# This avoids the type-instability of using `gyro` as a value.
-# I also removed the ..._function fields to decouple data from logic.
 mutable struct Link{N_RW}
     root::Bool # Whether this link is a root link (i.e., the main bus or core body of the spacecraft).
     r::MVector{3, Float64} # Position of COM (Body frame for non-root, inertial frame for root)
@@ -240,9 +234,6 @@ mutable struct Joint
     end
 end
 
-# --- CRITICAL REFACTOR 2 ---
-# SpacecraftModel is now parametric on T_Effectors, a Tuple type.
-# This ensures the `dynamic_effectors` field is type-stable.
 mutable struct SpacecraftModel
     joints::Vector{Joint} # List of joints
     links::Vector{Link} # List of links (bodies)
@@ -255,24 +246,6 @@ mutable struct SpacecraftModel
     n_thrusters::Int64 # Number of thrusters in the spacecraft model
     initial_condition::AbstractInitialCondition # Initial conditions for the simulation (orbit, attitude, etc.)
     id::Int64 # Unique identifier for the spacecraft (useful for multi-spacecraft simulations)
-    # dynamic_effectors::T_Effectors # List of dynamic effector models (gravity, drag, etc.)
-
-    # function SpacecraftModel(; joints=Joint[], children=Link[], root=Link{0}(),
-    #     instant_actuation=true,
-    #     prop_mass=0.0,
-    #     inertia_tensor=SMatrix{3, 3, Float64}(zeros(3, 3)),
-    #     n_reaction_wheels=0,
-    #     n_thrusters=0,
-    #     initial_condition) # Set default as empty tuple
-        
-    #     # Calculate dry mass from children
-    #     dry_mass = root.m
-    #     for child in children
-    #         dry_mass += child.m
-    #     end
-
-    #     new(joints, children, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters)
-    # end
 end
 
 function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::AbstractVector{<:Link}=Link[], root::Link=Link{0}(root=true),
@@ -286,9 +259,9 @@ function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::Abstr
     joints_vec = Vector{Joint}(joints)
     links_vec = Vector{Link}(links)
 
-    # Calculate dry mass from links
     dry_mass = 0.0
     if !any(link -> link === root, links_vec)
+        # Keep the root in the link list so dry-mass aggregation sees the full assembly.
         push!(links_vec, root) # Include root in the links list for mass calculation
     end
     for link in links_vec

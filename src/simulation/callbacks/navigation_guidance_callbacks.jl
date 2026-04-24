@@ -23,7 +23,6 @@ function get_navigation_callbacks(num_sats::Int, args::SimulationConfiguration):
 end
 
 function get_guidance_callbacks(num_sats::Int, args::SimulationConfiguration)::Vector{DiscreteCallback}
-    # Implement a callback to calculate guidance commands at each time step based on the current state and the guidance model defined in the simulation configuration
     guidance_models = args.guidance_model.guidance_effectors
     guidance_rates = args.guidance_model.guidance_rates
     use_invokelatest = callback_use_invokelatest()

@@ -8,26 +8,12 @@
     throw(ArgumentError("Invalid $name='$raw'. Use one of: 1/0, true/false, yes/no, on/off."))
 end
 
-# Cached booleans for ENV knobs that are read on every callback invocation.
-# They are initialised lazily on first call; use `_reset_cached_env_flags!()`
-# in tests or REPL sessions after modifying ENV.
-const _GRAM_TRACK_CACHE_IGNORE_TIME_WINDOW = Ref{Union{Nothing, Bool}}(nothing)
-const _GRAM_TRACK_CACHE_TARGET_USE_J2 = Ref{Union{Nothing, Bool}}(nothing)
-
 @inline function _gram_track_cache_ignore_time_window()::Bool
-    v = _GRAM_TRACK_CACHE_IGNORE_TIME_WINDOW[]
-    v === nothing || return v
-    result = _parse_bool_env("SPACEAGORA_GRAM_TRACK_CACHE_IGNORE_TIME_WINDOW", true)
-    _GRAM_TRACK_CACHE_IGNORE_TIME_WINDOW[] = result
-    return result
+    return _parse_bool_env("SPACEAGORA_GRAM_TRACK_CACHE_IGNORE_TIME_WINDOW", true)
 end
 
 @inline function _gram_track_cache_target_use_j2()::Bool
-    v = _GRAM_TRACK_CACHE_TARGET_USE_J2[]
-    v === nothing || return v
-    result = _parse_bool_env("SPACEAGORA_GRAM_TRACK_CACHE_TARGET_USE_J2", true)
-    _GRAM_TRACK_CACHE_TARGET_USE_J2[] = result
-    return result
+    return _parse_bool_env("SPACEAGORA_GRAM_TRACK_CACHE_TARGET_USE_J2", true)
 end
 
 """
@@ -37,11 +23,8 @@ Clear all memoised ENV flag values so they are re-read from `ENV` on the next
 call.  Call this after modifying `ENV` in tests or interactive sessions.
 """
 function _reset_cached_env_flags!()
-    _GRAM_TRACK_CACHE_IGNORE_TIME_WINDOW[] = nothing
-    _GRAM_TRACK_CACHE_TARGET_USE_J2[] = nothing
-    # Also reset the stats-enabled cache so test suites that toggle
-    # SPACEAGORA_GRAM_PROFILE between runs see the updated value.
-    _GRAM_RUNTIME_STATS_ENABLED_CACHE[] = nothing
+    # Callback ENV knobs are read directly so withenv-scoped changes take effect
+    # immediately. Keep this hook for compatibility with tests and REPL usage.
     return nothing
 end
 

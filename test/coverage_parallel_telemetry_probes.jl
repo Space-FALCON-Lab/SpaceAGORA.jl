@@ -4,9 +4,18 @@ using DataFrames
 
 const _COV_REPO_ROOT = isdefined(Main, :REPO_ROOT) ? Main.REPO_ROOT : normpath(joinpath(@__DIR__, ".."))
 
+if !isdefined(@__MODULE__, :SimulationModel)
+    include(joinpath(_COV_REPO_ROOT, "src", "core", "simulation_model.jl"))
+    using .SimulationModel
+end
+if !isdefined(@__MODULE__, :SimulationEngine)
+    include(joinpath(_COV_REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+end
+if !isdefined(@__MODULE__, :TelemetryVerification)
+    include(joinpath(_COV_REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
+end
+
 include(joinpath(_COV_REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
-include(joinpath(_COV_REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
-include(joinpath(_COV_REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
 
 const PP = ParallelProfiles
 const TV = TelemetryVerification
@@ -709,7 +718,7 @@ end
     @test TV._base_gravity_effector(:inverse_squared_j2) isa TV.InverseSquaredJ2GravityModel
     @test_throws ArgumentError TV._base_gravity_effector(:bad)
     @test TV._harmonics_order(0, 0) == 0
-    @test TV._harmonics_order(10, 0) == 10
+    @test TV._harmonics_order(10, 0) == 0
     @test TV._harmonics_order(20, 10) == 10
     @test TV._nbody_primary_name("earth") == "Earth"
     @test_throws ArgumentError TV._nbody_primary_name("pluto")

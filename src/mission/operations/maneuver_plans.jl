@@ -1,9 +1,9 @@
-# import .config
-
 @inline function _legacy_phi_to_signed_maneuver_delta_v(delta_v::Real, phi::Real)::Float64
     dv = Float64(delta_v)
     abs(dv) <= 0.0 && return 0.0
 
+    # Legacy firing plans encode maneuver direction through `phi`; convert that into
+    # the signed delta-v convention used by the typed maneuver command pipeline.
     phi_norm = mod2pi(Float64(phi))
     if isapprox(phi_norm, 0.0; atol=1e-12, rtol=0.0) || isapprox(phi_norm, 2π; atol=1e-12, rtol=0.0)
         return -abs(dv)
@@ -243,14 +243,8 @@ function heat_rate_control_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofp
         println("Aerobraking at ", rp, " m")
         println("New periapsis: ", rp_new, " m")
         args[:delta_v] = abs(sqrt(2*planet.μ/rp - planet.μ*2/(rp+ra)) - sqrt(2*planet.μ/rp_new - planet.μ*2/(rp_new+ra)))
-        # args[:phi] = deg2rad(180.0)
         args[:phi] = deg2rad(0.0)
     else
-        # rp_new = -planet.H*log(2*max_q/(planet.ρ_ref*periapsis_velocity^3*config.cnf.α)) + planet.Rp_e
-        # println("Aerobraking at ", rp, " m")
-        # println("New periapsis: ", rp_new, " m")
-        # args[:delta_v] = abs(sqrt(2*planet.μ/rp - planet.μ*2/(rp+ra)) - sqrt(2*planet.μ/rp_new - planet.μ*2/(rp_new+ra)))
-        # args[:phi] = deg2rad(180.0)
         args[:delta_v] = 0.0
         args[:phi] = deg2rad(180.0)
     end
@@ -259,23 +253,13 @@ function heat_rate_control_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofp
 end
 
 function Earth_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, args=nothing)
-    # max_q = 100000 # Max heat rate
-    # min_q = 99000 # Min heat rate
-    # estimated_ρ = planet.ρ_ref * exp(-(rp-6378e3) / planet.H)
-    # periapsis_velocity = sqrt(planet.μ *(2/rp - 2/(ra+rp)))
-    # q = 0.5 * estimated_ρ * periapsis_velocity^3
-    # println("Estimated q: ", q, " W/cm^2")
     if rp < 120e3 + planet.Rp_e
-        # rp_new = -planet.H*log(2*min_q/(planet.ρ_ref*periapsis_velocity^3)) + 6378e3
-        # println("Aerobraking at ", rp, " m")
-        # println("New periapsis: ", rp_new, " m")
         target_periapsis_altitude = 140e3 # Target periapsis altitude in meters
         a_i = (rp + ra) / 2 # Initial semi-major axis
         a_f = (target_periapsis_altitude + planet.Rp_e + ra) / 2 # Final semi-major axis
         v_i = sqrt(planet.μ * (2 / ra - 1 / a_i))
         v_f = sqrt(planet.μ * (2 / ra - 1 / a_f))
         args[:delta_v] = v_f - v_i
-        # args[:delta_v] = abs(sqrt(2*planet.μ/rp - planet.μ*2/(rp+ra)) - sqrt(2*planet.μ/rp_new - planet.μ*2/(rp_new+ra)))
         args[:phi] = deg2rad(180.0)
     else
         args[:delta_v] = 0.0
@@ -344,10 +328,6 @@ function titan_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, 
         args[:delta_v] = 0.0
         args[:phi] = 0.0
     end
-    # if args.phi == math.radians(0) and args.delta_v != 0.0:
-    #     print("LOWER MANEUVER!")
-    # elif args.phi == math.radians(180) and args.delta_v != 0.0:
-    #     print("RAISE MANEUVER!")
 
     return args
 end

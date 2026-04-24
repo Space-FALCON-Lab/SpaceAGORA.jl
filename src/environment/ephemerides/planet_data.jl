@@ -29,14 +29,6 @@ end
 function planet_data(ip)
     planet_id = _compat_parse_planet_id(ip)
 
-    # try
-    #     if haskey(ip, :planet)
-    #         ip = ip[:planet]
-    #     end
-    # catch
-    #     nothing
-    # end
-
     if planet_id == 0 # Earth
         Rp_e = 6.3781363e6            # equatorial radius, m
         Rp_p = 6.3568e6            # polar radius, m
@@ -53,7 +45,6 @@ function planet_data(ip)
         p = 101400.0               # surface pressure, km/(m⋅s)
         J2 = 1.08263e-3            # Earth's dynamic form factor
         k = 1.83e-4                # Chapman heating coefficient, kg^0.5/m
-        # k = 1.7623e-4            # Sutton - Graves heating coefficient, kg^0.5/m
         ω = [0.0, 0.0, 7.2921066e-5]   # Earth's rotation rate, rad/s
         μ_fluid = 1.5*10e-5        # kinematic viscosity, m²/s
         Lz = -9.8/1e3              # vertical temperature gradient, K/m
@@ -79,7 +70,6 @@ function planet_data(ip)
         p = 636.0                  # surface pressure, km/(m⋅s)
         J2 = 1.96045e-3            # Mars' dynamic form factor
         k = 1.898e-4               # Chapman heating coefficient, kg^0.5/m
-        # k = 1.7623e-4            # Sutton - Graves heating coefficient, kg^0.5/m
         ω = [0.0, 0.0, 7.08823596e-5]    # Mars' rotation rate, rad/s
         μ_fluid = 13.06*10e-6      # kinematic viscosity, m²/s
         Lz = -4.5/1e3              # vertical temperature gradient, K/m
@@ -105,7 +95,6 @@ function planet_data(ip)
         p = 9200000.0              # surface pressure, km/(m⋅s)
         J2 = 4.458e-6              # Venus' dynamic form factor
         k = 1.896e-4               # Chapman heating coefficient, kg^0.5/m
-        # k = 1.7623e-4            # Sutton - Graves heating coefficient, kg^0.5/m
         ω = [0.0, 0.0, -2.99e-7]   # Venus' rotation rate, rad/s
         μ_fluid = 2.0*10e-6        # kinematic viscosity, m²/s
         Lz = -10.7/1e3             # vertical temperature gradient, K/m

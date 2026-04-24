@@ -4,7 +4,6 @@ using Arrow
 using .SimulationModel: Model, Cnf, Solution
 
 function save_csv(filename::String, args::Dict, arrow_filename::String, params::Tuple)
-    cnf = params[1]
     model = params[2]
     solution = params[3]
     if args[:save_csv]
@@ -12,7 +11,6 @@ function save_csv(filename::String, args::Dict, arrow_filename::String, params::
 
         writer = open(filename, "a")
     end
-    # periapsis_alt = vcat(cnf.altitude_periapsis, zeros(length(solution.orientation.time) - length(cnf.altitude_periapsis)))
     println("Preparing data to save to CSV and Arrow files...")
     println("Max time: ", maximum(solution.orientation.time))
     data_push = DataFrame(time = solution.orientation.time,
@@ -88,8 +86,6 @@ function save_csv(filename::String, args::Dict, arrow_filename::String, params::
                           aoa_control = solution.physical_properties.α_control,
                           S = solution.physical_properties.S,
                           mass = solution.performance.mass,
-                        #   heat_rate = solution.performance.heat_rate,
-                        #   heat_load = solution.performance.heat_load,
                           T_r = solution.performance.T_r,
                           q = solution.performance.q,
                           gravity_ii_1 = solution.forces.gravity_ii[1],
@@ -168,8 +164,6 @@ function save_csv(filename::String, args::Dict, arrow_filename::String, params::
     if args[:print_res]
         println("Writing data to Arrow file...")
     end
-    # println(solution.orientation.number_of_passage[1])
-    # temp_file = joinpath(temp_name, "data$(uuid4()).arrow")
     Arrow.append(arrow_filename, data_push)
     if args[:print_res]
         println("Data written to Arrow file.")

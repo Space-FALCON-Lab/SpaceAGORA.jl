@@ -39,16 +39,11 @@ const _STK_RESULTS_DIR = joinpath(
     "stk_results"
 )
 
-# const _GMAT_HARMONICS_EARTH_FILE = "data/Gravity_harmonics_data/GGM03S.csv" # For Basilisk validation
 const _GMAT_HARMONICS_EARTH_FILE = "data/Gravity_harmonics_data/EarthGGM05C.csv" # For internal GMAT parity, matches the file used in the GMAT scenarios
 const _GMAT_HARMONICS_MARS_FILE = "data/Gravity_harmonics_data/GGM2B.csv"
 const _GMAT_HARMONICS_VENUS_FILE = "data/Gravity_harmonics_data/MGNP180U.csv"
 const _GMAT_HARMONICS_MOON_FILE = "data/Gravity_harmonics_data/LP165P.csv"
 const _GMAT_PLANETARY_KERNEL_CANDIDATES = (
-    # "spk/planets/de442s.bsp",
-    # "spk/planets/de442.bsp",
-    # "spk/planets/de440s.bsp",
-    # "spk/planets/de440_GRAM.bsp",
     "spk/planets/de430.bsp",
 )
 const _CYGNSS_48HR_TELEMETRY_FEATHER = joinpath(_GMAT_REPO_ROOT, "data", "telemetry", "CYGNSS", "cygnss_data_48hr.feather")
@@ -269,12 +264,6 @@ function _selected_gmat_scenario_names()::Union{Nothing, Set{String}}
     raw = strip(get(ENV, "SPACEAGORA_GMAT_SCENARIOS", ""))
     isempty(raw) && return nothing
     tokens = Set(filter!(!isempty, strip.(split(raw, ","))))
-    expected = _gmat_matrix_expected_scenario_names()
-    unknown = sort!(collect(setdiff(tokens, expected)))
-    # isempty(unknown) || throw(ArgumentError(
-    #     "Unknown GMAT scenarios in SPACEAGORA_GMAT_SCENARIOS: $(join(unknown, \", \")). " *
-    #     "Known scenarios: $(join(sort!(collect(expected)), \", \"))"
-    # ))
     return tokens
 end
 
@@ -777,7 +766,6 @@ function _base_scenario_dict(name::String, telemetry_path::String)
         "spacecraft" => Dict{String, Any}(
             "bus_dims_m" => Any[2.05e-1, 3.7e-1, 0.8e-1],
             "panel_dims_m" => Any[10e-3, 28.5e-3, 0.0001],
-            # "bus_mass_kg" => 620.0,
             "bus_mass_kg" => 29.0,
             "panel_mass_each_kg" => 0.0,
             "panel_offset_y_m" => 2.45,

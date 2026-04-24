@@ -230,7 +230,7 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
         end
 
         # Rotation Calculation
-        L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), current_time)
+        L_PI = pxform("J2000", "IAU_"*uppercase(m.planet.name), et)
         # rot_angle = norm(ω_planet) * t0     # rad
         # L_PI = [cos(rot_angle)  sin(rot_angle)  0.0;
         #         -sin(rot_angle) cos(rot_angle)  0.0; 

@@ -15,8 +15,26 @@ using SatelliteToolboxGravityModels
 using SPICE
 using SpecialFunctions: loggamma
 using TOML
-using JET
-using Aqua
+
+const HAS_JET = let
+    try
+        @eval using JET
+        true
+    catch err
+        @info "Skipping JET-backed test checks" exception=(err, catch_backtrace())
+        false
+    end
+end
+
+const HAS_AQUA = let
+    try
+        @eval using Aqua
+        true
+    catch err
+        @info "Skipping Aqua-backed test checks" exception=(err, catch_backtrace())
+        false
+    end
+end
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
@@ -606,20 +624,20 @@ function make_single_link_spacecraft(;
 end
 
 function make_base_thruster_model(;
-    thrust::Float64,
-    direction::Float64=0.0,
-    Δv::Float64=0.0,
-    start_burn_time::Float64=0.0,
-    stop_burn_time::Float64=0.0,
-    Isp::Float64=300.0
+    thrust::Real,
+    direction::Real=0.0,
+    Δv::Real=0.0,
+    start_burn_time::Real=0.0,
+    stop_burn_time::Real=0.0,
+    Isp::Real=300.0
 )
     return BaseThrusterModel(
-        thrust=[thrust],
-        direction=[direction],
-        Δv=[Δv],
-        start_burn_time=[start_burn_time],
-        stop_burn_time=[stop_burn_time],
-        Isp=[Isp]
+        thrust=[Float64(thrust)],
+        direction=[Float64(direction)],
+        Δv=[Float64(Δv)],
+        start_burn_time=[Float64(start_burn_time)],
+        stop_burn_time=[Float64(stop_burn_time)],
+        Isp=[Float64(Isp)]
     )
 end
 

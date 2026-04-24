@@ -9,36 +9,25 @@ formulas that keep either the degree or the order fixed. All ALFs for M > N are 
 definition.
 """
 function fnALF_IDR!(A::AbstractArray{Float64}, x::Float64, N::Integer, M::Integer)
-    # Allocate the output array.
-    # TODO: this should be done in-place to avoid allocating a new array at each run.
-    # A = zeros(N+1,M+1)
-
-    # Precompute sqrt
+    # Fill a preallocated table of fully normalized associated Legendre functions.
     ξ = √(1 - x^2)
-    # Initialize top left element
     A[1,1] = 1.0
 
     # Sectorials
     sectorial_limit = min(N, M)
     if M > 0
         @inbounds for i=2:sectorial_limit+1
-            # For ease of notation
             n = i - 1
-
-            # TODO: preallocate fn's for speed.
             fn = √( ((1 + δ(1,n))*(2n + 1)) / 2n )
             A[i,i] = fn * ξ * A[i-1,i-1]
-
         end
     end
 
-    # Zonals and tesserals
+    # Zonal and tesseral terms share the same recurrence once the sectorials are seeded.
     for j = 1:M+1
         @inbounds for i = j+1:N+1
-            # For ease of notation
             m = j - 1
             n = i - 1
-            #TODO: preallocate gnm, hnm for speed
             gnm = √(((2n + 1)*(2n-1)) / ((n+m)*(n-m)))
 
             if i == j + 1
@@ -47,11 +36,8 @@ function fnALF_IDR!(A::AbstractArray{Float64}, x::Float64, N::Integer, M::Intege
                 hnm = √(((2n + 1)*(n-m-1)*(n+m-1))/((2n-3)*(n+m)*(n-m)))
                 A[i,j] = gnm * x * A[i-1,j] - hnm * A[i-2,j]
             end
-            
         end      
     end
-
-    # return A
 end
 
 function calculate_topography_harmonics!(Clm::AbstractArray{Float64}, Slm::AbstractArray{Float64}, latitude::Float64, longitude::Float64, Plm::AbstractArray{Float64}, topo_degree::Integer, topo_order::Integer)
@@ -79,12 +65,10 @@ function calculate_topography_harmonics!(Clm::AbstractArray{Float64}, Slm::Abstr
         harmonic : Float64
             Value of the topography harmonic at the given latitude and longitude.
     """
-    # Precompute the fnALFs
     l = topo_degree + 1
     m = topo_order + 1
     fnALF_IDR!(Plm, sin(latitude), l, m)
 
-    # Initialize the harmonic
     harmonic = 0.0
     λ = longitude
     sinmλ = MVector{m+1, Float64}(zeros(m+1))
@@ -100,7 +84,6 @@ function calculate_topography_harmonics!(Clm::AbstractArray{Float64}, Slm::Abstr
         end
     end
 
-    # harmonic_list =zeros(l*m)
     @turbo for i = 1:l
         for j = 1:m
             harmonic += Plm[i, j] * (Clm[i,j] * cosmλ[j] + Slm[i,j] * sinmλ[j])
@@ -139,8 +122,6 @@ function Mars_elevation!(args, Clm, Slm, latitude, longitude, A)
     topo_degree = args[:topo_degree]
     topo_order = args[:topo_order]
     harmonic = calculate_topography_harmonics!(Clm, Slm, latitude, longitude, A, topo_degree, topo_order)
-    # mean_radius = 3389.5e3
-    # elevation = harmonic
     return harmonic
 end
 
@@ -205,6 +186,5 @@ function Earth_elevation!(args, Clm::AbstractArray{Float64}, Slm::AbstractArray{
     topo_degree = args[:topo_degree]
     topo_order = args[:topo_order]
     harmonic = calculate_topography_harmonics!(Clm, Slm, latitude, longitude, A, topo_degree, topo_order)
-    # elevation = harmonic
     return harmonic
 end

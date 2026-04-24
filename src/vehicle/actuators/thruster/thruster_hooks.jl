@@ -3,7 +3,7 @@ module ThrusterHooks
 using LinearAlgebra, CSV, DataFrames
 using ..SpacecraftModels
 using ..Components
-using ..Kinematics # We'll need this for rotate_to_body
+using ..Kinematics
 
 export update_thrusters!, thrust_calculation_schmitt_trigger!, schmitt_trigger, integrate_impulse!
 
@@ -20,9 +20,8 @@ function update_thrusters!(link::Link, torque::AbstractVector{Float64}, t::Float
         return
     end
 
-    # Update the thruster Jacobian matrix to account for possible articulated joints
     link.J_thruster = Matrix{Float64}(zeros(3, length(link.thrusters))) # Reset the Jacobian matrix
-    rot_to_body = rotate_to_body(link) # Get the rotation matrix to convert from inertial to body frame
+    rot_to_body = rotate_to_body(link)
     
     for (i, thruster) in enumerate(link.thrusters)
         direction_norm = norm(thruster.direction)
@@ -30,10 +29,12 @@ function update_thrusters!(link::Link, torque::AbstractVector{Float64}, t::Float
             link.J_thruster[:, i] .= 0.0
             continue
         end
-        thruster.direction ./= direction_norm # Ensure the thruster direction is a unit vector
-        link.J_thruster[:, i] = cross(rot_to_body * thruster.location + link.r, rot_to_body * thruster.direction) # Update the Jacobian matrix with the r x F vector in the body frame
+        thruster.direction ./= direction_norm
+        link.J_thruster[:, i] = cross(rot_to_body * thruster.location + link.r, rot_to_body * thruster.direction)
     end
     
+    # The pseudoinverse can produce negative entries for an underdetermined layout;
+    # shift and clamp so downstream pulse scheduling only sees realizable thrusts.
     thrust_vector = pinv(link.J_thruster) * torque # Solve for the thrust vector using the Jacobian matrix
     if !all(isfinite, thrust_vector)
         thrust_vector .= 0.0
@@ -46,8 +47,7 @@ function update_thrusters!(link::Link, torque::AbstractVector{Float64}, t::Float
     end
     
     for (i, thruster) in enumerate(link.thrusters)
-        thruster.thrust = thrust_vector[i] # Update the requested thrust in the thruster
-        # Call the specific calculation function
+        thruster.thrust = thrust_vector[i]
         thrust_calculation_schmitt_trigger!(link, thruster, thrust_vector[i], t) 
     end
 end

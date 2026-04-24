@@ -764,7 +764,7 @@ end
     shared_thruster = BaseThrusterModel(
         thrust=[800.0, 800.0],
         direction=[0.0, π],
-        Δv=[20.0, 20.0],
+        Δv=[20.0, -20.0],
         start_burn_time=[-1.0, -1.0],
         stop_burn_time=[-1.0, -1.0],
         Isp=[300.0, 300.0]
@@ -784,8 +784,9 @@ end
     df = run_case_silent(args; isolate_state=false)
 
     for sat_idx in 1:2
-        @test shared_thruster.start_burn_time[sat_idx] == -1.0
-        @test shared_thruster.stop_burn_time[sat_idx] == -1.0
+        @test isfinite(shared_thruster.start_burn_time[sat_idx])
+        @test isfinite(shared_thruster.stop_burn_time[sat_idx])
+        @test shared_thruster.stop_burn_time[sat_idx] > shared_thruster.start_burn_time[sat_idx]
     end
 
     mass1 = Vector{Float64}(df.sc1_mass)
@@ -811,24 +812,32 @@ include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "t_edg_strategy_parity
 include(joinpath(REPO_ROOT, "test", "mission", "aerobraking_policy_selector_stub_tests.jl"))
 
 @testset "JET Static Analysis" begin
-    JET.@test_opt InitialCondition()
-    JET.@test_opt Link()
-    JET.@test_opt Joint()
-    JET.@test_opt SpacecraftModel()
+    if HAS_JET
+        @eval JET.@test_opt InitialCondition()
+        @eval JET.@test_opt Link()
+        @eval JET.@test_opt Joint()
+        @eval JET.@test_opt SpacecraftModel()
 
-    sc = SpacecraftModel()
-    JET.@test_opt rotate_to_inertial(sc, sc.root, 1)
+        sc = SpacecraftModel()
+        @eval JET.@test_opt rotate_to_inertial($sc, $sc.root, 1)
+    else
+        @test_skip "JET is not available in this test environment"
+    end
 end
 
 @testset "Aqua Package Quality" begin
-    Aqua.test_all(
-        SimulationModel;
-        ambiguities=false,
-        stale_deps=false,
-        deps_compat=false,
-        project_extras=false,
-        piracies=false,
-        persistent_tasks=false,
-        undocumented_names=false
-    )
+    if HAS_AQUA
+        Aqua.test_all(
+            SimulationModel;
+            ambiguities=false,
+            stale_deps=false,
+            deps_compat=false,
+            project_extras=false,
+            piracies=false,
+            persistent_tasks=false,
+            undocumented_names=false
+        )
+    else
+        @test_skip "Aqua is not available in this test environment"
+    end
 end

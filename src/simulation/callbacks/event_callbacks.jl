@@ -29,7 +29,6 @@ function get_impact_callback(num_sats::Int)
     return VectorContinuousCallback(condition!, nothing, affect_downcrossing!, num_sats)
 end
 
-# Only call if simulating a single satellite
 function get_orbit_end_callback(num_sats::Int)
     function condition!(out, u, t, integrator)
         # Use radial-velocity root events for orbit bookkeeping.
@@ -48,7 +47,6 @@ function get_orbit_end_callback(num_sats::Int)
         p.orbit_counter[idx] += 1 # Increment the orbit counter in the shared buffers
         completed_orbits = p.orbit_counter[idx] - 1
         target_orbits = p.args.mission_configuration.number_of_orbits
-        # Check for orbit completion and log it (placeholder logic)
         if callback_verbose(integrator)
             println("Orbit $(completed_orbits) completed by Satellite $idx at time $(integrator.t) seconds!")
         end
@@ -131,24 +129,18 @@ function get_entry_end_callback(num_sats::Int, args::SimulationConfiguration)
     return VectorContinuousCallback(condition!, nothing, affect_downcrossing!, num_sats)
 end
 
-# Only call if simulating single satellite
-# Callback to adjust the max timestep depending on whether the satellite is in the atmosphere
 function get_drag_state_callback(num_sats::Int)
-    # out = zeros(num_sats) # Output array to store the condition for each satellite
     condition!(out, u, t, integrator) = begin
         @inbounds for i in 1:num_sats
             alt = norm(_simulation_engine_module()._state_position_ii(u, i)) - integrator.p.args.environment_model.planet.Rp_e
-            # println("Satellite $i altitude: $(alt) meters at time $(integrator.t) seconds")
             out[i] = alt - integrator.p.args.environment_model.EI*1e3 # Positive when above the atmosphere, negative when in the atmosphere
         end
-        # return out
     end
     function affect_upcrossing!(integrator, idx::Int64)
         p = integrator.p
         if callback_verbose(integrator)
             println("Switching to space integration at time $(integrator.t) seconds!")
         end
-        # sleep(3.0)
         integrator.opts.dtmax = p.args.integration_tolerances.dt_max_orbit # Increase the maximum timestep when exiting the atmosphere
         reltol_new, abstol_new = _callback_tolerances_for_phase(
             integrator.opts.reltol,
@@ -166,7 +158,6 @@ function get_drag_state_callback(num_sats::Int)
         if callback_verbose(integrator)
             println("Switching to atmosphere integration at time $(integrator.t) seconds!")
         end
-        # sleep(3.0)
         integrator.opts.dtmax = p.args.integration_tolerances.dt_max_atmosphere # Decrease the maximum timestep when entering the atmosphere
         reltol_new, abstol_new = _callback_tolerances_for_phase(
             integrator.opts.reltol,
@@ -239,7 +230,6 @@ end
 
 
 function get_periapsis_save_callback(num_sats::Int)
-    # Implement a callback to save the state of the simulation at periapsis for each orbit, which can be useful for analyzing the changes in the orbit after each pass through the atmosphere
     function condition!(out, u, t, integrator)
         @inbounds for i in 1:num_sats
             OE = rvtoorbitalelement(
@@ -252,13 +242,9 @@ function get_periapsis_save_callback(num_sats::Int)
     end
 
     function affect!(integrator, idx::Int64)
-        p = integrator.p
-        u = integrator.u
-
         if callback_verbose(integrator)
             println("Periapsis reached for Satellite $idx at time $(integrator.t) seconds!")
         end
-        # Save the state at periapsis to a file or data structure as needed
     end
 
     return VectorContinuousCallback(condition!, affect!, nothing, num_sats)

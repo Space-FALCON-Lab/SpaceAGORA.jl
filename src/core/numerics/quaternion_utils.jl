@@ -158,10 +158,7 @@ function Q̄(q1, q2)
         r = q̂[1:3] / normv
         θ = (2 * atan(normv, q̂[4]))
     end
-    # r = q̂[2:4] / (norm(q̂[2:4]) + 1e-10)
-    # θ = 2 * atan(norm(q̂[2:4]), q̂[1])
     q̄ = L(q1) * [cos(θ / 4); sin(θ / 4) * r]
-    # values, vectors = eigen(0.5.*([q1 q2] * [q1 q2]'))
     q̄ ./= norm(q̄)
 
     return q̄
@@ -204,7 +201,6 @@ end
 
 function dphi_from_q(q)
     v = @views q[1:3]
-    # v = SVector(q[2], q[3], q[4])
     s = q[4]
     normv = norm(v)
     return [-2*v/(s^2*(1.0 + normv^2/s^2)) (2 * atan(normv, s))/(normv+1e-10)*Matrix(I, 3,3) .- v*v'*(2 * atan(normv, s))/(normv+1e-10)^3 .+ 2*v*v'/((normv+1e-10)*s*(normv+1e-10)*(1.0 + normv^2/s^2))] 

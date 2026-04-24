@@ -199,7 +199,17 @@ end
 end
 
 @inline function _planet_transform_key(planet)::NTuple{9, Int64}
-    return ntuple(i -> round(Int64, planet.J2000_to_pci[i] * 1e12), 9)
+    return (
+        round(Int64, planet.ω[1] * 1e12),
+        round(Int64, planet.ω[2] * 1e12),
+        round(Int64, planet.ω[3] * 1e12),
+        round(Int64, planet.α * 1e12),
+        round(Int64, planet.δ * 1e12),
+        round(Int64, planet.Rp_e * 1e6),
+        round(Int64, planet.Rp_p * 1e6),
+        round(Int64, planet.Rp_m * 1e6),
+        round(Int64, planet.μ * 1e-6),
+    )
 end
 
 @inline function _body_query_names_reuse_key(body_query_names::AbstractVector{String})::String

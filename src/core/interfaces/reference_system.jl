@@ -23,19 +23,6 @@ function _spice_lock()
     error("RuntimeServices.SPICE_LOCK not found in module ancestry for reference_system.jl")
 end
 
-function _simulation_model_module()
-    mod = @__MODULE__
-    while true
-        if isdefined(mod, :ephemerides_requires_spice) && isdefined(mod, :planet_frame_lpi)
-            return mod
-        end
-        parent = parentmodule(mod)
-        parent === mod && break
-        mod = parent
-    end
-    error("SimulationModel ephemerides helpers not found in module ancestry for reference_system.jl")
-end
-
 # eop_iau2000a = fetch_iers_eop(Val(:IAU2000A))
 
 function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet::T)::Tuple{SVector{3, Float64}, SVector{3, Float64}} where T
@@ -117,12 +104,11 @@ function r_intor_p!(
     et::Float64,
     ephemerides_model
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    sim_model = _simulation_model_module()
-    if getproperty(sim_model, :ephemerides_requires_spice)(ephemerides_model)
+    if ephemerides_requires_spice(ephemerides_model)
         return r_intor_p!(r_i, v_i, planet, et)
     end
 
-    l_pi = getproperty(sim_model, :planet_frame_lpi)(planet, et, ephemerides_model)
+    l_pi = planet_frame_lpi(planet, et, ephemerides_model)
     ω_j2000 = planet.ω
     r_p = SVector{3, Float64}(l_pi * r_i)
     v_p = SVector{3, Float64}(l_pi * (v_i - cross(ω_j2000, r_i)))

@@ -1519,25 +1519,26 @@ const _moon_fallback_warned = Ref(false)
 
 function body_pos_wrt_earth_pci(body_name::String, et::Float64, planet::AbstractPlanet)::SVector{3, Float64}
     name = uppercase(body_name)
+    l_pi = SimulationModel.planet_frame_lpi(planet, et, SimulationModel.SpiceEphemeridesModel())
     if name == "MOON"
         try
             r_moon_j2000 = lock(RuntimeServices.SPICE_LOCK) do
                 SVector{3, Float64}(spkpos("MOON", et, "J2000", "NONE", "EARTH")[1]) * 1e3
             end
-            return planet.J2000_to_pci * r_moon_j2000
+            return l_pi * r_moon_j2000
         catch
             if !_moon_fallback_warned[]
                 _moon_fallback_warned[] = true
                 @warn "MOON SPICE ephemeris is unavailable; using analytic lunar orbit fallback for third-body acceleration."
             end
-            return planet.J2000_to_pci * moon_pos_analytic_j2000(et)
+            return l_pi * moon_pos_analytic_j2000(et)
         end
     end
 
     r_body_j2000 = lock(RuntimeServices.SPICE_LOCK) do
         SVector{3, Float64}(spkpos(name, et, "J2000", "NONE", "EARTH")[1]) * 1e3
     end
-    return planet.J2000_to_pci * r_body_j2000
+    return l_pi * r_body_j2000
 end
 
 struct SunMoonThirdBodyModel{P <: AbstractPlanet} <: AbstractForceTorqueModel

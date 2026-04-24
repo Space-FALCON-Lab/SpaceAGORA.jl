@@ -49,6 +49,26 @@ end
     return nothing
 end
 
+@inline function _append_checkpoint_saved_segment!(
+    times_acc::Vector{Float64},
+    data_acc::Vector,
+    saved_values,
+    sol,
+    save_fields,
+    p,
+)
+    _append_saved_segment!(times_acc, data_acc, saved_values)
+    isempty(sol.t) && return nothing
+
+    t_final = Float64(sol.t[end])
+    if isempty(times_acc) || !isapprox(times_acc[end], t_final; atol=0.0, rtol=0.0)
+        integrator_view = (p=p,)
+        push!(times_acc, t_final)
+        push!(data_acc, SimulationModel.SimulationCallbacks._save_snapshot(save_fields, sol.u[end], t_final, integrator_view))
+    end
+    return nothing
+end
+
 function run_simulation(
     args::SimulationConfiguration;
     isolate_state::Bool=true,
@@ -223,7 +243,14 @@ function run_simulation(
             if solver_mode == :gravity_backbone_split
                 _append_backbone_saved_segment!(checkpoint_saved_times, checkpoint_saved_data, seg_sol, save_fields_resolved, p)
             else
-                _append_saved_segment!(checkpoint_saved_times, checkpoint_saved_data, saved_values)
+                _append_checkpoint_saved_segment!(
+                    checkpoint_saved_times,
+                    checkpoint_saved_data,
+                    saved_values,
+                    seg_sol,
+                    save_fields_resolved,
+                    p,
+                )
             end
             last_sol = seg_sol
             t_cursor = Float64(seg_sol.t[end])

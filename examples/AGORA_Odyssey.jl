@@ -20,7 +20,6 @@ ic = _mars_odyssey_initial_condition_from_spice(initial_time, SPICE_PATH)
 
 spacecraft = make_three_body_spacecraft(
     bus_dims=(2.2, 2.6, 1.7),
-    # panel_dims=(0.01, 5.5 / 2.0, 2.6),
     panel_dims=(0.01, 5.5 / 1.35, 2.6),
     bus_mass=391.0,
     panel_mass_each=10.0,
@@ -44,13 +43,11 @@ dynamic_effectors = smoke_mode ? (
     solar_radiation_pressure,
     AerodynamicCoefficientfM()
 )
-# density_model = smoke_mode ? NoAtmosphereModel() : ConstantDensityModel(2e-9, 180.0)
-# density_model = NoAtmosphereModel()
 density_model = GRAMAtmosphereModel(planet_name="mars")
 base_args = make_example_config(
     planet=planet,
     spacecraft=spacecraft,
-    mission_time=3_600.0*400.0,
+    mission_time=3_600.0*800.0,
     initial_time=initial_time,
     dynamic_effectors=dynamic_effectors,
     density_model=density_model,

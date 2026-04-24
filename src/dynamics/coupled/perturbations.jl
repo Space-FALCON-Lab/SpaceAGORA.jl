@@ -32,7 +32,14 @@ const sqrt_2 = sqrt(2.0)
 const sqrt_3 = sqrt(3.0)
 const _J2_COMPARE_LOG_COUNT = Base.Threads.Atomic{Int}(0)
 const _MARS_MU_M3S2 = 0.4282837285418775e5 * 1e9
-const _SPICE_FORCE_BARYCENTER_BODIES = ("mars",)
+const _SPICE_FORCE_BARYCENTER_BODIES = (
+    "mars",
+    "jupiter",
+    "saturn",
+    "uranus",
+    "neptune",
+    "pluto",
+)
 const _THIRD_BODY_MU = Dict{String, Float64}(
     "sun" => 1.32712440041279419e20,
     "mercury" => 2.2032e13,
@@ -562,7 +569,7 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
         else
             _nbody_body_position_from_spice_j2000_m(body_name_spice, et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls)
         end
-        pos_primary_k_all[k] = model.planet.J2000_to_pci * pos_primary_body_j2000_m
+        pos_primary_k_all[k] = pos_primary_body_j2000_m
     end
 
     started_ns = time_ns()
@@ -903,7 +910,7 @@ function srp(
     pos_ii_sv = SVector{3, Float64}(pos_ii)
     primary_body_name = _spice_query_name(planet.name)
     pos_primary_sun_j2000_m = spice_position_j2000_m("sun", et, primary_body_name)
-    pos_primary_sun = SVector{3, Float64}(planet.J2000_to_pci * pos_primary_sun_j2000_m)
+    pos_primary_sun = SVector{3, Float64}(pos_primary_sun_j2000_m)
     return srp_cannonball_accel(
         pos_ii_sv,
         pos_primary_sun,
@@ -928,7 +935,6 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
     primary_body_name = _spice_query_name(planet.name)
     spice_rhs_memo_enabled = param.shared_buffers.spice_rhs_memo_enabled[]
     spice_rhs_memo = param.shared_buffers.spice_rhs_memo
-
     pos_primary_sun = if model.direct || model.albedo
         cache_entry = param.shared_buffers.srp_sun_ephemeris_cache[]
         pos_primary_sun_j2000_m = if cache_entry isa SRPSunEphemerisCache
@@ -937,7 +943,7 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
         else
             _srp_sun_position_from_spice_j2000_m(et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls)
         end
-        SVector{3, Float64}(planet.J2000_to_pci * pos_primary_sun_j2000_m)
+        SVector{3, Float64}(pos_primary_sun_j2000_m)
     else
         SVector{3, Float64}(0.0, 0.0, 0.0)
     end

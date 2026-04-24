@@ -134,7 +134,7 @@ end
             p.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls,
         )
     end
-    return SolarEphemerisSample(SVector{3, Float64}(planet.J2000_to_pci * pos_primary_sun_j2000_m))
+    return SolarEphemerisSample(SVector{3, Float64}(pos_primary_sun_j2000_m))
 end
 
 @inline function sample_third_body_ephemerides(model::SimulationModel.NBodyGravityModel, x, p, sat_idx::Int, t::Float64)
@@ -173,7 +173,7 @@ end
                 p.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls,
             )
         end
-        return SVector{3, Float64}(model.planet.J2000_to_pci * pos_primary_body_j2000_m)
+        return SVector{3, Float64}(pos_primary_body_j2000_m)
     end
     return ThirdBodyEphemerisSample(model.body_names, positions_ii)
 end

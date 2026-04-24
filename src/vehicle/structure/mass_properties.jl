@@ -4,7 +4,6 @@
 Returns the center of mass of the spacecraft assembly that the body is a part of.
 """
 function get_COM(model::SpacecraftModel)
-    # BFS starting from body to find all bodies attached to the current body
     bodies = model.links # Get all bodies in the model
     return get_COM(bodies) # Call the version for a list of bodies
 end
@@ -31,7 +30,6 @@ Calculates the inertia tensor of the entire assembly connected to `body`
 and updates it in the `model.inertia_tensors` array.
 """
 function update_inertia_tensor!(model::SpacecraftModel, body::Link)
-    # BFS starting from body to find all bodies attached to the current body
     bodies, root_index = traverse_bodies(model, body)
 
     # Calculate the inertia tensor
@@ -55,10 +53,10 @@ Returns the total inertia tensor of a collection of bodies using the parallel ax
 function update_inertia_tensor(bodies::Vector{Link}, prop_mass::Float64 = 0.0)
     inertia_tensor = SMatrix{3, 3, Float64}(zeros(3, 3))
     for b in bodies
-        # Apply parallel axis theorem to update inertia tensor
         R = b.root ? SMatrix{3, 3, Float64}(I(3)) : rot(b.q) # Rotation matrix from quaternion
         I_body = R * b.inertia * R' # Transform inertia tensor to the body frame
         r = SVector{3, Float64}(b.r) # Position vector of the body
+        # Only the root assembly carries shared propellant mass in this legacy structure model.
         fuel_mass = b.root ? prop_mass : 0.0 # Get propellant mass if root body
         inertia_tensor += I_body + (b.m + fuel_mass) * hat(r) * hat(r)' # Parallel axis theorem
     end
@@ -71,8 +69,6 @@ end
 Returns the pre-calculated inertia tensor for the assembly connected to `body`.
 """
 function get_inertia_tensor(model::SpacecraftModel)
-    # BFS starting from body to find all bodies attached to the current body
-    # bodies, root_index = traverse_bodies(model, body)
     return model.inertia_tensor # Return the inertia tensor of the root body
 end
 
@@ -92,9 +88,7 @@ end
 Manually sets the inertia tensor for the assembly connected to `body`.
 """
 function set_inertia_tensor!(model::SpacecraftModel, body::Link, inertia_tensor::SMatrix{3, 3, Float64})
-    # Find the index of the body in the links vector
     bodies, root_index = traverse_bodies(model, body)
-    # @assert index !== nothing "Body not found in the model"
     model.inertia_tensors[root_index] = inertia_tensor # Set the inertia tensor for the body
 end
 
@@ -107,7 +101,6 @@ Returns a Vector{Float64} if multiple roots exist, or a single Float64 if only o
 function get_spacecraft_mass(model::SpacecraftModel; dry=false)
     masses = Float64[]
     for root in model.roots
-        # BFS starting from root to find all bodies attached to the root body
         bodies, root_index = traverse_bodies(model, root)
         push!(masses, get_spacecraft_mass(model, bodies, root_index; dry=dry))
     end

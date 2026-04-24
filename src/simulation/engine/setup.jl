@@ -15,7 +15,7 @@ using TOML
 
 const _normalize_warning_emitted = Ref(false)
 const RESULTS_BUNDLE_SCHEMA_VERSION = "1"
-const CHECKPOINT_SCHEMA_VERSION = "1"
+const CHECKPOINT_SCHEMA_VERSION = "2"
 const _EPHEMERIS_REUSE_LOCK = ReentrantLock()
 const _SRP_EPHEMERIS_REUSE_CACHE = Dict{Any, SimulationModel.SRPSunEphemerisCache}()
 const _NBODY_EPHEMERIS_REUSE_CACHE = Dict{Any, SimulationModel.NBodyEphemerisCache}()

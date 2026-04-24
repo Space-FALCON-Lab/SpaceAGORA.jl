@@ -31,21 +31,33 @@ function _sha256_hex(path::String)::String
     end
 end
 
-function _write_checkpoint!(args, t::Float64, u_state, checkpoint_schema_version)
-    paths = IOConfig._checkpoint_paths(args)
-    payload = (
+function _checkpoint_payload(
+    t::Float64,
+    u_state,
+    checkpoint_schema_version;
+    runtime_state=nothing
+)
+    base = (
         schema_version=checkpoint_schema_version,
         created_utc=string(now(UTC)),
         t=t,
         u=deepcopy(u_state)
     )
+    runtime_state === nothing && return base
+    return merge(base, (runtime_state=deepcopy(runtime_state),))
+end
+
+function _write_checkpoint_payload!(args, payload)
+    paths = IOConfig._checkpoint_paths(args)
     _atomic_write_file(paths.data, tmp -> open(tmp, "w") do io
         serialize(io, payload)
     end)
 
+    schema_version = haskey(payload, :schema_version) ? payload[:schema_version] : "unknown"
+    t = haskey(payload, :t) ? Float64(payload[:t]) : NaN
     manifest = Dict{String, Any}(
-        "schema_version" => checkpoint_schema_version,
-        "created_utc" => string(now(UTC)),
+        "schema_version" => schema_version,
+        "created_utc" => haskey(payload, :created_utc) ? string(payload[:created_utc]) : string(now(UTC)),
         "time_s" => t,
         "data_path" => paths.data,
         "data_size_bytes" => filesize(paths.data),
@@ -55,6 +67,11 @@ function _write_checkpoint!(args, t::Float64, u_state, checkpoint_schema_version
         TOML.print(io, manifest)
     end)
     return nothing
+end
+
+function _write_checkpoint!(args, t::Float64, u_state, checkpoint_schema_version; runtime_state=nothing)
+    payload = _checkpoint_payload(t, u_state, checkpoint_schema_version; runtime_state=runtime_state)
+    return _write_checkpoint_payload!(args, payload)
 end
 
 function _load_checkpoint(args)
@@ -68,7 +85,16 @@ function _load_checkpoint(args)
     if !haskey(payload, :t) || !haskey(payload, :u)
         throw(ArgumentError("Checkpoint payload missing required keys (:t, :u)."))
     end
-    return (t=Float64(payload[:t]), u=payload[:u], data_path=paths.data, manifest_path=paths.manifest)
+    runtime_state = haskey(payload, :runtime_state) ? payload[:runtime_state] : nothing
+    schema_version = haskey(payload, :schema_version) ? string(payload[:schema_version]) : "unknown"
+    return (
+        t=Float64(payload[:t]),
+        u=payload[:u],
+        runtime_state=runtime_state,
+        schema_version=schema_version,
+        data_path=paths.data,
+        manifest_path=paths.manifest
+    )
 end
 
 function _clear_checkpoint!(args)
@@ -81,6 +107,7 @@ end
 export _atomic_write_file
 export _sha256_hex
 export _write_checkpoint!
+export _write_checkpoint_payload!
 export _load_checkpoint
 export _clear_checkpoint!
 

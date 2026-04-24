@@ -151,6 +151,9 @@ function get_callbacks(
     if _requires_quaternion_projection_callback(args)
         callbacks = _append_callback(callbacks, get_quaternion_projection_callback(num_sats, args))
     end
+    if args.simulation_settings.verbose && _progress_interval_s() > 0.0
+        callbacks = _append_callback(callbacks, get_progress_callback(num_sats, args))
+    end
     callbacks = _append_callback(callbacks, get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values))
 
     return CallbackSet(callbacks...)

@@ -243,6 +243,48 @@ function get_data_saving_callback(
     return SavingCallback(save_func, saved_values; saveat=data_rate, save_everystep=false)
 end
 
+@inline function _progress_interval_s()::Float64
+    return max(0.0, _parse_float_env("SPACEAGORA_PROGRESS_INTERVAL_S", 0.0))
+end
+
+function get_progress_callback(num_sats::Int, args::SimulationConfiguration)
+    interval_s = _progress_interval_s()
+    interval_s > 0.0 || throw(ArgumentError("Progress callback requires SPACEAGORA_PROGRESS_INTERVAL_S > 0."))
+    mission_end_s = args.mission_configuration.mission_time
+
+    function progress_affect!(integrator)
+        p = integrator.p
+        t_s = Float64(integrator.t)
+        percent = clamp(100.0 * t_s / mission_end_s, 0.0, 100.0)
+        min_altitude_m = Inf
+        lead_speed_m_s = 0.0
+
+        @inbounds for sat_idx in 1:num_sats
+            if !p.is_active[sat_idx]
+                continue
+            end
+            pos = Float64.(integrator.u.sc[sat_idx].pos)
+            vel = Float64.(integrator.u.sc[sat_idx].vel)
+            alt_m = norm(pos) - p.args.environment_model.planet.Rp_e
+            min_altitude_m = min(min_altitude_m, alt_m)
+            if sat_idx == 1
+                lead_speed_m_s = norm(vel)
+            end
+        end
+
+        min_altitude_km = isfinite(min_altitude_m) ? min_altitude_m / 1e3 : NaN
+        lead_speed_km_s = lead_speed_m_s / 1e3
+        println(
+            "Progress: t=$(round(t_s / 3600.0, digits=3)) hr / $(round(mission_end_s / 3600.0, digits=3)) hr " *
+            "($(round(percent, digits=1))%), min_altitude=$(round(min_altitude_km, digits=3)) km, " *
+            "speed=$(round(lead_speed_km_s, digits=3)) km/s"
+        )
+        return nothing
+    end
+
+    return PeriodicCallback(progress_affect!, interval_s)
+end
+
 
 function get_periapsis_save_callback(num_sats::Int)
     # Implement a callback to save the state of the simulation at periapsis for each orbit, which can be useful for analyzing the changes in the orbit after each pass through the atmosphere

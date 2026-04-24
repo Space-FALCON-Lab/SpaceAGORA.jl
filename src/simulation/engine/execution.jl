@@ -99,6 +99,10 @@ function run_simulation(
         else
             t_start = ckpt.t
             u_start = ckpt.u
+            restored_runtime = _restore_checkpoint_runtime_state!(p, ckpt.runtime_state)
+            if !restored_runtime && args.simulation_settings.verbose
+                @warn "Checkpoint contains no runtime state; resuming state vector only." schema_version=ckpt.schema_version
+            end
             if args.simulation_settings.verbose
                 println("Resuming simulation from checkpoint at t=$(round(t_start, digits=6)) s")
             end
@@ -165,9 +169,25 @@ function run_simulation(
             end
             _append_saved_segment!(checkpoint_saved_times, checkpoint_saved_data, saved_values)
             last_sol = seg_sol
-            t_cursor = Float64(seg_sol.t[end])
-            u_cursor = deepcopy(seg_sol.u[end])
-            _write_checkpoint!(args, t_cursor, u_cursor)
+            t_cursor = Float64(t_next)
+            u_cursor = deepcopy(seg_sol(t_cursor))
+            if isempty(checkpoint_saved_times) || !isapprox(checkpoint_saved_times[end], t_cursor; atol=0.0, rtol=0.0)
+                push!(checkpoint_saved_times, t_cursor)
+                push!(
+                    checkpoint_saved_data,
+                    SimulationModel.SimulationCallbacks._save_snapshot(
+                        save_fields_resolved,
+                        u_cursor,
+                        t_cursor,
+                        (; p=p)
+                    )
+                )
+            end
+            _write_checkpoint!(args, t_cursor, u_cursor, p)
+            if args.mission_configuration.mission_type == SimulationModel.MissionOrbits &&
+                    all((!p.is_active[i]) || (p.orbit_counter[i] - 1) >= args.mission_configuration.number_of_orbits for i in eachindex(p.orbit_counter))
+                break
+            end
         end
 
     elseif t_start < mission_end

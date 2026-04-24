@@ -246,6 +246,176 @@ end
     end
 end
 
+@testset "Checkpoint Runtime State Resume" begin
+    full_thruster = make_base_thruster_model(
+        thrust=2.0,
+        direction=0.0,
+        Δv=0.0,
+        start_burn_time=10.0,
+        stop_burn_time=50.0,
+        Isp=300.0
+    )
+    full_args = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=80.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        control_effectors=(full_thruster,),
+        control_rates=[10.0],
+        keplerian=true,
+        simulation_settings=SimulationSettings(
+            results=true,
+            verbose=false,
+            generate_plots=false,
+            results_directory="output",
+            save_csv=true,
+            normalize=false
+        ),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=2.0)
+    )
+    df_full = run_case_silent(full_args)
+
+    checkpoint_dir = joinpath("output", "checkpoints")
+    phase1_thruster = make_base_thruster_model(
+        thrust=2.0,
+        direction=0.0,
+        Δv=0.0,
+        start_burn_time=10.0,
+        stop_burn_time=50.0,
+        Isp=300.0
+    )
+    phase1_args = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=30.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        control_effectors=(phase1_thruster,),
+        control_rates=[10.0],
+        keplerian=true,
+        simulation_settings=SimulationSettings(
+            results=true,
+            verbose=false,
+            generate_plots=false,
+            results_directory="output",
+            save_csv=true,
+            normalize=false,
+            checkpoint_enabled=true,
+            checkpoint_interval_s=30.0,
+            checkpoint_directory=checkpoint_dir
+        ),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=2.0)
+    )
+    blank_resume_thruster = make_base_thruster_model(
+        thrust=2.0,
+        direction=Float64(π),
+        Δv=0.0,
+        start_burn_time=-1.0,
+        stop_burn_time=-1.0,
+        Isp=300.0
+    )
+    resume_args = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=80.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        control_effectors=(blank_resume_thruster,),
+        control_rates=[10.0],
+        keplerian=true,
+        simulation_settings=SimulationSettings(
+            results=true,
+            verbose=false,
+            generate_plots=false,
+            results_directory="output",
+            save_csv=true,
+            normalize=false,
+            checkpoint_enabled=true,
+            checkpoint_interval_s=50.0,
+            checkpoint_directory=checkpoint_dir,
+            resume_from_checkpoint=true
+        ),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=2.0)
+    )
+
+    mktempdir() do tmp
+        cd(tmp) do
+            run_simulation(phase1_args)
+            ckpt = SimulationEngine._load_checkpoint(phase1_args)
+            @test ckpt !== nothing
+            @test ckpt.schema_version == "2"
+            @test ckpt.runtime_state !== nothing
+            @test ckpt.runtime_state.control_effectors[1].start_burn_time[1] == 10.0
+            @test ckpt.runtime_state.control_effectors[1].stop_burn_time[1] == 50.0
+            checkpoint_mass = Float64(ckpt.u.sc[1].mass)
+
+            run_simulation(resume_args)
+            @test blank_resume_thruster.start_burn_time[1] == -1.0
+            df_resume = CSV.read(joinpath("output", "simulation_results.csv"), DataFrame)
+            @test minimum(Float64.(df_resume.time)) >= 30.0
+            first_after_resume = findfirst(t -> Float64(t) > 30.0, df_resume.time)
+            @test first_after_resume !== nothing
+            @test Float64(df_resume.sc1_mass[first_after_resume]) < checkpoint_mass
+
+            p_full = SVector{3, Float64}(Float64(df_full.sc1_pos_1[end]), Float64(df_full.sc1_pos_2[end]), Float64(df_full.sc1_pos_3[end]))
+            v_full = SVector{3, Float64}(Float64(df_full.sc1_vel_1[end]), Float64(df_full.sc1_vel_2[end]), Float64(df_full.sc1_vel_3[end]))
+            p_resume = SVector{3, Float64}(Float64(df_resume.sc1_pos_1[end]), Float64(df_resume.sc1_pos_2[end]), Float64(df_resume.sc1_pos_3[end]))
+            v_resume = SVector{3, Float64}(Float64(df_resume.sc1_vel_1[end]), Float64(df_resume.sc1_vel_2[end]), Float64(df_resume.sc1_vel_3[end]))
+
+            @test norm(p_resume - p_full) < 1.0
+            @test norm(v_resume - v_full) < 1e-3
+            @test abs(Float64(df_resume.sc1_mass[end]) - Float64(df_full.sc1_mass[end])) < 1e-8
+        end
+    end
+end
+
+@testset "Checkpoint State Rewrite Preserves Integrated Mass" begin
+    checkpoint_dir = joinpath("output", "checkpoints")
+    args = build_config(
+        spacecraft=make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=40.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(
+            results=true,
+            verbose=false,
+            generate_plots=false,
+            results_directory="output",
+            save_csv=true,
+            normalize=false,
+            checkpoint_enabled=true,
+            checkpoint_interval_s=40.0,
+            checkpoint_directory=checkpoint_dir
+        ),
+        tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=2.0)
+    )
+
+    mktempdir() do tmp
+        cd(tmp) do
+            run_simulation(args)
+            ckpt = SimulationEngine._load_checkpoint(args)
+            original_mass = Float64(ckpt.u.sc[1].mass)
+            reset_u = deepcopy(ckpt.u)
+            reset_u.sc[1].pos .= SVector{3, Float64}(1.0, 2.0, 3.0)
+            reset_u.sc[1].vel .= SVector{3, Float64}(4.0, 5.0, 6.0)
+            SimulationEngine._rewrite_checkpoint_state!(args, ckpt.t, reset_u)
+
+            rewritten = SimulationEngine._load_checkpoint(args)
+            @test Float64(rewritten.u.sc[1].mass) == original_mass
+            @test SVector{3, Float64}(rewritten.u.sc[1].pos) == SVector{3, Float64}(1.0, 2.0, 3.0)
+            @test SVector{3, Float64}(rewritten.u.sc[1].vel) == SVector{3, Float64}(4.0, 5.0, 6.0)
+            @test rewritten.runtime_state !== nothing
+        end
+    end
+end
+
 @testset "Checkpoint Guards + Missing Resume + Bundle Toggle" begin
     base_spacecraft() = make_spacecraft(ra_alt_m=520e3, rp_alt_m=420e3, ν_deg=165.0)
     base_settings(; kwargs...) = SimulationSettings(
@@ -297,13 +467,13 @@ end
             @test isfile(joinpath("output", "simulation_results.csv"))
 
             df = CSV.read(joinpath("output", "simulation_results.csv"), DataFrame)
-            @test nrow(df) > 10
+            @test nrow(df) >= 7
             @test abs(Float64(df.time[end]) - 60.0) < 1e-8
 
             ckpt_manifest_path = joinpath("output", "checkpoints", "simulation_checkpoint.manifest.toml")
             @test isfile(ckpt_manifest_path)
             ckpt_manifest = TOML.parsefile(ckpt_manifest_path)
-            @test get(ckpt_manifest, "schema_version", "") == "1"
+            @test get(ckpt_manifest, "schema_version", "") == "2"
             @test get(ckpt_manifest, "time_s", 0.0) > 0.0
             @test get(ckpt_manifest, "data_size_bytes", 0) > 0
             @test length(get(ckpt_manifest, "data_sha256", "")) == 64

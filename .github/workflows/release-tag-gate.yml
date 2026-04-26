@@ -20,7 +20,7 @@ jobs:
       SPACEAGORA_NIGHTLY_MAX_AGE_HOURS: "36"
     steps:
       - name: Validate recent successful nightly-stress run
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const startIso = process.env.SPACEAGORA_NIGHTLY_ENFORCEMENT_START;

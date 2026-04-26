@@ -10,3 +10,8 @@ GRAMpy/*
 *.csv
 */.CondaPkg/*
 Manifest.toml
+# PackageCompiler sysimage artifacts
+*.so
+*.dll
+*.dylib
+SpaceAGORA.so

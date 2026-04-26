@@ -7,13 +7,22 @@
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	"features": {"ghcr.io/julialang/devcontainer-features/julia:1":{"channel": "release"},
-				 "ghcr.io/devcontainers/features/python:1": {}}
+				 "ghcr.io/devcontainers/features/python:1": {}},
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
 
-	// Use 'postCreateCommand' to run commands after the container is created.
-	// "postCreateCommand": "uname -a",
+	// Pre-instantiate the Julia environment and resolve the CondaPkg Python environment
+	// once when the container is created. This avoids re-downloading and re-compiling
+	// packages on every fresh Julia session.
+	"postCreateCommand": "julia --project=.SpaceAGORA -e 'using Pkg; Pkg.instantiate()'",
+
+	// Persist the CondaPkg conda environment to a fixed path so that PythonCall/CondaPkg
+	// only rebuilds the Python environment when CondaPkg.toml actually changes, rather
+	// than resolving it from scratch on every session.
+	"containerEnv": {
+		"JULIA_CONDAPKG_ENV": "/home/vscode/.julia/condapkg/SpaceAGORA"
+	},
 
 	// Configure tool-specific properties.
 	// "customizations": {},

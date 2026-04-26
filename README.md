@@ -7,7 +7,7 @@ package-owned CLI.
 
 ## Install
 
-Use the committed `/.AGORA` environment as the canonical committed execution environment
+Use the committed root environment as the canonical committed execution environment
 for examples, tests, benchmarks, and most local runs. In normal
 repository usage there is no bootstrap step beyond instantiating that committed
 environment:
@@ -15,7 +15,7 @@ environment:
 ```bash
 git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
-julia --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
 ## First no-GRAM run
@@ -23,7 +23,7 @@ julia --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
 The fastest first run does not require GRAM or SPICE:
 
 ```bash
-julia --project=.AGORA examples/AGORA_Earth_NoGRAM.jl
+julia --project=. examples/AGORA_Earth_NoGRAM.jl
 ```
 
 SpaceAGORA also supports higher-fidelity GRAM/SPICE-backed runs when local

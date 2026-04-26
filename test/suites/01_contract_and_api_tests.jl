@@ -377,15 +377,15 @@ end
 end
 
 @testset ".AGORA Environment Contract" begin
-    agora_project = joinpath(REPO_ROOT, ".AGORA", "Project.toml")
-    agora_manifest = joinpath(REPO_ROOT, ".AGORA", "Manifest.toml")
+    agora_project = joinpath(REPO_ROOT, "Project.toml")
+    agora_manifest = joinpath(REPO_ROOT, "Manifest.toml")
 
     @test isfile(agora_project)
     @test isfile(agora_manifest)
 
-    tracked = read(`sh -lc "cd '$REPO_ROOT' && git ls-files .AGORA/Project.toml .AGORA/Manifest.toml"`, String)
-    @test occursin(".AGORA/Project.toml", tracked)
-    @test occursin(".AGORA/Manifest.toml", tracked)
+    tracked = read(`sh -lc "cd '$REPO_ROOT' && git ls-files Project.toml Manifest.toml"`, String)
+    @test occursin("Project.toml", tracked)
+    @test occursin("Manifest.toml", tracked)
 
     readme = read(joinpath(REPO_ROOT, "README.md"), String)
     getting_started = read(joinpath(REPO_ROOT, "docs", "src", "getting_started.md"), String)
@@ -438,12 +438,10 @@ end
     end
 
     @test isempty(nonstdlib_deps_without_compat(joinpath(REPO_ROOT, "Project.toml")))
-    @test isempty(nonstdlib_deps_without_compat(joinpath(REPO_ROOT, ".AGORA", "Project.toml")))
 end
 
 @testset "Precompilation Contract" begin
     root_project = TOML.parsefile(joinpath(REPO_ROOT, "Project.toml"))
-    agora_project = TOML.parsefile(joinpath(REPO_ROOT, ".AGORA", "Project.toml"))
     spaceagora_src = read(joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"), String)
     precompile_src = read(joinpath(REPO_ROOT, "src", "precompile_workload.jl"), String)
     clean_depot_smoke = read(joinpath(REPO_ROOT, "test", "ci_clean_depot_smoke.jl"), String)
@@ -451,8 +449,6 @@ end
 
     @test get(get(root_project, "deps", Dict()), "PrecompileTools", nothing) == "aea7be01-6a6a-4083-8856-8a6e6704d82a"
     @test get(get(root_project, "compat", Dict()), "PrecompileTools", nothing) == "1"
-    @test get(get(agora_project, "deps", Dict()), "PrecompileTools", nothing) == "aea7be01-6a6a-4083-8856-8a6e6704d82a"
-    @test get(get(agora_project, "compat", Dict()), "PrecompileTools", nothing) == "1"
 
     @test occursin("__precompile__(true)", spaceagora_src)
     @test !occursin("__precompile__(false)", spaceagora_src)

@@ -6,7 +6,7 @@ right next document.
 This page is for first-time users choosing between a no-GRAM local run, a
 higher-fidelity setup, or a packaged study workflow.
 
-The `/.AGORA` environment is the canonical committed execution environment for
+The root environment is the canonical committed execution environment for
 the repository-owned quickstart path.
 
 The default minimal onboarding path is the no-GRAM Earth vacuum baseline:
@@ -26,7 +26,7 @@ true
 Shortest successful command:
 
 ```bash
-julia --project=.AGORA examples/AGORA_Earth_NoGRAM.jl
+julia --project=. examples/AGORA_Earth_NoGRAM.jl
 ```
 
 What to read next:

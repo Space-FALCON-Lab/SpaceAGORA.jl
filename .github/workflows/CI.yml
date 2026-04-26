@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-  pull_request:
+    branches: ["main", "master"]
 
 # Restrict the default GITHUB_TOKEN to the minimum required permissions.
 permissions:

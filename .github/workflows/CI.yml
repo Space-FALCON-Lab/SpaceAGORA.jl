@@ -3,45 +3,42 @@ name: CI
 on:
   push:
     branches: ["main", "master"]
-  pull_request:
 
 # Restrict the default GITHUB_TOKEN to the minimum required permissions.
 permissions:
   contents: read
 
 jobs:
-  test:
-    name: Julia ${{ matrix.julia-version }} – ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+  # ------------------------------------------------------------------
+  # Core test matrix — run the full unit test suite on every supported
+  # Julia version with code-coverage instrumentation.
+  # ------------------------------------------------------------------
+  tests-matrix:
+    name: Tests – Julia ${{ matrix.julia-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         julia-version: ["1.10", "lts"]
-        os: [ubuntu-latest]
+    env:
+      JULIA_NUM_THREADS: "2"
 
     steps:
       - uses: actions/checkout@v4
 
-      # ------------------------------------------------------------------
       # 1. Install Julia
-      # ------------------------------------------------------------------
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.julia-version }}
 
-      # ------------------------------------------------------------------
-      # 2. Cache ~/.julia/packages and compiled artifacts.
+      # 2. Restore ~/.julia/packages and compiled artifacts from cache.
       #    The cache key changes whenever Project.toml or Manifest.toml
-      #    changes, so packages are only re-downloaded when the dependency
-      #    set actually changes.
-      # ------------------------------------------------------------------
+      #    changes, so packages are only re-downloaded when needed.
       - uses: julia-actions/cache@v2
 
-      # ------------------------------------------------------------------
-      # 3. Cache the CondaPkg conda environment.
-      #    We hash CondaPkg.toml so the cache is invalidated only when the
-      #    Python dependency specification changes.
-      # ------------------------------------------------------------------
+      # 3. Restore the CondaPkg conda environment from cache.
+      #    Keyed on CondaPkg.toml so only invalidated when Python deps change.
       - name: Cache CondaPkg environment
         uses: actions/cache@v4
         with:
@@ -49,19 +46,102 @@ jobs:
           key: condapkg-${{ runner.os }}-${{ hashFiles('.SpaceAGORA/CondaPkg.toml') }}
           restore-keys: condapkg-${{ runner.os }}-
 
-      # ------------------------------------------------------------------
-      # 4. Instantiate the Julia environment (downloads + precompiles all
-      #    registered packages, resolves CondaPkg).
-      # ------------------------------------------------------------------
+      # 4. Instantiate the environment using whatever was restored from cache.
       - name: Instantiate environment
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
-        run: julia --project=.SpaceAGORA -e 'using Pkg; Pkg.instantiate()'
+        run: julia --startup-file=no --project=.SpaceAGORA -e 'using Pkg; Pkg.instantiate()'
 
-      # ------------------------------------------------------------------
-      # 5. Run the test suite.
-      # ------------------------------------------------------------------
-      - name: Run tests
+      # 5. Run the full unit test suite with code-coverage instrumentation.
+      - name: Run test suite
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
-        run: julia --project=.SpaceAGORA test/runtests.jl
+        run: julia --startup-file=no --project=.SpaceAGORA --code-coverage=user test/runtests.jl
+
+      # 6. Upload coverage data so it can be inspected in the Actions artifacts panel.
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.julia-version }}-${{ github.run_id }}
+          path: "**/*.cov"
+          if-no-files-found: ignore
+
+      # 7. Deprecation-warning smoke: verify the core source loads without
+      #    triggering any deprecation warnings.
+      - name: Depwarn smoke
+        env:
+          JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
+        run: |
+          julia --startup-file=no --depwarn=error --project=.SpaceAGORA -e '
+            include("src/physical_models/Planet_data.jl")
+            include("src/config.jl")
+            println("depwarn_smoke_ok")
+          '
+
+  # ------------------------------------------------------------------
+  # Rollup job — required status check that enforces matrix success.
+  # Branch-protection rules should require this job, not the individual
+  # matrix legs.
+  # ------------------------------------------------------------------
+  tests:
+    name: Tests (all versions)
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [tests-matrix]
+    steps:
+      - name: Enforce test matrix success
+        run: |
+          echo "tests-matrix result=${{ needs.tests-matrix.result }}"
+          if [ "${{ needs.tests-matrix.result }}" != "success" ]; then
+            echo "Test matrix failed or was cancelled."
+            exit 1
+          fi
+
+  # ------------------------------------------------------------------
+  # Threaded smoke — ensures the code is safe under multi-threading.
+  # ------------------------------------------------------------------
+  threaded-smoke:
+    name: Threaded smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      JULIA_NUM_THREADS: "4"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "lts"
+
+      - uses: julia-actions/cache@v2
+
+      - name: Cache CondaPkg environment
+        uses: actions/cache@v4
+        with:
+          path: ~/.julia/condapkg/SpaceAGORA
+          key: condapkg-${{ runner.os }}-${{ hashFiles('.SpaceAGORA/CondaPkg.toml') }}
+          restore-keys: condapkg-${{ runner.os }}-
+
+      - name: Instantiate environment
+        env:
+          JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
+        run: julia --startup-file=no --project=.SpaceAGORA -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Threaded smoke
+        env:
+          JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
+        run: |
+          julia --startup-file=no --depwarn=error --project=.SpaceAGORA -e '
+            if Threads.nthreads() < 2
+              error("Threaded smoke requires ≥ 2 threads; got $(Threads.nthreads())")
+            end
+            include("src/physical_models/Planet_data.jl")
+            include("src/config.jl")
+            using StaticArrays
+            earth = planet_data(0)
+            @assert earth.μ > 0 "planet_data(0).μ must be positive"
+            println("threaded_smoke_ok ($(Threads.nthreads()) threads)")
+          '

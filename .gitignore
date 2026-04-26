@@ -54,3 +54,9 @@ cache/
 # Temp / editor artifacts
 texput.log
 .~lock.*#
+
+# PackageCompiler sysimage artifacts
+*.so
+*.dll
+*.dylib
+SpaceAGORA.so

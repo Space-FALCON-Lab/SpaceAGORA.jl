@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+# Restrict the default GITHUB_TOKEN to the minimum required permissions.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Julia ${{ matrix.julia-version }} – ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        julia-version: ["1.10", "lts"]
+        os: [ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------
+      # 1. Install Julia
+      # ------------------------------------------------------------------
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.julia-version }}
+
+      # ------------------------------------------------------------------
+      # 2. Cache ~/.julia/packages and compiled artifacts.
+      #    The cache key changes whenever Project.toml or Manifest.toml
+      #    changes, so packages are only re-downloaded when the dependency
+      #    set actually changes.
+      # ------------------------------------------------------------------
+      - uses: julia-actions/cache@v2
+
+      # ------------------------------------------------------------------
+      # 3. Cache the CondaPkg conda environment.
+      #    We hash CondaPkg.toml so the cache is invalidated only when the
+      #    Python dependency specification changes.
+      # ------------------------------------------------------------------
+      - name: Cache CondaPkg environment
+        uses: actions/cache@v4
+        with:
+          path: ~/.julia/condapkg/SpaceAGORA
+          key: condapkg-${{ runner.os }}-${{ hashFiles('.SpaceAGORA/CondaPkg.toml') }}
+          restore-keys: condapkg-${{ runner.os }}-
+
+      # ------------------------------------------------------------------
+      # 4. Instantiate the Julia environment (downloads + precompiles all
+      #    registered packages, resolves CondaPkg).
+      # ------------------------------------------------------------------
+      - name: Instantiate environment
+        env:
+          JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
+        run: julia --project=.SpaceAGORA -e 'using Pkg; Pkg.instantiate()'
+
+      # ------------------------------------------------------------------
+      # 5. Run the test suite.
+      # ------------------------------------------------------------------
+      - name: Run tests
+        env:
+          JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
+        run: julia --project=.SpaceAGORA test/runtests.jl

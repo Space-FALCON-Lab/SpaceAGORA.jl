@@ -1,0 +1,305 @@
+version = 1
+
+[[scenarios]]
+name = "odyssey"
+kind = "orbit_events"
+planet = "mars"
+events = ["peri", "apo"]
+telemetry_peri = "data/telemetry/Odyssey/True_Odyssey_periapsis_alts.feather"
+telemetry_apo = "data/telemetry/Odyssey/True_Odyssey_apoapsis_alts.feather"
+target_orbits_quick = 8
+target_orbits_full = 340
+compare_points_quick = 8
+compare_points_full = 273
+min_eval_points = 6
+ra_m = 2.8559615e7
+rp_altitude_m = 87000.0
+i_deg = 93.522
+aop_deg = 109.7454
+raan_deg = 28.1517
+ta_deg = 175.0
+gravity_model = "inverse_squared"
+gravity_harmonics_degree = 20
+gravity_harmonics_order = 20
+gravity_harmonics_file = "data/Gravity_harmonics_data/Mars50c.csv"
+nbody_bodies = ["sun", "earth", "moon", "jupiter"]
+srp_enabled = true
+srp_cr = 1.3
+srp_area_m2 = 3.74
+include_wind = true
+orbit_altitude_mode = "true"
+EI_km = 250.0
+
+[scenarios.maneuvers]
+orbit_numbers = [7, 10, 12, 14, 16, 25, 32, 45, 49, 53, 66, 74, 88, 91, 99, 105, 129, 146, 179, 197, 213, 229, 241, 257, 270, 282, 295, 306, 318, 330]
+delta_v_mps = [-0.549, -0.549, -0.301, -0.151, -0.303, 0.145, -0.151, -0.099, -0.099, -0.2, -0.2, 0.297, -0.149, -0.149, -0.147, 0.144, 0.144, 1.0, 0.844, 0.6, 0.844, 0.6, 0.6, 1.2, 1.0, 1.2, 1.2, 1.0, 1.0, 1.2]
+thrust_n = 4.0
+isp_s = 220.0
+guidance_rate_s = 30.0
+control_rate_s = 10.0
+
+[scenarios.atmosphere_truth]
+assumption_id = "odyssey_mars_gram_deterministic_v1"
+atmosphere_model = "GRAM"
+atmosphere_dataset = "MarsGRAM climatology"
+space_weather_model = "MarsGRAM deterministic (seeded, perturbations off)"
+solar_flux_model = "MarsGRAM epoch-fixed defaults"
+gram_seed = 1001
+gram_perturbation_scales = [0.0, 0.0, 0.0, 0.0]
+gram_offline_surrogate = "off"
+gram_static_grid = false
+gram_track_cache = false
+gram_global_lock = "on"
+
+[scenarios.calibration]
+enabled = true
+profiles = ["full"]
+search_on_quick_subset = false
+fit_cd_scale = false
+cd_scale_min = 1.0
+cd_scale_max = 1.0
+cd_scale_steps = 3
+fit_cr = true
+cr_min = 1.15
+cr_max = 1.45
+cr_steps = 3
+fit_bias = true
+bias_abs_max_km = 500.0
+objective = "mean_nmae"
+
+[scenarios.initial_time]
+year = 2001
+month = 11
+day = 6
+hour = 19
+minute = 0
+second = 32.0
+
+[scenarios.spacecraft]
+bus_dims_m = [2.2, 2.6, 1.7]
+panel_dims_m = [0.01, 1.945, 1.7]
+bus_mass_kg = 391.0
+panel_mass_each_kg = 10.0
+panel_offset_y_m = 2.2725
+prop_mass_kg = 50.0
+id = 1001
+
+[scenarios.units]
+x = "orbit_index"
+peri = "km"
+apo = "km"
+
+[scenarios.tolerances_quick.peri]
+max_abs_km = 35.0
+max_nmae = 9.00
+
+[scenarios.tolerances_quick.apo]
+max_abs_km = 7000.0
+max_nmae = 0.80
+
+[scenarios.tolerances_full.peri]
+max_abs_km = 8.40
+max_nmae = 9.00
+max_rmse_km = 1.715
+
+[scenarios.tolerances_full.apo]
+max_abs_km = 1109.86
+max_nmae = 0.55
+max_rmse_km = 653.057
+
+[[scenarios]]
+name = "vex"
+kind = "orbit_events"
+planet = "venus"
+events = ["peri", "apo"]
+telemetry_peri = "data/telemetry/VEx/Vex_periapsis_data_new.feather"
+telemetry_apo = "data/telemetry/VEx/Vex_apoapsis_data.feather"
+target_orbits_quick = 8
+target_orbits_full = 60
+compare_points_quick = 8
+compare_points_full = 55
+min_eval_points = 6
+ra_m = 7.2651770e7
+rp_altitude_m = 186600.0
+i_deg = 89.876
+aop_deg = 75.505
+raan_deg = 104.115
+ta_deg = 178.0
+gravity_model = "inverse_squared"
+gravity_harmonics_degree = 20
+gravity_harmonics_order = 20
+gravity_harmonics_file = "data/Gravity_harmonics_data/MGNP180U.csv"
+nbody_bodies = ["sun", "earth", "moon", "jupiter"]
+srp_enabled = true
+srp_cr = 1.3
+srp_area_m2 = 5.70
+include_wind = true
+EI_km = 250.0
+
+[scenarios.maneuvers]
+orbit_numbers = [6, 37, 42, 46]
+delta_v_mps = [0.428, -0.177, -0.07, -0.05]
+thrust_n = 4.0
+isp_s = 220.0
+guidance_rate_s = 30.0
+control_rate_s = 10.0
+
+[scenarios.atmosphere_truth]
+assumption_id = "vex_venus_gram_deterministic_v1"
+atmosphere_model = "GRAM"
+atmosphere_dataset = "VenusGRAM climatology"
+space_weather_model = "VenusGRAM deterministic (seeded, perturbations off)"
+solar_flux_model = "VenusGRAM epoch-fixed defaults"
+gram_seed = 1001
+gram_perturbation_scales = [0.0, 0.0, 0.0, 0.0]
+gram_offline_surrogate = "off"
+gram_static_grid = false
+gram_track_cache = false
+gram_global_lock = "on"
+
+[scenarios.calibration]
+enabled = true
+profiles = ["full"]
+search_on_quick_subset = false
+fit_cd_scale = false
+cd_scale_min = 1.0
+cd_scale_max = 1.0
+cd_scale_steps = 3
+fit_cr = true
+cr_min = 1.15
+cr_max = 1.45
+cr_steps = 3
+fit_bias = true
+bias_abs_max_km = 500.0
+objective = "mean_nmae"
+
+[scenarios.initial_time]
+year = 2014
+month = 5
+day = 19
+hour = 4
+minute = 0
+second = 0.0
+
+[scenarios.spacecraft]
+bus_dims_m = [2.05, 3.7, 2.8]
+panel_dims_m = [0.01, 2.85, 1.0]
+bus_mass_kg = 630.0
+panel_mass_each_kg = 10.0
+panel_offset_y_m = 2.45
+prop_mass_kg = 0.0
+id = 1002
+
+[scenarios.units]
+x = "orbit_index"
+peri = "km"
+apo = "km"
+
+[scenarios.tolerances_quick.peri]
+max_abs_km = 55.0
+max_nmae = 1.00
+
+[scenarios.tolerances_quick.apo]
+max_abs_km = 2200.0
+max_nmae = 1.20
+
+[scenarios.tolerances_full.peri]
+max_abs_km = 4.58
+max_nmae = 0.90
+max_rmse_km = 3.368
+
+[scenarios.tolerances_full.apo]
+max_abs_km = 152.81
+max_nmae = 1.20
+max_rmse_km = 47.248
+
+[[scenarios]]
+name = "earth_gmat"
+kind = "time_aligned_state"
+planet = "earth"
+events = ["peri", "apo"]
+comparison_mode = "orbit_events"
+orbit_altitude_mode = "oblate"
+telemetry = "data/telemetry/GMAT_Earth_Aerobraking/Earth_Aerobraking_test.feather"
+max_points_quick = 800
+max_points_full = 2000
+min_eval_points = 4
+gravity_model = "inverse_squared"
+gravity_harmonics_degree = 50
+gravity_harmonics_order = 50
+gravity_harmonics_file = "data/Gravity_harmonics_data/EarthGGM05C.csv"
+nbody_bodies = ["sun", "moon"]
+EI_km = 300.0
+
+[scenarios.atmosphere_truth]
+assumption_id = "earth_gmat_gram_deterministic_v1"
+atmosphere_model = "GRAM"
+atmosphere_dataset = "MERRA2 All Mean"
+space_weather_model = "EarthGRAM MERRA2 climatology (deterministic)"
+solar_flux_model = "EarthGRAM/MERRA2 epoch-fixed defaults"
+gram_seed = 1001
+gram_perturbation_scales = [0.0, 0.0, 0.0, 0.0]
+gram_offline_surrogate = "auto"
+gram_static_grid = false
+gram_track_cache = false
+gram_global_lock = "on"
+
+[scenarios.calibration]
+enabled = false
+profiles = ["full"]
+fit_cd_scale = false
+fit_cr = false
+fit_bias = false
+
+[scenarios.initial_time]
+year = 2014
+month = 5
+day = 19
+hour = 14
+minute = 7
+second = 32.0
+
+[scenarios.telemetry_columns]
+time = "DefaultSC.ElapsedSecs"
+altitude = "DefaultSC.Earth.Altitude"
+x = "DefaultSC.EarthMJ2000Eq.X"
+y = "DefaultSC.EarthMJ2000Eq.Y"
+z = "DefaultSC.EarthMJ2000Eq.Z"
+sma = "DefaultSC.Earth.SMA"
+ecc = "DefaultSC.Earth.ECC"
+inc = "DefaultSC.EarthMJ2000Eq.INC"
+aop = "DefaultSC.EarthMJ2000Eq.AOP"
+raan = "DefaultSC.EarthMJ2000Eq.RAAN"
+ta = "DefaultSC.Earth.TA"
+
+[scenarios.spacecraft]
+bus_dims_m = [2.05, 3.7, 2.8]
+panel_dims_m = [0.01, 2.85, 1.0]
+bus_mass_kg = 620.0
+panel_mass_each_kg = 10.0
+panel_offset_y_m = 2.45
+prop_mass_kg = 10.0
+id = 1003
+
+[scenarios.units]
+x = "orbit"
+peri = "km"
+apo = "km"
+
+[scenarios.tolerances_quick.peri]
+max_abs_km = 2500.0
+max_nmae = 0.35
+
+[scenarios.tolerances_quick.apo]
+max_abs_km = 2500.0
+max_nmae = 1.50
+
+[scenarios.tolerances_full.peri]
+max_abs_km = 2.794
+max_nmae = 0.25
+max_rmse_km = 1.173
+
+[scenarios.tolerances_full.apo]
+max_abs_km = 184.562
+max_nmae = 0.25
+max_rmse_km = 92.728

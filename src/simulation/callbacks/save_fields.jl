@@ -1,0 +1,199 @@
+struct SaveField{F}
+    name::Symbol
+    getter::F
+    per_satellite::Bool
+    column_prefix::String
+end
+
+function SaveField(
+    name::Symbol,
+    getter::F;
+    per_satellite::Bool=false,
+    column_prefix::AbstractString=String(name)
+) where {F}
+    return SaveField{F}(name, getter, per_satellite, String(column_prefix))
+end
+
+@inline function _save_positions(num_sats::Int, u, t, integrator)
+    positions = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        positions[i] = _simulation_engine_module()._state_position_ii(u, i)
+    end
+    return positions
+end
+
+@inline function _save_velocities(num_sats::Int, u, t, integrator)
+    velocities = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        velocities[i] = _simulation_engine_module()._state_velocity_ii(u, i)
+    end
+    return velocities
+end
+
+@inline function _save_drag(num_sats::Int, u, t, integrator)
+    p = integrator.p
+    drag_cache = p.save_cache.drag_cache
+    drags = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        drags[i] = i <= length(drag_cache) ? drag_cache[i] : SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    return drags
+end
+
+@inline function _save_lift(num_sats::Int, u, t, integrator)
+    p = integrator.p
+    lift_cache = p.save_cache.lift_cache
+    lifts = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        lifts[i] = i <= length(lift_cache) ? lift_cache[i] : SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    return lifts
+end
+
+@inline function _save_cross(num_sats::Int, u, t, integrator)
+    p = integrator.p
+    cross_cache = p.save_cache.cross_cache
+    crosses = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        crosses[i] = i <= length(cross_cache) ? cross_cache[i] : SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    return crosses
+end
+
+@inline function _save_wind(num_sats::Int, u, t, integrator)
+    p = integrator.p
+    shared_winds = p.shared_buffers.winds
+    winds = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        winds[i] = i <= length(shared_winds) ? shared_winds[i] : SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    return winds
+end
+
+@inline function _save_periapsis_altitude(num_sats::Int, u, t, integrator)
+    planet = integrator.p.args.environment_model.planet
+    periapsis_altitudes = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        pos = _simulation_engine_module()._state_position_ii(u, i)
+        vel = _simulation_engine_module()._state_velocity_ii(u, i)
+        oe = rvtoorbitalelement(pos, vel, planet)
+        periapsis_altitudes[i] = oe[1] * (1.0 - oe[2]) - planet.Rp_e
+    end
+    return periapsis_altitudes
+end
+
+@inline function _save_altitude(num_sats::Int, u, t, integrator)
+    planet = integrator.p.args.environment_model.planet
+    et = integrator.p.shared_buffers.et_start[] + Float64(t)
+    ephemerides_model = integrator.p.args.environment_model.ephemerides_model
+    altitudes = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        pos = _simulation_engine_module()._state_position_ii(u, i)
+        vel = _simulation_engine_module()._state_velocity_ii(u, i)
+        rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
+        altitudes[i] = rtolatlong(rp, planet, ephemerides_model)[1]
+    end
+    return altitudes
+end
+
+@inline function _save_latitude_deg(num_sats::Int, u, t, integrator)
+    planet = integrator.p.args.environment_model.planet
+    et = integrator.p.shared_buffers.et_start[] + Float64(t)
+    ephemerides_model = integrator.p.args.environment_model.ephemerides_model
+    latitudes_deg = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        pos = _simulation_engine_module()._state_position_ii(u, i)
+        vel = _simulation_engine_module()._state_velocity_ii(u, i)
+        rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
+        latitudes_deg[i] = rad2deg(rtolatlong(rp, planet, ephemerides_model)[2])
+    end
+    return latitudes_deg
+end
+
+@inline function _save_longitude_deg(num_sats::Int, u, t, integrator)
+    planet = integrator.p.args.environment_model.planet
+    et = integrator.p.shared_buffers.et_start[] + Float64(t)
+    ephemerides_model = integrator.p.args.environment_model.ephemerides_model
+    longitudes_deg = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        pos = _simulation_engine_module()._state_position_ii(u, i)
+        vel = _simulation_engine_module()._state_velocity_ii(u, i)
+        rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
+        longitudes_deg[i] = rad2deg(rtolatlong(rp, planet, ephemerides_model)[3])
+    end
+    return longitudes_deg
+end
+
+@inline function _save_heat_rate(num_sats::Int, u, t, integrator)
+    heat_rates = Vector{Float64}(undef, num_sats)
+    shared_heat_rates = integrator.p.shared_buffers.heat_rates
+    @inbounds for i in 1:num_sats
+        heat_rates[i] = i <= length(shared_heat_rates) ? sum(shared_heat_rates[i]) : 0.0
+    end
+    return heat_rates
+end
+
+@inline function _save_heat_load(num_sats::Int, u, t, integrator)
+    heat_loads = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        heat_loads[i] = sum(_simulation_engine_module()._state_heat_loads(u, integrator.p.args, i))
+    end
+    return heat_loads
+end
+
+@inline function _save_mass(num_sats::Int, u, t, integrator)
+    masses = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        masses[i] = _simulation_engine_module()._state_mass_kg(u, integrator.p.args, i)
+    end
+    return masses
+end
+
+@inline function _save_quaternion(num_sats::Int, u, t, integrator)
+    quaternions = Vector{SVector{4, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        q = _simulation_engine_module()._state_quaternion(u, i)
+        q === nothing && throw(ArgumentError("Quaternion save field requires orientation state."))
+        quaternions[i] = q
+    end
+    return quaternions
+end
+
+function default_save_fields(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    fields = SaveField[
+        SaveField(:position, (u, t, integrator) -> _save_positions(num_sats, u, t, integrator); per_satellite=true, column_prefix="pos"),
+        SaveField(:velocity, (u, t, integrator) -> _save_velocities(num_sats, u, t, integrator); per_satellite=true, column_prefix="vel"),
+        SaveField(:altitude, (u, t, integrator) -> _save_altitude(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:latitude_deg, (u, t, integrator) -> _save_latitude_deg(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:longitude_deg, (u, t, integrator) -> _save_longitude_deg(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:mass, (u, t, integrator) -> _save_mass(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:wind, (u, t, integrator) -> _save_wind(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:drag, (u, t, integrator) -> _save_drag(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:lift, (u, t, integrator) -> _save_lift(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:cross, (u, t, integrator) -> _save_cross(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:periapsis_altitude, (u, t, integrator) -> _save_periapsis_altitude(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:heat_rate, (u, t, integrator) -> _save_heat_rate(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:heat_load, (u, t, integrator) -> _save_heat_load(num_sats, u, t, integrator); per_satellite=true)
+    ]
+    if args.mission_configuration.orientation_sim
+        push!(fields, SaveField(:quaternion, (u, t, integrator) -> _save_quaternion(num_sats, u, t, integrator); per_satellite=true, column_prefix="q"))
+    end
+    return fields
+end
+
+@inline function _resolve_save_fields(save_fields, args::SimulationConfiguration)
+    resolved = isnothing(save_fields) ? default_save_fields(args) : collect(save_fields)
+    names = Symbol[field.name for field in resolved]
+    length(unique(names)) == length(names) || throw(ArgumentError("save_fields names must be unique. Got $(names)."))
+    return resolved
+end
+
+function _save_snapshot(save_fields, u, t, integrator)::SaveData
+    # SaveData is a persistence/output boundary; keep runtime logic on typed state and buffers.
+    snapshot = SaveData()
+    for field in save_fields
+        snapshot[field.name] = field.getter(u, t, integrator)
+    end
+    return snapshot
+end

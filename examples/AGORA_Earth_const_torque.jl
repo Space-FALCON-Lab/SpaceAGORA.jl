@@ -1,0 +1,54 @@
+include(joinpath(@__DIR__, "common.jl"))
+using SPICE
+using StaticArrays
+using LinearAlgebra
+using ComponentArrays
+
+
+struct ConstantBodyTorqueModel <: AbstractForceTorqueModel
+    torque::SVector{3, Float64}
+end
+
+function SimulationModel.calcForceTorque(
+    model::ConstantBodyTorqueModel,
+    x::ComponentVector,
+    p::ODEParams,
+    i::Int64
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    return SVector{3, Float64}(0.0, 0.0, 0.0), model.torque
+end
+
+planet = Earth("", SPICE_PATH)
+
+q0 = normalize(SVector{4, Float64}(0.0, 0.15, -0.2, 0.97))
+w0 = SVector{3, Float64}(0.0, 0.0, 0.0)
+
+ra = 7_200e3
+rp = 6_850e3
+a = (ra + rp) / 2.0
+e = (ra - rp) / (ra + rp)
+ic = InitialCondition(a, e, 35.0, 40.0, 10.0, 170.0, q0, w0)
+
+spacecraft = make_three_body_spacecraft(
+    bus_dims=(2.6, 1.8, 1.5),
+    panel_dims=(0.01, 1.5, 0.8),
+    bus_mass=750.0,
+    panel_mass_each=5.0,
+    panel_offset_y=1.2,
+    ic=ic,
+    prop_mass=1.0
+)
+
+args = make_example_config(
+    planet=planet,
+    spacecraft=spacecraft,
+    mission_time=900.0,
+    initial_time=InitialTime(year=2025, month=1, day=1, hour=0, minute=0, second=0.0),
+    dynamic_effectors=(InverseSquaredGravityModel(), ConstantBodyTorqueModel(SVector{3, Float64}(1e-3, 0.0, 0.0))),
+    density_model=NoAtmosphereModel(),
+    orientation_sim=true,
+    keplerian=true,
+    EI_km=120.0
+)
+
+run_and_report(args)

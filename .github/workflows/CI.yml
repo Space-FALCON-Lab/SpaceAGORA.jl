@@ -43,20 +43,20 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.julia/condapkg/SpaceAGORA
-          key: condapkg-${{ runner.os }}-${{ hashFiles('.SpaceAGORA/CondaPkg.toml') }}
+          key: condapkg-${{ runner.os }}-${{ hashFiles('CondaPkg.toml') }}
           restore-keys: condapkg-${{ runner.os }}-
 
       # 4. Instantiate the environment using whatever was restored from cache.
       - name: Instantiate environment
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
-        run: julia --startup-file=no --project=.SpaceAGORA -e 'using Pkg; Pkg.instantiate()'
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       # 5. Run the full unit test suite with code-coverage instrumentation.
       - name: Run test suite
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
-        run: julia --startup-file=no --project=.SpaceAGORA --code-coverage=user test/runtests.jl
+        run: julia --startup-file=no --project=. --code-coverage=user test/runtests.jl
 
       # 6. Upload coverage data so it can be inspected in the Actions artifacts panel.
       - name: Upload coverage artifacts
@@ -73,7 +73,7 @@ jobs:
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
         run: |
-          julia --startup-file=no --depwarn=error --project=.SpaceAGORA -e '
+          julia --startup-file=no --depwarn=error --project=. -e '
             include("src/physical_models/Planet_data.jl")
             include("src/config.jl")
             println("depwarn_smoke_ok")
@@ -122,19 +122,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.julia/condapkg/SpaceAGORA
-          key: condapkg-${{ runner.os }}-${{ hashFiles('.SpaceAGORA/CondaPkg.toml') }}
+          key: condapkg-${{ runner.os }}-${{ hashFiles('CondaPkg.toml') }}
           restore-keys: condapkg-${{ runner.os }}-
 
       - name: Instantiate environment
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
-        run: julia --startup-file=no --project=.SpaceAGORA -e 'using Pkg; Pkg.instantiate()'
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Threaded smoke
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
         run: |
-          julia --startup-file=no --depwarn=error --project=.SpaceAGORA -e '
+          julia --startup-file=no --depwarn=error --project=. -e '
             if Threads.nthreads() < 2
               error("Threaded smoke requires ≥ 2 threads; got $(Threads.nthreads())")
             end

@@ -3,11 +3,11 @@
 # Minimal Julia test suite for SpaceAGORA.jl.
 #
 # Run with either:
-#   julia --project=.SpaceAGORA -e 'using Pkg; Pkg.test()'
+#   julia --project=. -e 'using Pkg; Pkg.test()'
 # or directly:
-#   julia --project=.SpaceAGORA test/runtests.jl
+#   julia --project=. test/runtests.jl
 # or, if a sysimage has been built:
-#   julia --project=.SpaceAGORA --sysimage SpaceAGORA.so test/runtests.jl
+#   julia --project=. --sysimage SpaceAGORA.so test/runtests.jl
 #
 # These tests use only built-in density and gravity models (no GRAM, no SPICE)
 # so they can run in CI without external data files.

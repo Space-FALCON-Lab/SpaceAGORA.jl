@@ -26,6 +26,9 @@ jobs:
           submodules: recursive
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      - name: Update GRAMSuite submodule to latest main
+        run: git submodule update --init --recursive --remote data/GRAMSuite.jl
+
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
         with:

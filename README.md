@@ -15,8 +15,13 @@ environment:
 ```bash
 git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
+git submodule update --init --recursive --remote
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
+
+The `GRAMSuite.jl` submodule is configured to track its `main` branch, so
+running `git submodule update --init --recursive --remote` refreshes it to the
+latest upstream `main` commit.
 
 ## First no-GRAM run
 

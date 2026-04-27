@@ -1,3 +1,4 @@
 [submodule "GRAMSuite.jl"]
 	path = data/GRAMSuite.jl
 	url = https://github.com/Space-FALCON-Lab/GRAMSuite.jl.git
+	branch = main

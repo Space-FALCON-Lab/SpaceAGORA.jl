@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Building a Simulation Configuration · SpaceAGORA.jl</title><meta name="title" content="Building a Simulation Configuration · SpaceAGORA.jl"/><meta property="og:title" content="Building a Simulation Configuration · SpaceAGORA.jl"/><meta property="twitter:title" content="Building a Simulation Configuration · SpaceAGORA.jl"/><meta name="description" content="Documentation for SpaceAGORA.jl."/><meta property="og:description" content="Documentation for SpaceAGORA.jl."/><meta property="twitter:description" content="Documentation for SpaceAGORA.jl."/><meta property="og:url" content="https://space-falcon-lab.github.io/SpaceAGORA.jl/user/simulation_configuration/"/><meta property="twitter:url" content="https://space-falcon-lab.github.io/SpaceAGORA.jl/user/simulation_configuration/"/><link rel="canonical" href="https://space-falcon-lab.github.io/SpaceAGORA.jl/user/simulation_configuration/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">SpaceAGORA.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Overview</a></li><li><span class="tocitem">User Guide</span><ul><li><a class="tocitem" href="../../getting_started/">Start Here</a></li><li><a class="tocitem" href="../quickstart/">Quickstart</a></li><li><a class="tocitem" href="../installation_environment/">Installation &amp; Environment</a></li><li><a class="tocitem" href="../gramsuite_setup/">GRAMSuite Setup</a></li><li><a class="tocitem" href="../../assets/">Assets &amp; Modes</a></li><li><a class="tocitem" href="../first_simulation/">First Simulation</a></li><li><a class="tocitem" href="../verification_study/">Verification Study</a></li><li><a class="tocitem" href="../recipes/">Recipes</a></li><li><a class="tocitem" href="../concepts/">Concepts</a></li></ul></li><li><span class="tocitem">Reference</span><ul><li><a class="tocitem" href="../../cli/">CLI</a></li><li><a class="tocitem" href="../../generated/public_api/">Public API</a></li><li><a class="tocitem" href="../../distributed_hpc/">Distributed and HPC</a></li><li><a class="tocitem" href="../../extensibility/">Extensibility</a></li></ul></li><li><span class="tocitem">Maintainer Guide</span><ul><li><a class="tocitem" href="../../maintainer/">Maintainer Overview</a></li><li><a class="tocitem" href="../../documentation_policy/">Documentation Policy</a></li><li><a class="tocitem" href="../../public_api_policy/">API Policy</a></li><li><a class="tocitem" href="../../contracts/">Contracts</a></li><li><a class="tocitem" href="../../generated/contracts/architecture/canonical_topology_contract/">SpaceAGORA Canonical Topology Contract</a></li><li><a class="tocitem" href="../../generated/contracts/architecture/final_clean_contract/">SpaceAGORA Final-Clean Contract</a></li><li><a class="tocitem" href="../../generated/contracts/architecture/gnc_aerobraking_boundary_contract/">GNC Aerobraking Boundary Contract</a></li><li><a class="tocitem" href="../../generated/contracts/architecture/src_canonical_owner_audit/">SpaceAGORA <code>src/</code> Canonical Owner Audit</a></li><li><a class="tocitem" href="../../generated/contracts/architecture/src_completeness_contract/">SpaceAGORA <code>src/</code> Completeness Contract</a></li><li><a class="tocitem" href="../../generated/contracts/quality/api_naming_contract/">SpaceAGORA API and Naming Contract</a></li><li><a class="tocitem" href="../../generated/contracts/quality/verification_contract/">SpaceAGORA Verification Contract</a></li><li><a class="tocitem" href="../../generated/contracts/quality/performance_runtime_analysis/">SpaceAGORA Runtime Analysis</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Building a Simulation Configuration</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Building a Simulation Configuration</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/Space-FALCON-Lab/SpaceAGORA.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/main/docs/src/user/simulation_configuration.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Building-a-Simulation-Configuration"><a class="docs-heading-anchor" href="#Building-a-Simulation-Configuration">Building a Simulation Configuration</a><a id="Building-a-Simulation-Configuration-1"></a><a class="docs-heading-anchor-permalink" href="#Building-a-Simulation-Configuration" title="Permalink"></a></h1><p>Use this page when you want to assemble a <code>SimulationConfiguration</code> from scratch rather than relying on the <code>make_example_config</code> shortcut used in the repository examples.</p><p>This page is for users who have already completed the quickstart and now want to write their own scenario, change the spacecraft, switch atmosphere models, or understand what each configuration field controls.</p><p>Shortest successful command:</p><pre><code class="language-bash hljs">julia --project=. examples/AGORA_Basic_Quickstart.jl</code></pre><p>What to read next:</p><ul><li><a href="../atmosphere_models/">Atmosphere Models</a></li><li><a href="../solver_configuration/">Solver Configuration</a></li><li><a href="../../extensibility/">Extensibility</a></li></ul><h2 id="The-top-level-struct"><a class="docs-heading-anchor" href="#The-top-level-struct">The top-level struct</a><a id="The-top-level-struct-1"></a><a class="docs-heading-anchor-permalink" href="#The-top-level-struct" title="Permalink"></a></h2><p><code>SimulationConfiguration</code> is the single object passed to <code>run_simulation</code>. It is composed from several nested structs, all accessed through <code>SpaceAGORA.SimulationModel</code> (abbreviated <code>SM</code> in the examples):</p><pre><code class="language-julia hljs">using SpaceAGORA
+const SM = SpaceAGORA.SimulationModel
+
+config = SM.SimulationConfiguration(
+    file_paths             = SM.FilePaths(),
+    simulation_settings    = SM.SimulationSettings(...),
+    mission_configuration  = SM.MissionConfiguration(...),
+    environment_model      = SM.EnvironmentModel(...),
+    dynamics_model         = SM.DynamicsModel([spacecraft], effectors),
+    guidance_model         = SM.GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
+    navigation_model       = SM.NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
+    control_model          = SM.ControlModel(control_effectors=(), control_rates=Float64[]),
+    initial_time           = SM.InitialTime(year=2024, month=1, day=1, hour=0, minute=0, second=0.0),
+    integration_tolerances = SM.IntegrationTolerances()
+)
+
+run_simulation(config)</code></pre><h2 id="InitialTime"><a class="docs-heading-anchor" href="#InitialTime">InitialTime</a><a id="InitialTime-1"></a><a class="docs-heading-anchor-permalink" href="#InitialTime" title="Permalink"></a></h2><p>Specifies the simulation epoch. All fields default to the J2000 epoch (2000-01-01 00:00:00).</p><pre><code class="language-julia hljs">SM.InitialTime(
+    year   = 2024,
+    month  = 5,
+    day    = 27,
+    hour   = 5,
+    minute = 0,
+    second = 0.0
+)</code></pre><p>This epoch is used as the reference for SPICE-backed ephemerides and for <code>NRLMSISE00AtmosphereModel</code> when <code>use_space_indices=true</code>.</p><h2 id="InitialCondition"><a class="docs-heading-anchor" href="#InitialCondition">InitialCondition</a><a id="InitialCondition-1"></a><a class="docs-heading-anchor-permalink" href="#InitialCondition" title="Permalink"></a></h2><p><code>InitialCondition</code> accepts two input modes. Use whichever is more natural for your scenario. All angular inputs are in degrees; the constructor converts to radians internally.</p><p><strong>Mode 1: apoapsis and periapsis radii</strong></p><pre><code class="language-julia hljs">ic = SM.InitialCondition(
+    ra  = planet.Rp_e + 1_200e3,  # apoapsis radius from planet center, m
+    rp  = planet.Rp_e + 400e3,    # periapsis radius from planet center, m
+    i   = 28.5,                   # inclination, degrees
+    ω   = 10.0,                   # argument of periapsis, degrees
+    Ω   = 20.0,                   # right ascension of ascending node, degrees
+    ν   = 0.0                     # true anomaly at epoch, degrees (default 0.0)
+)</code></pre><p><strong>Mode 2: semi-major axis and eccentricity</strong></p><pre><code class="language-julia hljs">ic = SM.InitialCondition(
+    a   = planet.Rp_e + 800e3,
+    e   = 0.001,
+    i   = 28.5,
+    ω   = 10.0,
+    Ω   = 20.0,
+    ν   = 0.0
+)</code></pre><p>You cannot mix both modes in the same call; providing both <code>ra</code>/<code>rp</code> and <code>a</code>/<code>e</code> raises an error.</p><p><strong>Cartesian initial condition</strong></p><p>For non-Keplerian starts or when state is available in an inertial Cartesian frame:</p><pre><code class="language-julia hljs">ic = SM.CartesianInitialCondition(
+    pos     = [6_778_137.0, 0.0, 0.0],   # inertial position, m
+    vel     = [0.0, 7784.0, 0.0],         # inertial velocity, m/s
+    q       = [1.0, 0.0, 0.0, 0.0],       # unit quaternion (scalar-first)
+    ang_vel = [0.0, 0.0, 0.0]             # body angular velocity, rad/s
+)</code></pre><h2 id="MissionConfiguration"><a class="docs-heading-anchor" href="#MissionConfiguration">MissionConfiguration</a><a id="MissionConfiguration-1"></a><a class="docs-heading-anchor-permalink" href="#MissionConfiguration" title="Permalink"></a></h2><p>Controls the termination condition, time horizon, and output cadence.</p><pre><code class="language-julia hljs">SM.MissionConfiguration(
+    mission_type     = SM.MissionTime,    # SM.MissionTime or SM.MissionOrbits
+    mission_time     = 3600.0 * 12.0,    # total simulated seconds (MissionTime)
+    number_of_orbits = 1,                # orbit count (MissionOrbits)
+    keplerian        = true,             # use Keplerian orbit mode
+    orientation_sim  = false,            # include attitude dynamics
+    num_steps_to_save = 1000,            # output buffer size before flush
+    data_rate        = 10.0              # output sample cadence, seconds
+)</code></pre><p>When <code>mission_type = SM.MissionOrbits</code>, the simulation terminates after <code>number_of_orbits</code> complete orbits. When <code>keplerian = true</code>, the integrator uses Keplerian two-phase integration (free-flight + drag-pass). Set <code>keplerian = false</code> to keep uniform integration throughout (useful for continuous atmosphere scenarios or full entry trajectories).</p><h2 id="EnvironmentModel"><a class="docs-heading-anchor" href="#EnvironmentModel">EnvironmentModel</a><a id="EnvironmentModel-1"></a><a class="docs-heading-anchor-permalink" href="#EnvironmentModel" title="Permalink"></a></h2><p>Wires together the planet, atmosphere, ephemerides, and thermal model. All four of these must be provided; there are no defaults for <code>planet</code> or <code>density_model</code>.</p><pre><code class="language-julia hljs">planet = SM.make_no_gram_planet(:earth)
+
+SM.EnvironmentModel(
+    planet            = planet,
+    EI                = 120.0,                   # entry interface altitude, km
+    density_model     = SM.NoAtmosphereModel(),
+    ephemerides_model = SM.SimpleEphemeridesModel(),
+    thermal_model     = SM.MaxwellianHeat(
+                            thermal_accomodation_factor=1.0,
+                            planet=planet
+                        ),
+    topography        = false,
+    wind              = false
+)</code></pre><p><code>EI</code> (entry interface) controls the altitude threshold below which atmospheric drag is applied. For orbit-only scenarios, set it high enough that the spacecraft never crosses it (e.g., <code>120.0</code> km for Earth).</p><p>Set <code>wind = true</code> to request wind vectors from the atmosphere model; note that the open-data models (<code>NoAtmosphereModel</code>, <code>ExponentialAtmosphereModel</code>, <code>PiecewiseExponentialAtmosphereModel</code>) always return zero wind regardless.</p><p>For the supported atmosphere models and their constructors, see <a href="../atmosphere_models/">Atmosphere Models</a>.</p><h2 id="DynamicsModel"><a class="docs-heading-anchor" href="#DynamicsModel">DynamicsModel</a><a id="DynamicsModel-1"></a><a class="docs-heading-anchor-permalink" href="#DynamicsModel" title="Permalink"></a></h2><p>Holds the list of spacecraft and the tuple of force/torque effectors:</p><pre><code class="language-julia hljs">SM.DynamicsModel([spacecraft], (SM.InverseSquaredJ2GravityModel(),))</code></pre><p>Multiple spacecraft can be passed in the array for parallel propagation. The effectors tuple accepts any combination of <code>AbstractForceTorqueModel</code> implementations. Common built-in effectors:</p><ul><li><code>SM.InverseSquaredGravityModel()</code> — inverse-square point-mass gravity</li><li><code>SM.InverseSquaredJ2GravityModel()</code> — point-mass gravity with J2 oblateness</li></ul><h2 id="SimulationSettings"><a class="docs-heading-anchor" href="#SimulationSettings">SimulationSettings</a><a id="SimulationSettings-1"></a><a class="docs-heading-anchor-permalink" href="#SimulationSettings" title="Permalink"></a></h2><p>Controls output behavior and diagnostics:</p><pre><code class="language-julia hljs">SM.SimulationSettings(
+    results            = true,           # write output files
+    verbose            = false,          # print solver diagnostics
+    results_directory  = &quot;output&quot;,       # directory for CSV and bundle output
+    generate_plots     = false,          # reserved; disable for CLI runs
+    save_csv           = true,           # write CSV alongside the Feather bundle
+    checkpoint_enabled = false,          # periodic checkpoint for restart safety
+    checkpoint_interval_s = 300.0,      # checkpoint cadence, simulated seconds
+    checkpoint_directory  = &quot;&quot;,         # defaults to results_directory/checkpoints
+    resume_from_checkpoint = false       # resume from latest checkpoint if present
+)</code></pre><p>Set <code>results = false</code> to run without writing any output (useful for performance profiling or validation-only runs).</p><h2 id="FilePaths"><a class="docs-heading-anchor" href="#FilePaths">FilePaths</a><a id="FilePaths-1"></a><a class="docs-heading-anchor-permalink" href="#FilePaths" title="Permalink"></a></h2><p><code>FilePaths</code> holds paths to licensed external asset directories. For no-GRAM runs, the defaults are fine and this struct does not need to be set explicitly:</p><pre><code class="language-julia hljs">SM.FilePaths(
+    results              = &quot;Results&quot;,
+    GRAM                 = &quot;data/GRAMSuite.jl/GRAM Suite 2.0&quot;,
+    SPICE                = &quot;data/GRAMSuite.jl/GRAM Suite 2.0/SPICE&quot;,
+    topography_harmonics = &quot;data/Topography_harmonics_data&quot;,
+    gravity_harmonics    = &quot;data/Gravity_harmonics_data&quot;
+)</code></pre><h2 id="Using-make_example_config"><a class="docs-heading-anchor" href="#Using-make_example_config">Using <code>make_example_config</code></a><a id="Using-make_example_config-1"></a><a class="docs-heading-anchor-permalink" href="#Using-make_example_config" title="Permalink"></a></h2><p>For quick studies and all repository examples, <code>make_example_config</code> from <code>SpaceAGORA.TelemetryVerification</code> assembles the configuration in one call:</p><pre><code class="language-julia hljs">import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft, run_and_report
+
+spacecraft = make_three_body_spacecraft(
+    bus_dims        = (2.05, 2.05, 2.8),
+    panel_dims      = (0.01, 2.85, 1.0),
+    bus_mass        = 620.0,
+    panel_mass_each = 10.0,
+    panel_offset_y  = 2.05/2.0 + 2.85/2.0,
+    ic              = SM.InitialCondition(ra=..., rp=..., i=28.5, ω=10.0, Ω=20.0, ν=0.0),
+    prop_mass       = 200.0,
+    id              = 1
+)
+
+config = make_example_config(
+    planet             = SM.make_no_gram_planet(:earth),
+    spacecraft         = spacecraft,
+    mission_time       = 3600.0 * 12.0,
+    initial_time       = SM.InitialTime(year=2024, month=1, day=1),
+    dynamic_effectors  = (SM.InverseSquaredJ2GravityModel(),),
+    density_model      = SM.NoAtmosphereModel(),
+    ephemerides_model  = SM.SimpleEphemeridesModel(),
+    orientation_sim    = false,
+    keplerian          = true,
+    EI_km              = 120.0,
+    verbose            = true
+)
+
+run_and_report(config)</code></pre><p><code>make_example_config</code> is not part of the stable root <code>SpaceAGORA</code> export — it lives in <code>SpaceAGORA.TelemetryVerification</code> and is imported by all repository examples through <code>examples/common.jl</code>. It is appropriate for examples and quick studies; for production use, build <code>SimulationConfiguration</code> directly.</p><h2 id="make_three_body_spacecraft"><a class="docs-heading-anchor" href="#make_three_body_spacecraft"><code>make_three_body_spacecraft</code></a><a id="make_three_body_spacecraft-1"></a><a class="docs-heading-anchor-permalink" href="#make_three_body_spacecraft" title="Permalink"></a></h2><p>Constructs a three-body spacecraft: a main bus plus two symmetric solar panels. This is the geometry used by all repository examples.</p><pre><code class="language-julia hljs">make_three_body_spacecraft(
+    bus_dims        = (x, y, z),         # bus bounding box, m
+    panel_dims      = (t, span, chord),  # panel thickness, half-span, chord, m
+    bus_mass        = 620.0,             # kg
+    panel_mass_each = 10.0,              # kg per panel
+    panel_offset_y  = offset,            # panel center offset from bus center, m
+    ic              = SM.InitialCondition(...),
+    prop_mass       = 200.0,             # propellant mass, kg
+    id              = 1                  # spacecraft ID, used in output column names
+)</code></pre><p>The <code>id</code> field determines the column prefix in the output CSV: spacecraft 1 gets <code>sc1_*</code> columns, spacecraft 2 gets <code>sc2_*</code>, and so on.</p></article><nav class="docs-footer"><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Tuesday 28 April 2026 02:08">Tuesday 28 April 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

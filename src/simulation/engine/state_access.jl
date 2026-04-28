@@ -19,16 +19,34 @@ end
     return u.x[2]
 end
 
+@inline function _gravity_backbone_spacecraft_state(u)
+    if _is_gravity_backbone_state(u)
+        return _gravity_backbone_position_state(u)
+    end
+    if hasproperty(u, :sc)
+        return getproperty(u, :sc)
+    end
+    return u
+end
+
 @inline function _state_position_ii(u, sat_idx::Int)::SVector{3, Float64}
     if _is_gravity_backbone_state(u)
-        return SVector{3, Float64}(_gravity_backbone_position_state(u).sc[sat_idx].pos)
+        spacecraft_state = _gravity_backbone_spacecraft_state(u)
+        if hasproperty(spacecraft_state, :sc)
+            return SVector{3, Float64}(spacecraft_state.sc[sat_idx].pos)
+        end
+        return SVector{3, Float64}(spacecraft_state[sat_idx].pos)
     end
     return SVector{3, Float64}(u.sc[sat_idx].pos)
 end
 
 @inline function _state_velocity_ii(u, sat_idx::Int)::SVector{3, Float64}
     if _is_gravity_backbone_state(u)
-        return SVector{3, Float64}(_gravity_backbone_velocity_state(u).sc[sat_idx].vel)
+        spacecraft_state = _gravity_backbone_velocity_state(u)
+        if hasproperty(spacecraft_state, :sc)
+            return SVector{3, Float64}(spacecraft_state.sc[sat_idx].vel)
+        end
+        return SVector{3, Float64}(spacecraft_state[sat_idx].vel)
     end
     return SVector{3, Float64}(u.sc[sat_idx].vel)
 end

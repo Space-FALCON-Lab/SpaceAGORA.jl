@@ -237,8 +237,8 @@ end
 
 @inline function _gravity_backbone_state_sample(q_state, dq_state, p, sat_idx::Int)::StateSample
     spacecraft = p.args.dynamics_model.spacecraft[sat_idx]
-    pos_ii = SVector{3, Float64}(q_state.sc[sat_idx].pos)
-    vel_ii = SVector{3, Float64}(dq_state.sc[sat_idx].vel)
+    pos_ii = SVector{3, Float64}(q_state.sc[sat_idx])
+    vel_ii = SVector{3, Float64}(dq_state.sc[sat_idx])
     mass_kg = spacecraft.dry_mass + spacecraft.prop_mass
     return StateSample(pos_ii, vel_ii, mass_kg; spacecraft=spacecraft)
 end

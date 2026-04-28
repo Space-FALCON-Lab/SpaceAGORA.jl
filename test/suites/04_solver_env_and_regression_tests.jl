@@ -979,7 +979,7 @@
     @test all(isnothing, p_workspace_resize.shared_buffers.nbody_workspaces)
     @test all(isnothing, p_workspace_resize.shared_buffers.aero_workspaces)
 
-    gram_model_instances = SimulationModel.GRAMAtmosphereModel(planet_name="earth")
+    gram_model_instances = SimulationModel.GRAMAtmosphereModel(Ref{Any}(nothing))
     args_density_instances = build_config(
         spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
         density_model=gram_model_instances,

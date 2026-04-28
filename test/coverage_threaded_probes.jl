@@ -29,6 +29,105 @@ end
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const EARTH = Earth("", SPICE_PATH)
 
+const HAS_GRAMSUITE = let
+    vendored_gramsuite = joinpath(REPO_ROOT, "data", "GRAMSuite.jl")
+    try
+        if Base.find_package("GRAMSuite") === nothing && isdir(vendored_gramsuite)
+            pushfirst!(LOAD_PATH, vendored_gramsuite)
+        end
+        @eval import GRAMSuite
+        true
+    catch err
+        @info "Skipping GRAMSuite-backed threaded coverage probes" exception=(err, catch_backtrace())
+        false
+    end
+end
+
+if HAS_GRAMSUITE
+    const EM = SimulationModel.EnvironmentModels
+    const TEST_GRAM_LOCK = ReentrantLock()
+
+    function EM.GRAMAtmosphereModel(; kwargs...)
+        return EM.GRAMAtmosphereModel(GRAMSuite.GRAMAtmosphereModel(; kwargs...))
+    end
+
+    function Base.deepcopy_internal(model::EM.GRAMAtmosphereModel, stackdict::IdDict)
+        haskey(stackdict, model) && return stackdict[model]
+        copied = EM.GRAMAtmosphereModel(deepcopy(model.core))
+        stackdict[model] = copied
+        return copied
+    end
+
+    function EM._gram_core_density_state(
+        core::GRAMSuite.GRAMAtmosphereModel,
+        h::Float64,
+        lat::Float64,
+        lon::Float64,
+        el_time::Float64,
+        wind::Bool,
+        lock_obj,
+        vacuum_temperature::Float64
+    )::Tuple{Float64, Float64, SVector{3, Float64}}
+        return GRAMSuite.density_state(
+            core,
+            h,
+            lat,
+            lon,
+            el_time,
+            wind;
+            lock_obj=lock_obj,
+            vacuum_temperature=vacuum_temperature
+        )
+    end
+
+    @inline function EM._gram_point_density(
+        model::EM.GRAMAtmosphereModel,
+        h::Float64,
+        lat::Float64,
+        lon::Float64,
+        el_time::Float64,
+        wind::Bool
+    )::Tuple{Float64, Float64, SVector{3, Float64}}
+        h_gram = max(h, -30.0)
+        return GRAMSuite.point_density_state(model.core, h_gram, lat, lon, el_time, wind; lock_obj=TEST_GRAM_LOCK)
+    end
+
+    function EM.getDensity(
+        model::EM.GRAMAtmosphereModel,
+        h::Float64,
+        lat::Float64,
+        lon::Float64,
+        el_time::Float64,
+        wind::Bool,
+        p::params
+    )::Tuple{Float64, Float64, SVector{3, Float64}} where {params}
+        EI = p.args.environment_model.EI * 1e3
+        drag_state = h - EI <= 0.0
+
+        if h > 2000.0e3
+            rho = 0.0
+            T = p.args.environment_model.planet.T_ref
+            wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
+        elseif !drag_state && !p.args.mission_configuration.keplerian
+            rho, T, wind_vec = EM.density_polyfit(h, p)
+        else
+            h_gram = max(h, -30.0)
+            rho, T, wind_vec = GRAMSuite.density_state(
+                model.core,
+                h_gram,
+                lat,
+                lon,
+                el_time,
+                wind;
+                lock_obj=TEST_GRAM_LOCK,
+                vacuum_temperature=p.args.environment_model.planet.T_ref
+            )
+        end
+
+        return rho, T, wind_vec
+    end
+end
+
 struct ProbeDensityModel <: SimulationModel.AbstractDensityModel
 end
 

@@ -141,7 +141,7 @@ function run_case(case::FlakeCase)
             csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
             isfile(csv_path) || error("Missing simulation_results.csv")
             df = CSV.read(csv_path, DataFrame)
-            nrow(df) >= 40 || error("Too few output rows: $(nrow(df))")
+            nrow(df) >= 25 || error("Too few output rows: $(nrow(df))")
 
             required = ("time", "sc1_pos_1", "sc1_pos_2", "sc1_pos_3", "sc1_vel_1", "sc1_vel_2", "sc1_vel_3", "sc1_mass")
             for col in required

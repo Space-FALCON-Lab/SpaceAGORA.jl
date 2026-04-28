@@ -2,7 +2,14 @@
 Local CI gate artifact for repository-wide test verification.
 
 ## Changed Files
-No `src/*.jl` changes are present in the local `HEAD~1...HEAD` diff used by this gate.
+- `src/analysis/verification/telemetry_verification/error_tables.jl`
+- `src/analysis/verification/telemetry_verification/reporting.jl`
+- `src/examples/Earth.jl`
+- `src/simulation/callbacks/control_callbacks.jl`
+- `src/simulation/callbacks/navigation_guidance_callbacks.jl`
+- `src/utils/state_normalization.jl`
+
+The current local diff is a cleanup-oriented source change set that removes older example and normalization surfaces while updating telemetry verification reporting and the remaining callback entry points.
 
 ## Findings
 No P1 findings were identified for the local gate run.

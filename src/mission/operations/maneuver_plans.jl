@@ -1,8 +1,8 @@
-@inline function _legacy_phi_to_signed_maneuver_delta_v(delta_v::Real, phi::Real)::Float64
+@inline function _phi_to_signed_maneuver_delta_v(delta_v::Real, phi::Real)::Float64
     dv = Float64(delta_v)
     abs(dv) <= 0.0 && return 0.0
 
-    # Legacy firing plans encode maneuver direction through `phi`; convert that into
+    # Firing plans encode maneuver direction through `phi`; convert that into
     # the signed delta-v convention used by the typed maneuver command pipeline.
     phi_norm = mod2pi(Float64(phi))
     if isapprox(phi_norm, 0.0; atol=1e-12, rtol=0.0) || isapprox(phi_norm, 2π; atol=1e-12, rtol=0.0)
@@ -36,7 +36,7 @@ function odyssey_campaign_maneuvers(
         abs(delta_v) <= 0.0 && continue
 
         phi = get(args, :phi, 0.0)
-        signed_delta_v = _legacy_phi_to_signed_maneuver_delta_v(delta_v, phi)
+        signed_delta_v = _phi_to_signed_maneuver_delta_v(delta_v, phi)
         push!(maneuver_orbit_number, orbit_i)
         push!(maneuver_Δv, signed_delta_v)
     end

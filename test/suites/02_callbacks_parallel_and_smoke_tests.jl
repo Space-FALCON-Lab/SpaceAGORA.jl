@@ -641,7 +641,7 @@ end
         keplerian=true
     )
     p_density_lookup = ODEParams{1}(args=args_density_lookup)
-    gram_model_lookup = SimulationModel.GRAMAtmosphereModel(planet_name="earth")
+    gram_model_lookup = SimulationModel.GRAMAtmosphereModel(nothing)
     push!(p_density_lookup.shared_buffers.density_models, gram_model_lookup)
     @test callbacks._density_model_for_sat(p_density_lookup, 1) === gram_model_lookup
     @test callbacks._density_model_for_sat(p_density_lookup, 2) isa NoAtmosphereModel

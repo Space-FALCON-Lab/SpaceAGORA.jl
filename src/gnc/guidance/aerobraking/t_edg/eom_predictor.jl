@@ -1,5 +1,4 @@
 using PreallocationTools
-# using NonlinearSolve
 using NLsolve
 using LinearAlgebra
 using DifferentialEquations

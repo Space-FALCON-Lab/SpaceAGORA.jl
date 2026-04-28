@@ -17,14 +17,6 @@ updates:
       timezone: "America/Detroit"
 
   - package-ecosystem: "julia"
-    directory: "/.AGORA"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:30"
-      timezone: "America/Detroit"
-
-  - package-ecosystem: "julia"
     directory: "/docs"
     schedule:
       interval: "weekly"

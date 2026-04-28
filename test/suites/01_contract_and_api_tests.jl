@@ -376,7 +376,7 @@ end
     @test SimulationModel.select_strategy(selector, cfg_targeting, input) == SimulationModel.T_EDG
 end
 
-@testset ".AGORA Environment Contract" begin
+@testset "Root Environment Contract" begin
     agora_project = joinpath(REPO_ROOT, "Project.toml")
     agora_manifest = joinpath(REPO_ROOT, "Manifest.toml")
 
@@ -489,7 +489,7 @@ end
     @test occursin("package-ecosystem: \"github-actions\"", dependabot_src)
     @test occursin("package-ecosystem: \"julia\"", dependabot_src)
     @test occursin("directory: \"/\"", dependabot_src)
-    @test occursin("directory: \"/.AGORA\"", dependabot_src)
+    @test !occursin("directory: \"/.AGORA\"", dependabot_src)
     @test occursin("directory: \"/docs\"", dependabot_src)
 end
 

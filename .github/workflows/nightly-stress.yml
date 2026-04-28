@@ -42,7 +42,7 @@ jobs:
         uses: julia-actions/cache@v2
 
       - name: Instantiate
-        run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Instantiate SpaceAGORACalibration
         run: julia --startup-file=no --project=SpaceAGORACalibration.jl -e 'using Pkg; Pkg.instantiate()'
@@ -52,10 +52,10 @@ jobs:
         run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}
 
       - name: Full test suite with coverage
-        run: julia --startup-file=no --project=.AGORA --code-coverage=user test/runtests.jl
+        run: julia --startup-file=no --project=. --code-coverage=user test/runtests.jl
 
       - name: Coverage quality gate
-        run: julia --startup-file=no --project=.AGORA test/ci_coverage_quality_gate.jl
+        run: julia --startup-file=no --project=. test/ci_coverage_quality_gate.jl
 
       - name: SpaceAGORACalibration tests with coverage
         run: julia --startup-file=no --project=SpaceAGORACalibration.jl --code-coverage=user SpaceAGORACalibration.jl/test/runtests.jl
@@ -64,68 +64,68 @@ jobs:
         run: julia --startup-file=no --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/test/ci_coverage_quality_gate.jl
 
       - name: P1 findings gate
-        run: julia --startup-file=no --project=.AGORA test/ci_p1_findings_gate.jl
+        run: julia --startup-file=no --project=. test/ci_p1_findings_gate.jl
 
       - name: Naming contract gate
-        run: julia --startup-file=no --project=.AGORA test/ci_naming_contract_gate.jl
+        run: julia --startup-file=no --project=. test/ci_naming_contract_gate.jl
 
       - name: Architecture contract gate
-        run: julia --startup-file=no --project=.AGORA test/ci_architecture_contract_gate.jl
+        run: julia --startup-file=no --project=. test/ci_architecture_contract_gate.jl
 
       - name: No legacy ownership gate
-        run: julia --startup-file=no --project=.AGORA test/ci_no_legacy_ownership_gate.jl
+        run: julia --startup-file=no --project=. test/ci_no_legacy_ownership_gate.jl
 
       - name: No artifact files gate
-        run: julia --startup-file=no --project=.AGORA test/ci_no_artifact_files_gate.jl
+        run: julia --startup-file=no --project=. test/ci_no_artifact_files_gate.jl
 
       - name: Canonical path contract gate
-        run: julia --startup-file=no --project=.AGORA test/ci_canonical_path_contract_gate.jl
+        run: julia --startup-file=no --project=. test/ci_canonical_path_contract_gate.jl
 
       - name: No src/benchmarks root gate
-        run: julia --startup-file=no --project=.AGORA test/ci_no_src_benchmarks_root_gate.jl
+        run: julia --startup-file=no --project=. test/ci_no_src_benchmarks_root_gate.jl
 
       - name: No dynamics/models gate
-        run: julia --startup-file=no --project=.AGORA test/ci_no_dynamics_models_gate.jl
+        run: julia --startup-file=no --project=. test/ci_no_dynamics_models_gate.jl
 
       - name: Vehicle structure boundary gate
-        run: julia --startup-file=no --project=.AGORA test/ci_vehicle_structure_boundary_gate.jl
+        run: julia --startup-file=no --project=. test/ci_vehicle_structure_boundary_gate.jl
 
       - name: GNC aerobraking boundary gate
-        run: julia --startup-file=no --project=.AGORA test/ci_gnc_aerobraking_boundary_gate.jl
+        run: julia --startup-file=no --project=. test/ci_gnc_aerobraking_boundary_gate.jl
 
       - name: No guidance/control cross-include gate
-        run: julia --startup-file=no --project=.AGORA test/ci_no_guidance_control_cross_include_gate.jl
+        run: julia --startup-file=no --project=. test/ci_no_guidance_control_cross_include_gate.jl
 
       - name: Aerobraking strategy contract gate
-        run: julia --startup-file=no --project=.AGORA test/ci_aerobraking_strategy_contract_gate.jl
+        run: julia --startup-file=no --project=. test/ci_aerobraking_strategy_contract_gate.jl
 
       - name: Typed config equivalence gate
-        run: julia --startup-file=no --project=.AGORA test/ci_typed_config_equivalence_gate.jl
+        run: julia --startup-file=no --project=. test/ci_typed_config_equivalence_gate.jl
 
       - name: Benchmark wrapper parity gate
-        run: julia --startup-file=no --project=.AGORA test/ci_benchmark_wrapper_parity_gate.jl
+        run: julia --startup-file=no --project=. test/ci_benchmark_wrapper_parity_gate.jl
 
       - name: AI review artifact gate (PR only)
         if: github.event_name == 'pull_request'
         env:
           SPACEAGORA_PR_NUMBER: ${{ github.event.pull_request.number }}
           SPACEAGORA_BASE_REF: ${{ github.base_ref }}
-        run: julia --startup-file=no --project=.AGORA test/ci_ai_review_artifact_gate.jl
+        run: julia --startup-file=no --project=. test/ci_ai_review_artifact_gate.jl
 
       - name: Threaded smoke stress
-        run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_threaded_smoke.jl
+        run: julia --startup-file=no --depwarn=error --project=. test/ci_threaded_smoke.jl
 
       - name: Example regression stress
-        run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_examples_regression.jl
+        run: julia --startup-file=no --depwarn=error --project=. test/ci_examples_regression.jl
 
       - name: Telemetry full regression (GRAM deterministic)
-        run: julia --startup-file=no --depwarn=error --project=.AGORA benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true
+        run: julia --startup-file=no --depwarn=error --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true
 
       - name: Nightly Monte Carlo stress
-        run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_nightly_montecarlo_stress.jl
+        run: julia --startup-file=no --depwarn=error --project=. test/ci_nightly_montecarlo_stress.jl
 
       - name: Flake guard
-        run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_flake_guard.jl
+        run: julia --startup-file=no --depwarn=error --project=. test/ci_flake_guard.jl
 
       - name: Upload telemetry nightly artifacts
         if: always()

@@ -29,8 +29,8 @@ for marker in (
     "If new extension points were added, I updated `docs/src/extensibility.md`",
     "If new CLI commands or flags were added, I updated `docs/src/cli.md`",
     "`julia --project=docs docs/make.jl`",
-    "`julia --project=.AGORA test/ci_public_api_surface_gate.jl`",
-    "`julia --project=.AGORA test/ci_hpc_extensibility_docs_gate.jl`",
+    "`julia --project=. test/ci_public_api_surface_gate.jl`",
+    "`julia --project=. test/ci_hpc_extensibility_docs_gate.jl`",
 )
     occursin(marker, pr_template) || error("PR template missing docs drift/release marker: $(marker)")
 end

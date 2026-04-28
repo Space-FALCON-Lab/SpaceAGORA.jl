@@ -1,6 +1,6 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 const EXAMPLES_DIR = joinpath(REPO_ROOT, "examples")
-const PROJECT_PATH = joinpath(REPO_ROOT, ".AGORA")
+const PROJECT_PATH = REPO_ROOT
 
 function list_examples()
     helper_files = Set(["common.jl", "aerobraking_mission_plot_utils.jl"])

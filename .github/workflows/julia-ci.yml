@@ -37,14 +37,14 @@ jobs:
         uses: julia-actions/cache@v2
 
       - name: Instantiate
-        run: julia --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Run test suite
-        run: julia --project=.AGORA test/runtests.jl
+        run: julia --project=. test/runtests.jl
 
       - name: Depwarn smoke (Earth thruster example)
         if: matrix.julia-version == '1.12'
-        run: julia --compiled-modules=existing --depwarn=error --project=.AGORA examples/Earth_Thruster_Test.jl
+        run: julia --compiled-modules=existing --depwarn=error --project=. examples/Earth_Thruster_Test.jl
 
   tests:
     if: always()
@@ -87,10 +87,10 @@ jobs:
           version: "1.12"
 
       - name: Instantiate in clean depot
-        run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Clean-depot student entrypoint smoke
-        run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_clean_depot_smoke.jl
+        run: julia --startup-file=no --depwarn=error --project=. test/ci_clean_depot_smoke.jl
 
   threaded-smoke:
     runs-on: ubuntu-latest
@@ -120,10 +120,10 @@ jobs:
         uses: julia-actions/cache@v2
 
       - name: Instantiate
-        run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Threaded smoke
-        run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_threaded_smoke.jl
+        run: julia --startup-file=no --depwarn=error --project=. test/ci_threaded_smoke.jl
 
   revise-hot-reload-smoke:
     runs-on: ubuntu-latest
@@ -153,10 +153,10 @@ jobs:
         uses: julia-actions/cache@v2
 
       - name: Instantiate
-        run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Revise hot-reload smoke
-        run: julia --startup-file=no --depwarn=error --project=.AGORA test/ci_revise_hot_reload_smoke.jl
+        run: julia --startup-file=no --depwarn=error --project=. test/ci_revise_hot_reload_smoke.jl
 
   readme-command-smoke:
     runs-on: ubuntu-latest
@@ -183,10 +183,10 @@ jobs:
           version: "1.12"
 
       - name: README instantiate command
-        run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: README example command
-        run: julia --startup-file=no --compiled-modules=existing --project=.AGORA examples/Earth_Thruster_Test.jl
+        run: julia --startup-file=no --compiled-modules=existing --project=. examples/Earth_Thruster_Test.jl
 
   example-suite-smoke:
     runs-on: ubuntu-latest
@@ -216,10 +216,10 @@ jobs:
         uses: julia-actions/cache@v2
 
       - name: Instantiate
-        run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Example suite smoke
-        run: julia --startup-file=no --project=.AGORA test/ci_examples_suite_smoke.jl
+        run: julia --startup-file=no --project=. test/ci_examples_suite_smoke.jl
 
   example-regression:
     runs-on: ubuntu-latest
@@ -249,10 +249,10 @@ jobs:
         uses: julia-actions/cache@v2
 
       - name: Instantiate
-        run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Example regression
-        run: julia --startup-file=no --project=.AGORA test/ci_examples_regression.jl
+        run: julia --startup-file=no --project=. test/ci_examples_regression.jl
 
   telemetry-quick-regression:
     runs-on: ubuntu-latest
@@ -282,10 +282,10 @@ jobs:
         uses: julia-actions/cache@v2
 
       - name: Instantiate
-        run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Telemetry quick regression (GRAM deterministic)
-        run: julia --startup-file=no --depwarn=error --project=.AGORA benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
+        run: julia --startup-file=no --depwarn=error --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
 
       - name: Upload telemetry quick artifacts
         if: always()
@@ -328,13 +328,13 @@ jobs:
         uses: julia-actions/cache@v2
 
       - name: Instantiate
-        run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Run tests with coverage
-        run: julia --startup-file=no --project=.AGORA --code-coverage=user test/runtests.jl
+        run: julia --startup-file=no --project=. --code-coverage=user test/runtests.jl
 
       - name: Coverage quality gate
-        run: julia --startup-file=no --project=.AGORA test/ci_coverage_quality_gate.jl
+        run: julia --startup-file=no --project=. test/ci_coverage_quality_gate.jl
 
   calibration-coverage-quality-gate:
     runs-on: ubuntu-latest
@@ -398,70 +398,70 @@ jobs:
           version: "1.12"
 
       - name: P1 findings gate
-        run: julia --startup-file=no --project=.AGORA test/ci_p1_findings_gate.jl
+        run: julia --startup-file=no --project=. test/ci_p1_findings_gate.jl
 
       - name: Naming contract gate
-        run: julia --startup-file=no --project=.AGORA test/ci_naming_contract_gate.jl
+        run: julia --startup-file=no --project=. test/ci_naming_contract_gate.jl
 
       - name: Architecture contract gate
-        run: julia --startup-file=no --project=.AGORA test/ci_architecture_contract_gate.jl
+        run: julia --startup-file=no --project=. test/ci_architecture_contract_gate.jl
 
       - name: No legacy ownership gate
-        run: julia --startup-file=no --project=.AGORA test/ci_no_legacy_ownership_gate.jl
+        run: julia --startup-file=no --project=. test/ci_no_legacy_ownership_gate.jl
 
       - name: No artifact files gate
-        run: julia --startup-file=no --project=.AGORA test/ci_no_artifact_files_gate.jl
+        run: julia --startup-file=no --project=. test/ci_no_artifact_files_gate.jl
 
       - name: Canonical path contract gate
-        run: julia --startup-file=no --project=.AGORA test/ci_canonical_path_contract_gate.jl
+        run: julia --startup-file=no --project=. test/ci_canonical_path_contract_gate.jl
 
       - name: No src/benchmarks root gate
-        run: julia --startup-file=no --project=.AGORA test/ci_no_src_benchmarks_root_gate.jl
+        run: julia --startup-file=no --project=. test/ci_no_src_benchmarks_root_gate.jl
 
       - name: No dynamics/models gate
-        run: julia --startup-file=no --project=.AGORA test/ci_no_dynamics_models_gate.jl
+        run: julia --startup-file=no --project=. test/ci_no_dynamics_models_gate.jl
 
       - name: Vehicle structure boundary gate
-        run: julia --startup-file=no --project=.AGORA test/ci_vehicle_structure_boundary_gate.jl
+        run: julia --startup-file=no --project=. test/ci_vehicle_structure_boundary_gate.jl
 
       - name: Src completeness contract gate
-        run: julia --startup-file=no --project=.AGORA test/ci_src_completeness_contract_gate.jl
+        run: julia --startup-file=no --project=. test/ci_src_completeness_contract_gate.jl
 
       - name: No legacy include chains gate
-        run: julia --startup-file=no --project=.AGORA test/ci_no_legacy_include_chains_gate.jl
+        run: julia --startup-file=no --project=. test/ci_no_legacy_include_chains_gate.jl
 
       - name: No inert force terms gate
-        run: julia --startup-file=no --project=.AGORA test/ci_no_inert_force_terms_gate.jl
+        run: julia --startup-file=no --project=. test/ci_no_inert_force_terms_gate.jl
 
       - name: GNC aerobraking boundary gate
-        run: julia --startup-file=no --project=.AGORA test/ci_gnc_aerobraking_boundary_gate.jl
+        run: julia --startup-file=no --project=. test/ci_gnc_aerobraking_boundary_gate.jl
 
       - name: No guidance/control cross-include gate
-        run: julia --startup-file=no --project=.AGORA test/ci_no_guidance_control_cross_include_gate.jl
+        run: julia --startup-file=no --project=. test/ci_no_guidance_control_cross_include_gate.jl
 
       - name: Aerobraking strategy contract gate
-        run: julia --startup-file=no --project=.AGORA test/ci_aerobraking_strategy_contract_gate.jl
+        run: julia --startup-file=no --project=. test/ci_aerobraking_strategy_contract_gate.jl
 
       - name: Rotational ownership gate
-        run: julia --startup-file=no --project=.AGORA test/ci_rotational_ownership_gate.jl
+        run: julia --startup-file=no --project=. test/ci_rotational_ownership_gate.jl
 
       - name: Scaffold interface gate
-        run: julia --startup-file=no --project=.AGORA test/ci_scaffold_interface_gate.jl
+        run: julia --startup-file=no --project=. test/ci_scaffold_interface_gate.jl
 
       - name: Typed config equivalence gate
-        run: julia --startup-file=no --project=.AGORA test/ci_typed_config_equivalence_gate.jl
+        run: julia --startup-file=no --project=. test/ci_typed_config_equivalence_gate.jl
 
       - name: Benchmark wrapper parity gate
-        run: julia --startup-file=no --project=.AGORA test/ci_benchmark_wrapper_parity_gate.jl
+        run: julia --startup-file=no --project=. test/ci_benchmark_wrapper_parity_gate.jl
 
       - name: Docs contract gate
-        run: julia --startup-file=no --project=.AGORA test/ci_docs_contract_gate.jl
+        run: julia --startup-file=no --project=. test/ci_docs_contract_gate.jl
 
       - name: Public API surface gate
-        run: julia --startup-file=no --project=.AGORA test/ci_public_api_surface_gate.jl
+        run: julia --startup-file=no --project=. test/ci_public_api_surface_gate.jl
 
       - name: HPC/extensibility docs gate
-        run: julia --startup-file=no --project=.AGORA test/ci_hpc_extensibility_docs_gate.jl
+        run: julia --startup-file=no --project=. test/ci_hpc_extensibility_docs_gate.jl
 
   documentation-release-gate:
     runs-on: ubuntu-latest
@@ -492,7 +492,7 @@ jobs:
         uses: julia-actions/cache@v2
 
       - name: Instantiate runtime environment
-        run: julia --startup-file=no --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Instantiate docs environment
         run: julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
@@ -501,10 +501,10 @@ jobs:
         run: julia --project=docs docs/make.jl
 
       - name: Public API surface gate
-        run: julia --startup-file=no --project=.AGORA test/ci_public_api_surface_gate.jl
+        run: julia --startup-file=no --project=. test/ci_public_api_surface_gate.jl
 
       - name: HPC/extensibility docs gate
-        run: julia --startup-file=no --project=.AGORA test/ci_hpc_extensibility_docs_gate.jl
+        run: julia --startup-file=no --project=. test/ci_hpc_extensibility_docs_gate.jl
 
   ai-review-artifact-gate:
     if: github.event_name == 'pull_request'
@@ -537,4 +537,4 @@ jobs:
         env:
           SPACEAGORA_PR_NUMBER: ${{ github.event.pull_request.number }}
           SPACEAGORA_BASE_REF: ${{ github.base_ref }}
-        run: julia --startup-file=no --project=.AGORA test/ci_ai_review_artifact_gate.jl
+        run: julia --startup-file=no --project=. test/ci_ai_review_artifact_gate.jl

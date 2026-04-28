@@ -15,8 +15,8 @@ have GRAM or SPICE configured yet.
 ```bash
 git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
-julia --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
-julia --project=.AGORA examples/AGORA_Earth_NoGRAM.jl
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
 ## Choose your path
@@ -35,6 +35,7 @@ Use this route if you need higher-fidelity atmosphere, ephemerides, or frame
 data.
 
 - [Installation & Environment](user/installation_environment.md)
+- [GRAMSuite Setup](user/gramsuite_setup.md)
 - [Assets & Modes](assets.md)
 - [Verification Study](user/verification_study.md)
 

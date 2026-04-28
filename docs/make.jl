@@ -129,6 +129,7 @@ makedocs(
             "Start Here" => "getting_started.md",
             "Quickstart" => "user/quickstart.md",
             "Installation & Environment" => "user/installation_environment.md",
+            "GRAMSuite Setup" => "user/gramsuite_setup.md",
             "Assets & Modes" => "assets.md",
             "First Simulation" => "user/first_simulation.md",
             "Verification Study" => "user/verification_study.md",

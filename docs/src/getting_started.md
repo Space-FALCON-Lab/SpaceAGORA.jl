@@ -26,7 +26,7 @@ true
 Shortest successful command:
 
 ```bash
-julia --project=. examples/AGORA_Earth_NoGRAM.jl
+julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
 What to read next:

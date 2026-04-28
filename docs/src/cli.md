@@ -24,7 +24,7 @@ SpaceAGORA exposes a package-owned CLI surface through:
 ./bin/spaceagora
 ```
 
-The wrapper keeps execution on the committed `/.AGORA` environment by default
+The wrapper keeps execution on the root project environment by default
 and forwards into `SpaceAGORA.run_cli(...)`.
 
 ## Commands
@@ -32,7 +32,7 @@ and forwards into `SpaceAGORA.run_cli(...)`.
 ### Run an example
 
 ```bash
-./bin/spaceagora run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/cli_run
+./bin/spaceagora run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
 ```
 
 Use `--smoke` to force the example smoke configuration.

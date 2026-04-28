@@ -9,7 +9,7 @@ the repository-owned verification study with explicit enforcement.
 Shortest successful command:
 
 ```bash
-julia --project=.AGORA benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
+julia --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
 ```
 
 What to read next:
@@ -23,7 +23,7 @@ What to read next:
 The direct study launcher is:
 
 ```bash
-julia --project=.AGORA benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
+julia --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
 ```
 
 Use `quick` when you want the shortest validation path. Keep `--enforce=true`

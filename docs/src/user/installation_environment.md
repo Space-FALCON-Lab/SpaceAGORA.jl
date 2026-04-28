@@ -9,7 +9,7 @@ environments before running anything heavier than a quick smoke path.
 Shortest successful command:
 
 ```bash
-julia --project=.AGORA -e 'using Pkg; Pkg.instantiate()'
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
 What to read next:
@@ -20,10 +20,11 @@ What to read next:
 
 ## The repository environments
 
-### `/.AGORA`
+### Root project (`--project=.`)
 
-`/.AGORA` is the committed execution environment used by examples, tests,
-benchmarks, and most local commands in this repository.
+The root project at the repository root is the canonical execution environment
+used by examples, tests, benchmarks, and most local commands in this
+repository.
 
 Use it for:
 
@@ -53,9 +54,9 @@ Generated reports and builds stay local. Common ignored output roots are:
 You can regenerate common local artifacts with:
 
 ```bash
-julia --project=.AGORA scripts/regenerate_ignored_outputs.jl runtime-analysis quick
-julia --project=.AGORA scripts/regenerate_ignored_outputs.jl telemetry quick
-julia --project=.AGORA scripts/regenerate_ignored_outputs.jl docs
+julia --project=. scripts/regenerate_ignored_outputs.jl runtime-analysis quick
+julia --project=. scripts/regenerate_ignored_outputs.jl telemetry quick
+julia --project=. scripts/regenerate_ignored_outputs.jl docs
 ```
 
 ## When you need more than setup

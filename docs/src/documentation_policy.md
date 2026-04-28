@@ -88,8 +88,8 @@ Before merge to `main`, the documentation release gate is:
 
 ```bash
 julia --project=docs docs/make.jl
-julia --project=.AGORA test/ci_public_api_surface_gate.jl
-julia --project=.AGORA test/ci_hpc_extensibility_docs_gate.jl
+julia --project=. test/ci_public_api_surface_gate.jl
+julia --project=. test/ci_hpc_extensibility_docs_gate.jl
 ```
 
 These are treated as release blockers for the documentation surface.

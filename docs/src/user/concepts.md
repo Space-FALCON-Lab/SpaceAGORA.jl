@@ -9,7 +9,7 @@ which route, mode, or surface is appropriate for their work.
 Shortest successful command:
 
 ```bash
-./bin/spaceagora run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/cli_run
+./bin/spaceagora run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
 ```
 
 What to read next:

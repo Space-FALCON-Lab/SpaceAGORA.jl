@@ -20,13 +20,13 @@ What to read next:
 ## Run the first no-GRAM example
 
 ```bash
-julia --project=.AGORA examples/AGORA_Earth_NoGRAM.jl
+julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
 ## Run an example through the CLI
 
 ```bash
-./bin/spaceagora run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/cli_run
+./bin/spaceagora run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
 ```
 
 ## Inspect local assets
@@ -39,7 +39,7 @@ julia --project=.AGORA examples/AGORA_Earth_NoGRAM.jl
 ## Run the telemetry verification study
 
 ```bash
-julia --project=.AGORA benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
+julia --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
 ```
 
 ## Run the telemetry verification CLI path
@@ -58,7 +58,7 @@ julia --project=docs docs/make.jl
 ## Regenerate common local artifacts
 
 ```bash
-julia --project=.AGORA scripts/regenerate_ignored_outputs.jl runtime-analysis quick
-julia --project=.AGORA scripts/regenerate_ignored_outputs.jl telemetry quick
-julia --project=.AGORA scripts/regenerate_ignored_outputs.jl docs
+julia --project=. scripts/regenerate_ignored_outputs.jl runtime-analysis quick
+julia --project=. scripts/regenerate_ignored_outputs.jl telemetry quick
+julia --project=. scripts/regenerate_ignored_outputs.jl docs
 ```

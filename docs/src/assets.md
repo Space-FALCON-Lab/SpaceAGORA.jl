@@ -132,7 +132,7 @@ You can inspect it with either:
 
 ```bash
 ./bin/spaceagora assets manifest
-julia --project=.AGORA scripts/assets/show_asset_manifest.jl
+julia --project=. scripts/assets/show_asset_manifest.jl
 ```
 
 ## Setup and check scripts
@@ -140,7 +140,7 @@ julia --project=.AGORA scripts/assets/show_asset_manifest.jl
 Baseline/open-mode bootstrap:
 
 ```bash
-julia --project=.AGORA scripts/assets/setup_open_assets.jl
+julia --project=. scripts/assets/setup_open_assets.jl
 ```
 
 This does not download GRAM or SPICE. It reports the baseline/open asset
@@ -149,5 +149,5 @@ contract and explicitly leaves licensed assets as user-provided.
 Direct asset check script:
 
 ```bash
-julia --project=.AGORA scripts/assets/check_assets.jl
+julia --project=. scripts/assets/check_assets.jl
 ```

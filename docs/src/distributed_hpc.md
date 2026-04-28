@@ -40,8 +40,8 @@ The key environment knobs are:
 - `SPACEAGORA_PERF_MACHINE_LABEL`
   - machine label folded into persistent hint signatures
 
-Use `.AGORA` as the worker project unless you have a deliberate reason to point
-workers at a different environment.
+Use `.` (the root project) as the worker project unless you have a deliberate
+reason to point workers at a different environment.
 
 ## Deterministic hint state
 
@@ -69,7 +69,7 @@ That keeps route and hint decisions reproducible across repeated benchmark runs.
 
 For multi-node or multi-job execution, prefer:
 
-1. a pre-instantiated project (`--project=.AGORA`)
+1. a pre-instantiated project (`--project=.`)
 2. a read-mostly shared depot that is prepared ahead of time
 3. a job-local writable depot overlay when cluster policy allows it
 

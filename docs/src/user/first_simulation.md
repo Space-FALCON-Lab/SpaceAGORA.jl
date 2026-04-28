@@ -9,7 +9,7 @@ and want a concrete next command.
 Shortest successful command:
 
 ```bash
-julia --project=.AGORA examples/Earth_Thruster_Test.jl
+julia --project=. examples/Earth_Thruster_Test.jl
 ```
 
 What to read next:
@@ -25,7 +25,7 @@ What to read next:
 Use a repository-owned example when you want the smallest amount of setup:
 
 ```bash
-julia --project=.AGORA examples/Earth_Thruster_Test.jl
+julia --project=. examples/Earth_Thruster_Test.jl
 ```
 
 ### CLI wrapper

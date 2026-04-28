@@ -37,11 +37,8 @@ jobs:
       - name: Cache Julia artifacts
         uses: julia-actions/cache@v2
 
-      - name: Instantiate docs environment
-        run: julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
-
       - name: Build and deploy docs
-        run: julia --project=docs docs/make.jl
+        run: julia --project=. docs/make.jl
 
       - name: Upload undocumented public API report
         if: always()

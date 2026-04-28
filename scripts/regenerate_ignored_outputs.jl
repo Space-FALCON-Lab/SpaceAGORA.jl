@@ -1,14 +1,13 @@
 #!/usr/bin/env julia
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
-const AGORA_PROJECT = joinpath(REPO_ROOT, ".AGORA")
 
 function _usage()
     println("""
     Usage:
-      julia --project=.AGORA scripts/regenerate_ignored_outputs.jl runtime-analysis [quick|full] [outdir]
-      julia --project=.AGORA scripts/regenerate_ignored_outputs.jl telemetry [quick|full]
-      julia --project=.AGORA scripts/regenerate_ignored_outputs.jl docs
+      julia --project=. scripts/regenerate_ignored_outputs.jl runtime-analysis [quick|full] [outdir]
+      julia --project=. scripts/regenerate_ignored_outputs.jl telemetry [quick|full]
+      julia --project=. scripts/regenerate_ignored_outputs.jl docs
 
     Notes:
       - Generated outputs are written under the ignored `output/` or `docs/build/` paths.
@@ -24,12 +23,12 @@ end
 
 function _runtime_analysis_cmd(profile::String, outdir::String)
     launcher = joinpath(REPO_ROOT, "benchmarks", "studies", "performance_runtime_analysis.jl")
-    return `$(Base.julia_cmd()) --startup-file=no --project=$AGORA_PROJECT $launcher $profile --outdir=$outdir`
+    return `$(Base.julia_cmd()) --startup-file=no --project=$REPO_ROOT $launcher $profile --outdir=$outdir`
 end
 
 function _telemetry_cmd(profile::String)
     launcher = joinpath(REPO_ROOT, "benchmarks", "studies", "telemetry_orbit_accuracy_study.jl")
-    return `$(Base.julia_cmd()) --startup-file=no --project=$AGORA_PROJECT $launcher $profile --enforce=true`
+    return `$(Base.julia_cmd()) --startup-file=no --project=$REPO_ROOT $launcher $profile --enforce=true`
 end
 
 function _docs_cmd()

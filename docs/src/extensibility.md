@@ -38,6 +38,8 @@ Stable interface:
 - `SpaceAGORA.solver_partition`
 - `SpaceAGORA.gravity_backbone_structure`
 - `SpaceAGORA.gravity_backbone_acceleration_ii`
+- `SpaceAGORA.gravity_backbone_kick_structure`
+- `SpaceAGORA.gravity_backbone_kick_acceleration_ii`
 - `SpaceAGORA.calcForceTorque`
 
 Preferred additive methods:
@@ -47,6 +49,8 @@ SpaceAGORA.environment_requirements(model) -> SpaceAGORA.EffectorEnvironmentRequ
 SpaceAGORA.solver_partition(model) -> :explicit | :implicit
 SpaceAGORA.gravity_backbone_structure(model) -> :unsupported | :position_only_static_gravity
 SpaceAGORA.gravity_backbone_acceleration_ii(model, x::SpaceAGORA.StateSample, env::SpaceAGORA.EnvironmentSample, t::Float64) -> accel_ii
+SpaceAGORA.gravity_backbone_kick_structure(model) -> :unsupported | :velocity_kick_explicit
+SpaceAGORA.gravity_backbone_kick_acceleration_ii(model, x::SpaceAGORA.StateSample, env::SpaceAGORA.EnvironmentSample, t::Float64) -> accel_ii
 SpaceAGORA.wrench(model, x::SpaceAGORA.StateSample, env::SpaceAGORA.EnvironmentSample, t::Float64) -> (force_ii, torque_body)
 ```
 

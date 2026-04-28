@@ -33,6 +33,7 @@ control_hooks_src = _read(joinpath("src", "gnc", "control", "control_hooks.jl"))
 callback_registry_src = _read(joinpath("src", "simulation", "callbacks", "registry.jl"))
 density_callback_assembly_src = _read(joinpath("src", "simulation", "callbacks", "density_callbacks", "assembly.jl"))
 density_models_src = _read(joinpath("src", "environment", "atmosphere", "density_models.jl"))
+gram_suite_ext_src = _read(joinpath("ext", "SpaceAGORAGRAMSuiteExt.jl"))
 ephemerides_models_src = _read(joinpath("src", "environment", "ephemerides", "ephemerides_models.jl"))
 setup_src = _read(joinpath("src", "simulation", "engine", "setup.jl"))
 control_commands_src = _read(joinpath("src", "gnc", "control", "aerobraking", "control_commands.jl"))
@@ -146,8 +147,10 @@ occursin("import ..RuntimeServices", engine_src) ||
 !occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"simulation\", \"runtime_services.jl\"))", engine_src) ||
     error("SimulationEngine still directly includes runtime_services.jl.")
 
-occursin("using ...RuntimeServices: GRAM_LOCK", density_models_src) ||
-    error("Environment density models are not importing GRAM_LOCK from RuntimeServices.")
+!occursin("using GRAMSuite", density_models_src) ||
+    error("density_models.jl must not import GRAMSuite directly; GRAM support belongs in SpaceAGORAGRAMSuiteExt.")
+occursin("SpaceAGORA.RuntimeServices.GRAM_LOCK", gram_suite_ext_src) ||
+    error("SpaceAGORAGRAMSuiteExt is not referencing GRAM_LOCK from SpaceAGORA.RuntimeServices.")
 occursin("using ...RuntimeServices: SPICE_LOCK", ephemerides_models_src) ||
     error("Ephemerides models are not importing SPICE_LOCK from RuntimeServices.")
 occursin("using ...RuntimeServices: SPICE_LOCK, GRAM_LOCK", callback_registry_src) ||

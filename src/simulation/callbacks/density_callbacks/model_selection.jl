@@ -88,15 +88,15 @@ end
         return EnvironmentModels.density_polyfit(h, p)
     end
     println("GRAM density altitude = $(h) m ($(h / 1e3) km)")
-    return GRAMSuite.density_state(
+    return EnvironmentModels._gram_core_density_state(
         model.core,
         h,
         lat,
         lon,
         el_time,
-        wind;
-        lock_obj=model_lock,
-        vacuum_temperature=p.args.environment_model.planet.T_ref
+        wind,
+        model_lock,
+        p.args.environment_model.planet.T_ref
     )
 end
 

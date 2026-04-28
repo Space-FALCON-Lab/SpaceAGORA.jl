@@ -5,7 +5,6 @@ using DiffEqBase
 using LinearAlgebra
 using SPICE
 using Dates
-using GRAMSuite
 using ...RuntimeServices: SPICE_LOCK, GRAM_LOCK
 using ..SimulationModel: PlanetFrameEphemerisCache, rot
 using ..SimulationModel: ephemerides_time_seconds, planet_frame_lpi, ephemerides_requires_spice

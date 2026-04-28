@@ -12,6 +12,8 @@ using Logging
 
 include(joinpath(@__DIR__, "aerobraking_mission_plot_utils.jl"))
 
+setup_gram_example!()
+
 planet = Mars("", SPICE_PATH)
 smoke_mode = get(ENV, "SPACEAGORA_EXAMPLE_SMOKE", "0") == "1"
 initial_time = InitialTime(year=2001, month=11, day=6, hour=10, minute=5, second=12.7)

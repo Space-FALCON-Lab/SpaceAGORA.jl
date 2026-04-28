@@ -19,7 +19,6 @@ DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 FiniteDiff = "6a86dc24-6348-571c-b903-95158fe2bd41"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
-GRAMSuite = "b50455af-6a46-4eae-bf92-8039261dd674"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
@@ -58,6 +57,15 @@ SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+
+[weakdeps]
+GRAMSuite = "b50455af-6a46-4eae-bf92-8039261dd674"
+
+[extensions]
+SpaceAGORAGRAMSuiteExt = "GRAMSuite"
+
+[extras]
+GRAMSuite = "b50455af-6a46-4eae-bf92-8039261dd674"
 
 [sources]
 GRAMSuite = {path = "data/GRAMSuite.jl"}

@@ -33,6 +33,19 @@ julia --project=. examples/AGORA_Earth_NoGRAM.jl
 
 SpaceAGORA also supports higher-fidelity GRAM/SPICE-backed runs when local
 assets are available under `data/GRAMSuite.jl/GRAM Suite 2.0`.
+If the native GRAM shared library for your operating system is missing, build
+it with:
+
+```bash
+./scripts/ensure_gram_native.sh
+```
+
+If the vendored GRAM build metadata came from a different machine or checkout
+path, force a clean local rebuild with:
+
+```bash
+./scripts/ensure_gram_native.sh --clean
+```
 
 ## Docs and CLI
 

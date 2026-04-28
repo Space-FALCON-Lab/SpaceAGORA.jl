@@ -6,6 +6,8 @@ using DataFrames
 using SPICE
 using StaticArrays
 
+setup_gram_example!()
+
 
 struct ConstantDensityModel <: AbstractDensityModel
     rho::Float64
@@ -44,7 +46,7 @@ _set_aerobraking_mission_spice_config!(VEX_SPICE_CONFIG)
 
 planet = Venus("", SPICE_PATH)
 smoke_mode = get(ENV, "SPACEAGORA_EXAMPLE_SMOKE", "0") == "1"
-vex_schedule = _load_aerobraking_maneuver_schedule(joinpath(REPO_ROOT, "Maneuver_plans", "vex.csv"))
+vex_schedule = _load_aerobraking_maneuver_schedule(joinpath(REPO_ROOT, "data", "Maneuver_plans", "vex.csv"))
 requested_initial_time = InitialTime(year=2014, month=5, day=19, hour=14, minute=7, second=32.0)
 vex_initial = _nearest_apoapsis_initial_time_and_condition_from_spice(
     requested_initial_time,

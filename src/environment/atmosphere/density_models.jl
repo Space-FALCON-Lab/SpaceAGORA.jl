@@ -3,9 +3,7 @@
 using SatelliteToolbox
 using StaticArrays
 using LinearAlgebra
-using GRAMSuite
 using Dates
-using ...RuntimeServices: GRAM_LOCK
 
 """
 Vacuum baseline density model used by the default no-GRAM quickstart path.
@@ -136,11 +134,13 @@ function PiecewiseExponentialAtmosphereModel(
 end
 
 """
-SpaceAGORA wrapper around `GRAMSuite.GRAMAtmosphereModel` that preserves
-`AbstractDensityModel` dispatch compatibility.
+SpaceAGORA wrapper around a GRAMSuite atmosphere model that preserves
+`AbstractDensityModel` dispatch compatibility. The `core` field holds the
+underlying GRAMSuite model object; constructors are provided by the
+`SpaceAGORAGRAMSuiteExt` package extension when GRAMSuite is loaded.
 """
 struct GRAMAtmosphereModel <: AbstractDensityModel
-    core::GRAMSuite.GRAMAtmosphereModel
+    core
 end
 
 @kwdef struct ConstantDensityModel <: AbstractDensityModel
@@ -377,78 +377,50 @@ end
     return (:base_model, :surrogate_file, :point_fallback_below_m, wrapped...)
 end
 
-@inline _gram_use_global_lock() = GRAMSuite.gram_use_global_lock()
+# These Refs are set by SpaceAGORAGRAMSuiteExt when GRAMSuite is loaded.
+const _GRAM_USE_GLOBAL_LOCK_FN = Ref{Function}(() -> false)
+const _GRAM_DEFAULT_SURROGATE_FILE_FN = Ref{Function}(_ -> "")
+
+@inline _gram_use_global_lock()::Bool = _GRAM_USE_GLOBAL_LOCK_FN[]()
 
 @inline function _gram_default_surrogate_file(planet::String)::String
-    return GRAMSuite.gram_default_surrogate_file(planet)
+    return _GRAM_DEFAULT_SURROGATE_FILE_FN[](planet)
 end
 
-function GRAMAtmosphereModel(; kwargs...)
-    return GRAMAtmosphereModel(GRAMSuite.GRAMAtmosphereModel(; kwargs...))
-end
-
-function GRAMAtmosphereModelSurrogate(;
-    surrogate_file::String="",
-    point_fallback_below_m::Union{Nothing, Real}=nothing,
-    kwargs...
-)
-    base_model = GRAMAtmosphereModel(; kwargs...)
-    file = isempty(strip(surrogate_file)) ?
-        GRAMSuite.gram_default_surrogate_file(base_model.planet_name; gram_root=base_model.gram_root) :
-        GRAMSuite.resolve_path(surrogate_file)
-    point_fallback = if point_fallback_below_m === nothing
-        GRAMSuite.gram_default_point_fallback_below_m(base_model.planet_name)
-    else
-        value = Float64(point_fallback_below_m)
-        value >= 0.0 || throw(ArgumentError("point_fallback_below_m must be >= 0.0 m, got $value"))
-        value
-    end
-
-    return GRAMAtmosphereModelSurrogate(base_model, file, point_fallback)
-end
-
-function precompute_gram_static_grids!(
-    base_model::GRAMAtmosphereModel;
-    planets::Union{Nothing, AbstractVector{<:AbstractString}}=nothing,
-    wind::Bool=true
-)
-    return GRAMSuite.precompute_gram_static_grids!(
-        base_model.core;
-        planets=planets,
-        wind=wind,
-        lock_obj=GRAM_LOCK
+function _gram_not_loaded_error(fn_name::String)
+    error(
+        "GRAMSuite.jl is not loaded. " *
+        "Add GRAMSuite as a dependency and load it before calling `$(fn_name)`."
     )
 end
 
-clear_gram_static_grid_cache!() = GRAMSuite.clear_gram_static_grid_cache!()
-clear_gram_offline_surrogate_cache!() = GRAMSuite.clear_gram_offline_surrogate_cache!()
-
-function Base.deepcopy_internal(model::GRAMAtmosphereModel, stackdict::IdDict)
-    if haskey(stackdict, model)
-        return stackdict[model]
-    end
-
-    copied = lock(GRAM_LOCK) do
-        GRAMAtmosphereModel(deepcopy(model.core))
-    end
-    stackdict[model] = copied
-    return copied
+function precompute_gram_static_grids!(::AbstractDensityModel; kwargs...)
+    _gram_not_loaded_error("precompute_gram_static_grids!")
 end
 
-function Base.deepcopy_internal(model::GRAMAtmosphereModelSurrogate, stackdict::IdDict)
-    if haskey(stackdict, model)
-        return stackdict[model]
-    end
+# Zero-arg cache-clear functions use Callable Refs so the extension can wire them in
+# without triggering method-overwrite warnings.
+const _CLEAR_GRAM_STATIC_GRID_CACHE_FN = Ref{Function}(
+    () -> _gram_not_loaded_error("clear_gram_static_grid_cache!")
+)
+const _CLEAR_GRAM_OFFLINE_SURROGATE_CACHE_FN = Ref{Function}(
+    () -> _gram_not_loaded_error("clear_gram_offline_surrogate_cache!")
+)
 
-    copied = lock(GRAM_LOCK) do
-        GRAMAtmosphereModelSurrogate(
-            deepcopy(model.base_model),
-            model.surrogate_file,
-            model.point_fallback_below_m
-        )
-    end
-    stackdict[model] = copied
-    return copied
+clear_gram_static_grid_cache!() = _CLEAR_GRAM_STATIC_GRID_CACHE_FN[]()
+clear_gram_offline_surrogate_cache!() = _CLEAR_GRAM_OFFLINE_SURROGATE_CACHE_FN[]()
+
+function _gram_core_density_state(
+    _core,
+    _h::Float64,
+    _lat::Float64,
+    _lon::Float64,
+    _el_time::Float64,
+    _wind::Bool,
+    _lock_obj,
+    _vacuum_temperature::Float64
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    _gram_not_loaded_error("GRAMAtmosphereModel density evaluation")
 end
 
 function interp(a, b, x)
@@ -899,17 +871,6 @@ function _gram_point_density(
 end
 
 @inline function _gram_point_density(
-    model::GRAMAtmosphereModel,
-    h::Float64,
-    lat::Float64,
-    lon::Float64,
-    el_time::Float64,
-    wind::Bool
-)::Tuple{Float64, Float64, SVector{3, Float64}}
-    return GRAMSuite.point_density_state(model.core, h, lat, lon, el_time, wind; lock_obj=GRAM_LOCK)
-end
-
-@inline function _gram_point_density(
     model::GRAMAtmosphereModelSurrogate,
     h::Float64,
     lat::Float64,
@@ -920,65 +881,8 @@ end
     return _gram_point_density(model.base_model, h, lat, lon, el_time, wind)
 end
 
-function getDensity(model::GRAMAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
-    EI = p.args.environment_model.EI * 1e3
-    drag_state = h - EI <= 0.0
-
-    if h > 2000.0e3
-        rho = 0.0
-        T = p.args.environment_model.planet.T_ref
-        wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
-    elseif !drag_state && !p.args.mission_configuration.keplerian
-        rho, T, wind_vec = density_polyfit(h, p)
-    else
-        # println("GRAM density altitude = $(h) m ($(h / 1e3) km)")
-        rho, T, wind_vec = GRAMSuite.density_state(
-            model.core,
-            h,
-            lat,
-            lon,
-            el_time,
-            wind;
-            lock_obj=GRAM_LOCK,
-            vacuum_temperature=p.args.environment_model.planet.T_ref
-        )
-    end
-
-    return rho, T, wind_vec
-end
-
 function getDensity(model::ConstantDensityModel, altitude_m::Float64, latitude_deg::Float64, longitude_deg::Float64, et::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
     return model.density_kg_m3, model.temperature_k, SVector{3, Float64}(0.0, 0.0, 0.0)
-end
-
-function getDensity(model::GRAMAtmosphereModelSurrogate, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
-    EI = p.args.environment_model.EI * 1e3
-    drag_state = h - EI <= 0.0
-
-    if h > 2000.0e3
-        return 0.0, p.args.environment_model.planet.T_ref, SVector{3, Float64}(0.0, 0.0, 0.0)
-    elseif !drag_state && !p.args.mission_configuration.keplerian
-        return density_polyfit(h, p)
-    end
-
-    base_model = model.base_model isa GRAMAtmosphereModel ? model.base_model.core : model.base_model
-    point_fallback = model.base_model isa GRAMAtmosphereModel ? nothing :
-        (m, h_i, lat_i, lon_i, t_i, w_i) -> _gram_point_density(m, h_i, lat_i, lon_i, t_i, w_i)
-
-    println("GRAM density altitude = $(h) m ($(h / 1e3) km)")
-    return GRAMSuite.surrogate_density_state(
-        base_model,
-        model.surrogate_file,
-        model.point_fallback_below_m,
-        h,
-        lat,
-        lon,
-        el_time,
-        wind;
-        lock_obj=GRAM_LOCK,
-        point_density_fallback=point_fallback,
-        vacuum_temperature=p.args.environment_model.planet.T_ref
-    )
 end
 
 function getDensity(model::NRLMSISE00AtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool)::Tuple{Float64, Float64, SVector{3, Float64}}

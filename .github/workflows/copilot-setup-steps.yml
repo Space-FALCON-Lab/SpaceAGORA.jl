@@ -1,0 +1,79 @@
+name: "Copilot Setup Steps"
+
+# Run this workflow automatically whenever it is changed so that setup
+# problems are caught early.  Manual re-runs are also available from the
+# repository's "Actions" tab.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  # The job MUST be called `copilot-setup-steps` or it will not be picked
+  # up by Copilot cloud agent.
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 59
+
+    permissions:
+      contents: read
+
+    env:
+      JULIA_NUM_THREADS: "2"
+      # Stable location for the CondaPkg-managed conda environment so it
+      # can be restored from cache by the agent on subsequent runs.
+      JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+
+      # Keep the GRAMSuite data submodule in sync with its remote main branch
+      # so that the cached environment always reflects the latest data.
+      - name: Update GRAMSuite submodule to latest main
+        env:
+          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+        run: |
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git submodule update --init --recursive --remote data/GRAMSuite.jl
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      # Cache ~/.julia/packages, ~/.julia/compiled, and ~/.julia/artifacts.
+      # The cache key includes the Julia version and is invalidated whenever
+      # Project.toml or Manifest.toml change, matching the strategy used in
+      # the other CI workflows.
+      - name: Cache Julia packages and compiled artifacts
+        uses: julia-actions/cache@v2
+
+      # Cache the CondaPkg-managed conda environment separately, keyed on
+      # CondaPkg.toml, so that Python dependencies are not reinstalled when
+      # only Julia sources change.
+      - name: Cache CondaPkg environment
+        uses: actions/cache@v4
+        with:
+          path: ~/.julia/condapkg/SpaceAGORA
+          key: condapkg-${{ runner.os }}-${{ hashFiles('CondaPkg.toml') }}
+          restore-keys: condapkg-${{ runner.os }}-
+
+      # Resolve and download all declared Julia dependencies.
+      - name: Instantiate Julia environment
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      # Explicitly trigger precompilation so that every package's compiled
+      # .ji cache file is written to ~/.julia/compiled before the cache is
+      # saved.  Without this step the files would be created on the first
+      # `using` call inside the agent session, defeating the purpose of the
+      # cache.
+      - name: Precompile Julia packages
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.precompile()'

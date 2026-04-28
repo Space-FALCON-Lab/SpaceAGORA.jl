@@ -473,26 +473,28 @@ end
     end
     @test all(isfinite, p_density.shared_buffers.densities)
 
-    p_density_models = ODEParams{4}(args=thread_safe_args)
-    u_density_models = build_initial_conditions(thread_safe_args)
-    append!(p_density_models.shared_buffers.density_models, fill(GRAMAtmosphereModel(planet_name="earth"), 4))
-    integrator_density_models = MockCallbackIntegrator(
-        p_density_models,
-        u_density_models,
-        0.0,
-        MockCallbackOpts(1.0, 1e-8, 1e-8),
-        1,
-        Inf
-    )
-    withenv(
-        "SPACEAGORA_DENSITY_BATCH_PARALLEL" => "off",
-        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "on",
-        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1"
-    ) do
-        density_cb = callbacks.get_density_callback(4, thread_safe_args)
-        density_cb.affect!(integrator_density_models)
+    if HAS_GRAMSUITE
+        p_density_models = ODEParams{4}(args=thread_safe_args)
+        u_density_models = build_initial_conditions(thread_safe_args)
+        append!(p_density_models.shared_buffers.density_models, fill(GRAMAtmosphereModel(planet_name="earth"), 4))
+        integrator_density_models = MockCallbackIntegrator(
+            p_density_models,
+            u_density_models,
+            0.0,
+            MockCallbackOpts(1.0, 1e-8, 1e-8),
+            1,
+            Inf
+        )
+        withenv(
+            "SPACEAGORA_DENSITY_BATCH_PARALLEL" => "off",
+            "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "on",
+            "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1"
+        ) do
+            density_cb = callbacks.get_density_callback(4, thread_safe_args)
+            density_cb.affect!(integrator_density_models)
+        end
+        @test all(isfinite, p_density_models.shared_buffers.densities)
     end
-    @test all(isfinite, p_density_models.shared_buffers.densities)
 
     # Guidance invokelatest branch.
     probe_guidance = ProbeGuidanceModel([0])
@@ -1298,24 +1300,26 @@ end
     @test env_models._gram_use_global_lock() isa Bool
     @test_throws MethodError env_models._gram_point_density(:bad_model, 0.0, 0.0, 0.0, 0.0, false)
 
-    gram_model = env_models.GRAMAtmosphereModel(
-        planet_name="earth",
-        initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
-    )
-    @test gram_model.core === gram_model.core
-    @test gram_model.planet_name == "earth"
-    copied_gram = Base.deepcopy_internal(gram_model, IdDict())
-    @test copied_gram !== gram_model
+    if HAS_GRAMSUITE
+        gram_model = env_models.GRAMAtmosphereModel(
+            planet_name="earth",
+            initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
+        )
+        @test gram_model.core === gram_model.core
+        @test gram_model.planet_name == "earth"
+        copied_gram = Base.deepcopy_internal(gram_model, IdDict())
+        @test copied_gram !== gram_model
 
-    rho_hi, T_hi, wind_hi = env_models.getDensity(gram_model, 2_500e3, 0.0, 0.0, 0.0, true, p_density_helpers)
-    @test rho_hi == 0.0
-    @test T_hi == args_density_helpers.environment_model.planet.T_ref
-    @test wind_hi == SVector{3, Float64}(0.0, 0.0, 0.0)
+        rho_hi, T_hi, wind_hi = env_models.getDensity(gram_model, 2_500e3, 0.0, 0.0, 0.0, true, p_density_helpers)
+        @test rho_hi == 0.0
+        @test T_hi == args_density_helpers.environment_model.planet.T_ref
+        @test wind_hi == SVector{3, Float64}(0.0, 0.0, 0.0)
 
-    rho_mid, T_mid, wind_mid = env_models.getDensity(gram_model, 150e3, 0.0, 0.0, 0.0, true, p_density_helpers)
-    @test isfinite(rho_mid)
-    @test T_mid == args_density_helpers.environment_model.planet.T_ref
-    @test wind_mid == SVector{3, Float64}(0.0, 0.0, 0.0)
+        rho_mid, T_mid, wind_mid = env_models.getDensity(gram_model, 150e3, 0.0, 0.0, 0.0, true, p_density_helpers)
+        @test isfinite(rho_mid)
+        @test T_mid == args_density_helpers.environment_model.planet.T_ref
+        @test wind_mid == SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
 
     rho_polyfit, T_polyfit, wind_polyfit = env_models.density_polyfit(150e3, p_density_helpers)
     @test isfinite(rho_polyfit)

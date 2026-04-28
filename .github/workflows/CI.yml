@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        julia-version: ["1.10", "lts"]
+        julia-version: ["1.12"]
     env:
       JULIA_NUM_THREADS: "2"
 
@@ -132,7 +132,7 @@ jobs:
 
       - uses: julia-actions/setup-julia@v2
         with:
-          version: "lts"
+          version: "1.12"
 
       - uses: julia-actions/cache@v2
 

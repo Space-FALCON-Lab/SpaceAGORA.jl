@@ -26,6 +26,8 @@ jobs:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
+          git submodule sync data/GRAMSuite.jl
           git submodule update --init --recursive --remote data/GRAMSuite.jl
 
       - name: Setup Julia
@@ -79,6 +81,8 @@ jobs:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
+          git submodule sync data/GRAMSuite.jl
           git submodule update --init --recursive --remote data/GRAMSuite.jl
 
       - name: Setup Julia
@@ -109,6 +113,8 @@ jobs:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
+          git submodule sync data/GRAMSuite.jl
           git submodule update --init --recursive --remote data/GRAMSuite.jl
 
       - name: Setup Julia
@@ -142,6 +148,8 @@ jobs:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
+          git submodule sync data/GRAMSuite.jl
           git submodule update --init --recursive --remote data/GRAMSuite.jl
 
       - name: Setup Julia
@@ -172,6 +180,8 @@ jobs:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
+          git submodule sync data/GRAMSuite.jl
           git submodule update --init --recursive --remote data/GRAMSuite.jl
 
       - name: Setup Julia
@@ -205,6 +215,8 @@ jobs:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
+          git submodule sync data/GRAMSuite.jl
           git submodule update --init --recursive --remote data/GRAMSuite.jl
 
       - name: Setup Julia
@@ -238,6 +250,8 @@ jobs:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
+          git submodule sync data/GRAMSuite.jl
           git submodule update --init --recursive --remote data/GRAMSuite.jl
 
       - name: Setup Julia
@@ -284,6 +298,8 @@ jobs:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
+          git submodule sync data/GRAMSuite.jl
           git submodule update --init --recursive --remote data/GRAMSuite.jl
 
       - name: Setup Julia
@@ -323,6 +339,8 @@ jobs:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
+          git submodule sync data/GRAMSuite.jl
           git submodule update --init --recursive --remote data/GRAMSuite.jl
 
       - name: Setup Julia
@@ -357,6 +375,8 @@ jobs:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
+          git submodule sync data/GRAMSuite.jl
           git submodule update --init --recursive --remote data/GRAMSuite.jl
 
       - name: Setup Julia
@@ -385,6 +405,8 @@ jobs:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
+          git submodule sync data/GRAMSuite.jl
           git submodule update --init --recursive --remote data/GRAMSuite.jl
 
       - name: Setup Julia
@@ -427,6 +449,8 @@ jobs:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
+          git submodule sync data/GRAMSuite.jl
           git submodule update --init --recursive --remote data/GRAMSuite.jl
 
       - name: Fetch base ref

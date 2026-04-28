@@ -23,7 +23,7 @@ docs/build/
 docs/site/
 docs/src/generated/
 docs/.CondaPkg/
-docs/Manifest.toml
+# docs/Manifest.toml is intentionally tracked so julia-actions/cache has a stable key
 output/calibration/
 SpaceAGORACalibration.jl/test/output/
 SpaceAGORACalibration.jl/.CondaPkg/

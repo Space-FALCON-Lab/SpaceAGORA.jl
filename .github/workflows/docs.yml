@@ -37,6 +37,9 @@ jobs:
       - name: Cache Julia artifacts
         uses: julia-actions/cache@v2
 
+      - name: Instantiate environment
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+
       - name: Build and deploy docs
         run: julia --project=. docs/make.jl
 

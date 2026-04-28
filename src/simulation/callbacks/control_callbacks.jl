@@ -107,7 +107,7 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
         # all spacecraft states. The spacecraft index is passed explicitly
         # to avoid conflating effector-index with spacecraft-index.
         apply_control! = if use_invokelatest
-            # Dev mode: keep Revise/hot-reload workflows free of world-age errors.
+            # Dev mode: keep hot-reload workflows free of world-age errors.
             (integrator, sat_idx) -> begin
                 Base.invokelatest(calcControlEffect!, control_model, integrator.u, integrator.p, integrator.t, sat_idx)
                 if control_model isa BaseThrusterModel

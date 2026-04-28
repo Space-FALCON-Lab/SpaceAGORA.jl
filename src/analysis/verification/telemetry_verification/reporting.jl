@@ -8,7 +8,10 @@ function _generate_plots(summary_csv::String, errors_csv::String, profile::Symbo
     plot_script = joinpath(REPO_ROOT, "scripts", "plotting", "telemetry_orbit_accuracy_plots.jl")
     isfile(plot_script) || throw(ErrorException("Missing plotting script: $plot_script"))
     outdir = _default_plots_outdir(summary_csv, profile)
-    cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(joinpath(REPO_ROOT, ".AGORA")) $plot_script --summary=$summary_csv --errors=$errors_csv --outdir=$outdir`
+    plot_project = let agora_project = joinpath(REPO_ROOT, ".AGORA")
+        isdir(agora_project) ? agora_project : REPO_ROOT
+    end
+    cmd = `$(Base.julia_cmd()) --startup-file=no --project=$plot_project $plot_script --summary=$summary_csv --errors=$errors_csv --outdir=$outdir`
     run(cmd)
     return outdir
 end

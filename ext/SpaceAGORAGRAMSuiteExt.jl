@@ -118,7 +118,8 @@ end
     el_time::Float64,
     wind::Bool
 )::Tuple{Float64, Float64, SVector{3, Float64}}
-    return GRAMSuite.point_density_state(model.core, h, lat, lon, el_time, wind; lock_obj=GRAM_LOCK)
+    h_gram = max(h, -30.0)
+    return GRAMSuite.point_density_state(model.core, h_gram, lat, lon, el_time, wind; lock_obj=GRAM_LOCK)
 end
 
 # ---------------------------------------------------------------------------
@@ -144,9 +145,10 @@ function EM.getDensity(
     elseif !drag_state && !p.args.mission_configuration.keplerian
         rho, T, wind_vec = EM.density_polyfit(h, p)
     else
+        h_gram = max(h, -30.0)
         rho, T, wind_vec = GRAMSuite.density_state(
             model.core,
-            h,
+            h_gram,
             lat,
             lon,
             el_time,
@@ -180,13 +182,14 @@ function EM.getDensity(
     base_model = model.base_model isa EM.GRAMAtmosphereModel ? model.base_model.core : model.base_model
     point_fallback = model.base_model isa EM.GRAMAtmosphereModel ? nothing :
         (m, h_i, lat_i, lon_i, t_i, w_i) -> EM._gram_point_density(m, h_i, lat_i, lon_i, t_i, w_i)
+    h_gram = max(h, -30.0)
 
     println("GRAM density altitude = $(h) m ($(h / 1e3) km)")
     return GRAMSuite.surrogate_density_state(
         base_model,
         model.surrogate_file,
         model.point_fallback_below_m,
-        h,
+        h_gram,
         lat,
         lon,
         el_time,

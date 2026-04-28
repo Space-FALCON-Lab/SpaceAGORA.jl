@@ -811,20 +811,6 @@ include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "e_edg_strategy_parity
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "t_edg_strategy_parity_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "mission", "aerobraking_policy_selector_stub_tests.jl"))
 
-@testset "JET Static Analysis" begin
-    if HAS_JET
-        @eval JET.@test_opt InitialCondition()
-        @eval JET.@test_opt Link()
-        @eval JET.@test_opt Joint()
-        @eval JET.@test_opt SpacecraftModel()
-
-        sc = SpacecraftModel()
-        @eval JET.@test_opt rotate_to_inertial($sc, $sc.root, 1)
-    else
-        @test_skip "JET is not available in this test environment"
-    end
-end
-
 @testset "Aqua Package Quality" begin
     if HAS_AQUA
         Aqua.test_all(

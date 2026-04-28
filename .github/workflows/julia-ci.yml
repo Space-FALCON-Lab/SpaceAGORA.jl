@@ -125,39 +125,6 @@ jobs:
       - name: Threaded smoke
         run: julia --startup-file=no --depwarn=error --project=. test/ci_threaded_smoke.jl
 
-  revise-hot-reload-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      JULIA_NUM_THREADS: "2"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-
-      - name: Update GRAMSuite submodule to latest main
-        env:
-          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          git submodule update --init --recursive --remote data/GRAMSuite.jl
-
-      - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
-        with:
-          version: "1.12"
-
-      - name: Cache Julia artifacts
-        uses: julia-actions/cache@v2
-
-      - name: Instantiate
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Revise hot-reload smoke
-        run: julia --startup-file=no --depwarn=error --project=. test/ci_revise_hot_reload_smoke.jl
-
   readme-command-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -252,7 +219,7 @@ jobs:
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Example regression
-        run: julia --startup-file=no --project=. test/ci_examples_regression.jl
+        run: julia --startup-file=no --project=. test/integration/examples/runtests.jl
 
   telemetry-quick-regression:
     runs-on: ubuntu-latest
@@ -397,71 +364,8 @@ jobs:
         with:
           version: "1.12"
 
-      - name: P1 findings gate
-        run: julia --startup-file=no --project=. test/ci_p1_findings_gate.jl
-
-      - name: Naming contract gate
-        run: julia --startup-file=no --project=. test/ci_naming_contract_gate.jl
-
-      - name: Architecture contract gate
-        run: julia --startup-file=no --project=. test/ci_architecture_contract_gate.jl
-
-      - name: No legacy ownership gate
-        run: julia --startup-file=no --project=. test/ci_no_legacy_ownership_gate.jl
-
-      - name: No artifact files gate
-        run: julia --startup-file=no --project=. test/ci_no_artifact_files_gate.jl
-
-      - name: Canonical path contract gate
-        run: julia --startup-file=no --project=. test/ci_canonical_path_contract_gate.jl
-
-      - name: No src/benchmarks root gate
-        run: julia --startup-file=no --project=. test/ci_no_src_benchmarks_root_gate.jl
-
-      - name: No dynamics/models gate
-        run: julia --startup-file=no --project=. test/ci_no_dynamics_models_gate.jl
-
-      - name: Vehicle structure boundary gate
-        run: julia --startup-file=no --project=. test/ci_vehicle_structure_boundary_gate.jl
-
-      - name: Src completeness contract gate
-        run: julia --startup-file=no --project=. test/ci_src_completeness_contract_gate.jl
-
-      - name: No legacy include chains gate
-        run: julia --startup-file=no --project=. test/ci_no_legacy_include_chains_gate.jl
-
-      - name: No inert force terms gate
-        run: julia --startup-file=no --project=. test/ci_no_inert_force_terms_gate.jl
-
-      - name: GNC aerobraking boundary gate
-        run: julia --startup-file=no --project=. test/ci_gnc_aerobraking_boundary_gate.jl
-
-      - name: No guidance/control cross-include gate
-        run: julia --startup-file=no --project=. test/ci_no_guidance_control_cross_include_gate.jl
-
-      - name: Aerobraking strategy contract gate
-        run: julia --startup-file=no --project=. test/ci_aerobraking_strategy_contract_gate.jl
-
-      - name: Rotational ownership gate
-        run: julia --startup-file=no --project=. test/ci_rotational_ownership_gate.jl
-
-      - name: Scaffold interface gate
-        run: julia --startup-file=no --project=. test/ci_scaffold_interface_gate.jl
-
-      - name: Typed config equivalence gate
-        run: julia --startup-file=no --project=. test/ci_typed_config_equivalence_gate.jl
-
-      - name: Benchmark wrapper parity gate
-        run: julia --startup-file=no --project=. test/ci_benchmark_wrapper_parity_gate.jl
-
-      - name: Docs contract gate
-        run: julia --startup-file=no --project=. test/ci_docs_contract_gate.jl
-
-      - name: Public API surface gate
-        run: julia --startup-file=no --project=. test/ci_public_api_surface_gate.jl
-
-      - name: HPC/extensibility docs gate
-        run: julia --startup-file=no --project=. test/ci_hpc_extensibility_docs_gate.jl
+      - name: Contract suite
+        run: julia --startup-file=no --project=. test/contracts/pr_runtests.jl
 
   documentation-release-gate:
     runs-on: ubuntu-latest

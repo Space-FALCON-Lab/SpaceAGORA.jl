@@ -127,13 +127,10 @@ This note documents the edge-case tests added for thruster-related functions and
     - monotonic mass decrease during burns,
     - stronger mass depletion for lower `Isp` (ratio check).
 
-## Revise / World-Age Operational Note
+## Hot-Reload / World-Age Operational Note
 
-- CI now includes dedicated Revise/hot-reload smoke:
-  - `test/ci_revise_hot_reload_smoke.jl` (runs under `--depwarn=error`, Julia 1.12).
-  - It edits control-effector methods in-session via `Revise.includet(...)` + `Revise.revise()` and verifies updated behavior is used.
-- To support this reliably, callback-dispatched control/guidance effects now use `Base.invokelatest(...)` in `src/simulation/callbacks/callbacks.jl`, avoiding world-age errors during hot reload.
-- A no-Revise fallback remains valid for operational troubleshooting:
+- Callback-dispatched control/guidance effects now use `Base.invokelatest(...)` in `src/simulation/callbacks/callbacks.jl`, avoiding world-age errors during in-session method updates.
+- A restart-based fallback remains valid for operational troubleshooting:
   1. Restart Julia.
   2. Re-instantiate/precompile with `.AGORA`.
   3. Re-run smoke under depwarn-as-error:

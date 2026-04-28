@@ -33,6 +33,21 @@ function _orbit_rows_errors(
     return [peri_summary, apo_summary], [peri_errors, apo_errors]
 end
 
+@inline function _telemetry_altitude_km(
+    pos_m::SVector{3, Float64},
+    vel_mps::SVector{3, Float64},
+    planet,
+    altitude_mode::Symbol
+)::Float64
+    if altitude_mode == :vacuum
+        return (norm(pos_m) - planet.Rp_e) * 1e-3
+    elseif altitude_mode == :oblate
+        pos_p, _ = r_intor_p!(pos_m, vel_mps, planet)
+        return rtolatlong(pos_p, planet)[1] * 1e-3
+    end
+    throw(ArgumentError("Unsupported altitude_mode='$altitude_mode' in telemetry altitude calculation"))
+end
+
 function _time_aligned_rows_errors(
     cfg::TimeAlignedScenarioConfig,
     args::SimulationConfiguration,
@@ -116,8 +131,16 @@ function _time_aligned_rows_errors(
     sim_x_km = sim_x_m .* 1e-3 .+ get(bias_by_event, "state_x_time", 0.0)
     sim_y_km = sim_y_m .* 1e-3 .+ get(bias_by_event, "state_y_time", 0.0)
     sim_z_km = sim_z_m .* 1e-3 .+ get(bias_by_event, "state_z_time", 0.0)
-    sim_r_m = sqrt.(sim_x_m .^ 2 .+ sim_y_m .^ 2 .+ sim_z_m .^ 2)
-    sim_altitude_km = (sim_r_m .- args.environment_model.planet.Rp_e) .* 1e-3 .+ get(bias_by_event, "altitude_time", 0.0)
+    sim_altitude_km = Vector{Float64}(undef, length(sim_time))
+    @inbounds for i in eachindex(sim_time)
+        sim_altitude_km[i] = _telemetry_altitude_km(
+            SVector{3, Float64}(sim_x_m[i], sim_y_m[i], sim_z_m[i]),
+            SVector{3, Float64}(sim_vx_mps[i], sim_vy_mps[i], sim_vz_mps[i]),
+            args.environment_model.planet,
+            cfg.orbit_altitude_mode
+        )
+    end
+    sim_altitude_km .+= get(bias_by_event, "altitude_time", 0.0)
 
     altitude_summary, altitude_errors = _compare_time_series(
         cfg.name,

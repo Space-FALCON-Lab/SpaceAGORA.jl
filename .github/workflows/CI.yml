@@ -83,8 +83,7 @@ jobs:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
         run: |
           julia --startup-file=no --depwarn=error --project=. -e '
-            include("src/physical_models/Planet_data.jl")
-            include("src/config.jl")
+            using SpaceAGORA
             println("depwarn_smoke_ok")
           '
 
@@ -152,14 +151,4 @@ jobs:
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
         run: |
-          julia --startup-file=no --depwarn=error --project=. -e '
-            if Threads.nthreads() < 2
-              error("Threaded smoke requires ≥ 2 threads; got $(Threads.nthreads())")
-            end
-            include("src/physical_models/Planet_data.jl")
-            include("src/config.jl")
-            using StaticArrays
-            earth = planet_data(0)
-            @assert earth.μ > 0 "planet_data(0).μ must be positive"
-            println("threaded_smoke_ok ($(Threads.nthreads()) threads)")
-          '
+          julia --startup-file=no --depwarn=error --project=. test/ci_threaded_smoke.jl

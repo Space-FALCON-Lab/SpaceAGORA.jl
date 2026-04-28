@@ -1,0 +1,6 @@
+include(joinpath(@__DIR__, "..", "ci_coverage_quality_gate.jl"))
+include(joinpath(@__DIR__, "..", "coverage_parallel_telemetry_probes.jl"))
+include(joinpath(@__DIR__, "..", "coverage_runtime_boundary_probes.jl"))
+include(joinpath(@__DIR__, "..", "coverage_targeted_90_probes.jl"))
+include(joinpath(@__DIR__, "..", "ci_runtime_any_hotpath_gate.jl"))
+include(joinpath(@__DIR__, "..", "ci_runtime_analysis_copy_overhead_gate.jl"))

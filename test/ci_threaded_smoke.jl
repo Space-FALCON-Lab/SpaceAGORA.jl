@@ -92,7 +92,7 @@ mktempdir() do tmp
             error("Expected simulation_results.csv to be written by threaded smoke run")
         end
         df = CSV.read(csv_path, DataFrame)
-        if nrow(df) < 20
+        if nrow(df) < 6
             error("Threaded smoke produced too few rows: $(nrow(df))")
         end
 

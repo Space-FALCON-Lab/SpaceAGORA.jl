@@ -10,7 +10,7 @@ user-facing surfaces are:
 
 ## Installation
 
-Use the repository root environment for examples, tests, and normal local runs:
+Use the repository root environment as the canonical committed execution environment for examples, tests, and normal local runs:
 
 ```bash
 git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
@@ -20,7 +20,7 @@ julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
 That gives you the baseline open-data onboarding path immediately. You do not
-need GRAM or SPICE to run the first quickstart example.
+need GRAM or SPICE to run the first quickstart example, and there is no bootstrap step beyond instantiating the committed root environment.
 
 Helpful first checks:
 

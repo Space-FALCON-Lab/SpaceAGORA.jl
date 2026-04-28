@@ -33,7 +33,7 @@ function get_guidance_callbacks(num_sats::Int, args::SimulationConfiguration)::V
         guidance_func = (integrator) -> begin
             if use_invokelatest
                 @inbounds for sat_idx in 1:num_sats
-                    # Dev mode: keep Revise/hot-reload workflows free of world-age errors.
+                    # Dev mode: keep hot-reload workflows free of world-age errors.
                     Base.invokelatest(calcGuidanceEffect!, guidance_model, integrator.u, integrator.p, integrator.t, sat_idx)
                 end
             else

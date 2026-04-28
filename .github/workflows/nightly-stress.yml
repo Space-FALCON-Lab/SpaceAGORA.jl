@@ -63,47 +63,8 @@ jobs:
       - name: SpaceAGORACalibration coverage quality gate
         run: julia --startup-file=no --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/test/ci_coverage_quality_gate.jl
 
-      - name: P1 findings gate
-        run: julia --startup-file=no --project=. test/ci_p1_findings_gate.jl
-
-      - name: Naming contract gate
-        run: julia --startup-file=no --project=. test/ci_naming_contract_gate.jl
-
-      - name: Architecture contract gate
-        run: julia --startup-file=no --project=. test/ci_architecture_contract_gate.jl
-
-      - name: No legacy ownership gate
-        run: julia --startup-file=no --project=. test/ci_no_legacy_ownership_gate.jl
-
-      - name: No artifact files gate
-        run: julia --startup-file=no --project=. test/ci_no_artifact_files_gate.jl
-
-      - name: Canonical path contract gate
-        run: julia --startup-file=no --project=. test/ci_canonical_path_contract_gate.jl
-
-      - name: No src/benchmarks root gate
-        run: julia --startup-file=no --project=. test/ci_no_src_benchmarks_root_gate.jl
-
-      - name: No dynamics/models gate
-        run: julia --startup-file=no --project=. test/ci_no_dynamics_models_gate.jl
-
-      - name: Vehicle structure boundary gate
-        run: julia --startup-file=no --project=. test/ci_vehicle_structure_boundary_gate.jl
-
-      - name: GNC aerobraking boundary gate
-        run: julia --startup-file=no --project=. test/ci_gnc_aerobraking_boundary_gate.jl
-
-      - name: No guidance/control cross-include gate
-        run: julia --startup-file=no --project=. test/ci_no_guidance_control_cross_include_gate.jl
-
-      - name: Aerobraking strategy contract gate
-        run: julia --startup-file=no --project=. test/ci_aerobraking_strategy_contract_gate.jl
-
-      - name: Typed config equivalence gate
-        run: julia --startup-file=no --project=. test/ci_typed_config_equivalence_gate.jl
-
-      - name: Benchmark wrapper parity gate
-        run: julia --startup-file=no --project=. test/ci_benchmark_wrapper_parity_gate.jl
+      - name: Contract suite
+        run: julia --startup-file=no --project=. test/contracts/nightly_runtests.jl
 
       - name: AI review artifact gate (PR only)
         if: github.event_name == 'pull_request'
@@ -116,16 +77,13 @@ jobs:
         run: julia --startup-file=no --depwarn=error --project=. test/ci_threaded_smoke.jl
 
       - name: Example regression stress
-        run: julia --startup-file=no --depwarn=error --project=. test/ci_examples_regression.jl
+        run: julia --startup-file=no --depwarn=error --project=. test/integration/examples/runtests.jl
 
       - name: Telemetry full regression (GRAM deterministic)
         run: julia --startup-file=no --depwarn=error --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true
 
-      - name: Nightly Monte Carlo stress
-        run: julia --startup-file=no --depwarn=error --project=. test/ci_nightly_montecarlo_stress.jl
-
-      - name: Flake guard
-        run: julia --startup-file=no --depwarn=error --project=. test/ci_flake_guard.jl
+      - name: Stress suite
+        run: julia --startup-file=no --depwarn=error --project=. test/stress/runtests.jl
 
       - name: Upload telemetry nightly artifacts
         if: always()

@@ -1,24 +1,15 @@
 # startup.jl – Julia interactive startup template for SpaceAGORA.jl
 #
 # Copy this file to ~/.julia/config/startup.jl (or append its contents to an
-# existing startup.jl).  It loads Revise.jl on every interactive Julia session
-# so that changes to source files are hot-reloaded without restarting Julia,
-# eliminating the costly package precompilation step during development.
+# existing startup.jl) to make interactive work in this project more convenient.
 #
 # One-time setup:
-#   1. Install Revise into your global Julia environment:
-#        julia -e 'using Pkg; Pkg.add("Revise")'
-#   2. Copy or symlink this file:
+#   1. Copy or symlink this file:
 #        cp startup.jl ~/.julia/config/startup.jl
 #
-# After that, start Julia normally (with --project=.SpaceAGORA) and any edits
-# you make to .jl files will be picked up automatically the next time you call
-# a changed function.
+# This template intentionally avoids project-specific package loads so it stays
+# usable even in minimal Julia environments.
 
 atreplinit() do repl
-    try
-        @eval using Revise
-    catch e
-        @warn "Could not load Revise" exception = e
-    end
+    return nothing
 end

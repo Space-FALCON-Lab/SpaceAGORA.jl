@@ -27,7 +27,11 @@ jobs:
           fetch-depth: 0
 
       - name: Update GRAMSuite submodule to latest main
-        run: git submodule update --init --recursive --remote data/GRAMSuite.jl
+        env:
+          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+        run: |
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git submodule update --init --recursive --remote data/GRAMSuite.jl
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2

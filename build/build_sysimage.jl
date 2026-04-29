@@ -99,15 +99,21 @@ else
     println("Precompile execution trace: $(abspath(PRECOMPILE_SCRIPT))")
 end
 
-create_sysimage(
-    PACKAGES;
-    sysimage_path = SYSIMAGE_PATH,
+kwargs = Dict{Symbol,Any}(
+    :sysimage_path => sysimage_path,
+    # add other kwargs you already use...
     # Use the Earth example as a precompile execution trace so that the
     # methods hot-called during a real run are compiled into the image.
     # CI skips this trace by default to avoid depending on native runtime data.
     precompile_execution_file = PRECOMPILE_SCRIPT,
     project = PROJECT_ROOT,
 )
+
+if precompile_execution_file !== nothing
+    kwargs[:precompile_execution_file] = precompile_execution_file  # String or Vector{String}
+end
+
+PackageCompiler.create_sysimage(packages; kwargs...)
 
 println("Done.  Launch Julia with:")
 println("  julia --project=. --sysimage SpaceAGORA.so <script.jl>")

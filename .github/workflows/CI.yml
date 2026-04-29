@@ -62,17 +62,28 @@ jobs:
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Instantiate sysimage environment
+        env:
+          JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Instantiate sysimage build environment
+        run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
       - name: Instantiate GRAMSuite environment
         run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
 
       - name: Ensure native GRAM build
         run: ./scripts/ensure_gram_native.sh --clean
+
+      - name: Build SpaceAGORA sysimage
+        env:
+          JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
+        run: julia --startup-file=no --project=build build/build_sysimage.jl
         
       # 5. Run the full unit test suite with code-coverage instrumentation.
       - name: Run test suite
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
-        run: julia --startup-file=no --project=. --code-coverage=user test/runtests.jl
+        run: julia --startup-file=no --sysimage SpaceAGORA.so --project=. --code-coverage=user test/runtests.jl
 
       # 6. Upload coverage data so it can be inspected in the Actions artifacts panel.
       - name: Upload coverage artifacts
@@ -89,7 +100,7 @@ jobs:
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
         run: |
-          julia --startup-file=no --depwarn=error --project=. -e '
+          julia --startup-file=no --sysimage SpaceAGORA.so --depwarn=error --project=. -e '
             using SpaceAGORA
             println("depwarn_smoke_ok")
           '
@@ -156,8 +167,21 @@ jobs:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
+      - name: Instantiate sysimage environment
+        env:
+          JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Instantiate sysimage build environment
+        run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Build SpaceAGORA sysimage
+        env:
+          JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
+        run: julia --startup-file=no --project=build build/build_sysimage.jl
+
       - name: Threaded smoke
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
         run: |
-          julia --startup-file=no --depwarn=error --project=. test/ci_threaded_smoke.jl
+          julia --startup-file=no --sysimage SpaceAGORA.so --depwarn=error --project=. test/ci_threaded_smoke.jl

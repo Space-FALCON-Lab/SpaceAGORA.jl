@@ -3,7 +3,7 @@
 # Builds a custom Julia system image that has all SpaceAGORA.jl packages
 # pre-compiled into it.  Subsequent Julia sessions launched with
 #
-#   julia --project=.SpaceAGORA --sysimage SpaceAGORA.so <script.jl>
+#   julia --project=. --sysimage SpaceAGORA.so <script.jl>
 #
 # start in seconds rather than minutes because they skip the per-package
 # compilation step entirely.
@@ -14,12 +14,12 @@
 #
 # The resulting sysimage is written to SpaceAGORA.so in the repository root.
 # That file is listed in .gitignore and should NOT be committed to version
-# control.  Rebuild it whenever the package set in .SpaceAGORA/Project.toml
+# control.  Rebuild it whenever the package set in Project.toml
 # changes.
 
 using PackageCompiler
 
-# All packages from .SpaceAGORA/Project.toml that should be baked into the
+# All packages from the root Project.toml that should be baked into the
 # sysimage.  PackageCompiler needs them listed by symbol.
 const PACKAGES = [
     :Arrow,
@@ -38,6 +38,7 @@ const PACKAGES = [
     :Enzyme,
     :FiniteDiff,
     :ForwardDiff,
+    :GRAMSuite,
     :Interpolations,
     :LaTeXStrings,
     :LegendrePolynomials,
@@ -68,26 +69,45 @@ const PACKAGES = [
     :StaticArrays,
 ]
 
+const PROJECT_ROOT = normpath(joinpath(@__DIR__, ".."))
+
 # The sysimage is written next to this build script's parent (i.e. repo root).
-const SYSIMAGE_PATH = joinpath(@__DIR__, "..", "SpaceAGORA.so")
+const SYSIMAGE_PATH = joinpath(PROJECT_ROOT, "SpaceAGORA.so")
 
 # Optional: provide a precompile script so PackageCompiler can record which
-# methods are actually called and include their native code.  Point this at a
-# lightweight example that exercises the core code paths.
-const PRECOMPILE_SCRIPT = joinpath(@__DIR__, "..", "src", "examples", "Earth.jl")
+# methods are actually called and include their native code.
+const PRECOMPILE_SCRIPT = let
+    override = get(ENV, "SPACEAGORA_SYSIMAGE_PRECOMPILE_FILE", "")
+    default_script = joinpath(PROJECT_ROOT, "src", "examples", "Earth.jl")
+
+    if !isempty(override)
+        override
+    elseif get(ENV, "CI", "false") == "true"
+        nothing
+    elseif isfile(default_script)
+        default_script
+    else
+        nothing
+    end
+end
 
 println("Building sysimage → $(abspath(SYSIMAGE_PATH))")
 println("This will take several minutes the first time …")
+if PRECOMPILE_SCRIPT === nothing
+    println("Precompile execution trace: skipped")
+else
+    println("Precompile execution trace: $(abspath(PRECOMPILE_SCRIPT))")
+end
 
 create_sysimage(
     PACKAGES;
     sysimage_path = SYSIMAGE_PATH,
     # Use the Earth example as a precompile execution trace so that the
     # methods hot-called during a real run are compiled into the image.
-    # Remove or replace this line if GRAM / SPICE data are not available.
-    precompile_execution_file = isfile(PRECOMPILE_SCRIPT) ? PRECOMPILE_SCRIPT : nothing,
-    project = joinpath(@__DIR__, "..", ".SpaceAGORA"),
+    # CI skips this trace by default to avoid depending on native runtime data.
+    precompile_execution_file = PRECOMPILE_SCRIPT,
+    project = PROJECT_ROOT,
 )
 
 println("Done.  Launch Julia with:")
-println("  julia --project=.SpaceAGORA --sysimage SpaceAGORA.so <script.jl>")
+println("  julia --project=. --sysimage SpaceAGORA.so <script.jl>")

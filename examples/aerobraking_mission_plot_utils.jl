@@ -785,6 +785,338 @@ function _save_apoapsis_periapsis_plot(args::SimulationConfiguration, planet, od
     return plot_path
 end
 
+function _save_trajectory_components_plot(args::SimulationConfiguration)
+    results_dir = args.simulation_settings.results_directory
+    time_s, sim_x_km, sim_y_km, sim_z_km = _simulation_position_samples(args)
+    time_hr = time_s ./ 3600.0
+
+    p = plot(
+        time_hr,
+        sim_x_km;
+        xlabel="Mission Time (hr)",
+        ylabel="Position Component (km)",
+        label="x",
+        linewidth=2.0,
+        color=:royalblue,
+        grid=true,
+        legend=:topright,
+        title="Inertial Trajectory Components"
+    )
+    plot!(p, time_hr, sim_y_km; label="y", linewidth=2.0, color=:firebrick)
+    plot!(p, time_hr, sim_z_km; label="z", linewidth=2.0, color=:seagreen)
+    _add_vertical_markers!(p, _trajectory_marker_times(args))
+
+    plot_path = joinpath(results_dir, "trajectory_components_vs_time.png")
+    savefig(p, plot_path)
+    println("Saved trajectory-components plot to $(abspath(plot_path))")
+    return plot_path
+end
+
+function _save_reference_sphere_altitude_plot(args::SimulationConfiguration; reference_radius_km::Float64=6378.0)
+    results_dir = args.simulation_settings.results_directory
+    time_s, sim_x_km, sim_y_km, sim_z_km = _simulation_position_samples(args)
+    time_hr = time_s ./ 3600.0
+    altitude_km = [
+        sqrt(sim_x_km[i]^2 + sim_y_km[i]^2 + sim_z_km[i]^2) - reference_radius_km
+        for i in eachindex(time_s)
+    ]
+
+    p = plot(
+        time_hr,
+        altitude_km;
+        xlabel="Mission Time (hr)",
+        ylabel="Altitude Above 6378 km Sphere (km)",
+        label="Altitude",
+        linewidth=2.0,
+        color=:darkcyan,
+        grid=true,
+        legend=:topright,
+        title="Altitude Relative to 6378 km Reference Sphere"
+    )
+    _add_vertical_markers!(p, _trajectory_marker_times(args))
+
+    plot_path = joinpath(results_dir, "altitude_vs_time_reference_sphere_6378km.png")
+    savefig(p, plot_path)
+    println("Saved reference-sphere altitude plot to $(abspath(plot_path))")
+    return plot_path
+end
+
+function _initial_time_datetime(initial_time::InitialTime)::DateTime
+    whole_seconds = floor(Int, Float64(initial_time.second))
+    millis = round(Int, (Float64(initial_time.second) - whole_seconds) * 1e3)
+    base = DateTime(
+        Int(initial_time.year),
+        Int(initial_time.month),
+        Int(initial_time.day),
+        Int(initial_time.hour),
+        Int(initial_time.minute),
+        whole_seconds
+    )
+    return base + Millisecond(millis)
+end
+
+function _parse_tle_timestamp(line1::AbstractString)::DateTime
+    epoch_year = parse(Int, strip(line1[19:20]))
+    epoch_day = parse(Float64, strip(line1[21:32]))
+    year_full = epoch_year >= 57 ? 1900 + epoch_year : 2000 + epoch_year
+    base = DateTime(year_full, 1, 1, 0, 0, 0)
+    millis = round(Int, (epoch_day - 1.0) * 86400.0 * 1e3)
+    return base + Millisecond(millis)
+end
+
+function _parse_telemetry_timestamp(value)::DateTime
+    s = strip(string(value))
+    sep = occursin('T', s) ? 'T' : ' '
+    occursin(sep, s) || throw(ArgumentError("Unable to parse telemetry timestamp '$s'."))
+    date_part, time_part = split(s, sep; limit=2)
+    frac_us = 0
+    if occursin('.', time_part)
+        whole, frac = split(time_part, '.'; limit=2)
+        frac_digits = replace(frac, r"[^0-9]" => "")
+        frac_digits = isempty(frac_digits) ? "0" : frac_digits
+        frac_trimmed = first(frac_digits, min(length(frac_digits), 6))
+        frac_us = parse(Int, rpad(frac_trimmed, 6, '0'))
+        time_part = whole
+    end
+    base = DateTime(string(date_part, " ", time_part), dateformat"yyyy-mm-dd HH:MM:SS")
+    return base + Microsecond(frac_us)
+end
+
+function _load_tle_history(path::String)
+    raw_lines = [strip(line) for line in readlines(path) if !isempty(strip(line))]
+    length(raw_lines) >= 2 || throw(ArgumentError("TLE file at $(abspath(path)) must contain at least two lines."))
+    first_line = raw_lines[1]
+    step = startswith(first_line, "1 ") ? 2 : 3
+    entries = NamedTuple[]
+    idx = 1
+    while idx <= length(raw_lines) - 1
+        line1_idx = step == 2 ? idx : idx + 1
+        line2_idx = step == 2 ? idx + 1 : idx + 2
+        line2_idx <= length(raw_lines) || break
+        line1 = raw_lines[line1_idx]
+        line2 = raw_lines[line2_idx]
+        startswith(line1, "1 ") || (idx += step; continue)
+        startswith(line2, "2 ") || (idx += step; continue)
+        push!(entries, (timestamp=_parse_tle_timestamp(line1), line1=line1, line2=line2))
+        idx += step
+    end
+    isempty(entries) && throw(ArgumentError("No valid TLE pairs found in $(abspath(path))."))
+    sort!(entries, by=x -> x.timestamp)
+    return entries
+end
+
+@inline function _tle_mean_altitude_km(line2::AbstractString; reference_radius_km::Float64=6378.0)
+    mean_motion_rev_day = parse(Float64, strip(line2[53:63]))
+    n_rad_s = mean_motion_rev_day * 2π / 86400.0
+    μ_earth_km3_s2 = 398600.4418
+    semi_major_axis_km = cbrt(μ_earth_km3_s2 / (n_rad_s^2))
+    return semi_major_axis_km - reference_radius_km
+end
+
+function _closest_tle_entry(entries, target::DateTime)
+    timestamps = getfield.(entries, :timestamp)
+    idx = searchsortedfirst(timestamps, target)
+    if idx <= 1
+        return entries[1]
+    elseif idx > length(entries)
+        return entries[end]
+    end
+    prev_entry = entries[idx - 1]
+    next_entry = entries[idx]
+    dt_prev = abs(Dates.value(target - prev_entry.timestamp))
+    dt_next = abs(Dates.value(next_entry.timestamp - target))
+    return dt_prev <= dt_next ? prev_entry : next_entry
+end
+
+@inline function _interp_linear_samples(x::Vector{Float64}, y::Vector{Float64}, xq::Vector{Float64})::Vector{Float64}
+    out = Vector{Float64}(undef, length(xq))
+    j = 1
+    @inbounds for i in eachindex(xq)
+        xi = xq[i]
+        while j < length(x) - 1 && x[j + 1] < xi
+            j += 1
+        end
+        if xi <= x[1]
+            out[i] = y[1]
+        elseif xi >= x[end]
+            out[i] = y[end]
+        else
+            x0 = x[j]
+            x1 = x[j + 1]
+            y0 = y[j]
+            y1 = y[j + 1]
+            frac = (xi - x0) / (x1 - x0)
+            out[i] = y0 + frac * (y1 - y0)
+        end
+    end
+    return out
+end
+
+function _save_telemetry_simulation_altitude_plot(
+    args::SimulationConfiguration,
+    initial_time::InitialTime;
+    telemetry_csv_path::String=joinpath(REPO_ROOT, "data", "telemetry", "OPS-SAT1", "UHF_TM_notebook", "uhf_telemetry.csv"),
+    tle_path::String=joinpath(REPO_ROOT, "data", "telemetry", "OPS-SAT1", "UHF_TM_notebook", "tle_opssat.txt"),
+    reference_radius_km::Float64=6378.0
+)
+    results_dir = args.simulation_settings.results_directory
+    sim_time_s, sim_x_km, sim_y_km, sim_z_km = _simulation_position_samples(args)
+    sim_altitude_km = [
+        sqrt(sim_x_km[i]^2 + sim_y_km[i]^2 + sim_z_km[i]^2) - reference_radius_km
+        for i in eachindex(sim_time_s)
+    ]
+    sim_start = _initial_time_datetime(initial_time)
+    sim_end = sim_start + Millisecond(round(Int, sim_time_s[end] * 1e3))
+
+    telemetry_df = CSV.read(telemetry_csv_path, DataFrame)
+    :Timestamp in propertynames(telemetry_df) || throw(ArgumentError("Telemetry CSV missing Timestamp column: $(abspath(telemetry_csv_path))."))
+    telemetry_times = _parse_telemetry_timestamp.(telemetry_df.Timestamp)
+    in_window = [sim_start <= t <= sim_end for t in telemetry_times]
+    any(in_window) || throw(ArgumentError("No telemetry timestamps overlap the simulation window $(sim_start) to $(sim_end)."))
+    telemetry_times = telemetry_times[in_window]
+    telemetry_order = sortperm(telemetry_times)
+    telemetry_times = telemetry_times[telemetry_order]
+
+    tle_entries = _load_tle_history(tle_path)
+    telemetry_altitude_km = Vector{Float64}(undef, length(telemetry_times))
+    telemetry_elapsed_s = Vector{Float64}(undef, length(telemetry_times))
+    @inbounds for i in eachindex(telemetry_times)
+        entry = _closest_tle_entry(tle_entries, telemetry_times[i])
+        telemetry_altitude_km[i] = _tle_mean_altitude_km(entry.line2; reference_radius_km=reference_radius_km)
+        telemetry_elapsed_s[i] = Dates.value(telemetry_times[i] - sim_start) / 1000
+    end
+    sim_interp_altitude_km = _interp_linear_samples(sim_time_s, sim_altitude_km, telemetry_elapsed_s)
+
+    p = plot(
+        telemetry_times,
+        telemetry_altitude_km;
+        xlabel="Timestamp (UTC)",
+        ylabel="Altitude Above $(reference_radius_km) km Sphere (km)",
+        label="Telemetry / Closest-TLE",
+        linewidth=1.2,
+        marker=:circle,
+        markersize=2.5,
+        color=:black,
+        alpha=0.7,
+        grid=true,
+        legend=:topright,
+        title="Telemetry and Simulation Altitude at Corresponding Timestamps"
+    )
+    plot!(
+        p,
+        telemetry_times,
+        sim_interp_altitude_km;
+        label="Simulation",
+        linewidth=2.2,
+        color=:darkcyan
+    )
+
+    plot_path = joinpath(results_dir, "telemetry_vs_simulation_altitude_6378km.png")
+    savefig(p, plot_path)
+    println("Saved telemetry/simulation altitude comparison plot to $(abspath(plot_path))")
+    return plot_path
+end
+
+function _save_orbital_elements_plot(args::SimulationConfiguration, planet)
+    results_dir = args.simulation_settings.results_directory
+    time_s, sim_x_km, sim_y_km, sim_z_km = _simulation_position_samples(args)
+    _, sim_vx_kms, sim_vy_kms, sim_vz_kms = _simulation_velocity_samples(args)
+    sim_oe = _orbital_elements_from_state_samples(
+        sim_x_km,
+        sim_y_km,
+        sim_z_km,
+        sim_vx_kms,
+        sim_vy_kms,
+        sim_vz_kms,
+        planet
+    )
+    time_hr = time_s ./ 3600.0
+
+    specs = (
+        (:semi_major_axis_km, "Semi-major Axis (km)", :royalblue),
+        (:eccentricity, "Eccentricity", :firebrick),
+        (:inclination_deg, "Inclination (deg)", :seagreen),
+        (:raan_deg, "RAAN (deg)", :darkorange2),
+        (:arg_periapsis_deg, "Argument of Periapsis (deg)", :purple),
+        (:true_anomaly_deg, "True Anomaly (deg)", :teal)
+    )
+
+    subplots = Plots.Plot[]
+    for (field, ylabel, color) in specs
+        sp = plot(
+            time_hr,
+            getproperty(sim_oe, field);
+            ylabel=ylabel,
+            label=false,
+            linewidth=2.0,
+            color=color,
+            grid=true
+        )
+        push!(subplots, sp)
+    end
+    xlabel!(subplots[5], "Mission Time (hr)")
+    xlabel!(subplots[6], "Mission Time (hr)")
+
+    p = plot(
+        subplots...;
+        layout=(3, 2),
+        size=(1300, 1000),
+        plot_title="Orbital Elements vs Time"
+    )
+    _add_vertical_markers!(p, _trajectory_marker_times(args))
+
+    plot_path = joinpath(results_dir, "orbital_elements_vs_time.png")
+    savefig(p, plot_path)
+    println("Saved orbital-elements plot to $(abspath(plot_path))")
+    return plot_path
+end
+
+function _save_apoapsis_periapsis_trace_plot(args::SimulationConfiguration, planet)
+    results_dir = args.simulation_settings.results_directory
+    csv_path = joinpath(results_dir, "simulation_results.csv")
+    extrema = _derive_orbit_extrema_from_results(csv_path, planet)
+
+    p = plot(
+        extrema.peri.orbit,
+        extrema.peri.altitude_km;
+        xlabel="Orbit Number",
+        ylabel="Periapsis Altitude (km)",
+        label="Periapsis",
+        linewidth=2.5,
+        marker=:circle,
+        color=:dodgerblue,
+        grid=true,
+        legend=:topright,
+        title="Apoapsis and Periapsis Traces"
+    )
+
+    apo_axis = twinx()
+    plot!(
+        apo_axis,
+        extrema.apo.orbit,
+        extrema.apo.altitude_km;
+        ylabel="Apoapsis Altitude (km)",
+        label=false,
+        linewidth=2.5,
+        marker=:diamond,
+        color=:crimson
+    )
+    plot!(
+        p,
+        [NaN],
+        [NaN];
+        label="Apoapsis",
+        linewidth=2.5,
+        marker=:diamond,
+        color=:crimson
+    )
+
+    plot_path = joinpath(results_dir, "apoapsis_periapsis_trace_vs_orbit.png")
+    savefig(p, plot_path)
+    println("Saved apoapsis/periapsis trace plot to $(abspath(plot_path))")
+    return plot_path
+end
+
 function _save_periapsis_latlon_plot(args::SimulationConfiguration, planet, odyssey_schedule)
     results_dir = args.simulation_settings.results_directory
     peri_events = _load_periapsis_events(results_dir)

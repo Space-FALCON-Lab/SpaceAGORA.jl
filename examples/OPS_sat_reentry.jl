@@ -1,0 +1,152 @@
+include(joinpath(@__DIR__, "common.jl"))
+# include(joinpath(REPO_ROOT, "src", "mission", "operations", "maneuver_plans.jl"))
+using CSV
+using DataFrames
+using Plots
+using PlotlyJS: Plot, scatter3d, surface, Layout, attr
+using Roots
+using SPICE
+using StaticArrays
+using LinearAlgebra
+using Logging
+
+include(joinpath(@__DIR__, "aerobraking_mission_plot_utils.jl"))
+setup_gram_example!()
+planet = Earth("", SPICE_PATH)
+smoke_mode = get(ENV, "SPACEAGORA_EXAMPLE_SMOKE", "0") == "1"
+initial_time=InitialTime(
+    year=2024,
+    month=5,
+    day=1,
+    hour=1,
+    minute=39,
+    second=26.766720
+)
+
+ic = InitialCondition(
+    a=6_711_404.4155,
+    e=0.0000465,
+    i=97.4411,
+    ω=216.2541,
+    Ω=326.1064,
+    ν=143.8726
+)
+
+spacecraft = make_three_body_spacecraft(
+    bus_dims=(0.3, 0.1, 0.1),
+    panel_dims=(0.01, 1.0e-5, 1.0e-5),
+    # panel_dims=(0.005, 0.10, 0.30),
+    bus_mass=7.0,
+    panel_mass_each=0.165,
+    panel_offset_y=0.15,
+    ic=ic,
+    reflection_coefficient=0.9,
+    prop_mass=0.1,
+    id=101
+)
+
+earth_harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
+sun_gravity = NBodyGravityModel(body_names=("Sun","Moon"), primary_body_name="Earth", planet=planet)
+solar_radiation_pressure = SolarRadiationPressureModel(spacecraft.root.reflection_coefficient, spacecraft.root.ref_area)
+dynamic_effectors = (
+    InverseSquaredGravityModel(),
+    sun_gravity,
+    GravitationalHarmonicsModel(99, 99, earth_harmonics_file, planet),
+    solar_radiation_pressure,
+    AerodynamicCoefficientfM()
+)
+# density_model = smoke_mode ? NoAtmosphereModel() : ConstantDensityModel(2e-9, 180.0)
+# density_model = NoAtmosphereModel()
+density_model = GRAMAtmosphereModel(planet_name="earth")
+base_args = make_example_config(
+    planet=planet,
+    spacecraft=spacecraft,
+    mission_time=8.0 * 86400.0,
+    initial_time=initial_time,
+    dynamic_effectors=dynamic_effectors,
+    density_model=density_model,
+    orientation_sim=false,
+    keplerian=smoke_mode,
+    EI_km=350.0,
+    results_directory=joinpath(REPO_ROOT, "output", "max_drag_config")
+)
+
+
+
+args = SimulationConfiguration(
+    file_paths=base_args.file_paths,
+    simulation_settings=base_args.simulation_settings,
+    mission_configuration=base_args.mission_configuration,
+    environment_model=base_args.environment_model,
+    dynamics_model=base_args.dynamics_model,
+    guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
+    navigation_model=base_args.navigation_model,
+    control_model=ControlModel(control_effectors=(), control_rates=Float64[]),
+    initial_time=base_args.initial_time,
+    integration_tolerances=IntegrationTolerances(
+        reltol_orbit=1e-8,
+        abstol_orbit=1e-8,
+        dt_max_orbit=30.0,
+        reltol_atmosphere=1e-8,
+        abstol_atmosphere=1e-8,
+        dt_max_atmosphere=1.0
+    )
+)
+# ENV["SPACEAGORA_SOLVER_MODE"] = "auto_stiff"
+# ENV["SPACEAGORA_SOLVER_MAXITERS"] = "5000"
+
+args_eff = SpaceAGORA.TelemetryVerification._example_smoke_args(args)
+sim_elapsed = @elapsed sol = run_simulation(args_eff; return_solution=true)
+csv_path = joinpath(args_eff.simulation_settings.results_directory, "simulation_results.csv")
+if args_eff.simulation_settings.results && isfile(csv_path)
+    df = CSV.read(csv_path, DataFrame)
+    println("Saved $(nrow(df)) samples to $(abspath(csv_path))")
+end
+println("COMPUTATIONAL TIME = $(sim_elapsed) s")
+periapsis_event_path = _save_periapsis_event_table(
+    sol,
+    args_eff,
+    args_eff.environment_model.planet;
+    allow_empty=smoke_mode
+)
+trajectory_components_plot_path = _save_trajectory_components_plot(args_eff)
+reference_sphere_altitude_plot_path = _save_reference_sphere_altitude_plot(args_eff)
+telemetry_simulation_altitude_plot_path = _save_telemetry_simulation_altitude_plot(args_eff, args_eff.initial_time)
+orbital_elements_plot_path = _save_orbital_elements_plot(args_eff, args_eff.environment_model.planet)
+apoapsis_periapsis_trace_plot_path = _save_apoapsis_periapsis_trace_plot(args_eff, args_eff.environment_model.planet)
+# try
+#     spice_periapsis_event_path = _save_spice_periapsis_event_table(
+#         args_eff,
+#         args_eff.environment_model.planet,
+#         args_eff.initial_time,
+#         SPICE_PATH;
+#         allow_empty=smoke_mode
+#     )
+#     spice_apoapsis_event_path = _save_spice_apoapsis_event_table(
+#         args_eff,
+#         args_eff.environment_model.planet,
+#         args_eff.initial_time,
+#         SPICE_PATH;
+#         allow_empty=smoke_mode
+#     )
+# catch err
+#     @warn "Skipping SPICE periapsis/apoapsis post-processing for OPS_sat_reentry." exception=(err, catch_backtrace())
+# end
+# if _has_orbit_extrema_for_plots(args_eff, args_eff.environment_model.planet)
+#     _save_apoapsis_periapsis_plot(args_eff, args_eff.environment_model.planet, odyssey_schedule)
+#     _save_apoapsis_radius_plot(args_eff, args_eff.environment_model.planet, odyssey_schedule)
+#     _save_periapsis_latlon_plot(args_eff, args_eff.environment_model.planet, odyssey_schedule)
+#     _save_drag_along_velocity_plot(args_eff)
+#     _save_aero_sideways_components_plot(args_eff)
+# end
+# trajectory_plot_path = _save_trajectory_comparison_plot(args_eff, args_eff.environment_model.planet, args_eff.initial_time, SPICE_PATH)
+# planet_fixed_trajectory_plot_path = _save_planet_fixed_trajectory_comparison_plot(args_eff, args_eff.environment_model.planet, args_eff.initial_time, SPICE_PATH)
+# _save_planet_fixed_axis_trajectory_plot(args_eff, args_eff.environment_model.planet, args_eff.initial_time, SPICE_PATH)
+# _save_orbital_elements_comparison_plot(args_eff, args_eff.environment_model.planet, args_eff.initial_time, SPICE_PATH)
+# _save_inertial_position_error_plot(args_eff, args_eff.initial_time, SPICE_PATH)
+# _save_inertial_velocity_error_plot(args_eff, args_eff.initial_time, SPICE_PATH)
+# _save_planet_fixed_position_error_plot(args_eff, args_eff.environment_model.planet, args_eff.initial_time, SPICE_PATH)
+# _save_planet_fixed_velocity_error_plot(args_eff, args_eff.environment_model.planet, args_eff.initial_time, SPICE_PATH)
+# _save_rtn_position_error_plot(args_eff, args_eff.initial_time, SPICE_PATH)
+# _save_rtn_velocity_error_plot(args_eff, args_eff.initial_time, SPICE_PATH)
+# _open_plot_in_browser(trajectory_plot_path)

@@ -194,6 +194,7 @@ module Planets
     end
 
     @inline function _spice_body_radii_m(planet_name::String)::NTuple{3, Float64}
+        println(planet_name)
         radii_km = lock(SPICE_LOCK) do
             bodvrd(_spice_body_pool_name(planet_name), "RADII")
         end

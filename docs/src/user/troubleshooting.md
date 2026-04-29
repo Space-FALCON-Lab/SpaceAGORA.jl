@@ -55,6 +55,10 @@ expected local path.
    ```bash
    ./scripts/ensure_gram_native.sh
    ```
+   If the repo is mounted `noexec` inside Docker, use:
+   ```bash
+   bash ./scripts/ensure_gram_native.sh
+   ```
 4. Confirm with:
    ```bash
    ./bin/spaceagora assets check
@@ -76,10 +80,22 @@ different machine or checkout path.
 ./scripts/ensure_gram_native.sh
 ```
 
+Docker `noexec` fallback:
+
+```bash
+bash ./scripts/ensure_gram_native.sh
+```
+
 If the build metadata came from a different machine or path:
 
 ```bash
 ./scripts/ensure_gram_native.sh --clean
+```
+
+Docker `noexec` fallback:
+
+```bash
+bash ./scripts/ensure_gram_native.sh --clean
 ```
 
 ---

@@ -75,7 +75,7 @@ done
 GRAM_ROOT="${GRAM_ROOT_ARG:-${GRAM_ROOT:-${DEFAULT_GRAM_ROOT}}}"
 GRAM_ROOT="$(cd "${GRAM_ROOT}" && pwd)"
 [[ -d "${GRAM_ROOT}" ]] || { echo "GRAM root not found: ${GRAM_ROOT}" >&2; exit 1; }
-[[ -x "${BUILD_HELPER}" ]] || { echo "GRAM build helper not found: ${BUILD_HELPER}" >&2; exit 1; }
+[[ -f "${BUILD_HELPER}" ]] || { echo "GRAM build helper not found: ${BUILD_HELPER}" >&2; exit 1; }
 
 OS="$(uname -s)"
 LIB_EXT="$(expected_lib_ext "${OS}")"
@@ -97,7 +97,7 @@ if [[ "${CLEAN_FLAG}" -eq 1 ]]; then
 fi
 BUILD_ARGS+=("${GRAM_ROOT}")
 
-"${BUILD_HELPER}" "${BUILD_ARGS[@]}"
+bash "${BUILD_HELPER}" "${BUILD_ARGS[@]}"
 
 if [[ ! -f "${EXPECTED_LIB}" ]]; then
   echo "Build completed but expected native library is still missing: ${EXPECTED_LIB}" >&2

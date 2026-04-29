@@ -103,11 +103,24 @@ root with:
 ./scripts/ensure_gram_native.sh
 ```
 
+If you are running inside Docker and the repo is mounted with `noexec`, invoke
+the wrapper through `bash` instead:
+
+```bash
+bash ./scripts/ensure_gram_native.sh
+```
+
 If the copied build metadata came from a different machine or absolute path,
 force a clean rebuild:
 
 ```bash
 ./scripts/ensure_gram_native.sh --clean
+```
+
+On Docker bind mounts with `noexec`, use:
+
+```bash
+bash ./scripts/ensure_gram_native.sh --clean
 ```
 
 This step should produce the native `libGRAM` artifact under the platform

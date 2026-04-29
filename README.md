@@ -70,11 +70,24 @@ it with:
 ./scripts/ensure_gram_native.sh
 ```
 
+On Docker bind mounts that are marked `noexec`, run the wrapper through
+`bash` instead:
+
+```bash
+bash ./scripts/ensure_gram_native.sh
+```
+
 If the build metadata came from a different machine or checkout path, force a
 clean rebuild with:
 
 ```bash
 ./scripts/ensure_gram_native.sh --clean
+```
+
+Docker `noexec` fallback:
+
+```bash
+bash ./scripts/ensure_gram_native.sh --clean
 ```
 
 ## Quick Start
@@ -149,6 +162,8 @@ Before running it, verify:
 - `data/GRAMSuite.jl/GRAM Suite 2.0/SPICE` exists
 - the platform-native GRAM shared library exists, or can be built with
   `./scripts/ensure_gram_native.sh`
+  If the repo is mounted `noexec` in Docker, use
+  `bash ./scripts/ensure_gram_native.sh`.
 
 Useful commands:
 

@@ -62,10 +62,6 @@ jobs:
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-      - name: Instantiate sysimage environment
-        env:
-          JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
       - name: Instantiate sysimage build environment
         run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
       - name: Instantiate GRAMSuite environment
@@ -163,11 +159,6 @@ jobs:
           restore-keys: condapkg-${{ runner.os }}-
 
       - name: Instantiate environment
-        env:
-          JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Instantiate sysimage environment
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'

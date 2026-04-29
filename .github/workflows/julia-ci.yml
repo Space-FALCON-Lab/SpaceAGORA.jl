@@ -41,9 +41,6 @@ jobs:
       - name: Instantiate
         run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
-      - name: Instantiate sysimage environment
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-
       - name: Instantiate sysimage build environment
         run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
 
@@ -105,9 +102,6 @@ jobs:
       - name: Instantiate in clean depot
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
-      - name: Instantiate sysimage environment in clean depot
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-
       - name: Instantiate sysimage build environment in clean depot
         run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
 
@@ -149,9 +143,6 @@ jobs:
       - name: Instantiate
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
-      - name: Instantiate sysimage environment
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-
       - name: Instantiate sysimage build environment
         run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
 
@@ -188,9 +179,6 @@ jobs:
           version: "1.12"
 
       - name: README instantiate command
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Instantiate sysimage environment
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Instantiate sysimage build environment
@@ -237,9 +225,6 @@ jobs:
       - name: Ensure native GRAM build
         run: ./scripts/ensure_gram_native.sh
 
-      - name: Instantiate sysimage environment
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-
       - name: Instantiate sysimage build environment
         run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
 
@@ -284,9 +269,6 @@ jobs:
       - name: Ensure native GRAM build
         run: ./scripts/ensure_gram_native.sh
 
-      - name: Instantiate sysimage environment
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-
       - name: Instantiate sysimage build environment
         run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
 
@@ -330,9 +312,6 @@ jobs:
 
       - name: Ensure native GRAM build
         run: ./scripts/ensure_gram_native.sh
-
-      - name: Instantiate sysimage environment
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Instantiate sysimage build environment
         run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
@@ -391,9 +370,6 @@ jobs:
       - name: Ensure native GRAM build
         run: ./scripts/ensure_gram_native.sh
 
-      - name: Instantiate sysimage environment
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-
       - name: Instantiate sysimage build environment
         run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
 
@@ -441,9 +417,6 @@ jobs:
       - name: Instantiate SpaceAGORACalibration
         run: julia --startup-file=no --project=SpaceAGORACalibration.jl -e 'using Pkg; Pkg.instantiate()'
 
-      - name: Instantiate sysimage environment
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-
       - name: Instantiate sysimage build environment
         run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
 
@@ -479,9 +452,6 @@ jobs:
         uses: julia-actions/setup-julia@v2
         with:
           version: "1.12"
-
-      - name: Instantiate sysimage environment
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Instantiate sysimage build environment
         run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
@@ -528,9 +498,6 @@ jobs:
       - name: Instantiate docs environment
         run: julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
 
-      - name: Instantiate sysimage environment
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-
       - name: Instantiate sysimage build environment
         run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
 
@@ -574,9 +541,6 @@ jobs:
         uses: julia-actions/setup-julia@v2
         with:
           version: "1.12"
-
-      - name: Instantiate sysimage environment
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Instantiate sysimage build environment
         run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'

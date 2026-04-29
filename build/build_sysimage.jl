@@ -105,8 +105,8 @@ kwargs = Dict{Symbol,Any}(
     # Use the Earth example as a precompile execution trace so that the
     # methods hot-called during a real run are compiled into the image.
     # CI skips this trace by default to avoid depending on native runtime data.
-    precompile_execution_file = PRECOMPILE_SCRIPT,
-    project = PROJECT_ROOT,
+    :precompile_execution_file = PRECOMPILE_SCRIPT,
+    :project = PROJECT_ROOT,
 )
 
 if precompile_execution_file !== nothing

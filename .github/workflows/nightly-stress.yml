@@ -47,6 +47,9 @@ jobs:
       - name: Instantiate SpaceAGORACalibration
         run: julia --startup-file=no --project=SpaceAGORACalibration.jl -e 'using Pkg; Pkg.instantiate()'
 
+      - name: Ensure native GRAM build
+        run: ./scripts/ensure_gram_native.sh
+
       - name: Fetch base ref (PR only)
         if: github.event_name == 'pull_request'
         run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}

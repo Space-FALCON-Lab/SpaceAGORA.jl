@@ -41,6 +41,9 @@ jobs:
       - name: Instantiate
         run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
+      - name: Ensure native GRAM build
+        run: ./scripts/ensure_gram_native.sh
+
       - name: Run test suite
         run: julia --project=. test/runtests.jl
 
@@ -195,6 +198,9 @@ jobs:
       - name: Instantiate
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
+      - name: Ensure native GRAM build
+        run: ./scripts/ensure_gram_native.sh
+
       - name: Example suite smoke
         run: julia --startup-file=no --project=. test/ci_examples_suite_smoke.jl
 
@@ -230,6 +236,9 @@ jobs:
       - name: Instantiate
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
+      - name: Ensure native GRAM build
+        run: ./scripts/ensure_gram_native.sh
+
       - name: Example regression
         run: julia --startup-file=no --project=. test/integration/examples/runtests.jl
 
@@ -264,6 +273,9 @@ jobs:
 
       - name: Instantiate
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Ensure native GRAM build
+        run: ./scripts/ensure_gram_native.sh
 
       - name: Telemetry quick regression (GRAM deterministic)
         run: julia --startup-file=no --depwarn=error --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
@@ -312,6 +324,9 @@ jobs:
 
       - name: Instantiate
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Ensure native GRAM build
+        run: ./scripts/ensure_gram_native.sh
 
       - name: Run tests with coverage
         run: julia --startup-file=no --project=. --code-coverage=user test/runtests.jl

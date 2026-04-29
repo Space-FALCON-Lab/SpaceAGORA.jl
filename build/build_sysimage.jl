@@ -100,7 +100,7 @@ else
 end
 
 kwargs = Dict{Symbol,Any}(
-    :sysimage_path => sysimage_path,
+    :sysimage_path => SYSIMAGE_PATH
     # add other kwargs you already use...
     # Use the Earth example as a precompile execution trace so that the
     # methods hot-called during a real run are compiled into the image.

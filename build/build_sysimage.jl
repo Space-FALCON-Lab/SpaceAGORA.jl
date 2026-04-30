@@ -108,7 +108,7 @@ if PRECOMPILE_SCRIPT !== nothing
     kwargs[:precompile_execution_file] = PRECOMPILE_SCRIPT
 end
 
-PackageCompiler.create_sysimage(packages; kwargs...)
+PackageCompiler.create_sysimage(PACKAGES; kwargs...)
 
 println("Done.  Launch Julia with:")
 println("  julia --project=. --sysimage SpaceAGORA.so <script.jl>")

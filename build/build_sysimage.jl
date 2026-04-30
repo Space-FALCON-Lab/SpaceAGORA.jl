@@ -101,16 +101,11 @@ end
 
 kwargs = Dict{Symbol,Any}(
     :sysimage_path => SYSIMAGE_PATH,
-    # add other kwargs you already use...
-    # Use the Earth example as a precompile execution trace so that the
-    # methods hot-called during a real run are compiled into the image.
-    # CI skips this trace by default to avoid depending on native runtime data.
-    :precompile_execution_file = PRECOMPILE_SCRIPT,
-    :project = PROJECT_ROOT,
+    :project => PROJECT_ROOT,
 )
 
-if precompile_execution_file !== nothing
-    kwargs[:precompile_execution_file] = precompile_execution_file  # String or Vector{String}
+if PRECOMPILE_SCRIPT !== nothing
+    kwargs[:precompile_execution_file] = PRECOMPILE_SCRIPT
 end
 
 PackageCompiler.create_sysimage(packages; kwargs...)

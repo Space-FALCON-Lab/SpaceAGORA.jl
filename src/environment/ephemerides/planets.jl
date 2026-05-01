@@ -141,7 +141,7 @@ module Planets
         p::Float64 = 0.0
         k::Float64 = 0.0
         ω::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 2.6617e-6)
-        μ::Float64 = 4.902799 #8005821478e12
+        μ::Float64 = 4.902799e12
         J2::Float64 = 2.027e-4
         g_ref::Float64 = 1.62
         ρ_ref::Float64 = 0.0
@@ -209,7 +209,7 @@ module Planets
 
     function _gravity_constants_kernel_if_available(spice_path::String)
         for relpath in (
-            # "pck/de_403_masses.tpc",
+            "pck/de_403_masses.tpc",
             # "spk/planets/de_403_masses.tpc",
             "pck/gm_de440.tpc",
             "pck/gm_de441.tpc",

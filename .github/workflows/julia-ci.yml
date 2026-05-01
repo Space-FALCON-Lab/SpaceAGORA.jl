@@ -26,7 +26,7 @@ jobs:
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
+        uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.julia-version }}
 
@@ -76,7 +76,7 @@ jobs:
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
+        uses: julia-actions/setup-julia@v3
         with:
           version: "1.12"
 
@@ -103,7 +103,7 @@ jobs:
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
+        uses: julia-actions/setup-julia@v3
         with:
           version: "1.12"
 
@@ -133,7 +133,7 @@ jobs:
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
+        uses: julia-actions/setup-julia@v3
         with:
           version: "1.12"
 
@@ -160,7 +160,7 @@ jobs:
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
+        uses: julia-actions/setup-julia@v3
         with:
           version: "1.12"
 
@@ -193,7 +193,7 @@ jobs:
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
+        uses: julia-actions/setup-julia@v3
         with:
           version: "1.12"
 
@@ -226,7 +226,7 @@ jobs:
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
+        uses: julia-actions/setup-julia@v3
         with:
           version: "1.12"
 
@@ -272,7 +272,7 @@ jobs:
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
+        uses: julia-actions/setup-julia@v3
         with:
           version: "1.12"
 
@@ -311,7 +311,7 @@ jobs:
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
+        uses: julia-actions/setup-julia@v3
         with:
           version: "1.12"
 
@@ -342,7 +342,7 @@ jobs:
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
+        uses: julia-actions/setup-julia@v3
         with:
           version: "1.12"
 
@@ -362,7 +362,7 @@ jobs:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
+        uses: julia-actions/setup-julia@v3
         with:
           version: "1.12"
 
@@ -401,7 +401,7 @@ jobs:
         run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}
 
       - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
+        uses: julia-actions/setup-julia@v3
         with:
           version: "1.12"
 

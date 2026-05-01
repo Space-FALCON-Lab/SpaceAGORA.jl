@@ -81,7 +81,7 @@ jobs:
       # 7. Upload coverage data so it can be inspected in the Actions artifacts panel.
       - name: Upload coverage artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-${{ matrix.julia-version }}-${{ github.run_id }}
           path: "**/*.cov"

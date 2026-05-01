@@ -25,7 +25,7 @@ jobs:
       JULIA_NUM_THREADS: "4"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
@@ -129,7 +129,7 @@ jobs:
       JULIA_NUM_THREADS: "4"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 

@@ -51,7 +51,7 @@ jobs:
       # Project.toml or Manifest.toml change, matching the strategy used in
       # the other CI workflows.
       - name: Cache Julia packages and compiled artifacts
-        uses: julia-actions/cache@v2
+        uses: julia-actions/cache@v3
 
       # Cache the CondaPkg-managed conda environment separately, keyed on
       # CondaPkg.toml, so that Python dependencies are not reinstalled when

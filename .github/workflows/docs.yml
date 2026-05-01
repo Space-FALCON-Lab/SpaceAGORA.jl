@@ -36,7 +36,7 @@ jobs:
           version: "1.12"
 
       - name: Cache Julia artifacts
-        uses: julia-actions/cache@v2
+        uses: julia-actions/cache@v3
 
       - name: Instantiate environment
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'

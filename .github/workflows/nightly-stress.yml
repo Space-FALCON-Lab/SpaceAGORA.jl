@@ -36,7 +36,7 @@ jobs:
           version: "1.12"
 
       - name: Cache Julia artifacts
-        uses: julia-actions/cache@v2
+        uses: julia-actions/cache@v3
 
       - name: Instantiate vendored GRAMSuite
         run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'

@@ -42,7 +42,7 @@ jobs:
       # 2. Restore ~/.julia/packages and compiled artifacts from cache.
       #    The cache key changes whenever Project.toml or Manifest.toml
       #    changes, so packages are only re-downloaded when needed.
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@v3
 
       # 3. Restore the CondaPkg conda environment from cache.
       #    Keyed on CondaPkg.toml so only invalidated when Python deps change.
@@ -142,7 +142,7 @@ jobs:
         with:
           version: "1.12"
 
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@v3
 
       - name: Cache CondaPkg environment
         uses: actions/cache@v4

@@ -8,7 +8,7 @@ command, go back to the User Guide.
 
 Quickest maintainer check:
 
-```bash
+```text
 julia --project=docs docs/make.jl
 ```
 
@@ -72,6 +72,8 @@ Examples already in the repo:
 - assets are anchored to `data/assets_manifest.toml`
 - public API docs are anchored to `docs/public_api_symbols.jl`
 - Wave 5 docs are anchored by `test/ci_hpc_extensibility_docs_gate.jl`
+- terminal commands in user docs should use cross-platform entrypoints or
+  provide shell-specific variants where syntax differs
 
 ## PR review checklist
 
@@ -86,7 +88,7 @@ Every PR should check the docs drift items in `.github/pull_request_template.md`
 
 Before merge to `main`, the documentation release gate is:
 
-```bash
+```text
 julia --project=docs docs/make.jl
 julia --project=. test/ci_public_api_surface_gate.jl
 julia --project=. test/ci_hpc_extensibility_docs_gate.jl

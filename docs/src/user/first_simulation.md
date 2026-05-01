@@ -8,7 +8,7 @@ and want a concrete next command.
 
 Shortest successful command:
 
-```bash
+```text
 julia --project=. examples/Earth_Thruster_Test.jl
 ```
 
@@ -24,7 +24,7 @@ What to read next:
 
 Use a repository-owned example when you want the smallest amount of setup:
 
-```bash
+```text
 julia --project=. examples/Earth_Thruster_Test.jl
 ```
 
@@ -32,8 +32,8 @@ julia --project=. examples/Earth_Thruster_Test.jl
 
 Use the CLI when you want a stable packaged command surface:
 
-```bash
-./bin/spaceagora run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/cli_run
+```text
+julia --project=. src/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/cli_run
 ```
 
 ## When to pick a different path

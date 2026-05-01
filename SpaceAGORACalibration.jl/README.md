@@ -49,8 +49,8 @@ Stages are restartable from `state.toml` and `evaluations.arrow`.
 
 ## Usage
 
-```bash
-julia --project=SpaceAGORACalibration.jl -e 'using Pkg; Pkg.instantiate()'
+```text
+julia --project=SpaceAGORACalibration.jl -e "using Pkg; Pkg.instantiate()"
 
 # Mock smoke run (package-only)
 julia --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/bin/run_calibration.jl

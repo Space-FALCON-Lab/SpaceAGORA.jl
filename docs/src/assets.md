@@ -8,8 +8,8 @@ higher-fidelity workflows, or checking whether required data is present.
 
 Shortest successful command:
 
-```bash
-./bin/spaceagora assets check
+```text
+julia --project=. src/cli/main.jl assets check
 ```
 
 What to read next:
@@ -108,10 +108,10 @@ The package-owned asset check distinguishes:
 
 Useful commands:
 
-```bash
-./bin/spaceagora assets check
-./bin/spaceagora assets manifest
-./bin/spaceagora assets setup-open
+```text
+julia --project=. src/cli/main.jl assets check
+julia --project=. src/cli/main.jl assets manifest
+julia --project=. src/cli/main.jl assets setup-open
 ```
 
 ## Machine-readable manifest
@@ -130,8 +130,8 @@ This file is the machine-readable asset source of truth for:
 
 You can inspect it with either:
 
-```bash
-./bin/spaceagora assets manifest
+```text
+julia --project=. src/cli/main.jl assets manifest
 julia --project=. scripts/assets/show_asset_manifest.jl
 ```
 
@@ -139,7 +139,7 @@ julia --project=. scripts/assets/show_asset_manifest.jl
 
 Baseline/open-mode bootstrap:
 
-```bash
+```text
 julia --project=. scripts/assets/setup_open_assets.jl
 ```
 
@@ -148,6 +148,6 @@ contract and explicitly leaves licensed assets as user-provided.
 
 Direct asset check script:
 
-```bash
+```text
 julia --project=. scripts/assets/check_assets.jl
 ```

@@ -8,8 +8,8 @@ execution, worker-project setup, or scheduler examples.
 
 Shortest successful example:
 
-```bash
-scripts/hpc/local_process_runtime_analysis.sh
+```text
+julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/hpc_local_runtime_analysis
 ```
 
 What to read next:
@@ -89,6 +89,9 @@ Repository examples:
 - `scripts/hpc/slurm_process_runtime_analysis.sh`
 
 The local launcher is the minimal path for one machine with process workers.
+Those helper scripts are Unix-oriented examples; on Windows, set the same
+environment variables in PowerShell or `cmd.exe` and run the Julia CLI
+entrypoint directly.
 
 The Slurm launcher shows:
 

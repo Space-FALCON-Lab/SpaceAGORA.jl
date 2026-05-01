@@ -9,7 +9,7 @@ interpret the output.
 
 Shortest successful command:
 
-```bash
+```text
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 

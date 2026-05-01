@@ -8,7 +8,7 @@ not for first-time users trying to run a simulation.
 
 Quickest maintainer build:
 
-```bash
+```text
 julia --project=docs docs/make.jl
 ```
 

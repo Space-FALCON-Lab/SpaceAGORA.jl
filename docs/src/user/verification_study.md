@@ -8,7 +8,7 @@ the repository-owned verification study with explicit enforcement.
 
 Shortest successful command:
 
-```bash
+```text
 julia --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
 ```
 
@@ -22,7 +22,7 @@ What to read next:
 
 The direct study launcher is:
 
-```bash
+```text
 julia --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
 ```
 
@@ -33,8 +33,8 @@ when threshold failures should stop the run.
 
 The packaged CLI route is:
 
-```bash
-./bin/spaceagora telemetry quick --output-dir=output/telemetry_cli --enforce=1
+```text
+julia --project=. src/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
 ```
 
 Plot generation is off by default in the CLI path so the command remains usable

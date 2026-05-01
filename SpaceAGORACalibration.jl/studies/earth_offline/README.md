@@ -10,21 +10,48 @@ This study is an Earth-only telemetry calibration campaign designed for reproduc
 
 ## Run (from repo root)
 
+PowerShell:
+
+```powershell
+$env:JULIA_PKG_OFFLINE = "true"
+julia --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --profile=quick --plots=0
+```
+
+`cmd.exe`:
+
+```bat
+set JULIA_PKG_OFFLINE=true
+julia --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --profile=quick --plots=0
+```
+
+POSIX shells:
+
 ```bash
-JULIA_PKG_OFFLINE=true julia --project=SpaceAGORACalibration.jl \
-  SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl \
-  --profile=quick \
-  --plots=0
+export JULIA_PKG_OFFLINE=true
+julia --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --profile=quick --plots=0
 ```
 
 ## Smoke run (fast sanity)
 
+PowerShell:
+
+```powershell
+$env:JULIA_PKG_OFFLINE = "true"
+julia --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --spec=SpaceAGORACalibration.jl/studies/earth_offline/spec_earth_offline_smoke.toml --profile=quick --plots=0
+```
+
+`cmd.exe`:
+
+```bat
+set JULIA_PKG_OFFLINE=true
+julia --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --spec=SpaceAGORACalibration.jl/studies/earth_offline/spec_earth_offline_smoke.toml --profile=quick --plots=0
+```
+
+POSIX shells:
+
 ```bash
-JULIA_PKG_OFFLINE=true julia --project=SpaceAGORACalibration.jl \
-  SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl \
-  --spec=SpaceAGORACalibration.jl/studies/earth_offline/spec_earth_offline_smoke.toml \
-  --profile=quick \
-  --plots=0
+export JULIA_PKG_OFFLINE=true
+julia --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --spec=SpaceAGORACalibration.jl/studies/earth_offline/spec_earth_offline_smoke.toml --profile=quick --plots=0
 ```
 
 The engine stage map remains:
@@ -44,7 +71,8 @@ Outputs are written under:
 - `spec.toml`, `evaluations.arrow`, `state.toml`, `best_manifest.toml`, `report.md`
 
 This study enables candidate-level outer parallelism with `budgets.parallel_evaluations` in the spec.
-You can override at runtime with `SPACEAGORA_CALIBRATION_PARALLEL_EVALUATIONS=<N>`.
+You can override it with the `SPACEAGORA_CALIBRATION_PARALLEL_EVALUATIONS`
+environment variable in your shell before launching the study.
 
 Replica artifacts during robustness stage are isolated as:
 

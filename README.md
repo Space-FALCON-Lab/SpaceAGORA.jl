@@ -5,18 +5,27 @@ simulation, including aerobraking, entry, and aerocapture workflows. The main
 user-facing surfaces are:
 
 - the root `SpaceAGORA` Julia API
-- the repository CLI wrapper at `./bin/spaceagora`
+- the repository CLI wrapper at `./bin/spaceagora` on Linux/macOS or
+  `bin\spaceagora.bat` on Windows
 - runnable example scripts under `examples/`
+
+Cross-platform command conventions used below:
+
+- `julia --project=. src/cli/main.jl ...` works on Windows, Linux, and macOS
+- `julia --project=. scripts/ensure_gram_native.jl ...` works on Windows,
+  Linux, and macOS
+- `./bin/spaceagora` and `./scripts/ensure_gram_native.sh` remain available as
+  convenience wrappers on Linux/macOS
 
 ## Installation
 
 Use the repository root environment as the canonical committed execution environment for examples, tests, and normal local runs:
 
-```bash
+```text
 git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
 git submodule update --init --recursive --remote
-julia --project=. -e 'using Pkg; Pkg.instantiate()'
+julia --project=. -e "using Pkg; Pkg.instantiate()"
 ```
 
 That gives you the baseline open-data onboarding path immediately. You do not
@@ -24,9 +33,9 @@ need GRAM or SPICE to run the first quickstart example, and there is no bootstra
 
 Helpful first checks:
 
-```bash
-./bin/spaceagora assets check
-./bin/spaceagora assets setup-open
+```text
+julia --project=. src/cli/main.jl assets check
+julia --project=. src/cli/main.jl assets setup-open
 ```
 
 `assets check` reports which optional local assets are present.
@@ -66,42 +75,29 @@ step-by-step local setup guide for licensed GRAM assets.
 If the native GRAM shared library for your operating system is missing, build
 it with:
 
-```bash
-./scripts/ensure_gram_native.sh
-```
-
-On Docker bind mounts that are marked `noexec`, run the wrapper through
-`bash` instead:
-
-```bash
-bash ./scripts/ensure_gram_native.sh
+```text
+julia --project=. scripts/ensure_gram_native.jl
 ```
 
 If the build metadata came from a different machine or checkout path, force a
 clean rebuild with:
 
-```bash
-./scripts/ensure_gram_native.sh --clean
-```
-
-Docker `noexec` fallback:
-
-```bash
-bash ./scripts/ensure_gram_native.sh --clean
+```text
+julia --project=. scripts/ensure_gram_native.jl --clean
 ```
 
 ## Quick Start
 
 The fastest first run is:
 
-```bash
+```text
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
 Or through the CLI:
 
-```bash
-./bin/spaceagora run --example=AGORA_Basic_Quickstart.jl
+```text
+julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl
 ```
 
 That example is intentionally simple:
@@ -114,8 +110,8 @@ That example is intentionally simple:
 
 If you only want to verify the end-to-end path with a short run, use:
 
-```bash
-./bin/spaceagora run --example=AGORA_Basic_Quickstart.jl --smoke
+```text
+julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --smoke
 ```
 
 ## Basic Example
@@ -145,7 +141,7 @@ Key ideas in that example:
 
 Once GRAM assets are available locally, the smallest GRAM-backed example is:
 
-```bash
+```text
 julia --project=. examples/AGORA_Basic_GRAMEarth.jl
 ```
 
@@ -161,15 +157,13 @@ Before running it, verify:
 - `data/GRAMSuite.jl/GRAM Suite 2.0` exists
 - `data/GRAMSuite.jl/GRAM Suite 2.0/SPICE` exists
 - the platform-native GRAM shared library exists, or can be built with
-  `./scripts/ensure_gram_native.sh`
-  If the repo is mounted `noexec` in Docker, use
-  `bash ./scripts/ensure_gram_native.sh`.
+  `julia --project=. scripts/ensure_gram_native.jl`
 
 Useful commands:
 
-```bash
-./bin/spaceagora assets check
-./scripts/ensure_gram_native.sh
+```text
+julia --project=. src/cli/main.jl assets check
+julia --project=. scripts/ensure_gram_native.jl
 julia --project=. examples/AGORA_Basic_GRAMEarth.jl
 ```
 
@@ -184,10 +178,12 @@ add mission-specific guidance, maneuvers, and higher-fidelity dynamics.
 ## CLI and docs
 
 - Docs site: [space-falcon-lab.github.io/SpaceAGORA.jl](https://space-falcon-lab.github.io/SpaceAGORA.jl)
-- CLI wrapper: `./bin/spaceagora`
-- Run an example: `./bin/spaceagora run --example=AGORA_Basic_Quickstart.jl`
-- Asset check: `./bin/spaceagora assets check`
-- Verification study: `./bin/spaceagora telemetry quick --output-dir=output/telemetry_cli --enforce=1`
+- Cross-platform CLI entrypoint: `julia --project=. src/cli/main.jl`
+- Linux/macOS wrapper: `./bin/spaceagora`
+- Windows wrapper: `bin\spaceagora.bat`
+- Run an example: `julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl`
+- Asset check: `julia --project=. src/cli/main.jl assets check`
+- Verification study: `julia --project=. src/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1`
 
 ## For contributors
 

@@ -8,7 +8,7 @@ and want to scale it up or understand the available execution profiles.
 
 Shortest successful command:
 
-```bash
+```text
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
@@ -74,15 +74,31 @@ with_parallel_profile(:r3) do ... end     # symbol (case-insensitive)
 For CLI runs or scripted batch execution, set `SPACEAGORA_PARALLEL_PROFILE`
 before launching:
 
-```bash
-SPACEAGORA_PARALLEL_PROFILE=R3 julia --project=. examples/AGORA_Basic_Quickstart.jl
+```powershell
+$env:SPACEAGORA_PARALLEL_PROFILE = "R3"
+julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
-Or pin it for a session:
+`cmd.exe`:
+
+```bat
+set SPACEAGORA_PARALLEL_PROFILE=R3
+julia --project=. examples/AGORA_Basic_Quickstart.jl
+```
+
+POSIX shells:
 
 ```bash
-export SPACEAGORA_PARALLEL_PROFILE=R4
+export SPACEAGORA_PARALLEL_PROFILE=R3
 julia --project=. examples/AGORA_Basic_Quickstart.jl
+```
+
+Or pin it for a session with the Julia API:
+
+```julia
+with_parallel_profile(:R4) do
+    run_simulation(config)
+end
 ```
 
 ## Inspecting a profile's environment variables
@@ -108,6 +124,20 @@ the same session. This reduces the calibration overhead on the second and
 subsequent runs.
 
 Set a stable hint state path to make hints persist across Julia sessions:
+
+```powershell
+$env:SPACEAGORA_PARALLEL_POLICY_STATE_PATH = "C:\\path\\to\\hints.toml"
+$env:SPACEAGORA_PARALLEL_PROFILE = "R5"
+```
+
+`cmd.exe`:
+
+```bat
+set SPACEAGORA_PARALLEL_POLICY_STATE_PATH=C:\path\to\hints.toml
+set SPACEAGORA_PARALLEL_PROFILE=R5
+```
+
+POSIX shells:
 
 ```bash
 export SPACEAGORA_PARALLEL_POLICY_STATE_PATH=/path/to/hints.toml

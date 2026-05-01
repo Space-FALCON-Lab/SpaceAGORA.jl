@@ -8,7 +8,7 @@ to adjust the solver beyond the defaults.
 
 Shortest successful command:
 
-```bash
+```text
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 

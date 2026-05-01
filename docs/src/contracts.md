@@ -8,7 +8,7 @@ start with the User Guide instead.
 
 Quickest related build command:
 
-```bash
+```text
 julia --project=docs docs/make.jl
 ```
 

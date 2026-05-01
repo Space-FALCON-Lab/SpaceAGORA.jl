@@ -10,7 +10,7 @@ understand what each configuration field controls.
 
 Shortest successful command:
 
-```bash
+```text
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 

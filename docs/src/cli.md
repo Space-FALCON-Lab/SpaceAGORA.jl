@@ -8,8 +8,8 @@ verification studies, benchmarks, and asset inspection.
 
 Shortest successful command:
 
-```bash
-./bin/spaceagora assets check
+```text
+julia --project=. src/cli/main.jl assets check
 ```
 
 What to read next:
@@ -20,27 +20,32 @@ What to read next:
 
 SpaceAGORA exposes a package-owned CLI surface through:
 
-```bash
-./bin/spaceagora
+```text
+julia --project=. src/cli/main.jl
 ```
 
-The wrapper keeps execution on the root project environment by default
-and forwards into `SpaceAGORA.run_cli(...)`.
+This Julia entrypoint is the cross-platform command path for Windows, Linux,
+and macOS.
+
+Convenience wrappers:
+
+- Linux/macOS: `./bin/spaceagora`
+- Windows: `bin\spaceagora.bat`
 
 ## Commands
 
 ### Run an example
 
-```bash
-./bin/spaceagora run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
+```text
+julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
 ```
 
 Use `--smoke` to force the example smoke configuration.
 
 ### Run telemetry verification
 
-```bash
-./bin/spaceagora telemetry quick --output-dir=output/telemetry_cli --enforce=1
+```text
+julia --project=. src/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
 ```
 
 Plot generation is off by default in the CLI path so the telemetry command
@@ -49,17 +54,17 @@ explicitly with `--plots=1`.
 
 ### Run benchmark launchers
 
-```bash
-./bin/spaceagora benchmark runtime-analysis smoke --output-dir=output/perf_cli
-./bin/spaceagora benchmark smart-parallel-ladder smoke --output-dir=output/smart_ladder_cli
+```text
+julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_cli
+julia --project=. src/cli/main.jl benchmark smart-parallel-ladder smoke --output-dir=output/smart_ladder_cli
 ```
 
 ### Inspect assets
 
-```bash
-./bin/spaceagora assets check
-./bin/spaceagora assets manifest
-./bin/spaceagora assets setup-open
+```text
+julia --project=. src/cli/main.jl assets check
+julia --project=. src/cli/main.jl assets manifest
+julia --project=. src/cli/main.jl assets setup-open
 ```
 
 ## Print-only mode

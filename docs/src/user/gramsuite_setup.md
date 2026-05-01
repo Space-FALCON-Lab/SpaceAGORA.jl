@@ -39,7 +39,7 @@ copy/verification steps below.
 Start from the SpaceAGORA repository root and make sure the submodule is
 present locally:
 
-```bash
+```text
 git submodule update --init --recursive --remote
 ```
 
@@ -99,28 +99,15 @@ scripts expect that exact folder name.
 If the platform-native GRAM shared library is missing, build it from the repo
 root with:
 
-```bash
-./scripts/ensure_gram_native.sh
-```
-
-If you are running inside Docker and the repo is mounted with `noexec`, invoke
-the wrapper through `bash` instead:
-
-```bash
-bash ./scripts/ensure_gram_native.sh
+```text
+julia --project=. scripts/ensure_gram_native.jl
 ```
 
 If the copied build metadata came from a different machine or absolute path,
 force a clean rebuild:
 
-```bash
-./scripts/ensure_gram_native.sh --clean
-```
-
-On Docker bind mounts with `noexec`, use:
-
-```bash
-bash ./scripts/ensure_gram_native.sh --clean
+```text
+julia --project=. scripts/ensure_gram_native.jl --clean
 ```
 
 This step should produce the native `libGRAM` artifact under the platform
@@ -134,8 +121,8 @@ data/GRAMSuite.jl/GRAM Suite 2.0/Build/lib
 
 Use the built-in asset report:
 
-```bash
-./bin/spaceagora assets check
+```text
+julia --project=. src/cli/main.jl assets check
 ```
 
 For a GRAM-ready machine, the report should show these as available:
@@ -151,7 +138,7 @@ under `data/GRAMSuite.jl`.
 Once the folder copy and native-library setup are complete, try the basic
 GRAM-backed example:
 
-```bash
+```text
 julia --project=. examples/AGORA_Basic_GRAMEarth.jl
 ```
 
@@ -187,12 +174,12 @@ data/GRAMSuite.jl/GRAM Suite 2.0/SPICE
 
 Run:
 
-```bash
-./scripts/ensure_gram_native.sh
+```text
+julia --project=. scripts/ensure_gram_native.jl
 ```
 
 If needed, retry with:
 
-```bash
-./scripts/ensure_gram_native.sh --clean
+```text
+julia --project=. scripts/ensure_gram_native.jl --clean
 ```

@@ -26,15 +26,15 @@ populated are significantly faster.
 - The compiled cache persists across sessions, so only the very first run per
   Julia install is slow.
 - To warm the cache explicitly without running a full simulation:
-  ```bash
-  julia --project=. -e 'using SpaceAGORA'
+  ```text
+  julia --project=. -e "using SpaceAGORA"
   ```
 
 ---
 
 ## GRAM assets not found
 
-**Symptom:** `./bin/spaceagora assets check` reports `gram_root` or
+**Symptom:** `julia --project=. src/cli/main.jl assets check` reports `gram_root` or
 `spice_directory` as missing, or a GRAM-backed example errors on load.
 
 **Cause:** The official NASA GRAM Suite files have not been copied into the
@@ -44,7 +44,7 @@ expected local path.
 [GRAMSuite Setup](gramsuite_setup.md). The key steps are:
 
 1. Pull the `GRAMSuite.jl` submodule:
-   ```bash
+   ```text
    git submodule update --init --recursive --remote
    ```
 2. Copy the official GRAM Suite distribution into:
@@ -52,16 +52,12 @@ expected local path.
    data/GRAMSuite.jl/GRAM Suite 2.0
    ```
 3. Build or verify the native shared library:
-   ```bash
-   ./scripts/ensure_gram_native.sh
-   ```
-   If the repo is mounted `noexec` inside Docker, use:
-   ```bash
-   bash ./scripts/ensure_gram_native.sh
+   ```text
+   julia --project=. scripts/ensure_gram_native.jl
    ```
 4. Confirm with:
-   ```bash
-   ./bin/spaceagora assets check
+   ```text
+   julia --project=. src/cli/main.jl assets check
    ```
 
 ---
@@ -76,26 +72,14 @@ different machine or checkout path.
 
 **Resolution:**
 
-```bash
-./scripts/ensure_gram_native.sh
-```
-
-Docker `noexec` fallback:
-
-```bash
-bash ./scripts/ensure_gram_native.sh
+```text
+julia --project=. scripts/ensure_gram_native.jl
 ```
 
 If the build metadata came from a different machine or path:
 
-```bash
-./scripts/ensure_gram_native.sh --clean
-```
-
-Docker `noexec` fallback:
-
-```bash
-bash ./scripts/ensure_gram_native.sh --clean
+```text
+julia --project=. scripts/ensure_gram_native.jl --clean
 ```
 
 ---
@@ -249,7 +233,7 @@ setup_gram_example!()
 
 ## Verification study threshold failures
 
-**Symptom:** `./bin/spaceagora telemetry quick --enforce=1` exits non-zero and
+**Symptom:** `julia --project=. src/cli/main.jl telemetry quick --enforce=1` exits non-zero and
 reports threshold violations.
 
 **Cause:** Either the simulation output diverges from the reference telemetry,
@@ -262,4 +246,4 @@ or tolerance thresholds are set tighter than the current model accuracy.
 3. If you changed integration tolerances, reset them to the defaults in
    `make_example_config` and re-run.
 4. If GRAM is involved, verify the asset layout with
-   `./bin/spaceagora assets check`.
+   `julia --project=. src/cli/main.jl assets check`.

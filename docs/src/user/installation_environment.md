@@ -8,8 +8,8 @@ environments before running anything heavier than a quick smoke path.
 
 Shortest successful command:
 
-```bash
-julia --project=. -e 'using Pkg; Pkg.instantiate()'
+```text
+julia --project=. -e "using Pkg; Pkg.instantiate()"
 ```
 
 What to read next:
@@ -37,8 +37,8 @@ Use it for:
 
 The docs build uses its own project:
 
-```bash
-julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
+```text
+julia --project=docs -e "using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()"
 julia --project=docs docs/make.jl
 ```
 
@@ -53,7 +53,7 @@ Generated reports and builds stay local. Common ignored output roots are:
 
 You can regenerate common local artifacts with:
 
-```bash
+```text
 julia --project=. scripts/regenerate_ignored_outputs.jl runtime-analysis quick
 julia --project=. scripts/regenerate_ignored_outputs.jl telemetry quick
 julia --project=. scripts/regenerate_ignored_outputs.jl docs

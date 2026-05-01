@@ -38,8 +38,8 @@ Use it for:
 The docs build uses its own project:
 
 ```text
-julia --project=docs -e "using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()"
-julia --project=docs docs/make.jl
+julia --project=. -e "using Pkg; Pkg.instantiate()"
+julia --project=. docs/make.jl
 ```
 
 ## Local output paths

@@ -68,7 +68,7 @@ jobs:
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Ensure native GRAM build
-        run: ./scripts/ensure_gram_native.sh
+        run: ./scripts/ensure_gram_native.sh --clean
 
       # Explicitly trigger precompilation so that every package's compiled
       # .ji cache file is written to ~/.julia/compiled before the cache is

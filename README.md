@@ -187,7 +187,7 @@ add mission-specific guidance, maneuvers, and higher-fidelity dynamics.
 
 ## For contributors
 
-- User docs live in `docs/src/` and are built with `julia --project=docs docs/make.jl`
+- User docs live in `docs/src/` and are built with `julia --project=. docs/make.jl`
 - Generated API pages come from `docs/public_api_symbols.jl`
 - Architecture and quality references live under the docs Maintainer Guide
 

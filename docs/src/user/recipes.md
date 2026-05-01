@@ -51,8 +51,8 @@ julia --project=. src/cli/main.jl telemetry quick --output-dir=output/telemetry_
 ## Build the docs locally
 
 ```text
-julia --project=docs -e "using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()"
-julia --project=docs docs/make.jl
+julia --project=. -e "using Pkg; Pkg.instantiate()"
+julia --project=. docs/make.jl
 ```
 
 ## Regenerate common local artifacts

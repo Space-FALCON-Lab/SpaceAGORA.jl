@@ -9,7 +9,7 @@ not for first-time users trying to run a simulation.
 Quickest maintainer build:
 
 ```text
-julia --project=docs docs/make.jl
+julia --project=. docs/make.jl
 ```
 
 What to read next:

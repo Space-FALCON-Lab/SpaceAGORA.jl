@@ -9,7 +9,7 @@ start with the User Guide instead.
 Quickest related build command:
 
 ```text
-julia --project=docs docs/make.jl
+julia --project=. docs/make.jl
 ```
 
 What to read next:

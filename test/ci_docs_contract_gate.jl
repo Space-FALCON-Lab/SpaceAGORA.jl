@@ -28,7 +28,7 @@ for marker in (
     "If assets changed, I updated `data/assets_manifest.toml` and `docs/src/assets.md`",
     "If new extension points were added, I updated `docs/src/extensibility.md`",
     "If new CLI commands or flags were added, I updated `docs/src/cli.md`",
-    "`julia --project=docs docs/make.jl`",
+    "`julia --project=. docs/make.jl`",
     "`julia --project=. test/ci_public_api_surface_gate.jl`",
     "`julia --project=. test/ci_hpc_extensibility_docs_gate.jl`",
 )

@@ -9,7 +9,7 @@ command, go back to the User Guide.
 Quickest maintainer check:
 
 ```text
-julia --project=docs docs/make.jl
+julia --project=. docs/make.jl
 ```
 
 What to read next:
@@ -89,7 +89,7 @@ Every PR should check the docs drift items in `.github/pull_request_template.md`
 Before merge to `main`, the documentation release gate is:
 
 ```text
-julia --project=docs docs/make.jl
+julia --project=. docs/make.jl
 julia --project=. test/ci_public_api_surface_gate.jl
 julia --project=. test/ci_hpc_extensibility_docs_gate.jl
 ```

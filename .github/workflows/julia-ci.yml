@@ -36,7 +36,7 @@ jobs:
         run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
 
       - name: Ensure native GRAM build
-        run: ./scripts/ensure_gram_native.sh
+        run: ./scripts/ensure_gram_native.sh --clean
 
       - name: Cache SpaceAGORA sysimage
         id: sysimage-cache
@@ -233,7 +233,7 @@ jobs:
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Ensure native GRAM build
-        run: ./scripts/ensure_gram_native.sh
+        run: ./scripts/ensure_gram_native.sh --clean
 
       - name: Download SpaceAGORA sysimage
         uses: actions/download-artifact@v4
@@ -273,7 +273,7 @@ jobs:
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Ensure native GRAM build
-        run: ./scripts/ensure_gram_native.sh
+        run: ./scripts/ensure_gram_native.sh --clean
 
       - name: Download SpaceAGORA sysimage
         uses: actions/download-artifact@v4
@@ -313,7 +313,7 @@ jobs:
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Ensure native GRAM build
-        run: ./scripts/ensure_gram_native.sh
+        run: ./scripts/ensure_gram_native.sh --clean
 
       - name: Download SpaceAGORA sysimage
         uses: actions/download-artifact@v4
@@ -366,7 +366,7 @@ jobs:
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Ensure native GRAM build
-        run: ./scripts/ensure_gram_native.sh
+        run: ./scripts/ensure_gram_native.sh --clean
 
       - name: Download SpaceAGORA sysimage
         uses: actions/download-artifact@v4
@@ -465,17 +465,17 @@ jobs:
       - name: Cache Julia artifacts
         uses: julia-actions/cache@v2
 
-      - name: Instantiate docs environment
-        run: julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
+      - name: Instantiate runtime environment
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Build docs
-        run: julia --project=docs docs/make.jl
+        run: julia --project=. docs/make.jl
 
       - name: Public API surface gate
-        run: julia --startup-file=no --project=docs test/ci_public_api_surface_gate.jl
+        run: julia --startup-file=no --project=. test/ci_public_api_surface_gate.jl
 
       - name: HPC/extensibility docs gate
-        run: julia --startup-file=no --project=docs test/ci_hpc_extensibility_docs_gate.jl
+        run: julia --startup-file=no --project=. test/ci_hpc_extensibility_docs_gate.jl
 
   ai-review-artifact-gate:
     if: github.event_name == 'pull_request'

@@ -48,7 +48,7 @@ jobs:
         run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
 
       - name: Ensure native GRAM build
-        run: ./scripts/ensure_gram_native.sh
+        run: ./scripts/ensure_gram_native.sh --clean
 
       - name: Cache SpaceAGORA sysimage
         id: sysimage-cache

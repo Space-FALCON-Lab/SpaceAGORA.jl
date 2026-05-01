@@ -25,6 +25,11 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      - name: Update GRAMSuite submodule to latest main
+        env:
+          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+        run: bash .github/scripts/update_gramsuite_submodule.sh regular
+
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
         with:
@@ -33,11 +38,11 @@ jobs:
       - name: Cache Julia artifacts
         uses: julia-actions/cache@v2
 
-      - name: Instantiate docs environment
-        run: julia --startup-file=no --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
+      - name: Instantiate environment
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Build and deploy docs
-        run: julia --project=docs docs/make.jl
+        run: julia --project=. docs/make.jl
 
       - name: Upload undocumented public API report
         if: always()

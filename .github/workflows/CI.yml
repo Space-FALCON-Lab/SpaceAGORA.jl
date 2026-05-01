@@ -63,9 +63,19 @@ jobs:
       - name: Ensure native GRAM build
         run: ./scripts/ensure_gram_native.sh
 
+      - name: Cache SpaceAGORA sysimage
+        id: sysimage-cache
+        uses: actions/cache@v4
+        with:
+          path: SpaceAGORA.so
+          key: spaceagora-sysimage-${{ runner.os }}-julia-${{ matrix.julia-version }}-${{ hashFiles('Project.toml', 'Manifest.toml', 'build/Project.toml', 'build/Manifest.toml', 'build/build_sysimage.jl', 'src/precompile_workload.jl') }}
+
       - name: Build SpaceAGORA sysimage
+        if: steps.sysimage-cache.outputs.cache-hit != 'true'
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
+          JULIA_IMAGE_THREADS: "1"
+          SPACEAGORA_CI_MIN_SYSIMAGE: "1"
         run: julia --startup-file=no --project=build build/build_sysimage.jl
         
       # 5. Run the full unit test suite with code-coverage instrumentation.

@@ -50,7 +50,18 @@ jobs:
       - name: Ensure native GRAM build
         run: ./scripts/ensure_gram_native.sh
 
+      - name: Cache SpaceAGORA sysimage
+        id: sysimage-cache
+        uses: actions/cache@v4
+        with:
+          path: SpaceAGORA.so
+          key: spaceagora-sysimage-${{ runner.os }}-julia-1.12-${{ hashFiles('Project.toml', 'Manifest.toml', 'build/Project.toml', 'build/Manifest.toml', 'build/build_sysimage.jl', 'src/precompile_workload.jl') }}
+
       - name: Build SpaceAGORA sysimage
+        if: steps.sysimage-cache.outputs.cache-hit != 'true'
+        env:
+          JULIA_IMAGE_THREADS: "1"
+          SPACEAGORA_CI_MIN_SYSIMAGE: "1"
         run: julia --startup-file=no --project=build build/build_sysimage.jl
 
       - name: Fetch base ref (PR only)

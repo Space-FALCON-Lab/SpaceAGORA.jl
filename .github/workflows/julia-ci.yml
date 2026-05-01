@@ -5,9 +5,64 @@ on:
   pull_request:
 
 jobs:
+  build-ci-sysimage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      JULIA_NUM_THREADS: "2"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+
+      - name: Update GRAMSuite test submodule to dev main
+        env:
+          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: Cache Julia artifacts
+        uses: julia-actions/cache@v2
+
+      - name: Instantiate
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Instantiate sysimage build environment
+        run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Ensure native GRAM build
+        run: ./scripts/ensure_gram_native.sh
+
+      - name: Cache SpaceAGORA sysimage
+        id: sysimage-cache
+        uses: actions/cache@v4
+        with:
+          path: SpaceAGORA.so
+          key: spaceagora-sysimage-${{ runner.os }}-julia-1.12-${{ hashFiles('Project.toml', 'Manifest.toml', 'build/Project.toml', 'build/Manifest.toml', 'build/build_sysimage.jl', 'src/precompile_workload.jl') }}
+
+      - name: Build SpaceAGORA sysimage
+        if: steps.sysimage-cache.outputs.cache-hit != 'true'
+        env:
+          JULIA_IMAGE_THREADS: "1"
+          SPACEAGORA_CI_MIN_SYSIMAGE: "1"
+        run: julia --startup-file=no --project=build build/build_sysimage.jl
+
+      - name: Upload SpaceAGORA sysimage
+        uses: actions/upload-artifact@v4
+        with:
+          name: spaceagora-ci-sysimage
+          path: SpaceAGORA.so
+          if-no-files-found: error
+
   tests-matrix:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    needs: [build-ci-sysimage]
     strategy:
       fail-fast: false
       matrix:
@@ -36,14 +91,11 @@ jobs:
       - name: Instantiate
         run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
-      - name: Instantiate sysimage build environment
-        run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Ensure native GRAM build
-        run: ./scripts/ensure_gram_native.sh
-
-      - name: Build SpaceAGORA sysimage
-        run: julia --startup-file=no --project=build build/build_sysimage.jl
+      - name: Download SpaceAGORA sysimage
+        uses: actions/download-artifact@v4
+        with:
+          name: spaceagora-ci-sysimage
+          path: .
 
       - name: Run test suite
         run: julia --startup-file=no --sysimage SpaceAGORA.so --project=. test/runtests.jl
@@ -155,6 +207,7 @@ jobs:
   example-suite-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    needs: [build-ci-sysimage]
     env:
       JULIA_NUM_THREADS: "2"
     steps:
@@ -182,11 +235,11 @@ jobs:
       - name: Ensure native GRAM build
         run: ./scripts/ensure_gram_native.sh
 
-      - name: Instantiate sysimage build environment
-        run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Build SpaceAGORA sysimage
-        run: julia --startup-file=no --project=build build/build_sysimage.jl
+      - name: Download SpaceAGORA sysimage
+        uses: actions/download-artifact@v4
+        with:
+          name: spaceagora-ci-sysimage
+          path: .
 
       - name: Example suite smoke
         run: julia --startup-file=no --sysimage SpaceAGORA.so --project=. test/ci_examples_suite_smoke.jl
@@ -194,6 +247,7 @@ jobs:
   example-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    needs: [build-ci-sysimage]
     env:
       JULIA_NUM_THREADS: "2"
     steps:
@@ -221,11 +275,11 @@ jobs:
       - name: Ensure native GRAM build
         run: ./scripts/ensure_gram_native.sh
 
-      - name: Instantiate sysimage build environment
-        run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Build SpaceAGORA sysimage
-        run: julia --startup-file=no --project=build build/build_sysimage.jl
+      - name: Download SpaceAGORA sysimage
+        uses: actions/download-artifact@v4
+        with:
+          name: spaceagora-ci-sysimage
+          path: .
 
       - name: Example regression
         run: julia --startup-file=no --sysimage SpaceAGORA.so --project=. test/integration/examples/runtests.jl
@@ -233,6 +287,7 @@ jobs:
   telemetry-quick-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    needs: [build-ci-sysimage]
     env:
       JULIA_NUM_THREADS: "2"
     steps:
@@ -260,11 +315,11 @@ jobs:
       - name: Ensure native GRAM build
         run: ./scripts/ensure_gram_native.sh
 
-      - name: Instantiate sysimage build environment
-        run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Build SpaceAGORA sysimage
-        run: julia --startup-file=no --project=build build/build_sysimage.jl
+      - name: Download SpaceAGORA sysimage
+        uses: actions/download-artifact@v4
+        with:
+          name: spaceagora-ci-sysimage
+          path: .
 
       - name: Telemetry quick regression (GRAM deterministic)
         run: julia --startup-file=no --sysimage SpaceAGORA.so --depwarn=error --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
@@ -282,6 +337,7 @@ jobs:
   coverage-quality-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    needs: [build-ci-sysimage]
     env:
       JULIA_NUM_THREADS: "2"
       SPACEAGORA_COVERAGE_MIN_OVERALL: "90.0"
@@ -312,11 +368,11 @@ jobs:
       - name: Ensure native GRAM build
         run: ./scripts/ensure_gram_native.sh
 
-      - name: Instantiate sysimage build environment
-        run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Build SpaceAGORA sysimage
-        run: julia --startup-file=no --project=build build/build_sysimage.jl
+      - name: Download SpaceAGORA sysimage
+        uses: actions/download-artifact@v4
+        with:
+          name: spaceagora-ci-sysimage
+          path: .
 
       - name: Run tests with coverage
         run: julia --startup-file=no --sysimage SpaceAGORA.so --project=. --code-coverage=user test/runtests.jl
@@ -327,6 +383,7 @@ jobs:
   calibration-coverage-quality-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    needs: [build-ci-sysimage]
     env:
       JULIA_NUM_THREADS: "2"
       SPACEAGORA_CAL_COVERAGE_MIN_OVERALL: "90.0"
@@ -354,11 +411,11 @@ jobs:
       - name: Instantiate SpaceAGORACalibration
         run: julia --startup-file=no --project=SpaceAGORACalibration.jl -e 'using Pkg; Pkg.instantiate()'
 
-      - name: Instantiate sysimage build environment
-        run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Build SpaceAGORA sysimage
-        run: julia --startup-file=no --project=build build/build_sysimage.jl
+      - name: Download SpaceAGORA sysimage
+        uses: actions/download-artifact@v4
+        with:
+          name: spaceagora-ci-sysimage
+          path: .
 
       - name: Run SpaceAGORACalibration tests with coverage
         run: julia --startup-file=no --sysimage SpaceAGORA.so --project=SpaceAGORACalibration.jl --code-coverage=user SpaceAGORACalibration.jl/test/runtests.jl

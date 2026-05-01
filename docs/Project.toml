@@ -1,0 +1,11 @@
+name = "SpaceAGORADocs"
+uuid = "1ed5aa50-6aa9-4307-b5ca-d5f969ecfd72"
+version = "0.1.0"
+
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+SpaceAGORA = "afbfb69f-5c0b-4832-b760-43725dff8540"
+
+[compat]
+Documenter = "1"
+julia = "1.12"

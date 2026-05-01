@@ -20,8 +20,8 @@
 using PackageCompiler
 
 # All packages from the root Project.toml that should be baked into the
-# sysimage.  PackageCompiler needs them listed by symbol.
-const PACKAGES = [
+# full local sysimage. PackageCompiler needs them listed by symbol.
+const FULL_PACKAGES = [
     :Arrow,
     :AssociatedLegendrePolynomials,
     :AstroTime,
@@ -53,7 +53,41 @@ const PACKAGES = [
     :StaticArrays,
 ]
 
+# CI jobs benefit more from fast, reliable sysimage builds than from squeezing
+# every optional plotting package into the image. Keep the runtime-heavy core
+# stack and omit the largest optional frontends.
+const CI_PACKAGES = [
+    :Arrow,
+    :AssociatedLegendrePolynomials,
+    :AstroTime,
+    :CSV,
+    :ControlSystemsBase,
+    :DataFrames,
+    :DiffEqBase,
+    :DiffEqCallbacks,
+    :DifferentialEquations,
+    :Interpolations,
+    :LaTeXStrings,
+    :MatrixEquations,
+    :NLsolve,
+    :OrdinaryDiffEq,
+    :PreallocationTools,
+    :Quaternions,
+    :Reexport,
+    :Roots,
+    :Rotations,
+    :SPICE,
+    :SatelliteToolbox,
+    :SatelliteToolboxAtmosphericModels,
+    :SatelliteToolboxGeomagneticField,
+    :SatelliteToolboxTransformations,
+    :SpecialFunctions,
+    :StaticArrays,
+]
+
 const PROJECT_ROOT = normpath(joinpath(@__DIR__, ".."))
+const CI_MIN_SYSIMAGE = get(ENV, "SPACEAGORA_CI_MIN_SYSIMAGE", "0") == "1"
+const PACKAGES = CI_MIN_SYSIMAGE ? CI_PACKAGES : FULL_PACKAGES
 
 # The sysimage is written next to this build script's parent (i.e. repo root).
 const SYSIMAGE_PATH = joinpath(PROJECT_ROOT, "SpaceAGORA.so")
@@ -77,6 +111,8 @@ end
 
 println("Building sysimage → $(abspath(SYSIMAGE_PATH))")
 println("This will take several minutes the first time …")
+println("Sysimage package profile: $(CI_MIN_SYSIMAGE ? "ci-min" : "full")")
+println("Packages baked in: $(length(PACKAGES))")
 if PRECOMPILE_SCRIPT === nothing
     println("Precompile execution trace: skipped")
 else

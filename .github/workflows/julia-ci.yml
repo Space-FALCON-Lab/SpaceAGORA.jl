@@ -18,17 +18,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
-      - name: Update GRAMSuite submodule to latest main
+      - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
-          git submodule sync data/GRAMSuite.jl
-          git submodule update --init --recursive --remote data/GRAMSuite.jl
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -45,7 +40,7 @@ jobs:
         run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
 
       - name: Ensure native GRAM build
-        run: ./scripts/ensure_gram_native.sh --clean
+        run: ./scripts/ensure_gram_native.sh
 
       - name: Build SpaceAGORA sysimage
         run: julia --startup-file=no --project=build build/build_sysimage.jl
@@ -82,17 +77,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
-      - name: Update GRAMSuite submodule to latest main
+      - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
-          git submodule sync data/GRAMSuite.jl
-          git submodule update --init --recursive --remote data/GRAMSuite.jl
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -102,14 +92,8 @@ jobs:
       - name: Instantiate in clean depot
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
-      - name: Instantiate sysimage build environment in clean depot
-        run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Build SpaceAGORA sysimage in clean depot
-        run: julia --startup-file=no --project=build build/build_sysimage.jl
-
       - name: Clean-depot student entrypoint smoke
-        run: julia --startup-file=no --sysimage SpaceAGORA.so --depwarn=error --project=. test/ci_clean_depot_smoke.jl
+        run: julia --startup-file=no --depwarn=error --project=. test/ci_clean_depot_smoke.jl
 
   threaded-smoke:
     runs-on: ubuntu-latest
@@ -120,17 +104,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
-      - name: Update GRAMSuite submodule to latest main
+      - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
-          git submodule sync data/GRAMSuite.jl
-          git submodule update --init --recursive --remote data/GRAMSuite.jl
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -143,14 +122,8 @@ jobs:
       - name: Instantiate
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
-      - name: Instantiate sysimage build environment
-        run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Build SpaceAGORA sysimage
-        run: julia --startup-file=no --project=build build/build_sysimage.jl
-
       - name: Threaded smoke
-        run: julia --startup-file=no --sysimage SpaceAGORA.so --depwarn=error --project=. test/ci_threaded_smoke.jl
+        run: julia --startup-file=no --depwarn=error --project=. test/ci_threaded_smoke.jl
 
   readme-command-smoke:
     runs-on: ubuntu-latest
@@ -161,17 +134,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
-      - name: Update GRAMSuite submodule to latest main
+      - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
-          git submodule sync data/GRAMSuite.jl
-          git submodule update --init --recursive --remote data/GRAMSuite.jl
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -181,14 +149,8 @@ jobs:
       - name: README instantiate command
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
-      - name: Instantiate sysimage build environment
-        run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Build SpaceAGORA sysimage
-        run: julia --startup-file=no --project=build build/build_sysimage.jl
-
       - name: README example command
-        run: julia --startup-file=no --sysimage SpaceAGORA.so --compiled-modules=existing --project=. examples/Earth_Thruster_Test.jl
+        run: julia --startup-file=no --compiled-modules=existing --project=. examples/Earth_Thruster_Test.jl
 
   example-suite-smoke:
     runs-on: ubuntu-latest
@@ -199,17 +161,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
-      - name: Update GRAMSuite submodule to latest main
+      - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
-          git submodule sync data/GRAMSuite.jl
-          git submodule update --init --recursive --remote data/GRAMSuite.jl
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -243,17 +200,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
-      - name: Update GRAMSuite submodule to latest main
+      - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
-          git submodule sync data/GRAMSuite.jl
-          git submodule update --init --recursive --remote data/GRAMSuite.jl
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -287,17 +239,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
-      - name: Update GRAMSuite submodule to latest main
+      - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
-          git submodule sync data/GRAMSuite.jl
-          git submodule update --init --recursive --remote data/GRAMSuite.jl
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -344,17 +291,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
-      - name: Update GRAMSuite submodule to latest main
+      - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
-          git submodule sync data/GRAMSuite.jl
-          git submodule update --init --recursive --remote data/GRAMSuite.jl
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -394,17 +336,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
-      - name: Update GRAMSuite submodule to latest main
+      - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
-          git submodule sync data/GRAMSuite.jl
-          git submodule update --init --recursive --remote data/GRAMSuite.jl
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -436,31 +373,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
-      - name: Update GRAMSuite submodule to latest main
+      - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
-          git submodule sync data/GRAMSuite.jl
-          git submodule update --init --recursive --remote data/GRAMSuite.jl
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
         with:
           version: "1.12"
 
-      - name: Instantiate sysimage build environment
-        run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Build SpaceAGORA sysimage
-        run: julia --startup-file=no --project=build build/build_sysimage.jl
-
       - name: Contract suite
-        run: julia --startup-file=no --sysimage SpaceAGORA.so --project=. test/contracts/pr_runtests.jl
+        run: julia --startup-file=no --project=. test/contracts/pr_runtests.jl
 
   documentation-release-gate:
     runs-on: ubuntu-latest
@@ -472,17 +398,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
-      - name: Update GRAMSuite submodule to latest main
+      - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
-          git submodule sync data/GRAMSuite.jl
-          git submodule update --init --recursive --remote data/GRAMSuite.jl
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -498,20 +419,14 @@ jobs:
       - name: Instantiate docs environment
         run: julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
 
-      - name: Instantiate sysimage build environment
-        run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Build SpaceAGORA sysimage
-        run: julia --startup-file=no --project=build build/build_sysimage.jl
-
       - name: Build docs
         run: julia --project=docs docs/make.jl
 
       - name: Public API surface gate
-        run: julia --startup-file=no --sysimage SpaceAGORA.so --project=. test/ci_public_api_surface_gate.jl
+        run: julia --startup-file=no --project=. test/ci_public_api_surface_gate.jl
 
       - name: HPC/extensibility docs gate
-        run: julia --startup-file=no --sysimage SpaceAGORA.so --project=. test/ci_hpc_extensibility_docs_gate.jl
+        run: julia --startup-file=no --project=. test/ci_hpc_extensibility_docs_gate.jl
 
   ai-review-artifact-gate:
     if: github.event_name == 'pull_request'
@@ -521,18 +436,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
           fetch-depth: 0
 
-      - name: Update GRAMSuite submodule to latest main
+      - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
-          git submodule sync data/GRAMSuite.jl
-          git submodule update --init --recursive --remote data/GRAMSuite.jl
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Fetch base ref
         run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}
@@ -542,14 +452,8 @@ jobs:
         with:
           version: "1.12"
 
-      - name: Instantiate sysimage build environment
-        run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Build SpaceAGORA sysimage
-        run: julia --startup-file=no --project=build build/build_sysimage.jl
-
       - name: AI review artifact gate
         env:
           SPACEAGORA_PR_NUMBER: ${{ github.event.pull_request.number }}
           SPACEAGORA_BASE_REF: ${{ github.base_ref }}
-        run: julia --startup-file=no --sysimage SpaceAGORA.so --project=. test/ci_ai_review_artifact_gate.jl
+        run: julia --startup-file=no --project=. test/ci_ai_review_artifact_gate.jl

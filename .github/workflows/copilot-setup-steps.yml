@@ -32,7 +32,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       # Keep the GRAMSuite data submodule in sync with its remote main branch
@@ -40,9 +39,7 @@ jobs:
       - name: Update GRAMSuite submodule to latest main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          git submodule update --init --recursive --remote data/GRAMSuite.jl
+        run: bash .github/scripts/update_gramsuite_submodule.sh regular
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -71,7 +68,7 @@ jobs:
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Ensure native GRAM build
-        run: ./scripts/ensure_gram_native.sh --clean
+        run: ./scripts/ensure_gram_native.sh
 
       # Explicitly trigger precompilation so that every package's compiled
       # .ji cache file is written to ~/.julia/compiled before the cache is

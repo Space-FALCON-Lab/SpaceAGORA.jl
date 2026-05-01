@@ -23,17 +23,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
-      # - name: Update GRAMSuite submodule to latest main
-      #   env:
-      #     GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-      #   run: |
-      #     git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-      #     sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
-      #     git submodule sync data/GRAMSuite.jl
-      #     git submodule update --init --recursive --remote data/GRAMSuite.jl
+      - name: Update GRAMSuite submodule to latest main
+        env:
+          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+        run: bash .github/scripts/update_gramsuite_submodule.sh regular
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2

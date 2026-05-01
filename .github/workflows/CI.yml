@@ -29,14 +29,10 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
-      - name: Update GRAMSuite submodule to latest main
+      - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
-          git submodule sync data/GRAMSuite.jl
-          git submodule update --init --recursive --remote data/GRAMSuite.jl
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       # 1. Install Julia
       - uses: julia-actions/setup-julia@v2
@@ -64,11 +60,8 @@ jobs:
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
       - name: Instantiate sysimage build environment
         run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
-      - name: Instantiate GRAMSuite environment
-        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
-
       - name: Ensure native GRAM build
-        run: ./scripts/ensure_gram_native.sh --clean
+        run: ./scripts/ensure_gram_native.sh
 
       - name: Build SpaceAGORA sysimage
         env:
@@ -136,14 +129,10 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
-      - name: Update GRAMSuite submodule to latest main
+      - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          sed -i 's|/GRAMSuite\.jl\.git|/dev-GRAMSuite\.jl\.git|' .gitmodules
-          git submodule sync data/GRAMSuite.jl
-          git submodule update --init --recursive --remote data/GRAMSuite.jl
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - uses: julia-actions/setup-julia@v2
         with:
@@ -163,16 +152,8 @@ jobs:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
-      - name: Instantiate sysimage build environment
-        run: julia --startup-file=no --project=build -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Build SpaceAGORA sysimage
-        env:
-          JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
-        run: julia --startup-file=no --project=build build/build_sysimage.jl
-
       - name: Threaded smoke
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
         run: |
-          julia --startup-file=no --sysimage SpaceAGORA.so --depwarn=error --project=. test/ci_threaded_smoke.jl
+          julia --startup-file=no --depwarn=error --project=. test/ci_threaded_smoke.jl

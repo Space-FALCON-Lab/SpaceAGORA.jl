@@ -53,7 +53,18 @@ jobs:
           key: condapkg-${{ runner.os }}-${{ hashFiles('CondaPkg.toml') }}
           restore-keys: condapkg-${{ runner.os }}-
 
-      # 4. Instantiate the environment using whatever was restored from cache.
+      # 4. Instantiate vendored GRAMSuite first so CI fails fast on its environment.
+      - name: Instantiate vendored GRAMSuite
+        env:
+          JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
+        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
+
+      - name: GRAMSuite load smoke
+        env:
+          JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
+        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using GRAMSuite; println("gramsuite_load_ok")'
+
+      # 5. Instantiate the main environment using whatever was restored from cache.
       - name: Instantiate environment
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
@@ -61,13 +72,13 @@ jobs:
       - name: Ensure native GRAM build
         run: ./scripts/ensure_gram_native.sh --clean
         
-      # 5. Run the full unit test suite with code-coverage instrumentation.
+      # 6. Run the full unit test suite with code-coverage instrumentation.
       - name: Run test suite
         env:
           JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
         run: julia --startup-file=no --project=. --code-coverage=user test/runtests.jl
 
-      # 6. Upload coverage data so it can be inspected in the Actions artifacts panel.
+      # 7. Upload coverage data so it can be inspected in the Actions artifacts panel.
       - name: Upload coverage artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -76,7 +87,7 @@ jobs:
           path: "**/*.cov"
           if-no-files-found: ignore
 
-      # 7. Deprecation-warning smoke: verify the core source loads without
+      # 8. Deprecation-warning smoke: verify the core source loads without
       #    triggering any deprecation warnings.
       - name: Depwarn smoke
         env:
@@ -139,6 +150,16 @@ jobs:
           path: ~/.julia/condapkg/SpaceAGORA
           key: condapkg-${{ runner.os }}-${{ hashFiles('CondaPkg.toml') }}
           restore-keys: condapkg-${{ runner.os }}-
+
+      - name: Instantiate vendored GRAMSuite
+        env:
+          JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
+        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
+
+      - name: GRAMSuite load smoke
+        env:
+          JULIA_CONDAPKG_ENV: ~/.julia/condapkg/SpaceAGORA
+        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using GRAMSuite; println("gramsuite_load_ok")'
 
       - name: Instantiate environment
         env:

@@ -1300,6 +1300,7 @@ end
     @test env_models._gram_use_global_lock() isa Bool
     @test_throws MethodError env_models._gram_point_density(:bad_model, 0.0, 0.0, 0.0, 0.0, false)
 
+    gram_model = nothing
     if HAS_GRAMSUITE
         gram_model = env_models.GRAMAtmosphereModel(
             planet_name="earth",
@@ -1369,53 +1370,55 @@ end
     ) do
         @test callbacks._gram_isolated_pool_enabled(2) == (Threads.nthreads() > 1)
     end
-    withenv(
-        "SPACEAGORA_GRAM_ISOLATED_POOL" => "off",
-        "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => "2"
-    ) do
-        rho_pool = zeros(Float64, length(hs_batch))
-        T_pool = zeros(Float64, length(hs_batch))
-        wind_pool = [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in eachindex(hs_batch)]
-        @test !callbacks._gram_isolated_pool_batch_eval!(
-            rho_pool,
-            T_pool,
-            wind_pool,
-            gram_model,
-            hs_batch,
-            lats_batch,
-            lons_batch,
-            ts_batch,
-            true,
-            p_density_helpers
-        )
-    end
-    withenv(
-        "SPACEAGORA_GRAM_ISOLATED_POOL" => "on",
-        "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => "2"
-    ) do
-        rho_pool = zeros(Float64, length(hs_batch))
-        T_pool = zeros(Float64, length(hs_batch))
-        wind_pool = [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in eachindex(hs_batch)]
-        pooled = callbacks._gram_isolated_pool_batch_eval!(
-            rho_pool,
-            T_pool,
-            wind_pool,
-            gram_model,
-            hs_batch,
-            lats_batch,
-            lons_batch,
-            ts_batch,
-            true,
-            p_density_helpers;
-            allotment_hint=2
-        )
-        @test pooled || Threads.nthreads() == 1
-        @test all(isfinite, rho_pool)
-        @test all(isfinite, T_pool)
-        @test all(isfinite, getindex.(wind_pool, 1))
-        if Threads.nthreads() > 1
-            @test length(p_density_helpers.shared_buffers.gram_isolated_pool_models) >= 2
-            @test length(p_density_helpers.shared_buffers.gram_isolated_pool_locks) >= 2
+    if HAS_GRAMSUITE
+        withenv(
+            "SPACEAGORA_GRAM_ISOLATED_POOL" => "off",
+            "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => "2"
+        ) do
+            rho_pool = zeros(Float64, length(hs_batch))
+            T_pool = zeros(Float64, length(hs_batch))
+            wind_pool = [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in eachindex(hs_batch)]
+            @test !callbacks._gram_isolated_pool_batch_eval!(
+                rho_pool,
+                T_pool,
+                wind_pool,
+                gram_model,
+                hs_batch,
+                lats_batch,
+                lons_batch,
+                ts_batch,
+                true,
+                p_density_helpers
+            )
+        end
+        withenv(
+            "SPACEAGORA_GRAM_ISOLATED_POOL" => "on",
+            "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => "2"
+        ) do
+            rho_pool = zeros(Float64, length(hs_batch))
+            T_pool = zeros(Float64, length(hs_batch))
+            wind_pool = [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in eachindex(hs_batch)]
+            pooled = callbacks._gram_isolated_pool_batch_eval!(
+                rho_pool,
+                T_pool,
+                wind_pool,
+                gram_model,
+                hs_batch,
+                lats_batch,
+                lons_batch,
+                ts_batch,
+                true,
+                p_density_helpers;
+                allotment_hint=2
+            )
+            @test pooled || Threads.nthreads() == 1
+            @test all(isfinite, rho_pool)
+            @test all(isfinite, T_pool)
+            @test all(isfinite, getindex.(wind_pool, 1))
+            if Threads.nthreads() > 1
+                @test length(p_density_helpers.shared_buffers.gram_isolated_pool_models) >= 2
+                @test length(p_density_helpers.shared_buffers.gram_isolated_pool_locks) >= 2
+            end
         end
     end
     withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => "on") do

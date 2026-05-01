@@ -22,7 +22,7 @@ jobs:
       matrix:
         julia-version: ["1.12"]
     env:
-      JULIA_NUM_THREADS: "2"
+      JULIA_NUM_THREADS: "4"
 
     steps:
       - uses: actions/checkout@v4

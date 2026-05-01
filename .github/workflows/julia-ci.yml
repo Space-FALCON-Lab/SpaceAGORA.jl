@@ -13,7 +13,7 @@ jobs:
       matrix:
         julia-version: ["1.12"]
     env:
-      JULIA_NUM_THREADS: "2"
+      JULIA_NUM_THREADS: "4"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,7 +69,7 @@ jobs:
     timeout-minutes: 60
     env:
       JULIA_DEPOT_PATH: ${{ runner.temp }}/julia-clean-depot
-      JULIA_NUM_THREADS: "2"
+      JULIA_NUM_THREADS: "4"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -138,7 +138,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      JULIA_NUM_THREADS: "2"
+      JULIA_NUM_THREADS: "4"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -171,7 +171,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      JULIA_NUM_THREADS: "2"
+      JULIA_NUM_THREADS: "4"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -210,7 +210,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      JULIA_NUM_THREADS: "2"
+      JULIA_NUM_THREADS: "4"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -249,7 +249,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      JULIA_NUM_THREADS: "2"
+      JULIA_NUM_THREADS: "4"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -298,7 +298,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      JULIA_NUM_THREADS: "2"
+      JULIA_NUM_THREADS: "4"
       SPACEAGORA_COVERAGE_MIN_OVERALL: "90.0"
       SPACEAGORA_COVERAGE_MIN_FILE: "80.0"
       SPACEAGORA_COVERAGE_WINDOW_SECONDS: "1200"
@@ -343,7 +343,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      JULIA_NUM_THREADS: "2"
+      JULIA_NUM_THREADS: "4"
       SPACEAGORA_CAL_COVERAGE_MIN_OVERALL: "90.0"
       SPACEAGORA_CAL_COVERAGE_MIN_FILE: "70.0"
       SPACEAGORA_CAL_COVERAGE_WINDOW_SECONDS: "1200"
@@ -407,7 +407,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      JULIA_NUM_THREADS: "2"
+      JULIA_NUM_THREADS: "4"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout

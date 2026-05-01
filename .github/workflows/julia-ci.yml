@@ -400,11 +400,6 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
-      - name: Update GRAMSuite test submodule to dev main
-        env:
-          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: bash .github/scripts/update_gramsuite_submodule.sh dev
-
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
         with:
@@ -413,9 +408,6 @@ jobs:
       - name: Cache Julia artifacts
         uses: julia-actions/cache@v2
 
-      - name: Instantiate runtime environment
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-
       - name: Instantiate docs environment
         run: julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
 
@@ -423,10 +415,10 @@ jobs:
         run: julia --project=docs docs/make.jl
 
       - name: Public API surface gate
-        run: julia --startup-file=no --project=. test/ci_public_api_surface_gate.jl
+        run: julia --startup-file=no --project=docs test/ci_public_api_surface_gate.jl
 
       - name: HPC/extensibility docs gate
-        run: julia --startup-file=no --project=. test/ci_hpc_extensibility_docs_gate.jl
+        run: julia --startup-file=no --project=docs test/ci_hpc_extensibility_docs_gate.jl
 
   ai-review-artifact-gate:
     if: github.event_name == 'pull_request'

@@ -235,12 +235,34 @@ end
     return nothing
 end
 
+@inline function _gravity_backbone_xyz_chunk(state, sat_idx::Int)::SVector{3, Float64}
+    if hasproperty(state, :sc)
+        sc_state = state.sc[sat_idx]
+        if hasproperty(sc_state, :pos)
+            return SVector{3, Float64}(sc_state.pos)
+        elseif hasproperty(sc_state, :vel)
+            return SVector{3, Float64}(sc_state.vel)
+        end
+        return SVector{3, Float64}(sc_state)
+    end
+
+    if sat_idx <= length(state)
+        sat_state = state[sat_idx]
+        if hasproperty(sat_state, :pos)
+            return SVector{3, Float64}(sat_state.pos)
+        elseif hasproperty(sat_state, :vel)
+            return SVector{3, Float64}(sat_state.vel)
+        end
+    end
+
+    base = 3 * (sat_idx - 1)
+    return SVector{3, Float64}(state[base + 1], state[base + 2], state[base + 3])
+end
+
 @inline function _gravity_backbone_state_sample(q_state, dq_state, p, sat_idx::Int)::StateSample
     spacecraft = p.args.dynamics_model.spacecraft[sat_idx]
-    q_sc = hasproperty(q_state, :sc) ? q_state.sc[sat_idx] : q_state[sat_idx]
-    dq_sc = hasproperty(dq_state, :sc) ? dq_state.sc[sat_idx] : dq_state[sat_idx]
-    pos_ii = hasproperty(q_sc, :pos) ? SVector{3, Float64}(q_sc.pos) : SVector{3, Float64}(q_sc)
-    vel_ii = hasproperty(dq_sc, :vel) ? SVector{3, Float64}(dq_sc.vel) : SVector{3, Float64}(dq_sc)
+    pos_ii = _gravity_backbone_xyz_chunk(q_state, sat_idx)
+    vel_ii = _gravity_backbone_xyz_chunk(dq_state, sat_idx)
     mass_kg = spacecraft.dry_mass + spacecraft.prop_mass
     return StateSample(pos_ii, vel_ii, mass_kg; spacecraft=spacecraft)
 end

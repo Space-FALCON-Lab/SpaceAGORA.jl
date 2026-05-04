@@ -1,6 +1,9 @@
 #!/usr/bin/env julia
 
-using SpaceAGORACalibration
+if !isdefined(Main, :SpaceAGORACalibration)
+    include(normpath(joinpath(@__DIR__, "..", "src", "SpaceAGORACalibration.jl")))
+end
+using .SpaceAGORACalibration
 
 function main(args::Vector{String})
     spec_path = isempty(args) ? joinpath(@__DIR__, "..", "examples", "demo_spec.toml") : args[1]

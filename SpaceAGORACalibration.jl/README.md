@@ -1,6 +1,6 @@
 # SpaceAGORACalibration.jl
 
-`SpaceAGORACalibration.jl` is a standalone orchestration package for calibration workflows.
+`SpaceAGORACalibration.jl` is an orchestration package for calibration workflows that runs from the repository root project.
 It does not implement spacecraft physics. It drives calibration through a backend interface.
 
 ## Architecture
@@ -50,13 +50,13 @@ Stages are restartable from `state.toml` and `evaluations.arrow`.
 ## Usage
 
 ```text
-julia --project=SpaceAGORACalibration.jl -e "using Pkg; Pkg.instantiate()"
+julia --project=. -e "using Pkg; Pkg.instantiate()"
 
 # Mock smoke run (package-only)
-julia --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/bin/run_calibration.jl
+julia --project=. SpaceAGORACalibration.jl/bin/run_calibration.jl
 
 # Telemetry calibration driver (process-isolated verify_telemetry backend)
-julia --project=SpaceAGORACalibration.jl \
+julia --project=. \
   SpaceAGORACalibration.jl/bin/run_telemetry_tuner.jl \
   --spec=SpaceAGORACalibration.jl/examples/telemetry_hybrid_spec.toml \
   --project=.AGORA \
@@ -65,7 +65,7 @@ julia --project=SpaceAGORACalibration.jl \
   --plots=0
 
 # Earth-focused telemetry calibration
-julia --project=SpaceAGORACalibration.jl \
+julia --project=. \
   SpaceAGORACalibration.jl/bin/run_telemetry_tuner.jl \
   --spec=SpaceAGORACalibration.jl/examples/telemetry_earth_spec.toml \
   --project=.AGORA \
@@ -74,7 +74,7 @@ julia --project=SpaceAGORACalibration.jl \
   --plots=0
 
 # Earth-only offline study
-julia --project=SpaceAGORACalibration.jl \
+julia --project=. \
   SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl \
   --profile=quick \
   --plots=0

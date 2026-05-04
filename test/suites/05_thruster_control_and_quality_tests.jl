@@ -461,7 +461,111 @@
             atol=1e-12,
             rtol=0.0
         )
+        @test isnan(burn_helper(0.0, 20.0, 2.0, 300.0))
+        @test isnan(burn_helper(100.0, -1.0, 2.0, 300.0))
+        @test isnan(burn_helper(100.0, 20.0, 0.0, 300.0))
         @test isnan(burn_helper(100.0, 20.0, 2.0, 0.0))
+
+        @testset "typed maneuver and helper boundary branches" begin
+            hooks = SimulationModel.ControlHooks
+            guidance_command = hooks._guidance_maneuver_command
+            burn_buffer = hooks._burn_plan_buffer
+            active_plan = hooks._active_burn_plan
+            set_plan! = hooks._set_burn_plan!
+            clear_plan! = hooks._clear_burn_plan!
+            commanded = hooks._commanded_maneuver
+            model_window = hooks._model_burn_window
+            effective_window = hooks._effective_burn_window
+            effective_direction = hooks._effective_direction_rad
+            effective_thrust_isp = hooks._effective_thrust_isp
+            available_propellant = hooks._available_propellant_kg
+            validated_plan = hooks._validated_burn_plan
+
+            p_no_shared = (;)
+            @test guidance_command(p_no_shared, 1) === nothing
+            @test burn_buffer(p_no_shared) === nothing
+            @test active_plan(p_no_shared, 1) === nothing
+            @test set_plan!(p_no_shared, 1, PropulsiveBurnPlan(valid=true)) === nothing
+            @test clear_plan!(p_no_shared, 1) === nothing
+
+            p_helper = ODEParams{1}(args=args)
+            model_helper = make_base_thruster_model(
+                thrust=2.0,
+                direction=0.25,
+                Δv=3.0,
+                start_burn_time=-1.0,
+                stop_burn_time=-1.0,
+                Isp=300.0
+            )
+            @test guidance_command(p_helper, 0) === nothing
+            @test active_plan(p_helper, 0) === nothing
+            @test set_plan!(p_helper, 0, PropulsiveBurnPlan(valid=true)) === nothing
+            @test clear_plan!(p_helper, 0) === nothing
+            @test model_window(model_helper, 0) === (NaN, NaN)
+            @test isnan(effective_direction(model_helper, p_helper, 0))
+            bad_thrust, bad_isp = effective_thrust_isp(model_helper, p_helper, 0)
+            @test isnan(bad_thrust) && isnan(bad_isp)
+
+            fallback_window = effective_window(model_helper, p_helper, 1)
+            @test fallback_window == (-1.0, -1.0)
+            plan_fallback = PropulsiveBurnPlan(
+                valid=true,
+                delta_v_mps=3.0,
+                direction_rad=π,
+                start_burn_s=10.0,
+                stop_burn_s=20.0,
+                thrust_n=5.0,
+                isp_s=310.0
+            )
+            set_plan!(p_helper, 1, plan_fallback)
+            @test active_plan(p_helper, 1).valid
+            @test effective_window(model_helper, p_helper, 1) == (10.0, 20.0)
+            @test isapprox(effective_direction(model_helper, p_helper, 1), π; atol=1e-12, rtol=0.0)
+            @test effective_thrust_isp(model_helper, p_helper, 1) == (5.0, 310.0)
+            clear_plan!(p_helper, 1)
+            @test active_plan(p_helper, 1) === nothing
+
+            p_helper.shared_buffers.maneuver_commands[1] = PropulsiveManeuverCommand(
+                valid=true,
+                delta_v_mps=-4.0,
+                direction_rad=0.0,
+                source_orbit=42
+            )
+            cmd = commanded(model_helper, p_helper, 1)
+            @test cmd.delta_v_mps == 4.0
+            @test cmd.direction_rad == π
+            @test cmd.source_orbit == 42
+            @test model_helper.Δv[1] == 4.0
+            @test isapprox(model_helper.direction[1], π; atol=1e-12, rtol=0.0)
+
+            model_nan = make_base_thruster_model(
+                thrust=2.0,
+                direction=0.5,
+                Δv=NaN,
+                start_burn_time=-1.0,
+                stop_burn_time=-1.0,
+                Isp=300.0
+            )
+            p_helper.shared_buffers.maneuver_commands[1] = PropulsiveManeuverCommand()
+            nan_cmd = commanded(model_nan, p_helper, 1)
+            @test isnan(nan_cmd.delta_v_mps)
+            @test model_nan.direction[1] == 0.5
+            @test commanded(model_nan, p_helper, 2) === nothing
+
+            @test available_propellant(p_no_shared, 1, 100.0) === nothing
+            @test available_propellant(p_helper, 2, 100.0) === nothing
+            @test available_propellant(p_helper, 1, 100.0) === nothing
+
+            maneuver_valid = (delta_v_mps=1.0, direction_rad=0.0, source_orbit=1)
+            @test validated_plan(model_helper, p_helper, 1, -1.0, maneuver_valid) === nothing
+            @test validated_plan(model_helper, p_helper, 1, 100.0, (delta_v_mps=0.0, direction_rad=0.0, source_orbit=1)) === nothing
+            @test validated_plan(model_helper, p_helper, 1, 100.0, (delta_v_mps=1.0, direction_rad=NaN, source_orbit=1)) === nothing
+            model_zero_isp = make_base_thruster_model(thrust=2.0, Δv=1.0, Isp=0.0)
+            @test validated_plan(model_zero_isp, p_helper, 1, 100.0, maneuver_valid) === nothing
+            model_zero_thrust_helper = make_base_thruster_model(thrust=0.0, Δv=1.0, Isp=300.0)
+            @test validated_plan(model_zero_thrust_helper, p_helper, 1, 100.0, maneuver_valid) === nothing
+            @test validated_plan(model_helper, p_helper, 1, 100.0, maneuver_valid).valid
+        end
     end
 
     @testset "schmitt_trigger" begin

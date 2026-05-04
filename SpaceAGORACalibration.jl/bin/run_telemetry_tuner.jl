@@ -1,6 +1,9 @@
 #!/usr/bin/env julia
 
-using SpaceAGORACalibration
+if !isdefined(Main, :SpaceAGORACalibration)
+    include(normpath(joinpath(@__DIR__, "..", "src", "SpaceAGORACalibration.jl")))
+end
+using .SpaceAGORACalibration
 using SpaceAGORA
 
 @inline function _parse_bool(raw::AbstractString)::Bool

@@ -2,7 +2,7 @@
 
 julia_version = "1.12.1"
 manifest_format = "2.0"
-project_hash = "50cb9a8734e4d9b690bd7a778b7491df5d3f3b5a"
+project_hash = "576e90250b16a1b74b1b32f62393751b6e9611c3"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -2889,7 +2889,7 @@ uuid = "a2af1166-a08f-5f64-846c-94a0d3cef48c"
 version = "1.2.2"
 
 [[deps.SpaceAGORA]]
-deps = ["Aqua", "Arrow", "AssociatedLegendrePolynomials", "AstroTime", "CSV", "ComponentArrays", "ControlSystemsBase", "DataFrames", "Dates", "DiffEqBase", "DiffEqCallbacks", "DifferentialEquations", "Documenter", "Interpolations", "LaTeXStrings", "LinearAlgebra", "Logging", "LoopVectorization", "MatrixEquations", "NLsolve", "OrdinaryDiffEq", "PlotlyJS", "Plots", "Polyester", "PreallocationTools", "PrecompileTools", "Printf", "Quaternions", "Random", "RecursiveArrayTools", "Reexport", "Roots", "Rotations", "SHA", "SPICE", "SatelliteToolbox", "SatelliteToolboxAtmosphericModels", "SatelliteToolboxGeomagneticField", "SatelliteToolboxGravityModels", "SatelliteToolboxTransformations", "Serialization", "SpecialFunctions", "StaticArrays", "Statistics", "TOML"]
+deps = ["Aqua", "Arrow", "AssociatedLegendrePolynomials", "AstroTime", "CSV", "ComponentArrays", "ControlSystemsBase", "DataFrames", "Dates", "DiffEqBase", "DiffEqCallbacks", "DifferentialEquations", "Documenter", "Interpolations", "LaTeXStrings", "LinearAlgebra", "Logging", "LoopVectorization", "MatrixEquations", "NLsolve", "OrdinaryDiffEq", "PlotlyJS", "Plots", "Polyester", "PreallocationTools", "PrecompileTools", "Printf", "Quaternions", "Random", "RecursiveArrayTools", "Reexport", "Roots", "Rotations", "SHA", "SPICE", "SatelliteToolbox", "SatelliteToolboxAtmosphericModels", "SatelliteToolboxGeomagneticField", "SatelliteToolboxGravityModels", "SatelliteToolboxTransformations", "Serialization", "SpecialFunctions", "StaticArrays", "Statistics", "TOML", "Tables"]
 path = "."
 uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
 version = "0.1.0"

@@ -14,21 +14,21 @@ PowerShell:
 
 ```powershell
 $env:JULIA_PKG_OFFLINE = "true"
-julia --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --profile=quick --plots=0
+julia --project=. SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --profile=quick --plots=0
 ```
 
 `cmd.exe`:
 
 ```bat
 set JULIA_PKG_OFFLINE=true
-julia --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --profile=quick --plots=0
+julia --project=. SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --profile=quick --plots=0
 ```
 
 POSIX shells:
 
 ```bash
 export JULIA_PKG_OFFLINE=true
-julia --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --profile=quick --plots=0
+julia --project=. SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --profile=quick --plots=0
 ```
 
 ## Smoke run (fast sanity)
@@ -37,21 +37,21 @@ PowerShell:
 
 ```powershell
 $env:JULIA_PKG_OFFLINE = "true"
-julia --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --spec=SpaceAGORACalibration.jl/studies/earth_offline/spec_earth_offline_smoke.toml --profile=quick --plots=0
+julia --project=. SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --spec=SpaceAGORACalibration.jl/studies/earth_offline/spec_earth_offline_smoke.toml --profile=quick --plots=0
 ```
 
 `cmd.exe`:
 
 ```bat
 set JULIA_PKG_OFFLINE=true
-julia --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --spec=SpaceAGORACalibration.jl/studies/earth_offline/spec_earth_offline_smoke.toml --profile=quick --plots=0
+julia --project=. SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --spec=SpaceAGORACalibration.jl/studies/earth_offline/spec_earth_offline_smoke.toml --profile=quick --plots=0
 ```
 
 POSIX shells:
 
 ```bash
 export JULIA_PKG_OFFLINE=true
-julia --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --spec=SpaceAGORACalibration.jl/studies/earth_offline/spec_earth_offline_smoke.toml --profile=quick --plots=0
+julia --project=. SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl --spec=SpaceAGORACalibration.jl/studies/earth_offline/spec_earth_offline_smoke.toml --profile=quick --plots=0
 ```
 
 The engine stage map remains:

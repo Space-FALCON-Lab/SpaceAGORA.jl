@@ -1,6 +1,9 @@
 using Arrow
 using Random
-using SpaceAGORACalibration
+if !isdefined(Main, :SpaceAGORACalibration)
+    include(normpath(joinpath(@__DIR__, "..", "src", "SpaceAGORACalibration.jl")))
+end
+using .SpaceAGORACalibration
 using Tables
 using TOML
 

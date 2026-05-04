@@ -47,9 +47,6 @@ jobs:
       - name: Instantiate
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
-      - name: Instantiate SpaceAGORACalibration
-        run: julia --startup-file=no --project=SpaceAGORACalibration.jl -e 'using Pkg; Pkg.instantiate()'
-
       - name: Ensure native GRAM build
         run: ./scripts/ensure_gram_native.sh --clean
 
@@ -64,10 +61,10 @@ jobs:
         run: julia --startup-file=no --project=. test/ci_coverage_quality_gate.jl
 
       - name: SpaceAGORACalibration tests with coverage
-        run: julia --startup-file=no --project=SpaceAGORACalibration.jl --code-coverage=user SpaceAGORACalibration.jl/test/runtests.jl
+        run: julia --startup-file=no --project=. --code-coverage=user SpaceAGORACalibration.jl/test/runtests.jl
 
       - name: SpaceAGORACalibration coverage quality gate
-        run: julia --startup-file=no --project=SpaceAGORACalibration.jl SpaceAGORACalibration.jl/test/ci_coverage_quality_gate.jl
+        run: julia --startup-file=no --project=. SpaceAGORACalibration.jl/test/ci_coverage_quality_gate.jl
 
       - name: Contract suite
         run: julia --startup-file=no --project=. test/contracts/nightly_runtests.jl

@@ -586,6 +586,7 @@ function _write_smart_ladder_report(
         println(io, "## Reproducibility")
         println(io, "```bash")
         process_suffix = isnothing(config.process_workers) ? "" : " --process-workers=$(config.process_workers)"
+        rung_suffix = isempty(config.rung_filter) ? "" : " --rungs=$(join(config.rung_filter, ","))"
         project_flag = Base.shell_escape(SMART_LADDER_PROJECT)
         println(
             io,
@@ -593,7 +594,7 @@ function _write_smart_ladder_report(
             "--profile=$(config.profile.name) --outdir=$(config.outdir) --clean=1 --passes=$(config.passes) " *
             "--randomize-rung-order=$(config.randomize_rung_order ? 1 : 0) --seed=$(config.random_seed) " *
             "--outer-only-backend=$(config.outer_only_backend)$(process_suffix) " *
-            "--layer-attribution=$(config.include_layer_attribution ? 1 : 0) " *
+            "--layer-attribution=$(config.include_layer_attribution ? 1 : 0)$(rung_suffix) " *
             "--include-control-stress-per-orbit=$(config.include_control_stress_per_orbit ? 1 : 0) " *
             "--control-stress-repeats-full=$(config.control_stress_repeats_full) " *
             "--control-stress-warmup-full=$(config.control_stress_warmup_full) " *

@@ -17,23 +17,22 @@ function instantiate_vendored_gramsuite!()
     return nothing
 end
 
-if Base.find_package("GRAMSuite") === nothing && isdir(VENDORED_GRAMSUITE)
-    pushfirst!(LOAD_PATH, VENDORED_GRAMSUITE)
-end
+using SpaceAGORA
+using SpaceAGORA.TelemetryVerification
 
 try
     import GRAMSuite
 catch err
     if isdir(VENDORED_GRAMSUITE)
+        if Base.find_package("GRAMSuite") === nothing
+            pushfirst!(LOAD_PATH, VENDORED_GRAMSUITE)
+        end
         instantiate_vendored_gramsuite!()
         @eval import GRAMSuite
     else
         rethrow(err)
     end
 end
-
-using SpaceAGORA
-using SpaceAGORA.TelemetryVerification
 
 function _study_cli_args(argv::Vector{String})::Vector{String}
     args = copy(argv)

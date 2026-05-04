@@ -53,6 +53,7 @@ Base.@kwdef struct SmartLadderConfig
     outer_only_backend::String
     process_workers::Union{Nothing, Int}
     include_layer_attribution::Bool
+    rung_filter::Vector{String}
     include_control_stress_per_orbit::Bool
     control_stress_repeats_full::Int
     control_stress_warmup_full::Int
@@ -145,6 +146,22 @@ end
     return values
 end
 
+function _parse_rung_filter(raw::AbstractString)::Vector{String}
+    token = strip(String(raw))
+    isempty(token) && return String[]
+    values = String[]
+    seen = Set{String}()
+    for part in split(token, ",")
+        value = strip(part)
+        isempty(value) && continue
+        if !(value in seen)
+            push!(values, value)
+            push!(seen, value)
+        end
+    end
+    return values
+end
+
 function parse_smart_ladder_cli()::SmartLadderConfig
     profile_name = lowercase(strip(get(ENV, "SPACEAGORA_SMART_LADDER_PROFILE", get(ENV, "SPACEAGORA_PERF_PROFILE", "full"))))
     outdir = get(ENV, "SPACEAGORA_SMART_LADDER_OUTDIR", SMART_LADDER_DEFAULT_OUTDIR)
@@ -155,6 +172,7 @@ function parse_smart_ladder_cli()::SmartLadderConfig
     outer_only_backend = _parse_outer_only_backend(get(ENV, "SPACEAGORA_SMART_LADDER_OUTER_ONLY_BACKEND", "threads"))
     process_workers = _parse_optional_positive_int(get(ENV, "SPACEAGORA_SMART_LADDER_PROCESS_WORKERS", ""))
     include_layer_attribution = _parse_bool_token(get(ENV, "SPACEAGORA_SMART_LADDER_LAYER_ATTRIBUTION", "1"))
+    rung_filter = _parse_rung_filter(get(ENV, "SPACEAGORA_SMART_LADDER_RUNGS", ""))
     include_control_stress_per_orbit = _parse_bool_token(get(ENV, "SPACEAGORA_PERF_INCLUDE_CONTROL_STRESS_PER_ORBIT", "1"))
     control_stress_repeats_full = _parse_positive_int(
         get(ENV, "SPACEAGORA_PERF_CONTROL_STRESS_REPEATS_FULL", "3"),
@@ -176,6 +194,7 @@ function parse_smart_ladder_cli()::SmartLadderConfig
             clean = true
             passes = 1
             include_layer_attribution = false
+            rung_filter = String[]
             include_control_stress_per_orbit = false
             control_stress_repeats_full = 1
             control_stress_warmup_full = 0
@@ -201,6 +220,8 @@ function parse_smart_ladder_cli()::SmartLadderConfig
             process_workers = _parse_optional_positive_int(String(split(arg, "=", limit=2)[2]))
         elseif startswith(arg, "--layer-attribution=")
             include_layer_attribution = _parse_bool_token(String(split(arg, "=", limit=2)[2]))
+        elseif startswith(arg, "--rungs=")
+            rung_filter = _parse_rung_filter(String(split(arg, "=", limit=2)[2]))
         elseif startswith(arg, "--include-control-stress-per-orbit=")
             include_control_stress_per_orbit = _parse_bool_token(String(split(arg, "=", limit=2)[2]))
         elseif startswith(arg, "--control-stress-repeats-full=")
@@ -223,7 +244,7 @@ function parse_smart_ladder_cli()::SmartLadderConfig
             throw(ArgumentError(
                 "Unknown argument '$arg'. Supported: [quick|full|smoke], --profile=..., --outdir=..., --clean=0|1, " *
                 "--passes=N, --randomize-rung-order=0|1, --seed=N, --outer-only-backend=threads|process|auto, " *
-                "--process-workers=N, --layer-attribution=0|1, --include-control-stress-per-orbit=0|1, --control-stress-repeats-full=N, " *
+                "--process-workers=N, --layer-attribution=0|1, --rungs=<csv>, --include-control-stress-per-orbit=0|1, --control-stress-repeats-full=N, " *
                 "--control-stress-warmup-full=N, --solver-axis=inherit|frozen|factorial, --solver-mode=<mode>, --solver-factors=<csv>."
             ))
         end
@@ -249,6 +270,7 @@ function parse_smart_ladder_cli()::SmartLadderConfig
         outer_only_backend=outer_only_backend,
         process_workers=process_workers,
         include_layer_attribution=include_layer_attribution,
+        rung_filter=rung_filter,
         include_control_stress_per_orbit=include_control_stress_per_orbit,
         control_stress_repeats_full=control_stress_repeats_full,
         control_stress_warmup_full=control_stress_warmup_full,

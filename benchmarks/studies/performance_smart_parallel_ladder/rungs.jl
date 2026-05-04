@@ -65,14 +65,15 @@ function _ladder_rungs(config::SmartLadderConfig)::Vector{LadderRungSpec}
         )
     ]
     if _smart_ladder_smoke_mode()
-        return LadderRungSpec[
+        rungs = LadderRungSpec[
             rungs[1],
             rungs[3],
             rungs[7],
         ]
+        return _filter_ladder_rungs(rungs, config.rung_filter)
     end
     if !config.include_layer_attribution
-        return rungs
+        return _filter_ladder_rungs(rungs, config.rung_filter)
     end
 
     attribution_backend = _layer_attribution_backend(config)
@@ -171,7 +172,26 @@ function _ladder_rungs(config::SmartLadderConfig)::Vector{LadderRungSpec}
             ),
         ]
     )
-    return rungs
+    return _filter_ladder_rungs(rungs, config.rung_filter)
+end
+
+function _filter_ladder_rungs(
+    rungs::Vector{LadderRungSpec},
+    filter::Vector{String}
+)::Vector{LadderRungSpec}
+    isempty(filter) && return rungs
+    wanted = Set(filter)
+    selected = [r for r in rungs if r.label in wanted || String(r.mode) in wanted]
+    if length(selected) != length(filter)
+        available = sort(vcat([r.label for r in rungs], [String(r.mode) for r in rungs]))
+        matched = Set(vcat([r.label for r in selected], [String(r.mode) for r in selected]))
+        unknown = [token for token in filter if !(token in matched)]
+        throw(ArgumentError(
+            "Unknown smart-ladder rung filter token(s): $(join(unknown, ", ")). " *
+            "Available rung labels/modes: $(join(available, ", "))."
+        ))
+    end
+    return selected
 end
 
 function _ladder_env_pairs(

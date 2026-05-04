@@ -151,6 +151,14 @@ function _baseline_artifact(artifacts::Vector{ModeRunArtifacts})::ModeRunArtifac
     return artifacts[idx]
 end
 
+function _baseline_artifact_or_nothing(
+    artifacts::Vector{ModeRunArtifacts}
+)::Union{Nothing, ModeRunArtifacts}
+    idx = findfirst(a -> a.mode == :serial, artifacts)
+    idx === nothing && return nothing
+    return artifacts[idx]
+end
+
 function _prepare_speed_sample_table(raw_df::DataFrame)::DataFrame
     rows = NamedTuple[]
     for row in eachrow(raw_df)
@@ -389,7 +397,8 @@ function _build_vs_r0_speedup_table(
     artifacts::Vector{ModeRunArtifacts},
     rung_label_by_mode::Dict{Symbol, String}
 )::DataFrame
-    baseline = _baseline_artifact(artifacts)
+    baseline = _baseline_artifact_or_nothing(artifacts)
+    baseline === nothing && return DataFrame()
     rows = NamedTuple[]
     for artifact in artifacts
         rung_label = get(rung_label_by_mode, artifact.mode, string(artifact.mode))
@@ -414,7 +423,8 @@ function _build_mission_family_speedup_table(
     artifacts::Vector{ModeRunArtifacts},
     rung_label_by_mode::Dict{Symbol, String}
 )::DataFrame
-    baseline = _baseline_artifact(artifacts)
+    baseline = _baseline_artifact_or_nothing(artifacts)
+    baseline === nothing && return DataFrame()
     baseline_samples = _prepare_speed_sample_table(baseline.raw_df)
     if nrow(baseline_samples) == 0
         return DataFrame()
@@ -510,7 +520,8 @@ function _build_thermal_contribution_table(
     artifacts::Vector{ModeRunArtifacts},
     rung_label_by_mode::Dict{Symbol, String}
 )::DataFrame
-    baseline = _baseline_artifact(artifacts)
+    baseline = _baseline_artifact_or_nothing(artifacts)
+    baseline === nothing && return DataFrame()
     baseline_samples = _prepare_thermal_speed_sample_table(baseline.raw_df)
     if nrow(baseline_samples) == 0 || !_has_column(baseline_samples, :is_thermal)
         return DataFrame()
@@ -632,4 +643,3 @@ end
     alpha = clamp((-v0) / dv, 0.0, 1.0)
     return t0 + alpha * (t1 - t0)
 end
-

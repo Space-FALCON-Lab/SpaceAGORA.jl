@@ -350,7 +350,8 @@ function _build_accuracy_parity_table(
     artifacts::Vector{ModeRunArtifacts},
     rung_label_by_mode::Dict{Symbol, String}
 )::DataFrame
-    baseline = _baseline_artifact(artifacts)
+    baseline = _baseline_artifact_or_nothing(artifacts)
+    baseline === nothing && return DataFrame()
     baseline_samples = _prepare_accuracy_sample_table(baseline.raw_df)
     if nrow(baseline_samples) == 0
         return DataFrame()
@@ -561,7 +562,8 @@ function _build_montecarlo_distribution_parity_table(
     artifacts::Vector{ModeRunArtifacts},
     rung_label_by_mode::Dict{Symbol, String}
 )::DataFrame
-    baseline = _baseline_artifact(artifacts)
+    baseline = _baseline_artifact_or_nothing(artifacts)
+    baseline === nothing && return DataFrame()
     baseline_raw = baseline.raw_df
     if !(_has_column(baseline_raw, :category) && _has_column(baseline_raw, :scenario) && _has_column(baseline_raw, :solve_success))
         return DataFrame()
@@ -736,4 +738,3 @@ function _build_fidelity_parity_table(
     sort!(df, :mode)
     return df
 end
-

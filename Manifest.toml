@@ -2,7 +2,7 @@
 
 julia_version = "1.12.1"
 manifest_format = "2.0"
-project_hash = "50cb9a8734e4d9b690bd7a778b7491df5d3f3b5a"
+project_hash = "cdb174319ca348b0c542c1466625aeca7e47f672"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -1023,6 +1023,12 @@ version = "0.73.22"
 
     [deps.GR.weakdeps]
     IJulia = "7073ff75-c697-5162-941a-fcdaad2a7d2a"
+
+[[deps.GRAMSuite]]
+deps = ["LinearAlgebra", "Serialization", "StaticArrays"]
+path = "/home/space-falcon-1/Documents/SpaceAGORA.jl/data/GRAMSuite.jl"
+uuid = "b50455af-6a46-4eae-bf92-8039261dd674"
+version = "0.1.0"
 
 [[deps.GR_jll]]
 deps = ["Artifacts", "Bzip2_jll", "Cairo_jll", "FFMPEG_jll", "Fontconfig_jll", "FreeType2_jll", "GLFW_jll", "JLLWrappers", "JpegTurbo_jll", "Libdl", "Libtiff_jll", "Pixman_jll", "Qt6Base_jll", "Zlib_jll", "libpng_jll"]
@@ -2893,12 +2899,10 @@ deps = ["Aqua", "Arrow", "AssociatedLegendrePolynomials", "AstroTime", "CSV", "C
 path = "."
 uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
 version = "0.1.0"
+weakdeps = ["GRAMSuite"]
 
     [deps.SpaceAGORA.extensions]
     SpaceAGORAGRAMSuiteExt = "GRAMSuite"
-
-    [deps.SpaceAGORA.weakdeps]
-    GRAMSuite = "b50455af-6a46-4eae-bf92-8039261dd674"
 
 [[deps.SpaceIndices]]
 deps = ["Dates", "DelimitedFiles", "Downloads", "JSON", "OptionalData", "Reexport", "Scratch"]

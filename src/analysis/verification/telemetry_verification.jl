@@ -1,6 +1,10 @@
 module TelemetryVerification
 
 export VerificationRequest, VerificationResult, run_verification, run_verification_cli, run_study
+export CYGNSSEstimatorValidationRequest, CYGNSSEstimatorValidationResult
+export run_cygnss_estimator_validation, run_cygnss_estimator_validation_cli
+export CYGNSSTimingOffsetSweepRequest, CYGNSSTimingOffsetSweepResult
+export run_cygnss_timing_offset_sweep, run_cygnss_timing_offset_sweep_cli
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 const DEFAULT_OUTPUT_DIR = joinpath(REPO_ROOT, "output")
@@ -24,6 +28,7 @@ using CSV
 using DataFrames
 using Arrow
 using TOML
+using Plots
 
 using ..SimulationModel
 using ..SimulationEngine
@@ -41,6 +46,7 @@ include(joinpath(@__DIR__, "telemetry_verification", "calibration.jl"))
 include(joinpath(@__DIR__, "telemetry_verification", "error_tables.jl"))
 include(joinpath(@__DIR__, "telemetry_verification", "reporting.jl"))
 include(joinpath(@__DIR__, "telemetry_verification", "runner.jl"))
+include(joinpath(@__DIR__, "telemetry_verification", "cygnss_estimator_validation.jl"))
 
 # Architecture contract: runner delegates simulation execution to SimulationEngine.run_simulation.
 end # module TelemetryVerification

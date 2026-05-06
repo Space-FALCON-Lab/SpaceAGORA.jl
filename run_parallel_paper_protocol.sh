@@ -15,28 +15,59 @@ SEED="20260304"
 PASSES="3"
 LAYER_ATTR="1"
 
-THREADS_MAIN="32"
-PROCESS_WORKERS_LIST=(8 16 24 32)
-SCALING_THREADS_LIST=(1 2 4 8 16 32 48 64 96)
+# Auto-detect logical CPU count; override by setting SPACEAGORA_PERF_NCPU.
+NCPU="${SPACEAGORA_PERF_NCPU:-$(nproc)}"
+THREADS_MAIN="$NCPU"
+
+# Four evenly-spaced process worker counts from NCPU/4 up to NCPU.
+_gen_process_workers() {
+  local n=$1 step=$(( $1 / 4 )) arr=()
+  [[ $step -lt 1 ]] && step=1
+  for i in 1 2 3 4; do
+    local w=$(( step * i ))
+    [[ $w -gt $n ]] && w=$n
+    [[ ${#arr[@]} -eq 0 || ${arr[-1]} -ne $w ]] && arr+=("$w")
+  done
+  echo "${arr[@]}"
+}
+
+# Powers of 2 from 1 up to NCPU, then NCPU itself if not already a power of 2.
+_gen_scaling_threads() {
+  local n=$1 t=1 arr=()
+  while [[ $t -lt $n ]]; do arr+=("$t"); t=$(( t * 2 )); done
+  arr+=("$n")
+  echo "${arr[@]}"
+}
+
+read -ra PROCESS_WORKERS_LIST <<< "$(_gen_process_workers "$NCPU")"
+read -ra SCALING_THREADS_LIST <<< "$(_gen_scaling_threads "$NCPU")"
 
 BASE_OUT="output/performance/paper_protocol_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$BASE_OUT"
 
-# Ensure .AGORA exists for subprocess project routing.
-if [[ ! -d ".AGORA" ]]; then
-  echo "[setup] Creating .AGORA from Project/Manifest"
-  mkdir -p .AGORA
-  cp Project.toml Manifest.toml .AGORA/
-fi
-
 echo "[setup] Instantiating project"
-julia --project=.AGORA -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+julia --project=. -e '
+    using Pkg
+    # GRAMSuite is declared as a weakdep + sources path; develop it so
+    # "using GRAMSuite" works in the benchmark and the SpaceAGORA extension fires.
+    gram_path = joinpath(pwd(), "data", "GRAMSuite.jl")
+    if isdir(gram_path) && !haskey(Pkg.project().dependencies, "GRAMSuite")
+        @info "Developing GRAMSuite from local source for GRAM benchmark cases"
+        Pkg.develop(Pkg.PackageSpec(path=gram_path))
+    end
+    Pkg.instantiate()
+    Pkg.precompile()
+'
 
 # Thread/process hygiene.
 export OPENBLAS_NUM_THREADS=1
-export SPACEAGORA_PERF_MACHINE_LABEL="${SPACEAGORA_PERF_MACHINE_LABEL:-tower_9985WX}"
+export SPACEAGORA_PERF_MACHINE_LABEL="${SPACEAGORA_PERF_MACHINE_LABEL:-$(hostname -s)}"
 export JULIA_NUM_THREADS="$THREADS_MAIN"
 # export JULIA_EXCLUSIVE=1   # enable only on a dedicated machine
+
+echo "[config] NCPU=$NCPU  THREADS_MAIN=$THREADS_MAIN  MACHINE=$SPACEAGORA_PERF_MACHINE_LABEL"
+echo "[config] PROCESS_WORKERS_LIST=(${PROCESS_WORKERS_LIST[*]})"
+echo "[config] SCALING_THREADS_LIST=(${SCALING_THREADS_LIST[*]})"
 
 # Freeze solver axis for parallel-only claims.
 export SPACEAGORA_PERF_SOLVER_MODE="auto_stiff"
@@ -52,7 +83,7 @@ run_ladder_once() {
   local workers="${6:-}"
 
   local cmd=(
-    julia --project=.AGORA benchmarks/studies/performance_smart_parallel_ladder.jl
+    julia --project=. benchmarks/studies/performance_smart_parallel_ladder.jl
     "$PROFILE"
     --outdir="$outdir"
     --clean="$clean"
@@ -104,7 +135,7 @@ done
 
 echo "[run] 4) Paper pipeline summary across modes"
 JULIA_NUM_THREADS="$THREADS_MAIN" \
-julia --project=.AGORA benchmarks/scripts/performance_paper_pipeline.jl \
+julia --project=. benchmarks/scripts/performance_paper_pipeline.jl \
   --profile=full \
   --modes=serial,auto,threads,process \
   --outdir="$BASE_OUT/paper_pipeline_full"

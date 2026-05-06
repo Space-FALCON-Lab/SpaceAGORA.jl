@@ -16,7 +16,10 @@ const _PERF_POLICY_ENV_BASELINE = Dict{String, Union{Nothing, String}}(
 )
 const _PERF_THREADS_BACKEND_WARNING_EMITTED = Ref(false)
 
-include(joinpath(REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
+using SpaceAGORA
+using GRAMSuite
+
+import SpaceAGORA.ParallelProfiles
 using .ParallelProfiles
 
 using CSV
@@ -35,14 +38,19 @@ if myid() == 1
     using Plots
 end
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+import SpaceAGORA.SimulationModel
 using .SimulationModel
+
+import SpaceAGORA.SimulationEngine
+
+# GRAMSuite exports InitialTime, GRAMAtmosphereModel, and GRAMAtmosphereModelSurrogate,
+# which collide with the SpaceAGORA types brought in by `using .SimulationModel`.
+# Explicit imports resolve the ambiguity in favour of the SpaceAGORA versions.
+import SpaceAGORA.SimulationModel.SimConfig: InitialTime
+import SpaceAGORA.SimulationModel.EnvironmentModels: GRAMAtmosphereModel, GRAMAtmosphereModelSurrogate
 
 # run_simulation.jl expects quat_mult in the including scope.
 const quat_mult = SimulationModel.quat_mult
-if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
-end
 if !isdefined(@__MODULE__, :run_simulation)
     const run_simulation = SimulationEngine.run_simulation
 end

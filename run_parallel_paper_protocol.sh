@@ -23,6 +23,7 @@ SCALING_THREADS_LIST=(1 2 4 8 16 32 64)
 
 PROCESS_RUNGS="r1_b_outer_only_process"
 SCALING_RUNGS="r5_full_smart"
+SCALING_CASES="multi_4_gravity,multi_8_gravity,multi_16_gravity,multi_32_gravity,multi_64_gravity"
 
 BASE_OUT="output/performance/paper_protocol_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$BASE_OUT"
@@ -42,6 +43,7 @@ export SPACEAGORA_PERF_WORKER_PROJECT="$SCRIPT_DIR"
 export SPACEAGORA_PERF_SOLVER_MODE="auto_stiff"
 export SPACEAGORA_PERF_SPLIT_ROLLOUT_GATE=0
 export SPACEAGORA_PERF_MULTIRATE_ROLLOUT_GATE=0
+export SPACEAGORA_PERF_EXCLUDE_ENTRY_SCENARIOS=1
 
 run_ladder_once() {
   local outdir="$1"
@@ -78,6 +80,7 @@ run_ladder_once() {
 
   SPACEAGORA_PERF_OUTER_ROUTE_STATE_RESET="$reset" \
   SPACEAGORA_PARALLEL_POLICY_STATE_RESET="$reset" \
+  SPACEAGORA_PERF_CASES="${SPACEAGORA_PERF_CASES:-}" \
   JULIA_NUM_THREADS="$threads" \
   "${cmd[@]}"
 }
@@ -122,6 +125,7 @@ done
 
 echo "[run] 3) Strong-scaling sweep (threads), cold-only, r5_full_smart only"
 for T in "${SCALING_THREADS_LIST[@]}"; do
+  SPACEAGORA_PERF_CASES="$SCALING_CASES" \
   run_cold_only "$BASE_OUT/ladder_scaling_threads_${T}" "threads" "$T" "" "$PASSES_LIGHT" "$LAYER_ATTR_LIGHT" "$SCALING_RUNGS"
 done
 

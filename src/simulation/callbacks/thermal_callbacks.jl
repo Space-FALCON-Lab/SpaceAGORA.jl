@@ -58,7 +58,7 @@ end
 
 function get_thermal_callback(num_sats::Int, args::SimulationConfiguration)
     function update_thermal_sat!(i::Int, p, u, t::Float64)
-        _compute_stage_heat_rates!(p, u.sc[i], i, t; use_buffered_density=false)
+        _compute_stage_heat_rates!(p, u.sc[i], i, t; use_buffered_density=true)
         return nothing
     end
 

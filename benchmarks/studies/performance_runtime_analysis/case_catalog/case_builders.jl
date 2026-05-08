@@ -438,7 +438,7 @@ function make_montecarlo_multi_sat_config(
         spacecraft=spacecraft,
         mission_time_s=mission_time_s,
         orientation_sim=false,
-        dynamic_effectors=(InverseSquaredGravityModel(), harmonics20),
+        dynamic_effectors=(harmonics20,),
         dt_max_orbit=1.0,
         reltol_orbit=1e-9,
         abstol_orbit=1e-9
@@ -475,7 +475,7 @@ function make_montecarlo_high_accuracy_config(
         spacecraft=[sc],
         mission_time_s=mission_time_s,
         orientation_sim=false,
-        dynamic_effectors=(InverseSquaredGravityModel(), harmonics50),
+        dynamic_effectors=(harmonics50,),
         dt_max_orbit=0.5,
         reltol_orbit=1e-10,
         abstol_orbit=1e-10
@@ -584,7 +584,7 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
     mars_gram_point_density = _build_mars_gram_point_density()
     earth_gram_surrogate_density = _build_earth_gram_surrogate_density()
     thermal_stress_density = SimulationModel.EnvironmentModels.PolynomialFitAtmosphereModel([-27.0])
-    multi_scaling_effectors = (InverseSquaredGravityModel(), harmonics20)
+    multi_scaling_effectors = (harmonics20,)
     sc_thermal_stress = make_constellation(planet, 8; with_panel=true, panel_count=12)
     sc_thermal_aerobrake = [make_spacecraft(
         mars;
@@ -775,7 +775,7 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 spacecraft=sc_articulated_heavy,
                 mission_time_s=min(spec.mission_short_s, 2400.0),
                 orientation_sim=true,
-                dynamic_effectors=(InverseSquaredGravityModel(), harmonics20, AerodynamicCoefficientfM()),
+                dynamic_effectors=(harmonics20, AerodynamicCoefficientfM()),
                 density_model=deepcopy(thermal_stress_density),
                 dt_max_orbit=0.5
             ),
@@ -805,7 +805,7 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 spacecraft=sc_long_constellation,
                 mission_time_s=spec.mission_long_s,
                 orientation_sim=false,
-                dynamic_effectors=(InverseSquaredGravityModel(), harmonics20, SolarRadiationPressureModel(1.2, 12.0)),
+                dynamic_effectors=(harmonics20, SolarRadiationPressureModel(1.2, 12.0)),
                 density_model=deepcopy(earth_gram_surrogate_density),
                 dt_max_orbit=2.0
             ),
@@ -895,7 +895,8 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 mission_time_s=spec.mission_short_s,
                 orientation_sim=false,
                 dynamic_effectors=multi_scaling_effectors,
-                density_model=deepcopy(earth_gram_surrogate_density)
+                density_model=deepcopy(earth_gram_surrogate_density),
+                dt_max_orbit=20.0
             )
         ),
         BenchmarkCase(
@@ -908,7 +909,8 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 mission_time_s=spec.mission_short_s,
                 orientation_sim=false,
                 dynamic_effectors=multi_scaling_effectors,
-                density_model=deepcopy(earth_gram_surrogate_density)
+                density_model=deepcopy(earth_gram_surrogate_density),
+                dt_max_orbit=20.0
             ),
             run_in_quick=false
         ),
@@ -939,7 +941,8 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 mission_time_s=spec.mission_short_s,
                 orientation_sim=false,
                 dynamic_effectors=multi_scaling_effectors,
-                density_model=deepcopy(earth_gram_surrogate_density)
+                density_model=deepcopy(earth_gram_surrogate_density),
+                dt_max_orbit=20.0
             ),
             run_in_quick=false
         ),
@@ -953,7 +956,8 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 mission_time_s=spec.mission_short_s,
                 orientation_sim=false,
                 dynamic_effectors=multi_scaling_effectors,
-                density_model=deepcopy(earth_gram_surrogate_density)
+                density_model=deepcopy(earth_gram_surrogate_density),
+                dt_max_orbit=20.0
             ),
             run_in_quick=false
         ),
@@ -967,7 +971,8 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 mission_time_s=spec.mission_short_s,
                 orientation_sim=false,
                 dynamic_effectors=multi_scaling_effectors,
-                density_model=deepcopy(earth_gram_surrogate_density)
+                density_model=deepcopy(earth_gram_surrogate_density),
+                dt_max_orbit=20.0
             ),
             run_in_quick=false
         ),
@@ -1005,7 +1010,7 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 spacecraft=sc_baseline,
                 mission_time_s=spec.mission_short_s,
                 orientation_sim=false,
-                dynamic_effectors=(InverseSquaredGravityModel(), harmonics20)
+                dynamic_effectors=(harmonics20,)
             )
         ),
         BenchmarkCase(
@@ -1017,7 +1022,7 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 spacecraft=sc_baseline,
                 mission_time_s=spec.mission_short_s,
                 orientation_sim=false,
-                dynamic_effectors=(InverseSquaredGravityModel(), harmonics50)
+                dynamic_effectors=(harmonics50,)
             ),
             run_in_quick=false
         ),
@@ -1134,4 +1139,3 @@ function _multirate_rollout_benchmark_cases(cases::Vector{BenchmarkCase})::Vecto
     end
     return expanded
 end
-

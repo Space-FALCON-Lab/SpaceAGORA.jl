@@ -79,6 +79,18 @@
     withenv("SPACEAGORA_EFFECTOR_WORK_NS_PER_WORKER_THRESHOLD" => "0.0") do
         @test_throws ArgumentError _effector_work_ns_per_worker_threshold()
     end
+    withenv("SPACEAGORA_RHS_EXECUTION_MODE" => "flat") do
+        @test _rhs_execution_mode_env() == :flat_constellation_effector_queue
+    end
+    withenv("SPACEAGORA_RHS_EXECUTION_MODE" => "satellite") do
+        @test _rhs_execution_mode_env() == :satellite_batch
+    end
+    withenv("SPACEAGORA_RHS_EXECUTION_MODE" => "per_satellite") do
+        @test _rhs_execution_mode_env() == :per_satellite_effector_reduce
+    end
+    withenv("SPACEAGORA_RHS_EXECUTION_MODE" => "bad") do
+        @test_throws ArgumentError _rhs_execution_mode_env()
+    end
 
     args_eff_single = build_config(
         spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
@@ -166,6 +178,62 @@
             @test decision_constellation.use_threads == false
             @test decision_constellation.allotment == 1
         end
+    end
+
+    args_flat_rhs = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i, ν_deg=150.0 + i)
+            for i in 1:4
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            InverseSquaredJ2GravityModel(),
+            InverseSquaredGravityModel(),
+            InverseSquaredJ2GravityModel(),
+        ),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    u_flat_rhs = build_initial_conditions(args_flat_rhs)
+    du_serial_rhs = copy(u_flat_rhs)
+    du_flat_rhs = copy(u_flat_rhs)
+    du_serial_rhs .= 0.0
+    du_flat_rhs .= 0.0
+    p_serial_rhs = ODEParams{4}(args=args_flat_rhs)
+    p_flat_rhs = ODEParams{4}(args=args_flat_rhs)
+    _initialize_heat_rate_buffers!(p_serial_rhs)
+    _initialize_heat_rate_buffers!(p_flat_rhs)
+    withenv(
+        "SPACEAGORA_RHS_EXECUTION_MODE" => "serial",
+        "SPACEAGORA_EFFECTOR_PARALLEL" => "off"
+    ) do
+        spacecraft_dynamics!(du_serial_rhs, u_flat_rhs, p_serial_rhs, 0.0)
+    end
+    withenv(
+        "SPACEAGORA_RHS_EXECUTION_MODE" => "flat",
+        "SPACEAGORA_EFFECTOR_PARALLEL" => "off",
+        "SPACEAGORA_INNER_THREAD_BUDGET" => string(max(1, Threads.nthreads()))
+    ) do
+        plan_flat_rhs = _rhs_execution_plan(
+            args_flat_rhs,
+            p_flat_rhs,
+            args_flat_rhs.dynamics_model.dynamic_effectors,
+            4
+        )
+        if Threads.nthreads() > 1
+            @test plan_flat_rhs.mode == :flat_constellation_effector_queue
+        end
+        spacecraft_dynamics!(du_flat_rhs, u_flat_rhs, p_flat_rhs, 0.0)
+    end
+    for i in 1:4
+        @test isapprox(du_flat_rhs.sc[i].pos, du_serial_rhs.sc[i].pos; atol=1e-12, rtol=1e-12)
+        @test isapprox(du_flat_rhs.sc[i].vel, du_serial_rhs.sc[i].vel; atol=1e-10, rtol=1e-10)
+        @test isapprox(du_flat_rhs.sc[i].mass, du_serial_rhs.sc[i].mass; atol=1e-12, rtol=1e-12)
+        @test isapprox(du_flat_rhs.sc[i].heat_loads, du_serial_rhs.sc[i].heat_loads; atol=1e-12, rtol=1e-12)
     end
 
     @test _retcode_is_stiff_symptom(:Unstable)
@@ -1345,11 +1413,9 @@
                         max_order=model_full.M
                     )
                 )
-                ref_central_pp = -EARTH.μ / norm(pos_pp)^3 * pos_pp
-                ref_perturbation_pp = ref_total_pp - ref_central_pp
 
                 @test torque_pp == SVector{3, Float64}(0.0, 0.0, 0.0)
-                @test isapprox(acc_pp, ref_perturbation_pp; atol=1e-12, rtol=1e-9)
+                @test isapprox(acc_pp, ref_total_pp; atol=1e-12, rtol=1e-9)
             end
         end
     end

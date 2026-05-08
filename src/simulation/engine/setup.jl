@@ -528,6 +528,198 @@ end
     return _dynamic_effector_thread_decision(args, nothing, dynamic_effectors, num_sats)
 end
 
+@inline function _rhs_execution_mode_env()::Symbol
+    raw = lowercase(strip(_engine_env_get("SPACEAGORA_RHS_EXECUTION_MODE", "auto")))
+    if raw in ("auto", "")
+        return :auto
+    elseif raw in ("serial", "off", "none")
+        return :serial
+    elseif raw in ("satellite", "satellite_batch", "batch")
+        return :satellite_batch
+    elseif raw in ("per_satellite", "per_satellite_effector_reduce", "effector")
+        return :per_satellite_effector_reduce
+    elseif raw in ("flat", "flat_constellation", "flat_constellation_effector_queue")
+        return :flat_constellation_effector_queue
+    end
+    throw(ArgumentError(
+        "Unsupported SPACEAGORA_RHS_EXECUTION_MODE='$raw'. Use one of: auto, serial, satellite, per_satellite, flat."
+    ))
+end
+
+@inline function _rhs_flat_min_sats()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_FLAT_MIN_SATS", 4)
+end
+
+@inline function _rhs_flat_min_effectors()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_FLAT_MIN_EFFECTORS", 4)
+end
+
+@inline function _rhs_flat_work_ns_threshold()::Float64
+    return _parse_positive_float_env("SPACEAGORA_EFFECTOR_FLAT_WORK_NS_THRESHOLD", 2.0e5)
+end
+
+@inline function _rhs_harmonics_flat_experimental_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_HARMONICS_FLAT_EXPERIMENTAL", false)
+end
+
+@inline function _rhs_flat_supported(dynamic_effectors::Tuple)::Bool
+    if length(dynamic_effectors) == 1
+        return dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
+            _dynamic_effector_threadsafe(dynamic_effectors[1]) &&
+            _rhs_harmonics_flat_experimental_enabled()
+    end
+    return length(dynamic_effectors) > 1 && _dynamic_effectors_parallel_supported(dynamic_effectors)
+end
+
+@inline function _rhs_single_harmonics_flat_supported(dynamic_effectors::Tuple)::Bool
+    return length(dynamic_effectors) == 1 &&
+        dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
+        _dynamic_effector_threadsafe(dynamic_effectors[1]) &&
+        _rhs_harmonics_flat_experimental_enabled()
+end
+
+@inline function _rhs_effectors_have_heavy_or_heterogeneous_cost(dynamic_effectors::Tuple)::Bool
+    has_srp = false
+    has_nbody = false
+    has_aero = false
+    has_harmonics = false
+    has_simple = false
+    @inbounds for effector in dynamic_effectors
+        if effector isa SimulationModel.SolarRadiationPressureModel
+            has_srp = true
+        elseif effector isa SimulationModel.NBodyGravityModel
+            has_nbody = true
+        elseif effector isa SimulationModel.AerodynamicCoefficientfM
+            has_aero = true
+        elseif effector isa SimulationModel.GravitationalHarmonicsModel
+            has_harmonics = true
+        else
+            has_simple = true
+        end
+    end
+    classes = (has_srp ? 1 : 0) + (has_nbody ? 1 : 0) + (has_aero ? 1 : 0) +
+        (has_harmonics ? 1 : 0) + (has_simple ? 1 : 0)
+    return has_srp || has_nbody || has_aero || has_harmonics || classes > 1
+end
+
+@inline function _rhs_execution_plan(
+    args::SimulationConfiguration,
+    p,
+    dynamic_effectors::Tuple,
+    num_sats::Int
+)
+    forced_mode = _rhs_execution_mode_env()
+    n_effectors = length(dynamic_effectors)
+    active_sats = if p === nothing || !hasproperty(p, :is_active)
+        num_sats
+    else
+        count(identity, p.is_active)
+    end
+    budget = SimulationModel.ParallelPolicy.effective_inner_thread_budget()
+    effector_decision = _dynamic_effector_thread_decision(args, p, dynamic_effectors, num_sats)
+
+    if forced_mode == :serial
+        return (
+            mode=:serial,
+            allotment=1,
+            scheduler=:serial,
+            policy_applied=true,
+            effector_decision=(use_threads=false, allotment=1, mode=effector_decision.mode, policy_applied=effector_decision.policy_applied),
+        )
+    elseif forced_mode == :satellite_batch
+        return (
+            mode=:satellite_batch,
+            allotment=1,
+            scheduler=:static,
+            policy_applied=true,
+            effector_decision=(use_threads=false, allotment=1, mode=effector_decision.mode, policy_applied=effector_decision.policy_applied),
+        )
+    elseif forced_mode == :per_satellite_effector_reduce
+        return (
+            mode=:per_satellite_effector_reduce,
+            allotment=effector_decision.allotment,
+            scheduler=:auto,
+            policy_applied=true,
+            effector_decision=effector_decision,
+        )
+    elseif forced_mode == :flat_constellation_effector_queue
+        if active_sats <= 1 || !_rhs_flat_supported(dynamic_effectors) || budget <= 1
+            return (
+                mode=:satellite_batch,
+                allotment=1,
+                scheduler=:static,
+                policy_applied=true,
+                effector_decision=(use_threads=false, allotment=1, mode=effector_decision.mode, policy_applied=effector_decision.policy_applied),
+            )
+        end
+        return (
+            mode=:flat_constellation_effector_queue,
+            allotment=min(max(1, budget), max(active_sats * n_effectors, 1)),
+            scheduler=:dynamic,
+            policy_applied=true,
+            effector_decision=(use_threads=false, allotment=1, mode=effector_decision.mode, policy_applied=effector_decision.policy_applied),
+        )
+    end
+
+    single_harmonics_flat = _rhs_single_harmonics_flat_supported(dynamic_effectors)
+
+    if active_sats <= 1 || budget <= 1 || !_rhs_flat_supported(dynamic_effectors)
+        return (
+            mode=:satellite_batch,
+            allotment=1,
+            scheduler=:static,
+            policy_applied=false,
+            effector_decision=effector_decision,
+        )
+    end
+
+    shared_buffers = _effector_shared_buffers(p)
+    per_effector_cost_ns = _effector_observed_cost_ns_per_item(shared_buffers)
+    estimated_work_ns = per_effector_cost_ns * active_sats * n_effectors
+    many_heavy_effectors = _rhs_effectors_have_heavy_or_heterogeneous_cost(dynamic_effectors) &&
+        estimated_work_ns >= _rhs_flat_work_ns_threshold()
+
+    if single_harmonics_flat && active_sats >= _rhs_flat_min_sats()
+        return (
+            mode=:flat_constellation_effector_queue,
+            allotment=min(max(1, budget), active_sats),
+            scheduler=:dynamic,
+            policy_applied=true,
+            effector_decision=(use_threads=false, allotment=1, mode=effector_decision.mode, policy_applied=effector_decision.policy_applied),
+        )
+    end
+
+    if active_sats >= budget && !many_heavy_effectors
+        return (
+            mode=:satellite_batch,
+            allotment=1,
+            scheduler=:static,
+            policy_applied=true,
+            effector_decision=(use_threads=false, allotment=1, mode=effector_decision.mode, policy_applied=effector_decision.policy_applied),
+        )
+    end
+
+    if active_sats >= _rhs_flat_min_sats() &&
+       n_effectors >= _rhs_flat_min_effectors() &&
+       many_heavy_effectors
+        return (
+            mode=:flat_constellation_effector_queue,
+            allotment=min(max(1, budget), active_sats * n_effectors),
+            scheduler=:dynamic,
+            policy_applied=true,
+            effector_decision=(use_threads=false, allotment=1, mode=effector_decision.mode, policy_applied=effector_decision.policy_applied),
+        )
+    end
+
+    return (
+        mode=:per_satellite_effector_reduce,
+        allotment=effector_decision.allotment,
+        scheduler=:auto,
+        policy_applied=effector_decision.policy_applied,
+        effector_decision=effector_decision,
+    )
+end
+
 function _initialize_density_model_instances!(p)
     instances = p.shared_buffers.density_models
     empty!(instances)

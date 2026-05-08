@@ -21,6 +21,7 @@ using .ParallelProfiles
 
 using CSV
 using DataFrames
+using Arrow
 using Dates
 using Distributed
 using LinearAlgebra

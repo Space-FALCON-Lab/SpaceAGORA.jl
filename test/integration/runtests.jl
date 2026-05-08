@@ -244,6 +244,8 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const _effector_cost_ema_alpha = SimulationEngine._effector_cost_ema_alpha
     const _effector_work_ns_per_worker_threshold = SimulationEngine._effector_work_ns_per_worker_threshold
     const _dynamic_effector_thread_decision = SimulationEngine._dynamic_effector_thread_decision
+    const _rhs_execution_mode_env = SimulationEngine._rhs_execution_mode_env
+    const _rhs_execution_plan = SimulationEngine._rhs_execution_plan
     const _retcode_is_stiff_symptom = SimulationEngine._retcode_is_stiff_symptom
     const _split_imex_solver_spec = SimulationEngine._split_imex_solver_spec
     const _symplectic_conservative_eligible = SimulationEngine._symplectic_conservative_eligible

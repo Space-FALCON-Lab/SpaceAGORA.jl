@@ -18,6 +18,7 @@ using ..LegacyModelCodes:
     LegacyThrustNone,
     _compat_enum_parse
 using ..CommandTypes: PropulsiveManeuverCommand, PropulsiveBurnPlan
+using ..EffectorSampling: StateSample
 using StaticArrays
 using AstroTime
 using OrdinaryDiffEq
@@ -565,6 +566,9 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
         nbody_ephemeris_cache::Base.RefValue{Union{Nothing, NBodyEphemerisCache}} = Ref{Union{Nothing, NBodyEphemerisCache}}(nothing)
         srp_sun_ephemeris_cache::Base.RefValue{Union{Nothing, SRPSunEphemerisCache}} = Ref{Union{Nothing, SRPSunEphemerisCache}}(nothing)
         planet_frame_ephemeris_cache::Base.RefValue{Union{Nothing, PlanetFrameEphemerisCache}} = Ref{Union{Nothing, PlanetFrameEphemerisCache}}(nothing)
+        harmonics_lpi_lock::ReentrantLock = ReentrantLock()
+        harmonics_lpi_key::Base.RefValue{Any} = Ref{Any}(nothing)
+        harmonics_lpi::Base.RefValue{SMatrix{3,3,Float64,9}} = Ref(SMatrix{3,3,Float64,9}((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)))
         maneuver_commands::Vector{PropulsiveManeuverCommand} = [PropulsiveManeuverCommand() for _ in 1:N_sats]
         maneuver_burn_plans::Vector{PropulsiveBurnPlan} = [PropulsiveBurnPlan() for _ in 1:N_sats]
         spice_runtime_counters::SpiceRuntimeCounters = SpiceRuntimeCounters()
@@ -577,6 +581,11 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
         debug_initial_derivative::Base.RefValue{Bool} = Ref(false)
         effector_cost_ns_per_item::Base.RefValue{Float64} = Ref(NaN)
         effector_cost_samples::Base.RefValue{Int64} = Ref(Int64(0))
+        rhs_flat_effector_partials::Base.RefValue{Array{Float64, 3}} = Ref(Array{Float64, 3}(undef, 0, 0, 0))
+        rhs_flat_effector_totals::Base.RefValue{Matrix{Float64}} = Ref(Matrix{Float64}(undef, 0, 0))
+        rhs_flat_state_samples::Base.RefValue{Vector{Union{Nothing, StateSample}}} = Ref(Vector{Union{Nothing, StateSample}}())
+        rhs_flat_work_items::Base.RefValue{Vector{Int}} = Ref(Int[])
+        rhs_atmosphere_prefilled::Base.RefValue{Bool} = Ref(false)
     end
 
     # SaveData is an output/persistence boundary and intentionally remains heterogeneous.

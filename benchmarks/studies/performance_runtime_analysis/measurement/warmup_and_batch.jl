@@ -1,3 +1,117 @@
+@inline function _perf_save_trajectory_feather_enabled()::Bool
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_PERF_SAVE_TRAJECTORY_FEATHER", "0")))
+    return raw in ("1", "true", "yes", "on")
+end
+
+@inline function _perf_trajectory_output_root()::String
+    raw = strip(get(ENV, "SPACEAGORA_PERF_TRAJECTORY_OUTDIR", ""))
+    isempty(raw) && return joinpath(pwd(), "output", "performance", "trajectories")
+    return abspath(raw)
+end
+
+@inline function _safe_trajectory_token(value)::String
+    token = replace(strip(string(value)), r"[^A-Za-z0-9_.-]+" => "_")
+    return isempty(token) ? "unknown" : token
+end
+
+@inline function _sat_state_from_solution_state(u, sat_idx::Int)
+    if hasproperty(u, :sc)
+        states = getproperty(u, :sc)
+        sat_idx <= length(states) || return nothing
+        return states[sat_idx]
+    end
+    return nothing
+end
+
+@inline function _state_vec3_component(state, name::Symbol)::Union{Nothing, SVector{3, Float64}}
+    hasproperty(state, name) || return nothing
+    value = getproperty(state, name)
+    try
+        return SVector{3, Float64}(value)
+    catch
+        return nothing
+    end
+end
+
+@inline function _state_scalar_component(state, name::Symbol)::Union{Missing, Float64}
+    hasproperty(state, name) || return missing
+    value = try
+        Float64(getproperty(state, name))
+    catch
+        return missing
+    end
+    return isfinite(value) ? value : missing
+end
+
+function _write_case_trajectory_feathers!(
+    sol,
+    case::BenchmarkCase,
+    repeat_idx::Int,
+    attempt::Int,
+    seed::Union{Missing, Int}
+)::Vector{String}
+    _perf_save_trajectory_feather_enabled() || return String[]
+    isempty(sol.t) && return String[]
+
+    n_sats = length(case.args_template.dynamics_model.spacecraft)
+    n_sats > 0 || return String[]
+    root = _perf_trajectory_output_root()
+    case_dir = joinpath(root, _safe_trajectory_token(case.name))
+    repeat_dir = joinpath(case_dir, "repeat_$(lpad(repeat_idx, 3, '0'))")
+    if !(seed isa Missing)
+        repeat_dir = joinpath(repeat_dir, "seed_$(lpad(Int(seed), 3, '0'))")
+    end
+    attempt_dir = joinpath(repeat_dir, "attempt_$(lpad(attempt, 2, '0'))")
+    mkpath(attempt_dir)
+
+    written = String[]
+    times = Float64.(sol.t)
+    n_times = length(times)
+    @inbounds for sat_idx in 1:n_sats
+        pos_x = Vector{Union{Missing, Float64}}(missing, n_times)
+        pos_y = Vector{Union{Missing, Float64}}(missing, n_times)
+        pos_z = Vector{Union{Missing, Float64}}(missing, n_times)
+        vel_x = Vector{Union{Missing, Float64}}(missing, n_times)
+        vel_y = Vector{Union{Missing, Float64}}(missing, n_times)
+        vel_z = Vector{Union{Missing, Float64}}(missing, n_times)
+        mass = Vector{Union{Missing, Float64}}(missing, n_times)
+
+        for k in 1:n_times
+            sat_state = _sat_state_from_solution_state(sol.u[k], sat_idx)
+            sat_state === nothing && continue
+            pos = _state_vec3_component(sat_state, :pos)
+            vel = _state_vec3_component(sat_state, :vel)
+            if pos !== nothing
+                pos_x[k] = pos[1]
+                pos_y[k] = pos[2]
+                pos_z[k] = pos[3]
+            end
+            if vel !== nothing
+                vel_x[k] = vel[1]
+                vel_y[k] = vel[2]
+                vel_z[k] = vel[3]
+            end
+            mass[k] = _state_scalar_component(sat_state, :mass)
+        end
+
+        df = DataFrame(
+            time_s=times,
+            sat_id=fill(sat_idx, n_times),
+            pos_x_m=pos_x,
+            pos_y_m=pos_y,
+            pos_z_m=pos_z,
+            vel_x_mps=vel_x,
+            vel_y_mps=vel_y,
+            vel_z_mps=vel_z,
+            mass_kg=mass
+        )
+        path = joinpath(attempt_dir, "sat_$(lpad(sat_idx, 3, '0')).feather")
+        Arrow.write(path, df)
+        push!(written, path)
+    end
+    return written
+end
+
 function measure_case(
     case::BenchmarkCase,
     profile_name::String,
@@ -99,6 +213,9 @@ function measure_case(
     final_primary_vel_norm_mps = missing
     final_primary_mass_kg = missing
     terminal_time_s = missing
+    trajectory_feather_dir = missing
+    trajectory_feather_files = missing
+    trajectory_feather_satellites = missing
     entry_target_count = isnothing(case.entry_target_count_override) ? missing : Int(case.entry_target_count_override)
 
     solve_payload = solve_timed.value
@@ -125,6 +242,12 @@ function measure_case(
         final_primary_mass_kg = terminal.mass_kg
         if !isempty(sol.t)
             terminal_time_s = Float64(sol.t[end])
+        end
+        trajectory_paths = _write_case_trajectory_feathers!(sol, case, repeat_idx, attempt, seed)
+        if !isempty(trajectory_paths)
+            trajectory_feather_dir = dirname(first(trajectory_paths))
+            trajectory_feather_files = join(trajectory_paths, "|")
+            trajectory_feather_satellites = length(trajectory_paths)
         end
         if hasproperty(solve_result, :parallel_policy)
             snapshot = solve_result.parallel_policy
@@ -235,6 +358,9 @@ function measure_case(
         final_primary_vel_norm_mps=final_primary_vel_norm_mps,
         final_primary_mass_kg=final_primary_mass_kg,
         terminal_time_s=terminal_time_s,
+        trajectory_feather_dir=trajectory_feather_dir,
+        trajectory_feather_files=trajectory_feather_files,
+        trajectory_feather_satellites=trajectory_feather_satellites,
         entry_target_count=entry_target_count,
         sim_seconds_per_wall_second=sim_seconds_per_wall_second,
         satellite_sim_seconds_per_wall_second=satellite_sim_seconds_per_wall_second,
@@ -297,6 +423,9 @@ end
             warmup = min(warmup, 1)
             repeats = min(repeats, 2)
         end
+    elseif occursin(r"^multi_\d+_gravity$", case.name)
+        warmup = 1
+        repeats = 2
     end
     return warmup, repeats
 end
@@ -359,4 +488,3 @@ function run_case_batch!(
     end
     return _run_case_batch_core!(rows, case, spec, idx, total, resolved_plan)
 end
-

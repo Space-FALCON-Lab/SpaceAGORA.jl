@@ -60,6 +60,7 @@ Base.@kwdef struct SmartLadderConfig
     solver_axis::Symbol
     solver_mode::String
     solver_factor_modes::Vector{String}
+    trajectory_output::Bool
 end
 
 Base.@kwdef struct LadderRungSpec
@@ -185,6 +186,7 @@ function parse_smart_ladder_cli()::SmartLadderConfig
     solver_axis = _parse_solver_axis(get(ENV, "SPACEAGORA_SMART_LADDER_SOLVER_AXIS", "frozen"))
     solver_mode = lowercase(strip(get(ENV, "SPACEAGORA_SMART_LADDER_SOLVER_MODE", "auto_stiff")))
     solver_factor_modes = _parse_solver_factor_modes(get(ENV, "SPACEAGORA_SMART_LADDER_SOLVER_FACTORS", "auto_stiff,split_imex,multirate"))
+    trajectory_output = _parse_bool_token(get(ENV, "SPACEAGORA_SMART_LADDER_TRAJECTORY_OUTPUT", "0"))
 
     for arg in ARGS
         if arg == "smoke"
@@ -240,12 +242,15 @@ function parse_smart_ladder_cli()::SmartLadderConfig
             solver_mode = lowercase(strip(String(split(arg, "=", limit=2)[2])))
         elseif startswith(arg, "--solver-factors=")
             solver_factor_modes = _parse_solver_factor_modes(String(split(arg, "=", limit=2)[2]))
+        elseif startswith(arg, "--trajectory-output=")
+            trajectory_output = _parse_bool_token(String(split(arg, "=", limit=2)[2]))
         else
             throw(ArgumentError(
                 "Unknown argument '$arg'. Supported: [quick|full|smoke], --profile=..., --outdir=..., --clean=0|1, " *
                 "--passes=N, --randomize-rung-order=0|1, --seed=N, --outer-only-backend=threads|process|auto, " *
                 "--process-workers=N, --layer-attribution=0|1, --rungs=<csv>, --include-control-stress-per-orbit=0|1, --control-stress-repeats-full=N, " *
-                "--control-stress-warmup-full=N, --solver-axis=inherit|frozen|factorial, --solver-mode=<mode>, --solver-factors=<csv>."
+                "--control-stress-warmup-full=N, --solver-axis=inherit|frozen|factorial, --solver-mode=<mode>, --solver-factors=<csv>, " *
+                "--trajectory-output=0|1."
             ))
         end
     end
@@ -276,7 +281,8 @@ function parse_smart_ladder_cli()::SmartLadderConfig
         control_stress_warmup_full=control_stress_warmup_full,
         solver_axis=solver_axis,
         solver_mode=solver_mode,
-        solver_factor_modes=solver_factor_modes
+        solver_factor_modes=solver_factor_modes,
+        trajectory_output=trajectory_output
     )
 end
 

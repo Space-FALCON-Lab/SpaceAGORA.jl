@@ -835,6 +835,8 @@ end
     @test size(harmonics_l20.C) == (21, 21)
     @test size(harmonics_l20.S) == (21, 21)
     @test harmonics_l20.coefficient_normalization == :full
+    @test harmonics_l20.include_central == true
+    @test GravitationalHarmonicsModel(2, 0, harmonics_file, EARTH; include_central=false).include_central == false
     @test_throws ArgumentError GravitationalHarmonicsModel(10, 11, harmonics_file, EARTH)
 
     child_link = Link(root=false, q=MVector{4, Float64}(sin(pi / 4), 0.0, 0.0, cos(pi / 4)))

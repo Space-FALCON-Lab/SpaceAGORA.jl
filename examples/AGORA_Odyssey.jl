@@ -32,14 +32,13 @@ spacecraft = make_three_body_spacecraft(
     id=100
 )
 
-mars_harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "GMM3.csv")
+mars_harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
 sun_gravity = NBodyGravityModel(body_names=("Sun",), primary_body_name="Mars", planet=planet)
 solar_radiation_pressure = SolarRadiationPressureModel(spacecraft.root.reflection_coefficient, spacecraft.root.ref_area)
 dynamic_effectors = smoke_mode ? (
     InverseSquaredGravityModel(),
     sun_gravity
 ) : (
-    InverseSquaredGravityModel(),
     sun_gravity,
     GravitationalHarmonicsModel(50, 50, mars_harmonics_file, planet),
     solar_radiation_pressure,

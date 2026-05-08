@@ -48,6 +48,15 @@ end
     return PlanetFrameSample(l_pi, pos_pp, vel_pp, alt, lat, lon)
 end
 
+# Variant that accepts a pre-computed l_pi so the caller avoids acquiring harmonics_lpi_lock.
+# Used in the parallel atmosphere pre-sample phase where l_pi is computed once before @batch.
+@inline function sample_planet_frame_with_lpi(x, planet, l_pi::SMatrix{3, 3, Float64, 9})::PlanetFrameSample
+    pos_ii, vel_ii = _extract_sample_pos_vel(x)
+    pos_pp, vel_pp = SimulationModel.SimulationCallbacks._planet_relative_state(pos_ii, vel_ii, planet, l_pi)
+    alt, lat, lon = SimulationModel.SimulationCallbacks.rtolatlong(pos_pp, planet)
+    return PlanetFrameSample(l_pi, pos_pp, vel_pp, alt, lat, lon)
+end
+
 @inline function _sample_atmosphere_from_planet_frame(
     x,
     planet_frame::PlanetFrameSample,
@@ -200,6 +209,37 @@ end
         solar=solar,
         third_bodies=third_bodies,
     )
+end
+
+# Variant of sample_environment that reads atmosphere from shared buffers rather than
+# calling the live GRAM sampler. Used when the flat queue pre-fill has already populated
+# shared_buffers.densities/temperatures/winds for all active satellites.
+@inline function sample_environment_with_buffered_atm(
+    req::EffectorEnvironmentRequirements,
+    model,
+    x,
+    p,
+    sat_idx::Int,
+    t::Float64,
+)::EnvironmentSample
+    planet = p.args.environment_model.planet
+    planet_frame = req.planet_frame ? sample_planet_frame(x, p, sat_idx, t) : nothing
+    atmosphere = req.atmosphere ? sample_buffered_atmosphere(x, p, sat_idx, t) : nothing
+    solar = req.solar ? sample_solar_ephemeris(x, p, sat_idx, t) : nothing
+    third_bodies = isempty(req.third_body_names) ? nothing : sample_third_body_ephemerides(model, x, p, sat_idx, t)
+    return EnvironmentSample(
+        planet;
+        planet_frame=req.planet_frame ? planet_frame : nothing,
+        atmosphere=atmosphere,
+        solar=solar,
+        third_bodies=third_bodies,
+    )
+end
+
+@inline function _wrench_method_available(effector::SimulationModel.DynamicEffectors.GravitationalHarmonicsModel)::Bool
+    # The legacy RHS path reuses per-satellite harmonics scratch buffers; the
+    # generic wrench hook allocates a scratch workspace per call.
+    return false
 end
 
 @inline function _wrench_method_available(effector)::Bool

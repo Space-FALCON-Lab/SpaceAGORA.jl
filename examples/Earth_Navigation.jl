@@ -1737,7 +1737,6 @@ navigation_rates = fill(NAVIGATION_RATE_SEC, length(navigation_effectors))
 
 areas = [sc.root.ref_area for sc in spacecraft]
 dynamic_effectors = (
-    InverseSquaredGravityModel(),
     GravitationalHarmonicsModel(4, 0, EARTH_HARMONICS_FILE, planet), # up to J4 (zonal)
     SunMoonThirdBodyModel(planet),
     CannonballSRPModel(planet, areas, 1.3, 4.56e-6, 149_597_870_700.0)

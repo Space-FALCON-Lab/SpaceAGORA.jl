@@ -10,7 +10,7 @@ const inv_sqrt_π = 1 / sqrt(π)
 end
 
 @inline function _multibody_thread_threshold()::Int
-    return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_MULTIBODY_THREAD_THRESHOLD", 2)
+    return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_MULTIBODY_THREAD_THRESHOLD", 4)
 end
 
 @inline function _multibody_max_threads()::Int
@@ -318,8 +318,8 @@ function calcForceTorque(model::AerodynamicCoefficientConstant, x::AbstractVecto
 
     bodies, root_index = traverse_bodies(m.body, m.body.roots[1]) # Get all bodies in the simulation
 
-    pos_ii = SVector{3, Float64}(x[1:3])
-    vel_ii = SVector{3, Float64}(x[4:6])
+    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
+    vel_ii = SVector{3, Float64}(x[4], x[5], x[6])
 
     h_ii = cross(pos_ii, vel_ii)    # Inertial angular momentum vector [m ^ 2 / s]
 
@@ -566,7 +566,7 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
             thread_area[worker_id] = 0.0
         end
 
-        ParallelPolicy.threaded_foreach_worker(length(bodies), decision.allotment) do worker_id, idx
+        ParallelPolicy.threaded_foreach_worker_persistent(:rhs_aero, length(bodies), decision.allotment) do worker_id, idx
             force_body, drag_body, lift_body, cross_body, cl_area, cd_area, area = compute_link_wrench!(idx)
             thread_force[worker_id] .+= force_body
             thread_drag[worker_id] .+= drag_body
@@ -623,8 +623,8 @@ function calcForceTorque(model::AerodynamicCoefficientNoBallisticFlight, x::Abst
     bodies = spacecraft.links # Include the root body of the spacecraft
     root = spacecraft.root
     root_index = 1
-    pos_ii = SVector{3, Float64}(x.pos)
-    vel_ii = SVector{3, Float64}(x.vel)
+    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
+    vel_ii = SVector{3, Float64}(x[4], x[5], x[6])
 
     h_ii = cross(pos_ii, vel_ii)    # Inertial angular momentum vector [m ^ 2 / s]
 

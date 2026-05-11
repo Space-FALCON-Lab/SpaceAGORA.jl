@@ -325,6 +325,10 @@ end
     return SimulationModel.ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_RHS_BATCH_PARALLEL"; default="auto")
 end
 
+@inline function _rhs_batch_thread_threshold()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_RHS_BATCH_THREAD_THRESHOLD", 16)
+end
+
 @inline function _profile_forces_serial_rhs()::Bool
     raw = lowercase(strip(_engine_env_get("SPACEAGORA_PARALLEL_PROFILE", "")))
     return raw in ("r0", "serial", "r0_true_serial", "true_serial")
@@ -340,7 +344,7 @@ end
     elseif mode == :on
         return true
     end
-    return num_spacecraft > 1 && Polyester.num_cores() > 1
+    return num_spacecraft >= _rhs_batch_thread_threshold() && Polyester.num_cores() > 1
 end
 
 @inline function _effector_thread_threshold()::Int
@@ -373,6 +377,38 @@ end
 
 @inline function _effector_cost_ema_alpha()::Float64
     return _parse_unit_float_env("SPACEAGORA_EFFECTOR_COST_EMA_ALPHA", 0.2)
+end
+
+@inline function _rhs_flat_packet_target_min_ns()::Float64
+    return _parse_positive_float_env("SPACEAGORA_RHS_FLAT_PACKET_TARGET_MIN_NS", 2.5e4)
+end
+
+@inline function _rhs_flat_packet_scheduler_mode()::Symbol
+    return SimulationModel.ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_RHS_FLAT_PACKET_SCHEDULER"; default="auto")
+end
+
+@inline function _rhs_flat_packet_min_items()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_RHS_FLAT_PACKET_MIN_ITEMS", 128)
+end
+
+@inline function _rhs_flat_packet_work_ns_threshold()::Float64
+    return _parse_positive_float_env("SPACEAGORA_RHS_FLAT_PACKET_WORK_NS_THRESHOLD", 5.0e6)
+end
+
+@inline function _rhs_flat_packet_heterogeneity_threshold()::Float64
+    return _parse_positive_float_env("SPACEAGORA_RHS_FLAT_PACKET_HETEROGENEITY_THRESHOLD", 3.0)
+end
+
+@inline function _rhs_flat_packet_overhead_disable_ratio()::Float64
+    return _parse_unit_float_env("SPACEAGORA_RHS_FLAT_PACKET_OVERHEAD_DISABLE_RATIO", 0.10)
+end
+
+@inline function _rhs_flat_packet_overhead_min_samples()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_RHS_FLAT_PACKET_OVERHEAD_MIN_SAMPLES", 4)
+end
+
+@inline function _rhs_effector_cost_min_samples()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_RHS_EFFECTOR_COST_MIN_SAMPLES", 4)
 end
 
 @inline function _effector_work_ns_per_worker_threshold()::Float64
@@ -473,6 +509,72 @@ end
     return nothing
 end
 
+function _ensure_rhs_effector_cost_model!(shared_buffers, n_effectors::Int)::Nothing
+    shared_buffers === nothing && return nothing
+    n_effectors >= 0 || return nothing
+    if hasproperty(shared_buffers, :rhs_effector_cost_ns)
+        costs = shared_buffers.rhs_effector_cost_ns[]
+        if length(costs) < n_effectors
+            old_len = length(costs)
+            resize!(costs, n_effectors)
+            @inbounds for idx in (old_len + 1):n_effectors
+                costs[idx] = NaN
+            end
+        end
+    end
+    if hasproperty(shared_buffers, :rhs_effector_cost_samples)
+        samples = shared_buffers.rhs_effector_cost_samples[]
+        if length(samples) < n_effectors
+            old_len = length(samples)
+            resize!(samples, n_effectors)
+            @inbounds for idx in (old_len + 1):n_effectors
+                samples[idx] = Int64(0)
+            end
+        end
+    end
+    return nothing
+end
+
+@inline function _rhs_effector_observed_cost_ns(shared_buffers, eff_idx::Int, fallback_ns::Float64)::Float64
+    shared_buffers === nothing && return fallback_ns
+    if !(hasproperty(shared_buffers, :rhs_effector_cost_ns) && hasproperty(shared_buffers, :rhs_effector_cost_samples))
+        return fallback_ns
+    end
+    costs = shared_buffers.rhs_effector_cost_ns[]
+    samples = shared_buffers.rhs_effector_cost_samples[]
+    if eff_idx <= length(costs) && eff_idx <= length(samples)
+        estimate = Float64(costs[eff_idx])
+        if samples[eff_idx] >= _rhs_effector_cost_min_samples() && isfinite(estimate) && estimate > 0.0
+            return estimate
+        end
+    end
+    return fallback_ns
+end
+
+function _update_rhs_effector_cost_model!(
+    shared_buffers,
+    eff_idx::Int,
+    elapsed_ns::Float64,
+)::Nothing
+    shared_buffers === nothing && return nothing
+    elapsed_ns > 0.0 || return nothing
+    if !(hasproperty(shared_buffers, :rhs_effector_cost_ns) && hasproperty(shared_buffers, :rhs_effector_cost_samples))
+        return nothing
+    end
+    _ensure_rhs_effector_cost_model!(shared_buffers, eff_idx)
+    costs = shared_buffers.rhs_effector_cost_ns[]
+    samples = shared_buffers.rhs_effector_cost_samples[]
+    α = _effector_cost_ema_alpha()
+    previous = costs[eff_idx]
+    costs[eff_idx] = if isfinite(previous) && previous > 0.0
+        (1.0 - α) * previous + α * elapsed_ns
+    else
+        elapsed_ns
+    end
+    samples[eff_idx] = min(typemax(Int64), samples[eff_idx] + Int64(1))
+    return nothing
+end
+
 @inline function _dynamic_effector_thread_decision(
     args::SimulationConfiguration,
     p,
@@ -547,26 +649,35 @@ end
 end
 
 @inline function _rhs_flat_min_sats()::Int
-    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_FLAT_MIN_SATS", 4)
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_FLAT_MIN_SATS", 24)
 end
 
 @inline function _rhs_flat_min_effectors()::Int
-    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_FLAT_MIN_EFFECTORS", 4)
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_FLAT_MIN_EFFECTORS", 3)
 end
 
 @inline function _rhs_flat_work_ns_threshold()::Float64
     return _parse_positive_float_env("SPACEAGORA_EFFECTOR_FLAT_WORK_NS_THRESHOLD", 2.0e5)
 end
 
+@inline function _rhs_flat_cost_heterogeneity_threshold()::Float64
+    return _parse_positive_float_env("SPACEAGORA_EFFECTOR_FLAT_COST_HETEROGENEITY_THRESHOLD", 3.0)
+end
+
 @inline function _rhs_harmonics_flat_experimental_enabled()::Bool
     return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_HARMONICS_FLAT_EXPERIMENTAL", false)
+end
+
+@inline function _rhs_harmonics_batch_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_HARMONICS_BATCH_ENABLED", true) ||
+        _rhs_harmonics_flat_experimental_enabled()
 end
 
 @inline function _rhs_flat_supported(dynamic_effectors::Tuple)::Bool
     if length(dynamic_effectors) == 1
         return dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
             _dynamic_effector_threadsafe(dynamic_effectors[1]) &&
-            _rhs_harmonics_flat_experimental_enabled()
+            _rhs_harmonics_batch_enabled()
     end
     return length(dynamic_effectors) > 1 && _dynamic_effectors_parallel_supported(dynamic_effectors)
 end
@@ -575,31 +686,30 @@ end
     return length(dynamic_effectors) == 1 &&
         dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
         _dynamic_effector_threadsafe(dynamic_effectors[1]) &&
-        _rhs_harmonics_flat_experimental_enabled()
+        _rhs_harmonics_batch_enabled()
 end
 
 @inline function _rhs_effectors_have_heavy_or_heterogeneous_cost(dynamic_effectors::Tuple)::Bool
-    has_srp = false
     has_nbody = false
     has_aero = false
     has_harmonics = false
-    has_simple = false
+    min_cost = Inf
+    max_cost = 0.0
     @inbounds for effector in dynamic_effectors
-        if effector isa SimulationModel.SolarRadiationPressureModel
-            has_srp = true
-        elseif effector isa SimulationModel.NBodyGravityModel
+        cost = _rhs_effector_static_cost_ns(effector)
+        min_cost = min(min_cost, cost)
+        max_cost = max(max_cost, cost)
+        if effector isa SimulationModel.NBodyGravityModel
             has_nbody = true
         elseif effector isa SimulationModel.AerodynamicCoefficientfM
             has_aero = true
         elseif effector isa SimulationModel.GravitationalHarmonicsModel
             has_harmonics = true
-        else
-            has_simple = true
         end
     end
-    classes = (has_srp ? 1 : 0) + (has_nbody ? 1 : 0) + (has_aero ? 1 : 0) +
-        (has_harmonics ? 1 : 0) + (has_simple ? 1 : 0)
-    return has_srp || has_nbody || has_aero || has_harmonics || classes > 1
+    heterogeneity = max_cost / max(min_cost, 1.0)
+    return has_nbody || has_aero || has_harmonics ||
+        heterogeneity >= _rhs_flat_cost_heterogeneity_threshold()
 end
 
 @inline function _rhs_execution_plan(
@@ -689,16 +799,6 @@ end
         )
     end
 
-    if active_sats >= budget && !many_heavy_effectors
-        return (
-            mode=:satellite_batch,
-            allotment=1,
-            scheduler=:static,
-            policy_applied=true,
-            effector_decision=(use_threads=false, allotment=1, mode=effector_decision.mode, policy_applied=effector_decision.policy_applied),
-        )
-    end
-
     if active_sats >= _rhs_flat_min_sats() &&
        n_effectors >= _rhs_flat_min_effectors() &&
        many_heavy_effectors
@@ -706,6 +806,16 @@ end
             mode=:flat_constellation_effector_queue,
             allotment=min(max(1, budget), active_sats * n_effectors),
             scheduler=:dynamic,
+            policy_applied=true,
+            effector_decision=(use_threads=false, allotment=1, mode=effector_decision.mode, policy_applied=effector_decision.policy_applied),
+        )
+    end
+
+    if active_sats >= budget
+        return (
+            mode=:satellite_batch,
+            allotment=1,
+            scheduler=:static,
             policy_applied=true,
             effector_decision=(use_threads=false, allotment=1, mode=effector_decision.mode, policy_applied=effector_decision.policy_applied),
         )

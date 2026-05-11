@@ -9,11 +9,7 @@
     if _wrench_method_available(effector)
         state_sample === nothing && error("wrench-based effector evaluation requires a typed StateSample.")
         req = SimulationModel.environment_requirements(effector)
-        env = if req.atmosphere && p.shared_buffers.rhs_atmosphere_prefilled[]
-            sample_environment_with_buffered_atm(req, effector, sc_view, p, sat_idx, t)
-        else
-            sample_environment(req, effector, sc_view, p, sat_idx, t; write_buffers=false)
-        end
+        env = sample_environment_with_reusable_buffers(req, effector, sc_view, p, sat_idx, t)
         return SimulationModel.wrench(effector, state_sample, env, t)
     end
     return SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)
@@ -229,14 +225,17 @@ end
 @inline function _ensure_rhs_flat_effector_scratch!(
     shared_buffers,
     num_sats::Int,
-    workers::Int,
+    workers::Int;
+    zero_partials::Bool=true,
 )
-    partials_ref = shared_buffers.rhs_flat_effector_partials
-    partials = partials_ref[]
-    if size(partials, 1) != 6 || size(partials, 2) < num_sats || size(partials, 3) < workers
-        partials_ref[] = zeros(Float64, 6, num_sats, workers)
-    else
-        partials[:, 1:num_sats, 1:workers] .= 0.0
+    if zero_partials
+        partials_ref = shared_buffers.rhs_flat_effector_partials
+        partials = partials_ref[]
+        if size(partials, 1) != 6 || size(partials, 2) < num_sats || size(partials, 3) < workers
+            partials_ref[] = zeros(Float64, 6, num_sats, workers)
+        else
+            partials[:, 1:num_sats, 1:workers] .= 0.0
+        end
     end
 
     totals_ref = shared_buffers.rhs_flat_effector_totals
@@ -256,12 +255,82 @@ end
         samples[i] = nothing
     end
 
+    state_pos_ref = shared_buffers.rhs_flat_state_pos_ii
+    state_vel_ref = shared_buffers.rhs_flat_state_vel_ii
+    state_mass_ref = shared_buffers.rhs_flat_state_mass_kg
+    state_q_ref = shared_buffers.rhs_flat_state_q_ib
+    state_omega_ref = shared_buffers.rhs_flat_state_omega_body
+    if length(state_pos_ref[]) < num_sats
+        resize!(state_pos_ref[], num_sats)
+        resize!(state_vel_ref[], num_sats)
+        resize!(state_mass_ref[], num_sats)
+        resize!(state_q_ref[], num_sats)
+        resize!(state_omega_ref[], num_sats)
+    end
+
+    planet_pos_ref = shared_buffers.rhs_flat_planet_pos_pp
+    planet_vel_ref = shared_buffers.rhs_flat_planet_vel_pp
+    planet_alt_ref = shared_buffers.rhs_flat_planet_alt_m
+    planet_lat_ref = shared_buffers.rhs_flat_planet_lat_rad
+    planet_lon_ref = shared_buffers.rhs_flat_planet_lon_rad
+    if length(planet_pos_ref[]) < num_sats
+        resize!(planet_pos_ref[], num_sats)
+        resize!(planet_vel_ref[], num_sats)
+        resize!(planet_alt_ref[], num_sats)
+        resize!(planet_lat_ref[], num_sats)
+        resize!(planet_lon_ref[], num_sats)
+    end
+
     items_ref = shared_buffers.rhs_flat_work_items
     items = items_ref[]
     if length(items) < num_sats
         resize!(items, num_sats)
     end
+
+    packet_starts_ref = shared_buffers.rhs_flat_packet_starts
+    packet_ends_ref = shared_buffers.rhs_flat_packet_ends
+    packet_costs_ref = shared_buffers.rhs_flat_packet_costs
+    packet_elapsed_ref = shared_buffers.rhs_flat_packet_elapsed_ns
+    if length(packet_starts_ref[]) < num_sats
+        resize!(packet_starts_ref[], num_sats)
+        resize!(packet_ends_ref[], num_sats)
+        resize!(packet_costs_ref[], num_sats)
+        resize!(packet_elapsed_ref[], num_sats)
+    end
     return nothing
+end
+
+function _prefill_rhs_flat_state_samples!(shared_buffers, sc_state, p)::Nothing
+    orientation_sim = p.args.mission_configuration.orientation_sim
+    pos = shared_buffers.rhs_flat_state_pos_ii[]
+    vel = shared_buffers.rhs_flat_state_vel_ii[]
+    mass = shared_buffers.rhs_flat_state_mass_kg[]
+    q = shared_buffers.rhs_flat_state_q_ib[]
+    omega = shared_buffers.rhs_flat_state_omega_body[]
+    @inbounds for sat_idx in eachindex(sc_state)
+        p.is_active[sat_idx] || continue
+        @views sc_view = sc_state[sat_idx]
+        pos_i, vel_i = _extract_sample_pos_vel(sc_view)
+        pos[sat_idx] = pos_i
+        vel[sat_idx] = vel_i
+        mass[sat_idx] = _extract_sample_mass_kg(sc_view)
+        if orientation_sim
+            q[sat_idx] = SVector{4, Float64}(sc_view.q)
+            omega[sat_idx] = SVector{3, Float64}(sc_view.ω)
+        end
+    end
+    return nothing
+end
+
+@inline function _rhs_flat_state_sample_from_buffers(shared_buffers, spacecraft, sat_idx::Int, orientation_sim::Bool)
+    return StateSample(
+        shared_buffers.rhs_flat_state_pos_ii[][sat_idx],
+        shared_buffers.rhs_flat_state_vel_ii[][sat_idx],
+        shared_buffers.rhs_flat_state_mass_kg[][sat_idx];
+        q_ib=orientation_sim ? shared_buffers.rhs_flat_state_q_ib[][sat_idx] : nothing,
+        ω_body=orientation_sim ? shared_buffers.rhs_flat_state_omega_body[][sat_idx] : nothing,
+        spacecraft=spacecraft[sat_idx],
+    )
 end
 
 @inline function _flat_partition_selected(
@@ -289,10 +358,14 @@ end
     return 1
 end
 
-@inline function _rhs_flat_item_cost_key(dynamic_effectors::Tuple, item::Int)::Int
-    n_effectors = length(dynamic_effectors)
-    eff_idx = mod(item - 1, n_effectors) + 1
-    return -_rhs_effector_cost_rank(dynamic_effectors[eff_idx])
+@inline function _rhs_effector_static_cost_ns(effector)::Float64
+    rank = _rhs_effector_cost_rank(effector)
+    return _effector_cost_ns_per_item_default() * Float64(rank * rank)
+end
+
+@inline function _rhs_effector_estimated_cost_ns(shared_buffers, dynamic_effectors::Tuple, eff_idx::Int)::Float64
+    fallback = _rhs_effector_static_cost_ns(dynamic_effectors[eff_idx])
+    return _rhs_effector_observed_cost_ns(shared_buffers, eff_idx, fallback)
 end
 
 function _prepare_rhs_flat_work_items!(
@@ -320,9 +393,169 @@ function _prepare_rhs_flat_work_items!(
         end
     end
     if count_items > 1
-        sort!(@view(work_items[1:count_items]); by=item -> _rhs_flat_item_cost_key(dynamic_effectors, item), alg=Base.Sort.DEFAULT_STABLE)
+        sort!(
+            @view(work_items[1:count_items]);
+            by=item -> -_rhs_flat_item_estimated_cost_ns(p.shared_buffers, dynamic_effectors, item),
+            alg=Base.Sort.DEFAULT_STABLE,
+        )
     end
     return count_items
+end
+
+@inline function _rhs_flat_item_eff_idx(item::Int, n_effectors::Int)::Int
+    return mod(item - 1, n_effectors) + 1
+end
+
+@inline function _rhs_flat_item_estimated_cost_ns(shared_buffers, dynamic_effectors::Tuple, item::Int)::Float64
+    eff_idx = _rhs_flat_item_eff_idx(item, length(dynamic_effectors))
+    return _rhs_effector_estimated_cost_ns(shared_buffers, dynamic_effectors, eff_idx)
+end
+
+function _prepare_rhs_flat_work_packets!(
+    packet_starts::Vector{Int},
+    packet_ends::Vector{Int},
+    packet_costs::Vector{Float64},
+    packet_elapsed_ns::Vector{Int64},
+    work_items::Vector{Int},
+    count_items::Int,
+    shared_buffers,
+    dynamic_effectors::Tuple,
+    workers::Int,
+)::Int
+    count_items <= 0 && return 0
+    if length(packet_starts) < count_items
+        resize!(packet_starts, count_items)
+        resize!(packet_ends, count_items)
+        resize!(packet_costs, count_items)
+        resize!(packet_elapsed_ns, count_items)
+    end
+
+    total_cost_ns = 0.0
+    @inbounds for idx in 1:count_items
+        total_cost_ns += _rhs_flat_item_estimated_cost_ns(shared_buffers, dynamic_effectors, work_items[idx])
+    end
+    target_ns = max(_rhs_flat_packet_target_min_ns(), total_cost_ns / max(1, workers * 4))
+
+    packet_count = 0
+    idx = 1
+    @inbounds while idx <= count_items
+        packet_count += 1
+        packet_starts[packet_count] = idx
+        packet_elapsed_ns[packet_count] = Int64(0)
+        running_cost = 0.0
+        first_item = true
+        while idx <= count_items
+            item_cost = _rhs_flat_item_estimated_cost_ns(shared_buffers, dynamic_effectors, work_items[idx])
+            if !first_item && running_cost + item_cost > target_ns
+                break
+            end
+            running_cost += item_cost
+            idx += 1
+            first_item = false
+            if running_cost >= target_ns
+                break
+            end
+        end
+        packet_ends[packet_count] = idx - 1
+        packet_costs[packet_count] = max(running_cost, 1.0)
+    end
+    return packet_count
+end
+
+function _rhs_flat_packet_work_stats(
+    shared_buffers,
+    dynamic_effectors::Tuple,
+    work_items::Vector{Int},
+    count_items::Int,
+)::Tuple{Float64, Float64}
+    total_cost_ns = 0.0
+    min_cost_ns = Inf
+    max_cost_ns = 0.0
+    @inbounds for idx in 1:count_items
+        item_cost = _rhs_flat_item_estimated_cost_ns(shared_buffers, dynamic_effectors, work_items[idx])
+        total_cost_ns += item_cost
+        min_cost_ns = min(min_cost_ns, item_cost)
+        max_cost_ns = max(max_cost_ns, item_cost)
+    end
+    heterogeneity = max_cost_ns / max(min_cost_ns, 1.0)
+    return total_cost_ns, heterogeneity
+end
+
+function _rhs_flat_use_packet_scheduler(
+    shared_buffers,
+    dynamic_effectors::Tuple,
+    work_items::Vector{Int},
+    count_items::Int,
+)::Bool
+    mode = _rhs_flat_packet_scheduler_mode()
+    mode == :off && return false
+    if mode == :on
+        return count_items > 1
+    end
+    if hasproperty(shared_buffers, :rhs_flat_packet_disabled) && shared_buffers.rhs_flat_packet_disabled[]
+        return false
+    end
+    count_items >= _rhs_flat_packet_min_items() || return false
+    total_cost_ns, heterogeneity = _rhs_flat_packet_work_stats(shared_buffers, dynamic_effectors, work_items, count_items)
+    total_cost_ns >= _rhs_flat_packet_work_ns_threshold() || return false
+    heterogeneity >= _rhs_flat_packet_heterogeneity_threshold() || return false
+    return true
+end
+
+function _update_rhs_flat_packet_overhead_model!(
+    shared_buffers,
+    packet_overhead_ns::Int64,
+    flat_elapsed_ns::Int64,
+)::Nothing
+    packet_overhead_ns > 0 || return nothing
+    flat_elapsed_ns > 0 || return nothing
+    if !(hasproperty(shared_buffers, :rhs_flat_packet_overhead_ema) &&
+         hasproperty(shared_buffers, :rhs_flat_packet_overhead_samples) &&
+         hasproperty(shared_buffers, :rhs_flat_packet_disabled))
+        return nothing
+    end
+    ratio = min(1.0, Float64(packet_overhead_ns) / Float64(flat_elapsed_ns))
+    α = _effector_cost_ema_alpha()
+    previous = shared_buffers.rhs_flat_packet_overhead_ema[]
+    shared_buffers.rhs_flat_packet_overhead_ema[] = if isfinite(previous) && previous >= 0.0
+        (1.0 - α) * previous + α * ratio
+    else
+        ratio
+    end
+    shared_buffers.rhs_flat_packet_overhead_samples[] =
+        min(typemax(Int64), shared_buffers.rhs_flat_packet_overhead_samples[] + Int64(1))
+    if shared_buffers.rhs_flat_packet_overhead_samples[] >= _rhs_flat_packet_overhead_min_samples() &&
+       shared_buffers.rhs_flat_packet_overhead_ema[] >= _rhs_flat_packet_overhead_disable_ratio()
+        shared_buffers.rhs_flat_packet_disabled[] = true
+    end
+    return nothing
+end
+
+function _update_rhs_flat_packet_cost_model!(
+    shared_buffers,
+    dynamic_effectors::Tuple,
+    work_items::Vector{Int},
+    packet_starts::Vector{Int},
+    packet_ends::Vector{Int},
+    packet_costs::Vector{Float64},
+    packet_elapsed_ns::Vector{Int64},
+    packet_count::Int,
+)::Nothing
+    packet_count <= 0 && return nothing
+    n_effectors = length(dynamic_effectors)
+    @inbounds for packet_idx in 1:packet_count
+        elapsed_ns = packet_elapsed_ns[packet_idx]
+        elapsed_ns > 0 || continue
+        estimated_packet_cost = max(packet_costs[packet_idx], 1.0)
+        scale = Float64(elapsed_ns) / estimated_packet_cost
+        for item_idx in packet_starts[packet_idx]:packet_ends[packet_idx]
+            item = work_items[item_idx]
+            eff_idx = _rhs_flat_item_eff_idx(item, n_effectors)
+            item_estimate = _rhs_effector_estimated_cost_ns(shared_buffers, dynamic_effectors, eff_idx)
+            _update_rhs_effector_cost_model!(shared_buffers, eff_idx, max(1.0, item_estimate * scale))
+        end
+    end
+    return nothing
 end
 
 function _accumulate_harmonics_flat_batch!(
@@ -336,7 +569,7 @@ function _accumulate_harmonics_flat_batch!(
     active_sats = count(identity, p.is_active)
     active_sats <= 0 && return nothing
     workers = SimulationModel.ParallelPolicy.thread_worker_count(active_sats, plan.allotment)
-    _ensure_rhs_flat_effector_scratch!(p.shared_buffers, num_sats, workers)
+    _ensure_rhs_flat_effector_scratch!(p.shared_buffers, num_sats, workers; zero_partials=false)
     totals = p.shared_buffers.rhs_flat_effector_totals[]
     work_items = p.shared_buffers.rhs_flat_work_items[]
     if length(work_items) < active_sats
@@ -362,19 +595,26 @@ function _accumulate_harmonics_flat_batch!(
     # with @turbo SIMD over the satellite dimension.
     n_workers = min(workers, count_items)
     batch_size = cld(count_items, max(1, n_workers))
-    pool = SimulationModel.DynamicEffectors.PerturbationEffectors._get_harmonics_batch_pool(model, n_workers, batch_size)
+    pool = SimulationModel.DynamicEffectors.PerturbationEffectors._get_harmonics_batch_pool_cached!(
+        p.shared_buffers.rhs_harmonics_batch_pool, model, n_workers, batch_size,
+    )
     if n_workers <= 1
         SimulationModel.DynamicEffectors.PerturbationEffectors._harmonics_flat_batch_kernel!(
             totals, model, sc_state, work_items, 1, count_items, lpi, pool[1]
         )
     else
-        Threads.@sync for w in 1:n_workers
+        # Use persistent workers: one "item" per batch range so workers stay alive
+        # across RHS calls instead of spawning new tasks each time.
+        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
+            :rhs_harmonics_batch,
+            n_workers,
+            plan.allotment,
+        ) do _worker_id, w
             item_start = (w - 1) * batch_size + 1
             item_end   = min(w * batch_size, count_items)
-            item_start > count_items && continue
-            ws = pool[w]
-            Threads.@spawn SimulationModel.DynamicEffectors.PerturbationEffectors._harmonics_flat_batch_kernel!(
-                totals, model, sc_state, work_items, item_start, item_end, lpi, ws
+            item_start > count_items && return
+            SimulationModel.DynamicEffectors.PerturbationEffectors._harmonics_flat_batch_kernel!(
+                totals, model, sc_state, work_items, item_start, item_end, lpi, pool[w]
             )
         end
     end
@@ -418,8 +658,12 @@ function _accumulate_dynamic_effectors_flat_batch!(
 
     partials = p.shared_buffers.rhs_flat_effector_partials[]
     totals = p.shared_buffers.rhs_flat_effector_totals[]
-    state_samples = p.shared_buffers.rhs_flat_state_samples[]
     work_items = p.shared_buffers.rhs_flat_work_items[]
+    packet_starts = p.shared_buffers.rhs_flat_packet_starts[]
+    packet_ends = p.shared_buffers.rhs_flat_packet_ends[]
+    packet_costs = p.shared_buffers.rhs_flat_packet_costs[]
+    packet_elapsed_ns = p.shared_buffers.rhs_flat_packet_elapsed_ns[]
+    _ensure_rhs_effector_cost_model!(p.shared_buffers, n_effectors)
 
     needs_state_sample = if partition === nothing
         any(_wrench_method_available(effector) for effector in dynamic_effectors)
@@ -427,14 +671,10 @@ function _accumulate_dynamic_effectors_flat_batch!(
         _partition_needs_state_sample(dynamic_effectors, partition)
     end
     if needs_state_sample
-        spacecraft = p.args.dynamics_model.spacecraft
-        orientation_sim = p.args.mission_configuration.orientation_sim
-        @inbounds for sat_idx in 1:num_sats
-            if p.is_active[sat_idx]
-                @views state_samples[sat_idx] = build_state_sample(sc_state[sat_idx], spacecraft[sat_idx], orientation_sim)
-            end
-        end
+        _prefill_rhs_flat_state_samples!(p.shared_buffers, sc_state, p)
     end
+    spacecraft = p.args.dynamics_model.spacecraft
+    orientation_sim = p.args.mission_configuration.orientation_sim
 
     needs_timing = plan.policy_applied
     started_ns = needs_timing ? time_ns() : UInt64(0)
@@ -447,23 +687,70 @@ function _accumulate_dynamic_effectors_flat_batch!(
     )
     count_items <= 0 && return nothing
 
-    SimulationModel.ParallelPolicy.threaded_foreach_worker(count_items, plan.allotment) do worker_id, item_idx
-        item = @inbounds work_items[item_idx]
-        sat_idx = fld(item - 1, n_effectors) + 1
-        eff_idx = mod(item - 1, n_effectors) + 1
-        effector = dynamic_effectors[eff_idx]
-        @views sc_view = sc_state[sat_idx]
-        state_sample = needs_state_sample ? state_samples[sat_idx] : nothing
-        force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
-        @inbounds begin
+    use_packets = _rhs_flat_use_packet_scheduler(p.shared_buffers, dynamic_effectors, work_items, count_items)
+    packet_count = 0
+    packet_overhead_ns = Int64(0)
+    if use_packets
+        packet_prepare_started_ns = needs_timing ? time_ns() : UInt64(0)
+        packet_count = _prepare_rhs_flat_work_packets!(
+            packet_starts,
+            packet_ends,
+            packet_costs,
+            packet_elapsed_ns,
+            work_items,
+            count_items,
+            p.shared_buffers,
+            dynamic_effectors,
+            workers,
+        )
+        packet_count <= 0 && return nothing
+        if needs_timing
+            packet_overhead_ns += Int64(time_ns() - packet_prepare_started_ns)
+        end
+
+        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_flat_queue_packets, packet_count, plan.allotment) do worker_id, packet_idx
+            packet_started_ns = needs_timing ? time_ns() : UInt64(0)
+            @inbounds for item_idx in packet_starts[packet_idx]:packet_ends[packet_idx]
+                item = work_items[item_idx]
+                sat_idx = fld(item - 1, n_effectors) + 1
+                eff_idx = mod(item - 1, n_effectors) + 1
+                effector = dynamic_effectors[eff_idx]
+                @views sc_view = sc_state[sat_idx]
+                state_sample = _wrench_method_available(effector) ?
+                    _rhs_flat_state_sample_from_buffers(p.shared_buffers, spacecraft, sat_idx, orientation_sim) :
+                    nothing
+                force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
+                partials[1, sat_idx, worker_id] += force[1]
+                partials[2, sat_idx, worker_id] += force[2]
+                partials[3, sat_idx, worker_id] += force[3]
+                partials[4, sat_idx, worker_id] += torque[1]
+                partials[5, sat_idx, worker_id] += torque[2]
+                partials[6, sat_idx, worker_id] += torque[3]
+            end
+            if needs_timing
+                @inbounds packet_elapsed_ns[packet_idx] = Int64(time_ns() - packet_started_ns)
+            end
+            return nothing
+        end
+    else
+        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_flat_queue, count_items, plan.allotment) do worker_id, item_idx
+            item = work_items[item_idx]
+            sat_idx = fld(item - 1, n_effectors) + 1
+            eff_idx = mod(item - 1, n_effectors) + 1
+            effector = dynamic_effectors[eff_idx]
+            @views sc_view = sc_state[sat_idx]
+            state_sample = _wrench_method_available(effector) ?
+                _rhs_flat_state_sample_from_buffers(p.shared_buffers, spacecraft, sat_idx, orientation_sim) :
+                nothing
+            force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
             partials[1, sat_idx, worker_id] += force[1]
             partials[2, sat_idx, worker_id] += force[2]
             partials[3, sat_idx, worker_id] += force[3]
             partials[4, sat_idx, worker_id] += torque[1]
             partials[5, sat_idx, worker_id] += torque[2]
             partials[6, sat_idx, worker_id] += torque[3]
+            return nothing
         end
-        return nothing
     end
 
     @inbounds for sat_idx in 1:num_sats
@@ -493,6 +780,21 @@ function _accumulate_dynamic_effectors_flat_batch!(
             use_threads=true,
             elapsed_ns=elapsed_ns,
         )
+        if use_packets
+            feedback_started_ns = time_ns()
+            _update_rhs_flat_packet_cost_model!(
+                p.shared_buffers,
+                dynamic_effectors,
+                work_items,
+                packet_starts,
+                packet_ends,
+                packet_costs,
+                packet_elapsed_ns,
+                packet_count,
+            )
+            packet_overhead_ns += Int64(time_ns() - feedback_started_ns)
+            _update_rhs_flat_packet_overhead_model!(p.shared_buffers, packet_overhead_ns, elapsed_ns)
+        end
     end
     return nothing
 end
@@ -518,10 +820,16 @@ function _prefill_shared_body_samples!(p, t::Float64, sc_state, dynamic_effector
     first_active = findfirst(p.is_active)
     first_active === nothing && return nothing
     @views sc_view = sc_state[first_active]
+    p.shared_buffers.rhs_solar_prefilled[] = false
 
     for effector in dynamic_effectors
-        if effector isa SimulationModel.SolarRadiationPressureModel
-            sample_solar_ephemeris(sc_view, p, first_active, t)
+        needs_solar = effector isa SimulationModel.SolarRadiationPressureModel ||
+            (_wrench_method_available(effector) && SimulationModel.environment_requirements(effector).solar)
+        if needs_solar
+            solar = sample_solar_ephemeris(sc_view, p, first_active, t)
+            p.shared_buffers.rhs_flat_solar_pos_ii[] = solar.sun_pos_ii
+            p.shared_buffers.rhs_flat_solar_t[] = t
+            p.shared_buffers.rhs_solar_prefilled[] = true
             break
         end
     end
@@ -532,24 +840,63 @@ function _prefill_shared_body_samples!(p, t::Float64, sc_state, dynamic_effector
             break
         end
     end
+
+    for effector in dynamic_effectors
+        if effector isa SimulationModel.GravitationalHarmonicsModel
+            et = p.shared_buffers.et_start[] + t
+            SimulationModel.DynamicEffectors.PerturbationEffectors._harmonics_lpi_at!(effector, p, et)
+            break
+        end
+    end
     return nothing
 end
 
-# Parallel atmosphere pre-sample: fills shared_buffers.densities/temperatures/winds for
-# all active satellites before the flat effector queue. l_pi is pre-computed once so the
-# batch avoids acquiring harmonics_lpi_lock per satellite.
-function _prefill_atmosphere_samples!(p, t::Float64, sc_state)::Nothing
+# Parallel environment pre-sample: fills planet-frame component arrays for all active
+# satellites and, when requested, shared_buffers.densities/temperatures/winds before the
+# flat effector queue. l_pi is pre-computed once so the batch avoids acquiring
+# harmonics_lpi_lock per satellite.
+function _prefill_environment_samples!(p, t::Float64, sc_state; atmosphere::Bool)::Nothing
     num_sats = length(sc_state)
     num_sats == 0 && return nothing
     planet = p.args.environment_model.planet
     l_pi = _planet_lpi_at_engine(p, t)
-    @batch for sat_idx in 1:num_sats
-        p.is_active[sat_idx] || continue
-        @views sc_view = sc_state[sat_idx]
-        planet_frame = sample_planet_frame_with_lpi(sc_view, planet, l_pi)
-        _sample_atmosphere_from_planet_frame(sc_view, planet_frame, p, sat_idx, t; write_buffers=true)
+    p.shared_buffers.rhs_flat_planet_lpi[] = l_pi
+    planet_pos = p.shared_buffers.rhs_flat_planet_pos_pp[]
+    planet_vel = p.shared_buffers.rhs_flat_planet_vel_pp[]
+    planet_alt = p.shared_buffers.rhs_flat_planet_alt_m[]
+    planet_lat = p.shared_buffers.rhs_flat_planet_lat_rad[]
+    planet_lon = p.shared_buffers.rhs_flat_planet_lon_rad[]
+    if length(planet_pos) < num_sats
+        resize!(planet_pos, num_sats)
+        resize!(planet_vel, num_sats)
+        resize!(planet_alt, num_sats)
+        resize!(planet_lat, num_sats)
+        resize!(planet_lon, num_sats)
+    end
+
+    decision = SimulationModel.SimulationCallbacks._density_callback_thread_decision(p.args, num_sats)
+    worker_allotment = decision.use_threads ? decision.allotment : 1
+    SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_atmosphere, num_sats, worker_allotment) do _, sat_idx
+        if p.is_active[sat_idx]
+            @views sc_view = sc_state[sat_idx]
+            planet_frame = sample_planet_frame_with_lpi(sc_view, planet, l_pi)
+            @inbounds begin
+                planet_pos[sat_idx] = planet_frame.pos_pp
+                planet_vel[sat_idx] = planet_frame.vel_pp
+                planet_alt[sat_idx] = planet_frame.alt_m
+                planet_lat[sat_idx] = planet_frame.lat_rad
+                planet_lon[sat_idx] = planet_frame.lon_rad
+            end
+            if atmosphere
+                _sample_atmosphere_from_planet_frame(sc_view, planet_frame, p, sat_idx, t; write_buffers=true)
+            end
+        end
     end
     return nothing
+end
+
+function _prefill_atmosphere_samples!(p, t::Float64, sc_state)::Nothing
+    return _prefill_environment_samples!(p, t, sc_state; atmosphere=true)
 end
 
 function _spacecraft_dynamics_flat_constellation_effector_queue!(
@@ -571,28 +918,39 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
     # Phase 1 (serial): warm SpiceRhsMemo for solar/N-body bodies before workers start.
     _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
 
-    # Phase 2 (parallel): pre-sample atmosphere per satellite so the hot loop reads buffers.
+    # Phase 2 (parallel): pre-sample reusable per-satellite environment components so
+    # wrench effectors in the hot loop read typed buffers instead of rebuilding samples.
+    needs_planet_frame_prefill = partition === nothing && any(dynamic_effectors) do eff
+        _wrench_method_available(eff) && begin
+            req = SimulationModel.environment_requirements(eff)
+            req.planet_frame || req.atmosphere
+        end
+    end
     needs_atm_prefill = partition === nothing && any(dynamic_effectors) do eff
         _wrench_method_available(eff) && SimulationModel.environment_requirements(eff).atmosphere
     end
-    if needs_atm_prefill
-        _prefill_atmosphere_samples!(p, t, sc_state)
-        p.shared_buffers.rhs_atmosphere_prefilled[] = true
+    if needs_planet_frame_prefill
+        _prefill_environment_samples!(p, t, sc_state; atmosphere=needs_atm_prefill)
+        p.shared_buffers.rhs_planet_frame_prefilled[] = true
+        p.shared_buffers.rhs_atmosphere_prefilled[] = needs_atm_prefill
     end
 
-    _accumulate_dynamic_effectors_flat_batch!(sc_state, p, t, dynamic_effectors, plan; partition=partition)
-
-    if needs_atm_prefill
-        p.shared_buffers.rhs_atmosphere_prefilled[] = false
+    try
+        _accumulate_dynamic_effectors_flat_batch!(sc_state, p, t, dynamic_effectors, plan; partition=partition)
+    finally
+        if needs_planet_frame_prefill
+            p.shared_buffers.rhs_planet_frame_prefilled[] = false
+            p.shared_buffers.rhs_atmosphere_prefilled[] = false
+        end
     end
     totals = p.shared_buffers.rhs_flat_effector_totals[]
 
-    @inbounds for i in eachindex(sc_state)
-        if !p.is_active[i]
+    SimulationModel.ParallelPolicy.threaded_foreach(length(sc_state), plan.allotment) do i
+        @inbounds if !p.is_active[i]
             sc_du[i] .= 0.0
-            continue
+            return
         end
-        @views begin
+        @inbounds @views begin
             sc_view = sc_state[i]
             du_view = sc_du[i]
             forces, torques = _flat_totals_force_torque(totals, i)
@@ -691,9 +1049,9 @@ end
     if hasproperty(state, :sc)
         sc_state = state.sc[sat_idx]
         if hasproperty(sc_state, :pos)
-            return SVector{3, Float64}(sc_state.pos)
+            return SVector{3, Float64}(sc_state[1], sc_state[2], sc_state[3])
         elseif hasproperty(sc_state, :vel)
-            return SVector{3, Float64}(sc_state.vel)
+            return SVector{3, Float64}(sc_state[1], sc_state[2], sc_state[3])
         end
         return SVector{3, Float64}(sc_state)
     end
@@ -701,9 +1059,9 @@ end
     if sat_idx <= length(state)
         sat_state = state[sat_idx]
         if hasproperty(sat_state, :pos)
-            return SVector{3, Float64}(sat_state.pos)
+            return SVector{3, Float64}(sat_state[1], sat_state[2], sat_state[3])
         elseif hasproperty(sat_state, :vel)
-            return SVector{3, Float64}(sat_state.vel)
+            return SVector{3, Float64}(sat_state[1], sat_state[2], sat_state[3])
         end
     end
 
@@ -863,6 +1221,9 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
     effector_decision = plan.effector_decision
     use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(length(spacecraft))
     if use_rhs_batch
+        _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
+    end
+    if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(sc_state)
             if !p.is_active[i]
@@ -965,6 +1326,9 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
     end
     effector_decision = plan.effector_decision
     use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(length(spacecraft))
+    if use_rhs_batch
+        _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
+    end
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(sc_state)
@@ -1073,6 +1437,9 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
     effector_decision = plan.effector_decision
     use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(length(spacecraft))
     if use_rhs_batch
+        _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
+    end
+    if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(sc_state)
             if !p.is_active[i]
@@ -1166,6 +1533,9 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
     end
     effector_decision = plan.effector_decision
     use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(length(spacecraft))
+    if use_rhs_batch
+        _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
+    end
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(sc_state)

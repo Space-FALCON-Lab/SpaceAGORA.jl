@@ -200,6 +200,13 @@ function measure_case(
     policy_control_threads_enabled = missing
     policy_multibody_threads_enabled = missing
     policy_other_threads_enabled = missing
+    policy_observations_total = missing
+    policy_elapsed_ns_total = missing
+    policy_threaded_elapsed_ns_total = missing
+    policy_serial_elapsed_ns_total = missing
+    policy_last_source = missing
+    policy_last_mode = missing
+    policy_last_allotment = missing
     nbody_spkpos_runtime_calls = missing
     nbody_spkpos_cache_build_calls = missing
     nbody_spkpos_total_calls = missing
@@ -258,6 +265,13 @@ function measure_case(
                 policy_control_threads_enabled = getproperty(snapshot, :control_threads_enabled)
                 policy_multibody_threads_enabled = getproperty(snapshot, :multibody_threads_enabled)
                 policy_other_threads_enabled = getproperty(snapshot, :other_threads_enabled)
+                policy_observations_total = getproperty(snapshot, :observations_total)
+                policy_elapsed_ns_total = getproperty(snapshot, :elapsed_ns_total)
+                policy_threaded_elapsed_ns_total = getproperty(snapshot, :threaded_elapsed_ns_total)
+                policy_serial_elapsed_ns_total = getproperty(snapshot, :serial_elapsed_ns_total)
+                policy_last_source = getproperty(snapshot, :last_source)
+                policy_last_mode = getproperty(snapshot, :last_mode)
+                policy_last_allotment = getproperty(snapshot, :last_allotment)
             end
         end
         if hasproperty(solve_result, :spice_counters)
@@ -345,6 +359,13 @@ function measure_case(
         policy_control_threads_enabled=policy_control_threads_enabled,
         policy_multibody_threads_enabled=policy_multibody_threads_enabled,
         policy_other_threads_enabled=policy_other_threads_enabled,
+        policy_observations_total=policy_observations_total,
+        policy_elapsed_ns_total=policy_elapsed_ns_total,
+        policy_threaded_elapsed_ns_total=policy_threaded_elapsed_ns_total,
+        policy_serial_elapsed_ns_total=policy_serial_elapsed_ns_total,
+        policy_last_source=policy_last_source,
+        policy_last_mode=policy_last_mode,
+        policy_last_allotment=policy_last_allotment,
         nbody_spkpos_runtime_calls=nbody_spkpos_runtime_calls,
         nbody_spkpos_cache_build_calls=nbody_spkpos_cache_build_calls,
         nbody_spkpos_total_calls=nbody_spkpos_total_calls,

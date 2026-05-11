@@ -1,13 +1,13 @@
 @inline function _extract_pos_vel(x)
     if hasproperty(x, :pos) && hasproperty(x, :vel)
-        return SVector{3, Float64}(x.pos), SVector{3, Float64}(x.vel)
+        return SVector{3, Float64}(x[1], x[2], x[3]), SVector{3, Float64}(x[4], x[5], x[6])
     end
-    return SVector{3, Float64}(x[1:3]), SVector{3, Float64}(x[4:6])
+    return SVector{3, Float64}(x[1], x[2], x[3]), SVector{3, Float64}(x[4], x[5], x[6])
 end
 
 @inline function _extract_mass_kg(x)::Float64
     if hasproperty(x, :mass)
-        return Float64(x.mass)
+        return Float64(x[7])
     end
     return length(x) >= 7 ? Float64(x[7]) : NaN
 end

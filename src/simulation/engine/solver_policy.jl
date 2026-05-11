@@ -152,6 +152,37 @@ end
     return first(effectors) isa SimulationModel.InverseSquaredGravityModel
 end
 
+@inline function _auto_stiff_smooth_gravity_tsit5_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5", true)
+end
+
+@inline function _auto_stiff_smooth_gravity_effector(effector)::Bool
+    return effector isa SimulationModel.InverseSquaredGravityModel ||
+           effector isa SimulationModel.InverseSquaredJ2GravityModel ||
+           effector isa SimulationModel.GravitationalHarmonicsModel ||
+           effector isa SimulationModel.NBodyGravityModel
+end
+
+@inline function _auto_stiff_smooth_gravity_reject_reason(args)::Union{Nothing, String}
+    _auto_stiff_smooth_gravity_tsit5_enabled() || return "SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5=0 disables smooth-gravity Tsit5 routing."
+    args.mission_configuration.orientation_sim && return "orientation_sim=true can couple attitude states into the RHS."
+    isempty(args.control_model.control_effectors) || return "control effectors are active."
+    isempty(args.guidance_model.guidance_effectors) || return "guidance effectors are active."
+    isempty(args.navigation_model.navigation_effectors) || return "navigation effectors are active."
+
+    effectors = args.dynamics_model.dynamic_effectors
+    isempty(effectors) && return "no dynamic effectors are active."
+    @inbounds for effector in effectors
+        _auto_stiff_smooth_gravity_effector(effector) || return "$(nameof(typeof(effector))) is not a supported smooth-gravity effector."
+        req = SimulationModel.environment_requirements(effector)
+        req.atmosphere && return "$(nameof(typeof(effector))) requires atmosphere samples."
+        req.solar && return "$(nameof(typeof(effector))) requires solar samples."
+    end
+    return nothing
+end
+
+@inline _auto_stiff_smooth_gravity_eligible(args)::Bool = isnothing(_auto_stiff_smooth_gravity_reject_reason(args))
+
 @inline function _gravity_backbone_structure_validated(effector)::Symbol
     structure = SimulationModel.gravity_backbone_structure(effector)
     if structure === :unsupported || structure === :position_only_static_gravity
@@ -589,6 +620,16 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
     end
 
     if mode == :auto_stiff
+        if _auto_stiff_smooth_gravity_eligible(args)
+            sol = _solve_with_explicit_solver(prob, args, Tsit5(), reltol_tol, abstol_tol)
+            return sol, (
+                solver="Tsit5",
+                initial_solver="Tsit5",
+                fallback_used=false,
+                trigger_retcode=missing
+            )
+        end
+
         # True stiffness-aware autoswitching handled internally by OrdinaryDiffEq.
         # This replaces the manual "retry with Rodas5P on Tsit5 failure" policy.
         autoswitch_alg = AutoTsit5(Rodas5P(autodiff=AutoFiniteDiff()))

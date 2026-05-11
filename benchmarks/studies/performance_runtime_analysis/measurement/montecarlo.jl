@@ -350,14 +350,15 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
     return DataFrame(rows)
 end
 @inline function selected_cases(spec::ProfileSpec, cases::Vector{BenchmarkCase})::Vector{BenchmarkCase}
-    selected = spec.name == "full" ? cases : [c for c in cases if c.run_in_quick]
+    case_filter = _perf_case_name_filter()
+    selected = if isempty(case_filter)
+        spec.name == "full" ? cases : [c for c in cases if c.run_in_quick]
+    else
+        by_name = Dict(c.name => c for c in cases)
+        [by_name[name] for name in case_filter if haskey(by_name, name)]
+    end
     if _exclude_entry_scenarios()
         selected = [c for c in selected if c.category != "entry"]
-    end
-    case_filter = _perf_case_name_filter()
-    if !isempty(case_filter)
-        wanted = Set(case_filter)
-        selected = [c for c in selected if c.name in wanted]
     end
     if _perf_smoke_mode()
         return selected[1:min(end, 3)]

@@ -581,11 +581,36 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
         debug_initial_derivative::Base.RefValue{Bool} = Ref(false)
         effector_cost_ns_per_item::Base.RefValue{Float64} = Ref(NaN)
         effector_cost_samples::Base.RefValue{Int64} = Ref(Int64(0))
+        rhs_effector_cost_ns::Base.RefValue{Vector{Float64}} = Ref(Float64[])
+        rhs_effector_cost_samples::Base.RefValue{Vector{Int64}} = Ref(Int64[])
         rhs_flat_effector_partials::Base.RefValue{Array{Float64, 3}} = Ref(Array{Float64, 3}(undef, 0, 0, 0))
         rhs_flat_effector_totals::Base.RefValue{Matrix{Float64}} = Ref(Matrix{Float64}(undef, 0, 0))
         rhs_flat_state_samples::Base.RefValue{Vector{Union{Nothing, StateSample}}} = Ref(Vector{Union{Nothing, StateSample}}())
+        rhs_flat_state_pos_ii::Base.RefValue{Vector{SVector{3, Float64}}} = Ref(SVector{3, Float64}[])
+        rhs_flat_state_vel_ii::Base.RefValue{Vector{SVector{3, Float64}}} = Ref(SVector{3, Float64}[])
+        rhs_flat_state_mass_kg::Base.RefValue{Vector{Float64}} = Ref(Float64[])
+        rhs_flat_state_q_ib::Base.RefValue{Vector{SVector{4, Float64}}} = Ref(SVector{4, Float64}[])
+        rhs_flat_state_omega_body::Base.RefValue{Vector{SVector{3, Float64}}} = Ref(SVector{3, Float64}[])
+        rhs_flat_planet_lpi::Base.RefValue{SMatrix{3, 3, Float64, 9}} = Ref(SMatrix{3,3,Float64,9}((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)))
+        rhs_flat_planet_pos_pp::Base.RefValue{Vector{SVector{3, Float64}}} = Ref(SVector{3, Float64}[])
+        rhs_flat_planet_vel_pp::Base.RefValue{Vector{SVector{3, Float64}}} = Ref(SVector{3, Float64}[])
+        rhs_flat_planet_alt_m::Base.RefValue{Vector{Float64}} = Ref(Float64[])
+        rhs_flat_planet_lat_rad::Base.RefValue{Vector{Float64}} = Ref(Float64[])
+        rhs_flat_planet_lon_rad::Base.RefValue{Vector{Float64}} = Ref(Float64[])
+        rhs_flat_solar_pos_ii::Base.RefValue{SVector{3, Float64}} = Ref(SVector{3, Float64}(0.0, 0.0, 0.0))
+        rhs_flat_solar_t::Base.RefValue{Float64} = Ref(NaN)
         rhs_flat_work_items::Base.RefValue{Vector{Int}} = Ref(Int[])
+        rhs_flat_packet_starts::Base.RefValue{Vector{Int}} = Ref(Int[])
+        rhs_flat_packet_ends::Base.RefValue{Vector{Int}} = Ref(Int[])
+        rhs_flat_packet_costs::Base.RefValue{Vector{Float64}} = Ref(Float64[])
+        rhs_flat_packet_elapsed_ns::Base.RefValue{Vector{Int64}} = Ref(Int64[])
+        rhs_flat_packet_overhead_ema::Base.RefValue{Float64} = Ref(NaN)
+        rhs_flat_packet_overhead_samples::Base.RefValue{Int64} = Ref(Int64(0))
+        rhs_flat_packet_disabled::Base.RefValue{Bool} = Ref(false)
+        rhs_planet_frame_prefilled::Base.RefValue{Bool} = Ref(false)
         rhs_atmosphere_prefilled::Base.RefValue{Bool} = Ref(false)
+        rhs_solar_prefilled::Base.RefValue{Bool} = Ref(false)
+        rhs_harmonics_batch_pool::Base.RefValue{Any} = Ref{Any}(nothing)
     end
 
     # SaveData is an output/persistence boundary and intentionally remains heterogeneous.
@@ -602,7 +627,7 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
     end
 
     
-    @kwdef struct ODEParams{N_sats}
+    @kwdef struct ODEParams{N_sats, A <: SimulationConfiguration}
         # m::Model = Model()                      # Model struct
         # cnf::Cnf = Cnf()            # Configuration parameters
         # solution::Solution = Solution() # Solution struct
@@ -617,11 +642,29 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
         # gram::Any = nothing              # GRAM object
         # numberofpassage::Int64 = 0       # Current passage number
         # orientation_sim::Bool = false    # Flag for orientation simulation
-        args::SimulationConfiguration = SimulationConfiguration() # Arguments dictionary
-        shared_buffers::SharedBuffers = SharedBuffers{N_sats}() # Shared buffers for callback and integrator
+        args::A = SimulationConfiguration() # Arguments dictionary
+        shared_buffers::SharedBuffers{N_sats} = SharedBuffers{N_sats}() # Shared buffers for callback and integrator
         is_active::Vector{Bool} = [true for _ in 1:N_sats] # Vector to track which satellites are still active in the simulation
         orbit_counter::Vector{Int64} = ones(Int64, N_sats) # Counter for the number of orbits completed
         save_cache::SaveCache = SaveCache() # Cache for saving results
+    end
+
+    function ODEParams{N_sats}(;
+        args=SimulationConfiguration(),
+        shared_buffers=SharedBuffers{N_sats}(),
+        is_active::Vector{Bool}=[true for _ in 1:N_sats],
+        orbit_counter::Vector{Int64}=ones(Int64, N_sats),
+        save_cache::SaveCache=SaveCache(),
+    ) where {N_sats}
+        args isa SimulationConfiguration || throw(ArgumentError("ODEParams args must be a SimulationConfiguration."))
+        shared_buffers isa SharedBuffers{N_sats} || throw(ArgumentError("ODEParams shared_buffers must be SharedBuffers{$N_sats}."))
+        return ODEParams{N_sats, typeof(args)}(
+            args,
+            shared_buffers,
+            is_active,
+            orbit_counter,
+            save_cache,
+        )
     end
     # solution = Solution()
 

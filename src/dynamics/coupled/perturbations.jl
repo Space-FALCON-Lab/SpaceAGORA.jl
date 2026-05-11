@@ -341,6 +341,25 @@ function _get_harmonics_batch_pool(
     return _HARMONICS_BATCH_POOL[key]
 end
 
+# Fetch the batch pool from a per-solve cached ref to avoid the global Dict lookup
+# on every RHS call. Falls through to _get_harmonics_batch_pool on first use or resize.
+function _get_harmonics_batch_pool_cached!(
+    pool_ref::Base.RefValue{Any},
+    model::GravitationalHarmonicsModel,
+    n_workers::Int,
+    batch_size::Int,
+)::Vector{HarmonicsBatchWorkspace}
+    cached = pool_ref[]
+    if cached isa Vector{HarmonicsBatchWorkspace} &&
+       length(cached) >= n_workers &&
+       !isempty(cached) && size(cached[1].A, 1) >= batch_size
+        return cached
+    end
+    fresh = _get_harmonics_batch_pool(model, n_workers, batch_size)
+    pool_ref[] = fresh
+    return fresh
+end
+
 # Batched harmonics kernel: processes satellites item_start..item_end together.
 # Coefficients (C, S, VR01, VR11) are loaded once per (degree, order) pair
 # and broadcast across all satellites via @turbo SIMD over the batch dimension.
@@ -850,8 +869,8 @@ end
     calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
 """
 function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    pos_ii = hasproperty(x, :pos) ? SVector{3, Float64}(x.pos) : SVector{3, Float64}(x[1:3])
-    mass = hasproperty(x, :mass) ? x.mass : x[7]
+    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
+    mass = Float64(x[7])
     primary_body_name = _spice_query_name(model.primary_body_name)
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
     force_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize force vector
@@ -881,7 +900,7 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
         @inbounds for worker_id in 1:n_workers
             thread_force[worker_id] .= 0.0
         end
-        ParallelPolicy.threaded_foreach_worker(n_bodies, decision.allotment) do worker_id, k
+        ParallelPolicy.threaded_foreach_worker_persistent(:rhs_nbody, n_bodies, decision.allotment) do worker_id, k
             pos_primary_k = pos_primary_k_all[k]
             pos_spacecraft_k = pos_primary_k - pos_ii
             pos_spacecraft_k_mag = norm(pos_spacecraft_k)
@@ -1232,8 +1251,8 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
     end
 
     planet = param.args.environment_model.planet
-    pos_ii = hasproperty(x, :pos) ? SVector{3, Float64}(x.pos) : SVector{3, Float64}(x[1:3])
-    mass = hasproperty(x, :mass) ? x.mass : x[7]
+    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
+    mass = Float64(x[7])
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
     primary_body_name = _spice_query_name(planet.name)
     spice_rhs_memo_enabled = param.shared_buffers.spice_rhs_memo_enabled[]

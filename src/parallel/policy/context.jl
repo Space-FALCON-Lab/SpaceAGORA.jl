@@ -58,6 +58,65 @@ function _persistent_foreach_worker_loop(
     end
 end
 
+function _persistent_foreach_worker_loop_w(
+    worker_id::Int,
+    request_channel::Channel{Any},
+    done_channel::Channel{Any}
+)::Nothing
+    while true
+        request = take!(request_channel)
+        if request === :stop
+            return nothing
+        end
+
+        captured = nothing
+        try
+            num_items = request.num_items
+            active_workers = request.active_workers
+            scheduler = request.scheduler
+            chunk = request.chunk
+            f = request.f
+            if scheduler == :dynamic
+                next_index = request.next_index
+                @inbounds while true
+                    start_idx = Threads.atomic_add!(next_index, chunk)
+                    start_idx > num_items && break
+                    stop_idx = min(num_items, start_idx + chunk - 1)
+                    for idx in start_idx:stop_idx
+                        f(worker_id, idx)
+                    end
+                end
+            else
+                @inbounds for idx in worker_id:active_workers:num_items
+                    f(worker_id, idx)
+                end
+            end
+        catch err
+            captured = Base.CapturedException(err, catch_backtrace())
+        end
+        put!(done_channel, captured)
+    end
+end
+
+function _create_persistent_foreach_worker_pool(workers::Int)::_PersistentForeachPool
+    workers = max(2, workers)
+    request_channels = [Channel{Any}(1) for _ in 1:workers]
+    done_channel = Channel{Any}(workers)
+    pool = _PersistentForeachPool(
+        workers=workers,
+        request_channels=request_channels,
+        done_channel=done_channel
+    )
+    @inbounds for worker_id in 1:workers
+        Threads.@spawn _persistent_foreach_worker_loop_w(
+            worker_id,
+            request_channels[worker_id],
+            done_channel
+        )
+    end
+    return pool
+end
+
 function _create_persistent_foreach_pool(workers::Int)::_PersistentForeachPool
     workers = max(2, workers)
     request_channels = [Channel{Any}(1) for _ in 1:workers]
@@ -89,15 +148,17 @@ end
 function _destroy_persistent_foreach_scope!(scope_id::UInt)::Nothing
     pools = _PersistentForeachPool[]
     lock(_persistent_foreach_lock) do
-        stale_keys = Tuple{UInt, Symbol}[]
-        for (key, pool) in _persistent_foreach_pools
-            if key[1] == scope_id
-                push!(stale_keys, key)
-                push!(pools, pool)
+        for dict in (_persistent_foreach_pools, _persistent_foreach_worker_pools)
+            stale_keys = Tuple{UInt, Symbol}[]
+            for (key, pool) in dict
+                if key[1] == scope_id
+                    push!(stale_keys, key)
+                    push!(pools, pool)
+                end
             end
-        end
-        @inbounds for key in stale_keys
-            delete!(_persistent_foreach_pools, key)
+            @inbounds for key in stale_keys
+                delete!(dict, key)
+            end
         end
     end
     @inbounds for pool in pools

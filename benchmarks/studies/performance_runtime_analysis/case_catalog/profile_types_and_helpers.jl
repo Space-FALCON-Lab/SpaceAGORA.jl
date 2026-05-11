@@ -303,6 +303,9 @@ end
 
 @inline function perf_parallel_backend()::Symbol
     mode = lowercase(strip(get(ENV, "SPACEAGORA_PERF_PARALLEL_BACKEND", "auto")))
+    if mode == "auto" && !isempty(_perf_case_name_filter())
+        return :none
+    end
     if mode in ("none", "serial", "off", "0", "false", "no")
         return :none
     elseif mode in ("threads", "thread")

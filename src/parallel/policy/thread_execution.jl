@@ -115,6 +115,39 @@ function threaded_foreach_persistent(
     return threaded_foreach_persistent(source, num_items, allotment, f)
 end
 
+function _persistent_worker_pool_for(source::Symbol)::_PersistentForeachPool
+    key = _persistent_pool_key(source)
+    lock(_persistent_foreach_lock) do
+        return get!(_persistent_foreach_worker_pools, key) do
+            _create_persistent_foreach_worker_pool(_default_thread_pool_size())
+        end
+    end
+end
+
+function threaded_foreach_worker_persistent(
+    source::Symbol,
+    num_items::Int,
+    allotment::Int,
+    f::F
+) where {F <: Function}
+    num_items <= 0 && return nothing
+    workers = _thread_worker_count(num_items, allotment)
+    if workers <= 1 || !callback_persistent_workers_enabled()
+        return threaded_foreach_worker(num_items, allotment, f)
+    end
+    pool = _persistent_worker_pool_for(source)
+    return _threaded_foreach_persistent!(pool, num_items, workers, f)
+end
+
+function threaded_foreach_worker_persistent(
+    f::F,
+    source::Symbol,
+    num_items::Int,
+    allotment::Int
+) where {F <: Function}
+    return threaded_foreach_worker_persistent(source, num_items, allotment, f)
+end
+
 @inline function _thread_worker_count(num_items::Int, allotment::Int)::Int
     num_items <= 0 && return 1
     budget = effective_inner_thread_budget()

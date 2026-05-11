@@ -37,14 +37,15 @@ end
 
 @inline function _inverse_squared_gravity_accel(pos_ii::SVector{3, Float64}, planet)::SVector{3, Float64}
     r = norm(pos_ii)
-    return -planet.μ / r^2 * normalize(pos_ii)
+    μ = Float64(planet.μ)
+    return -μ / r^2 * normalize(pos_ii)
 end
 
 @inline function _inverse_squared_j2_gravity_accel(pos_ii::SVector{3, Float64}, planet)::SVector{3, Float64}
     r = norm(pos_ii)
-    μ = planet.μ
-    J2 = planet.J2
-    Rp_m = planet.Rp_m
+    μ = Float64(planet.μ)
+    J2 = Float64(planet.J2)
+    Rp_m = Float64(planet.Rp_m)
     x, y, z = pos_ii
     r_squared = r^2
     gravity_ii_mag_spherical = -μ / r_squared
@@ -179,8 +180,8 @@ function aerobraking_gravity_force_ii(
 end
 
 function calcForceTorque(model::ConstantGravityModel, x::ComponentVector, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    pos_ii = SVector{3, Float64}(x.pos)
-    mass = x.mass
+    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
+    mass = Float64(x[7])
     gravity_ii = _inverse_squared_gravity_accel(pos_ii, param.args.environment_model.planet)
     force_ii = mass * gravity_ii
     torque_body = _gravity_gradient_torque_body(model, pos_ii, x, param, i)
@@ -211,8 +212,8 @@ end
 end
 
 function calcForceTorque(model::InverseSquaredGravityModel, x::ComponentVector, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    pos_ii = SVector{3, Float64}(x.pos)
-    mass = x.mass
+    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
+    mass = Float64(x[7])
     gravity_ii = _inverse_squared_gravity_accel(pos_ii, param.args.environment_model.planet)
     force_ii = mass * gravity_ii
     torque_body = _gravity_gradient_torque_body(model, pos_ii, x, param, i)
@@ -243,8 +244,8 @@ end
 end
 
 function calcForceTorque(model::InverseSquaredJ2GravityModel, x::ComponentVector, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    pos_ii = SVector{3, Float64}(x.pos)
-    mass = x.mass
+    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
+    mass = Float64(x[7])
     gravity_ii = _inverse_squared_j2_gravity_accel(pos_ii, param.args.environment_model.planet)
     force_ii = mass * gravity_ii
     torque_body = _gravity_gradient_torque_body(model, pos_ii, x, param, i)

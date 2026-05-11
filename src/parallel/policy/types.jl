@@ -112,3 +112,4 @@ Base.@kwdef mutable struct _PersistentForeachPool
 end
 
 const _persistent_foreach_pools = Dict{Tuple{UInt, Symbol}, _PersistentForeachPool}()
+const _persistent_foreach_worker_pools = Dict{Tuple{UInt, Symbol}, _PersistentForeachPool}()

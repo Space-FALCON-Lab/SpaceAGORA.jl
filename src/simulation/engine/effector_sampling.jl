@@ -6,9 +6,9 @@ using LinearAlgebra
         return x.pos_ii, x.vel_ii
     end
     if hasproperty(x, :pos) && hasproperty(x, :vel)
-        return SVector{3, Float64}(x.pos), SVector{3, Float64}(x.vel)
+        return SVector{3, Float64}(x[1], x[2], x[3]), SVector{3, Float64}(x[4], x[5], x[6])
     end
-    return SVector{3, Float64}(x[1:3]), SVector{3, Float64}(x[4:6])
+    return SVector{3, Float64}(x[1], x[2], x[3]), SVector{3, Float64}(x[4], x[5], x[6])
 end
 
 @inline function _extract_sample_mass_kg(x)::Float64
@@ -16,7 +16,7 @@ end
         return Float64(x.mass_kg)
     end
     if hasproperty(x, :mass)
-        return Float64(x.mass)
+        return Float64(x[7])
     end
     return length(x) >= 7 ? Float64(x[7]) : NaN
 end
@@ -115,6 +115,17 @@ end
     return AtmosphereSample(rho, T, wind_vec)
 end
 
+@inline function sample_buffered_planet_frame(p, sat_idx::Int)::PlanetFrameSample
+    return PlanetFrameSample(
+        p.shared_buffers.rhs_flat_planet_lpi[],
+        p.shared_buffers.rhs_flat_planet_pos_pp[][sat_idx],
+        p.shared_buffers.rhs_flat_planet_vel_pp[][sat_idx],
+        p.shared_buffers.rhs_flat_planet_alt_m[][sat_idx],
+        p.shared_buffers.rhs_flat_planet_lat_rad[][sat_idx],
+        p.shared_buffers.rhs_flat_planet_lon_rad[][sat_idx],
+    )
+end
+
 @inline function sample_solar_ephemeris(x, p, sat_idx::Int, t::Float64)::SolarEphemerisSample
     planet = p.args.environment_model.planet
     et = p.shared_buffers.et_start[] + t
@@ -211,10 +222,34 @@ end
     )
 end
 
-# Variant of sample_environment that reads atmosphere from shared buffers rather than
-# calling the live GRAM sampler. Used when the flat queue pre-fill has already populated
-# shared_buffers.densities/temperatures/winds for all active satellites.
-@inline function sample_environment_with_buffered_atm(
+@inline function _sample_reusable_planet_frame(req::EffectorEnvironmentRequirements, x, p, sat_idx::Int, t::Float64)
+    if req.planet_frame || req.atmosphere
+        return p.shared_buffers.rhs_planet_frame_prefilled[] ?
+            sample_buffered_planet_frame(p, sat_idx) :
+            sample_planet_frame(x, p, sat_idx, t)
+    end
+    return nothing
+end
+
+@inline function _sample_reusable_atmosphere(req::EffectorEnvironmentRequirements, x, planet_frame, p, sat_idx::Int, t::Float64)
+    req.atmosphere || return nothing
+    if p.shared_buffers.rhs_atmosphere_prefilled[]
+        return sample_buffered_atmosphere(x, p, sat_idx, t)
+    end
+    return _sample_atmosphere_from_planet_frame(x, planet_frame, p, sat_idx, t; write_buffers=false)
+end
+
+@inline function _sample_reusable_solar(req::EffectorEnvironmentRequirements, x, p, sat_idx::Int, t::Float64)
+    req.solar || return nothing
+    return (p.shared_buffers.rhs_solar_prefilled[] && p.shared_buffers.rhs_flat_solar_t[] == t) ?
+        SolarEphemerisSample(p.shared_buffers.rhs_flat_solar_pos_ii[]) :
+        sample_solar_ephemeris(x, p, sat_idx, t)
+end
+
+# Variant of sample_environment that reads reusable flat-RHS component buffers when
+# available. Used by wrench-based effectors so repeated effectors for the same satellite
+# do not rebuild the same planet-frame, atmosphere, or solar samples.
+@inline function sample_environment_with_reusable_buffers(
     req::EffectorEnvironmentRequirements,
     model,
     x,
@@ -223,17 +258,28 @@ end
     t::Float64,
 )::EnvironmentSample
     planet = p.args.environment_model.planet
-    planet_frame = req.planet_frame ? sample_planet_frame(x, p, sat_idx, t) : nothing
-    atmosphere = req.atmosphere ? sample_buffered_atmosphere(x, p, sat_idx, t) : nothing
-    solar = req.solar ? sample_solar_ephemeris(x, p, sat_idx, t) : nothing
+    sampled_planet_frame = _sample_reusable_planet_frame(req, x, p, sat_idx, t)
+    atmosphere = _sample_reusable_atmosphere(req, x, sampled_planet_frame, p, sat_idx, t)
+    solar = _sample_reusable_solar(req, x, p, sat_idx, t)
     third_bodies = isempty(req.third_body_names) ? nothing : sample_third_body_ephemerides(model, x, p, sat_idx, t)
     return EnvironmentSample(
         planet;
-        planet_frame=req.planet_frame ? planet_frame : nothing,
+        planet_frame=req.planet_frame ? sampled_planet_frame : nothing,
         atmosphere=atmosphere,
         solar=solar,
         third_bodies=third_bodies,
     )
+end
+
+@inline function sample_environment_with_buffered_atm(
+    req::EffectorEnvironmentRequirements,
+    model,
+    x,
+    p,
+    sat_idx::Int,
+    t::Float64,
+)::EnvironmentSample
+    return sample_environment_with_reusable_buffers(req, model, x, p, sat_idx, t)
 end
 
 @inline function _wrench_method_available(effector::SimulationModel.DynamicEffectors.GravitationalHarmonicsModel)::Bool

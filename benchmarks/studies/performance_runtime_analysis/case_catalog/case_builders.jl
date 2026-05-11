@@ -652,6 +652,10 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
     sc_long_constellation = make_constellation(planet, 12; with_panel=false)
     sc_effector_stress6 = make_constellation(planet, 6; with_panel=false)
     sc_effector_stress12 = make_constellation(planet, 12; with_panel=false)
+    sc_effector_stress24 = make_constellation(planet, 24; with_panel=false)
+    sc_mixed_body12 = make_constellation(planet, 12; with_panel=false)
+    sc_harmonics_srp16 = make_constellation(planet, 16; with_panel=false)
+    sc_aero_surrogate16 = make_constellation(planet, 16; with_panel=false)
     effector_stress_effectors = (
         InverseSquaredJ2GravityModel(),
         SolarRadiationPressureModel(1.2, 16.0),
@@ -841,6 +845,21 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
             run_in_quick=false
         ),
         BenchmarkCase(
+            name="effector_24sat_dual_srp_stack",
+            category="effector_stress",
+            description="24 spacecraft with J2 + dual SRP effectors (no atmosphere/control) to expose larger flat-queue backlogs",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_effector_stress24,
+                mission_time_s=min(spec.mission_short_s, 3600.0),
+                orientation_sim=false,
+                dynamic_effectors=effector_stress_effectors,
+                density_model=NoAtmosphereModel(),
+                dt_max_orbit=0.5
+            ),
+            run_in_quick=false
+        ),
+        BenchmarkCase(
             name="single_entry_earth_shallow",
             category="entry",
             description="1 blunted-cone entry spacecraft, Earth shallow entry from gamma/v/h (target 1 entry interface downcrossing, drag + aero, Earth GRAM point-to-point)",
@@ -975,6 +994,103 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 dt_max_orbit=20.0
             ),
             run_in_quick=false
+        ),
+        BenchmarkCase(
+            name="multi_256_gravity",
+            category="satellite_scaling",
+            description="256 spacecraft, L20 harmonics with GRAM surrogate density from file",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=make_constellation(planet, 256; with_panel=false),
+                mission_time_s=spec.mission_short_s,
+                orientation_sim=false,
+                dynamic_effectors=multi_scaling_effectors,
+                density_model=deepcopy(earth_gram_surrogate_density),
+                dt_max_orbit=20.0
+            ),
+            run_in_quick=false
+        ),
+        BenchmarkCase(
+            name="multi_1024_gravity",
+            category="satellite_scaling",
+            description="1024 spacecraft, L20 harmonics with GRAM surrogate density from file",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=make_constellation(planet, 1024; with_panel=false),
+                mission_time_s=spec.mission_short_s,
+                orientation_sim=false,
+                dynamic_effectors=multi_scaling_effectors,
+                density_model=deepcopy(earth_gram_surrogate_density),
+                dt_max_orbit=20.0
+            ),
+            run_in_quick=false
+        ),
+        BenchmarkCase(
+            name="multi_12_nbody_sun_moon",
+            category="shared_body_sampling",
+            description="12 spacecraft with J2 gravity + Sun/Moon N-body perturbations and no atmosphere to stress shared ephemeris sampling",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_mixed_body12,
+                mission_time_s=spec.mission_short_s,
+                orientation_sim=false,
+                dynamic_effectors=(InverseSquaredJ2GravityModel(), nbody_sun_moon),
+                density_model=NoAtmosphereModel(),
+                dt_max_orbit=10.0
+            ),
+            run_in_quick=false
+        ),
+        BenchmarkCase(
+            name="multi_12_j2_nbody_srp",
+            category="shared_body_sampling",
+            description="12 spacecraft with J2, Sun/Moon N-body, and SRP; no atmosphere, isolating shared body and heterogeneous effector cost",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_mixed_body12,
+                mission_time_s=spec.mission_short_s,
+                orientation_sim=false,
+                dynamic_effectors=(
+                    InverseSquaredJ2GravityModel(),
+                    nbody_sun_moon,
+                    SolarRadiationPressureModel(1.2, 12.0)
+                ),
+                density_model=NoAtmosphereModel(),
+                dt_max_orbit=10.0
+            ),
+            run_in_quick=false
+        ),
+        BenchmarkCase(
+            name="multi_16_harmonics_srp_no_density",
+            category="shared_body_sampling",
+            description="16 spacecraft with L20 harmonics + SRP and no atmosphere to separate dynamic-effector scheduling from density/thermal cost",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_harmonics_srp16,
+                mission_time_s=spec.mission_short_s,
+                orientation_sim=false,
+                dynamic_effectors=(harmonics20, SolarRadiationPressureModel(1.2, 12.0)),
+                density_model=NoAtmosphereModel(),
+                dt_max_orbit=10.0
+            ),
+            run_in_quick=false
+        ),
+        BenchmarkCase(
+            name="multi_16_aero_surrogate_cached",
+            category="atmosphere_heavy",
+            description="16 spacecraft with inverse-square gravity + aero, GRAM surrogate density, and track-cache enabled for atmosphere pre-sampling studies",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_aero_surrogate16,
+                mission_time_s=spec.mission_short_s,
+                orientation_sim=false,
+                dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+                density_model=deepcopy(earth_gram_surrogate_density),
+                dt_max_orbit=10.0
+            ),
+            run_in_quick=false,
+            env_overrides=Pair{String, String}[
+                "SPACEAGORA_GRAM_TRACK_CACHE" => "on"
+            ]
         ),
         BenchmarkCase(
             name="single_j2",

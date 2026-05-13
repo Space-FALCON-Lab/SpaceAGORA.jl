@@ -37,7 +37,10 @@ copy/verification steps below.
 ## Pull the `GRAMSuite.jl` submodule
 
 Start from the SpaceAGORA repository root and make sure the submodule is
-present locally:
+present locally. The full checkout uses Git LFS and downloads several GB of
+binary GRAM data. Before running it, make sure the machine has enough free disk
+space for both the final files and Git LFS temporary downloads; 15-20 GB free is
+a practical minimum.
 
 ```text
 git submodule update --init --recursive --remote
@@ -53,6 +56,22 @@ The wrapper package is not the same thing as the licensed GRAM binaries and
 data. The submodule gives SpaceAGORA the Julia integration layer and the
 expected folder scaffold; the official NASA distribution provides the GRAM
 content that must be placed into that scaffold.
+
+If you only need the wrapper source or want to inspect the scaffold without
+downloading LFS objects immediately, skip LFS smudging during the submodule
+checkout:
+
+```text
+GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --recursive --remote
+```
+
+Later, after freeing enough disk space, fetch the LFS-backed GRAM files from
+inside the submodule:
+
+```text
+cd data/GRAMSuite.jl
+git lfs pull
+```
 
 ## Expected target location
 
@@ -182,4 +201,23 @@ If needed, retry with:
 
 ```text
 julia --project=. scripts/ensure_gram_native.jl --clean
+```
+
+### Git LFS reports `no space left on device`
+
+The GRAM submodule contains large LFS-backed binaries. Free disk space first,
+then retry the LFS checkout:
+
+```text
+cd data/GRAMSuite.jl
+git lfs pull
+git checkout .
+```
+
+If the failed checkout left temporary LFS files behind, they can be removed
+after confirming no other Git LFS operation is running:
+
+```text
+rm -rf ../../.git/modules/GRAMSuite.jl/lfs/incomplete/*
+rm -rf ../../.git/modules/GRAMSuite.jl/lfs/tmp/*
 ```

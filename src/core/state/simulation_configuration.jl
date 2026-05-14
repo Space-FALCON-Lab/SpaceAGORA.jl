@@ -1,5 +1,6 @@
 module SimConfig
     export SimulationConfiguration, InitialTime, IntegrationTolerances, FilePaths, SimulationSettings, MissionConfiguration, EnvironmentModel, MissionType, MissionTime, MissionOrbits
+    export SolverConfig
     using ..AbstractTypes: AbstractPlanet, AbstractDensityModel, AbstractThermalModel, AbstractEphemeridesModel
     using ..SpacecraftModels: DynamicsModel, GuidanceModel, ControlModel, NavigationModel
     using ..EphemeridesModels: SpiceEphemeridesModel
@@ -52,6 +53,36 @@ module SimConfig
     @inline Base.:(==)(lhs::AbstractString, rhs::MissionType) = rhs == lhs
     @inline Base.:(==)(lhs::MissionType, rhs::Symbol) = lhs == String(rhs)
     @inline Base.:(==)(lhs::Symbol, rhs::MissionType) = rhs == lhs
+
+    """
+        SolverConfig
+
+    Typed runtime configuration for solver selection, fixed-step settings, and
+    multirate/IMEX integration policy. Fields correspond to the `SPACEAGORA_SOLVER_*`
+    environment variables.
+
+    When `solver_config` is `nothing` on a `SimulationConfiguration`, `run_simulation`
+    reads the effective config from the active environment at call time (respecting any
+    `SimulationEngineConfig` overrides). Set this field explicitly to pin solver behavior
+    independent of environment variables.
+
+    `split_imex` uses the atmosphere-implicit IMEX partition. `multirate` keeps the
+    control-focused split path. `gravity_backbone_split` is a fixed-step symplectic
+    gravity-backbone mode; it is not a fully symplectic whole-system solve.
+    """
+    Base.@kwdef struct SolverConfig
+        solver_mode::Symbol = :tsit5
+        maxiters::Union{Nothing, Int} = nothing
+        symplectic_dt_s::Union{Nothing, Float64} = nothing
+        gravity_backbone_dt_s::Union{Nothing, Float64} = nothing
+        split_imex_solver::Symbol = :kencarp4
+        multirate_slow_dt_s::Union{Nothing, Float64} = nothing
+        multirate_fast_substeps::Int = 8
+        multirate_slow_solver::Symbol = :tsit5
+        multirate_fast_solver::Symbol = :auto_stiff
+        auto_stiff_gravity_tsit5::Bool = true
+        auto_stiff_switch_max::Int = 50
+    end
 
     @kwdef struct InitialTime
         year::Int32 = 2000
@@ -212,6 +243,7 @@ module SimConfig
         control_model::ControlModel # Control models to use for the simulation, e.g., for calculating control inputs based on the state vector
         initial_time::InitialTime # Initial time for the simulation
         integration_tolerances::IntegrationTolerances = IntegrationTolerances() # Tolerances for the numerical integrator
+        solver_config::Union{Nothing, SolverConfig} = nothing # nothing = read from env at run time
     end # struct SimulationConfiguration
     
 end # module SimConfig

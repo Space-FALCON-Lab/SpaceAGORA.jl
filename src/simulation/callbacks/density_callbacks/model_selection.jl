@@ -87,7 +87,6 @@ end
     elseif !drag_state && !p.args.mission_configuration.keplerian
         return EnvironmentModels.density_polyfit(h, p)
     end
-    println("GRAM density altitude = $(h) m ($(h / 1e3) km)")
     return EnvironmentModels._gram_core_density_state(
         model.core,
         h,

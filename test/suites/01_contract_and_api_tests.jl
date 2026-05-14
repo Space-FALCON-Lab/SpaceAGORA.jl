@@ -352,6 +352,7 @@ end
     @test occursin("checkdocs_ignored_modules = Module[", docs_make)
     @test occursin("SpaceAGORA.RuntimeServices", docs_make)
     @test occursin("SpaceAGORA.SimulationEngine", docs_make)
+    @test occursin("SpaceAGORA.SimulationCampaigns", docs_make)
     @test occursin("SpaceAGORA.SimulationModel", docs_make)
     @test occursin("SpaceAGORA.ParallelProfiles", docs_make)
     @test occursin("SpaceAGORA.TelemetryVerification", docs_make)
@@ -360,6 +361,44 @@ end
     @test occursin("spaceagora_no_gram_example_args", docs_make)
     @test occursin("```jldoctest", getting_started)
     @test occursin("```jldoctest", from_env_src)
+end
+
+@testset "Monte Carlo Campaign Runner Contract" begin
+    sandbox = Module(:SpaceAGORAMonteCarloSandbox)
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"))
+
+    @test Core.eval(sandbox, :(Base.isexported(SpaceAGORA, :MonteCarloSpec)))
+    @test Core.eval(sandbox, :(Base.isexported(SpaceAGORA, :MonteCarloSampleResult)))
+    @test Core.eval(sandbox, :(Base.isexported(SpaceAGORA, :MonteCarloResult)))
+    @test Core.eval(sandbox, :(Base.isexported(SpaceAGORA, :run_monte_carlo)))
+
+    result = Core.eval(sandbox, quote
+        SpaceAGORA.run_monte_carlo(10:12; threads=1) do seed
+            seed + 1
+        end
+    end)
+    @test result.threads == 1
+    @test length(result.samples) == 3
+    @test length(result.successful) == 3
+    @test isempty(result.failed)
+    @test [sample.seed for sample in result.samples] == [10, 11, 12]
+    @test [sample.value for sample in result.samples] == [11, 12, 13]
+
+    mixed = Core.eval(sandbox, quote
+        spec = SpaceAGORA.MonteCarloSpec(seeds=1:3, threads=1)
+        SpaceAGORA.run_monte_carlo(spec) do seed
+            seed == 2 && error("seed two failed")
+            seed
+        end
+    end)
+    @test length(mixed.samples) == 3
+    @test length(mixed.successful) == 2
+    @test length(mixed.failed) == 1
+    @test mixed.failed[1].seed == 2
+
+    @test_throws ArgumentError Core.eval(sandbox, :(
+        SpaceAGORA.run_monte_carlo(identity, 1:1; threads=Threads.nthreads() + 1)
+    ))
 end
 
 @testset "Aerobraking Selector Contract" begin

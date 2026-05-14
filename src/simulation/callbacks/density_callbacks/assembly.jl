@@ -16,8 +16,31 @@ end
     return false
 end
 
-@inline function _requires_density_callback(effectors::Tuple, args::SimulationConfiguration)::Bool
+@inline function _requires_density_for_rhs(effectors::Tuple, args::SimulationConfiguration)::Bool
     return _uses_atmospheric_dynamic_effector(effectors) || !(args.environment_model.density_model isa NoAtmosphereModel)
+end
+
+# Backward-compat alias — existing callers that check whether density computation
+# is possible at all (thermal, drag-state, entry-end, tests) keep working.
+@inline function _requires_density_callback(effectors::Tuple, args::SimulationConfiguration)::Bool
+    return _requires_density_for_rhs(effectors, args)
+end
+
+# Returns true only when a non-RHS consumer needs density pre-staged in
+# shared_buffers before the step.  The RHS computes density inline via
+# sample_buffered_atmosphere → sample_atmosphere, so it does not require the
+# staged callback.  Callers: get_callbacks density callback installation only.
+@inline function _requires_staged_density_callback(effectors::Tuple, args::SimulationConfiguration)::Bool
+    _requires_density_for_rhs(effectors, args) || return false
+    # Explicit compatibility/debug override.
+    ParallelPolicy.parse_bool_env("SPACEAGORA_FORCE_DENSITY_CALLBACK", false) && return true
+    # Thermal callback fires at each step and reads shared_buffers.densities.
+    _requires_thermal_callback(effectors, args) && return true
+    # Drag-state switching uses staged density to pick the next tolerance set.
+    _requires_drag_state_callback(effectors, args) && return true
+    # Entry-end detection compares altitude against EI using staged density.
+    _requires_entry_end_callback(effectors, args) && return true
+    return false
 end
 
 @inline function _requires_guidance_orbit_counter(args::SimulationConfiguration)::Bool
@@ -58,8 +81,11 @@ end
 end
 
 @inline function _requires_thermal_callback(effectors::Tuple, args::SimulationConfiguration)::Bool
-    # Thermal-rate evaluation requires atmospheric state (ρ, T, wind), populated by density callback.
-    return _requires_density_callback(effectors, args)
+    _requires_density_callback(effectors, args) || return false
+    @inbounds for spacecraft in args.dynamics_model.spacecraft
+        !isempty(spacecraft.links) && return true
+    end
+    return false
 end
 
 @inline function _requires_quaternion_projection_callback(args::SimulationConfiguration)::Bool
@@ -130,7 +156,7 @@ function get_callbacks(
         )
     end
 
-    if !backbone_mode && _requires_density_callback(effectors, args)
+    if !backbone_mode && _requires_staged_density_callback(effectors, args)
         callbacks = _append_callback(callbacks, get_density_callback(num_sats, effectors, args))
     end
 

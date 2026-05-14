@@ -11,6 +11,11 @@ end
 Base.@kwdef mutable struct PolicyTelemetry
     decisions_total::Int64 = 0
     threads_enabled_total::Int64 = 0
+    # Separate proposed (policy output) from dispatched (actually threaded) so that
+    # route overrides — e.g. satellite_batch forcing effector threads off — are visible.
+    policy_threading_proposed_total::Int64 = 0
+    policy_threading_dispatched_total::Int64 = 0
+    policy_discarded_by_route_total::Int64 = 0
     adaptive_decisions_total::Int64 = 0
     density_decisions::Int64 = 0
     density_threads_enabled::Int64 = 0
@@ -113,3 +118,35 @@ end
 
 const _persistent_foreach_pools = Dict{Tuple{UInt, Symbol}, _PersistentForeachPool}()
 const _persistent_foreach_worker_pools = Dict{Tuple{UInt, Symbol}, _PersistentForeachPool}()
+
+# Spin-barrier pool: workers poll an atomic generation counter instead of sleeping
+# on a Channel. Dispatch latency drops from ~1-5 µs (condvar wake) to ~10-50 ns
+# (spin-poll check), allowing fine-grained parallelism at 32-128+ threads.
+# Trade-off: worker threads burn CPU while idle. Use only for very-high-frequency
+# kernels where the compute time per invocation is sub-microsecond.
+mutable struct _SpinBarrierPool
+    workers::Int
+    # Per-worker generation: coordinator increments to signal "new work ready".
+    worker_gen::Vector{Threads.Atomic{Int}}
+    # Number of workers that have finished the current dispatch round.
+    done_count::Threads.Atomic{Int}
+    # True once the pool should stop.
+    stop::Threads.Atomic{Bool}
+    # Shared request payload written by coordinator before bumping generations.
+    request::Base.RefValue{Any}
+    run_lock::ReentrantLock
+end
+
+function _SpinBarrierPool(workers::Int)
+    return _SpinBarrierPool(
+        workers,
+        [Threads.Atomic{Int}(0) for _ in 1:workers],
+        Threads.Atomic{Int}(0),
+        Threads.Atomic{Bool}(false),
+        Ref{Any}(nothing),
+        ReentrantLock(),
+    )
+end
+
+const _spin_barrier_pools = Dict{Tuple{UInt, Symbol}, _SpinBarrierPool}()
+const _spin_barrier_lock  = ReentrantLock()

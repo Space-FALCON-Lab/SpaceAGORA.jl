@@ -10,7 +10,7 @@
         state_sample === nothing && error("wrench-based effector evaluation requires a typed StateSample.")
         req = SimulationModel.environment_requirements(effector)
         env = sample_environment_with_reusable_buffers(req, effector, sc_view, p, sat_idx, t)
-        return SimulationModel.wrench(effector, state_sample, env, t)
+        return SimulationModel.wrench_caching!(effector, state_sample, env, t, p, sat_idx)
     end
     return SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)
 end
@@ -368,6 +368,42 @@ end
     return _rhs_effector_observed_cost_ns(shared_buffers, eff_idx, fallback)
 end
 
+"""
+    ConstellationExecutionPlan
+
+Execution-plan metadata for constellation-scale RHS work. The hot path still stores
+node work as encoded integers in `SharedBuffers` to avoid per-step allocations; this
+type names that layout and leaves a first-class slot for future satellite-satellite
+interaction edges.
+"""
+Base.@kwdef struct ConstellationExecutionPlan
+    num_sats::Int
+    n_effectors::Int
+    workers::Int
+    node_count::Int
+    edge_count::Int = 0
+    partition::Union{Nothing, Symbol} = nothing
+    use_packets::Bool = false
+end
+
+struct ConstellationInteractionEdgeWorkItem
+    source_sat_idx::Int
+    target_sat_idx::Int
+    eff_idx::Int
+end
+
+@inline function _constellation_node_work_item(sat_idx::Int, eff_idx::Int, n_effectors::Int)::Int
+    return (sat_idx - 1) * n_effectors + eff_idx
+end
+
+@inline function _constellation_node_sat_idx(item::Int, n_effectors::Int)::Int
+    return fld(item - 1, n_effectors) + 1
+end
+
+@inline function _constellation_node_eff_idx(item::Int, n_effectors::Int)::Int
+    return mod(item - 1, n_effectors) + 1
+end
+
 function _prepare_rhs_flat_work_items!(
     work_items::Vector{Int},
     p,
@@ -384,12 +420,13 @@ function _prepare_rhs_flat_work_items!(
     count_items = 0
     @inbounds for sat_idx in 1:num_sats
         p.is_active[sat_idx] || continue
-        base = (sat_idx - 1) * n_effectors
         for eff_idx in 1:n_effectors
             effector = dynamic_effectors[eff_idx]
             _flat_partition_selected(effector, partition) || continue
+            # Skip effectors resolved by pre-passes — they already wrote into totals.
+            partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector)) && continue
             count_items += 1
-            work_items[count_items] = base + eff_idx
+            work_items[count_items] = _constellation_node_work_item(sat_idx, eff_idx, n_effectors)
         end
     end
     if count_items > 1
@@ -403,12 +440,51 @@ function _prepare_rhs_flat_work_items!(
 end
 
 @inline function _rhs_flat_item_eff_idx(item::Int, n_effectors::Int)::Int
-    return mod(item - 1, n_effectors) + 1
+    return _constellation_node_eff_idx(item, n_effectors)
 end
 
 @inline function _rhs_flat_item_estimated_cost_ns(shared_buffers, dynamic_effectors::Tuple, item::Int)::Float64
     eff_idx = _rhs_flat_item_eff_idx(item, length(dynamic_effectors))
     return _rhs_effector_estimated_cost_ns(shared_buffers, dynamic_effectors, eff_idx)
+end
+
+function _build_constellation_execution_plan!(
+    work_items::Vector{Int},
+    p,
+    dynamic_effectors::Tuple,
+    num_sats::Int,
+    workers::Int,
+    partition::Union{Nothing, Symbol},
+)::ConstellationExecutionPlan
+    n_effectors = length(dynamic_effectors)
+    node_count = _prepare_rhs_flat_work_items!(
+        work_items,
+        p,
+        dynamic_effectors,
+        num_sats,
+        partition,
+    )
+    return ConstellationExecutionPlan(
+        num_sats=num_sats,
+        n_effectors=n_effectors,
+        workers=workers,
+        node_count=node_count,
+        edge_count=0,
+        partition=partition,
+        use_packets=false,
+    )
+end
+
+@inline function _with_packet_scheduler(exec_plan::ConstellationExecutionPlan, use_packets::Bool)::ConstellationExecutionPlan
+    return ConstellationExecutionPlan(
+        num_sats=exec_plan.num_sats,
+        n_effectors=exec_plan.n_effectors,
+        workers=exec_plan.workers,
+        node_count=exec_plan.node_count,
+        edge_count=exec_plan.edge_count,
+        partition=exec_plan.partition,
+        use_packets=use_packets,
+    )
 end
 
 function _prepare_rhs_flat_work_packets!(
@@ -558,18 +634,204 @@ function _update_rhs_flat_packet_cost_model!(
     return nothing
 end
 
+# ── Batchable-effector trait ────────────────────────────────────────────────────
+# Effectors that can be evaluated over all satellites in a single pre-pass,
+# reading shared-environment data (ephemeris, sun position) that was prefilled
+# once by _prefill_shared_body_samples!.  The pre-pass writes directly into the
+# totals matrix, and those effectors are skipped in the per-(sat,effector) flat
+# queue.  This eliminates per-item channel/worker dispatch overhead for NBody and
+# SRP, which are the dominant cost for high-thread-count constellations once the
+# ephemeris cache is warm.
+#
+# GRAM/aero are NOT batchable: density is altitude/location-dependent per
+# satellite and mutable model state prevents safe cross-satellite sharing.
+@inline _batchable_effector(::Any)::Bool = false
+@inline _batchable_effector(::SimulationModel.NBodyGravityModel)::Bool = true
+@inline _batchable_effector(::SimulationModel.SolarRadiationPressureModel)::Bool = true
+
+@inline function _has_any_batchable_effector(effectors::Tuple)::Bool
+    @inbounds for e in effectors
+        _batchable_effector(e) && return true
+    end
+    return false
+end
+
+@inline function _count_non_batchable_effectors(effectors::Tuple)::Int
+    count = 0
+    @inbounds for e in effectors
+        _batchable_effector(e) || (count += 1)
+    end
+    return count
+end
+
+# Harmonics has its own SIMD pre-pass (different from the batchable trait because
+# it uses mutable LPI matrix state and requires sc_state rather than pos_buffers).
+@inline _harmonics_prepass_effector(::Any)::Bool = false
+@inline _harmonics_prepass_effector(::SimulationModel.GravitationalHarmonicsModel)::Bool = true
+
+@inline function _has_any_harmonics_effector(effectors::Tuple)::Bool
+    @inbounds for e in effectors
+        _harmonics_prepass_effector(e) && return true
+    end
+    return false
+end
+
+# Effectors that still need flat queue dispatch (not handled by any pre-pass).
+@inline function _count_flat_queue_only_effectors(effectors::Tuple)::Int
+    count = 0
+    @inbounds for e in effectors
+        _batchable_effector(e) || _harmonics_prepass_effector(e) || (count += 1)
+    end
+    return count
+end
+
+# NBody batch pre-pass: third-body positions are read from the SpiceRhsMemo (or
+# the pre-warmed NBodyEphemerisCache) exactly once, then the force is accumulated
+# for all active satellites with a tight scalar loop.  No allocations.
+function _accumulate_nbody_flat_batch!(
+    totals::Matrix{Float64},
+    effector::SimulationModel.NBodyGravityModel,
+    pos_buffers::Vector{SVector{3, Float64}},
+    mass_buffers::Vector{Float64},
+    active_flags,
+    p,
+    t::Float64,
+    num_sats::Int,
+)::Nothing
+    n_bodies = length(effector.body_names)
+    n_bodies == 0 && return nothing
+
+    et = p.shared_buffers.et_start[] + t
+    primary_body_name = SimulationModel.DynamicEffectors._spice_query_name(effector.primary_body_name)
+    memo_enabled  = p.shared_buffers.spice_rhs_memo_enabled[]
+    memo          = p.shared_buffers.spice_rhs_memo
+    nbody_cache   = p.shared_buffers.nbody_ephemeris_cache[]
+    counter       = p.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls
+    pert          = SimulationModel.DynamicEffectors.PerturbationEffectors
+
+    # Gather third-body positions once (O(n_bodies), not O(n_bodies × n_sats)).
+    body_positions = ntuple(n_bodies) do k
+        bname = SimulationModel.DynamicEffectors._spice_query_name(effector.body_names[k])
+        if nbody_cache isa SimulationModel.NBodyEphemerisCache
+            pos = SimulationModel.DynamicEffectors._nbody_body_position_from_cache_j2000_m(
+                nbody_cache, et, bname, primary_body_name)
+            pos !== nothing && return pos
+        end
+        pert._nbody_body_position_from_spice_j2000_m(bname, et, primary_body_name, memo_enabled, memo, counter)
+    end
+
+    body_mus = effector.body_mus
+    @inbounds for sat_idx in 1:num_sats
+        active_flags[sat_idx] || continue
+        r = pos_buffers[sat_idx]
+        mass = mass_buffers[sat_idx]
+        r1, r2, r3 = r[1], r[2], r[3]
+        fx, fy, fz = 0.0, 0.0, 0.0
+        for k in 1:n_bodies
+            rk = body_positions[k]
+            rk1, rk2, rk3 = rk[1], rk[2], rk[3]
+            dx = rk1 - r1; dy = rk2 - r2; dz = rk3 - r3
+            d2 = dx*dx + dy*dy + dz*dz
+            d3 = d2 * sqrt(d2)
+            rk2_norm = rk1*rk1 + rk2*rk2 + rk3*rk3
+            rk3_norm = rk2_norm * sqrt(rk2_norm)
+            mu = body_mus[k]
+            fx += mu * (dx/d3 - rk1/rk3_norm) * mass
+            fy += mu * (dy/d3 - rk2/rk3_norm) * mass
+            fz += mu * (dz/d3 - rk3/rk3_norm) * mass
+        end
+        totals[1, sat_idx] += fx
+        totals[2, sat_idx] += fy
+        totals[3, sat_idx] += fz
+        # torques[4..6] stay zero (NBody produces no torque)
+    end
+    return nothing
+end
+
+# SRP batch pre-pass: sun position is read once (from ephemeris cache or memo),
+# then SRP acceleration is accumulated for all active satellites.
+function _accumulate_srp_flat_batch!(
+    totals::Matrix{Float64},
+    effector::SimulationModel.SolarRadiationPressureModel,
+    pos_buffers::Vector{SVector{3, Float64}},
+    mass_buffers::Vector{Float64},
+    active_flags,
+    p,
+    t::Float64,
+    num_sats::Int,
+)::Nothing
+    effector.A == 0.0 && return nothing
+
+    et = p.shared_buffers.et_start[] + t
+    primary_body_name = SimulationModel.DynamicEffectors._spice_query_name(p.args.environment_model.planet.name)
+    memo_enabled = p.shared_buffers.spice_rhs_memo_enabled[]
+    memo         = p.shared_buffers.spice_rhs_memo
+    counter      = p.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls
+    pert         = SimulationModel.DynamicEffectors.PerturbationEffectors
+
+    sun_pos = if effector.direct || effector.albedo
+        srp_cache = p.shared_buffers.srp_sun_ephemeris_cache[]
+        if srp_cache isa SimulationModel.SRPSunEphemerisCache
+            pos = SimulationModel.DynamicEffectors._srp_sun_position_from_cache_j2000_m(srp_cache, et)
+            pos !== nothing ? pos : pert._srp_sun_position_from_spice_j2000_m(et, primary_body_name, memo_enabled, memo, counter)
+        else
+            pert._srp_sun_position_from_spice_j2000_m(et, primary_body_name, memo_enabled, memo, counter)
+        end
+    else
+        SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    planet = p.args.environment_model.planet
+    @inbounds for sat_idx in 1:num_sats
+        active_flags[sat_idx] || continue
+        pos_ii = pos_buffers[sat_idx]
+        mass   = mass_buffers[sat_idx]
+        accel  = pert._srp_total_acceleration_ii(effector, planet, pos_ii, sun_pos, mass)
+        totals[1, sat_idx] += mass * accel[1]
+        totals[2, sat_idx] += mass * accel[2]
+        totals[3, sat_idx] += mass * accel[3]
+        # torques[4..6] stay zero
+    end
+    return nothing
+end
+
+# Dispatch to the appropriate batch kernel for a single batchable effector.
+@inline function _accumulate_batchable_effector_flat!(
+    totals::Matrix{Float64},
+    effector,
+    pos_buffers::Vector{SVector{3, Float64}},
+    mass_buffers::Vector{Float64},
+    active_flags,
+    p,
+    t::Float64,
+    num_sats::Int,
+)::Nothing
+    if effector isa SimulationModel.NBodyGravityModel
+        return _accumulate_nbody_flat_batch!(totals, effector, pos_buffers, mass_buffers, active_flags, p, t, num_sats)
+    elseif effector isa SimulationModel.SolarRadiationPressureModel
+        return _accumulate_srp_flat_batch!(totals, effector, pos_buffers, mass_buffers, active_flags, p, t, num_sats)
+    end
+    return nothing
+end
+
 function _accumulate_harmonics_flat_batch!(
     sc_state,
     p,
     t::Float64,
     model::SimulationModel.GravitationalHarmonicsModel,
-    plan,
+    plan;
+    init_scratch::Bool=true,
 )::Nothing
     num_sats = length(sc_state)
     active_sats = count(identity, p.is_active)
     active_sats <= 0 && return nothing
-    workers = SimulationModel.ParallelPolicy.thread_worker_count(active_sats, plan.allotment)
-    _ensure_rhs_flat_effector_scratch!(p.shared_buffers, num_sats, workers; zero_partials=false)
+    min_sats = SimulationModel.ParallelPolicy.harmonics_batch_spin_barrier_enabled() ?
+        1 : _rhs_harmonics_batch_min_sats_per_worker()
+    capped_allotment = max(1, min(plan.allotment, fld(active_sats, max(1, min_sats))))
+    workers = SimulationModel.ParallelPolicy.thread_worker_count(active_sats, capped_allotment)
+    if init_scratch
+        _ensure_rhs_flat_effector_scratch!(p.shared_buffers, num_sats, workers; zero_partials=false)
+    end
     totals = p.shared_buffers.rhs_flat_effector_totals[]
     work_items = p.shared_buffers.rhs_flat_work_items[]
     if length(work_items) < active_sats
@@ -603,9 +865,10 @@ function _accumulate_harmonics_flat_batch!(
             totals, model, sc_state, work_items, 1, count_items, lpi, pool[1]
         )
     else
-        # Use persistent workers: one "item" per batch range so workers stay alive
-        # across RHS calls instead of spawning new tasks each time.
-        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
+        dispatch_fn = SimulationModel.ParallelPolicy.harmonics_batch_spin_barrier_enabled() ?
+            SimulationModel.ParallelPolicy.threaded_foreach_worker_spin :
+            SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent
+        dispatch_fn(
             :rhs_harmonics_batch,
             n_workers,
             plan.allotment,
@@ -666,7 +929,8 @@ function _accumulate_dynamic_effectors_flat_batch!(
     _ensure_rhs_effector_cost_model!(p.shared_buffers, n_effectors)
 
     needs_state_sample = if partition === nothing
-        any(_wrench_method_available(effector) for effector in dynamic_effectors)
+        any(_wrench_method_available(effector) for effector in dynamic_effectors) ||
+            _has_any_batchable_effector(dynamic_effectors)
     else
         _partition_needs_state_sample(dynamic_effectors, partition)
     end
@@ -676,21 +940,55 @@ function _accumulate_dynamic_effectors_flat_batch!(
     spacecraft = p.args.dynamics_model.spacecraft
     orientation_sim = p.args.mission_configuration.orientation_sim
 
+    # ── Batchable effector pre-pass (NBody, SRP) ─────────────────────────────
+    # Run batchable effectors as a single serial sweep before the flat queue.
+    # They read shared environment data (third-body/sun positions) that was
+    # prefilled once by _prefill_shared_body_samples!, avoiding per-item channel
+    # dispatch overhead.  Only applies to the unpartitioned path; IMEX-partitioned
+    # calls let the flat queue handle partition filtering.
+    if partition === nothing && _has_any_batchable_effector(dynamic_effectors)
+        pos_buffers  = p.shared_buffers.rhs_flat_state_pos_ii[]
+        mass_buffers = p.shared_buffers.rhs_flat_state_mass_kg[]
+        @inbounds for effector in dynamic_effectors
+            _batchable_effector(effector) || continue
+            _accumulate_batchable_effector_flat!(totals, effector, pos_buffers, mass_buffers, p.is_active, p, t, num_sats)
+        end
+        _count_non_batchable_effectors(dynamic_effectors) == 0 && return nothing
+    end
+
+    # ── Harmonics SIMD pre-pass ───────────────────────────────────────────────
+    # Run the SIMD batch kernel for GravitationalHarmonicsModel as a pre-pass,
+    # writing directly into the already-zeroed totals matrix.  Skips scratch
+    # re-initialization so batchable contributions above are preserved.  The
+    # single-effector shortcut at the top of this function already handles the
+    # harmonics-only case; this pre-pass covers the multi-effector path.
+    if partition === nothing && _has_any_harmonics_effector(dynamic_effectors)
+        @inbounds for effector in dynamic_effectors
+            effector isa SimulationModel.GravitationalHarmonicsModel || continue
+            _accumulate_harmonics_flat_batch!(sc_state, p, t, effector, plan; init_scratch=false)
+            break
+        end
+        _count_flat_queue_only_effectors(dynamic_effectors) == 0 && return nothing
+    end
+
     needs_timing = plan.policy_applied
     started_ns = needs_timing ? time_ns() : UInt64(0)
-    count_items = _prepare_rhs_flat_work_items!(
+    exec_plan = _build_constellation_execution_plan!(
         work_items,
         p,
         dynamic_effectors,
         num_sats,
+        workers,
         partition,
     )
+    count_items = exec_plan.node_count
     count_items <= 0 && return nothing
 
     use_packets = _rhs_flat_use_packet_scheduler(p.shared_buffers, dynamic_effectors, work_items, count_items)
+    exec_plan = _with_packet_scheduler(exec_plan, use_packets)
     packet_count = 0
     packet_overhead_ns = Int64(0)
-    if use_packets
+    if exec_plan.use_packets
         packet_prepare_started_ns = needs_timing ? time_ns() : UInt64(0)
         packet_count = _prepare_rhs_flat_work_packets!(
             packet_starts,
@@ -701,7 +999,7 @@ function _accumulate_dynamic_effectors_flat_batch!(
             count_items,
             p.shared_buffers,
             dynamic_effectors,
-            workers,
+            exec_plan.workers,
         )
         packet_count <= 0 && return nothing
         if needs_timing
@@ -712,9 +1010,10 @@ function _accumulate_dynamic_effectors_flat_batch!(
             packet_started_ns = needs_timing ? time_ns() : UInt64(0)
             @inbounds for item_idx in packet_starts[packet_idx]:packet_ends[packet_idx]
                 item = work_items[item_idx]
-                sat_idx = fld(item - 1, n_effectors) + 1
-                eff_idx = mod(item - 1, n_effectors) + 1
+                sat_idx = _constellation_node_sat_idx(item, exec_plan.n_effectors)
+                eff_idx = _constellation_node_eff_idx(item, exec_plan.n_effectors)
                 effector = dynamic_effectors[eff_idx]
+                partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector)) && continue
                 @views sc_view = sc_state[sat_idx]
                 state_sample = _wrench_method_available(effector) ?
                     _rhs_flat_state_sample_from_buffers(p.shared_buffers, spacecraft, sat_idx, orientation_sim) :
@@ -735,9 +1034,10 @@ function _accumulate_dynamic_effectors_flat_batch!(
     else
         SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_flat_queue, count_items, plan.allotment) do worker_id, item_idx
             item = work_items[item_idx]
-            sat_idx = fld(item - 1, n_effectors) + 1
-            eff_idx = mod(item - 1, n_effectors) + 1
+            sat_idx = _constellation_node_sat_idx(item, exec_plan.n_effectors)
+            eff_idx = _constellation_node_eff_idx(item, exec_plan.n_effectors)
             effector = dynamic_effectors[eff_idx]
+            partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector)) && return nothing
             @views sc_view = sc_state[sat_idx]
             state_sample = _wrench_method_available(effector) ?
                 _rhs_flat_state_sample_from_buffers(p.shared_buffers, spacecraft, sat_idx, orientation_sim) :
@@ -754,7 +1054,7 @@ function _accumulate_dynamic_effectors_flat_batch!(
     end
 
     @inbounds for sat_idx in 1:num_sats
-        for worker_id in 1:workers
+        for worker_id in 1:exec_plan.workers
             totals[1, sat_idx] += partials[1, sat_idx, worker_id]
             totals[2, sat_idx] += partials[2, sat_idx, worker_id]
             totals[3, sat_idx] += partials[3, sat_idx, worker_id]
@@ -766,7 +1066,6 @@ function _accumulate_dynamic_effectors_flat_batch!(
 
     if needs_timing
         elapsed_ns = Int64(time_ns() - started_ns)
-        active_sats = count(identity, p.is_active)
         _update_effector_cost_model!(
             p.shared_buffers,
             max(1, count_items),
@@ -780,7 +1079,7 @@ function _accumulate_dynamic_effectors_flat_batch!(
             use_threads=true,
             elapsed_ns=elapsed_ns,
         )
-        if use_packets
+        if exec_plan.use_packets
             feedback_started_ns = time_ns()
             _update_rhs_flat_packet_cost_model!(
                 p.shared_buffers,
@@ -1422,6 +1721,20 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
     dynamic_effectors = dynamics_model.dynamic_effectors
     spacecraft = dynamics_model.spacecraft
     p.shared_buffers.current_time[] = t
+    # Fast path: if no active satellite is in the atmosphere, all implicit drag
+    # terms are zero.  This eliminates GRAM calls and Newton Jacobian perturbations
+    # during coast arcs (the vast majority of an aerobraking mission).
+    any_in_atm = false
+    @inbounds for i in eachindex(p.is_active)
+        if p.is_active[i] && p.shared_buffers.in_atmosphere[i]
+            any_in_atm = true
+            break
+        end
+    end
+    if !any_in_atm
+        du .= 0.0
+        return nothing
+    end
     plan = _rhs_execution_plan(p.args, p, dynamic_effectors, length(spacecraft))
     if plan.mode == :flat_constellation_effector_queue
         return _spacecraft_dynamics_flat_constellation_effector_queue!(
@@ -1442,7 +1755,7 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(sc_state)
-            if !p.is_active[i]
+            if !p.is_active[i] || !p.shared_buffers.in_atmosphere[i]
                 sc_du[i] .= 0.0
                 continue
             end
@@ -1476,7 +1789,7 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
         end
     else
         @inbounds for i in eachindex(sc_state)
-            if !p.is_active[i]
+            if !p.is_active[i] || !p.shared_buffers.in_atmosphere[i]
                 sc_du[i] .= 0.0
                 continue
             end

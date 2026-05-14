@@ -185,14 +185,14 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
         @test cfg_invalid.parallel.outer_parallel_active === true
         @test cfg_invalid.parallel.parallel_policy_adaptive === false
         @test cfg_invalid.parallel.effector_parallel_mode == "on"
-        @test cfg_invalid.solver.mode == "gravity_backbone_split"
+        @test cfg_invalid.solver.solver_mode == :gravity_backbone_split
         @test cfg_invalid.solver.maxiters === nothing
-        @test cfg_invalid.solver.split_imex_solver == "kencarp58"
+        @test cfg_invalid.solver.split_imex_solver == :kencarp58
         @test cfg_invalid.solver.gravity_backbone_dt_s === nothing
         @test cfg_invalid.solver.multirate_fast_substeps == 8
         @test cfg_invalid.solver.multirate_slow_dt_s === nothing
-        @test cfg_invalid.solver.multirate_slow_solver == "vern9"
-        @test cfg_invalid.solver.multirate_fast_solver == "rodas5p"
+        @test cfg_invalid.solver.multirate_slow_solver == :tsit5
+        @test cfg_invalid.solver.multirate_fast_solver == :rodas5p
         @test cfg_invalid.runtime_policy.warn_normalize === true
         @test cfg_invalid.runtime_policy.allow_typed_normalize === true
         @test cfg_invalid.runtime_policy.gram_per_sat_instances === false
@@ -239,14 +239,14 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
                 thermal_callback_parallel_mode="manual"
             ),
             solver=SimulationEngine.SolverConfig(
-                mode="gravity_backbone_split",
+                solver_mode=:gravity_backbone_split,
                 maxiters=123,
-                split_imex_solver="kencarp47",
+                split_imex_solver=:kencarp47,
                 gravity_backbone_dt_s=6.5,
                 multirate_fast_substeps=11,
                 multirate_slow_dt_s=14.0,
-                multirate_slow_solver="vern9",
-                multirate_fast_solver="rodas5p"
+                multirate_slow_solver=:tsit5,
+                multirate_fast_solver=:rodas5p
             ),
             runtime_policy=SimulationEngine.RuntimePolicyConfig(
                 warn_normalize=false,

@@ -15,6 +15,7 @@ julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=
 What to read next:
 
 - [CLI](cli.md)
+- [Parallel Execution](user/parallel_execution.md)
 - [Recipes](user/recipes.md)
 - [Maintainer Overview](maintainer/index.md)
 
@@ -56,7 +57,10 @@ The parallel-policy persistent hint layer is controlled by:
 
 Recommended practice:
 
-1. Set a stable `SPACEAGORA_PARALLEL_PROFILE`.
+1. Set stable route and policy controls for the run, such as
+   `SPACEAGORA_PERF_PARALLEL_BACKEND`,
+   `SPACEAGORA_PERF_OUTER_ROUTE_ADAPTIVE`, and
+   `SPACEAGORA_PARALLEL_POLICY_ADAPTIVE`.
 2. Set a stable `SPACEAGORA_PERF_MACHINE_LABEL`.
 3. Set an explicit `SPACEAGORA_PARALLEL_POLICY_STATE_PATH` so repeated jobs
    reuse the same hint file intentionally instead of relying on the default

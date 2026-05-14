@@ -27,7 +27,7 @@ using Reexport
 export Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters
 export SaveCache, SaveData
 export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, SpiceRuntimeCounters, SpiceRhsMemo
-export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
+export GramTrackCache, VacuumPredictedGRAMCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
     @kwdef struct Mission
         e::Int64 = 0
         d::Int64 = 0
@@ -520,6 +520,25 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
         winds::Vector{SVector{3, Float64}}
     end
 
+    # Vacuum-predicted GRAM density cache.
+    # Propagates a drag-free (two-body + J2) trajectory, samples the density model
+    # at N evenly-spaced knots, and fits natural cubic splines to log(ρ) and T vs
+    # time.  Subsequent density queries interpolate from the splines when the actual
+    # trajectory stays within a configurable position deviation of the vacuum prediction.
+    mutable struct VacuumPredictedGRAMCache
+        valid::Bool
+        t0::Float64                         # time of first spline knot
+        t1::Float64                         # time of last spline knot
+        h::Float64                          # uniform knot spacing in seconds
+        log_rhos::Vector{Float64}           # log(ρ) at knots (spline a-coefficients)
+        Ms_rho::Vector{Float64}             # natural cubic spline second derivatives for log(ρ)
+        Ts::Vector{Float64}                 # temperature at knots
+        Ms_T::Vector{Float64}              # natural cubic spline second derivatives for T
+        winds::Vector{SVector{3, Float64}}  # wind vectors at knots (linear interpolation)
+        vac_alts::Vector{Float64}           # vacuum-predicted altitude at each knot
+        vac_positions::Vector{SVector{3, Float64}} # vacuum-predicted inertial position at each knot
+    end
+
     struct AeroScratchWorkspace
         thread_force::Vector{MVector{3, Float64}}
         thread_cl::Vector{Float64}
@@ -552,12 +571,14 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
         densities::Vector{Float64} = zeros(Float64, N_sats)
         temperatures::Vector{Float64} = ones(Float64, N_sats)
         winds::Vector{SVector{3,Float64}} = [SVector{3,Float64}(0.0, 0.0, 0.0) for _ in 1:N_sats]
+        density_sample_t::Vector{Float64} = fill(NaN, N_sats)
         density_batch_altitudes::Vector{Float64} = zeros(Float64, N_sats)
         density_batch_latitudes::Vector{Float64} = zeros(Float64, N_sats)
         density_batch_longitudes::Vector{Float64} = zeros(Float64, N_sats)
         heat_rates::Vector{Vector{Float64}} = [Float64[] for _ in 1:N_sats]
         density_models::Vector{_PerSatDensityModel} = _PerSatDensityModel[]
         gram_density_cache::Vector{Union{Nothing, GramTrackCache}} = _typed_nothing_vector(GramTrackCache, N_sats)
+        vacuum_gram_caches::Vector{Union{Nothing, VacuumPredictedGRAMCache}} = _typed_nothing_vector(VacuumPredictedGRAMCache, N_sats)
         gram_isolated_pool_models::Vector{GRAMAtmosphereModel} = GRAMAtmosphereModel[]
         gram_isolated_pool_locks::Vector{ReentrantLock} = ReentrantLock[]
         harmonics_workspaces::Vector{Union{Nothing, _HarmonicsWorkspaceMap}} = _typed_nothing_vector(_HarmonicsWorkspaceMap, N_sats)
@@ -611,6 +632,14 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
         rhs_atmosphere_prefilled::Base.RefValue{Bool} = Ref(false)
         rhs_solar_prefilled::Base.RefValue{Bool} = Ref(false)
         rhs_harmonics_batch_pool::Base.RefValue{Any} = Ref{Any}(nothing)
+        # Per-satellite atmosphere presence flag, maintained by get_drag_state_callback.
+        # Initialised false (above atmosphere); spacecraft_dynamics_implicit_atmosphere!
+        # short-circuits to du=0 when false, eliminating GRAM calls during coast arcs.
+        in_atmosphere::Vector{Bool} = fill(false, N_sats)
+        # Pre-solve calibration override: when non-nothing, _rhs_execution_plan returns
+        # this plan directly, bypassing all heuristic routing logic.  Set by the
+        # auto-calibration sweep in rhs_calibration.jl and cleared after the solve.
+        rhs_plan_override::Base.RefValue{Any} = Ref{Any}(nothing)
     end
 
     # SaveData is an output/persistence boundary and intentionally remains heterogeneous.

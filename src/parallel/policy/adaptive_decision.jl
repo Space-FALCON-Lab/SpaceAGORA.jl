@@ -9,6 +9,7 @@
     source::Symbol=:other
 )
     budget = effective_inner_thread_budget()
+    auto_budget_allowed = mode != :auto || budget >= auto_thread_min_budget(source)
     adaptive_enabled = (mode == :auto) && adaptive_policy_enabled()
     measured_reward = adaptive_enabled && persistent_hints_enabled() && adaptive_measured_reward_enabled()
     bootstrap_threads = adaptive_enabled && adaptive_bootstrap_threads()
@@ -80,6 +81,8 @@
 
     use_threads =
         if budget <= 1 || num_items <= 1
+            false
+        elseif !auto_budget_allowed
             false
         elseif mode == :off
             false

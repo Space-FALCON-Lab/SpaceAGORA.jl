@@ -148,6 +148,40 @@ function threaded_foreach_worker_persistent(
     return threaded_foreach_worker_persistent(source, num_items, allotment, f)
 end
 
+# Spin-barrier variant: workers spin-poll an atomic generation counter instead of
+# sleeping on a Channel. Dispatch overhead is ~10-50 ns vs ~1-5 µs for channels,
+# allowing the harmonics SIMD batch to scale to 32-128+ threads.
+# Opt-in via SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER=1.
+@inline harmonics_batch_spin_barrier_enabled()::Bool =
+    parse_bool_env("SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER", false)
+
+function threaded_foreach_worker_spin(
+    source::Symbol,
+    num_items::Int,
+    allotment::Int,
+    f::F,
+) where {F <: Function}
+    num_items <= 0 && return nothing
+    workers = _thread_worker_count(num_items, allotment)
+    if workers <= 1
+        @inbounds for idx in 1:num_items
+            f(1, idx)
+        end
+        return nothing
+    end
+    pool = _spin_barrier_pool_for(source)
+    return _spin_barrier_dispatch!(pool, num_items, workers, f)
+end
+
+function threaded_foreach_worker_spin(
+    f::F,
+    source::Symbol,
+    num_items::Int,
+    allotment::Int,
+) where {F <: Function}
+    return threaded_foreach_worker_spin(source, num_items, allotment, f)
+end
+
 @inline function _thread_worker_count(num_items::Int, allotment::Int)::Int
     num_items <= 0 && return 1
     budget = effective_inner_thread_budget()

@@ -57,6 +57,13 @@ function _ts_project()::String
     return _THREAD_SCALE_REPO_ROOT
 end
 
+function _ts_sysimage()::Union{Nothing, String}
+    raw = _ts_env("SPACEAGORA_THREAD_SCALE_SYSIMAGE", joinpath(_THREAD_SCALE_REPO_ROOT, "SpaceAGORA.so"))
+    isempty(raw) && return nothing
+    path = abspath(raw)
+    return isfile(path) ? path : nothing
+end
+
 function _ts_find_latest_raw_csv(outdir::String, profile::String)::Union{Nothing, String}
     prefix = "runtime_raw_$(profile)_"
     candidates = [
@@ -83,13 +90,24 @@ function _ts_run_one(
     println("[thread-scaling] threads=$(n_threads)  case=$(case)  profile=$(profile)")
 
     julia_bin = Base.julia_cmd().exec[1]
-    cmd = Cmd([
+    gc_threads = let raw = strip(get(ENV, "SPACEAGORA_GC_THREADS", ""))
+        isempty(raw) ? max(2, div(n_threads, 4)) : clamp(parse(Int, raw), 1, 128)
+    end
+    cmd_parts = String[
         julia_bin,
         "--threads=$(n_threads)",
+        "--gcthreads=$(gc_threads),1",
+    ]
+    sysimage = _ts_sysimage()
+    if sysimage !== nothing
+        push!(cmd_parts, "--sysimage=$(sysimage)")
+    end
+    append!(cmd_parts, String[
         "--project=$(project)",
         _THREAD_SCALE_RUNTIME_SCRIPT,
         profile,
     ])
+    cmd = Cmd(cmd_parts)
 
     env_pairs = [
         "SPACEAGORA_PERF_CASES"                   => case,
@@ -99,6 +117,8 @@ function _ts_run_one(
         "SPACEAGORA_PERF_EXCLUDE_ENTRY_SCENARIOS" => "1",
         "SPACEAGORA_PERF_PARALLEL_BACKEND"        => "none",
         "SPACEAGORA_INNER_THREAD_BUDGET"          => "0",
+        "SPACEAGORA_PERF_WARMUP_LOGS"             => "1",
+        "SPACEAGORA_PERF_WARMUP_MISSION_SCALE"    => get(ENV, "SPACEAGORA_PERF_WARMUP_MISSION_SCALE", "1.0"),
     ]
 
     started_ns = time_ns()
@@ -330,11 +350,21 @@ function _ts_write_report(
         println(io, "- Case: `$(case)`")
         println(io, "- Thread counts measured: $(join(thread_counts, ", "))")
         println(io, "- Host CPU threads available: `$(Sys.CPU_THREADS)`")
+        sysimage = _ts_sysimage()
+        println(io, "- Sysimage: `$(sysimage === nothing ? "none" : sysimage)`")
         println(io)
         println(io, "## Scaling Table")
         println(io)
         println(io, "- `speedup_vs_1t`: 1-thread mean solve time / N-thread mean solve time.")
         println(io, "- `parallel_efficiency_pct`: `100 × speedup / n_threads`. 100% = perfect linear scaling.")
+        println(io)
+        println(io, "## Interpretation")
+        println(io)
+        println(io, "This study changes the Julia thread pool size for a single simulation solve; it does not run multiple independent solves concurrently. `SPACEAGORA_INNER_THREAD_BUDGET=0` means the inner runtime may use the full Julia thread pool for that subprocess.")
+        println(io)
+        println(io, "For the default 1024-spacecraft gravity case, higher thread counts are expected to flatten once the parallel RHS work is no longer the dominant cost. The ODE integrator still advances steps serially, performs adaptive step control and saving outside the satellite loop, and pays a synchronization/scheduling cost at each RHS evaluation. The gravity batch itself is also a compact, vectorized kernel, so after the useful satellite-loop parallelism is saturated, additional threads mostly add barrier/cache/memory-bandwidth pressure rather than reducing wall time.")
+        println(io)
+        println(io, "If the table shows approximately even solve times across larger thread counts, interpret that as a saturation point for this workload and machine, not as evidence that the requested thread count was ignored. Check the raw CSV columns such as `policy_threads_enabled_total`, `policy_decisions_total`, `accepted_steps`, and `rejected_steps` to distinguish active threaded execution from solver-step-count differences.")
         println(io)
 
         col_order = [
@@ -370,7 +400,13 @@ function _ts_write_report(
                 "SPACEAGORA_PERF_INCLUDE_MISSION_TIME_SWEEP=0 " *
                 "SPACEAGORA_PERF_EXCLUDE_ENTRY_SCENARIOS=1 " *
                 "SPACEAGORA_PERF_PARALLEL_BACKEND=none " *
-                "julia --threads=$(n) --project=. benchmarks/studies/performance_runtime_analysis.jl $(profile)"
+                "SPACEAGORA_INNER_THREAD_BUDGET=0 " *
+                "SPACEAGORA_PERF_WARMUP_LOGS=1 " *
+                "SPACEAGORA_PERF_WARMUP_MISSION_SCALE=$(get(ENV, "SPACEAGORA_PERF_WARMUP_MISSION_SCALE", "1.0")) " *
+                (sysimage === nothing ? "" : "SPACEAGORA_THREAD_SCALE_SYSIMAGE=$(sysimage) ") *
+                "julia --threads=$(n) " *
+                (sysimage === nothing ? "" : "--sysimage=$(sysimage) ") *
+                "--project=. benchmarks/studies/performance_runtime_analysis.jl $(profile)"
             )
         end
         println(io, "```")
@@ -400,6 +436,9 @@ function main_thread_scaling()
     println("Case:          $(case)")
     println("Profile:       $(profile)")
     println("Thread counts: $(join(thread_counts, ", "))")
+    println("Warmup scale:  $(get(ENV, "SPACEAGORA_PERF_WARMUP_MISSION_SCALE", "1.0"))")
+    sysimage = _ts_sysimage()
+    println("Sysimage:      $(sysimage === nothing ? "none" : sysimage)")
     println("Output:        $(outdir)")
     println("Project:       $(project)")
 

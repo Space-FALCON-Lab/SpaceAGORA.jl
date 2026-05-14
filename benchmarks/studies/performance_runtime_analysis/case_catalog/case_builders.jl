@@ -656,6 +656,7 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
     sc_mixed_body12 = make_constellation(planet, 12; with_panel=false)
     sc_harmonics_srp16 = make_constellation(planet, 16; with_panel=false)
     sc_aero_surrogate16 = make_constellation(planet, 16; with_panel=false)
+    sc_aero_surrogate64 = make_constellation(planet, 64; with_panel=false)
     effector_stress_effectors = (
         InverseSquaredJ2GravityModel(),
         SolarRadiationPressureModel(1.2, 16.0),
@@ -1007,6 +1008,45 @@ function build_cases(spec::ProfileSpec, planet::Earth)::Vector{BenchmarkCase}
                 dynamic_effectors=multi_scaling_effectors,
                 density_model=deepcopy(earth_gram_surrogate_density),
                 dt_max_orbit=20.0
+            ),
+            run_in_quick=false
+        ),
+        BenchmarkCase(
+            name="multi_64_aero_gram",
+            category="atmosphere_heavy",
+            description="64 spacecraft with L20 harmonics + Sun/Moon third-body gravity + SRP + aero effectors and GRAM surrogate density from file",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=sc_aero_surrogate64,
+                mission_time_s=spec.mission_short_s,
+                orientation_sim=false,
+                dynamic_effectors=(
+                    harmonics20,
+                    nbody_sun_moon,
+                    SolarRadiationPressureModel(1.2, 12.0),
+                    AerodynamicCoefficientfM()
+                ),
+                density_model=deepcopy(earth_gram_surrogate_density),
+                dt_max_orbit=10.0
+            ),
+            run_in_quick=false
+        ),
+        BenchmarkCase(
+            name="multi_64_nbody_srp",
+            category="atmosphere_heavy",
+            description="64 spacecraft with L20 harmonics + Sun/Moon third-body gravity + SRP, no aerodynamics/GRAM — isolates NBody/SRP/harmonics scaling from atmosphere cost",
+            args_template=build_config(
+                planet=planet,
+                spacecraft=make_constellation(planet, 64; with_panel=false),
+                mission_time_s=spec.mission_short_s,
+                orientation_sim=false,
+                dynamic_effectors=(
+                    harmonics20,
+                    nbody_sun_moon,
+                    SolarRadiationPressureModel(1.2, 12.0),
+                ),
+                density_model=NoAtmosphereModel(),
+                dt_max_orbit=10.0
             ),
             run_in_quick=false
         ),

@@ -4,6 +4,7 @@ module SimulationEngine
 using ..SimulationModel
 import ..RuntimeServices
 using SPICE
+using SparseArrays
 
 include(joinpath(@__DIR__, "config", "parallel_config.jl"))
 include(joinpath(@__DIR__, "config", "solver_config.jl"))
@@ -19,6 +20,7 @@ include(joinpath(@__DIR__, "state_access.jl"))
 include(joinpath(@__DIR__, "setup.jl"))
 include(joinpath(@__DIR__, "solver_policy.jl"))
 include(joinpath(@__DIR__, "dynamics_rhs.jl"))
+include(joinpath(@__DIR__, "rhs_calibration.jl"))
 include(joinpath(@__DIR__, "persistence.jl"))
 include(joinpath(@__DIR__, "resume_checkpoint.jl"))
 include(joinpath(@__DIR__, "reporting.jl"))
@@ -32,6 +34,7 @@ export ArtifactConfig
 export SimulationEngineConfig
 export simulation_engine_config_from_env
 export run_simulation
+export SolverIntegratorCache
 export prewarm_nbody_ephemeris_cache
 export load_nbody_ephemeris_cache!
 

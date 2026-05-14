@@ -91,7 +91,7 @@ end
         caches,
     )
     if write_buffers
-        callbacks._write_density_buffers!(p, sat_idx, rho, T, wind_vec)
+        callbacks._write_density_buffers!(p, sat_idx, rho, T, wind_vec, t)
     end
     return AtmosphereSample(rho, T, wind_vec)
 end
@@ -108,7 +108,15 @@ end
     )
 end
 
+@inline function _buffered_atmosphere_valid(p, sat_idx::Int, t::Float64)::Bool
+    times = p.shared_buffers.density_sample_t
+    return sat_idx <= length(times) && times[sat_idx] == t
+end
+
 @inline function sample_buffered_atmosphere(x, p, sat_idx::Int, t::Float64)::AtmosphereSample
+    if !_buffered_atmosphere_valid(p, sat_idx, t)
+        return sample_atmosphere(x, p, sat_idx, t; write_buffers=true)
+    end
     rho = sat_idx <= length(p.shared_buffers.densities) ? p.shared_buffers.densities[sat_idx] : 0.0
     T = sat_idx <= length(p.shared_buffers.temperatures) ? p.shared_buffers.temperatures[sat_idx] : p.args.environment_model.planet.T_ref
     wind_vec = sat_idx <= length(p.shared_buffers.winds) ? p.shared_buffers.winds[sat_idx] : SVector{3, Float64}(0.0, 0.0, 0.0)

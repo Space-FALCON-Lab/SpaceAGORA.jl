@@ -17,7 +17,7 @@ using ..DynamicEffectors.AerodynamicEffectors: AerodynamicCoefficientConstant, A
 using ..GravityEffectors: InverseSquaredJ2GravityModel, j2_secular_rates
 using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
 using ..ConfigTypes: SaveData
-import ..ConfigTypes: GramTrackCache
+import ..ConfigTypes: GramTrackCache, VacuumPredictedGRAMCache
 using ..ControlHooks: calcControlEffect!
 using ..GuidanceHooks: calcGuidanceEffect!
 using ..NavigationHooks: calcNavigationEffect!

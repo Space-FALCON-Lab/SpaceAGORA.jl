@@ -203,11 +203,15 @@ end
     return α_body, 0.0, nothing
 end
 
+const _AERO_ZERO3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+const _AERO_ZERO5 = (_AERO_ZERO3, _AERO_ZERO3, _AERO_ZERO3, _AERO_ZERO3, _AERO_ZERO3)
+
+# Returns (force_ii, torque_body, drag_ii, lift_ii, cross_ii) all in the inertial frame.
 function _aero_pure_wrench(
     coefficient_mode::Symbol,
     x::StateSample,
     env::EnvironmentSample,
-)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+)::NTuple{5, SVector{3, Float64}}
     x.spacecraft === nothing && throw(ArgumentError("Aerodynamic wrench evaluation requires StateSample.spacecraft."))
     planet_frame = env.planet_frame
     atmosphere = env.atmosphere
@@ -218,7 +222,7 @@ function _aero_pure_wrench(
     T = atmosphere.temperature_k
     wind = atmosphere.wind_pp
     if !isfinite(rho) || rho <= eps(Float64) || !isfinite(T) || T <= 0.0
-        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+        return _AERO_ZERO5
     end
 
     spacecraft = x.spacecraft
@@ -235,7 +239,7 @@ function _aero_pure_wrench(
     h_pp = cross(planet_frame.pos_pp, vel_pp)
     h_pp_mag = norm(h_pp)
     if !isfinite(h_pp_mag) || h_pp_mag <= eps(Float64)
-        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+        return _AERO_ZERO5
     end
 
     bank_angle = deg2rad(0.0)
@@ -245,7 +249,7 @@ function _aero_pure_wrench(
     vel_pp_rw = vel_pp + wind_pp
     vel_pp_rw_mag = norm(vel_pp_rw)
     if vel_pp_rw_mag <= eps(Float64)
-        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+        return _AERO_ZERO5
     end
 
     vel_pp_rw_hat = vel_pp_rw / vel_pp_rw_mag
@@ -259,8 +263,11 @@ function _aero_pure_wrench(
     lift_scale = q * cos(bank_angle)
     θ_body = acos(clamp(vel_pp_rw[1] / vel_pp_rw_mag, -1.0, 1.0))
 
-    force_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+    force_ii  = MVector{3, Float64}(0.0, 0.0, 0.0)
     torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+    drag_ii   = MVector{3, Float64}(0.0, 0.0, 0.0)
+    lift_ii   = MVector{3, Float64}(0.0, 0.0, 0.0)
+    cross_ii  = MVector{3, Float64}(0.0, 0.0, 0.0)
     @inbounds for body in bodies
         α_body, β_body, R_body_to_inertial = _aero_link_angles(spacecraft, body, root_index, orientation_sim, vel_pi, θ_body)
         CL_body, CD_body, CS_body = if coefficient_mode == :fm
@@ -273,14 +280,26 @@ function _aero_pure_wrench(
         drag_pp_body = q * CD_body * body.ref_area * drag_pp_hat
         lift_pp_body = lift_scale * CL_body * body.ref_area * lift_pp_hat
         cross_pp_body = orientation_sim ? (q * CS_body * body.ref_area * cross_pp_hat) : SVector{3, Float64}(0.0, 0.0, 0.0)
-        force_body = l_pi_t * (drag_pp_body + lift_pp_body + cross_pp_body)
-        force_ii .+= force_body
+        drag_ii_body  = l_pi_t * drag_pp_body
+        lift_ii_body  = l_pi_t * lift_pp_body
+        cross_ii_body = l_pi_t * cross_pp_body
+        force_ii  .+= drag_ii_body + lift_ii_body + cross_ii_body
+        drag_ii   .+= drag_ii_body
+        lift_ii   .+= lift_ii_body
+        cross_ii  .+= cross_ii_body
         if orientation_sim && !(R_body_to_inertial === nothing)
+            force_body = SVector{3, Float64}(drag_ii_body + lift_ii_body + cross_ii_body)
             torque_body .+= cross(SVector{3, Float64}(body.r), R_body_to_inertial' * force_body)
         end
     end
 
-    return SVector{3, Float64}(force_ii), SVector{3, Float64}(torque_body)
+    return (
+        SVector{3, Float64}(force_ii),
+        SVector{3, Float64}(torque_body),
+        SVector{3, Float64}(drag_ii),
+        SVector{3, Float64}(lift_ii),
+        SVector{3, Float64}(cross_ii),
+    )
 end
 
 @inline function wrench(
@@ -289,7 +308,8 @@ end
     env::EnvironmentSample,
     t::Float64,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    return _aero_pure_wrench(:constant, x, env)
+    force, torque, _, _, _ = _aero_pure_wrench(:constant, x, env)
+    return force, torque
 end
 
 @inline function wrench(
@@ -298,7 +318,8 @@ end
     env::EnvironmentSample,
     t::Float64,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    return _aero_pure_wrench(:fm, x, env)
+    force, torque, _, _, _ = _aero_pure_wrench(:fm, x, env)
+    return force, torque
 end
 
 @inline function wrench(
@@ -307,7 +328,47 @@ end
     env::EnvironmentSample,
     t::Float64,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    return _aero_pure_wrench(:constant, x, env)
+    force, torque, _, _, _ = _aero_pure_wrench(:constant, x, env)
+    return force, torque
+end
+
+@inline function wrench_caching!(
+    model::AerodynamicCoefficientConstant,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+    p::ODEParams,
+    sat_idx::Int,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:constant, x, env)
+    _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
+    return force, torque
+end
+
+@inline function wrench_caching!(
+    model::AerodynamicCoefficientfM,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+    p::ODEParams,
+    sat_idx::Int,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:fm, x, env)
+    _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
+    return force, torque
+end
+
+@inline function wrench_caching!(
+    model::AerodynamicCoefficientNoBallisticFlight,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+    p::ODEParams,
+    sat_idx::Int,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:constant, x, env)
+    _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
+    return force, torque
 end
 
 # Calculate force/torque functions

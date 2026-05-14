@@ -29,6 +29,23 @@ julia --project=. examples/AGORA_Basic_Quickstart.jl
 julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
 ```
 
+## Run a Monte Carlo example script with threads
+
+```text
+julia --project=. --threads=8 examples/AGORA_Earth_MonteCarlo.jl
+```
+
+Inside the script:
+
+```julia
+using SpaceAGORA
+
+result = run_monte_carlo(1:100; threads=8) do seed
+    args = make_config_for_seed(seed)
+    run_simulation(args)
+end
+```
+
 ## Inspect local assets
 
 ```text

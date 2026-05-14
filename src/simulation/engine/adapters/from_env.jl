@@ -10,6 +10,116 @@ function _parse_bool(raw, default::Bool)
     return default
 end
 
+function _parse_solver_mode_sym(raw::String)::Symbol
+    mode = lowercase(strip(raw))
+    mode in ("tsit5", "default", "") && return :tsit5
+    mode in ("symplectic", "kahanli8", "verlet") && return :symplectic
+    mode in ("gravity_backbone_split", "gravity-backbone-split", "gravity_backbone", "gravity-backbone") && return :gravity_backbone_split
+    mode in ("auto_stiff", "auto-stiff", "autostiff", "auto") && return :auto_stiff
+    mode in ("rodas5p", "rodas", "stiff") && return :rodas5p
+    mode in ("split_imex", "split-imex", "split", "imex") && return :split_imex
+    mode in ("multirate", "multirate_split", "split_multirate", "mr") && return :multirate
+    mode in ("dp8", "dormandprince8", "dop8") && return :dp8
+    throw(ArgumentError(
+        "Unsupported SPACEAGORA_SOLVER_MODE='$raw'. Use one of: tsit5, symplectic, gravity_backbone_split, dp8, auto_stiff, rodas5p, split_imex, multirate."
+    ))
+end
+
+function _parse_multirate_solver_sym(raw::String, env_name::String)::Symbol
+    mode = lowercase(strip(raw))
+    mode in ("tsit5", "tsit", "default") && return :tsit5
+    mode in ("auto_stiff", "auto-stiff", "autostiff", "auto") && return :auto_stiff
+    mode in ("rodas5p", "rodas", "stiff") && return :rodas5p
+    mode in ("kencarp4", "ken4") && return :kencarp4
+    mode in ("dp8", "dormandprince8", "dop8") && return :dp8
+    throw(ArgumentError(
+        "Unsupported $(env_name)='$raw'. Use one of: tsit5, dp8, auto_stiff, rodas5p, kencarp4."
+    ))
+end
+
+function _parse_split_imex_solver_sym(raw::String)::Symbol
+    mode = lowercase(strip(raw))
+    mode in ("kencarp4", "ken4", "default") && return :kencarp4
+    mode in ("kencarp47", "ken47") && return :kencarp47
+    mode in ("kencarp58", "ken58") && return :kencarp58
+    throw(ArgumentError(
+        "Unsupported SPACEAGORA_SPLIT_IMEX_SOLVER='$raw'. Use one of: kencarp4, kencarp47, kencarp58."
+    ))
+end
+
+"""
+    _solver_config_from_env([env_get]) -> SolverConfig
+
+Build a typed `SolverConfig` from `SPACEAGORA_SOLVER_*` environment variables.
+`env_get(name, default)` defaults to `_engine_env_get`, which respects any active
+`SimulationEngineConfig` overrides.
+"""
+function _parse_float_opt(raw::String)::Union{Nothing, Float64}
+    s = strip(raw)
+    isempty(s) && return nothing
+    v = tryparse(Float64, s)
+    (v !== nothing && v > 0.0) ? v : nothing
+end
+
+function _solver_config_from_env(env_get=_engine_env_get)::SolverConfig
+    solver_mode = try
+        _parse_solver_mode_sym(env_get("SPACEAGORA_SOLVER_MODE", "tsit5"))
+    catch
+        :tsit5
+    end
+
+    raw_maxiters = strip(env_get("SPACEAGORA_SOLVER_MAXITERS", ""))
+    maxiters = if isempty(raw_maxiters)
+        nothing
+    else
+        v = tryparse(Int, raw_maxiters)
+        (v !== nothing && v > 0) ? v : nothing
+    end
+
+    symplectic_dt_s = _parse_float_opt(env_get("SPACEAGORA_SYMPLECTIC_DT_S", ""))
+    gravity_backbone_dt_s = _parse_float_opt(env_get("SPACEAGORA_GRAVITY_BACKBONE_DT_S", ""))
+
+    split_imex_solver = try
+        _parse_split_imex_solver_sym(env_get("SPACEAGORA_SPLIT_IMEX_SOLVER", "kencarp4"))
+    catch
+        :kencarp4
+    end
+
+    multirate_slow_dt_s = _parse_float_opt(env_get("SPACEAGORA_MULTIRATE_SLOW_DT_S", ""))
+
+    multirate_fast_substeps = let v = tryparse(Int, env_get("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS", "8"))
+        (v !== nothing && v > 0) ? v : 8
+    end
+
+    multirate_slow_solver = try
+        _parse_multirate_solver_sym(env_get("SPACEAGORA_MULTIRATE_SLOW_SOLVER", "tsit5"), "SPACEAGORA_MULTIRATE_SLOW_SOLVER")
+    catch
+        :tsit5
+    end
+    multirate_fast_solver = try
+        _parse_multirate_solver_sym(env_get("SPACEAGORA_MULTIRATE_FAST_SOLVER", "auto_stiff"), "SPACEAGORA_MULTIRATE_FAST_SOLVER")
+    catch
+        :auto_stiff
+    end
+
+    auto_stiff_gravity_tsit5 = SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5", true)
+    auto_stiff_switch_max = SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_AUTO_STIFF_SWITCH_MAX", 50)
+
+    return SolverConfig(
+        solver_mode=solver_mode,
+        maxiters=maxiters,
+        symplectic_dt_s=symplectic_dt_s,
+        gravity_backbone_dt_s=gravity_backbone_dt_s,
+        split_imex_solver=split_imex_solver,
+        multirate_slow_dt_s=multirate_slow_dt_s,
+        multirate_fast_substeps=multirate_fast_substeps,
+        multirate_slow_solver=multirate_slow_solver,
+        multirate_fast_solver=multirate_fast_solver,
+        auto_stiff_gravity_tsit5=auto_stiff_gravity_tsit5,
+        auto_stiff_switch_max=auto_stiff_switch_max,
+    )
+end
+
 """
     simulation_engine_config_from_env([env=ENV]) -> SimulationEngineConfig
 
@@ -40,41 +150,8 @@ function simulation_engine_config_from_env(env::AbstractDict{<:Any, <:Any}=ENV):
         thermal_callback_parallel_mode=String(get(env, "SPACEAGORA_THERMAL_CALLBACK_PARALLEL", "auto"))
     )
 
-    raw_maxiters = strip(String(get(env, "SPACEAGORA_SOLVER_MAXITERS", "")))
-    maxiters = isempty(raw_maxiters) ? nothing : try
-        parse(Int, raw_maxiters)
-    catch
-        nothing
-    end
-
-    raw_mr_dt = strip(String(get(env, "SPACEAGORA_MULTIRATE_SLOW_DT_S", "")))
-    mr_dt = isempty(raw_mr_dt) ? nothing : try
-        parse(Float64, raw_mr_dt)
-    catch
-        nothing
-    end
-
-    raw_backbone_dt = strip(String(get(env, "SPACEAGORA_GRAVITY_BACKBONE_DT_S", "")))
-    backbone_dt = isempty(raw_backbone_dt) ? nothing : try
-        parse(Float64, raw_backbone_dt)
-    catch
-        nothing
-    end
-
-    solver = SolverConfig(
-        mode=String(get(env, "SPACEAGORA_SOLVER_MODE", "")),
-        maxiters=maxiters,
-        split_imex_solver=String(get(env, "SPACEAGORA_SPLIT_IMEX_SOLVER", "kencarp4")),
-        gravity_backbone_dt_s=backbone_dt,
-        multirate_fast_substeps=try
-            parse(Int, String(get(env, "SPACEAGORA_MULTIRATE_FAST_SUBSTEPS", "8")))
-        catch
-            8
-        end,
-        multirate_slow_dt_s=mr_dt,
-        multirate_slow_solver=String(get(env, "SPACEAGORA_MULTIRATE_SLOW_SOLVER", "tsit5")),
-        multirate_fast_solver=String(get(env, "SPACEAGORA_MULTIRATE_FAST_SOLVER", "auto_stiff"))
-    )
+    env_get = (name, default) -> String(get(env, name, default))
+    solver = _solver_config_from_env(env_get)
 
     runtime_policy = RuntimePolicyConfig(
         warn_normalize=_parse_bool(get(env, "SPACEAGORA_WARN_NORMALIZE", nothing), true),
@@ -133,15 +210,18 @@ function _engine_env_overrides(config::SimulationEngineConfig)::Dict{String, Str
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => config.parallel.density_callback_parallel_mode,
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => config.parallel.control_callback_parallel_mode,
         "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => config.parallel.thermal_callback_parallel_mode,
-        "SPACEAGORA_SPLIT_IMEX_SOLVER" => config.solver.split_imex_solver,
+        "SPACEAGORA_SOLVER_MODE" => string(config.solver.solver_mode),
+        "SPACEAGORA_SPLIT_IMEX_SOLVER" => string(config.solver.split_imex_solver),
         "SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => string(config.solver.multirate_fast_substeps),
-        "SPACEAGORA_MULTIRATE_SLOW_SOLVER" => config.solver.multirate_slow_solver,
-        "SPACEAGORA_MULTIRATE_FAST_SOLVER" => config.solver.multirate_fast_solver
+        "SPACEAGORA_MULTIRATE_SLOW_SOLVER" => string(config.solver.multirate_slow_solver),
+        "SPACEAGORA_MULTIRATE_FAST_SOLVER" => string(config.solver.multirate_fast_solver),
+        "SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5" => _env_bool(config.solver.auto_stiff_gravity_tsit5),
+        "SPACEAGORA_AUTO_STIFF_SWITCH_MAX" => string(config.solver.auto_stiff_switch_max),
     )
 
     !isempty(config.parallel.profile) && (overrides["SPACEAGORA_PARALLEL_PROFILE"] = config.parallel.profile)
-    !isempty(config.solver.mode) && (overrides["SPACEAGORA_SOLVER_MODE"] = config.solver.mode)
     !(config.solver.maxiters === nothing) && (overrides["SPACEAGORA_SOLVER_MAXITERS"] = string(config.solver.maxiters))
+    !(config.solver.symplectic_dt_s === nothing) && (overrides["SPACEAGORA_SYMPLECTIC_DT_S"] = string(config.solver.symplectic_dt_s))
     !(config.solver.gravity_backbone_dt_s === nothing) && (overrides["SPACEAGORA_GRAVITY_BACKBONE_DT_S"] = string(config.solver.gravity_backbone_dt_s))
     !(config.solver.multirate_slow_dt_s === nothing) && (overrides["SPACEAGORA_MULTIRATE_SLOW_DT_S"] = string(config.solver.multirate_slow_dt_s))
 

@@ -118,7 +118,8 @@ function measure_case(
     repeat_idx::Int;
     seed::Union{Missing, Int}=missing,
     attempt::Int=1,
-    plan::Union{Nothing, ParallelPriorityPlan}=nothing
+    plan::Union{Nothing, ParallelPriorityPlan}=nothing,
+    solver_cache=nothing
 )
     timestamp_utc = string(now(UTC))
     args_meta = case.args_template
@@ -157,7 +158,8 @@ function measure_case(
                 profile_name=profile_name,
                 solver_mode_override=case.solver_mode_override,
                 split_imex_solver_override=case.split_imex_solver_override,
-                entry_target_count_override=case.entry_target_count_override
+                entry_target_count_override=case.entry_target_count_override,
+                solver_cache=solver_cache
             )
             (ok=true, result=result, err=nothing, bt=nothing)
         catch err
@@ -389,12 +391,70 @@ function measure_case(
     )
 end
 
-function run_warmup(case::BenchmarkCase, warmup::Int, profile_name::String)
+@inline function _perf_optional_nonnegative_int_env(name::String)::Union{Nothing, Int}
+    raw = strip(get(ENV, name, ""))
+    isempty(raw) && return nothing
+    value = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("$(name) must be a nonnegative integer, got '$(raw)'."))
+    end
+    value >= 0 || throw(ArgumentError("$(name) must be nonnegative, got $(value)."))
+    return value
+end
+
+@inline function _perf_warmup_mission_scale()::Float64
+    raw = strip(get(ENV, "SPACEAGORA_PERF_WARMUP_MISSION_SCALE", "1.0"))
+    value = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_PERF_WARMUP_MISSION_SCALE must be a positive finite number, got '$(raw)'."))
+    end
+    (isfinite(value) && value > 0.0) || throw(ArgumentError("SPACEAGORA_PERF_WARMUP_MISSION_SCALE must be > 0, got $(value)."))
+    return value
+end
+
+function _with_mission_time(args::SimulationConfiguration, mission_time_s::Float64)::SimulationConfiguration
+    mission_time_s > 0.0 || throw(ArgumentError("warmup mission_time_s must be > 0, got $(mission_time_s)."))
+    cfg = args.mission_configuration
+    mission_cfg = MissionConfiguration(
+        mission_type=cfg.mission_type,
+        keplerian=cfg.keplerian,
+        number_of_orbits=cfg.number_of_orbits,
+        mission_time=mission_time_s,
+        orientation_sim=cfg.orientation_sim,
+        num_steps_to_save=cfg.num_steps_to_save,
+        data_rate=cfg.data_rate,
+    )
+    return SimulationConfiguration(
+        file_paths=args.file_paths,
+        simulation_settings=args.simulation_settings,
+        mission_configuration=mission_cfg,
+        environment_model=args.environment_model,
+        dynamics_model=args.dynamics_model,
+        guidance_model=args.guidance_model,
+        navigation_model=args.navigation_model,
+        control_model=args.control_model,
+        initial_time=args.initial_time,
+        integration_tolerances=args.integration_tolerances,
+    )
+end
+
+function run_warmup(case::BenchmarkCase, warmup::Int, profile_name::String; solver_cache=nothing)
     log_warmup = _perf_warmup_logs()
+    warmup_mission_scale = _perf_warmup_mission_scale()
     for i in 1:warmup
         args_run = deepcopy(case.args_template)
+        original_mission_time_s = args_run.mission_configuration.mission_time
+        if warmup_mission_scale != 1.0
+            args_run = _with_mission_time(args_run, max(eps(Float64), original_mission_time_s * warmup_mission_scale))
+        end
         if log_warmup
-            println("  warmup $(i)/$(warmup): start")
+            println(
+                "  warmup $(i)/$(warmup): start " *
+                "(mission_time=$(round(args_run.mission_configuration.mission_time; digits=3)) s, " *
+                "scale=$(round(warmup_mission_scale; digits=4)))"
+            )
             flush(stdout)
         end
         warmup_started_ns = time_ns()
@@ -405,7 +465,8 @@ function run_warmup(case::BenchmarkCase, warmup::Int, profile_name::String)
                 profile_name=profile_name,
                 solver_mode_override=case.solver_mode_override,
                 split_imex_solver_override=case.split_imex_solver_override,
-                entry_target_count_override=case.entry_target_count_override
+                entry_target_count_override=case.entry_target_count_override,
+                solver_cache=solver_cache
             )
             warmup_elapsed_s = (time_ns() - warmup_started_ns) / 1e9
             if log_warmup
@@ -444,9 +505,17 @@ end
             warmup = min(warmup, 1)
             repeats = min(repeats, 2)
         end
-    elseif occursin(r"^multi_\d+_gravity$", case.name)
+    elseif occursin(r"^multi_\d+_gravity$", case.name) || case.name == "multi_64_aero_gram"
         warmup = 1
         repeats = 2
+    end
+    warmup_override = _perf_optional_nonnegative_int_env("SPACEAGORA_PERF_WARMUP_OVERRIDE")
+    repeats_override = _perf_optional_nonnegative_int_env("SPACEAGORA_PERF_REPEATS_OVERRIDE")
+    if warmup_override !== nothing
+        warmup = warmup_override
+    end
+    if repeats_override !== nothing
+        repeats = repeats_override
     end
     return warmup, repeats
 end
@@ -466,11 +535,12 @@ function _run_case_batch_core!(
         "solver_override=$(isnothing(case.solver_mode_override) ? "none" : case.solver_mode_override), " *
         "split_override=$(isnothing(case.split_imex_solver_override) ? "none" : case.split_imex_solver_override)"
     )
-    run_warmup(case, warmup_count, spec.name)
+    solver_cache = SimulationEngine.SolverIntegratorCache()
+    run_warmup(case, warmup_count, spec.name; solver_cache=solver_cache)
     for rep in 1:repeat_count
         last_row = nothing
         for attempt in 1:spec.max_attempts
-            row = measure_case(case, spec.name, rep; attempt=attempt, plan=plan)
+            row = measure_case(case, spec.name, rep; attempt=attempt, plan=plan, solver_cache=solver_cache)
             last_row = row
             if row.solve_success
                 push!(rows, row)

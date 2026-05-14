@@ -17,6 +17,7 @@ function _compute_stage_heat_rates!(
     use_buffered_density::Bool=false,
 )
     links = p.args.dynamics_model.spacecraft[sat_idx].links
+    isempty(links) && return _heat_rate_buffer_for_sat!(p, sat_idx)
     heat_rates = _heat_rate_buffer_for_sat!(p, sat_idx)
     engine = _simulation_engine_module()
     planet_frame = engine.sample_planet_frame(x, p, sat_idx, t)

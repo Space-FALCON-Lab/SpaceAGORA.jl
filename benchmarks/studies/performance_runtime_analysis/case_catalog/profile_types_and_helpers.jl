@@ -190,7 +190,8 @@ function _run_perf_simulation(
     profile_name::String="quick",
     solver_mode_override::Union{Nothing, String}=nothing,
     split_imex_solver_override::Union{Nothing, String}=nothing,
-    entry_target_count_override::Union{Nothing, Int}=nothing
+    entry_target_count_override::Union{Nothing, Int}=nothing,
+    solver_cache=nothing
 )
     solver_mode = isnothing(solver_mode_override) ? _perf_solver_mode_env(profile_name) : solver_mode_override
     split_solver_env = isnothing(split_imex_solver_override) ? nothing : String(split_imex_solver_override)
@@ -210,7 +211,8 @@ function _run_perf_simulation(
             args_run;
             isolate_state=false,
             return_solution=return_solution,
-            return_solver_metadata=return_solver_metadata
+            return_solver_metadata=return_solver_metadata,
+            solver_cache=solver_cache
         )
     end
 end

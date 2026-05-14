@@ -184,7 +184,7 @@ function EM.getDensity(
         (m, h_i, lat_i, lon_i, t_i, w_i) -> EM._gram_point_density(m, h_i, lat_i, lon_i, t_i, w_i)
     h_gram = max(h, -30.0)
 
-    println("GRAM density altitude = $(h) m ($(h / 1e3) km)")
+    # println("GRAM density altitude = $(h) m ($(h / 1e3) km)")
     return GRAMSuite.surrogate_density_state(
         base_model,
         model.surrogate_file,

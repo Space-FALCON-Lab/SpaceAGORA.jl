@@ -13,19 +13,22 @@ function main(args=ARGS)
         println("[aero-perturb] starting $(spec.procs - nworkers()) worker process(es); this can take a bit on first run")
         flush(stdout)
         addprocs(spec.procs - nworkers(); exeflags="--project=$(project) --compiled-modules=existing")
-        for worker in workers()
-            println("[aero-perturb] initializing worker=$worker")
-            flush(stdout)
-            ex = quote
-                import Pkg
-                Pkg.activate($project; io=devnull)
-                include(joinpath($study_dir, "study.jl"))
-                nothing
+        println("[aero-perturb] initializing $(length(workers())) worker(s) in parallel...")
+        flush(stdout)
+        init_tasks = map(workers()) do worker
+            @async begin
+                ex = quote
+                    import Pkg
+                    Pkg.activate($project; io=devnull)
+                    include(joinpath($study_dir, "study.jl"))
+                    nothing
+                end
+                remotecall_wait(Core.eval, worker, Main, ex)
+                println("[aero-perturb] worker=$worker ready")
+                flush(stdout)
             end
-            remotecall_wait(Core.eval, worker, Main, ex)
-            println("[aero-perturb] worker=$worker ready")
-            flush(stdout)
         end
+        foreach(wait, init_tasks)
     end
 
     return AerobrakingPerturbationMC.run_study(spec)

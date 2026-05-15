@@ -6,7 +6,10 @@ Venus:
 
 - planets: `mars`, `earth`, `venus`
 - periapsis regimes: `shallow`, `nominal`, `deep`
-- apoapsis/eccentricity regimes: `low`, `medium`, `high`
+- apoapsis altitudes (km, per planet):
+  - mars: 300, 500, 750, 1 000, 1 500, 2 000, 3 000, 4 500, 7 000, 12 000
+  - earth: 600, 1 000, 2 000, 5 000, 10 000, 20 000, 36 000, 60 000
+  - venus: 600, 1 000, 2 000, 5 000, 10 000, 20 000, 40 000
 - dynamics cases: `two_body`, `j2`, `harmonics_low`, `srp`, `third_body_sun`,
   `gram_aero`, `full_environment`
 - density cases for aero cases only: `low = 0.75`, `nominal = 1.0`,
@@ -29,6 +32,13 @@ Run a tiny verification case:
 
 ```bash
 julia --project=. benchmarks/studies/aerobraking_perturbation_mc/main.jl --smoke --norbits 1
+```
+
+Override the apoapsis grid (applied to all planets):
+
+```bash
+julia --project=. benchmarks/studies/aerobraking_perturbation_mc/main.jl \
+  --apoapsis-alts 500,1000,2000,4500
 ```
 
 Outputs are written to `output/aerobraking_perturbation_mc/<timestamp>/`.

@@ -703,11 +703,14 @@ function ensure_perf_workers!()
     end
     script_path = abspath(joinpath(dirname(@__DIR__), "..", "performance_runtime_analysis.jl"))
     @everywhere workers() include($script_path)
-    for w in workers()
-        remotecall_wait(perf_worker_planet, w)
-        remotecall_wait(perf_worker_mars, w)
-        remotecall_wait(perf_worker_prime_gram_bindings!, w)
+    init_tasks = map(workers()) do w
+        @async begin
+            remotecall_wait(perf_worker_planet, w)
+            remotecall_wait(perf_worker_mars, w)
+            remotecall_wait(perf_worker_prime_gram_bindings!, w)
+        end
     end
+    foreach(wait, init_tasks)
     _perf_workers_initialized[] = true
     return nothing
 end

@@ -17,7 +17,11 @@ import SpaceAGORA: getDensity, getDensityBatch!
 
 const DEFAULT_PLANETS = [:mars, :earth, :venus]
 const DEFAULT_PERIAPSIS_REGIMES = [:shallow, :nominal, :deep]
-const DEFAULT_APOAPSIS_REGIMES = [:low, :medium, :high]
+const DEFAULT_APOAPSIS_ALTITUDES_KM = Dict{Symbol, Vector{Float64}}(
+    :mars  => [600.0, 1_000.0, 1_500.0, 2_000.0, 3_000.0, 5_000.0, 7_500.0, 12_000.0, 20_000.0, 30_000.0],
+    :earth => [600.0, 1_000.0, 2_000.0, 5_000.0, 10_000.0, 20_000.0, 36_000.0, 60_000.0],
+    :venus => [600.0, 1_000.0, 2_000.0, 5_000.0, 10_000.0, 20_000.0, 40_000.0],
+)
 const DEFAULT_DYNAMICS_CASES = [
     :two_body,
     :j2,
@@ -29,6 +33,14 @@ const DEFAULT_DYNAMICS_CASES = [
 ]
 const DEFAULT_DENSITY_SCALES = Dict(:low => 0.75, :nominal => 1.0, :high => 1.25)
 
+const NOMINAL_SPACECRAFT_MASS_SCALE = 1.0
+const NOMINAL_INCLINATION_DEG = 93.0
+const NOMINAL_ARGP_DEG = 80.0
+
+const DEFAULT_SPACECRAFT_MASS_SCALES = [0.25, 0.5, 1.0, 2.0, 4.0]
+const DEFAULT_INCLINATIONS_DEG = [30.0, 60.0, 93.0, 120.0, 150.0]
+const DEFAULT_ARGP_DEGS = [0.0, 45.0, 80.0, 135.0, 180.0]
+
 @inline _timestamp() = Dates.format(now(), "HH:MM:SS")
 
 @inline function _sample_field(sample::NamedTuple, key::Symbol, default)
@@ -38,7 +50,8 @@ end
 function _sample_label(sample::NamedTuple)::String
     density = _sample_field(sample, :density_case, :none)
     density_part = density === :none ? "" : "/density=$(density)"
-    return "$(sample.planet)/$(sample.periapsis_regime)/apo=$(sample.apoapsis_regime)/$(sample.dynamics_case)$(density_part)"
+    apo_str = @sprintf("%.0fkm", sample.apoapsis_alt_km)
+    return "$(sample.planet)/$(sample.periapsis_regime)/apo=$(apo_str)/ms=$(sample.spacecraft_mass_scale)/inc=$(sample.inclination_deg)/aop=$(sample.argp_deg)/$(sample.dynamics_case)$(density_part)"
 end
 
 function _progress_prefix(sample::NamedTuple)::String
@@ -52,13 +65,17 @@ function _sample_slug(sample::NamedTuple)::String
     idx = _sample_field(sample, :sample_index, 0)
     prefix = idx > 0 ? @sprintf("case_%03d", idx) : "case"
     density = _sample_field(sample, :density_case, :none)
+    ms_str = replace(@sprintf("%.2f", sample.spacecraft_mass_scale), "." => "p")
     return join((
         prefix,
         String(sample.planet),
         String(sample.periapsis_regime),
-        "apo_" * String(sample.apoapsis_regime),
+        @sprintf("apo_%05.0fkm", sample.apoapsis_alt_km),
         String(sample.dynamics_case),
         "density_" * String(density),
+        "ms" * ms_str,
+        @sprintf("inc%03.0f", sample.inclination_deg),
+        @sprintf("aop%03.0f", sample.argp_deg),
     ), "_")
 end
 
@@ -87,25 +104,30 @@ function _write_feather(path::String, df::DataFrame)::String
     return path
 end
 
-function _write_table_pair(base_path_without_ext::String, df::DataFrame)
-    csv_path = base_path_without_ext * ".csv"
+function _write_feather_table(base_path_without_ext::String, df::DataFrame)
     feather_path = base_path_without_ext * ".feather"
-    CSV.write(csv_path, df)
     _write_feather(feather_path, df)
-    return (; csv_path, feather_path)
+    return (; feather_path)
 end
 
 Base.@kwdef struct StudySpec
     planets::Vector{Symbol} = copy(DEFAULT_PLANETS)
     periapsis_regimes::Vector{Symbol} = copy(DEFAULT_PERIAPSIS_REGIMES)
-    apoapsis_regimes::Vector{Symbol} = copy(DEFAULT_APOAPSIS_REGIMES)
+    apoapsis_altitudes_km::Dict{Symbol, Vector{Float64}} = deepcopy(DEFAULT_APOAPSIS_ALTITUDES_KM)
     dynamics_cases::Vector{Symbol} = copy(DEFAULT_DYNAMICS_CASES)
     density_scales::Dict{Symbol, Float64} = copy(DEFAULT_DENSITY_SCALES)
+    spacecraft_mass_scales::Vector{Float64} = copy(DEFAULT_SPACECRAFT_MASS_SCALES)
+    inclinations_deg::Vector{Float64} = copy(DEFAULT_INCLINATIONS_DEG)
+    argp_degs::Vector{Float64} = copy(DEFAULT_ARGP_DEGS)
+    nominal_mass_scale::Float64 = NOMINAL_SPACECRAFT_MASS_SCALE
+    nominal_inclination_deg::Float64 = NOMINAL_INCLINATION_DEG
+    nominal_argp_deg::Float64 = NOMINAL_ARGP_DEG
     norbits::Int = 30
     procs::Int = parse(Int, get(ENV, "SPACEAGORA_AERO_PERTURB_PROCS", "0"))
     output_dir::String = joinpath(REPO_ROOT, "output", "aerobraking_perturbation_mc")
-    results::Bool = true
+    results::Bool = false
     smoke::Bool = get(ENV, "SPACEAGORA_AERO_PERTURB_SMOKE", "0") == "1"
+    resume_dir::String = ""
 end
 
 const GRAM_TRAJECTORY_DENSITY_ENV = Dict(
@@ -212,16 +234,6 @@ function _periapsis_altitude_m(planet_id::Symbol, regime::Symbol)::Float64
     return table[regime]
 end
 
-function _apoapsis_altitude_m(planet_id::Symbol, regime::Symbol)::Float64
-    table = if planet_id == :mars
-        Dict(:low => 500e3, :medium => 2_000e3, :high => 4_500e3)
-    elseif planet_id == :venus
-        Dict(:low => 600e3, :medium => 5_000e3, :high => 20_000e3)
-    else
-        Dict(:low => 600e3, :medium => 5_000e3, :high => 30_000e3)
-    end
-    return table[regime]
-end
 
 function _harmonics_file(planet_id::Symbol)::String
     if planet_id == :mars
@@ -243,23 +255,26 @@ function _density_model(planet_id::Symbol, dynamics_case::Symbol, density_scale:
     return DensityScaleModel(base, density_scale)
 end
 
-function _spacecraft(planet, rp_alt_m::Float64, ra_alt_m::Float64)
+function _spacecraft(planet, rp_alt_m::Float64, ra_alt_m::Float64;
+        mass_scale::Float64=NOMINAL_SPACECRAFT_MASS_SCALE,
+        inclination_deg::Float64=NOMINAL_INCLINATION_DEG,
+        argp_deg::Float64=NOMINAL_ARGP_DEG)
     return make_three_body_spacecraft(
         bus_dims=(2.2, 2.6, 1.7),
         panel_dims=(0.01, 3.0, 1.5),
-        bus_mass=350.0,
-        panel_mass_each=10.0,
+        bus_mass=350.0 * mass_scale,
+        panel_mass_each=10.0 * mass_scale,
         panel_offset_y=2.6,
         ic=InitialCondition(
             ra=planet.Rp_e + ra_alt_m,
             rp=planet.Rp_e + rp_alt_m,
-            i=93.0,
-            ω=80.0,
+            i=inclination_deg,
+            ω=argp_deg,
             Ω=30.0,
             ν=180.0,
         ),
         reflection_coefficient=0.9,
-        prop_mass=50.0,
+        prop_mass=50.0 * mass_scale,
         id=1,
     )
 end
@@ -270,23 +285,25 @@ function _dynamic_effectors(planet_id::Symbol, planet, spacecraft, dynamics_case
     elseif dynamics_case == :j2
         return (InverseSquaredJ2GravityModel(),)
     elseif dynamics_case == :harmonics_low
-        return (GravitationalHarmonicsModel(4, 4, _harmonics_file(planet_id), planet),)
+        return (GravitationalHarmonicsModel(20, 20, _harmonics_file(planet_id), planet),)
     elseif dynamics_case == :srp
         return (
             InverseSquaredGravityModel(),
             SolarRadiationPressureModel(spacecraft.root.reflection_coefficient, spacecraft.root.ref_area),
         )
     elseif dynamics_case == :third_body_sun
+        body_names = planet_id == :earth ? ("Sun", "Moon") : ("Sun",)
         return (
             InverseSquaredGravityModel(),
-            NBodyGravityModel(body_names=("Sun",), primary_body_name=planet.name, planet=planet),
+            NBodyGravityModel(body_names=body_names, primary_body_name=planet.name, planet=planet),
         )
     elseif dynamics_case == :gram_aero
         return (InverseSquaredGravityModel(), AerodynamicCoefficientfM())
     elseif dynamics_case == :full_environment
+        body_names = planet_id == :earth ? ("Sun", "Moon") : ("Sun",)
         return (
-            NBodyGravityModel(body_names=("Sun",), primary_body_name=planet.name, planet=planet),
-            GravitationalHarmonicsModel(4, 4, _harmonics_file(planet_id), planet),
+            NBodyGravityModel(body_names=body_names, primary_body_name=planet.name, planet=planet),
+            GravitationalHarmonicsModel(20, 20, _harmonics_file(planet_id), planet),
             SolarRadiationPressureModel(spacecraft.root.reflection_coefficient, spacecraft.root.ref_area),
             AerodynamicCoefficientfM(),
         )
@@ -302,8 +319,11 @@ end
 function _make_config(sample::NamedTuple, results_directory::String, results::Bool)
     planet = _planet(sample.planet)
     rp_alt_m = _periapsis_altitude_m(sample.planet, sample.periapsis_regime)
-    ra_alt_m = _apoapsis_altitude_m(sample.planet, sample.apoapsis_regime)
-    spacecraft = _spacecraft(planet, rp_alt_m, ra_alt_m)
+    ra_alt_m = sample.apoapsis_alt_km * 1e3
+    spacecraft = _spacecraft(planet, rp_alt_m, ra_alt_m;
+        mass_scale=sample.spacecraft_mass_scale,
+        inclination_deg=sample.inclination_deg,
+        argp_deg=sample.argp_deg)
     mission_time = sample.norbits * _period_s(planet, rp_alt_m, ra_alt_m)
     dynamic_effectors = _dynamic_effectors(sample.planet, planet, spacecraft, sample.dynamics_case)
     density_model = _density_model(sample.planet, sample.dynamics_case, sample.density_scale)
@@ -324,27 +344,52 @@ function _make_config(sample::NamedTuple, results_directory::String, results::Bo
     )
 end
 
+function _ofat_spacecraft_combos(spec::StudySpec)::Vector{NTuple{3, Float64}}
+    seen = Set{NTuple{3, Float64}}()
+    combos = NTuple{3, Float64}[]
+    function _add!(m, i, a)
+        key = (Float64(m), Float64(i), Float64(a))
+        key in seen && return
+        push!(seen, key)
+        push!(combos, key)
+    end
+    nm, ni, na = spec.nominal_mass_scale, spec.nominal_inclination_deg, spec.nominal_argp_deg
+    _add!(nm, ni, na)
+    for m in spec.spacecraft_mass_scales; _add!(m, ni, na); end
+    for i in spec.inclinations_deg;      _add!(nm, i, na); end
+    for a in spec.argp_degs;             _add!(nm, ni, a); end
+    return combos
+end
+
 function make_samples(spec::StudySpec)
     samples = NamedTuple[]
     periapsis_regimes = spec.smoke ? spec.periapsis_regimes[1:min(end, 1)] : spec.periapsis_regimes
-    apoapsis_regimes = spec.smoke ? spec.apoapsis_regimes[1:min(end, 1)] : spec.apoapsis_regimes
     dynamics_cases = spec.smoke ? [:two_body, :gram_aero] : spec.dynamics_cases
     density_items = sort(collect(spec.density_scales); by=x -> String(x.first))
+    nominal_combo = (spec.nominal_mass_scale, spec.nominal_inclination_deg, spec.nominal_argp_deg)
+    spacecraft_combos = spec.smoke ? [nominal_combo] : _ofat_spacecraft_combos(spec)
     for planet in spec.planets
+        all_apo = get(spec.apoapsis_altitudes_km, planet, DEFAULT_APOAPSIS_ALTITUDES_KM[planet])
+        apo_alts = spec.smoke ? all_apo[1:min(end, 1)] : all_apo
         for periapsis_regime in periapsis_regimes
-            for apoapsis_regime in apoapsis_regimes
-                for dynamics_case in dynamics_cases
-                    density_iter = _is_aero_case(dynamics_case) ? density_items : [(:none => NaN)]
-                    for density_pair in density_iter
-                        push!(samples, (
-                            planet=planet,
-                            periapsis_regime=periapsis_regime,
-                            apoapsis_regime=apoapsis_regime,
-                            dynamics_case=dynamics_case,
-                            density_case=Symbol(density_pair.first),
-                            density_scale=Float64(density_pair.second),
-                            norbits=spec.smoke ? 1 : spec.norbits,
-                        ))
+            for apoapsis_alt_km in apo_alts
+                for (mass_scale, inclination_deg, argp_deg) in spacecraft_combos
+                    for dynamics_case in dynamics_cases
+                        density_iter = _is_aero_case(dynamics_case) ? density_items : [(:none => NaN)]
+                        for density_pair in density_iter
+                            push!(samples, (
+                                planet=planet,
+                                periapsis_regime=periapsis_regime,
+                                apoapsis_alt_km=apoapsis_alt_km,
+                                spacecraft_mass_scale=mass_scale,
+                                inclination_deg=inclination_deg,
+                                argp_deg=argp_deg,
+                                dynamics_case=dynamics_case,
+                                density_case=Symbol(density_pair.first),
+                                density_scale=Float64(density_pair.second),
+                                norbits=spec.smoke ? 1 : spec.norbits,
+                            ))
+                        end
                     end
                 end
             end
@@ -598,26 +643,135 @@ function _write_active_force_history!(args, sample::NamedTuple, sol, case_dir::S
         active_perturbation_force_ii_3=fz,
         active_perturbation_force_mag=fmag,
     )
-    force_paths = _write_table_pair(joinpath(case_dir, "active_force_history"), force_df)
+    force_paths = _write_feather_table(joinpath(case_dir, "active_force_history"), force_df)
 
     combined_df = copy(trajectory_df)
     combined_df[!, :active_perturbation_force_ii_1] = fx
     combined_df[!, :active_perturbation_force_ii_2] = fy
     combined_df[!, :active_perturbation_force_ii_3] = fz
     combined_df[!, :active_perturbation_force_mag] = fmag
-    combined_paths = _write_table_pair(joinpath(case_dir, "trajectory_with_active_force"), combined_df)
+    combined_paths = _write_feather_table(joinpath(case_dir, "trajectory_with_active_force"), combined_df)
 
     return (
         simulation_results_csv=isfile(trajectory_csv_path) ? trajectory_csv_path : "",
         simulation_results_feather=trajectory_feather_path,
-        active_force_history_csv=force_paths.csv_path,
+        active_force_history_csv="",
         active_force_history_feather=force_paths.feather_path,
-        trajectory_with_active_force_csv=combined_paths.csv_path,
+        trajectory_with_active_force_csv="",
         trajectory_with_active_force_feather=combined_paths.feather_path,
     )
 end
 
-function run_sample(sample::NamedTuple; output_dir::String=joinpath(REPO_ROOT, "output"), results::Bool=true)
+const _RESULT_ROW_SYMBOL_FIELDS = Set([:planet, :periapsis_regime, :dynamics_case, :density_case])
+
+function _is_case_complete(case_dir::String)::Bool
+    return isfile(joinpath(case_dir, "active_force_history.feather"))
+end
+
+function _result_row_dataframe(row::NamedTuple)::DataFrame
+    pairs = Pair{Symbol, Any}[]
+    for key in keys(row)
+        val = getfield(row, key)
+        if val isa Symbol
+            push!(pairs, key => String(val))
+        elseif val isa Number || val isa Bool || val isa AbstractString
+            push!(pairs, key => val)
+        end
+    end
+    return DataFrame(pairs)
+end
+
+function _write_result_row(row::NamedTuple, case_dir::String)
+    _write_feather(joinpath(case_dir, "result_row.feather"), _result_row_dataframe(row))
+    return nothing
+end
+
+function _read_result_row(case_dir::String)::Union{NamedTuple, Nothing}
+    feather_path = joinpath(case_dir, "result_row.feather")
+    csv_path = joinpath(case_dir, "result_row.csv")
+    df = if isfile(feather_path)
+        DataFrame(Arrow.Table(feather_path))
+    elseif isfile(csv_path)
+        CSV.read(csv_path, DataFrame)
+    else
+        return nothing
+    end
+    nrow(df) == 0 && return nothing
+    row = first(eachrow(df))
+    pairs = []
+    for name in names(df)
+        sym = Symbol(name)
+        val = getproperty(row, sym)
+        val_converted = (sym in _RESULT_ROW_SYMBOL_FIELDS && val isa AbstractString) ? Symbol(val) : val
+        push!(pairs, sym => val_converted)
+    end
+    return NamedTuple(pairs)
+end
+
+# Reconstruct a result row for a case that completed without a result_row file (e.g. runs
+# predating this feature). Reads position/velocity from the trajectory feather to recompute
+# orbital elements. Density metrics are unavailable and are set to NaN.
+# Pass a pre-created `planet` object to avoid repeated SPICE kernel loads across many cases.
+function _reconstruct_result_row(sample::NamedTuple, case_dir::String; planet=nothing)::NamedTuple
+    traj_path = joinpath(case_dir, "simulation_results.feather")
+    planet = planet !== nothing ? planet : _planet(sample.planet)
+    rp_alt_m = _periapsis_altitude_m(sample.planet, sample.periapsis_regime)
+    ra_alt_m = sample.apoapsis_alt_km * 1e3
+    mission_time = sample.norbits * _period_s(planet, rp_alt_m, ra_alt_m)
+    if !isfile(traj_path)
+        return _sample_failure_row(sample; output_dir=dirname(case_dir), stage="resume_missing_trajectory")
+    end
+    tbl = Arrow.Table(traj_path)
+    n = length(tbl.time)
+    first_pos = SVector{3, Float64}(tbl.sc1_pos_1[1], tbl.sc1_pos_2[1], tbl.sc1_pos_3[1])
+    first_vel = SVector{3, Float64}(tbl.sc1_vel_1[1], tbl.sc1_vel_2[1], tbl.sc1_vel_3[1])
+    last_pos  = SVector{3, Float64}(tbl.sc1_pos_1[n], tbl.sc1_pos_2[n], tbl.sc1_pos_3[n])
+    last_vel  = SVector{3, Float64}(tbl.sc1_vel_1[n], tbl.sc1_vel_2[n], tbl.sc1_vel_3[n])
+    initial_el = _elements_from_rv(first_pos, first_vel, planet.μ)
+    final_el   = _elements_from_rv(last_pos,  last_vel,  planet.μ)
+    return merge(sample, (
+        requested_rp_alt_m=rp_alt_m,
+        requested_ra_alt_m=ra_alt_m,
+        mission_time_s=mission_time,
+        elapsed_s=NaN,
+        retcode="unknown",
+        success=true,
+        initial_a_m=initial_el.a,
+        initial_e=initial_el.e,
+        initial_rp_alt_m=initial_el.rp - planet.Rp_e,
+        initial_ra_alt_m=initial_el.ra - planet.Rp_e,
+        final_a_m=final_el.a,
+        final_e=final_el.e,
+        final_rp_alt_m=final_el.rp - planet.Rp_e,
+        final_ra_alt_m=final_el.ra - planet.Rp_e,
+        final_i_deg=rad2deg(final_el.inc),
+        final_raan_deg=rad2deg(final_el.raan),
+        final_argp_deg=rad2deg(final_el.argp),
+        final_energy_j_kg=final_el.energy,
+        delta_a_m=final_el.a - initial_el.a,
+        delta_e=final_el.e - initial_el.e,
+        delta_rp_alt_m=(final_el.rp - initial_el.rp),
+        delta_ra_alt_m=(final_el.ra - initial_el.ra),
+        samples_saved=n,
+        case_dir=case_dir,
+        peak_density=NaN,
+        integrated_density=NaN,
+        max_dynamic_pressure=NaN,
+        integrated_dynamic_pressure=NaN,
+        time_below_interface_s=NaN,
+        simulation_results_csv="",
+        simulation_results_feather=traj_path,
+        active_force_history_csv="",
+        active_force_history_feather=joinpath(case_dir, "active_force_history.feather"),
+        trajectory_with_active_force_csv="",
+        trajectory_with_active_force_feather=joinpath(case_dir, "trajectory_with_active_force.feather"),
+        failure_stage="",
+        failure_error="",
+        failure_log="",
+    ))
+end
+
+function run_sample(sample::NamedTuple; output_dir::String=joinpath(REPO_ROOT, "output"), results::Bool=false)
     total_elapsed = time()
     _log_sample(sample, "START $(_sample_label(sample))")
     case_dir = joinpath(output_dir, _sample_slug(sample))
@@ -625,7 +779,7 @@ function run_sample(sample::NamedTuple; output_dir::String=joinpath(REPO_ROOT, "
     args = _make_config(sample, case_dir, results)
     planet = args.environment_model.planet
     rp_alt_m = _periapsis_altitude_m(sample.planet, sample.periapsis_regime)
-    ra_alt_m = _apoapsis_altitude_m(sample.planet, sample.apoapsis_regime)
+    ra_alt_m = sample.apoapsis_alt_km * 1e3
     _log_sample(
         sample,
         @sprintf(
@@ -646,7 +800,7 @@ function run_sample(sample::NamedTuple; output_dir::String=joinpath(REPO_ROOT, "
     density = _density_metrics(args, sol)
     _log_sample(sample, "FORCE history start")
     force_paths = _write_active_force_history!(args, sample, sol, case_dir)
-    _log_sample(sample, "FORCE history written $(force_paths.active_force_history_csv)")
+    _log_sample(sample, "FORCE history written $(force_paths.active_force_history_feather)")
     _log_sample(
         sample,
         @sprintf(
@@ -745,10 +899,12 @@ function _sample_failure_row(
     ))
 end
 
-function run_sample_guarded(sample::NamedTuple; output_dir::String=joinpath(REPO_ROOT, "output"), results::Bool=true)
+function run_sample_guarded(sample::NamedTuple; output_dir::String=joinpath(REPO_ROOT, "output"), results::Bool=false)
     try
         row = run_sample(sample; output_dir=output_dir, results=results)
-        return merge(row, (failure_stage="", failure_error="", failure_log=""))
+        full_row = merge(row, (failure_stage="", failure_error="", failure_log=""))
+        _write_result_row(full_row, row.case_dir)
+        return full_row
     catch err
         return _sample_failure_row(sample; output_dir=output_dir, stage="sample_exception", err=err, bt=catch_backtrace())
     end
@@ -811,7 +967,10 @@ function paired_deltas(results_df::DataFrame)
     base_cols = [
         :planet,
         :periapsis_regime,
-        :apoapsis_regime,
+        :apoapsis_alt_km,
+        :spacecraft_mass_scale,
+        :inclination_deg,
+        :argp_deg,
         :final_a_m,
         :final_e,
         :final_rp_alt_m,
@@ -825,8 +984,9 @@ function paired_deltas(results_df::DataFrame)
         :time_below_interface_s,
     ]
     base = baselines[:, base_cols]
-    rename!(base, Dict(c => Symbol("baseline_", c) for c in names(base) if !(Symbol(c) in (:planet, :periapsis_regime, :apoapsis_regime))))
-    joined = leftjoin(results_df, base; on=[:planet, :periapsis_regime, :apoapsis_regime])
+    join_keys = [:planet, :periapsis_regime, :apoapsis_alt_km, :spacecraft_mass_scale, :inclination_deg, :argp_deg]
+    rename!(base, Dict(c => Symbol("baseline_", c) for c in names(base) if !(Symbol(c) in join_keys)))
+    joined = leftjoin(results_df, base; on=join_keys)
     for col in (:final_a_m, :final_e, :final_rp_alt_m, :final_ra_alt_m, :final_i_deg, :final_raan_deg, :final_argp_deg, :final_energy_j_kg, :max_dynamic_pressure, :integrated_dynamic_pressure, :time_below_interface_s)
         joined[!, Symbol("delta_vs_baseline_", col)] = joined[!, col] .- joined[!, Symbol("baseline_", col)]
     end
@@ -834,7 +994,7 @@ function paired_deltas(results_df::DataFrame)
 end
 
 function aggregate_deltas(delta_df::DataFrame)
-    grouped = groupby(delta_df, [:planet, :periapsis_regime, :apoapsis_regime, :dynamics_case, :density_case])
+    grouped = groupby(delta_df, [:planet, :periapsis_regime, :apoapsis_alt_km, :spacecraft_mass_scale, :inclination_deg, :argp_deg, :dynamics_case, :density_case])
     return combine(
         grouped,
         :delta_vs_baseline_final_ra_alt_m => mean => :mean_delta_final_ra_alt_m,
@@ -863,7 +1023,13 @@ function _manifest(spec::StudySpec, samples, outdir::String)
         "spec" => Dict(
             "planets" => string.(spec.planets),
             "periapsis_regimes" => string.(spec.periapsis_regimes),
-            "apoapsis_regimes" => string.(spec.apoapsis_regimes),
+            "apoapsis_altitudes_km" => Dict(String(k) => v for (k, v) in spec.apoapsis_altitudes_km),
+            "spacecraft_mass_scales" => spec.spacecraft_mass_scales,
+            "inclinations_deg" => spec.inclinations_deg,
+            "argp_degs" => spec.argp_degs,
+            "nominal_mass_scale" => spec.nominal_mass_scale,
+            "nominal_inclination_deg" => spec.nominal_inclination_deg,
+            "nominal_argp_deg" => spec.nominal_argp_deg,
             "dynamics_cases" => string.(spec.dynamics_cases),
             "density_scales" => Dict(String(k) => v for (k, v) in spec.density_scales),
             "norbits" => spec.norbits,
@@ -885,32 +1051,70 @@ function run_study(spec::StudySpec=StudySpec())
         merge(sample, (sample_index=i, sample_count=length(samples)))
         for (i, sample) in enumerate(samples)
     ]
-    stamp = Dates.format(now(), "yyyymmdd_HHMMSS")
-    outdir = joinpath(spec.output_dir, stamp)
-    mkpath(outdir)
 
-    println("[aero-perturb] samples=$(length(samples)), norbits=$(spec.smoke ? 1 : spec.norbits), workers=$(nworkers()), output=$(outdir)")
+    outdir = if !isempty(spec.resume_dir)
+        isdir(spec.resume_dir) || error("[aero-perturb] resume directory does not exist: $(spec.resume_dir)")
+        spec.resume_dir
+    else
+        stamp = Dates.format(now(), "yyyymmdd_HHMMSS")
+        d = joinpath(spec.output_dir, stamp)
+        mkpath(d)
+        d
+    end
+
+    # When resuming, partition samples into already-complete and still-pending.
+    completed_rows = Any[]
+    pending_samples = eltype(indexed_samples)[]
+    if !isempty(spec.resume_dir)
+        planet_cache = Dict{Symbol, Any}()
+        for sample in indexed_samples
+            case_dir = joinpath(outdir, _sample_slug(sample))
+            if _is_case_complete(case_dir)
+                row = _read_result_row(case_dir)
+                if row !== nothing
+                    push!(completed_rows, row)
+                else
+                    planet = get!(planet_cache, sample.planet) do; _planet(sample.planet); end
+                    push!(completed_rows, _reconstruct_result_row(sample, case_dir; planet=planet))
+                end
+            else
+                push!(pending_samples, sample)
+            end
+        end
+        println("[aero-perturb] RESUME $(spec.resume_dir)")
+        println("[aero-perturb] completed=$(length(completed_rows)) pending=$(length(pending_samples)) total=$(length(samples)) output=$(outdir)")
+    else
+        pending_samples = indexed_samples
+        println("[aero-perturb] samples=$(length(samples)), norbits=$(spec.smoke ? 1 : spec.norbits), workers=$(nworkers()), output=$(outdir)")
+    end
+
     println("[aero-perturb] GRAM density method=vacuum_predicted_gram_cache env=$(gram_density_env)")
     println("[aero-perturb] progress logging is per simulation: START -> CONFIG -> SOLVE start -> SOLVE done -> DONE")
     flush(stdout)
-    rows = if nworkers() > 1
-        _run_samples_distributed(indexed_samples, outdir, spec.results)
+
+    new_rows = if isempty(pending_samples)
+        Any[]
+    elseif nworkers() > 1
+        _run_samples_distributed(pending_samples, outdir, spec.results)
     else
-        map(sample -> run_sample_guarded(sample; output_dir=outdir, results=spec.results), indexed_samples)
+        map(sample -> run_sample_guarded(sample; output_dir=outdir, results=spec.results), pending_samples)
     end
 
-    results_df = DataFrame(rows)
+    all_rows = vcat(completed_rows, new_rows)
+    sort!(all_rows, by = r -> r.sample_index)
+
+    results_df = DataFrame(all_rows)
     delta_df = paired_deltas(results_df)
     aggregate_df = aggregate_deltas(delta_df)
 
-    _write_table_pair(joinpath(outdir, "results"), results_df)
-    _write_table_pair(joinpath(outdir, "paired_deltas"), delta_df)
-    _write_table_pair(joinpath(outdir, "aggregates"), aggregate_df)
+    _write_feather_table(joinpath(outdir, "results"), results_df)
+    _write_feather_table(joinpath(outdir, "paired_deltas"), delta_df)
+    _write_feather_table(joinpath(outdir, "aggregates"), aggregate_df)
     open(joinpath(outdir, "manifest.toml"), "w") do io
         TOML.print(io, _manifest(spec, samples, outdir))
     end
 
-    println("[aero-perturb] wrote results/paired_deltas/aggregates as .csv and .feather, plus manifest.toml")
+    println("[aero-perturb] wrote results/paired_deltas/aggregates as .feather, plus manifest.toml")
     return (; outdir, results=results_df, deltas=delta_df, aggregates=aggregate_df)
 end
 
@@ -922,11 +1126,17 @@ end
 function spec_from_args(args::Vector{String})
     planets = copy(DEFAULT_PLANETS)
     dynamics_cases = copy(DEFAULT_DYNAMICS_CASES)
+    apoapsis_altitudes_km = deepcopy(DEFAULT_APOAPSIS_ALTITUDES_KM)
+    spacecraft_mass_scales = copy(DEFAULT_SPACECRAFT_MASS_SCALES)
+    inclinations_deg = copy(DEFAULT_INCLINATIONS_DEG)
+    argp_degs = copy(DEFAULT_ARGP_DEGS)
     procs = parse(Int, get(ENV, "SPACEAGORA_AERO_PERTURB_PROCS", "0"))
     norbits = 30
     output_dir = joinpath(REPO_ROOT, "output", "aerobraking_perturbation_mc")
     smoke = get(ENV, "SPACEAGORA_AERO_PERTURB_SMOKE", "0") == "1"
-    results = true
+    results = false
+    resume = false
+    resume_dir = ""
 
     i = 1
     while i <= length(args)
@@ -935,16 +1145,33 @@ function spec_from_args(args::Vector{String})
             i += 1; planets = _parse_symbols(args[i])
         elseif arg == "--dynamics"
             i += 1; dynamics_cases = _parse_symbols(args[i])
+        elseif arg == "--apoapsis-alts"
+            i += 1
+            alts = parse.(Float64, strip.(split(args[i], ",")))
+            for p in keys(apoapsis_altitudes_km)
+                apoapsis_altitudes_km[p] = alts
+            end
+        elseif arg == "--mass-scales"
+            i += 1; spacecraft_mass_scales = parse.(Float64, strip.(split(args[i], ",")))
+        elseif arg == "--inclinations"
+            i += 1; inclinations_deg = parse.(Float64, strip.(split(args[i], ",")))
+        elseif arg == "--argps"
+            i += 1; argp_degs = parse.(Float64, strip.(split(args[i], ",")))
         elseif arg == "--norbits"
             i += 1; norbits = parse(Int, args[i])
         elseif arg == "--procs"
             i += 1; procs = parse(Int, args[i])
         elseif arg == "--output-dir"
             i += 1; output_dir = abspath(args[i])
+        elseif arg == "--resume"
+            resume = true
+        elseif arg == "--resume-dir"
+            i += 1; resume_dir = abspath(args[i])
         elseif arg == "--smoke"
             smoke = true
         elseif arg == "--save-simulation-csv"
-            results = true
+            @warn "--save-simulation-csv is ignored; aerobraking perturbation MC now writes Feather outputs only"
+            results = false
         elseif arg == "--no-save-simulation-csv"
             results = false
         elseif arg in ("-h", "--help")
@@ -955,12 +1182,18 @@ function spec_from_args(args::Vector{String})
             Options:
               --planets mars,earth,venus
               --dynamics two_body,j2,harmonics_low,srp,third_body_sun,gram_aero,full_environment
+              --apoapsis-alts km1,km2,...    override apoapsis altitude grid (applied to all planets)
+              --mass-scales s1,s2,...        spacecraft mass scale factors (default: 0.25,0.5,1.0,2.0,4.0)
+              --inclinations deg1,deg2,...   orbital inclinations in degrees (default: 30,60,93,120,150)
+              --argps deg1,deg2,...          arguments of perigee in degrees (default: 0,45,80,135,180)
               --norbits N
               --procs N
               --output-dir PATH
+              --resume                       resume from the latest run under --output-dir
+              --resume-dir PATH              resume from a specific run directory
               --smoke
-              --save-simulation-csv
-              --no-save-simulation-csv
+              --save-simulation-csv       ignored; this study writes Feather outputs only
+              --no-save-simulation-csv    default; retained for compatibility
             """)
             exit(0)
         else
@@ -969,14 +1202,28 @@ function spec_from_args(args::Vector{String})
         i += 1
     end
 
+    # --resume without --resume-dir: auto-detect the latest timestamped run under output_dir
+    if resume && isempty(resume_dir)
+        run_dirs = filter(readdir(output_dir; join=true)) do d
+            isdir(d) && occursin(r"^\d{8}_\d{6}$", basename(d))
+        end
+        isempty(run_dirs) && error("No previous runs found under $output_dir")
+        resume_dir = last(sort(run_dirs))
+    end
+
     return StudySpec(
         planets=planets,
         dynamics_cases=dynamics_cases,
+        apoapsis_altitudes_km=apoapsis_altitudes_km,
+        spacecraft_mass_scales=spacecraft_mass_scales,
+        inclinations_deg=inclinations_deg,
+        argp_degs=argp_degs,
         norbits=norbits,
         procs=procs,
         output_dir=output_dir,
         results=results,
         smoke=smoke,
+        resume_dir=resume_dir,
     )
 end
 

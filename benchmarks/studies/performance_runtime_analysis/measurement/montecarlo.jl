@@ -138,9 +138,10 @@ function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, plan
         if mc_backend == :process
             ensure_perf_workers!()
             warmup_seed = first(seeds)
-            for w in workers()
-                remotecall_wait(perf_worker_montecarlo_warmup, w, spec, mission_time_s, warmup_seed, variant, :process)
+            warmup_tasks = map(workers()) do w
+                @async remotecall_wait(perf_worker_montecarlo_warmup, w, spec, mission_time_s, warmup_seed, variant, :process)
             end
+            foreach(wait, warmup_tasks)
         else
             plan = parallel_priority_plan(warmup_case, mc_backend)
             env_pairs = parallel_priority_env_pairs(plan)

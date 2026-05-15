@@ -604,3 +604,93 @@ Earth-Centered, Earth-Fixed (ECEF) frame.
 
 #     return v_gcrf
 # end
+
+# -----------------------------------------------------------------------------
+# RPO / HCW reference-frame utilities
+# -----------------------------------------------------------------------------
+
+"""
+    rtn_dcm_from_inertial(r_target_ii, v_target_ii)
+
+Return the direction-cosine matrix whose columns are the RTN basis vectors
+expressed in the inertial frame. The RTN convention used here is the HCW/RPO
+convention: radial, along-track, cross-track.
+"""
+function rtn_dcm_from_inertial(r_target_ii, v_target_ii)::SMatrix{3, 3, Float64}
+    r = SVector{3, Float64}(r_target_ii)
+    v = SVector{3, Float64}(v_target_ii)
+    r_norm = norm(r)
+    h = cross(r, v)
+    h_norm = norm(h)
+    if r_norm <= eps(Float64) || h_norm <= eps(Float64)
+        throw(ArgumentError("RTN frame requires nonzero target position and angular momentum."))
+    end
+
+    r_hat = r / r_norm
+    n_hat = h / h_norm
+    t_hat = normalize(cross(n_hat, r_hat))
+    return SMatrix{3, 3, Float64}(hcat(r_hat, t_hat, n_hat))
+end
+
+@inline function _rtn_rate_rad_s(r_target_ii, v_target_ii)::Float64
+    r = SVector{3, Float64}(r_target_ii)
+    v = SVector{3, Float64}(v_target_ii)
+    r2 = dot(r, r)
+    r2 <= eps(Float64) && throw(ArgumentError("RTN frame rate requires nonzero target position."))
+    return norm(cross(r, v)) / r2
+end
+
+"""
+    inertial_to_rtn_relative_state(r_chaser_ii, v_chaser_ii, r_target_ii, v_target_ii)
+
+Convert inertial chaser/target states to an HCW-style RTN relative state
+`[r_R, r_T, r_N, v_R, v_T, v_N]`.
+"""
+function inertial_to_rtn_relative_state(
+    r_chaser_ii,
+    v_chaser_ii,
+    r_target_ii,
+    v_target_ii,
+)::SVector{6, Float64}
+    C = rtn_dcm_from_inertial(r_target_ii, v_target_ii)
+    n = _rtn_rate_rad_s(r_target_ii, v_target_ii)
+    r_rel_ii = SVector{3, Float64}(r_chaser_ii) - SVector{3, Float64}(r_target_ii)
+    v_rel_ii = SVector{3, Float64}(v_chaser_ii) - SVector{3, Float64}(v_target_ii)
+    r_rel_rtn = C' * r_rel_ii
+    v_rel_rtn = C' * v_rel_ii - cross(SVector{3, Float64}(0.0, 0.0, n), r_rel_rtn)
+    return SVector{6, Float64}(
+        r_rel_rtn[1], r_rel_rtn[2], r_rel_rtn[3],
+        v_rel_rtn[1], v_rel_rtn[2], v_rel_rtn[3],
+    )
+end
+
+"""
+    rtn_to_inertial_relative_state(r_rel_rtn, v_rel_rtn, r_target_ii, v_target_ii)
+
+Convert an RTN relative position/velocity into inertial chaser position and
+velocity using the target inertial state.
+"""
+function rtn_to_inertial_relative_state(
+    r_rel_rtn,
+    v_rel_rtn,
+    r_target_ii,
+    v_target_ii,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    C = rtn_dcm_from_inertial(r_target_ii, v_target_ii)
+    n = _rtn_rate_rad_s(r_target_ii, v_target_ii)
+    r_rel = SVector{3, Float64}(r_rel_rtn)
+    v_rel = SVector{3, Float64}(v_rel_rtn)
+    r_chaser = SVector{3, Float64}(r_target_ii) + C * r_rel
+    v_chaser = SVector{3, Float64}(v_target_ii) +
+        C * (v_rel + cross(SVector{3, Float64}(0.0, 0.0, n), r_rel))
+    return r_chaser, v_chaser
+end
+
+"""
+    rtn_accel_to_inertial(a_rtn, r_target_ii, v_target_ii)
+
+Rotate an acceleration command from RTN coordinates to the inertial frame.
+"""
+function rtn_accel_to_inertial(a_rtn, r_target_ii, v_target_ii)::SVector{3, Float64}
+    return rtn_dcm_from_inertial(r_target_ii, v_target_ii) * SVector{3, Float64}(a_rtn)
+end

@@ -9,6 +9,8 @@ include(joinpath(@__DIR__, "simulation", "runtime_services.jl"))
 include(joinpath(@__DIR__, "core", "simulation_model.jl"))
 include(joinpath(@__DIR__, "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(@__DIR__, "analysis", "verification", "telemetry_verification.jl"))
+include(joinpath(@__DIR__, "assets", "rpo_station_assets.jl"))
+include(joinpath(@__DIR__, "analysis", "visualization", "rpo", "rpo_visualization.jl"))
 include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
 
 using .ParallelProfiles: ParallelProfile, ParallelProfileConfig
@@ -35,6 +37,8 @@ using .SimulationModel: getDensity, getDensityBatch!
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
+using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
+using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
 using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 
 @doc (@doc SimulationEngine.ParallelConfig) ParallelConfig
@@ -311,6 +315,7 @@ export getDensity, getDensityBatch!
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation
+export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
 
 """

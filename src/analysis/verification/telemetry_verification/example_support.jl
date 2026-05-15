@@ -148,9 +148,12 @@ function run_and_report(args::SM.SimulationConfiguration)
     args_eff = _example_smoke_args(args)
     t = @elapsed run_simulation(args_eff)
     csv_path = joinpath(args_eff.simulation_settings.results_directory, "simulation_results.csv")
+    saved_csv_path = nothing
     if args_eff.simulation_settings.results && isfile(csv_path)
         df = CSV.read(csv_path, DataFrame)
         println("Saved $(nrow(df)) samples to $(abspath(csv_path))")
+        saved_csv_path = csv_path
     end
     println("COMPUTATIONAL TIME = $(t) s")
+    return saved_csv_path
 end

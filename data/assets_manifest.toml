@@ -53,3 +53,12 @@ kind = "directory"
 required = false
 licensing = "user-provided"
 detail = "Optional surrogate/static-grid bundle for GRAM-accelerated studies."
+
+[[asset]]
+name = "rpo_gateway_core_stl"
+scope = "RPO station reference geometry"
+relative_path = "data/rpo/station_geometry/gateway/Gateway_Core.stl"
+kind = "file"
+required = false
+licensing = "open-repo"
+detail = "Gateway Core STL used by the RPO station reference geometry and MPC RPO test case."

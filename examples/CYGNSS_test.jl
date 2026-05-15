@@ -67,6 +67,9 @@ args = SimulationConfiguration(
         reltol_orbit=1e-8,
         abstol_orbit=1e-8,
         dt_max_orbit=10.0
+    ),
+    solver_config=SolverConfig(
+        solver_mode=:rodas5p
     )
 )
 

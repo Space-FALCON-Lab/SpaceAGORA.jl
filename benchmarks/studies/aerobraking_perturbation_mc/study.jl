@@ -40,6 +40,8 @@ const NOMINAL_ARGP_DEG = 80.0
 const DEFAULT_SPACECRAFT_MASS_SCALES = [0.25, 0.5, 1.0, 2.0, 4.0]
 const DEFAULT_INCLINATIONS_DEG = [30.0, 60.0, 93.0, 120.0, 150.0]
 const DEFAULT_ARGP_DEGS = [0.0, 45.0, 80.0, 135.0, 180.0]
+const AERO_SOLVER_MAXITERS = 20_000_000
+const AERO_AUTO_STIFF_SWITCH_MAX = 5
 
 @inline _timestamp() = Dates.format(now(), "HH:MM:SS")
 
@@ -327,6 +329,11 @@ function _make_config(sample::NamedTuple, results_directory::String, results::Bo
     mission_time = sample.norbits * _period_s(planet, rp_alt_m, ra_alt_m)
     dynamic_effectors = _dynamic_effectors(sample.planet, planet, spacecraft, sample.dynamics_case)
     density_model = _density_model(sample.planet, sample.dynamics_case, sample.density_scale)
+    solver_config = _is_aero_case(sample.dynamics_case) ? SM.SolverConfig(
+        solver_mode=:auto_stiff,
+        maxiters=AERO_SOLVER_MAXITERS,
+        auto_stiff_switch_max=AERO_AUTO_STIFF_SWITCH_MAX,
+    ) : nothing
 
     return make_example_config(
         planet=planet,
@@ -341,6 +348,7 @@ function _make_config(sample::NamedTuple, results_directory::String, results::Bo
         verbose=false,
         results=results,
         results_directory=results_directory,
+        solver_config=solver_config,
     )
 end
 
@@ -509,7 +517,16 @@ end
 
 function _trajectory_dataframe(args, sol, trajectory_csv_path::String)
     if isfile(trajectory_csv_path)
-        return CSV.read(trajectory_csv_path, DataFrame)
+        try
+            df = CSV.read(trajectory_csv_path, DataFrame)
+            required = (:time, :sc1_pos_1, :sc1_pos_2, :sc1_pos_3, :sc1_vel_1, :sc1_vel_2, :sc1_vel_3, :sc1_mass)
+            if all(name -> name in Symbol.(names(df)), required)
+                return df
+            end
+            @warn "Ignoring stale simulation_results.csv without trajectory columns; reconstructing from solution" path=trajectory_csv_path
+        catch err
+            @warn "Ignoring unreadable simulation_results.csv; reconstructing from solution" path=trajectory_csv_path exception=(err, catch_backtrace())
+        end
     end
     return _trajectory_dataframe_from_solution(sol)
 end

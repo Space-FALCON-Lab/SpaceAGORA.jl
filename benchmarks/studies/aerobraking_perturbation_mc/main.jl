@@ -7,29 +7,7 @@ function main(args=ARGS)
     spec = AerobrakingPerturbationMC.spec_from_args(collect(args))
     AerobrakingPerturbationMC.configure_gram_trajectory_density!()
 
-    if spec.procs > 0 && nworkers() < spec.procs
-        study_dir = @__DIR__
-        project = AerobrakingPerturbationMC.REPO_ROOT
-        println("[aero-perturb] starting $(spec.procs - nworkers()) worker process(es); this can take a bit on first run")
-        flush(stdout)
-        addprocs(spec.procs - nworkers(); exeflags="--project=$(project) --compiled-modules=existing")
-        println("[aero-perturb] initializing $(length(workers())) worker(s) in parallel...")
-        flush(stdout)
-        init_tasks = map(workers()) do worker
-            @async begin
-                ex = quote
-                    import Pkg
-                    Pkg.activate($project; io=devnull)
-                    include(joinpath($study_dir, "study.jl"))
-                    nothing
-                end
-                remotecall_wait(Core.eval, worker, Main, ex)
-                println("[aero-perturb] worker=$worker ready")
-                flush(stdout)
-            end
-        end
-        foreach(wait, init_tasks)
-    end
+    AerobrakingPerturbationMC.ensure_aero_perturb_workers!(spec.procs)
 
     return AerobrakingPerturbationMC.run_study(spec)
 end

@@ -102,6 +102,7 @@ function run_simulation(
     return_solution::Bool=false,
     return_solver_metadata::Bool=false,
     save_fields=nothing,
+    extra_callbacks=(),
     solver_cache::Union{Nothing, SolverIntegratorCache}=nothing
 )
     return SimulationModel.ParallelPolicy.with_policy_context() do
@@ -160,7 +161,8 @@ function run_simulation(
         args.dynamics_model.dynamic_effectors,
         args;
         saved_values=saved_values,
-        save_fields=save_fields_resolved
+        save_fields=save_fields_resolved,
+        extra_callbacks=extra_callbacks
     ) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
     ephemerides_model = args.environment_model.ephemerides_model
     et_start = SimulationModel.ephemerides_time_seconds(args.initial_time, ephemerides_model)

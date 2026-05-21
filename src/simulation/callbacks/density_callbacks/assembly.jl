@@ -143,7 +143,8 @@ function get_callbacks(
     effectors::Tuple,
     args::SimulationConfiguration;
     saved_values=nothing,
-    save_fields=nothing
+    save_fields=nothing,
+    extra_callbacks=()
 )::CallbackSet
     save_fields_resolved = _resolve_save_fields(save_fields, args)
     backbone_mode = _simulation_engine_module()._solver_policy_mode() == :gravity_backbone_split
@@ -184,9 +185,10 @@ function get_callbacks(
     if !backbone_mode && _requires_quaternion_projection_callback(args)
         callbacks = _append_callback(callbacks, get_quaternion_projection_callback(num_sats, args))
     end
-    if !backbone_mode
+    if !backbone_mode && args.simulation_settings.results
         callbacks = _append_callback(callbacks, get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values))
     end
+    callbacks = _append_callbacks(callbacks, extra_callbacks)
 
     return CallbackSet(callbacks...)
 end

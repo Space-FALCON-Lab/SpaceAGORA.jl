@@ -261,12 +261,39 @@ mutable struct SolverIntegratorCache
     SolverIntegratorCache() = new(nothing)
 end
 
+@inline function _solver_save_everystep()::Bool
+    name = "SPACEAGORA_SOLVER_SAVE_EVERYSTEP"
+    active_overrides = _engine_active_overrides_ref[]
+    raw_value = if active_overrides !== nothing && haskey(active_overrides, name)
+        get(active_overrides, name, "true")
+    else
+        get(ENV, name, "true")
+    end
+    raw = lowercase(strip(String(raw_value)))
+    return raw in ("1", "true", "yes", "on")
+end
+
+@inline function _solver_bool_env(name::String, default::Bool)::Bool
+    active_overrides = _engine_active_overrides_ref[]
+    raw_value = if active_overrides !== nothing && haskey(active_overrides, name)
+        get(active_overrides, name, default ? "true" : "false")
+    else
+        get(ENV, name, default ? "true" : "false")
+    end
+    raw = lowercase(strip(String(raw_value)))
+    return raw in ("1", "true", "yes", "on")
+end
+
 @inline function _solve_with_explicit_solver(prob, cfg::SolverConfig, args, alg, reltol_tol, abstol_tol;
     dtmax_override::Union{Nothing, Float64}=nothing,
     solver_cache::Union{Nothing, SolverIntegratorCache}=nothing)
     maxiters = _solver_maxiters(cfg)
     dtmax_use = isnothing(dtmax_override) ? args.integration_tolerances.dt_max_orbit : dtmax_override
     dtmax_use > 0.0 || throw(ArgumentError("Solver dtmax must be > 0.0, got $dtmax_use."))
+    save_everystep = _solver_save_everystep()
+    save_on = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_ON", true)
+    save_start = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_START", true)
+    save_end = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_END", true)
 
     if solver_cache !== nothing && solver_cache.integrator !== nothing
         integ = solver_cache.integrator
@@ -281,18 +308,18 @@ end
 
     if maxiters === nothing
         if solver_cache !== nothing
-            integ = DiffEqBase.init(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use)
+            integ = DiffEqBase.init(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
             solver_cache.integrator = integ
             return DiffEqBase.solve!(integ)
         end
-        return solve(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use)
+        return solve(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
     end
     if solver_cache !== nothing
-        integ = DiffEqBase.init(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, maxiters=maxiters)
+        integ = DiffEqBase.init(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, maxiters=maxiters, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
         solver_cache.integrator = integ
         return DiffEqBase.solve!(integ)
     end
-    return solve(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, maxiters=maxiters)
+    return solve(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, maxiters=maxiters, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
 end
 
 @inline function _solve_with_explicit_solver(prob, args, alg, reltol_tol, abstol_tol;
@@ -312,10 +339,14 @@ end
 
 @inline function _solve_with_fixed_step_solver(prob, cfg::SolverConfig, alg, dt_s::Float64)
     maxiters = _solver_maxiters(cfg)
+    save_everystep = _solver_save_everystep()
+    save_on = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_ON", true)
+    save_start = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_START", true)
+    save_end = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_END", true)
     if maxiters === nothing
-        return solve(prob, alg; dt=dt_s)
+        return solve(prob, alg; dt=dt_s, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
     end
-    return solve(prob, alg; dt=dt_s, maxiters=maxiters)
+    return solve(prob, alg; dt=dt_s, maxiters=maxiters, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
 end
 @inline _solve_with_fixed_step_solver(prob, alg, dt_s::Float64) = _solve_with_fixed_step_solver(prob, _active_solver_config(), alg, dt_s)
 

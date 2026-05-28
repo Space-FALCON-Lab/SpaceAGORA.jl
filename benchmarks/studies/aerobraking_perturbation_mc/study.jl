@@ -931,6 +931,26 @@ function _central_force(args, state::SM.StateSample, env)::SVector{3, Float64}
     return force
 end
 
+function _c20_harmonics_force(model::GravitationalHarmonicsModel, state::SM.StateSample, planet_frame)::SVector{3, Float64}
+    model.L >= 2 || return SVector{3, Float64}(0.0, 0.0, 0.0)
+    C20 = Float64(model.C[3, 1])
+    isfinite(C20) && C20 != 0.0 || return SVector{3, Float64}(0.0, 0.0, 0.0)
+    pos_pp = planet_frame.pos_pp
+    r = norm(pos_pp)
+    r > 0.0 || return SVector{3, Float64}(0.0, 0.0, 0.0)
+    x, y, z = pos_pp
+    r2 = r * r
+    z2 = z * z
+    J2 = -sqrt(5.0) * C20
+    common = 1.5 * model.planet.μ * J2 * model.reference_radius_m^2 / (r2 * r2)
+    accel_pp = SVector{3, Float64}(
+        common * (x / r) * (5.0 * z2 / r2 - 1.0),
+        common * (y / r) * (5.0 * z2 / r2 - 1.0),
+        common * (z / r) * (5.0 * z2 / r2 - 3.0),
+    )
+    return state.mass_kg * (planet_frame.l_pi' * accel_pp)
+end
+
 function _force_for_effector(args, state::SM.StateSample, row, effector, t::Float64)::SVector{3, Float64}
     planet_frame = nothing
     solar = nothing
@@ -946,8 +966,10 @@ function _force_for_effector(args, state::SM.StateSample, row, effector, t::Floa
     end
     env = SM.EnvironmentSample(args.environment_model.planet; planet_frame=planet_frame, solar=solar, third_bodies=third_bodies)
     force, _ = SM.wrench(effector, state, env, t)
-    if effector isa InverseSquaredJ2GravityModel || effector isa GravitationalHarmonicsModel
+    if effector isa InverseSquaredJ2GravityModel
         return force - _central_force(args, state, env)
+    elseif effector isa GravitationalHarmonicsModel
+        return force - _central_force(args, state, env) - _c20_harmonics_force(effector, state, planet_frame)
     end
     return force
 end
@@ -1021,21 +1043,31 @@ end
     return idx <= length(cache) ? cache[idx] : SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-function _stream_density_update!(writer::OrbitChunkWriter, pos::SVector{3, Float64}, vel::SVector{3, Float64}, t::Float64)
+function _stream_density_update!(
+    writer::OrbitChunkWriter,
+    state::SM.StateSample,
+    p,
+    t::Float64,
+)
     args = writer.args
-    density_model = args.environment_model.density_model
-    planet = args.environment_model.planet
     EI_m = args.environment_model.EI * 1e3
-    r = norm(pos)
-    alt = r - planet.Rp_e
+    frame = _planet_frame_sample(args, state, t)
+    alt = frame.alt_m
     inside = alt <= EI_m
     rho = 0.0
     q = 0.0
+    density_model = SM.SimulationCallbacks._density_model_for_sat(p, 1)
     if !(density_model isa NoAtmosphereModel)
-        lat = asind(clamp(pos[3] / r, -1.0, 1.0))
-        lon = atan(pos[2], pos[1]) * 180.0 / π
         density_state = try
-            getDensity(density_model, Float64(alt), Float64(lat), Float64(lon), Float64(t), true)
+            getDensity(
+                density_model,
+                Float64(frame.alt_m),
+                Float64(frame.lat_rad),
+                Float64(frame.lon_rad),
+                Float64(t),
+                true,
+                p,
+            )
         catch
             writer.peak_density = NaN
             writer.integrated_density = NaN
@@ -1046,7 +1078,7 @@ function _stream_density_update!(writer::OrbitChunkWriter, pos::SVector{3, Float
             return (; alt, rho=NaN, q=NaN, inside)
         end
         rho, _, wind = density_state
-        q = 0.5 * rho * norm(vel - wind)^2
+        q = 0.5 * rho * norm(frame.vel_pp - wind)^2
         writer.peak_density = max(writer.peak_density, rho)
         writer.max_dynamic_pressure = max(writer.max_dynamic_pressure, q)
     end
@@ -1117,7 +1149,7 @@ function _stream_sample!(writer::OrbitChunkWriter, u, t_raw, integrator)
         sc1_cross_1=cross_force[1], sc1_cross_2=cross_force[2], sc1_cross_3=cross_force[3],
     )
     force = _active_perturbation_force(args, writer.sample, state, row_for_force, t)
-    density = _stream_density_update!(writer, pos, vel, t)
+    density = _stream_density_update!(writer, state, p, t)
     push!(writer.buffer, merge(row_for_force, (
         orbit=orbit,
         altitude_m=density.alt,

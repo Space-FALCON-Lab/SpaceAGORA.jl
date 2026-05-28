@@ -121,7 +121,12 @@ The force ratio is
 `active_perturbation_force_mag / (sc1_mass * GM / norm(sc1_pos)^2)`. Useful
 plotting options include `--metric peak|p95|p50|max_in_atmosphere`,
 `--plot-set all|time|heatmaps|rankings`, and
-`--density-case nominal|low|high|all`. Summary generation uses multiple threads
+`--density-case nominal|low|high|all` (default: `nominal`). Time-history plots include analytical
+basic/detailed perturbation-parameter overlays by default; use
+`--analytical-overlays none|basic|detailed|both` to control them. The plotting
+pass also writes per-planet `analytical_basic_vs_detailed_*.pdf` comparison
+plots for the selected time-history cuts, with nominal-density aero only and separate J2, higher-degree
+harmonics, SRP, third-body, and aerodynamic analytical curves. Summary generation uses multiple threads
 by default: if the plotting script is launched from a single-threaded Julia
 process, it restarts itself with `--threads=auto`. Cap summary worker tasks with
 `--summary-threads N` or `SPACEAGORA_AERO_PERTURB_SUMMARY_THREADS=N` when memory

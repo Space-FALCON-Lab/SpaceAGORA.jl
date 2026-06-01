@@ -96,6 +96,45 @@ end
     return nothing
 end
 
+function _save_simulation_results_if_enabled!(
+    args,
+    solver_mode::Symbol,
+    checkpoint_active::Bool,
+    save_fields_resolved,
+    saved_values,
+    checkpoint_saved_times,
+    checkpoint_saved_data,
+    backbone_saved_times,
+    backbone_saved_data,
+)
+    args.simulation_settings.results || return nothing
+    results_times = if solver_mode == :gravity_backbone_split
+        checkpoint_active ? checkpoint_saved_times : backbone_saved_times
+    else
+        checkpoint_active ? checkpoint_saved_times : saved_values.t
+    end
+    results_data = if solver_mode == :gravity_backbone_split
+        checkpoint_active ? checkpoint_saved_data : backbone_saved_data
+    else
+        checkpoint_active ? checkpoint_saved_data : saved_values.saveval
+    end
+    results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
+    csv_path = _write_results_csv!(results_df, args)
+    if _typed_save_bundle_enabled()
+        _write_results_bundle!(results_df, results_times, args; csv_path=csv_path)
+    end
+    return csv_path
+end
+
+function _try_save_simulation_results_if_enabled!(args...)
+    try
+        return _save_simulation_results_if_enabled!(args...)
+    catch err
+        @warn "Failed to save partial simulation results after solve failure." reason=sprint(showerror, err)
+        return nothing
+    end
+end
+
 function run_simulation(
     args::SimulationConfiguration;
     isolate_state::Bool=true,
@@ -279,11 +318,23 @@ function run_simulation(
             empty!(saved_values.saveval)
             p.shared_buffers.solve_segment_end_time[] = t_next
             prob = _build_typed_solver_problem(u_cursor, (t_cursor, t_next), p, callbacks, solver_mode, jac_prototype)
-            seg_sol, solve_meta = _solve_with_solver_policy(prob, solver_cfg, args, reltol_tol, abstol_tol)
-            push!(solver_trace, solve_meta)
-            if !SciMLBase.successful_retcode(seg_sol.retcode)
-                throw(ErrorException("Checkpointed solve failed with retcode=$(seg_sol.retcode)."))
+            seg_sol, solve_meta = try
+                _solve_with_solver_policy(prob, solver_cfg, args, reltol_tol, abstol_tol)
+            catch err
+                _try_save_simulation_results_if_enabled!(
+                    args,
+                    solver_mode,
+                    checkpoint_active,
+                    save_fields_resolved,
+                    saved_values,
+                    checkpoint_saved_times,
+                    checkpoint_saved_data,
+                    backbone_saved_times,
+                    backbone_saved_data,
+                )
+                rethrow()
             end
+            push!(solver_trace, solve_meta)
             if solver_mode == :gravity_backbone_split
                 _append_backbone_saved_segment!(checkpoint_saved_times, checkpoint_saved_data, seg_sol, save_fields_resolved, p)
             else
@@ -297,6 +348,20 @@ function run_simulation(
                 )
             end
             last_sol = seg_sol
+            if !SciMLBase.successful_retcode(seg_sol.retcode)
+                _try_save_simulation_results_if_enabled!(
+                    args,
+                    solver_mode,
+                    checkpoint_active,
+                    save_fields_resolved,
+                    saved_values,
+                    checkpoint_saved_times,
+                    checkpoint_saved_data,
+                    backbone_saved_times,
+                    backbone_saved_data,
+                )
+                throw(ErrorException("Checkpointed solve failed with retcode=$(seg_sol.retcode)."))
+            end
             t_cursor = Float64(seg_sol.t[end])
             u_cursor = deepcopy(seg_sol.u[end])
             _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode))
@@ -308,36 +373,55 @@ function run_simulation(
     elseif t_start < mission_end
         p.shared_buffers.solve_segment_end_time[] = mission_end
         prob = _build_typed_solver_problem(u_start, (t_start, mission_end), p, callbacks, solver_mode, jac_prototype)
-        sol, solve_meta = _solve_with_solver_policy(prob, solver_cfg, args, reltol_tol, abstol_tol; solver_cache=solver_cache)
-        push!(solver_trace, solve_meta)
-        if !SciMLBase.successful_retcode(sol.retcode)
-            throw(ErrorException("Solve failed with retcode=$(sol.retcode)."))
+        sol, solve_meta = try
+            _solve_with_solver_policy(prob, solver_cfg, args, reltol_tol, abstol_tol; solver_cache=solver_cache)
+        catch err
+            _try_save_simulation_results_if_enabled!(
+                args,
+                solver_mode,
+                checkpoint_active,
+                save_fields_resolved,
+                saved_values,
+                checkpoint_saved_times,
+                checkpoint_saved_data,
+                backbone_saved_times,
+                backbone_saved_data,
+            )
+            rethrow()
         end
+        push!(solver_trace, solve_meta)
         last_sol = sol
         if solver_mode == :gravity_backbone_split
             _append_backbone_saved_segment!(backbone_saved_times, backbone_saved_data, sol, save_fields_resolved, p)
         end
+        if !SciMLBase.successful_retcode(sol.retcode)
+            _try_save_simulation_results_if_enabled!(
+                args,
+                solver_mode,
+                checkpoint_active,
+                save_fields_resolved,
+                saved_values,
+                checkpoint_saved_times,
+                checkpoint_saved_data,
+                backbone_saved_times,
+                backbone_saved_data,
+            )
+            throw(ErrorException("Solve failed with retcode=$(sol.retcode)."))
+        end
     end
 
     # Process and save results
-    if args.simulation_settings.results
-        results_times = if solver_mode == :gravity_backbone_split
-            checkpoint_active ? checkpoint_saved_times : backbone_saved_times
-        else
-            checkpoint_active ? checkpoint_saved_times : saved_values.t
-        end
-        results_data = if solver_mode == :gravity_backbone_split
-            checkpoint_active ? checkpoint_saved_data : backbone_saved_data
-        else
-            checkpoint_active ? checkpoint_saved_data : saved_values.saveval
-        end
-        results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
-        # Keep backwards-compatible CSV contract used by existing scripts/tests.
-        csv_path = _write_results_csv!(results_df, args)
-        if _typed_save_bundle_enabled()
-            _write_results_bundle!(results_df, results_times, args; csv_path=csv_path)
-        end
-    end
+    _save_simulation_results_if_enabled!(
+        args,
+        solver_mode,
+        checkpoint_active,
+        save_fields_resolved,
+        saved_values,
+        checkpoint_saved_times,
+        checkpoint_saved_data,
+        backbone_saved_times,
+        backbone_saved_data,
+    )
 
     if return_solution
         if checkpoint_active && args.simulation_settings.checkpoint_interval_s < mission_end

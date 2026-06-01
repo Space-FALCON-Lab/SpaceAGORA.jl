@@ -35,6 +35,7 @@ using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleratio
 using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 using .SimulationModel: getDensity, getDensityBatch!
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
+using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
 using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
 using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
@@ -316,6 +317,7 @@ export gravity_backbone_structure, gravity_backbone_acceleration_ii
 export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 export getDensity, getDensityBatch!
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
+export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation
 export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli

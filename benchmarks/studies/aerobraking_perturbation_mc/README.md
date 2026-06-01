@@ -74,6 +74,47 @@ Run a tiny verification case:
 julia --project=. benchmarks/studies/aerobraking_perturbation_mc/main.jl --smoke --norbits 1
 ```
 
+Run the targeted inclination-by-argument-of-periapsis supplement used to fill
+poster regime-map slices:
+
+```bash
+julia --project=. benchmarks/studies/aerobraking_perturbation_mc/run_inclination_argp_supplement.jl --procs 8
+```
+
+This supplemental run covers nominal periapsis, one representative apoapsis per
+body (Mars 5 000 km, Venus 10 000 km, Earth 36 000 km, Titan 10 000 km),
+mass scale 1, `full_environment`, nominal density, and the full
+11-by-15 inclination/AOP grid. It writes to
+`output/aerobraking_perturbation_mc_inclination_argp_supplement/<timestamp>/`.
+After it completes, regenerate poster products by passing both run directories:
+
+```bash
+julia --project=. benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl \
+  output/aerobraking_perturbation_mc/20260519_121929 \
+  output/aerobraking_perturbation_mc_inclination_argp_supplement/<timestamp>
+```
+
+Run the targeted periapsis-altitude supplement used to make the
+`omega`-vs-periapsis-altitude poster slice less sparse:
+
+```bash
+julia --project=. benchmarks/studies/aerobraking_perturbation_mc/run_periapsis_altitude_supplement.jl --procs 8
+```
+
+This run covers one representative apoapsis per body, fixed inclination
+93 deg, the full AOP grid, seven periapsis altitude levels spanning the
+current deep-to-shallow range, `full_environment`, and nominal density. It
+writes to
+`output/aerobraking_perturbation_mc_periapsis_altitude_supplement/<timestamp>/`.
+After it completes, pass this third run directory to the poster generator:
+
+```bash
+julia --project=. benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl \
+  output/aerobraking_perturbation_mc/20260519_121929 \
+  output/aerobraking_perturbation_mc_inclination_argp_supplement/<timestamp> \
+  output/aerobraking_perturbation_mc_periapsis_altitude_supplement/<timestamp>
+```
+
 Override the apoapsis grid (applied to all planets):
 
 ```bash

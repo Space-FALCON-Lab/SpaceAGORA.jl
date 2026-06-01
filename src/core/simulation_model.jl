@@ -31,6 +31,7 @@ include(joinpath(@__DIR__, "..", "gnc", "command_types.jl"))
 
 include(joinpath(@__DIR__, "..", "vehicle", "actuators", "thruster", "thruster_models_module.jl"))
 include(joinpath(@__DIR__, "..", "gnc", "guidance", "guidance_models.jl"))
+@reexport using .GuidanceModels
 
 	include(joinpath(@__DIR__, "..", "environment", "ephemerides", "planets.jl"))
 	@reexport using .Planets

@@ -135,12 +135,14 @@ end
 Base.@kwdef struct StudySpec
     planets::Vector{Symbol} = copy(DEFAULT_PLANETS)
     periapsis_regimes::Vector{Symbol} = copy(DEFAULT_PERIAPSIS_REGIMES)
+    periapsis_altitudes_m::Dict{Tuple{Symbol, Symbol}, Float64} = Dict{Tuple{Symbol, Symbol}, Float64}()
     apoapsis_altitudes_km::Dict{Symbol, Vector{Float64}} = deepcopy(DEFAULT_APOAPSIS_ALTITUDES_KM)
     dynamics_cases::Vector{Symbol} = copy(DEFAULT_DYNAMICS_CASES)
     density_scales::Dict{Symbol, Float64} = copy(DEFAULT_DENSITY_SCALES)
     spacecraft_mass_scales::Vector{Float64} = copy(DEFAULT_SPACECRAFT_MASS_SCALES)
     inclinations_deg::Vector{Float64} = copy(DEFAULT_INCLINATIONS_DEG)
     argp_degs::Vector{Float64} = copy(DEFAULT_ARGP_DEGS)
+    spacecraft_grid::Symbol = :ofat
     nominal_mass_scale::Float64 = NOMINAL_SPACECRAFT_MASS_SCALE
     nominal_inclination_deg::Float64 = NOMINAL_INCLINATION_DEG
     nominal_argp_deg::Float64 = NOMINAL_ARGP_DEG
@@ -411,6 +413,14 @@ function _periapsis_altitude_m(planet_id::Symbol, regime::Symbol)::Float64
     return table[regime]
 end
 
+function _sample_periapsis_altitude_m(sample::NamedTuple)::Float64
+    if haskey(sample, :periapsis_alt_m)
+        alt = Float64(sample.periapsis_alt_m)
+        isfinite(alt) && alt > 0.0 && return alt
+    end
+    return _periapsis_altitude_m(sample.planet, sample.periapsis_regime)
+end
+
 
 function _harmonics_file(planet_id::Symbol)::String
     if planet_id == :mars
@@ -638,7 +648,7 @@ end
 
 function _make_config(sample::NamedTuple, results_directory::String, results::Bool)
     planet = _planet(sample.planet)
-    rp_alt_m = _periapsis_altitude_m(sample.planet, sample.periapsis_regime)
+    rp_alt_m = _sample_periapsis_altitude_m(sample)
     ra_alt_m = sample.apoapsis_alt_km * 1e3
     spacecraft = _spacecraft(planet, rp_alt_m, ra_alt_m;
         mass_scale=sample.spacecraft_mass_scale,
@@ -691,17 +701,32 @@ function _ofat_spacecraft_combos(spec::StudySpec)::Vector{NTuple{3, Float64}}
     return combos
 end
 
+function _inclination_argp_spacecraft_combos(spec::StudySpec)::Vector{NTuple{3, Float64}}
+    return [
+        (Float64(spec.nominal_mass_scale), Float64(i), Float64(a))
+        for i in spec.inclinations_deg
+        for a in spec.argp_degs
+    ]
+end
+
+function _spacecraft_combos(spec::StudySpec)::Vector{NTuple{3, Float64}}
+    spec.spacecraft_grid == :ofat && return _ofat_spacecraft_combos(spec)
+    spec.spacecraft_grid == :inclination_argp && return _inclination_argp_spacecraft_combos(spec)
+    throw(ArgumentError("Unsupported spacecraft_grid=$(spec.spacecraft_grid). Use :ofat or :inclination_argp."))
+end
+
 function make_samples(spec::StudySpec)
     samples = NamedTuple[]
     periapsis_regimes = spec.smoke ? spec.periapsis_regimes[1:min(end, 1)] : spec.periapsis_regimes
     dynamics_cases = spec.smoke ? [:two_body, :gram_aero] : spec.dynamics_cases
     density_items = sort(collect(spec.density_scales); by=x -> String(x.first))
     nominal_combo = (spec.nominal_mass_scale, spec.nominal_inclination_deg, spec.nominal_argp_deg)
-    spacecraft_combos = spec.smoke ? [nominal_combo] : _ofat_spacecraft_combos(spec)
+    spacecraft_combos = spec.smoke ? [nominal_combo] : _spacecraft_combos(spec)
     for planet in spec.planets
         all_apo = get(spec.apoapsis_altitudes_km, planet, DEFAULT_APOAPSIS_ALTITUDES_KM[planet])
         apo_alts = spec.smoke ? all_apo[1:min(end, 1)] : all_apo
         for periapsis_regime in periapsis_regimes
+            periapsis_alt_m = get(spec.periapsis_altitudes_m, (planet, periapsis_regime), NaN)
             for apoapsis_alt_km in apo_alts
                 for (mass_scale, inclination_deg, argp_deg) in spacecraft_combos
                     for dynamics_case in dynamics_cases
@@ -710,6 +735,7 @@ function make_samples(spec::StudySpec)
                             push!(samples, (
                                 planet=planet,
                                 periapsis_regime=periapsis_regime,
+                                periapsis_alt_m=periapsis_alt_m,
                                 apoapsis_alt_km=apoapsis_alt_km,
                                 spacecraft_mass_scale=mass_scale,
                                 inclination_deg=inclination_deg,
@@ -1416,7 +1442,7 @@ function _reconstruct_result_row(sample::NamedTuple, case_dir::String; planet=no
     manifest_path = joinpath(case_dir, "orbit_chunk_manifest.feather")
     legacy_traj_path = joinpath(case_dir, "simulation_results.feather")
     planet = planet !== nothing ? planet : _planet(sample.planet)
-    rp_alt_m = _periapsis_altitude_m(sample.planet, sample.periapsis_regime)
+    rp_alt_m = _sample_periapsis_altitude_m(sample)
     ra_alt_m = sample.apoapsis_alt_km * 1e3
     mission_time = sample.norbits * _period_s(planet, rp_alt_m, ra_alt_m)
     if !isfile(manifest_path) && !isfile(legacy_traj_path)
@@ -1513,7 +1539,7 @@ function _run_sample_once(sample::NamedTuple; output_dir::String=joinpath(REPO_R
     mkpath(case_dir)
     args = _make_config(sample, case_dir, results)
     planet = args.environment_model.planet
-    rp_alt_m = _periapsis_altitude_m(sample.planet, sample.periapsis_regime)
+    rp_alt_m = _sample_periapsis_altitude_m(sample)
     ra_alt_m = sample.apoapsis_alt_km * 1e3
     period_s = _period_s(planet, rp_alt_m, ra_alt_m)
     save_times = _aero_save_times(planet, rp_alt_m, ra_alt_m, args.environment_model.EI * 1e3, sample.norbits)
@@ -1940,10 +1966,12 @@ function _manifest(spec::StudySpec, samples, outdir::String)
         "spec" => Dict(
             "planets" => string.(spec.planets),
             "periapsis_regimes" => string.(spec.periapsis_regimes),
+            "periapsis_altitudes_m" => Dict("$(String(k[1]))/$(String(k[2]))" => v for (k, v) in spec.periapsis_altitudes_m),
             "apoapsis_altitudes_km" => Dict(String(k) => v for (k, v) in spec.apoapsis_altitudes_km),
             "spacecraft_mass_scales" => spec.spacecraft_mass_scales,
             "inclinations_deg" => spec.inclinations_deg,
             "argp_degs" => spec.argp_degs,
+            "spacecraft_grid" => String(spec.spacecraft_grid),
             "nominal_mass_scale" => spec.nominal_mass_scale,
             "nominal_inclination_deg" => spec.nominal_inclination_deg,
             "nominal_argp_deg" => spec.nominal_argp_deg,
@@ -2094,6 +2122,7 @@ function spec_from_args(args::Vector{String})
     spacecraft_mass_scales = copy(DEFAULT_SPACECRAFT_MASS_SCALES)
     inclinations_deg = copy(DEFAULT_INCLINATIONS_DEG)
     argp_degs = copy(DEFAULT_ARGP_DEGS)
+    spacecraft_grid = :ofat
     procs = parse(Int, get(ENV, "SPACEAGORA_AERO_PERTURB_PROCS", "0"))
     worker_max_cases = parse(Int, get(ENV, "SPACEAGORA_AERO_PERTURB_WORKER_MAX_CASES", string(DEFAULT_WORKER_MAX_CASES)))
     worker_max_rss_gb = parse(Float64, get(ENV, "SPACEAGORA_AERO_PERTURB_WORKER_MAX_RSS_GB", string(DEFAULT_WORKER_MAX_RSS_GB)))
@@ -2134,6 +2163,10 @@ function spec_from_args(args::Vector{String})
             i += 1; inclinations_deg = parse.(Float64, strip.(split(args[i], ",")))
         elseif arg == "--argps"
             i += 1; argp_degs = parse.(Float64, strip.(split(args[i], ",")))
+        elseif arg == "--spacecraft-grid"
+            i += 1
+            spacecraft_grid = Symbol(args[i])
+            spacecraft_grid in (:ofat, :inclination_argp) || throw(ArgumentError("--spacecraft-grid must be ofat or inclination_argp"))
         elseif arg == "--norbits"
             i += 1; norbits = parse(Int, args[i])
         elseif arg == "--procs"
@@ -2191,6 +2224,7 @@ function spec_from_args(args::Vector{String})
               --mass-scales s1,s2,...        spacecraft mass scale factors (default: 0.25,0.5,1.0,2.0,4.0)
               --inclinations deg1,deg2,...   orbital inclinations in degrees (default: 15,30,45,60,75,93,105,120,135,150,165)
               --argps deg1,deg2,...          arguments of perigee in degrees (default: 0,30,45,60,80,90,120,135,150,180,210,240,270,300,330)
+              --spacecraft-grid MODE         ofat or inclination_argp (default: ofat)
               --norbits N
               --procs N                    number of worker processes
               --worker-max-cases N         recycle each worker after N cases (default: $(DEFAULT_WORKER_MAX_CASES), 0 disables)
@@ -2227,6 +2261,7 @@ function spec_from_args(args::Vector{String})
         spacecraft_mass_scales=spacecraft_mass_scales,
         inclinations_deg=inclinations_deg,
         argp_degs=argp_degs,
+        spacecraft_grid=spacecraft_grid,
         norbits=norbits,
         procs=procs,
         worker_max_cases=worker_max_cases,

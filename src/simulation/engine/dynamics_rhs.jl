@@ -74,6 +74,7 @@ end
             () -> MVector{6, Float64}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
             (local_sum, eff_idx) -> begin
                 effector = dynamic_effectors[eff_idx]
+                _constellation_coupled_effector(effector) && return nothing
                 force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
                 local_sum[1] += force[1]
                 local_sum[2] += force[2]
@@ -92,15 +93,16 @@ end
         )
         # Unpack reduced MVector directly into forces/torques without an intermediate SVector.
         @inbounds begin
-            forces[1] = reduced[1]
-            forces[2] = reduced[2]
-            forces[3] = reduced[3]
-            torques[1] = reduced[4]
-            torques[2] = reduced[5]
-            torques[3] = reduced[6]
+            forces[1] += reduced[1]
+            forces[2] += reduced[2]
+            forces[3] += reduced[3]
+            torques[1] += reduced[4]
+            torques[2] += reduced[5]
+            torques[3] += reduced[6]
         end
     else
         @inbounds for effector in dynamic_effectors
+            _constellation_coupled_effector(effector) && continue
             force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
             forces .+= force
             torques .+= torque
@@ -151,6 +153,7 @@ end
             (local_sum, eff_idx) -> begin
                 effector = dynamic_effectors[eff_idx]
                 _effector_in_partition(effector, partition) || return nothing
+                _constellation_coupled_effector(effector) && return nothing
                 force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
                 local_sum[1] += force[1]
                 local_sum[2] += force[2]
@@ -167,13 +170,14 @@ end
                 return nothing
             end
         )
-        forces .= SVector{3, Float64}(reduced[1], reduced[2], reduced[3])
-        torques .= SVector{3, Float64}(reduced[4], reduced[5], reduced[6])
+        forces .+= SVector{3, Float64}(reduced[1], reduced[2], reduced[3])
+        torques .+= SVector{3, Float64}(reduced[4], reduced[5], reduced[6])
         return nothing
     end
 
     @inbounds for effector in dynamic_effectors
         _effector_in_partition(effector, partition) || continue
+        _constellation_coupled_effector(effector) && continue
         force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
         forces .+= force
         torques .+= torque
@@ -363,6 +367,72 @@ end
     return _effector_cost_ns_per_item_default() * Float64(rank * rank)
 end
 
+@inline _constellation_coupled_effector(::Any)::Bool = false
+@inline _constellation_coupled_effector(::SimulationModel.OpenCavityLaserLinkModel)::Bool = true
+
+@inline function _has_constellation_coupled_effector(effectors::Tuple)::Bool
+    @inbounds for effector in effectors
+        _constellation_coupled_effector(effector) && return true
+    end
+    return false
+end
+
+@inline function _count_non_constellation_coupled_effectors(effectors::Tuple)::Int
+    count = 0
+    @inbounds for effector in effectors
+        _constellation_coupled_effector(effector) || (count += 1)
+    end
+    return count
+end
+
+function _accumulate_constellation_coupled_effectors!(
+    totals::AbstractMatrix{Float64},
+    dynamic_effectors::Tuple,
+    pos_buffers::Vector{SVector{3, Float64}},
+    active_flags,
+    partition::Union{Nothing, Symbol},
+)::Nothing
+    @inbounds for effector in dynamic_effectors
+        _constellation_coupled_effector(effector) || continue
+        if partition !== nothing && SimulationModel.solver_partition(effector) !== partition
+            continue
+        end
+        if effector isa SimulationModel.OpenCavityLaserLinkModel
+            SimulationModel.DynamicEffectors.accumulate_laser_link_forces!(
+                totals,
+                effector,
+                pos_buffers,
+                active_flags,
+            )
+        end
+    end
+    return nothing
+end
+
+function _constellation_coupled_force_totals!(
+    p,
+    sc_state,
+    dynamic_effectors::Tuple,
+    partition::Union{Nothing, Symbol},
+)
+    has_coupled = partition === nothing ?
+        _has_constellation_coupled_effector(dynamic_effectors) :
+        any(effector -> _constellation_coupled_effector(effector) && _effector_in_partition(effector, partition), dynamic_effectors)
+    has_coupled || return nothing
+
+    _ensure_rhs_flat_effector_scratch!(p.shared_buffers, length(sc_state), 1)
+    _prefill_rhs_flat_state_samples!(p.shared_buffers, sc_state, p)
+    totals = p.shared_buffers.rhs_flat_effector_totals[]
+    _accumulate_constellation_coupled_effectors!(
+        totals,
+        dynamic_effectors,
+        p.shared_buffers.rhs_flat_state_pos_ii[],
+        p.is_active,
+        partition,
+    )
+    return totals
+end
+
 @inline function _rhs_effector_estimated_cost_ns(shared_buffers, dynamic_effectors::Tuple, eff_idx::Int)::Float64
     fallback = _rhs_effector_static_cost_ns(dynamic_effectors[eff_idx])
     return _rhs_effector_observed_cost_ns(shared_buffers, eff_idx, fallback)
@@ -423,6 +493,7 @@ function _prepare_rhs_flat_work_items!(
         for eff_idx in 1:n_effectors
             effector = dynamic_effectors[eff_idx]
             _flat_partition_selected(effector, partition) || continue
+            _constellation_coupled_effector(effector) && continue
             # Skip effectors resolved by pre-passes — they already wrote into totals.
             partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector)) && continue
             count_items += 1
@@ -930,15 +1001,29 @@ function _accumulate_dynamic_effectors_flat_batch!(
 
     needs_state_sample = if partition === nothing
         any(_wrench_method_available(effector) for effector in dynamic_effectors) ||
-            _has_any_batchable_effector(dynamic_effectors)
+            _has_any_batchable_effector(dynamic_effectors) ||
+            _has_constellation_coupled_effector(dynamic_effectors)
     else
-        _partition_needs_state_sample(dynamic_effectors, partition)
+        _partition_needs_state_sample(dynamic_effectors, partition) ||
+            any(effector -> _constellation_coupled_effector(effector) && _effector_in_partition(effector, partition), dynamic_effectors)
     end
     if needs_state_sample
         _prefill_rhs_flat_state_samples!(p.shared_buffers, sc_state, p)
     end
     spacecraft = p.args.dynamics_model.spacecraft
     orientation_sim = p.args.mission_configuration.orientation_sim
+
+    if _has_constellation_coupled_effector(dynamic_effectors)
+        pos_buffers = p.shared_buffers.rhs_flat_state_pos_ii[]
+        _accumulate_constellation_coupled_effectors!(
+            totals,
+            dynamic_effectors,
+            pos_buffers,
+            p.is_active,
+            partition,
+        )
+        _count_non_constellation_coupled_effectors(dynamic_effectors) == 0 && return nothing
+    end
 
     # ── Batchable effector pre-pass (NBody, SRP) ─────────────────────────────
     # Run batchable effectors as a single serial sweep before the flat queue.
@@ -1522,6 +1607,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
     if use_rhs_batch
         _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
     end
+    coupled_totals = _constellation_coupled_force_totals!(p, sc_state, dynamic_effectors, nothing)
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(sc_state)
@@ -1532,7 +1618,11 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
             @views begin
                 sc_view = sc_state[i]
                 du_view = sc_du[i]
-                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                forces = if coupled_totals === nothing
+                    MVector{3, Float64}(0.0, 0.0, 0.0)
+                else
+                    MVector{3, Float64}(coupled_totals[1, i], coupled_totals[2, i], coupled_totals[3, i])
+                end
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
@@ -1575,7 +1665,11 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
             @views begin
                 sc_view = sc_state[i]
                 du_view = sc_du[i]
-                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                forces = if coupled_totals === nothing
+                    MVector{3, Float64}(0.0, 0.0, 0.0)
+                else
+                    MVector{3, Float64}(coupled_totals[1, i], coupled_totals[2, i], coupled_totals[3, i])
+                end
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
@@ -1628,6 +1722,7 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
     if use_rhs_batch
         _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
     end
+    coupled_totals = _constellation_coupled_force_totals!(p, sc_state, dynamic_effectors, nothing)
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(sc_state)
@@ -1638,7 +1733,11 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
             @views begin
                 sc_view = sc_state[i]
                 du_view = sc_du[i]
-                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                forces = if coupled_totals === nothing
+                    MVector{3, Float64}(0.0, 0.0, 0.0)
+                else
+                    MVector{3, Float64}(coupled_totals[1, i], coupled_totals[2, i], coupled_totals[3, i])
+                end
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
@@ -1679,7 +1778,11 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
             @views begin
                 sc_view = sc_state[i]
                 du_view = sc_du[i]
-                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                forces = if coupled_totals === nothing
+                    MVector{3, Float64}(0.0, 0.0, 0.0)
+                else
+                    MVector{3, Float64}(coupled_totals[1, i], coupled_totals[2, i], coupled_totals[3, i])
+                end
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
@@ -1849,6 +1952,7 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
     if use_rhs_batch
         _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
     end
+    coupled_totals = _constellation_coupled_force_totals!(p, sc_state, dynamic_effectors, :explicit)
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(sc_state)
@@ -1859,7 +1963,11 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
             @views begin
                 sc_view = sc_state[i]
                 du_view = sc_du[i]
-                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                forces = if coupled_totals === nothing
+                    MVector{3, Float64}(0.0, 0.0, 0.0)
+                else
+                    MVector{3, Float64}(coupled_totals[1, i], coupled_totals[2, i], coupled_totals[3, i])
+                end
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :explicit)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
@@ -1902,7 +2010,11 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
             @views begin
                 sc_view = sc_state[i]
                 du_view = sc_du[i]
-                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+                forces = if coupled_totals === nothing
+                    MVector{3, Float64}(0.0, 0.0, 0.0)
+                else
+                    MVector{3, Float64}(coupled_totals[1, i], coupled_totals[2, i], coupled_totals[3, i])
+                end
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :explicit)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)

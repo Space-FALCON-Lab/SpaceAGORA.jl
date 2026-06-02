@@ -987,6 +987,113 @@
         rtol=1e-10
     )
 
+    @testset "Open Cavity Laser Link Effector" begin
+        dyn = SimulationModel.DynamicEffectors
+        model = OpenCavityLaserLinkModel(
+            1,
+            [2, 3];
+            range_m=10.0,
+            power_w=3.0e8,
+            magnification=1.0,
+            beta=1.0,
+            eta=1.0,
+            schedule=:naive_next_entering,
+        )
+        expected_mag = model.power_w / dyn.LaserLinkEffectors.SPEED_OF_LIGHT_MPS
+        @test isapprox(dyn.laser_link_force_magnitude(model), expected_mag; rtol=1e-14)
+        @test dyn.laser_link_pair_force(
+            model,
+            SVector{3, Float64}(0.0, 0.0, 0.0),
+            SVector{3, Float64}(20.0, 0.0, 0.0),
+        ) == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+        model.active_helper_idx = 2
+        totals = zeros(Float64, 8, 3)
+        dyn.accumulate_laser_link_forces!(
+            totals,
+            model,
+            SVector{3, Float64}[
+                SVector{3, Float64}(0.0, 0.0, 0.0),
+                SVector{3, Float64}(5.0, 0.0, 0.0),
+                SVector{3, Float64}(0.0, 5.0, 0.0),
+            ],
+            trues(3),
+        )
+        @test isapprox(totals[1:3, 1], [expected_mag, 0.0, 0.0]; rtol=1e-14, atol=1e-14)
+        @test isapprox(totals[1:3, 2], [-expected_mag, 0.0, 0.0]; rtol=1e-14, atol=1e-14)
+        @test totals[1:3, 3] == zeros(3)
+        @test count(!iszero, (model.target_idx, model.active_helper_idx)) == 2
+
+        pos_a = SVector{3, Float64}[
+            SVector{3, Float64}(0.0, 0.0, 0.0),
+            SVector{3, Float64}(5.0, 0.0, 0.0),
+            SVector{3, Float64}(20.0, 0.0, 0.0),
+        ]
+        vel_a = SVector{3, Float64}[SVector{3, Float64}(0.0, 1.0, 0.0) for _ in 1:3]
+        model.active_helper_idx = 0
+        fill!(model.previous_in_range, false)
+        @test dyn.update_laser_link_schedule!(model, pos_a, vel_a) == 2
+
+        # Helper 2 enters while helper 1 is still active; the active link is held.
+        pos_b = SVector{3, Float64}[
+            SVector{3, Float64}(0.0, 0.0, 0.0),
+            SVector{3, Float64}(5.0, 0.0, 0.0),
+            SVector{3, Float64}(4.0, 0.0, 0.0),
+        ]
+        @test dyn.update_laser_link_schedule!(model, pos_b, vel_a) == 2
+
+        # Helper 1 leaves; helper 2 was already in range, so naive scheduling waits.
+        pos_c = SVector{3, Float64}[
+            SVector{3, Float64}(0.0, 0.0, 0.0),
+            SVector{3, Float64}(20.0, 0.0, 0.0),
+            SVector{3, Float64}(4.0, 0.0, 0.0),
+        ]
+        @test dyn.update_laser_link_schedule!(model, pos_c, vel_a) == 0
+
+        # Helper 2 exits and then re-enters, so a new link is formed.
+        pos_d = SVector{3, Float64}[
+            SVector{3, Float64}(0.0, 0.0, 0.0),
+            SVector{3, Float64}(20.0, 0.0, 0.0),
+            SVector{3, Float64}(20.0, 0.0, 0.0),
+        ]
+        @test dyn.update_laser_link_schedule!(model, pos_d, vel_a) == 0
+        @test dyn.update_laser_link_schedule!(model, pos_c, vel_a) == 3
+
+        sc_target = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, i_deg=0.0, Ω_deg=0.0, ω_deg=0.0, ν_deg=0.0)
+        sc_h1 = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, i_deg=0.0, Ω_deg=0.0, ω_deg=0.0, ν_deg=0.05)
+        sc_h2 = make_spacecraft(ra_alt_m=520e3, rp_alt_m=520e3, i_deg=0.0, Ω_deg=0.0, ω_deg=0.0, ν_deg=0.0)
+        laser_smoke = OpenCavityLaserLinkModel(
+            1,
+            [2, 3];
+            range_m=50e3,
+            power_w=10_000.0,
+            magnification=100.0,
+            beta=1.0,
+            eta=2.0,
+            schedule=:naive_next_entering,
+        )
+        args_laser_smoke = build_config_multi(
+            spacecraft=[sc_target, sc_h1, sc_h2],
+            density_model=NoAtmosphereModel(),
+            orientation_sim=false,
+            mission_time=30.0,
+            EI_km=120.0,
+            dynamic_effectors=(InverseSquaredJ2GravityModel(), laser_smoke),
+            keplerian=true,
+            simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+            tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=5.0),
+            ephemerides_model=SimpleEphemeridesModel(),
+        )
+        sol_laser = run_simulation(
+            args_laser_smoke;
+            return_solution=true,
+            extra_callbacks=(laser_link_scheduler_callback(laser_smoke),),
+        )
+        @test DiffEqBase.successful_retcode(sol_laser.retcode)
+        laser_after = sol_laser.prob.p.args.dynamics_model.dynamic_effectors[2]
+        @test laser_after.link_activation_count >= 1
+    end
+
     env_empty = sample_environment(
         EffectorEnvironmentRequirements(),
         WrenchOnlyForceModel(typed_force, typed_torque),

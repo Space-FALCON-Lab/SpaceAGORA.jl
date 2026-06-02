@@ -155,6 +155,7 @@ end
     gravity_effectors_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models", "gravity_effectors.jl"), String)
     aerodynamic_effectors_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models", "aerodynamic_effectors.jl"), String)
     perturbation_effectors_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models", "perturbation_effectors.jl"), String)
+    laser_link_effectors_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models", "laser_link_effectors.jl"), String)
     thruster_models_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models", "thruster_models.jl"), String)
     guidance_models_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models", "guidance_models.jl"), String)
     top_level_thruster_models_src = read(joinpath(REPO_ROOT, "src", "vehicle", "actuators", "thruster", "thruster_models_module.jl"), String)
@@ -169,6 +170,7 @@ end
         "gravity_effectors.jl",
         "aerodynamic_effectors.jl",
         "perturbation_effectors.jl",
+        "laser_link_effectors.jl",
         "thruster_models.jl",
         "guidance_models.jl",
     )
@@ -177,6 +179,7 @@ end
     @test occursin("module GravityEffectors", gravity_effectors_src)
     @test occursin("module AerodynamicEffectors", aerodynamic_effectors_src)
     @test occursin("module PerturbationEffectors", perturbation_effectors_src)
+    @test occursin("module LaserLinkEffectors", laser_link_effectors_src)
     @test occursin("module ThrusterModels", thruster_models_src)
     @test occursin("module GuidanceModels", guidance_models_src)
     @test occursin("module ThrusterModels", top_level_thruster_models_src)
@@ -186,10 +189,11 @@ end
     @test !occursin(r"^\s+module\s+(GravityEffectors|AerodynamicEffectors|PerturbationEffectors|ThrusterModels|GuidanceModels)"m, force_torque_src)
 
     @test occursin("function calcForceTorque end", force_torque_src)
-    @test occursin("using ..EffectorSampling: wrench, environment_requirements, solver_partition", force_torque_src)
+    @test occursin("using ..EffectorSampling: wrench, wrench_caching!, environment_requirements, solver_partition", force_torque_src)
     @test occursin("using .GravityEffectors: ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel", force_torque_src)
     @test occursin("using .AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight", force_torque_src)
     @test occursin("using .PerturbationEffectors: NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel", force_torque_src)
+    @test occursin("using .LaserLinkEffectors: OpenCavityLaserLinkModel, laser_link_scheduler_callback", force_torque_src)
     @test occursin("using .ThrusterModels: BaseThrusterModel", force_torque_src)
     @test occursin("using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", force_torque_src)
     @test occursin("using ...ThrusterModels: BaseThrusterModel", thruster_models_src)
@@ -211,6 +215,8 @@ end
     @test isdefined(SimulationModel, :ConstantGravityModel)
     @test isdefined(SimulationModel, :NBodyGravityModel)
     @test isdefined(SimulationModel, :AerodynamicCoefficientConstant)
+    @test isdefined(SimulationModel, :OpenCavityLaserLinkModel)
+    @test isdefined(SimulationModel, :laser_link_scheduler_callback)
     @test isdefined(SimulationModel, :BaseThrusterModel)
     @test isdefined(SimulationModel, :AerobrakingCampaignPropulsiveManeuverGuidanceModel)
     @test isdefined(SimulationModel, :PropulsiveManeuverCommand)

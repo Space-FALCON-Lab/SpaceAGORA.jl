@@ -8,6 +8,7 @@ module DynamicEffectors
     include(joinpath(@__DIR__, "force_torque_models", "gravity_effectors.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "aerodynamic_effectors.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "perturbation_effectors.jl"))
+    include(joinpath(@__DIR__, "force_torque_models", "laser_link_effectors.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "thruster_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "guidance_models.jl"))
 
@@ -28,11 +29,15 @@ module DynamicEffectors
     using .PerturbationEffectors: _make_harmonics_scratch_workspace, _harmonics_workspace_for_sat!
     using .PerturbationEffectors: _nbody_body_position_from_cache_j2000_m, _srp_sun_position_from_cache_j2000_m
     using .PerturbationEffectors: eclipse_area_calc
+    using .LaserLinkEffectors: OpenCavityLaserLinkModel, laser_link_scheduler_callback
+    using .LaserLinkEffectors: laser_link_force_magnitude, laser_link_pair_force, laser_link_active_pair
+    using .LaserLinkEffectors: update_laser_link_schedule!, accumulate_laser_link_forces!
     using .ThrusterModels: BaseThrusterModel
     using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
+    export OpenCavityLaserLinkModel, laser_link_scheduler_callback
     export aerobraking_gravity_force_ii, srp, srp_cannonball_accel, planetary_albedo_accel, planetary_ir_accel
     export AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
     export calcForceTorque

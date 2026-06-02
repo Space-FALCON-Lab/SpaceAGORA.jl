@@ -33,6 +33,7 @@ using .SimulationModel: make_no_gram_planet, make_no_gram_density_model, make_no
 using .SimulationModel: calcForceTorque, wrench, environment_requirements, solver_partition
 using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleration_ii
 using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
+using .SimulationModel: OpenCavityLaserLinkModel, laser_link_scheduler_callback
 using .SimulationModel: getDensity, getDensityBatch!
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 using .TelemetryVerification: VerificationRequest, VerificationResult
@@ -64,6 +65,16 @@ using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 @doc (@doc SimulationModel.ThirdBodyEphemerisSample) ThirdBodyEphemerisSample
 @doc (@doc SimulationModel.EnvironmentSample) EnvironmentSample
 @doc (@doc SimulationModel.EffectorEnvironmentRequirements) EffectorEnvironmentRequirements
+@doc (@doc SimulationModel.OpenCavityLaserLinkModel) OpenCavityLaserLinkModel
+
+"""
+    laser_link_scheduler_callback(model::OpenCavityLaserLinkModel)
+
+Build the accepted-step scheduler callback for an open-cavity laser-link model.
+Pass this callback through `run_simulation(...; extra_callbacks=(callback,))`
+when using stateful laser-link scheduling.
+"""
+laser_link_scheduler_callback
 
 """
     NoAtmosphereModel()
@@ -314,6 +325,7 @@ export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
 export calcForceTorque, wrench, environment_requirements, solver_partition
 export gravity_backbone_structure, gravity_backbone_acceleration_ii
 export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
+export OpenCavityLaserLinkModel, laser_link_scheduler_callback
 export getDensity, getDensityBatch!
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 export VerificationRequest, VerificationResult

@@ -73,6 +73,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :gravity_backbone_acceleration_ii, rendered = "SpaceAGORA.gravity_backbone_acceleration_ii"),
             (owner = :SpaceAGORA, symbol = :gravity_backbone_kick_structure, rendered = "SpaceAGORA.gravity_backbone_kick_structure"),
             (owner = :SpaceAGORA, symbol = :gravity_backbone_kick_acceleration_ii, rendered = "SpaceAGORA.gravity_backbone_kick_acceleration_ii"),
+            (owner = :SpaceAGORA, symbol = :OpenCavityLaserLinkModel, rendered = "SpaceAGORA.OpenCavityLaserLinkModel"),
+            (owner = :SpaceAGORA, symbol = :laser_link_scheduler_callback, rendered = "SpaceAGORA.laser_link_scheduler_callback"),
             (owner = :SpaceAGORA, symbol = :getDensity, rendered = "SpaceAGORA.getDensity"),
             (owner = :SpaceAGORA, symbol = :getDensityBatch!, rendered = "SpaceAGORA.getDensityBatch!"),
             (owner = :SpaceAGORA, symbol = :calcControlEffect!, rendered = "SpaceAGORA.calcControlEffect!"),

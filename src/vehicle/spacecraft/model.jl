@@ -4,6 +4,7 @@ using StaticArrays
 using LinearAlgebra
 
 using ..Components
+using ..EphemeridesModels: SpiceEphemeridesModel, ephemerides_time_seconds, planet_frame_lpi
 
 export Link, Joint, SpacecraftModel, DynamicsModel, InitialCondition, CartesianInitialCondition, AbstractInitialCondition, GuidanceModel, NavigationModel, ControlModel
 
@@ -86,6 +87,140 @@ function InitialCondition(;
 
     ν_eff = ν === nothing ? 0.0 : ν
     return InitialCondition(a, e, i, ω, Ω, ν_eff, q, ang_vel)
+end
+
+@inline function _initial_condition_lpi(planet, L_PI, initial_time, ephemerides_model)::SMatrix{3, 3, Float64, 9}
+    if L_PI !== nothing
+        return SMatrix{3, 3, Float64}(L_PI)
+    end
+
+    if initial_time !== nothing
+        model = ephemerides_model === nothing ? SpiceEphemeridesModel() : ephemerides_model
+        return planet_frame_lpi(planet, ephemerides_time_seconds(initial_time, model), model)
+    end
+
+    if hasproperty(planet, :L_PI)
+        planet_lpi = SMatrix{3, 3, Float64}(getproperty(planet, :L_PI))
+        sum(abs2, planet_lpi) > 0.0 && return planet_lpi
+    end
+
+    return I3
+end
+
+@inline function _initial_condition_apsis_direction_ii(
+    i::Float64,
+    ω::Float64,
+    Ω::Float64,
+    ν::Float64
+)::SVector{3, Float64}
+    q = SVector{3, Float64}(cos(ν), sin(ν), 0.0)
+    Q = @SMatrix [
+        -sin(Ω)*cos(i)*sin(ω)+cos(Ω)*cos(ω)  cos(Ω)*cos(i)*sin(ω)+sin(Ω)*cos(ω)  sin(i)*sin(ω)
+        -sin(Ω)*cos(i)*cos(ω)-cos(Ω)*sin(ω)  cos(Ω)*cos(i)*cos(ω)-sin(Ω)*sin(ω)  sin(i)*cos(ω)
+         sin(Ω)*sin(i)                       -cos(Ω)*sin(i)                       cos(i)
+    ]
+    u = Q' * q
+    return u / norm(u)
+end
+
+@inline function _initial_condition_oblate_altitude(radius::Float64, u_pp::SVector{3, Float64}, planet)::Float64
+    x = radius * u_pp[1]
+    y = radius * u_pp[2]
+    z = radius * u_pp[3]
+
+    f = (planet.Rp_e - planet.Rp_p) / planet.Rp_e
+    e2 = 1.0 - (1.0 - f)^2
+    ep2 = e2 / (1.0 - e2)
+    p_xy = sqrt(x^2 + y^2)
+
+    θ = atan(z * planet.Rp_e, p_xy * planet.Rp_p)
+    lat = atan(z + ep2 * planet.Rp_p * sin(θ)^3, p_xy - e2 * planet.Rp_e * cos(θ)^3)
+    N = planet.Rp_e / sqrt(1.0 - e2 * sin(lat)^2)
+    return p_xy * cos(lat) + (z + e2 * N * sin(lat)^2) * sin(lat) - N
+end
+
+@inline function _initial_condition_oblate_surface_radius(u_pp::SVector{3, Float64}, planet)::Float64
+    return inv(sqrt((u_pp[1]^2 + u_pp[2]^2) / planet.Rp_e^2 + u_pp[3]^2 / planet.Rp_p^2))
+end
+
+function _initial_condition_radius_for_oblate_altitude(
+    target_altitude::Float64,
+    u_pp::SVector{3, Float64},
+    planet
+)::Float64
+    target_altitude >= 0.0 ||
+        throw(ArgumentError("Oblate InitialCondition altitudes must be nonnegative; got $target_altitude m."))
+
+    lo = _initial_condition_oblate_surface_radius(u_pp, planet)
+    hi = lo + target_altitude + abs(planet.Rp_e - planet.Rp_p) + 1.0
+    while _initial_condition_oblate_altitude(hi, u_pp, planet) < target_altitude
+        hi += max(target_altitude, abs(planet.Rp_e - planet.Rp_p), 1.0)
+    end
+
+    for _ in 1:80
+        mid = 0.5 * (lo + hi)
+        if _initial_condition_oblate_altitude(mid, u_pp, planet) < target_altitude
+            lo = mid
+        else
+            hi = mid
+        end
+    end
+    return 0.5 * (lo + hi)
+end
+
+"""
+    InitialCondition(planet; ra, hp, i=0.0, ω=0.0, Ω=0.0, ν=180.0, initial_time=nothing, ephemerides_model=nothing, L_PI=nothing)
+
+Construct orbital elements from apoapsis altitude `ra` and periapsis altitude
+`hp`, measured above the planet's oblate reference ellipsoid along the apsis
+directions. Pass `initial_time` and `ephemerides_model` to compute the
+inertial-to-planet-fixed frame at construction time. Pass `L_PI` to use a
+specific frame directly; otherwise the constructor uses `planet.L_PI` when it
+has been initialized.
+"""
+function InitialCondition(
+    planet;
+    ra::Union{Nothing, Real}=nothing,
+    hp::Union{Nothing, Real}=nothing,
+    i::Real=0.0,
+    ω::Real=0.0,
+    Ω::Real=0.0,
+    ν::Union{Nothing, Real}=nothing,
+    q::SVector{4, Float64}=DEFAULT_INITIAL_CONDITION_Q,
+    ang_vel::SVector{3, Float64}=DEFAULT_INITIAL_CONDITION_ANG_VEL,
+    initial_time=nothing,
+    ephemerides_model=nothing,
+    L_PI::Union{Nothing, AbstractMatrix}=nothing
+)
+    (ra !== nothing && hp !== nothing) ||
+        throw(ArgumentError("Oblate InitialCondition construction requires both ra and hp altitude inputs."))
+
+    i_rad = deg2rad(Float64(i))
+    ω_rad = deg2rad(Float64(ω))
+    Ω_rad = deg2rad(Float64(Ω))
+    l_pi = _initial_condition_lpi(planet, L_PI, initial_time, ephemerides_model)
+
+    u_apo_pp = SVector{3, Float64}(l_pi * _initial_condition_apsis_direction_ii(i_rad, ω_rad, Ω_rad, Float64(pi)))
+    u_peri_pp = SVector{3, Float64}(l_pi * _initial_condition_apsis_direction_ii(i_rad, ω_rad, Ω_rad, 0.0))
+    u_apo_pp /= norm(u_apo_pp)
+    u_peri_pp /= norm(u_peri_pp)
+
+    ra_radius = _initial_condition_radius_for_oblate_altitude(Float64(ra), u_apo_pp, planet)
+    rp_radius = _initial_condition_radius_for_oblate_altitude(Float64(hp), u_peri_pp, planet)
+    ra_radius > rp_radius ||
+        throw(ArgumentError("Oblate InitialCondition requires apoapsis radius > periapsis radius; got ra=$ra_radius m, rp=$rp_radius m."))
+    ν_eff = ν === nothing ? 180.0 : Float64(ν)
+
+    return InitialCondition(
+        ra=ra_radius,
+        rp=rp_radius,
+        i=Float64(i),
+        ω=Float64(ω),
+        Ω=Float64(Ω),
+        ν=ν_eff,
+        q=q,
+        ang_vel=ang_vel
+    )
 end
 
 struct CartesianInitialCondition <: AbstractInitialCondition

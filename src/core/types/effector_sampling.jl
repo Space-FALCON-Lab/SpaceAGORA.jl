@@ -10,6 +10,7 @@ export StateSample,
     EnvironmentSample,
     EffectorEnvironmentRequirements,
     wrench,
+    wrench_caching!,
     environment_requirements,
     solver_partition,
     gravity_backbone_structure,
@@ -159,6 +160,16 @@ inertial frame and torque is expressed in the body frame. Implementations should
 behave as pure functions of `(model, x, env, t)`.
 """
 function wrench end
+
+"""
+    wrench_caching!(model, x::StateSample, env::EnvironmentSample, t::Float64, p, sat_idx::Int)
+
+Like `wrench`, but may also write per-component force diagnostics to `p.save_cache`
+(e.g. drag/lift/cross vectors for aerodynamic models).  The default falls back to
+calling `wrench` and ignoring `p`/`sat_idx`.
+"""
+function wrench_caching! end
+@inline wrench_caching!(model, x, env, t, p, sat_idx) = wrench(model, x, env, t)
 
 """
     solver_partition(model) -> Symbol

@@ -28,9 +28,9 @@ end
 function build_command(build_helper::AbstractString, clean::Bool, gram_root::AbstractString)
     if Sys.iswindows()
         cmd_helper = replace(build_helper, '/' => '\\')
-        return clean ? `cmd /C $cmd_helper --clean $gram_root` : `cmd /C $cmd_helper $gram_root`
+        return Cmd(["cmd", "/C", cmd_helper, args...])
     end
-    return clean ? `bash $build_helper --clean $gram_root` : `bash $build_helper $gram_root`
+    return Cmd(["bash", build_helper, args...])
 end
 
 function main(args::Vector{String})

@@ -151,8 +151,10 @@ function run_mode(
         end
 
         orbit_started_ns = time_ns()
-        orbit_raw_df = run_per_orbit_for_scenarios(config.profile, cases, planet)
-        orbit_summary_df = summarize_per_orbit_results(orbit_raw_df)
+        if _include_mission_time_sweep()
+            orbit_raw_df = run_per_orbit_for_scenarios(config.profile, cases, planet)
+            orbit_summary_df = summarize_per_orbit_results(orbit_raw_df)
+        end
         orbit_elapsed_s = (time_ns() - orbit_started_ns) / 1e9
 
         entry_duration_started_ns = time_ns()

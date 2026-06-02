@@ -112,6 +112,8 @@ function perf_worker_measure_entry_duration_scenario(
 end
 
 function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, planet::Earth)
+    _include_montecarlo_scenarios() || return nothing
+
     seeds = collect(1001:(1000 + spec.montecarlo_samples))
     scenarios = _active_montecarlo_scenarios()
     if _perf_smoke_mode()
@@ -136,9 +138,10 @@ function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, plan
         if mc_backend == :process
             ensure_perf_workers!()
             warmup_seed = first(seeds)
-            for w in workers()
-                remotecall_wait(perf_worker_montecarlo_warmup, w, spec, mission_time_s, warmup_seed, variant, :process)
+            warmup_tasks = map(workers()) do w
+                @async remotecall_wait(perf_worker_montecarlo_warmup, w, spec, mission_time_s, warmup_seed, variant, :process)
             end
+            foreach(wait, warmup_tasks)
         else
             plan = parallel_priority_plan(warmup_case, mc_backend)
             env_pairs = parallel_priority_env_pairs(plan)
@@ -348,7 +351,16 @@ function run_benchmarks(spec::ProfileSpec, cases::Vector{BenchmarkCase}, planet:
     return DataFrame(rows)
 end
 @inline function selected_cases(spec::ProfileSpec, cases::Vector{BenchmarkCase})::Vector{BenchmarkCase}
-    selected = spec.name == "full" ? cases : [c for c in cases if c.run_in_quick]
+    case_filter = _perf_case_name_filter()
+    selected = if isempty(case_filter)
+        spec.name == "full" ? cases : [c for c in cases if c.run_in_quick]
+    else
+        by_name = Dict(c.name => c for c in cases)
+        [by_name[name] for name in case_filter if haskey(by_name, name)]
+    end
+    if _exclude_entry_scenarios()
+        selected = [c for c in selected if c.category != "entry"]
+    end
     if _perf_smoke_mode()
         return selected[1:min(end, 3)]
     end
@@ -363,6 +375,9 @@ end
 end
 
 @inline function _entry_duration_selected_cases(spec::ProfileSpec, cases::Vector{BenchmarkCase})::Vector{BenchmarkCase}
+    if _exclude_entry_scenarios()
+        return BenchmarkCase[]
+    end
     selected = [c for c in (spec.name == "full" ? cases : [c for c in cases if c.run_in_quick]) if c.category == "entry"]
     if _perf_smoke_mode()
         return selected[1:min(end, 1)]

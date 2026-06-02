@@ -1,3 +1,10 @@
+function record_route_discard!()
+    lock(_policy_telemetry_lock) do
+        _active_policy_context().telemetry.policy_discarded_by_route_total += 1
+    end
+    return nothing
+end
+
 function record_policy_observation!(
     source::Symbol;
     mode::Symbol,
@@ -25,6 +32,7 @@ function record_policy_observation!(
         t.elapsed_ns_total += elapsed_ns_clamped
         if use_threads
             t.threaded_elapsed_ns_total += elapsed_ns_clamped
+            t.policy_threading_dispatched_total += 1
         else
             t.serial_elapsed_ns_total += elapsed_ns_clamped
         end

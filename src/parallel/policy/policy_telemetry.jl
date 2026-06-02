@@ -30,6 +30,7 @@ function _record_policy_decision!(
         t = _active_policy_context().telemetry
         t.decisions_total += 1
         t.threads_enabled_total += use_threads ? 1 : 0
+        t.policy_threading_proposed_total += use_threads ? 1 : 0
         t.adaptive_decisions_total += adaptive_enabled ? 1 : 0
 
         bucket = _telemetry_bucket(source)
@@ -93,6 +94,9 @@ function policy_telemetry_snapshot()
         return (
             decisions_total=t.decisions_total,
             threads_enabled_total=t.threads_enabled_total,
+            policy_threading_proposed_total=t.policy_threading_proposed_total,
+            policy_threading_dispatched_total=t.policy_threading_dispatched_total,
+            policy_discarded_by_route_total=t.policy_discarded_by_route_total,
             adaptive_decisions_total=t.adaptive_decisions_total,
             density_decisions=t.density_decisions,
             density_threads_enabled=t.density_threads_enabled,

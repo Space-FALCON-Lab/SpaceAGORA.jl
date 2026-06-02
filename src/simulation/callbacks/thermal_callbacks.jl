@@ -17,6 +17,7 @@ function _compute_stage_heat_rates!(
     use_buffered_density::Bool=false,
 )
     links = p.args.dynamics_model.spacecraft[sat_idx].links
+    isempty(links) && return _heat_rate_buffer_for_sat!(p, sat_idx)
     heat_rates = _heat_rate_buffer_for_sat!(p, sat_idx)
     engine = _simulation_engine_module()
     planet_frame = engine.sample_planet_frame(x, p, sat_idx, t)
@@ -58,7 +59,7 @@ end
 
 function get_thermal_callback(num_sats::Int, args::SimulationConfiguration)
     function update_thermal_sat!(i::Int, p, u, t::Float64)
-        _compute_stage_heat_rates!(p, u.sc[i], i, t; use_buffered_density=false)
+        _compute_stage_heat_rates!(p, u.sc[i], i, t; use_buffered_density=true)
         return nothing
     end
 

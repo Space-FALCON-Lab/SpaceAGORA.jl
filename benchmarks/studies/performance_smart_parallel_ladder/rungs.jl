@@ -57,9 +57,9 @@ function _ladder_rungs(config::SmartLadderConfig)::Vector{LadderRungSpec}
         LadderRungSpec(
             mode=:outer_inner_full_smart,
             label="r5_full_smart",
-            description="Outer + inner enabled with tuned adaptive policy behavior (thermal forced on, shorter adaptive window, control tail-guard).",
+            description="Serial case execution with tuned inner adaptive policy behavior (thermal forced on, shorter adaptive window, control tail-guard).",
             matrix=:full_auto,
-            backend="auto",
+            backend="none",
             inner_adaptive=true,
             outer_route_adaptive=true
         )
@@ -228,6 +228,7 @@ function _ladder_env_pairs(
         "SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD" => measured_reward,
         "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => persistent_hints,
         "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => persistent_state_persist,
+        "SPACEAGORA_PERF_SAVE_TRAJECTORY_FEATHER" => (config.trajectory_output ? "1" : "0"),
         "SPACEAGORA_PERF_INCLUDE_CONTROL_STRESS_PER_ORBIT" => (config.include_control_stress_per_orbit ? "1" : "0"),
         "SPACEAGORA_PERF_CONTROL_STRESS_REPEATS_FULL" => string(config.control_stress_repeats_full),
         "SPACEAGORA_PERF_CONTROL_STRESS_WARMUP_FULL" => string(config.control_stress_warmup_full)
@@ -439,8 +440,8 @@ function _ladder_artifacts(
     profile_name = config.profile.name
     raw_path = _latest_artifact_path(rung_outdir, "runtime_raw", profile_name, ".csv")
     summary_path = _latest_artifact_path(rung_outdir, "runtime_summary", profile_name, ".csv")
-    orbit_raw_path = _latest_artifact_path(rung_outdir, "runtime_per_orbit_raw", profile_name, ".csv")
-    orbit_summary_path = _latest_artifact_path(rung_outdir, "runtime_per_orbit_summary", profile_name, ".csv")
+    orbit_raw_path = _latest_artifact_path_optional(rung_outdir, "runtime_per_orbit_raw", profile_name, ".csv")
+    orbit_summary_path = _latest_artifact_path_optional(rung_outdir, "runtime_per_orbit_summary", profile_name, ".csv")
     entry_duration_raw_path = _latest_artifact_path(rung_outdir, "runtime_entry_duration_raw", profile_name, ".csv")
     entry_duration_summary_path = _latest_artifact_path(rung_outdir, "runtime_entry_duration_summary", profile_name, ".csv")
     stage_timing_path = _latest_artifact_path_optional(rung_outdir, "runtime_stage_timing", profile_name, ".csv")
@@ -463,8 +464,8 @@ function _ladder_artifacts(
         entry_duration_elapsed_s=entry_duration_elapsed_s,
         raw_path=raw_path,
         summary_path=summary_path,
-        orbit_raw_path=orbit_raw_path,
-        orbit_summary_path=orbit_summary_path,
+        orbit_raw_path=isnothing(orbit_raw_path) ? "" : orbit_raw_path,
+        orbit_summary_path=isnothing(orbit_summary_path) ? "" : orbit_summary_path,
         entry_duration_raw_path=entry_duration_raw_path,
         entry_duration_summary_path=entry_duration_summary_path,
         report_path=report_path,
@@ -476,6 +477,6 @@ function _ladder_artifacts(
         split_gate_df=split_gate_df,
         raw_df=CSV.read(raw_path, DataFrame),
         summary_df=CSV.read(summary_path, DataFrame),
-        orbit_summary_df=CSV.read(orbit_summary_path, DataFrame)
+        orbit_summary_df=isnothing(orbit_summary_path) ? DataFrame() : CSV.read(orbit_summary_path, DataFrame)
     )
 end

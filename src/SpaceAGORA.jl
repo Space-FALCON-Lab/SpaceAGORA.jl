@@ -8,6 +8,7 @@ include(joinpath(@__DIR__, "parallel", "routing", "parallel_profiles.jl"))
 include(joinpath(@__DIR__, "simulation", "runtime_services.jl"))
 include(joinpath(@__DIR__, "core", "simulation_model.jl"))
 include(joinpath(@__DIR__, "simulation", "engine", "simulation_engine.jl"))
+include(joinpath(@__DIR__, "simulation", "campaigns", "simulation_campaigns.jl"))
 include(joinpath(@__DIR__, "analysis", "verification", "telemetry_verification.jl"))
 include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
 
@@ -19,6 +20,7 @@ using .ParallelProfiles: default_outer_route, outer_route_candidates, select_out
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
 import .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
+using .SimulationCampaigns: MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
 using .SimulationModel.AbstractTypes: AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel
 using .SimulationModel.AbstractTypes: AbstractControlEffectorModel, AbstractEphemeridesModel
 using .SimulationModel.AbstractTypes: AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
@@ -33,6 +35,7 @@ using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleratio
 using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 using .SimulationModel: getDensity, getDensityBatch!
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
+using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
 using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
 using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
@@ -43,6 +46,10 @@ using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 @doc (@doc SimulationEngine.ArtifactConfig) ArtifactConfig
 @doc (@doc SimulationEngine.SimulationEngineConfig) SimulationEngineConfig
 @doc (@doc SimulationEngine.simulation_engine_config_from_env) simulation_engine_config_from_env
+@doc (@doc SimulationCampaigns.MonteCarloSpec) MonteCarloSpec
+@doc (@doc SimulationCampaigns.MonteCarloSampleResult) MonteCarloSampleResult
+@doc (@doc SimulationCampaigns.MonteCarloResult) MonteCarloResult
+@doc (@doc SimulationCampaigns.run_monte_carlo) run_monte_carlo
 @doc (@doc SimulationModel.AbstractTypes.AbstractForceTorqueModel) AbstractForceTorqueModel
 @doc (@doc SimulationModel.AbstractTypes.AbstractPlanet) AbstractPlanet
 @doc (@doc SimulationModel.AbstractTypes.AbstractDensityModel) AbstractDensityModel
@@ -296,6 +303,7 @@ export default_outer_route, outer_route_candidates, select_outer_route!, record_
 export ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 export simulation_engine_config_from_env
 export prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
+export MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
 export AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractControlEffectorModel
 export AbstractEphemeridesModel, AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
 export StateSample, PlanetFrameSample, AtmosphereSample, SolarEphemerisSample
@@ -309,6 +317,7 @@ export gravity_backbone_structure, gravity_backbone_acceleration_ii
 export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 export getDensity, getDensityBatch!
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
+export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation
 export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli

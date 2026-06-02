@@ -101,7 +101,8 @@ function make_example_config(;
     EI_km::Float64=300.0,
     verbose::Bool=true,
     results::Bool=true,
-    results_directory::String=_example_default_results_directory()
+    results_directory::String=_example_default_results_directory(),
+    solver_config::Union{Nothing, SM.SolverConfig}=nothing
 )
     return SM.SimulationConfiguration(
         simulation_settings=SM.SimulationSettings(
@@ -140,7 +141,8 @@ function make_example_config(;
             reltol_atmosphere=1e-8,
             abstol_atmosphere=1e-8,
             dt_max_atmosphere=0.2
-        )
+        ),
+        solver_config=solver_config
     )
 end
 

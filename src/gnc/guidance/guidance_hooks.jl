@@ -3,8 +3,9 @@ module GuidanceHooks
 
     using ..ConfigTypes: ODEParams, Solution
     using ..AbstractTypes: AbstractPlanet, AbstractControlEffectorModel, AbstractGuidanceModel
-    using ..GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
+    using ..GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel, ApoapsisTargetPeriapsisRaiseGuidanceModel
     using ..CommandTypes: PropulsiveManeuverCommand, AerobrakingControlCommand
+    using ..EphemeridesModels: planet_frame_lpi
     using ..GravityEffectors: aerobraking_gravity_force_ii
     using ..AerobrakingPolicy: AbstractAerobrakingPolicySelector, AerobrakingPolicyConfig, E_EDG, T_EDG, select_strategy
     using ..ReferenceSystems

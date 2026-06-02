@@ -6,9 +6,9 @@ using LinearAlgebra
         return x.pos_ii, x.vel_ii
     end
     if hasproperty(x, :pos) && hasproperty(x, :vel)
-        return SVector{3, Float64}(x.pos), SVector{3, Float64}(x.vel)
+        return SVector{3, Float64}(x[1], x[2], x[3]), SVector{3, Float64}(x[4], x[5], x[6])
     end
-    return SVector{3, Float64}(x[1:3]), SVector{3, Float64}(x[4:6])
+    return SVector{3, Float64}(x[1], x[2], x[3]), SVector{3, Float64}(x[4], x[5], x[6])
 end
 
 @inline function _extract_sample_mass_kg(x)::Float64
@@ -16,7 +16,7 @@ end
         return Float64(x.mass_kg)
     end
     if hasproperty(x, :mass)
-        return Float64(x.mass)
+        return Float64(x[7])
     end
     return length(x) >= 7 ? Float64(x[7]) : NaN
 end
@@ -43,6 +43,15 @@ end
     pos_ii, vel_ii = _extract_sample_pos_vel(x)
     planet = p.args.environment_model.planet
     l_pi = _planet_lpi_at_engine(p, t)
+    pos_pp, vel_pp = SimulationModel.SimulationCallbacks._planet_relative_state(pos_ii, vel_ii, planet, l_pi)
+    alt, lat, lon = SimulationModel.SimulationCallbacks.rtolatlong(pos_pp, planet)
+    return PlanetFrameSample(l_pi, pos_pp, vel_pp, alt, lat, lon)
+end
+
+# Variant that accepts a pre-computed l_pi so the caller avoids acquiring harmonics_lpi_lock.
+# Used in the parallel atmosphere pre-sample phase where l_pi is computed once before @batch.
+@inline function sample_planet_frame_with_lpi(x, planet, l_pi::SMatrix{3, 3, Float64, 9})::PlanetFrameSample
+    pos_ii, vel_ii = _extract_sample_pos_vel(x)
     pos_pp, vel_pp = SimulationModel.SimulationCallbacks._planet_relative_state(pos_ii, vel_ii, planet, l_pi)
     alt, lat, lon = SimulationModel.SimulationCallbacks.rtolatlong(pos_pp, planet)
     return PlanetFrameSample(l_pi, pos_pp, vel_pp, alt, lat, lon)
@@ -82,7 +91,7 @@ end
         caches,
     )
     if write_buffers
-        callbacks._write_density_buffers!(p, sat_idx, rho, T, wind_vec)
+        callbacks._write_density_buffers!(p, sat_idx, rho, T, wind_vec, t)
     end
     return AtmosphereSample(rho, T, wind_vec)
 end
@@ -99,11 +108,30 @@ end
     )
 end
 
+@inline function _buffered_atmosphere_valid(p, sat_idx::Int, t::Float64)::Bool
+    times = p.shared_buffers.density_sample_t
+    return sat_idx <= length(times) && times[sat_idx] == t
+end
+
 @inline function sample_buffered_atmosphere(x, p, sat_idx::Int, t::Float64)::AtmosphereSample
+    if !_buffered_atmosphere_valid(p, sat_idx, t)
+        return sample_atmosphere(x, p, sat_idx, t; write_buffers=true)
+    end
     rho = sat_idx <= length(p.shared_buffers.densities) ? p.shared_buffers.densities[sat_idx] : 0.0
     T = sat_idx <= length(p.shared_buffers.temperatures) ? p.shared_buffers.temperatures[sat_idx] : p.args.environment_model.planet.T_ref
     wind_vec = sat_idx <= length(p.shared_buffers.winds) ? p.shared_buffers.winds[sat_idx] : SVector{3, Float64}(0.0, 0.0, 0.0)
     return AtmosphereSample(rho, T, wind_vec)
+end
+
+@inline function sample_buffered_planet_frame(p, sat_idx::Int)::PlanetFrameSample
+    return PlanetFrameSample(
+        p.shared_buffers.rhs_flat_planet_lpi[],
+        p.shared_buffers.rhs_flat_planet_pos_pp[][sat_idx],
+        p.shared_buffers.rhs_flat_planet_vel_pp[][sat_idx],
+        p.shared_buffers.rhs_flat_planet_alt_m[][sat_idx],
+        p.shared_buffers.rhs_flat_planet_lat_rad[][sat_idx],
+        p.shared_buffers.rhs_flat_planet_lon_rad[][sat_idx],
+    )
 end
 
 @inline function sample_solar_ephemeris(x, p, sat_idx::Int, t::Float64)::SolarEphemerisSample
@@ -200,6 +228,72 @@ end
         solar=solar,
         third_bodies=third_bodies,
     )
+end
+
+@inline function _sample_reusable_planet_frame(req::EffectorEnvironmentRequirements, x, p, sat_idx::Int, t::Float64)
+    if req.planet_frame || req.atmosphere
+        return p.shared_buffers.rhs_planet_frame_prefilled[] ?
+            sample_buffered_planet_frame(p, sat_idx) :
+            sample_planet_frame(x, p, sat_idx, t)
+    end
+    return nothing
+end
+
+@inline function _sample_reusable_atmosphere(req::EffectorEnvironmentRequirements, x, planet_frame, p, sat_idx::Int, t::Float64)
+    req.atmosphere || return nothing
+    if p.shared_buffers.rhs_atmosphere_prefilled[]
+        return sample_buffered_atmosphere(x, p, sat_idx, t)
+    end
+    return _sample_atmosphere_from_planet_frame(x, planet_frame, p, sat_idx, t; write_buffers=false)
+end
+
+@inline function _sample_reusable_solar(req::EffectorEnvironmentRequirements, x, p, sat_idx::Int, t::Float64)
+    req.solar || return nothing
+    return (p.shared_buffers.rhs_solar_prefilled[] && p.shared_buffers.rhs_flat_solar_t[] == t) ?
+        SolarEphemerisSample(p.shared_buffers.rhs_flat_solar_pos_ii[]) :
+        sample_solar_ephemeris(x, p, sat_idx, t)
+end
+
+# Variant of sample_environment that reads reusable flat-RHS component buffers when
+# available. Used by wrench-based effectors so repeated effectors for the same satellite
+# do not rebuild the same planet-frame, atmosphere, or solar samples.
+@inline function sample_environment_with_reusable_buffers(
+    req::EffectorEnvironmentRequirements,
+    model,
+    x,
+    p,
+    sat_idx::Int,
+    t::Float64,
+)::EnvironmentSample
+    planet = p.args.environment_model.planet
+    sampled_planet_frame = _sample_reusable_planet_frame(req, x, p, sat_idx, t)
+    atmosphere = _sample_reusable_atmosphere(req, x, sampled_planet_frame, p, sat_idx, t)
+    solar = _sample_reusable_solar(req, x, p, sat_idx, t)
+    third_bodies = isempty(req.third_body_names) ? nothing : sample_third_body_ephemerides(model, x, p, sat_idx, t)
+    return EnvironmentSample(
+        planet;
+        planet_frame=req.planet_frame ? sampled_planet_frame : nothing,
+        atmosphere=atmosphere,
+        solar=solar,
+        third_bodies=third_bodies,
+    )
+end
+
+@inline function sample_environment_with_buffered_atm(
+    req::EffectorEnvironmentRequirements,
+    model,
+    x,
+    p,
+    sat_idx::Int,
+    t::Float64,
+)::EnvironmentSample
+    return sample_environment_with_reusable_buffers(req, model, x, p, sat_idx, t)
+end
+
+@inline function _wrench_method_available(effector::SimulationModel.DynamicEffectors.GravitationalHarmonicsModel)::Bool
+    # The legacy RHS path reuses per-satellite harmonics scratch buffers; the
+    # generic wrench hook allocates a scratch workspace per call.
+    return false
 end
 
 @inline function _wrench_method_available(effector)::Bool

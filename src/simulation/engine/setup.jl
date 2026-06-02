@@ -325,6 +325,10 @@ end
     return SimulationModel.ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_RHS_BATCH_PARALLEL"; default="auto")
 end
 
+@inline function _rhs_batch_thread_threshold()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_RHS_BATCH_THREAD_THRESHOLD", 16)
+end
+
 @inline function _profile_forces_serial_rhs()::Bool
     raw = lowercase(strip(_engine_env_get("SPACEAGORA_PARALLEL_PROFILE", "")))
     return raw in ("r0", "serial", "r0_true_serial", "true_serial")
@@ -340,7 +344,7 @@ end
     elseif mode == :on
         return true
     end
-    return num_spacecraft > 1 && Polyester.num_cores() > 1
+    return num_spacecraft >= _rhs_batch_thread_threshold() && Polyester.num_cores() > 1
 end
 
 @inline function _effector_thread_threshold()::Int
@@ -373,6 +377,38 @@ end
 
 @inline function _effector_cost_ema_alpha()::Float64
     return _parse_unit_float_env("SPACEAGORA_EFFECTOR_COST_EMA_ALPHA", 0.2)
+end
+
+@inline function _rhs_flat_packet_target_min_ns()::Float64
+    return _parse_positive_float_env("SPACEAGORA_RHS_FLAT_PACKET_TARGET_MIN_NS", 2.5e4)
+end
+
+@inline function _rhs_flat_packet_scheduler_mode()::Symbol
+    return SimulationModel.ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_RHS_FLAT_PACKET_SCHEDULER"; default="auto")
+end
+
+@inline function _rhs_flat_packet_min_items()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_RHS_FLAT_PACKET_MIN_ITEMS", 128)
+end
+
+@inline function _rhs_flat_packet_work_ns_threshold()::Float64
+    return _parse_positive_float_env("SPACEAGORA_RHS_FLAT_PACKET_WORK_NS_THRESHOLD", 5.0e6)
+end
+
+@inline function _rhs_flat_packet_heterogeneity_threshold()::Float64
+    return _parse_positive_float_env("SPACEAGORA_RHS_FLAT_PACKET_HETEROGENEITY_THRESHOLD", 3.0)
+end
+
+@inline function _rhs_flat_packet_overhead_disable_ratio()::Float64
+    return _parse_unit_float_env("SPACEAGORA_RHS_FLAT_PACKET_OVERHEAD_DISABLE_RATIO", 0.10)
+end
+
+@inline function _rhs_flat_packet_overhead_min_samples()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_RHS_FLAT_PACKET_OVERHEAD_MIN_SAMPLES", 4)
+end
+
+@inline function _rhs_effector_cost_min_samples()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_RHS_EFFECTOR_COST_MIN_SAMPLES", 4)
 end
 
 @inline function _effector_work_ns_per_worker_threshold()::Float64
@@ -473,6 +509,72 @@ end
     return nothing
 end
 
+function _ensure_rhs_effector_cost_model!(shared_buffers, n_effectors::Int)::Nothing
+    shared_buffers === nothing && return nothing
+    n_effectors >= 0 || return nothing
+    if hasproperty(shared_buffers, :rhs_effector_cost_ns)
+        costs = shared_buffers.rhs_effector_cost_ns[]
+        if length(costs) < n_effectors
+            old_len = length(costs)
+            resize!(costs, n_effectors)
+            @inbounds for idx in (old_len + 1):n_effectors
+                costs[idx] = NaN
+            end
+        end
+    end
+    if hasproperty(shared_buffers, :rhs_effector_cost_samples)
+        samples = shared_buffers.rhs_effector_cost_samples[]
+        if length(samples) < n_effectors
+            old_len = length(samples)
+            resize!(samples, n_effectors)
+            @inbounds for idx in (old_len + 1):n_effectors
+                samples[idx] = Int64(0)
+            end
+        end
+    end
+    return nothing
+end
+
+@inline function _rhs_effector_observed_cost_ns(shared_buffers, eff_idx::Int, fallback_ns::Float64)::Float64
+    shared_buffers === nothing && return fallback_ns
+    if !(hasproperty(shared_buffers, :rhs_effector_cost_ns) && hasproperty(shared_buffers, :rhs_effector_cost_samples))
+        return fallback_ns
+    end
+    costs = shared_buffers.rhs_effector_cost_ns[]
+    samples = shared_buffers.rhs_effector_cost_samples[]
+    if eff_idx <= length(costs) && eff_idx <= length(samples)
+        estimate = Float64(costs[eff_idx])
+        if samples[eff_idx] >= _rhs_effector_cost_min_samples() && isfinite(estimate) && estimate > 0.0
+            return estimate
+        end
+    end
+    return fallback_ns
+end
+
+function _update_rhs_effector_cost_model!(
+    shared_buffers,
+    eff_idx::Int,
+    elapsed_ns::Float64,
+)::Nothing
+    shared_buffers === nothing && return nothing
+    elapsed_ns > 0.0 || return nothing
+    if !(hasproperty(shared_buffers, :rhs_effector_cost_ns) && hasproperty(shared_buffers, :rhs_effector_cost_samples))
+        return nothing
+    end
+    _ensure_rhs_effector_cost_model!(shared_buffers, eff_idx)
+    costs = shared_buffers.rhs_effector_cost_ns[]
+    samples = shared_buffers.rhs_effector_cost_samples[]
+    α = _effector_cost_ema_alpha()
+    previous = costs[eff_idx]
+    costs[eff_idx] = if isfinite(previous) && previous > 0.0
+        (1.0 - α) * previous + α * elapsed_ns
+    else
+        elapsed_ns
+    end
+    samples[eff_idx] = min(typemax(Int64), samples[eff_idx] + Int64(1))
+    return nothing
+end
+
 @inline function _dynamic_effector_thread_decision(
     args::SimulationConfiguration,
     p,
@@ -526,6 +628,307 @@ end
     num_sats::Int
 )
     return _dynamic_effector_thread_decision(args, nothing, dynamic_effectors, num_sats)
+end
+
+# Returns true when satellite-level batching occupies every available thread,
+# making nested per-effector threading purely additive overhead.
+@inline function _satellite_batch_saturates_pool(active_sats::Int, budget::Int)::Bool
+    return active_sats >= budget && budget > 1
+end
+
+# Forces an effector decision to serial, preserving the mode/policy fields for
+# telemetry while making it structurally impossible to enable nested effector
+# threads under satellite_batch.
+@inline function _with_serial_effector_decision(effector_decision)
+    return (
+        use_threads=false,
+        allotment=1,
+        mode=effector_decision.mode,
+        policy_applied=effector_decision.policy_applied,
+    )
+end
+
+@inline function _rhs_execution_mode_env()::Symbol
+    raw = lowercase(strip(_engine_env_get("SPACEAGORA_RHS_EXECUTION_MODE", "auto")))
+    if raw in ("auto", "")
+        return :auto
+    elseif raw in ("serial", "off", "none")
+        return :serial
+    elseif raw in ("satellite", "satellite_batch", "batch")
+        return :satellite_batch
+    elseif raw in ("per_satellite", "per_satellite_effector_reduce", "effector")
+        return :per_satellite_effector_reduce
+    elseif raw in ("flat", "flat_constellation", "flat_constellation_effector_queue")
+        return :flat_constellation_effector_queue
+    end
+    throw(ArgumentError(
+        "Unsupported SPACEAGORA_RHS_EXECUTION_MODE='$raw'. Use one of: auto, serial, satellite, per_satellite, flat."
+    ))
+end
+
+@inline function _rhs_flat_min_sats()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_FLAT_MIN_SATS", 24)
+end
+
+@inline function _rhs_flat_min_effectors()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_FLAT_MIN_EFFECTORS", 3)
+end
+
+@inline function _rhs_flat_work_ns_threshold()::Float64
+    return _parse_positive_float_env("SPACEAGORA_EFFECTOR_FLAT_WORK_NS_THRESHOLD", 2.0e5)
+end
+
+@inline function _rhs_flat_work_per_worker_ns_threshold()::Float64
+    return _parse_positive_float_env("SPACEAGORA_RHS_FLAT_WORK_PER_WORKER_NS_THRESHOLD", 2.5e4)
+end
+
+@inline function _rhs_flat_cost_heterogeneity_threshold()::Float64
+    return _parse_positive_float_env("SPACEAGORA_EFFECTOR_FLAT_COST_HETEROGENEITY_THRESHOLD", 3.0)
+end
+
+@inline function _rhs_flat_min_thread_budget()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env(
+        "SPACEAGORA_EFFECTOR_FLAT_MIN_THREAD_BUDGET",
+        SimulationModel.ParallelPolicy.auto_thread_min_budget(),
+    )
+end
+
+@inline function _rhs_harmonics_flat_experimental_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_HARMONICS_FLAT_EXPERIMENTAL", false)
+end
+
+@inline function _rhs_harmonics_batch_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_HARMONICS_BATCH_ENABLED", true) ||
+        _rhs_harmonics_flat_experimental_enabled()
+end
+
+# Minimum satellites per worker for the harmonics SIMD batch (SIMD efficiency floor).
+# The formula workers = min(budget, fld(active_sats, floor)) automatically scales with
+# both satellite count and thread budget.  Default 4: one AVX2 / half AVX-512 register
+# width — enough for @turbo to have a full SIMD iteration while allowing 16 workers at
+# 64 satellites (fld(64,4)=16) and 32 workers at 128 satellites (fld(128,4)=32).
+# Raise to 8 if targeting AVX-512-only machines where 4-wide @turbo is suboptimal.
+@inline function _rhs_harmonics_batch_min_sats_per_worker()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env(
+        "SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER", 4
+    )
+end
+
+@inline function _rhs_flat_supported(dynamic_effectors::Tuple)::Bool
+    if length(dynamic_effectors) == 1
+        return dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
+            _dynamic_effector_threadsafe(dynamic_effectors[1]) &&
+            _rhs_harmonics_batch_enabled()
+    end
+    return length(dynamic_effectors) > 1 && _dynamic_effectors_parallel_supported(dynamic_effectors)
+end
+
+@inline function _rhs_single_harmonics_flat_supported(dynamic_effectors::Tuple)::Bool
+    return length(dynamic_effectors) == 1 &&
+        dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
+        _dynamic_effector_threadsafe(dynamic_effectors[1]) &&
+        _rhs_harmonics_batch_enabled()
+end
+
+@inline function _rhs_effectors_have_heavy_or_heterogeneous_cost(dynamic_effectors::Tuple)::Bool
+    has_nbody = false
+    has_aero = false
+    has_harmonics = false
+    min_cost = Inf
+    max_cost = 0.0
+    @inbounds for effector in dynamic_effectors
+        cost = _rhs_effector_static_cost_ns(effector)
+        min_cost = min(min_cost, cost)
+        max_cost = max(max_cost, cost)
+        if effector isa SimulationModel.NBodyGravityModel
+            has_nbody = true
+        elseif effector isa SimulationModel.AerodynamicCoefficientfM
+            has_aero = true
+        elseif effector isa SimulationModel.GravitationalHarmonicsModel
+            has_harmonics = true
+        end
+    end
+    heterogeneity = max_cost / max(min_cost, 1.0)
+    return has_nbody || has_aero || has_harmonics ||
+        heterogeneity >= _rhs_flat_cost_heterogeneity_threshold()
+end
+
+@inline function _rhs_execution_plan(
+    args::SimulationConfiguration,
+    p,
+    dynamic_effectors::Tuple,
+    num_sats::Int
+)
+    # Calibration override: return the pre-measured best plan without heuristic routing.
+    if p !== nothing && hasproperty(p, :shared_buffers)
+        override = p.shared_buffers.rhs_plan_override[]
+        override === nothing || return override
+    end
+    forced_mode = _rhs_execution_mode_env()
+    n_effectors = length(dynamic_effectors)
+    active_sats = if p === nothing || !hasproperty(p, :is_active)
+        num_sats
+    else
+        count(identity, p.is_active)
+    end
+    budget = SimulationModel.ParallelPolicy.effective_inner_thread_budget()
+    # Compute the threading preference from the policy; route selection below may
+    # override it via _with_serial_effector_decision when satellite_batch is chosen.
+    effector_decision = _dynamic_effector_thread_decision(args, p, dynamic_effectors, num_sats)
+
+    # ── Forced modes ────────────────────────────────────────────────────────────
+    # Satellite_batch and serial always disable inner effector threading:
+    # the outer @batch loop already saturates available threads.
+    if forced_mode == :serial
+        return (
+            mode=:serial,
+            allotment=1,
+            scheduler=:serial,
+            dominant_axis=:serial,
+            policy_applied=true,
+            effector_decision=_with_serial_effector_decision(effector_decision),
+        )
+    elseif forced_mode == :satellite_batch
+        return (
+            mode=:satellite_batch,
+            allotment=1,
+            scheduler=:static,
+            dominant_axis=:satellite,
+            policy_applied=true,
+            effector_decision=_with_serial_effector_decision(effector_decision),
+        )
+    elseif forced_mode == :per_satellite_effector_reduce
+        return (
+            mode=:per_satellite_effector_reduce,
+            allotment=effector_decision.allotment,
+            scheduler=:auto,
+            dominant_axis=:per_satellite_inner_effector,
+            policy_applied=true,
+            effector_decision=effector_decision,
+        )
+    elseif forced_mode == :flat_constellation_effector_queue
+        if active_sats <= 1 || !_rhs_flat_supported(dynamic_effectors) || budget <= 1
+            return (
+                mode=:satellite_batch,
+                allotment=1,
+                scheduler=:static,
+                dominant_axis=:satellite,
+                policy_applied=true,
+                effector_decision=_with_serial_effector_decision(effector_decision),
+            )
+        end
+        return (
+            mode=:flat_constellation_effector_queue,
+            allotment=min(max(1, budget), max(active_sats * n_effectors, 1)),
+            scheduler=:dynamic,
+            dominant_axis=:flat_effector,
+            policy_applied=true,
+            effector_decision=_with_serial_effector_decision(effector_decision),
+        )
+    end
+
+    # ── Auto routing ─────────────────────────────────────────────────────────────
+
+    # Single-harmonics SIMD batch: route through flat_constellation whenever the
+    # constellation is large enough to give each worker at least min_sats_per_worker
+    # satellites (viable_workers >= 2), or when running single-threaded (budget <= 1).
+    # The SIMD batch kernel loads each spherical harmonic coefficient pair once and
+    # broadcasts it to the full satellite batch via @turbo, which is more cache-efficient
+    # than Polyester @batch where every thread independently traverses the coefficient
+    # table for its satellite slice.  The worker count is capped at viable_workers inside
+    # _accumulate_harmonics_flat_batch!, so this routing is safe at any thread budget.
+    single_harmonics_flat = _rhs_single_harmonics_flat_supported(dynamic_effectors)
+    if single_harmonics_flat && active_sats >= _rhs_flat_min_sats() && active_sats > 1
+        min_sats_floor = SimulationModel.ParallelPolicy.harmonics_batch_spin_barrier_enabled() ?
+            1 : _rhs_harmonics_batch_min_sats_per_worker()
+        viable_workers = fld(active_sats, max(1, min_sats_floor))
+        if budget <= 1 || viable_workers >= 2
+            return (
+                mode=:flat_constellation_effector_queue,
+                allotment=min(max(1, budget), viable_workers),
+                scheduler=:dynamic,
+                dominant_axis=:flat_effector,
+                policy_applied=true,
+                effector_decision=_with_serial_effector_decision(effector_decision),
+            )
+        end
+    end
+
+    # Safety: not enough satellites, threads, or thread-safe effectors for any
+    # satellite-parallel path. For single-satellite cases with a thread budget,
+    # the full budget is available for inner effector parallelism — preserve
+    # the effector_decision rather than forcing it serial. For the budget<=1 or
+    # non-flat-supported cases, serial is correct on both axes.
+    if active_sats <= 1 || budget <= 1 || !_rhs_flat_supported(dynamic_effectors)
+        inner_ed = (active_sats <= 1 && budget > 1) ?
+            effector_decision : _with_serial_effector_decision(effector_decision)
+        return (
+            mode=:satellite_batch,
+            allotment=1,
+            scheduler=:static,
+            dominant_axis=:satellite,
+            policy_applied=inner_ed.policy_applied,
+            effector_decision=inner_ed,
+        )
+    end
+
+    # Flat queue requires a minimum thread budget to amortise channel/worker overhead.
+    if budget < _rhs_flat_min_thread_budget()
+        return (
+            mode=:satellite_batch,
+            allotment=1,
+            scheduler=:static,
+            dominant_axis=:satellite,
+            policy_applied=true,
+            effector_decision=_with_serial_effector_decision(effector_decision),
+        )
+    end
+
+    shared_buffers = _effector_shared_buffers(p)
+    per_effector_cost_ns = _effector_observed_cost_ns_per_item(shared_buffers)
+    estimated_total_work_ns   = per_effector_cost_ns * active_sats * n_effectors
+    estimated_work_per_worker = estimated_total_work_ns / max(1, budget)
+    # Flat queue is profitable only when total work is large AND each worker gets
+    # enough to pay for dispatch/wakeup overhead (§5 per-worker gate).
+    many_heavy_effectors = _rhs_effectors_have_heavy_or_heterogeneous_cost(dynamic_effectors) &&
+        estimated_total_work_ns   >= _rhs_flat_work_ns_threshold() &&
+        estimated_work_per_worker >= _rhs_flat_work_per_worker_ns_threshold()
+
+    if active_sats >= _rhs_flat_min_sats() &&
+       n_effectors >= _rhs_flat_min_effectors() &&
+       many_heavy_effectors
+        return (
+            mode=:flat_constellation_effector_queue,
+            allotment=min(max(1, budget), active_sats * n_effectors),
+            scheduler=:dynamic,
+            dominant_axis=:flat_effector,
+            policy_applied=true,
+            effector_decision=_with_serial_effector_decision(effector_decision),
+        )
+    end
+
+    # Satellite batch saturates the thread pool: every available thread handles at
+    # least one satellite, so nested per-effector threads add only overhead.
+    if _satellite_batch_saturates_pool(active_sats, budget)
+        return (
+            mode=:satellite_batch,
+            allotment=1,
+            scheduler=:static,
+            dominant_axis=:satellite,
+            policy_applied=true,
+            effector_decision=_with_serial_effector_decision(effector_decision),
+        )
+    end
+
+    # Few satellites, many threads: each satellite gets its own effector-reduce.
+    return (
+        mode=:per_satellite_effector_reduce,
+        allotment=effector_decision.allotment,
+        scheduler=:auto,
+        dominant_axis=:per_satellite_inner_effector,
+        policy_applied=effector_decision.policy_applied,
+        effector_decision=effector_decision,
+    )
 end
 
 function _initialize_density_model_instances!(p)

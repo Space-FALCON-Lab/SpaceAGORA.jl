@@ -1,13 +1,13 @@
 @inline function _extract_pos_vel(x)
     if hasproperty(x, :pos) && hasproperty(x, :vel)
-        return SVector{3, Float64}(x.pos), SVector{3, Float64}(x.vel)
+        return SVector{3, Float64}(x[1], x[2], x[3]), SVector{3, Float64}(x[4], x[5], x[6])
     end
-    return SVector{3, Float64}(x[1:3]), SVector{3, Float64}(x[4:6])
+    return SVector{3, Float64}(x[1], x[2], x[3]), SVector{3, Float64}(x[4], x[5], x[6])
 end
 
 @inline function _extract_mass_kg(x)::Float64
     if hasproperty(x, :mass)
-        return Float64(x.mass)
+        return Float64(x[7])
     end
     return length(x) >= 7 ? Float64(x[7]) : NaN
 end
@@ -17,7 +17,8 @@ end
     sat_idx::Int,
     rho::Float64,
     T::Float64,
-    wind_vec::SVector{3, Float64}
+    wind_vec::SVector{3, Float64},
+    t::Float64=p.shared_buffers.current_time[],
 )
     if sat_idx <= length(p.shared_buffers.densities)
         p.shared_buffers.densities[sat_idx] = rho
@@ -27,6 +28,18 @@ end
     end
     if sat_idx <= length(p.shared_buffers.winds)
         p.shared_buffers.winds[sat_idx] = wind_vec
+    end
+    if sat_idx <= length(p.shared_buffers.density_sample_t)
+        p.shared_buffers.density_sample_t[sat_idx] = t
+    end
+    return nothing
+end
+
+@inline function _write_density_time_buffers!(p, num_sats::Int, t::Float64)::Nothing
+    times = p.shared_buffers.density_sample_t
+    limit = min(num_sats, length(times))
+    @inbounds for sat_idx in 1:limit
+        times[sat_idx] = t
     end
     return nothing
 end
@@ -81,6 +94,23 @@ function _density_state_from_kinematics!(
     target_include_j2::Bool,
     caches::Vector{Union{Nothing, GramTrackCache}}
 )::Tuple{Float64, Float64, SVector{3, Float64}}
+    # Vacuum-predicted GRAM density cache: interpolate from a pre-built spline on
+    # log(ρ) along the drag-free trajectory.  Only active inside the atmosphere
+    # (in_atmosphere flag) to avoid wasteful builds during coast arcs.
+    if _vacuum_gram_cache_enabled()
+        in_atm = sat_idx <= length(p.shared_buffers.in_atmosphere) &&
+                 p.shared_buffers.in_atmosphere[sat_idx]
+        if in_atm
+            vacuum_cache = _vacuum_gram_cache_for_sat!(p.shared_buffers.vacuum_gram_caches, sat_idx)
+            return _query_vacuum_gram_cache!(
+                vacuum_cache, density_model, p, pos_ii, vel_ii, alt, t,
+                _vacuum_gram_cache_npoints(),
+                _vacuum_gram_cache_horizon_s(),
+                _vacuum_gram_cache_deviation_m()
+            )
+        end
+    end
+
     if stats_enabled
         _gram_runtime_stats_update!(s -> begin
             s.density_calls += 1
@@ -175,7 +205,9 @@ end
 
 function _stage_environment_state(x, p, sat_idx::Int, t::Float64; write_buffers::Bool=true)
     kin = _stage_environment_kinematics(x, p, t)
-    atmosphere = _simulation_engine_module().sample_atmosphere(x, p, sat_idx, t; write_buffers=write_buffers)
+    atmosphere = write_buffers ?
+        _simulation_engine_module().sample_buffered_atmosphere(x, p, sat_idx, t) :
+        _simulation_engine_module().sample_atmosphere(x, p, sat_idx, t; write_buffers=false)
     return merge(kin, (rho=atmosphere.rho_kg_m3, T=atmosphere.temperature_k, wind=atmosphere.wind_pp))
 end
 
@@ -209,7 +241,7 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
             target_include_j2,
             caches,
         )
-        _write_density_buffers!(p, i, rho, T, wind_vec)
+        _write_density_buffers!(p, i, rho, T, wind_vec, Float64(t))
         return nothing
     end
 
@@ -299,6 +331,7 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                     p
                 )
             end
+            _write_density_time_buffers!(p, num_sats, Float64(integrator.t))
         elseif use_threads
             ParallelPolicy.threaded_foreach_persistent(:density_callback, num_sats, decision.allotment) do i
                 @inbounds update_density_sat!(i, p, u, Float64(integrator.t))

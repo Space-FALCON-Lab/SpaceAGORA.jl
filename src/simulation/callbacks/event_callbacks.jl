@@ -1,9 +1,11 @@
+const IMPACT_ALTITUDE_M = 50_000.0
+
 function get_impact_callback(num_sats::Int)
     function condition!(out, u, t, integrator)
         p = integrator.p
         Rp_e = p.args.environment_model.planet.Rp_e
         @inbounds for i in 1:num_sats
-            out[i] = norm(_simulation_engine_module()._state_position_ii(u, i)) - Rp_e
+            out[i] = norm(_simulation_engine_module()._state_position_ii(u, i)) - Rp_e - IMPACT_ALTITUDE_M
         end
     end
 
@@ -11,7 +13,7 @@ function get_impact_callback(num_sats::Int)
         p = integrator.p
         if p.is_active[idx]
             if callback_verbose(integrator)
-                println("Impact detected for satellite $idx at time $(integrator.t) seconds!")
+                println("Impact detected for satellite $idx at time $(integrator.t) seconds at altitude <= $(IMPACT_ALTITUDE_M * 1e-3) km!")
             end
             p.is_active[idx] = false
             if _simulation_engine_module()._is_gravity_backbone_state(integrator.u)
@@ -141,6 +143,15 @@ function get_drag_state_callback(num_sats::Int)
         if callback_verbose(integrator)
             println("Switching to space integration at time $(integrator.t) seconds!")
         end
+        p.shared_buffers.in_atmosphere[idx] = false
+        # Invalidate the vacuum-predicted GRAM cache so the next atmospheric entry
+        # rebuilds it from the correct state rather than interpolating stale data.
+        if idx <= length(p.shared_buffers.vacuum_gram_caches)
+            cache = p.shared_buffers.vacuum_gram_caches[idx]
+            if cache !== nothing
+                cache.valid = false
+            end
+        end
         integrator.opts.dtmax = p.args.integration_tolerances.dt_max_orbit # Increase the maximum timestep when exiting the atmosphere
         reltol_new, abstol_new = _callback_tolerances_for_phase(
             integrator.opts.reltol,
@@ -158,6 +169,7 @@ function get_drag_state_callback(num_sats::Int)
         if callback_verbose(integrator)
             println("Switching to atmosphere integration at time $(integrator.t) seconds!")
         end
+        p.shared_buffers.in_atmosphere[idx] = true
         integrator.opts.dtmax = p.args.integration_tolerances.dt_max_atmosphere # Decrease the maximum timestep when entering the atmosphere
         reltol_new, abstol_new = _callback_tolerances_for_phase(
             integrator.opts.reltol,

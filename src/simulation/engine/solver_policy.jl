@@ -49,28 +49,13 @@ function _build_solver_tolerances(u_state::ComponentVector, args)
     return reltol_state, abstol_state
 end
 
+@inline _solver_policy_mode(cfg::SolverConfig)::Symbol = cfg.solver_mode
 @inline function _solver_policy_mode()::Symbol
-    mode = lowercase(strip(_engine_env_get("SPACEAGORA_SOLVER_MODE", "tsit5")))
-    if mode in ("tsit5", "default")
-        return :tsit5
-    elseif mode in ("symplectic", "kahanli8", "verlet")
-        return :symplectic
-    elseif mode in ("gravity_backbone_split", "gravity-backbone-split", "gravity_backbone", "gravity-backbone")
-        return :gravity_backbone_split
-    elseif mode in ("auto_stiff", "auto-stiff", "autostiff", "auto")
-        return :auto_stiff
-    elseif mode in ("rodas5p", "rodas", "stiff")
-        return :rodas5p
-    elseif mode in ("split_imex", "split-imex", "split", "imex")
-        return :split_imex
-    elseif mode in ("multirate", "multirate_split", "split_multirate", "mr")
-        return :multirate
-    elseif mode in ("dp8", "dormandprince8", "dop8")
-        return :dp8
+    active_config = _engine_active_config_ref[]
+    if active_config !== nothing
+        return _solver_policy_mode(active_config.solver)
     end
-    throw(ArgumentError(
-        "Unsupported SPACEAGORA_SOLVER_MODE='$mode'. Use one of: tsit5, symplectic, gravity_backbone_split, dp8, auto_stiff, rodas5p, split_imex, multirate."
-    ))
+    return _solver_policy_mode(simulation_engine_config_from_env().solver)
 end
 
 @inline function _retcode_is_stiff_symptom(retcode)::Bool
@@ -97,47 +82,22 @@ end
     return false
 end
 
-@inline function _solver_maxiters()::Union{Nothing, Int}
-    raw = strip(_engine_env_get("SPACEAGORA_SOLVER_MAXITERS", ""))
-    isempty(raw) && return nothing
-    parsed = try
-        parse(Int, raw)
-    catch
-        throw(ArgumentError("SPACEAGORA_SOLVER_MAXITERS must be an integer, got '$raw'."))
-    end
-    parsed > 0 || throw(ArgumentError("SPACEAGORA_SOLVER_MAXITERS must be > 0, got $parsed."))
-    return parsed
+@inline _solver_maxiters(cfg::SolverConfig)::Union{Nothing, Int} = cfg.maxiters
+@inline _active_solver_config()::SolverConfig = begin
+    active_config = _engine_active_config_ref[]
+    active_config === nothing ? simulation_engine_config_from_env().solver : active_config.solver
 end
 
-@inline function _symplectic_fixed_dt_s(args)::Float64
-    raw = strip(_engine_env_get("SPACEAGORA_SYMPLECTIC_DT_S", ""))
-    dt = if isempty(raw)
-        args.integration_tolerances.dt_max_orbit
-    else
-        parsed = try
-            parse(Float64, raw)
-        catch
-            throw(ArgumentError("SPACEAGORA_SYMPLECTIC_DT_S must be a number, got '$raw'."))
-        end
-        parsed
-    end
-    dt > 0.0 || throw(ArgumentError("SPACEAGORA_SYMPLECTIC_DT_S must be > 0.0, got $dt."))
+@inline function _symplectic_fixed_dt_s(cfg::SolverConfig, args)::Float64
+    dt = isnothing(cfg.symplectic_dt_s) ? args.integration_tolerances.dt_max_orbit : cfg.symplectic_dt_s
+    dt > 0.0 || throw(ArgumentError("SolverConfig.symplectic_dt_s must be > 0.0, got $dt."))
     return dt
 end
+@inline _symplectic_fixed_dt_s(args)::Float64 = _symplectic_fixed_dt_s(_active_solver_config(), args)
 
-@inline function _gravity_backbone_fixed_dt_s(args)::Float64
-    raw = strip(_engine_env_get("SPACEAGORA_GRAVITY_BACKBONE_DT_S", ""))
-    dt = if isempty(raw)
-        args.integration_tolerances.dt_max_orbit
-    else
-        parsed = try
-            parse(Float64, raw)
-        catch
-            throw(ArgumentError("SPACEAGORA_GRAVITY_BACKBONE_DT_S must be a number, got '$raw'."))
-        end
-        parsed
-    end
-    dt > 0.0 || throw(ArgumentError("SPACEAGORA_GRAVITY_BACKBONE_DT_S must be > 0.0, got $dt."))
+@inline function _gravity_backbone_fixed_dt_s(cfg::SolverConfig, args)::Float64
+    dt = isnothing(cfg.gravity_backbone_dt_s) ? args.integration_tolerances.dt_max_orbit : cfg.gravity_backbone_dt_s
+    dt > 0.0 || throw(ArgumentError("SolverConfig.gravity_backbone_dt_s must be > 0.0, got $dt."))
     return dt
 end
 
@@ -151,6 +111,44 @@ end
     length(effectors) == 1 || return false
     return first(effectors) isa SimulationModel.InverseSquaredGravityModel
 end
+
+@inline _auto_stiff_smooth_gravity_tsit5_enabled(cfg::SolverConfig)::Bool = cfg.auto_stiff_gravity_tsit5
+
+@inline function _auto_stiff_smooth_gravity_effector(effector)::Bool
+    return effector isa SimulationModel.InverseSquaredGravityModel ||
+           effector isa SimulationModel.InverseSquaredJ2GravityModel ||
+           effector isa SimulationModel.GravitationalHarmonicsModel ||
+           effector isa SimulationModel.NBodyGravityModel
+end
+
+@inline function _auto_stiff_smooth_gravity_reject_reason(cfg::SolverConfig, args)::Union{Nothing, String}
+    _auto_stiff_smooth_gravity_tsit5_enabled(cfg) || return "SolverConfig.auto_stiff_gravity_tsit5=false disables smooth-gravity Tsit5 routing."
+    args.mission_configuration.orientation_sim && return "orientation_sim=true can couple attitude states into the RHS."
+    isempty(args.control_model.control_effectors) || return "control effectors are active."
+    isempty(args.guidance_model.guidance_effectors) || return "guidance effectors are active."
+    isempty(args.navigation_model.navigation_effectors) || return "navigation effectors are active."
+
+    effectors = args.dynamics_model.dynamic_effectors
+    isempty(effectors) && return "no dynamic effectors are active."
+    @inbounds for effector in effectors
+        _auto_stiff_smooth_gravity_effector(effector) || return "$(nameof(typeof(effector))) is not a supported smooth-gravity effector."
+        req = SimulationModel.environment_requirements(effector)
+        req.atmosphere && return "$(nameof(typeof(effector))) requires atmosphere samples."
+        req.solar && return "$(nameof(typeof(effector))) requires solar samples."
+    end
+    return nothing
+end
+
+@inline _auto_stiff_smooth_gravity_eligible(cfg::SolverConfig, args)::Bool = isnothing(_auto_stiff_smooth_gravity_reject_reason(cfg, args))
+@inline _auto_stiff_smooth_gravity_eligible(args)::Bool = _auto_stiff_smooth_gravity_eligible(_active_solver_config(), args)
+
+# Consecutive stiff-detection events required before AutoTsit5 commits to Rodas5P.
+# The OrdinaryDiffEq default is 5, which can trigger during brief atmospheric passes
+# where the entry/exit density gradient looks locally stiff.  A higher value requires
+# sustained stiffness across many steps before switching, avoiding unnecessary implicit
+# solves during aerobraking passages.
+@inline _auto_stiff_switch_max(cfg::SolverConfig)::Int = cfg.auto_stiff_switch_max
+@inline _auto_stiff_switch_max()::Int = _auto_stiff_switch_max(_active_solver_config())
 
 @inline function _gravity_backbone_structure_validated(effector)::Symbol
     structure = SimulationModel.gravity_backbone_structure(effector)
@@ -218,103 +216,139 @@ end
 
 @inline _gravity_backbone_eligible(args)::Bool = isnothing(_gravity_backbone_reject_reason(args))
 
-@inline function _split_imex_solver_spec()
-    mode = lowercase(strip(_engine_env_get("SPACEAGORA_SPLIT_IMEX_SOLVER", "kencarp4")))
-    if mode in ("kencarp4", "ken4", "default")
-        return (alg=KenCarp4(autodiff=AutoFiniteDiff()), label="KenCarp4")
-    elseif mode in ("kencarp47", "ken47")
-        return (alg=KenCarp47(autodiff=AutoFiniteDiff()), label="KenCarp47")
-    elseif mode in ("kencarp58", "ken58")
-        return (alg=KenCarp58(autodiff=AutoFiniteDiff()), label="KenCarp58")
-    end
+@inline function _split_imex_solver_spec(cfg::SolverConfig)
+    mode = cfg.split_imex_solver
+    mode === :kencarp4  && return (alg=KenCarp4(autodiff=AutoFiniteDiff()),  label="KenCarp4")
+    mode === :kencarp47 && return (alg=KenCarp47(autodiff=AutoFiniteDiff()), label="KenCarp47")
+    mode === :kencarp58 && return (alg=KenCarp58(autodiff=AutoFiniteDiff()), label="KenCarp58")
     throw(ArgumentError(
-        "Unsupported SPACEAGORA_SPLIT_IMEX_SOLVER='$mode'. Use one of: kencarp4, kencarp47, kencarp58."
+        "Unsupported SolverConfig.split_imex_solver=$(repr(mode)). Use one of: :kencarp4, :kencarp47, :kencarp58."
     ))
 end
+@inline _split_imex_solver_spec() = _split_imex_solver_spec(_active_solver_config())
 
-@inline function _multirate_fast_substeps()::Int
-    raw = strip(_engine_env_get("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS", "8"))
-    parsed = try
-        parse(Int, raw)
-    catch
-        throw(ArgumentError("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS must be an integer, got '$raw'."))
-    end
-    parsed > 0 || throw(ArgumentError("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS must be > 0, got $parsed."))
-    return parsed
-end
+@inline _multirate_fast_substeps(cfg::SolverConfig)::Int = cfg.multirate_fast_substeps
 
-@inline function _multirate_slow_dt_s(args)::Float64
+@inline function _multirate_slow_dt_s(cfg::SolverConfig, args)::Float64
     default_dt = min(args.integration_tolerances.dt_max_orbit, 2.0)
-    raw = strip(_engine_env_get("SPACEAGORA_MULTIRATE_SLOW_DT_S", ""))
-    dt = if isempty(raw)
-        default_dt
-    else
-        parsed = try
-            parse(Float64, raw)
-        catch
-            throw(ArgumentError("SPACEAGORA_MULTIRATE_SLOW_DT_S must be a number, got '$raw'."))
-        end
-        parsed
-    end
-    dt > 0.0 || throw(ArgumentError("SPACEAGORA_MULTIRATE_SLOW_DT_S must be > 0.0, got $dt."))
+    dt = isnothing(cfg.multirate_slow_dt_s) ? default_dt : cfg.multirate_slow_dt_s
+    dt > 0.0 || throw(ArgumentError("SolverConfig.multirate_slow_dt_s must be > 0.0, got $dt."))
     return min(dt, args.integration_tolerances.dt_max_orbit)
 end
 
-@inline function _multirate_solver_spec(env_name::String, default_mode::String)
-    mode = lowercase(strip(_engine_env_get(env_name, default_mode)))
-    if mode in ("tsit5", "tsit", "default")
-        return (alg=Tsit5(), label="Tsit5", auto_switch_capable=false)
-    elseif mode in ("auto_stiff", "auto-stiff", "autostiff", "auto")
-        return (
-            alg=AutoTsit5(Rodas5P(autodiff=AutoFiniteDiff())),
-            label="AutoTsit5(Rodas5P)",
-            auto_switch_capable=true
-        )
-    elseif mode in ("rodas5p", "rodas", "stiff")
-        return (alg=Rodas5P(autodiff=AutoFiniteDiff()), label="Rodas5P", auto_switch_capable=false)
-    elseif mode in ("kencarp4", "ken4")
-        return (alg=KenCarp4(autodiff=AutoFiniteDiff()), label="KenCarp4", auto_switch_capable=false)
-    elseif mode in ("dp8", "dormandprince8", "dop8")
-        return (alg=DP8(), label="DP8", auto_switch_capable=false)
-    end
+@inline function _multirate_solver_spec_from_sym(mode::Symbol, field_name::String)
+    mode === :tsit5     && return (alg=Tsit5(), label="Tsit5", auto_switch_capable=false)
+    mode === :auto_stiff && return (
+        alg=AutoTsit5(Rodas5P(autodiff=AutoFiniteDiff())),
+        label="AutoTsit5(Rodas5P)",
+        auto_switch_capable=true
+    )
+    mode === :rodas5p   && return (alg=Rodas5P(autodiff=AutoFiniteDiff()), label="Rodas5P", auto_switch_capable=false)
+    mode === :kencarp4  && return (alg=KenCarp4(autodiff=AutoFiniteDiff()), label="KenCarp4", auto_switch_capable=false)
+    mode === :dp8       && return (alg=DP8(), label="DP8", auto_switch_capable=false)
     throw(ArgumentError(
-        "Unsupported $(env_name)='$mode'. Use one of: tsit5, dp8, auto_stiff, rodas5p, kencarp4."
+        "Unsupported SolverConfig.$field_name=$(repr(mode)). Use one of: :tsit5, :dp8, :auto_stiff, :rodas5p, :kencarp4."
     ))
 end
 
-@inline _multirate_slow_solver_spec() = _multirate_solver_spec("SPACEAGORA_MULTIRATE_SLOW_SOLVER", "tsit5")
-@inline _multirate_fast_solver_spec() = _multirate_solver_spec("SPACEAGORA_MULTIRATE_FAST_SOLVER", "auto_stiff")
+@inline _multirate_slow_solver_spec(cfg::SolverConfig) = _multirate_solver_spec_from_sym(cfg.multirate_slow_solver, "multirate_slow_solver")
+@inline _multirate_fast_solver_spec(cfg::SolverConfig) = _multirate_solver_spec_from_sym(cfg.multirate_fast_solver, "multirate_fast_solver")
+@inline _multirate_slow_solver_spec() = _multirate_slow_solver_spec(_active_solver_config())
+@inline _multirate_fast_solver_spec() = _multirate_fast_solver_spec(_active_solver_config())
 
-@inline function _solve_with_explicit_solver(prob, args, alg, reltol_tol, abstol_tol; dtmax_override::Union{Nothing, Float64}=nothing)
-    maxiters = _solver_maxiters()
+mutable struct SolverIntegratorCache
+    integrator::Any
+    SolverIntegratorCache() = new(nothing)
+end
+
+@inline function _solver_save_everystep()::Bool
+    name = "SPACEAGORA_SOLVER_SAVE_EVERYSTEP"
+    active_overrides = _engine_active_overrides_ref[]
+    raw_value = if active_overrides !== nothing && haskey(active_overrides, name)
+        get(active_overrides, name, "true")
+    else
+        get(ENV, name, "true")
+    end
+    raw = lowercase(strip(String(raw_value)))
+    return raw in ("1", "true", "yes", "on")
+end
+
+@inline function _solver_bool_env(name::String, default::Bool)::Bool
+    active_overrides = _engine_active_overrides_ref[]
+    raw_value = if active_overrides !== nothing && haskey(active_overrides, name)
+        get(active_overrides, name, default ? "true" : "false")
+    else
+        get(ENV, name, default ? "true" : "false")
+    end
+    raw = lowercase(strip(String(raw_value)))
+    return raw in ("1", "true", "yes", "on")
+end
+
+@inline function _solve_with_explicit_solver(prob, cfg::SolverConfig, args, alg, reltol_tol, abstol_tol;
+    dtmax_override::Union{Nothing, Float64}=nothing,
+    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing)
+    maxiters = _solver_maxiters(cfg)
     dtmax_use = isnothing(dtmax_override) ? args.integration_tolerances.dt_max_orbit : dtmax_override
     dtmax_use > 0.0 || throw(ArgumentError("Solver dtmax must be > 0.0, got $dtmax_use."))
-    if maxiters === nothing
-        return solve(
-            prob,
-            alg;
-            reltol=reltol_tol,
-            abstol=abstol_tol,
-            dtmax=dtmax_use
-        )
+    save_everystep = _solver_save_everystep()
+    save_on = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_ON", true)
+    save_start = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_START", true)
+    save_end = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_END", true)
+
+    if solver_cache !== nothing && solver_cache.integrator !== nothing
+        integ = solver_cache.integrator
+        integ.p = prob.p
+        SciMLBase.reinit!(integ, prob.u0;
+            t0=Float64(first(prob.tspan)),
+            tf=Float64(last(prob.tspan)),
+            erase_sol=true,
+            reinit_callbacks=false)
+        return DiffEqBase.solve!(integ)
     end
-    return solve(
+
+    if maxiters === nothing
+        if solver_cache !== nothing
+            integ = DiffEqBase.init(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
+            solver_cache.integrator = integ
+            return DiffEqBase.solve!(integ)
+        end
+        return solve(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
+    end
+    if solver_cache !== nothing
+        integ = DiffEqBase.init(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, maxiters=maxiters, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
+        solver_cache.integrator = integ
+        return DiffEqBase.solve!(integ)
+    end
+    return solve(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, maxiters=maxiters, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
+end
+
+@inline function _solve_with_explicit_solver(prob, args, alg, reltol_tol, abstol_tol;
+    dtmax_override::Union{Nothing, Float64}=nothing,
+    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing)
+    return _solve_with_explicit_solver(
         prob,
-        alg;
-        reltol=reltol_tol,
-        abstol=abstol_tol,
-        dtmax=dtmax_use,
-        maxiters=maxiters
+        _active_solver_config(),
+        args,
+        alg,
+        reltol_tol,
+        abstol_tol;
+        dtmax_override=dtmax_override,
+        solver_cache=solver_cache,
     )
 end
 
-@inline function _solve_with_fixed_step_solver(prob, alg, dt_s::Float64)
-    maxiters = _solver_maxiters()
+@inline function _solve_with_fixed_step_solver(prob, cfg::SolverConfig, alg, dt_s::Float64)
+    maxiters = _solver_maxiters(cfg)
+    save_everystep = _solver_save_everystep()
+    save_on = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_ON", true)
+    save_start = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_START", true)
+    save_end = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_END", true)
     if maxiters === nothing
-        return solve(prob, alg; dt=dt_s)
+        return solve(prob, alg; dt=dt_s, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
     end
-    return solve(prob, alg; dt=dt_s, maxiters=maxiters)
+    return solve(prob, alg; dt=dt_s, maxiters=maxiters, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
 end
+@inline _solve_with_fixed_step_solver(prob, alg, dt_s::Float64) = _solve_with_fixed_step_solver(prob, _active_solver_config(), alg, dt_s)
 
 @inline function _is_partitioned_second_order_problem(prob)::Bool
     hasproperty(prob, :problem_type) || return false
@@ -325,15 +359,15 @@ end
     return ODEProblem(f, u, tspan, prob.p; prob.kwargs...)
 end
 
-function _solve_with_multirate_solver(prob, args, reltol_tol, abstol_tol)
+function _solve_with_multirate_solver(prob, cfg::SolverConfig, args, reltol_tol, abstol_tol)
     if !(hasproperty(prob.f, :f1) && hasproperty(prob.f, :f2))
-        throw(ArgumentError("SPACEAGORA_SOLVER_MODE=multirate requires a split problem with f1/f2 components."))
+        throw(ArgumentError("SolverConfig.solver_mode=:multirate requires a split problem with f1/f2 components."))
     end
 
     t_start = Float64(first(prob.tspan))
     t_end = Float64(last(prob.tspan))
     if t_end <= t_start
-        sol = _solve_with_explicit_solver(prob, args, Tsit5(), reltol_tol, abstol_tol)
+        sol = _solve_with_explicit_solver(prob, cfg, args, Tsit5(), reltol_tol, abstol_tol)
         return sol, (
             slow_solver="Tsit5",
             fast_solver="Tsit5",
@@ -345,10 +379,10 @@ function _solve_with_multirate_solver(prob, args, reltol_tol, abstol_tol)
         )
     end
 
-    slow_spec = _multirate_slow_solver_spec()
-    fast_spec = _multirate_fast_solver_spec()
-    fast_substeps = _multirate_fast_substeps()
-    slow_dt_s = _multirate_slow_dt_s(args)
+    slow_spec = _multirate_slow_solver_spec(cfg)
+    fast_spec = _multirate_fast_solver_spec(cfg)
+    fast_substeps = _multirate_fast_substeps(cfg)
+    slow_dt_s = _multirate_slow_dt_s(cfg, args)
     fast_dt_s = slow_dt_s / fast_substeps
 
     t_cursor = t_start
@@ -370,6 +404,7 @@ function _solve_with_multirate_solver(prob, args, reltol_tol, abstol_tol)
             fast_prob_pre = _split_subproblem(prob, prob.f.f2, u_cursor, (t_cursor, t_half))
             sol_fast_pre = _solve_with_explicit_solver(
                 fast_prob_pre,
+                cfg,
                 args,
                 fast_spec.alg,
                 reltol_tol,
@@ -397,6 +432,7 @@ function _solve_with_multirate_solver(prob, args, reltol_tol, abstol_tol)
         slow_prob = _split_subproblem(prob, prob.f.f1, u_cursor, (t_cursor, t_next))
         sol_slow = _solve_with_explicit_solver(
             slow_prob,
+            cfg,
             args,
             slow_spec.alg,
             reltol_tol,
@@ -424,6 +460,7 @@ function _solve_with_multirate_solver(prob, args, reltol_tol, abstol_tol)
             fast_prob_post = _split_subproblem(prob, prob.f.f2, u_cursor, (t_half, t_next))
             sol_fast_post = _solve_with_explicit_solver(
                 fast_prob_post,
+                cfg,
                 args,
                 fast_spec.alg,
                 reltol_tol,
@@ -461,8 +498,10 @@ function _solve_with_multirate_solver(prob, args, reltol_tol, abstol_tol)
         auto_switch_events=auto_switch_events
     )
 end
+_solve_with_multirate_solver(prob, args, reltol_tol, abstol_tol) =
+    _solve_with_multirate_solver(prob, _active_solver_config(), args, reltol_tol, abstol_tol)
 
-function _solve_with_gravity_backbone_solver(prob, args)
+function _solve_with_gravity_backbone_solver(prob, cfg::SolverConfig, args)
     t_start = Float64(first(prob.tspan))
     t_end = Float64(last(prob.tspan))
     alg = KahanLi8()
@@ -479,7 +518,7 @@ function _solve_with_gravity_backbone_solver(prob, args)
         return sol, solver_label
     end
 
-    dt_s = _gravity_backbone_fixed_dt_s(args)
+    dt_s = _gravity_backbone_fixed_dt_s(cfg, args)
     t_cursor = t_start
     u_cursor = deepcopy(prob.u0)
     solution_ts = Float64[t_cursor]
@@ -499,7 +538,7 @@ function _solve_with_gravity_backbone_solver(prob, args)
         end
 
         core_prob = remake(prob; u0=u_cursor, tspan=(t_cursor, t_next))
-        core_sol = _solve_with_fixed_step_solver(core_prob, alg, segment_dt)
+        core_sol = _solve_with_fixed_step_solver(core_prob, cfg, alg, segment_dt)
         reached_t = Float64(core_sol.t[end])
         u_cursor = deepcopy(core_sol.u[end])
         final_retcode = core_sol.retcode
@@ -545,16 +584,17 @@ function _solve_with_gravity_backbone_solver(prob, args)
     return sol, solver_label
 end
 
-function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
-    mode = _solver_policy_mode()
+function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, abstol_tol;
+    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing)
+    mode = _solver_policy_mode(cfg)
     if mode == :symplectic
         _symplectic_conservative_eligible(args) || throw(ArgumentError(
-            "SPACEAGORA_SOLVER_MODE=symplectic currently requires a single-spacecraft, translational-only inverse-squared gravity configuration with no control/guidance/navigation effectors."
+            "SolverConfig.solver_mode=:symplectic currently requires a single-spacecraft, translational-only inverse-squared gravity configuration with no control/guidance/navigation effectors."
         ))
         _is_partitioned_second_order_problem(prob) || throw(ArgumentError(
-            "SPACEAGORA_SOLVER_MODE=symplectic requires a partitioned SecondOrderODEProblem. The typed run_simulation path still builds a first-order ODEProblem, so use tsit5/auto_stiff there until a partitioned runtime path is added."
+            "SolverConfig.solver_mode=:symplectic requires a partitioned SecondOrderODEProblem. The typed run_simulation path still builds a first-order ODEProblem, so use :tsit5/:auto_stiff there until a partitioned runtime path is added."
         ))
-        sol = _solve_with_fixed_step_solver(prob, KahanLi8(), _symplectic_fixed_dt_s(args))
+        sol = _solve_with_fixed_step_solver(prob, cfg, KahanLi8(), _symplectic_fixed_dt_s(cfg, args))
         return sol, (
             solver="KahanLi8(Symplectic)",
             initial_solver="KahanLi8",
@@ -567,9 +607,9 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
         reject_reason = _gravity_backbone_reject_reason(args)
         isnothing(reject_reason) || throw(ArgumentError(reject_reason))
         _is_partitioned_second_order_problem(prob) || throw(ArgumentError(
-            "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires a SecondOrderODEProblem built over translational position/velocity states."
+            "SolverConfig.solver_mode=:gravity_backbone_split requires a SecondOrderODEProblem built over translational position/velocity states."
         ))
-        sol, solver_label = _solve_with_gravity_backbone_solver(prob, args)
+        sol, solver_label = _solve_with_gravity_backbone_solver(prob, cfg, args)
         return sol, (
             solver=solver_label,
             initial_solver="KahanLi8",
@@ -578,8 +618,15 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
         )
     end
 
+    # KLUFactorization requires a sparse W matrix. Only use it when a jac_prototype
+    # was provided (multi-satellite path); fall back to dense LU otherwise so that
+    # single-satellite runs don't get wrong Newton corrections from KLU on a dense matrix.
+    _rodas5p_alg() = prob.f.jac_prototype !== nothing ?
+        Rodas5P(autodiff=AutoFiniteDiff(), linsolve=KLUFactorization()) :
+        Rodas5P(autodiff=AutoFiniteDiff())
+
     if mode == :rodas5p
-        sol = _solve_with_explicit_solver(prob, args, Rodas5P(autodiff=AutoFiniteDiff()), reltol_tol, abstol_tol)
+        sol = _solve_with_explicit_solver(prob, cfg, args, _rodas5p_alg(), reltol_tol, abstol_tol; solver_cache=solver_cache)
         return sol, (
             solver="Rodas5P",
             initial_solver="Rodas5P",
@@ -589,10 +636,20 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
     end
 
     if mode == :auto_stiff
+        if _auto_stiff_smooth_gravity_eligible(cfg, args)
+            sol = _solve_with_explicit_solver(prob, cfg, args, Tsit5(), reltol_tol, abstol_tol; solver_cache=solver_cache)
+            return sol, (
+                solver="Tsit5",
+                initial_solver="Tsit5",
+                fallback_used=false,
+                trigger_retcode=missing
+            )
+        end
+
         # True stiffness-aware autoswitching handled internally by OrdinaryDiffEq.
         # This replaces the manual "retry with Rodas5P on Tsit5 failure" policy.
-        autoswitch_alg = AutoTsit5(Rodas5P(autodiff=AutoFiniteDiff()))
-        sol = _solve_with_explicit_solver(prob, args, autoswitch_alg, reltol_tol, abstol_tol)
+        autoswitch_alg = AutoTsit5(_rodas5p_alg(); switch_max=_auto_stiff_switch_max(cfg))
+        sol = _solve_with_explicit_solver(prob, cfg, args, autoswitch_alg, reltol_tol, abstol_tol; solver_cache=solver_cache)
         switched = _auto_stiff_switched(sol)
         return sol, (
             solver="AutoTsit5(Rodas5P)",
@@ -603,8 +660,8 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
     end
 
     if mode == :split_imex
-        split_solver = _split_imex_solver_spec()
-        sol = _solve_with_explicit_solver(prob, args, split_solver.alg, reltol_tol, abstol_tol)
+        split_solver = _split_imex_solver_spec(cfg)
+        sol = _solve_with_explicit_solver(prob, cfg, args, split_solver.alg, reltol_tol, abstol_tol; solver_cache=solver_cache)
         return sol, (
             solver="$(split_solver.label)(IMEX)",
             initial_solver=split_solver.label,
@@ -614,7 +671,7 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
     end
 
     if mode == :multirate
-        sol, multirate_meta = _solve_with_multirate_solver(prob, args, reltol_tol, abstol_tol)
+        sol, multirate_meta = _solve_with_multirate_solver(prob, cfg, args, reltol_tol, abstol_tol)
         switched = multirate_meta.auto_switch_events > 0
         return sol, (
             solver="Multirate(Strang; slow=$(multirate_meta.slow_solver), fast=$(multirate_meta.fast_solver))",
@@ -625,7 +682,7 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
     end
 
     if mode == :dp8
-        sol = _solve_with_explicit_solver(prob, args, DP8(), reltol_tol, abstol_tol)
+        sol = _solve_with_explicit_solver(prob, cfg, args, DP8(), reltol_tol, abstol_tol; solver_cache=solver_cache)
         return sol, (
             solver="DP8",
             initial_solver="DP8",
@@ -634,7 +691,7 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol)
         )
     end
 
-    tsit_sol = _solve_with_explicit_solver(prob, args, Tsit5(), reltol_tol, abstol_tol)
+    tsit_sol = _solve_with_explicit_solver(prob, cfg, args, Tsit5(), reltol_tol, abstol_tol; solver_cache=solver_cache)
     return tsit_sol, (
         solver="Tsit5",
         initial_solver="Tsit5",

@@ -98,9 +98,14 @@ function main()
         multirate_gate_report_path = multirate_gate_result.report_path
     end
 
+    mission_time_sweep_enabled = _include_mission_time_sweep()
+    orbit_raw_df = DataFrame()
+    orbit_summary_df = DataFrame()
     orbit_started_ns = time_ns()
-    orbit_raw_df = run_per_orbit_for_scenarios(spec, cases, planet)
-    orbit_summary_df = summarize_per_orbit_results(orbit_raw_df)
+    if mission_time_sweep_enabled
+        orbit_raw_df = run_per_orbit_for_scenarios(spec, cases, planet)
+        orbit_summary_df = summarize_per_orbit_results(orbit_raw_df)
+    end
     orbit_elapsed_s = (time_ns() - orbit_started_ns) / 1e9
     entry_duration_started_ns = time_ns()
     entry_duration_raw_df = run_entry_duration_sweep(spec, cases, planet)
@@ -170,8 +175,10 @@ function main()
 
     CSV.write(raw_path, raw_df)
     CSV.write(summary_path, summary_df)
-    CSV.write(orbit_raw_path, orbit_raw_df)
-    CSV.write(orbit_summary_path, orbit_summary_df)
+    if mission_time_sweep_enabled
+        CSV.write(orbit_raw_path, orbit_raw_df)
+        CSV.write(orbit_summary_path, orbit_summary_df)
+    end
     CSV.write(entry_duration_raw_path, entry_duration_raw_df)
     CSV.write(entry_duration_summary_path, entry_duration_summary_df)
     CSV.write(stage_timing_path, stage_timing_df)
@@ -203,8 +210,12 @@ function main()
     println("Analysis complete.")
     println("Raw results: $raw_path")
     println("Summary: $summary_path")
-    println("Mission-time-sweep raw: $orbit_raw_path")
-    println("Mission-time-sweep summary: $orbit_summary_path")
+    if mission_time_sweep_enabled
+        println("Mission-time-sweep raw: $orbit_raw_path")
+        println("Mission-time-sweep summary: $orbit_summary_path")
+    else
+        println("Mission-time-sweep: skipped")
+    end
     println("Entry-duration-sweep raw: $entry_duration_raw_path")
     println("Entry-duration-sweep summary: $entry_duration_summary_path")
     println("Stage timing: $stage_timing_path")

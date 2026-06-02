@@ -113,7 +113,7 @@ function _scenario_dynamic_effectors(
     cd_scale::Float64=1.0,
     cr_override::Union{Nothing, Float64}=nothing
 )
-    effectors = Any[_base_gravity_effector(cfg.gravity_model)]
+    effectors = Any[]
 
     if cfg.gravity_harmonics_degree > 0
         harmonics_file = cfg.gravity_harmonics_file
@@ -132,6 +132,8 @@ function _scenario_dynamic_effectors(
                 j2_source=_telemetry_j2_source_for_scenario(cfg.name)
             )
         )
+    else
+        push!(effectors, _base_gravity_effector(cfg.gravity_model))
     end
 
     if !isempty(cfg.nbody_bodies)

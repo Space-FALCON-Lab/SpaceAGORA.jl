@@ -13,7 +13,7 @@ const SE = EngineSandbox.SimulationEngine
 @testset "typed_config_equivalence" begin
     cfg = SE.SimulationEngineConfig(
         parallel=SE.ParallelConfig(profile="r5", effector_parallel_mode="on", rhs_batch_parallel_mode="off"),
-        solver=SE.SolverConfig(mode="rodas5p", maxiters=12345, gravity_backbone_dt_s=4.0),
+        solver=SE.SolverConfig(solver_mode=:rodas5p, maxiters=12345, gravity_backbone_dt_s=4.0),
         runtime_policy=SE.RuntimePolicyConfig(
             warn_normalize=false,
             allow_typed_normalize=true,
@@ -44,7 +44,7 @@ const SE = EngineSandbox.SimulationEngine
         "SPACEAGORA_WARN_NORMALIZE" => "0"
     ) do
         from_env = SE.simulation_engine_config_from_env(ENV)
-        @test from_env.solver.mode == "split_imex"
+        @test from_env.solver.solver_mode == :split_imex
         @test from_env.solver.maxiters == 777
         @test from_env.solver.gravity_backbone_dt_s == 6.5
         @test from_env.artifacts.save_bundle == false

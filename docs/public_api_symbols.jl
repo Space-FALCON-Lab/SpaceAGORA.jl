@@ -10,7 +10,11 @@ const PUBLIC_API_SECTIONS = [
         items = [
             (owner = :SpaceAGORA, symbol = :run_simulation, rendered = "SpaceAGORA.run_simulation"),
             (owner = :SpaceAGORA, symbol = :prewarm_nbody_ephemeris_cache, rendered = "SpaceAGORA.prewarm_nbody_ephemeris_cache"),
-            (owner = :SpaceAGORA, symbol = :load_nbody_ephemeris_cache!, rendered = "SpaceAGORA.load_nbody_ephemeris_cache!")
+            (owner = :SpaceAGORA, symbol = :load_nbody_ephemeris_cache!, rendered = "SpaceAGORA.load_nbody_ephemeris_cache!"),
+            (owner = :SimulationCampaigns, symbol = :MonteCarloSpec, rendered = "SpaceAGORA.MonteCarloSpec"),
+            (owner = :SimulationCampaigns, symbol = :MonteCarloSampleResult, rendered = "SpaceAGORA.MonteCarloSampleResult"),
+            (owner = :SimulationCampaigns, symbol = :MonteCarloResult, rendered = "SpaceAGORA.MonteCarloResult"),
+            (owner = :SimulationCampaigns, symbol = :run_monte_carlo, rendered = "SpaceAGORA.run_monte_carlo")
         ]
     ),
     (
@@ -125,6 +129,8 @@ const PUBLIC_API_SECTIONS = [
         return spaceagora
     elseif owner === :SimulationEngine
         return getproperty(spaceagora, :SimulationEngine)
+    elseif owner === :SimulationCampaigns
+        return getproperty(spaceagora, :SimulationCampaigns)
     elseif owner === :ParallelProfiles
         return getproperty(spaceagora, :ParallelProfiles)
     elseif owner === :TelemetryVerification

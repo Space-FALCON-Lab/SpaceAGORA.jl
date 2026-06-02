@@ -413,9 +413,9 @@ function latlongtoNED(H_LAN_LON)
     uExyz = SVector{3, Float64}(0.0, 1.0, 0.0)
 
     # Rotate by longitude to change to PCPF frame
-    L3 = SMatrix{3, 3, Float64}([cos(lon) -sin(lon) 0.0;
+    L3 = @SMatrix [cos(lon) -sin(lon) 0.0;
           sin(lon) cos(lon) 0.0;
-          0.0 0.0 1.0])
+          0.0 0.0 1.0]
 
     uN = L3 * uNxyz
     uE = L3 * uExyz

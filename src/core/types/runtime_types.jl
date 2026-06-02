@@ -18,6 +18,7 @@ using ..LegacyModelCodes:
     LegacyThrustNone,
     _compat_enum_parse
 using ..CommandTypes: PropulsiveManeuverCommand, PropulsiveBurnPlan
+using ..EffectorSampling: StateSample
 using StaticArrays
 using AstroTime
 using OrdinaryDiffEq
@@ -26,7 +27,7 @@ using Reexport
 export Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters
 export SaveCache, SaveData
 export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, SpiceRuntimeCounters, SpiceRhsMemo
-export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
+export GramTrackCache, VacuumPredictedGRAMCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
     @kwdef struct Mission
         e::Int64 = 0
         d::Int64 = 0
@@ -519,6 +520,25 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
         winds::Vector{SVector{3, Float64}}
     end
 
+    # Vacuum-predicted GRAM density cache.
+    # Propagates a drag-free (two-body + J2) trajectory, samples the density model
+    # at N evenly-spaced knots, and fits natural cubic splines to log(ρ) and T vs
+    # time.  Subsequent density queries interpolate from the splines when the actual
+    # trajectory stays within a configurable position deviation of the vacuum prediction.
+    mutable struct VacuumPredictedGRAMCache
+        valid::Bool
+        t0::Float64                         # time of first spline knot
+        t1::Float64                         # time of last spline knot
+        h::Float64                          # uniform knot spacing in seconds
+        log_rhos::Vector{Float64}           # log(ρ) at knots (spline a-coefficients)
+        Ms_rho::Vector{Float64}             # natural cubic spline second derivatives for log(ρ)
+        Ts::Vector{Float64}                 # temperature at knots
+        Ms_T::Vector{Float64}              # natural cubic spline second derivatives for T
+        winds::Vector{SVector{3, Float64}}  # wind vectors at knots (linear interpolation)
+        vac_alts::Vector{Float64}           # vacuum-predicted altitude at each knot
+        vac_positions::Vector{SVector{3, Float64}} # vacuum-predicted inertial position at each knot
+    end
+
     struct AeroScratchWorkspace
         thread_force::Vector{MVector{3, Float64}}
         thread_cl::Vector{Float64}
@@ -551,12 +571,14 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
         densities::Vector{Float64} = zeros(Float64, N_sats)
         temperatures::Vector{Float64} = ones(Float64, N_sats)
         winds::Vector{SVector{3,Float64}} = [SVector{3,Float64}(0.0, 0.0, 0.0) for _ in 1:N_sats]
+        density_sample_t::Vector{Float64} = fill(NaN, N_sats)
         density_batch_altitudes::Vector{Float64} = zeros(Float64, N_sats)
         density_batch_latitudes::Vector{Float64} = zeros(Float64, N_sats)
         density_batch_longitudes::Vector{Float64} = zeros(Float64, N_sats)
         heat_rates::Vector{Vector{Float64}} = [Float64[] for _ in 1:N_sats]
         density_models::Vector{_PerSatDensityModel} = _PerSatDensityModel[]
         gram_density_cache::Vector{Union{Nothing, GramTrackCache}} = _typed_nothing_vector(GramTrackCache, N_sats)
+        vacuum_gram_caches::Vector{Union{Nothing, VacuumPredictedGRAMCache}} = _typed_nothing_vector(VacuumPredictedGRAMCache, N_sats)
         gram_isolated_pool_models::Vector{GRAMAtmosphereModel} = GRAMAtmosphereModel[]
         gram_isolated_pool_locks::Vector{ReentrantLock} = ReentrantLock[]
         harmonics_workspaces::Vector{Union{Nothing, _HarmonicsWorkspaceMap}} = _typed_nothing_vector(_HarmonicsWorkspaceMap, N_sats)
@@ -565,6 +587,9 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
         nbody_ephemeris_cache::Base.RefValue{Union{Nothing, NBodyEphemerisCache}} = Ref{Union{Nothing, NBodyEphemerisCache}}(nothing)
         srp_sun_ephemeris_cache::Base.RefValue{Union{Nothing, SRPSunEphemerisCache}} = Ref{Union{Nothing, SRPSunEphemerisCache}}(nothing)
         planet_frame_ephemeris_cache::Base.RefValue{Union{Nothing, PlanetFrameEphemerisCache}} = Ref{Union{Nothing, PlanetFrameEphemerisCache}}(nothing)
+        harmonics_lpi_lock::ReentrantLock = ReentrantLock()
+        harmonics_lpi_key::Base.RefValue{Any} = Ref{Any}(nothing)
+        harmonics_lpi::Base.RefValue{SMatrix{3,3,Float64,9}} = Ref(SMatrix{3,3,Float64,9}((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)))
         maneuver_commands::Vector{PropulsiveManeuverCommand} = [PropulsiveManeuverCommand() for _ in 1:N_sats]
         maneuver_burn_plans::Vector{PropulsiveBurnPlan} = [PropulsiveBurnPlan() for _ in 1:N_sats]
         spice_runtime_counters::SpiceRuntimeCounters = SpiceRuntimeCounters()
@@ -577,6 +602,44 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
         debug_initial_derivative::Base.RefValue{Bool} = Ref(false)
         effector_cost_ns_per_item::Base.RefValue{Float64} = Ref(NaN)
         effector_cost_samples::Base.RefValue{Int64} = Ref(Int64(0))
+        rhs_effector_cost_ns::Base.RefValue{Vector{Float64}} = Ref(Float64[])
+        rhs_effector_cost_samples::Base.RefValue{Vector{Int64}} = Ref(Int64[])
+        rhs_flat_effector_partials::Base.RefValue{Array{Float64, 3}} = Ref(Array{Float64, 3}(undef, 0, 0, 0))
+        rhs_flat_effector_totals::Base.RefValue{Matrix{Float64}} = Ref(Matrix{Float64}(undef, 0, 0))
+        rhs_flat_state_samples::Base.RefValue{Vector{Union{Nothing, StateSample}}} = Ref(Vector{Union{Nothing, StateSample}}())
+        rhs_flat_state_pos_ii::Base.RefValue{Vector{SVector{3, Float64}}} = Ref(SVector{3, Float64}[])
+        rhs_flat_state_vel_ii::Base.RefValue{Vector{SVector{3, Float64}}} = Ref(SVector{3, Float64}[])
+        rhs_flat_state_mass_kg::Base.RefValue{Vector{Float64}} = Ref(Float64[])
+        rhs_flat_state_q_ib::Base.RefValue{Vector{SVector{4, Float64}}} = Ref(SVector{4, Float64}[])
+        rhs_flat_state_omega_body::Base.RefValue{Vector{SVector{3, Float64}}} = Ref(SVector{3, Float64}[])
+        rhs_flat_planet_lpi::Base.RefValue{SMatrix{3, 3, Float64, 9}} = Ref(SMatrix{3,3,Float64,9}((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)))
+        rhs_flat_planet_pos_pp::Base.RefValue{Vector{SVector{3, Float64}}} = Ref(SVector{3, Float64}[])
+        rhs_flat_planet_vel_pp::Base.RefValue{Vector{SVector{3, Float64}}} = Ref(SVector{3, Float64}[])
+        rhs_flat_planet_alt_m::Base.RefValue{Vector{Float64}} = Ref(Float64[])
+        rhs_flat_planet_lat_rad::Base.RefValue{Vector{Float64}} = Ref(Float64[])
+        rhs_flat_planet_lon_rad::Base.RefValue{Vector{Float64}} = Ref(Float64[])
+        rhs_flat_solar_pos_ii::Base.RefValue{SVector{3, Float64}} = Ref(SVector{3, Float64}(0.0, 0.0, 0.0))
+        rhs_flat_solar_t::Base.RefValue{Float64} = Ref(NaN)
+        rhs_flat_work_items::Base.RefValue{Vector{Int}} = Ref(Int[])
+        rhs_flat_packet_starts::Base.RefValue{Vector{Int}} = Ref(Int[])
+        rhs_flat_packet_ends::Base.RefValue{Vector{Int}} = Ref(Int[])
+        rhs_flat_packet_costs::Base.RefValue{Vector{Float64}} = Ref(Float64[])
+        rhs_flat_packet_elapsed_ns::Base.RefValue{Vector{Int64}} = Ref(Int64[])
+        rhs_flat_packet_overhead_ema::Base.RefValue{Float64} = Ref(NaN)
+        rhs_flat_packet_overhead_samples::Base.RefValue{Int64} = Ref(Int64(0))
+        rhs_flat_packet_disabled::Base.RefValue{Bool} = Ref(false)
+        rhs_planet_frame_prefilled::Base.RefValue{Bool} = Ref(false)
+        rhs_atmosphere_prefilled::Base.RefValue{Bool} = Ref(false)
+        rhs_solar_prefilled::Base.RefValue{Bool} = Ref(false)
+        rhs_harmonics_batch_pool::Base.RefValue{Any} = Ref{Any}(nothing)
+        # Per-satellite atmosphere presence flag, maintained by get_drag_state_callback.
+        # Initialised false (above atmosphere); spacecraft_dynamics_implicit_atmosphere!
+        # short-circuits to du=0 when false, eliminating GRAM calls during coast arcs.
+        in_atmosphere::Vector{Bool} = fill(false, N_sats)
+        # Pre-solve calibration override: when non-nothing, _rhs_execution_plan returns
+        # this plan directly, bypassing all heuristic routing logic.  Set by the
+        # auto-calibration sweep in rhs_calibration.jl and cleared after the solve.
+        rhs_plan_override::Base.RefValue{Any} = Ref{Any}(nothing)
     end
 
     # SaveData is an output/persistence boundary and intentionally remains heterogeneous.
@@ -593,7 +656,7 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
     end
 
     
-    @kwdef struct ODEParams{N_sats}
+    @kwdef struct ODEParams{N_sats, A <: SimulationConfiguration}
         # m::Model = Model()                      # Model struct
         # cnf::Cnf = Cnf()            # Configuration parameters
         # solution::Solution = Solution() # Solution struct
@@ -608,11 +671,29 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
         # gram::Any = nothing              # GRAM object
         # numberofpassage::Int64 = 0       # Current passage number
         # orientation_sim::Bool = false    # Flag for orientation simulation
-        args::SimulationConfiguration = SimulationConfiguration() # Arguments dictionary
-        shared_buffers::SharedBuffers = SharedBuffers{N_sats}() # Shared buffers for callback and integrator
+        args::A = SimulationConfiguration() # Arguments dictionary
+        shared_buffers::SharedBuffers{N_sats} = SharedBuffers{N_sats}() # Shared buffers for callback and integrator
         is_active::Vector{Bool} = [true for _ in 1:N_sats] # Vector to track which satellites are still active in the simulation
         orbit_counter::Vector{Int64} = ones(Int64, N_sats) # Counter for the number of orbits completed
         save_cache::SaveCache = SaveCache() # Cache for saving results
+    end
+
+    function ODEParams{N_sats}(;
+        args=SimulationConfiguration(),
+        shared_buffers=SharedBuffers{N_sats}(),
+        is_active::Vector{Bool}=[true for _ in 1:N_sats],
+        orbit_counter::Vector{Int64}=ones(Int64, N_sats),
+        save_cache::SaveCache=SaveCache(),
+    ) where {N_sats}
+        args isa SimulationConfiguration || throw(ArgumentError("ODEParams args must be a SimulationConfiguration."))
+        shared_buffers isa SharedBuffers{N_sats} || throw(ArgumentError("ODEParams shared_buffers must be SharedBuffers{$N_sats}."))
+        return ODEParams{N_sats, typeof(args)}(
+            args,
+            shared_buffers,
+            is_active,
+            orbit_counter,
+            save_cache,
+        )
     end
     # solution = Solution()
 

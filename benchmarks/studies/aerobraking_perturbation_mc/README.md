@@ -94,6 +94,31 @@ julia --project=. benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_p
   output/aerobraking_perturbation_mc_inclination_argp_supplement/<timestamp>
 ```
 
+Run the matching shallow/deep inclination-by-argument-of-periapsis supplement
+to fill out the remaining `slice_atlas_omega_vs_inclination_reference_apo`
+panels:
+
+```bash
+julia --project=. benchmarks/studies/aerobraking_perturbation_mc/run_inclination_argp_periapsis_supplement.jl --procs 8
+```
+
+This supplemental run uses the same representative apoapses and full
+11-by-15 inclination/AOP grid as the nominal supplement, but covers shallow
+and deep periapsis only. It writes to
+`output/aerobraking_perturbation_mc_inclination_argp_periapsis_supplement/<timestamp>/`.
+
+Run the phase-dependence supplement for inclination-vs-apoapsis plots at
+argument of periapsis 0, 90, 180, and 270 deg:
+
+```bash
+julia --project=. benchmarks/studies/aerobraking_perturbation_mc/run_phase_inclination_apoapsis_supplement.jl --procs 8
+```
+
+This run covers Mars, Venus, Earth, and Titan at nominal periapsis, mass
+scale 1, `full_environment`, nominal density, 22 inclination levels, 21
+apoapsis levels per body, and the four AOP phases. It writes to
+`output/aerobraking_perturbation_mc_phase_inclination_apoapsis_supplement/<timestamp>/`.
+
 Run the targeted periapsis-altitude supplement used to make the
 `omega`-vs-periapsis-altitude poster slice less sparse:
 
@@ -112,6 +137,8 @@ After it completes, pass this third run directory to the poster generator:
 julia --project=. benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl \
   output/aerobraking_perturbation_mc/20260519_121929 \
   output/aerobraking_perturbation_mc_inclination_argp_supplement/<timestamp> \
+  output/aerobraking_perturbation_mc_inclination_argp_periapsis_supplement/<timestamp> \
+  output/aerobraking_perturbation_mc_phase_inclination_apoapsis_supplement/<timestamp> \
   output/aerobraking_perturbation_mc_periapsis_altitude_supplement/<timestamp>
 ```
 

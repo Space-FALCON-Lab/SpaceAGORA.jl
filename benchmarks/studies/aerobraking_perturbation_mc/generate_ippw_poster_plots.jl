@@ -5,6 +5,7 @@
 #   julia --project=. benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl
 #   julia --project=. benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl output/aerobraking_perturbation_mc/20260519_121929
 #   julia --project=. benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl base_run supplement_run
+#   julia --project=. benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl base_run nominal_inclination_argp_run shallow_deep_inclination_argp_run periapsis_altitude_run
 #
 # The analytical contour here is an additive prediction from the isolated
 # perturbation cases in the run, not the final closed-form secular Xi model.
@@ -27,6 +28,7 @@ const POSTER_DENSITY = "nominal"
 const DEFAULT_MASS_SCALE = 1.0
 const DEFAULT_INCLINATION_DEG = 93.0
 const DEFAULT_ARGP_DEG = 80.0
+const PHASE_ARGP_DEGS = [0.0, 90.0, 180.0, 270.0]
 const POSTER_PERIAPSIS = Dict("mars" => "nominal", "venus" => "nominal", "earth" => "nominal", "titan" => "nominal")
 const POSTER_APOAPSIS_KM = Dict("mars" => 5000.0, "venus" => 10000.0, "earth" => 36000.0, "titan" => 10000.0)
 const PERIAPSIS_ALTITUDE_KM = Dict(
@@ -1079,6 +1081,72 @@ function plot_priority_slices(additive::DataFrame, out_dir::String)
     return paths
 end
 
+function phase_grid_coverage(additive::DataFrame, out_dir::String)
+    rows = NamedTuple[]
+    for planet in PLANETS
+        peri = POSTER_PERIAPSIS[planet]
+        base = additive[
+            (additive.planet .== planet) .&
+            (additive.periapsis_regime .== peri) .&
+            (additive.spacecraft_mass_scale .== DEFAULT_MASS_SCALE),
+            :,
+        ]
+        for argp in PHASE_ARGP_DEGS
+            df = base[base.argp_deg .== argp, :]
+            xs = isempty(df) ? Float64[] : sort(unique(Float64.(df.apoapsis_alt_km)))
+            ys = isempty(df) ? Float64[] : sort(unique(Float64.(df.inclination_deg)))
+            total = length(xs) * length(ys)
+            push!(rows, (
+                planet=planet,
+                periapsis_regime=peri,
+                argp_deg=argp,
+                rows=nrow(df),
+                apoapsis_levels=length(xs),
+                inclination_levels=length(ys),
+                nominal_grid_cells=total,
+                coverage_fraction=total > 0 ? nrow(df) / total : 0.0,
+            ))
+        end
+    end
+    df = DataFrame(rows)
+    CSV.write(joinpath(out_dir, "phase_inclination_apoapsis_coverage.csv"), df)
+    return df
+end
+
+function plot_phase_inclination_apoapsis(additive::DataFrame, out_dir::String)
+    paths = String[]
+    phase_grid_coverage(additive, out_dir)
+    for planet in PLANETS
+        peri = POSTER_PERIAPSIS[planet]
+        base = additive[
+            (additive.planet .== planet) .&
+            (additive.periapsis_regime .== peri) .&
+            (additive.spacecraft_mass_scale .== DEFAULT_MASS_SCALE),
+            :,
+        ]
+        isempty(base) && continue
+        subplots = Plots.Plot[]
+        for argp in PHASE_ARGP_DEGS
+            df = base[base.argp_deg .== argp, :]
+            title = @sprintf("omega=%.0f deg", argp)
+            push!(subplots, atlas_panel(df, :apoapsis_alt_km, :inclination_deg, title, "apoapsis (km)", "inclination (deg)"))
+        end
+        fig = plot(
+            subplots...;
+            layout=(1, 4),
+            size=(1700, 420),
+            plot_title=@sprintf("%s Phase Dependence: inclination vs apoapsis, %s periapsis, full environment", PLANET_LABEL[planet], REGIME_LABEL[peri]),
+            plot_titlefontsize=13,
+            left_margin=7Plots.mm,
+            bottom_margin=8Plots.mm,
+        )
+        out = joinpath(out_dir, @sprintf("phase_dependence_inclination_vs_apoapsis_%s_%s_full_environment.pdf", planet, peri))
+        savefig(fig, out)
+        push!(paths, out)
+    end
+    return paths
+end
+
 function plot_equilibrium_terms(additive::DataFrame, out_dir::String)
     df = additive[
         (additive.spacecraft_mass_scale .== DEFAULT_MASS_SCALE) .&
@@ -1257,6 +1325,7 @@ function main(args=ARGS)
     plot_regime_fraction_summary(additive, out_dir)
     plot_slice_atlas(additive, out_dir)
     plot_priority_slices(additive, out_dir)
+    plot_phase_inclination_apoapsis(additive, out_dir)
     plot_equilibrium_terms(additive, out_dir)
     write_short_period_offset(additive, out_dir)
     titan_zlk_estimate(results, out_dir)

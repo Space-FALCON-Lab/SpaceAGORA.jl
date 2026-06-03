@@ -4,7 +4,7 @@ Use this page when you want to speed up multi-satellite campaigns or
 performance-sensitive studies by enabling parallel execution.
 
 This page is for users who already have a working single-satellite simulation
-and want to scale it up or understand the available execution profiles.
+and want to scale it up or understand the available parallel controls.
 
 Shortest successful command:
 
@@ -17,131 +17,183 @@ What to read next:
 - [Distributed and HPC](../distributed_hpc.md)
 - [Simulation Configuration](simulation_configuration.md)
 
-## Profiles
+## Runtime Controls
 
-SpaceAGORA exposes a tiered set of parallel execution profiles. Each profile
-is a named preset for a set of environment variables that control outer-level
-(across satellites) and inner-level (within-satellite callbacks) parallelism.
+SpaceAGORA's parallel runtime is controlled by route and policy settings. The
+important axes are:
 
-| Profile | Outer | Inner | Notes |
-|---|---|---|---|
-| `R0` | Serial | Serial | Fully deterministic; useful for debugging and baselines |
-| `R1_a` | Threads | Serial | Outer satellite loop uses Julia threads |
-| `R1_b` | Process workers | Serial | Outer loop uses spawned process workers |
-| `R2` | Serial | Auto | Inner callback parallelism only; useful for single-satellite studies |
-| `R3` | Auto | Auto, static | Both levels on; static inner scheduler |
-| `R4` | Auto | Auto, adaptive | Both levels on; adaptive inner scheduler |
-| `R5` | Auto | Auto, dynamic + hints | Full auto with dynamic scheduling and persistent performance hints |
+| Axis | Values | Purpose |
+|---|---|---|
+| Outer route | `none`, `threads`, `process`, `auto` | Chooses whether campaign or constellation work runs serially, on Julia threads, or on process workers |
+| Callback and effector modes | `off`, `auto`, `on` | Controls density, control, thermal, multibody, and dynamic-effector inner parallelism |
+| RHS execution mode | `auto`, `serial`, `satellite`, `per_satellite`, `flat` | Chooses the dominant RHS threading strategy for a simulation |
+| Inner scheduler | `static`, `dynamic` | Chooses fixed worker assignment or dynamic work stealing |
+| Adaptive policy | `0`, `1` | Allows measured runtime feedback to adjust worker counts and route choices |
+| Persistent hints | `0`, `1` | Reuses measured policy choices across repeated runs when state persistence is enabled |
 
 For a machine with many cores running a multi-satellite campaign, start with
-`R3` as a conservative starting point and move to `R4` or `R5` once you have
-validated correctness.
-
-## Using `with_parallel_profile`
-
-The cleanest way to apply a profile for a single run is `with_parallel_profile`,
-which scopes the environment variable changes to the block:
-
-```julia
-using SpaceAGORA
-
-with_parallel_profile(:R3) do
-    run_simulation(config)
-end
-```
-
-To run several scenarios under the same profile:
-
-```julia
-with_parallel_profile(:R4) do
-    for config in configs
-        run_simulation(config)
-    end
-end
-```
-
-`with_parallel_profile` accepts `ParallelProfile` enum values, string names,
-or symbols:
-
-```julia
-with_parallel_profile(R3) do ... end      # enum value
-with_parallel_profile("R3") do ... end    # string
-with_parallel_profile(:r3) do ... end     # symbol (case-insensitive)
-```
+`auto` outer routing, `auto` inner modes, and the default `auto` RHS execution
+mode. Enable adaptive policy and persistent hints for repeated performance
+studies after validating correctness against a forced serial run.
 
 ## Using environment variables
 
-For CLI runs or scripted batch execution, set `SPACEAGORA_PARALLEL_PROFILE`
-before launching:
+For CLI runs or scripted batch execution, set the controls before launching:
 
 ```powershell
-$env:SPACEAGORA_PARALLEL_PROFILE = "R3"
+$env:SPACEAGORA_PERF_PARALLEL_BACKEND = "auto"
+$env:SPACEAGORA_PERF_OUTER_ROUTE_ADAPTIVE = "1"
+$env:SPACEAGORA_DENSITY_CALLBACK_PARALLEL = "auto"
+$env:SPACEAGORA_CONTROL_CALLBACK_PARALLEL = "auto"
+$env:SPACEAGORA_THERMAL_CALLBACK_PARALLEL = "auto"
+$env:SPACEAGORA_MULTIBODY_PARALLEL = "auto"
+$env:SPACEAGORA_EFFECTOR_PARALLEL = "auto"
+$env:SPACEAGORA_RHS_BATCH_PARALLEL = "auto"
+$env:SPACEAGORA_RHS_EXECUTION_MODE = "auto"
+$env:SPACEAGORA_PARALLEL_POLICY_ADAPTIVE = "1"
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
 `cmd.exe`:
 
 ```bat
-set SPACEAGORA_PARALLEL_PROFILE=R3
+set SPACEAGORA_PERF_PARALLEL_BACKEND=auto
+set SPACEAGORA_PERF_OUTER_ROUTE_ADAPTIVE=1
+set SPACEAGORA_DENSITY_CALLBACK_PARALLEL=auto
+set SPACEAGORA_CONTROL_CALLBACK_PARALLEL=auto
+set SPACEAGORA_THERMAL_CALLBACK_PARALLEL=auto
+set SPACEAGORA_MULTIBODY_PARALLEL=auto
+set SPACEAGORA_EFFECTOR_PARALLEL=auto
+set SPACEAGORA_RHS_BATCH_PARALLEL=auto
+set SPACEAGORA_RHS_EXECUTION_MODE=auto
+set SPACEAGORA_PARALLEL_POLICY_ADAPTIVE=1
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
 POSIX shells:
 
 ```bash
-export SPACEAGORA_PARALLEL_PROFILE=R3
+export SPACEAGORA_PERF_PARALLEL_BACKEND=auto
+export SPACEAGORA_PERF_OUTER_ROUTE_ADAPTIVE=1
+export SPACEAGORA_DENSITY_CALLBACK_PARALLEL=auto
+export SPACEAGORA_CONTROL_CALLBACK_PARALLEL=auto
+export SPACEAGORA_THERMAL_CALLBACK_PARALLEL=auto
+export SPACEAGORA_MULTIBODY_PARALLEL=auto
+export SPACEAGORA_EFFECTOR_PARALLEL=auto
+export SPACEAGORA_RHS_BATCH_PARALLEL=auto
+export SPACEAGORA_RHS_EXECUTION_MODE=auto
+export SPACEAGORA_PARALLEL_POLICY_ADAPTIVE=1
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
-Or pin it for a session with the Julia API:
+To force a serial baseline for validation:
 
-```julia
-with_parallel_profile(:R4) do
-    run_simulation(config)
-end
+```bash
+export SPACEAGORA_PERF_PARALLEL_BACKEND=none
+export SPACEAGORA_DENSITY_CALLBACK_PARALLEL=off
+export SPACEAGORA_CONTROL_CALLBACK_PARALLEL=off
+export SPACEAGORA_THERMAL_CALLBACK_PARALLEL=off
+export SPACEAGORA_MULTIBODY_PARALLEL=off
+export SPACEAGORA_EFFECTOR_PARALLEL=off
+export SPACEAGORA_RHS_BATCH_PARALLEL=off
+export SPACEAGORA_RHS_EXECUTION_MODE=serial
+export SPACEAGORA_PARALLEL_POLICY_ADAPTIVE=0
+julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
-## Inspecting a profile's environment variables
+The same environment variables can be scoped in Julia with `withenv` when you
+want one process to run several scenarios with different settings.
 
-`profile_env_pairs` returns the full list of `SPACEAGORA_*` environment
-variable pairs that a profile implies, which is useful for understanding what
-each profile actually sets or for wiring profiles into external schedulers:
+## Monte Carlo campaigns
+
+Use `run_monte_carlo` when you want to run many independent simulations from
+an example script or study without copying benchmark-specific orchestration
+code. The runner applies parallelism across Monte Carlo samples: each worker
+task calls your function with one seed.
+
+Start Julia with the number of threads you want available:
+
+```bash
+julia --project=. --threads=8 examples/AGORA_Earth_MonteCarlo.jl
+```
+
+Then cap the campaign runner to that same thread count, or a smaller count:
 
 ```julia
 using SpaceAGORA
 
-pairs = profile_env_pairs(:R4)
-for (k, v) in pairs
-    println("$k = $v")
+result = run_monte_carlo(1:100; threads=8) do seed
+    args = make_config_for_seed(seed)
+    run_simulation(args; return_solution=true)
+end
+
+println("successful samples: $(length(result.successful))")
+println("failed samples: $(length(result.failed))")
+```
+
+`threads` does not create new Julia threads at runtime. If the script requests
+more Monte Carlo threads than Julia was launched with, the runner throws a
+clear `ArgumentError`.
+
+For reusable scripts, build a spec explicitly:
+
+```julia
+spec = MonteCarloSpec(seeds=1001:1100, threads=8, fail_fast=false)
+
+result = run_monte_carlo(spec) do seed
+    args = make_config_for_seed(seed)
+    run_simulation(args)
 end
 ```
 
-## Persistent performance hints (R5)
+By default, failed samples are captured in `result.failed` and do not stop the
+rest of the campaign. Set `fail_fast=true` when you want the runner to rethrow
+on the first failed sample instead.
 
-`R5` enables persistent performance hints: the adaptive inner scheduler records
-wall-clock measurements per satellite and reuses them across repeated calls in
-the same session. This reduces the calibration overhead on the second and
-subsequent runs.
+## Auditing Active Controls
+
+For reproducible studies, record the `SPACEAGORA_*` controls that define the
+route and inner-policy behavior:
+
+```julia
+for key in sort(collect(keys(ENV)))
+    if startswith(key, "SPACEAGORA_")
+        println("$key = $(ENV[key])")
+    end
+end
+```
+
+## Persistent Performance Hints
+
+Persistent performance hints let the adaptive inner scheduler record wall-clock
+measurements and reuse them across repeated calls. This reduces calibration
+overhead on the second and subsequent runs.
 
 Set a stable hint state path to make hints persist across Julia sessions:
 
 ```powershell
 $env:SPACEAGORA_PARALLEL_POLICY_STATE_PATH = "C:\\path\\to\\hints.toml"
-$env:SPACEAGORA_PARALLEL_PROFILE = "R5"
+$env:SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS = "1"
+$env:SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST = "1"
+$env:SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD = "1"
 ```
 
 `cmd.exe`:
 
 ```bat
 set SPACEAGORA_PARALLEL_POLICY_STATE_PATH=C:\path\to\hints.toml
-set SPACEAGORA_PARALLEL_PROFILE=R5
+set SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS=1
+set SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST=1
+set SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD=1
 ```
 
 POSIX shells:
 
 ```bash
 export SPACEAGORA_PARALLEL_POLICY_STATE_PATH=/path/to/hints.toml
-export SPACEAGORA_PARALLEL_PROFILE=R5
+export SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS=1
+export SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST=1
+export SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD=1
 ```
 
 Use `SPACEAGORA_PARALLEL_POLICY_STATE_RESET=1` to discard accumulated hints
@@ -149,13 +201,13 @@ and restart calibration.
 
 ## When not to use parallelism
 
-- **Debugging**: use `R0` to eliminate concurrency as a source of
-  non-determinism.
-- **Single-satellite no-GRAM runs**: inner parallelism (R2+) adds overhead
-  that exceeds the benefit for simple orbit-only scenarios. Start with `R0` and
+- **Debugging**: force the serial baseline settings above to eliminate
+  concurrency as a source of non-determinism.
+- **Single-satellite no-GRAM runs**: inner parallelism often adds overhead that
+  exceeds the benefit for simple orbit-only scenarios. Start serial and
   measure.
-- **Correctness validation**: run the same scenario under `R0` and your target
-  profile and compare outputs before relying on the parallel result.
+- **Correctness validation**: run the same scenario with forced serial settings
+  and your target parallel controls before relying on the parallel result.
 
 ## HPC and process worker setup
 

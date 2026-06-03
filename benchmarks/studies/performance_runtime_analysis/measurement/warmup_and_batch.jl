@@ -1,10 +1,125 @@
+@inline function _perf_save_trajectory_feather_enabled()::Bool
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_PERF_SAVE_TRAJECTORY_FEATHER", "0")))
+    return raw in ("1", "true", "yes", "on")
+end
+
+@inline function _perf_trajectory_output_root()::String
+    raw = strip(get(ENV, "SPACEAGORA_PERF_TRAJECTORY_OUTDIR", ""))
+    isempty(raw) && return joinpath(pwd(), "output", "performance", "trajectories")
+    return abspath(raw)
+end
+
+@inline function _safe_trajectory_token(value)::String
+    token = replace(strip(string(value)), r"[^A-Za-z0-9_.-]+" => "_")
+    return isempty(token) ? "unknown" : token
+end
+
+@inline function _sat_state_from_solution_state(u, sat_idx::Int)
+    if hasproperty(u, :sc)
+        states = getproperty(u, :sc)
+        sat_idx <= length(states) || return nothing
+        return states[sat_idx]
+    end
+    return nothing
+end
+
+@inline function _state_vec3_component(state, name::Symbol)::Union{Nothing, SVector{3, Float64}}
+    hasproperty(state, name) || return nothing
+    value = getproperty(state, name)
+    try
+        return SVector{3, Float64}(value)
+    catch
+        return nothing
+    end
+end
+
+@inline function _state_scalar_component(state, name::Symbol)::Union{Missing, Float64}
+    hasproperty(state, name) || return missing
+    value = try
+        Float64(getproperty(state, name))
+    catch
+        return missing
+    end
+    return isfinite(value) ? value : missing
+end
+
+function _write_case_trajectory_feathers!(
+    sol,
+    case::BenchmarkCase,
+    repeat_idx::Int,
+    attempt::Int,
+    seed::Union{Missing, Int}
+)::Vector{String}
+    _perf_save_trajectory_feather_enabled() || return String[]
+    isempty(sol.t) && return String[]
+
+    n_sats = length(case.args_template.dynamics_model.spacecraft)
+    n_sats > 0 || return String[]
+    root = _perf_trajectory_output_root()
+    case_dir = joinpath(root, _safe_trajectory_token(case.name))
+    repeat_dir = joinpath(case_dir, "repeat_$(lpad(repeat_idx, 3, '0'))")
+    if !(seed isa Missing)
+        repeat_dir = joinpath(repeat_dir, "seed_$(lpad(Int(seed), 3, '0'))")
+    end
+    attempt_dir = joinpath(repeat_dir, "attempt_$(lpad(attempt, 2, '0'))")
+    mkpath(attempt_dir)
+
+    written = String[]
+    times = Float64.(sol.t)
+    n_times = length(times)
+    @inbounds for sat_idx in 1:n_sats
+        pos_x = Vector{Union{Missing, Float64}}(missing, n_times)
+        pos_y = Vector{Union{Missing, Float64}}(missing, n_times)
+        pos_z = Vector{Union{Missing, Float64}}(missing, n_times)
+        vel_x = Vector{Union{Missing, Float64}}(missing, n_times)
+        vel_y = Vector{Union{Missing, Float64}}(missing, n_times)
+        vel_z = Vector{Union{Missing, Float64}}(missing, n_times)
+        mass = Vector{Union{Missing, Float64}}(missing, n_times)
+
+        for k in 1:n_times
+            sat_state = _sat_state_from_solution_state(sol.u[k], sat_idx)
+            sat_state === nothing && continue
+            pos = _state_vec3_component(sat_state, :pos)
+            vel = _state_vec3_component(sat_state, :vel)
+            if pos !== nothing
+                pos_x[k] = pos[1]
+                pos_y[k] = pos[2]
+                pos_z[k] = pos[3]
+            end
+            if vel !== nothing
+                vel_x[k] = vel[1]
+                vel_y[k] = vel[2]
+                vel_z[k] = vel[3]
+            end
+            mass[k] = _state_scalar_component(sat_state, :mass)
+        end
+
+        df = DataFrame(
+            time_s=times,
+            sat_id=fill(sat_idx, n_times),
+            pos_x_m=pos_x,
+            pos_y_m=pos_y,
+            pos_z_m=pos_z,
+            vel_x_mps=vel_x,
+            vel_y_mps=vel_y,
+            vel_z_mps=vel_z,
+            mass_kg=mass
+        )
+        path = joinpath(attempt_dir, "sat_$(lpad(sat_idx, 3, '0')).feather")
+        Arrow.write(path, df)
+        push!(written, path)
+    end
+    return written
+end
+
 function measure_case(
     case::BenchmarkCase,
     profile_name::String,
     repeat_idx::Int;
     seed::Union{Missing, Int}=missing,
     attempt::Int=1,
-    plan::Union{Nothing, ParallelPriorityPlan}=nothing
+    plan::Union{Nothing, ParallelPriorityPlan}=nothing,
+    solver_cache=nothing
 )
     timestamp_utc = string(now(UTC))
     args_meta = case.args_template
@@ -43,7 +158,8 @@ function measure_case(
                 profile_name=profile_name,
                 solver_mode_override=case.solver_mode_override,
                 split_imex_solver_override=case.split_imex_solver_override,
-                entry_target_count_override=case.entry_target_count_override
+                entry_target_count_override=case.entry_target_count_override,
+                solver_cache=solver_cache
             )
             (ok=true, result=result, err=nothing, bt=nothing)
         catch err
@@ -86,6 +202,13 @@ function measure_case(
     policy_control_threads_enabled = missing
     policy_multibody_threads_enabled = missing
     policy_other_threads_enabled = missing
+    policy_observations_total = missing
+    policy_elapsed_ns_total = missing
+    policy_threaded_elapsed_ns_total = missing
+    policy_serial_elapsed_ns_total = missing
+    policy_last_source = missing
+    policy_last_mode = missing
+    policy_last_allotment = missing
     nbody_spkpos_runtime_calls = missing
     nbody_spkpos_cache_build_calls = missing
     nbody_spkpos_total_calls = missing
@@ -99,6 +222,9 @@ function measure_case(
     final_primary_vel_norm_mps = missing
     final_primary_mass_kg = missing
     terminal_time_s = missing
+    trajectory_feather_dir = missing
+    trajectory_feather_files = missing
+    trajectory_feather_satellites = missing
     entry_target_count = isnothing(case.entry_target_count_override) ? missing : Int(case.entry_target_count_override)
 
     solve_payload = solve_timed.value
@@ -126,6 +252,12 @@ function measure_case(
         if !isempty(sol.t)
             terminal_time_s = Float64(sol.t[end])
         end
+        trajectory_paths = _write_case_trajectory_feathers!(sol, case, repeat_idx, attempt, seed)
+        if !isempty(trajectory_paths)
+            trajectory_feather_dir = dirname(first(trajectory_paths))
+            trajectory_feather_files = join(trajectory_paths, "|")
+            trajectory_feather_satellites = length(trajectory_paths)
+        end
         if hasproperty(solve_result, :parallel_policy)
             snapshot = solve_result.parallel_policy
             if !(snapshot isa Nothing)
@@ -135,6 +267,13 @@ function measure_case(
                 policy_control_threads_enabled = getproperty(snapshot, :control_threads_enabled)
                 policy_multibody_threads_enabled = getproperty(snapshot, :multibody_threads_enabled)
                 policy_other_threads_enabled = getproperty(snapshot, :other_threads_enabled)
+                policy_observations_total = getproperty(snapshot, :observations_total)
+                policy_elapsed_ns_total = getproperty(snapshot, :elapsed_ns_total)
+                policy_threaded_elapsed_ns_total = getproperty(snapshot, :threaded_elapsed_ns_total)
+                policy_serial_elapsed_ns_total = getproperty(snapshot, :serial_elapsed_ns_total)
+                policy_last_source = getproperty(snapshot, :last_source)
+                policy_last_mode = getproperty(snapshot, :last_mode)
+                policy_last_allotment = getproperty(snapshot, :last_allotment)
             end
         end
         if hasproperty(solve_result, :spice_counters)
@@ -222,6 +361,13 @@ function measure_case(
         policy_control_threads_enabled=policy_control_threads_enabled,
         policy_multibody_threads_enabled=policy_multibody_threads_enabled,
         policy_other_threads_enabled=policy_other_threads_enabled,
+        policy_observations_total=policy_observations_total,
+        policy_elapsed_ns_total=policy_elapsed_ns_total,
+        policy_threaded_elapsed_ns_total=policy_threaded_elapsed_ns_total,
+        policy_serial_elapsed_ns_total=policy_serial_elapsed_ns_total,
+        policy_last_source=policy_last_source,
+        policy_last_mode=policy_last_mode,
+        policy_last_allotment=policy_last_allotment,
         nbody_spkpos_runtime_calls=nbody_spkpos_runtime_calls,
         nbody_spkpos_cache_build_calls=nbody_spkpos_cache_build_calls,
         nbody_spkpos_total_calls=nbody_spkpos_total_calls,
@@ -235,6 +381,9 @@ function measure_case(
         final_primary_vel_norm_mps=final_primary_vel_norm_mps,
         final_primary_mass_kg=final_primary_mass_kg,
         terminal_time_s=terminal_time_s,
+        trajectory_feather_dir=trajectory_feather_dir,
+        trajectory_feather_files=trajectory_feather_files,
+        trajectory_feather_satellites=trajectory_feather_satellites,
         entry_target_count=entry_target_count,
         sim_seconds_per_wall_second=sim_seconds_per_wall_second,
         satellite_sim_seconds_per_wall_second=satellite_sim_seconds_per_wall_second,
@@ -242,12 +391,70 @@ function measure_case(
     )
 end
 
-function run_warmup(case::BenchmarkCase, warmup::Int, profile_name::String)
+@inline function _perf_optional_nonnegative_int_env(name::String)::Union{Nothing, Int}
+    raw = strip(get(ENV, name, ""))
+    isempty(raw) && return nothing
+    value = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("$(name) must be a nonnegative integer, got '$(raw)'."))
+    end
+    value >= 0 || throw(ArgumentError("$(name) must be nonnegative, got $(value)."))
+    return value
+end
+
+@inline function _perf_warmup_mission_scale()::Float64
+    raw = strip(get(ENV, "SPACEAGORA_PERF_WARMUP_MISSION_SCALE", "1.0"))
+    value = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_PERF_WARMUP_MISSION_SCALE must be a positive finite number, got '$(raw)'."))
+    end
+    (isfinite(value) && value > 0.0) || throw(ArgumentError("SPACEAGORA_PERF_WARMUP_MISSION_SCALE must be > 0, got $(value)."))
+    return value
+end
+
+function _with_mission_time(args::SimulationConfiguration, mission_time_s::Float64)::SimulationConfiguration
+    mission_time_s > 0.0 || throw(ArgumentError("warmup mission_time_s must be > 0, got $(mission_time_s)."))
+    cfg = args.mission_configuration
+    mission_cfg = MissionConfiguration(
+        mission_type=cfg.mission_type,
+        keplerian=cfg.keplerian,
+        number_of_orbits=cfg.number_of_orbits,
+        mission_time=mission_time_s,
+        orientation_sim=cfg.orientation_sim,
+        num_steps_to_save=cfg.num_steps_to_save,
+        data_rate=cfg.data_rate,
+    )
+    return SimulationConfiguration(
+        file_paths=args.file_paths,
+        simulation_settings=args.simulation_settings,
+        mission_configuration=mission_cfg,
+        environment_model=args.environment_model,
+        dynamics_model=args.dynamics_model,
+        guidance_model=args.guidance_model,
+        navigation_model=args.navigation_model,
+        control_model=args.control_model,
+        initial_time=args.initial_time,
+        integration_tolerances=args.integration_tolerances,
+    )
+end
+
+function run_warmup(case::BenchmarkCase, warmup::Int, profile_name::String; solver_cache=nothing)
     log_warmup = _perf_warmup_logs()
+    warmup_mission_scale = _perf_warmup_mission_scale()
     for i in 1:warmup
         args_run = deepcopy(case.args_template)
+        original_mission_time_s = args_run.mission_configuration.mission_time
+        if warmup_mission_scale != 1.0
+            args_run = _with_mission_time(args_run, max(eps(Float64), original_mission_time_s * warmup_mission_scale))
+        end
         if log_warmup
-            println("  warmup $(i)/$(warmup): start")
+            println(
+                "  warmup $(i)/$(warmup): start " *
+                "(mission_time=$(round(args_run.mission_configuration.mission_time; digits=3)) s, " *
+                "scale=$(round(warmup_mission_scale; digits=4)))"
+            )
             flush(stdout)
         end
         warmup_started_ns = time_ns()
@@ -258,7 +465,8 @@ function run_warmup(case::BenchmarkCase, warmup::Int, profile_name::String)
                 profile_name=profile_name,
                 solver_mode_override=case.solver_mode_override,
                 split_imex_solver_override=case.split_imex_solver_override,
-                entry_target_count_override=case.entry_target_count_override
+                entry_target_count_override=case.entry_target_count_override,
+                solver_cache=solver_cache
             )
             warmup_elapsed_s = (time_ns() - warmup_started_ns) / 1e9
             if log_warmup
@@ -297,6 +505,17 @@ end
             warmup = min(warmup, 1)
             repeats = min(repeats, 2)
         end
+    elseif occursin(r"^multi_\d+_gravity$", case.name) || case.name == "multi_64_aero_gram"
+        warmup = 1
+        repeats = 2
+    end
+    warmup_override = _perf_optional_nonnegative_int_env("SPACEAGORA_PERF_WARMUP_OVERRIDE")
+    repeats_override = _perf_optional_nonnegative_int_env("SPACEAGORA_PERF_REPEATS_OVERRIDE")
+    if warmup_override !== nothing
+        warmup = warmup_override
+    end
+    if repeats_override !== nothing
+        repeats = repeats_override
     end
     return warmup, repeats
 end
@@ -316,11 +535,12 @@ function _run_case_batch_core!(
         "solver_override=$(isnothing(case.solver_mode_override) ? "none" : case.solver_mode_override), " *
         "split_override=$(isnothing(case.split_imex_solver_override) ? "none" : case.split_imex_solver_override)"
     )
-    run_warmup(case, warmup_count, spec.name)
+    solver_cache = SimulationEngine.SolverIntegratorCache()
+    run_warmup(case, warmup_count, spec.name; solver_cache=solver_cache)
     for rep in 1:repeat_count
         last_row = nothing
         for attempt in 1:spec.max_attempts
-            row = measure_case(case, spec.name, rep; attempt=attempt, plan=plan)
+            row = measure_case(case, spec.name, rep; attempt=attempt, plan=plan, solver_cache=solver_cache)
             last_row = row
             if row.solve_success
                 push!(rows, row)
@@ -359,4 +579,3 @@ function run_case_batch!(
     end
     return _run_case_batch_core!(rows, case, spec, idx, total, resolved_plan)
 end
-

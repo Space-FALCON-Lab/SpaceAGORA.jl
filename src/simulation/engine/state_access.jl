@@ -33,22 +33,28 @@ end
     if _is_gravity_backbone_state(u)
         spacecraft_state = _gravity_backbone_spacecraft_state(u)
         if hasproperty(spacecraft_state, :sc)
-            return SVector{3, Float64}(spacecraft_state.sc[sat_idx].pos)
+            sc_state = spacecraft_state.sc[sat_idx]
+            return SVector{3, Float64}(sc_state[1], sc_state[2], sc_state[3])
         end
-        return SVector{3, Float64}(spacecraft_state[sat_idx].pos)
+        sc_state = spacecraft_state[sat_idx]
+        return SVector{3, Float64}(sc_state[1], sc_state[2], sc_state[3])
     end
-    return SVector{3, Float64}(u.sc[sat_idx].pos)
+    sc_state = u.sc[sat_idx]
+    return SVector{3, Float64}(sc_state[1], sc_state[2], sc_state[3])
 end
 
 @inline function _state_velocity_ii(u, sat_idx::Int)::SVector{3, Float64}
     if _is_gravity_backbone_state(u)
         spacecraft_state = _gravity_backbone_velocity_state(u)
         if hasproperty(spacecraft_state, :sc)
-            return SVector{3, Float64}(spacecraft_state.sc[sat_idx].vel)
+            sc_state = spacecraft_state.sc[sat_idx]
+            return SVector{3, Float64}(sc_state[1], sc_state[2], sc_state[3])
         end
-        return SVector{3, Float64}(spacecraft_state[sat_idx].vel)
+        sc_state = spacecraft_state[sat_idx]
+        return SVector{3, Float64}(sc_state[1], sc_state[2], sc_state[3])
     end
-    return SVector{3, Float64}(u.sc[sat_idx].vel)
+    sc_state = u.sc[sat_idx]
+    return SVector{3, Float64}(sc_state[4], sc_state[5], sc_state[6])
 end
 
 @inline function _state_mass_kg(u, args, sat_idx::Int)::Float64

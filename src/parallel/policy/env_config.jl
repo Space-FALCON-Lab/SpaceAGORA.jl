@@ -133,6 +133,26 @@ end
     return max(1, min(available, budget))
 end
 
+@inline function auto_thread_min_budget()::Int
+    return parse_thread_threshold_env("SPACEAGORA_AUTO_THREAD_MIN_BUDGET", 4)
+end
+
+@inline function auto_thread_min_budget(source::Symbol)::Int
+    default_budget = auto_thread_min_budget()
+    if source == :density_callback
+        return parse_thread_threshold_env(
+            "SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET",
+            max(default_budget, 16),
+        )
+    elseif source == :thermal_callback
+        return parse_thread_threshold_env(
+            "SPACEAGORA_THERMAL_CALLBACK_AUTO_THREAD_MIN_BUDGET",
+            max(default_budget, 16),
+        )
+    end
+    return default_budget
+end
+
 @inline function _telemetry_bucket(source::Symbol)::Symbol
     if source == :density_callback
         return :density

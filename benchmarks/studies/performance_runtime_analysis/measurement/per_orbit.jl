@@ -184,6 +184,8 @@ function run_montecarlo_per_orbit!(
     period_s::Float64,
     orbit_counts::Vector{Int}
 )
+    _include_montecarlo_scenarios() || return nothing
+
     seeds = collect(1:spec.montecarlo_samples)
     scenarios = _active_montecarlo_scenarios()
     if _perf_smoke_mode()

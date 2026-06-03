@@ -26,12 +26,11 @@ function normalize_gram_root(path::AbstractString)
 end
 
 function build_command(build_helper::AbstractString, clean::Bool, gram_root::AbstractString)
-    args = clean ? ["--clean", gram_root] : [gram_root]
     if Sys.iswindows()
         cmd_helper = replace(build_helper, '/' => '\\')
-        return `cmd /C $cmd_helper $(args...)`
+        return Cmd(["cmd", "/C", cmd_helper, args...])
     end
-    return `bash $build_helper $(args...)`
+    return Cmd(["bash", build_helper, args...])
 end
 
 function main(args::Vector{String})

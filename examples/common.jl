@@ -97,3 +97,69 @@ if !isdefined(@__MODULE__, :SPICE_PATH)
 end
 
 import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft, run_and_report
+
+function print_thread_diagnostics(args; label::String="")
+    PP  = SimulationModel.ParallelPolicy
+    SE  = SimulationEngine
+    sep = "─" ^ 60
+
+    header = isempty(label) ? "Thread Diagnostics" : "Thread Diagnostics — $label"
+    println("[SpaceAGORA] $header")
+    println(sep)
+
+    total_threads = Threads.nthreads()
+    inner_budget  = PP.effective_inner_thread_budget()
+    budget_note   = inner_budget < total_threads ? "  ← capped by SPACEAGORA_INNER_THREAD_BUDGET" : ""
+    println("  Julia threads available   : $total_threads")
+    println("  Inner thread budget       : $inner_budget$budget_note")
+
+    effector_cap  = SE._effector_max_threads()
+    effector_mode = SE._effector_parallel_mode()
+    heavy_only    = SE._effector_heavy_only()
+    work_threshold_µs = round(Int, SE._effector_work_ns_per_worker_threshold() / 1e3)
+    println("  Effector thread cap       : $effector_cap  (SPACEAGORA_EFFECTOR_MAX_THREADS)")
+    println("  Effector parallel mode    : $effector_mode")
+    println("  Heavy-work gate           : $heavy_only  (SPACEAGORA_EFFECTOR_PARALLEL_HEAVY_ONLY)")
+
+    calib_raw  = lowercase(strip(get(ENV, "SPACEAGORA_RHS_CALIBRATE", "auto")))
+    effs       = args.dynamics_model.dynamic_effectors
+    n_sats     = length(args.dynamics_model.spacecraft)
+    calib_note = n_sats < 2 ? "  ← skipped (requires ≥2 active satellites)" : ""
+    println("  RHS plan calibration      : $calib_raw$calib_note")
+
+    println()
+    println("  Effectors ($(length(effs))):")
+    for (i, eff) in enumerate(effs)
+        safe   = SE._dynamic_effector_threadsafe(eff) ? "thread-safe" : "NOT thread-safe"
+        tname  = string(nameof(typeof(eff)))
+        detail = if eff isa GravitationalHarmonicsModel
+            " ($(eff.L)×$(eff.M) deg/ord)"
+        elseif eff isa NBodyGravityModel
+            " ($(join(eff.body_names, ", ")))"
+        else
+            ""
+        end
+        println("    [$i] $tname$detail  —  $safe")
+    end
+
+    println()
+    plan = SE._rhs_execution_plan(args, nothing, effs, n_sats)
+    ed   = plan.effector_decision
+    dom  = hasproperty(plan, :dominant_axis) ? string(plan.dominant_axis) : string(plan.mode)
+    println("  Routing ($n_sats satellite$(n_sats == 1 ? "" : "s"), cold cost model):")
+    println("    mode            : $(plan.mode)")
+    println("    dominant axis   : $dom")
+    println("    effector threads: use=$(ed.use_threads)  allotment=$(ed.allotment)  mode=$(ed.mode)")
+    if !ed.use_threads && heavy_only
+        println("    → heavy-only gate: threading activates once observed cost/worker ≥ $work_threshold_µs µs")
+        harm_idx = findfirst(e -> e isa GravitationalHarmonicsModel, effs)
+        if harm_idx !== nothing
+            h = effs[harm_idx]
+            println("      ($(h.L)×$(h.M) harmonics will exceed this threshold within the first few RHS calls)")
+        end
+    elseif ed.use_threads
+        println("    → $(ed.allotment) effector thread(s) active from first RHS call")
+    end
+    println(sep)
+    return nothing
+end

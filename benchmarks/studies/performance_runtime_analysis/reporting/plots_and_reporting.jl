@@ -681,14 +681,19 @@ function generate_runtime_plots(
         _save_runtime_plot!(plot_artifacts, plt, outdir, "runtime_plot_montecarlo_seed_trace", spec, stamp)
     end
 
-    sweep_multiplier_col = :mission_time_multiplier in names(orbit_summary_df) ? :mission_time_multiplier : :orbit_count
-    orbit_valid = orbit_summary_df[
-        (orbit_summary_df.samples_success .> 0) .&
-        .!ismissing.(orbit_summary_df[!, sweep_multiplier_col]), :
-    ]
+    orbit_required_cols = (:samples_success, :total_time_mean_s, :orbits_per_wall_second_mean, :time_per_orbit_mean_s)
+    orbit_valid = if nrow(orbit_summary_df) > 0 && all(col -> col in names(orbit_summary_df), orbit_required_cols)
+        sweep_multiplier_col = :mission_time_multiplier in names(orbit_summary_df) ? :mission_time_multiplier : :orbit_count
+        orbit_summary_df[
+            (orbit_summary_df.samples_success .> 0) .&
+            .!ismissing.(orbit_summary_df[!, sweep_multiplier_col]), :
+        ]
+    else
+        DataFrame()
+    end
 
     # 13) Mission-time sweep runtime scaling.
-    orbit_scaling_df = orbit_valid[.!ismissing.(orbit_valid.total_time_mean_s), :]
+    orbit_scaling_df = nrow(orbit_valid) > 0 ? orbit_valid[.!ismissing.(orbit_valid.total_time_mean_s), :] : DataFrame()
     if nrow(orbit_scaling_df) > 0
         multiplier_col = :mission_time_multiplier in names(orbit_scaling_df) ? :mission_time_multiplier : :orbit_count
         time_per_unit_col = :time_per_baseline_period_mean_s in names(orbit_scaling_df) ? :time_per_baseline_period_mean_s : :time_per_orbit_mean_s
@@ -709,7 +714,7 @@ function generate_runtime_plots(
     end
 
     # 14) Mission-time sweep efficiency scaling.
-    orbit_eff_df = orbit_valid[.!ismissing.(orbit_valid.orbits_per_wall_second_mean), :]
+    orbit_eff_df = nrow(orbit_valid) > 0 ? orbit_valid[.!ismissing.(orbit_valid.orbits_per_wall_second_mean), :] : DataFrame()
     if nrow(orbit_eff_df) > 0
         multiplier_col = :mission_time_multiplier in names(orbit_eff_df) ? :mission_time_multiplier : :orbit_count
         throughput_col = :baseline_periods_per_wall_second_mean in names(orbit_eff_df) ? :baseline_periods_per_wall_second_mean : :orbits_per_wall_second_mean
@@ -730,7 +735,7 @@ function generate_runtime_plots(
     end
 
     # 15) Mission-time sweep time heatmap.
-    heat_df = orbit_valid[.!ismissing.(orbit_valid.time_per_orbit_mean_s), :]
+    heat_df = nrow(orbit_valid) > 0 ? orbit_valid[.!ismissing.(orbit_valid.time_per_orbit_mean_s), :] : DataFrame()
     if nrow(heat_df) > 0
         multiplier_col = :mission_time_multiplier in names(heat_df) ? :mission_time_multiplier : :orbit_count
         heat_value_col = :time_per_baseline_period_mean_s in names(heat_df) ? :time_per_baseline_period_mean_s : :time_per_orbit_mean_s
@@ -1430,4 +1435,3 @@ function _scenario_metric(summary_df::DataFrame, scenario::String, metric::Symbo
     idx === nothing && return nothing
     return summary_df[idx, metric]
 end
-

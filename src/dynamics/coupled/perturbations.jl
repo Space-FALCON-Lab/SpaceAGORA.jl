@@ -206,6 +206,7 @@ struct GravitationalHarmonicsModel{P <: AbstractPlanet} <: AbstractForceTorqueMo
     coefficient_normalization::Symbol # Canonicalized source normalization keyword
     active_orders_by_degree::Vector{Vector{Int}} # Nonzero tesseral/sectoral orders per degree (m >= 1)
     reference_radius_m::Float64 # Reference radius associated with the harmonics coefficients
+    include_central::Bool # Include the inverse-square primary-body term in this gravity model
     planet::P # Planet data for primary body
 end
 
@@ -263,6 +264,322 @@ end
         sat_map[key] = workspace
     end
     return workspace
+end
+
+# ---------------------------------------------------------------------------
+# Batched harmonics workspace — satellite index is the first (fastest) dimension
+# so that @turbo loops over the batch are unit-stride in memory.
+# ---------------------------------------------------------------------------
+
+struct HarmonicsBatchWorkspace
+    A::Array{Float64, 3}    # [B, L+4, L+4]
+    R::Matrix{Float64}       # [B, M+3]
+    I::Matrix{Float64}       # [B, M+3]
+    s_vec::Vector{Float64}   # x/r per satellite
+    t_vec::Vector{Float64}   # y/r per satellite
+    u_vec::Vector{Float64}   # z/r per satellite
+    inv_r::Vector{Float64}
+    mass::Vector{Float64}
+    rVec::Matrix{Float64}    # [3, B] planet-frame positions
+    ρ::Vector{Float64}
+    ρ_np1::Vector{Float64}
+    rr::Vector{Float64}
+    a1::Vector{Float64}
+    a2::Vector{Float64}
+    a3::Vector{Float64}
+    a4::Vector{Float64}
+    sum1::Vector{Float64}
+    sum2::Vector{Float64}
+    sum3::Vector{Float64}
+    sum4::Vector{Float64}
+end
+
+function _make_harmonics_batch_workspace(model::GravitationalHarmonicsModel, batch_size::Int)
+    L = model.L
+    M = model.M
+    B = batch_size
+    A = zeros(Float64, B, L + 4, L + 4)
+    # Diagonal elements are position-independent; initialise once and never overwrite.
+    A[:, 1, 1] .= 1.0
+    @inbounds for l = 1:(L + 2)
+        i = l + 1
+        diag_val = sqrt((2 * l + 1) / (2 * l)) * A[1, i - 1, i - 1]
+        A[:, i, i] .= diag_val
+    end
+    z = B -> zeros(Float64, B)
+    return HarmonicsBatchWorkspace(
+        A,
+        zeros(Float64, B, M + 3),
+        zeros(Float64, B, M + 3),
+        z(B), z(B), z(B), z(B), z(B),
+        zeros(Float64, 3, B),
+        z(B), z(B), z(B), z(B), z(B), z(B), z(B), z(B), z(B), z(B), z(B),
+    )
+end
+
+# Per-worker workspace pool keyed by objectid(model).
+# Indexed by worker number (1..n_workers); resized on first use or constellation change.
+const _HARMONICS_BATCH_POOL = Dict{UInt, Vector{HarmonicsBatchWorkspace}}()
+const _HARMONICS_BATCH_POOL_LOCK = ReentrantLock()
+
+function _get_harmonics_batch_pool(
+    model::GravitationalHarmonicsModel,
+    n_workers::Int,
+    batch_size::Int,
+)::Vector{HarmonicsBatchWorkspace}
+    key = objectid(model)
+    pool = get(_HARMONICS_BATCH_POOL, key, nothing)
+    if pool !== nothing && length(pool) >= n_workers && size(pool[1].A, 1) >= batch_size
+        return pool
+    end
+    lock(_HARMONICS_BATCH_POOL_LOCK) do
+        pool = get(_HARMONICS_BATCH_POOL, key, nothing)
+        if pool === nothing || length(pool) < n_workers || size(pool[1].A, 1) < batch_size
+            _HARMONICS_BATCH_POOL[key] = [_make_harmonics_batch_workspace(model, batch_size) for _ in 1:n_workers]
+        end
+    end
+    return _HARMONICS_BATCH_POOL[key]
+end
+
+# Fetch the batch pool from a per-solve cached ref to avoid the global Dict lookup
+# on every RHS call. Falls through to _get_harmonics_batch_pool on first use or resize.
+function _get_harmonics_batch_pool_cached!(
+    pool_ref::Base.RefValue{Any},
+    model::GravitationalHarmonicsModel,
+    n_workers::Int,
+    batch_size::Int,
+)::Vector{HarmonicsBatchWorkspace}
+    cached = pool_ref[]
+    if cached isa Vector{HarmonicsBatchWorkspace} &&
+       length(cached) >= n_workers &&
+       !isempty(cached) && size(cached[1].A, 1) >= batch_size
+        return cached
+    end
+    fresh = _get_harmonics_batch_pool(model, n_workers, batch_size)
+    pool_ref[] = fresh
+    return fresh
+end
+
+# Batched harmonics kernel: processes satellites item_start..item_end together.
+# Coefficients (C, S, VR01, VR11) are loaded once per (degree, order) pair
+# and broadcast across all satellites via @turbo SIMD over the batch dimension.
+function _harmonics_flat_batch_kernel!(
+    totals::Matrix{Float64},
+    model::GravitationalHarmonicsModel,
+    sc_state,
+    work_items::Vector{Int},
+    item_start::Int,
+    item_end::Int,
+    lpi::SMatrix{3, 3, Float64, 9},
+    ws::HarmonicsBatchWorkspace,
+)::Nothing
+    B = item_end - item_start + 1
+    B <= 0 && return nothing
+
+    L = model.L
+    M = model.M
+    RE = model.reference_radius_m
+    μ = model.planet.μ
+    A = ws.A
+    R = ws.R
+    I = ws.I
+
+    # Phase 1: gather per-satellite position components and initialise accumulators.
+    @inbounds for b = 1:B
+        sat_idx = work_items[item_start + b - 1]
+        sc = sc_state[sat_idx]
+        pos_ii = SVector{3, Float64}(sc[1], sc[2], sc[3])
+        rVec = lpi * pos_ii
+        r = norm(rVec)
+        inv_r_b = 1.0 / r
+        ws.rVec[1, b] = rVec[1]
+        ws.rVec[2, b] = rVec[2]
+        ws.rVec[3, b] = rVec[3]
+        ws.s_vec[b]   = rVec[1] * inv_r_b
+        ws.t_vec[b]   = rVec[2] * inv_r_b
+        ws.u_vec[b]   = rVec[3] * inv_r_b
+        ws.inv_r[b]   = inv_r_b
+        ws.mass[b]    = sc[7]
+        ws.ρ[b]       = RE * inv_r_b
+        ws.ρ_np1[b]   = -μ * inv_r_b * ws.ρ[b]
+        ws.a1[b] = 0.0
+        ws.a2[b] = 0.0
+        ws.a3[b] = 0.0
+        ws.a4[b] = 0.0
+    end
+
+    # Phase 2: A sub-diagonal — A[b, row+1, row] = u[b] * sqrt_2n_plus_3[n] * A[b, row, row].
+    # Diagonal A[b,i,i] was set once at workspace construction and is never overwritten.
+    @turbo for b = 1:B
+        A[b, 2, 1] = ws.u_vec[b] * sqrt_3
+    end
+    @inbounds for n = 1:(L + 1)
+        row = n + 1
+        s2n3 = model.sqrt_2n_plus_3[n]
+        @turbo for b = 1:B
+            A[b, row + 1, row] = ws.u_vec[b] * s2n3 * A[b, row, row]
+        end
+    end
+
+    # Phase 3: longitude trig recurrence R[b,j] + i*I[b,j] = (s[b]+i*t[b])^(j-1).
+    @turbo for b = 1:B
+        R[b, 1] = 1.0
+        I[b, 1] = 0.0
+    end
+    @inbounds for j = 2:(M + 2)
+        @turbo for b = 1:B
+            sv  = ws.s_vec[b]
+            tv  = ws.t_vec[b]
+            Rn  = R[b, j - 1]
+            In  = I[b, j - 1]
+            R[b, j] = sv * Rn - tv * In
+            I[b, j] = sv * In + tv * Rn
+        end
+    end
+
+    # Phase 4: main degree/order accumulation — coefficients loaded once per (l,m) pair,
+    # broadcast to all B satellites via SIMD.
+    max_recur_row = 2
+    @inbounds for l = 1:L
+        row = l + 1
+
+        if row > max_recur_row
+            jmax = min(max(M, 1) + 1, l - 1)
+            for j = 1:jmax
+                N1v = model.N1[row, j]
+                N2v = model.N2[row, j]
+                @turbo for b = 1:B
+                    A[b, row, j] = ws.u_vec[b] * N1v * A[b, row - 1, j] - N2v * A[b, row - 2, j]
+                end
+            end
+            max_recur_row = row
+        end
+
+        next_row = row + 1
+        if next_row > max_recur_row
+            jmax_next = min(max(M, 1) + 1, l)
+            for j = 1:jmax_next
+                N1v = model.N1[next_row, j]
+                N2v = model.N2[next_row, j]
+                @turbo for b = 1:B
+                    A[b, next_row, j] = ws.u_vec[b] * N1v * A[b, next_row - 1, j] - N2v * A[b, next_row - 2, j]
+                end
+            end
+            max_recur_row = next_row
+        end
+
+        @turbo for b = 1:B
+            ws.ρ_np1[b] *= ws.ρ[b]
+            ws.rr[b]   = ws.ρ_np1[b] / RE
+            ws.sum1[b] = 0.0
+            ws.sum2[b] = 0.0
+            ws.sum3[b] = 0.0
+            ws.sum4[b] = 0.0
+        end
+
+        # m=0 zonal term: I[b,1]==0 and R[b,1]==1 always, so D0 = C0*sqrt_2.
+        C0      = model.C[row, 1]
+        D0      = C0 * sqrt_2
+        VR01_r1 = model.VR01[row, 1]
+        VR11_r1 = model.VR11[row, 1]
+        @turbo for b = 1:B
+            ws.sum3[b] += VR01_r1 * A[b, row, 2] * D0
+            ws.sum4[b] += VR11_r1 * A[b, row + 1, 2] * D0
+        end
+
+        active_orders = model.active_orders_by_degree[row]
+        for idx in eachindex(active_orders)
+            ord    = active_orders[idx]
+            j      = ord + 1
+            Cv     = model.C[row, j]
+            Sv     = model.S[row, j]
+            VR01v  = model.VR01[row, j]
+            VR11v  = model.VR11[row, j]
+            ordf   = Float64(ord)
+            @turbo for b = 1:B
+                R_prev = R[b, j - 1]
+                I_prev = I[b, j - 1]
+                Rj     = R[b, j]
+                Ij     = I[b, j]
+                D = (Cv * Rj    + Sv * Ij)    * sqrt_2
+                E = (Cv * R_prev + Sv * I_prev) * sqrt_2
+                F = (Sv * R_prev - Cv * I_prev) * sqrt_2
+                mA = ordf * A[b, row, j]
+                ws.sum1[b] += mA * E
+                ws.sum2[b] += mA * F
+                ws.sum3[b] += VR01v * A[b, row, j + 1] * D
+                ws.sum4[b] += VR11v * A[b, row + 1, j + 1] * D
+            end
+        end
+
+        @turbo for b = 1:B
+            ws.a1[b] += ws.rr[b] * ws.sum1[b]
+            ws.a2[b] += ws.rr[b] * ws.sum2[b]
+            ws.a3[b] += ws.rr[b] * ws.sum3[b]
+            ws.a4[b] -= ws.rr[b] * ws.sum4[b]
+        end
+    end
+
+    # Phase 5: back-transform to inertial frame and scatter into totals.
+    lpi_t = lpi'
+    include_central = model.include_central
+    @inbounds for b = 1:B
+        sat_idx  = work_items[item_start + b - 1]
+        sv       = ws.s_vec[b]
+        tv       = ws.t_vec[b]
+        uv       = ws.u_vec[b]
+        inv_r_b  = ws.inv_r[b]
+        mass_b   = ws.mass[b]
+        rVec_b   = SVector{3, Float64}(ws.rVec[1, b], ws.rVec[2, b], ws.rVec[3, b])
+        g_pp_generic = SVector{3, Float64}(
+            -ws.a1[b] - sv * ws.a4[b],
+            -ws.a2[b] - tv * ws.a4[b],
+            -ws.a3[b] - uv * ws.a4[b],
+        )
+        g_pp = include_central ?
+            g_pp_generic - μ * inv_r_b^3 * rVec_b :
+            g_pp_generic
+        force_ii = mass_b * (lpi_t * g_pp)
+        totals[1, sat_idx] += force_ii[1]
+        totals[2, sat_idx] += force_ii[2]
+        totals[3, sat_idx] += force_ii[3]
+    end
+    return nothing
+end
+
+@inline function _harmonics_lpi_cache_key(model::GravitationalHarmonicsModel, param::ODEParams, et::Float64)
+    return (
+        model.planet.name,
+        ephemerides_cache_key(param.args.environment_model.ephemerides_model),
+        et,
+    )
+end
+
+function _harmonics_lpi_at!(
+    model::GravitationalHarmonicsModel,
+    param::ODEParams,
+    et::Float64
+)::SMatrix{3, 3, Float64, 9}
+    shared = param.shared_buffers
+    key = _harmonics_lpi_cache_key(model, param, et)
+
+    # The RHS evaluates all spacecraft at the same t. Avoid repeating the same
+    # SPICE pxform inside every harmonics force evaluation.
+    if shared.harmonics_lpi_key[] == key
+        return shared.harmonics_lpi[]
+    end
+
+    return lock(shared.harmonics_lpi_lock) do
+        if shared.harmonics_lpi_key[] != key
+            ephemerides_model = param.args.environment_model.ephemerides_model
+            if ephemerides_requires_spice(ephemerides_model)
+                Base.Threads.atomic_add!(shared.spice_runtime_counters.planet_pxform_runtime_calls, 1)
+            end
+            shared.harmonics_lpi[] = planet_frame_lpi(model.planet, et, ephemerides_model)
+            shared.harmonics_lpi_key[] = key
+        end
+        shared.harmonics_lpi[]
+    end
 end
 
 struct SolarRadiationPressureModel <: AbstractForceTorqueModel
@@ -340,6 +657,9 @@ Accepted `coefficient_normalization` values are:
 - `:full` or `:fully_normalized`
 - `:schmidt`
 - `:unnormalized`
+
+Set `include_central=false` to recover the legacy non-central perturbation-only
+behavior.
 """
 function GravitationalHarmonicsModel(
     L::Int64,
@@ -349,7 +669,8 @@ function GravitationalHarmonicsModel(
     coefficient_normalization::Symbol=:full,
     coefficients_normalized::Bool=true,
     j2_source::Symbol=:file_c20,
-    reference_radius_m::Union{Nothing, Float64}=nothing
+    reference_radius_m::Union{Nothing, Float64}=nothing,
+    include_central::Bool=true
 ) where P <: AbstractPlanet
     if L < 0 || M < 0
         throw(ArgumentError("Gravitational harmonics degree/order must be non-negative, got L=$L, M=$M."))
@@ -539,6 +860,7 @@ function GravitationalHarmonicsModel(
         normalized_source,
         active_orders_by_degree,
         reference_radius_m === nothing ? _infer_harmonics_reference_radius_m(coefficients_file, planet) : reference_radius_m,
+        include_central,
         planet
     )
 end
@@ -547,8 +869,8 @@ end
     calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
 """
 function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    pos_ii = hasproperty(x, :pos) ? SVector{3, Float64}(x.pos) : SVector{3, Float64}(x[1:3])
-    mass = hasproperty(x, :mass) ? x.mass : x[7]
+    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
+    mass = Float64(x[7])
     primary_body_name = _spice_query_name(model.primary_body_name)
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
     force_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize force vector
@@ -578,7 +900,7 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
         @inbounds for worker_id in 1:n_workers
             thread_force[worker_id] .= 0.0
         end
-        ParallelPolicy.threaded_foreach_worker(n_bodies, decision.allotment) do worker_id, k
+        ParallelPolicy.threaded_foreach_worker_persistent(:rhs_nbody, n_bodies, decision.allotment) do worker_id, k
             pos_primary_k = pos_primary_k_all[k]
             pos_spacecraft_k = pos_primary_k - pos_ii
             pos_spacecraft_k_mag = norm(pos_spacecraft_k)
@@ -929,8 +1251,8 @@ function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{F
     end
 
     planet = param.args.environment_model.planet
-    pos_ii = hasproperty(x, :pos) ? SVector{3, Float64}(x.pos) : SVector{3, Float64}(x[1:3])
-    mass = hasproperty(x, :mass) ? x.mass : x[7]
+    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
+    mass = Float64(x[7])
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
     primary_body_name = _spice_query_name(planet.name)
     spice_rhs_memo_enabled = param.shared_buffers.spice_rhs_memo_enabled[]
@@ -1142,17 +1464,23 @@ end
 """
     calcForceTorque(model::GravitationalHarmonicsModel, x, param, i)
 
-Compute the non-central spherical-harmonics gravity perturbation using coefficients stored in
-the model's internal fully normalized convention. The inverse-square central term is handled
-separately by the base gravity effector and is intentionally not included here.
+Compute spherical-harmonics gravity using coefficients stored in the model's internal fully
+normalized convention. By default this includes the inverse-square central term, so it should
+not be paired with a separate `InverseSquaredGravityModel` for the same primary body.
 """
-function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
-
-    # Transform from J2000 inertial to planet-fixed using the configured ephemerides model.
-    L_PI = planet_frame_lpi(model.planet, et, param.args.environment_model.ephemerides_model)
-    rVec_cart = L_PI * SVector{3, Float64}(x.pos) # convert from inertial to planet-fixed frame for gravity calculation
-    mass = x.mass
+# Inner kernel: compute harmonics force/torque given a pre-computed inertial→planet-fixed
+# rotation matrix. Called directly by the flat-batch parallel region (which already computed
+# L_PI once serially) to avoid per-satellite cache-key allocation inside the parallel loop.
+@inline function _harmonics_calcforcetorque_with_lpi(
+    model::GravitationalHarmonicsModel,
+    x::AbstractVector{Float64},
+    param::ODEParams,
+    i::Int64,
+    L_PI::SMatrix{3, 3, Float64, 9},
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
+    rVec_cart = L_PI * pos_ii # convert from inertial to planet-fixed frame for gravity calculation
+    mass = Float64(x[7])
 
     workspace = _harmonics_workspace_for_sat!(model, param, i)
     A = workspace.A
@@ -1254,10 +1582,14 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
     end
 
     g_pp_generic = SVector{3, Float64}(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4)
-    force_ii = mass * L_PI' * g_pp_generic
+    g_pp = if model.include_central
+        g_pp_generic - model.planet.μ * inv_r^3 * rVec_cart
+    else
+        g_pp_generic
+    end
+    force_ii = mass * L_PI' * g_pp
 
-    compare_j2 = lowercase(strip(get(ENV, "SPACEAGORA_DEBUG_COMPARE_J2", "0"))) in ("1", "true", "yes", "on")
-    if compare_j2 && model.L == 2 && model.M == 0
+    if _DEBUG_COMPARE_J2[] && model.L == 2 && model.M == 0
         C20 = model.C[3, 1]
         if isfinite(C20) && C20 != 0.0
             x_pp, y_pp, z_pp = rVec_cart
@@ -1285,6 +1617,12 @@ function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{F
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
+function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
+    L_PI = _harmonics_lpi_at!(model, param, et)
+    return _harmonics_calcforcetorque_with_lpi(model, x, param, i, L_PI)
+end
+
 @inline environment_requirements(::GravitationalHarmonicsModel) = EffectorEnvironmentRequirements(planet_frame=true)
 
 @inline function wrench(
@@ -1302,9 +1640,12 @@ end
     I = workspace.I
 
     rVec_cart = planet_frame.pos_pp
-    RE = model.planet.Rp_e
+    RE = model.reference_radius_m
     r = norm(rVec_cart)
-    s, n, u = normalize(rVec_cart)
+    inv_r = 1.0 / r
+    s = rVec_cart[1] * inv_r
+    n = rVec_cart[2] * inv_r
+    u = rVec_cart[3] * inv_r
     L = model.L
     M = model.M
     @fastmath begin
@@ -1366,10 +1707,28 @@ end
             a3 += rr * sum3
             a4 -= rr * sum4
         end
-        force_pp = x.mass_kg * SVector{3, Float64}(-a1 - s * a4, -a2 - n * a4, -a3 - u * a4)
+        g_pp_generic = SVector{3, Float64}(-a1 - s * a4, -a2 - n * a4, -a3 - u * a4)
+        g_pp = if model.include_central
+            g_pp_generic - model.planet.μ * inv_r^3 * rVec_cart
+        else
+            g_pp_generic
+        end
+        force_pp = x.mass_kg * g_pp
         force_ii = planet_frame.l_pi' * force_pp
         return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
     end
+end
+
+@inline gravity_backbone_structure(::GravitationalHarmonicsModel) = :position_only_static_gravity
+
+@inline function gravity_backbone_acceleration_ii(
+    model::GravitationalHarmonicsModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::SVector{3, Float64}
+    force_ii, _ = wrench(model, x, env, t)
+    return force_ii / x.mass_kg
 end
 
 """

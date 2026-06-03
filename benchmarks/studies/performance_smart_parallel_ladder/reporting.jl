@@ -58,7 +58,8 @@ function _write_aggregate_rung_report(
         println(io, "## Source Runs")
         println(io)
         for run in runs
-            println(io, "- pass=$(run.pass), solver=$(run.solver_label): raw=`$(run.artifact.raw_path)`, per-orbit raw=`$(run.artifact.orbit_raw_path)`, report=`$(run.artifact.report_path)`")
+            per_orbit_raw = isempty(run.artifact.orbit_raw_path) ? "skipped" : "`$(run.artifact.orbit_raw_path)`"
+            println(io, "- pass=$(run.pass), solver=$(run.solver_label): raw=`$(run.artifact.raw_path)`, per-orbit raw=$(per_orbit_raw), report=`$(run.artifact.report_path)`")
         end
     end
 end
@@ -85,12 +86,14 @@ function _aggregate_rung_artifacts(
             _tag_rung_column(run.artifact.raw_df, rung; pass_idx=run.pass, solver_label=run.solver_label, solver_mode=run_solver_mode);
             cols=:union
         )
-        local_orbit_raw = CSV.read(run.artifact.orbit_raw_path, DataFrame)
-        orbit_raw_df = vcat(
-            orbit_raw_df,
-            _tag_rung_column(local_orbit_raw, rung; pass_idx=run.pass, solver_label=run.solver_label, solver_mode=run_solver_mode);
-            cols=:union
-        )
+        if !isempty(run.artifact.orbit_raw_path)
+            local_orbit_raw = CSV.read(run.artifact.orbit_raw_path, DataFrame)
+            orbit_raw_df = vcat(
+                orbit_raw_df,
+                _tag_rung_column(local_orbit_raw, rung; pass_idx=run.pass, solver_label=run.solver_label, solver_mode=run_solver_mode);
+                cols=:union
+            )
+        end
         local_entry_duration_raw = CSV.read(run.artifact.entry_duration_raw_path, DataFrame)
         entry_duration_raw_df = vcat(
             entry_duration_raw_df,
@@ -117,7 +120,7 @@ function _aggregate_rung_artifacts(
     end
 
     summary_df = summarize_results(raw_df)
-    orbit_summary_df = summarize_per_orbit_results(orbit_raw_df)
+    orbit_summary_df = nrow(orbit_raw_df) > 0 ? summarize_per_orbit_results(orbit_raw_df) : DataFrame()
     entry_duration_summary_df = summarize_entry_duration_results(entry_duration_raw_df)
 
     bench_elapsed_s = mean([run.artifact.bench_elapsed_s for run in runs])
@@ -178,8 +181,10 @@ function _aggregate_rung_artifacts(
 
     CSV.write(raw_path, raw_df)
     CSV.write(summary_path, summary_df)
-    CSV.write(orbit_raw_path, orbit_raw_df)
-    CSV.write(orbit_summary_path, orbit_summary_df)
+    if nrow(orbit_raw_df) > 0
+        CSV.write(orbit_raw_path, orbit_raw_df)
+        CSV.write(orbit_summary_path, orbit_summary_df)
+    end
     CSV.write(entry_duration_raw_path, entry_duration_raw_df)
     CSV.write(entry_duration_summary_path, entry_duration_summary_df)
     CSV.write(stage_timing_path, stage_timing_df)
@@ -221,8 +226,8 @@ function _aggregate_rung_artifacts(
         entry_duration_elapsed_s=entry_duration_elapsed_s,
         raw_path=raw_path,
         summary_path=summary_path,
-        orbit_raw_path=orbit_raw_path,
-        orbit_summary_path=orbit_summary_path,
+        orbit_raw_path=nrow(orbit_raw_df) > 0 ? orbit_raw_path : "",
+        orbit_summary_path=nrow(orbit_raw_df) > 0 ? orbit_summary_path : "",
         entry_duration_raw_path=entry_duration_raw_path,
         entry_duration_summary_path=entry_duration_summary_path,
         report_path=report_path,
@@ -569,7 +574,11 @@ function _write_smart_ladder_report(
         for artifact in artifacts
             println(io, "- Rung `$(artifact.mode)` aggregated raw: `$(artifact.raw_path)`")
             println(io, "- Rung `$(artifact.mode)` aggregated summary: `$(artifact.summary_path)`")
-            println(io, "- Rung `$(artifact.mode)` aggregated per-orbit summary: `$(artifact.orbit_summary_path)`")
+            if isempty(artifact.orbit_summary_path)
+                println(io, "- Rung `$(artifact.mode)` aggregated per-orbit summary: skipped")
+            else
+                println(io, "- Rung `$(artifact.mode)` aggregated per-orbit summary: `$(artifact.orbit_summary_path)`")
+            end
             if !isempty(artifact.stage_timing_path)
                 println(io, "- Rung `$(artifact.mode)` aggregated stage timing: `$(artifact.stage_timing_path)`")
             end
@@ -600,7 +609,8 @@ function _write_smart_ladder_report(
             "--control-stress-warmup-full=$(config.control_stress_warmup_full) " *
             "--solver-axis=$(config.solver_axis) " *
             "--solver-mode=$(config.solver_mode) " *
-            "--solver-factors=$(join(config.solver_factor_modes, ","))"
+            "--solver-factors=$(join(config.solver_factor_modes, ",")) " *
+            "--trajectory-output=$(config.trajectory_output ? 1 : 0)"
         )
         println(io, "```")
         println(io)
@@ -646,6 +656,7 @@ function main_smart_parallel_ladder()
     println("Solver axis: $(config.solver_axis)")
     println("Primary solver: label=$(primary_solver_label), mode=$(primary_solver_mode === nothing ? "inherit" : primary_solver_mode)")
     println("Solver variants: $(join(["$(v.label):$(v.solver_mode === nothing ? "inherit" : String(v.solver_mode))" for v in solver_variants], ", "))")
+    println("Trajectory feather output: $(config.trajectory_output ? "on" : "off")")
     println("Wrapper Threads.nthreads()=$(Threads.nthreads()), Sys.CPU_THREADS=$(Sys.CPU_THREADS)")
 
     pass_results = LadderPassResult[]

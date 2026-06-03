@@ -16,6 +16,9 @@ setup_gram_example!()
 
 planet = Mars("", SPICE_PATH)
 smoke_mode = get(ENV, "SPACEAGORA_EXAMPLE_SMOKE", "0") == "1"
+ENV["SPACEAGORA_SOLVER_MODE"] = get(ENV, "SPACEAGORA_SOLVER_MODE", "split_imex")
+ENV["SPACEAGORA_SPLIT_IMEX_SOLVER"] = get(ENV, "SPACEAGORA_SPLIT_IMEX_SOLVER", "kencarp4")
+ENV["SPACEAGORA_VACUUM_GRAM_CACHE"] = get(ENV, "SPACEAGORA_VACUUM_GRAM_CACHE", "1")
 initial_time = InitialTime(year=2001, month=11, day=6, hour=10, minute=5, second=12.7)
 
 ic = _mars_odyssey_initial_condition_from_spice(initial_time, SPICE_PATH)
@@ -32,14 +35,13 @@ spacecraft = make_three_body_spacecraft(
     id=100
 )
 
-mars_harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "GMM3.csv")
+mars_harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "Mars50c.csv")
 sun_gravity = NBodyGravityModel(body_names=("Sun",), primary_body_name="Mars", planet=planet)
 solar_radiation_pressure = SolarRadiationPressureModel(spacecraft.root.reflection_coefficient, spacecraft.root.ref_area)
 dynamic_effectors = smoke_mode ? (
     InverseSquaredGravityModel(),
     sun_gravity
 ) : (
-    InverseSquaredGravityModel(),
     sun_gravity,
     GravitationalHarmonicsModel(50, 50, mars_harmonics_file, planet),
     solar_radiation_pressure,
@@ -93,11 +95,14 @@ args = SimulationConfiguration(
         dt_max_orbit=30.0,
         reltol_atmosphere=1e-8,
         abstol_atmosphere=1e-8,
-        dt_max_atmosphere=1.0
+        dt_max_atmosphere=5.0
     )
 )
 
 args_eff = SpaceAGORA.TelemetryVerification._example_smoke_args(args)
+
+print_thread_diagnostics(args_eff; label="AGORA_Odyssey")
+
 sim_elapsed = @elapsed sol = run_simulation(args_eff; return_solution=true)
 csv_path = joinpath(args_eff.simulation_settings.results_directory, "simulation_results.csv")
 if args_eff.simulation_settings.results && isfile(csv_path)

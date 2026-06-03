@@ -79,6 +79,18 @@
     withenv("SPACEAGORA_EFFECTOR_WORK_NS_PER_WORKER_THRESHOLD" => "0.0") do
         @test_throws ArgumentError _effector_work_ns_per_worker_threshold()
     end
+    withenv("SPACEAGORA_RHS_EXECUTION_MODE" => "flat") do
+        @test _rhs_execution_mode_env() == :flat_constellation_effector_queue
+    end
+    withenv("SPACEAGORA_RHS_EXECUTION_MODE" => "satellite") do
+        @test _rhs_execution_mode_env() == :satellite_batch
+    end
+    withenv("SPACEAGORA_RHS_EXECUTION_MODE" => "per_satellite") do
+        @test _rhs_execution_mode_env() == :per_satellite_effector_reduce
+    end
+    withenv("SPACEAGORA_RHS_EXECUTION_MODE" => "bad") do
+        @test_throws ArgumentError _rhs_execution_mode_env()
+    end
 
     args_eff_single = build_config(
         spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
@@ -168,6 +180,117 @@
         end
     end
 
+    args_flat_rhs = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i, ν_deg=150.0 + i)
+            for i in 1:4
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            InverseSquaredJ2GravityModel(),
+            InverseSquaredGravityModel(),
+            InverseSquaredJ2GravityModel(),
+        ),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    u_flat_rhs = build_initial_conditions(args_flat_rhs)
+    du_serial_rhs = copy(u_flat_rhs)
+    du_flat_rhs = copy(u_flat_rhs)
+    du_serial_rhs .= 0.0
+    du_flat_rhs .= 0.0
+    p_serial_rhs = ODEParams{4}(args=args_flat_rhs)
+    p_flat_rhs = ODEParams{4}(args=args_flat_rhs)
+    _initialize_heat_rate_buffers!(p_serial_rhs)
+    _initialize_heat_rate_buffers!(p_flat_rhs)
+    withenv(
+        "SPACEAGORA_RHS_EXECUTION_MODE" => "serial",
+        "SPACEAGORA_EFFECTOR_PARALLEL" => "off"
+    ) do
+        spacecraft_dynamics!(du_serial_rhs, u_flat_rhs, p_serial_rhs, 0.0)
+    end
+    withenv(
+        "SPACEAGORA_RHS_EXECUTION_MODE" => "flat",
+        "SPACEAGORA_EFFECTOR_PARALLEL" => "off",
+        "SPACEAGORA_INNER_THREAD_BUDGET" => string(max(1, Threads.nthreads()))
+    ) do
+        plan_flat_rhs = _rhs_execution_plan(
+            args_flat_rhs,
+            p_flat_rhs,
+            args_flat_rhs.dynamics_model.dynamic_effectors,
+            4
+        )
+        if Threads.nthreads() > 1
+            @test plan_flat_rhs.mode == :flat_constellation_effector_queue
+        end
+        spacecraft_dynamics!(du_flat_rhs, u_flat_rhs, p_flat_rhs, 0.0)
+    end
+    for i in 1:4
+        @test isapprox(du_flat_rhs.sc[i].pos, du_serial_rhs.sc[i].pos; atol=1e-12, rtol=1e-12)
+        @test isapprox(du_flat_rhs.sc[i].vel, du_serial_rhs.sc[i].vel; atol=1e-10, rtol=1e-10)
+        @test isapprox(du_flat_rhs.sc[i].mass, du_serial_rhs.sc[i].mass; atol=1e-12, rtol=1e-12)
+        @test isapprox(du_flat_rhs.sc[i].heat_loads, du_serial_rhs.sc[i].heat_loads; atol=1e-12, rtol=1e-12)
+    end
+
+    harmonics_file_flat = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_flat_model = GravitationalHarmonicsModel(8, 8, harmonics_file_flat, EARTH)
+    args_harmonics_flat = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=520e3 + 8e3 * i, rp_alt_m=500e3 + 4e3 * i, ν_deg=120.0 + 2.0 * i)
+            for i in 1:4
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(harmonics_flat_model,),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    u_harmonics_flat = build_initial_conditions(args_harmonics_flat)
+    du_harmonics_serial = copy(u_harmonics_flat)
+    du_harmonics_flat = copy(u_harmonics_flat)
+    du_harmonics_serial .= 0.0
+    du_harmonics_flat .= 0.0
+    p_harmonics_serial = ODEParams{4}(args=args_harmonics_flat)
+    p_harmonics_flat = ODEParams{4}(args=args_harmonics_flat)
+    _initialize_heat_rate_buffers!(p_harmonics_serial)
+    _initialize_heat_rate_buffers!(p_harmonics_flat)
+    _initialize_harmonics_workspace_buffers!(p_harmonics_serial)
+    _initialize_harmonics_workspace_buffers!(p_harmonics_flat)
+    withenv(
+        "SPACEAGORA_RHS_EXECUTION_MODE" => "serial",
+        "SPACEAGORA_EFFECTOR_PARALLEL" => "off"
+    ) do
+        spacecraft_dynamics!(du_harmonics_serial, u_harmonics_flat, p_harmonics_serial, 0.0)
+    end
+    withenv(
+        "SPACEAGORA_RHS_EXECUTION_MODE" => "flat",
+        "SPACEAGORA_EFFECTOR_PARALLEL" => "off",
+        "SPACEAGORA_HARMONICS_BATCH_ENABLED" => "1",
+        "SPACEAGORA_INNER_THREAD_BUDGET" => string(max(1, Threads.nthreads()))
+    ) do
+        plan_harmonics_flat = _rhs_execution_plan(
+            args_harmonics_flat,
+            p_harmonics_flat,
+            args_harmonics_flat.dynamics_model.dynamic_effectors,
+            4
+        )
+        if Threads.nthreads() > 1
+            @test plan_harmonics_flat.mode == :flat_constellation_effector_queue
+        end
+        spacecraft_dynamics!(du_harmonics_flat, u_harmonics_flat, p_harmonics_flat, 0.0)
+    end
+    for i in 1:4
+        @test isapprox(du_harmonics_flat.sc[i].pos, du_harmonics_serial.sc[i].pos; atol=1e-12, rtol=1e-12)
+        @test isapprox(du_harmonics_flat.sc[i].vel, du_harmonics_serial.sc[i].vel; atol=1e-8, rtol=1e-9)
+        @test isapprox(du_harmonics_flat.sc[i].mass, du_harmonics_serial.sc[i].mass; atol=1e-12, rtol=1e-12)
+    end
+
     @test _retcode_is_stiff_symptom(:Unstable)
     @test _retcode_is_stiff_symptom("DtLessThanMin")
     @test _retcode_is_stiff_symptom(:InitialFailure)
@@ -238,6 +361,16 @@
     @test _auto_stiff_switched(DummyAlgChoice([1, 2, 1])) == true
 
     solver_args = args_eff_single
+    solver_args_atmo = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=ExponentialAtmosphereModel(EARTH),
+        orientation_sim=false,
+        mission_time=120.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+        keplerian=true
+    )
+
     prob_simple = ODEProblem(
         (du, u, p, t) -> begin
             du[1] = -u[1]
@@ -261,9 +394,45 @@
     withenv("SPACEAGORA_SOLVER_MODE" => "auto_stiff", "SPACEAGORA_SOLVER_MAXITERS" => nothing) do
         sol, meta = _solve_with_solver_policy(prob_simple, solver_args, 1e-8, 1e-8)
         @test string(sol.retcode) == "Success"
+        @test meta.solver == "Tsit5"
+        @test meta.initial_solver == "Tsit5"
+        @test meta.fallback_used == false
+    end
+    withenv(
+        "SPACEAGORA_SOLVER_MODE" => "auto_stiff",
+        "SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5" => "0",
+        "SPACEAGORA_SOLVER_MAXITERS" => nothing
+    ) do
+        sol, meta = _solve_with_solver_policy(prob_simple, solver_args, 1e-8, 1e-8)
+        @test string(sol.retcode) == "Success"
         @test meta.solver == "AutoTsit5(Rodas5P)"
         @test meta.initial_solver == "AutoTsit5"
     end
+    withenv(
+        "SPACEAGORA_SOLVER_MODE" => "auto_stiff",
+        "SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5" => "1",
+        "SPACEAGORA_SOLVER_MAXITERS" => nothing
+    ) do
+        sol, meta = _solve_with_solver_policy(prob_simple, solver_args_atmo, 1e-8, 1e-8)
+        @test string(sol.retcode) == "Success"
+        @test meta.solver == "AutoTsit5(Rodas5P)"
+        @test meta.initial_solver == "AutoTsit5"
+    end
+
+    u_alloc_probe = build_initial_conditions(solver_args)
+    p_alloc_probe = ODEParams{1}(args=solver_args)
+    sc_alloc_probe = u_alloc_probe.sc[1]
+    gravity_alloc_model = InverseSquaredGravityModel()
+    j2_alloc_model = InverseSquaredJ2GravityModel()
+    for _ in 1:1000
+        calcForceTorque(gravity_alloc_model, sc_alloc_probe, p_alloc_probe, 1)
+        calcForceTorque(j2_alloc_model, sc_alloc_probe, p_alloc_probe, 1)
+        SimulationEngine._extract_sample_pos_vel(sc_alloc_probe)
+    end
+    @test (@allocated calcForceTorque(gravity_alloc_model, sc_alloc_probe, p_alloc_probe, 1)) == 0
+    @test (@allocated calcForceTorque(j2_alloc_model, sc_alloc_probe, p_alloc_probe, 1)) == 0
+    @test (@allocated SimulationEngine._extract_sample_pos_vel(sc_alloc_probe)) == 0
+
     split_prob_simple = SplitODEProblem(
         (du, u, p, t) -> begin
             du[1] = -u[1]
@@ -851,6 +1020,23 @@
     @test force_probe == SVector{3, Float64}(env_probe.atmosphere.rho_kg_m3, env_probe.planet_frame.alt_m, 0.0)
     @test torque_probe == SVector{3, Float64}(0.0, 0.0, 0.0)
 
+    SimulationEngine._ensure_rhs_flat_effector_scratch!(p_probe.shared_buffers, 1, 1)
+    SimulationEngine._prefill_environment_samples!(p_probe, 0.0, u0_probe.sc; atmosphere=true)
+    p_probe.shared_buffers.rhs_planet_frame_prefilled[] = true
+    p_probe.shared_buffers.rhs_atmosphere_prefilled[] = true
+    env_probe_reused = SimulationEngine.sample_environment_with_reusable_buffers(
+        req_probe,
+        AtmosphereProbeWrenchModel(),
+        u0_probe.sc[1],
+        p_probe,
+        1,
+        0.0,
+    )
+    @test env_probe_reused.planet_frame == SimulationEngine.sample_buffered_planet_frame(p_probe, 1)
+    @test env_probe_reused.atmosphere == SimulationEngine.sample_buffered_atmosphere(u0_probe.sc[1], p_probe, 1, 0.0)
+    p_probe.shared_buffers.rhs_planet_frame_prefilled[] = false
+    p_probe.shared_buffers.rhs_atmosphere_prefilled[] = false
+
     withenv("SPACEAGORA_SOLVER_MAXITERS" => "1000") do
         sol = _solve_with_explicit_solver(prob_simple, solver_args, Tsit5(), 1e-8, 1e-8)
         @test string(sol.retcode) == "Success"
@@ -1345,11 +1531,9 @@
                         max_order=model_full.M
                     )
                 )
-                ref_central_pp = -EARTH.μ / norm(pos_pp)^3 * pos_pp
-                ref_perturbation_pp = ref_total_pp - ref_central_pp
 
                 @test torque_pp == SVector{3, Float64}(0.0, 0.0, 0.0)
-                @test isapprox(acc_pp, ref_perturbation_pp; atol=1e-12, rtol=1e-9)
+                @test isapprox(acc_pp, ref_total_pp; atol=1e-12, rtol=1e-9)
             end
         end
     end

@@ -9,7 +9,7 @@ module AerodynamicEffectors
     using ...SimulationModel: rot
     using LinearAlgebra
     using StaticArrays
-    import ..DynamicEffectors: calcForceTorque, wrench, environment_requirements, solver_partition
+    import ..DynamicEffectors: calcForceTorque, wrench, wrench_caching!, environment_requirements, solver_partition
 
     export AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
 

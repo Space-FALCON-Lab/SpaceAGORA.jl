@@ -87,7 +87,6 @@ end
     elseif !drag_state && !p.args.mission_configuration.keplerian
         return EnvironmentModels.density_polyfit(h, p)
     end
-    println("GRAM density altitude = $(h) m ($(h / 1e3) km)")
     return EnvironmentModels._gram_core_density_state(
         model.core,
         h,
@@ -185,7 +184,7 @@ function _gram_isolated_pool_batch_eval!(
     workers > 1 || return false
 
     models, locks = _ensure_gram_isolated_pool!(p, density_model, workers)
-    ParallelPolicy.threaded_foreach_worker(n, workers) do worker_id, idx
+    ParallelPolicy.threaded_foreach_worker_persistent(:rhs_gram_batch, n, workers) do worker_id, idx
         model_i = models[worker_id]::EnvironmentModels.GRAMAtmosphereModel
         lock_i = locks[worker_id]
         h = Float64(hs[idx])

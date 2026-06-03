@@ -76,7 +76,6 @@ dynamic_effectors = smoke_mode ? (
     sun_gravity,
     solar_radiation_pressure
 ) : (
-    InverseSquaredGravityModel(),
     GravitationalHarmonicsModel(50, 50, venus_harmonics_file, planet),
     sun_gravity,
     solar_radiation_pressure,

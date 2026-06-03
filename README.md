@@ -24,7 +24,6 @@ Use the repository root environment as the canonical committed execution environ
 ```text
 git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
-git submodule update --init --recursive --remote
 julia --project=. -e "using Pkg; Pkg.instantiate()"
 ```
 
@@ -70,7 +69,9 @@ Need the exact process for pulling the `GRAMSuite.jl` submodule and copying the
 official NASA GRAM Suite folders into the expected repo path after access is
 approved? See
 [docs/src/user/gramsuite_setup.md](docs/src/user/gramsuite_setup.md). It is a
-step-by-step local setup guide for licensed GRAM assets.
+step-by-step local setup guide for licensed GRAM assets. The full GRAM submodule
+checkout uses Git LFS and downloads several GB of binary data, so it is separate
+from the default baseline installation path.
 
 If the native GRAM shared library for your operating system is missing, build
 it with:

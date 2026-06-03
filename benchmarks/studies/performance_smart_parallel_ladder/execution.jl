@@ -16,6 +16,9 @@ function run_rung(
     )
     cmd = `$(Base.julia_cmd()) --project=$(SMART_LADDER_PROJECT) $(SMART_LADDER_RUNTIME_SCRIPT) --profile=$(config.profile.name) --outdir=$(rung_outdir)`
     env_pairs = _ladder_env_pairs(rung, config; solver_mode=solver_mode)
+    if config.trajectory_output
+        push!(env_pairs, "SPACEAGORA_PERF_TRAJECTORY_OUTDIR" => joinpath(rung_outdir, "trajectories"))
+    end
     metadata_paths = _write_rung_repro_metadata(
         rung_outdir,
         rung,
@@ -179,4 +182,3 @@ end
         inner_state_reset=inner_state_reset
     )
 end
-

@@ -136,6 +136,22 @@ end
     return raw in ("1", "true", "yes", "on")
 end
 
+function _perf_case_name_filter()::Vector{String}
+    raw = strip(get(ENV, "SPACEAGORA_PERF_CASES", ""))
+    isempty(raw) && return String[]
+    names = String[]
+    seen = Set{String}()
+    for part in split(raw, ",")
+        name = strip(part)
+        isempty(name) && continue
+        if !(name in seen)
+            push!(names, name)
+            push!(seen, name)
+        end
+    end
+    return names
+end
+
 @inline function _perf_solver_mode_env()::String
     return _perf_solver_mode_env("quick")
 end
@@ -174,7 +190,8 @@ function _run_perf_simulation(
     profile_name::String="quick",
     solver_mode_override::Union{Nothing, String}=nothing,
     split_imex_solver_override::Union{Nothing, String}=nothing,
-    entry_target_count_override::Union{Nothing, Int}=nothing
+    entry_target_count_override::Union{Nothing, Int}=nothing,
+    solver_cache=nothing
 )
     solver_mode = isnothing(solver_mode_override) ? _perf_solver_mode_env(profile_name) : solver_mode_override
     split_solver_env = isnothing(split_imex_solver_override) ? nothing : String(split_imex_solver_override)
@@ -194,7 +211,8 @@ function _run_perf_simulation(
             args_run;
             isolate_state=false,
             return_solution=return_solution,
-            return_solver_metadata=return_solver_metadata
+            return_solver_metadata=return_solver_metadata,
+            solver_cache=solver_cache
         )
     end
 end
@@ -287,6 +305,9 @@ end
 
 @inline function perf_parallel_backend()::Symbol
     mode = lowercase(strip(get(ENV, "SPACEAGORA_PERF_PARALLEL_BACKEND", "auto")))
+    if mode == "auto" && !isempty(_perf_case_name_filter())
+        return :none
+    end
     if mode in ("none", "serial", "off", "0", "false", "no")
         return :none
     elseif mode in ("threads", "thread")
@@ -431,6 +452,18 @@ end
 
 @inline function _include_control_stress_per_orbit()::Bool
     return _parse_bool_env("SPACEAGORA_PERF_INCLUDE_CONTROL_STRESS_PER_ORBIT", true)
+end
+
+@inline function _exclude_entry_scenarios()::Bool
+    return _parse_bool_env("SPACEAGORA_PERF_EXCLUDE_ENTRY_SCENARIOS", false)
+end
+
+@inline function _include_montecarlo_scenarios()::Bool
+    return _parse_bool_env("SPACEAGORA_PERF_INCLUDE_MONTECARLO", true)
+end
+
+@inline function _include_mission_time_sweep()::Bool
+    return _parse_bool_env("SPACEAGORA_PERF_INCLUDE_MISSION_TIME_SWEEP", true)
 end
 
 @inline function _split_rollout_enabled()::Bool

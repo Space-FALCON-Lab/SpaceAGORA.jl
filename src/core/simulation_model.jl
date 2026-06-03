@@ -29,6 +29,17 @@ include(joinpath(@__DIR__, "..", "core", "types", "effector_sampling.jl"))
 include(joinpath(@__DIR__, "..", "gnc", "command_types.jl"))
 @reexport using .CommandTypes
 
+include(joinpath(@__DIR__, "..", "gnc", "hypr", "hypr_utils.jl"))
+
+include(joinpath(@__DIR__, "..", "vehicle", "robotics", "robotics.jl"))
+@reexport using .Robotics
+include(joinpath(@__DIR__, "..", "gnc", "robotics", "robot_arm_planning.jl"))
+@reexport using .RobotArmPlanning
+include(joinpath(@__DIR__, "..", "dynamics", "multibody_cloth", "cloth_multibody.jl"))
+@reexport using .ClothMultibody
+include(joinpath(@__DIR__, "..", "dynamics", "multibody_cloth", "cloth_robot_arm_dynamics.jl"))
+@reexport using .ClothRobotArmDynamics
+
 include(joinpath(@__DIR__, "..", "vehicle", "actuators", "thruster", "thruster_models_module.jl"))
 @reexport using .ThrusterModels
 include(joinpath(@__DIR__, "..", "gnc", "guidance", "guidance_models.jl"))

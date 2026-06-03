@@ -26,6 +26,32 @@ using .SimulationModel.AbstractTypes: AbstractControlEffectorModel, AbstractEphe
 using .SimulationModel.AbstractTypes: AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
 using .SimulationModel: StateSample, PlanetFrameSample, AtmosphereSample, SolarEphemerisSample
 using .SimulationModel: ThirdBodyEphemerisSample, EnvironmentSample, EffectorEnvironmentRequirements
+using .SimulationModel: ClothArmBasePose, ClothArmLink, ClothArmJoint, ClothArmModel, ClothArmPose, ClothArmState
+using .SimulationModel: default_cloth_arm_model, cloth_fk, cloth_fk_state, cloth_end_effector_pose
+using .SimulationModel: cloth_ik, cloth_total_reach, closest_surface_target
+using .SimulationModel: RobotArmPlannerConfig, RobotArmPlan, plan_robot_arm_motion, robot_arm_plan_sample
+using .SimulationModel: RobotArmSphereObstacle, RobotArmHYPRConfig, RobotArmHYPRResult
+using .SimulationModel: plan_robot_arm_motion_hypr, robot_arm_sample_hypr_path
+using .SimulationModel: robot_arm_clearance_stats_from_samples, robot_arm_hypr_path_cost_components
+using .SimulationModel: ClothRobotArmReferenceState, cloth_reference_state
+using .SimulationModel: CompliantBody, CompliantJoint, CompliantMultibodyModel, CompliantMultibodyTrajectory
+using .SimulationModel: CompliantTopologyNode, CompliantTopologyEdge, CompliantTopologyBuild
+using .SimulationModel: CompliantJointActuator, CompliantJointLoad
+using .SimulationModel: rectangular_prism_inertia, thin_panel_inertia
+using .SimulationModel: build_compliant_topology, build_rectangular_compliant_grid
+using .SimulationModel: compliant_state_vector, compliant_state_parts, compliant_multibody_dynamics
+using .SimulationModel: compliant_joint_loads
+using .SimulationModel: step_compliant_multibody_rk4, step_compliant_multibody_implicit_midpoint
+using .SimulationModel: simulate_compliant_multibody
+using .SimulationModel: ClothRobotArmSimulation, cloth_robot_arm_multibody, cloth_robot_arm_initial_state
+using .SimulationModel: cloth_robot_arm_rest_quaternions, cloth_robot_arm_end_effector
+using .SimulationModel: cloth_robot_arm_actuators
+using .SimulationModel: coupled_cloth_robot_arm_state_shape, initialize_coupled_cloth_robot_arm_state!
+using .SimulationModel: assign_coupled_cloth_robot_arm_rhs!
+using .SimulationModel: simulate_cloth_robot_arm_plan
+using .SimulationModel: RobotArmHeldActuation, RobotArmJointMPCController, RobotArmControlEffector, RobotArmReactionEffector
+using .SimulationModel: init_robot_arm_joint_mpc, robot_arm_joint_mpc_reference_preview
+using .SimulationModel: robot_arm_joint_mpc_control, robot_arm_measured_joint_state
 using .SimulationModel: NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
 using .SimulationModel: NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 using .SimulationModel: SimpleEphemeridesModel
@@ -62,6 +88,10 @@ using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 @doc (@doc SimulationModel.ThirdBodyEphemerisSample) ThirdBodyEphemerisSample
 @doc (@doc SimulationModel.EnvironmentSample) EnvironmentSample
 @doc (@doc SimulationModel.EffectorEnvironmentRequirements) EffectorEnvironmentRequirements
+
+@doc (@doc SimulationModel.ClothArmModel) ClothArmModel
+@doc (@doc SimulationModel.ClothArmBasePose) ClothArmBasePose
+@doc (@doc SimulationModel.RobotArmPlan) RobotArmPlan
 
 """
     NoAtmosphereModel()
@@ -304,6 +334,28 @@ export AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractC
 export AbstractEphemeridesModel, AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
 export StateSample, PlanetFrameSample, AtmosphereSample, SolarEphemerisSample
 export ThirdBodyEphemerisSample, EnvironmentSample, EffectorEnvironmentRequirements
+export ClothArmBasePose, ClothArmLink, ClothArmJoint, ClothArmModel, ClothArmPose, ClothArmState
+export default_cloth_arm_model, cloth_fk, cloth_fk_state, cloth_end_effector_pose
+export cloth_ik, cloth_total_reach, closest_surface_target
+export RobotArmPlannerConfig, RobotArmPlan, plan_robot_arm_motion, robot_arm_plan_sample
+export RobotArmSphereObstacle, RobotArmHYPRConfig, RobotArmHYPRResult
+export plan_robot_arm_motion_hypr, robot_arm_sample_hypr_path
+export robot_arm_clearance_stats_from_samples, robot_arm_hypr_path_cost_components
+export ClothRobotArmSimulation, cloth_robot_arm_multibody, cloth_robot_arm_initial_state
+export cloth_robot_arm_rest_quaternions, cloth_robot_arm_end_effector, simulate_cloth_robot_arm_plan
+export cloth_robot_arm_actuators
+export CompliantBody, CompliantJoint, CompliantMultibodyModel, CompliantMultibodyTrajectory
+export CompliantTopologyNode, CompliantTopologyEdge, CompliantTopologyBuild
+export CompliantJointActuator, CompliantJointLoad
+export rectangular_prism_inertia, thin_panel_inertia
+export build_compliant_topology, build_rectangular_compliant_grid
+export compliant_state_vector, compliant_state_parts, compliant_multibody_dynamics, compliant_joint_loads
+export step_compliant_multibody_rk4, step_compliant_multibody_implicit_midpoint, simulate_compliant_multibody
+export coupled_cloth_robot_arm_state_shape, initialize_coupled_cloth_robot_arm_state!
+export assign_coupled_cloth_robot_arm_rhs!
+export RobotArmHeldActuation, RobotArmJointMPCController, RobotArmControlEffector, RobotArmReactionEffector
+export init_robot_arm_joint_mpc, robot_arm_joint_mpc_reference_preview
+export robot_arm_joint_mpc_control, robot_arm_measured_joint_state
 export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
 export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 export SimpleEphemeridesModel

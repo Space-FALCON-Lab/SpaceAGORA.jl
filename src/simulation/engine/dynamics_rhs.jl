@@ -396,6 +396,72 @@ end
     return nothing
 end
 
+"""Return whether an effector owns a robot-arm plan for the requested spacecraft."""
+@inline function _robot_arm_effector_matches(effector, sat_idx::Int)::Bool
+    return hasproperty(effector, :plan) &&
+        hasproperty(effector, :spacecraft_idx) &&
+        getproperty(effector, :spacecraft_idx) == sat_idx &&
+        getproperty(effector, :plan) isa SimulationModel.RobotArmPlan
+end
+
+"""Read a numeric effector field as `Float64`, falling back to a default value."""
+@inline _effector_float(effector, name::Symbol, default::Float64)::Float64 =
+    hasproperty(effector, name) ? Float64(getproperty(effector, name)) : default
+
+"""Read an optional effector field, falling back to a default value."""
+@inline _effector_value(effector, name::Symbol, default) =
+    hasproperty(effector, name) ? getproperty(effector, name) : default
+
+"""Build the cloth-coupled robot-arm RHS configuration from an active effector."""
+@inline function _robot_arm_coupling_from_effector(effector, t::Float64)
+    return (
+        plan=getproperty(effector, :plan),
+        t_s=max(0.0, t - _effector_float(effector, :updated_at_s, 0.0)),
+        k_translation_n_m=_effector_value(effector, :k_translation_n_m, 5.0e3),
+        c_translation_n_s_m=_effector_value(effector, :c_translation_n_s_m, 30.0),
+        k_rotation_n_m_rad=_effector_value(effector, :k_rotation_n_m_rad, 15.0),
+        c_rotation_n_m_s_rad=_effector_value(effector, :c_rotation_n_m_s_rad, 0.5),
+        joint_actuators=hasproperty(effector, :joint_actuators) ?
+            getproperty(effector, :joint_actuators) :
+            SimulationModel.CompliantJointActuator[],
+    )
+end
+
+"""Find the active robot-arm coupling configuration for one spacecraft."""
+function _robot_arm_coupling(args, sat_idx::Int, t::Float64)
+    if hasproperty(args, :control_model) && hasproperty(args.control_model, :control_effectors)
+        @inbounds for effector in args.control_model.control_effectors
+            _robot_arm_effector_matches(effector, sat_idx) && return _robot_arm_coupling_from_effector(effector, t)
+        end
+    end
+    if hasproperty(args, :dynamics_model) && hasproperty(args.dynamics_model, :dynamic_effectors)
+        @inbounds for effector in args.dynamics_model.dynamic_effectors
+            _robot_arm_effector_matches(effector, sat_idx) && return _robot_arm_coupling_from_effector(effector, t)
+        end
+    end
+    return nothing
+end
+
+"""Apply coupled cloth robot-arm state derivatives to one spacecraft RHS view."""
+@inline function _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, sat_idx::Int, t::Float64, forces, torques)
+    coupling = _robot_arm_coupling(p.args, sat_idx, t)
+    coupling === nothing && return nothing
+    SimulationModel.assign_coupled_cloth_robot_arm_rhs!(
+        du_view,
+        sc_view,
+        coupling.plan,
+        coupling.t_s,
+        forces,
+        torques;
+        k_translation_n_m=coupling.k_translation_n_m,
+        c_translation_n_s_m=coupling.c_translation_n_s_m,
+        k_rotation_n_m_rad=coupling.k_rotation_n_m_rad,
+        c_rotation_n_m_s_rad=coupling.c_rotation_n_m_s_rad,
+        joint_actuators=coupling.joint_actuators,
+    )
+    return nothing
+end
+
 function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     sc_state = u.sc
     sc_du = du.sc
@@ -420,6 +486,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -463,6 +530,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -518,6 +586,7 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
+                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -559,6 +628,7 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
+                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -696,6 +766,7 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :explicit)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -739,6 +810,7 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :explicit)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -792,6 +864,7 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
 
                 SimulationModel.DynamicsTranslational.assign_control_only_translational_rhs!(
                     du_view,
@@ -827,6 +900,7 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
 
                 SimulationModel.DynamicsTranslational.assign_control_only_translational_rhs!(
                     du_view,
@@ -856,11 +930,12 @@ end # function spacecraft_dynamics_fast_control!
 function build_initial_conditions(args)::ComponentVector
     # Each spacecraft can have a different body count, so the state layout has
     # to be sized per spacecraft before we pack the global ComponentVector.
-    sc_shapes = map(args.dynamics_model.spacecraft) do sc
+    sc_shapes = map(eachindex(args.dynamics_model.spacecraft)) do i
+        sc = args.dynamics_model.spacecraft[i]
         n_bodies = length(sc.links)
         mass = sc.dry_mass + sc.prop_mass
-        if args.mission_configuration.orientation_sim
-            return (
+        base_shape = if args.mission_configuration.orientation_sim
+            (
                 pos = zeros(3), 
                 vel = zeros(3), 
                 mass = mass, 
@@ -869,13 +944,16 @@ function build_initial_conditions(args)::ComponentVector
                 ω = zeros(3)
             )
         else
-            return (
+            (
                 pos = zeros(3), 
                 vel = zeros(3), 
                 mass = mass, 
                 heat_loads = zeros(n_bodies)
             )
         end
+        coupling = _robot_arm_coupling(args, i, 0.0)
+        coupling === nothing && return base_shape
+        return merge(base_shape, SimulationModel.coupled_cloth_robot_arm_state_shape(coupling.plan))
     end
 
     state = ComponentVector(sc = sc_shapes)
@@ -898,6 +976,10 @@ function build_initial_conditions(args)::ComponentVector
         if args.mission_configuration.orientation_sim
             sc_view.q .= SimulationModel.project_unit_quaternion(spacecraft.initial_condition.q)
             sc_view.ω .= spacecraft.initial_condition.ang_vel
+        end
+        coupling = _robot_arm_coupling(args, i, 0.0)
+        if coupling !== nothing
+            SimulationModel.initialize_coupled_cloth_robot_arm_state!(sc_view, coupling.plan; t_s=coupling.t_s)
         end
     end
 

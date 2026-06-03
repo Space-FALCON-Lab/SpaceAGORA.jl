@@ -1,3 +1,4 @@
+"""Offset a surface point along its normal to produce a standoff goal."""
 function rpo_goal_standoff_point(surface_point_body, surface_normal_body, standoff_m::Real)
     n = SVector{3, Float64}(surface_normal_body)
     n_norm = norm(n)

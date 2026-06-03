@@ -1,3 +1,4 @@
+"""Compute path-length and distance references used to normalize RPO cost terms."""
 function rpo_path_cost_normalization_refs(points, cfg::RPOPSOConfig)
     pts = Matrix{Float64}(points)
     dx = pts[1, end] - pts[1, 1]
@@ -11,6 +12,7 @@ function rpo_path_cost_normalization_refs(points, cfg::RPOPSOConfig)
     return (straight_len=straight_len, len_ref=len_ref, fuel_ref=max(fuel_ref, 1.0e-12))
 end
 
+"""Approximate fuel demand from sampled path increments."""
 function rpo_fuel_proxy_from_samples(samples, cfg::RPOPSOConfig)
     pts = Matrix{Float64}(samples)
     size(pts, 2) < 3 && return 0.0
@@ -25,40 +27,62 @@ function rpo_fuel_proxy_from_samples(samples, cfg::RPOPSOConfig)
     return fuel
 end
 
+"""Summarize obstacle clearance, violations, and penalties along sampled RPO path points."""
 function rpo_clearance_stats_from_samples(
     samples,
     geometry,
     safe_distance_m::Real;
     cost_cutoff::Real=Inf,
     w_obs::Real=0.0,
+    obstacle_sigmoid_k::Real=1.0e6,
+    obstacle_sigmoid_tol_m::Real=0.0,
 )
     min_clearance = Inf
     violation_count = 0
+    obstacle_score = 0.0
     safe = Float64(safe_distance_m)
+    threshold = safe - Float64(obstacle_sigmoid_tol_m)
+    k = Float64(obstacle_sigmoid_k)
     @inbounds for j in 1:size(samples, 2)
         p = SVector{3, Float64}(samples[1, j], samples[2, j], samples[3, j])
         clearance = rpo_clearance_distance_to_station(p, geometry)
         min_clearance = min(min_clearance, clearance)
-        if clearance < safe
+        beta = rpo_obstacle_sigmoid_penalty(clearance, threshold, k)
+        obstacle_score += beta
+        if clearance < 0.0
             violation_count += 1
-            if w_obs > 0.0 && isfinite(cost_cutoff) && Float64(w_obs) * violation_count > Float64(cost_cutoff)
-                return (
-                    min_clearance=min_clearance,
-                    violation_count=violation_count,
-                    violation_fraction=violation_count / max(size(samples, 2), 1),
-                    cutoff_exceeded=true,
-                )
-            end
+        end
+        if w_obs > 0.0 && isfinite(cost_cutoff) && Float64(w_obs) * obstacle_score > Float64(cost_cutoff)
+            return (
+                min_clearance=min_clearance,
+                violation_count=violation_count,
+                violation_fraction=violation_count / max(size(samples, 2), 1),
+                obstacle_score=obstacle_score,
+                cutoff_exceeded=true,
+            )
         end
     end
     return (
         min_clearance=min_clearance,
         violation_count=violation_count,
         violation_fraction=violation_count / max(size(samples, 2), 1),
+        obstacle_score=obstacle_score,
         cutoff_exceeded=false,
     )
 end
 
+"""Evaluate the smooth obstacle penalty for a clearance value."""
+@inline function rpo_obstacle_sigmoid_penalty(clearance::Real, threshold::Real, k::Real)
+    x = Float64(k) * (Float64(clearance) - Float64(threshold))
+    if x >= 0.0
+        y = exp(-x)
+        return y / (1.0 + y)
+    else
+        return 1.0 / (1.0 + exp(x))
+    end
+end
+
+"""Compute normalized RPO objective components for a candidate path."""
 function rpo_normalized_path_cost_components(
     points,
     geometry,
@@ -66,15 +90,24 @@ function rpo_normalized_path_cost_components(
     safe_distance_m::Real=0.0,
     cost_cutoff::Real=Inf,
 )
-    samples = rpo_sample_path(points, cfg.sample_ds_m; curve_type=cfg.curve_type)
+    samples = rpo_sample_path(
+        points,
+        cfg,
+        geometry;
+        safe_distance_m=safe_distance_m,
+        base_ds_m=rpo_hypr_sampling_density_m(cfg, safe_distance_m),
+        curve_type=cfg.curve_type,
+    )
     stats = rpo_clearance_stats_from_samples(
         samples,
         geometry,
         safe_distance_m;
         cost_cutoff=cost_cutoff,
         w_obs=cfg.w_obs,
+        obstacle_sigmoid_k=cfg.obstacle_sigmoid_k,
+        obstacle_sigmoid_tol_m=cfg.obstacle_sigmoid_tol_m,
     )
-    J_obs = stats.violation_count
+    J_obs = stats.obstacle_score
     if stats.cutoff_exceeded
         return (
             total=Inf,
@@ -123,6 +156,7 @@ function rpo_normalized_path_cost_components(
     )
 end
 
+"""Return the scalar RPO path objective, optionally cutting off expensive candidates early."""
 function rpo_path_cost(points, geometry, cfg::RPOPSOConfig; safe_distance_m::Real=0.0, cost_cutoff::Real=Inf)
     return rpo_normalized_path_cost_components(points, geometry, cfg; safe_distance_m=safe_distance_m, cost_cutoff=cost_cutoff).total
 end

@@ -1,3 +1,4 @@
+"""Convert a geometric RPO path into a retimed reference trajectory and plan object."""
 function rpo_reference_from_path(path_rtn, geometry, cfg::RPOPSOConfig; safe_distance_m::Real=0.0)
     r_ref, _, _ = rpo_retime_path(path_rtn, geometry, cfg; safe_distance_m=safe_distance_m)
     n = size(r_ref, 2)

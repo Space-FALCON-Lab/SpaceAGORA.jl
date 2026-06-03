@@ -1,3 +1,4 @@
+"""Build continuous Clohessy-Wiltshire relative-motion matrices."""
 function rpo_hcw_continuous_mats(n::Real)
     n = Float64(n)
     A = [
@@ -19,6 +20,7 @@ function rpo_hcw_continuous_mats(n::Real)
     return A, B
 end
 
+"""Discretize linear dynamics with a zero-order hold input model."""
 function rpo_discretize_zoh(A, B, dt::Real)
     nx = size(A, 1)
     nu = size(B, 2)
@@ -29,6 +31,7 @@ function rpo_discretize_zoh(A, B, dt::Real)
     return Md[1:nx, 1:nx], Md[1:nx, nx+1:end]
 end
 
+"""Build stacked prediction matrices for finite-horizon MPC."""
 function rpo_prediction_mats(Ad, Bd, horizon::Int)
     nx = size(Ad, 1)
     nu = size(Bd, 2)
@@ -49,6 +52,7 @@ function rpo_prediction_mats(Ad, Bd, horizon::Int)
     return Abar, Bbar
 end
 
+"""Assemble a block-diagonal dense matrix from equally typed blocks."""
 function rpo_block_diag(blocks)
     rows = sum(size(b, 1) for b in blocks)
     cols = sum(size(b, 2) for b in blocks)
@@ -64,6 +68,7 @@ function rpo_block_diag(blocks)
     return out
 end
 
+"""Precomputed finite-horizon unconstrained LQ-MPC controller for RPO tracking."""
 mutable struct RpoLQMPCController
     Ad::Matrix{Float64}
     Bd::Matrix{Float64}
@@ -80,6 +85,7 @@ mutable struct RpoLQMPCController
     u_max::Vector{Float64}
 end
 
+"""Initialize RPO LQ-MPC prediction, cost, and gain matrices."""
 function init_rpo_lqmpc(n, dt, Q, R, Qf, horizon; u_min=nothing, u_max=nothing)
     A, B = rpo_hcw_continuous_mats(n)
     Ad, Bd = rpo_discretize_zoh(A, B, dt)
@@ -115,6 +121,7 @@ function init_rpo_lqmpc(n, dt, Q, R, Qf, horizon; u_min=nothing, u_max=nothing)
     return RpoLQMPCController(Ad, Bd, horizon, sparse(H), E, F, G, W, model, OSQP.Results(), zeros(nU), u_min, u_max)
 end
 
+"""Build an RPO plan preview over an MPC horizon."""
 function rpo_ref_preview(plan::RPOPlan, t_elapsed_s::Real, dt::Real, horizon::Int)
     nx = 6
     out = zeros(nx, horizon + 1)
@@ -129,6 +136,7 @@ function rpo_ref_preview(plan::RPOPlan, t_elapsed_s::Real, dt::Real, horizon::In
     return out
 end
 
+"""Compute the first RPO LQ-MPC acceleration command for the current state."""
 function rpo_lqmpc_control(ctrl::RpoLQMPCController, x, x_ref)
     nx = size(ctrl.Ad, 1)
     nu = size(ctrl.Bd, 2)

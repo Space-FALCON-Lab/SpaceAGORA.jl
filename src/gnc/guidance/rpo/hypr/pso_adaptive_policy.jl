@@ -1,11 +1,14 @@
+"""Estimate obstacle complexity along the straight-line start-to-goal corridor."""
 function rpo_estimate_geometry_complexity(start_rtn, goal_rtn, geometry; sample_ds_m::Real=0.25, safe_distance_m::Real=0.0)
     path = hcat(SVector{3, Float64}(start_rtn), SVector{3, Float64}(goal_rtn))
     samples = rpo_sample_path_polyline(path, sample_ds_m)
     stats = rpo_path_clearance_stats(samples, geometry; safe_distance_m=safe_distance_m)
     clearance_term = stats.min_clearance <= 0.0 ? 1.0 : 1.0 / (1.0 + stats.min_clearance)
-    return clamp(0.7 * stats.violation_fraction + 0.3 * clearance_term, 0.0, 1.0)
+    buffer_fraction = stats.min_clearance < Float64(safe_distance_m) ? 1.0 : 0.0
+    return clamp(0.7 * buffer_fraction + 0.3 * clearance_term, 0.0, 1.0)
 end
 
+"""Measure straight-line path length, clearance, and violation counts for adaptive planning."""
 function rpo_probe_geometry_metrics(start_rtn, goal_rtn, geometry; sample_ds_m::Real=0.25, safe_distance_m::Real=0.0)
     straight = hcat(SVector{3, Float64}(start_rtn), SVector{3, Float64}(goal_rtn))
     samples = rpo_sample_path_polyline(straight, sample_ds_m)
@@ -14,10 +17,11 @@ function rpo_probe_geometry_metrics(start_rtn, goal_rtn, geometry; sample_ds_m::
         detour_ratio=1.0,
         min_clearance=stats.min_clearance,
         violation_fraction=stats.violation_fraction,
-        success=stats.violation_count == 0,
+        success=stats.min_clearance + 1.0e-9 >= Float64(safe_distance_m),
     )
 end
 
+"""Adjust an RPO PSO config based on quick geometry-probe metrics."""
 function rpo_adaptive_pso_config(base::RPOPSOConfig, start_rtn, goal_rtn, geometry; safe_distance_m::Real=0.0)
     dist = norm(SVector{3, Float64}(goal_rtn) - SVector{3, Float64}(start_rtn))
     if !base.adaptive_enable
@@ -44,10 +48,16 @@ function rpo_adaptive_pso_config(base::RPOPSOConfig, start_rtn, goal_rtn, geomet
     n_waypoints_min = base.adaptive_allow_downscale ?
         min(base.adaptive_n_waypoints_min, n_waypoints_max) :
         min(max(base.adaptive_n_waypoints_min, base.n_waypoints), n_waypoints_max)
-    n_particles_max = base.adaptive_n_particles_max > 0 ? base.adaptive_n_particles_max : max(20, 3 * base.n_particles)
-    n_iters_max = base.adaptive_n_iters_max > 0 ? base.adaptive_n_iters_max : max(5, 3 * base.n_iters)
-    n_particles_min = min(base.adaptive_n_particles_min, n_particles_max)
-    n_iters_min = min(base.adaptive_n_iters_min, n_iters_max)
+    raw_n_particles_max = base.adaptive_n_particles_max > 0 ? base.adaptive_n_particles_max : max(20, 3 * base.n_particles)
+    raw_n_iters_max = base.adaptive_n_iters_max > 0 ? base.adaptive_n_iters_max : max(5, 3 * base.n_iters)
+    n_particles_max = base.adaptive_allow_downscale ? raw_n_particles_max : max(raw_n_particles_max, base.n_particles)
+    n_iters_max = base.adaptive_allow_downscale ? raw_n_iters_max : max(raw_n_iters_max, base.n_iters)
+    n_particles_min = base.adaptive_allow_downscale ?
+        min(base.adaptive_n_particles_min, n_particles_max) :
+        min(max(base.adaptive_n_particles_min, base.n_particles), n_particles_max)
+    n_iters_min = base.adaptive_allow_downscale ?
+        min(base.adaptive_n_iters_min, n_iters_max) :
+        min(max(base.adaptive_n_iters_min, base.n_iters), n_iters_max)
     effort_scale = base.adaptive_effort_min_fraction +
         (base.adaptive_effort_max_fraction - base.adaptive_effort_min_fraction) * explore
     cfg = rpo_pso_config(

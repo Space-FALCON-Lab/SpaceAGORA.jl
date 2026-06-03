@@ -23,6 +23,14 @@ function _env_float(name::AbstractString, default::Real)
     return parse(Float64, token)
 end
 
+function _env_bool(name::AbstractString, default::Bool)
+    token = lowercase(strip(get(ENV, name, "")))
+    isempty(token) && return default
+    token in ("1", "true", "yes", "on") && return true
+    token in ("0", "false", "no", "off") && return false
+    error("Environment variable $name must be boolean-like, got '$token'.")
+end
+
 function _rpo_batch_smoke_mode()
     return get(ENV, "SPACEAGORA_EXAMPLE_SMOKE", "0") == "1"
 end
@@ -228,6 +236,18 @@ function _rpo_control_effector_from_integrator(integrator)
     return nothing
 end
 
+function _rpo_demo_chaser_propellant_mass_kg(demo)::Float64
+    spacecraft = demo.args.dynamics_model.spacecraft
+    isempty(spacecraft) && return NaN
+    prop_mass = Float64(spacecraft[1].prop_mass)
+    return isfinite(prop_mass) && prop_mass > 0.0 ? prop_mass : NaN
+end
+
+function _rpo_fuel_used_pct(fuel_used_kg::Real, propellant_mass_kg::Real)::Float64
+    denom = Float64(propellant_mass_kg)
+    return isfinite(denom) && denom > 0.0 ? 100.0 * Float64(fuel_used_kg) / denom : NaN
+end
+
 function _rpo_batch_progress_save_field(args, case_label::AbstractString)
     tf_s = Float64(args.mission_configuration.mission_time)
     last_bucket = Ref(-1)
@@ -333,6 +353,7 @@ function _rpo_batch_case_metrics(case, demo, csv_path::AbstractString, planner_r
 
     final_goal_error = norm(SVector{3, Float64}(actual_rtn[:, end]) - SVector{3, Float64}(case.goal_rtn))
     fuel_used = mass[1] - mass[end]
+    propellant_mass_kg = _rpo_demo_chaser_propellant_mass_kg(demo)
     success = final_goal_error <= 0.75 && minimum(clearances) >= -0.05 && fuel_used >= -1.0e-8
 
     return (
@@ -350,7 +371,8 @@ function _rpo_batch_case_metrics(case, demo, csv_path::AbstractString, planner_r
         total_runtime_s=Float64(planner_runtime_s + simulation_runtime_s),
         planned_duration_s=demo.initial_plan.t_ref_s[end],
         fuel_used_kg=fuel_used,
-        fuel_used_pct=100.0 * fuel_used / mass[1],
+        fuel_used_pct=_rpo_fuel_used_pct(fuel_used, propellant_mass_kg),
+        propellant_mass_kg=propellant_mass_kg,
         force_impulse_ns=_trapz(t, force_norm),
         torque_impulse_nms=_trapz(t, torque_norm),
         thrust_saturation_fraction=count(identity, thruster_any_sat) / max(nrow(df), 1),
@@ -372,6 +394,22 @@ function _write_rpo_batch_summary(path::AbstractString, rows)
     df = DataFrame(rows)
     CSV.write(path, df)
     return df
+end
+
+function _rpo_seeded_cases_dataframe(cases)
+    return DataFrame([
+        (
+            case_id=case.case_id,
+            seed=case.seed,
+            start_x=case.start_rtn[1],
+            start_y=case.start_rtn[2],
+            start_z=case.start_rtn[3],
+            goal_x=case.goal_rtn[1],
+            goal_y=case.goal_rtn[2],
+            goal_z=case.goal_rtn[3],
+        )
+        for case in cases
+    ])
 end
 
 function _save_plot(plot_obj, output_dir::AbstractString, filename::AbstractString)
@@ -398,7 +436,7 @@ function _family_metric_specs()
     return [
         (:success_pct, "Success", "success (%)"),
         (:total_runtime_s, "Runtime", "s"),
-        (:fuel_used_kg, "Fuel", "kg"),
+        (:fuel_used_pct, "Fuel", "%"),
         (:thrust_saturation_fraction, "Thruster Sat.", "fraction"),
         (:reaction_wheel_saturation_fraction, "RW Sat.", "fraction"),
         (:tracking_max_m, "Tracking Max", "m"),
@@ -412,6 +450,8 @@ function _metric_values(df::DataFrame, metric::Symbol)
     metric == :success_pct && return 100.0 .* Float64.(df.success)
     return Float64.(df[!, metric])
 end
+
+@inline _metric_rows(df::DataFrame, metric::Symbol) = metric == :success_pct ? df : df[df.success .== 1, :]
 
 function _axis_name(prefix::AbstractString, idx::Integer)
     idx == 1 && return Symbol(prefix)
@@ -434,7 +474,6 @@ function _rpo_family_metric_summary_plot(df::DataFrame; rows::Integer=3, cols::I
         :margin => attr(l=70, r=30, t=80, b=50),
         :plot_bgcolor => "rgb(250,250,250)",
     )
-    case_labels = ["case $(_rpo_batch_case_label(id))" for id in df.case_id]
     xgap = 0.055
     ygap = 0.095
     xspan = (1.0 - xgap * (cols - 1)) / cols
@@ -449,14 +488,17 @@ function _rpo_family_metric_summary_plot(df::DataFrame; rows::Integer=3, cols::I
         y0 = y1 - yspan
         xaxis = _trace_axis_name("x", idx)
         yaxis = _trace_axis_name("y", idx)
-        values = _metric_values(df, metric)
+        metric_df = _metric_rows(df, metric)
+        values = _metric_values(metric_df, metric)
         xvals = fill(label, length(values))
+        case_labels = ["case $(_rpo_batch_case_label(id))" for id in metric_df.case_id]
 
         push!(traces, box(
             x=xvals,
             y=values,
             name=label,
             boxpoints=false,
+            boxmean=true,
             fillcolor="rgba(64,120,165,0.28)",
             line=attr(color="rgb(42,86,125)", width=2),
             marker=attr(color="rgb(42,86,125)"),
@@ -547,12 +589,12 @@ function _save_rpo_batch_family_plots(output_dir::AbstractString, df::DataFrame,
 end
 
 function run_rpo_cubesat_mpc_batch(;
-    n_cases::Integer=_rpo_batch_smoke_mode() ? 1 : _env_int("SPACEAGORA_RPO_BATCH_N", 50),
+    n_cases::Integer=_rpo_batch_smoke_mode() ? 1 : _env_int("SPACEAGORA_RPO_BATCH_N", 200),
     seed::Integer=_env_int("SPACEAGORA_RPO_BATCH_SEED", 740),
     mission_time::Real=_env_float("SPACEAGORA_EXAMPLE_SMOKE_MISSION_TIME", 180.0),
     results_directory::AbstractString=joinpath(REPO_ROOT, "output", "rpo_batch_cases"),
-    pso_n_particles::Integer=_rpo_batch_smoke_mode() ? 10 : _env_int("SPACEAGORA_RPO_BATCH_PSO_PARTICLES", 200),
-    pso_n_iters::Integer=_rpo_batch_smoke_mode() ? 4 : _env_int("SPACEAGORA_RPO_BATCH_PSO_ITERS", 55),
+    pso_n_particles::Integer=_rpo_batch_smoke_mode() ? 10 : _env_int("SPACEAGORA_RPO_BATCH_PSO_PARTICLES", 120),
+    pso_n_iters::Integer=_rpo_batch_smoke_mode() ? 4 : _env_int("SPACEAGORA_RPO_BATCH_PSO_ITERS", 35),
     pso_config=nothing,
     pso_configurator=nothing,
     n_station_points::Integer=_rpo_batch_smoke_mode() ? 800 : _env_int("SPACEAGORA_RPO_BATCH_STATION_POINTS", 10000),
@@ -630,6 +672,219 @@ function run_rpo_cubesat_mpc_batch(;
     )
 end
 
+function run_rpo_cubesat_mpc_planner_comparison_batch(;
+    n_cases::Integer=_rpo_batch_smoke_mode() ? 1 : _env_int("SPACEAGORA_RPO_COMPARISON_N", 50),
+    seed::Integer=_env_int("SPACEAGORA_RPO_COMPARISON_SEED", _env_int("SPACEAGORA_RPO_BATCH_SEED", 740)),
+    results_directory::AbstractString=joinpath(REPO_ROOT, "output", "rpo_planner_comparison_cases"),
+    pso_n_particles::Integer=_rpo_batch_smoke_mode() ? 8 : _env_int("SPACEAGORA_RPO_COMPARISON_PSO_PARTICLES", 100),
+    pso_n_iters::Integer=_rpo_batch_smoke_mode() ? 2 : _env_int("SPACEAGORA_RPO_COMPARISON_PSO_ITERS", 60),
+    pso_n_waypoints::Integer=_rpo_batch_smoke_mode() ? 1 : _env_int("SPACEAGORA_RPO_COMPARISON_PSO_WAYPOINTS", 5),
+    rrt_connect_iters::Integer=_rpo_batch_smoke_mode() ? 25 : _env_int("SPACEAGORA_RPO_COMPARISON_RRT_CONNECT_ITERS", 1000),
+    rrt_connect_step_size_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_RRT_CONNECT_STEP_SIZE", 0.75),
+    rrt_star_iters::Integer=_rpo_batch_smoke_mode() ? 25 : _env_int("SPACEAGORA_RPO_COMPARISON_RRT_STAR_ITERS", rrt_connect_iters),
+    rrt_star_step_size_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_RRT_STAR_STEP_SIZE", rrt_connect_step_size_m),
+    rrt_star_neighbor_radius_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_RRT_STAR_NEIGHBOR_RADIUS", 2.0),
+    chomp_iters::Integer=_rpo_batch_smoke_mode() ? 2 : _env_int("SPACEAGORA_RPO_COMPARISON_CHOMP_ITERS", pso_n_iters),
+    stomp_iters::Integer=_rpo_batch_smoke_mode() ? 2 : _env_int("SPACEAGORA_RPO_COMPARISON_STOMP_ITERS", pso_n_iters),
+    stomp_rollouts::Integer=_rpo_batch_smoke_mode() ? 3 : _env_int("SPACEAGORA_RPO_COMPARISON_STOMP_ROLLOUTS", 20),
+    n_station_points::Integer=_rpo_batch_smoke_mode() ? 800 : _env_int("SPACEAGORA_RPO_COMPARISON_STATION_POINTS", 10000),
+    safe_distance_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_SAFE_DISTANCE", 0.1),
+    obstacle_weight_scale::Real=_env_float("SPACEAGORA_RPO_COMPARISON_OBS_WEIGHT_SCALE", 10.0),
+    obstacle_margin_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_OBS_MARGIN", 0.5),
+    match_hypr_runtime::Bool=_env_bool("SPACEAGORA_RPO_COMPARISON_MATCH_HYPR_RUNTIME", true),
+    runtime_limit_s::Real=_env_float("SPACEAGORA_RPO_COMPARISON_RUNTIME_LIMIT_S", 30.0),
+    force_full_iters::Bool=_env_bool("SPACEAGORA_RPO_COMPARISON_FORCE_FULL_ITERS", true),
+    mpc_horizon::Integer=_rpo_batch_smoke_mode() ? 4 : _env_int("SPACEAGORA_RPO_COMPARISON_MPC_HORIZON", 80),
+    mpc_u_max_mps2::Real=_rpo_batch_smoke_mode() ? 0.05 : _env_float("SPACEAGORA_RPO_COMPARISON_MPC_U_MAX", 0.01875),
+    mpc_q_pos::Real=_rpo_batch_smoke_mode() ? 10.0 : _env_float("SPACEAGORA_RPO_COMPARISON_MPC_Q_POS", 30.0),
+    mpc_q_vel::Real=_rpo_batch_smoke_mode() ? 1.0 : _env_float("SPACEAGORA_RPO_COMPARISON_MPC_Q_VEL", 4.0),
+    mpc_r_accel::Real=_rpo_batch_smoke_mode() ? 0.1 : _env_float("SPACEAGORA_RPO_COMPARISON_MPC_R_ACCEL", 0.025),
+    mpc_qf_pos::Real=_rpo_batch_smoke_mode() ? 50.0 : _env_float("SPACEAGORA_RPO_COMPARISON_MPC_QF_POS", 300.0),
+    mpc_qf_vel::Real=_rpo_batch_smoke_mode() ? 5.0 : _env_float("SPACEAGORA_RPO_COMPARISON_MPC_QF_VEL", 25.0),
+    mpc_settle_time_s::Real=_rpo_batch_smoke_mode() ? 2.0 : _env_float("SPACEAGORA_RPO_COMPARISON_MPC_SETTLE_TIME", 30.0),
+    mpc_final_position_tol_m::Real=_rpo_batch_smoke_mode() ? 0.75 : _env_float("SPACEAGORA_RPO_COMPARISON_MPC_FINAL_TOL", 0.25),
+    write_plotly_outputs::Bool=_env_bool("SPACEAGORA_RPO_COMPARISON_PLOTS", true),
+    show_progress::Bool=_env_bool("SPACEAGORA_RPO_COMPARISON_PROGRESS", true),
+)
+    mkpath(results_directory)
+    println("RPO planner comparison batch: HYPR vs PSO (unrefined) vs RRT-Connect vs RRT-Connect + Bezier vs RRT* vs CHOMP vs STOMP")
+    println("  cases=$(n_cases), seed=$(seed), station_points=$(n_station_points)")
+    println("  output=$(abspath(results_directory))")
+
+    station_points = SpaceAGORA.load_rpo_station_cad_pointcloud(
+        :gateway;
+        n_points=n_station_points,
+        rng=MersenneTwister(seed),
+    )
+    geometry = RPOReferenceGeometry(
+        RPOStationGeometry(station_points; keepout_radius_m=0.25, name="gateway_core");
+        chaser=RPOCubeSatGeometry(dims_m=(0.1, 0.1, 0.3)),
+    )
+    generated_cases = generate_rpo_seeded_batch_cases(
+        n_cases=n_cases,
+        seed=seed,
+        geometry_seed=seed,
+        n_station_points=n_station_points,
+    )
+    comparison_cases = [
+        RPOPlannerComparisonCase(
+            start_rtn=SVector{3, Float64}(case.start_rtn),
+            goal_rtn=SVector{3, Float64}(case.goal_rtn),
+            label=_rpo_batch_case_label(case.case_id),
+        )
+        for case in generated_cases
+    ]
+
+    pso_cfg = rpo_740_mpc_final_pso_config(
+        safe_distance_m=safe_distance_m;
+        n_particles=Int(pso_n_particles),
+        n_iters=Int(pso_n_iters),
+        n_waypoints=Int(pso_n_waypoints),
+        adaptive_enable=!_rpo_batch_smoke_mode(),
+        refinement_enable=true,
+    )
+    if _rpo_batch_smoke_mode()
+        pso_cfg = rpo_pso_config(
+            pso_cfg;
+            cull_enable=false,
+            schedule_enable=false,
+            reexplore_enable=false,
+            refinement_enable=false,
+            sample_ds_m=0.5,
+            retime_dt_s=0.5,
+            retime_a_max_mps2=0.05,
+            retime_max_steps=5_000,
+        )
+    end
+    mpc_u_max = Float64(mpc_u_max_mps2)
+    tracking = RPOLQMPCTrackingSettings(
+        dt_s=pso_cfg.retime_dt_s,
+        horizon=Int(mpc_horizon),
+        settle_time_s=Float64(mpc_settle_time_s),
+        final_position_tol_m=Float64(mpc_final_position_tol_m),
+        u_max_mps2=SVector{3, Float64}(mpc_u_max, mpc_u_max, mpc_u_max),
+        q_pos=Float64(mpc_q_pos),
+        q_vel=Float64(mpc_q_vel),
+        r_accel=Float64(mpc_r_accel),
+        qf_pos=Float64(mpc_qf_pos),
+        qf_vel=Float64(mpc_qf_vel),
+    )
+    cfg = RPOPlannerComparisonConfig(
+        pso_config=pso_cfg,
+        rrt_connect=RPORRTConnectSettings(
+            n_iters=Int(rrt_connect_iters),
+            step_size_m=Float64(rrt_connect_step_size_m),
+            collision_sample_ds_m=max(pso_cfg.sample_ds_m, 0.10),
+            shortcut_iters=_rpo_batch_smoke_mode() ? 4 : 80,
+        ),
+        rrt_star=RPORRTStarSettings(
+            n_iters=Int(rrt_star_iters),
+            step_size_m=Float64(rrt_star_step_size_m),
+            collision_sample_ds_m=max(pso_cfg.sample_ds_m, 0.10),
+            neighbor_radius_m=Float64(rrt_star_neighbor_radius_m),
+            shortcut_iters=_rpo_batch_smoke_mode() ? 4 : 80,
+        ),
+        chomp=RPOCHOMPSettings(n_iters=Int(chomp_iters)),
+        stomp=RPOSTOMPSettings(n_iters=Int(stomp_iters), n_rollouts=Int(stomp_rollouts)),
+        optimizer=RPOTrajectoryOptimizerSettings(
+            w_obs_scale=Float64(obstacle_weight_scale),
+            obstacle_margin_m=Float64(obstacle_margin_m),
+            match_hypr_runtime=match_hypr_runtime,
+            runtime_limit_s=Float64(runtime_limit_s),
+            force_full_iters=force_full_iters,
+        ),
+        tracking=tracking,
+        safe_distance_m=Float64(safe_distance_m),
+        output_dir=String(results_directory),
+        write_plotly_outputs=write_plotly_outputs,
+        rng_seed=Int(seed),
+        show_progress=show_progress,
+    )
+
+    runtime = @elapsed batch = rpo_run_planner_comparison_batch(comparison_cases, geometry, cfg)
+    batch = merge(batch, (station_triangles=SpaceAGORA.load_rpo_station_cad_triangles(:gateway),))
+    outputs = rpo_write_planner_comparison_outputs(batch)
+    rows = rpo_flatten_planner_results(batch)
+    summary_df = DataFrame(rows)
+    summary_path = outputs.csv
+    cases_path = joinpath(results_directory, "rpo_planner_comparison_cases.csv")
+    CSV.write(cases_path, _rpo_seeded_cases_dataframe(generated_cases))
+
+    println("RPO planner comparison complete in $(round(runtime, digits=2)) s.")
+    println("Summary CSV: ", abspath(summary_path))
+    println("Cases CSV:   ", abspath(cases_path))
+    if outputs.plotly_outputs
+        println("Plots:")
+        println("  ", abspath(outputs.metrics_plot))
+        println("  ", abspath(outputs.path_plot))
+        for planner in batch.planner_types
+            path = outputs.method_path_plots[planner]
+            println("  ", abspath(path))
+        end
+    else
+        println("Plotly outputs: disabled")
+    end
+    planner_report_rows = NamedTuple[]
+    for planner in cfg.planners
+        planner_rows = filter(row -> row.planner == normalize_rpo_comparison_planner_type(planner), rows)
+        isempty(planner_rows) && continue
+        successful_rows = filter(row -> row.success, planner_rows)
+        success_pct = 100.0 * mean([row.success ? 1.0 : 0.0 for row in planner_rows])
+        mean_fuel_pct = isempty(successful_rows) ? NaN : mean([row.fuel_used_pct for row in successful_rows])
+        fuel_values_pct = [Float64(row.fuel_used_pct) for row in successful_rows]
+        std_fuel_pct = length(fuel_values_pct) > 1 ? std(fuel_values_pct) : (isempty(fuel_values_pct) ? NaN : 0.0)
+        mean_runtime = mean([row.planner_compute_time for row in planner_rows])
+        push!(planner_report_rows, (
+            planner=planner,
+            success_pct=success_pct,
+            mean_fuel_pct=mean_fuel_pct,
+            std_fuel_pct=std_fuel_pct,
+            mean_runtime=mean_runtime,
+        ))
+    end
+    hypr_success_fuel_by_case = Dict{Int, Float64}()
+    for row in rows
+        row.planner == :hypr && row.success || continue
+        hypr_success_fuel_by_case[Int(row.case_id)] = Float64(row.fuel_used_pct)
+    end
+    for row in planner_report_rows
+        planner_rows = filter(result -> result.planner == normalize_rpo_comparison_planner_type(row.planner), rows)
+        paired_fuel_pct = Float64[]
+        paired_hypr_fuel_pct = Float64[]
+        for result in planner_rows
+            result.success || continue
+            hypr_fuel_pct = get(hypr_success_fuel_by_case, Int(result.case_id), NaN)
+            isfinite(hypr_fuel_pct) || continue
+            push!(paired_fuel_pct, Float64(result.fuel_used_pct))
+            push!(paired_hypr_fuel_pct, hypr_fuel_pct)
+        end
+        paired_mean_fuel_pct = isempty(paired_fuel_pct) ? NaN : mean(paired_fuel_pct)
+        paired_hypr_mean_fuel_pct = isempty(paired_hypr_fuel_pct) ? NaN : mean(paired_hypr_fuel_pct)
+        fuel_diff_pct = isfinite(paired_mean_fuel_pct) && isfinite(paired_hypr_mean_fuel_pct) && paired_hypr_mean_fuel_pct > 0.0 ?
+            100.0 * (paired_mean_fuel_pct - paired_hypr_mean_fuel_pct) / paired_hypr_mean_fuel_pct :
+            NaN
+        @printf("  %-21s success=%5.1f%% mean_fuel=%7.3f%% std_fuel=%6.3f%% fuel_vs_hypr=%+6.1f%% mean_planner=%.3f s\n",
+            rpo_comparison_planner_label(row.planner), row.success_pct, row.mean_fuel_pct, row.std_fuel_pct, fuel_diff_pct, row.mean_runtime)
+    end
+
+    return (
+        cases=generated_cases,
+        batch=batch,
+        summary=summary_df,
+        summary_path=summary_path,
+        cases_path=cases_path,
+        outputs=outputs,
+        output_dir=results_directory,
+    )
+end
+
 if abspath(PROGRAM_FILE) == @__FILE__
-    run_rpo_cubesat_mpc_batch()
+    mode = isempty(ARGS) ? get(ENV, "SPACEAGORA_RPO_BATCH_MODE", "batch") : lowercase(strip(ARGS[1]))
+    if mode in ("batch", "hypr")
+        run_rpo_cubesat_mpc_batch()
+    elseif mode in ("comparison", "planner_comparison", "planners")
+        run_rpo_cubesat_mpc_planner_comparison_batch()
+    else
+        error("Unknown RPO batch mode '$mode'. Use batch or comparison.")
+    end
 end

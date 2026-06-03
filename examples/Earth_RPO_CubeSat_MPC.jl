@@ -15,16 +15,18 @@ six-axis CubeSat chaser using HYPR/PSO guidance and LQ-MPC tracking.
 function build_rpo_cubesat_mpc_demo(;
     mission_time=180.0,
     results_directory=joinpath(REPO_ROOT, "output", "rpo_single_case"),
-    seed::Integer=740,
+    seed::Integer=741,
     start_rtn=SVector{3, Float64}(-8.0, -4.0, 2.0),
     goal_rtn=SVector{3, Float64}(5.0, 0.0, 0.0),
-    pso_n_particles::Integer=200,
-    pso_n_iters::Integer=55,
+    pso_n_particles::Integer=120,
+    pso_n_iters::Integer=35,
     pso_config=nothing,
     pso_configurator=nothing,
     n_station_points::Integer=10000,
     station_geometry_seed::Integer=seed,
     data_rate_s::Real=10.0,
+    pso_iteration_runtime_limit_s=nothing,
+    pso_iteration_callback=nothing,
     verbose::Bool=true,
 )
     start_rtn = SVector{3, Float64}(start_rtn)
@@ -68,7 +70,7 @@ function build_rpo_cubesat_mpc_demo(;
 
     chaser_root = Link{0}(
         root=true,
-        m=12.0,
+        m=5.0,
         dims=MVector{3, Float64}(0.1, 0.1, 0.3),
         ref_area=0.03,
     )
@@ -76,7 +78,7 @@ function build_rpo_cubesat_mpc_demo(;
         joints=Joint[],
         links=[chaser_root],
         root=chaser_root,
-        prop_mass=0.3,
+        prop_mass=0.2,
         inertia_tensor=chaser_root.inertia,
         initial_condition=CartesianInitialCondition(r_chaser_ii, v_chaser_ii; q=q_identity),
         id=101,
@@ -101,6 +103,19 @@ function build_rpo_cubesat_mpc_demo(;
             curve_type=:bezier,
             sample_ds_m=0.05,
         ),
+        adaptive=RPOPSOAdaptiveSettings(
+            allow_downscale=true,
+            n_particles_min=80,
+            n_particles_max=160,
+            n_iters_min=8,
+            n_iters_max=35,
+        ),
+        early_stopping=RPOPSOEarlyStoppingSettings(
+            enabled=true,
+            patience=8,
+            min_iters=12,
+            min_rel_improvement=1.0e-4,
+        ),
         objective=RPOPSOObjectiveSettings(
             cost_ref_distance_m=20.0,
             mass_kg=chaser_initial_mass_kg,
@@ -123,6 +138,9 @@ function build_rpo_cubesat_mpc_demo(;
     else
         rpo_pso_config(default_pso_configurator)
     end
+    if pso_iteration_runtime_limit_s !== nothing
+        pso_cfg = rpo_pso_config(pso_cfg; iteration_runtime_limit_s=Float64(pso_iteration_runtime_limit_s))
+    end
 
     plan_buffer = RPOPlanBuffer()
     plan_result = rpo_pso_plan_path(
@@ -132,6 +150,7 @@ function build_rpo_cubesat_mpc_demo(;
         pso_cfg;
         safe_distance_m=0.1,
         rng=MersenneTwister(seed),
+        iteration_callback=pso_iteration_callback,
     )
     t_ref, r_ref, v_ref = rpo_reference_from_path(
         plan_result.path,
@@ -151,6 +170,10 @@ function build_rpo_cubesat_mpc_demo(;
             components=plan_result.components,
             adaptive=plan_result.adaptive,
             refinement_improved=plan_result.refinement_improved,
+            iteration_timed_out=plan_result.iteration_timed_out,
+            iteration_timeout_iter=plan_result.iteration_timeout_iter,
+            iteration_timeout_phase=plan_result.iteration_timeout_phase,
+            iteration_timeout_events=plan_result.iteration_timeout_events,
             cost_history=plan_result.cost_history,
             planned_at_s=0.0,
         ),
@@ -234,7 +257,7 @@ function build_rpo_cubesat_mpc_demo(;
             abstol_orbit=1e-8,
             reltol_quaternion=1e-8,
             abstol_quaternion=1e-8,
-            dt_max_orbit=0.1,
+            dt_max_orbit=0.05,
         ),
     )
 
@@ -313,7 +336,9 @@ function _save_plot(plot_obj, output_dir::AbstractString, filename::AbstractStri
     return path
 end
 
-function _station_mesh_trace()
+const _STATION_MESH_TRACE_CACHE = Ref{Any}(nothing)
+
+function _build_station_mesh_trace()
     triangles = SpaceAGORA.load_rpo_station_cad_triangles(:gateway)
     ntri = size(triangles, 2) ÷ 3
     tri_idxs = collect(1:ntri)
@@ -345,6 +370,13 @@ function _station_mesh_trace()
         name="Gateway mesh",
         hoverinfo="skip",
     )
+end
+
+function _station_mesh_trace(; refresh::Bool=false)
+    if refresh || _STATION_MESH_TRACE_CACHE[] === nothing
+        _STATION_MESH_TRACE_CACHE[] = _build_station_mesh_trace()
+    end
+    return deepcopy(_STATION_MESH_TRACE_CACHE[])
 end
 
 function _cuboid_mesh_trace(centers::Matrix{Float64}, half_extents; max_cubes::Integer=12)

@@ -1,7 +1,9 @@
+"""Fetch one station point as a static 3-vector."""
 @inline function _rpo_station_point(points::Matrix{Float64}, idx::Int)
     return SVector{3, Float64}(points[1, idx], points[2, idx], points[3, idx])
 end
 
+"""Search the station KD-tree for the nearest point to a query."""
 function _nearest_station_point_kdtree(
     node::Nothing,
     p::SVector{3, Float64},
@@ -12,6 +14,7 @@ function _nearest_station_point_kdtree(
     return best_idx, best_d2
 end
 
+"""Search the station KD-tree for the nearest point to a query."""
 function _nearest_station_point_kdtree(
     node::RPOStationKDNode,
     p::SVector{3, Float64},
@@ -37,6 +40,7 @@ function _nearest_station_point_kdtree(
     return best_idx, best_d2
 end
 
+"""Search the station KD-tree for the nearest squared distance to a query."""
 function _nearest_station_distance_sq_kdtree(
     node::Nothing,
     p::SVector{3, Float64},
@@ -46,6 +50,7 @@ function _nearest_station_distance_sq_kdtree(
     return best_d2
 end
 
+"""Search the station KD-tree for the nearest squared distance to a query."""
 function _nearest_station_distance_sq_kdtree(
     node::RPOStationKDNode,
     p::SVector{3, Float64},
@@ -69,12 +74,14 @@ function _nearest_station_distance_sq_kdtree(
     return best_d2
 end
 
+"""Return the squared distance from a query point to the nearest station point."""
 @inline function nearest_station_distance_sq(p_body, station::RPOStationGeometry)
     p = SVector{3, Float64}(p_body)
     station.kd_root === nothing && throw(ArgumentError("RPO station KD-tree is empty."))
     return _nearest_station_distance_sq_kdtree(station.kd_root, p, station.points_body, Inf)
 end
 
+"""Return the nearest station point to a body-frame query."""
 @inline function nearest_station_point(p_body, station::RPOStationGeometry)
     p = SVector{3, Float64}(p_body)
     station.kd_root === nothing && throw(ArgumentError("RPO station KD-tree is empty."))

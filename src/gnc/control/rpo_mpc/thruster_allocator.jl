@@ -1,3 +1,4 @@
+"""Allocate a requested body force across six-axis thrusters."""
 function rpo_allocate_six_axis_thrusters(force_body, thrusters::SixAxisThrusterModel)
     f = zeros(6)
     desired = SVector{3, Float64}(force_body)
@@ -13,6 +14,7 @@ function rpo_allocate_six_axis_thrusters(force_body, thrusters::SixAxisThrusterM
     return SVector{6, Float64}(f)
 end
 
+"""Compute net body force and torque produced by allocated thruster forces."""
 function rpo_thruster_wrench_body(thruster_forces, thrusters::SixAxisThrusterModel)
     F = SVector{3, Float64}(0.0, 0.0, 0.0)
     τ = SVector{3, Float64}(0.0, 0.0, 0.0)

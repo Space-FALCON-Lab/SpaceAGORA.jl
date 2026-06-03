@@ -1,3 +1,4 @@
+"""Return body torque commanded through the RPO reaction wheel allocator."""
 function rpo_reaction_wheel_torque_command(model::RPOMPCControlModel, u, sat_idx::Int)
     if model.attitude_kp == 0.0 && model.rate_kd == 0.0
         return SVector{3, Float64}(0.0, 0.0, 0.0)

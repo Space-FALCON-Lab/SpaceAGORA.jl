@@ -1,7 +1,9 @@
+"""Extract chaser position and velocity for the RPO controller."""
 function _rpo_control_state_pos_vel(u, idx::Int)
     return SVector{3, Float64}(u.sc[idx].pos), SVector{3, Float64}(u.sc[idx].vel)
 end
 
+"""Apply the RPO MPC controller at the current simulation time and cache the actuator command."""
 function calcControlEffect!(model::RPOMPCControlModel, u, p::ODEParams, t::Float64, sat_idx::Int)
     sat_idx == model.chaser_idx || return nothing
     model.plan_buffer.valid || return nothing
@@ -32,11 +34,13 @@ function calcControlEffect!(model::RPOMPCControlModel, u, p::ODEParams, t::Float
     return nothing
 end
 
+"""Return the held force and torque command for a control effector."""
 function calcControlForceTorque(model::RPOMPCControlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
     i == model.chaser_idx || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     return model.held.force_ii, model.held.torque_body
 end
 
+"""Return propellant mass flow for a control effector."""
 function calcControlMassFlowRate(model::RPOMPCControlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
     i == model.chaser_idx || return 0.0
     mdot = 0.0

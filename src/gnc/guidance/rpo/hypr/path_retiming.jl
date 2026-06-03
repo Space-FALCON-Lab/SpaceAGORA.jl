@@ -1,3 +1,4 @@
+"""Compute cumulative arc-length parameters for sampled path points."""
 function rpo_arc_length_params(points)
     pts = Matrix{Float64}(points)
     s = zeros(size(pts, 2))
@@ -11,6 +12,7 @@ function rpo_arc_length_params(points)
 end
 
 
+"""Drop consecutive path samples that are closer than the tolerance."""
 function rpo_remove_near_duplicate_samples(points; tol::Real=1.0e-10)
     pts = Matrix{Float64}(points)
     n = size(pts, 2)
@@ -33,6 +35,7 @@ function rpo_remove_near_duplicate_samples(points; tol::Real=1.0e-10)
 end
 
 
+"""Interpolate a point at a requested arc-length coordinate."""
 function rpo_interpolate_along_path(points, s_vals, s_query::Real)
     pts = Matrix{Float64}(points)
     s = Vector{Float64}(s_vals)
@@ -65,6 +68,7 @@ function rpo_interpolate_along_path(points, s_vals, s_query::Real)
 end
 
 
+"""Estimate curvature at each sampled path point from neighboring samples."""
 function rpo_curvature_from_samples(samples, s_vals)
     pts = Matrix{Float64}(samples)
     s = Vector{Float64}(s_vals)
@@ -107,6 +111,7 @@ function rpo_curvature_from_samples(samples, s_vals)
 end
 
 
+"""Retiming path samples into position, velocity, acceleration, and time references."""
 function rpo_retime_path(
     points,
     geometry,
@@ -115,7 +120,14 @@ function rpo_retime_path(
     fallback_speed_mps::Real=1.0e-3,
     duplicate_tol_m::Real=1.0e-10,
 )
-    raw_samples = rpo_sample_path(points, cfg.sample_ds_m; curve_type=cfg.curve_type)
+    raw_samples = rpo_sample_path(
+        points,
+        cfg,
+        geometry;
+        safe_distance_m=safe_distance_m,
+        base_ds_m=cfg.sample_ds_m,
+        curve_type=cfg.curve_type,
+    )
     samples = rpo_remove_near_duplicate_samples(raw_samples; tol=duplicate_tol_m)
 
     s_samples = rpo_arc_length_params(samples)
@@ -130,18 +142,16 @@ function rpo_retime_path(
 
     n = length(s_samples)
     v_max = zeros(n)
-    raw_clearance = zeros(n)
-    effective_clearance = zeros(n)
+    geometry_distance = zeros(n)
 
     amax = Float64(cfg.retime_a_max_mps2)
     reaction_time = Float64(cfg.retime_reaction_time_s)
     speed_scale = Float64(cfg.retime_speed_scale)
     max_speed = Float64(cfg.retime_max_speed_mps)
     cfg_min_speed = Float64(cfg.retime_min_speed_mps)
-    safe_distance = Float64(safe_distance_m)
 
-    # This is the minimum speed used when the path has locally infeasible clearance.
-    # It prevents the batch run from crashing, but it does not make the path safe.
+    # This is the minimum speed used when the path has locally infeasible geometry distance.
+    # It prevents the batch run from crashing, but it does not make the path collision-free.
     fallback_speed = max(Float64(fallback_speed_mps), eps(Float64))
 
     if isfinite(max_speed)
@@ -153,10 +163,9 @@ function rpo_retime_path(
     infeasible_idxs = Int[]
 
     @inbounds for j in eachindex(s_samples)
-        raw_clearance[j] = rpo_clearance_to_station(samples[:, j], geometry).clearance
-        effective_clearance[j] = raw_clearance[j] - safe_distance
+        geometry_distance[j] = rpo_clearance_to_station(samples[:, j], geometry).distance
 
-        d_avail = max(0.0, effective_clearance[j])
+        d_avail = max(0.0, geometry_distance[j])
 
         v_clear = if d_avail <= 0.0 || amax <= 0.0
             0.0
@@ -178,8 +187,7 @@ function rpo_retime_path(
             v = min(v, max_speed)
         end
 
-        # Main change:
-        # If the clearance model says v = 0, warn and use a tiny fallback speed
+        # If the geometry distance model says v = 0, warn and use a tiny fallback speed
         # instead of allowing the retimer to stall.
         if v <= 0.0
             push!(infeasible_idxs, j)
@@ -193,15 +201,13 @@ function rpo_retime_path(
     if !isempty(infeasible_idxs)
         k = first(infeasible_idxs)
 
-        @warn "RPO retiming encountered infeasible zero-speed samples. Continuing with fallback speed. The path likely violates the RPO safety geometry." (
+        @warn "RPO retiming encountered infeasible zero-speed samples. Continuing with fallback speed. The path likely intersects the RPO geometry." (
             count = length(infeasible_idxs),
             first_idx = k,
             first_s_m = s_samples[k],
             total_s_m = total,
             first_position_m = samples[:, k],
-            raw_clearance_m = raw_clearance[k],
-            safe_distance_m = safe_distance,
-            effective_clearance_m = effective_clearance[k],
+            geometry_distance_m = geometry_distance[k],
             curvature_1pm = κ[k],
             fallback_speed_mps = fallback_speed,
         )
@@ -232,8 +238,7 @@ function rpo_retime_path(
                 total_s_m = total,
                 v_mps = v,
                 fallback_speed_mps = fallback_speed,
-                raw_clearance_m = raw_clearance[idx],
-                effective_clearance_m = effective_clearance[idx],
+                geometry_distance_m = geometry_distance[idx],
                 curvature_1pm = κ[idx],
             )
 

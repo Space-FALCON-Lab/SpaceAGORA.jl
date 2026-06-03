@@ -1,3 +1,4 @@
+"""KD-tree node for nearest-neighbor queries on station point clouds."""
 mutable struct RPOStationKDNode
     idx::Int
     axis::Int
@@ -5,6 +6,7 @@ mutable struct RPOStationKDNode
     right::Union{Nothing, RPOStationKDNode}
 end
 
+"""Construct station geometry and its KD-tree from body-frame point samples."""
 struct RPOStationGeometry
     points_body::Matrix{Float64}
     kd_root::Union{Nothing, RPOStationKDNode}
@@ -12,6 +14,7 @@ struct RPOStationGeometry
     name::String
 end
 
+"""Build a KD-tree over station point-cloud indices."""
 function _rpo_build_station_kdtree(points::Matrix{Float64}, indices::Vector{Int}, depth::Int=0)
     isempty(indices) && return nothing
     axis = mod(depth, 3) + 1
@@ -27,6 +30,7 @@ function _rpo_build_station_kdtree(points::Matrix{Float64}, indices::Vector{Int}
     )
 end
 
+"""Construct station geometry and its KD-tree from body-frame point samples."""
 function RPOStationGeometry(points_body; keepout_radius_m::Real=0.0, name::AbstractString="station")
     points = Matrix{Float64}(points_body)
     size(points, 1) == 3 || throw(ArgumentError("RPOStationGeometry point cloud must be a 3 x N matrix."))

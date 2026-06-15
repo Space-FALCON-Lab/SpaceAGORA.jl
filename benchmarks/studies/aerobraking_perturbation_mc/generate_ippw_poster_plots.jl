@@ -29,6 +29,17 @@ const DEFAULT_MASS_SCALE = 1.0
 const DEFAULT_INCLINATION_DEG = 93.0
 const DEFAULT_ARGP_DEG = 80.0
 const PHASE_ARGP_DEGS = [0.0, 90.0, 180.0, 270.0]
+const COMBINED_PHASE_ARGP_DEGS = [0.0, 180.0]
+const PHASE_INCLINATIONS_DEG = sort(unique(vcat(
+    collect(range(15.0, 165.0; step=7.5)),
+    [DEFAULT_INCLINATION_DEG],
+)))
+const PHASE_APOAPSIS_ALTITUDES_KM = Dict(
+    "mars" => collect(range(1_000.0, 30_000.0; length=21)),
+    "venus" => collect(range(1_000.0, 40_000.0; length=21)),
+    "earth" => collect(range(1_000.0, 60_000.0; length=21)),
+    "titan" => collect(range(1_000.0, 40_000.0; length=21)),
+)
 const POSTER_PERIAPSIS = Dict("mars" => "nominal", "venus" => "nominal", "earth" => "nominal", "titan" => "nominal")
 const POSTER_APOAPSIS_KM = Dict("mars" => 5000.0, "venus" => 10000.0, "earth" => 36000.0, "titan" => 10000.0)
 const PERIAPSIS_ALTITUDE_KM = Dict(
@@ -345,7 +356,7 @@ function altitude_category_panel(df::DataFrame, xcol::Symbol, title::String, xla
         xlabel=xlabel,
         ylabel="periapsis alt. (km)",
         legend=false,
-        framestyle=:box,
+        framestyle=:none,
         grid=true,
         titlefontsize=7,
         guidefontsize=7,
@@ -1085,12 +1096,12 @@ function phase_grid_coverage(additive::DataFrame, out_dir::String)
     rows = NamedTuple[]
     for planet in PLANETS
         peri = POSTER_PERIAPSIS[planet]
-        base = additive[
+        base = phase_grid_subset(additive[
             (additive.planet .== planet) .&
             (additive.periapsis_regime .== peri) .&
             (additive.spacecraft_mass_scale .== DEFAULT_MASS_SCALE),
             :,
-        ]
+        ], planet)
         for argp in PHASE_ARGP_DEGS
             df = base[base.argp_deg .== argp, :]
             xs = isempty(df) ? Float64[] : sort(unique(Float64.(df.apoapsis_alt_km)))
@@ -1115,36 +1126,150 @@ end
 
 function plot_phase_inclination_apoapsis(additive::DataFrame, out_dir::String)
     paths = String[]
+    combined_subplots = Plots.Plot[]
     phase_grid_coverage(additive, out_dir)
-    for planet in PLANETS
+    for (planet_idx, planet) in enumerate(PLANETS)
         peri = POSTER_PERIAPSIS[planet]
-        base = additive[
+        base = phase_grid_subset(additive[
             (additive.planet .== planet) .&
             (additive.periapsis_regime .== peri) .&
             (additive.spacecraft_mass_scale .== DEFAULT_MASS_SCALE),
             :,
-        ]
+        ], planet)
         isempty(base) && continue
         subplots = Plots.Plot[]
-        for argp in PHASE_ARGP_DEGS
+        for (argp_idx, argp) in enumerate(PHASE_ARGP_DEGS)
             df = base[base.argp_deg .== argp, :]
-            title = @sprintf("omega=%.0f deg", argp)
-            push!(subplots, atlas_panel(df, :apoapsis_alt_km, :inclination_deg, title, "apoapsis (km)", "inclination (deg)"))
+            title = @sprintf("AoP=%.0f deg", argp)
+            ylabel = argp_idx == 1 ? "$(PLANET_LABEL[planet])\nInclination (deg)" : ""
+            combined_xlabel = planet_idx == length(PLANETS) ? "Apoapsis (km)" : ""
+            panel = phase_box_panel(df, :apoapsis_alt_km, :inclination_deg, title, "Apoapsis (km)", ylabel)
+            push!(subplots, panel)
+            if argp in COMBINED_PHASE_ARGP_DEGS
+                combined_title = planet_idx == 1 ? title : ""
+                combined_panel = phase_box_panel(df, :apoapsis_alt_km, :inclination_deg, combined_title, combined_xlabel, ylabel)
+                push!(combined_subplots, combined_panel)
+            end
         end
         fig = plot(
             subplots...;
             layout=(1, 4),
             size=(1700, 420),
-            plot_title=@sprintf("%s Phase Dependence: inclination vs apoapsis, %s periapsis, full environment", PLANET_LABEL[planet], REGIME_LABEL[peri]),
-            plot_titlefontsize=13,
-            left_margin=7Plots.mm,
-            bottom_margin=8Plots.mm,
+            left_margin=16Plots.mm,
+            right_margin=8Plots.mm,
+            top_margin=8Plots.mm,
+            bottom_margin=18Plots.mm,
         )
         out = joinpath(out_dir, @sprintf("phase_dependence_inclination_vs_apoapsis_%s_%s_full_environment.pdf", planet, peri))
         savefig(fig, out)
         push!(paths, out)
     end
+    if !isempty(combined_subplots)
+        fig = plot(
+            phase_regime_legend_panel(), combined_subplots...;
+            layout=@layout([l{0.08h}; a b; c d; e f; g h]),
+            size=(1200, 2600),
+            left_margin=18Plots.mm,
+            right_margin=10Plots.mm,
+            top_margin=8Plots.mm,
+            bottom_margin=20Plots.mm,
+        )
+        out = joinpath(out_dir, "phase_dependence_inclination_vs_apoapsis_all_planets_full_environment.pdf")
+        savefig(fig, out)
+        push!(paths, out)
+    end
     return paths
+end
+
+function phase_regime_legend_panel()
+    sp = plot(
+        xlims=(0, 1),
+        ylims=(0, 1),
+        framestyle=:none,
+        grid=false,
+        legend=false,
+        xticks=false,
+        yticks=false,
+    )
+    legend_box = Shape(
+        [0.08, 0.98, 0.98, 0.08],
+        [0.12, 0.12, 0.90, 0.90],
+    )
+    plot!(sp, legend_box; color=:white, fillalpha=0.0, linecolor=:black, linewidth=0.7)
+    entries = [
+        (0.22, "#c84630", "Lowering"),
+        (0.50, "#edf6e5", "Stable"),
+        (0.78, "#2b6cb0", "Raising"),
+    ]
+    for (x, color, label) in entries
+        box = Shape(
+            [x - 0.045, x + 0.015, x + 0.015, x - 0.045],
+            [0.36, 0.36, 0.66, 0.66],
+        )
+        plot!(sp, box; color=color, linecolor=:black, linewidth=0.5)
+        annotate!(sp, x + 0.035, 0.51, text(label, :left, 18, :black))
+    end
+    return sp
+end
+
+function phase_value_in_grid(value, grid; atol::Float64=1e-6)::Bool
+    f = Float64(value)
+    return any(abs(f - Float64(g)) <= atol for g in grid)
+end
+
+function phase_grid_subset(df::DataFrame, planet::String)::DataFrame
+    isempty(df) && return df
+    apo_grid = PHASE_APOAPSIS_ALTITUDES_KM[planet]
+    keep = [
+        phase_value_in_grid(row.apoapsis_alt_km, apo_grid) &&
+        phase_value_in_grid(row.inclination_deg, PHASE_INCLINATIONS_DEG) &&
+        phase_value_in_grid(row.argp_deg, PHASE_ARGP_DEGS)
+        for row in eachrow(df)
+    ]
+    return df[keep, :]
+end
+
+function phase_sparse_ticks(values; max_ticks::Int=6)
+    vals = sort(unique(Float64.(values)))
+    isempty(vals) && return (Float64[], String[])
+    nticks = min(max_ticks, length(vals))
+    idxs = unique(round.(Int, range(1, length(vals); length=nticks)))
+    ticks = vals[idxs]
+    labels = [
+        abs(v - round(v)) < 1e-6 ? @sprintf("%.0f", v) : @sprintf("%.1f", v)
+        for v in ticks
+    ]
+    return ticks, labels
+end
+
+function phase_box_panel(df::DataFrame, xcol::Symbol, ycol::Symbol, title::String, xlabel::String, ylabel::String)
+    sp = plot(
+        title=title,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        legend=false,
+        framestyle=:box,
+        grid=true,
+        titlefontsize=18,
+        guidefontsize=18,
+        tickfontsize=18,
+        xrotation=45,
+    )
+    isempty(df) && return sp
+
+    xs, ys, z_full = pivot_grid(df, xcol, ycol, :full_environment_delta_rp_m)
+    heatmap!(
+        sp,
+        xs,
+        ys,
+        regime_grid(z_full);
+        color=cgrad(["#c84630", "#edf6e5", "#2b6cb0"], [0.0, 0.5, 1.0]),
+        clims=(-1.5, 1.5),
+        colorbar=false,
+    )
+    xticks!(sp, phase_sparse_ticks(xs; max_ticks=5))
+    yticks!(sp, phase_sparse_ticks(ys; max_ticks=6))
+    return sp
 end
 
 function plot_equilibrium_terms(additive::DataFrame, out_dir::String)
@@ -1289,6 +1414,8 @@ function write_readme(out_dir::String)
     - `slice_atlas_inclination_vs_*.pdf`: visual diagnostics for selecting clean inclination-horizontal slices.
     - `priority_slice_*.pdf`: cleaner poster-candidate slices for omega/apoapsis,
       omega/eccentricity, inclination/apoapsis, and omega/periapsis-altitude.
+    - `phase_dependence_inclination_vs_apoapsis_all_planets_full_environment.pdf`:
+      4x2 phase-dependence regime map across planets and selected AoP values.
     - `equilibrium_drag_vs_gravity_additive.pdf`: drag-vs-gravity equilibrium schematic populated from data.
     - `short_period_additive_offset_summary.csv` / `.pdf`: one-orbit additive-prediction offset check.
     - `titan_zlk_timescale_estimate.csv`: Titan ZLK period estimate from the reference geometry.

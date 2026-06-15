@@ -15,7 +15,7 @@
 #   --time-apo-panels N        max apoapsis columns for time/sweep panel grids (default: 6)
 #   --summary-threads N          summary worker tasks (default: auto-threaded Julia)
 #   --plot-threads N             plot worker tasks for independent PDF outputs (default: auto-threaded Julia)
-#   --analytical-overlays none|basic|detailed|both
+#   --analytical-overlays none|basic
 
 using Arrow
 using CSV
@@ -64,14 +64,15 @@ const GRID_BOTTOM_MARGIN = 12Plots.mm
 const GRID_TOP_MARGIN = 5Plots.mm
 const DEFAULT_TIME_APO_PANELS = 6
 const MAX_HEATMAP_XTICKS = 12
-const ANALYTICAL_OVERLAY_MODES = ("none", "basic", "detailed", "both")
+const ANALYTICAL_OVERLAY_MODES = ("none", "basic")
 const PLOT_SAVE_LOCK = ReentrantLock()
+const PARAMETER_COMPARISON_BASIC_X_OFFSET = 0.985
+const PARAMETER_COMPARISON_SIM_X_OFFSET = 1.015
 
 # (dynamics_case, density_case, line_color, line_style)
 const TRACE_STYLES = [
     ("j2",               "none",    "#1f77b4", :solid),
     ("harmonics_low",    "none",    "#2ca02c", :solid),
-    ("srp",              "none",    "#ff7f0e", :solid),
     ("third_body_sun",   "none",    "#d62728", :solid),
     ("gram_aero",        "high",    "#7b2d8b", :solid),
     ("gram_aero",        "nominal", "#9e4fc4", :solid),
@@ -84,7 +85,6 @@ const TRACE_STYLES = [
 const ANALYTICAL_COMPARISON_STYLES = [
     (:j2, "j2", "none", "#1f77b4"),
     (:harmonics, "harmonics_low", "none", "#2ca02c"),
-    (:srp, "srp", "none", "#ff7f0e"),
     (:third_body, "third_body_sun", "none", "#d62728"),
     (:drag, "gram_aero", "nominal", "#9e4fc4"),
 ]
@@ -133,7 +133,7 @@ Base.@kwdef struct PlotOptions
     time_apo_panels::Int = DEFAULT_TIME_APO_PANELS
     summary_threads::Int = Threads.nthreads()
     plot_threads::Int = Threads.nthreads()
-    analytical_overlays::String = "both"
+    analytical_overlays::String = "basic"
 end
 
 function _parse_case_dir(dirname::String)
@@ -532,11 +532,11 @@ function _trace_label(planet::String, dynamics::String, density::String)
         "Aero"
     elseif dynamics == "full_environment"
         if planet == "earth"
-            "Full Env (Sun+Moon+20x20+SRP+Aero)"
+            "Full Env (Sun+Moon+20x20+Aero)"
         elseif planet == "titan"
-            "Full Env (Saturn+Sun+5x5+SRP+Aero)"
+            "Full Env (Saturn+Sun+5x5+Aero)"
         else
-            "Full Env (Sun+20x20+SRP+Aero)"
+            "Full Env (Sun+20x20+Aero)"
         end
     else
         dynamics
@@ -614,21 +614,12 @@ function _plot_analytical_overlay!(sp, row, x_periods, idxs, model_key, color, m
 
     xs = x_periods[idxs]
     plotted = false
-    if mode in ("basic", "both")
+    if mode == "basic"
         ys = series.basic[model_key]
         finite = isfinite.(ys)
         if any(finite)
             plot!(sp, xs[finite], ys[finite];
                 color=color, linestyle=:dashdot, linewidth=0.8, alpha=0.85, label=nothing)
-            plotted = true
-        end
-    end
-    if mode in ("detailed", "both")
-        ys = series.detailed[model_key]
-        finite = isfinite.(ys)
-        if any(finite)
-            plot!(sp, xs[finite], ys[finite];
-                color=color, linestyle=:dash, linewidth=0.8, alpha=0.85, label=nothing)
             plotted = true
         end
     end
@@ -639,7 +630,7 @@ function _analytical_comparison_styles(opts::PlotOptions)
     styles = NamedTuple[]
     for (model_key, dynamics, default_density, color) in ANALYTICAL_COMPARISON_STYLES
         if model_key == :drag
-            push!(styles, (model_key=model_key, dynamics=dynamics, density="nominal", color=color, label_suffix=" rho nominal"))
+            push!(styles, (model_key=model_key, dynamics=dynamics, density="nominal", color=color, label_suffix=""))
         else
             push!(styles, (model_key=model_key, dynamics=dynamics, density=default_density, color=color, label_suffix=""))
         end
@@ -749,7 +740,7 @@ function plot_planet_time_histories(run_dir::String, planet::String, summary_df:
             subtitle = "$(uppercasefirst(periapsis)) / $(round(Int, apo_alt_km)) km apo"
             sp = plot(
                 title=subtitle,
-                titlefontsize=6,
+                titlefontsize=16,
                 xlabel=peri_idx == n_peri ? "Time / orbital period" : "",
                 ylabel=apo_idx == 1 ? "Force / gravity" : "",
                 yscale=:log10,
@@ -758,8 +749,8 @@ function plot_planet_time_histories(run_dir::String, planet::String, summary_df:
                 framestyle=:box,
                 grid=true,
                 gridalpha=0.25,
-                guidefontsize=7,
-                tickfontsize=5,
+                guidefontsize=17,
+                tickfontsize=15,
             )
 
             any_data = false
@@ -791,7 +782,7 @@ function plot_planet_time_histories(run_dir::String, planet::String, summary_df:
     end
 
     leg = plot(
-        framestyle=:none, grid=false, legend=:inside, legendfontsize=7,
+        framestyle=:none, grid=false, legend=:inside, legendfontsize=17,
         background_color_inside=:transparent, background_color_outside=:transparent,
         xlims=(0, 1), ylims=(0, 1),
     )
@@ -799,11 +790,8 @@ function plot_planet_time_histories(run_dir::String, planet::String, summary_df:
         label = _trace_label(planet, dynamics, density)
         plot!(leg, [NaN], [NaN]; color=color, linestyle=lstyle, linewidth=1.4, label="$(label) simulation")
         if _analytical_model_key(dynamics) !== nothing
-            if opts.analytical_overlays in ("basic", "both")
+            if opts.analytical_overlays == "basic"
                 plot!(leg, [NaN], [NaN]; color=color, linestyle=:dashdot, linewidth=1.2, label="$(label) analytical basic")
-            end
-            if opts.analytical_overlays in ("detailed", "both")
-                plot!(leg, [NaN], [NaN]; color=color, linestyle=:dash, linewidth=1.2, label="$(label) analytical detailed")
             end
         end
     end
@@ -847,7 +835,275 @@ function _analytical_comparison_source_rows(planet_df::DataFrame, periapsis, apo
     return rows
 end
 
-function plot_analytical_basic_vs_detailed_time_histories(planet::String, summary_df::DataFrame, opts::PlotOptions)
+function _finite_summary(v)
+    vals = filter(x -> isfinite(x) && x > 0.0, Float64.(v))
+    isempty(vals) && return nothing
+    return (lo=minimum(vals), mid=median(vals), hi=maximum(vals))
+end
+
+function _finite_mean_summary(v)
+    vals = filter(x -> isfinite(x) && x > 0.0, Float64.(v))
+    isempty(vals) && return nothing
+    return (lo=minimum(vals), mid=mean(vals), hi=maximum(vals))
+end
+
+function _time_weighted_summary(values, times)
+    samples = Tuple{Float64, Float64}[]
+    for (value_raw, time_raw) in zip(values, times)
+        value = Float64(value_raw)
+        time = Float64(time_raw)
+        if isfinite(value) && value > 0.0 && isfinite(time)
+            push!(samples, (time, value))
+        end
+    end
+    sort!(samples, by=first)
+    ts = first.(samples)
+    vals = last.(samples)
+    isempty(vals) && return nothing
+    length(vals) == 1 && return (lo=vals[1], mid=vals[1], hi=vals[1])
+
+    total_weight = 0.0
+    weighted_sum = 0.0
+    for i in 1:(length(vals) - 1)
+        dt = ts[i + 1] - ts[i]
+        dt > 0.0 && isfinite(dt) || continue
+        weighted_sum += 0.5 * (vals[i] + vals[i + 1]) * dt
+        total_weight += dt
+    end
+    if total_weight <= 0.0
+        return (lo=minimum(vals), mid=mean(vals), hi=maximum(vals))
+    end
+    return (lo=minimum(vals), mid=weighted_sum / total_weight, hi=maximum(vals))
+end
+
+function _saved_perturbing_force_ratios(row, tbl)
+    names_set = Set(Symbol.(propertynames(tbl)))
+    required = (:time, :active_perturbation_force_mag, :sc1_mass, :sc1_pos_1, :sc1_pos_2, :sc1_pos_3)
+    all(name -> name in names_set, required) || return Float64[]
+
+    gm = PLANET_GM[String(row.planet)]
+    ratios = Tuple{Float64, Float64}[]
+    for idx in eachindex(tbl.active_perturbation_force_mag)
+        force = Float64(tbl.active_perturbation_force_mag[idx])
+        r2 = Float64(tbl.sc1_pos_1[idx])^2 +
+            Float64(tbl.sc1_pos_2[idx])^2 +
+            Float64(tbl.sc1_pos_3[idx])^2
+        mass = Float64(tbl.sc1_mass[idx])
+        denom = mass * gm / r2
+        if isfinite(force) && force > 0.0 && isfinite(denom) && denom > 0.0
+            push!(ratios, (Float64(tbl.time[idx]), force / denom))
+        end
+    end
+    return ratios
+end
+
+function _saved_perturbing_force_ratio_summary(row, tbl, model_key::Symbol)
+    ratio_samples = _saved_perturbing_force_ratios(row, tbl)
+    isempty(ratio_samples) && return nothing
+    times = first.(ratio_samples)
+    ratios = last.(ratio_samples)
+    if model_key in (:j2, :harmonics, :third_body)
+        return _time_weighted_summary(ratios, times)
+    end
+    value = maximum(ratios)
+    return (lo=value, mid=value, hi=value)
+end
+
+function _comparison_model_label(model_key::Symbol)::String
+    model_key == :j2 && return "J2"
+    model_key == :harmonics && return "Harm."
+    model_key == :third_body && return "3rd Body"
+    model_key == :drag && return "Drag"
+    return String(model_key)
+end
+
+function _parameter_comparison_series(planet_df::DataFrame, periapsis, opts::PlotOptions)
+    all_apo_alts = sort(unique(Float64.(planet_df.apoapsis_alt_km)))
+    series_by_style = NamedTuple[]
+    for style in _analytical_comparison_styles(opts)
+        basic_x = Float64[]
+        basic_y = Float64[]
+        sim_x = Float64[]
+        sim_mid = Float64[]
+        sim_lo = Float64[]
+        sim_hi = Float64[]
+
+        for apo_alt_km in all_apo_alts
+            local_rows = planet_df[
+                (planet_df.periapsis_regime .== periapsis) .&
+                (planet_df.apoapsis_alt_km .== apo_alt_km) .&
+                (planet_df.dynamics_case .== style.dynamics) .&
+                (planet_df.density_case .== style.density),
+                :,
+            ]
+            isempty(local_rows) && continue
+
+            row = local_rows[1, :]
+            tbl = Arrow.Table(String(row.trajectory_path))
+            n = length(tbl.time)
+            idxs = style.model_key == :harmonics ? collect(eachindex(tbl.time)) : _downsample_indices(n)
+            series = try
+                analytical_series(_analytical_info(row), tbl, idxs)
+            catch err
+                @warn "Skipping analytical parameter comparison" path=String(row.trajectory_path) exception=(err, catch_backtrace())
+                continue
+            end
+            basic_stats = _finite_summary(series.basic[style.model_key])
+            simulation_stats = if style.model_key == :harmonics
+                # Higher harmonics are recomputed with degree-2 harmonics removed; use the full
+                # saved time history so the orbit-average is not biased by plot sampling.
+                _time_weighted_summary(series.detailed[:harmonics], Float64.(tbl.time)[idxs])
+            else
+                _saved_perturbing_force_ratio_summary(row, tbl, style.model_key)
+            end
+            if basic_stats !== nothing
+                push!(basic_x, Float64(apo_alt_km))
+                push!(basic_y, basic_stats.mid)
+            end
+            if simulation_stats !== nothing
+                push!(sim_x, Float64(apo_alt_km))
+                push!(sim_mid, simulation_stats.mid)
+                push!(sim_lo, simulation_stats.lo)
+                push!(sim_hi, simulation_stats.hi)
+            end
+        end
+
+        push!(series_by_style, (;
+            style...,
+            basic_x,
+            basic_y,
+            sim_x,
+            sim_mid,
+            sim_lo,
+            sim_hi,
+        ))
+    end
+    return all_apo_alts, series_by_style
+end
+
+function _plot_parameter_comparison_series!(sp, series_by_style)::Bool
+    any_data = false
+    for style in series_by_style
+        if !isempty(style.basic_x)
+            order = sortperm(style.basic_x)
+            bx = style.basic_x[order] .* PARAMETER_COMPARISON_BASIC_X_OFFSET
+            plot!(sp, bx, style.basic_y[order];
+                color=style.color, linestyle=:dash, linewidth=1.8,
+                marker=:diamond, markercolor=:white, markerstrokecolor=style.color,
+                markersize=4.6, markerstrokewidth=1.3,
+                alpha=0.9, label=nothing)
+            any_data = true
+        end
+        if !isempty(style.sim_x)
+            order = sortperm(style.sim_x)
+            sx = style.sim_x[order] .* PARAMETER_COMPARISON_SIM_X_OFFSET
+            sy = style.sim_mid[order]
+            plot!(sp, sx, sy;
+                color=style.color, linestyle=:solid, linewidth=2.4,
+                marker=:square, markercolor=style.color, markerstrokecolor="#222222",
+                markersize=5.2, markerstrokewidth=0.35,
+                alpha=0.95, label=nothing)
+            any_data = true
+        end
+    end
+    return any_data
+end
+
+function _add_parameter_comparison_legend!(sp, opts::PlotOptions)
+    plot!(sp, [NaN], [NaN]; color="#333333", marker=:none, linestyle=:dash,
+        linewidth=1.8, label="Analytical")
+    plot!(sp, [NaN], [NaN]; color="#333333", marker=:none, linestyle=:solid,
+        linewidth=2.4, label="Simulated")
+    for style in _analytical_comparison_styles(opts)
+        plot!(sp, [NaN], [NaN]; color=style.color, linestyle=:solid, linewidth=3.0,
+            label=_comparison_model_label(style.model_key) * style.label_suffix)
+    end
+end
+
+function _parameter_comparison_legend_plot(opts::PlotOptions)
+    sp = plot(
+        framestyle=:none,
+        grid=false,
+        legend=:inside,
+        legend_column=3,
+        legendfontsize=40,
+        background_color_inside=:transparent,
+        background_color_outside=:transparent,
+        margin=0Plots.mm,
+        top_margin=0Plots.mm,
+        bottom_margin=0Plots.mm,
+        left_margin=0Plots.mm,
+        right_margin=0Plots.mm,
+        xlims=(0, 1),
+        ylims=(0, 1),
+    )
+    _add_parameter_comparison_legend!(sp, opts)
+    return sp
+end
+
+function plot_nominal_planet_parameter_comparison(summary_df::DataFrame, opts::PlotOptions)
+    opts.analytical_overlays == "none" && return nothing
+    subplots = Plots.Plot[]
+    nominal = "nominal"
+
+    for (planet_idx, planet) in enumerate(opts.planets)
+        planet_df = summary_df[(summary_df.planet .== planet) .& (summary_df.periapsis_regime .== nominal), :]
+        if isempty(planet_df)
+            println("  No nominal analytical comparison rows for $planet; skipping panel.")
+            continue
+        end
+
+        all_apo_alts, series_by_style = _parameter_comparison_series(planet_df, nominal, opts)
+        isempty(all_apo_alts) && continue
+        sp = plot(
+            title="",
+            xlabel="",
+            ylabel="$(uppercasefirst(planet))\nPerturbation parameter",
+            xscale=:log10,
+            yscale=:log10,
+            ylims=(1e-9, 1.0),
+            legend=false,
+            framestyle=:box,
+            grid=true,
+            gridalpha=0.18,
+            guidefontsize=42,
+            tickfontsize=38,
+            xticks=_xticks_for_dense_grid(all_apo_alts; max_ticks=5),
+            xrotation=45,
+        )
+        any_data = _plot_parameter_comparison_series!(sp, series_by_style)
+        !any_data && annotate!(sp, mean(all_apo_alts), 5e-5, text("no data", :center, 38, :gray))
+        push!(subplots, sp)
+    end
+
+    if isempty(subplots)
+        println("  No nominal analytical comparison data for selected planets; skipping.")
+        return nothing
+    end
+    xlabel!(last(subplots), "Apoapsis altitude (km)")
+
+    ms_tag = replace(@sprintf("ms%.2f", opts.spacecraft_mass_scale), "." => "p")
+    inc_tag = @sprintf("inc%03.0f", opts.inclination_deg)
+    aop_tag = @sprintf("aop%03.0f", opts.argp_deg)
+    density_tag = "density_nominal"
+    leg = _parameter_comparison_legend_plot(opts)
+    layout = @eval Plots.@layout [a{0.05h}; Plots.grid(4, 1)]
+    fig = plot(
+        leg, subplots...;
+        layout=layout,
+        size=(2600, 5300),
+        left_margin=84Plots.mm,
+        right_margin=52Plots.mm,
+        bottom_margin=15Plots.mm,
+        top_margin=10Plots.mm,
+    )
+    out_path = joinpath(opts.out_dir, "analytical_parameter_comparison_nominal_planets_$(ms_tag)_$(inc_tag)_$(aop_tag)_$(density_tag).pdf")
+    _save_pdf(fig, out_path)
+    println("  Saved: $out_path")
+    return out_path
+end
+
+function plot_analytical_parameter_comparison(planet::String, summary_df::DataFrame, opts::PlotOptions)
     opts.analytical_overlays == "none" && return nothing
     planet_df = summary_df[summary_df.planet .== planet, :]
     if isempty(planet_df)
@@ -855,92 +1111,127 @@ function plot_analytical_basic_vs_detailed_time_histories(planet::String, summar
         return nothing
     end
 
-    labels = analytical_labels()
     periapsis_regimes = _ordered_periapsis(planet_df.periapsis_regime)
     all_apo_alts = sort(unique(Float64.(planet_df.apoapsis_alt_km)))
-    apo_alts = _representative_values(all_apo_alts, opts.time_apo_panels)
-    n_apo = length(apo_alts)
     n_peri = length(periapsis_regimes)
     subplots = Plots.Plot[]
+    xticks = _xticks_for_dense_grid(all_apo_alts)
 
     for (peri_idx, periapsis) in enumerate(periapsis_regimes)
-        for (apo_idx, apo_alt_km) in enumerate(apo_alts)
-            subtitle = "$(uppercasefirst(String(periapsis))) / $(round(Int, apo_alt_km)) km apo"
-            sp = plot(
-                title=subtitle,
-                titlefontsize=6,
-                xlabel=peri_idx == n_peri ? "Time / orbital period" : "",
-                ylabel=apo_idx == 1 ? "Force / gravity or Pi" : "",
-                yscale=:log10,
-                ylims=(1e-9, 1.0),
-                legend=false,
-                framestyle=:box,
-                grid=true,
-                gridalpha=0.25,
-                guidefontsize=7,
-                tickfontsize=5,
-            )
+        sp = plot(
+            title=uppercasefirst(String(periapsis)),
+            titlefontsize=19,
+            xlabel=peri_idx == n_peri ? "Apoapsis altitude (km)" : "",
+            ylabel=peri_idx == 1 ? "Perturbation parameter" : "",
+            xscale=:log10,
+            yscale=:log10,
+            ylims=(1e-9, 1.0),
+            legend=false,
+            framestyle=:box,
+            grid=true,
+            gridalpha=0.18,
+            guidefontsize=18,
+            tickfontsize=17,
+            xticks=xticks,
+            xrotation=25,
+        )
 
-            any_data = false
-            for item in _analytical_comparison_source_rows(planet_df, periapsis, apo_alt_km, opts)
-                row = item.row
+        any_data = false
+        for style in _analytical_comparison_styles(opts)
+            basic_x = Float64[]
+            basic_y = Float64[]
+            sim_x = Float64[]
+            sim_mid = Float64[]
+            sim_lo = Float64[]
+            sim_hi = Float64[]
+
+            for apo_alt_km in all_apo_alts
+                local_rows = planet_df[
+                    (planet_df.periapsis_regime .== periapsis) .&
+                    (planet_df.apoapsis_alt_km .== apo_alt_km) .&
+                    (planet_df.dynamics_case .== style.dynamics) .&
+                    (planet_df.density_case .== style.density),
+                    :,
+                ]
+                isempty(local_rows) && continue
+
+                row = local_rows[1, :]
                 tbl = Arrow.Table(String(row.trajectory_path))
                 n = length(tbl.time)
-                idxs = _downsample_indices(n)
-                x_periods = _time_over_period(row, tbl, PLANET_GM[String(row.planet)])
+                idxs = style.model_key == :harmonics ? collect(eachindex(tbl.time)) : _downsample_indices(n)
                 series = try
                     analytical_series(_analytical_info(row), tbl, idxs)
                 catch err
-                    @warn "Skipping analytical basic-vs-detailed comparison" path=String(row.trajectory_path) exception=(err, catch_backtrace())
+                    @warn "Skipping analytical parameter comparison" path=String(row.trajectory_path) exception=(err, catch_backtrace())
                     continue
                 end
-                xs = x_periods[idxs]
-                simulation = simulated_model_ratio_series(_analytical_info(row), tbl, item.model_key, idxs)
-                basic = series.basic[item.model_key]
-                detailed = series.detailed[item.model_key]
-                finite_simulation = isfinite.(simulation)
-                finite_basic = isfinite.(basic)
-                finite_detailed = isfinite.(detailed)
-                if any(finite_basic)
-                    plot!(sp, xs[finite_basic], basic[finite_basic];
-                        color=item.color, linestyle=:dashdot, linewidth=0.8, alpha=0.85, label=nothing)
-                    any_data = true
+                basic_stats = _finite_summary(series.basic[style.model_key])
+                simulation_stats = if style.model_key == :harmonics
+                    _time_weighted_summary(series.detailed[:harmonics], Float64.(tbl.time)[idxs])
+                else
+                    _saved_perturbing_force_ratio_summary(row, tbl, style.model_key)
                 end
-                if any(finite_detailed)
-                    plot!(sp, xs[finite_detailed], detailed[finite_detailed];
-                        color=item.color, linestyle=:dash, linewidth=1.2, alpha=0.95, label=nothing)
-                    any_data = true
+                if basic_stats !== nothing
+                    push!(basic_x, Float64(apo_alt_km))
+                    push!(basic_y, basic_stats.mid)
                 end
-                if any(finite_simulation)
-                    plot!(sp, xs[finite_simulation], simulation[finite_simulation];
-                        color=item.color, linestyle=:solid, linewidth=0.55, alpha=0.85, label=nothing)
-                    any_data = true
+                if simulation_stats !== nothing
+                    push!(sim_x, Float64(apo_alt_km))
+                    push!(sim_mid, simulation_stats.mid)
+                    push!(sim_lo, simulation_stats.lo)
+                    push!(sim_hi, simulation_stats.hi)
                 end
             end
-            !any_data && annotate!(sp, 0.5, 5e-5, text("no data", :center, 6, :gray))
-            push!(subplots, sp)
+
+            if !isempty(basic_x)
+                order = sortperm(basic_x)
+                plot!(sp, basic_x[order], basic_y[order];
+                    color=style.color, linestyle=:dashdot, linewidth=1.6,
+                    marker=:diamond, markersize=3.8, markerstrokewidth=0.0,
+                    alpha=0.85, label=nothing)
+                any_data = true
+            end
+            if !isempty(sim_x)
+                order = sortperm(sim_x)
+                sx = sim_x[order]
+                sy = sim_mid[order]
+                slo = sim_lo[order]
+                shi = sim_hi[order]
+                plot!(sp, sx, sy;
+                    color=style.color, linestyle=:solid, linewidth=2.0,
+                    marker=:circle, markersize=3.8, markerstrokewidth=0.0,
+                    alpha=0.95, label=nothing)
+                for (x, lo, hi) in zip(sx, slo, shi)
+                    plot!(sp, [x, x], [lo, hi];
+                        color=style.color, linewidth=1.1, alpha=0.55, label=nothing)
+                end
+                any_data = true
+            end
         end
+        !any_data && annotate!(sp, mean(all_apo_alts), 5e-5, text("no data", :center, 7, :gray))
+        push!(subplots, sp)
     end
 
     leg = plot(
-        framestyle=:none, grid=false, legend=:inside, legendfontsize=6,
+        framestyle=:none, grid=false, legend=:inside, legendfontsize=17,
         background_color_inside=:transparent, background_color_outside=:transparent,
         xlims=(0, 1), ylims=(0, 1),
     )
+    plot!(leg, [NaN], [NaN]; color="#333333", marker=:diamond, linestyle=:solid,
+        markersize=5, markerstrokewidth=0.0, label="Basic")
+    plot!(leg, [NaN], [NaN]; color="#333333", marker=:circle, linestyle=:solid,
+        linewidth=2.0, markersize=5, markerstrokewidth=0.0, label="Simulated parameter")
     for style in _analytical_comparison_styles(opts)
-        model_label = labels[style.model_key] * style.label_suffix
-        plot!(leg, [NaN], [NaN]; color=style.color, linestyle=:solid, linewidth=0.8, label="Simulated $(model_label)")
-        plot!(leg, [NaN], [NaN]; color=style.color, linestyle=:dashdot, linewidth=1.2, label="Basic $(model_label)")
-        plot!(leg, [NaN], [NaN]; color=style.color, linestyle=:dash, linewidth=1.6, label="Detailed $(model_label)")
+        plot!(leg, [NaN], [NaN]; color=style.color, linestyle=:solid, linewidth=3.0,
+            label=_comparison_model_label(style.model_key) * style.label_suffix)
     end
 
-    layout = @eval Plots.@layout [Plots.grid($n_peri, $n_apo) a{0.30w}]
-    title_suffix = length(apo_alts) < length(all_apo_alts) ? " (representative apoapsis cuts)" : ""
+    layout = @eval Plots.@layout [Plots.grid($n_peri, 1) a{0.18w}]
     fig = plot(
         subplots..., leg;
         layout=layout,
-        size=(max(900, 260 * n_apo), 300 * n_peri),
-        plot_title="$(uppercasefirst(planet)) - Simulated vs Analytical Perturbation Parameters$(title_suffix)",
+        size=(940, max(620, 230 * n_peri)),
+        plot_title="$(uppercasefirst(planet)) - Perturbation Parameters vs Apoapsis Altitude",
         plot_titlefontsize=11,
         left_margin=GRID_LEFT_MARGIN,
         bottom_margin=GRID_BOTTOM_MARGIN,
@@ -951,7 +1242,7 @@ function plot_analytical_basic_vs_detailed_time_histories(planet::String, summar
     inc_tag = @sprintf("inc%03.0f", opts.inclination_deg)
     aop_tag = @sprintf("aop%03.0f", opts.argp_deg)
     density_tag = "density_nominal"
-    out_path = joinpath(opts.out_dir, "analytical_basic_vs_detailed_$(planet)_$(ms_tag)_$(inc_tag)_$(aop_tag)_$(density_tag).pdf")
+    out_path = joinpath(opts.out_dir, "analytical_parameter_comparison_$(planet)_$(ms_tag)_$(inc_tag)_$(aop_tag)_$(density_tag).pdf")
     _save_pdf(fig, out_path)
     println("  Saved: $out_path")
     return out_path
@@ -991,15 +1282,15 @@ function plot_regime_heatmaps(summary_df::DataFrame, opts::PlotOptions)
                 periapsis_regimes,
                 z;
                 title=uppercasefirst(planet),
-                titlefontsize=8,
+                titlefontsize=18,
                 xlabel="Apoapsis altitude (km)",
                 ylabel="Regime",
                 color=:viridis,
                 clims=(-9, 0),
                 colorbar_title="log10 ratio",
                 framestyle=:box,
-                guidefontsize=7,
-                tickfontsize=6,
+                guidefontsize=17,
+                tickfontsize=16,
                 xticks=xticks,
                 xrotation=35,
             )
@@ -1035,7 +1326,7 @@ function plot_cross_planet_comparison(summary_df::DataFrame, opts::PlotOptions)
     for (idx, periapsis) in enumerate(periapsis_regimes)
         sp = plot(
             title=uppercasefirst(periapsis),
-            titlefontsize=8,
+            titlefontsize=18,
             xlabel="Apoapsis altitude (km)",
             ylabel=idx == 1 ? _metric_label(opts.metric) : "",
             yscale=:log10,
@@ -1044,8 +1335,8 @@ function plot_cross_planet_comparison(summary_df::DataFrame, opts::PlotOptions)
             framestyle=:box,
             grid=true,
             gridalpha=0.25,
-            guidefontsize=8,
-            tickfontsize=7,
+            guidefontsize=18,
+            tickfontsize=17,
             xticks=apo_xticks,
             xrotation=35,
         )
@@ -1140,8 +1431,8 @@ function plot_rankings(ranking_df::DataFrame, opts::PlotOptions)
         ylabel="",
         title="Top Perturbation Force Ratios",
         titlefontsize=12,
-        guidefontsize=8,
-        tickfontsize=6,
+        guidefontsize=18,
+        tickfontsize=16,
         size=(1300, 900),
         left_margin=58Plots.mm,
         bottom_margin=12Plots.mm,
@@ -1188,7 +1479,7 @@ function plot_orbit_parameter_effects(summary_df::DataFrame, planet::String, par
             subtitle = "$(uppercasefirst(periapsis)) / $(round(Int, apo_alt_km)) km apo"
             sp = plot(
                 title=subtitle,
-                titlefontsize=6,
+                titlefontsize=16,
                 xlabel=peri_idx == n_peri ? "$parameter_label (deg)" : "",
                 ylabel=apo_idx == 1 ? "Peak force / gravity" : "",
                 yscale=:log10,
@@ -1197,8 +1488,8 @@ function plot_orbit_parameter_effects(summary_df::DataFrame, planet::String, par
                 framestyle=:box,
                 grid=true,
                 gridalpha=0.25,
-                guidefontsize=7,
-                tickfontsize=5,
+                guidefontsize=17,
+                tickfontsize=15,
             )
 
             any_data = false
@@ -1240,7 +1531,7 @@ function plot_orbit_parameter_effects(summary_df::DataFrame, planet::String, par
     end
 
     leg = plot(
-        framestyle=:none, grid=false, legend=:inside, legendfontsize=7,
+        framestyle=:none, grid=false, legend=:inside, legendfontsize=17,
         background_color_inside=:transparent, background_color_outside=:transparent,
         xlims=(0, 1), ylims=(0, 1),
     )
@@ -1296,7 +1587,7 @@ function _parse_args(args)::PlotOptions
     time_apo_panels = DEFAULT_TIME_APO_PANELS
     summary_threads = parse(Int, get(ENV, "SPACEAGORA_AERO_PERTURB_SUMMARY_THREADS", string(Threads.nthreads())))
     plot_threads = parse(Int, get(ENV, PLOT_THREADS_ENV, string(Threads.nthreads())))
-    analytical_overlays = "both"
+    analytical_overlays = "basic"
 
     i = 1
     while i <= length(args)
@@ -1398,9 +1689,6 @@ function main(args=ARGS)
             push!(jobs, (label="time histories for $planet", fn=let planet=planet
                 () -> plot_planet_time_histories(opts.run_dir, planet, summary_df, opts)
             end))
-            push!(jobs, (label="analytical comparison for $planet", fn=let planet=planet
-                () -> plot_analytical_basic_vs_detailed_time_histories(planet, summary_df, opts)
-            end))
             push!(jobs, (label="inclination sweep for $planet", fn=let planet=planet, planet_all=copy(planet_all)
                 () -> plot_orbit_parameter_effects(planet_all, planet, :inclination, opts)
             end))
@@ -1408,6 +1696,7 @@ function main(args=ARGS)
                 () -> plot_orbit_parameter_effects(planet_all, planet, :argp, opts)
             end))
         end
+        push!(jobs, (label="nominal analytical comparison", fn=() -> plot_nominal_planet_parameter_comparison(summary_df, opts)))
         _run_plot_jobs_threaded(jobs, opts.plot_threads)
     end
 

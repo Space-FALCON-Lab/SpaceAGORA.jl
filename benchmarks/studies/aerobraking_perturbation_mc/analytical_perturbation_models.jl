@@ -277,6 +277,30 @@ function _state(tbl, idx::Int)
     return pos, vel, mass
 end
 
+function _orbital_geometry(ctx::CaseContext, pos::SVector{3, Float64}, vel::SVector{3, Float64})
+    mu = _planet_mu(ctx.planet)
+    r = norm(pos)
+    v2 = dot(vel, vel)
+    if !(isfinite(r) && r > 0.0 && isfinite(v2) && mu > 0.0)
+        return (a_m=NaN, e=NaN, rp_m=NaN, ra_m=NaN)
+    end
+
+    energy = 0.5 * v2 - mu / r
+    if !(isfinite(energy) && energy < 0.0)
+        return (a_m=NaN, e=NaN, rp_m=NaN, ra_m=NaN)
+    end
+
+    a_m = -mu / (2.0 * energy)
+    h = cross(pos, vel)
+    e_vec = cross(vel, h) / mu - pos / r
+    e = norm(e_vec)
+    if !(isfinite(a_m) && a_m > 0.0 && isfinite(e) && e >= 0.0)
+        return (a_m=NaN, e=NaN, rp_m=NaN, ra_m=NaN)
+    end
+
+    return (a_m=a_m, e=e, rp_m=a_m * (1.0 - e), ra_m=a_m * (1.0 + e))
+end
+
 function _planet_frame(ctx::CaseContext, pos::SVector{3, Float64}, vel::SVector{3, Float64}, t::Float64)
     et = ctx.et0_s + t
     l_pi = SM.planet_frame_lpi(ctx.planet, et, _EPHEMERIDES_MODEL)
@@ -309,15 +333,22 @@ end
     return _planet_mu(ctx.planet) / (r * r)
 end
 
+@inline _planet_radius_m(ctx::CaseContext)::Float64 = ctx.planet.Rp_e
+
 function _basic_j2(ctx::CaseContext)::Float64
-    return 1.5 * ctx.planet.J2 * (ctx.planet.Rp_e / ctx.semi_major_m)^2
+    return _basic_j2(ctx, ctx.semi_major_m)
+end
+
+function _basic_j2(ctx::CaseContext, semi_major_m::Float64)::Float64
+    semi_major_m > 0.0 && isfinite(semi_major_m) || return NaN
+    return 1.5 * ctx.planet.J2 * (_planet_radius_m(ctx) / semi_major_m)^2
 end
 
 function _kaula_harmonics_truncation_degree(ctx::CaseContext)::Int
     max_degree = min(ctx.harmonics_model.L, size(ctx.harmonics_model.C, 1) - 1)
     max_degree < 3 && return max_degree
     K = PLANET_K_HIGHER_HARMONICS[ctx.planet_id]
-    radius_ratio = ctx.planet.Rp_e / ctx.semi_major_m
+    radius_ratio = _planet_radius_m(ctx) / ctx.semi_major_m
     truncation_degree = 3
     for degree in 3:max_degree
         kaula_term = K / degree^2 * radius_ratio^degree
@@ -328,10 +359,25 @@ function _kaula_harmonics_truncation_degree(ctx::CaseContext)::Int
 end
 
 function _basic_harmonics(ctx::CaseContext)::Float64
+    return _basic_harmonics(ctx, ctx.semi_major_m)
+end
+
+function _degree_harmonics_coefficient_norm(ctx::CaseContext, degree::Int)::Float64
+    max_order = min(ctx.harmonics_model.M, size(ctx.harmonics_model.C, 2) - 1)
+    coefficient_norm2 = 0.0
+    for order in 0:min(degree, max_order)
+        coefficient_norm2 += ctx.harmonics_model.C[degree + 1, order + 1]^2 +
+            ctx.harmonics_model.S[degree + 1, order + 1]^2
+    end
+    return sqrt(coefficient_norm2)
+end
+
+function _basic_harmonics(ctx::CaseContext, semi_major_m::Float64)::Float64
+    semi_major_m > 0.0 && isfinite(semi_major_m) || return NaN
     total = 0.0
-    radius_ratio = ctx.planet.Rp_e / ctx.semi_major_m
+    radius_ratio = _planet_radius_m(ctx) / semi_major_m
     for degree in 3:_kaula_harmonics_truncation_degree(ctx)
-        total += abs(ctx.harmonics_model.C[degree + 1, 1]) * radius_ratio^degree
+        total += _degree_harmonics_coefficient_norm(ctx, degree) * radius_ratio^degree
     end
     return total
 end
@@ -347,13 +393,18 @@ function _basic_srp(ctx::CaseContext)::Float64
 end
 
 function _basic_third_body(ctx::CaseContext)::Float64
+    return _basic_third_body(ctx, ctx.ra_m)
+end
+
+function _basic_third_body(ctx::CaseContext, apoapsis_m::Float64)::Float64
+    apoapsis_m > 0.0 && isfinite(apoapsis_m) || return NaN
     positions = _third_body_positions(ctx, 0.0)
     total = 0.0
     for (mu3, pos3) in zip(ctx.nbody_model.body_mus, positions)
         r3 = norm(pos3)
         r3 > 0.0 && isfinite(r3) || continue
         alpha = dot(pos3 / r3, ctx.ra_hat)
-        total += mu3 * ctx.ra_m^2 / (r3^3 * _planet_mu(ctx.planet)) * sqrt(1.0 + 3.0 * alpha^2)
+        total += mu3 * apoapsis_m^3 / (r3^3 * _planet_mu(ctx.planet)) * sqrt(1.0 + 3.0 * alpha^2)
     end
     return total
 end
@@ -390,7 +441,13 @@ function _basic_drag(ctx::CaseContext, tbl)::Float64
         finite_ratios = filter(isfinite, _saved_aero_force_ratios(ctx, tbl))
         !isempty(finite_ratios) && return maximum(finite_ratios)
     end
-    return rho_p * ctx.rp_m / (2.0 * ctx.beta_kg_m2)
+    return _basic_drag(ctx, rho_p, ctx.rp_m)
+end
+
+function _basic_drag(ctx::CaseContext, density_kg_m3::Float64, periapsis_m::Float64)::Float64
+    density_kg_m3 >= 0.0 && isfinite(density_kg_m3) || return NaN
+    periapsis_m > 0.0 && isfinite(periapsis_m) || return NaN
+    return density_kg_m3 * periapsis_m / (2.0 * ctx.beta_kg_m2)
 end
 
 function _detailed_j2(ctx::CaseContext, pos::SVector{3, Float64}, vel::SVector{3, Float64}, t::Float64)::Float64
@@ -410,24 +467,17 @@ function _detailed_j2_force(ctx::CaseContext, pos::SVector{3, Float64}, vel::SVe
     return j2_force - central_force
 end
 
-function _c20_harmonics_force(ctx::CaseContext, model, pos::SVector{3, Float64}, vel::SVector{3, Float64}, mass::Float64, t::Float64)::SVector{3, Float64}
-    model.L >= 2 || return SVector{3, Float64}(0.0, 0.0, 0.0)
-    C20 = Float64(model.C[3, 1])
-    isfinite(C20) && C20 != 0.0 || return SVector{3, Float64}(0.0, 0.0, 0.0)
+function _degree2_harmonics_force(ctx::CaseContext, pos::SVector{3, Float64}, vel::SVector{3, Float64}, mass::Float64, t::Float64)::SVector{3, Float64}
+    ctx.harmonics_model.L >= 2 || return SVector{3, Float64}(0.0, 0.0, 0.0)
     frame = _planet_frame(ctx, pos, vel, t)
-    r = norm(frame.pos_pp)
-    r > 0.0 || return SVector{3, Float64}(0.0, 0.0, 0.0)
-    x, y, z = frame.pos_pp
-    r2 = r * r
-    z2 = z * z
-    J2 = -sqrt(5.0) * C20
-    common = 1.5 * _planet_mu(ctx.planet) * J2 * model.reference_radius_m^2 / (r2 * r2)
-    accel_pp = SVector{3, Float64}(
-        common * (x / r) * (5.0 * z2 / r2 - 1.0),
-        common * (y / r) * (5.0 * z2 / r2 - 1.0),
-        common * (z / r) * (5.0 * z2 / r2 - 3.0),
-    )
-    return mass * (frame.l_pi' * accel_pp)
+    state = SM.StateSample(pos, vel, mass)
+    env = SM.EnvironmentSample(ctx.planet; planet_frame=frame)
+    force, _ = SM.wrench(ctx.degree2_harmonics_model, state, env, t)
+    if ctx.degree2_harmonics_model.include_central
+        central_force, _ = SM.wrench(InverseSquaredGravityModel(), state, env, t)
+        force -= central_force
+    end
+    return force
 end
 
 function _detailed_j2_from_force(ctx::CaseContext, pos::SVector{3, Float64}, vel::SVector{3, Float64}, mass::Float64, t::Float64)::Float64
@@ -444,7 +494,7 @@ function _detailed_harmonics(ctx::CaseContext, pos::SVector{3, Float64}, vel::SV
         central_force, _ = SM.wrench(InverseSquaredGravityModel(), state, env, t)
         force -= central_force
     end
-    force -= _c20_harmonics_force(ctx, ctx.harmonics_model, pos, vel, mass, t)
+    force -= _degree2_harmonics_force(ctx, pos, vel, mass, t)
     return norm(force) / max(mass, eps(Float64)) / _central_ratio_denominator(ctx, norm(pos))
 end
 
@@ -457,11 +507,18 @@ function _detailed_srp(ctx::CaseContext, pos::SVector{3, Float64}, vel::SVector{
 end
 
 function _simulated_j2(ctx::CaseContext, pos::SVector{3, Float64}, vel::SVector{3, Float64}, mass::Float64, t::Float64)::Float64
-    return _detailed_j2_from_force(ctx, pos, vel, mass, t)
+    geometry = _orbital_geometry(ctx, pos, vel)
+    return _basic_j2(ctx, geometry.a_m)
 end
 
 function _simulated_harmonics(ctx::CaseContext, pos::SVector{3, Float64}, vel::SVector{3, Float64}, mass::Float64, t::Float64)::Float64
-    return _detailed_harmonics(ctx, pos, vel, mass, t)
+    geometry = _orbital_geometry(ctx, pos, vel)
+    return _basic_harmonics(ctx, geometry.a_m)
+end
+
+function _simulated_third_body(ctx::CaseContext, pos::SVector{3, Float64}, vel::SVector{3, Float64})::Float64
+    geometry = _orbital_geometry(ctx, pos, vel)
+    return _basic_third_body(ctx, geometry.ra_m)
 end
 
 function _simulated_srp(ctx::CaseContext, pos::SVector{3, Float64}, vel::SVector{3, Float64}, mass::Float64, t::Float64)::Float64
@@ -507,6 +564,48 @@ function _effective_cda_over_m(tbl, idx::Int)::Float64
     return drag / (q * mass)
 end
 
+function _density_at_altitude(ctx::CaseContext, tbl, altitude_m::Float64)::Float64
+    isfinite(altitude_m) || return NaN
+    names_set = Set(Symbol.(propertynames(tbl)))
+    :density_kg_m3 in names_set || return NaN
+
+    altitudes = if :altitude_m in names_set
+        Float64.(tbl.altitude_m)
+    else
+        [
+            norm(SVector{3, Float64}(
+                Float64(tbl.sc1_pos_1[i]),
+                Float64(tbl.sc1_pos_2[i]),
+                Float64(tbl.sc1_pos_3[i]),
+            )) - ctx.planet.Rp_e for i in eachindex(tbl.density_kg_m3)
+        ]
+    end
+
+    samples = Tuple{Float64, Float64}[]
+    for (alt, rho_raw) in zip(altitudes, tbl.density_kg_m3)
+        rho = Float64(rho_raw)
+        if isfinite(alt) && isfinite(rho) && rho > 0.0
+            push!(samples, (Float64(alt), rho))
+        end
+    end
+    isempty(samples) && return NaN
+
+    sort!(samples; by=first)
+    altitude_m <= samples[1][1] && return samples[1][2]
+    altitude_m >= samples[end][1] && return samples[end][2]
+
+    for i in 1:(length(samples) - 1)
+        alt_lo, rho_lo = samples[i]
+        alt_hi, rho_hi = samples[i + 1]
+        if alt_lo <= altitude_m <= alt_hi
+            alt_hi == alt_lo && return rho_lo
+            f = (altitude_m - alt_lo) / (alt_hi - alt_lo)
+            return exp((1.0 - f) * log(rho_lo) + f * log(rho_hi))
+        end
+    end
+    return samples[end][2]
+end
+
 function _detailed_drag(ctx::CaseContext, tbl, idx::Int, pos::SVector{3, Float64}, vel::SVector{3, Float64}, t::Float64)::Float64
     names_set = Set(Symbol.(propertynames(tbl)))
     :density_kg_m3 in names_set || return _saved_aero_force_ratio(ctx, tbl, idx)
@@ -542,17 +641,11 @@ function _saved_force_ratio(ctx::CaseContext, tbl, idx::Int)::Float64
     return isfinite(ratio) ? ratio : NaN
 end
 
-function _simulated_drag(ctx::CaseContext, tbl, idx::Int)::Float64
-    names_set = Set(Symbol.(propertynames(tbl)))
-    required = (:sc1_drag_1, :sc1_drag_2, :sc1_drag_3, :sc1_lift_1, :sc1_lift_2, :sc1_lift_3, :sc1_cross_1, :sc1_cross_2, :sc1_cross_3)
-    all(name -> name in names_set, required) || return _saved_force_ratio(ctx, tbl, idx)
-    pos, _, mass = _state(tbl, idx)
-    force = SVector{3, Float64}(
-        Float64(tbl.sc1_drag_1[idx]) + Float64(tbl.sc1_lift_1[idx]) + Float64(tbl.sc1_cross_1[idx]),
-        Float64(tbl.sc1_drag_2[idx]) + Float64(tbl.sc1_lift_2[idx]) + Float64(tbl.sc1_cross_2[idx]),
-        Float64(tbl.sc1_drag_3[idx]) + Float64(tbl.sc1_lift_3[idx]) + Float64(tbl.sc1_cross_3[idx]),
-    )
-    return norm(force) / max(mass, eps(Float64)) / _central_ratio_denominator(ctx, norm(pos))
+function _simulated_drag(ctx::CaseContext, tbl, pos::SVector{3, Float64}, vel::SVector{3, Float64})::Float64
+    geometry = _orbital_geometry(ctx, pos, vel)
+    rp_altitude_m = geometry.rp_m - ctx.planet.Rp_e
+    rho_p = _density_at_altitude(ctx, tbl, rp_altitude_m)
+    return _basic_drag(ctx, rho_p, geometry.rp_m)
 end
 
 function _empty_series(n::Int)
@@ -621,9 +714,9 @@ function _simulated_model_ratio_series_unlocked(info, tbl, model_key::Symbol, in
         elseif model_key == :srp
             _simulated_srp(ctx, pos, vel, mass, t)
         elseif model_key == :third_body
-            _saved_force_ratio(ctx, tbl, idx)
+            _simulated_third_body(ctx, pos, vel)
         elseif model_key == :drag
-            _simulated_drag(ctx, tbl, idx)
+            _simulated_drag(ctx, tbl, pos, vel)
         else
             _saved_force_ratio(ctx, tbl, idx)
         end

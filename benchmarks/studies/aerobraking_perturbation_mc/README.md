@@ -184,17 +184,22 @@ you want to plot an older dataset.
 
 The plotting pass writes `plots/perturbation_force_ratio_summary.feather`,
 `plots/perturbation_force_ratio_summary.csv`, a filtered summary CSV, per-planet
-time-history PDFs, cross-planet heatmaps/comparison plots, and ranking tables.
+time-history PDFs, compact parameter-comparison PDFs, cross-planet heatmaps/comparison plots, and ranking tables.
 The force ratio is
 `active_perturbation_force_mag / (sc1_mass * GM / norm(sc1_pos)^2)`. Useful
 plotting options include `--metric peak|p95|p50|max_in_atmosphere`,
 `--plot-set all|time|heatmaps|rankings`, and
 `--density-case nominal|low|high|all` (default: `nominal`). Time-history plots include analytical
-basic/detailed perturbation-parameter overlays by default; use
-`--analytical-overlays none|basic|detailed|both` to control them. The plotting
-pass also writes per-planet `analytical_basic_vs_detailed_*.pdf` comparison
-plots for the selected time-history cuts, with nominal-density aero only and separate J2, higher-degree
-harmonics, SRP, third-body, and aerodynamic analytical curves. Summary generation uses multiple threads
+basic perturbation-parameter overlays by default; use
+`--analytical-overlays none|basic` to control them. The plotting
+pass also writes one `analytical_parameter_comparison_nominal_planets_*.pdf`
+marker plot with apoapsis altitude on the horizontal axis and one nominal-periapsis
+panel per planet, with nominal-density aero only and separate J2, higher-degree
+harmonics, third-body, and aerodynamic analytical parameters. The simulated
+comparison marker uses saved perturbing force divided by central-body gravity at
+the same trajectory point: time-weighted orbit averages for J2 and third-body,
+recomputed with degree-2 harmonics removed then time-weighted for higher
+harmonics, and peak value for drag. Summary generation uses multiple threads
 by default: if the plotting script is launched from a single-threaded Julia
 process, it restarts itself with `--threads=auto`. Cap summary worker tasks with
 `--summary-threads N` or `SPACEAGORA_AERO_PERTURB_SUMMARY_THREADS=N` when memory

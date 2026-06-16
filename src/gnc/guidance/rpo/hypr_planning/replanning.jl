@@ -38,6 +38,7 @@ struct RPOReplanningConfig
     sphere_surface_samples::Int
     remaining_sample_ds_m::Float64
     tracking_error_retime_m::Float64
+    tracking_error_replan_m::Float64
     rng_seed::Int
 end
 
@@ -64,7 +65,7 @@ function _rpo_replanning_sphere(value)
 end
 
 """Runtime replanning policy for dynamic RPO obstacles, goal changes, and tracking errors."""
-function RPOReplanningConfig(; enabled::Bool=true, spheres=RPOReplanningSphere[], desired_goal_rtn=nothing, goal_change_tolerance_m::Real=1.0e-6, safe_distance_m::Real=0.0, retime_clearance_m::Real=0.25, min_replan_interval_s::Real=0.0, hysteresis_samples::Integer=1, sphere_surface_samples::Integer=96, remaining_sample_ds_m::Real=0.10, tracking_error_retime_m::Real=Inf, rng_seed::Integer=740)
+function RPOReplanningConfig(; enabled::Bool=true, spheres=RPOReplanningSphere[], desired_goal_rtn=nothing, goal_change_tolerance_m::Real=1.0e-6, safe_distance_m::Real=0.0, retime_clearance_m::Real=0.25, min_replan_interval_s::Real=0.0, hysteresis_samples::Integer=1, sphere_surface_samples::Integer=96, remaining_sample_ds_m::Real=0.10, tracking_error_retime_m::Real=Inf, tracking_error_replan_m::Real=Inf, rng_seed::Integer=740)
     sphere_vec = RPOReplanningSphere[_rpo_replanning_sphere(s) for s in spheres]
     desired_goal = desired_goal_rtn === nothing ? nothing : SVector{3, Float64}(desired_goal_rtn)
     goal_tol = Float64(goal_change_tolerance_m)
@@ -72,7 +73,8 @@ function RPOReplanningConfig(; enabled::Bool=true, spheres=RPOReplanningSphere[]
     retime = Float64(retime_clearance_m)
     min_interval = Float64(min_replan_interval_s)
     sample_ds = Float64(remaining_sample_ds_m)
-    tracking_error = Float64(tracking_error_retime_m)
+    tracking_error_retime = max(0.0, Float64(tracking_error_retime_m))
+    tracking_error_replan = max(0.0, Float64(tracking_error_replan_m))
     goal_tol >= 0.0 || throw(ArgumentError("goal_change_tolerance_m must be nonnegative."))
     safe >= 0.0 || throw(ArgumentError("safe_distance_m must be nonnegative."))
     retime >= safe || throw(ArgumentError("retime_clearance_m must be >= safe_distance_m."))
@@ -80,7 +82,8 @@ function RPOReplanningConfig(; enabled::Bool=true, spheres=RPOReplanningSphere[]
     hysteresis_samples >= 1 || throw(ArgumentError("hysteresis_samples must be >= 1."))
     sphere_surface_samples >= 12 || throw(ArgumentError("sphere_surface_samples must be >= 12."))
     sample_ds > 0.0 || throw(ArgumentError("remaining_sample_ds_m must be positive."))
-    (tracking_error > 0.0 || isinf(tracking_error)) || throw(ArgumentError("tracking_error_retime_m must be positive or Inf."))
+    !isnan(tracking_error_retime) || throw(ArgumentError("tracking_error_retime_m must not be NaN."))
+    !isnan(tracking_error_replan) || throw(ArgumentError("tracking_error_replan_m must not be NaN."))
     return RPOReplanningConfig(
         enabled,
         sphere_vec,
@@ -92,7 +95,8 @@ function RPOReplanningConfig(; enabled::Bool=true, spheres=RPOReplanningSphere[]
         Int(hysteresis_samples),
         Int(sphere_surface_samples),
         sample_ds,
-        tracking_error,
+        tracking_error_retime,
+        tracking_error_replan,
         Int(rng_seed),
     )
 end
@@ -223,6 +227,9 @@ function rpo_replanning_decision(plan::RPOPlan, current_rtn, geometry::RPORefere
     end
     if isempty(spheres)
         tracking_error = rpo_reference_tracking_error(plan, current_rtn)
+        if tracking_error > config.tracking_error_replan_m
+            return (action=:replan, reason=:tracking_error, min_clearance=Inf, spheres=spheres, geometry=geometry)
+        end
         if tracking_error > config.tracking_error_retime_m
             return (action=:retime, reason=:tracking_error, min_clearance=Inf, spheres=spheres, geometry=geometry)
         end

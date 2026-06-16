@@ -25,20 +25,43 @@ Base.@kwdef struct RPOPlannerComparisonCase
 end
 
 """Configuration for running and exporting RPO planner comparison batches."""
+const RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M = 0.5
+
 Base.@kwdef struct RPOPlannerComparisonConfig
     planners::Vector{Symbol} = [:hypr, :pso_unrefined, :rrt_connect, :rrt_connect_bezier, :rrt_star, :chomp, :stomp]
-    pso_config::RPOPSOConfig = rpo_740_mpc_final_pso_config()
+    pso_config::RPOPSOConfig = rpo_740_mpc_final_pso_config(safe_distance_m=RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M)
     rrt_connect::RPORRTConnectSettings = RPORRTConnectSettings()
     rrt_star::RPORRTStarSettings = RPORRTStarSettings()
     chomp::RPOCHOMPSettings = RPOCHOMPSettings(n_iters=pso_config.n_iters)
     stomp::RPOSTOMPSettings = RPOSTOMPSettings(n_iters=pso_config.n_iters)
     optimizer::RPOTrajectoryOptimizerSettings = RPOTrajectoryOptimizerSettings()
     tracking::RPOLQMPCTrackingSettings = RPOLQMPCTrackingSettings()
-    safe_distance_m::Float64 = pso_config.safe_distance_m
+    safe_distance_m::Float64 = pso_config.safe_distance_m > 0.0 ? pso_config.safe_distance_m : RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M
     output_dir::String = joinpath(pwd(), "rpo_planner_comparison")
     write_plotly_outputs::Bool = true
+    write_failed_path_outputs::Bool = true
     rng_seed::Int = 740
     show_progress::Bool = true
+end
+
+"""Return the comparison config with planner cost safety pinned to the published 0.5 m value."""
+function _rpo_comparison_config_with_fixed_safe_distance(cfg::RPOPlannerComparisonConfig)
+    return RPOPlannerComparisonConfig(
+        planners=cfg.planners,
+        pso_config=rpo_pso_config(cfg.pso_config; safe_distance_m=RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M),
+        rrt_connect=cfg.rrt_connect,
+        rrt_star=cfg.rrt_star,
+        chomp=cfg.chomp,
+        stomp=cfg.stomp,
+        optimizer=cfg.optimizer,
+        tracking=cfg.tracking,
+        safe_distance_m=RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M,
+        output_dir=cfg.output_dir,
+        write_plotly_outputs=cfg.write_plotly_outputs,
+        write_failed_path_outputs=cfg.write_failed_path_outputs,
+        rng_seed=cfg.rng_seed,
+        show_progress=cfg.show_progress,
+    )
 end
 
 """Render a fixed-width text progress bar for planner comparison output."""
@@ -150,6 +173,7 @@ function rpo_740_mpc_final_pso_config(; safe_distance_m::Real=0.0, goal_collisio
         reexplore_waypoint_scale=1.5,
         reexplore_waypoint_increment=2,
         reexplore_max_waypoints=max(8 + 4, Int(ceil(1.5 * 8))),
+        rrt_warmstart_enable=true,
         refinement_enable=true,
         refinement_start_iter=60,
         refinement_period=10,
@@ -182,6 +206,25 @@ function _rpo_comparison_rrt_connect_settings(cfg::RPOPlannerComparisonConfig, n
         collision_safe_distance_fraction=src.collision_safe_distance_fraction,
         collision_obstacle_guard_fraction=src.collision_obstacle_guard_fraction,
         connect_max_steps=src.connect_max_steps,
+        shortcut_iters=src.shortcut_iters,
+    )
+end
+
+"""Build RRT* settings for comparison planners with a caller-selected iteration cap."""
+function _rpo_comparison_rrt_star_settings(cfg::RPOPlannerComparisonConfig, n_iters::Integer)
+    src = cfg.rrt_star
+    return RPORRTStarSettings(
+        n_iters=Int(n_iters),
+        step_size_m=src.step_size_m,
+        goal_sample_rate=src.goal_sample_rate,
+        collision_sample_ds_m=src.collision_sample_ds_m,
+        adaptive_collision_sampling_enable=src.adaptive_collision_sampling_enable,
+        collision_max_sample_ds_m=src.collision_max_sample_ds_m,
+        collision_far_clearance_m=src.collision_far_clearance_m,
+        collision_sampling_power=src.collision_sampling_power,
+        collision_safe_distance_fraction=src.collision_safe_distance_fraction,
+        collision_obstacle_guard_fraction=src.collision_obstacle_guard_fraction,
+        neighbor_radius_m=src.neighbor_radius_m,
         shortcut_iters=src.shortcut_iters,
     )
 end
@@ -221,6 +264,7 @@ function rpo_plan_comparison_path(
     rng=Random.default_rng(),
     runtime_limit_s::Real=Inf,
 )
+    cfg = _rpo_comparison_config_with_fixed_safe_distance(cfg)
     planner = normalize_rpo_comparison_planner_type(planner_type)
     base_cfg = rpo_pso_config(cfg.pso_config; safe_distance_m=cfg.safe_distance_m)
     # Choose optimizer iterations from the runtime-limited override, HYPR matching, or planner default.
@@ -296,14 +340,7 @@ function rpo_plan_comparison_path(
             planner_iteration_count=plan.iterations,
         ))
     elseif planner == :rrt_star
-        settings = RPORRTStarSettings(
-            n_iters=runtime_limited_iters(cfg.rrt_star.n_iters),
-            step_size_m=cfg.rrt_star.step_size_m,
-            goal_sample_rate=cfg.rrt_star.goal_sample_rate,
-            collision_sample_ds_m=cfg.rrt_star.collision_sample_ds_m,
-            neighbor_radius_m=cfg.rrt_star.neighbor_radius_m,
-            shortcut_iters=cfg.rrt_star.shortcut_iters,
-        )
+        settings = _rpo_comparison_rrt_star_settings(cfg, runtime_limited_iters(cfg.rrt_star.n_iters))
         plan = rpo_rrt_star_plan_path(
             start_rtn,
             goal_rtn,
@@ -505,6 +542,7 @@ end
 
 """Run all configured RPO planners across all comparison cases."""
 function rpo_run_planner_comparison_batch(cases, geometry, cfg::RPOPlannerComparisonConfig=RPOPlannerComparisonConfig())
+    cfg = _rpo_comparison_config_with_fixed_safe_distance(cfg)
     comparison_cases = collect(cases)
     planner_types = [normalize_rpo_comparison_planner_type(p) for p in cfg.planners]
     if cfg.optimizer.match_hypr_runtime && (:hypr in planner_types)
@@ -882,6 +920,142 @@ function rpo_comparison_path_family_plot(batch; planner=nothing)
     )
 end
 
+"""Create a 3D Plotly view for one planner/case path."""
+function rpo_comparison_single_path_plot(batch, plan; planner)
+    planner_type = normalize_rpo_comparison_planner_type(planner)
+    label = rpo_comparison_planner_label(planner_type)
+    case_label = plan.case.label
+    ref = plan.tracking.r_ref_rtn
+    actual = plan.tracking.x_hist[1:3, :]
+    traces = PlotlyJS.GenericTrace[rpo_comparison_station_trace(batch)]
+    push!(traces, PlotlyJS.scatter3d(
+        x=ref[1, :],
+        y=ref[2, :],
+        z=ref[3, :],
+        mode="lines",
+        line=PlotlyJS.attr(width=5, dash="dot", color="rgb(45,95,170)"),
+        name="desired",
+    ))
+    push!(traces, PlotlyJS.scatter3d(
+        x=actual[1, :],
+        y=actual[2, :],
+        z=actual[3, :],
+        mode="lines",
+        line=PlotlyJS.attr(width=5, color="rgb(205,92,55)"),
+        name="tracked",
+    ))
+    if hasproperty(plan, :raw_path)
+        raw = Matrix{Float64}(plan.raw_path)
+        push!(traces, PlotlyJS.scatter3d(
+            x=raw[1, :],
+            y=raw[2, :],
+            z=raw[3, :],
+            mode="lines+markers",
+            line=PlotlyJS.attr(width=2, dash="dash", color="rgb(110,110,110)"),
+            marker=PlotlyJS.attr(size=3, color="rgb(110,110,110)"),
+            name="raw planner path",
+        ))
+    end
+    push!(traces, PlotlyJS.scatter3d(
+        x=[plan.case.start_rtn[1]],
+        y=[plan.case.start_rtn[2]],
+        z=[plan.case.start_rtn[3]],
+        mode="markers",
+        marker=PlotlyJS.attr(size=7, color="rgb(45,150,90)", symbol="circle"),
+        name="start",
+    ))
+    push!(traces, PlotlyJS.scatter3d(
+        x=[plan.case.goal_rtn[1]],
+        y=[plan.case.goal_rtn[2]],
+        z=[plan.case.goal_rtn[3]],
+        mode="markers",
+        marker=PlotlyJS.attr(size=8, color="rgb(190,60,55)", symbol="diamond"),
+        name="goal",
+    ))
+    return PlotlyJS.Plot(
+        traces,
+        PlotlyJS.Layout(
+            title="$(label) Failed Case $(case_label) Path",
+            scene=PlotlyJS.attr(
+                aspectmode="data",
+                xaxis_title="radial (m)",
+                yaxis_title="along-track (m)",
+                zaxis_title="cross-track (m)",
+            ),
+        ),
+    )
+end
+
+"""Create a 3D Plotly view containing all failed paths for one planner."""
+function rpo_comparison_failed_paths_plot(batch; planner, failed_indices)
+    planner_type = normalize_rpo_comparison_planner_type(planner)
+    label = rpo_comparison_planner_label(planner_type)
+    traces = PlotlyJS.GenericTrace[rpo_comparison_station_trace(batch)]
+    plans = batch.plans_by_planner[planner_type]
+    for idx in failed_indices
+        plan = plans[idx]
+        case_label = plan.case.label
+        ref = plan.tracking.r_ref_rtn
+        actual = plan.tracking.x_hist[1:3, :]
+        push!(traces, PlotlyJS.scatter3d(
+            x=ref[1, :],
+            y=ref[2, :],
+            z=ref[3, :],
+            mode="lines",
+            line=PlotlyJS.attr(width=4, dash="dot"),
+            name="case $(case_label) desired",
+        ))
+        push!(traces, PlotlyJS.scatter3d(
+            x=actual[1, :],
+            y=actual[2, :],
+            z=actual[3, :],
+            mode="lines",
+            line=PlotlyJS.attr(width=4),
+            name="case $(case_label) tracked",
+        ))
+        if hasproperty(plan, :raw_path)
+            raw = Matrix{Float64}(plan.raw_path)
+            push!(traces, PlotlyJS.scatter3d(
+                x=raw[1, :],
+                y=raw[2, :],
+                z=raw[3, :],
+                mode="lines+markers",
+                line=PlotlyJS.attr(width=2, dash="dash"),
+                marker=PlotlyJS.attr(size=3),
+                name="case $(case_label) raw planner path",
+            ))
+        end
+        push!(traces, PlotlyJS.scatter3d(
+            x=[plan.case.start_rtn[1]],
+            y=[plan.case.start_rtn[2]],
+            z=[plan.case.start_rtn[3]],
+            mode="markers",
+            marker=PlotlyJS.attr(size=6, color="rgb(45,150,90)", symbol="circle"),
+            name="case $(case_label) start",
+        ))
+        push!(traces, PlotlyJS.scatter3d(
+            x=[plan.case.goal_rtn[1]],
+            y=[plan.case.goal_rtn[2]],
+            z=[plan.case.goal_rtn[3]],
+            mode="markers",
+            marker=PlotlyJS.attr(size=7, color="rgb(190,60,55)", symbol="diamond"),
+            name="case $(case_label) goal",
+        ))
+    end
+    return PlotlyJS.Plot(
+        traces,
+        PlotlyJS.Layout(
+            title="$(label) Failed Case Paths ($(length(failed_indices)))",
+            scene=PlotlyJS.attr(
+                aspectmode="data",
+                xaxis_title="radial (m)",
+                yaxis_title="along-track (m)",
+                zaxis_title="cross-track (m)",
+            ),
+        ),
+    )
+end
+
 """Choose x-axis values for a planner cost-history trace."""
 function rpo_comparison_cost_iteration_xvalues(plan, costs)
     n = length(costs)
@@ -948,11 +1122,35 @@ function rpo_comparison_cost_iteration_plot(batch; planner)
     )
 end
 
+"""Return a filesystem-safe token for generated planner-comparison artifact names."""
+function rpo_comparison_artifact_slug(value)
+    token = replace(lowercase(String(value)), r"[^a-z0-9_=-]+" => "_")
+    token = strip(token, '_')
+    return isempty(token) ? "case" : token
+end
+
+"""Write one path HTML per planner containing all failed planner/case results."""
+function rpo_write_failed_path_outputs(batch, output_dir::AbstractString)
+    failed_dir = joinpath(output_dir, "rpo_failed_path_plots")
+    failed_path_plots = Dict{Symbol, String}()
+    for planner in batch.planner_types
+        results = batch.results_by_planner[planner]
+        failed_indices = [idx for idx in eachindex(results) if !results[idx].success]
+        isempty(failed_indices) && continue
+        mkpath(failed_dir)
+        path = joinpath(failed_dir, "rpo_failed_paths_$(planner).html")
+        PlotlyJS.savefig(rpo_comparison_failed_paths_plot(batch; planner=planner, failed_indices=failed_indices), path)
+        failed_path_plots[planner] = path
+    end
+    return failed_path_plots
+end
+
 """Write planner comparison CSVs and plots to the requested output directory."""
 function rpo_write_planner_comparison_outputs(
     batch;
     output_dir::AbstractString=batch.config.output_dir,
     write_plotly_outputs::Bool=batch.config.write_plotly_outputs,
+    write_failed_path_outputs::Bool=batch.config.write_failed_path_outputs,
 )
     mkpath(output_dir)
     rows = rpo_flatten_planner_results(batch)
@@ -962,6 +1160,7 @@ function rpo_write_planner_comparison_outputs(
     path_plot_path = nothing
     method_path_plots = Dict{Symbol, String}()
     cost_iteration_plots = Dict{Symbol, String}()
+    failed_path_plots = Dict{Symbol, String}()
 
     if write_plotly_outputs
         metric_plot_path = joinpath(output_dir, "rpo_planner_comparison_metrics.html")
@@ -982,6 +1181,9 @@ function rpo_write_planner_comparison_outputs(
             cost_iteration_plots[planner] = cost_path
         end
     end
+    if write_failed_path_outputs
+        failed_path_plots = rpo_write_failed_path_outputs(batch, output_dir)
+    end
 
     return (
         csv=csv_path,
@@ -989,6 +1191,8 @@ function rpo_write_planner_comparison_outputs(
         path_plot=path_plot_path,
         method_path_plots=method_path_plots,
         cost_iteration_plots=cost_iteration_plots,
+        failed_path_plots=failed_path_plots,
         plotly_outputs=write_plotly_outputs,
+        failed_path_outputs=write_failed_path_outputs,
     )
 end

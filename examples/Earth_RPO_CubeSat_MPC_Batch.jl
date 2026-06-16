@@ -412,6 +412,247 @@ function _rpo_seeded_cases_dataframe(cases)
     ])
 end
 
+function _rpo_repro_value(value)
+    if value isa AbstractArray
+        return join(string.(vec(collect(value))), ";")
+    elseif value isa Tuple
+        return join(string.(value), ";")
+    elseif value isa Symbol
+        return String(value)
+    else
+        return string(value)
+    end
+end
+
+function _rpo_repro_push!(rows, category, parameter, value; units="", source="", notes="")
+    push!(rows, (
+        category=String(category),
+        parameter=String(parameter),
+        value=_rpo_repro_value(value),
+        units=String(units),
+        source=String(source),
+        notes=String(notes),
+    ))
+    return rows
+end
+
+function _rpo_case_clearance_summary(cases, geometry)
+    start_clearances = [RPO_NAV.rpo_clearance_to_station(case.start_rtn, geometry).clearance for case in cases]
+    goal_clearances = [RPO_NAV.rpo_clearance_to_station(case.goal_rtn, geometry).clearance for case in cases]
+    all_clearances = vcat(start_clearances, goal_clearances)
+    return (
+        start_min=minimum(start_clearances),
+        start_mean=mean(start_clearances),
+        goal_min=minimum(goal_clearances),
+        goal_mean=mean(goal_clearances),
+        endpoint_min=minimum(all_clearances),
+        endpoint_mean=mean(all_clearances),
+    )
+end
+
+function _write_rpo_planner_comparison_reproducibility_csv(
+    path::AbstractString;
+    cfg::RPOPlannerComparisonConfig,
+    pso_cfg::RPOPSOConfig,
+    tracking::RPOLQMPCTrackingSettings,
+    generated_cases,
+    geometry,
+    n_cases::Integer,
+    seed::Integer,
+    geometry_seed::Integer,
+    n_station_points::Integer,
+    endpoint_min_clearance_m::Real,
+    endpoint_max_clearance_m::Real,
+    endpoint_clearance_margin_m::Real,
+    min_separation_m::Real,
+    surrounded_max_distance_m::Real,
+    max_sampling_tries::Integer,
+    obstacle_weight_scale::Real,
+    obstacle_margin_m::Real,
+    runtime_limit_s::Real,
+    write_failed_path_outputs::Bool,
+)
+    rows = NamedTuple[]
+    clearance_summary = _rpo_case_clearance_summary(generated_cases, geometry)
+    control_points = pso_cfg.curve_type == :bezier ? pso_cfg.n_waypoints + 2 : pso_cfg.n_waypoints
+
+    _rpo_repro_push!(rows, "run", "n_cases", n_cases; source="CLI --runs / SPACEAGORA_RPO_COMPARISON_N")
+    _rpo_repro_push!(rows, "run", "rng_seed", seed; source="SPACEAGORA_RPO_COMPARISON_SEED")
+    _rpo_repro_push!(rows, "run", "geometry_seed", geometry_seed; source="comparison case generator")
+    _rpo_repro_push!(rows, "run", "julia_version", VERSION)
+    _rpo_repro_push!(rows, "run", "julia_num_threads", Threads.nthreads())
+    _rpo_repro_push!(rows, "run", "smoke_mode", _rpo_batch_smoke_mode(); source="SPACEAGORA_EXAMPLE_SMOKE")
+    _rpo_repro_push!(rows, "run", "planners", join(string.(cfg.planners), ";"))
+    _rpo_repro_push!(rows, "run", "runtime_limit_s", runtime_limit_s; units="s")
+    _rpo_repro_push!(rows, "run", "failed_path_plots", write_failed_path_outputs; source="SPACEAGORA_RPO_COMPARISON_FAILED_PATH_PLOTS")
+
+    _rpo_repro_push!(rows, "pso", "particles", pso_cfg.n_particles)
+    _rpo_repro_push!(rows, "pso", "iterations", pso_cfg.n_iters)
+    _rpo_repro_push!(rows, "pso", "internal_waypoints", pso_cfg.n_waypoints)
+    _rpo_repro_push!(rows, "pso", "control_points", control_points; notes="Bezier includes start and goal endpoints.")
+    _rpo_repro_push!(rows, "pso", "curve_type", pso_cfg.curve_type)
+    _rpo_repro_push!(rows, "pso", "sample_ds_m", pso_cfg.sample_ds_m; units="m")
+    _rpo_repro_push!(rows, "pso", "search_margin_m", pso_cfg.search_margin_m; units="m")
+    _rpo_repro_push!(rows, "pso", "spread_scale", pso_cfg.spread_scale)
+    _rpo_repro_push!(rows, "pso", "w_len", pso_cfg.w_len)
+    _rpo_repro_push!(rows, "pso", "w_obs", pso_cfg.w_obs)
+    _rpo_repro_push!(rows, "pso", "w_fuel", pso_cfg.w_fuel)
+    _rpo_repro_push!(rows, "pso", "w_inertia", pso_cfg.w_inertia)
+    _rpo_repro_push!(rows, "pso", "c1", pso_cfg.c1)
+    _rpo_repro_push!(rows, "pso", "c2", pso_cfg.c2)
+    _rpo_repro_push!(rows, "pso", "obstacle_sigmoid_k", pso_cfg.obstacle_sigmoid_k)
+    _rpo_repro_push!(rows, "pso", "tau_tol", 1.0e-10; units="m", source="rpo_retime_path duplicate_tol_m default")
+    _rpo_repro_push!(rows, "pso", "obstacle_sigmoid_tol_m", pso_cfg.obstacle_sigmoid_tol_m; units="m")
+    _rpo_repro_push!(rows, "pso", "alpha_v", pso_cfg.retime_speed_scale; source="RPOPSOConfig.retime_speed_scale")
+    _rpo_repro_push!(rows, "pso", "d_safe", cfg.safe_distance_m; units="m", source="RPOPlannerComparisonConfig.safe_distance_m")
+    _rpo_repro_push!(rows, "pso", "reaction_time_s", pso_cfg.retime_reaction_time_s; units="s")
+    _rpo_repro_push!(rows, "pso", "braking_acceleration_mps2", pso_cfg.retime_a_max_mps2; units="m/s^2")
+    _rpo_repro_push!(rows, "pso", "retime_dt_s", pso_cfg.retime_dt_s; units="s")
+    _rpo_repro_push!(rows, "pso", "retime_min_speed_mps", pso_cfg.retime_min_speed_mps; units="m/s")
+    _rpo_repro_push!(rows, "pso", "retime_max_speed_mps", pso_cfg.retime_max_speed_mps; units="m/s")
+    _rpo_repro_push!(rows, "pso", "retime_max_steps", pso_cfg.retime_max_steps)
+    _rpo_repro_push!(rows, "pso", "cost_ref_distance_m", pso_cfg.cost_ref_distance_m; units="m")
+    _rpo_repro_push!(rows, "pso", "mass_kg", pso_cfg.mass_kg; units="kg")
+    _rpo_repro_push!(rows, "pso", "tf_s", pso_cfg.tf_s; units="s")
+    _rpo_repro_push!(rows, "pso", "isp_s", pso_cfg.isp_s; units="s")
+
+    _rpo_repro_push!(rows, "hypr_adaptive", "adaptive_enable", pso_cfg.adaptive_enable)
+    _rpo_repro_push!(rows, "hypr_adaptive", "adaptive_allow_downscale", pso_cfg.adaptive_allow_downscale)
+    _rpo_repro_push!(rows, "hypr_adaptive", "adaptive_complexity_weight", pso_cfg.adaptive_complexity_weight)
+    _rpo_repro_push!(rows, "hypr_adaptive", "adaptive_distance_weight", pso_cfg.adaptive_distance_weight)
+    _rpo_repro_push!(rows, "hypr_adaptive", "adaptive_waypoint_gain", pso_cfg.adaptive_waypoint_gain)
+    _rpo_repro_push!(rows, "hypr_adaptive", "adaptive_effort_min_fraction", pso_cfg.adaptive_effort_min_fraction)
+    _rpo_repro_push!(rows, "hypr_adaptive", "adaptive_effort_max_fraction", pso_cfg.adaptive_effort_max_fraction)
+    _rpo_repro_push!(rows, "hypr_adaptive", "n_waypoints_range", (pso_cfg.adaptive_n_waypoints_min, pso_cfg.adaptive_n_waypoints_max))
+    _rpo_repro_push!(rows, "hypr_adaptive", "n_particles_range", (pso_cfg.adaptive_n_particles_min, pso_cfg.adaptive_n_particles_max))
+    _rpo_repro_push!(rows, "hypr_adaptive", "n_iters_range", (pso_cfg.adaptive_n_iters_min, pso_cfg.adaptive_n_iters_max))
+    _rpo_repro_push!(rows, "hypr_adaptive", "w_len_range", (pso_cfg.adaptive_w_len_min, pso_cfg.adaptive_w_len_max))
+    _rpo_repro_push!(rows, "hypr_adaptive", "w_obs_range", (pso_cfg.adaptive_w_obs_min, pso_cfg.adaptive_w_obs_max))
+    _rpo_repro_push!(rows, "hypr_adaptive", "w_inertia_range", (pso_cfg.adaptive_w_inertia_min, pso_cfg.adaptive_w_inertia_max))
+    _rpo_repro_push!(rows, "hypr_adaptive", "c1_range", (pso_cfg.adaptive_c1_min, pso_cfg.adaptive_c1_max))
+    _rpo_repro_push!(rows, "hypr_adaptive", "c2_range", (pso_cfg.adaptive_c2_min, pso_cfg.adaptive_c2_max))
+    _rpo_repro_push!(rows, "hypr_adaptive", "spread_scale_range", (pso_cfg.adaptive_spread_scale_min, pso_cfg.adaptive_spread_scale_max))
+    _rpo_repro_push!(rows, "hypr_adaptive_sampling", "adaptive_sampling_enable", pso_cfg.adaptive_sampling_enable)
+    _rpo_repro_push!(rows, "hypr_adaptive_sampling", "adaptive_sampling_max_ds_m", pso_cfg.adaptive_sampling_max_ds_m; units="m")
+    _rpo_repro_push!(rows, "hypr_adaptive_sampling", "adaptive_sampling_far_clearance_m", pso_cfg.adaptive_sampling_far_clearance_m; units="m")
+    _rpo_repro_push!(rows, "hypr_adaptive_sampling", "adaptive_sampling_power", pso_cfg.adaptive_sampling_power)
+    _rpo_repro_push!(rows, "hypr_adaptive_sampling", "adaptive_sampling_safe_distance_fraction", pso_cfg.adaptive_sampling_safe_distance_fraction)
+    _rpo_repro_push!(rows, "hypr_adaptive_sampling", "adaptive_sampling_obstacle_guard_fraction", pso_cfg.adaptive_sampling_obstacle_guard_fraction)
+    _rpo_repro_push!(rows, "hypr_schedule", "schedule_enable", pso_cfg.schedule_enable)
+    _rpo_repro_push!(rows, "hypr_schedule", "schedule_w_end_fraction", pso_cfg.schedule_w_end_fraction)
+    _rpo_repro_push!(rows, "hypr_schedule", "schedule_c1_end_fraction", pso_cfg.schedule_c1_end_fraction)
+    _rpo_repro_push!(rows, "hypr_schedule", "schedule_c2_end_fraction", pso_cfg.schedule_c2_end_fraction)
+    _rpo_repro_push!(rows, "hypr_schedule", "schedule_transition_fraction", pso_cfg.schedule_transition_fraction)
+    _rpo_repro_push!(rows, "hypr_schedule", "schedule_w_min", pso_cfg.schedule_w_min)
+    _rpo_repro_push!(rows, "hypr_schedule", "schedule_c_range", (pso_cfg.schedule_c_min, pso_cfg.schedule_c_max))
+    _rpo_repro_push!(rows, "hypr_early_stopping", "early_stopping_enable", pso_cfg.early_stopping_enable)
+    _rpo_repro_push!(rows, "hypr_early_stopping", "early_stopping_patience", pso_cfg.early_stopping_patience)
+    _rpo_repro_push!(rows, "hypr_early_stopping", "early_stopping_min_iters", pso_cfg.early_stopping_min_iters)
+    _rpo_repro_push!(rows, "hypr_early_stopping", "early_stopping_min_abs_improvement", pso_cfg.early_stopping_min_abs_improvement)
+    _rpo_repro_push!(rows, "hypr_early_stopping", "early_stopping_min_rel_improvement", pso_cfg.early_stopping_min_rel_improvement)
+    _rpo_repro_push!(rows, "hypr_early_stopping", "early_stopping_require_feasible", pso_cfg.early_stopping_require_feasible)
+    _rpo_repro_push!(rows, "hypr_cull", "cull_enable", pso_cfg.cull_enable)
+    _rpo_repro_push!(rows, "hypr_cull", "cull_fraction_max", pso_cfg.cull_fraction_max)
+    _rpo_repro_push!(rows, "hypr_cull", "cull_start_iter", pso_cfg.cull_start_iter)
+    _rpo_repro_push!(rows, "hypr_cull", "cull_noise_scale", pso_cfg.cull_noise_scale)
+    _rpo_repro_push!(rows, "hypr_cull", "cull_arc_velocity_scale", pso_cfg.cull_arc_velocity_scale)
+    _rpo_repro_push!(rows, "hypr_probe", "probe_enable", pso_cfg.probe_enable)
+    _rpo_repro_push!(rows, "hypr_probe", "probe_max_depth", pso_cfg.probe_max_depth)
+    _rpo_repro_push!(rows, "hypr_probe", "probe_candidates", pso_cfg.probe_candidates)
+    _rpo_repro_push!(rows, "hypr_probe", "probe_offset_scale", pso_cfg.probe_offset_scale)
+    _rpo_repro_push!(rows, "hypr_probe", "probe_sample_ds_m", pso_cfg.probe_sample_ds_m; units="m")
+    _rpo_repro_push!(rows, "hypr_probe", "probe_seed", pso_cfg.probe_seed)
+    _rpo_repro_push!(rows, "hypr_reexplore", "reexplore_enable", pso_cfg.reexplore_enable)
+    _rpo_repro_push!(rows, "hypr_reexplore", "reexplore_trigger_iter", pso_cfg.reexplore_trigger_iter)
+    _rpo_repro_push!(rows, "hypr_reexplore", "reexplore_search_margin_scale", pso_cfg.reexplore_search_margin_scale)
+    _rpo_repro_push!(rows, "hypr_reexplore", "reexplore_waypoint_scale", pso_cfg.reexplore_waypoint_scale)
+    _rpo_repro_push!(rows, "hypr_reexplore", "reexplore_waypoint_increment", pso_cfg.reexplore_waypoint_increment)
+    _rpo_repro_push!(rows, "hypr_reexplore", "reexplore_max_waypoints", pso_cfg.reexplore_max_waypoints)
+    _rpo_repro_push!(rows, "hypr_warmstart", "rrt_warmstart_enable", pso_cfg.rrt_warmstart_enable)
+    _rpo_repro_push!(rows, "hypr_warmstart", "rrt_warmstart_iters", pso_cfg.rrt_warmstart_iters)
+    _rpo_repro_push!(rows, "hypr_warmstart", "rrt_warmstart_step_size_m", pso_cfg.rrt_warmstart_step_size_m; units="m")
+    _rpo_repro_push!(rows, "hypr_warmstart", "rrt_warmstart_goal_sample_rate", pso_cfg.rrt_warmstart_goal_sample_rate)
+    _rpo_repro_push!(rows, "hypr_warmstart", "rrt_warmstart_collision_sample_ds_m", pso_cfg.rrt_warmstart_collision_sample_ds_m; units="m")
+    _rpo_repro_push!(rows, "hypr_warmstart", "rrt_warmstart_connect_max_steps", pso_cfg.rrt_warmstart_connect_max_steps)
+    _rpo_repro_push!(rows, "hypr_warmstart", "rrt_warmstart_shortcut_iters", pso_cfg.rrt_warmstart_shortcut_iters)
+    _rpo_repro_push!(rows, "hypr_warmstart", "rrt_warmstart_runtime_limit_s", pso_cfg.rrt_warmstart_runtime_limit_s; units="s")
+    _rpo_repro_push!(rows, "hypr_warmstart", "rrt_warmstart_box_margin_m", pso_cfg.rrt_warmstart_box_margin_m; units="m")
+    _rpo_repro_push!(rows, "hypr_refinement", "refinement_enable", pso_cfg.refinement_enable)
+    _rpo_repro_push!(rows, "hypr_refinement", "refinement_start_iter", pso_cfg.refinement_start_iter)
+    _rpo_repro_push!(rows, "hypr_refinement", "refinement_period", pso_cfg.refinement_period)
+    _rpo_repro_push!(rows, "hypr_refinement", "refinement_sample_ds_m", pso_cfg.refinement_sample_ds_m; units="m")
+    _rpo_repro_push!(rows, "hypr_refinement", "refinement_merge_distance_m", pso_cfg.refinement_merge_distance_m; units="m")
+    _rpo_repro_push!(rows, "hypr_refinement", "refinement_waypoint_passes", pso_cfg.refinement_waypoint_passes)
+    _rpo_repro_push!(rows, "hypr_refinement", "refinement_rounds", pso_cfg.refinement_rounds)
+    _rpo_repro_push!(rows, "hypr_refinement", "refinement_min_abs_cost_improvement", pso_cfg.refinement_min_abs_cost_improvement)
+    _rpo_repro_push!(rows, "hypr_refinement", "refinement_min_rel_cost_improvement", pso_cfg.refinement_min_rel_cost_improvement)
+    _rpo_repro_push!(rows, "hypr_refinement", "refinement_straight_max_segment_length_m", pso_cfg.refinement_straight_max_segment_length_m; units="m")
+    _rpo_repro_push!(rows, "hypr_refinement", "refinement_straight_max_inserted", pso_cfg.refinement_straight_max_inserted)
+    _rpo_repro_push!(rows, "hypr_refinement", "refinement_straight_clearance_margin_m", pso_cfg.refinement_straight_clearance_margin_m; units="m")
+
+    _rpo_repro_push!(rows, "mpc", "horizon", tracking.horizon)
+    _rpo_repro_push!(rows, "mpc", "dt_s", tracking.dt_s; units="s")
+    _rpo_repro_push!(rows, "mpc", "mean_motion_radps", tracking.mean_motion_radps; units="rad/s")
+    _rpo_repro_push!(rows, "mpc", "Q_diag", [tracking.q_pos, tracking.q_pos, tracking.q_pos, tracking.q_vel, tracking.q_vel, tracking.q_vel])
+    _rpo_repro_push!(rows, "mpc", "R_diag", [tracking.r_accel, tracking.r_accel, tracking.r_accel])
+    _rpo_repro_push!(rows, "mpc", "Qf_diag", [tracking.qf_pos, tracking.qf_pos, tracking.qf_pos, tracking.qf_vel, tracking.qf_vel, tracking.qf_vel])
+    _rpo_repro_push!(rows, "mpc", "u_max_mps2", tracking.u_max_mps2; units="m/s^2")
+    _rpo_repro_push!(rows, "mpc", "mass_kg", tracking.mass_kg; units="kg")
+    _rpo_repro_push!(rows, "mpc", "propellant_mass_kg", tracking.propellant_mass_kg; units="kg")
+    _rpo_repro_push!(rows, "mpc", "final_position_tol_m", tracking.final_position_tol_m; units="m")
+    _rpo_repro_push!(rows, "mpc", "settle_time_s", tracking.settle_time_s; units="s")
+
+    _rpo_repro_push!(rows, "osqp", "verbose", false; source="init_rpo_lqmpc")
+    _rpo_repro_push!(rows, "osqp", "polish", false; source="init_rpo_lqmpc")
+    _rpo_repro_push!(rows, "osqp", "warm_start", true; source="init_rpo_lqmpc")
+    _rpo_repro_push!(rows, "osqp", "eps_abs", 1.0e-4; source="init_rpo_lqmpc")
+    _rpo_repro_push!(rows, "osqp", "eps_rel", 1.0e-4; source="init_rpo_lqmpc")
+    _rpo_repro_push!(rows, "osqp", "max_iter", 1000; source="init_rpo_lqmpc")
+
+    _rpo_repro_push!(rows, "geometry", "station_asset", "gateway")
+    _rpo_repro_push!(rows, "geometry", "point_cloud_resolution", n_station_points; units="points")
+    _rpo_repro_push!(rows, "geometry", "station_keepout_radius_m", geometry.station.keepout_radius_m; units="m")
+    _rpo_repro_push!(rows, "geometry", "chaser_half_extents_m", geometry.chaser.half_extents_body; units="m")
+
+    _rpo_repro_push!(rows, "sampling", "obstacle_distribution", "Gateway CAD triangle surface sampled proportional to triangle area")
+    _rpo_repro_push!(rows, "sampling", "start_goal_sampling", "Independent near-surface start/goal samples; reject surrounded endpoints; require minimum separation")
+    _rpo_repro_push!(rows, "sampling", "endpoint_clearance_distribution", "Uniform clearance shell")
+    _rpo_repro_push!(rows, "sampling", "endpoint_min_clearance_m", endpoint_min_clearance_m; units="m")
+    _rpo_repro_push!(rows, "sampling", "endpoint_max_clearance_m", endpoint_max_clearance_m; units="m")
+    _rpo_repro_push!(rows, "sampling", "endpoint_clearance_margin_m", endpoint_clearance_margin_m; units="m")
+    _rpo_repro_push!(rows, "sampling", "min_start_goal_separation_m", min_separation_m; units="m")
+    _rpo_repro_push!(rows, "sampling", "surrounded_max_distance_m", surrounded_max_distance_m; units="m")
+    _rpo_repro_push!(rows, "sampling", "max_sampling_tries", max_sampling_tries)
+    _rpo_repro_push!(rows, "sampling", "actual_endpoint_min_clearance_m", clearance_summary.endpoint_min; units="m")
+    _rpo_repro_push!(rows, "sampling", "actual_endpoint_mean_clearance_m", clearance_summary.endpoint_mean; units="m")
+    _rpo_repro_push!(rows, "sampling", "actual_start_min_clearance_m", clearance_summary.start_min; units="m")
+    _rpo_repro_push!(rows, "sampling", "actual_goal_min_clearance_m", clearance_summary.goal_min; units="m")
+
+    _rpo_repro_push!(rows, "rrt_connect", "n_iters", cfg.rrt_connect.n_iters)
+    _rpo_repro_push!(rows, "rrt_connect", "step_size_m", cfg.rrt_connect.step_size_m; units="m")
+    _rpo_repro_push!(rows, "rrt_connect", "goal_sample_rate", cfg.rrt_connect.goal_sample_rate)
+    _rpo_repro_push!(rows, "rrt_connect", "collision_sample_ds_m", cfg.rrt_connect.collision_sample_ds_m; units="m")
+    _rpo_repro_push!(rows, "rrt_connect", "adaptive_collision_sampling_enable", cfg.rrt_connect.adaptive_collision_sampling_enable)
+    _rpo_repro_push!(rows, "rrt_connect", "shortcut_iters", cfg.rrt_connect.shortcut_iters)
+    _rpo_repro_push!(rows, "rrt_star", "n_iters", cfg.rrt_star.n_iters)
+    _rpo_repro_push!(rows, "rrt_star", "step_size_m", cfg.rrt_star.step_size_m; units="m")
+    _rpo_repro_push!(rows, "rrt_star", "neighbor_radius_m", cfg.rrt_star.neighbor_radius_m; units="m")
+    _rpo_repro_push!(rows, "rrt_star", "shortcut_iters", cfg.rrt_star.shortcut_iters)
+
+    _rpo_repro_push!(rows, "trajectory_optimizers", "obstacle_weight_scale", obstacle_weight_scale)
+    _rpo_repro_push!(rows, "trajectory_optimizers", "obstacle_margin_m", obstacle_margin_m; units="m")
+    _rpo_repro_push!(rows, "trajectory_optimizers", "no_change_tol", cfg.optimizer.no_change_tol)
+    _rpo_repro_push!(rows, "trajectory_optimizers", "match_hypr_runtime", cfg.optimizer.match_hypr_runtime)
+    _rpo_repro_push!(rows, "trajectory_optimizers", "force_full_iters", cfg.optimizer.force_full_iters)
+    _rpo_repro_push!(rows, "trajectory_optimizers", "chomp_iters", cfg.chomp.n_iters)
+    _rpo_repro_push!(rows, "trajectory_optimizers", "stomp_iters", cfg.stomp.n_iters)
+    _rpo_repro_push!(rows, "trajectory_optimizers", "stomp_rollouts", cfg.stomp.n_rollouts)
+
+    df = DataFrame(rows)
+    CSV.write(path, df)
+    return path
+end
+
 function _save_plot(plot_obj, output_dir::AbstractString, filename::AbstractString)
     mkpath(output_dir)
     path = joinpath(output_dir, filename)
@@ -688,7 +929,12 @@ function run_rpo_cubesat_mpc_planner_comparison_batch(;
     stomp_iters::Integer=_rpo_batch_smoke_mode() ? 2 : _env_int("SPACEAGORA_RPO_COMPARISON_STOMP_ITERS", pso_n_iters),
     stomp_rollouts::Integer=_rpo_batch_smoke_mode() ? 3 : _env_int("SPACEAGORA_RPO_COMPARISON_STOMP_ROLLOUTS", 20),
     n_station_points::Integer=_rpo_batch_smoke_mode() ? 800 : _env_int("SPACEAGORA_RPO_COMPARISON_STATION_POINTS", 10000),
-    safe_distance_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_SAFE_DISTANCE", 0.1),
+    safe_distance_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_SAFE_DISTANCE", 0.5),
+    endpoint_clearance_margin_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_ENDPOINT_CLEARANCE_MARGIN", 0.05),
+    endpoint_max_clearance_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_ENDPOINT_MAX_CLEARANCE", 1.0),
+    min_separation_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_MIN_SEPARATION", 1.5),
+    surrounded_max_distance_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_SURROUNDED_MAX_DISTANCE", 2.0),
+    max_sampling_tries::Integer=_env_int("SPACEAGORA_RPO_COMPARISON_MAX_SAMPLING_TRIES", 4000),
     obstacle_weight_scale::Real=_env_float("SPACEAGORA_RPO_COMPARISON_OBS_WEIGHT_SCALE", 10.0),
     obstacle_margin_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_OBS_MARGIN", 0.5),
     match_hypr_runtime::Bool=_env_bool("SPACEAGORA_RPO_COMPARISON_MATCH_HYPR_RUNTIME", true),
@@ -704,11 +950,15 @@ function run_rpo_cubesat_mpc_planner_comparison_batch(;
     mpc_settle_time_s::Real=_rpo_batch_smoke_mode() ? 2.0 : _env_float("SPACEAGORA_RPO_COMPARISON_MPC_SETTLE_TIME", 30.0),
     mpc_final_position_tol_m::Real=_rpo_batch_smoke_mode() ? 0.75 : _env_float("SPACEAGORA_RPO_COMPARISON_MPC_FINAL_TOL", 0.25),
     write_plotly_outputs::Bool=_env_bool("SPACEAGORA_RPO_COMPARISON_PLOTS", true),
+    write_failed_path_outputs::Bool=_env_bool("SPACEAGORA_RPO_COMPARISON_FAILED_PATH_PLOTS", true),
     show_progress::Bool=_env_bool("SPACEAGORA_RPO_COMPARISON_PROGRESS", true),
 )
     mkpath(results_directory)
+    comparison_safe_distance_m = SM.GuidanceHooks.RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M
+    endpoint_min_clearance_m = comparison_safe_distance_m + max(Float64(endpoint_clearance_margin_m), 0.0)
     println("RPO planner comparison batch: HYPR vs PSO (unrefined) vs RRT-Connect vs RRT-Connect + Bezier vs RRT* vs CHOMP vs STOMP")
     println("  cases=$(n_cases), seed=$(seed), station_points=$(n_station_points)")
+    println("  safety=$(comparison_safe_distance_m) m, endpoint_min_clearance=$(endpoint_min_clearance_m) m")
     println("  output=$(abspath(results_directory))")
 
     station_points = SpaceAGORA.load_rpo_station_cad_pointcloud(
@@ -725,6 +975,11 @@ function run_rpo_cubesat_mpc_planner_comparison_batch(;
         seed=seed,
         geometry_seed=seed,
         n_station_points=n_station_points,
+        endpoint_min_clearance_m=endpoint_min_clearance_m,
+        endpoint_max_clearance_m=endpoint_max_clearance_m,
+        min_separation_m=min_separation_m,
+        surrounded_max_distance_m=surrounded_max_distance_m,
+        max_sampling_tries=max_sampling_tries,
     )
     comparison_cases = [
         RPOPlannerComparisonCase(
@@ -736,7 +991,7 @@ function run_rpo_cubesat_mpc_planner_comparison_batch(;
     ]
 
     pso_cfg = rpo_740_mpc_final_pso_config(
-        safe_distance_m=safe_distance_m;
+        safe_distance_m=comparison_safe_distance_m;
         n_particles=Int(pso_n_particles),
         n_iters=Int(pso_n_iters),
         n_waypoints=Int(pso_n_waypoints),
@@ -794,9 +1049,10 @@ function run_rpo_cubesat_mpc_planner_comparison_batch(;
             force_full_iters=force_full_iters,
         ),
         tracking=tracking,
-        safe_distance_m=Float64(safe_distance_m),
+        safe_distance_m=Float64(comparison_safe_distance_m),
         output_dir=String(results_directory),
         write_plotly_outputs=write_plotly_outputs,
+        write_failed_path_outputs=write_failed_path_outputs,
         rng_seed=Int(seed),
         show_progress=show_progress,
     )
@@ -809,10 +1065,34 @@ function run_rpo_cubesat_mpc_planner_comparison_batch(;
     summary_path = outputs.csv
     cases_path = joinpath(results_directory, "rpo_planner_comparison_cases.csv")
     CSV.write(cases_path, _rpo_seeded_cases_dataframe(generated_cases))
+    reproducibility_path = joinpath(results_directory, "rpo_planner_comparison_reproducibility.csv")
+    _write_rpo_planner_comparison_reproducibility_csv(
+        reproducibility_path;
+        cfg=cfg,
+        pso_cfg=pso_cfg,
+        tracking=tracking,
+        generated_cases=generated_cases,
+        geometry=geometry,
+        n_cases=n_cases,
+        seed=seed,
+        geometry_seed=seed,
+        n_station_points=n_station_points,
+        endpoint_min_clearance_m=endpoint_min_clearance_m,
+        endpoint_max_clearance_m=endpoint_max_clearance_m,
+        endpoint_clearance_margin_m=endpoint_clearance_margin_m,
+        min_separation_m=min_separation_m,
+        surrounded_max_distance_m=surrounded_max_distance_m,
+        max_sampling_tries=max_sampling_tries,
+        obstacle_weight_scale=obstacle_weight_scale,
+        obstacle_margin_m=obstacle_margin_m,
+        runtime_limit_s=runtime_limit_s,
+        write_failed_path_outputs=write_failed_path_outputs,
+    )
 
     println("RPO planner comparison complete in $(round(runtime, digits=2)) s.")
     println("Summary CSV: ", abspath(summary_path))
     println("Cases CSV:   ", abspath(cases_path))
+    println("Repro CSV:   ", abspath(reproducibility_path))
     if outputs.plotly_outputs
         println("Plots:")
         println("  ", abspath(outputs.metrics_plot))
@@ -823,6 +1103,12 @@ function run_rpo_cubesat_mpc_planner_comparison_batch(;
         end
     else
         println("Plotly outputs: disabled")
+    end
+    if outputs.failed_path_outputs
+        println("Failed path plot files: $(length(outputs.failed_path_plots))")
+        for planner in sort!(collect(keys(outputs.failed_path_plots)); by=string)
+            println("  ", rpo_comparison_planner_label(planner), ": ", abspath(outputs.failed_path_plots[planner]))
+        end
     end
     planner_report_rows = NamedTuple[]
     for planner in cfg.planners
@@ -873,9 +1159,61 @@ function run_rpo_cubesat_mpc_planner_comparison_batch(;
         summary=summary_df,
         summary_path=summary_path,
         cases_path=cases_path,
+        reproducibility_path=reproducibility_path,
         outputs=outputs,
         output_dir=results_directory,
     )
+end
+
+function _rpo_planner_comparison_cli_usage()
+    return "Usage: julia --project=. examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl [--runs N]\n" *
+        "   or: julia --project=. examples/Earth_RPO_CubeSat_MPC_Batch.jl comparison [--runs N]"
+end
+
+function _parse_rpo_positive_int_cli(value::AbstractString, option::AbstractString)
+    parsed = tryparse(Int, strip(String(value)))
+    parsed !== nothing && parsed > 0 || throw(ArgumentError("$(option) must be a positive integer, got '$(value)'."))
+    return parsed
+end
+
+function _rpo_planner_comparison_cli_kwargs(args::Vector{String})
+    n_cases = nothing
+    i = 1
+    while i <= length(args)
+        arg = strip(args[i])
+        if arg in ("--help", "-h")
+            println(_rpo_planner_comparison_cli_usage())
+            return nothing
+        elseif arg in ("--runs", "--n-runs", "--cases", "--n-cases", "-n")
+            i < length(args) || throw(ArgumentError("$(arg) requires an integer value.\n$(_rpo_planner_comparison_cli_usage())"))
+            n_cases = _parse_rpo_positive_int_cli(args[i + 1], arg)
+            i += 2
+        elseif startswith(arg, "--runs=")
+            n_cases = _parse_rpo_positive_int_cli(split(arg, "=", limit=2)[2], "--runs")
+            i += 1
+        elseif startswith(arg, "--n-runs=")
+            n_cases = _parse_rpo_positive_int_cli(split(arg, "=", limit=2)[2], "--n-runs")
+            i += 1
+        elseif startswith(arg, "--cases=")
+            n_cases = _parse_rpo_positive_int_cli(split(arg, "=", limit=2)[2], "--cases")
+            i += 1
+        elseif startswith(arg, "--n-cases=")
+            n_cases = _parse_rpo_positive_int_cli(split(arg, "=", limit=2)[2], "--n-cases")
+            i += 1
+        elseif tryparse(Int, arg) !== nothing
+            n_cases = _parse_rpo_positive_int_cli(arg, "runs")
+            i += 1
+        else
+            throw(ArgumentError("Unknown planner comparison argument '$(arg)'.\n$(_rpo_planner_comparison_cli_usage())"))
+        end
+    end
+    return n_cases === nothing ? NamedTuple() : (n_cases=n_cases,)
+end
+
+function run_rpo_cubesat_mpc_planner_comparison_batch_cli(args::Vector{String}=copy(ARGS))
+    kwargs = _rpo_planner_comparison_cli_kwargs(args)
+    kwargs === nothing && return nothing
+    return run_rpo_cubesat_mpc_planner_comparison_batch(; kwargs...)
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
@@ -883,7 +1221,8 @@ if abspath(PROGRAM_FILE) == @__FILE__
     if mode in ("batch", "hypr")
         run_rpo_cubesat_mpc_batch()
     elseif mode in ("comparison", "planner_comparison", "planners")
-        run_rpo_cubesat_mpc_planner_comparison_batch()
+        comparison_args = length(ARGS) >= 2 ? ARGS[2:end] : String[]
+        run_rpo_cubesat_mpc_planner_comparison_batch_cli(comparison_args)
     else
         error("Unknown RPO batch mode '$mode'. Use batch or comparison.")
     end

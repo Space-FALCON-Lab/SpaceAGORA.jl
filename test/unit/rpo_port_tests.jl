@@ -87,6 +87,13 @@ end
     @test synced_cfg.sample_ds_m == synced_cfg.safe_distance_m
     @test SM.GuidanceHooks.rpo_hypr_sampling_density_m(SM.RPOPSOConfig(sample_ds_m=0.5), 0.2) == 0.2
     @test SM.GuidanceHooks.rpo_740_mpc_final_pso_config(safe_distance_m=0.2).sample_ds_m == 0.2
+    @test SM.GuidanceHooks.rpo_740_mpc_final_pso_config(safe_distance_m=0.2).rrt_warmstart_enable === true
+    @test SM.GuidanceHooks.rpo_740_mpc_final_pso_config(safe_distance_m=0.2; rrt_warmstart_enable=false).rrt_warmstart_enable === false
+    comparison_cfg = SM.RPOPlannerComparisonConfig()
+    @test comparison_cfg.safe_distance_m == 0.5
+    @test comparison_cfg.pso_config.safe_distance_m == 0.5
+    fallback_comparison_cfg = SM.RPOPlannerComparisonConfig(pso_config=SM.RPOPSOConfig())
+    @test fallback_comparison_cfg.safe_distance_m == 0.5
 
     adaptive_sampling_cfg = SM.RPOPSOConfig(
         sample_ds_m=0.05,
@@ -384,6 +391,28 @@ end
     @test decision.action == :retime
     @test decision.reason == :tracking_error
 
+    any_displacement = SM.GuidanceHooks.RPOReplanningConfig(
+        safe_distance_m=0.1,
+        retime_clearance_m=0.5,
+        tracking_error_retime_m=-0.25,
+        tracking_error_replan_m=-1.0,
+    )
+    @test any_displacement.tracking_error_retime_m == 0.0
+    @test any_displacement.tracking_error_replan_m == 0.0
+    decision = SM.GuidanceHooks.rpo_replanning_decision(plan, SVector{3, Float64}(0.0, 1.0, 0.0), geom, any_displacement, 1.0)
+    @test decision.action == :retime
+    @test decision.reason == :tracking_error
+
+    large_displacement = SM.GuidanceHooks.RPOReplanningConfig(
+        safe_distance_m=0.1,
+        retime_clearance_m=0.5,
+        tracking_error_retime_m=0.5,
+        tracking_error_replan_m=0.75,
+    )
+    decision = SM.GuidanceHooks.rpo_replanning_decision(plan, SVector{3, Float64}(0.0, 1.0, 0.0), geom, large_displacement, 1.0)
+    @test decision.action == :replan
+    @test decision.reason == :tracking_error
+
     goal_changed = SM.GuidanceHooks.RPOReplanningConfig(
         desired_goal_rtn=SVector{3, Float64}(3.0, 0.5, 0.0),
         goal_change_tolerance_m=0.05,
@@ -490,6 +519,21 @@ end
         @test all(row.fuel_used_pct ≈ 100.0 * row.fuel_used / tracking.propellant_mass_kg for row in rows)
         @test all(isfinite(row.planner_compute_time) for row in rows)
         @test all(row.success for row in rows)
+        @test all(
+            plan.config.safe_distance_m == 0.5
+            for plans in values(batch.plans_by_planner)
+            for plan in plans
+        )
+        @test all(
+            plan.cost ≈ SM.GuidanceHooks.rpo_normalized_path_cost_components(
+                plan.path,
+                geom,
+                plan.config;
+                safe_distance_m=0.5,
+            ).total
+            for plans in values(batch.plans_by_planner)
+            for plan in plans
+        )
         @test SM.GuidanceHooks.rpo_comparison_metric_includes_result((success=false,), :success_pct)
         @test SM.GuidanceHooks.rpo_comparison_metric_includes_result((success=false,), :keepout_violations)
         @test !SM.GuidanceHooks.rpo_comparison_metric_includes_result((success=false,), :fuel_used_pct)
@@ -517,6 +561,9 @@ end
         @test isnothing(outputs.path_plot)
         @test isempty(outputs.method_path_plots)
         @test isempty(outputs.cost_iteration_plots)
+        @test outputs.failed_path_plots isa Dict{Symbol, String}
+        @test isempty(outputs.failed_path_plots)
+        @test outputs.failed_path_outputs === true
         @test filesize(outputs.csv) > 0
     end
 end

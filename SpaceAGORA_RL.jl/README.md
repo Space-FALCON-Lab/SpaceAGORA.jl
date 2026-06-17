@@ -9,3 +9,9 @@ DDQN learner infrastructure, CSV/report helpers, and an example runner.
 
 Reference material is kept under `Reference Code/` and is not on the runtime path.
 Generated artifacts should go under `outputs/`; only placeholders are committed.
+
+Training uses `training.global_steps` as the primary stopping budget when that
+value is positive. This matches the paper's step-based DDQN stopping condition:
+one global step is one environment transition/action step, not one full
+aerobraking campaign. The `training.episodes` field is still used by evaluation
+scripts and by explicit episode-capped training calls.

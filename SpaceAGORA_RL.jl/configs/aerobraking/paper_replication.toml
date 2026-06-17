@@ -29,7 +29,7 @@ discount = 0.95
 batch_size = 256
 train_frequency = 5
 train_start = 10000
-replay_size = 1000000
+replay_size = 20000
 target_update = 10000
 gradient_clip_norm = 10.0
 adam_epsilon = 1.0e-6
@@ -38,16 +38,17 @@ hidden_dim = 1024
 [epsilon]
 start = 1.0
 stop = 0.01
-decay_steps = 500000
+decay_steps = 5000
 decay_start_step = 10000
 
 [training]
 seed = 42
+global_steps = 20
 episodes = 4
 max_steps = 1000
 n_workers = 1
 checkpoint_frequency = 500
-progress_frequency = 1
+progress_frequency = 5
 output_dir = "SpaceAGORA_RL.jl/outputs/runs"
 
 [reports]

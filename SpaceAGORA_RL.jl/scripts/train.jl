@@ -8,7 +8,9 @@ function main(args=ARGS)
     session = build_training_session(config)
     result = train_parallel!(session)
     println("wrote run artifacts to ", result.output_dir)
-    println("episodes: ", length(result.summaries), " transitions: ", length(result.transitions))
+    println("episodes: ", length(result.summaries),
+            " transitions: ", length(result.transitions),
+            " global_step: ", result.global_step)
     return result
 end
 

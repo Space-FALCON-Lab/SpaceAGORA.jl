@@ -1,5 +1,6 @@
 Base.@kwdef struct TrainingConfig
     seed::Int = 42
+    global_steps::Int = 0
     episodes::Int = 4
     max_steps::Int = 1_000
     n_workers::Int = 1
@@ -105,6 +106,7 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
     )
     training = TrainingConfig(
         seed = Int(_get(train_table, "seed", 42)),
+        global_steps = Int(_get(train_table, "global_steps", 0)),
         episodes = Int(_get(train_table, "episodes", 4)),
         max_steps = Int(_get(train_table, "max_steps", 1_000)),
         n_workers = Int(_get(train_table, "n_workers", 1)),

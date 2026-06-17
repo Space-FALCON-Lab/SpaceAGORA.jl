@@ -4,6 +4,7 @@ Base.@kwdef struct TrainingConfig
     max_steps::Int = 1_000
     n_workers::Int = 1
     checkpoint_frequency::Int = 500
+    progress_frequency::Int = 50
     output_dir::String = joinpath(package_root(), "outputs", "runs")
 end
 
@@ -108,6 +109,7 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
         max_steps = Int(_get(train_table, "max_steps", 1_000)),
         n_workers = Int(_get(train_table, "n_workers", 1)),
         checkpoint_frequency = Int(_get(train_table, "checkpoint_frequency", 500)),
+        progress_frequency = Int(_get(train_table, "progress_frequency", 50)),
         output_dir = String(_get(train_table, "output_dir", joinpath(package_root(), "outputs", "runs"))),
     )
     reports = ReportConfig(

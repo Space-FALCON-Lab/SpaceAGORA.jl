@@ -47,6 +47,7 @@ episodes = 4
 max_steps = 1000
 n_workers = 1
 checkpoint_frequency = 500
+progress_frequency = 1
 output_dir = "SpaceAGORA_RL.jl/outputs/runs"
 
 [reports]

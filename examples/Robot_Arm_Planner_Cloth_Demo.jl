@@ -1108,7 +1108,17 @@ function generate_robot_arm_batch_cases(; n_cases::Integer=50, seed::Integer=740
     return cases
 end
 
-function _robot_arm_case_metrics(case, plan, sim, obstacles, hypr, base_sim; case_dir::AbstractString, motion_html::AbstractString="")
+function _robot_arm_case_metrics(
+    case,
+    plan,
+    sim,
+    obstacles,
+    hypr,
+    base_sim;
+    case_dir::AbstractString,
+    motion_html::AbstractString="",
+    runtime_s::Real=NaN,
+)
     ref_clearance = minimum(_obstacle_clearance_series(plan.ee_ref, obstacles))
     cloth_clearance = minimum(_obstacle_clearance_series(sim.end_effector_positions, obstacles))
     base_disp = maximum(vec(sqrt.(sum(base_sim.base_positions_m .^ 2; dims=1))))
@@ -1130,6 +1140,7 @@ function _robot_arm_case_metrics(case, plan, sim, obstacles, hypr, base_sim; cas
         target_z_m=plan.target[3],
         success=(plan.final_error_m <= 5.0e-3 && maximum(sim.tracking_error_m) <= 0.035 && cloth_clearance >= -0.005) ? 1 : 0,
         obstacle_count=length(obstacles),
+        runtime_s=Float64(runtime_s),
         planned_duration_s=plan.t_ref_s[end],
         reference_samples=length(plan.t_ref_s),
         fuel_used_kg=fuel_used,
@@ -1163,6 +1174,7 @@ function _robot_arm_case_metrics(case, plan, sim, obstacles, hypr, base_sim; cas
 end
 
 function _run_robot_arm_case(case; out_dir::AbstractString, save_plots::Bool)
+    case_runtime_start_ns = time_ns()
     mkpath(out_dir)
     arm = default_cloth_arm_model(
         mount_offset_body=(0.15, 0.0, 0.0),
@@ -1294,11 +1306,14 @@ function _run_robot_arm_case(case; out_dir::AbstractString, save_plots::Bool)
     peak_thrust_mn = 1.0e3 * maximum(vec(sqrt.(sum(base_sim.stabilization_thrust_n .^ 2; dims=1))))
     peak_rw_mnm = 1.0e3 * maximum(vec(sqrt.(sum(base_sim.stabilization_rw_torque_nm .^ 2; dims=1))))
     fuel_used = _stabilization_fuel_used_kg(base_sim)
+    runtime_s = 1.0e-9 * (time_ns() - case_runtime_start_ns)
+    metrics = _robot_arm_case_metrics(case, plan, sim, obstacles, hypr, base_sim; case_dir=out_dir, motion_html=motion_html, runtime_s=runtime_s)
     println("  case $(_arm_batch_case_label(case.case_id)) complete: ",
         "fuel=", @sprintf("%.6f kg", fuel_used),
         ", max EE error=", @sprintf("%.3f mm", max_error_mm),
         ", min clearance=", @sprintf("%.3f mm", min_cloth_clearance_mm),
-        ", duration=", @sprintf("%.3f s", plan.t_ref_s[end]))
+        ", duration=", @sprintf("%.3f s", plan.t_ref_s[end]),
+        ", runtime=", @sprintf("%.3f s", runtime_s))
 
     return (
         case=case,
@@ -1315,7 +1330,7 @@ function _run_robot_arm_case(case; out_dir::AbstractString, save_plots::Bool)
         motion_html=motion_html,
         metrics_html=metrics_html,
         summary_html=summary_html,
-        metrics=_robot_arm_case_metrics(case, plan, sim, obstacles, hypr, base_sim; case_dir=out_dir, motion_html=motion_html),
+        metrics=metrics,
     )
 end
 
@@ -1338,11 +1353,13 @@ end
 function _arm_batch_metrics_plot(df::DataFrame)
     specs = [
         (:fuel_used_pct, "Fuel used (%)"),
+        (:cloth_tracking_mean_m, "Mean tracking error (m)"),
         (:cloth_tracking_max_m, "Max tracking error (m)"),
         (:min_cloth_clearance_m, "Min cloth clearance (m)"),
         (:max_thrust_saturation_ratio, "Max thrust sat. (x)"),
         (:max_rw_saturation_ratio, "Max RW sat. (x)"),
         (:planned_duration_s, "Plan duration (s)"),
+        (:runtime_s, "Runtime (s)"),
     ]
     traces = PlotlyJS.GenericTrace[]
     for (idx, (metric, label)) in enumerate(specs)
@@ -1358,19 +1375,23 @@ function _arm_batch_metrics_plot(df::DataFrame)
         traces,
         PlotlyJS.Layout(
             title="Robot Arm Batch Metrics",
-            grid=PlotlyJS.attr(rows=3, columns=2, pattern="independent"),
+            grid=PlotlyJS.attr(rows=4, columns=2, pattern="independent"),
             xaxis=PlotlyJS.attr(title="case"),
             yaxis=PlotlyJS.attr(title="fuel used (%)"),
             xaxis2=PlotlyJS.attr(title="case"),
-            yaxis2=PlotlyJS.attr(title="tracking error (m)"),
+            yaxis2=PlotlyJS.attr(title="mean tracking error (m)"),
             xaxis3=PlotlyJS.attr(title="case"),
-            yaxis3=PlotlyJS.attr(title="clearance (m)"),
+            yaxis3=PlotlyJS.attr(title="max tracking error (m)"),
             xaxis4=PlotlyJS.attr(title="case"),
-            yaxis4=PlotlyJS.attr(title="thrust saturation"),
+            yaxis4=PlotlyJS.attr(title="clearance (m)"),
             xaxis5=PlotlyJS.attr(title="case"),
-            yaxis5=PlotlyJS.attr(title="RW saturation"),
+            yaxis5=PlotlyJS.attr(title="thrust saturation"),
             xaxis6=PlotlyJS.attr(title="case"),
-            yaxis6=PlotlyJS.attr(title="duration (s)"),
+            yaxis6=PlotlyJS.attr(title="RW saturation"),
+            xaxis7=PlotlyJS.attr(title="case"),
+            yaxis7=PlotlyJS.attr(title="duration (s)"),
+            xaxis8=PlotlyJS.attr(title="case"),
+            yaxis8=PlotlyJS.attr(title="runtime (s)"),
             showlegend=false,
             margin=PlotlyJS.attr(l=70, r=30, t=70, b=55),
         ),
@@ -1429,6 +1450,8 @@ function run_robot_arm_planner_cloth_batch(;
     println("  success               = ", @sprintf("%.1f%%", success_pct))
     println("  mean fuel used        = ", @sprintf("%.6f kg", sum(summary_df.fuel_used_kg) / max(nrow(summary_df), 1)))
     println("  max fuel used         = ", @sprintf("%.6f kg", maximum(summary_df.fuel_used_kg)))
+    println("  mean runtime          = ", @sprintf("%.3f s", sum(summary_df.runtime_s) / max(nrow(summary_df), 1)))
+    println("  mean tracking error   = ", @sprintf("%.3f mm", 1.0e3 * sum(summary_df.cloth_tracking_mean_m) / max(nrow(summary_df), 1)))
     println("  max tracking error    = ", @sprintf("%.3f mm", 1.0e3 * maximum(summary_df.cloth_tracking_max_m)))
     println("  min cloth clearance   = ", @sprintf("%.3f mm", 1.0e3 * minimum(summary_df.min_cloth_clearance_m)))
     println("  summary CSV           = ", abspath(summary_csv))

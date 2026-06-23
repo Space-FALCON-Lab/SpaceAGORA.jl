@@ -1,0 +1,19 @@
+{
+  "id": "src-gnc-guidance-aerobraking-t-edg",
+  "title": "T Edg",
+  "componentKey": "src/gnc/guidance/aerobraking/t_edg",
+  "description": "4 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/gnc/guidance/aerobraking/t_edg/eom_predictor.jl",
+    "src/gnc/guidance/aerobraking/t_edg/targeting_solver.jl",
+    "src/gnc/guidance/aerobraking/t_edg/trajectory_predictor.jl",
+    "src/gnc/guidance/aerobraking/t_edg/t_edg_strategy.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

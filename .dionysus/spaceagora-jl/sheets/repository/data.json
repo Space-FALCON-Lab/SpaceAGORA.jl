@@ -1,0 +1,232 @@
+{
+  "id": "auto-logical-component-data",
+  "filePath": "sheets/repository/data.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-17",
+  "title": "Data",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "Data: 4 implementation files, 2 sub-components.",
+  "verificationIntent": "Verify that Data's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-17-root",
+      "title": "Data",
+      "role": "subsystem",
+      "description": "4 implementation files, 0 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 620,
+      "height": 300,
+      "tags": [
+        "data",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-17",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-17",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-17-child-1",
+      "title": "Telemetry",
+      "role": "component",
+      "description": "3 files, 0 exports, 7 imports.",
+      "x": 20,
+      "y": 60,
+      "width": 215,
+      "height": 355,
+      "tags": [
+        "data/telemetry",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-17-1",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-17-1",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-17-file-1-1",
+      "title": "gmat_cygnss_comp.py",
+      "role": "function",
+      "description": "data/telemetry/gmat_cygnss_comp.py (358 lines · 2 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "data/telemetry",
+        "file",
+        "py"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-17-file-1-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-17-file-1-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-17-file-1-2",
+      "title": "gmat_matrix_parity_locked.py",
+      "role": "function",
+      "description": "data/telemetry/gmat_matrix_parity_locked.py (244 lines · 3 imports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "data/telemetry",
+        "file",
+        "py"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-17-file-1-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-17-file-1-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-17-file-1-3",
+      "title": "convert_to_feather.py",
+      "role": "function",
+      "description": "data/telemetry/convert_to_feather.py (46 lines · 2 imports).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "data/telemetry",
+        "file",
+        "py"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-17-file-1-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-17-file-1-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-17-child-2",
+      "title": "Topography Harmonics Data",
+      "role": "component",
+      "description": "1 files, 0 exports, 4 imports.",
+      "x": 255,
+      "y": 60,
+      "width": 215,
+      "height": 185,
+      "tags": [
+        "data/Topography_harmonics_data",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-17-2",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-17-2",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-17-file-2-1",
+      "title": "venus_topo_comparison.jl",
+      "role": "function",
+      "description": "data/Topography_harmonics_data/venus_topo_comparison.jl (139 lines · 4 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "data/Topography_harmonics_data",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-17-file-2-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-17-file-2-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [],
+  "viewKind": "internal-block"
+}

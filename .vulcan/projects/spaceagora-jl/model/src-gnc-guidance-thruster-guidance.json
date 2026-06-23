@@ -1,0 +1,17 @@
+{
+  "id": "src-gnc-guidance-thruster-guidance",
+  "title": "Thruster Guidance",
+  "componentKey": "src/gnc/guidance/thruster_guidance",
+  "description": "2 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/gnc/guidance/thruster_guidance/thruster_guidance_functions.jl",
+    "src/gnc/guidance/thruster_guidance/thruster_guidance_models.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

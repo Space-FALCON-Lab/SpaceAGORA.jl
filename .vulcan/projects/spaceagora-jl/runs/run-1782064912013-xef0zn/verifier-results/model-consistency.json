@@ -1,0 +1,5 @@
+{
+  "passed": false,
+  "output": "Rule A: File 'src/gnc/navigation/ads_mekf.jl' is not assigned to any ComponentDoc.",
+  "durationMs": 50
+}

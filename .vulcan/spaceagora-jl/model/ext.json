@@ -1,0 +1,24 @@
+{
+  "id": "ext",
+  "title": "SpaceAGORAGRAMSuiteExt",
+  "componentKey": "ext",
+  "description": "1 files, 0 exports, 1 connections",
+  "interfaces": [],
+  "connections": [
+    {
+      "targetId": "src-spaceagora",
+      "targetTitle": "SpaceAGORA",
+      "edgeKind": "imports",
+      "interfaceName": "SpaceAGORA",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "ext/SpaceAGORAGRAMSuiteExt.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

@@ -1,0 +1,21 @@
+{
+  "id": "benchmarks-studies-performance-smart-parallel-ladder",
+  "title": "Performance Smart Parallel Ladder",
+  "componentKey": "benchmarks/studies/performance_smart_parallel_ladder",
+  "description": "6 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "benchmarks/studies/performance_smart_parallel_ladder/accuracy_analysis.jl",
+    "benchmarks/studies/performance_smart_parallel_ladder/cli.jl",
+    "benchmarks/studies/performance_smart_parallel_ladder/execution.jl",
+    "benchmarks/studies/performance_smart_parallel_ladder/reporting.jl",
+    "benchmarks/studies/performance_smart_parallel_ladder/rungs.jl",
+    "benchmarks/studies/performance_smart_parallel_ladder/statistics.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

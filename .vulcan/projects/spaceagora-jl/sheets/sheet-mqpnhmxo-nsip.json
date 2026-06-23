@@ -1,0 +1,240 @@
+{
+  "id": "sheet-mqpnhmxo-nsip",
+  "filePath": "sheets/sheet-mqpnhmxo-nsip.json",
+  "parentId": "sheet-mqpnhis5-puej",
+  "ownerNodeId": "node-mqpnhjgf-f2oj",
+  "title": "MEKF Estimator — Internal Block Diagram",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "Internals of the Multiplicative EKF: state, gyro-driven predict, multiplicative measurement updates, Joseph covariance, NEES.",
+  "verificationIntent": "Blocks map to ads_mekf.jl functions; covariance stays SPD; updates are multiplicative.",
+  "nodes": [
+    {
+      "id": "node-mqpnhn1f-9yel",
+      "title": "ADSMEKFState",
+      "role": "data-type",
+      "description": "q_est∈ℍ (unit quaternion), gyro_bias∈ℝ³, P∈ℝ^{6×6} error covariance.",
+      "x": 120,
+      "y": 200,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "m-st",
+          "name": "state",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "ADSMEKFState",
+          "subPorts": [
+            {
+              "id": "m-st-q",
+              "name": "q_est",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Quaternion"
+            },
+            {
+              "id": "m-st-b",
+              "name": "gyro_bias",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Vector3"
+            },
+            {
+              "id": "m-st-P",
+              "name": "P",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Matrix6"
+            }
+          ]
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhn57-26wz",
+      "title": "predict!",
+      "role": "function",
+      "description": "Gyro-driven propagation of quaternion + bias; covariance time-update P⁻=FPFᵀ+Q.",
+      "x": 420,
+      "y": 80,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "m-pred-in",
+          "name": "gyro",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "Vector3"
+        },
+        {
+          "id": "m-pred-out",
+          "name": "state",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "ADSMEKFState"
+        }
+      ],
+      "designNotes": [
+        {
+          "id": "note-1782159060580-6o5r",
+          "text": "Predict: ω̂=ω_meas−b̂; q←q⊗δq(ω̂·dt); F=[[I−[ω̂]×dt, −I·dt],[0, I]]; P⁻=FPFᵀ+Q, Q=diag(σ_ARW²/dt·I₃, σ_bias²·dt·I₃).",
+          "format": "latex",
+          "color": "blue",
+          "x": 20,
+          "y": -60,
+          "createdAt": "2026-06-22T20:11:00.580Z",
+          "updatedAt": "2026-06-22T20:11:00.580Z"
+        }
+      ]
+    },
+    {
+      "id": "node-mqpnhn8u-g06w",
+      "title": "update_star_tracker!",
+      "role": "function",
+      "description": "Quaternion measurement: z = 2·sgn(δq_w)·δq_{1:3}, H=[I₃ 0]. Joseph covariance update.",
+      "x": 420,
+      "y": 220,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "m-st-in",
+          "name": "q_meas",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "Quaternion"
+        },
+        {
+          "id": "m-st-out",
+          "name": "state",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "ADSMEKFState"
+        }
+      ],
+      "designNotes": [
+        {
+          "id": "note-1782159060706-1iic",
+          "text": "Update: S=HP⁻Hᵀ+R; K=P⁻Hᵀ S⁻¹; δx=Kz; q⁺=q⁻⊗δq(δθ); b⁺=b⁻+δb; P⁺=(I−KH)P⁻(I−KH)ᵀ+KRKᵀ (Joseph).",
+          "format": "latex",
+          "color": "green",
+          "x": 20,
+          "y": -60,
+          "createdAt": "2026-06-22T20:11:00.706Z",
+          "updatedAt": "2026-06-22T20:11:00.706Z"
+        }
+      ]
+    },
+    {
+      "id": "node-mqpnhnc5-rov5",
+      "title": "update_vector!",
+      "role": "function",
+      "description": "Unit-vector (mag/sun): z = b_meas − R(q)b_ref, H=[−[b_pred]× 0].",
+      "x": 420,
+      "y": 360,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "m-vec-in",
+          "name": "unit_vec",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "UnitVector3"
+        },
+        {
+          "id": "m-vec-out",
+          "name": "state",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "ADSMEKFState"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhnf7-lseg",
+      "title": "compute_nees",
+      "role": "function",
+      "description": "NEES = eᵀP⁻¹e for filter-consistency monitoring (drives SAFE transition).",
+      "x": 720,
+      "y": 200,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "m-nees-in",
+          "name": "state",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "ADSMEKFState"
+        },
+        {
+          "id": "m-nees-out",
+          "name": "nees",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "Float64"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-mqpnhnih-8zy1",
+      "sourceNodeId": "node-mqpnhn1f-9yel",
+      "targetNodeId": "node-mqpnhn57-26wz",
+      "sourcePortId": "m-st",
+      "targetPortId": "m-pred-in",
+      "kind": "data-flow",
+      "label": "x,P"
+    },
+    {
+      "id": "edge-mqpnhnm9-rnux",
+      "sourceNodeId": "node-mqpnhn57-26wz",
+      "targetNodeId": "node-mqpnhn8u-g06w",
+      "sourcePortId": "m-pred-out",
+      "targetPortId": "m-st-in",
+      "kind": "data-flow",
+      "label": "x⁻,P⁻"
+    },
+    {
+      "id": "edge-mqpnhnq7-qqvu",
+      "sourceNodeId": "node-mqpnhn8u-g06w",
+      "targetNodeId": "node-mqpnhnc5-rov5",
+      "sourcePortId": "m-st-out",
+      "targetPortId": "m-vec-in",
+      "kind": "data-flow",
+      "label": "x⁺"
+    },
+    {
+      "id": "edge-mqpnhntx-qxu1",
+      "sourceNodeId": "node-mqpnhnc5-rov5",
+      "targetNodeId": "node-mqpnhnf7-lseg",
+      "sourcePortId": "m-vec-out",
+      "targetPortId": "m-nees-in",
+      "kind": "data-flow",
+      "label": "x,P"
+    }
+  ],
+  "viewKind": "internal-block"
+}

@@ -1,0 +1,18 @@
+{
+  "id": "scripts-assets",
+  "title": "Assets",
+  "componentKey": "scripts/assets",
+  "description": "3 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "scripts/assets/check_assets.jl",
+    "scripts/assets/setup_open_assets.jl",
+    "scripts/assets/show_asset_manifest.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

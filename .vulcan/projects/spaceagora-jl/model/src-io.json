@@ -1,0 +1,166 @@
+{
+  "id": "src-io",
+  "title": "Io",
+  "componentKey": "src/io",
+  "description": "5 files, 18 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "_results_bundle_prefix",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_results_csv_path",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_collision_results_csv_path",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_checkpoint_directory",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_checkpoint_paths",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "io_log_enabled",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "io_log_info",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "io_log_warn",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_append_saved_segment!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_append_series_columns!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_build_results_dataframe",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_write_results_csv!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_write_results_bundle!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_atomic_write_file",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_sha256_hex",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_write_checkpoint!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_load_checkpoint",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_clear_checkpoint!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/io/config/io_config.jl",
+    "src/io/logging/io_logging.jl",
+    "src/io/outputs/io_outputs.jl",
+    "src/io/outputs/save_csv.jl",
+    "src/io/serialization/io_serialization.jl"
+  ],
+  "exports": [
+    "_results_bundle_prefix",
+    "_results_csv_path",
+    "_collision_results_csv_path",
+    "_checkpoint_directory",
+    "_checkpoint_paths",
+    "io_log_enabled",
+    "io_log_info",
+    "io_log_warn",
+    "_append_saved_segment!",
+    "_append_series_columns!",
+    "_build_results_dataframe",
+    "_write_results_csv!",
+    "_write_results_bundle!",
+    "_atomic_write_file",
+    "_sha256_hex",
+    "_write_checkpoint!",
+    "_load_checkpoint",
+    "_clear_checkpoint!"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

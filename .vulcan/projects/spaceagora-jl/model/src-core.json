@@ -1,0 +1,856 @@
+{
+  "id": "src-core",
+  "title": "SimulationModel",
+  "componentKey": "src/core",
+  "description": "11 files, 71 exports, 37 connections",
+  "interfaces": [
+    {
+      "name": "make_no_gram_planet",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "make_no_gram_density_model",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "make_no_gram_environment",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "OE",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "cartesian",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "R_RA_DEC",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "H_LAN_LON",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "uDuNuE",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "clock",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SimulationConfiguration",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "InitialTime",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "IntegrationTolerances",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "FilePaths",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SimulationSettings",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "MissionConfiguration",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "EnvironmentModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "MissionType",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "MissionTime",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "MissionOrbits",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractForceTorqueModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractPlanet",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractDensityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractThermalModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractThrusterModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractControlEffectorModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractEphemeridesModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractGuidanceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyGravityModelCode",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyDensityModelCode",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyAerodynamicModelCode",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyThermalModelCode",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyThrustControlCode",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyGravityConstant",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyGravityInverseSquared",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyGravityInverseSquaredJ2",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyGravityGRAM",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyDensityConstant",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyDensityExponential",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyDensityNoDensity",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyDensityGRAM",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyDensityNRLMSISE",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyAeroCdClConstant",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyAeroDiffusive",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyAeroNoBallisticAxial",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyThermalConvectiveRadiative",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyThermalMaxwellian",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyThrustNone",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyThrustAerobrakingManeuver",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyThrustDragPassageFiring",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "StateSample",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Initial_condition",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Aerodynamics",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Engines",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Model",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Cnf",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Solution",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ODEParams",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "IntermediateSolution",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Mission",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "InitialParameters",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SaveCache",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SaveData",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SRPSunEphemerisCache",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NBodyEphemerisCache",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "PlanetFrameEphemerisCache",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SpiceRuntimeCounters",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SpiceRhsMemo",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "GramTrackCache",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AeroScratchWorkspace",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NBodyScratchWorkspace",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "HarmonicsScratchWorkspace",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [
+    {
+      "targetId": "src-core-numerics",
+      "targetTitle": "Numerics",
+      "edgeKind": "imports",
+      "interfaceName": "quaternion_utils",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-core-state",
+      "targetTitle": "NoGramPresets",
+      "edgeKind": "imports",
+      "interfaceName": "no_gram_presets",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-core-state",
+      "targetTitle": "NoGramPresets",
+      "edgeKind": "imports",
+      "interfaceName": "reference_system_config",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-core-state",
+      "targetTitle": "NoGramPresets",
+      "edgeKind": "imports",
+      "interfaceName": "simulation_configuration",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-core-types",
+      "targetTitle": "AbstractTypes",
+      "edgeKind": "imports",
+      "interfaceName": "abstract_types",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-core-types",
+      "targetTitle": "AbstractTypes",
+      "edgeKind": "imports",
+      "interfaceName": "compat_model_codes",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-core-types",
+      "targetTitle": "AbstractTypes",
+      "edgeKind": "imports",
+      "interfaceName": "effector_sampling",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-core-types",
+      "targetTitle": "AbstractTypes",
+      "edgeKind": "imports",
+      "interfaceName": "runtime_types",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-dynamics-coupled",
+      "targetTitle": "DynamicEffectors",
+      "edgeKind": "imports",
+      "interfaceName": "force_torque_models",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-dynamics-rotational",
+      "targetTitle": "DynamicsRotational",
+      "edgeKind": "imports",
+      "interfaceName": "rotational_models",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-dynamics-translational",
+      "targetTitle": "DynamicsTranslational",
+      "edgeKind": "imports",
+      "interfaceName": "translational_models",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-environment-ephemerides",
+      "targetTitle": "EphemeridesModels",
+      "edgeKind": "imports",
+      "interfaceName": "ephemerides_models",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-environment-ephemerides",
+      "targetTitle": "EphemeridesModels",
+      "edgeKind": "imports",
+      "interfaceName": "planet_shapes",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-environment-ephemerides",
+      "targetTitle": "EphemeridesModels",
+      "edgeKind": "imports",
+      "interfaceName": "planets",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-environment-gravity",
+      "targetTitle": "GravityEffectors",
+      "edgeKind": "imports",
+      "interfaceName": "gravity_effectors",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-environment",
+      "targetTitle": "EnvironmentModels",
+      "edgeKind": "imports",
+      "interfaceName": "physical_models",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc",
+      "targetTitle": "CommandTypes",
+      "edgeKind": "imports",
+      "interfaceName": "command_types",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-control",
+      "targetTitle": "ControlHooks",
+      "edgeKind": "imports",
+      "interfaceName": "control_hooks",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-guidance",
+      "targetTitle": "GuidanceHooks",
+      "edgeKind": "imports",
+      "interfaceName": "guidance_hooks",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-guidance",
+      "targetTitle": "GuidanceHooks",
+      "edgeKind": "imports",
+      "interfaceName": "guidance_models",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-navigation",
+      "targetTitle": "NavigationHooks",
+      "edgeKind": "imports",
+      "interfaceName": "navigation_hooks",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-io-config",
+      "targetTitle": "IOConfig",
+      "edgeKind": "imports",
+      "interfaceName": "io_config",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-io-logging",
+      "targetTitle": "IOLogging",
+      "edgeKind": "imports",
+      "interfaceName": "io_logging",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-io-outputs",
+      "targetTitle": "IOOutputs",
+      "edgeKind": "imports",
+      "interfaceName": "io_outputs",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-io-serialization",
+      "targetTitle": "IOSerialization",
+      "edgeKind": "imports",
+      "interfaceName": "io_serialization",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-mission-operations-aerobraking-policy",
+      "targetTitle": "AerobrakingPolicy",
+      "edgeKind": "imports",
+      "interfaceName": "policy_types",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-parallel-policy",
+      "targetTitle": "ParallelPolicy",
+      "edgeKind": "imports",
+      "interfaceName": "parallel_policy",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-callbacks",
+      "targetTitle": "SimulationCallbacks",
+      "edgeKind": "imports",
+      "interfaceName": "callbacks",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-vehicle-actuators",
+      "targetTitle": "ActuatorHooks",
+      "edgeKind": "imports",
+      "interfaceName": "actuator_hooks",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-vehicle-actuators-thruster",
+      "targetTitle": "ThrusterHooks",
+      "edgeKind": "imports",
+      "interfaceName": "thruster_hooks",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-vehicle-actuators-thruster",
+      "targetTitle": "ThrusterHooks",
+      "edgeKind": "imports",
+      "interfaceName": "thruster_models_module",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-vehicle-kinematics",
+      "targetTitle": "Kinematics",
+      "edgeKind": "imports",
+      "interfaceName": "kinematics",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-vehicle-spacecraft",
+      "targetTitle": "Assembly",
+      "edgeKind": "imports",
+      "interfaceName": "assembly",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-vehicle-spacecraft",
+      "targetTitle": "Assembly",
+      "edgeKind": "imports",
+      "interfaceName": "components",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-vehicle-spacecraft",
+      "targetTitle": "Assembly",
+      "edgeKind": "imports",
+      "interfaceName": "model",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-vehicle-structure",
+      "targetTitle": "Structure",
+      "edgeKind": "imports",
+      "interfaceName": "structure_models",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-vehicle-thermal",
+      "targetTitle": "VehicleThermalModels",
+      "edgeKind": "imports",
+      "interfaceName": "thermal_models_module",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/core/interfaces/reference_system.jl",
+    "src/core/numerics/quaternion_utils.jl",
+    "src/core/simulation_model.jl",
+    "src/core/state/no_gram_presets.jl",
+    "src/core/state/reference_system_config.jl",
+    "src/core/state/simulation_configuration.jl",
+    "src/core/types/abstract_types.jl",
+    "src/core/types/compat_model_codes.jl",
+    "src/core/types/effector_sampling.jl",
+    "src/core/types/runtime_types.jl",
+    "src/core/utils/misc.jl"
+  ],
+  "exports": [
+    "make_no_gram_planet",
+    "make_no_gram_density_model",
+    "make_no_gram_environment",
+    "OE",
+    "cartesian",
+    "R_RA_DEC",
+    "H_LAN_LON",
+    "uDuNuE",
+    "clock",
+    "SimulationConfiguration",
+    "InitialTime",
+    "IntegrationTolerances",
+    "FilePaths",
+    "SimulationSettings",
+    "MissionConfiguration",
+    "EnvironmentModel",
+    "MissionType",
+    "MissionTime",
+    "MissionOrbits",
+    "AbstractForceTorqueModel",
+    "AbstractPlanet",
+    "AbstractDensityModel",
+    "AbstractThermalModel",
+    "AbstractThrusterModel",
+    "AbstractControlEffectorModel",
+    "AbstractEphemeridesModel",
+    "AbstractGuidanceModel",
+    "LegacyGravityModelCode",
+    "LegacyDensityModelCode",
+    "LegacyAerodynamicModelCode",
+    "LegacyThermalModelCode",
+    "LegacyThrustControlCode",
+    "LegacyGravityConstant",
+    "LegacyGravityInverseSquared",
+    "LegacyGravityInverseSquaredJ2",
+    "LegacyGravityGRAM",
+    "LegacyDensityConstant",
+    "LegacyDensityExponential",
+    "LegacyDensityNoDensity",
+    "LegacyDensityGRAM",
+    "LegacyDensityNRLMSISE",
+    "LegacyAeroCdClConstant",
+    "LegacyAeroDiffusive",
+    "LegacyAeroNoBallisticAxial",
+    "LegacyThermalConvectiveRadiative",
+    "LegacyThermalMaxwellian",
+    "LegacyThrustNone",
+    "LegacyThrustAerobrakingManeuver",
+    "LegacyThrustDragPassageFiring",
+    "StateSample",
+    "Initial_condition",
+    "Aerodynamics",
+    "Engines",
+    "Model",
+    "Cnf",
+    "Solution",
+    "ODEParams",
+    "IntermediateSolution",
+    "Mission",
+    "InitialParameters",
+    "SaveCache",
+    "SaveData",
+    "SRPSunEphemerisCache",
+    "NBodyEphemerisCache",
+    "PlanetFrameEphemerisCache",
+    "SpiceRuntimeCounters",
+    "SpiceRhsMemo",
+    "GramTrackCache",
+    "AeroScratchWorkspace",
+    "NBodyScratchWorkspace",
+    "HarmonicsScratchWorkspace"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

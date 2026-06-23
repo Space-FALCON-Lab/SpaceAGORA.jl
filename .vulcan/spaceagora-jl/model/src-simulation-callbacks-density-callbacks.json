@@ -1,0 +1,20 @@
+{
+  "id": "src-simulation-callbacks-density-callbacks",
+  "title": "Density Callbacks",
+  "componentKey": "src/simulation/callbacks/density_callbacks",
+  "description": "5 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/simulation/callbacks/density_callbacks/assembly.jl",
+    "src/simulation/callbacks/density_callbacks/config.jl",
+    "src/simulation/callbacks/density_callbacks/model_selection.jl",
+    "src/simulation/callbacks/density_callbacks/planet_frame.jl",
+    "src/simulation/callbacks/density_callbacks/runtime.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

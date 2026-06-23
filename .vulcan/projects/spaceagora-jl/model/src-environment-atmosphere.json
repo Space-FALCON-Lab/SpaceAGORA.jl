@@ -1,0 +1,24 @@
+{
+  "id": "src-environment-atmosphere",
+  "title": "Atmosphere",
+  "componentKey": "src/environment/atmosphere",
+  "description": "1 files, 0 exports, 1 connections",
+  "interfaces": [],
+  "connections": [
+    {
+      "targetId": "src-core-interfaces",
+      "targetTitle": "Interfaces",
+      "edgeKind": "imports",
+      "interfaceName": "reference_system",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/environment/atmosphere/density_models.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

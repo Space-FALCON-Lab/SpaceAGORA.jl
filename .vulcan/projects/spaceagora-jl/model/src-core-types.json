@@ -1,0 +1,437 @@
+{
+  "id": "src-core-types",
+  "title": "AbstractTypes",
+  "componentKey": "src/core/types",
+  "description": "4 files, 52 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "AbstractForceTorqueModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractPlanet",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractDensityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractThermalModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractThrusterModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractControlEffectorModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractEphemeridesModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractGuidanceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyGravityModelCode",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyDensityModelCode",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyAerodynamicModelCode",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyThermalModelCode",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyThrustControlCode",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyGravityConstant",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyGravityInverseSquared",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyGravityInverseSquaredJ2",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyGravityGRAM",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyDensityConstant",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyDensityExponential",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyDensityNoDensity",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyDensityGRAM",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyDensityNRLMSISE",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyAeroCdClConstant",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyAeroDiffusive",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyAeroNoBallisticAxial",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyThermalConvectiveRadiative",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyThermalMaxwellian",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyThrustNone",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyThrustAerobrakingManeuver",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LegacyThrustDragPassageFiring",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "StateSample",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Initial_condition",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Aerodynamics",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Engines",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Model",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Cnf",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Solution",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ODEParams",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "IntermediateSolution",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Mission",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "InitialParameters",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SaveCache",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SaveData",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SRPSunEphemerisCache",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NBodyEphemerisCache",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "PlanetFrameEphemerisCache",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SpiceRuntimeCounters",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SpiceRhsMemo",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "GramTrackCache",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AeroScratchWorkspace",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NBodyScratchWorkspace",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "HarmonicsScratchWorkspace",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/core/types/abstract_types.jl",
+    "src/core/types/compat_model_codes.jl",
+    "src/core/types/effector_sampling.jl",
+    "src/core/types/runtime_types.jl"
+  ],
+  "exports": [
+    "AbstractForceTorqueModel",
+    "AbstractPlanet",
+    "AbstractDensityModel",
+    "AbstractThermalModel",
+    "AbstractThrusterModel",
+    "AbstractControlEffectorModel",
+    "AbstractEphemeridesModel",
+    "AbstractGuidanceModel",
+    "LegacyGravityModelCode",
+    "LegacyDensityModelCode",
+    "LegacyAerodynamicModelCode",
+    "LegacyThermalModelCode",
+    "LegacyThrustControlCode",
+    "LegacyGravityConstant",
+    "LegacyGravityInverseSquared",
+    "LegacyGravityInverseSquaredJ2",
+    "LegacyGravityGRAM",
+    "LegacyDensityConstant",
+    "LegacyDensityExponential",
+    "LegacyDensityNoDensity",
+    "LegacyDensityGRAM",
+    "LegacyDensityNRLMSISE",
+    "LegacyAeroCdClConstant",
+    "LegacyAeroDiffusive",
+    "LegacyAeroNoBallisticAxial",
+    "LegacyThermalConvectiveRadiative",
+    "LegacyThermalMaxwellian",
+    "LegacyThrustNone",
+    "LegacyThrustAerobrakingManeuver",
+    "LegacyThrustDragPassageFiring",
+    "StateSample",
+    "Initial_condition",
+    "Aerodynamics",
+    "Engines",
+    "Model",
+    "Cnf",
+    "Solution",
+    "ODEParams",
+    "IntermediateSolution",
+    "Mission",
+    "InitialParameters",
+    "SaveCache",
+    "SaveData",
+    "SRPSunEphemerisCache",
+    "NBodyEphemerisCache",
+    "PlanetFrameEphemerisCache",
+    "SpiceRuntimeCounters",
+    "SpiceRhsMemo",
+    "GramTrackCache",
+    "AeroScratchWorkspace",
+    "NBodyScratchWorkspace",
+    "HarmonicsScratchWorkspace"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

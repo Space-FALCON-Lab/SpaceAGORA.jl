@@ -1,0 +1,19 @@
+{
+  "id": "benchmarks-studies-performance-runtime-analysis-measurement",
+  "title": "Measurement",
+  "componentKey": "benchmarks/studies/performance_runtime_analysis/measurement",
+  "description": "4 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "benchmarks/studies/performance_runtime_analysis/measurement/entry_duration.jl",
+    "benchmarks/studies/performance_runtime_analysis/measurement/montecarlo.jl",
+    "benchmarks/studies/performance_runtime_analysis/measurement/per_orbit.jl",
+    "benchmarks/studies/performance_runtime_analysis/measurement/warmup_and_batch.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

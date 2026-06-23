@@ -1,0 +1,16 @@
+{
+  "id": "src-gnc-internal",
+  "title": "Internal",
+  "componentKey": "src/gnc/internal",
+  "description": "1 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/gnc/internal/bridge_helpers.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

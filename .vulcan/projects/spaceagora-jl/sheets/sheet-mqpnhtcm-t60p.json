@@ -1,0 +1,279 @@
+{
+  "id": "sheet-mqpnhtcm-t60p",
+  "filePath": "sheets/sheet-mqpnhtcm-t60p.json",
+  "parentId": null,
+  "title": "ADS — Software Architecture",
+  "layer": "software-data",
+  "abstractionLevel": 1,
+  "summary": "ADS implementation modules in src/gnc/navigation + test/gnc. New files realize the logical blocks.",
+  "verificationIntent": "Each module maps to a logical block + has tests; no edits outside src/gnc/navigation and test/gnc.",
+  "nodes": [
+    {
+      "id": "node-mqpnhtg7-e7ht",
+      "title": "ads_sensor_models.jl",
+      "role": "module",
+      "description": "StarTracker/Gyro/Magnetometer/SunSensor measure() + noise.",
+      "x": 80,
+      "y": 80,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sw-ads-sensor-models-jl-in",
+          "name": "in",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "Module"
+        },
+        {
+          "id": "sw-ads-sensor-models-jl-out",
+          "name": "out",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "Module"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhtjn-ucch",
+      "title": "ads_mekf.jl",
+      "role": "module",
+      "description": "ADSMEKFState; predict!; update_star_tracker!; update_vector!; compute_nees.",
+      "x": 80,
+      "y": 220,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sw-ads-mekf-jl-in",
+          "name": "in",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "Module"
+        },
+        {
+          "id": "sw-ads-mekf-jl-out",
+          "name": "out",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "Module"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhtn1-v7wv",
+      "title": "ads_mode_manager.jl",
+      "role": "module",
+      "description": "ADSMode state machine; update!; active-sensor selection.",
+      "x": 80,
+      "y": 360,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sw-ads-mode-manager-jl-in",
+          "name": "in",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "Module"
+        },
+        {
+          "id": "sw-ads-mode-manager-jl-out",
+          "name": "out",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "Module"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhtqp-93wj",
+      "title": "ads_navigation_effector.jl",
+      "role": "module",
+      "description": "ADSNavigationEffector; calcNavigationEffect!; registration.",
+      "x": 380,
+      "y": 220,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sw-ads-navigation-effector-jl-in",
+          "name": "in",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "Module"
+        },
+        {
+          "id": "sw-ads-navigation-effector-jl-out",
+          "name": "out",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "Module"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhtuj-i0al",
+      "title": "navigation_hooks.jl [existing]",
+      "role": "external",
+      "description": "calcNavigationEffect! interface. READ ONLY.",
+      "x": 700,
+      "y": 120,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sw-navigation-hooks-jl-existing--in",
+          "name": "in",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "Module"
+        },
+        {
+          "id": "sw-navigation-hooks-jl-existing--out",
+          "name": "out",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "Module"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhty2-ezg5",
+      "title": "test/gnc/ads_tests.jl",
+      "role": "test-suite",
+      "description": "Unit + simulation V&V; emits #VULCAN_VNV + raw plots.",
+      "x": 700,
+      "y": 320,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "test/gnc",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sw-test-gnc-ads-tests-jl-in",
+          "name": "in",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "Module"
+        },
+        {
+          "id": "sw-test-gnc-ads-tests-jl-out",
+          "name": "out",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "Module"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-mqq08kre-5jm0",
+      "sourceNodeId": "node-mqpnhtg7-e7ht",
+      "targetNodeId": "node-mqpnhtqp-93wj",
+      "sourcePortId": "sw-ads-sensor-models-jl-out",
+      "targetPortId": "sw-ads-navigation-effector-jl-in",
+      "kind": "import",
+      "label": "measure()",
+      "evidence": [
+        {
+          "source": "ADS software architecture (DRM 1 model)",
+          "confidence": "manual",
+          "filePath": "src/gnc/navigation/ads_sensor_models.jl",
+          "detail": "ads_sensor_models.jl import ads_navigation_effector.jl"
+        }
+      ]
+    },
+    {
+      "id": "edge-mqq08l52-ulvg",
+      "sourceNodeId": "node-mqpnhtjn-ucch",
+      "targetNodeId": "node-mqpnhtqp-93wj",
+      "sourcePortId": "sw-ads-mekf-jl-out",
+      "targetPortId": "sw-ads-navigation-effector-jl-in",
+      "kind": "import",
+      "label": "estimate!",
+      "evidence": [
+        {
+          "source": "ADS software architecture (DRM 1 model)",
+          "confidence": "manual",
+          "filePath": "src/gnc/navigation/ads_mekf.jl",
+          "detail": "ads_mekf.jl import ads_navigation_effector.jl"
+        }
+      ]
+    },
+    {
+      "id": "edge-mqq08lkk-9ol0",
+      "sourceNodeId": "node-mqpnhtn1-v7wv",
+      "targetNodeId": "node-mqpnhtqp-93wj",
+      "sourcePortId": "sw-ads-mode-manager-jl-out",
+      "targetPortId": "sw-ads-navigation-effector-jl-in",
+      "kind": "import",
+      "label": "update!",
+      "evidence": [
+        {
+          "source": "ADS software architecture (DRM 1 model)",
+          "confidence": "manual",
+          "filePath": "src/gnc/navigation/ads_mode_manager.jl",
+          "detail": "ads_mode_manager.jl import ads_navigation_effector.jl"
+        }
+      ]
+    },
+    {
+      "id": "edge-mqq08lx1-kb8s",
+      "sourceNodeId": "node-mqpnhtqp-93wj",
+      "targetNodeId": "node-mqpnhtuj-i0al",
+      "sourcePortId": "sw-ads-navigation-effector-jl-out",
+      "targetPortId": "sw-navigation-hooks-jl-existing--in",
+      "kind": "realization",
+      "label": "implements",
+      "evidence": [
+        {
+          "source": "ADS software architecture (DRM 1 model)",
+          "confidence": "manual",
+          "filePath": "src/gnc/navigation/ads_navigation_effector.jl",
+          "detail": "ads_navigation_effector.jl realization navigation_hooks.jl [existing]"
+        }
+      ]
+    },
+    {
+      "id": "edge-mqq08m8z-p0z2",
+      "sourceNodeId": "node-mqpnhtqp-93wj",
+      "targetNodeId": "node-mqpnhty2-ezg5",
+      "sourcePortId": "sw-ads-navigation-effector-jl-out",
+      "targetPortId": "sw-test-gnc-ads-tests-jl-in",
+      "kind": "call",
+      "label": "verifies",
+      "evidence": [
+        {
+          "source": "ADS software architecture (DRM 1 model)",
+          "confidence": "manual",
+          "filePath": "src/gnc/navigation/ads_navigation_effector.jl",
+          "detail": "ads_navigation_effector.jl call test/gnc/ads_tests.jl"
+        }
+      ]
+    }
+  ]
+}

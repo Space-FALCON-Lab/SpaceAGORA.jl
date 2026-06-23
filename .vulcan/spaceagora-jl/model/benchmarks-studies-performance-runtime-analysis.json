@@ -1,0 +1,109 @@
+{
+  "id": "benchmarks-studies-performance-runtime-analysis",
+  "title": "Performance Runtime Analysis",
+  "componentKey": "benchmarks/studies/performance_runtime_analysis",
+  "description": "16 files, 0 exports, 11 connections",
+  "interfaces": [],
+  "connections": [
+    {
+      "targetId": "benchmarks-studies-performance-runtime-analysis-case-catalog",
+      "targetTitle": "Case Catalog",
+      "edgeKind": "imports",
+      "interfaceName": "case_builders",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-performance-runtime-analysis-case-catalog",
+      "targetTitle": "Case Catalog",
+      "edgeKind": "imports",
+      "interfaceName": "env_workers_and_routes",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-performance-runtime-analysis-case-catalog",
+      "targetTitle": "Case Catalog",
+      "edgeKind": "imports",
+      "interfaceName": "profile_types_and_helpers",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-performance-runtime-analysis-measurement",
+      "targetTitle": "Measurement",
+      "edgeKind": "imports",
+      "interfaceName": "entry_duration",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-performance-runtime-analysis-measurement",
+      "targetTitle": "Measurement",
+      "edgeKind": "imports",
+      "interfaceName": "montecarlo",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-performance-runtime-analysis-measurement",
+      "targetTitle": "Measurement",
+      "edgeKind": "imports",
+      "interfaceName": "per_orbit",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-performance-runtime-analysis-measurement",
+      "targetTitle": "Measurement",
+      "edgeKind": "imports",
+      "interfaceName": "warmup_and_batch",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-performance-runtime-analysis-reporting",
+      "targetTitle": "Reporting",
+      "edgeKind": "imports",
+      "interfaceName": "plots_and_reporting",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-performance-runtime-analysis-reporting",
+      "targetTitle": "Reporting",
+      "edgeKind": "imports",
+      "interfaceName": "report_writing",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-performance-runtime-analysis-reporting",
+      "targetTitle": "Reporting",
+      "edgeKind": "imports",
+      "interfaceName": "rollout_gates",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-performance-runtime-analysis-reporting",
+      "targetTitle": "Reporting",
+      "edgeKind": "imports",
+      "interfaceName": "summaries",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "benchmarks/studies/performance_runtime_analysis/case_catalog/case_builders.jl",
+    "benchmarks/studies/performance_runtime_analysis/case_catalog/env_workers_and_routes.jl",
+    "benchmarks/studies/performance_runtime_analysis/case_catalog/profile_types_and_helpers.jl",
+    "benchmarks/studies/performance_runtime_analysis/case_catalog.jl",
+    "benchmarks/studies/performance_runtime_analysis/cli.jl",
+    "benchmarks/studies/performance_runtime_analysis/main.jl",
+    "benchmarks/studies/performance_runtime_analysis/measurement/entry_duration.jl",
+    "benchmarks/studies/performance_runtime_analysis/measurement/montecarlo.jl",
+    "benchmarks/studies/performance_runtime_analysis/measurement/per_orbit.jl",
+    "benchmarks/studies/performance_runtime_analysis/measurement/warmup_and_batch.jl",
+    "benchmarks/studies/performance_runtime_analysis/measurement.jl",
+    "benchmarks/studies/performance_runtime_analysis/reporting/plots_and_reporting.jl",
+    "benchmarks/studies/performance_runtime_analysis/reporting/report_writing.jl",
+    "benchmarks/studies/performance_runtime_analysis/reporting/rollout_gates.jl",
+    "benchmarks/studies/performance_runtime_analysis/reporting/summaries.jl",
+    "benchmarks/studies/performance_runtime_analysis/reporting.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

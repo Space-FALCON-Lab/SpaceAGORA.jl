@@ -1,0 +1,77 @@
+{
+  "id": "auto-logical-component-ext",
+  "filePath": "model-interfaces/repository/ext.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-21",
+  "title": "SpaceAGORAGRAMSuiteExt",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "SpaceAGORAGRAMSuiteExt: 1 implementation files.",
+  "verificationIntent": "Verify that SpaceAGORAGRAMSuiteExt's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-21-root",
+      "title": "SpaceAGORAGRAMSuiteExt",
+      "role": "module",
+      "description": "1 implementation files, 0 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 560,
+      "height": 300,
+      "tags": [
+        "ext",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-21",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-21",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-21-direct-1",
+      "title": "SpaceAGORAGRAMSuiteExt.jl",
+      "role": "function",
+      "description": "ext/SpaceAGORAGRAMSuiteExt.jl (204 lines · 3 imports).",
+      "x": 18,
+      "y": 60,
+      "width": 200,
+      "height": 62,
+      "tags": [
+        "ext",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-direct-in-subsheet-21-direct-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-direct-out-subsheet-21-direct-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [],
+  "viewKind": "internal-block"
+}

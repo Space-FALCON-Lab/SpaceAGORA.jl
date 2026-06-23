@@ -1,0 +1,42 @@
+{
+  "id": "src-io-logging",
+  "title": "IOLogging",
+  "componentKey": "src/io/logging",
+  "description": "1 files, 3 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "io_log_enabled",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "io_log_info",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "io_log_warn",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/io/logging/io_logging.jl"
+  ],
+  "exports": [
+    "io_log_enabled",
+    "io_log_info",
+    "io_log_warn"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

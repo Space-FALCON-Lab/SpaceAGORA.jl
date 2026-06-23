@@ -1,0 +1,26 @@
+{
+  "id": "experimental-vehicle-resources-power-bus",
+  "title": "PowerBusModel",
+  "componentKey": "experimental/vehicle/resources/power_bus",
+  "description": "1 files, 1 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "PowerBusResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "experimental/vehicle/resources/power_bus/power_bus_model.jl"
+  ],
+  "exports": [
+    "PowerBusResourceModel"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

@@ -1,0 +1,164 @@
+{
+  "id": "src-simulation-engine",
+  "title": "SimulationEngine",
+  "componentKey": "src/simulation/engine",
+  "description": "18 files, 9 exports, 8 connections",
+  "interfaces": [
+    {
+      "name": "ParallelConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SolverConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "RuntimePolicyConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ArtifactConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SimulationEngineConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "simulation_engine_config_from_env",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_simulation",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "prewarm_nbody_ephemeris_cache",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "load_nbody_ephemeris_cache!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [
+    {
+      "targetId": "src-core-interfaces",
+      "targetTitle": "Interfaces",
+      "edgeKind": "imports",
+      "interfaceName": "reference_system",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-engine-adapters",
+      "targetTitle": "Adapters",
+      "edgeKind": "imports",
+      "interfaceName": "from_env",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-engine-adapters",
+      "targetTitle": "Adapters",
+      "edgeKind": "imports",
+      "interfaceName": "from_simulation_configuration",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-engine-config",
+      "targetTitle": "Config",
+      "edgeKind": "imports",
+      "interfaceName": "artifact_config",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-engine-config",
+      "targetTitle": "Config",
+      "edgeKind": "imports",
+      "interfaceName": "parallel_config",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-engine-config",
+      "targetTitle": "Config",
+      "edgeKind": "imports",
+      "interfaceName": "runtime_policy_config",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-engine-config",
+      "targetTitle": "Config",
+      "edgeKind": "imports",
+      "interfaceName": "simulation_engine_config",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-engine-config",
+      "targetTitle": "Config",
+      "edgeKind": "imports",
+      "interfaceName": "solver_config",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/simulation/engine/adapters/from_env.jl",
+    "src/simulation/engine/adapters/from_simulation_configuration.jl",
+    "src/simulation/engine/config/artifact_config.jl",
+    "src/simulation/engine/config/parallel_config.jl",
+    "src/simulation/engine/config/runtime_policy_config.jl",
+    "src/simulation/engine/config/simulation_engine_config.jl",
+    "src/simulation/engine/config/solver_config.jl",
+    "src/simulation/engine/dynamics_rhs.jl",
+    "src/simulation/engine/effector_sampling.jl",
+    "src/simulation/engine/execution.jl",
+    "src/simulation/engine/persistence.jl",
+    "src/simulation/engine/public_api.jl",
+    "src/simulation/engine/reporting.jl",
+    "src/simulation/engine/resume_checkpoint.jl",
+    "src/simulation/engine/setup.jl",
+    "src/simulation/engine/simulation_engine.jl",
+    "src/simulation/engine/solver_policy.jl",
+    "src/simulation/engine/state_access.jl"
+  ],
+  "exports": [
+    "ParallelConfig",
+    "SolverConfig",
+    "RuntimePolicyConfig",
+    "ArtifactConfig",
+    "SimulationEngineConfig",
+    "simulation_engine_config_from_env",
+    "run_simulation",
+    "prewarm_nbody_ephemeris_cache",
+    "load_nbody_ephemeris_cache!"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

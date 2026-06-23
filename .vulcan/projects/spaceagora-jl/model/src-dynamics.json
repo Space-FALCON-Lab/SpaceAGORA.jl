@@ -1,0 +1,304 @@
+{
+  "id": "src-dynamics",
+  "title": "Dynamics",
+  "componentKey": "src/dynamics",
+  "description": "15 files, 50 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "AerodynamicCoefficientConstant",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerodynamicCoefficientfM",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerodynamicCoefficientNoBallisticFlight",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ConstantGravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "InverseSquaredGravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "InverseSquaredJ2GravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "aerobraking_gravity_force_ii",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "j2_secular_rates",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerobrakingCampaignPropulsiveManeuverGuidanceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NBodyGravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "GravitationalHarmonicsModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SolarRadiationPressureModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "srp",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "srp_cannonball_accel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "planetary_albedo_accel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "planetary_ir_accel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "BaseThrusterModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "calcForceTorque",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "wrench",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "environment_requirements",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "solver_partition",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "quaternion_derivative",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "angular_acceleration",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "body_torque",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "body_angular_velocity",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "combine_torques",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "position_derivative",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "zero_position_derivative",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "acceleration_from_force",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "mass_derivative",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "assign_full_translational_rhs!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "assign_slow_translational_rhs!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "assign_control_only_translational_rhs!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "assign_force_only_translational_rhs!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/dynamics/coupled/aerodynamic_wrench_models.jl",
+    "src/dynamics/coupled/force_torque_models/aerodynamic_effectors.jl",
+    "src/dynamics/coupled/force_torque_models/gravity_effectors.jl",
+    "src/dynamics/coupled/force_torque_models/guidance_models.jl",
+    "src/dynamics/coupled/force_torque_models/perturbation_effectors.jl",
+    "src/dynamics/coupled/force_torque_models/thruster_models.jl",
+    "src/dynamics/coupled/force_torque_models.jl",
+    "src/dynamics/coupled/perturbations.jl",
+    "src/dynamics/rotational/attitude_kinematics.jl",
+    "src/dynamics/rotational/rigid_body_dynamics.jl",
+    "src/dynamics/rotational/rotational_models.jl",
+    "src/dynamics/rotational/torque_models.jl",
+    "src/dynamics/translational/point_mass_dynamics.jl",
+    "src/dynamics/translational/position_kinematics.jl",
+    "src/dynamics/translational/translational_models.jl"
+  ],
+  "exports": [
+    "AerodynamicCoefficientConstant",
+    "AerodynamicCoefficientfM",
+    "AerodynamicCoefficientNoBallisticFlight",
+    "ConstantGravityModel",
+    "InverseSquaredGravityModel",
+    "InverseSquaredJ2GravityModel",
+    "aerobraking_gravity_force_ii",
+    "j2_secular_rates",
+    "AerobrakingCampaignPropulsiveManeuverGuidanceModel",
+    "NBodyGravityModel",
+    "GravitationalHarmonicsModel",
+    "SolarRadiationPressureModel",
+    "srp",
+    "srp_cannonball_accel",
+    "planetary_albedo_accel",
+    "planetary_ir_accel",
+    "BaseThrusterModel",
+    "calcForceTorque",
+    "wrench",
+    "environment_requirements",
+    "solver_partition",
+    "quaternion_derivative",
+    "angular_acceleration",
+    "body_torque",
+    "body_angular_velocity",
+    "combine_torques",
+    "position_derivative",
+    "zero_position_derivative",
+    "acceleration_from_force",
+    "mass_derivative",
+    "assign_full_translational_rhs!",
+    "assign_slow_translational_rhs!",
+    "assign_control_only_translational_rhs!",
+    "assign_force_only_translational_rhs!"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

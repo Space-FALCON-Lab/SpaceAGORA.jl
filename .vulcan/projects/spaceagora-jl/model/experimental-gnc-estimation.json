@@ -1,0 +1,42 @@
+{
+  "id": "experimental-gnc-estimation",
+  "title": "Estimation",
+  "componentKey": "experimental/gnc/estimation",
+  "description": "1 files, 3 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "EstimatorState",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "MeasurementPacket",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "estimate_state!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "experimental/gnc/estimation/estimation.jl"
+  ],
+  "exports": [
+    "EstimatorState",
+    "MeasurementPacket",
+    "estimate_state!"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

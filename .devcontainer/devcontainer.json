@@ -1,0 +1,25 @@
+{
+  "name": "SpaceAGORA Dev Container",
+  "image": "mcr.microsoft.com/devcontainers/base:noble",
+
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    },
+    "ghcr.io/julialang/devcontainer-features/julia:1": {}
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "julialang.language-julia",
+        "ms-python.python"
+      ]
+    }
+  }
+
+  // "forwardPorts": [],
+  // "postCreateCommand": "julia --version && python --version && node --version",
+  // "remoteUser": "root"
+}

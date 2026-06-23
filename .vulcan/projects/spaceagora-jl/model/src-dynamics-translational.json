@@ -1,0 +1,84 @@
+{
+  "id": "src-dynamics-translational",
+  "title": "DynamicsTranslational",
+  "componentKey": "src/dynamics/translational",
+  "description": "3 files, 8 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "position_derivative",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "zero_position_derivative",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "acceleration_from_force",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "mass_derivative",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "assign_full_translational_rhs!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "assign_slow_translational_rhs!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "assign_control_only_translational_rhs!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "assign_force_only_translational_rhs!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/dynamics/translational/point_mass_dynamics.jl",
+    "src/dynamics/translational/position_kinematics.jl",
+    "src/dynamics/translational/translational_models.jl"
+  ],
+  "exports": [
+    "position_derivative",
+    "zero_position_derivative",
+    "acceleration_from_force",
+    "mass_derivative",
+    "assign_full_translational_rhs!",
+    "assign_slow_translational_rhs!",
+    "assign_control_only_translational_rhs!",
+    "assign_force_only_translational_rhs!"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

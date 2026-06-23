@@ -1,0 +1,31 @@
+{
+  "id": "test-integration-examples",
+  "title": "Examples",
+  "componentKey": "test/integration/examples",
+  "description": "2 files, 0 exports, 1 connections",
+  "interfaces": [],
+  "connections": [
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_examples_regression",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [
+    {
+      "path": "test/integration/examples/README.md",
+      "name": "README.md"
+    },
+    {
+      "path": "test/integration/examples/runtests.jl",
+      "name": "runtests.jl"
+    }
+  ],
+  "requirements": [],
+  "implementationFiles": [],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

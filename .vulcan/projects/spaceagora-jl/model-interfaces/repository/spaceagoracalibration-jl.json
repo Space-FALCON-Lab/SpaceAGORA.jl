@@ -1,0 +1,1812 @@
+{
+  "id": "auto-logical-component-spaceagoracalibration-jl",
+  "filePath": "model-interfaces/repository/spaceagoracalibration-jl.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-6",
+  "title": "SpaceAGORACalibration.Jl",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "SpaceAGORACalibration.Jl: 19 implementation files, 4 sub-components.",
+  "verificationIntent": "Verify that SpaceAGORACalibration.Jl's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-6-root",
+      "title": "SpaceAGORACalibration.Jl",
+      "role": "subsystem",
+      "description": "19 implementation files, 84 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 740,
+      "height": 430,
+      "tags": [
+        "SpaceAGORACalibration.jl",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-6",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-6",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-child-1",
+      "title": "AdaptiveRuntime",
+      "role": "module",
+      "description": "12 files, 84 exports, 75 imports.",
+      "x": 20,
+      "y": 60,
+      "width": 215,
+      "height": 1120,
+      "tags": [
+        "SpaceAGORACalibration.jl/src",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-6-1",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-6-1",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-1-1",
+      "title": "Backend.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/src/Backend.jl (1015 lines · 10 exports · 8 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/src",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-1-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-1-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-1-2",
+      "title": "Engine.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/src/Engine.jl (605 lines · 2 exports · 12 imports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/src",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-1-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-1-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-1-3",
+      "title": "Store.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/src/Store.jl (381 lines · 16 exports · 8 imports).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/src",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-1-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-1-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-1-4",
+      "title": "AdaptiveRuntime.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/src/AdaptiveRuntime.jl (399 lines · 7 exports · 5 imports).",
+      "x": 12,
+      "y": 276,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/src",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-1-4",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-1-4",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-1-5",
+      "title": "Spec.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/src/Spec.jl (372 lines · 9 exports · 1 imports).",
+      "x": 12,
+      "y": 354,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/src",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-1-5",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-1-5",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-1-6",
+      "title": "GlobalSearch.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/src/GlobalSearch.jl (322 lines · 5 exports · 6 imports).",
+      "x": 12,
+      "y": 432,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/src",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-1-6",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-1-6",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-1-7",
+      "title": "LocalRefine.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/src/LocalRefine.jl (267 lines · 3 exports · 5 imports).",
+      "x": 12,
+      "y": 510,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/src",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-1-7",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-1-7",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-1-8",
+      "title": "ParamSpace.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/src/ParamSpace.jl (190 lines · 6 exports · 2 imports).",
+      "x": 12,
+      "y": 588,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/src",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-1-8",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-1-8",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-1-9",
+      "title": "Robustness.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/src/Robustness.jl (96 lines · 5 exports · 5 imports).",
+      "x": 12,
+      "y": 666,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/src",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-1-9",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-1-9",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-1-10",
+      "title": "SpaceAGORACalibration.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl (27 lines · 16 exports · 15 imports).",
+      "x": 12,
+      "y": 744,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/src",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-1-10",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-1-10",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-1-11",
+      "title": "Report.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/src/Report.jl (97 lines · 1 exports · 6 imports).",
+      "x": 12,
+      "y": 822,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/src",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-1-11",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-1-11",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-1-12",
+      "title": "Objective.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/src/Objective.jl (90 lines · 4 exports · 2 imports).",
+      "x": 12,
+      "y": 900,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/src",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-1-12",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-1-12",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-child-2",
+      "title": "Bin",
+      "role": "component",
+      "description": "3 files, 0 exports, 8 imports.",
+      "x": 255,
+      "y": 60,
+      "width": 215,
+      "height": 355,
+      "tags": [
+        "SpaceAGORACalibration.jl/bin",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-6-2",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-6-2",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-2-1",
+      "title": "run_earth_offline_study.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl (170 lines · 3 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/bin",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-2-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-2-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-2-2",
+      "title": "run_telemetry_tuner.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/bin/run_telemetry_tuner.jl (169 lines · 3 imports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/bin",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-2-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-2-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-2-3",
+      "title": "run_calibration.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/bin/run_calibration.jl (20 lines · 2 imports).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/bin",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-2-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-2-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-child-3",
+      "title": "Test",
+      "role": "test-suite",
+      "description": "2 files, 0 exports, 7 imports.",
+      "x": 20,
+      "y": 185,
+      "width": 215,
+      "height": 270,
+      "tags": [
+        "SpaceAGORACalibration.jl/test",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-6-3",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-6-3",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-3-1",
+      "title": "runtests.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/test/runtests.jl (873 lines · 6 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/test",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-3-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-3-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-3-2",
+      "title": "ci_coverage_quality_gate.jl",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/test/ci_coverage_quality_gate.jl (176 lines · 1 imports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/test",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-3-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-3-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-child-4",
+      "title": "Studies",
+      "role": "subsystem",
+      "description": "1 files, 0 exports, 0 imports.",
+      "x": 255,
+      "y": 185,
+      "width": 215,
+      "height": 185,
+      "tags": [
+        "SpaceAGORACalibration.jl/studies",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-6-4",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-6-4",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-6-file-4-1",
+      "title": "README.md",
+      "role": "function",
+      "description": "SpaceAGORACalibration.jl/studies/earth_offline/README.md (86 lines).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "SpaceAGORACalibration.jl/studies",
+        "file",
+        "md"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-6-file-4-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-6-file-4-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "subsheet-6-edge-1",
+      "sourceNodeId": "subsheet-6-file-2-3",
+      "targetNodeId": "subsheet-6-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-3",
+      "targetPortId": "sub-file-in-subsheet-6-file-2-1",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-6-edge-2",
+      "sourceNodeId": "subsheet-6-file-2-3",
+      "targetNodeId": "subsheet-6-file-2-2",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-3",
+      "targetPortId": "sub-file-in-subsheet-6-file-2-2",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-6-edge-3",
+      "sourceNodeId": "subsheet-6-file-2-3",
+      "targetNodeId": "subsheet-6-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-3",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-2",
+      "kind": "call",
+      "label": "run_calibration"
+    },
+    {
+      "id": "subsheet-6-edge-4",
+      "sourceNodeId": "subsheet-6-file-2-3",
+      "targetNodeId": "subsheet-6-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-3",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-5",
+      "kind": "call",
+      "label": "load_spec"
+    },
+    {
+      "id": "subsheet-6-edge-5",
+      "sourceNodeId": "subsheet-6-file-2-1",
+      "targetNodeId": "subsheet-6-file-2-3",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-2-3",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-6-edge-6",
+      "sourceNodeId": "subsheet-6-file-2-1",
+      "targetNodeId": "subsheet-6-file-2-2",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-2-2",
+      "kind": "call",
+      "label": "_parse_bool"
+    },
+    {
+      "id": "subsheet-6-edge-7",
+      "sourceNodeId": "subsheet-6-file-2-1",
+      "targetNodeId": "subsheet-6-file-2-2",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-2-2",
+      "kind": "call",
+      "label": "_parse_profile"
+    },
+    {
+      "id": "subsheet-6-edge-8",
+      "sourceNodeId": "subsheet-6-file-2-1",
+      "targetNodeId": "subsheet-6-file-2-2",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-2-2",
+      "kind": "call",
+      "label": "_run_post_verify_best"
+    },
+    {
+      "id": "subsheet-6-edge-9",
+      "sourceNodeId": "subsheet-6-file-2-1",
+      "targetNodeId": "subsheet-6-file-2-2",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-2-2",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-6-edge-10",
+      "sourceNodeId": "subsheet-6-file-2-1",
+      "targetNodeId": "subsheet-6-file-2-2",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-2-2",
+      "kind": "call",
+      "label": "parse_cli"
+    },
+    {
+      "id": "subsheet-6-edge-11",
+      "sourceNodeId": "subsheet-6-file-2-1",
+      "targetNodeId": "subsheet-6-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-2",
+      "kind": "call",
+      "label": "run_calibration"
+    },
+    {
+      "id": "subsheet-6-edge-12",
+      "sourceNodeId": "subsheet-6-file-2-1",
+      "targetNodeId": "subsheet-6-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-5",
+      "kind": "call",
+      "label": "load_spec"
+    },
+    {
+      "id": "subsheet-6-edge-13",
+      "sourceNodeId": "subsheet-6-file-2-2",
+      "targetNodeId": "subsheet-6-file-2-3",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-2-3",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-6-edge-14",
+      "sourceNodeId": "subsheet-6-file-2-2",
+      "targetNodeId": "subsheet-6-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-2-1",
+      "kind": "call",
+      "label": "_parse_bool"
+    },
+    {
+      "id": "subsheet-6-edge-15",
+      "sourceNodeId": "subsheet-6-file-2-2",
+      "targetNodeId": "subsheet-6-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-2-1",
+      "kind": "call",
+      "label": "_parse_profile"
+    },
+    {
+      "id": "subsheet-6-edge-16",
+      "sourceNodeId": "subsheet-6-file-2-2",
+      "targetNodeId": "subsheet-6-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-2-1",
+      "kind": "call",
+      "label": "_run_post_verify_best"
+    },
+    {
+      "id": "subsheet-6-edge-17",
+      "sourceNodeId": "subsheet-6-file-2-2",
+      "targetNodeId": "subsheet-6-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-2-1",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-6-edge-18",
+      "sourceNodeId": "subsheet-6-file-2-2",
+      "targetNodeId": "subsheet-6-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-2-1",
+      "kind": "call",
+      "label": "parse_cli"
+    },
+    {
+      "id": "subsheet-6-edge-19",
+      "sourceNodeId": "subsheet-6-file-2-2",
+      "targetNodeId": "subsheet-6-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-2",
+      "kind": "call",
+      "label": "run_calibration"
+    },
+    {
+      "id": "subsheet-6-edge-20",
+      "sourceNodeId": "subsheet-6-file-2-2",
+      "targetNodeId": "subsheet-6-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-5",
+      "kind": "call",
+      "label": "load_spec"
+    },
+    {
+      "id": "subsheet-6-edge-21",
+      "sourceNodeId": "subsheet-6-file-1-1",
+      "targetNodeId": "subsheet-6-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-5",
+      "kind": "call",
+      "label": "primary_manifest_path"
+    },
+    {
+      "id": "subsheet-6-edge-22",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-4",
+      "kind": "call",
+      "label": "init_runtime_controller"
+    },
+    {
+      "id": "subsheet-6-edge-23",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "backend_full_auto_requested"
+    },
+    {
+      "id": "subsheet-6-edge-24",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "evaluate_candidate"
+    },
+    {
+      "id": "subsheet-6-edge-25",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-6",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-6",
+      "kind": "call",
+      "label": "global_target_count"
+    },
+    {
+      "id": "subsheet-6-edge-26",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-6",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-6",
+      "kind": "call",
+      "label": "plan_initial_design"
+    },
+    {
+      "id": "subsheet-6-edge-27",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-6",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-6",
+      "kind": "call",
+      "label": "propose_bo_candidate"
+    },
+    {
+      "id": "subsheet-6-edge-28",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-7",
+      "kind": "call",
+      "label": "_evaluate_candidates_ordered"
+    },
+    {
+      "id": "subsheet-6-edge-29",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-7",
+      "kind": "call",
+      "label": "_parallel_evaluations"
+    },
+    {
+      "id": "subsheet-6-edge-30",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-7",
+      "kind": "call",
+      "label": "run_local_refine"
+    },
+    {
+      "id": "subsheet-6-edge-31",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-12",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-12",
+      "kind": "call",
+      "label": "sort_indices_by_score"
+    },
+    {
+      "id": "subsheet-6-edge-32",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-8",
+      "kind": "call",
+      "label": "candidate_signature"
+    },
+    {
+      "id": "subsheet-6-edge-33",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-9",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-9",
+      "kind": "call",
+      "label": "plan_robustness_candidates"
+    },
+    {
+      "id": "subsheet-6-edge-34",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-9",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-9",
+      "kind": "call",
+      "label": "summarize_robustness"
+    },
+    {
+      "id": "subsheet-6-edge-35",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-5",
+      "kind": "call",
+      "label": "primary_manifest_path"
+    },
+    {
+      "id": "subsheet-6-edge-36",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-5",
+      "kind": "call",
+      "label": "validate_spec"
+    },
+    {
+      "id": "subsheet-6-edge-37",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-3",
+      "kind": "call",
+      "label": "init_store"
+    },
+    {
+      "id": "subsheet-6-edge-38",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-3",
+      "kind": "call",
+      "label": "load_ledger_entries"
+    },
+    {
+      "id": "subsheet-6-edge-39",
+      "sourceNodeId": "subsheet-6-file-1-2",
+      "targetNodeId": "subsheet-6-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-3",
+      "kind": "call",
+      "label": "load_state"
+    },
+    {
+      "id": "subsheet-6-edge-40",
+      "sourceNodeId": "subsheet-6-file-1-6",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-6",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "evaluate_candidate"
+    },
+    {
+      "id": "subsheet-6-edge-41",
+      "sourceNodeId": "subsheet-6-file-1-6",
+      "targetNodeId": "subsheet-6-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-6",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-8",
+      "kind": "call",
+      "label": "candidate_signature"
+    },
+    {
+      "id": "subsheet-6-edge-42",
+      "sourceNodeId": "subsheet-6-file-1-6",
+      "targetNodeId": "subsheet-6-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-6",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-8",
+      "kind": "call",
+      "label": "sample_initial_population"
+    },
+    {
+      "id": "subsheet-6-edge-43",
+      "sourceNodeId": "subsheet-6-file-1-6",
+      "targetNodeId": "subsheet-6-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-6",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-8",
+      "kind": "call",
+      "label": "sample_random_candidate"
+    },
+    {
+      "id": "subsheet-6-edge-44",
+      "sourceNodeId": "subsheet-6-file-1-7",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "evaluate_candidate"
+    },
+    {
+      "id": "subsheet-6-edge-45",
+      "sourceNodeId": "subsheet-6-file-1-7",
+      "targetNodeId": "subsheet-6-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-2",
+      "kind": "call",
+      "label": "_evaluate_candidates_ordered"
+    },
+    {
+      "id": "subsheet-6-edge-46",
+      "sourceNodeId": "subsheet-6-file-1-7",
+      "targetNodeId": "subsheet-6-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-2",
+      "kind": "call",
+      "label": "_parallel_evaluations"
+    },
+    {
+      "id": "subsheet-6-edge-47",
+      "sourceNodeId": "subsheet-6-file-1-7",
+      "targetNodeId": "subsheet-6-file-1-12",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-12",
+      "kind": "call",
+      "label": "primary_score"
+    },
+    {
+      "id": "subsheet-6-edge-48",
+      "sourceNodeId": "subsheet-6-file-1-7",
+      "targetNodeId": "subsheet-6-file-1-12",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-12",
+      "kind": "call",
+      "label": "sort_indices_by_score"
+    },
+    {
+      "id": "subsheet-6-edge-49",
+      "sourceNodeId": "subsheet-6-file-1-7",
+      "targetNodeId": "subsheet-6-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-8",
+      "kind": "call",
+      "label": "candidate_signature"
+    },
+    {
+      "id": "subsheet-6-edge-50",
+      "sourceNodeId": "subsheet-6-file-1-7",
+      "targetNodeId": "subsheet-6-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-8",
+      "kind": "call",
+      "label": "perturb_candidate"
+    },
+    {
+      "id": "subsheet-6-edge-51",
+      "sourceNodeId": "subsheet-6-file-1-9",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "evaluate_candidate"
+    },
+    {
+      "id": "subsheet-6-edge-52",
+      "sourceNodeId": "subsheet-6-file-1-9",
+      "targetNodeId": "subsheet-6-file-1-12",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-12",
+      "kind": "call",
+      "label": "robust_score"
+    },
+    {
+      "id": "subsheet-6-edge-53",
+      "sourceNodeId": "subsheet-6-file-1-9",
+      "targetNodeId": "subsheet-6-file-1-12",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-12",
+      "kind": "call",
+      "label": "robust_statistics"
+    },
+    {
+      "id": "subsheet-6-edge-54",
+      "sourceNodeId": "subsheet-6-file-1-3",
+      "targetNodeId": "subsheet-6-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-5",
+      "kind": "call",
+      "label": "spec_to_dict"
+    },
+    {
+      "id": "subsheet-6-edge-55",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "_apply_transform"
+    },
+    {
+      "id": "subsheet-6-edge-56",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "_candidate_env_pairs"
+    },
+    {
+      "id": "subsheet-6-edge-57",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "_candidate_runtime_policy_env_pairs"
+    },
+    {
+      "id": "subsheet-6-edge-58",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "_coerce_parameter_value"
+    },
+    {
+      "id": "subsheet-6-edge-59",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "_env_with_default"
+    },
+    {
+      "id": "subsheet-6-edge-60",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "_format_env_value"
+    },
+    {
+      "id": "subsheet-6-edge-61",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "_lookup_parameter"
+    },
+    {
+      "id": "subsheet-6-edge-62",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "_objective_from_rows"
+    },
+    {
+      "id": "subsheet-6-edge-63",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "_parse_segment"
+    },
+    {
+      "id": "subsheet-6-edge-64",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "_read_summary_rows"
+    },
+    {
+      "id": "subsheet-6-edge-65",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "_replica_id"
+    },
+    {
+      "id": "subsheet-6-edge-66",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "_runtime_from_rows"
+    },
+    {
+      "id": "subsheet-6-edge-67",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "_safe_bool"
+    },
+    {
+      "id": "subsheet-6-edge-68",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "_safe_float"
+    },
+    {
+      "id": "subsheet-6-edge-69",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "_select_items"
+    },
+    {
+      "id": "subsheet-6-edge-70",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "call",
+      "label": "evaluate_candidate"
+    },
+    {
+      "id": "subsheet-6-edge-71",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-2",
+      "kind": "call",
+      "label": "run_calibration"
+    },
+    {
+      "id": "subsheet-6-edge-72",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-8",
+      "kind": "call",
+      "label": "_sample_value"
+    },
+    {
+      "id": "subsheet-6-edge-73",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-8",
+      "kind": "call",
+      "label": "_value_from_unit"
+    },
+    {
+      "id": "subsheet-6-edge-74",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-8",
+      "kind": "call",
+      "label": "perturb_candidate"
+    },
+    {
+      "id": "subsheet-6-edge-75",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-8",
+      "kind": "call",
+      "label": "sample_initial_population"
+    },
+    {
+      "id": "subsheet-6-edge-76",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-5",
+      "kind": "call",
+      "label": "default_spec"
+    },
+    {
+      "id": "subsheet-6-edge-77",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-5",
+      "kind": "call",
+      "label": "spec_to_dict"
+    },
+    {
+      "id": "subsheet-6-edge-78",
+      "sourceNodeId": "subsheet-6-file-2-3",
+      "targetNodeId": "subsheet-6-file-1-10",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-3",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-10",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "SpaceAGORACalibration.jl/bin/run_calibration.jl",
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-79",
+      "sourceNodeId": "subsheet-6-file-2-1",
+      "targetNodeId": "subsheet-6-file-1-10",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-10",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl",
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-80",
+      "sourceNodeId": "subsheet-6-file-2-2",
+      "targetNodeId": "subsheet-6-file-1-10",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-10",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "SpaceAGORACalibration.jl/bin/run_telemetry_tuner.jl",
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-81",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-4",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/AdaptiveRuntime.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-82",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/Backend.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-83",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-2",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/Engine.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-84",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-6",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-6",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/GlobalSearch.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-85",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-7",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/LocalRefine.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-86",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-12",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-12",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/Objective.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-87",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-8",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/ParamSpace.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-88",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-11",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-11",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/Report.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-89",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-9",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-9",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/Robustness.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-90",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-5",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/Spec.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-91",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-3",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/Store.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-92",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-10",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-10",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "SpaceAGORACalibration.jl/test/runtests.jl",
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-93",
+      "sourceNodeId": "subsheet-6-file-2-3",
+      "targetNodeId": "subsheet-6-file-1-10",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-3",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-10",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "SpaceAGORACalibration.jl/bin/run_calibration.jl",
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-94",
+      "sourceNodeId": "subsheet-6-file-2-1",
+      "targetNodeId": "subsheet-6-file-1-10",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-10",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl",
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-95",
+      "sourceNodeId": "subsheet-6-file-2-2",
+      "targetNodeId": "subsheet-6-file-1-10",
+      "sourcePortId": "sub-file-out-subsheet-6-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-10",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "SpaceAGORACalibration.jl/bin/run_telemetry_tuner.jl",
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-96",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-4",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/AdaptiveRuntime.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-97",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-1",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/Backend.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-98",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-2",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/Engine.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-99",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-6",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-6",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/GlobalSearch.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-100",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-7",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/LocalRefine.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-101",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-12",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-12",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/Objective.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-102",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-8",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/ParamSpace.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-103",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-11",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-11",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/Report.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-104",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-9",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-9",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/Robustness.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-105",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-5",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/Spec.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-106",
+      "sourceNodeId": "subsheet-6-file-1-10",
+      "targetNodeId": "subsheet-6-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-6-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-3",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+        "SpaceAGORACalibration.jl/src/Store.jl"
+      ]
+    },
+    {
+      "id": "subsheet-6-edge-107",
+      "sourceNodeId": "subsheet-6-file-3-1",
+      "targetNodeId": "subsheet-6-file-1-10",
+      "sourcePortId": "sub-file-out-subsheet-6-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-6-file-1-10",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "SpaceAGORACalibration.jl/test/runtests.jl",
+        "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl"
+      ]
+    }
+  ],
+  "viewKind": "internal-block"
+}

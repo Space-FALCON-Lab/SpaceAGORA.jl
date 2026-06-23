@@ -1,0 +1,25 @@
+{
+  "id": "scripts-plotting",
+  "title": "Plotting",
+  "componentKey": "scripts/plotting",
+  "description": "2 files, 0 exports, 1 connections",
+  "interfaces": [],
+  "connections": [
+    {
+      "targetId": "src-core-utils",
+      "targetTitle": "Utils",
+      "edgeKind": "imports",
+      "interfaceName": "misc",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "scripts/plotting/plot_data.jl",
+    "scripts/plotting/telemetry_orbit_accuracy_plots.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

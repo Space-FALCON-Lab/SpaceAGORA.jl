@@ -1,0 +1,107 @@
+{
+  "id": "ads-requirements",
+  "filePath": "requirements/ads-requirements.json",
+  "title": "ADS — System Requirements",
+  "kind": "table",
+  "description": "DRM 1 Attitude Determination Subsystem requirements.",
+  "records": [
+    {
+      "id": "ADS-SYS-001",
+      "title": "Attitude estimate output",
+      "text": "The ADS shall output a body-inertial attitude quaternion, angular-rate estimate, gyro-bias estimate and 6x6 error covariance to the navigation effector at a configurable rate (default 1 Hz).",
+      "priority": "shall",
+      "verificationMethod": "test",
+      "acceptanceCriteria": "Output struct fields present and finite each cycle; rate configurable."
+    },
+    {
+      "id": "ADS-SYS-002",
+      "title": "Sunlit accuracy",
+      "text": "Steady-state attitude determination accuracy shall be <= 0.05 deg (1-sigma) per axis under sunlit conditions with star tracker + gyro available.",
+      "priority": "shall",
+      "verificationMethod": "simulation",
+      "acceptanceCriteria": "1-sigma per-axis error <= 0.05 deg over the steady-state window."
+    },
+    {
+      "id": "ADS-SYS-003",
+      "title": "Eclipse accuracy",
+      "text": "During eclipse the ADS shall maintain attitude knowledge using magnetometer + gyro with accuracy degraded to <= 0.5 deg (1-sigma) per axis.",
+      "priority": "shall",
+      "verificationMethod": "simulation",
+      "acceptanceCriteria": "1-sigma per-axis error <= 0.5 deg over an eclipse pass."
+    },
+    {
+      "id": "ADS-SYS-005",
+      "title": "Convergence",
+      "text": "The MEKF shall converge from a 5 deg initial attitude error to within 0.1 deg in <= 60 s under sunlit conditions.",
+      "priority": "shall",
+      "verificationMethod": "simulation",
+      "acceptanceCriteria": "Attitude error < 0.1 deg by t = 60 s."
+    },
+    {
+      "id": "ADS-SYS-006",
+      "title": "Filter consistency",
+      "text": "The MEKF shall pass NEES/NIS consistency within 95% chi-square bounds over a Monte Carlo of >= 100 trials.",
+      "priority": "shall",
+      "verificationMethod": "analysis",
+      "acceptanceCriteria": "Mean NEES within chi-square(3) 95% interval; >=90% of samples within bounds."
+    },
+    {
+      "id": "ADS-SNS-001",
+      "title": "Star tracker model",
+      "text": "Star tracker shall model 5 arcsec/axis (1-sigma) measurement noise with a 15 deg FOV and sun-exclusion masking.",
+      "priority": "shall",
+      "verificationMethod": "test",
+      "acceptanceCriteria": "Measured noise distribution consistent with 5 arcsec (goodness-of-fit p > 0.05)."
+    },
+    {
+      "id": "ADS-SNS-002",
+      "title": "Gyro model",
+      "text": "Gyro shall model angle random walk 0.1 deg/sqrt(hr) and bias instability 1 deg/hr; bias estimated as 3-state augmentation.",
+      "priority": "shall",
+      "verificationMethod": "test",
+      "acceptanceCriteria": "ARW and bias statistics consistent with spec."
+    },
+    {
+      "id": "ADS-SNS-003",
+      "title": "Magnetometer model",
+      "text": "Magnetometer shall draw the reference field from the environment model and add 50 nT/axis (1-sigma) noise; output normalized.",
+      "priority": "shall",
+      "verificationMethod": "test",
+      "acceptanceCriteria": "Angular noise distribution consistent with 50 nT on the ambient field."
+    },
+    {
+      "id": "ADS-SNS-004",
+      "title": "Sun sensor model",
+      "text": "Coarse sun sensor shall provide body-frame sun direction with 1 deg/axis (1-sigma) noise, valid only when not eclipsed and within a 70 deg FOV.",
+      "priority": "shall",
+      "verificationMethod": "test",
+      "acceptanceCriteria": "Angular noise distribution consistent with 1 deg; validity gating correct."
+    },
+    {
+      "id": "ADS-FLT-001",
+      "title": "MEKF structure",
+      "text": "The estimator shall be a Multiplicative EKF with a 6-state error vector (3 attitude error, 3 gyro bias), propagated on the gyro between updates.",
+      "priority": "shall",
+      "verificationMethod": "test",
+      "acceptanceCriteria": "Predict/update implemented; covariance stays SPD."
+    },
+    {
+      "id": "ADS-FLT-002",
+      "title": "Heterogeneous fusion",
+      "text": "The MEKF update shall fuse star-tracker quaternion, magnetometer unit vector and sun-sensor unit vector with independent covariances.",
+      "priority": "shall",
+      "verificationMethod": "test",
+      "acceptanceCriteria": "Each measurement type produces a valid Kalman update."
+    },
+    {
+      "id": "ADS-INT-001",
+      "title": "Effector contract",
+      "text": "The ADS shall register as a calcNavigationEffect! effector and emit the NavigationEffectorOutput interface without modifying existing navigation effectors.",
+      "priority": "shall",
+      "verificationMethod": "inspection",
+      "acceptanceCriteria": "Implements calcNavigationEffect!; existing effectors unchanged."
+    }
+  ],
+  "vnvEntries": [],
+  "updatedAt": "2026-06-23T01:32:28.377Z"
+}

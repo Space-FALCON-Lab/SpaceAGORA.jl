@@ -1,0 +1,77 @@
+{
+  "id": "auto-logical-component-startup",
+  "filePath": "model-interfaces/repository/startup.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-25",
+  "title": "Startup",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "Startup: 1 implementation files.",
+  "verificationIntent": "Verify that Startup's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-25-root",
+      "title": "Startup",
+      "role": "component",
+      "description": "1 implementation files, 0 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 560,
+      "height": 300,
+      "tags": [
+        "startup",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-25",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-25",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-25-direct-1",
+      "title": "startup.jl",
+      "role": "function",
+      "description": "startup.jl (16 lines).",
+      "x": 18,
+      "y": 60,
+      "width": 200,
+      "height": 62,
+      "tags": [
+        "startup",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-direct-in-subsheet-25-direct-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-direct-out-subsheet-25-direct-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [],
+  "viewKind": "internal-block"
+}

@@ -1,0 +1,16 @@
+{
+  "id": "src-core-utils",
+  "title": "Utils",
+  "componentKey": "src/core/utils",
+  "description": "1 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/core/utils/misc.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

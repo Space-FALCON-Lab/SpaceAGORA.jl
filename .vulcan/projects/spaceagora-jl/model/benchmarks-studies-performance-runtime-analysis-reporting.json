@@ -1,0 +1,19 @@
+{
+  "id": "benchmarks-studies-performance-runtime-analysis-reporting",
+  "title": "Reporting",
+  "componentKey": "benchmarks/studies/performance_runtime_analysis/reporting",
+  "description": "4 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "benchmarks/studies/performance_runtime_analysis/reporting/plots_and_reporting.jl",
+    "benchmarks/studies/performance_runtime_analysis/reporting/report_writing.jl",
+    "benchmarks/studies/performance_runtime_analysis/reporting/rollout_gates.jl",
+    "benchmarks/studies/performance_runtime_analysis/reporting/summaries.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

@@ -1,0 +1,139 @@
+{
+  "id": "src-analysis-verification",
+  "title": "TelemetryVerification",
+  "componentKey": "src/analysis/verification",
+  "description": "11 files, 5 exports, 10 connections",
+  "interfaces": [
+    {
+      "name": "VerificationRequest",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "VerificationResult",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_verification",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_verification_cli",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_study",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [
+    {
+      "targetId": "src-analysis-verification-telemetry-verification",
+      "targetTitle": "Telemetry Verification",
+      "edgeKind": "imports",
+      "interfaceName": "calibration",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-analysis-verification-telemetry-verification",
+      "targetTitle": "Telemetry Verification",
+      "edgeKind": "imports",
+      "interfaceName": "comparison_metrics",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-analysis-verification-telemetry-verification",
+      "targetTitle": "Telemetry Verification",
+      "edgeKind": "imports",
+      "interfaceName": "error_tables",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-analysis-verification-telemetry-verification",
+      "targetTitle": "Telemetry Verification",
+      "edgeKind": "imports",
+      "interfaceName": "example_support",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-analysis-verification-telemetry-verification",
+      "targetTitle": "Telemetry Verification",
+      "edgeKind": "imports",
+      "interfaceName": "manifest_parsing",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-analysis-verification-telemetry-verification",
+      "targetTitle": "Telemetry Verification",
+      "edgeKind": "imports",
+      "interfaceName": "reporting",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-analysis-verification-telemetry-verification",
+      "targetTitle": "Telemetry Verification",
+      "edgeKind": "imports",
+      "interfaceName": "runner",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-analysis-verification-telemetry-verification",
+      "targetTitle": "Telemetry Verification",
+      "edgeKind": "imports",
+      "interfaceName": "scenario_builders",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-analysis-verification-telemetry-verification",
+      "targetTitle": "Telemetry Verification",
+      "edgeKind": "imports",
+      "interfaceName": "telemetry_loading",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-analysis-verification-telemetry-verification",
+      "targetTitle": "Telemetry Verification",
+      "edgeKind": "imports",
+      "interfaceName": "types",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/analysis/verification/telemetry_verification/calibration.jl",
+    "src/analysis/verification/telemetry_verification/comparison_metrics.jl",
+    "src/analysis/verification/telemetry_verification/error_tables.jl",
+    "src/analysis/verification/telemetry_verification/example_support.jl",
+    "src/analysis/verification/telemetry_verification/manifest_parsing.jl",
+    "src/analysis/verification/telemetry_verification/reporting.jl",
+    "src/analysis/verification/telemetry_verification/runner.jl",
+    "src/analysis/verification/telemetry_verification/scenario_builders.jl",
+    "src/analysis/verification/telemetry_verification/telemetry_loading.jl",
+    "src/analysis/verification/telemetry_verification/types.jl",
+    "src/analysis/verification/telemetry_verification.jl"
+  ],
+  "exports": [
+    "VerificationRequest",
+    "VerificationResult",
+    "run_verification",
+    "run_verification_cli",
+    "run_study"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

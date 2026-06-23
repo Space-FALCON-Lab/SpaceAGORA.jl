@@ -1,0 +1,632 @@
+{
+  "id": "sheet-mqpnhis5-puej",
+  "filePath": "sheets/sheet-mqpnhis5-puej.json",
+  "parentId": null,
+  "title": "ADS — Logical Architecture",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "DRM 1 attitude determination logical decomposition with typed ports and exact data flows. Double-click a component to open its internal block diagram.",
+  "verificationIntent": "Each component maps to >=1 implementation file; typed connections match the NavigationEffectorOutput contract.",
+  "nodes": [
+    {
+      "id": "node-mqpnhivh-95q2",
+      "title": "RigidBodyDynamics [existing]",
+      "role": "external",
+      "description": "Truth attitude/rate source (rigid_body_dynamics.jl). Read-only. Exports quaternion_derivative, body_angular_velocity.",
+      "x": 60,
+      "y": 80,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/dynamics/rotational",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "p-dyn-out",
+          "name": "truth",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "SpacecraftState",
+          "subPorts": [
+            {
+              "id": "p-dyn-out-q",
+              "name": "q_true",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Quaternion"
+            },
+            {
+              "id": "p-dyn-out-w",
+              "name": "omega_true",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Vector3 rad/s"
+            },
+            {
+              "id": "p-dyn-out-t",
+              "name": "t",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Float64 s"
+            }
+          ]
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhiyo-rijm",
+      "title": "EnvironmentModels [existing]",
+      "role": "external",
+      "description": "Sun ephemeris + geomagnetic + eclipse (ephemerides_models.jl, perturbations.jl). Read-only.",
+      "x": 60,
+      "y": 320,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/environment/ephemerides",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "p-env-out",
+          "name": "environment",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "EnvFrame",
+          "subPorts": [
+            {
+              "id": "p-env-out-s",
+              "name": "sun_I",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "UnitVector3"
+            },
+            {
+              "id": "p-env-out-b",
+              "name": "B_I",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Vector3 nT"
+            },
+            {
+              "id": "p-env-out-e",
+              "name": "eclipse",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Bool"
+            }
+          ]
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhj1w-7fes",
+      "title": "SimulationCallbacks [existing]",
+      "role": "external",
+      "description": "PeriodicCallback scheduler (navigation_guidance_callbacks.jl). ADS registers at its rate. Read-only.",
+      "x": 1180,
+      "y": 200,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/simulation/callbacks",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "p-cb-in",
+          "name": "nav_in",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "NavigationEffectorOutput"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhj5n-rjyu",
+      "title": "SensorSuite",
+      "role": "component",
+      "description": "Four sensor measurement models (StarTracker, Gyro, Magnetometer, SunSensor). Simulates body-frame measurements + validity from truth + environment.",
+      "x": 380,
+      "y": 80,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "p-sen-truth",
+          "name": "truth",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "SpacecraftState"
+        },
+        {
+          "id": "p-sen-env",
+          "name": "environment",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "EnvFrame"
+        },
+        {
+          "id": "p-sen-meas",
+          "name": "measurements",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "SensorMeasurements",
+          "subPorts": [
+            {
+              "id": "p-sen-meas-stq",
+              "name": "star_tracker_q",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Quaternion"
+            },
+            {
+              "id": "p-sen-meas-stv",
+              "name": "st_valid",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Bool"
+            },
+            {
+              "id": "p-sen-meas-gyro",
+              "name": "gyro",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Vector3 rad/s"
+            },
+            {
+              "id": "p-sen-meas-mag",
+              "name": "mag",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "UnitVector3"
+            },
+            {
+              "id": "p-sen-meas-magv",
+              "name": "mag_valid",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Bool"
+            },
+            {
+              "id": "p-sen-meas-sun",
+              "name": "sun",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "UnitVector3"
+            },
+            {
+              "id": "p-sen-meas-sunv",
+              "name": "sun_valid",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Bool"
+            }
+          ]
+        }
+      ],
+      "designNotes": [
+        {
+          "id": "note-1782159056579-9y52",
+          "text": "Sensor models (1σ): star tracker 5″ as a small-angle rotation about a random axis, 15° FOV, sun-exclusion; gyro: ω̃=ω+b+n, ARW 0.1°/√hr (n~N(0,σ_ARW²/dt)), bias random walk 1°/hr; magnetometer: B_body=R(q)B_I+N(0,(50nT)²), normalized; sun sensor: ŝ_body=R(q)ŝ_I+N(0,(1°)²), 70° FOV, eclipse-gated.",
+          "format": "markdown",
+          "color": "amber",
+          "x": 20,
+          "y": -60,
+          "createdAt": "2026-06-22T20:10:56.579Z",
+          "updatedAt": "2026-06-22T20:10:56.579Z"
+        }
+      ]
+    },
+    {
+      "id": "node-mqpnhj95-0yxa",
+      "title": "ReferenceVectorProvider",
+      "role": "component",
+      "description": "Aggregates inertial reference vectors (sun, geomagnetic) from the existing environment models. No new physics.",
+      "x": 380,
+      "y": 320,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "p-ref-in",
+          "name": "environment",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "EnvFrame"
+        },
+        {
+          "id": "p-ref-out",
+          "name": "ref_inertial",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "ReferenceVectors",
+          "subPorts": [
+            {
+              "id": "p-ref-out-s",
+              "name": "sun_I",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "UnitVector3"
+            },
+            {
+              "id": "p-ref-out-b",
+              "name": "B_I",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Vector3 nT"
+            }
+          ]
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhjd1-fkrs",
+      "title": "ModeManager",
+      "role": "component",
+      "description": "ADS mode state machine (INIT/COARSE_ACQ/FINE_TRACK/ECLIPSE/SAFE). Selects active sensors for the MEKF update.",
+      "x": 700,
+      "y": 320,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "p-mode-health",
+          "name": "health",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "SensorHealth"
+        },
+        {
+          "id": "p-mode-ecl",
+          "name": "eclipse",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "Bool"
+        },
+        {
+          "id": "p-mode-out",
+          "name": "mode",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "ADSMode",
+          "subPorts": [
+            {
+              "id": "p-mode-out-m",
+              "name": "mode",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Enum"
+            },
+            {
+              "id": "p-mode-out-a",
+              "name": "active_sensors",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Set{Symbol}"
+            }
+          ]
+        }
+      ],
+      "designNotes": [
+        {
+          "id": "note-1782159056701-531d",
+          "text": "Mode logic: INIT→COARSE_ACQ when sensors healthy; COARSE_ACQ→FINE_TRACK when star-tracker locked and error<2°; ↔ECLIPSE on eclipse entry/exit; →SAFE on NEES>threshold or gyro failure (reachable within 2 cycles).",
+          "format": "markdown",
+          "color": "rose",
+          "x": 20,
+          "y": -60,
+          "createdAt": "2026-06-22T20:10:56.701Z",
+          "updatedAt": "2026-06-22T20:10:56.701Z"
+        }
+      ]
+    },
+    {
+      "id": "node-mqpnhjgf-f2oj",
+      "title": "MEKF Estimator",
+      "role": "component",
+      "description": "6-state Multiplicative EKF (3 attitude error + 3 gyro bias). Gyro-driven predict; multiplicative star-tracker/vector updates; Joseph-form covariance.",
+      "x": 700,
+      "y": 80,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "p-mekf-meas",
+          "name": "measurements",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "SensorMeasurements"
+        },
+        {
+          "id": "p-mekf-ref",
+          "name": "ref_inertial",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "ReferenceVectors"
+        },
+        {
+          "id": "p-mekf-active",
+          "name": "active_sensors",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "Set{Symbol}"
+        },
+        {
+          "id": "p-mekf-est",
+          "name": "estimate",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "AttitudeEstimate",
+          "subPorts": [
+            {
+              "id": "p-mekf-est-q",
+              "name": "q_est",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Quaternion"
+            },
+            {
+              "id": "p-mekf-est-w",
+              "name": "omega_est",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Vector3 rad/s"
+            },
+            {
+              "id": "p-mekf-est-b",
+              "name": "gyro_bias",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Vector3 rad/s"
+            },
+            {
+              "id": "p-mekf-est-P",
+              "name": "covariance",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Matrix6"
+            },
+            {
+              "id": "p-mekf-est-n",
+              "name": "nees",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Float64"
+            }
+          ]
+        }
+      ],
+      "designNotes": [
+        {
+          "id": "note-1782159056337-hv06",
+          "text": "MEKF — Multiplicative Extended Kalman Filter (6-state error: δθ∈ℝ³ attitude, δb∈ℝ³ gyro bias).\\n\\nPredict (gyro-driven): \\\\hat{\\\\omega}=\\\\omega_{meas}-\\\\hat b;\\\\; q_{k+1}=q_k\\\\otimes\\\\delta q(\\\\hat\\\\omega\\\\,dt).\\nF=\\\\begin{bmatrix} I-[\\\\hat\\\\omega]_\\\\times dt & -I\\\\,dt\\\\\\\\ 0 & I\\\\end{bmatrix},\\\\; P^-=FPF^\\\\top+Q.\\n\\nUpdate (multiplicative): innovation z, H; S=HP^-H^\\\\top+R; K=P^-H^\\\\top S^{-1}; δx=Kz;\\;q^+=q^-\\\\otimes\\\\delta q(δθ),\\\\; \\\\hat b^+=\\\\hat b^-+δb; Joseph: P^+=(I-KH)P^-(I-KH)^\\\\top+KRK^\\\\top.",
+          "format": "latex",
+          "color": "blue",
+          "x": 20,
+          "y": -60,
+          "createdAt": "2026-06-22T20:10:56.337Z",
+          "updatedAt": "2026-06-22T20:10:56.337Z"
+        },
+        {
+          "id": "note-1782159056461-7jps",
+          "text": "Consistency: NEES = e^\\\\top P^{-1} e with e=2\\\\,\\\\mathrm{sgn}(\\\\delta q_w)\\\\,\\\\delta q_{1:3} vs truth; expected E[NEES]=3, χ²(3) 95% ∈ [0.35, 9.35].",
+          "format": "latex",
+          "color": "green",
+          "x": 260,
+          "y": -60,
+          "createdAt": "2026-06-22T20:10:56.461Z",
+          "updatedAt": "2026-06-22T20:10:56.461Z"
+        }
+      ]
+    },
+    {
+      "id": "node-mqpnhjk1-36nr",
+      "title": "ADSNavigationEffector",
+      "role": "subsystem",
+      "description": "SpaceAGORA integration point. Implements calcNavigationEffect!(model,u,p,t,sat_idx): reads sensors, runs MEKF + ModeManager, publishes NavigationEffectorOutput. Double-click for internals.",
+      "x": 940,
+      "y": 200,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "p-eff-est",
+          "name": "estimate",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "AttitudeEstimate"
+        },
+        {
+          "id": "p-eff-mode",
+          "name": "mode",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "ADSMode"
+        },
+        {
+          "id": "p-eff-out",
+          "name": "nav_output",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "NavigationEffectorOutput",
+          "subPorts": [
+            {
+              "id": "p-eff-out-q",
+              "name": "q_BI",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Quaternion"
+            },
+            {
+              "id": "p-eff-out-w",
+              "name": "omega_BI",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Vector3 rad/s"
+            },
+            {
+              "id": "p-eff-out-b",
+              "name": "gyro_bias",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Vector3 rad/s"
+            },
+            {
+              "id": "p-eff-out-P",
+              "name": "covariance",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Matrix6"
+            },
+            {
+              "id": "p-eff-out-v",
+              "name": "valid",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Bool"
+            },
+            {
+              "id": "p-eff-out-m",
+              "name": "mode",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Int"
+            }
+          ]
+        }
+      ],
+      "designNotes": [
+        {
+          "id": "note-1782159056839-bzs5",
+          "text": "Integration: implements calcNavigationEffect!(model,u,p,t,sat_idx). Reads truth from rigid_body_dynamics, references from ephemerides; runs SensorSuite→ModeManager→MEKF; writes NavigationEffectorOutput. Registers with navigation_guidance_callbacks at the configured rate.",
+          "format": "markdown",
+          "color": "blue",
+          "x": 20,
+          "y": -60,
+          "createdAt": "2026-06-22T20:10:56.839Z",
+          "updatedAt": "2026-06-22T20:10:56.839Z"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-mqpnhjnd-m1vx",
+      "sourceNodeId": "node-mqpnhivh-95q2",
+      "targetNodeId": "node-mqpnhj5n-rjyu",
+      "sourcePortId": "p-dyn-out",
+      "targetPortId": "p-sen-truth",
+      "kind": "data-flow",
+      "label": "truth q,ω"
+    },
+    {
+      "id": "edge-mqpnhjqa-vuq8",
+      "sourceNodeId": "node-mqpnhiyo-rijm",
+      "targetNodeId": "node-mqpnhj5n-rjyu",
+      "sourcePortId": "p-env-out",
+      "targetPortId": "p-sen-env",
+      "kind": "data-flow",
+      "label": "sun,B,eclipse"
+    },
+    {
+      "id": "edge-mqpnhjtf-9bsc",
+      "sourceNodeId": "node-mqpnhiyo-rijm",
+      "targetNodeId": "node-mqpnhj95-0yxa",
+      "sourcePortId": "p-env-out",
+      "targetPortId": "p-ref-in",
+      "kind": "data-flow",
+      "label": "sun,B"
+    },
+    {
+      "id": "edge-mqpnhjwk-c7e5",
+      "sourceNodeId": "node-mqpnhj95-0yxa",
+      "targetNodeId": "node-mqpnhjgf-f2oj",
+      "sourcePortId": "p-ref-out",
+      "targetPortId": "p-mekf-ref",
+      "kind": "data-flow",
+      "label": "r_sun_I, r_B_I"
+    },
+    {
+      "id": "edge-mqpnhjzo-fczt",
+      "sourceNodeId": "node-mqpnhj5n-rjyu",
+      "targetNodeId": "node-mqpnhjgf-f2oj",
+      "sourcePortId": "p-sen-meas",
+      "targetPortId": "p-mekf-meas",
+      "kind": "data-flow",
+      "label": "measurements"
+    },
+    {
+      "id": "edge-mqpnhk33-9hd2",
+      "sourceNodeId": "node-mqpnhj5n-rjyu",
+      "targetNodeId": "node-mqpnhjd1-fkrs",
+      "sourcePortId": "p-sen-meas",
+      "targetPortId": "p-mode-health",
+      "kind": "data-flow",
+      "label": "validity"
+    },
+    {
+      "id": "edge-mqpnhk69-6e29",
+      "sourceNodeId": "node-mqpnhiyo-rijm",
+      "targetNodeId": "node-mqpnhjd1-fkrs",
+      "sourcePortId": "p-env-out",
+      "targetPortId": "p-mode-ecl",
+      "kind": "data-flow",
+      "label": "eclipse"
+    },
+    {
+      "id": "edge-mqpnhkae-yfpf",
+      "sourceNodeId": "node-mqpnhjd1-fkrs",
+      "targetNodeId": "node-mqpnhjgf-f2oj",
+      "sourcePortId": "p-mode-out",
+      "targetPortId": "p-mekf-active",
+      "kind": "control",
+      "label": "active sensors"
+    },
+    {
+      "id": "edge-mqpnhkds-f2wr",
+      "sourceNodeId": "node-mqpnhjd1-fkrs",
+      "targetNodeId": "node-mqpnhjk1-36nr",
+      "sourcePortId": "p-mode-out",
+      "targetPortId": "p-eff-mode",
+      "kind": "control",
+      "label": "mode"
+    },
+    {
+      "id": "edge-mqpnhkgz-j87j",
+      "sourceNodeId": "node-mqpnhjgf-f2oj",
+      "targetNodeId": "node-mqpnhjk1-36nr",
+      "sourcePortId": "p-mekf-est",
+      "targetPortId": "p-eff-est",
+      "kind": "data-flow",
+      "label": "q_est,ω,P"
+    },
+    {
+      "id": "edge-mqpnhkkf-geip",
+      "sourceNodeId": "node-mqpnhjk1-36nr",
+      "targetNodeId": "node-mqpnhj1w-7fes",
+      "sourcePortId": "p-eff-out",
+      "targetPortId": "p-cb-in",
+      "kind": "call",
+      "label": "NavigationEffectorOutput"
+    }
+  ],
+  "viewKind": "architecture-overview"
+}

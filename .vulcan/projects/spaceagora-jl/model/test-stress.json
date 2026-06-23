@@ -1,0 +1,34 @@
+{
+  "id": "test-stress",
+  "title": "Stress",
+  "componentKey": "test/stress",
+  "description": "1 files, 0 exports, 2 connections",
+  "interfaces": [],
+  "connections": [
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_flake_guard",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_nightly_montecarlo_stress",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [
+    {
+      "path": "test/stress/runtests.jl",
+      "name": "runtests.jl"
+    }
+  ],
+  "requirements": [],
+  "implementationFiles": [],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

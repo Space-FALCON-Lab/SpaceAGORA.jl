@@ -1,0 +1,515 @@
+{
+  "id": "spaceagora-jl",
+  "name": "SpaceAGORA.Jl",
+  "projectUsage": "workspace-model",
+  "mission": "Align SpaceAGORA.Jl with the repository implementation and keep the model current.",
+  "systemOfInterest": "SpaceAGORA.Jl",
+  "codeWorkspace": "C:/Users/Robbie/falcon/SpaceAGORA.jl",
+  "compileIntent": "Align the implementation with the current system model and close repository-to-model gaps.",
+  "agentConfig": {
+    "command": "claude",
+    "args": [],
+    "workingDirectory": "C:/Users/Robbie/falcon/SpaceAGORA.jl"
+  },
+  "aiAgents": [
+    {
+      "id": "claude-agent",
+      "name": "claude",
+      "provider": "claude",
+      "providerKind": "claude",
+      "binaryPath": "claude",
+      "extraArgs": [],
+      "command": "claude",
+      "args": [],
+      "workingDirectory": "C:/Users/Robbie/falcon/SpaceAGORA.jl"
+    }
+  ],
+  "defaultAgentId": "claude-agent",
+  "explorerFolders": [],
+  "componentPackages": [],
+  "buildHistory": [],
+  "aiJobs": [],
+  "kanbanTasks": [
+    {
+      "id": "task-1779599653183-2aps9",
+      "title": "Implement Structure in Spacecraft INterface",
+      "description": "New component \"Structure\" added to Spacecraft INterface. Implement in codebase.",
+      "column": "backlog",
+      "priority": "medium",
+      "assignedTo": null,
+      "assignedAt": null,
+      "linkedSheetId": "sheet-01e0bb74",
+      "linkedNodeIds": [
+        "node-17f9c126"
+      ],
+      "sourceJobId": null,
+      "sourceDiagramChange": {
+        "kind": "add-node",
+        "nodeTitle": "Structure",
+        "description": "New component \"Structure\" added to Spacecraft INterface. Implement in codebase."
+      },
+      "columnHistory": [
+        {
+          "column": "backlog",
+          "at": "2026-05-24T05:14:13.183Z",
+          "by": "diagram"
+        }
+      ],
+      "createdAt": "2026-05-24T05:14:13.183Z",
+      "updatedAt": "2026-05-24T05:14:13.183Z",
+      "completedAt": null
+    },
+    {
+      "id": "task-1780598800400-g41y",
+      "title": "Test task",
+      "description": "Test",
+      "column": "done",
+      "priority": "medium",
+      "assignedTo": null,
+      "assignedAt": null,
+      "linkedSheetId": null,
+      "linkedNodeIds": [],
+      "sourceJobId": null,
+      "sourceDiagramChange": null,
+      "columnHistory": [
+        {
+          "column": "backlog",
+          "at": "2026-06-04T18:46:40.400Z",
+          "by": "agent"
+        },
+        {
+          "column": "done",
+          "at": "2026-06-04T18:47:07.200Z",
+          "by": "agent"
+        }
+      ],
+      "createdAt": "2026-06-04T18:46:40.400Z",
+      "updatedAt": "2026-06-04T18:47:07.200Z",
+      "completedAt": "2026-06-04T18:47:07.200Z"
+    },
+    {
+      "id": "task-1780598952844-g361",
+      "title": "Implement ADS sensor models (ads_sensor_models.jl)",
+      "description": "Create src/gnc/navigation/ads_sensor_models.jl in SpaceAGORA.jl with four sensor measurement model structs.\n\nRequirements: ADS-SNS-001 through ADS-SNS-004.\n\n1. StarTrackerModel: quaternion measurement with 5 arcsec/axis Gaussian noise (std), 15 deg half-angle FOV, eclipse and sun-exclusion masks. measure() returns (q_meas::Quaternion, is_valid::Bool).\n\n2. GyroModel: angular rate measurement with angle random walk (ARW=0.1 deg/sqrt(hr)) and bias instability (1 deg/hr). Maintains a bias state that random-walks. measure() returns (omega_meas::SVector{3}, is_valid::Bool). Bias is provided as internal state.\n\n3. MagnetometerModel: calls get_magnetic_field_dipole(model, t, sat_idx) from perturbations.jl, rotates to body frame using q_true, adds 50 nT/axis Gaussian noise, normalizes. measure() returns (b_meas_normalized::SVector{3}, is_valid::Bool).\n\n4. SunSensorModel: uses existing SpaceAGORA sun ephemeris to get inertial sun direction, rotates to body frame, adds 1 deg/axis noise, checks 70 deg half-angle FOV and eclipse occultation. measure() returns (s_meas::SVector{3}, is_valid::Bool).\n\nAll structs: use StaticArrays (SVector, etc.) if available; else plain Vector. Follow existing SpaceAGORA struct conventions (struct, keyword constructor). All measure() functions take (model, truth_state, env_state, t, sat_idx).\n\nReference files:\n- src/dynamics/coupled/perturbations.jl: get_magnetic_field_dipole\n- src/environment/ephemerides/: sun direction\n- src/dynamics/rotational/rigid_body_dynamics.jl: truth quaternion",
+      "column": "in-progress",
+      "priority": "high",
+      "assignedTo": null,
+      "assignedAt": null,
+      "linkedSheetId": "sheet-mpzub32s-rn6t",
+      "linkedNodeIds": [
+        "node-mpzub37w-9rch"
+      ],
+      "sourceJobId": null,
+      "sourceDiagramChange": null,
+      "columnHistory": [
+        {
+          "column": "backlog",
+          "at": "2026-06-04T18:49:12.844Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-04T18:49:27.381Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T17:56:30.816Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T17:58:46.561Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T17:58:46.898Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:01:51.505Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:01:51.660Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:06:26.294Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:06:26.469Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:08:48.619Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:08:48.799Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:10:51.997Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:10:52.166Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:12:02.953Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:12:03.096Z",
+          "by": "agent"
+        }
+      ],
+      "createdAt": "2026-06-04T18:49:12.844Z",
+      "updatedAt": "2026-06-21T18:12:03.096Z",
+      "completedAt": null
+    },
+    {
+      "id": "task-1780598952935-om9v",
+      "title": "Implement MEKF estimator (ads_mekf.jl)",
+      "description": "Create src/gnc/navigation/ads_mekf.jl implementing a Multiplicative Extended Kalman Filter.\n\nRequirements: ADS-FLT-001, ADS-FLT-002, ADS-FLT-003, ADS-SYS-002, ADS-SYS-005, ADS-SYS-006.\n\nState: ADSMEKFState struct with fields: q_est (Quaternion), gyro_bias (SVector{3}), P (SMatrix{6,6}).\nThe 6-state error vector is [delta_phi (3, attitude error via MRP), delta_b (3, gyro bias error)].\n\nFunctions required:\n\nads_mekf_init(q0, bias0, P0) -> ADSMEKFState\n  Initialize filter state.\n\nads_mekf_predict!(state::ADSMEKFState, omega_meas::SVector{3}, dt::Float64, Q::SMatrix{6,6})\n  Gyro-based propagation:\n  omega_corrected = omega_meas - state.gyro_bias\n  q_new = q_est * delta_q(omega_corrected * dt)   [use axis-angle formula]\n  F = linearized kinematics Jacobian (6x6)\n  P_new = F * P * F' + Q\n\nads_mekf_update_star_tracker!(state::ADSMEKFState, q_meas::Quaternion, R_st::SMatrix{3,3})\n  H = [I3 | 0_{3x3}]  (attitude block only)\n  innovation = quat_error(q_meas, q_est) as 3-vec MRP\n  Standard KF update: K = P*H'*(H*P*H'+R)^-1; delta_x = K*inn; P = (I-K*H)*P\n  Apply correction: q_est = q_est * exp(delta_x[1:3]); gyro_bias += delta_x[4:6]\n\nads_mekf_update_vector!(state::ADSMEKFState, b_meas::SVector{3}, b_ref_I::SVector{3}, R_vec::SMatrix{3,3})\n  For magnetometer and sun sensor measurements (unit vectors).\n  b_ref_B = R(q_est) * b_ref_I   [rotate reference to body frame]\n  H = [skew(b_ref_B) | 0_{3x3}]  [sensitivity matrix]\n  innovation = b_meas - b_ref_B\n  Standard KF update as above.\n\nads_mekf_reset_error_state!(state::ADSMEKFState)\n  After update: delta_phi is reset to zero (q_est already updated). Reset P accordingly.",
+      "column": "done",
+      "priority": "high",
+      "assignedTo": null,
+      "assignedAt": null,
+      "linkedSheetId": "sheet-mpzub32s-rn6t",
+      "linkedNodeIds": [
+        "node-mpzub3ad-26ei"
+      ],
+      "sourceJobId": null,
+      "sourceDiagramChange": null,
+      "columnHistory": [
+        {
+          "column": "backlog",
+          "at": "2026-06-04T18:49:12.935Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-04T18:49:27.530Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:01:51.907Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:01:52.044Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:06:26.966Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:06:27.119Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:08:49.307Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:08:49.457Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:10:52.669Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:10:52.805Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:12:03.597Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:12:03.739Z",
+          "by": "agent"
+        },
+        {
+          "column": "done",
+          "at": "2026-06-21T22:37:30.924Z",
+          "by": "agent"
+        }
+      ],
+      "createdAt": "2026-06-04T18:49:12.935Z",
+      "updatedAt": "2026-06-21T22:37:30.924Z",
+      "completedAt": "2026-06-21T22:38:50.776Z"
+    },
+    {
+      "id": "task-1780598953026-ugx0",
+      "title": "Implement ADS mode manager (ads_mode_manager.jl)",
+      "description": "Create src/gnc/navigation/ads_mode_manager.jl implementing the ADS operational state machine.\n\nRequirements: ADS-SYS-004, ADS-INT-001.\n\n@enum ADSMode INIT COARSE_ACQ FINE_TRACK ECLIPSE SAFE\n\nmutable struct ADSModeManager\n  current_mode::ADSMode\n  eclipse_flag::Bool\n  sensor_health::Dict{Symbol, Bool}   # :star_tracker, :gyro, :magnetometer, :sun_sensor\n  nees_history::Vector{Float64}\n  nees_threshold::Float64\n  estimated_error_deg::Float64\nend\n\nads_mode_init(; nees_threshold=9.49) -> ADSModeManager\n\nads_mode_update!(mgr::ADSModeManager, sensor_health::Dict{Symbol,Bool}, eclipse_flag::Bool,\n                  nees::Float64, estimated_error_deg::Float64, reset_command::Bool=false) -> ADSMode\n  Implement all transitions from the ADS Mode State Machine:\n  - INIT -> COARSE_ACQ: all sensors healthy\n  - COARSE_ACQ -> FINE_TRACK: star_tracker healthy AND estimated_error < 2 deg\n  - FINE_TRACK -> ECLIPSE: eclipse_flag becomes true\n  - ECLIPSE -> FINE_TRACK: eclipse_flag false AND star_tracker healthy\n  - ECLIPSE -> COARSE_ACQ: eclipse_flag false AND star_tracker NOT healthy\n  - Any -> SAFE: !gyro_health OR nees > threshold\n  - SAFE -> INIT: reset_command=true\n\nads_mode_get_active_sensors(mgr::ADSModeManager) -> Vector{Symbol}\n  Returns which sensors to include in MEKF updates given current mode.\n  FINE_TRACK: [:star_tracker, :gyro, :magnetometer, :sun_sensor]\n  ECLIPSE: [:gyro, :magnetometer]\n  COARSE_ACQ: [:magnetometer, :sun_sensor]\n  SAFE/INIT: []",
+      "column": "in-progress",
+      "priority": "medium",
+      "assignedTo": null,
+      "assignedAt": null,
+      "linkedSheetId": "sheet-mpzub32s-rn6t",
+      "linkedNodeIds": [
+        "node-mpzub3d2-5cjf"
+      ],
+      "sourceJobId": null,
+      "sourceDiagramChange": null,
+      "columnHistory": [
+        {
+          "column": "backlog",
+          "at": "2026-06-04T18:49:13.026Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-04T18:49:27.689Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:01:52.288Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:01:52.442Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:06:27.603Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:06:27.745Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:08:49.946Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:08:50.086Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:10:53.320Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:10:53.460Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:12:04.230Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:12:04.369Z",
+          "by": "agent"
+        }
+      ],
+      "createdAt": "2026-06-04T18:49:13.026Z",
+      "updatedAt": "2026-06-21T18:12:04.369Z",
+      "completedAt": null
+    },
+    {
+      "id": "task-1780598953121-g1vr",
+      "title": "Implement ADS navigation effector (ads_navigation_effector.jl)",
+      "description": "Create src/gnc/navigation/ads_navigation_effector.jl — the SpaceAGORA integration entry point.\n\nRequirements: ADS-SYS-001, ADS-INT-001, ADS-INT-002, ADS-INT-003.\n\nThis file integrates sensor models + MEKF + mode manager and registers with SpaceAGORA.\n\nstruct ADSConfig\n  update_rate_hz::Float64       # default 1.0\n  star_tracker_noise_arcsec::Float64  # default 5.0\n  gyro_arw_deg_sqrthr::Float64       # default 0.1\n  gyro_bias_instability_deg_hr::Float64  # default 1.0\n  mag_noise_nT::Float64              # default 50.0\n  sun_sensor_noise_deg::Float64      # default 1.0\n  nees_threshold::Float64            # default 9.49\n  star_tracker_fov_deg::Float64      # default 15.0\n  sun_sensor_fov_deg::Float64        # default 70.0\nend\nADSConfig() = ADSConfig(1.0, 5.0, 0.1, 1.0, 50.0, 1.0, 9.49, 15.0, 70.0)\n\nmutable struct ADSNavigationEffector\n  config::ADSConfig\n  sensor_suite   # tuple or struct of all four sensor models\n  mekf_state::ADSMEKFState\n  mode_manager::ADSModeManager\n  last_update_time::Float64\n  initialized::Bool\nend\n\nfunction calcNavigationEffect!(effector::ADSNavigationEffector, model, u, p, t, sat_idx)\n  dt = t - effector.last_update_time\n  q_true = model.body.roots[sat_idx].q\n  omega_true = model.body.roots[sat_idx].omega  # or equivalent field name\n\n  # Get reference vectors\n  sun_dir_I = get_sun_direction(model, t)       # from existing ephemerides\n  B_field_I = get_magnetic_field_dipole(model, t, sat_idx)\n\n  # Measure all sensors\n  (q_st, st_valid) = measure(effector.sensor_suite.star_tracker, q_true, omega_true, t)\n  (omega_meas, gyro_valid) = measure(effector.sensor_suite.gyro, omega_true, t)\n  (b_meas, mag_valid) = measure(effector.sensor_suite.magnetometer, q_true, B_field_I, t)\n  (s_meas, sun_valid) = measure(effector.sensor_suite.sun_sensor, q_true, sun_dir_I, t)\n\n  # Update mode\n  eclipse_flag = is_eclipse(model, t, sat_idx)  # use existing SpaceAGORA eclipse check\n  sensor_health = Dict(:star_tracker=>st_valid, :gyro=>gyro_valid, :magnetometer=>mag_valid, :sun_sensor=>sun_valid)\n  nees = compute_nees(effector.mekf_state)\n  mode = ads_mode_update!(effector.mode_manager, sensor_health, eclipse_flag, nees, estimate_error_deg(effector.mekf_state))\n\n  # MEKF predict\n  Q = build_process_noise(effector.config, dt)\n  ads_mekf_predict!(effector.mekf_state, omega_meas, dt, Q)\n\n  # MEKF update (only for active sensors in current mode)\n  active = ads_mode_get_active_sensors(effector.mode_manager)\n  if :star_tracker in active && st_valid\n    R_st = build_st_noise(effector.config)\n    ads_mekf_update_star_tracker!(effector.mekf_state, q_st, R_st)\n  end\n  if :magnetometer in active && mag_valid\n    R_mag = build_mag_noise(effector.config)\n    ads_mekf_update_vector!(effector.mekf_state, b_meas, B_field_I, R_mag)\n  end\n  if :sun_sensor in active && sun_valid\n    R_sun = build_sun_noise(effector.config)\n    ads_mekf_update_vector!(effector.mekf_state, s_meas, sun_dir_I, R_sun)\n  end\n\n  # Write output — adapt to actual NavigationEffect output struct fields\n  valid = (mode != SAFE) && gyro_valid\n  set_navigation_output!(model, sat_idx, effector.mekf_state.q_est, omega_meas - effector.mekf_state.gyro_bias, valid)\n  effector.last_update_time = t\nend\n\nfunction register_ads_navigation!(sim_config, ads_config=ADSConfig())\n  # Create effector, register with sim_config at ads_config.update_rate_hz\n  # Follow pattern in navigation_hooks.jl and navigation_guidance_callbacks.jl\nend\n\nLook at src/gnc/navigation/navigation_hooks.jl to understand the exact calcNavigationEffect! signature and how to register. Adapt field names to match the actual SpaceAGORA model struct.",
+      "column": "in-progress",
+      "priority": "high",
+      "assignedTo": null,
+      "assignedAt": null,
+      "linkedSheetId": "sheet-mpzub32s-rn6t",
+      "linkedNodeIds": [
+        "node-mpzub35d-fhm2"
+      ],
+      "sourceJobId": null,
+      "sourceDiagramChange": null,
+      "columnHistory": [
+        {
+          "column": "backlog",
+          "at": "2026-06-04T18:49:13.121Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-04T18:49:27.846Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:01:52.688Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:01:52.836Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:06:28.227Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:06:28.361Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:08:50.589Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:08:50.725Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:10:53.950Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:10:54.089Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:12:04.861Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:12:04.996Z",
+          "by": "agent"
+        }
+      ],
+      "createdAt": "2026-06-04T18:49:13.121Z",
+      "updatedAt": "2026-06-21T18:12:04.996Z",
+      "completedAt": null
+    },
+    {
+      "id": "task-1780598953211-c1ft",
+      "title": "Implement and run ADS test suite (test/gnc/ads_tests.jl)",
+      "description": "Create test/gnc/ads_tests.jl and run it to verify DRM 1 implementation.\n\nRequirements: ADS-VNV-001, ADS-VNV-002, ADS-VNV-003.\n\nIMPORTANT: After writing the test file, run it using:\n  julia --project=C:/Users/Robbie/falcon/SpaceAGORA.jl test/gnc/ads_tests.jl\nand report the test results.\n\nusing Test, LinearAlgebra, Statistics, Random\n# Include ADS files\ninclude(\"../../src/gnc/navigation/ads_sensor_models.jl\")\ninclude(\"../../src/gnc/navigation/ads_mekf.jl\")\ninclude(\"../../src/gnc/navigation/ads_mode_manager.jl\")\ninclude(\"../../src/gnc/navigation/ads_navigation_effector.jl\")\n\n@testset \"ADS — DRM 1 Verification\" begin\n\n  @testset \"ADS-VNV-001: Sensor Noise Statistics\" begin\n    # Star tracker: measure N times with fixed truth, verify noise std matches 5 arcsec\n    # Gyro: verify ARW power spectral density\n    # Magnetometer: verify 50 nT std across 1000 samples\n    # Sun sensor: verify 1 deg std\n    # Use chi-squared goodness-of-fit at p=0.05\n    N = 1000\n    # ... test implementation\n  end\n\n  @testset \"ADS-VNV-002: MEKF Convergence\" begin\n    # Initialize with 5 deg attitude error\n    q_true = [1.0, 0.0, 0.0, 0.0]  # identity quaternion\n    # Create initial estimate with 5 deg rotation error around z-axis\n    # Run 60 seconds of predict+update cycles at 1 Hz\n    # Final attitude error must be < 0.1 deg per ADS-SYS-005\n    @test final_error_deg < 0.1\n  end\n\n  @testset \"ADS-VNV-003: Filter Consistency (NEES)\" begin\n    # 100 Monte Carlo trials\n    # Each trial: random 5 deg initial error, run 100 update cycles\n    # Compute NEES at each step\n    # Verify: mean NEES within 95% CI bounds of chi2(3) distribution\n    # CI bounds: [0.352, 7.815] for chi2(3) at 95%\n    N_trials = 100\n    # ... MC implementation\n    fraction_in_bounds = count(nees_within_95pct) / length(all_nees)\n    @test fraction_in_bounds >= 0.90  # 90% of steps within 95% CI\n  end\n\n  @testset \"ADS mode transitions\" begin\n    mgr = ads_mode_init()\n    @test mgr.current_mode == INIT\n    # Test INIT -> COARSE_ACQ\n    all_healthy = Dict(:star_tracker=>true,:gyro=>true,:magnetometer=>true,:sun_sensor=>true)\n    ads_mode_update!(mgr, all_healthy, false, 0.0, 10.0)\n    @test mgr.current_mode == COARSE_ACQ\n    # Test COARSE_ACQ -> FINE_TRACK (error < 2 deg)\n    ads_mode_update!(mgr, all_healthy, false, 0.0, 1.0)\n    @test mgr.current_mode == FINE_TRACK\n    # Test FINE_TRACK -> ECLIPSE\n    ads_mode_update!(mgr, all_healthy, true, 0.0, 0.05)\n    @test mgr.current_mode == ECLIPSE\n    # Test -> SAFE on gyro failure\n    no_gyro = Dict(:star_tracker=>true,:gyro=>false,:magnetometer=>true,:sun_sensor=>true)\n    ads_mode_update!(mgr, no_gyro, false, 0.0, 0.05)\n    @test mgr.current_mode == SAFE\n  end\n\nend\n\nAfter running tests, report results via complete_run with test_results summary.\nIf tests fail, diagnose and fix the implementation files, re-run until passing.",
+      "column": "in-progress",
+      "priority": "high",
+      "assignedTo": null,
+      "assignedAt": null,
+      "linkedSheetId": "sheet-mpzub32s-rn6t",
+      "linkedNodeIds": [],
+      "sourceJobId": null,
+      "sourceDiagramChange": null,
+      "columnHistory": [
+        {
+          "column": "backlog",
+          "at": "2026-06-04T18:49:13.211Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-04T18:49:27.996Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:01:53.079Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:01:53.213Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:06:28.854Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:06:28.987Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:08:51.222Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:08:51.361Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:10:54.578Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:10:54.717Z",
+          "by": "agent"
+        },
+        {
+          "column": "assigned",
+          "at": "2026-06-21T18:12:05.508Z",
+          "by": "agent"
+        },
+        {
+          "column": "in-progress",
+          "at": "2026-06-21T18:12:05.632Z",
+          "by": "agent"
+        }
+      ],
+      "createdAt": "2026-06-04T18:49:13.211Z",
+      "updatedAt": "2026-06-21T18:12:05.632Z",
+      "completedAt": null
+    }
+  ],
+  "requirements": [],
+  "repository": {
+    "rootPath": "C:\\Users\\Robbie\\falcon\\SpaceAGORA.jl",
+    "metadataPath": "C:\\Users\\Robbie\\falcon\\SpaceAGORA.jl\\.dionysus",
+    "lastAlignedAt": "2026-05-24T05:05:03.514Z"
+  }
+}

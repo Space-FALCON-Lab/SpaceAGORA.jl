@@ -1,0 +1,167 @@
+{
+  "id": "benchmarks-studies",
+  "title": "PerfRuntimeCompare",
+  "componentKey": "benchmarks/studies",
+  "description": "46 files, 0 exports, 15 connections",
+  "interfaces": [],
+  "connections": [
+    {
+      "targetId": "benchmarks-studies-performance-runtime-analysis",
+      "targetTitle": "Performance Runtime Analysis",
+      "edgeKind": "imports",
+      "interfaceName": "main",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-performance-smart-parallel-ladder",
+      "targetTitle": "Performance Smart Parallel Ladder",
+      "edgeKind": "imports",
+      "interfaceName": "accuracy_analysis",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-performance-smart-parallel-ladder",
+      "targetTitle": "Performance Smart Parallel Ladder",
+      "edgeKind": "imports",
+      "interfaceName": "cli",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-performance-smart-parallel-ladder",
+      "targetTitle": "Performance Smart Parallel Ladder",
+      "edgeKind": "imports",
+      "interfaceName": "execution",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-performance-smart-parallel-ladder",
+      "targetTitle": "Performance Smart Parallel Ladder",
+      "edgeKind": "imports",
+      "interfaceName": "reporting",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-performance-smart-parallel-ladder",
+      "targetTitle": "Performance Smart Parallel Ladder",
+      "edgeKind": "imports",
+      "interfaceName": "rungs",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-performance-smart-parallel-ladder",
+      "targetTitle": "Performance Smart Parallel Ladder",
+      "edgeKind": "imports",
+      "interfaceName": "statistics",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-telemetry-hybrid-tuner",
+      "targetTitle": "Telemetry Hybrid Tuner",
+      "edgeKind": "imports",
+      "interfaceName": "cli_and_specs",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-telemetry-hybrid-tuner",
+      "targetTitle": "Telemetry Hybrid Tuner",
+      "edgeKind": "imports",
+      "interfaceName": "manifest_and_evaluator",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-telemetry-hybrid-tuner",
+      "targetTitle": "Telemetry Hybrid Tuner",
+      "edgeKind": "imports",
+      "interfaceName": "reporting",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-telemetry-hybrid-tuner",
+      "targetTitle": "Telemetry Hybrid Tuner",
+      "edgeKind": "imports",
+      "interfaceName": "search_strategy",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-telemetry-odyssey-tuner",
+      "targetTitle": "Telemetry Odyssey Tuner",
+      "edgeKind": "imports",
+      "interfaceName": "candidates_and_evaluator",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-telemetry-odyssey-tuner",
+      "targetTitle": "Telemetry Odyssey Tuner",
+      "edgeKind": "imports",
+      "interfaceName": "cli_and_plots",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "benchmarks-studies-telemetry-odyssey-tuner",
+      "targetTitle": "Telemetry Odyssey Tuner",
+      "edgeKind": "imports",
+      "interfaceName": "reporting",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-spaceagora",
+      "targetTitle": "SpaceAGORA",
+      "edgeKind": "imports",
+      "interfaceName": "SpaceAGORA",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "benchmarks/studies/gram_interpolation_vs_point_to_point_analysis.jl",
+    "benchmarks/studies/gram_offline_db_accuracy_study.jl",
+    "benchmarks/studies/gram_planet_rho_altitude_sweep.jl",
+    "benchmarks/studies/gram_real_sim_runtime_compare.jl",
+    "benchmarks/studies/gram_real_sim_surrogate_decision_table.jl",
+    "benchmarks/studies/gram_real_sim_surrogate_matrix.jl",
+    "benchmarks/studies/gram_single_call_vs_point_to_point_analysis.jl",
+    "benchmarks/studies/performance_effector_reduction_microbench.jl",
+    "benchmarks/studies/performance_runtime_analysis/case_catalog/case_builders.jl",
+    "benchmarks/studies/performance_runtime_analysis/case_catalog/env_workers_and_routes.jl",
+    "benchmarks/studies/performance_runtime_analysis/case_catalog/profile_types_and_helpers.jl",
+    "benchmarks/studies/performance_runtime_analysis/case_catalog.jl",
+    "benchmarks/studies/performance_runtime_analysis/cli.jl",
+    "benchmarks/studies/performance_runtime_analysis/main.jl",
+    "benchmarks/studies/performance_runtime_analysis/measurement/entry_duration.jl",
+    "benchmarks/studies/performance_runtime_analysis/measurement/montecarlo.jl",
+    "benchmarks/studies/performance_runtime_analysis/measurement/per_orbit.jl",
+    "benchmarks/studies/performance_runtime_analysis/measurement/warmup_and_batch.jl",
+    "benchmarks/studies/performance_runtime_analysis/measurement.jl",
+    "benchmarks/studies/performance_runtime_analysis/reporting/plots_and_reporting.jl",
+    "benchmarks/studies/performance_runtime_analysis/reporting/report_writing.jl",
+    "benchmarks/studies/performance_runtime_analysis/reporting/rollout_gates.jl",
+    "benchmarks/studies/performance_runtime_analysis/reporting/summaries.jl",
+    "benchmarks/studies/performance_runtime_analysis/reporting.jl",
+    "benchmarks/studies/performance_runtime_analysis.jl",
+    "benchmarks/studies/performance_smart_parallel_ladder/accuracy_analysis.jl",
+    "benchmarks/studies/performance_smart_parallel_ladder/cli.jl",
+    "benchmarks/studies/performance_smart_parallel_ladder/execution.jl",
+    "benchmarks/studies/performance_smart_parallel_ladder/reporting.jl",
+    "benchmarks/studies/performance_smart_parallel_ladder/rungs.jl",
+    "benchmarks/studies/performance_smart_parallel_ladder/statistics.jl",
+    "benchmarks/studies/performance_smart_parallel_ladder.jl",
+    "benchmarks/studies/performance_smart_parallel_ladder_cross_machine.jl",
+    "benchmarks/studies/performance_split_imex_compare.jl",
+    "benchmarks/studies/performance_static_vs_parallel.jl",
+    "benchmarks/studies/telemetry_hybrid_tuner/cli_and_specs.jl",
+    "benchmarks/studies/telemetry_hybrid_tuner/manifest_and_evaluator.jl",
+    "benchmarks/studies/telemetry_hybrid_tuner/reporting.jl",
+    "benchmarks/studies/telemetry_hybrid_tuner/search_strategy.jl",
+    "benchmarks/studies/telemetry_hybrid_tuner.jl",
+    "benchmarks/studies/telemetry_odyssey_tuner/candidates_and_evaluator.jl",
+    "benchmarks/studies/telemetry_odyssey_tuner/cli_and_plots.jl",
+    "benchmarks/studies/telemetry_odyssey_tuner/reporting.jl",
+    "benchmarks/studies/telemetry_odyssey_tuner.jl",
+    "benchmarks/studies/telemetry_orbit_accuracy_plots.jl",
+    "benchmarks/studies/telemetry_orbit_accuracy_study.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

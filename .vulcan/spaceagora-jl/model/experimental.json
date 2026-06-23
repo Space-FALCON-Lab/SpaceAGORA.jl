@@ -1,0 +1,194 @@
+{
+  "id": "experimental",
+  "title": "Experimental",
+  "componentKey": "experimental",
+  "description": "«subsystem» | 9 files, 24 exports, 1 connections",
+  "interfaces": [
+    {
+      "name": "EstimatorState",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "MeasurementPacket",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "estimate_state!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NetworkTopology",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NetworkState",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NetworkInputs",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "step_network!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LaserTerminalActuator",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LaserTerminalCommand",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "apply_laser_terminal_command!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "BatteryResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LoadResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "PowerBusResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ResourceState",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ResourceInputs",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ResourceOutputs",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "initialize_resource_state",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "step_resource!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SolarArrayResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [
+    {
+      "targetId": "src-spaceagora",
+      "targetTitle": "SpaceAGORA",
+      "edgeKind": "imports",
+      "interfaceName": "SpaceAGORA",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "experimental/gnc/estimation/estimation.jl",
+    "experimental/mission/constellation/network/network.jl",
+    "experimental/README.md",
+    "experimental/vehicle/laser_terminal/laser_terminal.jl",
+    "experimental/vehicle/resources/battery/battery_model.jl",
+    "experimental/vehicle/resources/loads/load_model.jl",
+    "experimental/vehicle/resources/power_bus/power_bus_model.jl",
+    "experimental/vehicle/resources/resources.jl",
+    "experimental/vehicle/resources/solar_array/solar_array_model.jl"
+  ],
+  "exports": [
+    "EstimatorState",
+    "MeasurementPacket",
+    "estimate_state!",
+    "NetworkTopology",
+    "NetworkState",
+    "NetworkInputs",
+    "step_network!",
+    "LaserTerminalActuator",
+    "LaserTerminalCommand",
+    "apply_laser_terminal_command!",
+    "BatteryResourceModel",
+    "LoadResourceModel",
+    "PowerBusResourceModel",
+    "AbstractResourceModel",
+    "ResourceState",
+    "ResourceInputs",
+    "ResourceOutputs",
+    "initialize_resource_state",
+    "step_resource!",
+    "SolarArrayResourceModel"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

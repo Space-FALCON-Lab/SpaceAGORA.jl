@@ -1,0 +1,231 @@
+{
+  "id": "test-contracts",
+  "title": "Contracts",
+  "componentKey": "test/contracts",
+  "description": "3 files, 0 exports, 29 connections",
+  "interfaces": [],
+  "connections": [
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_aerobraking_strategy_contract_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_architecture_contract_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_benchmark_wrapper_parity_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_canonical_path_contract_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_gnc_aerobraking_boundary_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_naming_contract_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_no_artifact_files_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_no_dynamics_models_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_no_guidance_control_cross_include_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_no_legacy_ownership_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_no_src_benchmarks_root_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_p1_findings_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_typed_config_equivalence_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_vehicle_structure_boundary_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_docs_contract_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_hpc_extensibility_docs_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_no_inert_force_terms_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_no_legacy_include_chains_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_public_api_surface_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_rotational_ownership_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_scaffold_interface_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_src_completeness_contract_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_final_clean_contract_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_gnc_typed_command_boundary_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_io_surface_nonempty_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_project_compat_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_runtime_legacy_surface_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_thin_entry_files_gate",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_translational_ownership_gate",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [
+    {
+      "path": "test/contracts/nightly_runtests.jl",
+      "name": "nightly_runtests.jl"
+    },
+    {
+      "path": "test/contracts/pr_runtests.jl",
+      "name": "pr_runtests.jl"
+    },
+    {
+      "path": "test/contracts/runtests.jl",
+      "name": "runtests.jl"
+    }
+  ],
+  "requirements": [],
+  "implementationFiles": [],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

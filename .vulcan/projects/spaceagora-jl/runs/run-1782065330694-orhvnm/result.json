@@ -1,0 +1,7 @@
+{
+  "status": "success",
+  "summary": "Implemented src/gnc/navigation/ads_navigation_effector.jl (152 lines). interface-diff=PASS, model-consistency=PASS.",
+  "modifiedSheetIds": [],
+  "openQuestions": [],
+  "completedAt": "2026-06-21T18:08:51.185Z"
+}

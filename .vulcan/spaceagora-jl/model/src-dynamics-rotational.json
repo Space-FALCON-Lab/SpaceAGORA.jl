@@ -1,0 +1,61 @@
+{
+  "id": "src-dynamics-rotational",
+  "title": "DynamicsRotational",
+  "componentKey": "src/dynamics/rotational",
+  "description": "4 files, 5 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "quaternion_derivative",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "angular_acceleration",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "body_torque",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "body_angular_velocity",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "combine_torques",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/dynamics/rotational/attitude_kinematics.jl",
+    "src/dynamics/rotational/rigid_body_dynamics.jl",
+    "src/dynamics/rotational/rotational_models.jl",
+    "src/dynamics/rotational/torque_models.jl"
+  ],
+  "exports": [
+    "quaternion_derivative",
+    "angular_acceleration",
+    "body_torque",
+    "body_angular_velocity",
+    "combine_torques"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

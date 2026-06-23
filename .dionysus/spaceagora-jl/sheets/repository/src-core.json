@@ -1,0 +1,530 @@
+{
+  "id": "auto-logical-component-src-core",
+  "filePath": "sheets/repository/src-core.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-11",
+  "title": "SimulationModel",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "SimulationModel: 11 implementation files, 5 sub-components.",
+  "verificationIntent": "Verify that SimulationModel's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-11-root",
+      "title": "SimulationModel",
+      "role": "subsystem",
+      "description": "11 implementation files, 71 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 800,
+      "height": 560,
+      "tags": [
+        "src/core",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-11",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-11",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-11-child-1",
+      "title": "AbstractTypes",
+      "role": "module",
+      "description": "4 files, 52 exports, 12 imports.",
+      "x": 20,
+      "y": 60,
+      "width": 215,
+      "height": 440,
+      "tags": [
+        "src/core/types",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-11-1",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-11-1",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-11-file-1-1",
+      "title": "runtime_types.jl",
+      "role": "function",
+      "description": "src/core/types/runtime_types.jl (626 lines · 21 exports · 11 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/core/types",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-11-file-1-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-11-file-1-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-11-file-1-2",
+      "title": "effector_sampling.jl",
+      "role": "function",
+      "description": "src/core/types/effector_sampling.jl (222 lines · 1 exports · 1 imports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/core/types",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-11-file-1-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-11-file-1-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-11-file-1-3",
+      "title": "compat_model_codes.jl",
+      "role": "function",
+      "description": "src/core/types/compat_model_codes.jl (91 lines · 22 exports).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/core/types",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-11-file-1-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-11-file-1-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-11-file-1-4",
+      "title": "abstract_types.jl",
+      "role": "function",
+      "description": "src/core/types/abstract_types.jl (68 lines · 8 exports).",
+      "x": 12,
+      "y": 276,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/core/types",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-11-file-1-4",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-11-file-1-4",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-11-child-2",
+      "title": "NoGramPresets",
+      "role": "module",
+      "description": "3 files, 19 exports, 11 imports.",
+      "x": 255,
+      "y": 60,
+      "width": 215,
+      "height": 355,
+      "tags": [
+        "src/core/state",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-11-2",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-11-2",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-11-file-2-1",
+      "title": "simulation_configuration.jl",
+      "role": "function",
+      "description": "src/core/state/simulation_configuration.jl (218 lines · 10 exports · 5 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/core/state",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-11-file-2-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-11-file-2-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-11-file-2-2",
+      "title": "no_gram_presets.jl",
+      "role": "function",
+      "description": "src/core/state/no_gram_presets.jl (102 lines · 3 exports · 6 imports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/core/state",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-11-file-2-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-11-file-2-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-11-file-2-3",
+      "title": "reference_system_config.jl",
+      "role": "function",
+      "description": "src/core/state/reference_system_config.jl (48 lines · 6 exports).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/core/state",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-11-file-2-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-11-file-2-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-11-child-3",
+      "title": "Interfaces",
+      "role": "component",
+      "description": "1 files, 0 exports, 7 imports.",
+      "x": 20,
+      "y": 185,
+      "width": 215,
+      "height": 185,
+      "tags": [
+        "src/core/interfaces",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-11-3",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-11-3",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-11-file-3-1",
+      "title": "reference_system.jl",
+      "role": "function",
+      "description": "src/core/interfaces/reference_system.jl (607 lines · 7 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/core/interfaces",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-11-file-3-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-11-file-3-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-11-child-4",
+      "title": "Numerics",
+      "role": "component",
+      "description": "1 files, 0 exports, 2 imports.",
+      "x": 255,
+      "y": 185,
+      "width": 215,
+      "height": 185,
+      "tags": [
+        "src/core/numerics",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-11-4",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-11-4",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-11-file-4-1",
+      "title": "quaternion_utils.jl",
+      "role": "function",
+      "description": "src/core/numerics/quaternion_utils.jl (341 lines · 2 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/core/numerics",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-11-file-4-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-11-file-4-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-11-child-5",
+      "title": "Utils",
+      "role": "component",
+      "description": "1 files, 0 exports, 1 imports.",
+      "x": 20,
+      "y": 310,
+      "width": 215,
+      "height": 185,
+      "tags": [
+        "src/core/utils",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-11-5",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-11-5",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-11-file-5-1",
+      "title": "misc.jl",
+      "role": "function",
+      "description": "src/core/utils/misc.jl (27 lines · 1 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/core/utils",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-11-file-5-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-11-file-5-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "subsheet-11-edge-1",
+      "sourceNodeId": "subsheet-11-file-2-2",
+      "targetNodeId": "subsheet-11-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-11-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-11-file-2-1",
+      "kind": "call",
+      "label": "EnvironmentModel"
+    },
+    {
+      "id": "subsheet-11-edge-2",
+      "sourceNodeId": "subsheet-11-file-1-1",
+      "targetNodeId": "subsheet-11-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-11-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-11-file-1-3",
+      "kind": "call",
+      "label": "_compat_enum_parse"
+    }
+  ],
+  "viewKind": "internal-block"
+}

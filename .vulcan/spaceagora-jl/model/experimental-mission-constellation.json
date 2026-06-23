@@ -1,0 +1,50 @@
+{
+  "id": "experimental-mission-constellation",
+  "title": "Constellation",
+  "componentKey": "experimental/mission/constellation",
+  "description": "1 files, 4 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "NetworkTopology",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NetworkState",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NetworkInputs",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "step_network!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "experimental/mission/constellation/network/network.jl"
+  ],
+  "exports": [
+    "NetworkTopology",
+    "NetworkState",
+    "NetworkInputs",
+    "step_network!"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

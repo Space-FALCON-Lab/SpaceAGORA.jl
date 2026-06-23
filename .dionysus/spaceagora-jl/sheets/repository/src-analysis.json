@@ -1,0 +1,108 @@
+{
+  "id": "auto-logical-component-src-analysis",
+  "filePath": "sheets/repository/src-analysis.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-10",
+  "title": "Analysis",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "Analysis: 11 implementation files, 1 sub-components.",
+  "verificationIntent": "Verify that Analysis's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-10-root",
+      "title": "Analysis",
+      "role": "subsystem",
+      "description": "11 implementation files, 5 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 560,
+      "height": 300,
+      "tags": [
+        "src/analysis",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-10",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-10",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-10-child-1",
+      "title": "TelemetryVerification",
+      "role": "subsystem",
+      "description": "11 files, 5 exports, 25 imports.",
+      "x": 20,
+      "y": 60,
+      "width": 215,
+      "height": 185,
+      "tags": [
+        "src/analysis/verification",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-10-1",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-10-1",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-10-file-1-1",
+      "title": "telemetry_verification.jl",
+      "role": "function",
+      "description": "src/analysis/verification/telemetry_verification.jl (47 lines · 5 exports · 23 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/analysis/verification",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-10-file-1-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-10-file-1-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [],
+  "viewKind": "internal-block"
+}

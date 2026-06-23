@@ -1,0 +1,83 @@
+{
+  "id": "examples",
+  "title": "Examples",
+  "componentKey": "examples",
+  "description": "26 files, 0 exports, 1 connections",
+  "interfaces": [],
+  "connections": [
+    {
+      "targetId": "src-spaceagora",
+      "targetTitle": "SpaceAGORA",
+      "edgeKind": "imports",
+      "interfaceName": "SpaceAGORA",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [
+    {
+      "path": "examples/AGORA_Earth_Control_Test.jl",
+      "name": "AGORA_Earth_Control_Test.jl"
+    },
+    {
+      "path": "examples/AGORA_Earth_GG_Test.jl",
+      "name": "AGORA_Earth_GG_Test.jl"
+    },
+    {
+      "path": "examples/AGORA_Earth_SRP_Test.jl",
+      "name": "AGORA_Earth_SRP_Test.jl"
+    },
+    {
+      "path": "examples/AGORA_Odyssey_Control_Test.jl",
+      "name": "AGORA_Odyssey_Control_Test.jl"
+    },
+    {
+      "path": "examples/AGORA_Titan_Control_Test.jl",
+      "name": "AGORA_Titan_Control_Test.jl"
+    },
+    {
+      "path": "examples/AGORA_Vex_Control_Test.jl",
+      "name": "AGORA_Vex_Control_Test.jl"
+    },
+    {
+      "path": "examples/CYGNSS_test.jl",
+      "name": "CYGNSS_test.jl"
+    },
+    {
+      "path": "examples/Earth_RW_Test.jl",
+      "name": "Earth_RW_Test.jl"
+    },
+    {
+      "path": "examples/Earth_Thruster_Test.jl",
+      "name": "Earth_Thruster_Test.jl"
+    },
+    {
+      "path": "examples/Earth_Torque_Free_Test.jl",
+      "name": "Earth_Torque_Free_Test.jl"
+    },
+    {
+      "path": "examples/GRIFEX_test.jl",
+      "name": "GRIFEX_test.jl"
+    }
+  ],
+  "requirements": [],
+  "implementationFiles": [
+    "examples/aerobraking_mission_plot_utils.jl",
+    "examples/AGORA_Basic_GRAMEarth.jl",
+    "examples/AGORA_Basic_Quickstart.jl",
+    "examples/AGORA_Earth.jl",
+    "examples/AGORA_Earth_const_torque.jl",
+    "examples/AGORA_Earth_NoGRAM.jl",
+    "examples/AGORA_Keplerian.jl",
+    "examples/AGORA_LOFTID.jl",
+    "examples/AGORA_Magellan.jl",
+    "examples/AGORA_Mars_NoGRAM.jl",
+    "examples/AGORA_Odyssey.jl",
+    "examples/AGORA_Titan.jl",
+    "examples/AGORA_Vex.jl",
+    "examples/common.jl",
+    "examples/Earth_Navigation.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

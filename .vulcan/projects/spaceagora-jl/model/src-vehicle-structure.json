@@ -1,0 +1,37 @@
+{
+  "id": "src-vehicle-structure",
+  "title": "Structure",
+  "componentKey": "src/vehicle/structure",
+  "description": "4 files, 1 exports, 1 connections",
+  "interfaces": [
+    {
+      "name": "traverse_bodies",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [
+    {
+      "targetId": "src-vehicle-kinematics",
+      "targetTitle": "Kinematics",
+      "edgeKind": "imports",
+      "interfaceName": "kinematics",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/vehicle/structure/assembly_graph.jl",
+    "src/vehicle/structure/geometry_properties.jl",
+    "src/vehicle/structure/mass_properties.jl",
+    "src/vehicle/structure/structure_models.jl"
+  ],
+  "exports": [
+    "traverse_bodies"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

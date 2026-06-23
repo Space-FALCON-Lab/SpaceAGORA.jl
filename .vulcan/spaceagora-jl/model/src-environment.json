@@ -1,0 +1,258 @@
+{
+  "id": "src-environment",
+  "title": "EnvironmentModels",
+  "componentKey": "src/environment",
+  "description": "9 files, 28 exports, 1 connections",
+  "interfaces": [
+    {
+      "name": "SpiceEphemeridesModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SimpleEphemeridesModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ephemerides_time_seconds",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "planet_frame_lpi",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ephemerides_requires_spice",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ephemerides_cache_key",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Earth",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Mars",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Venus",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Moon",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Titan",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ConstantGravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "InverseSquaredGravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "InverseSquaredJ2GravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "aerobraking_gravity_force_ii",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "j2_secular_rates",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NoAtmosphereModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ExponentialAtmosphereModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "PiecewiseExponentialAtmosphereModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NRLMSISE00AtmosphereModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "init_nrlmsise_space_indices!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "GRAMAtmosphereModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "GRAMAtmosphereModelSurrogate",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ConstantDensityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "getDensity",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "getDensityBatch!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "precompute_gram_static_grids!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "clear_gram_static_grid_cache!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [
+    {
+      "targetId": "src-environment-atmosphere",
+      "targetTitle": "Atmosphere",
+      "edgeKind": "imports",
+      "interfaceName": "density_models",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/environment/atmosphere/density_models.jl",
+    "src/environment/ephemerides/ephemerides_models.jl",
+    "src/environment/ephemerides/planets.jl",
+    "src/environment/ephemerides/planet_data.jl",
+    "src/environment/ephemerides/planet_shapes.jl",
+    "src/environment/ephemerides/simple_ephemerides.jl",
+    "src/environment/gravity/gravity_effectors.jl",
+    "src/environment/gravity/gravity_models.jl",
+    "src/environment/physical_models.jl"
+  ],
+  "exports": [
+    "SpiceEphemeridesModel",
+    "SimpleEphemeridesModel",
+    "ephemerides_time_seconds",
+    "planet_frame_lpi",
+    "ephemerides_requires_spice",
+    "ephemerides_cache_key",
+    "Earth",
+    "Mars",
+    "Venus",
+    "Moon",
+    "Titan",
+    "ConstantGravityModel",
+    "InverseSquaredGravityModel",
+    "InverseSquaredJ2GravityModel",
+    "aerobraking_gravity_force_ii",
+    "j2_secular_rates",
+    "NoAtmosphereModel",
+    "ExponentialAtmosphereModel",
+    "PiecewiseExponentialAtmosphereModel",
+    "NRLMSISE00AtmosphereModel",
+    "init_nrlmsise_space_indices!",
+    "GRAMAtmosphereModel",
+    "GRAMAtmosphereModelSurrogate",
+    "ConstantDensityModel",
+    "getDensity",
+    "getDensityBatch!",
+    "precompute_gram_static_grids!",
+    "clear_gram_static_grid_cache!"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

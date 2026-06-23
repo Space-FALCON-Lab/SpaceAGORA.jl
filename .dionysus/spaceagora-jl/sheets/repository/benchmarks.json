@@ -1,0 +1,1609 @@
+{
+  "id": "auto-logical-component-benchmarks",
+  "filePath": "sheets/repository/benchmarks.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-2",
+  "title": "Benchmarks",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "Benchmarks: 47 implementation files, 2 sub-components.",
+  "verificationIntent": "Verify that Benchmarks's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-2-root",
+      "title": "Benchmarks",
+      "role": "subsystem",
+      "description": "47 implementation files, 0 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 620,
+      "height": 300,
+      "tags": [
+        "benchmarks",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-2",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-child-1",
+      "title": "PerfRuntimeCompare",
+      "role": "subsystem",
+      "description": "46 files, 0 exports, 134 imports.",
+      "x": 20,
+      "y": 60,
+      "width": 215,
+      "height": 1545,
+      "tags": [
+        "benchmarks/studies",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-2-1",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-2-1",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-1",
+      "title": "performance_static_vs_parallel.jl",
+      "role": "function",
+      "description": "benchmarks/studies/performance_static_vs_parallel.jl (928 lines · 2 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-2",
+      "title": "performance_smart_parallel_ladder_cross_machine.jl",
+      "role": "function",
+      "description": "benchmarks/studies/performance_smart_parallel_ladder_cross_machine.jl (845 lines · 4 imports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-3",
+      "title": "gram_offline_db_accuracy_study.jl",
+      "role": "function",
+      "description": "benchmarks/studies/gram_offline_db_accuracy_study.jl (524 lines · 10 imports).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-4",
+      "title": "gram_interpolation_vs_point_to_point_analysis.jl",
+      "role": "function",
+      "description": "benchmarks/studies/gram_interpolation_vs_point_to_point_analysis.jl (524 lines · 9 imports).",
+      "x": 12,
+      "y": 276,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-4",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-4",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-5",
+      "title": "gram_real_sim_surrogate_matrix.jl",
+      "role": "function",
+      "description": "benchmarks/studies/gram_real_sim_surrogate_matrix.jl (504 lines · 11 imports).",
+      "x": 12,
+      "y": 354,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-5",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-5",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-6",
+      "title": "gram_planet_rho_altitude_sweep.jl",
+      "role": "function",
+      "description": "benchmarks/studies/gram_planet_rho_altitude_sweep.jl (300 lines · 5 imports).",
+      "x": 12,
+      "y": 432,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-6",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-6",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-7",
+      "title": "performance_split_imex_compare.jl",
+      "role": "function",
+      "description": "benchmarks/studies/performance_split_imex_compare.jl (294 lines · 5 imports).",
+      "x": 12,
+      "y": 510,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-7",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-7",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-8",
+      "title": "performance_effector_reduction_microbench.jl",
+      "role": "function",
+      "description": "benchmarks/studies/performance_effector_reduction_microbench.jl (253 lines · 3 imports).",
+      "x": 12,
+      "y": 588,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-8",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-8",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-9",
+      "title": "gram_real_sim_runtime_compare.jl",
+      "role": "function",
+      "description": "benchmarks/studies/gram_real_sim_runtime_compare.jl (239 lines · 8 imports).",
+      "x": 12,
+      "y": 666,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-9",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-9",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-10",
+      "title": "gram_single_call_vs_point_to_point_analysis.jl",
+      "role": "function",
+      "description": "benchmarks/studies/gram_single_call_vs_point_to_point_analysis.jl (207 lines · 6 imports).",
+      "x": 12,
+      "y": 744,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-10",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-10",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-11",
+      "title": "gram_real_sim_surrogate_decision_table.jl",
+      "role": "function",
+      "description": "benchmarks/studies/gram_real_sim_surrogate_decision_table.jl (134 lines · 2 imports).",
+      "x": 12,
+      "y": 822,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-11",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-11",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-12",
+      "title": "telemetry_orbit_accuracy_study.jl",
+      "role": "function",
+      "description": "benchmarks/studies/telemetry_orbit_accuracy_study.jl (49 lines · 3 imports).",
+      "x": 12,
+      "y": 900,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-12",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-12",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-13",
+      "title": "performance_smart_parallel_ladder.jl",
+      "role": "function",
+      "description": "benchmarks/studies/performance_smart_parallel_ladder.jl (11 lines · 6 imports).",
+      "x": 12,
+      "y": 978,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-13",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-13",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-14",
+      "title": "telemetry_hybrid_tuner.jl",
+      "role": "function",
+      "description": "benchmarks/studies/telemetry_hybrid_tuner.jl (9 lines · 4 imports).",
+      "x": 12,
+      "y": 1056,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-14",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-14",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-15",
+      "title": "telemetry_odyssey_tuner.jl",
+      "role": "function",
+      "description": "benchmarks/studies/telemetry_odyssey_tuner.jl (8 lines · 3 imports).",
+      "x": 12,
+      "y": 1134,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-15",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-15",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-16",
+      "title": "performance_runtime_analysis.jl",
+      "role": "function",
+      "description": "benchmarks/studies/performance_runtime_analysis.jl (7 lines · 1 imports).",
+      "x": 12,
+      "y": 1212,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-16",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-16",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-1-17",
+      "title": "telemetry_orbit_accuracy_plots.jl",
+      "role": "function",
+      "description": "benchmarks/studies/telemetry_orbit_accuracy_plots.jl (8 lines).",
+      "x": 12,
+      "y": 1290,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/studies",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-1-17",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-1-17",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-child-2",
+      "title": "Scripts",
+      "role": "component",
+      "description": "1 files, 0 exports, 5 imports.",
+      "x": 255,
+      "y": 60,
+      "width": 215,
+      "height": 185,
+      "tags": [
+        "benchmarks/scripts",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-2-2",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-2-2",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-2-file-2-1",
+      "title": "performance_paper_pipeline.jl",
+      "role": "function",
+      "description": "benchmarks/scripts/performance_paper_pipeline.jl (951 lines · 5 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "benchmarks/scripts",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-2-file-2-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-2-file-2-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "subsheet-2-edge-1",
+      "sourceNodeId": "subsheet-2-file-2-1",
+      "targetNodeId": "subsheet-2-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-2-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-8",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-2-edge-2",
+      "sourceNodeId": "subsheet-2-file-2-1",
+      "targetNodeId": "subsheet-2-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-2-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-2",
+      "kind": "call",
+      "label": "_fmt_md"
+    },
+    {
+      "id": "subsheet-2-edge-3",
+      "sourceNodeId": "subsheet-2-file-2-1",
+      "targetNodeId": "subsheet-2-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-2-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-2",
+      "kind": "call",
+      "label": "_has_column"
+    },
+    {
+      "id": "subsheet-2-edge-4",
+      "sourceNodeId": "subsheet-2-file-2-1",
+      "targetNodeId": "subsheet-2-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-2-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-2",
+      "kind": "call",
+      "label": "_parse_bool_token"
+    },
+    {
+      "id": "subsheet-2-edge-5",
+      "sourceNodeId": "subsheet-2-file-2-1",
+      "targetNodeId": "subsheet-2-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-2-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-2",
+      "kind": "call",
+      "label": "_safe_float"
+    },
+    {
+      "id": "subsheet-2-edge-6",
+      "sourceNodeId": "subsheet-2-file-2-1",
+      "targetNodeId": "subsheet-2-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-2-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-2",
+      "kind": "call",
+      "label": "_write_markdown_table"
+    },
+    {
+      "id": "subsheet-2-edge-7",
+      "sourceNodeId": "subsheet-2-file-2-1",
+      "targetNodeId": "subsheet-2-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-2-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-7",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-2-edge-8",
+      "sourceNodeId": "subsheet-2-file-1-4",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_evaluate_direct"
+    },
+    {
+      "id": "subsheet-2-edge-9",
+      "sourceNodeId": "subsheet-2-file-1-4",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_generate_track"
+    },
+    {
+      "id": "subsheet-2-edge-10",
+      "sourceNodeId": "subsheet-2-file-1-4",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_make_args"
+    },
+    {
+      "id": "subsheet-2-edge-11",
+      "sourceNodeId": "subsheet-2-file-1-4",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_make_spacecraft"
+    },
+    {
+      "id": "subsheet-2-edge-12",
+      "sourceNodeId": "subsheet-2-file-1-4",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_pctl"
+    },
+    {
+      "id": "subsheet-2-edge-13",
+      "sourceNodeId": "subsheet-2-file-1-4",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_summarize_case"
+    },
+    {
+      "id": "subsheet-2-edge-14",
+      "sourceNodeId": "subsheet-2-file-1-4",
+      "targetNodeId": "subsheet-2-file-1-9",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-9",
+      "kind": "call",
+      "label": "_make_args"
+    },
+    {
+      "id": "subsheet-2-edge-15",
+      "sourceNodeId": "subsheet-2-file-1-4",
+      "targetNodeId": "subsheet-2-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-5",
+      "kind": "call",
+      "label": "_make_args"
+    },
+    {
+      "id": "subsheet-2-edge-16",
+      "sourceNodeId": "subsheet-2-file-1-4",
+      "targetNodeId": "subsheet-2-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-5",
+      "kind": "call",
+      "label": "_pctl"
+    },
+    {
+      "id": "subsheet-2-edge-17",
+      "sourceNodeId": "subsheet-2-file-1-3",
+      "targetNodeId": "subsheet-2-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-4",
+      "kind": "call",
+      "label": "_evaluate_direct"
+    },
+    {
+      "id": "subsheet-2-edge-18",
+      "sourceNodeId": "subsheet-2-file-1-3",
+      "targetNodeId": "subsheet-2-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-4",
+      "kind": "call",
+      "label": "_generate_track"
+    },
+    {
+      "id": "subsheet-2-edge-19",
+      "sourceNodeId": "subsheet-2-file-1-3",
+      "targetNodeId": "subsheet-2-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-4",
+      "kind": "call",
+      "label": "_make_args"
+    },
+    {
+      "id": "subsheet-2-edge-20",
+      "sourceNodeId": "subsheet-2-file-1-3",
+      "targetNodeId": "subsheet-2-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-4",
+      "kind": "call",
+      "label": "_make_spacecraft"
+    },
+    {
+      "id": "subsheet-2-edge-21",
+      "sourceNodeId": "subsheet-2-file-1-3",
+      "targetNodeId": "subsheet-2-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-4",
+      "kind": "call",
+      "label": "_pctl"
+    },
+    {
+      "id": "subsheet-2-edge-22",
+      "sourceNodeId": "subsheet-2-file-1-3",
+      "targetNodeId": "subsheet-2-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-4",
+      "kind": "call",
+      "label": "_summarize_case"
+    },
+    {
+      "id": "subsheet-2-edge-23",
+      "sourceNodeId": "subsheet-2-file-1-3",
+      "targetNodeId": "subsheet-2-file-1-9",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-9",
+      "kind": "call",
+      "label": "_make_args"
+    },
+    {
+      "id": "subsheet-2-edge-24",
+      "sourceNodeId": "subsheet-2-file-1-3",
+      "targetNodeId": "subsheet-2-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-5",
+      "kind": "call",
+      "label": "_error_table"
+    },
+    {
+      "id": "subsheet-2-edge-25",
+      "sourceNodeId": "subsheet-2-file-1-3",
+      "targetNodeId": "subsheet-2-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-5",
+      "kind": "call",
+      "label": "_make_args"
+    },
+    {
+      "id": "subsheet-2-edge-26",
+      "sourceNodeId": "subsheet-2-file-1-3",
+      "targetNodeId": "subsheet-2-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-5",
+      "kind": "call",
+      "label": "_parse_scenarios"
+    },
+    {
+      "id": "subsheet-2-edge-27",
+      "sourceNodeId": "subsheet-2-file-1-3",
+      "targetNodeId": "subsheet-2-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-5",
+      "kind": "call",
+      "label": "_pctl"
+    },
+    {
+      "id": "subsheet-2-edge-28",
+      "sourceNodeId": "subsheet-2-file-1-3",
+      "targetNodeId": "subsheet-2-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-5",
+      "kind": "call",
+      "label": "_planet_from_name"
+    },
+    {
+      "id": "subsheet-2-edge-29",
+      "sourceNodeId": "subsheet-2-file-1-3",
+      "targetNodeId": "subsheet-2-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-5",
+      "kind": "call",
+      "label": "_scenario_defs"
+    },
+    {
+      "id": "subsheet-2-edge-30",
+      "sourceNodeId": "subsheet-2-file-1-3",
+      "targetNodeId": "subsheet-2-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-5",
+      "kind": "call",
+      "label": "parse_cli"
+    },
+    {
+      "id": "subsheet-2-edge-31",
+      "sourceNodeId": "subsheet-2-file-1-3",
+      "targetNodeId": "subsheet-2-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-7",
+      "kind": "call",
+      "label": "parse_cli"
+    },
+    {
+      "id": "subsheet-2-edge-32",
+      "sourceNodeId": "subsheet-2-file-1-9",
+      "targetNodeId": "subsheet-2-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-4",
+      "kind": "call",
+      "label": "_make_args"
+    },
+    {
+      "id": "subsheet-2-edge-33",
+      "sourceNodeId": "subsheet-2-file-1-9",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_make_args"
+    },
+    {
+      "id": "subsheet-2-edge-34",
+      "sourceNodeId": "subsheet-2-file-1-9",
+      "targetNodeId": "subsheet-2-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-5",
+      "kind": "call",
+      "label": "_make_args"
+    },
+    {
+      "id": "subsheet-2-edge-35",
+      "sourceNodeId": "subsheet-2-file-1-9",
+      "targetNodeId": "subsheet-2-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-5",
+      "kind": "call",
+      "label": "_run_case"
+    },
+    {
+      "id": "subsheet-2-edge-36",
+      "sourceNodeId": "subsheet-2-file-1-9",
+      "targetNodeId": "subsheet-2-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-5",
+      "kind": "call",
+      "label": "_with_env"
+    },
+    {
+      "id": "subsheet-2-edge-37",
+      "sourceNodeId": "subsheet-2-file-1-9",
+      "targetNodeId": "subsheet-2-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-5",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "subsheet-2-edge-38",
+      "sourceNodeId": "subsheet-2-file-1-5",
+      "targetNodeId": "subsheet-2-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-4",
+      "kind": "call",
+      "label": "_make_args"
+    },
+    {
+      "id": "subsheet-2-edge-39",
+      "sourceNodeId": "subsheet-2-file-1-5",
+      "targetNodeId": "subsheet-2-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-4",
+      "kind": "call",
+      "label": "_pctl"
+    },
+    {
+      "id": "subsheet-2-edge-40",
+      "sourceNodeId": "subsheet-2-file-1-5",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_error_table"
+    },
+    {
+      "id": "subsheet-2-edge-41",
+      "sourceNodeId": "subsheet-2-file-1-5",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_make_args"
+    },
+    {
+      "id": "subsheet-2-edge-42",
+      "sourceNodeId": "subsheet-2-file-1-5",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_parse_scenarios"
+    },
+    {
+      "id": "subsheet-2-edge-43",
+      "sourceNodeId": "subsheet-2-file-1-5",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_pctl"
+    },
+    {
+      "id": "subsheet-2-edge-44",
+      "sourceNodeId": "subsheet-2-file-1-5",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_planet_from_name"
+    },
+    {
+      "id": "subsheet-2-edge-45",
+      "sourceNodeId": "subsheet-2-file-1-5",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_scenario_defs"
+    },
+    {
+      "id": "subsheet-2-edge-46",
+      "sourceNodeId": "subsheet-2-file-1-5",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "parse_cli"
+    },
+    {
+      "id": "subsheet-2-edge-47",
+      "sourceNodeId": "subsheet-2-file-1-5",
+      "targetNodeId": "subsheet-2-file-1-9",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-9",
+      "kind": "call",
+      "label": "_make_args"
+    },
+    {
+      "id": "subsheet-2-edge-48",
+      "sourceNodeId": "subsheet-2-file-1-5",
+      "targetNodeId": "subsheet-2-file-1-9",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-9",
+      "kind": "call",
+      "label": "_run_case"
+    },
+    {
+      "id": "subsheet-2-edge-49",
+      "sourceNodeId": "subsheet-2-file-1-5",
+      "targetNodeId": "subsheet-2-file-1-9",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-9",
+      "kind": "call",
+      "label": "_with_env"
+    },
+    {
+      "id": "subsheet-2-edge-50",
+      "sourceNodeId": "subsheet-2-file-1-5",
+      "targetNodeId": "subsheet-2-file-1-9",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-9",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "subsheet-2-edge-51",
+      "sourceNodeId": "subsheet-2-file-1-5",
+      "targetNodeId": "subsheet-2-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-7",
+      "kind": "call",
+      "label": "parse_cli"
+    },
+    {
+      "id": "subsheet-2-edge-52",
+      "sourceNodeId": "subsheet-2-file-1-10",
+      "targetNodeId": "subsheet-2-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-4",
+      "kind": "call",
+      "label": "_evaluate_direct"
+    },
+    {
+      "id": "subsheet-2-edge-53",
+      "sourceNodeId": "subsheet-2-file-1-10",
+      "targetNodeId": "subsheet-2-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-4",
+      "kind": "call",
+      "label": "_generate_track"
+    },
+    {
+      "id": "subsheet-2-edge-54",
+      "sourceNodeId": "subsheet-2-file-1-10",
+      "targetNodeId": "subsheet-2-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-4",
+      "kind": "call",
+      "label": "_make_args"
+    },
+    {
+      "id": "subsheet-2-edge-55",
+      "sourceNodeId": "subsheet-2-file-1-10",
+      "targetNodeId": "subsheet-2-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-4",
+      "kind": "call",
+      "label": "_summarize_case"
+    },
+    {
+      "id": "subsheet-2-edge-56",
+      "sourceNodeId": "subsheet-2-file-1-10",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_evaluate_direct"
+    },
+    {
+      "id": "subsheet-2-edge-57",
+      "sourceNodeId": "subsheet-2-file-1-10",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_generate_track"
+    },
+    {
+      "id": "subsheet-2-edge-58",
+      "sourceNodeId": "subsheet-2-file-1-10",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_make_args"
+    },
+    {
+      "id": "subsheet-2-edge-59",
+      "sourceNodeId": "subsheet-2-file-1-10",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "_summarize_case"
+    },
+    {
+      "id": "subsheet-2-edge-60",
+      "sourceNodeId": "subsheet-2-file-1-10",
+      "targetNodeId": "subsheet-2-file-1-9",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-9",
+      "kind": "call",
+      "label": "_make_args"
+    },
+    {
+      "id": "subsheet-2-edge-61",
+      "sourceNodeId": "subsheet-2-file-1-10",
+      "targetNodeId": "subsheet-2-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-5",
+      "kind": "call",
+      "label": "_make_args"
+    },
+    {
+      "id": "subsheet-2-edge-62",
+      "sourceNodeId": "subsheet-2-file-1-8",
+      "targetNodeId": "subsheet-2-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-8",
+      "targetPortId": "sub-file-in-subsheet-2-file-2-1",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-2-edge-63",
+      "sourceNodeId": "subsheet-2-file-1-8",
+      "targetNodeId": "subsheet-2-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-8",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-7",
+      "kind": "call",
+      "label": "_parse_positive_int"
+    },
+    {
+      "id": "subsheet-2-edge-64",
+      "sourceNodeId": "subsheet-2-file-1-8",
+      "targetNodeId": "subsheet-2-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-8",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-7",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-2-edge-65",
+      "sourceNodeId": "subsheet-2-file-1-8",
+      "targetNodeId": "subsheet-2-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-8",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-1",
+      "kind": "call",
+      "label": "_parse_positive_int"
+    },
+    {
+      "id": "subsheet-2-edge-66",
+      "sourceNodeId": "subsheet-2-file-1-16",
+      "targetNodeId": "subsheet-2-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-16",
+      "targetPortId": "sub-file-in-subsheet-2-file-2-1",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-2-edge-67",
+      "sourceNodeId": "subsheet-2-file-1-16",
+      "targetNodeId": "subsheet-2-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-16",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-8",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-2-edge-68",
+      "sourceNodeId": "subsheet-2-file-1-16",
+      "targetNodeId": "subsheet-2-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-16",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-7",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-2-edge-69",
+      "sourceNodeId": "subsheet-2-file-1-2",
+      "targetNodeId": "subsheet-2-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-2-file-2-1",
+      "kind": "call",
+      "label": "_fmt_md"
+    },
+    {
+      "id": "subsheet-2-edge-70",
+      "sourceNodeId": "subsheet-2-file-1-2",
+      "targetNodeId": "subsheet-2-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-2-file-2-1",
+      "kind": "call",
+      "label": "_has_column"
+    },
+    {
+      "id": "subsheet-2-edge-71",
+      "sourceNodeId": "subsheet-2-file-1-2",
+      "targetNodeId": "subsheet-2-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-2-file-2-1",
+      "kind": "call",
+      "label": "_parse_bool_token"
+    },
+    {
+      "id": "subsheet-2-edge-72",
+      "sourceNodeId": "subsheet-2-file-1-2",
+      "targetNodeId": "subsheet-2-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-2-file-2-1",
+      "kind": "call",
+      "label": "_safe_float"
+    },
+    {
+      "id": "subsheet-2-edge-73",
+      "sourceNodeId": "subsheet-2-file-1-2",
+      "targetNodeId": "subsheet-2-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-2-file-2-1",
+      "kind": "call",
+      "label": "_write_markdown_table"
+    },
+    {
+      "id": "subsheet-2-edge-74",
+      "sourceNodeId": "subsheet-2-file-1-2",
+      "targetNodeId": "subsheet-2-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-1",
+      "kind": "call",
+      "label": "_latest_artifact_path_optional"
+    },
+    {
+      "id": "subsheet-2-edge-75",
+      "sourceNodeId": "subsheet-2-file-1-2",
+      "targetNodeId": "subsheet-2-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-1",
+      "kind": "call",
+      "label": "_latest_artifact_path"
+    },
+    {
+      "id": "subsheet-2-edge-76",
+      "sourceNodeId": "subsheet-2-file-1-7",
+      "targetNodeId": "subsheet-2-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-2-file-2-1",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-2-edge-77",
+      "sourceNodeId": "subsheet-2-file-1-7",
+      "targetNodeId": "subsheet-2-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-3",
+      "kind": "call",
+      "label": "parse_cli"
+    },
+    {
+      "id": "subsheet-2-edge-78",
+      "sourceNodeId": "subsheet-2-file-1-7",
+      "targetNodeId": "subsheet-2-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-5",
+      "kind": "call",
+      "label": "parse_cli"
+    },
+    {
+      "id": "subsheet-2-edge-79",
+      "sourceNodeId": "subsheet-2-file-1-7",
+      "targetNodeId": "subsheet-2-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-8",
+      "kind": "call",
+      "label": "_parse_positive_int"
+    },
+    {
+      "id": "subsheet-2-edge-80",
+      "sourceNodeId": "subsheet-2-file-1-7",
+      "targetNodeId": "subsheet-2-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-8",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-2-edge-81",
+      "sourceNodeId": "subsheet-2-file-1-7",
+      "targetNodeId": "subsheet-2-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-1",
+      "kind": "call",
+      "label": "_parse_positive_int"
+    },
+    {
+      "id": "subsheet-2-edge-82",
+      "sourceNodeId": "subsheet-2-file-1-1",
+      "targetNodeId": "subsheet-2-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-2-1",
+      "kind": "call",
+      "label": "_parse_bool_token"
+    },
+    {
+      "id": "subsheet-2-edge-83",
+      "sourceNodeId": "subsheet-2-file-1-1",
+      "targetNodeId": "subsheet-2-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-2-1",
+      "kind": "call",
+      "label": "_write_markdown_table"
+    },
+    {
+      "id": "subsheet-2-edge-84",
+      "sourceNodeId": "subsheet-2-file-1-1",
+      "targetNodeId": "subsheet-2-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-2-1",
+      "kind": "call",
+      "label": "build_comparison_table"
+    },
+    {
+      "id": "subsheet-2-edge-85",
+      "sourceNodeId": "subsheet-2-file-1-1",
+      "targetNodeId": "subsheet-2-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-2-1",
+      "kind": "call",
+      "label": "build_mode_overview"
+    },
+    {
+      "id": "subsheet-2-edge-86",
+      "sourceNodeId": "subsheet-2-file-1-1",
+      "targetNodeId": "subsheet-2-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-2-1",
+      "kind": "call",
+      "label": "generate_pipeline_comparison_plots"
+    },
+    {
+      "id": "subsheet-2-edge-87",
+      "sourceNodeId": "subsheet-2-file-1-1",
+      "targetNodeId": "subsheet-2-file-1-11",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-11",
+      "kind": "call",
+      "label": "run"
+    },
+    {
+      "id": "subsheet-2-edge-88",
+      "sourceNodeId": "subsheet-2-file-1-1",
+      "targetNodeId": "subsheet-2-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-8",
+      "kind": "call",
+      "label": "_parse_positive_int"
+    },
+    {
+      "id": "subsheet-2-edge-89",
+      "sourceNodeId": "subsheet-2-file-1-1",
+      "targetNodeId": "subsheet-2-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-2",
+      "kind": "call",
+      "label": "_latest_artifact_path_optional"
+    },
+    {
+      "id": "subsheet-2-edge-90",
+      "sourceNodeId": "subsheet-2-file-1-1",
+      "targetNodeId": "subsheet-2-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-2",
+      "kind": "call",
+      "label": "_latest_artifact_path"
+    },
+    {
+      "id": "subsheet-2-edge-91",
+      "sourceNodeId": "subsheet-2-file-1-1",
+      "targetNodeId": "subsheet-2-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-2",
+      "kind": "call",
+      "label": "_parse_bool_token"
+    },
+    {
+      "id": "subsheet-2-edge-92",
+      "sourceNodeId": "subsheet-2-file-1-1",
+      "targetNodeId": "subsheet-2-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-2",
+      "kind": "call",
+      "label": "_write_markdown_table"
+    },
+    {
+      "id": "subsheet-2-edge-93",
+      "sourceNodeId": "subsheet-2-file-1-1",
+      "targetNodeId": "subsheet-2-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-7",
+      "kind": "call",
+      "label": "_parse_positive_int"
+    },
+    {
+      "id": "subsheet-2-edge-94",
+      "sourceNodeId": "subsheet-2-file-1-17",
+      "targetNodeId": "subsheet-2-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-17",
+      "targetPortId": "sub-file-in-subsheet-2-file-2-1",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-2-edge-95",
+      "sourceNodeId": "subsheet-2-file-1-17",
+      "targetNodeId": "subsheet-2-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-17",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-8",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-2-edge-96",
+      "sourceNodeId": "subsheet-2-file-1-17",
+      "targetNodeId": "subsheet-2-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-17",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-7",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "subsheet-2-edge-97",
+      "sourceNodeId": "subsheet-2-file-2-1",
+      "targetNodeId": "subsheet-2-file-1-16",
+      "sourcePortId": "sub-file-out-subsheet-2-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-16",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "benchmarks/scripts/performance_paper_pipeline.jl",
+        "benchmarks/studies/performance_runtime_analysis.jl"
+      ]
+    },
+    {
+      "id": "subsheet-2-edge-98",
+      "sourceNodeId": "subsheet-2-file-1-10",
+      "targetNodeId": "subsheet-2-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-4",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "benchmarks/studies/gram_single_call_vs_point_to_point_analysis.jl",
+        "benchmarks/studies/gram_interpolation_vs_point_to_point_analysis.jl"
+      ]
+    },
+    {
+      "id": "subsheet-2-edge-99",
+      "sourceNodeId": "subsheet-2-file-1-7",
+      "targetNodeId": "subsheet-2-file-1-16",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-16",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "benchmarks/studies/performance_split_imex_compare.jl",
+        "benchmarks/studies/performance_runtime_analysis.jl"
+      ]
+    },
+    {
+      "id": "subsheet-2-edge-100",
+      "sourceNodeId": "subsheet-2-file-2-1",
+      "targetNodeId": "subsheet-2-file-1-16",
+      "sourcePortId": "sub-file-out-subsheet-2-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-16",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "benchmarks/scripts/performance_paper_pipeline.jl",
+        "benchmarks/studies/performance_runtime_analysis.jl"
+      ]
+    },
+    {
+      "id": "subsheet-2-edge-101",
+      "sourceNodeId": "subsheet-2-file-1-10",
+      "targetNodeId": "subsheet-2-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-10",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-4",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "benchmarks/studies/gram_single_call_vs_point_to_point_analysis.jl",
+        "benchmarks/studies/gram_interpolation_vs_point_to_point_analysis.jl"
+      ]
+    },
+    {
+      "id": "subsheet-2-edge-102",
+      "sourceNodeId": "subsheet-2-file-1-7",
+      "targetNodeId": "subsheet-2-file-1-16",
+      "sourcePortId": "sub-file-out-subsheet-2-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-2-file-1-16",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "benchmarks/studies/performance_split_imex_compare.jl",
+        "benchmarks/studies/performance_runtime_analysis.jl"
+      ]
+    }
+  ],
+  "viewKind": "internal-block"
+}

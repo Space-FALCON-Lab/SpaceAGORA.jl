@@ -1,0 +1,2915 @@
+{
+  "id": "auto-logical-repository-alignment",
+  "filePath": "model-interfaces/repository/overview.json",
+  "parentId": null,
+  "title": "SpaceAGORA.Jl — Overview",
+  "layer": "logical",
+  "abstractionLevel": 0,
+  "summary": "Repository hierarchy rolls up from implementation files into EngineSandbox, Benchmarks, RuntimeServices, Examples, CommandTypes, SpaceAGORACalibration.Jl, Dynamics, Parallel, Vehicle, Analysis, SimulationModel, Experimental, EnvironmentModels, Scripts, Mission, Io, Data, SpaceAGORACLI, ExampleControlHookTemplate, PublicAPISymbols, SpaceAGORAGRAMSuiteExt, README, Precompile Workload, SpaceAGORA, Startup. Logical alignment is built bottom-up from source-level evidence and nested component ownership.",
+  "verificationIntent": "Keep the logical model synchronized with the implemented file-to-component hierarchy and observed code dependencies.",
+  "nodes": [
+    {
+      "id": "repo-logical-system",
+      "title": "SpaceAGORA.Jl",
+      "role": "system",
+      "description": "Repository-wide logical view synthesized from 349 implementation files across 25 components. Double-click any subsystem to explore its internals.",
+      "x": 40,
+      "y": 40,
+      "width": 1160,
+      "height": 1640,
+      "tags": [
+        "repository",
+        "aligned",
+        "system-root"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "system-in",
+          "name": "Inputs",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "system-out",
+          "name": "Outputs",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-1",
+      "title": "EngineSandbox",
+      "role": "subsystem",
+      "description": "76 files, 1 exports. Double-click to explore internals.",
+      "x": 50,
+      "y": 70,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "test",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-2",
+      "title": "Benchmarks",
+      "role": "subsystem",
+      "description": "47 files, 0 exports. Double-click to explore internals.",
+      "x": 410,
+      "y": 70,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "benchmarks",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-2",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-3",
+      "title": "RuntimeServices",
+      "role": "subsystem",
+      "description": "37 files, 12 exports. Double-click to explore internals.",
+      "x": 770,
+      "y": 70,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "src/simulation",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-3",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-4",
+      "title": "Examples",
+      "role": "component",
+      "description": "26 files, 0 exports. Double-click to explore internals.",
+      "x": 50,
+      "y": 210,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "examples",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-4",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-4",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-5",
+      "title": "CommandTypes",
+      "role": "subsystem",
+      "description": "25 files, 17 exports. Double-click to explore internals.",
+      "x": 410,
+      "y": 210,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "src/gnc",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-5",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "PropulsiveManeuverCommand"
+        },
+        {
+          "id": "root-out-5",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "PropulsiveManeuverCommand"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-6",
+      "title": "SpaceAGORACalibration.Jl",
+      "role": "subsystem",
+      "description": "19 files, 84 exports. Double-click to explore internals.",
+      "x": 770,
+      "y": 210,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "SpaceAGORACalibration.jl",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-6",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-6",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-7",
+      "title": "Dynamics",
+      "role": "subsystem",
+      "description": "15 files, 50 exports. Double-click to explore internals.",
+      "x": 50,
+      "y": 350,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "src/dynamics",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-7",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-7",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-8",
+      "title": "Parallel",
+      "role": "subsystem",
+      "description": "15 files, 36 exports. Double-click to explore internals.",
+      "x": 410,
+      "y": 350,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "src/parallel",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-8",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-8",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-9",
+      "title": "Vehicle",
+      "role": "subsystem",
+      "description": "14 files, 33 exports. Double-click to explore internals.",
+      "x": 770,
+      "y": 350,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "src/vehicle",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-9",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-9",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-10",
+      "title": "Analysis",
+      "role": "subsystem",
+      "description": "11 files, 5 exports. Double-click to explore internals.",
+      "x": 50,
+      "y": 490,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "src/analysis",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-10",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-10",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-11",
+      "title": "SimulationModel",
+      "role": "subsystem",
+      "description": "11 files, 71 exports. Double-click to explore internals.",
+      "x": 410,
+      "y": 490,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "src/core",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-11",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-11",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-12",
+      "title": "Experimental",
+      "role": "subsystem",
+      "description": "9 files, 24 exports. Double-click to explore internals.",
+      "x": 770,
+      "y": 490,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "experimental",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-12",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-12",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-13",
+      "title": "EnvironmentModels",
+      "role": "subsystem",
+      "description": "9 files, 28 exports. Double-click to explore internals.",
+      "x": 50,
+      "y": 630,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "src/environment",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-13",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "NoAtmosphereModel"
+        },
+        {
+          "id": "root-out-13",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "NoAtmosphereModel"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-14",
+      "title": "Scripts",
+      "role": "subsystem",
+      "description": "7 files, 0 exports. Double-click to explore internals.",
+      "x": 410,
+      "y": 630,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "scripts",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-14",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-14",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-15",
+      "title": "Mission",
+      "role": "subsystem",
+      "description": "6 files, 10 exports. Double-click to explore internals.",
+      "x": 770,
+      "y": 630,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "src/mission",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-15",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-15",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-16",
+      "title": "Io",
+      "role": "subsystem",
+      "description": "5 files, 18 exports. Double-click to explore internals.",
+      "x": 50,
+      "y": 770,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "src/io",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-16",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-16",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-17",
+      "title": "Data",
+      "role": "subsystem",
+      "description": "4 files, 0 exports. Double-click to explore internals.",
+      "x": 410,
+      "y": 770,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "data",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-17",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-17",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-18",
+      "title": "SpaceAGORACLI",
+      "role": "module",
+      "description": "3 files, 5 exports. Double-click to explore internals.",
+      "x": 770,
+      "y": 770,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "src/cli",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-18",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "AssetCheckItem"
+        },
+        {
+          "id": "root-out-18",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "AssetCheckItem"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-19",
+      "title": "ExampleControlHookTemplate",
+      "role": "module",
+      "description": "3 files, 0 exports. Double-click to explore internals.",
+      "x": 50,
+      "y": 910,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "templates",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-19",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-19",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-20",
+      "title": "PublicAPISymbols",
+      "role": "module",
+      "description": "2 files, 4 exports. Double-click to explore internals.",
+      "x": 410,
+      "y": 910,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "docs",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-20",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "PUBLIC_API_SECTIONS"
+        },
+        {
+          "id": "root-out-20",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "PUBLIC_API_SECTIONS"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-21",
+      "title": "SpaceAGORAGRAMSuiteExt",
+      "role": "module",
+      "description": "1 files, 0 exports. Double-click to explore internals.",
+      "x": 770,
+      "y": 910,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "ext",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-21",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-21",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-22",
+      "title": "README",
+      "role": "component",
+      "description": "1 files, 0 exports. Double-click to explore internals.",
+      "x": 50,
+      "y": 1050,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "README",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-22",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-22",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-23",
+      "title": "Precompile Workload",
+      "role": "component",
+      "description": "1 files, 0 exports. Double-click to explore internals.",
+      "x": 410,
+      "y": 1050,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "src/precompile_workload",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-23",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-23",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-24",
+      "title": "SpaceAGORA",
+      "role": "module",
+      "description": "1 files, 73 exports. Double-click to explore internals.",
+      "x": 770,
+      "y": 1050,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "src/SpaceAGORA",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-24",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "ParallelProfile"
+        },
+        {
+          "id": "root-out-24",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "ParallelProfile"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-logical-root-25",
+      "title": "Startup",
+      "role": "component",
+      "description": "1 files, 0 exports. Double-click to explore internals.",
+      "x": 50,
+      "y": 1190,
+      "width": 500,
+      "height": 90,
+      "tags": [
+        "startup",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "root-in-25",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "root-out-25",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "repo-logical-comp-edge-1",
+      "sourceNodeId": "repo-logical-root-2",
+      "targetNodeId": "repo-logical-root-14",
+      "sourcePortId": "root-out-2",
+      "targetPortId": "root-in-14",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "repo-logical-comp-edge-2",
+      "sourceNodeId": "repo-logical-root-2",
+      "targetNodeId": "repo-logical-root-6",
+      "sourcePortId": "root-out-2",
+      "targetPortId": "root-in-6",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "repo-logical-comp-edge-3",
+      "sourceNodeId": "repo-logical-root-2",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-2",
+      "targetPortId": "root-in-13",
+      "kind": "call",
+      "label": "Earth"
+    },
+    {
+      "id": "repo-logical-comp-edge-4",
+      "sourceNodeId": "repo-logical-root-2",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-2",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "repo-logical-comp-edge-5",
+      "sourceNodeId": "repo-logical-root-2",
+      "targetNodeId": "repo-logical-root-4",
+      "sourcePortId": "root-out-2",
+      "targetPortId": "root-in-4",
+      "kind": "call",
+      "label": "GRAMAtmosphereModel"
+    },
+    {
+      "id": "repo-logical-comp-edge-6",
+      "sourceNodeId": "repo-logical-root-2",
+      "targetNodeId": "repo-logical-root-10",
+      "sourcePortId": "root-out-2",
+      "targetPortId": "root-in-10",
+      "kind": "call",
+      "label": "_make_spacecraft"
+    },
+    {
+      "id": "repo-logical-comp-edge-7",
+      "sourceNodeId": "repo-logical-root-2",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-2",
+      "targetPortId": "root-in-11",
+      "kind": "call",
+      "label": "orbitalelemtorv"
+    },
+    {
+      "id": "repo-logical-comp-edge-8",
+      "sourceNodeId": "repo-logical-root-2",
+      "targetNodeId": "repo-logical-root-3",
+      "sourcePortId": "root-out-2",
+      "targetPortId": "root-in-3",
+      "kind": "call",
+      "label": "_gram_track_cache_config"
+    },
+    {
+      "id": "repo-logical-comp-edge-9",
+      "sourceNodeId": "repo-logical-root-2",
+      "targetNodeId": "repo-logical-root-9",
+      "sourcePortId": "root-out-2",
+      "targetPortId": "root-in-9",
+      "kind": "call",
+      "label": "ControlModel"
+    },
+    {
+      "id": "repo-logical-comp-edge-10",
+      "sourceNodeId": "repo-logical-root-2",
+      "targetNodeId": "repo-logical-root-8",
+      "sourcePortId": "root-out-2",
+      "targetPortId": "root-in-8",
+      "kind": "call",
+      "label": "threaded_foreach"
+    },
+    {
+      "id": "repo-logical-comp-edge-11",
+      "sourceNodeId": "repo-logical-root-2",
+      "targetNodeId": "repo-logical-root-7",
+      "sourcePortId": "root-out-2",
+      "targetPortId": "root-in-7",
+      "kind": "call",
+      "label": "GravitationalHarmonicsModel"
+    },
+    {
+      "id": "repo-logical-comp-edge-12",
+      "sourceNodeId": "repo-logical-root-17",
+      "targetNodeId": "repo-logical-root-2",
+      "sourcePortId": "root-out-17",
+      "targetPortId": "root-in-2",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "repo-logical-comp-edge-13",
+      "sourceNodeId": "repo-logical-root-17",
+      "targetNodeId": "repo-logical-root-14",
+      "sourcePortId": "root-out-17",
+      "targetPortId": "root-in-14",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "repo-logical-comp-edge-14",
+      "sourceNodeId": "repo-logical-root-17",
+      "targetNodeId": "repo-logical-root-6",
+      "sourcePortId": "root-out-17",
+      "targetPortId": "root-in-6",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "repo-logical-comp-edge-15",
+      "sourceNodeId": "repo-logical-root-17",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-17",
+      "targetPortId": "root-in-13",
+      "kind": "call",
+      "label": "interp"
+    },
+    {
+      "id": "repo-logical-comp-edge-16",
+      "sourceNodeId": "repo-logical-root-17",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-17",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "repo-logical-comp-edge-17",
+      "sourceNodeId": "repo-logical-root-20",
+      "targetNodeId": "repo-logical-root-4",
+      "sourcePortId": "root-out-20",
+      "targetPortId": "root-in-4",
+      "kind": "call",
+      "label": "InitialTime"
+    },
+    {
+      "id": "repo-logical-comp-edge-18",
+      "sourceNodeId": "repo-logical-root-20",
+      "targetNodeId": "repo-logical-root-10",
+      "sourcePortId": "root-out-20",
+      "targetPortId": "root-in-10",
+      "kind": "call",
+      "label": "make_example_config"
+    },
+    {
+      "id": "repo-logical-comp-edge-19",
+      "sourceNodeId": "repo-logical-root-20",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-20",
+      "targetPortId": "root-in-11",
+      "kind": "call",
+      "label": "make_no_gram_planet"
+    },
+    {
+      "id": "repo-logical-comp-edge-20",
+      "sourceNodeId": "repo-logical-root-20",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-20",
+      "targetPortId": "root-in-13",
+      "kind": "call",
+      "label": "NoAtmosphereModel"
+    },
+    {
+      "id": "repo-logical-comp-edge-21",
+      "sourceNodeId": "repo-logical-root-20",
+      "targetNodeId": "repo-logical-root-9",
+      "sourcePortId": "root-out-20",
+      "targetPortId": "root-in-9",
+      "kind": "call",
+      "label": "InitialCondition"
+    },
+    {
+      "id": "repo-logical-comp-edge-22",
+      "sourceNodeId": "repo-logical-root-20",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-20",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "make_example_config"
+    },
+    {
+      "id": "repo-logical-comp-edge-23",
+      "sourceNodeId": "repo-logical-root-4",
+      "targetNodeId": "repo-logical-root-2",
+      "sourcePortId": "root-out-4",
+      "targetPortId": "root-in-2",
+      "kind": "call",
+      "label": "run"
+    },
+    {
+      "id": "repo-logical-comp-edge-24",
+      "sourceNodeId": "repo-logical-root-4",
+      "targetNodeId": "repo-logical-root-10",
+      "sourcePortId": "root-out-4",
+      "targetPortId": "root-in-10",
+      "kind": "call",
+      "label": "_initial_time_et"
+    },
+    {
+      "id": "repo-logical-comp-edge-25",
+      "sourceNodeId": "repo-logical-root-4",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-4",
+      "targetPortId": "root-in-11",
+      "kind": "call",
+      "label": "rtolatlong"
+    },
+    {
+      "id": "repo-logical-comp-edge-26",
+      "sourceNodeId": "repo-logical-root-4",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-4",
+      "targetPortId": "root-in-13",
+      "kind": "call",
+      "label": "ephemerides_time_seconds"
+    },
+    {
+      "id": "repo-logical-comp-edge-27",
+      "sourceNodeId": "repo-logical-root-4",
+      "targetNodeId": "repo-logical-root-9",
+      "sourcePortId": "root-out-4",
+      "targetPortId": "root-in-9",
+      "kind": "call",
+      "label": "CartesianInitialCondition"
+    },
+    {
+      "id": "repo-logical-comp-edge-28",
+      "sourceNodeId": "repo-logical-root-4",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-4",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "make_example_config"
+    },
+    {
+      "id": "repo-logical-comp-edge-29",
+      "sourceNodeId": "repo-logical-root-4",
+      "targetNodeId": "repo-logical-root-7",
+      "sourcePortId": "root-out-4",
+      "targetPortId": "root-in-7",
+      "kind": "call",
+      "label": "calcForceTorque"
+    },
+    {
+      "id": "repo-logical-comp-edge-30",
+      "sourceNodeId": "repo-logical-root-4",
+      "targetNodeId": "repo-logical-root-5",
+      "sourcePortId": "root-out-4",
+      "targetPortId": "root-in-5",
+      "kind": "call",
+      "label": "calcControlForceTorque"
+    },
+    {
+      "id": "repo-logical-comp-edge-31",
+      "sourceNodeId": "repo-logical-root-4",
+      "targetNodeId": "repo-logical-root-15",
+      "sourcePortId": "root-out-4",
+      "targetPortId": "root-in-15",
+      "kind": "call",
+      "label": "odyssey_campaign_maneuvers"
+    },
+    {
+      "id": "repo-logical-comp-edge-32",
+      "sourceNodeId": "repo-logical-root-4",
+      "targetNodeId": "repo-logical-root-3",
+      "sourcePortId": "root-out-4",
+      "targetPortId": "root-in-3",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "repo-logical-comp-edge-33",
+      "sourceNodeId": "repo-logical-root-21",
+      "targetNodeId": "repo-logical-root-4",
+      "sourcePortId": "root-out-21",
+      "targetPortId": "root-in-4",
+      "kind": "call",
+      "label": "GRAMAtmosphereModel"
+    },
+    {
+      "id": "repo-logical-comp-edge-34",
+      "sourceNodeId": "repo-logical-root-21",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-21",
+      "targetPortId": "root-in-13",
+      "kind": "call",
+      "label": "_gram_core_density_state"
+    },
+    {
+      "id": "repo-logical-comp-edge-35",
+      "sourceNodeId": "repo-logical-root-22",
+      "targetNodeId": "repo-logical-root-4",
+      "sourcePortId": "root-out-22",
+      "targetPortId": "root-in-4",
+      "kind": "call",
+      "label": "GRAMAtmosphereModel"
+    },
+    {
+      "id": "repo-logical-comp-edge-36",
+      "sourceNodeId": "repo-logical-root-22",
+      "targetNodeId": "repo-logical-root-10",
+      "sourcePortId": "root-out-22",
+      "targetPortId": "root-in-10",
+      "kind": "call",
+      "label": "make_example_config"
+    },
+    {
+      "id": "repo-logical-comp-edge-37",
+      "sourceNodeId": "repo-logical-root-22",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-22",
+      "targetPortId": "root-in-11",
+      "kind": "call",
+      "label": "make_no_gram_planet"
+    },
+    {
+      "id": "repo-logical-comp-edge-38",
+      "sourceNodeId": "repo-logical-root-22",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-22",
+      "targetPortId": "root-in-13",
+      "kind": "call",
+      "label": "ExponentialAtmosphereModel"
+    },
+    {
+      "id": "repo-logical-comp-edge-39",
+      "sourceNodeId": "repo-logical-root-22",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-22",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "make_example_config"
+    },
+    {
+      "id": "repo-logical-comp-edge-40",
+      "sourceNodeId": "repo-logical-root-14",
+      "targetNodeId": "repo-logical-root-18",
+      "sourcePortId": "root-out-14",
+      "targetPortId": "root-in-18",
+      "kind": "call",
+      "label": "check_assets"
+    },
+    {
+      "id": "repo-logical-comp-edge-41",
+      "sourceNodeId": "repo-logical-root-14",
+      "targetNodeId": "repo-logical-root-2",
+      "sourcePortId": "root-out-14",
+      "targetPortId": "root-in-2",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "repo-logical-comp-edge-42",
+      "sourceNodeId": "repo-logical-root-14",
+      "targetNodeId": "repo-logical-root-6",
+      "sourcePortId": "root-out-14",
+      "targetPortId": "root-in-6",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "repo-logical-comp-edge-43",
+      "sourceNodeId": "repo-logical-root-14",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-14",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "repo-logical-comp-edge-44",
+      "sourceNodeId": "repo-logical-root-14",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-14",
+      "targetPortId": "root-in-11",
+      "kind": "call",
+      "label": "qToEulerAngles"
+    },
+    {
+      "id": "repo-logical-comp-edge-45",
+      "sourceNodeId": "repo-logical-root-14",
+      "targetNodeId": "repo-logical-root-9",
+      "sourcePortId": "root-out-14",
+      "targetPortId": "root-in-9",
+      "kind": "call",
+      "label": "traverse_bodies"
+    },
+    {
+      "id": "repo-logical-comp-edge-46",
+      "sourceNodeId": "repo-logical-root-6",
+      "targetNodeId": "repo-logical-root-2",
+      "sourcePortId": "root-out-6",
+      "targetPortId": "root-in-2",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "repo-logical-comp-edge-47",
+      "sourceNodeId": "repo-logical-root-6",
+      "targetNodeId": "repo-logical-root-14",
+      "sourcePortId": "root-out-6",
+      "targetPortId": "root-in-14",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "repo-logical-comp-edge-48",
+      "sourceNodeId": "repo-logical-root-6",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-6",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "repo-logical-comp-edge-49",
+      "sourceNodeId": "repo-logical-root-6",
+      "targetNodeId": "repo-logical-root-10",
+      "sourcePortId": "root-out-6",
+      "targetPortId": "root-in-10",
+      "kind": "call",
+      "label": "parse_cli"
+    },
+    {
+      "id": "repo-logical-comp-edge-50",
+      "sourceNodeId": "repo-logical-root-6",
+      "targetNodeId": "repo-logical-root-8",
+      "sourcePortId": "root-out-6",
+      "targetPortId": "root-in-8",
+      "kind": "call",
+      "label": "parse_parallel_profile"
+    },
+    {
+      "id": "repo-logical-comp-edge-51",
+      "sourceNodeId": "repo-logical-root-6",
+      "targetNodeId": "repo-logical-root-3",
+      "sourcePortId": "root-out-6",
+      "targetPortId": "root-in-3",
+      "kind": "call",
+      "label": "_parse_bool"
+    },
+    {
+      "id": "repo-logical-comp-edge-52",
+      "sourceNodeId": "repo-logical-root-10",
+      "targetNodeId": "repo-logical-root-4",
+      "sourcePortId": "root-out-10",
+      "targetPortId": "root-in-4",
+      "kind": "call",
+      "label": "_initial_time_et"
+    },
+    {
+      "id": "repo-logical-comp-edge-53",
+      "sourceNodeId": "repo-logical-root-10",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-10",
+      "targetPortId": "root-in-11",
+      "kind": "call",
+      "label": "rtolatlong"
+    },
+    {
+      "id": "repo-logical-comp-edge-54",
+      "sourceNodeId": "repo-logical-root-10",
+      "targetNodeId": "repo-logical-root-2",
+      "sourcePortId": "root-out-10",
+      "targetPortId": "root-in-2",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "repo-logical-comp-edge-55",
+      "sourceNodeId": "repo-logical-root-10",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-10",
+      "targetPortId": "root-in-13",
+      "kind": "call",
+      "label": "NoAtmosphereModel"
+    },
+    {
+      "id": "repo-logical-comp-edge-56",
+      "sourceNodeId": "repo-logical-root-10",
+      "targetNodeId": "repo-logical-root-3",
+      "sourcePortId": "root-out-10",
+      "targetPortId": "root-in-3",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "repo-logical-comp-edge-57",
+      "sourceNodeId": "repo-logical-root-10",
+      "targetNodeId": "repo-logical-root-9",
+      "sourcePortId": "root-out-10",
+      "targetPortId": "root-in-9",
+      "kind": "call",
+      "label": "ControlModel"
+    },
+    {
+      "id": "repo-logical-comp-edge-58",
+      "sourceNodeId": "repo-logical-root-10",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-10",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "repo-logical-comp-edge-59",
+      "sourceNodeId": "repo-logical-root-10",
+      "targetNodeId": "repo-logical-root-6",
+      "sourcePortId": "root-out-10",
+      "targetPortId": "root-in-6",
+      "kind": "call",
+      "label": "parse_cli"
+    },
+    {
+      "id": "repo-logical-comp-edge-60",
+      "sourceNodeId": "repo-logical-root-10",
+      "targetNodeId": "repo-logical-root-7",
+      "sourcePortId": "root-out-10",
+      "targetPortId": "root-in-7",
+      "kind": "call",
+      "label": "calcForceTorque"
+    },
+    {
+      "id": "repo-logical-comp-edge-61",
+      "sourceNodeId": "repo-logical-root-18",
+      "targetNodeId": "repo-logical-root-2",
+      "sourcePortId": "root-out-18",
+      "targetPortId": "root-in-2",
+      "kind": "call",
+      "label": "run"
+    },
+    {
+      "id": "repo-logical-comp-edge-62",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-7",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-7",
+      "kind": "call",
+      "label": "_spice_lock"
+    },
+    {
+      "id": "repo-logical-comp-edge-63",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-13",
+      "kind": "call",
+      "label": "_spice_body_fixed_frame"
+    },
+    {
+      "id": "repo-logical-comp-edge-64",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-2",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-2",
+      "kind": "call",
+      "label": "quat_mult"
+    },
+    {
+      "id": "repo-logical-comp-edge-65",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-4",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-4",
+      "kind": "call",
+      "label": "quat_mult"
+    },
+    {
+      "id": "repo-logical-comp-edge-66",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "quat_mult"
+    },
+    {
+      "id": "repo-logical-comp-edge-67",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-9",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-9",
+      "kind": "call",
+      "label": "SpacecraftModel"
+    },
+    {
+      "id": "repo-logical-comp-edge-68",
+      "sourceNodeId": "repo-logical-root-7",
+      "targetNodeId": "repo-logical-root-2",
+      "sourcePortId": "root-out-7",
+      "targetPortId": "root-in-2",
+      "kind": "call",
+      "label": "_parse_bool_env"
+    },
+    {
+      "id": "repo-logical-comp-edge-69",
+      "sourceNodeId": "repo-logical-root-7",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-7",
+      "targetPortId": "root-in-11",
+      "kind": "call",
+      "label": "latlongtoNED"
+    },
+    {
+      "id": "repo-logical-comp-edge-70",
+      "sourceNodeId": "repo-logical-root-7",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-7",
+      "targetPortId": "root-in-13",
+      "kind": "call",
+      "label": "calcForceTorque"
+    },
+    {
+      "id": "repo-logical-comp-edge-71",
+      "sourceNodeId": "repo-logical-root-7",
+      "targetNodeId": "repo-logical-root-8",
+      "sourcePortId": "root-out-7",
+      "targetPortId": "root-in-8",
+      "kind": "call",
+      "label": "thread_policy_decision"
+    },
+    {
+      "id": "repo-logical-comp-edge-72",
+      "sourceNodeId": "repo-logical-root-7",
+      "targetNodeId": "repo-logical-root-3",
+      "sourcePortId": "root-out-7",
+      "targetPortId": "root-in-3",
+      "kind": "call",
+      "label": "_parse_bool_env"
+    },
+    {
+      "id": "repo-logical-comp-edge-73",
+      "sourceNodeId": "repo-logical-root-7",
+      "targetNodeId": "repo-logical-root-9",
+      "sourcePortId": "root-out-7",
+      "targetPortId": "root-in-9",
+      "kind": "call",
+      "label": "rotate_to_inertial"
+    },
+    {
+      "id": "repo-logical-comp-edge-74",
+      "sourceNodeId": "repo-logical-root-7",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-7",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "_parse_bool_env"
+    },
+    {
+      "id": "repo-logical-comp-edge-75",
+      "sourceNodeId": "repo-logical-root-13",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-13",
+      "targetPortId": "root-in-11",
+      "kind": "call",
+      "label": "_spice_body_fixed_frame"
+    },
+    {
+      "id": "repo-logical-comp-edge-76",
+      "sourceNodeId": "repo-logical-root-13",
+      "targetNodeId": "repo-logical-root-7",
+      "sourcePortId": "root-out-13",
+      "targetPortId": "root-in-7",
+      "kind": "call",
+      "label": "calcForceTorque"
+    },
+    {
+      "id": "repo-logical-comp-edge-77",
+      "sourceNodeId": "repo-logical-root-13",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-13",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "calcForceTorque"
+    },
+    {
+      "id": "repo-logical-comp-edge-78",
+      "sourceNodeId": "repo-logical-root-5",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-5",
+      "targetPortId": "root-in-11",
+      "kind": "call",
+      "label": "latlongtoNED"
+    },
+    {
+      "id": "repo-logical-comp-edge-79",
+      "sourceNodeId": "repo-logical-root-5",
+      "targetNodeId": "repo-logical-root-7",
+      "sourcePortId": "root-out-5",
+      "targetPortId": "root-in-7",
+      "kind": "call",
+      "label": "aerodynamic_coefficient_fM"
+    },
+    {
+      "id": "repo-logical-comp-edge-80",
+      "sourceNodeId": "repo-logical-root-5",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-5",
+      "targetPortId": "root-in-13",
+      "kind": "call",
+      "label": "aerobraking_gravity_force_ii"
+    },
+    {
+      "id": "repo-logical-comp-edge-81",
+      "sourceNodeId": "repo-logical-root-5",
+      "targetNodeId": "repo-logical-root-9",
+      "sourcePortId": "root-out-5",
+      "targetPortId": "root-in-9",
+      "kind": "call",
+      "label": "get_spacecraft_reference_area"
+    },
+    {
+      "id": "repo-logical-comp-edge-82",
+      "sourceNodeId": "repo-logical-root-5",
+      "targetNodeId": "repo-logical-root-15",
+      "sourcePortId": "root-out-5",
+      "targetPortId": "root-in-15",
+      "kind": "call",
+      "label": "DefaultAerobrakingPolicySelector"
+    },
+    {
+      "id": "repo-logical-comp-edge-83",
+      "sourceNodeId": "repo-logical-root-5",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-5",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "second_time_switch_recalc_with_integration"
+    },
+    {
+      "id": "repo-logical-comp-edge-84",
+      "sourceNodeId": "repo-logical-root-16",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-16",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "_checkpoint_directory"
+    },
+    {
+      "id": "repo-logical-comp-edge-85",
+      "sourceNodeId": "repo-logical-root-15",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-15",
+      "targetPortId": "root-in-11",
+      "kind": "call",
+      "label": "error_quaternion"
+    },
+    {
+      "id": "repo-logical-comp-edge-86",
+      "sourceNodeId": "repo-logical-root-15",
+      "targetNodeId": "repo-logical-root-9",
+      "sourcePortId": "root-out-15",
+      "targetPortId": "root-in-9",
+      "kind": "call",
+      "label": "rotate_to_inertial"
+    },
+    {
+      "id": "repo-logical-comp-edge-87",
+      "sourceNodeId": "repo-logical-root-8",
+      "targetNodeId": "repo-logical-root-6",
+      "sourcePortId": "root-out-8",
+      "targetPortId": "root-in-6",
+      "kind": "call",
+      "label": "_safe_token"
+    },
+    {
+      "id": "repo-logical-comp-edge-88",
+      "sourceNodeId": "repo-logical-root-8",
+      "targetNodeId": "repo-logical-root-2",
+      "sourcePortId": "root-out-8",
+      "targetPortId": "root-in-2",
+      "kind": "call",
+      "label": "_machine_parallel_class"
+    },
+    {
+      "id": "repo-logical-comp-edge-89",
+      "sourceNodeId": "repo-logical-root-8",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-8",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "parse_parallel_profile"
+    },
+    {
+      "id": "repo-logical-comp-edge-90",
+      "sourceNodeId": "repo-logical-root-23",
+      "targetNodeId": "repo-logical-root-2",
+      "sourcePortId": "root-out-23",
+      "targetPortId": "root-in-2",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "repo-logical-comp-edge-91",
+      "sourceNodeId": "repo-logical-root-23",
+      "targetNodeId": "repo-logical-root-4",
+      "sourcePortId": "root-out-23",
+      "targetPortId": "root-in-4",
+      "kind": "call",
+      "label": "InitialTime"
+    },
+    {
+      "id": "repo-logical-comp-edge-92",
+      "sourceNodeId": "repo-logical-root-23",
+      "targetNodeId": "repo-logical-root-10",
+      "sourcePortId": "root-out-23",
+      "targetPortId": "root-in-10",
+      "kind": "call",
+      "label": "make_example_config"
+    },
+    {
+      "id": "repo-logical-comp-edge-93",
+      "sourceNodeId": "repo-logical-root-23",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-23",
+      "targetPortId": "root-in-13",
+      "kind": "call",
+      "label": "ExponentialAtmosphereModel"
+    },
+    {
+      "id": "repo-logical-comp-edge-94",
+      "sourceNodeId": "repo-logical-root-23",
+      "targetNodeId": "repo-logical-root-8",
+      "sourcePortId": "root-out-23",
+      "targetPortId": "root-in-8",
+      "kind": "call",
+      "label": "parse_parallel_profile"
+    },
+    {
+      "id": "repo-logical-comp-edge-95",
+      "sourceNodeId": "repo-logical-root-23",
+      "targetNodeId": "repo-logical-root-3",
+      "sourcePortId": "root-out-23",
+      "targetPortId": "root-in-3",
+      "kind": "call",
+      "label": "simulation_engine_config_from_env"
+    },
+    {
+      "id": "repo-logical-comp-edge-96",
+      "sourceNodeId": "repo-logical-root-23",
+      "targetNodeId": "repo-logical-root-9",
+      "sourcePortId": "root-out-23",
+      "targetPortId": "root-in-9",
+      "kind": "call",
+      "label": "InitialCondition"
+    },
+    {
+      "id": "repo-logical-comp-edge-97",
+      "sourceNodeId": "repo-logical-root-23",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-23",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "repo-logical-comp-edge-98",
+      "sourceNodeId": "repo-logical-root-3",
+      "targetNodeId": "repo-logical-root-8",
+      "sourcePortId": "root-out-3",
+      "targetPortId": "root-in-8",
+      "kind": "call",
+      "label": "threaded_foreach_persistent"
+    },
+    {
+      "id": "repo-logical-comp-edge-99",
+      "sourceNodeId": "repo-logical-root-3",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-3",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "state"
+    },
+    {
+      "id": "repo-logical-comp-edge-100",
+      "sourceNodeId": "repo-logical-root-3",
+      "targetNodeId": "repo-logical-root-2",
+      "sourcePortId": "root-out-3",
+      "targetPortId": "root-in-2",
+      "kind": "call",
+      "label": "_parse_bool_env"
+    },
+    {
+      "id": "repo-logical-comp-edge-101",
+      "sourceNodeId": "repo-logical-root-3",
+      "targetNodeId": "repo-logical-root-6",
+      "sourcePortId": "root-out-3",
+      "targetPortId": "root-in-6",
+      "kind": "call",
+      "label": "_parse_float_env"
+    },
+    {
+      "id": "repo-logical-comp-edge-102",
+      "sourceNodeId": "repo-logical-root-3",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-3",
+      "targetPortId": "root-in-13",
+      "kind": "call",
+      "label": "_gram_core_density_state"
+    },
+    {
+      "id": "repo-logical-comp-edge-103",
+      "sourceNodeId": "repo-logical-root-3",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-3",
+      "targetPortId": "root-in-11",
+      "kind": "call",
+      "label": "rot"
+    },
+    {
+      "id": "repo-logical-comp-edge-104",
+      "sourceNodeId": "repo-logical-root-3",
+      "targetNodeId": "repo-logical-root-9",
+      "sourcePortId": "root-out-3",
+      "targetPortId": "root-in-9",
+      "kind": "call",
+      "label": "getHeatRate"
+    },
+    {
+      "id": "repo-logical-comp-edge-105",
+      "sourceNodeId": "repo-logical-root-3",
+      "targetNodeId": "repo-logical-root-7",
+      "sourcePortId": "root-out-3",
+      "targetPortId": "root-in-7",
+      "kind": "call",
+      "label": "calcForceTorque"
+    },
+    {
+      "id": "repo-logical-comp-edge-106",
+      "sourceNodeId": "repo-logical-root-3",
+      "targetNodeId": "repo-logical-root-5",
+      "sourcePortId": "root-out-3",
+      "targetPortId": "root-in-5",
+      "kind": "call",
+      "label": "calcControlForceTorque"
+    },
+    {
+      "id": "repo-logical-comp-edge-107",
+      "sourceNodeId": "repo-logical-root-3",
+      "targetNodeId": "repo-logical-root-4",
+      "sourcePortId": "root-out-3",
+      "targetPortId": "root-in-4",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "repo-logical-comp-edge-108",
+      "sourceNodeId": "repo-logical-root-3",
+      "targetNodeId": "repo-logical-root-16",
+      "sourcePortId": "root-out-3",
+      "targetPortId": "root-in-16",
+      "kind": "call",
+      "label": "_build_results_dataframe"
+    },
+    {
+      "id": "repo-logical-comp-edge-109",
+      "sourceNodeId": "repo-logical-root-3",
+      "targetNodeId": "repo-logical-root-10",
+      "sourcePortId": "root-out-3",
+      "targetPortId": "root-in-10",
+      "kind": "call",
+      "label": "_parse_positive_float_env"
+    },
+    {
+      "id": "repo-logical-comp-edge-110",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-2",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-2",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "repo-logical-comp-edge-111",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-20",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-20",
+      "kind": "call",
+      "label": "spaceagora_no_gram_example_args"
+    },
+    {
+      "id": "repo-logical-comp-edge-112",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-4",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-4",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "repo-logical-comp-edge-113",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-18",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-18",
+      "kind": "call",
+      "label": "check_assets"
+    },
+    {
+      "id": "repo-logical-comp-edge-114",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-11",
+      "kind": "call",
+      "label": "gravity_backbone_acceleration_ii"
+    },
+    {
+      "id": "repo-logical-comp-edge-115",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-7",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-7",
+      "kind": "call",
+      "label": "calcForceTorque"
+    },
+    {
+      "id": "repo-logical-comp-edge-116",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-13",
+      "kind": "call",
+      "label": "ExponentialAtmosphereModel"
+    },
+    {
+      "id": "repo-logical-comp-edge-117",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-5",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-5",
+      "kind": "call",
+      "label": "calcControlForceTorque"
+    },
+    {
+      "id": "repo-logical-comp-edge-118",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-3",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-3",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "repo-logical-comp-edge-119",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "repo-logical-comp-edge-120",
+      "sourceNodeId": "repo-logical-root-9",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-9",
+      "targetPortId": "root-in-11",
+      "kind": "call",
+      "label": "dcm_to_quaternion"
+    },
+    {
+      "id": "repo-logical-comp-edge-121",
+      "sourceNodeId": "repo-logical-root-19",
+      "targetNodeId": "repo-logical-root-5",
+      "sourcePortId": "root-out-19",
+      "targetPortId": "root-in-5",
+      "kind": "call",
+      "label": "calcControlForceTorque"
+    },
+    {
+      "id": "repo-logical-comp-edge-122",
+      "sourceNodeId": "repo-logical-root-19",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-19",
+      "targetPortId": "root-in-13",
+      "kind": "call",
+      "label": "getDensity"
+    },
+    {
+      "id": "repo-logical-comp-edge-123",
+      "sourceNodeId": "repo-logical-root-19",
+      "targetNodeId": "repo-logical-root-7",
+      "sourcePortId": "root-out-19",
+      "targetPortId": "root-in-7",
+      "kind": "call",
+      "label": "calcForceTorque"
+    },
+    {
+      "id": "repo-logical-comp-edge-124",
+      "sourceNodeId": "repo-logical-root-19",
+      "targetNodeId": "repo-logical-root-1",
+      "sourcePortId": "root-out-19",
+      "targetPortId": "root-in-1",
+      "kind": "call",
+      "label": "calcForceTorque"
+    },
+    {
+      "id": "repo-logical-comp-edge-125",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-2",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-2",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "repo-logical-comp-edge-126",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-14",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-14",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "repo-logical-comp-edge-127",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-6",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-6",
+      "kind": "call",
+      "label": "main"
+    },
+    {
+      "id": "repo-logical-comp-edge-128",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-4",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-4",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "repo-logical-comp-edge-129",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-3",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-3",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "repo-logical-comp-edge-130",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-11",
+      "kind": "call",
+      "label": "EnvironmentModel"
+    },
+    {
+      "id": "repo-logical-comp-edge-131",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-13",
+      "kind": "call",
+      "label": "NoAtmosphereModel"
+    },
+    {
+      "id": "repo-logical-comp-edge-132",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-9",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-9",
+      "kind": "call",
+      "label": "ControlModel"
+    },
+    {
+      "id": "repo-logical-comp-edge-133",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-5",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-5",
+      "kind": "call",
+      "label": "security_mode"
+    },
+    {
+      "id": "repo-logical-comp-edge-134",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-10",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-10",
+      "kind": "call",
+      "label": "make_example_config"
+    },
+    {
+      "id": "repo-logical-comp-edge-135",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-20",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-20",
+      "kind": "call",
+      "label": "public_api_specs"
+    },
+    {
+      "id": "repo-logical-comp-edge-136",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-12",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-12",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "repo-logical-comp-edge-137",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-8",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-8",
+      "kind": "call",
+      "label": "_profile_outer_backend_token"
+    },
+    {
+      "id": "repo-logical-comp-edge-138",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-18",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-18",
+      "kind": "call",
+      "label": "_normalize_example_name"
+    },
+    {
+      "id": "repo-logical-comp-edge-139",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-7",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-7",
+      "kind": "call",
+      "label": "_constant_drag_coefficient"
+    },
+    {
+      "id": "repo-logical-comp-edge-140",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-15",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-15",
+      "kind": "call",
+      "label": "DefaultAerobrakingPolicySelector"
+    },
+    {
+      "id": "repo-logical-comp-edge-141",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-23",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-23",
+      "kind": "call",
+      "label": "_run_spaceagora_precompile_workload"
+    },
+    {
+      "id": "repo-logical-comp-edge-142",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-16",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-16",
+      "kind": "call",
+      "label": "_checkpoint_directory"
+    },
+    {
+      "id": "repo-logical-comp-edge-143",
+      "sourceNodeId": "repo-logical-root-2",
+      "targetNodeId": "repo-logical-root-24",
+      "sourcePortId": "root-out-2",
+      "targetPortId": "root-in-24",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "benchmarks/studies/telemetry_orbit_accuracy_study.jl",
+        "src/SpaceAGORA.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-144",
+      "sourceNodeId": "repo-logical-root-20",
+      "targetNodeId": "repo-logical-root-24",
+      "sourcePortId": "root-out-20",
+      "targetPortId": "root-in-24",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "docs/make.jl",
+        "src/SpaceAGORA.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-145",
+      "sourceNodeId": "repo-logical-root-4",
+      "targetNodeId": "repo-logical-root-24",
+      "sourcePortId": "root-out-4",
+      "targetPortId": "root-in-24",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "examples/common.jl",
+        "src/SpaceAGORA.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-146",
+      "sourceNodeId": "repo-logical-root-12",
+      "targetNodeId": "repo-logical-root-24",
+      "sourcePortId": "root-out-12",
+      "targetPortId": "root-in-24",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "experimental/README.md",
+        "src/SpaceAGORA.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-147",
+      "sourceNodeId": "repo-logical-root-21",
+      "targetNodeId": "repo-logical-root-24",
+      "sourcePortId": "root-out-21",
+      "targetPortId": "root-in-24",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "src/SpaceAGORA.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-148",
+      "sourceNodeId": "repo-logical-root-14",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-14",
+      "targetPortId": "root-in-11",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "scripts/plotting/plot_data.jl",
+        "src/core/utils/misc.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-149",
+      "sourceNodeId": "repo-logical-root-6",
+      "targetNodeId": "repo-logical-root-24",
+      "sourcePortId": "root-out-6",
+      "targetPortId": "root-in-24",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl",
+        "src/SpaceAGORA.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-150",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-7",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-7",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/core/simulation_model.jl",
+        "src/dynamics/coupled/force_torque_models.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-151",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-13",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/core/simulation_model.jl",
+        "src/environment/ephemerides/ephemerides_models.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-152",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-5",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-5",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/core/simulation_model.jl",
+        "src/gnc/command_types.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-153",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-16",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-16",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/core/simulation_model.jl",
+        "src/io/config/io_config.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-154",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-15",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-15",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/core/simulation_model.jl",
+        "src/mission/operations/aerobraking_policy/policy_types.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-155",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-8",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-8",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/core/simulation_model.jl",
+        "src/parallel/policy/parallel_policy.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-156",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-3",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-3",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/core/simulation_model.jl",
+        "src/simulation/callbacks/callbacks.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-157",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-9",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-9",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/core/simulation_model.jl",
+        "src/vehicle/actuators/actuator_hooks.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-158",
+      "sourceNodeId": "repo-logical-root-7",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-7",
+      "targetPortId": "root-in-11",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/dynamics/coupled/force_torque_models/aerodynamic_effectors.jl",
+        "src/core/interfaces/reference_system.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-159",
+      "sourceNodeId": "repo-logical-root-7",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-7",
+      "targetPortId": "root-in-13",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/dynamics/coupled/force_torque_models/gravity_effectors.jl",
+        "src/environment/gravity/gravity_models.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-160",
+      "sourceNodeId": "repo-logical-root-13",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-13",
+      "targetPortId": "root-in-11",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/environment/atmosphere/density_models.jl",
+        "src/core/interfaces/reference_system.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-161",
+      "sourceNodeId": "repo-logical-root-5",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-5",
+      "targetPortId": "root-in-11",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/gnc/control/propulsive_maneuvers.jl",
+        "src/core/interfaces/reference_system.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-162",
+      "sourceNodeId": "repo-logical-root-15",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-15",
+      "targetPortId": "root-in-11",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/mission/operations/attitude_control_plans.jl",
+        "src/core/numerics/quaternion_utils.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-163",
+      "sourceNodeId": "repo-logical-root-15",
+      "targetNodeId": "repo-logical-root-5",
+      "sourcePortId": "root-out-15",
+      "targetPortId": "root-in-5",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/mission/operations/attitude_control_plans.jl",
+        "src/gnc/control/attitude_control_models.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-164",
+      "sourceNodeId": "repo-logical-root-3",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-3",
+      "targetPortId": "root-in-11",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/callbacks/registry.jl",
+        "src/core/interfaces/reference_system.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-165",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-10",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-10",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/SpaceAGORA.jl",
+        "src/analysis/verification/telemetry_verification.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-166",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-18",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-18",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/SpaceAGORA.jl",
+        "src/cli/spaceagora_cli.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-167",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-11",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/SpaceAGORA.jl",
+        "src/core/simulation_model.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-168",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-8",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-8",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/SpaceAGORA.jl",
+        "src/parallel/routing/parallel_profiles.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-169",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-23",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-23",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/SpaceAGORA.jl",
+        "src/precompile_workload.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-170",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-3",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-3",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/SpaceAGORA.jl",
+        "src/simulation/engine/simulation_engine.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-171",
+      "sourceNodeId": "repo-logical-root-9",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-9",
+      "targetPortId": "root-in-11",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/vehicle/kinematics/kinematics.jl",
+        "src/core/numerics/quaternion_utils.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-172",
+      "sourceNodeId": "repo-logical-root-19",
+      "targetNodeId": "repo-logical-root-24",
+      "sourcePortId": "root-out-19",
+      "targetPortId": "root-in-24",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "templates/control_hook_template.jl",
+        "src/SpaceAGORA.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-173",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-24",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-24",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "test/ci_clean_depot_smoke.jl",
+        "src/SpaceAGORA.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-174",
+      "sourceNodeId": "repo-logical-root-2",
+      "targetNodeId": "repo-logical-root-24",
+      "sourcePortId": "root-out-2",
+      "targetPortId": "root-in-24",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "benchmarks/studies/telemetry_orbit_accuracy_study.jl",
+        "src/SpaceAGORA.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-175",
+      "sourceNodeId": "repo-logical-root-20",
+      "targetNodeId": "repo-logical-root-24",
+      "sourcePortId": "root-out-20",
+      "targetPortId": "root-in-24",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "docs/make.jl",
+        "src/SpaceAGORA.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-176",
+      "sourceNodeId": "repo-logical-root-4",
+      "targetNodeId": "repo-logical-root-24",
+      "sourcePortId": "root-out-4",
+      "targetPortId": "root-in-24",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "examples/common.jl",
+        "src/SpaceAGORA.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-177",
+      "sourceNodeId": "repo-logical-root-12",
+      "targetNodeId": "repo-logical-root-24",
+      "sourcePortId": "root-out-12",
+      "targetPortId": "root-in-24",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "experimental/README.md",
+        "src/SpaceAGORA.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-178",
+      "sourceNodeId": "repo-logical-root-21",
+      "targetNodeId": "repo-logical-root-24",
+      "sourcePortId": "root-out-21",
+      "targetPortId": "root-in-24",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "src/SpaceAGORA.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-179",
+      "sourceNodeId": "repo-logical-root-14",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-14",
+      "targetPortId": "root-in-11",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "scripts/plotting/plot_data.jl",
+        "src/core/utils/misc.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-180",
+      "sourceNodeId": "repo-logical-root-6",
+      "targetNodeId": "repo-logical-root-24",
+      "sourcePortId": "root-out-6",
+      "targetPortId": "root-in-24",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl",
+        "src/SpaceAGORA.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-181",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-7",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-7",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/core/simulation_model.jl",
+        "src/dynamics/coupled/force_torque_models.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-182",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-13",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/core/simulation_model.jl",
+        "src/environment/ephemerides/ephemerides_models.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-183",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-5",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-5",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/core/simulation_model.jl",
+        "src/gnc/command_types.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-184",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-16",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-16",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/core/simulation_model.jl",
+        "src/io/config/io_config.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-185",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-15",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-15",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/core/simulation_model.jl",
+        "src/mission/operations/aerobraking_policy/policy_types.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-186",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-8",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-8",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/core/simulation_model.jl",
+        "src/parallel/policy/parallel_policy.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-187",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-3",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-3",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/core/simulation_model.jl",
+        "src/simulation/callbacks/callbacks.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-188",
+      "sourceNodeId": "repo-logical-root-11",
+      "targetNodeId": "repo-logical-root-9",
+      "sourcePortId": "root-out-11",
+      "targetPortId": "root-in-9",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/core/simulation_model.jl",
+        "src/vehicle/actuators/actuator_hooks.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-189",
+      "sourceNodeId": "repo-logical-root-7",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-7",
+      "targetPortId": "root-in-11",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/dynamics/coupled/force_torque_models/aerodynamic_effectors.jl",
+        "src/core/interfaces/reference_system.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-190",
+      "sourceNodeId": "repo-logical-root-7",
+      "targetNodeId": "repo-logical-root-13",
+      "sourcePortId": "root-out-7",
+      "targetPortId": "root-in-13",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/dynamics/coupled/force_torque_models/gravity_effectors.jl",
+        "src/environment/gravity/gravity_models.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-191",
+      "sourceNodeId": "repo-logical-root-13",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-13",
+      "targetPortId": "root-in-11",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/environment/atmosphere/density_models.jl",
+        "src/core/interfaces/reference_system.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-192",
+      "sourceNodeId": "repo-logical-root-5",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-5",
+      "targetPortId": "root-in-11",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/gnc/control/propulsive_maneuvers.jl",
+        "src/core/interfaces/reference_system.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-193",
+      "sourceNodeId": "repo-logical-root-15",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-15",
+      "targetPortId": "root-in-11",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/mission/operations/attitude_control_plans.jl",
+        "src/core/numerics/quaternion_utils.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-194",
+      "sourceNodeId": "repo-logical-root-15",
+      "targetNodeId": "repo-logical-root-5",
+      "sourcePortId": "root-out-15",
+      "targetPortId": "root-in-5",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/mission/operations/attitude_control_plans.jl",
+        "src/gnc/control/attitude_control_models.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-195",
+      "sourceNodeId": "repo-logical-root-3",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-3",
+      "targetPortId": "root-in-11",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/callbacks/registry.jl",
+        "src/core/interfaces/reference_system.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-196",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-10",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-10",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/SpaceAGORA.jl",
+        "src/analysis/verification/telemetry_verification.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-197",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-18",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-18",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/SpaceAGORA.jl",
+        "src/cli/spaceagora_cli.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-198",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-11",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/SpaceAGORA.jl",
+        "src/core/simulation_model.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-199",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-8",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-8",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/SpaceAGORA.jl",
+        "src/parallel/routing/parallel_profiles.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-200",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-23",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-23",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/SpaceAGORA.jl",
+        "src/precompile_workload.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-201",
+      "sourceNodeId": "repo-logical-root-24",
+      "targetNodeId": "repo-logical-root-3",
+      "sourcePortId": "root-out-24",
+      "targetPortId": "root-in-3",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/SpaceAGORA.jl",
+        "src/simulation/engine/simulation_engine.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-202",
+      "sourceNodeId": "repo-logical-root-9",
+      "targetNodeId": "repo-logical-root-11",
+      "sourcePortId": "root-out-9",
+      "targetPortId": "root-in-11",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/vehicle/kinematics/kinematics.jl",
+        "src/core/numerics/quaternion_utils.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-203",
+      "sourceNodeId": "repo-logical-root-19",
+      "targetNodeId": "repo-logical-root-24",
+      "sourcePortId": "root-out-19",
+      "targetPortId": "root-in-24",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "templates/control_hook_template.jl",
+        "src/SpaceAGORA.jl"
+      ]
+    },
+    {
+      "id": "repo-logical-comp-edge-204",
+      "sourceNodeId": "repo-logical-root-1",
+      "targetNodeId": "repo-logical-root-24",
+      "sourcePortId": "root-out-1",
+      "targetPortId": "root-in-24",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "test/ci_clean_depot_smoke.jl",
+        "src/SpaceAGORA.jl"
+      ]
+    }
+  ],
+  "viewKind": "architecture-overview"
+}

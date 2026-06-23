@@ -13,6 +13,8 @@ include(joinpath(@__DIR__, "analysis", "verification", "telemetry_verification.j
 include(joinpath(@__DIR__, "assets", "rpo_station_assets.jl"))
 include(joinpath(@__DIR__, "analysis", "visualization", "rpo", "rpo_visualization.jl"))
 include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
+include(joinpath(@__DIR__, "dynamics", "keplerian", "keplerian_propagator.jl"))
+include(joinpath(@__DIR__, "mission", "constellation_design", "constellation_design.jl"))
 
 using .ParallelProfiles: ParallelProfile, ParallelProfileConfig
 using .ParallelProfiles: parse_parallel_profile, parallel_profile_name, profile_config, profile_env_pairs, with_parallel_profile
@@ -69,6 +71,8 @@ using .TelemetryVerification: run_verification, run_verification_cli, run_study
 using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
 using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
+using .KeplerianPropagator: oe2cart, kepler_satellite_state, kepler_prop_state, kepler_client_state
+using .ConstellationDesign: run_stage0_seeding, run_constellation_design, run_stage2_verification, run_capo_pipeline
 
 @doc (@doc SimulationEngine.ParallelConfig) ParallelConfig
 @doc (@doc SimulationEngine.SolverConfig) SolverConfig
@@ -167,6 +171,11 @@ SimpleEphemeridesModel
 @doc (@doc SimulationModel.make_no_gram_planet) make_no_gram_planet
 @doc (@doc SimulationModel.make_no_gram_density_model) make_no_gram_density_model
 @doc (@doc SimulationModel.make_no_gram_environment) make_no_gram_environment
+
+@doc (@doc KeplerianPropagator.oe2cart) oe2cart
+@doc (@doc KeplerianPropagator.kepler_satellite_state) kepler_satellite_state
+@doc (@doc KeplerianPropagator.kepler_prop_state) kepler_prop_state
+@doc (@doc KeplerianPropagator.kepler_client_state) kepler_client_state
 
 """
     calcForceTorque(model, x, p, i) -> (force_n, torque_n_m)

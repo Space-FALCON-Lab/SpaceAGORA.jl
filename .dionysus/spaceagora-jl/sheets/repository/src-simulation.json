@@ -1,0 +1,1548 @@
+{
+  "id": "auto-logical-component-src-simulation",
+  "filePath": "sheets/repository/src-simulation.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-3",
+  "title": "RuntimeServices",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "RuntimeServices: 37 implementation files, 2 sub-components.",
+  "verificationIntent": "Verify that RuntimeServices's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-3-root",
+      "title": "RuntimeServices",
+      "role": "subsystem",
+      "description": "37 implementation files, 12 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 620,
+      "height": 300,
+      "tags": [
+        "src/simulation",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-3",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-child-1",
+      "title": "SimulationCallbacks",
+      "role": "subsystem",
+      "description": "18 files, 3 exports, 37 imports.",
+      "x": 20,
+      "y": 60,
+      "width": 215,
+      "height": 865,
+      "tags": [
+        "src/simulation/callbacks",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-3-1",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-3-1",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-1-1",
+      "title": "event_callbacks.jl",
+      "role": "function",
+      "description": "src/simulation/callbacks/event_callbacks.jl (252 lines).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/callbacks",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-1-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-1-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-1-2",
+      "title": "save_fields.jl",
+      "role": "function",
+      "description": "src/simulation/callbacks/save_fields.jl (200 lines).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/callbacks",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-1-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-1-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-1-3",
+      "title": "registry.jl",
+      "role": "function",
+      "description": "src/simulation/callbacks/registry.jl (108 lines · 3 exports · 20 imports).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/callbacks",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-1-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-1-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-1-4",
+      "title": "control_callbacks.jl",
+      "role": "function",
+      "description": "src/simulation/callbacks/control_callbacks.jl (153 lines).",
+      "x": 12,
+      "y": 276,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/callbacks",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-1-4",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-1-4",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-1-5",
+      "title": "thermal_callbacks.jl",
+      "role": "function",
+      "description": "src/simulation/callbacks/thermal_callbacks.jl (95 lines).",
+      "x": 12,
+      "y": 354,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/callbacks",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-1-5",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-1-5",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-1-6",
+      "title": "navigation_guidance_callbacks.jl",
+      "role": "function",
+      "description": "src/simulation/callbacks/navigation_guidance_callbacks.jl (50 lines).",
+      "x": 12,
+      "y": 432,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/callbacks",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-1-6",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-1-6",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-1-7",
+      "title": "callbacks.jl",
+      "role": "function",
+      "description": "src/simulation/callbacks/callbacks.jl (12 lines · 8 imports).",
+      "x": 12,
+      "y": 510,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/callbacks",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-1-7",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-1-7",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-1-8",
+      "title": "density_callbacks.jl",
+      "role": "function",
+      "description": "src/simulation/callbacks/density_callbacks.jl (6 lines · 5 imports).",
+      "x": 12,
+      "y": 588,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/callbacks",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-1-8",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-1-8",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-1-9",
+      "title": "gram_track_cache.jl",
+      "role": "function",
+      "description": "src/simulation/callbacks/gram_track_cache.jl (5 lines · 4 imports).",
+      "x": 12,
+      "y": 666,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/callbacks",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-1-9",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-1-9",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-child-2",
+      "title": "SimulationEngine",
+      "role": "subsystem",
+      "description": "18 files, 9 exports, 39 imports.",
+      "x": 255,
+      "y": 60,
+      "width": 215,
+      "height": 1035,
+      "tags": [
+        "src/simulation/engine",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-3-2",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-3-2",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-2-1",
+      "title": "setup.jl",
+      "role": "function",
+      "description": "src/simulation/engine/setup.jl (1101 lines · 14 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/engine",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-2-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-2-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-2-2",
+      "title": "dynamics_rhs.jl",
+      "role": "function",
+      "description": "src/simulation/engine/dynamics_rhs.jl (906 lines).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/engine",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-2-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-2-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-2-3",
+      "title": "solver_policy.jl",
+      "role": "function",
+      "description": "src/simulation/engine/solver_policy.jl (645 lines).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/engine",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-2-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-2-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-2-4",
+      "title": "execution.jl",
+      "role": "function",
+      "description": "src/simulation/engine/execution.jl (321 lines).",
+      "x": 12,
+      "y": 276,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/engine",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-2-4",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-2-4",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-2-5",
+      "title": "effector_sampling.jl",
+      "role": "function",
+      "description": "src/simulation/engine/effector_sampling.jl (211 lines · 2 imports).",
+      "x": 12,
+      "y": 354,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/engine",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-2-5",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-2-5",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-2-6",
+      "title": "simulation_engine.jl",
+      "role": "function",
+      "description": "src/simulation/engine/simulation_engine.jl (39 lines · 9 exports · 20 imports).",
+      "x": 12,
+      "y": 432,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/engine",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-2-6",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-2-6",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-2-7",
+      "title": "state_access.jl",
+      "role": "function",
+      "description": "src/simulation/engine/state_access.jl (107 lines · 3 imports).",
+      "x": 12,
+      "y": 510,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/engine",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-2-7",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-2-7",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-2-8",
+      "title": "reporting.jl",
+      "role": "function",
+      "description": "src/simulation/engine/reporting.jl (67 lines).",
+      "x": 12,
+      "y": 588,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/engine",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-2-8",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-2-8",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-2-9",
+      "title": "public_api.jl",
+      "role": "function",
+      "description": "src/simulation/engine/public_api.jl (56 lines).",
+      "x": 12,
+      "y": 666,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/engine",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-2-9",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-2-9",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-2-10",
+      "title": "persistence.jl",
+      "role": "function",
+      "description": "src/simulation/engine/persistence.jl (38 lines).",
+      "x": 12,
+      "y": 744,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/engine",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-2-10",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-2-10",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-3-file-2-11",
+      "title": "resume_checkpoint.jl",
+      "role": "function",
+      "description": "src/simulation/engine/resume_checkpoint.jl (16 lines).",
+      "x": 12,
+      "y": 822,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/simulation/engine",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-3-file-2-11",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-3-file-2-11",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "subsheet-3-edge-1",
+      "sourceNodeId": "subsheet-3-file-1-1",
+      "targetNodeId": "subsheet-3-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-3",
+      "kind": "call",
+      "label": "_simulation_engine_module"
+    },
+    {
+      "id": "subsheet-3-edge-2",
+      "sourceNodeId": "subsheet-3-file-1-1",
+      "targetNodeId": "subsheet-3-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-2",
+      "kind": "call",
+      "label": "_save_snapshot"
+    },
+    {
+      "id": "subsheet-3-edge-3",
+      "sourceNodeId": "subsheet-3-file-1-1",
+      "targetNodeId": "subsheet-3-file-2-7",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-7",
+      "kind": "call",
+      "label": "_is_gravity_backbone_state"
+    },
+    {
+      "id": "subsheet-3-edge-4",
+      "sourceNodeId": "subsheet-3-file-1-1",
+      "targetNodeId": "subsheet-3-file-2-7",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-7",
+      "kind": "call",
+      "label": "_state_position_ii"
+    },
+    {
+      "id": "subsheet-3-edge-5",
+      "sourceNodeId": "subsheet-3-file-1-1",
+      "targetNodeId": "subsheet-3-file-2-7",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-7",
+      "kind": "call",
+      "label": "_state_quaternion"
+    },
+    {
+      "id": "subsheet-3-edge-6",
+      "sourceNodeId": "subsheet-3-file-1-1",
+      "targetNodeId": "subsheet-3-file-2-7",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-7",
+      "kind": "call",
+      "label": "_state_velocity_ii"
+    },
+    {
+      "id": "subsheet-3-edge-7",
+      "sourceNodeId": "subsheet-3-file-1-2",
+      "targetNodeId": "subsheet-3-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-3",
+      "kind": "call",
+      "label": "_simulation_engine_module"
+    },
+    {
+      "id": "subsheet-3-edge-8",
+      "sourceNodeId": "subsheet-3-file-1-2",
+      "targetNodeId": "subsheet-3-file-2-7",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-7",
+      "kind": "call",
+      "label": "_state_heat_loads"
+    },
+    {
+      "id": "subsheet-3-edge-9",
+      "sourceNodeId": "subsheet-3-file-1-2",
+      "targetNodeId": "subsheet-3-file-2-7",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-7",
+      "kind": "call",
+      "label": "_state_mass_kg"
+    },
+    {
+      "id": "subsheet-3-edge-10",
+      "sourceNodeId": "subsheet-3-file-1-2",
+      "targetNodeId": "subsheet-3-file-2-7",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-7",
+      "kind": "call",
+      "label": "_state_position_ii"
+    },
+    {
+      "id": "subsheet-3-edge-11",
+      "sourceNodeId": "subsheet-3-file-1-2",
+      "targetNodeId": "subsheet-3-file-2-7",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-7",
+      "kind": "call",
+      "label": "_state_quaternion"
+    },
+    {
+      "id": "subsheet-3-edge-12",
+      "sourceNodeId": "subsheet-3-file-1-2",
+      "targetNodeId": "subsheet-3-file-2-7",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-7",
+      "kind": "call",
+      "label": "_state_velocity_ii"
+    },
+    {
+      "id": "subsheet-3-edge-13",
+      "sourceNodeId": "subsheet-3-file-1-5",
+      "targetNodeId": "subsheet-3-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-1",
+      "kind": "call",
+      "label": "condition"
+    },
+    {
+      "id": "subsheet-3-edge-14",
+      "sourceNodeId": "subsheet-3-file-1-5",
+      "targetNodeId": "subsheet-3-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-3",
+      "kind": "call",
+      "label": "_simulation_engine_module"
+    },
+    {
+      "id": "subsheet-3-edge-15",
+      "sourceNodeId": "subsheet-3-file-1-5",
+      "targetNodeId": "subsheet-3-file-2-5",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-5",
+      "kind": "call",
+      "label": "sample_atmosphere"
+    },
+    {
+      "id": "subsheet-3-edge-16",
+      "sourceNodeId": "subsheet-3-file-1-5",
+      "targetNodeId": "subsheet-3-file-2-5",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-5",
+      "kind": "call",
+      "label": "sample_buffered_atmosphere"
+    },
+    {
+      "id": "subsheet-3-edge-17",
+      "sourceNodeId": "subsheet-3-file-1-5",
+      "targetNodeId": "subsheet-3-file-2-5",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-5",
+      "kind": "call",
+      "label": "sample_planet_frame"
+    },
+    {
+      "id": "subsheet-3-edge-18",
+      "sourceNodeId": "subsheet-3-file-2-2",
+      "targetNodeId": "subsheet-3-file-2-5",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-5",
+      "kind": "call",
+      "label": "_wrench_method_available"
+    },
+    {
+      "id": "subsheet-3-edge-19",
+      "sourceNodeId": "subsheet-3-file-2-2",
+      "targetNodeId": "subsheet-3-file-2-5",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-5",
+      "kind": "call",
+      "label": "build_state_sample"
+    },
+    {
+      "id": "subsheet-3-edge-20",
+      "sourceNodeId": "subsheet-3-file-2-2",
+      "targetNodeId": "subsheet-3-file-2-5",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-5",
+      "kind": "call",
+      "label": "sample_environment"
+    },
+    {
+      "id": "subsheet-3-edge-21",
+      "sourceNodeId": "subsheet-3-file-2-2",
+      "targetNodeId": "subsheet-3-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-1",
+      "kind": "call",
+      "label": "_dynamic_effector_thread_decision"
+    },
+    {
+      "id": "subsheet-3-edge-22",
+      "sourceNodeId": "subsheet-3-file-2-2",
+      "targetNodeId": "subsheet-3-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-1",
+      "kind": "call",
+      "label": "_rhs_batch_parallel_enabled"
+    },
+    {
+      "id": "subsheet-3-edge-23",
+      "sourceNodeId": "subsheet-3-file-2-2",
+      "targetNodeId": "subsheet-3-file-2-3",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-3",
+      "kind": "call",
+      "label": "_gravity_backbone_kick_structure_validated"
+    },
+    {
+      "id": "subsheet-3-edge-24",
+      "sourceNodeId": "subsheet-3-file-2-2",
+      "targetNodeId": "subsheet-3-file-2-3",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-3",
+      "kind": "call",
+      "label": "_gravity_backbone_structure_validated"
+    },
+    {
+      "id": "subsheet-3-edge-25",
+      "sourceNodeId": "subsheet-3-file-2-2",
+      "targetNodeId": "subsheet-3-file-2-7",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-7",
+      "kind": "call",
+      "label": "_gravity_backbone_position_state"
+    },
+    {
+      "id": "subsheet-3-edge-26",
+      "sourceNodeId": "subsheet-3-file-2-2",
+      "targetNodeId": "subsheet-3-file-2-7",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-7",
+      "kind": "call",
+      "label": "_gravity_backbone_velocity_state"
+    },
+    {
+      "id": "subsheet-3-edge-27",
+      "sourceNodeId": "subsheet-3-file-2-5",
+      "targetNodeId": "subsheet-3-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-5",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-3",
+      "kind": "call",
+      "label": "_gram_runtime_stats_enabled"
+    },
+    {
+      "id": "subsheet-3-edge-28",
+      "sourceNodeId": "subsheet-3-file-2-4",
+      "targetNodeId": "subsheet-3-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-4",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-2",
+      "kind": "call",
+      "label": "_save_snapshot"
+    },
+    {
+      "id": "subsheet-3-edge-29",
+      "sourceNodeId": "subsheet-3-file-2-4",
+      "targetNodeId": "subsheet-3-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-4",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-2",
+      "kind": "call",
+      "label": "default_save_fields"
+    },
+    {
+      "id": "subsheet-3-edge-30",
+      "sourceNodeId": "subsheet-3-file-2-4",
+      "targetNodeId": "subsheet-3-file-2-2",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-4",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-2",
+      "kind": "call",
+      "label": "build_initial_conditions"
+    },
+    {
+      "id": "subsheet-3-edge-31",
+      "sourceNodeId": "subsheet-3-file-2-4",
+      "targetNodeId": "subsheet-3-file-2-9",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-4",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-9",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "subsheet-3-edge-32",
+      "sourceNodeId": "subsheet-3-file-2-4",
+      "targetNodeId": "subsheet-3-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-4",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-1",
+      "kind": "call",
+      "label": "_spice_runtime_counters_snapshot"
+    },
+    {
+      "id": "subsheet-3-edge-33",
+      "sourceNodeId": "subsheet-3-file-2-4",
+      "targetNodeId": "subsheet-3-file-2-3",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-4",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-3",
+      "kind": "call",
+      "label": "_build_solver_tolerances"
+    },
+    {
+      "id": "subsheet-3-edge-34",
+      "sourceNodeId": "subsheet-3-file-2-4",
+      "targetNodeId": "subsheet-3-file-2-3",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-4",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-3",
+      "kind": "call",
+      "label": "_gravity_backbone_time_reached"
+    },
+    {
+      "id": "subsheet-3-edge-35",
+      "sourceNodeId": "subsheet-3-file-2-4",
+      "targetNodeId": "subsheet-3-file-2-3",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-4",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-3",
+      "kind": "call",
+      "label": "_solve_with_solver_policy"
+    },
+    {
+      "id": "subsheet-3-edge-36",
+      "sourceNodeId": "subsheet-3-file-2-4",
+      "targetNodeId": "subsheet-3-file-2-3",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-4",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-3",
+      "kind": "call",
+      "label": "_solver_policy_mode"
+    },
+    {
+      "id": "subsheet-3-edge-37",
+      "sourceNodeId": "subsheet-3-file-2-4",
+      "targetNodeId": "subsheet-3-file-2-7",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-4",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-7",
+      "kind": "call",
+      "label": "_gravity_backbone_initial_states"
+    },
+    {
+      "id": "subsheet-3-edge-38",
+      "sourceNodeId": "subsheet-3-file-2-9",
+      "targetNodeId": "subsheet-3-file-2-4",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-9",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-4",
+      "kind": "call",
+      "label": "run_simulation"
+    },
+    {
+      "id": "subsheet-3-edge-39",
+      "sourceNodeId": "subsheet-3-file-2-9",
+      "targetNodeId": "subsheet-3-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-9",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-1",
+      "kind": "call",
+      "label": "_prewarm_nbody_ephemeris_cache"
+    },
+    {
+      "id": "subsheet-3-edge-40",
+      "sourceNodeId": "subsheet-3-file-1-7",
+      "targetNodeId": "subsheet-3-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-4",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/callbacks/callbacks.jl",
+        "src/simulation/callbacks/control_callbacks.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-41",
+      "sourceNodeId": "subsheet-3-file-1-7",
+      "targetNodeId": "subsheet-3-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-8",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/callbacks/callbacks.jl",
+        "src/simulation/callbacks/density_callbacks.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-42",
+      "sourceNodeId": "subsheet-3-file-1-7",
+      "targetNodeId": "subsheet-3-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-1",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/callbacks/callbacks.jl",
+        "src/simulation/callbacks/event_callbacks.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-43",
+      "sourceNodeId": "subsheet-3-file-1-7",
+      "targetNodeId": "subsheet-3-file-1-9",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-9",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/callbacks/callbacks.jl",
+        "src/simulation/callbacks/gram_track_cache.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-44",
+      "sourceNodeId": "subsheet-3-file-1-7",
+      "targetNodeId": "subsheet-3-file-1-6",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-6",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/callbacks/callbacks.jl",
+        "src/simulation/callbacks/navigation_guidance_callbacks.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-45",
+      "sourceNodeId": "subsheet-3-file-1-7",
+      "targetNodeId": "subsheet-3-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-3",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/callbacks/callbacks.jl",
+        "src/simulation/callbacks/registry.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-46",
+      "sourceNodeId": "subsheet-3-file-1-7",
+      "targetNodeId": "subsheet-3-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-2",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/callbacks/callbacks.jl",
+        "src/simulation/callbacks/save_fields.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-47",
+      "sourceNodeId": "subsheet-3-file-1-7",
+      "targetNodeId": "subsheet-3-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-5",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/callbacks/callbacks.jl",
+        "src/simulation/callbacks/thermal_callbacks.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-48",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-2",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-2",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/dynamics_rhs.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-49",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-5",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-5",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/effector_sampling.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-50",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-4",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-4",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/execution.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-51",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-10",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-10",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/persistence.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-52",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-9",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-9",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/public_api.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-53",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-8",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-8",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/reporting.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-54",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-11",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-11",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/resume_checkpoint.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-55",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-1",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/setup.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-56",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-3",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-3",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/solver_policy.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-57",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-7",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-7",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/state_access.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-58",
+      "sourceNodeId": "subsheet-3-file-1-7",
+      "targetNodeId": "subsheet-3-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-4",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/callbacks/callbacks.jl",
+        "src/simulation/callbacks/control_callbacks.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-59",
+      "sourceNodeId": "subsheet-3-file-1-7",
+      "targetNodeId": "subsheet-3-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-8",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/callbacks/callbacks.jl",
+        "src/simulation/callbacks/density_callbacks.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-60",
+      "sourceNodeId": "subsheet-3-file-1-7",
+      "targetNodeId": "subsheet-3-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-1",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/callbacks/callbacks.jl",
+        "src/simulation/callbacks/event_callbacks.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-61",
+      "sourceNodeId": "subsheet-3-file-1-7",
+      "targetNodeId": "subsheet-3-file-1-9",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-9",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/callbacks/callbacks.jl",
+        "src/simulation/callbacks/gram_track_cache.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-62",
+      "sourceNodeId": "subsheet-3-file-1-7",
+      "targetNodeId": "subsheet-3-file-1-6",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-6",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/callbacks/callbacks.jl",
+        "src/simulation/callbacks/navigation_guidance_callbacks.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-63",
+      "sourceNodeId": "subsheet-3-file-1-7",
+      "targetNodeId": "subsheet-3-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-3",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/callbacks/callbacks.jl",
+        "src/simulation/callbacks/registry.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-64",
+      "sourceNodeId": "subsheet-3-file-1-7",
+      "targetNodeId": "subsheet-3-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-2",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/callbacks/callbacks.jl",
+        "src/simulation/callbacks/save_fields.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-65",
+      "sourceNodeId": "subsheet-3-file-1-7",
+      "targetNodeId": "subsheet-3-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-3-file-1-7",
+      "targetPortId": "sub-file-in-subsheet-3-file-1-5",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/callbacks/callbacks.jl",
+        "src/simulation/callbacks/thermal_callbacks.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-66",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-2",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-2",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/dynamics_rhs.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-67",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-5",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-5",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/effector_sampling.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-68",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-4",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-4",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/execution.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-69",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-10",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-10",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/persistence.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-70",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-9",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-9",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/public_api.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-71",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-8",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-8",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/reporting.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-72",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-11",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-11",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/resume_checkpoint.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-73",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-1",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/setup.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-74",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-3",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-3",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/solver_policy.jl"
+      ]
+    },
+    {
+      "id": "subsheet-3-edge-75",
+      "sourceNodeId": "subsheet-3-file-2-6",
+      "targetNodeId": "subsheet-3-file-2-7",
+      "sourcePortId": "sub-file-out-subsheet-3-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-3-file-2-7",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/simulation/engine/simulation_engine.jl",
+        "src/simulation/engine/state_access.jl"
+      ]
+    }
+  ],
+  "viewKind": "internal-block"
+}

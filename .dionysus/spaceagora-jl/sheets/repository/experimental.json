@@ -1,0 +1,672 @@
+{
+  "id": "auto-logical-component-experimental",
+  "filePath": "sheets/repository/experimental.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-12",
+  "title": "Experimental",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "Experimental: 9 implementation files, 3 sub-components.",
+  "verificationIntent": "Verify that Experimental's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-12-root",
+      "title": "Experimental",
+      "role": "subsystem",
+      "description": "9 implementation files, 24 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 680,
+      "height": 430,
+      "tags": [
+        "experimental",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-12",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-12",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-12-child-1",
+      "title": "Vehicle",
+      "role": "subsystem",
+      "description": "6 files, 17 exports, 12 imports.",
+      "x": 20,
+      "y": 60,
+      "width": 215,
+      "height": 610,
+      "tags": [
+        "experimental/vehicle",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-12-1",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-12-1",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-12-file-1-1",
+      "title": "resources.jl",
+      "role": "function",
+      "description": "experimental/vehicle/resources/resources.jl (50 lines · 10 exports · 8 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "experimental/vehicle",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-12-file-1-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-12-file-1-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-12-file-1-2",
+      "title": "laser_terminal.jl",
+      "role": "function",
+      "description": "experimental/vehicle/laser_terminal/laser_terminal.jl (22 lines · 3 exports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "experimental/vehicle",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-12-file-1-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-12-file-1-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-12-file-1-3",
+      "title": "battery_model.jl",
+      "role": "function",
+      "description": "experimental/vehicle/resources/battery/battery_model.jl (23 lines · 1 exports · 1 imports).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "experimental/vehicle",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-12-file-1-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-12-file-1-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-12-file-1-4",
+      "title": "load_model.jl",
+      "role": "function",
+      "description": "experimental/vehicle/resources/loads/load_model.jl (22 lines · 1 exports · 1 imports).",
+      "x": 12,
+      "y": 276,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "experimental/vehicle",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-12-file-1-4",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-12-file-1-4",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-12-file-1-5",
+      "title": "power_bus_model.jl",
+      "role": "function",
+      "description": "experimental/vehicle/resources/power_bus/power_bus_model.jl (22 lines · 1 exports · 1 imports).",
+      "x": 12,
+      "y": 354,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "experimental/vehicle",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-12-file-1-5",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-12-file-1-5",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-12-file-1-6",
+      "title": "solar_array_model.jl",
+      "role": "function",
+      "description": "experimental/vehicle/resources/solar_array/solar_array_model.jl (22 lines · 1 exports · 1 imports).",
+      "x": 12,
+      "y": 432,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "experimental/vehicle",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-12-file-1-6",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-12-file-1-6",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-12-child-2",
+      "title": "Gnc",
+      "role": "subsystem",
+      "description": "1 files, 3 exports, 0 imports.",
+      "x": 255,
+      "y": 60,
+      "width": 215,
+      "height": 185,
+      "tags": [
+        "experimental/gnc",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-12-2",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-12-2",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-12-file-2-1",
+      "title": "estimation.jl",
+      "role": "function",
+      "description": "experimental/gnc/estimation/estimation.jl (22 lines · 3 exports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "experimental/gnc",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-12-file-2-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-12-file-2-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-12-child-3",
+      "title": "Mission",
+      "role": "subsystem",
+      "description": "1 files, 4 exports, 0 imports.",
+      "x": 20,
+      "y": 185,
+      "width": 215,
+      "height": 185,
+      "tags": [
+        "experimental/mission",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-12-3",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-12-3",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-12-file-3-1",
+      "title": "network.jl",
+      "role": "function",
+      "description": "experimental/mission/constellation/network/network.jl (27 lines · 4 exports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "experimental/mission",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-12-file-3-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-12-file-3-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "subsheet-12-edge-1",
+      "sourceNodeId": "subsheet-12-file-1-3",
+      "targetNodeId": "subsheet-12-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-4",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-2",
+      "sourceNodeId": "subsheet-12-file-1-3",
+      "targetNodeId": "subsheet-12-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-5",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-3",
+      "sourceNodeId": "subsheet-12-file-1-3",
+      "targetNodeId": "subsheet-12-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-1",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-4",
+      "sourceNodeId": "subsheet-12-file-1-3",
+      "targetNodeId": "subsheet-12-file-1-6",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-3",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-6",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-5",
+      "sourceNodeId": "subsheet-12-file-1-4",
+      "targetNodeId": "subsheet-12-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-3",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-6",
+      "sourceNodeId": "subsheet-12-file-1-4",
+      "targetNodeId": "subsheet-12-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-5",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-7",
+      "sourceNodeId": "subsheet-12-file-1-4",
+      "targetNodeId": "subsheet-12-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-1",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-8",
+      "sourceNodeId": "subsheet-12-file-1-4",
+      "targetNodeId": "subsheet-12-file-1-6",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-6",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-9",
+      "sourceNodeId": "subsheet-12-file-1-5",
+      "targetNodeId": "subsheet-12-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-3",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-10",
+      "sourceNodeId": "subsheet-12-file-1-5",
+      "targetNodeId": "subsheet-12-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-4",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-11",
+      "sourceNodeId": "subsheet-12-file-1-5",
+      "targetNodeId": "subsheet-12-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-1",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-12",
+      "sourceNodeId": "subsheet-12-file-1-5",
+      "targetNodeId": "subsheet-12-file-1-6",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-6",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-13",
+      "sourceNodeId": "subsheet-12-file-1-1",
+      "targetNodeId": "subsheet-12-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-3",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-14",
+      "sourceNodeId": "subsheet-12-file-1-1",
+      "targetNodeId": "subsheet-12-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-4",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-15",
+      "sourceNodeId": "subsheet-12-file-1-1",
+      "targetNodeId": "subsheet-12-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-5",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-16",
+      "sourceNodeId": "subsheet-12-file-1-1",
+      "targetNodeId": "subsheet-12-file-1-6",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-6",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-17",
+      "sourceNodeId": "subsheet-12-file-1-6",
+      "targetNodeId": "subsheet-12-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-6",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-3",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-18",
+      "sourceNodeId": "subsheet-12-file-1-6",
+      "targetNodeId": "subsheet-12-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-6",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-4",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-19",
+      "sourceNodeId": "subsheet-12-file-1-6",
+      "targetNodeId": "subsheet-12-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-6",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-5",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-20",
+      "sourceNodeId": "subsheet-12-file-1-6",
+      "targetNodeId": "subsheet-12-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-6",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-1",
+      "kind": "call",
+      "label": "initialize_resource_state"
+    },
+    {
+      "id": "subsheet-12-edge-21",
+      "sourceNodeId": "subsheet-12-file-1-1",
+      "targetNodeId": "subsheet-12-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-3",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "experimental/vehicle/resources/resources.jl",
+        "experimental/vehicle/resources/battery/battery_model.jl"
+      ]
+    },
+    {
+      "id": "subsheet-12-edge-22",
+      "sourceNodeId": "subsheet-12-file-1-1",
+      "targetNodeId": "subsheet-12-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-4",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "experimental/vehicle/resources/resources.jl",
+        "experimental/vehicle/resources/loads/load_model.jl"
+      ]
+    },
+    {
+      "id": "subsheet-12-edge-23",
+      "sourceNodeId": "subsheet-12-file-1-1",
+      "targetNodeId": "subsheet-12-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-5",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "experimental/vehicle/resources/resources.jl",
+        "experimental/vehicle/resources/power_bus/power_bus_model.jl"
+      ]
+    },
+    {
+      "id": "subsheet-12-edge-24",
+      "sourceNodeId": "subsheet-12-file-1-1",
+      "targetNodeId": "subsheet-12-file-1-6",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-6",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "experimental/vehicle/resources/resources.jl",
+        "experimental/vehicle/resources/solar_array/solar_array_model.jl"
+      ]
+    },
+    {
+      "id": "subsheet-12-edge-25",
+      "sourceNodeId": "subsheet-12-file-1-1",
+      "targetNodeId": "subsheet-12-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-3",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "experimental/vehicle/resources/resources.jl",
+        "experimental/vehicle/resources/battery/battery_model.jl"
+      ]
+    },
+    {
+      "id": "subsheet-12-edge-26",
+      "sourceNodeId": "subsheet-12-file-1-1",
+      "targetNodeId": "subsheet-12-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-4",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "experimental/vehicle/resources/resources.jl",
+        "experimental/vehicle/resources/loads/load_model.jl"
+      ]
+    },
+    {
+      "id": "subsheet-12-edge-27",
+      "sourceNodeId": "subsheet-12-file-1-1",
+      "targetNodeId": "subsheet-12-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-5",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "experimental/vehicle/resources/resources.jl",
+        "experimental/vehicle/resources/power_bus/power_bus_model.jl"
+      ]
+    },
+    {
+      "id": "subsheet-12-edge-28",
+      "sourceNodeId": "subsheet-12-file-1-1",
+      "targetNodeId": "subsheet-12-file-1-6",
+      "sourcePortId": "sub-file-out-subsheet-12-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-12-file-1-6",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "experimental/vehicle/resources/resources.jl",
+        "experimental/vehicle/resources/solar_array/solar_array_model.jl"
+      ]
+    }
+  ],
+  "viewKind": "internal-block"
+}

@@ -1,0 +1,23 @@
+{
+  "id": "spaceagora-jl",
+  "name": "SpaceAGORA.jl",
+  "projectUsage": "workspace-model",
+  "mission": "High-fidelity spacecraft orbit and atmospheric-flight simulation with GNC subsystem development. Design Reference Missions: Attitude Determination Subsystem (DRM 1), Closed-Loop Attitude Control (DRM 2), Absolute Orbit Determination (DRM 3), Active Thermal Control (DRM 4), FDIR/Safe-Mode Manager (DRM 5).",
+  "systemOfInterest": "SpaceAGORA spacecraft GNC/ACS stack",
+  "codeWorkspace": "C:/Users/Robbie/falcon/SpaceAGORA.jl",
+  "compileIntent": "Implement, test, and integrate new GNC subsystems (sensor models, estimators, controllers, FDIR) into the SpaceAGORA.jl simulation framework using the effector + PeriodicCallback pattern. Each subsystem plugs into calcNavigationEffect!, calcGuidanceEffect!, or calcControlEffect!. Implementation language: Julia.",
+  "agentConfig": {
+    "command": "",
+    "args": [],
+    "workingDirectory": "C:/Users/Robbie/falcon/SpaceAGORA.jl"
+  },
+  "aiAgents": [],
+  "defaultAgentId": null,
+  "explorerFolders": [],
+  "sheets": [],
+  "requirementSets": [],
+  "componentPackages": [],
+  "buildHistory": [],
+  "aiJobs": [],
+  "kanbanTasks": []
+}

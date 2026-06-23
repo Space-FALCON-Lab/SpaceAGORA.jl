@@ -1,0 +1,47 @@
+{
+  "id": "test-integration",
+  "title": "IncludeOrderSandbox",
+  "componentKey": "test/integration",
+  "description": "8 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [
+    {
+      "path": "test/integration/cli/README.md",
+      "name": "README.md"
+    },
+    {
+      "path": "test/integration/examples/README.md",
+      "name": "README.md"
+    },
+    {
+      "path": "test/integration/examples/runtests.jl",
+      "name": "runtests.jl"
+    },
+    {
+      "path": "test/integration/persistence/README.md",
+      "name": "README.md"
+    },
+    {
+      "path": "test/integration/README.md",
+      "name": "README.md"
+    },
+    {
+      "path": "test/integration/runtests.jl",
+      "name": "runtests.jl"
+    },
+    {
+      "path": "test/integration/simulation/README.md",
+      "name": "README.md"
+    },
+    {
+      "path": "test/integration/telemetry/README.md",
+      "name": "README.md"
+    }
+  ],
+  "requirements": [],
+  "implementationFiles": [],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

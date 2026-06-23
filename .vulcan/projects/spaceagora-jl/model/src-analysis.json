@@ -1,0 +1,68 @@
+{
+  "id": "src-analysis",
+  "title": "Analysis",
+  "componentKey": "src/analysis",
+  "description": "11 files, 5 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "VerificationRequest",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "VerificationResult",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_verification",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_verification_cli",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_study",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/analysis/verification/telemetry_verification/calibration.jl",
+    "src/analysis/verification/telemetry_verification/comparison_metrics.jl",
+    "src/analysis/verification/telemetry_verification/error_tables.jl",
+    "src/analysis/verification/telemetry_verification/example_support.jl",
+    "src/analysis/verification/telemetry_verification/manifest_parsing.jl",
+    "src/analysis/verification/telemetry_verification/reporting.jl",
+    "src/analysis/verification/telemetry_verification/runner.jl",
+    "src/analysis/verification/telemetry_verification/scenario_builders.jl",
+    "src/analysis/verification/telemetry_verification/telemetry_loading.jl",
+    "src/analysis/verification/telemetry_verification/types.jl",
+    "src/analysis/verification/telemetry_verification.jl"
+  ],
+  "exports": [
+    "VerificationRequest",
+    "VerificationResult",
+    "run_verification",
+    "run_verification_cli",
+    "run_study"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

@@ -1,0 +1,16 @@
+{
+  "id": "spaceagoracalibration-jl-studies",
+  "title": "Studies",
+  "componentKey": "SpaceAGORACalibration.jl/studies",
+  "description": "«component» | 1 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "SpaceAGORACalibration.jl/studies/earth_offline/README.md"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

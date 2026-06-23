@@ -1,0 +1,700 @@
+{
+  "id": "auto-logical-component-src-vehicle",
+  "filePath": "model-interfaces/repository/src-vehicle.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-9",
+  "title": "Vehicle",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "Vehicle: 14 implementation files, 5 sub-components.",
+  "verificationIntent": "Verify that Vehicle's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-9-root",
+      "title": "Vehicle",
+      "role": "subsystem",
+      "description": "14 implementation files, 33 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 800,
+      "height": 560,
+      "tags": [
+        "src/vehicle",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-9",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-9",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-9-child-1",
+      "title": "ActuatorHooks",
+      "role": "subsystem",
+      "description": "4 files, 7 exports, 7 imports.",
+      "x": 20,
+      "y": 60,
+      "width": 215,
+      "height": 185,
+      "tags": [
+        "src/vehicle/actuators",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-9-1",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-9-1",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-9-file-1-1",
+      "title": "actuator_hooks.jl",
+      "role": "function",
+      "description": "src/vehicle/actuators/actuator_hooks.jl (28 lines · 2 exports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/vehicle/actuators",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-9-file-1-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-9-file-1-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-9-child-2",
+      "title": "Structure",
+      "role": "module",
+      "description": "4 files, 1 exports, 9 imports.",
+      "x": 255,
+      "y": 60,
+      "width": 215,
+      "height": 440,
+      "tags": [
+        "src/vehicle/structure",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-9-2",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-9-2",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-9-file-2-1",
+      "title": "geometry_properties.jl",
+      "role": "function",
+      "description": "src/vehicle/structure/geometry_properties.jl (136 lines · 1 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/vehicle/structure",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-9-file-2-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-9-file-2-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-9-file-2-2",
+      "title": "mass_properties.jl",
+      "role": "function",
+      "description": "src/vehicle/structure/mass_properties.jl (129 lines · 1 imports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/vehicle/structure",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-9-file-2-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-9-file-2-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-9-file-2-3",
+      "title": "structure_models.jl",
+      "role": "function",
+      "description": "src/vehicle/structure/structure_models.jl (28 lines · 1 exports · 7 imports).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/vehicle/structure",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-9-file-2-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-9-file-2-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-9-file-2-4",
+      "title": "assembly_graph.jl",
+      "role": "function",
+      "description": "src/vehicle/structure/assembly_graph.jl (32 lines).",
+      "x": 12,
+      "y": 276,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/vehicle/structure",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-9-file-2-4",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-9-file-2-4",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-9-child-3",
+      "title": "Assembly",
+      "role": "module",
+      "description": "3 files, 20 exports, 11 imports.",
+      "x": 20,
+      "y": 185,
+      "width": 215,
+      "height": 355,
+      "tags": [
+        "src/vehicle/spacecraft",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-9-3",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-9-3",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-9-file-3-1",
+      "title": "model.jl",
+      "role": "function",
+      "description": "src/vehicle/spacecraft/model.jl (341 lines · 10 exports · 4 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/vehicle/spacecraft",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-9-file-3-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-9-file-3-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-9-file-3-2",
+      "title": "assembly.jl",
+      "role": "function",
+      "description": "src/vehicle/spacecraft/assembly.jl (95 lines · 5 exports · 5 imports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/vehicle/spacecraft",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-9-file-3-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-9-file-3-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-9-file-3-3",
+      "title": "components.jl",
+      "role": "function",
+      "description": "src/vehicle/spacecraft/components.jl (84 lines · 5 exports · 2 imports).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/vehicle/spacecraft",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-9-file-3-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-9-file-3-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-9-child-4",
+      "title": "VehicleThermalModels",
+      "role": "module",
+      "description": "2 files, 2 exports, 6 imports.",
+      "x": 255,
+      "y": 185,
+      "width": 215,
+      "height": 270,
+      "tags": [
+        "src/vehicle/thermal",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-9-4",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-9-4",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-9-file-4-1",
+      "title": "thermal_models.jl",
+      "role": "function",
+      "description": "src/vehicle/thermal/thermal_models.jl (116 lines · 4 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/vehicle/thermal",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-9-file-4-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-9-file-4-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-9-file-4-2",
+      "title": "thermal_models_module.jl",
+      "role": "function",
+      "description": "src/vehicle/thermal/thermal_models_module.jl (8 lines · 2 exports · 2 imports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/vehicle/thermal",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-9-file-4-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-9-file-4-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-9-child-5",
+      "title": "Kinematics",
+      "role": "module",
+      "description": "1 files, 3 exports, 4 imports.",
+      "x": 20,
+      "y": 310,
+      "width": 215,
+      "height": 185,
+      "tags": [
+        "src/vehicle/kinematics",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-9-5",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-9-5",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-9-file-5-1",
+      "title": "kinematics.jl",
+      "role": "function",
+      "description": "src/vehicle/kinematics/kinematics.jl (64 lines · 3 exports · 4 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/vehicle/kinematics",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-9-file-5-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-9-file-5-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "subsheet-9-edge-1",
+      "sourceNodeId": "subsheet-9-file-2-1",
+      "targetNodeId": "subsheet-9-file-5-1",
+      "sourcePortId": "sub-file-out-subsheet-9-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-9-file-5-1",
+      "kind": "call",
+      "label": "rotate_to_inertial"
+    },
+    {
+      "id": "subsheet-9-edge-2",
+      "sourceNodeId": "subsheet-9-file-2-1",
+      "targetNodeId": "subsheet-9-file-2-4",
+      "sourcePortId": "sub-file-out-subsheet-9-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-9-file-2-4",
+      "kind": "call",
+      "label": "traverse_bodies"
+    },
+    {
+      "id": "subsheet-9-edge-3",
+      "sourceNodeId": "subsheet-9-file-2-2",
+      "targetNodeId": "subsheet-9-file-2-4",
+      "sourcePortId": "sub-file-out-subsheet-9-file-2-2",
+      "targetPortId": "sub-file-in-subsheet-9-file-2-4",
+      "kind": "call",
+      "label": "traverse_bodies"
+    },
+    {
+      "id": "subsheet-9-edge-4",
+      "sourceNodeId": "subsheet-9-file-2-3",
+      "targetNodeId": "subsheet-9-file-5-1",
+      "sourcePortId": "sub-file-out-subsheet-9-file-2-3",
+      "targetPortId": "sub-file-in-subsheet-9-file-5-1",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/vehicle/structure/structure_models.jl",
+        "src/vehicle/kinematics/kinematics.jl"
+      ]
+    },
+    {
+      "id": "subsheet-9-edge-5",
+      "sourceNodeId": "subsheet-9-file-2-3",
+      "targetNodeId": "subsheet-9-file-2-4",
+      "sourcePortId": "sub-file-out-subsheet-9-file-2-3",
+      "targetPortId": "sub-file-in-subsheet-9-file-2-4",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/vehicle/structure/structure_models.jl",
+        "src/vehicle/structure/assembly_graph.jl"
+      ]
+    },
+    {
+      "id": "subsheet-9-edge-6",
+      "sourceNodeId": "subsheet-9-file-2-3",
+      "targetNodeId": "subsheet-9-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-9-file-2-3",
+      "targetPortId": "sub-file-in-subsheet-9-file-2-1",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/vehicle/structure/structure_models.jl",
+        "src/vehicle/structure/geometry_properties.jl"
+      ]
+    },
+    {
+      "id": "subsheet-9-edge-7",
+      "sourceNodeId": "subsheet-9-file-2-3",
+      "targetNodeId": "subsheet-9-file-2-2",
+      "sourcePortId": "sub-file-out-subsheet-9-file-2-3",
+      "targetPortId": "sub-file-in-subsheet-9-file-2-2",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/vehicle/structure/structure_models.jl",
+        "src/vehicle/structure/mass_properties.jl"
+      ]
+    },
+    {
+      "id": "subsheet-9-edge-8",
+      "sourceNodeId": "subsheet-9-file-4-2",
+      "targetNodeId": "subsheet-9-file-4-1",
+      "sourcePortId": "sub-file-out-subsheet-9-file-4-2",
+      "targetPortId": "sub-file-in-subsheet-9-file-4-1",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/vehicle/thermal/thermal_models_module.jl",
+        "src/vehicle/thermal/thermal_models.jl"
+      ]
+    },
+    {
+      "id": "subsheet-9-edge-9",
+      "sourceNodeId": "subsheet-9-file-2-3",
+      "targetNodeId": "subsheet-9-file-5-1",
+      "sourcePortId": "sub-file-out-subsheet-9-file-2-3",
+      "targetPortId": "sub-file-in-subsheet-9-file-5-1",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/vehicle/structure/structure_models.jl",
+        "src/vehicle/kinematics/kinematics.jl"
+      ]
+    },
+    {
+      "id": "subsheet-9-edge-10",
+      "sourceNodeId": "subsheet-9-file-2-3",
+      "targetNodeId": "subsheet-9-file-2-4",
+      "sourcePortId": "sub-file-out-subsheet-9-file-2-3",
+      "targetPortId": "sub-file-in-subsheet-9-file-2-4",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/vehicle/structure/structure_models.jl",
+        "src/vehicle/structure/assembly_graph.jl"
+      ]
+    },
+    {
+      "id": "subsheet-9-edge-11",
+      "sourceNodeId": "subsheet-9-file-2-3",
+      "targetNodeId": "subsheet-9-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-9-file-2-3",
+      "targetPortId": "sub-file-in-subsheet-9-file-2-1",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/vehicle/structure/structure_models.jl",
+        "src/vehicle/structure/geometry_properties.jl"
+      ]
+    },
+    {
+      "id": "subsheet-9-edge-12",
+      "sourceNodeId": "subsheet-9-file-2-3",
+      "targetNodeId": "subsheet-9-file-2-2",
+      "sourcePortId": "sub-file-out-subsheet-9-file-2-3",
+      "targetPortId": "sub-file-in-subsheet-9-file-2-2",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/vehicle/structure/structure_models.jl",
+        "src/vehicle/structure/mass_properties.jl"
+      ]
+    },
+    {
+      "id": "subsheet-9-edge-13",
+      "sourceNodeId": "subsheet-9-file-4-2",
+      "targetNodeId": "subsheet-9-file-4-1",
+      "sourcePortId": "sub-file-out-subsheet-9-file-4-2",
+      "targetPortId": "sub-file-in-subsheet-9-file-4-1",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/vehicle/thermal/thermal_models_module.jl",
+        "src/vehicle/thermal/thermal_models.jl"
+      ]
+    }
+  ],
+  "viewKind": "internal-block"
+}

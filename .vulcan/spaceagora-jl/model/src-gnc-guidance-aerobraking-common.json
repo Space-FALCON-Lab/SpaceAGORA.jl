@@ -1,0 +1,17 @@
+{
+  "id": "src-gnc-guidance-aerobraking-common",
+  "title": "Common",
+  "componentKey": "src/gnc/guidance/aerobraking/common",
+  "description": "2 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/gnc/guidance/aerobraking/common/closed_form_solution.jl",
+    "src/gnc/guidance/aerobraking/common/heat_rate_models.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

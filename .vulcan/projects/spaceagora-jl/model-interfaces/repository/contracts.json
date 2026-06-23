@@ -1,0 +1,3125 @@
+{
+  "id": "auto-software-data-repository-alignment",
+  "filePath": "model-interfaces/repository/contracts.json",
+  "parentId": null,
+  "title": "SpaceAGORA.Jl — Software Contracts",
+  "layer": "software-data",
+  "abstractionLevel": 0,
+  "summary": "Detected 349 implementation files with import/export evidence that can be traced into software/data interfaces and component ownership.",
+  "verificationIntent": "Keep exported software/data interfaces traceable to the implementation files and consumers that depend on them.",
+  "nodes": [
+    {
+      "id": "repo-software-root",
+      "title": "Repository Contracts",
+      "role": "system",
+      "description": "Software/data interfaces inferred from exports, imports, and dominant modules across 349 files.",
+      "x": 40,
+      "y": 40,
+      "width": 1120,
+      "height": 3460,
+      "tags": [
+        "repository",
+        "contracts",
+        "system-root"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-1",
+      "title": "EngineSandbox Contracts",
+      "role": "component",
+      "description": "1 exports and 305 imports observed under test.",
+      "x": 50,
+      "y": 70,
+      "width": 470,
+      "height": 222,
+      "tags": [
+        "test",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-1-1",
+      "title": "01_contract_and_api_tests",
+      "role": "interface",
+      "description": "test/suites/01_contract_and_api_tests.jl. Exposes SimulationConfiguration.",
+      "x": 16,
+      "y": 46,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "test",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-1-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-1-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-2",
+      "title": "Benchmarks Contracts",
+      "role": "component",
+      "description": "0 exports and 139 imports observed under benchmarks.",
+      "x": 570,
+      "y": 70,
+      "width": 470,
+      "height": 222,
+      "tags": [
+        "benchmarks",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-2",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-2",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-3",
+      "title": "RuntimeServices Contracts",
+      "role": "component",
+      "description": "12 exports and 76 imports observed under src/simulation.",
+      "x": 50,
+      "y": 290,
+      "width": 470,
+      "height": 294,
+      "tags": [
+        "src/simulation",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-3",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-3",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-3-1",
+      "title": "registry",
+      "role": "interface",
+      "description": "src/simulation/callbacks/registry.jl. Exposes SaveField, default_save_fields, get_callbacks.",
+      "x": 16,
+      "y": 46,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/simulation",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-3-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-3-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-3-2",
+      "title": "simulation_engine",
+      "role": "interface",
+      "description": "src/simulation/engine/simulation_engine.jl. Exposes ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig, simulation_engine_config_from_env, run_simulation, prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!.",
+      "x": 16,
+      "y": 116,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/simulation",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-3-2",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-3-2",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-4",
+      "title": "Examples Contracts",
+      "role": "component",
+      "description": "0 exports and 113 imports observed under examples.",
+      "x": 570,
+      "y": 290,
+      "width": 470,
+      "height": 222,
+      "tags": [
+        "examples",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-4",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-4",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-5",
+      "title": "CommandTypes Contracts",
+      "role": "component",
+      "description": "17 exports and 92 imports observed under src/gnc.",
+      "x": 50,
+      "y": 510,
+      "width": 470,
+      "height": 510,
+      "tags": [
+        "src/gnc",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-5",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-5",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-5-1",
+      "title": "guidance_hooks",
+      "role": "interface",
+      "description": "src/gnc/guidance/guidance_hooks.jl. Exposes calcGuidanceEffect!, AbstractAerobrakingStrategy, EEdgStrategy, TEdgStrategy, AerobrakingGuidanceInput, AerobrakingGuidanceOutput, AerobrakingControlCommand, compute_aerobraking_guidance, dispatch_aerobraking_guidance.",
+      "x": 16,
+      "y": 46,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/gnc",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-5-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-5-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-5-2",
+      "title": "control_hooks",
+      "role": "interface",
+      "description": "src/gnc/control/control_hooks.jl. Exposes calcControlForceTorque, calcControlEffect!, calcControlMassFlowRate.",
+      "x": 16,
+      "y": 116,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/gnc",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-5-2",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-5-2",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-5-3",
+      "title": "command_types",
+      "role": "interface",
+      "description": "src/gnc/command_types.jl. Exposes PropulsiveManeuverCommand, PropulsiveBurnPlan, AerobrakingControlCommand.",
+      "x": 16,
+      "y": 186,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/gnc",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-5-3",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-5-3",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-5-4",
+      "title": "guidance_models",
+      "role": "interface",
+      "description": "src/gnc/guidance/guidance_models.jl. Exposes AerobrakingCampaignPropulsiveManeuverGuidanceModel.",
+      "x": 16,
+      "y": 256,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/gnc",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-5-4",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-5-4",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-5-5",
+      "title": "navigation_hooks",
+      "role": "interface",
+      "description": "src/gnc/navigation/navigation_hooks.jl. Exposes calcNavigationEffect!.",
+      "x": 16,
+      "y": 326,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/gnc",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-5-5",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-5-5",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-6",
+      "title": "SpaceAGORACalibration.Jl Contracts",
+      "role": "component",
+      "description": "84 exports and 91 imports observed under SpaceAGORACalibration.jl.",
+      "x": 570,
+      "y": 510,
+      "width": 470,
+      "height": 1014,
+      "tags": [
+        "SpaceAGORACalibration.jl",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-6",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-6",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-6-1",
+      "title": "Backend",
+      "role": "interface",
+      "description": "SpaceAGORACalibration.jl/src/Backend.jl. Exposes AbstractBackend, CommandBackend, InProcessBackend, MockBackend, BackendEvaluation, CandidateRuntimePolicy, backend_parallel_profile, backend_full_auto_requested, evaluate_candidate, apply_candidate_to_manifest!.",
+      "x": 16,
+      "y": 46,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "SpaceAGORACalibration.jl",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-6-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-6-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-6-2",
+      "title": "Engine",
+      "role": "interface",
+      "description": "SpaceAGORACalibration.jl/src/Engine.jl. Exposes CalibrationResult, run_calibration.",
+      "x": 16,
+      "y": 116,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "SpaceAGORACalibration.jl",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-6-2",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-6-2",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-6-3",
+      "title": "Store",
+      "role": "interface",
+      "description": "SpaceAGORACalibration.jl/src/Store.jl. Exposes RunStore, LedgerEntry, RunState, init_store, append_evaluation!, load_ledger_entries, load_stage_entries, save_state!, load_state, stage_is_completed!, spec_path, evaluations_path, state_path, best_manifest_path, report_path, STAGE_SEQUENCE.",
+      "x": 16,
+      "y": 186,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "SpaceAGORACalibration.jl",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-6-3",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-6-3",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-6-4",
+      "title": "AdaptiveRuntime",
+      "role": "interface",
+      "description": "SpaceAGORACalibration.jl/src/AdaptiveRuntime.jl. Exposes RuntimeDecision, RuntimeController, full_auto_enabled, init_runtime_controller, choose_runtime_decision!, record_runtime_feedback!, save_runtime_controller!.",
+      "x": 16,
+      "y": 256,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "SpaceAGORACalibration.jl",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-6-4",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-6-4",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-6-5",
+      "title": "Spec",
+      "role": "interface",
+      "description": "SpaceAGORACalibration.jl/src/Spec.jl. Exposes ParameterKind, ParameterSpec, BudgetSpec, CalibrationSpec, load_spec, default_spec, validate_spec, spec_to_dict, primary_manifest_path.",
+      "x": 16,
+      "y": 326,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "SpaceAGORACalibration.jl",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-6-5",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-6-5",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-6-6",
+      "title": "GlobalSearch",
+      "role": "interface",
+      "description": "SpaceAGORACalibration.jl/src/GlobalSearch.jl. Exposes GlobalSearchResult, global_target_count, plan_initial_design, propose_bo_candidate, run_global_search.",
+      "x": 16,
+      "y": 396,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "SpaceAGORACalibration.jl",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-6-6",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-6-6",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-6-7",
+      "title": "LocalRefine",
+      "role": "interface",
+      "description": "SpaceAGORACalibration.jl/src/LocalRefine.jl. Exposes LocalRefineResult, plan_local_candidates, run_local_refine.",
+      "x": 16,
+      "y": 466,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "SpaceAGORACalibration.jl",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-6-7",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-6-7",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-6-8",
+      "title": "ParamSpace",
+      "role": "interface",
+      "description": "SpaceAGORACalibration.jl/src/ParamSpace.jl. Exposes Candidate, sample_random_candidate, sample_lhs_population, sample_initial_population, perturb_candidate, candidate_signature.",
+      "x": 16,
+      "y": 536,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "SpaceAGORACalibration.jl",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-6-8",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-6-8",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-6-9",
+      "title": "Robustness",
+      "role": "interface",
+      "description": "SpaceAGORACalibration.jl/src/Robustness.jl. Exposes RobustnessRecord, RobustnessResult, plan_robustness_candidates, summarize_robustness, run_robustness.",
+      "x": 16,
+      "y": 606,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "SpaceAGORACalibration.jl",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-6-9",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-6-9",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-6-10",
+      "title": "SpaceAGORACalibration",
+      "role": "interface",
+      "description": "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl. Exposes CalibrationSpec, BudgetSpec, ParameterSpec, ParameterKind, Candidate, AbstractBackend, MockBackend, CommandBackend, InProcessBackend, BackendEvaluation, evaluate_candidate, CalibrationResult, run_calibration, load_spec, default_spec, validate_spec.",
+      "x": 16,
+      "y": 676,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "SpaceAGORACalibration.jl",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-6-10",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-6-10",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-6-11",
+      "title": "Report",
+      "role": "interface",
+      "description": "SpaceAGORACalibration.jl/src/Report.jl. Exposes write_report!.",
+      "x": 16,
+      "y": 746,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "SpaceAGORACalibration.jl",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-6-11",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-6-11",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-6-12",
+      "title": "Objective",
+      "role": "interface",
+      "description": "SpaceAGORACalibration.jl/src/Objective.jl. Exposes primary_score, robust_statistics, robust_score, sort_indices_by_score.",
+      "x": 16,
+      "y": 816,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "SpaceAGORACalibration.jl",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-6-12",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-6-12",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-7",
+      "title": "Dynamics Contracts",
+      "role": "component",
+      "description": "50 exports and 70 imports observed under src/dynamics.",
+      "x": 50,
+      "y": 730,
+      "width": 470,
+      "height": 726,
+      "tags": [
+        "src/dynamics",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-7",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-7",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-7-1",
+      "title": "force_torque_models",
+      "role": "interface",
+      "description": "src/dynamics/coupled/force_torque_models.jl. Exposes ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel, aerobraking_gravity_force_ii, srp, srp_cannonball_accel, planetary_albedo_accel, planetary_ir_accel, AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight, calcForceTorque, wrench, environment_requirements, solver_partition, BaseThrusterModel, AerobrakingCampaignPropulsiveManeuverGuidanceModel.",
+      "x": 16,
+      "y": 46,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/dynamics",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-7-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-7-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-7-2",
+      "title": "perturbation_effectors",
+      "role": "interface",
+      "description": "src/dynamics/coupled/force_torque_models/perturbation_effectors.jl. Exposes NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel, srp, srp_cannonball_accel, planetary_albedo_accel, planetary_ir_accel.",
+      "x": 16,
+      "y": 116,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/dynamics",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-7-2",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-7-2",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-7-3",
+      "title": "translational_models",
+      "role": "interface",
+      "description": "src/dynamics/translational/translational_models.jl. Exposes position_derivative, zero_position_derivative, acceleration_from_force, mass_derivative, assign_full_translational_rhs!, assign_slow_translational_rhs!, assign_control_only_translational_rhs!, assign_force_only_translational_rhs!.",
+      "x": 16,
+      "y": 186,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/dynamics",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-7-3",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-7-3",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-7-4",
+      "title": "aerodynamic_effectors",
+      "role": "interface",
+      "description": "src/dynamics/coupled/force_torque_models/aerodynamic_effectors.jl. Exposes AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight.",
+      "x": 16,
+      "y": 256,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/dynamics",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-7-4",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-7-4",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-7-5",
+      "title": "rotational_models",
+      "role": "interface",
+      "description": "src/dynamics/rotational/rotational_models.jl. Exposes quaternion_derivative, angular_acceleration, body_torque, body_angular_velocity, combine_torques.",
+      "x": 16,
+      "y": 326,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/dynamics",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-7-5",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-7-5",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-7-6",
+      "title": "gravity_effectors",
+      "role": "interface",
+      "description": "src/dynamics/coupled/force_torque_models/gravity_effectors.jl. Exposes ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, aerobraking_gravity_force_ii, j2_secular_rates.",
+      "x": 16,
+      "y": 396,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/dynamics",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-7-6",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-7-6",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-7-7",
+      "title": "guidance_models",
+      "role": "interface",
+      "description": "src/dynamics/coupled/force_torque_models/guidance_models.jl. Exposes AerobrakingCampaignPropulsiveManeuverGuidanceModel.",
+      "x": 16,
+      "y": 466,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/dynamics",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-7-7",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-7-7",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-7-8",
+      "title": "thruster_models",
+      "role": "interface",
+      "description": "src/dynamics/coupled/force_torque_models/thruster_models.jl. Exposes BaseThrusterModel.",
+      "x": 16,
+      "y": 536,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/dynamics",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-7-8",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-7-8",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-8",
+      "title": "Parallel Contracts",
+      "role": "component",
+      "description": "36 exports and 18 imports observed under src/parallel.",
+      "x": 570,
+      "y": 730,
+      "width": 470,
+      "height": 294,
+      "tags": [
+        "src/parallel",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-8",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-8",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-8-1",
+      "title": "parallel_policy",
+      "role": "interface",
+      "description": "src/parallel/policy/parallel_policy.jl. Exposes parse_bool_env, parse_parallel_mode_env, parse_thread_threshold_env, outer_parallel_active, effective_inner_thread_budget, use_threads_policy, thread_policy_decision, threaded_foreach, threaded_reduce, threaded_foreach_persistent, with_policy_context, reset_policy_telemetry!, policy_telemetry_snapshot, record_policy_observation!, reset_persistent_hint_state!, persistent_hints_state_reset_requested, hint_layer_stats_snapshot.",
+      "x": 16,
+      "y": 46,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/parallel",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-8-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-8-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-8-2",
+      "title": "parallel_profiles",
+      "role": "interface",
+      "description": "src/parallel/routing/parallel_profiles.jl. Exposes ParallelProfile, ParallelProfileConfig, parse_parallel_profile, parallel_profile_name, profile_config, profile_env_pairs, with_parallel_profile, OuterRouteFeatures, OuterRouteTuning, OuterRouteState, reset_outer_route_state!, outer_route_signature, outer_route_stats_snapshot, default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!, load_outer_route_state!, save_outer_route_state.",
+      "x": 16,
+      "y": 116,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/parallel",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-8-2",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-8-2",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-9",
+      "title": "Vehicle Contracts",
+      "role": "component",
+      "description": "33 exports and 37 imports observed under src/vehicle.",
+      "x": 50,
+      "y": 950,
+      "width": 470,
+      "height": 798,
+      "tags": [
+        "src/vehicle",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-9",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-9",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-9-1",
+      "title": "model",
+      "role": "interface",
+      "description": "src/vehicle/spacecraft/model.jl. Exposes Link, Joint, SpacecraftModel, DynamicsModel, InitialCondition, CartesianInitialCondition, AbstractInitialCondition, GuidanceModel, NavigationModel, ControlModel.",
+      "x": 16,
+      "y": 46,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/vehicle",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-9-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-9-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-9-2",
+      "title": "thruster_hooks",
+      "role": "interface",
+      "description": "src/vehicle/actuators/thruster/thruster_hooks.jl. Exposes update_thrusters!, thrust_calculation_schmitt_trigger!, schmitt_trigger, integrate_impulse!.",
+      "x": 16,
+      "y": 116,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/vehicle",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-9-2",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-9-2",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-9-3",
+      "title": "assembly",
+      "role": "interface",
+      "description": "src/vehicle/spacecraft/assembly.jl. Exposes add_body!, add_joint!, add_facet!, add_magnet!, add_thruster!.",
+      "x": 16,
+      "y": 186,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/vehicle",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-9-3",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-9-3",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-9-4",
+      "title": "components",
+      "role": "interface",
+      "description": "src/vehicle/spacecraft/components.jl. Exposes Facet, Thruster, Magnet, ReactionWheelAssembly, create_facet_list.",
+      "x": 16,
+      "y": 256,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/vehicle",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-9-4",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-9-4",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-9-5",
+      "title": "kinematics",
+      "role": "interface",
+      "description": "src/vehicle/kinematics/kinematics.jl. Exposes rotate_to_inertial, rotate_to_body, rotate_link.",
+      "x": 16,
+      "y": 326,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/vehicle",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-9-5",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-9-5",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-9-6",
+      "title": "structure_models",
+      "role": "interface",
+      "description": "src/vehicle/structure/structure_models.jl. Exposes traverse_bodies.",
+      "x": 16,
+      "y": 396,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/vehicle",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-9-6",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-9-6",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-9-7",
+      "title": "actuator_hooks",
+      "role": "interface",
+      "description": "src/vehicle/actuators/actuator_hooks.jl. Exposes apply_actuator_hook!, apply_actuator_hooks!.",
+      "x": 16,
+      "y": 466,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/vehicle",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-9-7",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-9-7",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-9-8",
+      "title": "thermal_models_module",
+      "role": "interface",
+      "description": "src/vehicle/thermal/thermal_models_module.jl. Exposes MaxwellianHeat, getHeatRate.",
+      "x": 16,
+      "y": 536,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/vehicle",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-9-8",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-9-8",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-9-9",
+      "title": "thruster_models_module",
+      "role": "interface",
+      "description": "src/vehicle/actuators/thruster/thruster_models_module.jl. Exposes BaseThrusterModel.",
+      "x": 16,
+      "y": 606,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/vehicle",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-9-9",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-9-9",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-10",
+      "title": "Analysis Contracts",
+      "role": "component",
+      "description": "5 exports and 25 imports observed under src/analysis.",
+      "x": 570,
+      "y": 950,
+      "width": 470,
+      "height": 222,
+      "tags": [
+        "src/analysis",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-10",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-10",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-10-1",
+      "title": "telemetry_verification",
+      "role": "interface",
+      "description": "src/analysis/verification/telemetry_verification.jl. Exposes VerificationRequest, VerificationResult, run_verification, run_verification_cli, run_study.",
+      "x": 16,
+      "y": 46,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/analysis",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-10-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-10-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-11",
+      "title": "SimulationModel Contracts",
+      "role": "component",
+      "description": "71 exports and 105 imports observed under src/core.",
+      "x": 50,
+      "y": 1170,
+      "width": 470,
+      "height": 654,
+      "tags": [
+        "src/core",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-11",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-11",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-11-1",
+      "title": "runtime_types",
+      "role": "interface",
+      "description": "src/core/types/runtime_types.jl. Exposes Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters, SaveCache, SaveData, SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, SpiceRuntimeCounters, SpiceRhsMemo, GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace.",
+      "x": 16,
+      "y": 46,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/core",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-11-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-11-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-11-2",
+      "title": "simulation_configuration",
+      "role": "interface",
+      "description": "src/core/state/simulation_configuration.jl. Exposes SimulationConfiguration, InitialTime, IntegrationTolerances, FilePaths, SimulationSettings, MissionConfiguration, EnvironmentModel, MissionType, MissionTime, MissionOrbits.",
+      "x": 16,
+      "y": 116,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/core",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-11-2",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-11-2",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-11-3",
+      "title": "effector_sampling",
+      "role": "interface",
+      "description": "src/core/types/effector_sampling.jl. Exposes StateSample.",
+      "x": 16,
+      "y": 186,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/core",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-11-3",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-11-3",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-11-4",
+      "title": "compat_model_codes",
+      "role": "interface",
+      "description": "src/core/types/compat_model_codes.jl. Exposes LegacyGravityModelCode, LegacyDensityModelCode, LegacyAerodynamicModelCode, LegacyThermalModelCode, LegacyThrustControlCode, LegacyGravityConstant, LegacyGravityInverseSquared, LegacyGravityInverseSquaredJ2, LegacyGravityGRAM, LegacyDensityConstant, LegacyDensityExponential, LegacyDensityNoDensity, LegacyDensityGRAM, LegacyDensityNRLMSISE, LegacyAeroCdClConstant, LegacyAeroDiffusive, LegacyAeroNoBallisticAxial, LegacyThermalConvectiveRadiative, LegacyThermalMaxwellian, LegacyThrustNone, LegacyThrustAerobrakingManeuver, LegacyThrustDragPassageFiring.",
+      "x": 16,
+      "y": 256,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/core",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-11-4",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-11-4",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-11-5",
+      "title": "no_gram_presets",
+      "role": "interface",
+      "description": "src/core/state/no_gram_presets.jl. Exposes make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment.",
+      "x": 16,
+      "y": 326,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/core",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-11-5",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-11-5",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-11-6",
+      "title": "abstract_types",
+      "role": "interface",
+      "description": "src/core/types/abstract_types.jl. Exposes AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractThermalModel, AbstractThrusterModel, AbstractControlEffectorModel, AbstractEphemeridesModel, AbstractGuidanceModel.",
+      "x": 16,
+      "y": 396,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/core",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-11-6",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-11-6",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-11-7",
+      "title": "reference_system_config",
+      "role": "interface",
+      "description": "src/core/state/reference_system_config.jl. Exposes OE, cartesian, R_RA_DEC, H_LAN_LON, uDuNuE, clock.",
+      "x": 16,
+      "y": 466,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/core",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-11-7",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-11-7",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-12",
+      "title": "Experimental Contracts",
+      "role": "component",
+      "description": "24 exports and 13 imports observed under experimental.",
+      "x": 570,
+      "y": 1170,
+      "width": 470,
+      "height": 726,
+      "tags": [
+        "experimental",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-12",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-12",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-12-1",
+      "title": "resources",
+      "role": "interface",
+      "description": "experimental/vehicle/resources/resources.jl. Exposes AbstractResourceModel, ResourceState, ResourceInputs, ResourceOutputs, initialize_resource_state, step_resource!, BatteryResourceModel, SolarArrayResourceModel, PowerBusResourceModel, LoadResourceModel.",
+      "x": 16,
+      "y": 46,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "experimental",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-12-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-12-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-12-2",
+      "title": "network",
+      "role": "interface",
+      "description": "experimental/mission/constellation/network/network.jl. Exposes NetworkTopology, NetworkState, NetworkInputs, step_network!.",
+      "x": 16,
+      "y": 116,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "experimental",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-12-2",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-12-2",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-12-3",
+      "title": "estimation",
+      "role": "interface",
+      "description": "experimental/gnc/estimation/estimation.jl. Exposes EstimatorState, MeasurementPacket, estimate_state!.",
+      "x": 16,
+      "y": 186,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "experimental",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-12-3",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-12-3",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-12-4",
+      "title": "laser_terminal",
+      "role": "interface",
+      "description": "experimental/vehicle/laser_terminal/laser_terminal.jl. Exposes LaserTerminalActuator, LaserTerminalCommand, apply_laser_terminal_command!.",
+      "x": 16,
+      "y": 256,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "experimental",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-12-4",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-12-4",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-12-5",
+      "title": "battery_model",
+      "role": "interface",
+      "description": "experimental/vehicle/resources/battery/battery_model.jl. Exposes BatteryResourceModel.",
+      "x": 16,
+      "y": 326,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "experimental",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-12-5",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-12-5",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-12-6",
+      "title": "load_model",
+      "role": "interface",
+      "description": "experimental/vehicle/resources/loads/load_model.jl. Exposes LoadResourceModel.",
+      "x": 16,
+      "y": 396,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "experimental",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-12-6",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-12-6",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-12-7",
+      "title": "power_bus_model",
+      "role": "interface",
+      "description": "experimental/vehicle/resources/power_bus/power_bus_model.jl. Exposes PowerBusResourceModel.",
+      "x": 16,
+      "y": 466,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "experimental",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-12-7",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-12-7",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-12-8",
+      "title": "solar_array_model",
+      "role": "interface",
+      "description": "experimental/vehicle/resources/solar_array/solar_array_model.jl. Exposes SolarArrayResourceModel.",
+      "x": 16,
+      "y": 536,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "experimental",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-12-8",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-12-8",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-13",
+      "title": "EnvironmentModels Contracts",
+      "role": "component",
+      "description": "28 exports and 30 imports observed under src/environment.",
+      "x": 50,
+      "y": 1390,
+      "width": 470,
+      "height": 438,
+      "tags": [
+        "src/environment",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-13",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-13",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-13-1",
+      "title": "planets",
+      "role": "interface",
+      "description": "src/environment/ephemerides/planets.jl. Exposes Earth, Mars, Venus, Moon, Titan.",
+      "x": 16,
+      "y": 46,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/environment",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-13-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-13-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-13-2",
+      "title": "physical_models",
+      "role": "interface",
+      "description": "src/environment/physical_models.jl. Exposes NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel, NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!, GRAMAtmosphereModel, GRAMAtmosphereModelSurrogate, ConstantDensityModel, getDensity, getDensityBatch!, precompute_gram_static_grids!, clear_gram_static_grid_cache!.",
+      "x": 16,
+      "y": 116,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/environment",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-13-2",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-13-2",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-13-3",
+      "title": "ephemerides_models",
+      "role": "interface",
+      "description": "src/environment/ephemerides/ephemerides_models.jl. Exposes SpiceEphemeridesModel, SimpleEphemeridesModel, ephemerides_time_seconds, planet_frame_lpi, ephemerides_requires_spice, ephemerides_cache_key.",
+      "x": 16,
+      "y": 186,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/environment",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-13-3",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-13-3",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-13-4",
+      "title": "gravity_effectors",
+      "role": "interface",
+      "description": "src/environment/gravity/gravity_effectors.jl. Exposes ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, aerobraking_gravity_force_ii, j2_secular_rates.",
+      "x": 16,
+      "y": 256,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/environment",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-13-4",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-13-4",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-14",
+      "title": "Scripts Contracts",
+      "role": "component",
+      "description": "0 exports and 15 imports observed under scripts.",
+      "x": 570,
+      "y": 1390,
+      "width": 470,
+      "height": 222,
+      "tags": [
+        "scripts",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-14",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-14",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-15",
+      "title": "Mission Contracts",
+      "role": "component",
+      "description": "10 exports and 11 imports observed under src/mission.",
+      "x": 50,
+      "y": 1610,
+      "width": 470,
+      "height": 222,
+      "tags": [
+        "src/mission",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-15",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-15",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-15-1",
+      "title": "policy_types",
+      "role": "interface",
+      "description": "src/mission/operations/aerobraking_policy/policy_types.jl. Exposes AerobrakingStrategyKind, E_EDG, T_EDG, AbstractAerobrakingPolicySelector, AerobrakingPolicyConfig, DRLPolicyAdapterStub, DefaultAerobrakingPolicySelector, AerobrakingPassSchedule, strategy_for_pass, select_strategy.",
+      "x": 16,
+      "y": 46,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/mission",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-15-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-15-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-16",
+      "title": "Io Contracts",
+      "role": "component",
+      "description": "18 exports and 18 imports observed under src/io.",
+      "x": 570,
+      "y": 1610,
+      "width": 470,
+      "height": 438,
+      "tags": [
+        "src/io",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-16",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-16",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-16-1",
+      "title": "io_outputs",
+      "role": "interface",
+      "description": "src/io/outputs/io_outputs.jl. Exposes _append_saved_segment!, _append_series_columns!, _build_results_dataframe, _write_results_csv!, _write_results_bundle!.",
+      "x": 16,
+      "y": 46,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/io",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-16-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-16-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-16-2",
+      "title": "io_serialization",
+      "role": "interface",
+      "description": "src/io/serialization/io_serialization.jl. Exposes _atomic_write_file, _sha256_hex, _write_checkpoint!, _load_checkpoint, _clear_checkpoint!.",
+      "x": 16,
+      "y": 116,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/io",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-16-2",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-16-2",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-16-3",
+      "title": "io_config",
+      "role": "interface",
+      "description": "src/io/config/io_config.jl. Exposes _results_bundle_prefix, _results_csv_path, _collision_results_csv_path, _checkpoint_directory, _checkpoint_paths.",
+      "x": 16,
+      "y": 186,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/io",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-16-3",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-16-3",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-16-4",
+      "title": "io_logging",
+      "role": "interface",
+      "description": "src/io/logging/io_logging.jl. Exposes io_log_enabled, io_log_info, io_log_warn.",
+      "x": 16,
+      "y": 256,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/io",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-16-4",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-16-4",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-17",
+      "title": "Data Contracts",
+      "role": "component",
+      "description": "0 exports and 11 imports observed under data.",
+      "x": 50,
+      "y": 1830,
+      "width": 470,
+      "height": 222,
+      "tags": [
+        "data",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-17",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-17",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-18",
+      "title": "SpaceAGORACLI Contracts",
+      "role": "component",
+      "description": "5 exports and 3 imports observed under src/cli.",
+      "x": 570,
+      "y": 1830,
+      "width": 470,
+      "height": 222,
+      "tags": [
+        "src/cli",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-18",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-18",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-18-1",
+      "title": "spaceagora_cli",
+      "role": "interface",
+      "description": "src/cli/spaceagora_cli.jl. Exposes AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli.",
+      "x": 16,
+      "y": 46,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/cli",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-18-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-18-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-19",
+      "title": "ExampleControlHookTemplate Contracts",
+      "role": "component",
+      "description": "0 exports and 7 imports observed under templates.",
+      "x": 50,
+      "y": 2050,
+      "width": 470,
+      "height": 222,
+      "tags": [
+        "templates",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-19",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-19",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-20",
+      "title": "PublicAPISymbols Contracts",
+      "role": "component",
+      "description": "4 exports and 7 imports observed under docs.",
+      "x": 570,
+      "y": 2050,
+      "width": 470,
+      "height": 222,
+      "tags": [
+        "docs",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-20",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-20",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-20-1",
+      "title": "public_api_symbols",
+      "role": "interface",
+      "description": "docs/public_api_symbols.jl. Exposes PUBLIC_API_SECTIONS, public_api_specs, render_public_api_markdown, undocumented_public_api_specs.",
+      "x": 16,
+      "y": 46,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "docs",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-20-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-20-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-21",
+      "title": "SpaceAGORAGRAMSuiteExt Contracts",
+      "role": "component",
+      "description": "0 exports and 3 imports observed under ext.",
+      "x": 50,
+      "y": 2270,
+      "width": 470,
+      "height": 222,
+      "tags": [
+        "ext",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-21",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-21",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-22",
+      "title": "README Contracts",
+      "role": "component",
+      "description": "0 exports and 1 imports observed under README.",
+      "x": 570,
+      "y": 2270,
+      "width": 470,
+      "height": 222,
+      "tags": [
+        "README",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-22",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-22",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-23",
+      "title": "Precompile Workload Contracts",
+      "role": "component",
+      "description": "0 exports and 0 imports observed under src/precompile_workload.",
+      "x": 50,
+      "y": 2490,
+      "width": 470,
+      "height": 222,
+      "tags": [
+        "src/precompile_workload",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-23",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-23",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-24",
+      "title": "SpaceAGORA Contracts",
+      "role": "component",
+      "description": "73 exports and 14 imports observed under src/SpaceAGORA.",
+      "x": 570,
+      "y": 2490,
+      "width": 470,
+      "height": 222,
+      "tags": [
+        "src/SpaceAGORA",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-24",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-24",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-interface-24-1",
+      "title": "SpaceAGORA",
+      "role": "interface",
+      "description": "src/SpaceAGORA.jl. Exposes ParallelProfile, ParallelProfileConfig, parse_parallel_profile, parallel_profile_name, profile_config, profile_env_pairs, with_parallel_profile, OuterRouteFeatures, OuterRouteTuning, OuterRouteState, reset_outer_route_state!, outer_route_signature, outer_route_stats_snapshot, default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!, ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig, simulation_engine_config_from_env, prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!, AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractControlEffectorModel, AbstractEphemeridesModel, AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel, StateSample, PlanetFrameSample, AtmosphereSample, SolarEphemerisSample, ThirdBodyEphemerisSample, EnvironmentSample, EffectorEnvironmentRequirements, NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel, NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!, SimpleEphemeridesModel, make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment, calcForceTorque, wrench, environment_requirements, solver_partition, gravity_backbone_structure, gravity_backbone_acceleration_ii, gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii, getDensity, getDensityBatch!, calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate, VerificationRequest, VerificationResult, run_verification, run_verification_cli, run_study, run_simulation, AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli.",
+      "x": 16,
+      "y": 46,
+      "width": 430,
+      "height": 58,
+      "tags": [
+        "src/SpaceAGORA",
+        "interface",
+        "repository"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "iface-in-repo-software-interface-24-1",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "iface-out-repo-software-interface-24-1",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "repo-software-component-25",
+      "title": "Startup Contracts",
+      "role": "component",
+      "description": "0 exports and 0 imports observed under startup.",
+      "x": 50,
+      "y": 2710,
+      "width": 470,
+      "height": 222,
+      "tags": [
+        "startup",
+        "contracts"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "contracts-in-25",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "contracts-out-25",
+          "name": "Publishes",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "repo-software-edge-1",
+      "sourceNodeId": "repo-software-interface-6-10",
+      "targetNodeId": "repo-software-interface-6-1",
+      "sourcePortId": "iface-out-repo-software-interface-6-10",
+      "targetPortId": "iface-in-repo-software-interface-6-1",
+      "kind": "data",
+      "label": "Code contract x2"
+    },
+    {
+      "id": "repo-software-edge-2",
+      "sourceNodeId": "repo-software-interface-6-10",
+      "targetNodeId": "repo-software-interface-6-2",
+      "sourcePortId": "iface-out-repo-software-interface-6-10",
+      "targetPortId": "iface-in-repo-software-interface-6-2",
+      "kind": "data",
+      "label": "Code contract x2"
+    },
+    {
+      "id": "repo-software-edge-3",
+      "sourceNodeId": "repo-software-interface-6-10",
+      "targetNodeId": "repo-software-interface-6-8",
+      "sourcePortId": "iface-out-repo-software-interface-6-10",
+      "targetPortId": "iface-in-repo-software-interface-6-8",
+      "kind": "data",
+      "label": "Code contract x2"
+    },
+    {
+      "id": "repo-software-edge-4",
+      "sourceNodeId": "repo-software-interface-6-10",
+      "targetNodeId": "repo-software-interface-6-5",
+      "sourcePortId": "iface-out-repo-software-interface-6-10",
+      "targetPortId": "iface-in-repo-software-interface-6-5",
+      "kind": "data",
+      "label": "Code contract x2"
+    },
+    {
+      "id": "repo-software-edge-68",
+      "sourceNodeId": "repo-software-interface-12-1",
+      "targetNodeId": "repo-software-interface-12-5",
+      "sourcePortId": "iface-out-repo-software-interface-12-1",
+      "targetPortId": "iface-in-repo-software-interface-12-5",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-69",
+      "sourceNodeId": "repo-software-interface-12-1",
+      "targetNodeId": "repo-software-interface-12-6",
+      "sourcePortId": "iface-out-repo-software-interface-12-1",
+      "targetPortId": "iface-in-repo-software-interface-12-6",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-70",
+      "sourceNodeId": "repo-software-interface-12-1",
+      "targetNodeId": "repo-software-interface-12-7",
+      "sourcePortId": "iface-out-repo-software-interface-12-1",
+      "targetPortId": "iface-in-repo-software-interface-12-7",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-71",
+      "sourceNodeId": "repo-software-interface-12-1",
+      "targetNodeId": "repo-software-interface-12-8",
+      "sourcePortId": "iface-out-repo-software-interface-12-1",
+      "targetPortId": "iface-in-repo-software-interface-12-8",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-79",
+      "sourceNodeId": "repo-software-interface-6-4",
+      "targetNodeId": "repo-software-interface-24-1",
+      "sourcePortId": "iface-out-repo-software-interface-6-4",
+      "targetPortId": "iface-in-repo-software-interface-24-1",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-80",
+      "sourceNodeId": "repo-software-interface-6-1",
+      "targetNodeId": "repo-software-interface-24-1",
+      "sourcePortId": "iface-out-repo-software-interface-6-1",
+      "targetPortId": "iface-in-repo-software-interface-24-1",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-81",
+      "sourceNodeId": "repo-software-interface-6-10",
+      "targetNodeId": "repo-software-interface-6-4",
+      "sourcePortId": "iface-out-repo-software-interface-6-10",
+      "targetPortId": "iface-in-repo-software-interface-6-4",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-82",
+      "sourceNodeId": "repo-software-interface-6-10",
+      "targetNodeId": "repo-software-interface-6-6",
+      "sourcePortId": "iface-out-repo-software-interface-6-10",
+      "targetPortId": "iface-in-repo-software-interface-6-6",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-83",
+      "sourceNodeId": "repo-software-interface-6-10",
+      "targetNodeId": "repo-software-interface-6-7",
+      "sourcePortId": "iface-out-repo-software-interface-6-10",
+      "targetPortId": "iface-in-repo-software-interface-6-7",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-84",
+      "sourceNodeId": "repo-software-interface-6-10",
+      "targetNodeId": "repo-software-interface-6-12",
+      "sourcePortId": "iface-out-repo-software-interface-6-10",
+      "targetPortId": "iface-in-repo-software-interface-6-12",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-85",
+      "sourceNodeId": "repo-software-interface-6-10",
+      "targetNodeId": "repo-software-interface-6-11",
+      "sourcePortId": "iface-out-repo-software-interface-6-10",
+      "targetPortId": "iface-in-repo-software-interface-6-11",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-86",
+      "sourceNodeId": "repo-software-interface-6-10",
+      "targetNodeId": "repo-software-interface-6-9",
+      "sourcePortId": "iface-out-repo-software-interface-6-10",
+      "targetPortId": "iface-in-repo-software-interface-6-9",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-87",
+      "sourceNodeId": "repo-software-interface-6-10",
+      "targetNodeId": "repo-software-interface-6-3",
+      "sourcePortId": "iface-out-repo-software-interface-6-10",
+      "targetPortId": "iface-in-repo-software-interface-6-3",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-137",
+      "sourceNodeId": "repo-software-interface-7-1",
+      "targetNodeId": "repo-software-interface-7-4",
+      "sourcePortId": "iface-out-repo-software-interface-7-1",
+      "targetPortId": "iface-in-repo-software-interface-7-4",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-138",
+      "sourceNodeId": "repo-software-interface-7-1",
+      "targetNodeId": "repo-software-interface-7-6",
+      "sourcePortId": "iface-out-repo-software-interface-7-1",
+      "targetPortId": "iface-in-repo-software-interface-7-6",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-139",
+      "sourceNodeId": "repo-software-interface-7-1",
+      "targetNodeId": "repo-software-interface-7-7",
+      "sourcePortId": "iface-out-repo-software-interface-7-1",
+      "targetPortId": "iface-in-repo-software-interface-7-7",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-140",
+      "sourceNodeId": "repo-software-interface-7-1",
+      "targetNodeId": "repo-software-interface-7-2",
+      "sourcePortId": "iface-out-repo-software-interface-7-1",
+      "targetPortId": "iface-in-repo-software-interface-7-2",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-141",
+      "sourceNodeId": "repo-software-interface-7-1",
+      "targetNodeId": "repo-software-interface-7-8",
+      "sourcePortId": "iface-out-repo-software-interface-7-1",
+      "targetPortId": "iface-in-repo-software-interface-7-8",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-232",
+      "sourceNodeId": "repo-software-interface-24-1",
+      "targetNodeId": "repo-software-interface-10-1",
+      "sourcePortId": "iface-out-repo-software-interface-24-1",
+      "targetPortId": "iface-in-repo-software-interface-10-1",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-233",
+      "sourceNodeId": "repo-software-interface-24-1",
+      "targetNodeId": "repo-software-interface-18-1",
+      "sourcePortId": "iface-out-repo-software-interface-24-1",
+      "targetPortId": "iface-in-repo-software-interface-18-1",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-235",
+      "sourceNodeId": "repo-software-interface-24-1",
+      "targetNodeId": "repo-software-interface-8-2",
+      "sourcePortId": "iface-out-repo-software-interface-24-1",
+      "targetPortId": "iface-in-repo-software-interface-8-2",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-237",
+      "sourceNodeId": "repo-software-interface-24-1",
+      "targetNodeId": "repo-software-interface-3-2",
+      "sourcePortId": "iface-out-repo-software-interface-24-1",
+      "targetPortId": "iface-in-repo-software-interface-3-2",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-241",
+      "sourceNodeId": "repo-software-interface-9-6",
+      "targetNodeId": "repo-software-interface-9-5",
+      "sourcePortId": "iface-out-repo-software-interface-9-6",
+      "targetPortId": "iface-in-repo-software-interface-9-5",
+      "kind": "data",
+      "label": "Code contract"
+    },
+    {
+      "id": "repo-software-edge-308",
+      "sourceNodeId": "repo-software-interface-1-1",
+      "targetNodeId": "repo-software-interface-24-1",
+      "sourcePortId": "iface-out-repo-software-interface-1-1",
+      "targetPortId": "iface-in-repo-software-interface-24-1",
+      "kind": "data",
+      "label": "Code contract"
+    }
+  ],
+  "viewKind": "data-flow"
+}

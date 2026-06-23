@@ -1,0 +1,1048 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{listings}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue,
+  pdftitle={SpaceAGORA Autonomy and GNC Interface Control Document},
+  pdfauthor={SpaceAGORA Interface Inspection}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{SpaceAGORA Autonomy and GNC ICD}
+\rhead{\thepage}
+
+\setlist[itemize]{leftmargin=1.4em}
+\setlist[enumerate]{leftmargin=1.6em}
+
+\lstdefinestyle{code}{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  backgroundcolor=\color{gray!6}
+}
+\lstset{style=code}
+
+\title{SpaceAGORA Autonomy and GNC\\Interface Control Document}
+\author{SpaceAGORA Interface Inspection}
+\date{\today}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Purpose}
+
+This document captures the code interfaces needed to use SpaceAGORA as the
+physics engine for decision-making software stacks, GNC autonomy stacks,
+navigation and estimation systems, control systems, and custom dynamics models.
+
+The intended integration pattern is:
+
+\begin{lstlisting}
+External autonomy stack
+  -> NavigationModel callbacks for sensors and estimators
+  -> GuidanceModel callbacks for decisions and mission policy
+  -> ControlModel callbacks for command execution and actuator behavior
+  -> DynamicsModel effectors only for physical forces and torques
+  -> run_simulation(SimulationConfiguration)
+\end{lstlisting}
+
+Guidance should not mutate dynamics directly. Guidance/control coupling should
+cross typed command boundaries such as \texttt{PropulsiveManeuverCommand} and
+\texttt{AerobrakingControlCommand}.
+
+\section{Top-Level Simulation Boundary}
+
+The primary execution entry point is:
+
+\begin{lstlisting}
+SpaceAGORA.run_simulation(config::SimulationConfiguration)
+\end{lstlisting}
+
+The \texttt{SimulationConfiguration} object is the top-level interface object
+that binds the physics environment, spacecraft, GNC callback models, runtime
+settings, initial time, and solver tolerances.
+
+Relevant source:
+\begin{itemize}
+  \item \texttt{src/SpaceAGORA.jl}
+  \item \texttt{src/core/state/simulation\_configuration.jl}
+\end{itemize}
+
+\texttt{SimulationConfiguration} contains:
+
+\begin{lstlisting}
+file_paths
+simulation_settings
+mission_configuration
+environment_model
+dynamics_model
+guidance_model
+navigation_model
+control_model
+initial_time
+integration_tolerances
+\end{lstlisting}
+
+\section{Simulation Configuration Interfaces}
+
+\subsection{EnvironmentModel}
+
+\texttt{EnvironmentModel} wires the physical environment:
+
+\begin{lstlisting}
+EnvironmentModel(
+    planet,
+    EI,
+    density_model,
+    ephemerides_model,
+    topography,
+    topo_degree,
+    topo_order,
+    wind,
+    thermal_model,
+)
+\end{lstlisting}
+
+Use this for planet/body selection, atmospheric model selection, ephemerides,
+topography, wind enablement, and thermal model selection.
+
+\subsection{DynamicsModel}
+
+\texttt{DynamicsModel} wires spacecraft and physical force/torque effectors:
+
+\begin{lstlisting}
+DynamicsModel([spacecraft], (dynamic_effector_1, dynamic_effector_2))
+\end{lstlisting}
+
+Use this only for physical dynamics contributors such as gravity, atmospheric
+forces, solar radiation pressure, perturbations, and custom physical force or
+torque models.
+
+\subsection{NavigationModel}
+
+\texttt{NavigationModel} wires sensor and estimator callbacks:
+
+\begin{lstlisting}
+NavigationModel(
+    navigation_effectors=(nav_model,),
+    navigation_rates=[rate_seconds],
+)
+\end{lstlisting}
+
+Use this for sensors, estimators, relative navigation, inter-agent measurement
+models, communication graph state, and navigation data products.
+
+\subsection{GuidanceModel}
+
+\texttt{GuidanceModel} wires decision and mission-policy callbacks:
+
+\begin{lstlisting}
+GuidanceModel(
+    guidance_effectors=(guidance_model,),
+    guidance_rates=[rate_seconds],
+)
+\end{lstlisting}
+
+Use this for mission decisions, mode logic, trajectory planning, maneuver
+planning, aerobraking policy selection, and autonomy decision outputs.
+
+\subsection{ControlModel}
+
+\texttt{ControlModel} wires control and actuation callbacks:
+
+\begin{lstlisting}
+ControlModel(
+    control_effectors=(controller,),
+    control_rates=[rate_seconds],
+)
+\end{lstlisting}
+
+Use this for command execution, actuator allocation, reaction wheel control,
+thruster scheduling, attitude control, force/torque actuation, and propellant
+mass flow.
+
+\section{Spacecraft Object and Motion Configuration}
+
+SpaceAGORA represents each simulated vehicle with a \texttt{SpacecraftModel}.
+The spacecraft object defines the vehicle structure, mass properties, hardware
+attachment points, and initial translational/rotational state. The spacecraft
+does not move by itself; motion is produced by the integrator from the
+spacecraft initial condition plus the forces, torques, control outputs, and
+mission settings configured around it.
+
+Relevant source:
+\begin{itemize}
+  \item \texttt{src/vehicle/spacecraft/model.jl}
+  \item \texttt{docs/src/user/simulation\_configuration.md}
+  \item \texttt{examples/AGORA\_Earth.jl}
+  \item \texttt{examples/Earth\_Thruster\_Test.jl}
+  \item \texttt{examples/Earth\_RW\_Test.jl}
+\end{itemize}
+
+\subsection{SpacecraftModel}
+
+The spacecraft container is:
+
+\begin{lstlisting}
+SpacecraftModel(
+    joints,
+    links,
+    root,
+    instant_actuation,
+    prop_mass,
+    inertia_tensor,
+    n_reaction_wheels,
+    n_thrusters,
+    initial_condition,
+    id,
+)
+\end{lstlisting}
+
+The key fields are:
+
+\begin{longtable}{>{\ttfamily}p{0.26\linewidth}p{0.66\linewidth}}
+\textbf{Field} & \textbf{Role} \\
+\hline
+joints & Structural joints connecting links in a multi-body vehicle model. \\
+links & List of body links. The constructor ensures the root link is included. \\
+root & Main bus or core body link. \\
+instant\_actuation & Whether control inputs such as panel angle changes are applied instantly. \\
+dry\_mass & Computed by summing link masses in the constructor. \\
+prop\_mass & Propellant mass available for maneuvers. \\
+inertia\_tensor & Spacecraft body-frame inertia tensor used by attitude dynamics. \\
+n\_reaction\_wheels & Number of reaction wheels represented in the model. \\
+n\_thrusters & Number of thrusters represented in the model. \\
+initial\_condition & Orbit, Cartesian state, attitude, and angular-rate initial condition. \\
+id & Spacecraft identifier for multi-spacecraft simulations. \\
+\end{longtable}
+
+A minimal single-body spacecraft can be constructed as:
+
+\begin{lstlisting}
+root = Link(
+    root=true,
+    dims=[1.0, 1.0, 1.0],
+    ref_area=1.0,
+    m=100.0,
+)
+
+ic = InitialCondition(
+    ra=planet.Rp_e + 700e3,
+    rp=planet.Rp_e + 400e3,
+    i=28.5,
+    omega=10.0,
+    Omega=20.0,
+    nu=0.0,
+)
+
+spacecraft = SpacecraftModel(
+    root=root,
+    links=[root],
+    prop_mass=20.0,
+    initial_condition=ic,
+    id=1,
+)
+\end{lstlisting}
+
+In the actual Julia source, the angular orbital-element names use Greek
+identifiers \texttt{omega}, \texttt{Omega}, and \texttt{nu} in examples when
+rendered here for portability; repository examples may use the corresponding
+Unicode symbols directly.
+
+\subsection{Link}
+
+\texttt{Link} represents a body element such as a bus, panel, appendage, or
+component body. Important fields include:
+
+\begin{longtable}{>{\ttfamily}p{0.26\linewidth}p{0.66\linewidth}}
+\textbf{Field} & \textbf{Role} \\
+\hline
+root & Marks the main bus/core body. \\
+r, q & Link position and attitude. For the root, these are inertial/root states; for non-root links they are body-relative. \\
+rdot, omega & Link velocity and angular velocity. \\
+dims & Box dimensions used for simple geometry and inertia defaults. \\
+ref\_area & Reference area used by aerodynamic models. \\
+m & Link mass. \\
+mass & Link mass matrix. \\
+inertia & Link inertia matrix. \\
+a\_b, b\_b & Body-frame left/right extents used for geometry and joints. \\
+alpha, beta, theta & Aerodynamic attitude/flow angles. \\
+reflection\_coefficient & Surface optical/aerodynamic reflection coefficient. \\
+rw\_assembly & Reaction wheel assembly state and limits. \\
+net\_force, net\_torque & Per-link accumulated force and torque buffers. \\
+attitude\_control\_rate & Link-level attitude control cadence where used. \\
+SRP\_facets & Facets for solar radiation pressure models. \\
+J\_thruster & Thruster allocation/Jacobian matrix. \\
+thrusters & Thruster hardware attached to the link. \\
+magnets & Magnetic dipoles attached to the link. \\
+\end{longtable}
+
+The constructor computes default mass and inertia values from mass and box
+dimensions when explicit matrices are not supplied.
+
+\subsection{Joint}
+
+\texttt{Joint} connects two \texttt{Link} objects for multi-body spacecraft.
+It stores body-frame connection points, translational/rotational stiffness,
+damping, and displacement state:
+
+\begin{lstlisting}
+Joint(
+    link1,
+    link2;
+    p1=link1.b_b,
+    p2=link2.a_b,
+    Kx=...,
+    Kt=...,
+    Cx=...,
+    Ct=...,
+)
+\end{lstlisting}
+
+Use joints when the spacecraft model needs articulated panels, flexible
+appendages, or multi-body geometry that is more detailed than a single rigid
+root link.
+
+\subsection{Initial Conditions}
+
+SpaceAGORA supports Keplerian and Cartesian initial conditions.
+
+Keplerian mode:
+
+\begin{lstlisting}
+ic = InitialCondition(
+    ra=planet.Rp_e + 1200e3,   # apoapsis radius from planet center, m
+    rp=planet.Rp_e + 400e3,    # periapsis radius from planet center, m
+    i=28.5,                    # inclination, deg
+    omega=10.0,                # argument of periapsis, deg
+    Omega=20.0,                # right ascension of ascending node, deg
+    nu=0.0,                    # true anomaly, deg
+    q=q0,                      # initial attitude quaternion
+    ang_vel=w0,                # initial body angular velocity, rad/s
+)
+\end{lstlisting}
+
+The keyword constructor also supports semi-major axis and eccentricity:
+
+\begin{lstlisting}
+ic = InitialCondition(
+    a=planet.Rp_e + 800e3,
+    e=0.001,
+    i=28.5,
+    omega=10.0,
+    Omega=20.0,
+    nu=0.0,
+)
+\end{lstlisting}
+
+Cartesian mode:
+
+\begin{lstlisting}
+ic = CartesianInitialCondition(
+    pos=[6_778_137.0, 0.0, 0.0],  # inertial position, m
+    vel=[0.0, 7784.0, 0.0],       # inertial velocity, m/s
+    q=q0,
+    ang_vel=w0,
+)
+\end{lstlisting}
+
+All Keplerian angular inputs are accepted in degrees and converted internally
+to radians.
+
+\subsection{How Spacecraft Motion Is Produced}
+
+The propagation path is:
+
+\begin{enumerate}
+  \item The spacecraft initial condition seeds the integrator state.
+  \item \texttt{MissionConfiguration} selects mission duration, orbit count,
+        Keplerian/two-phase mode, output cadence, and whether attitude dynamics
+        are enabled.
+  \item \texttt{EnvironmentModel} provides planet, atmosphere, ephemerides,
+        topography, wind, and thermal context.
+  \item \texttt{DynamicsModel.dynamic\_effectors} contributes physical forces
+        and torques through \texttt{wrench} or \texttt{calcForceTorque}.
+  \item \texttt{ControlModel.control\_effectors} contributes commanded forces,
+        torques, and mass flow through \texttt{calcControlForceTorque} and
+        \texttt{calcControlMassFlowRate}.
+  \item The ODE RHS sums physical and control forces/torques and advances the
+        spacecraft translational state, mass state, heat state, and, when
+        enabled, attitude state.
+\end{enumerate}
+
+Translational motion is controlled by initial position/velocity and the net
+force model. Rotational motion is controlled by initial attitude/angular rate,
+net body torque, inertia, and the \texttt{orientation\_sim} mission setting.
+
+\subsection{Translational Motion Configuration}
+
+To configure where the spacecraft goes, configure:
+
+\begin{lstlisting}
+spacecraft.initial_condition
+SimulationConfiguration.environment_model
+SimulationConfiguration.dynamics_model
+SimulationConfiguration.control_model
+MissionConfiguration(
+    mission_type=MissionTime,
+    mission_time=...,
+    keplerian=true_or_false,
+    orientation_sim=false,
+)
+\end{lstlisting}
+
+Example:
+
+\begin{lstlisting}
+dynamics = DynamicsModel(
+    [spacecraft],
+    (
+        InverseSquaredJ2GravityModel(),
+        AerodynamicCoefficientConstant(...),
+    ),
+)
+\end{lstlisting}
+
+The physical effectors determine truth acceleration. Navigation does not move
+the truth state.
+
+\subsection{Rotational Motion Configuration}
+
+To propagate attitude, set:
+
+\begin{lstlisting}
+MissionConfiguration(
+    orientation_sim=true,
+    ...
+)
+\end{lstlisting}
+
+Then provide an initial quaternion and angular rate in the spacecraft initial
+condition:
+
+\begin{lstlisting}
+q0 = normalize(SVector{4, Float64}(0.2, -0.1, 0.15, 0.95))
+w0 = SVector{3, Float64}(0.003, -0.004, 0.005)
+
+ic = InitialCondition(a, e, i, omega, Omega, nu, q0, w0)
+\end{lstlisting}
+
+Rotational motion responds to body-frame torques from dynamics and control
+effectors, as well as spacecraft inertia and link-level geometry where the
+selected models use it.
+
+\subsection{Navigation, Guidance, and Control Effects on Motion}
+
+Navigation callbacks observe and estimate state. They should update estimator,
+sensor, or communication-model state, but they should not directly advance the
+truth state.
+
+Guidance callbacks make decisions and produce commands or plans. They should
+not directly mutate physical dynamics. For aerobraking and propulsive maneuver
+logic, use typed command boundaries such as:
+
+\begin{lstlisting}
+PropulsiveManeuverCommand
+PropulsiveBurnPlan
+AerobrakingControlCommand
+\end{lstlisting}
+
+Control callbacks execute commands. Motion changes when control effectors
+return nonzero force, torque, or mass flow:
+
+\begin{lstlisting}
+calcControlForceTorque(model, u, p, sat_idx, t)
+calcControlMassFlowRate(model, u, p, sat_idx, t)
+\end{lstlisting}
+
+\subsection{Minimal End-to-End Spacecraft Setup}
+
+The following is the minimal shape of a spacecraft simulation setup:
+
+\begin{lstlisting}
+using SpaceAGORA
+const SM = SpaceAGORA.SimulationModel
+
+planet = SM.make_no_gram_planet(:earth)
+
+root = SM.Link(
+    root=true,
+    dims=[1.0, 1.0, 1.0],
+    ref_area=1.0,
+    m=100.0,
+)
+
+ic = SM.InitialCondition(
+    ra=planet.Rp_e + 700e3,
+    rp=planet.Rp_e + 400e3,
+    i=28.5,
+    omega=10.0,
+    Omega=20.0,
+    nu=0.0,
+)
+
+spacecraft = SM.SpacecraftModel(
+    root=root,
+    links=[root],
+    prop_mass=20.0,
+    initial_condition=ic,
+    id=1,
+)
+
+config = SM.SimulationConfiguration(
+    mission_configuration=SM.MissionConfiguration(
+        mission_type=SM.MissionTime,
+        mission_time=3600.0,
+        keplerian=true,
+        orientation_sim=false,
+        number_of_orbits=1,
+        num_steps_to_save=1000,
+        data_rate=10.0,
+    ),
+    environment_model=SM.EnvironmentModel(
+        planet=planet,
+        EI=120.0,
+        density_model=SM.NoAtmosphereModel(),
+        ephemerides_model=SM.SimpleEphemeridesModel(),
+        thermal_model=SM.MaxwellianHeat(
+            thermal_accomodation_factor=1.0,
+            planet=planet,
+        ),
+        topography=false,
+        wind=false,
+    ),
+    dynamics_model=SM.DynamicsModel(
+        [spacecraft],
+        (SM.InverseSquaredJ2GravityModel(),),
+    ),
+    guidance_model=SM.GuidanceModel(
+        guidance_effectors=(),
+        guidance_rates=Float64[],
+    ),
+    navigation_model=SM.NavigationModel(
+        navigation_effectors=(),
+        navigation_rates=Float64[],
+    ),
+    control_model=SM.ControlModel(
+        control_effectors=(),
+        control_rates=Float64[],
+    ),
+    initial_time=SM.InitialTime(
+        year=2024,
+        month=1,
+        day=1,
+        hour=0,
+        minute=0,
+        second=0.0,
+    ),
+    integration_tolerances=SM.IntegrationTolerances(),
+)
+
+sol = SpaceAGORA.run_simulation(config; return_solution=true)
+\end{lstlisting}
+
+\section{Dynamic Physics Effector Interface}
+
+For new physics models, prefer the typed \texttt{wrench} interface.
+
+\begin{lstlisting}
+struct MyEffector <: SpaceAGORA.AbstractForceTorqueModel
+    # model parameters
+end
+
+SpaceAGORA.environment_requirements(model::MyEffector) =
+    SpaceAGORA.EffectorEnvironmentRequirements(
+        planet_frame=true,
+        atmosphere=false,
+        solar=false,
+        third_body_names=(),
+    )
+
+function SpaceAGORA.wrench(
+    model::MyEffector,
+    x::SpaceAGORA.StateSample,
+    env::SpaceAGORA.EnvironmentSample,
+    t::Float64,
+)
+    force_ii = ...
+    torque_body = ...
+    return force_ii, torque_body
+end
+\end{lstlisting}
+
+The returned force is inertial-frame SI force. The returned torque is body-frame
+SI torque.
+
+Relevant source:
+\begin{itemize}
+  \item \texttt{src/core/types/effector\_sampling.jl}
+  \item \texttt{src/simulation/engine/dynamics\_rhs.jl}
+  \item \texttt{templates/force\_torque\_model\_template.jl}
+\end{itemize}
+
+\subsection{StateSample}
+
+\texttt{StateSample} provides:
+
+\begin{lstlisting}
+pos_ii       # inertial position, m
+vel_ii       # inertial velocity, m/s
+mass_kg      # spacecraft mass, kg
+q_ib         # inertial-to-body attitude quaternion, when available
+omega_body   # body-frame angular rate, when available
+spacecraft   # typed spacecraft model handle
+\end{lstlisting}
+
+\subsection{EnvironmentSample}
+
+\texttt{EnvironmentSample} provides optional sampled environment fields
+requested by \texttt{environment\_requirements}:
+
+\begin{lstlisting}
+planet
+planet_frame
+atmosphere
+solar
+third_bodies
+\end{lstlisting}
+
+\subsection{Environment Requirements}
+
+Use \texttt{EffectorEnvironmentRequirements} to request only the sampled data
+required by a physics effector:
+
+\begin{lstlisting}
+EffectorEnvironmentRequirements(
+    planet_frame=true,
+    atmosphere=true,
+    solar=false,
+    third_body_names=("Sun", "Moon"),
+)
+\end{lstlisting}
+
+\subsection{Solver Partitioning}
+
+Optional solver partition hooks:
+
+\begin{lstlisting}
+SpaceAGORA.solver_partition(model) -> :explicit | :implicit
+SpaceAGORA.gravity_backbone_structure(model) ->
+    :unsupported | :position_only_static_gravity
+SpaceAGORA.gravity_backbone_acceleration_ii(model, x, env, t)
+SpaceAGORA.gravity_backbone_kick_structure(model) ->
+    :unsupported | :velocity_kick_explicit
+SpaceAGORA.gravity_backbone_kick_acceleration_ii(model, x, env, t)
+\end{lstlisting}
+
+Use these only when a dynamics model must participate in specialized solver
+paths.
+
+\subsection{Legacy Force/Torque Hook}
+
+The legacy hook still exists:
+
+\begin{lstlisting}
+SpaceAGORA.calcForceTorque(model, x, p, sat_idx) ->
+    (force_n, torque_n_m)
+\end{lstlisting}
+
+Use \texttt{wrench} for new integrations where possible.
+
+\section{Atmosphere and Density Model Interface}
+
+Custom density models subtype:
+
+\begin{lstlisting}
+SpaceAGORA.AbstractDensityModel
+\end{lstlisting}
+
+Required scalar hook:
+
+\begin{lstlisting}
+SpaceAGORA.getDensity(model, h, lat, lon, el_time, wind[, p]) ->
+    (rho, temperature, wind_vec)
+\end{lstlisting}
+
+Optional batch hook:
+
+\begin{lstlisting}
+SpaceAGORA.getDensityBatch!(
+    rhos,
+    Ts,
+    winds,
+    model,
+    hs,
+    lats,
+    lons,
+    el_time,
+    wind,
+    p,
+)
+\end{lstlisting}
+
+Register the model as:
+
+\begin{lstlisting}
+environment_model.density_model
+\end{lstlisting}
+
+Relevant source:
+\begin{itemize}
+  \item \texttt{src/SpaceAGORA.jl}
+  \item \texttt{templates/density\_model\_template.jl}
+\end{itemize}
+
+\section{Navigation and Estimation Interface}
+
+Navigation models are periodic callback models. They are invoked once per
+configured navigation rate for each spacecraft index.
+
+Implement:
+
+\begin{lstlisting}
+SpaceAGORA.SimulationModel.calcNavigationEffect!(
+    model,
+    u,
+    p,
+    t::Float64,
+    sat_idx::Int,
+)
+\end{lstlisting}
+
+Register:
+
+\begin{lstlisting}
+NavigationModel(
+    navigation_effectors=(model,),
+    navigation_rates=[rate_seconds],
+)
+\end{lstlisting}
+
+The callback receives:
+
+\begin{lstlisting}
+model    # user navigation model instance
+u        # integrator state
+p        # ODE/runtime parameters
+t        # simulation time, s
+sat_idx  # spacecraft index
+\end{lstlisting}
+
+Appropriate responsibilities:
+\begin{itemize}
+  \item sensor simulation
+  \item measurement generation
+  \item estimator updates
+  \item relative navigation
+  \item covariance tracking
+  \item inter-agent observation state
+  \item communication graph updates
+\end{itemize}
+
+Relevant source:
+\begin{itemize}
+  \item \texttt{src/gnc/navigation/navigation\_hooks.jl}
+  \item \texttt{src/simulation/callbacks/navigation\_guidance\_callbacks.jl}
+  \item \texttt{examples/Earth\_Navigation.jl}
+\end{itemize}
+
+Note: this hook exists through \texttt{SpaceAGORA.SimulationModel}; it is not
+promoted to the root API in the same way as \texttt{wrench} and control hooks.
+
+\section{Guidance and Decision-Making Interface}
+
+Guidance models are periodic callback models. They are invoked once per
+configured guidance rate for each spacecraft index.
+
+Implement:
+
+\begin{lstlisting}
+SpaceAGORA.SimulationModel.calcGuidanceEffect!(
+    model,
+    u,
+    p,
+    t::Float64,
+    sat_idx::Int,
+)
+\end{lstlisting}
+
+Register:
+
+\begin{lstlisting}
+GuidanceModel(
+    guidance_effectors=(model,),
+    guidance_rates=[rate_seconds],
+)
+\end{lstlisting}
+
+Appropriate responsibilities:
+\begin{itemize}
+  \item mission policy decisions
+  \item mode selection
+  \item maneuver planning
+  \item trajectory guidance
+  \item target selection
+  \item aerobraking strategy selection
+  \item command generation for downstream control
+\end{itemize}
+
+Relevant source:
+\begin{itemize}
+  \item \texttt{src/gnc/guidance/guidance\_hooks.jl}
+  \item \texttt{src/simulation/callbacks/navigation\_guidance\_callbacks.jl}
+\end{itemize}
+
+Note: this hook exists through \texttt{SpaceAGORA.SimulationModel}; it is not
+promoted to the root API in the same way as \texttt{wrench} and control hooks.
+
+\section{Control and Actuation Interface}
+
+Control models use the stable root API:
+
+\begin{lstlisting}
+struct MyController <: SpaceAGORA.AbstractControlEffectorModel
+    # controller state and parameters
+end
+
+SpaceAGORA.calcControlEffect!(model, u, p, t::Float64, sat_idx::Int)
+SpaceAGORA.calcControlForceTorque(model, u, p, sat_idx::Int, t::Float64)
+SpaceAGORA.calcControlMassFlowRate(model, u, p, sat_idx::Int, t::Float64)
+\end{lstlisting}
+
+Register:
+
+\begin{lstlisting}
+ControlModel(
+    control_effectors=(model,),
+    control_rates=[rate_seconds],
+)
+\end{lstlisting}
+
+The control callback path periodically calls \texttt{calcControlEffect!}. The
+dynamics RHS accumulates \texttt{calcControlForceTorque} and
+\texttt{calcControlMassFlowRate}.
+
+Appropriate responsibilities:
+\begin{itemize}
+  \item actuator command execution
+  \item attitude control
+  \item reaction wheel control
+  \item thruster control
+  \item burn scheduling
+  \item force/torque generation
+  \item propellant mass depletion
+\end{itemize}
+
+Relevant source:
+\begin{itemize}
+  \item \texttt{src/SpaceAGORA.jl}
+  \item \texttt{src/simulation/callbacks/control\_callbacks.jl}
+  \item \texttt{src/simulation/engine/dynamics\_rhs.jl}
+  \item \texttt{templates/control\_hook\_template.jl}
+  \item \texttt{examples/Earth\_Thruster\_Test.jl}
+\end{itemize}
+
+\section{Typed Command Interfaces}
+
+SpaceAGORA defines typed command structs for GNC/control boundaries:
+
+\begin{lstlisting}
+PropulsiveManeuverCommand
+PropulsiveBurnPlan
+AerobrakingControlCommand
+\end{lstlisting}
+
+Relevant source:
+\begin{itemize}
+  \item \texttt{src/gnc/command\_types.jl}
+\end{itemize}
+
+\subsection{PropulsiveManeuverCommand}
+
+Fields:
+
+\begin{lstlisting}
+valid::Bool
+delta_v_mps::Float64
+direction_rad::Float64
+source_orbit::Int64
+\end{lstlisting}
+
+\subsection{PropulsiveBurnPlan}
+
+Fields:
+
+\begin{lstlisting}
+valid::Bool
+delta_v_mps::Float64
+direction_rad::Float64
+source_orbit::Int64
+start_burn_s::Float64
+stop_burn_s::Float64
+thrust_n::Float64
+isp_s::Float64
+commanded_impulse_n_s::Float64
+propellant_required_kg::Float64
+\end{lstlisting}
+
+\subsection{AerobrakingControlCommand}
+
+Fields:
+
+\begin{lstlisting}
+alpha_command::Float64
+\end{lstlisting}
+
+\section{Aerobraking Strategy and Policy Interface}
+
+Aerobraking has a typed strategy/policy boundary.
+
+Canonical interfaces:
+
+\begin{lstlisting}
+AerobrakingGuidanceInput
+AerobrakingGuidanceOutput
+AbstractAerobrakingStrategy
+AerobrakingPolicyConfig
+AbstractAerobrakingPolicySelector
+AerobrakingStrategyKind
+E_EDG
+T_EDG
+\end{lstlisting}
+
+Relevant source:
+\begin{itemize}
+  \item \texttt{src/gnc/guidance/aerobraking/interfaces.jl}
+  \item \texttt{src/mission/operations/aerobraking\_policy/policy\_types.jl}
+  \item \texttt{docs/architecture/gnc\_aerobraking\_boundary\_contract.md}
+\end{itemize}
+
+Policy selection:
+
+\begin{lstlisting}
+select_strategy(selector, config, input) -> AerobrakingStrategyKind
+\end{lstlisting}
+
+Guidance dispatch:
+
+\begin{lstlisting}
+dispatch_aerobraking_guidance(kind, input)
+dispatch_aerobraking_guidance(selector, config, input)
+\end{lstlisting}
+
+The repository includes:
+
+\begin{lstlisting}
+DefaultAerobrakingPolicySelector
+DRLPolicyAdapterStub
+\end{lstlisting}
+
+\texttt{DRLPolicyAdapterStub} intentionally throws \texttt{Not implemented}. A
+reinforcement learning or decision-making adapter should implement the
+\texttt{AbstractAerobrakingPolicySelector} contract rather than reaching into
+control or dynamics internals.
+
+\section{Runtime Scheduling Semantics}
+
+Navigation, guidance, and control callbacks are scheduled from their model
+containers and rates:
+
+\begin{lstlisting}
+NavigationModel.navigation_effectors
+NavigationModel.navigation_rates
+
+GuidanceModel.guidance_effectors
+GuidanceModel.guidance_rates
+
+ControlModel.control_effectors
+ControlModel.control_rates
+\end{lstlisting}
+
+Each callback is invoked over all spacecraft indices:
+
+\begin{lstlisting}
+for sat_idx in 1:num_sats
+    callback(model, integrator.u, integrator.p, integrator.t, sat_idx)
+end
+\end{lstlisting}
+
+Control effectors that are \texttt{BaseThrusterModel} receive event-driven burn
+scheduling behavior and tstop registration.
+
+\section{Public API Stability Notes}
+
+The strongest stable root interfaces are:
+
+\begin{lstlisting}
+SpaceAGORA.run_simulation
+SpaceAGORA.AbstractForceTorqueModel
+SpaceAGORA.wrench
+SpaceAGORA.environment_requirements
+SpaceAGORA.AbstractDensityModel
+SpaceAGORA.getDensity
+SpaceAGORA.AbstractControlEffectorModel
+SpaceAGORA.calcControlEffect!
+SpaceAGORA.calcControlForceTorque
+SpaceAGORA.calcControlMassFlowRate
+\end{lstlisting}
+
+Navigation and guidance callbacks are present and used by examples and tests,
+but currently live under:
+
+\begin{lstlisting}
+SpaceAGORA.SimulationModel.calcNavigationEffect!
+SpaceAGORA.SimulationModel.calcGuidanceEffect!
+\end{lstlisting}
+
+For an external autonomy package, isolate those calls behind a small adapter
+layer so future internal reshuffles in SpaceAGORA are localized.
+
+\section{Recommended External Stack Shape}
+
+Use this layering:
+
+\begin{lstlisting}
+Autonomy application
+  - Owns high-level mission behavior
+  - Owns policy/ML/RL decision models
+  - Owns autonomy state machines
+
+SpaceAGORA adapter layer
+  - Builds SimulationConfiguration
+  - Wraps navigation/guidance/control hooks
+  - Converts autonomy commands into typed SpaceAGORA command structs
+  - Converts SpaceAGORA state into autonomy observations
+
+SpaceAGORA
+  - Owns propagation
+  - Owns force/torque accumulation
+  - Owns environment sampling
+  - Owns callback scheduling
+  - Owns output and solver execution
+\end{lstlisting}
+
+Use \texttt{DynamicsModel} for physical truth. Use
+\texttt{NavigationModel}, \texttt{GuidanceModel}, and \texttt{ControlModel}
+for autonomy software behavior.
+
+\end{document}

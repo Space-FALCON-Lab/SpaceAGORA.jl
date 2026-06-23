@@ -1,0 +1,24 @@
+{
+  "id": "benchmarks-scripts",
+  "title": "Scripts",
+  "componentKey": "benchmarks/scripts",
+  "description": "1 files, 0 exports, 1 connections",
+  "interfaces": [],
+  "connections": [
+    {
+      "targetId": "benchmarks-studies",
+      "targetTitle": "PerfRuntimeCompare",
+      "edgeKind": "imports",
+      "interfaceName": "performance_runtime_analysis",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "benchmarks/scripts/performance_paper_pipeline.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

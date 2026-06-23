@@ -1,0 +1,320 @@
+{
+  "id": "src-parallel",
+  "title": "Parallel",
+  "componentKey": "src/parallel",
+  "description": "15 files, 36 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "parse_bool_env",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "parse_parallel_mode_env",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "parse_thread_threshold_env",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "outer_parallel_active",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "effective_inner_thread_budget",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "use_threads_policy",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "thread_policy_decision",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "threaded_foreach",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "threaded_reduce",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "threaded_foreach_persistent",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "with_policy_context",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "reset_policy_telemetry!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "policy_telemetry_snapshot",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "record_policy_observation!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "reset_persistent_hint_state!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "persistent_hints_state_reset_requested",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "hint_layer_stats_snapshot",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ParallelProfile",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ParallelProfileConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "parse_parallel_profile",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "parallel_profile_name",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "profile_config",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "profile_env_pairs",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "with_parallel_profile",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "OuterRouteFeatures",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "OuterRouteTuning",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "OuterRouteState",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "reset_outer_route_state!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "outer_route_signature",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "outer_route_stats_snapshot",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "default_outer_route",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "outer_route_candidates",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "select_outer_route!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "record_outer_route_feedback!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "load_outer_route_state!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "save_outer_route_state",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/parallel/policy/adaptive_decision.jl",
+    "src/parallel/policy/context.jl",
+    "src/parallel/policy/env_config.jl",
+    "src/parallel/policy/observation_tracking.jl",
+    "src/parallel/policy/parallel_policy.jl",
+    "src/parallel/policy/persistent_hints.jl",
+    "src/parallel/policy/policy_telemetry.jl",
+    "src/parallel/policy/thread_execution.jl",
+    "src/parallel/policy/types.jl",
+    "src/parallel/routing/env_mapping.jl",
+    "src/parallel/routing/outer_route_metrics.jl",
+    "src/parallel/routing/outer_route_selection.jl",
+    "src/parallel/routing/outer_route_state.jl",
+    "src/parallel/routing/parallel_profiles.jl",
+    "src/parallel/routing/profile_definitions.jl"
+  ],
+  "exports": [
+    "parse_bool_env",
+    "parse_parallel_mode_env",
+    "parse_thread_threshold_env",
+    "outer_parallel_active",
+    "effective_inner_thread_budget",
+    "use_threads_policy",
+    "thread_policy_decision",
+    "threaded_foreach",
+    "threaded_reduce",
+    "threaded_foreach_persistent",
+    "with_policy_context",
+    "reset_policy_telemetry!",
+    "policy_telemetry_snapshot",
+    "record_policy_observation!",
+    "reset_persistent_hint_state!",
+    "persistent_hints_state_reset_requested",
+    "hint_layer_stats_snapshot",
+    "ParallelProfile",
+    "ParallelProfileConfig",
+    "parse_parallel_profile",
+    "parallel_profile_name",
+    "profile_config",
+    "profile_env_pairs",
+    "with_parallel_profile",
+    "OuterRouteFeatures",
+    "OuterRouteTuning",
+    "OuterRouteState",
+    "reset_outer_route_state!",
+    "outer_route_signature",
+    "outer_route_stats_snapshot",
+    "default_outer_route",
+    "outer_route_candidates",
+    "select_outer_route!",
+    "record_outer_route_feedback!",
+    "load_outer_route_state!",
+    "save_outer_route_state"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

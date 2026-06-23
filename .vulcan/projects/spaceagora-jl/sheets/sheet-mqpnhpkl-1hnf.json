@@ -1,0 +1,175 @@
+{
+  "id": "sheet-mqpnhpkl-1hnf",
+  "filePath": "sheets/sheet-mqpnhpkl-1hnf.json",
+  "parentId": null,
+  "title": "ADS — Mode State Machine",
+  "layer": "operational",
+  "abstractionLevel": 1,
+  "summary": "INIT, COARSE_ACQ, FINE_TRACK, ECLIPSE, SAFE. Driven by sensor availability and filter consistency.",
+  "verificationIntent": "All transitions reachable; SAFE reachable within 2 cycles of a sensor/consistency fault.",
+  "nodes": [
+    {
+      "id": "node-mqpnhpoj-dh04",
+      "title": "INIT",
+      "role": "state",
+      "description": "Sensors starting; filter not seeded.",
+      "x": 80,
+      "y": 60,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhpsc-ht0o",
+      "title": "COARSE_ACQ",
+      "role": "state",
+      "description": "Magnetometer+sun TRIAD coarse solve (~2°).",
+      "x": 80,
+      "y": 220,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhpw5-6yzs",
+      "title": "FINE_TRACK",
+      "role": "state",
+      "description": "MEKF with star tracker+gyro (≤0.05°).",
+      "x": 80,
+      "y": 380,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhq0c-ihlo",
+      "title": "ECLIPSE",
+      "role": "state",
+      "description": "Gyro propagation + magnetometer (≤0.5°).",
+      "x": 360,
+      "y": 380,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhq46-hk0j",
+      "title": "SAFE",
+      "role": "state",
+      "description": "Filter diverged / sensor fault; validity=false.",
+      "x": 360,
+      "y": 200,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhq7o-516h",
+      "title": "●",
+      "role": "control-node",
+      "description": "initial",
+      "x": 20,
+      "y": 20,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "aiModificationPolicy": "default",
+      "ports": [],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-mqpnhqb5-3eq6",
+      "sourceNodeId": "node-mqpnhq7o-516h",
+      "targetNodeId": "node-mqpnhpoj-dh04",
+      "kind": "transition",
+      "label": "power-on",
+      "groundingStatus": "grounded"
+    },
+    {
+      "id": "edge-mqpnhqek-pe9e",
+      "sourceNodeId": "node-mqpnhpoj-dh04",
+      "targetNodeId": "node-mqpnhpsc-ht0o",
+      "kind": "transition",
+      "label": "sensors_healthy",
+      "groundingStatus": "grounded"
+    },
+    {
+      "id": "edge-mqpnhqig-r5il",
+      "sourceNodeId": "node-mqpnhpsc-ht0o",
+      "targetNodeId": "node-mqpnhpw5-6yzs",
+      "kind": "transition",
+      "label": "st_locked ∧ err<2°",
+      "groundingStatus": "grounded"
+    },
+    {
+      "id": "edge-mqpnhqm6-iz3o",
+      "sourceNodeId": "node-mqpnhpw5-6yzs",
+      "targetNodeId": "node-mqpnhq0c-ihlo",
+      "kind": "transition",
+      "label": "eclipse_entered",
+      "groundingStatus": "grounded"
+    },
+    {
+      "id": "edge-mqpnhqq4-nhwm",
+      "sourceNodeId": "node-mqpnhq0c-ihlo",
+      "targetNodeId": "node-mqpnhpw5-6yzs",
+      "kind": "transition",
+      "label": "eclipse_exit ∧ st_valid",
+      "groundingStatus": "grounded"
+    },
+    {
+      "id": "edge-mqpnhqtd-xmkj",
+      "sourceNodeId": "node-mqpnhq0c-ihlo",
+      "targetNodeId": "node-mqpnhpsc-ht0o",
+      "kind": "transition",
+      "label": "eclipse_exit ∧ ¬st_valid",
+      "groundingStatus": "grounded"
+    },
+    {
+      "id": "edge-mqpnhqwk-n8qd",
+      "sourceNodeId": "node-mqpnhpw5-6yzs",
+      "targetNodeId": "node-mqpnhq46-hk0j",
+      "kind": "transition",
+      "label": "NEES>thr ∨ gyro_fail",
+      "groundingStatus": "grounded"
+    },
+    {
+      "id": "edge-mqpnhr0a-vxqu",
+      "sourceNodeId": "node-mqpnhq0c-ihlo",
+      "targetNodeId": "node-mqpnhq46-hk0j",
+      "kind": "transition",
+      "label": "mag_fail ∨ gyro_fail",
+      "groundingStatus": "grounded"
+    },
+    {
+      "id": "edge-mqpnhr3v-1zxe",
+      "sourceNodeId": "node-mqpnhq46-hk0j",
+      "targetNodeId": "node-mqpnhpoj-dh04",
+      "kind": "transition",
+      "label": "reset",
+      "groundingStatus": "grounded"
+    }
+  ]
+}

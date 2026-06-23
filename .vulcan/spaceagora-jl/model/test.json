@@ -1,0 +1,344 @@
+{
+  "id": "test",
+  "title": "EngineSandbox",
+  "componentKey": "test",
+  "description": "76 files, 1 exports, 2 connections",
+  "interfaces": [
+    {
+      "name": "SimulationConfiguration",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [
+    {
+      "targetId": "src-spaceagora",
+      "targetTitle": "SpaceAGORA",
+      "edgeKind": "imports",
+      "interfaceName": "SpaceAGORA",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test-integration",
+      "targetTitle": "IncludeOrderSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "runtests",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [
+    {
+      "path": "test/ci_aerobraking_strategy_contract_gate.jl",
+      "name": "ci_aerobraking_strategy_contract_gate.jl"
+    },
+    {
+      "path": "test/ci_ai_review_artifact_gate.jl",
+      "name": "ci_ai_review_artifact_gate.jl"
+    },
+    {
+      "path": "test/ci_architecture_contract_gate.jl",
+      "name": "ci_architecture_contract_gate.jl"
+    },
+    {
+      "path": "test/ci_benchmark_wrapper_parity_gate.jl",
+      "name": "ci_benchmark_wrapper_parity_gate.jl"
+    },
+    {
+      "path": "test/ci_canonical_path_contract_gate.jl",
+      "name": "ci_canonical_path_contract_gate.jl"
+    },
+    {
+      "path": "test/ci_clean_depot_smoke.jl",
+      "name": "ci_clean_depot_smoke.jl"
+    },
+    {
+      "path": "test/ci_coverage_quality_gate.jl",
+      "name": "ci_coverage_quality_gate.jl"
+    },
+    {
+      "path": "test/ci_docs_contract_gate.jl",
+      "name": "ci_docs_contract_gate.jl"
+    },
+    {
+      "path": "test/ci_examples_regression.jl",
+      "name": "ci_examples_regression.jl"
+    },
+    {
+      "path": "test/ci_examples_suite_smoke.jl",
+      "name": "ci_examples_suite_smoke.jl"
+    },
+    {
+      "path": "test/ci_final_clean_contract_gate.jl",
+      "name": "ci_final_clean_contract_gate.jl"
+    },
+    {
+      "path": "test/ci_flake_guard.jl",
+      "name": "ci_flake_guard.jl"
+    },
+    {
+      "path": "test/ci_gnc_aerobraking_boundary_gate.jl",
+      "name": "ci_gnc_aerobraking_boundary_gate.jl"
+    },
+    {
+      "path": "test/ci_gnc_typed_command_boundary_gate.jl",
+      "name": "ci_gnc_typed_command_boundary_gate.jl"
+    },
+    {
+      "path": "test/ci_hpc_extensibility_docs_gate.jl",
+      "name": "ci_hpc_extensibility_docs_gate.jl"
+    },
+    {
+      "path": "test/ci_io_surface_nonempty_gate.jl",
+      "name": "ci_io_surface_nonempty_gate.jl"
+    },
+    {
+      "path": "test/ci_naming_contract_gate.jl",
+      "name": "ci_naming_contract_gate.jl"
+    },
+    {
+      "path": "test/ci_nightly_montecarlo_stress.jl",
+      "name": "ci_nightly_montecarlo_stress.jl"
+    },
+    {
+      "path": "test/ci_no_artifact_files_gate.jl",
+      "name": "ci_no_artifact_files_gate.jl"
+    },
+    {
+      "path": "test/ci_no_dynamics_models_gate.jl",
+      "name": "ci_no_dynamics_models_gate.jl"
+    },
+    {
+      "path": "test/ci_no_gram_smoke.jl",
+      "name": "ci_no_gram_smoke.jl"
+    },
+    {
+      "path": "test/ci_no_guidance_control_cross_include_gate.jl",
+      "name": "ci_no_guidance_control_cross_include_gate.jl"
+    },
+    {
+      "path": "test/ci_no_inert_force_terms_gate.jl",
+      "name": "ci_no_inert_force_terms_gate.jl"
+    },
+    {
+      "path": "test/ci_no_legacy_include_chains_gate.jl",
+      "name": "ci_no_legacy_include_chains_gate.jl"
+    },
+    {
+      "path": "test/ci_no_legacy_ownership_gate.jl",
+      "name": "ci_no_legacy_ownership_gate.jl"
+    },
+    {
+      "path": "test/ci_no_src_benchmarks_root_gate.jl",
+      "name": "ci_no_src_benchmarks_root_gate.jl"
+    },
+    {
+      "path": "test/ci_p1_findings_gate.jl",
+      "name": "ci_p1_findings_gate.jl"
+    },
+    {
+      "path": "test/ci_project_compat_gate.jl",
+      "name": "ci_project_compat_gate.jl"
+    },
+    {
+      "path": "test/ci_public_api_surface_gate.jl",
+      "name": "ci_public_api_surface_gate.jl"
+    },
+    {
+      "path": "test/ci_rotational_ownership_gate.jl",
+      "name": "ci_rotational_ownership_gate.jl"
+    },
+    {
+      "path": "test/ci_runtime_analysis_copy_overhead_gate.jl",
+      "name": "ci_runtime_analysis_copy_overhead_gate.jl"
+    },
+    {
+      "path": "test/ci_runtime_any_hotpath_gate.jl",
+      "name": "ci_runtime_any_hotpath_gate.jl"
+    },
+    {
+      "path": "test/ci_runtime_legacy_surface_gate.jl",
+      "name": "ci_runtime_legacy_surface_gate.jl"
+    },
+    {
+      "path": "test/ci_scaffold_interface_gate.jl",
+      "name": "ci_scaffold_interface_gate.jl"
+    },
+    {
+      "path": "test/ci_src_completeness_contract_gate.jl",
+      "name": "ci_src_completeness_contract_gate.jl"
+    },
+    {
+      "path": "test/ci_thin_entry_files_gate.jl",
+      "name": "ci_thin_entry_files_gate.jl"
+    },
+    {
+      "path": "test/ci_threaded_smoke.jl",
+      "name": "ci_threaded_smoke.jl"
+    },
+    {
+      "path": "test/ci_translational_ownership_gate.jl",
+      "name": "ci_translational_ownership_gate.jl"
+    },
+    {
+      "path": "test/ci_typed_config_equivalence_gate.jl",
+      "name": "ci_typed_config_equivalence_gate.jl"
+    },
+    {
+      "path": "test/ci_vehicle_structure_boundary_gate.jl",
+      "name": "ci_vehicle_structure_boundary_gate.jl"
+    },
+    {
+      "path": "test/contracts/nightly_runtests.jl",
+      "name": "nightly_runtests.jl"
+    },
+    {
+      "path": "test/contracts/pr_runtests.jl",
+      "name": "pr_runtests.jl"
+    },
+    {
+      "path": "test/contracts/runtests.jl",
+      "name": "runtests.jl"
+    },
+    {
+      "path": "test/coverage_parallel_telemetry_probes.jl",
+      "name": "coverage_parallel_telemetry_probes.jl"
+    },
+    {
+      "path": "test/coverage_runtime_boundary_probes.jl",
+      "name": "coverage_runtime_boundary_probes.jl"
+    },
+    {
+      "path": "test/coverage_targeted_90_probes.jl",
+      "name": "coverage_targeted_90_probes.jl"
+    },
+    {
+      "path": "test/coverage_threaded_probes.jl",
+      "name": "coverage_threaded_probes.jl"
+    },
+    {
+      "path": "test/cygnss_96hr_offset_sweep_worker.jl",
+      "name": "cygnss_96hr_offset_sweep_worker.jl"
+    },
+    {
+      "path": "test/gmat_scenario_matrix.jl",
+      "name": "gmat_scenario_matrix.jl"
+    },
+    {
+      "path": "test/gnc/aerobraking/e_edg_strategy_parity_tests.jl",
+      "name": "e_edg_strategy_parity_tests.jl"
+    },
+    {
+      "path": "test/gnc/aerobraking/t_edg_strategy_parity_tests.jl",
+      "name": "t_edg_strategy_parity_tests.jl"
+    },
+    {
+      "path": "test/helpers/README.md",
+      "name": "README.md"
+    },
+    {
+      "path": "test/integration/cli/README.md",
+      "name": "README.md"
+    },
+    {
+      "path": "test/integration/examples/README.md",
+      "name": "README.md"
+    },
+    {
+      "path": "test/integration/examples/runtests.jl",
+      "name": "runtests.jl"
+    },
+    {
+      "path": "test/integration/persistence/README.md",
+      "name": "README.md"
+    },
+    {
+      "path": "test/integration/README.md",
+      "name": "README.md"
+    },
+    {
+      "path": "test/integration/runtests.jl",
+      "name": "runtests.jl"
+    },
+    {
+      "path": "test/integration/simulation/README.md",
+      "name": "README.md"
+    },
+    {
+      "path": "test/integration/telemetry/README.md",
+      "name": "README.md"
+    },
+    {
+      "path": "test/mission/aerobraking_policy_selector_stub_tests.jl",
+      "name": "aerobraking_policy_selector_stub_tests.jl"
+    },
+    {
+      "path": "test/README.md",
+      "name": "README.md"
+    },
+    {
+      "path": "test/runtests.jl",
+      "name": "runtests.jl"
+    },
+    {
+      "path": "test/run_cygnss_96hr.jl",
+      "name": "run_cygnss_96hr.jl"
+    },
+    {
+      "path": "test/run_venus_matrix_only.jl",
+      "name": "run_venus_matrix_only.jl"
+    },
+    {
+      "path": "test/smoke/runtests.jl",
+      "name": "runtests.jl"
+    },
+    {
+      "path": "test/stress/runtests.jl",
+      "name": "runtests.jl"
+    },
+    {
+      "path": "test/suites/01_contract_and_api_tests.jl",
+      "name": "01_contract_and_api_tests.jl"
+    },
+    {
+      "path": "test/suites/02_callbacks_parallel_and_smoke_tests.jl",
+      "name": "02_callbacks_parallel_and_smoke_tests.jl"
+    },
+    {
+      "path": "test/suites/03_persistence_units_and_rotational_tests.jl",
+      "name": "03_persistence_units_and_rotational_tests.jl"
+    },
+    {
+      "path": "test/suites/04_solver_env_and_regression_tests.jl",
+      "name": "04_solver_env_and_regression_tests.jl"
+    },
+    {
+      "path": "test/suites/05_thruster_control_and_quality_tests.jl",
+      "name": "05_thruster_control_and_quality_tests.jl"
+    },
+    {
+      "path": "test/suites/06_monolith_split_runtime_tests.jl",
+      "name": "06_monolith_split_runtime_tests.jl"
+    },
+    {
+      "path": "test/suites/07_no_gram_onboarding_tests.jl",
+      "name": "07_no_gram_onboarding_tests.jl"
+    },
+    {
+      "path": "test/suites/08_cli_and_assets_tests.jl",
+      "name": "08_cli_and_assets_tests.jl"
+    },
+    {
+      "path": "test/unit/runtests.jl",
+      "name": "runtests.jl"
+    }
+  ],
+  "requirements": [],
+  "implementationFiles": [],
+  "exports": [
+    "SimulationConfiguration"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

@@ -1,0 +1,243 @@
+{
+  "id": "src-dynamics-coupled",
+  "title": "DynamicEffectors",
+  "componentKey": "src/dynamics/coupled",
+  "description": "8 files, 37 exports, 7 connections",
+  "interfaces": [
+    {
+      "name": "AerodynamicCoefficientConstant",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerodynamicCoefficientfM",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerodynamicCoefficientNoBallisticFlight",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ConstantGravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "InverseSquaredGravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "InverseSquaredJ2GravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "aerobraking_gravity_force_ii",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "j2_secular_rates",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerobrakingCampaignPropulsiveManeuverGuidanceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NBodyGravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "GravitationalHarmonicsModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SolarRadiationPressureModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "srp",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "srp_cannonball_accel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "planetary_albedo_accel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "planetary_ir_accel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "BaseThrusterModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "calcForceTorque",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "wrench",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "environment_requirements",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "solver_partition",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [
+    {
+      "targetId": "src-dynamics-coupled-force-torque-models",
+      "targetTitle": "AerodynamicEffectors",
+      "edgeKind": "imports",
+      "interfaceName": "aerodynamic_effectors",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-dynamics-coupled-force-torque-models",
+      "targetTitle": "AerodynamicEffectors",
+      "edgeKind": "imports",
+      "interfaceName": "gravity_effectors",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-dynamics-coupled-force-torque-models",
+      "targetTitle": "AerodynamicEffectors",
+      "edgeKind": "imports",
+      "interfaceName": "guidance_models",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-dynamics-coupled-force-torque-models",
+      "targetTitle": "AerodynamicEffectors",
+      "edgeKind": "imports",
+      "interfaceName": "perturbation_effectors",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-dynamics-coupled-force-torque-models",
+      "targetTitle": "AerodynamicEffectors",
+      "edgeKind": "imports",
+      "interfaceName": "thruster_models",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-core-numerics",
+      "targetTitle": "Numerics",
+      "edgeKind": "imports",
+      "interfaceName": "quaternion_utils",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-environment-ephemerides",
+      "targetTitle": "EphemeridesModels",
+      "edgeKind": "imports",
+      "interfaceName": "planet_data",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/dynamics/coupled/aerodynamic_wrench_models.jl",
+    "src/dynamics/coupled/force_torque_models/aerodynamic_effectors.jl",
+    "src/dynamics/coupled/force_torque_models/gravity_effectors.jl",
+    "src/dynamics/coupled/force_torque_models/guidance_models.jl",
+    "src/dynamics/coupled/force_torque_models/perturbation_effectors.jl",
+    "src/dynamics/coupled/force_torque_models/thruster_models.jl",
+    "src/dynamics/coupled/force_torque_models.jl",
+    "src/dynamics/coupled/perturbations.jl"
+  ],
+  "exports": [
+    "AerodynamicCoefficientConstant",
+    "AerodynamicCoefficientfM",
+    "AerodynamicCoefficientNoBallisticFlight",
+    "ConstantGravityModel",
+    "InverseSquaredGravityModel",
+    "InverseSquaredJ2GravityModel",
+    "aerobraking_gravity_force_ii",
+    "j2_secular_rates",
+    "AerobrakingCampaignPropulsiveManeuverGuidanceModel",
+    "NBodyGravityModel",
+    "GravitationalHarmonicsModel",
+    "SolarRadiationPressureModel",
+    "srp",
+    "srp_cannonball_accel",
+    "planetary_albedo_accel",
+    "planetary_ir_accel",
+    "BaseThrusterModel",
+    "calcForceTorque",
+    "wrench",
+    "environment_requirements",
+    "solver_partition"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

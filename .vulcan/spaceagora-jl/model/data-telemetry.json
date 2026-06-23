@@ -1,0 +1,18 @@
+{
+  "id": "data-telemetry",
+  "title": "Telemetry",
+  "componentKey": "data/telemetry",
+  "description": "«component» | 3 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "data/telemetry/convert_to_feather.py",
+    "data/telemetry/gmat_cygnss_comp.py",
+    "data/telemetry/gmat_matrix_parity_locked.py"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

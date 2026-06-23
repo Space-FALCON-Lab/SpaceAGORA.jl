@@ -1,0 +1,26 @@
+{
+  "id": "templates",
+  "title": "ExampleControlHookTemplate",
+  "componentKey": "templates",
+  "description": "3 files, 0 exports, 1 connections",
+  "interfaces": [],
+  "connections": [
+    {
+      "targetId": "src-spaceagora",
+      "targetTitle": "SpaceAGORA",
+      "edgeKind": "imports",
+      "interfaceName": "SpaceAGORA",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "templates/control_hook_template.jl",
+    "templates/density_model_template.jl",
+    "templates/force_torque_model_template.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

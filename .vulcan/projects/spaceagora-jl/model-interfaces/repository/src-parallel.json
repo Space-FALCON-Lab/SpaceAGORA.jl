@@ -1,0 +1,1218 @@
+{
+  "id": "auto-logical-component-src-parallel",
+  "filePath": "model-interfaces/repository/src-parallel.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-8",
+  "title": "Parallel",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "Parallel: 15 implementation files, 2 sub-components.",
+  "verificationIntent": "Verify that Parallel's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-8-root",
+      "title": "Parallel",
+      "role": "subsystem",
+      "description": "15 implementation files, 36 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 620,
+      "height": 300,
+      "tags": [
+        "src/parallel",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-8",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-8",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-child-1",
+      "title": "ParallelPolicy",
+      "role": "module",
+      "description": "9 files, 17 exports, 10 imports.",
+      "x": 20,
+      "y": 60,
+      "width": 215,
+      "height": 865,
+      "tags": [
+        "src/parallel/policy",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-8-1",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-8-1",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-file-1-1",
+      "title": "persistent_hints.jl",
+      "role": "function",
+      "description": "src/parallel/policy/persistent_hints.jl (491 lines).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/parallel/policy",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-8-file-1-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-8-file-1-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-file-1-2",
+      "title": "thread_execution.jl",
+      "role": "function",
+      "description": "src/parallel/policy/thread_execution.jl (230 lines).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/parallel/policy",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-8-file-1-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-8-file-1-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-file-1-3",
+      "title": "env_config.jl",
+      "role": "function",
+      "description": "src/parallel/policy/env_config.jl (173 lines).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/parallel/policy",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-8-file-1-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-8-file-1-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-file-1-4",
+      "title": "adaptive_decision.jl",
+      "role": "function",
+      "description": "src/parallel/policy/adaptive_decision.jl (158 lines).",
+      "x": 12,
+      "y": 276,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/parallel/policy",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-8-file-1-4",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-8-file-1-4",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-file-1-5",
+      "title": "policy_telemetry.jl",
+      "role": "function",
+      "description": "src/parallel/policy/policy_telemetry.jl (148 lines).",
+      "x": 12,
+      "y": 354,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/parallel/policy",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-8-file-1-5",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-8-file-1-5",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-file-1-6",
+      "title": "observation_tracking.jl",
+      "role": "function",
+      "description": "src/parallel/policy/observation_tracking.jl (143 lines).",
+      "x": 12,
+      "y": 432,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/parallel/policy",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-8-file-1-6",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-8-file-1-6",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-file-1-7",
+      "title": "context.jl",
+      "role": "function",
+      "description": "src/parallel/policy/context.jl (120 lines).",
+      "x": 12,
+      "y": 510,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/parallel/policy",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-8-file-1-7",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-8-file-1-7",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-file-1-8",
+      "title": "types.jl",
+      "role": "function",
+      "description": "src/parallel/policy/types.jl (115 lines).",
+      "x": 12,
+      "y": 588,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/parallel/policy",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-8-file-1-8",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-8-file-1-8",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-file-1-9",
+      "title": "parallel_policy.jl",
+      "role": "function",
+      "description": "src/parallel/policy/parallel_policy.jl (23 lines · 17 exports · 10 imports).",
+      "x": 12,
+      "y": 666,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/parallel/policy",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-8-file-1-9",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-8-file-1-9",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-child-2",
+      "title": "ParallelProfiles",
+      "role": "module",
+      "description": "6 files, 19 exports, 8 imports.",
+      "x": 255,
+      "y": 60,
+      "width": 215,
+      "height": 610,
+      "tags": [
+        "src/parallel/routing",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-8-2",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-8-2",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-file-2-1",
+      "title": "outer_route_selection.jl",
+      "role": "function",
+      "description": "src/parallel/routing/outer_route_selection.jl (611 lines · 1 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/parallel/routing",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-8-file-2-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-8-file-2-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-file-2-2",
+      "title": "outer_route_state.jl",
+      "role": "function",
+      "description": "src/parallel/routing/outer_route_state.jl (235 lines).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/parallel/routing",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-8-file-2-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-8-file-2-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-file-2-3",
+      "title": "profile_definitions.jl",
+      "role": "function",
+      "description": "src/parallel/routing/profile_definitions.jl (220 lines).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/parallel/routing",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-8-file-2-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-8-file-2-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-file-2-4",
+      "title": "env_mapping.jl",
+      "role": "function",
+      "description": "src/parallel/routing/env_mapping.jl (204 lines).",
+      "x": 12,
+      "y": 276,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/parallel/routing",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-8-file-2-4",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-8-file-2-4",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-file-2-5",
+      "title": "parallel_profiles.jl",
+      "role": "function",
+      "description": "src/parallel/routing/parallel_profiles.jl (21 lines · 19 exports · 7 imports).",
+      "x": 12,
+      "y": 354,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/parallel/routing",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-8-file-2-5",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-8-file-2-5",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-8-file-2-6",
+      "title": "outer_route_metrics.jl",
+      "role": "function",
+      "description": "src/parallel/routing/outer_route_metrics.jl (59 lines).",
+      "x": 12,
+      "y": 432,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/parallel/routing",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-8-file-2-6",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-8-file-2-6",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "subsheet-8-edge-1",
+      "sourceNodeId": "subsheet-8-file-1-4",
+      "targetNodeId": "subsheet-8-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-7",
+      "kind": "call",
+      "label": "_active_policy_context"
+    },
+    {
+      "id": "subsheet-8-edge-2",
+      "sourceNodeId": "subsheet-8-file-1-4",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "_adaptive_desire_cap"
+    },
+    {
+      "id": "subsheet-8-edge-3",
+      "sourceNodeId": "subsheet-8-file-1-4",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "adaptive_rho"
+    },
+    {
+      "id": "subsheet-8-edge-4",
+      "sourceNodeId": "subsheet-8-file-1-4",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "effective_inner_thread_budget"
+    },
+    {
+      "id": "subsheet-8-edge-5",
+      "sourceNodeId": "subsheet-8-file-1-4",
+      "targetNodeId": "subsheet-8-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-1",
+      "kind": "call",
+      "label": "_hint_candidate_allotments"
+    },
+    {
+      "id": "subsheet-8-edge-6",
+      "sourceNodeId": "subsheet-8-file-1-4",
+      "targetNodeId": "subsheet-8-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-1",
+      "kind": "call",
+      "label": "_hint_choose_allotment"
+    },
+    {
+      "id": "subsheet-8-edge-7",
+      "sourceNodeId": "subsheet-8-file-1-4",
+      "targetNodeId": "subsheet-8-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-1",
+      "kind": "call",
+      "label": "_hint_entry_count"
+    },
+    {
+      "id": "subsheet-8-edge-8",
+      "sourceNodeId": "subsheet-8-file-1-4",
+      "targetNodeId": "subsheet-8-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-1",
+      "kind": "call",
+      "label": "_hint_workload_signature"
+    },
+    {
+      "id": "subsheet-8-edge-9",
+      "sourceNodeId": "subsheet-8-file-1-4",
+      "targetNodeId": "subsheet-8-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-4",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-5",
+      "kind": "call",
+      "label": "_adaptive_state_for"
+    },
+    {
+      "id": "subsheet-8-edge-10",
+      "sourceNodeId": "subsheet-8-file-1-6",
+      "targetNodeId": "subsheet-8-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-6",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-7",
+      "kind": "call",
+      "label": "_active_policy_context"
+    },
+    {
+      "id": "subsheet-8-edge-11",
+      "sourceNodeId": "subsheet-8-file-1-6",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-6",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "_adaptive_desire_cap"
+    },
+    {
+      "id": "subsheet-8-edge-12",
+      "sourceNodeId": "subsheet-8-file-1-6",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-6",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "adaptive_delta"
+    },
+    {
+      "id": "subsheet-8-edge-13",
+      "sourceNodeId": "subsheet-8-file-1-6",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-6",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "adaptive_rho"
+    },
+    {
+      "id": "subsheet-8-edge-14",
+      "sourceNodeId": "subsheet-8-file-1-6",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-6",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "effective_inner_thread_budget"
+    },
+    {
+      "id": "subsheet-8-edge-15",
+      "sourceNodeId": "subsheet-8-file-1-6",
+      "targetNodeId": "subsheet-8-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-6",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-1",
+      "kind": "call",
+      "label": "_hint_entry_count"
+    },
+    {
+      "id": "subsheet-8-edge-16",
+      "sourceNodeId": "subsheet-8-file-1-6",
+      "targetNodeId": "subsheet-8-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-6",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-5",
+      "kind": "call",
+      "label": "_adaptive_state_for"
+    },
+    {
+      "id": "subsheet-8-edge-17",
+      "sourceNodeId": "subsheet-8-file-1-1",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "_persistent_hint_path"
+    },
+    {
+      "id": "subsheet-8-edge-18",
+      "sourceNodeId": "subsheet-8-file-1-1",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "_safe_token"
+    },
+    {
+      "id": "subsheet-8-edge-19",
+      "sourceNodeId": "subsheet-8-file-1-1",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "persistent_hints_exploration"
+    },
+    {
+      "id": "subsheet-8-edge-20",
+      "sourceNodeId": "subsheet-8-file-1-1",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "persistent_hints_min_samples"
+    },
+    {
+      "id": "subsheet-8-edge-21",
+      "sourceNodeId": "subsheet-8-file-1-1",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "persistent_hints_persist_enabled"
+    },
+    {
+      "id": "subsheet-8-edge-22",
+      "sourceNodeId": "subsheet-8-file-1-1",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "persistent_hints_state_reset_requested"
+    },
+    {
+      "id": "subsheet-8-edge-23",
+      "sourceNodeId": "subsheet-8-file-1-5",
+      "targetNodeId": "subsheet-8-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-7",
+      "kind": "call",
+      "label": "_active_policy_context"
+    },
+    {
+      "id": "subsheet-8-edge-24",
+      "sourceNodeId": "subsheet-8-file-1-5",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-5",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "_telemetry_bucket"
+    },
+    {
+      "id": "subsheet-8-edge-25",
+      "sourceNodeId": "subsheet-8-file-1-2",
+      "targetNodeId": "subsheet-8-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-7",
+      "kind": "call",
+      "label": "_active_policy_scope_id"
+    },
+    {
+      "id": "subsheet-8-edge-26",
+      "sourceNodeId": "subsheet-8-file-1-2",
+      "targetNodeId": "subsheet-8-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-7",
+      "kind": "call",
+      "label": "_create_persistent_foreach_pool"
+    },
+    {
+      "id": "subsheet-8-edge-27",
+      "sourceNodeId": "subsheet-8-file-1-2",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "_default_thread_pool_size"
+    },
+    {
+      "id": "subsheet-8-edge-28",
+      "sourceNodeId": "subsheet-8-file-1-2",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "effective_inner_thread_budget"
+    },
+    {
+      "id": "subsheet-8-edge-29",
+      "sourceNodeId": "subsheet-8-file-1-2",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "inner_dynamic_chunk_size"
+    },
+    {
+      "id": "subsheet-8-edge-30",
+      "sourceNodeId": "subsheet-8-file-1-2",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "inner_scheduler_mode"
+    },
+    {
+      "id": "subsheet-8-edge-31",
+      "sourceNodeId": "subsheet-8-file-1-2",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "call",
+      "label": "parse_bool_env"
+    },
+    {
+      "id": "subsheet-8-edge-32",
+      "sourceNodeId": "subsheet-8-file-2-4",
+      "targetNodeId": "subsheet-8-file-2-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-2-4",
+      "targetPortId": "sub-file-in-subsheet-8-file-2-3",
+      "kind": "call",
+      "label": "parallel_profile_name"
+    },
+    {
+      "id": "subsheet-8-edge-33",
+      "sourceNodeId": "subsheet-8-file-2-4",
+      "targetNodeId": "subsheet-8-file-2-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-2-4",
+      "targetPortId": "sub-file-in-subsheet-8-file-2-3",
+      "kind": "call",
+      "label": "profile_config"
+    },
+    {
+      "id": "subsheet-8-edge-34",
+      "sourceNodeId": "subsheet-8-file-2-6",
+      "targetNodeId": "subsheet-8-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-8-file-2-6",
+      "targetPortId": "sub-file-in-subsheet-8-file-2-1",
+      "kind": "call",
+      "label": "_outer_route_signature_hierarchy"
+    },
+    {
+      "id": "subsheet-8-edge-35",
+      "sourceNodeId": "subsheet-8-file-1-9",
+      "targetNodeId": "subsheet-8-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-4",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/parallel/policy/parallel_policy.jl",
+        "src/parallel/policy/adaptive_decision.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-36",
+      "sourceNodeId": "subsheet-8-file-1-9",
+      "targetNodeId": "subsheet-8-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-7",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/parallel/policy/parallel_policy.jl",
+        "src/parallel/policy/context.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-37",
+      "sourceNodeId": "subsheet-8-file-1-9",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/parallel/policy/parallel_policy.jl",
+        "src/parallel/policy/env_config.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-38",
+      "sourceNodeId": "subsheet-8-file-1-9",
+      "targetNodeId": "subsheet-8-file-1-6",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-6",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/parallel/policy/parallel_policy.jl",
+        "src/parallel/policy/observation_tracking.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-39",
+      "sourceNodeId": "subsheet-8-file-1-9",
+      "targetNodeId": "subsheet-8-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-1",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/parallel/policy/parallel_policy.jl",
+        "src/parallel/policy/persistent_hints.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-40",
+      "sourceNodeId": "subsheet-8-file-1-9",
+      "targetNodeId": "subsheet-8-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-5",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/parallel/policy/parallel_policy.jl",
+        "src/parallel/policy/policy_telemetry.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-41",
+      "sourceNodeId": "subsheet-8-file-1-9",
+      "targetNodeId": "subsheet-8-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-2",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/parallel/policy/parallel_policy.jl",
+        "src/parallel/policy/thread_execution.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-42",
+      "sourceNodeId": "subsheet-8-file-1-9",
+      "targetNodeId": "subsheet-8-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-8",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/parallel/policy/parallel_policy.jl",
+        "src/parallel/policy/types.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-43",
+      "sourceNodeId": "subsheet-8-file-2-5",
+      "targetNodeId": "subsheet-8-file-2-4",
+      "sourcePortId": "sub-file-out-subsheet-8-file-2-5",
+      "targetPortId": "sub-file-in-subsheet-8-file-2-4",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/parallel/routing/parallel_profiles.jl",
+        "src/parallel/routing/env_mapping.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-44",
+      "sourceNodeId": "subsheet-8-file-2-5",
+      "targetNodeId": "subsheet-8-file-2-6",
+      "sourcePortId": "sub-file-out-subsheet-8-file-2-5",
+      "targetPortId": "sub-file-in-subsheet-8-file-2-6",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/parallel/routing/parallel_profiles.jl",
+        "src/parallel/routing/outer_route_metrics.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-45",
+      "sourceNodeId": "subsheet-8-file-2-5",
+      "targetNodeId": "subsheet-8-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-8-file-2-5",
+      "targetPortId": "sub-file-in-subsheet-8-file-2-1",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/parallel/routing/parallel_profiles.jl",
+        "src/parallel/routing/outer_route_selection.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-46",
+      "sourceNodeId": "subsheet-8-file-2-5",
+      "targetNodeId": "subsheet-8-file-2-2",
+      "sourcePortId": "sub-file-out-subsheet-8-file-2-5",
+      "targetPortId": "sub-file-in-subsheet-8-file-2-2",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/parallel/routing/parallel_profiles.jl",
+        "src/parallel/routing/outer_route_state.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-47",
+      "sourceNodeId": "subsheet-8-file-2-5",
+      "targetNodeId": "subsheet-8-file-2-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-2-5",
+      "targetPortId": "sub-file-in-subsheet-8-file-2-3",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/parallel/routing/parallel_profiles.jl",
+        "src/parallel/routing/profile_definitions.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-48",
+      "sourceNodeId": "subsheet-8-file-1-9",
+      "targetNodeId": "subsheet-8-file-1-4",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-4",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/parallel/policy/parallel_policy.jl",
+        "src/parallel/policy/adaptive_decision.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-49",
+      "sourceNodeId": "subsheet-8-file-1-9",
+      "targetNodeId": "subsheet-8-file-1-7",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-7",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/parallel/policy/parallel_policy.jl",
+        "src/parallel/policy/context.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-50",
+      "sourceNodeId": "subsheet-8-file-1-9",
+      "targetNodeId": "subsheet-8-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-3",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/parallel/policy/parallel_policy.jl",
+        "src/parallel/policy/env_config.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-51",
+      "sourceNodeId": "subsheet-8-file-1-9",
+      "targetNodeId": "subsheet-8-file-1-6",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-6",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/parallel/policy/parallel_policy.jl",
+        "src/parallel/policy/observation_tracking.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-52",
+      "sourceNodeId": "subsheet-8-file-1-9",
+      "targetNodeId": "subsheet-8-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-1",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/parallel/policy/parallel_policy.jl",
+        "src/parallel/policy/persistent_hints.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-53",
+      "sourceNodeId": "subsheet-8-file-1-9",
+      "targetNodeId": "subsheet-8-file-1-5",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-5",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/parallel/policy/parallel_policy.jl",
+        "src/parallel/policy/policy_telemetry.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-54",
+      "sourceNodeId": "subsheet-8-file-1-9",
+      "targetNodeId": "subsheet-8-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-2",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/parallel/policy/parallel_policy.jl",
+        "src/parallel/policy/thread_execution.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-55",
+      "sourceNodeId": "subsheet-8-file-1-9",
+      "targetNodeId": "subsheet-8-file-1-8",
+      "sourcePortId": "sub-file-out-subsheet-8-file-1-9",
+      "targetPortId": "sub-file-in-subsheet-8-file-1-8",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/parallel/policy/parallel_policy.jl",
+        "src/parallel/policy/types.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-56",
+      "sourceNodeId": "subsheet-8-file-2-5",
+      "targetNodeId": "subsheet-8-file-2-4",
+      "sourcePortId": "sub-file-out-subsheet-8-file-2-5",
+      "targetPortId": "sub-file-in-subsheet-8-file-2-4",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/parallel/routing/parallel_profiles.jl",
+        "src/parallel/routing/env_mapping.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-57",
+      "sourceNodeId": "subsheet-8-file-2-5",
+      "targetNodeId": "subsheet-8-file-2-6",
+      "sourcePortId": "sub-file-out-subsheet-8-file-2-5",
+      "targetPortId": "sub-file-in-subsheet-8-file-2-6",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/parallel/routing/parallel_profiles.jl",
+        "src/parallel/routing/outer_route_metrics.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-58",
+      "sourceNodeId": "subsheet-8-file-2-5",
+      "targetNodeId": "subsheet-8-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-8-file-2-5",
+      "targetPortId": "sub-file-in-subsheet-8-file-2-1",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/parallel/routing/parallel_profiles.jl",
+        "src/parallel/routing/outer_route_selection.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-59",
+      "sourceNodeId": "subsheet-8-file-2-5",
+      "targetNodeId": "subsheet-8-file-2-2",
+      "sourcePortId": "sub-file-out-subsheet-8-file-2-5",
+      "targetPortId": "sub-file-in-subsheet-8-file-2-2",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/parallel/routing/parallel_profiles.jl",
+        "src/parallel/routing/outer_route_state.jl"
+      ]
+    },
+    {
+      "id": "subsheet-8-edge-60",
+      "sourceNodeId": "subsheet-8-file-2-5",
+      "targetNodeId": "subsheet-8-file-2-3",
+      "sourcePortId": "sub-file-out-subsheet-8-file-2-5",
+      "targetPortId": "sub-file-in-subsheet-8-file-2-3",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/parallel/routing/parallel_profiles.jl",
+        "src/parallel/routing/profile_definitions.jl"
+      ]
+    }
+  ],
+  "viewKind": "internal-block"
+}

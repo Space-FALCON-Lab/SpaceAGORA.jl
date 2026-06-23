@@ -1,0 +1,131 @@
+{
+  "id": "experimental-vehicle-resources",
+  "title": "Resources",
+  "componentKey": "experimental/vehicle/resources",
+  "description": "5 files, 14 exports, 4 connections",
+  "interfaces": [
+    {
+      "name": "BatteryResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LoadResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "PowerBusResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ResourceState",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ResourceInputs",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ResourceOutputs",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "initialize_resource_state",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "step_resource!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SolarArrayResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [
+    {
+      "targetId": "experimental-vehicle-resources-battery",
+      "targetTitle": "BatteryModel",
+      "edgeKind": "imports",
+      "interfaceName": "battery_model",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "experimental-vehicle-resources-loads",
+      "targetTitle": "LoadModel",
+      "edgeKind": "imports",
+      "interfaceName": "load_model",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "experimental-vehicle-resources-power-bus",
+      "targetTitle": "PowerBusModel",
+      "edgeKind": "imports",
+      "interfaceName": "power_bus_model",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "experimental-vehicle-resources-solar-array",
+      "targetTitle": "SolarArrayModel",
+      "edgeKind": "imports",
+      "interfaceName": "solar_array_model",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "experimental/vehicle/resources/battery/battery_model.jl",
+    "experimental/vehicle/resources/loads/load_model.jl",
+    "experimental/vehicle/resources/power_bus/power_bus_model.jl",
+    "experimental/vehicle/resources/resources.jl",
+    "experimental/vehicle/resources/solar_array/solar_array_model.jl"
+  ],
+  "exports": [
+    "BatteryResourceModel",
+    "LoadResourceModel",
+    "PowerBusResourceModel",
+    "AbstractResourceModel",
+    "ResourceState",
+    "ResourceInputs",
+    "ResourceOutputs",
+    "initialize_resource_state",
+    "step_resource!",
+    "SolarArrayResourceModel"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

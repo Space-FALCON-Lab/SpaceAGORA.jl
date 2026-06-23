@@ -1,0 +1,16 @@
+{
+  "id": "src-core-numerics",
+  "title": "Numerics",
+  "componentKey": "src/core/numerics",
+  "description": "1 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/core/numerics/quaternion_utils.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

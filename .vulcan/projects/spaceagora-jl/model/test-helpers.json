@@ -1,0 +1,19 @@
+{
+  "id": "test-helpers",
+  "title": "Helpers",
+  "componentKey": "test/helpers",
+  "description": "«component» | 1 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [
+    {
+      "path": "test/helpers/README.md",
+      "name": "README.md"
+    }
+  ],
+  "requirements": [],
+  "implementationFiles": [],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

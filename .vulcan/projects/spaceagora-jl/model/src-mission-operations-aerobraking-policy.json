@@ -1,0 +1,100 @@
+{
+  "id": "src-mission-operations-aerobraking-policy",
+  "title": "AerobrakingPolicy",
+  "componentKey": "src/mission/operations/aerobraking_policy",
+  "description": "3 files, 10 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "AerobrakingStrategyKind",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "E_EDG",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "T_EDG",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractAerobrakingPolicySelector",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerobrakingPolicyConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "DRLPolicyAdapterStub",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "DefaultAerobrakingPolicySelector",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerobrakingPassSchedule",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "strategy_for_pass",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "select_strategy",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/mission/operations/aerobraking_policy/pass_schedule.jl",
+    "src/mission/operations/aerobraking_policy/policy_types.jl",
+    "src/mission/operations/aerobraking_policy/selector_stub.jl"
+  ],
+  "exports": [
+    "AerobrakingStrategyKind",
+    "E_EDG",
+    "T_EDG",
+    "AbstractAerobrakingPolicySelector",
+    "AerobrakingPolicyConfig",
+    "DRLPolicyAdapterStub",
+    "DefaultAerobrakingPolicySelector",
+    "AerobrakingPassSchedule",
+    "strategy_for_pass",
+    "select_strategy"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

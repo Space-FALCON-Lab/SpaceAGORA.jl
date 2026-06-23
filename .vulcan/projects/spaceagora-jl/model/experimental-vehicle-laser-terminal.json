@@ -1,0 +1,42 @@
+{
+  "id": "experimental-vehicle-laser-terminal",
+  "title": "LaserTerminal",
+  "componentKey": "experimental/vehicle/laser_terminal",
+  "description": "1 files, 3 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "LaserTerminalActuator",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LaserTerminalCommand",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "apply_laser_terminal_command!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "experimental/vehicle/laser_terminal/laser_terminal.jl"
+  ],
+  "exports": [
+    "LaserTerminalActuator",
+    "LaserTerminalCommand",
+    "apply_laser_terminal_command!"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

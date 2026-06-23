@@ -1,0 +1,661 @@
+{
+  "id": "auto-logical-component-src-dynamics",
+  "filePath": "model-interfaces/repository/src-dynamics.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-7",
+  "title": "Dynamics",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "Dynamics: 15 implementation files, 3 sub-components.",
+  "verificationIntent": "Verify that Dynamics's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-7-root",
+      "title": "Dynamics",
+      "role": "subsystem",
+      "description": "15 implementation files, 50 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 680,
+      "height": 430,
+      "tags": [
+        "src/dynamics",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-7",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-7",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-7-child-1",
+      "title": "DynamicEffectors",
+      "role": "subsystem",
+      "description": "8 files, 37 exports, 62 imports.",
+      "x": 20,
+      "y": 60,
+      "width": 215,
+      "height": 355,
+      "tags": [
+        "src/dynamics/coupled",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-7-1",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-7-1",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-7-file-1-1",
+      "title": "perturbations.jl",
+      "role": "function",
+      "description": "src/dynamics/coupled/perturbations.jl (1580 lines · 16 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/dynamics/coupled",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-7-file-1-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-7-file-1-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-7-file-1-2",
+      "title": "aerodynamic_wrench_models.jl",
+      "role": "function",
+      "description": "src/dynamics/coupled/aerodynamic_wrench_models.jl (1260 lines · 2 imports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/dynamics/coupled",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-7-file-1-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-7-file-1-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-7-file-1-3",
+      "title": "force_torque_models.jl",
+      "role": "function",
+      "description": "src/dynamics/coupled/force_torque_models.jl (43 lines · 20 exports · 12 imports).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/dynamics/coupled",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-7-file-1-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-7-file-1-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-7-child-2",
+      "title": "DynamicsRotational",
+      "role": "module",
+      "description": "4 files, 5 exports, 5 imports.",
+      "x": 255,
+      "y": 60,
+      "width": 215,
+      "height": 440,
+      "tags": [
+        "src/dynamics/rotational",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-7-2",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-7-2",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-7-file-2-1",
+      "title": "rotational_models.jl",
+      "role": "function",
+      "description": "src/dynamics/rotational/rotational_models.jl (17 lines · 5 exports · 5 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/dynamics/rotational",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-7-file-2-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-7-file-2-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-7-file-2-2",
+      "title": "attitude_kinematics.jl",
+      "role": "function",
+      "description": "src/dynamics/rotational/attitude_kinematics.jl (18 lines).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/dynamics/rotational",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-7-file-2-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-7-file-2-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-7-file-2-3",
+      "title": "torque_models.jl",
+      "role": "function",
+      "description": "src/dynamics/rotational/torque_models.jl (15 lines).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/dynamics/rotational",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-7-file-2-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-7-file-2-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-7-file-2-4",
+      "title": "rigid_body_dynamics.jl",
+      "role": "function",
+      "description": "src/dynamics/rotational/rigid_body_dynamics.jl (10 lines).",
+      "x": 12,
+      "y": 276,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/dynamics/rotational",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-7-file-2-4",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-7-file-2-4",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-7-child-3",
+      "title": "DynamicsTranslational",
+      "role": "module",
+      "description": "3 files, 8 exports, 3 imports.",
+      "x": 20,
+      "y": 185,
+      "width": 215,
+      "height": 355,
+      "tags": [
+        "src/dynamics/translational",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-7-3",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-7-3",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-7-file-3-1",
+      "title": "point_mass_dynamics.jl",
+      "role": "function",
+      "description": "src/dynamics/translational/point_mass_dynamics.jl (67 lines).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/dynamics/translational",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-7-file-3-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-7-file-3-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-7-file-3-2",
+      "title": "translational_models.jl",
+      "role": "function",
+      "description": "src/dynamics/translational/translational_models.jl (18 lines · 8 exports · 3 imports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/dynamics/translational",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-7-file-3-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-7-file-3-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-7-file-3-3",
+      "title": "position_kinematics.jl",
+      "role": "function",
+      "description": "src/dynamics/translational/position_kinematics.jl (10 lines).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/dynamics/translational",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-7-file-3-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-7-file-3-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "subsheet-7-edge-1",
+      "sourceNodeId": "subsheet-7-file-1-2",
+      "targetNodeId": "subsheet-7-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-7-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-7-file-1-3",
+      "kind": "call",
+      "label": "calcForceTorque"
+    },
+    {
+      "id": "subsheet-7-edge-2",
+      "sourceNodeId": "subsheet-7-file-1-2",
+      "targetNodeId": "subsheet-7-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-7-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-7-file-1-1",
+      "kind": "call",
+      "label": "calcForceTorque"
+    },
+    {
+      "id": "subsheet-7-edge-3",
+      "sourceNodeId": "subsheet-7-file-1-2",
+      "targetNodeId": "subsheet-7-file-1-1",
+      "sourcePortId": "sub-file-out-subsheet-7-file-1-2",
+      "targetPortId": "sub-file-in-subsheet-7-file-1-1",
+      "kind": "call",
+      "label": "wrench"
+    },
+    {
+      "id": "subsheet-7-edge-4",
+      "sourceNodeId": "subsheet-7-file-1-1",
+      "targetNodeId": "subsheet-7-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-7-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-7-file-1-2",
+      "kind": "call",
+      "label": "_multibody_thread_decision"
+    },
+    {
+      "id": "subsheet-7-edge-5",
+      "sourceNodeId": "subsheet-7-file-1-1",
+      "targetNodeId": "subsheet-7-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-7-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-7-file-1-2",
+      "kind": "call",
+      "label": "calcForceTorque"
+    },
+    {
+      "id": "subsheet-7-edge-6",
+      "sourceNodeId": "subsheet-7-file-1-1",
+      "targetNodeId": "subsheet-7-file-1-2",
+      "sourcePortId": "sub-file-out-subsheet-7-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-7-file-1-2",
+      "kind": "call",
+      "label": "wrench"
+    },
+    {
+      "id": "subsheet-7-edge-7",
+      "sourceNodeId": "subsheet-7-file-1-1",
+      "targetNodeId": "subsheet-7-file-1-3",
+      "sourcePortId": "sub-file-out-subsheet-7-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-7-file-1-3",
+      "kind": "call",
+      "label": "calcForceTorque"
+    },
+    {
+      "id": "subsheet-7-edge-8",
+      "sourceNodeId": "subsheet-7-file-3-1",
+      "targetNodeId": "subsheet-7-file-3-3",
+      "sourcePortId": "sub-file-out-subsheet-7-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-7-file-3-3",
+      "kind": "call",
+      "label": "position_derivative"
+    },
+    {
+      "id": "subsheet-7-edge-9",
+      "sourceNodeId": "subsheet-7-file-3-1",
+      "targetNodeId": "subsheet-7-file-3-3",
+      "sourcePortId": "sub-file-out-subsheet-7-file-3-1",
+      "targetPortId": "sub-file-in-subsheet-7-file-3-3",
+      "kind": "call",
+      "label": "zero_position_derivative"
+    },
+    {
+      "id": "subsheet-7-edge-10",
+      "sourceNodeId": "subsheet-7-file-2-1",
+      "targetNodeId": "subsheet-7-file-2-2",
+      "sourcePortId": "sub-file-out-subsheet-7-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-7-file-2-2",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/dynamics/rotational/rotational_models.jl",
+        "src/dynamics/rotational/attitude_kinematics.jl"
+      ]
+    },
+    {
+      "id": "subsheet-7-edge-11",
+      "sourceNodeId": "subsheet-7-file-2-1",
+      "targetNodeId": "subsheet-7-file-2-4",
+      "sourcePortId": "sub-file-out-subsheet-7-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-7-file-2-4",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/dynamics/rotational/rotational_models.jl",
+        "src/dynamics/rotational/rigid_body_dynamics.jl"
+      ]
+    },
+    {
+      "id": "subsheet-7-edge-12",
+      "sourceNodeId": "subsheet-7-file-2-1",
+      "targetNodeId": "subsheet-7-file-2-3",
+      "sourcePortId": "sub-file-out-subsheet-7-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-7-file-2-3",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/dynamics/rotational/rotational_models.jl",
+        "src/dynamics/rotational/torque_models.jl"
+      ]
+    },
+    {
+      "id": "subsheet-7-edge-13",
+      "sourceNodeId": "subsheet-7-file-3-2",
+      "targetNodeId": "subsheet-7-file-3-1",
+      "sourcePortId": "sub-file-out-subsheet-7-file-3-2",
+      "targetPortId": "sub-file-in-subsheet-7-file-3-1",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/dynamics/translational/translational_models.jl",
+        "src/dynamics/translational/point_mass_dynamics.jl"
+      ]
+    },
+    {
+      "id": "subsheet-7-edge-14",
+      "sourceNodeId": "subsheet-7-file-3-2",
+      "targetNodeId": "subsheet-7-file-3-3",
+      "sourcePortId": "sub-file-out-subsheet-7-file-3-2",
+      "targetPortId": "sub-file-in-subsheet-7-file-3-3",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/dynamics/translational/translational_models.jl",
+        "src/dynamics/translational/position_kinematics.jl"
+      ]
+    },
+    {
+      "id": "subsheet-7-edge-15",
+      "sourceNodeId": "subsheet-7-file-2-1",
+      "targetNodeId": "subsheet-7-file-2-2",
+      "sourcePortId": "sub-file-out-subsheet-7-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-7-file-2-2",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/dynamics/rotational/rotational_models.jl",
+        "src/dynamics/rotational/attitude_kinematics.jl"
+      ]
+    },
+    {
+      "id": "subsheet-7-edge-16",
+      "sourceNodeId": "subsheet-7-file-2-1",
+      "targetNodeId": "subsheet-7-file-2-4",
+      "sourcePortId": "sub-file-out-subsheet-7-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-7-file-2-4",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/dynamics/rotational/rotational_models.jl",
+        "src/dynamics/rotational/rigid_body_dynamics.jl"
+      ]
+    },
+    {
+      "id": "subsheet-7-edge-17",
+      "sourceNodeId": "subsheet-7-file-2-1",
+      "targetNodeId": "subsheet-7-file-2-3",
+      "sourcePortId": "sub-file-out-subsheet-7-file-2-1",
+      "targetPortId": "sub-file-in-subsheet-7-file-2-3",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/dynamics/rotational/rotational_models.jl",
+        "src/dynamics/rotational/torque_models.jl"
+      ]
+    },
+    {
+      "id": "subsheet-7-edge-18",
+      "sourceNodeId": "subsheet-7-file-3-2",
+      "targetNodeId": "subsheet-7-file-3-1",
+      "sourcePortId": "sub-file-out-subsheet-7-file-3-2",
+      "targetPortId": "sub-file-in-subsheet-7-file-3-1",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/dynamics/translational/translational_models.jl",
+        "src/dynamics/translational/point_mass_dynamics.jl"
+      ]
+    },
+    {
+      "id": "subsheet-7-edge-19",
+      "sourceNodeId": "subsheet-7-file-3-2",
+      "targetNodeId": "subsheet-7-file-3-3",
+      "sourcePortId": "sub-file-out-subsheet-7-file-3-2",
+      "targetPortId": "sub-file-in-subsheet-7-file-3-3",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/dynamics/translational/translational_models.jl",
+        "src/dynamics/translational/position_kinematics.jl"
+      ]
+    }
+  ],
+  "viewKind": "internal-block"
+}

@@ -1,0 +1,58 @@
+{
+  "id": "src-io-serialization",
+  "title": "IOSerialization",
+  "componentKey": "src/io/serialization",
+  "description": "1 files, 5 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "_atomic_write_file",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_sha256_hex",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_write_checkpoint!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_load_checkpoint",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_clear_checkpoint!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/io/serialization/io_serialization.jl"
+  ],
+  "exports": [
+    "_atomic_write_file",
+    "_sha256_hex",
+    "_write_checkpoint!",
+    "_load_checkpoint",
+    "_clear_checkpoint!"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

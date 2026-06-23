@@ -1,0 +1,31 @@
+{
+  "id": "spaceagoracalibration-jl-test",
+  "title": "Test",
+  "componentKey": "SpaceAGORACalibration.jl/test",
+  "description": "«subsystem» | 2 files, 0 exports, 1 connections",
+  "interfaces": [],
+  "connections": [
+    {
+      "targetId": "spaceagoracalibration-jl-src",
+      "targetTitle": "AdaptiveRuntime",
+      "edgeKind": "imports",
+      "interfaceName": "SpaceAGORACalibration",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [
+    {
+      "path": "SpaceAGORACalibration.jl/test/ci_coverage_quality_gate.jl",
+      "name": "ci_coverage_quality_gate.jl"
+    },
+    {
+      "path": "SpaceAGORACalibration.jl/test/runtests.jl",
+      "name": "runtests.jl"
+    }
+  ],
+  "requirements": [],
+  "implementationFiles": [],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

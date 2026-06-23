@@ -1,0 +1,59 @@
+{
+  "id": "docs",
+  "title": "PublicAPISymbols",
+  "componentKey": "docs",
+  "description": "2 files, 4 exports, 1 connections",
+  "interfaces": [
+    {
+      "name": "PUBLIC_API_SECTIONS",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "public_api_specs",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "render_public_api_markdown",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "undocumented_public_api_specs",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [
+    {
+      "targetId": "src-spaceagora",
+      "targetTitle": "SpaceAGORA",
+      "edgeKind": "imports",
+      "interfaceName": "SpaceAGORA",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "docs/make.jl",
+    "docs/public_api_symbols.jl"
+  ],
+  "exports": [
+    "PUBLIC_API_SECTIONS",
+    "public_api_specs",
+    "render_public_api_markdown",
+    "undocumented_public_api_specs"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

@@ -1,0 +1,60 @@
+{
+  "id": "src-vehicle-actuators-thruster",
+  "title": "ThrusterHooks",
+  "componentKey": "src/vehicle/actuators/thruster",
+  "description": "3 files, 5 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "update_thrusters!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "thrust_calculation_schmitt_trigger!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "schmitt_trigger",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "integrate_impulse!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "BaseThrusterModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/vehicle/actuators/thruster/thruster_hooks.jl",
+    "src/vehicle/actuators/thruster/thruster_models.jl",
+    "src/vehicle/actuators/thruster/thruster_models_module.jl"
+  ],
+  "exports": [
+    "update_thrusters!",
+    "thrust_calculation_schmitt_trigger!",
+    "schmitt_trigger",
+    "integrate_impulse!",
+    "BaseThrusterModel"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

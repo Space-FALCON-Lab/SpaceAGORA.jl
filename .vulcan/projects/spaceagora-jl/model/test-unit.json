@@ -1,0 +1,19 @@
+{
+  "id": "test-unit",
+  "title": "Unit",
+  "componentKey": "test/unit",
+  "description": "1 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [
+    {
+      "path": "test/unit/runtests.jl",
+      "name": "runtests.jl"
+    }
+  ],
+  "requirements": [],
+  "implementationFiles": [],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

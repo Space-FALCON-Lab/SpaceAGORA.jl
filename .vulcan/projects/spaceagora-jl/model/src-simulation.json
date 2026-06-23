@@ -1,0 +1,150 @@
+{
+  "id": "src-simulation",
+  "title": "RuntimeServices",
+  "componentKey": "src/simulation",
+  "description": "37 files, 12 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "SaveField",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "default_save_fields",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "get_callbacks",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ParallelConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SolverConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "RuntimePolicyConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ArtifactConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SimulationEngineConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "simulation_engine_config_from_env",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_simulation",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "prewarm_nbody_ephemeris_cache",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "load_nbody_ephemeris_cache!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/simulation/callbacks/callbacks.jl",
+    "src/simulation/callbacks/control_callbacks.jl",
+    "src/simulation/callbacks/density_callbacks/assembly.jl",
+    "src/simulation/callbacks/density_callbacks/config.jl",
+    "src/simulation/callbacks/density_callbacks/model_selection.jl",
+    "src/simulation/callbacks/density_callbacks/planet_frame.jl",
+    "src/simulation/callbacks/density_callbacks/runtime.jl",
+    "src/simulation/callbacks/density_callbacks.jl",
+    "src/simulation/callbacks/event_callbacks.jl",
+    "src/simulation/callbacks/gram_track_cache/config.jl",
+    "src/simulation/callbacks/gram_track_cache/interpolation.jl",
+    "src/simulation/callbacks/gram_track_cache/refresh.jl",
+    "src/simulation/callbacks/gram_track_cache/targeting.jl",
+    "src/simulation/callbacks/gram_track_cache.jl",
+    "src/simulation/callbacks/navigation_guidance_callbacks.jl",
+    "src/simulation/callbacks/registry.jl",
+    "src/simulation/callbacks/save_fields.jl",
+    "src/simulation/callbacks/thermal_callbacks.jl",
+    "src/simulation/engine/adapters/from_env.jl",
+    "src/simulation/engine/adapters/from_simulation_configuration.jl",
+    "src/simulation/engine/config/artifact_config.jl",
+    "src/simulation/engine/config/parallel_config.jl",
+    "src/simulation/engine/config/runtime_policy_config.jl",
+    "src/simulation/engine/config/simulation_engine_config.jl",
+    "src/simulation/engine/config/solver_config.jl",
+    "src/simulation/engine/dynamics_rhs.jl",
+    "src/simulation/engine/effector_sampling.jl",
+    "src/simulation/engine/execution.jl",
+    "src/simulation/engine/persistence.jl",
+    "src/simulation/engine/public_api.jl",
+    "src/simulation/engine/reporting.jl",
+    "src/simulation/engine/resume_checkpoint.jl",
+    "src/simulation/engine/setup.jl",
+    "src/simulation/engine/simulation_engine.jl",
+    "src/simulation/engine/solver_policy.jl",
+    "src/simulation/engine/state_access.jl",
+    "src/simulation/runtime_services.jl"
+  ],
+  "exports": [
+    "SaveField",
+    "default_save_fields",
+    "get_callbacks",
+    "ParallelConfig",
+    "SolverConfig",
+    "RuntimePolicyConfig",
+    "ArtifactConfig",
+    "SimulationEngineConfig",
+    "simulation_engine_config_from_env",
+    "run_simulation",
+    "prewarm_nbody_ephemeris_cache",
+    "load_nbody_ephemeris_cache!"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

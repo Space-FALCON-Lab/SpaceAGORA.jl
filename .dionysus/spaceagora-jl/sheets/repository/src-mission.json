@@ -1,0 +1,139 @@
+{
+  "id": "auto-logical-component-src-mission",
+  "filePath": "sheets/repository/src-mission.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-15",
+  "title": "Mission",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "Mission: 6 implementation files, 1 sub-components.",
+  "verificationIntent": "Verify that Mission's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-15-root",
+      "title": "Mission",
+      "role": "subsystem",
+      "description": "6 implementation files, 10 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 560,
+      "height": 300,
+      "tags": [
+        "src/mission",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-15",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-15",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-15-child-1",
+      "title": "Operations",
+      "role": "subsystem",
+      "description": "5 files, 10 exports, 11 imports.",
+      "x": 20,
+      "y": 60,
+      "width": 215,
+      "height": 270,
+      "tags": [
+        "src/mission/operations",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-15-1",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-15-1",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-15-file-1-1",
+      "title": "maneuver_plans.jl",
+      "role": "function",
+      "description": "src/mission/operations/maneuver_plans.jl (354 lines).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/mission/operations",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-15-file-1-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-15-file-1-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-15-file-1-2",
+      "title": "attitude_control_plans.jl",
+      "role": "function",
+      "description": "src/mission/operations/attitude_control_plans.jl (296 lines · 9 imports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/mission/operations",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-15-file-1-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-15-file-1-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [],
+  "viewKind": "internal-block"
+}

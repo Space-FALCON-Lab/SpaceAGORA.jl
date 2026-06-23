@@ -1,0 +1,83 @@
+{
+  "id": "src-gnc-control",
+  "title": "ControlHooks",
+  "componentKey": "src/gnc/control",
+  "description": "6 files, 3 exports, 5 connections",
+  "interfaces": [
+    {
+      "name": "calcControlForceTorque",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "calcControlEffect!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "calcControlMassFlowRate",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [
+    {
+      "targetId": "src-gnc-control-aerobraking",
+      "targetTitle": "Aerobraking",
+      "edgeKind": "imports",
+      "interfaceName": "constraint_tracking",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-control-aerobraking",
+      "targetTitle": "Aerobraking",
+      "edgeKind": "imports",
+      "interfaceName": "control_commands",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-control-aerobraking",
+      "targetTitle": "Aerobraking",
+      "edgeKind": "imports",
+      "interfaceName": "tracking_executor",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-internal",
+      "targetTitle": "Internal",
+      "edgeKind": "imports",
+      "interfaceName": "bridge_helpers",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-core-interfaces",
+      "targetTitle": "Interfaces",
+      "edgeKind": "imports",
+      "interfaceName": "reference_system",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/gnc/control/aerobraking/constraint_tracking.jl",
+    "src/gnc/control/aerobraking/control_commands.jl",
+    "src/gnc/control/aerobraking/tracking_executor.jl",
+    "src/gnc/control/attitude_control_models.jl",
+    "src/gnc/control/control_hooks.jl",
+    "src/gnc/control/propulsive_maneuvers.jl"
+  ],
+  "exports": [
+    "calcControlForceTorque",
+    "calcControlEffect!",
+    "calcControlMassFlowRate"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

@@ -1,0 +1,57 @@
+{
+  "taskId": "task-1780598953211-c1ft",
+  "runId": "run-1782065525603-gzl7za",
+  "generatedAt": "2026-06-21T18:12:05.630Z",
+  "taskTitle": "Implement and run ADS test suite (test/gnc/ads_tests.jl)",
+  "taskDescription": "Create test/gnc/ads_tests.jl and run it to verify DRM 1 implementation.\n\nRequirements: ADS-VNV-001, ADS-VNV-002, ADS-VNV-003.\n\nIMPORTANT: After writing the test file, run it using:\n  julia --project=C:/Users/Robbie/falcon/SpaceAGORA.jl test/gnc/ads_tests.jl\nand report the test results.\n\nusing Test, LinearAlgebra, Statistics, Random\n# Include ADS files\ninclude(\"../../src/gnc/navigation/ads_sensor_models.jl\")\ninclude(\"../../src/gnc/navigation/ads_mekf.jl\")\ninclude(\"../../src/gnc/navigation/ads_mode_manager.jl\")\ninclude(\"../../src/gnc/navigation/ads_navigation_effector.jl\")\n\n@testset \"ADS — DRM 1 Verification\" begin\n\n  @testset \"ADS-VNV-001: Sensor Noise Statistics\" begin\n    # Star tracker: measure N times with fixed truth, verify noise std matches 5 arcsec\n    # Gyro: verify ARW power spectral density\n    # Magnetometer: verify 50 nT std across 1000 samples\n    # Sun sensor: verify 1 deg std\n    # Use chi-squared goodness-of-fit at p=0.05\n    N = 1000\n    # ... test implementation\n  end\n\n  @testset \"ADS-VNV-002: MEKF Convergence\" begin\n    # Initialize with 5 deg attitude error\n    q_true = [1.0, 0.0, 0.0, 0.0]  # identity quaternion\n    # Create initial estimate with 5 deg rotation error around z-axis\n    # Run 60 seconds of predict+update cycles at 1 Hz\n    # Final attitude error must be < 0.1 deg per ADS-SYS-005\n    @test final_error_deg < 0.1\n  end\n\n  @testset \"ADS-VNV-003: Filter Consistency (NEES)\" begin\n    # 100 Monte Carlo trials\n    # Each trial: random 5 deg initial error, run 100 update cycles\n    # Compute NEES at each step\n    # Verify: mean NEES within 95% CI bounds of chi2(3) distribution\n    # CI bounds: [0.352, 7.815] for chi2(3) at 95%\n    N_trials = 100\n    # ... MC implementation\n    fraction_in_bounds = count(nees_within_95pct) / length(all_nees)\n    @test fraction_in_bounds >= 0.90  # 90% of steps within 95% CI\n  end\n\n  @testset \"ADS mode transitions\" begin\n    mgr = ads_mode_init()\n    @test mgr.current_mode == INIT\n    # Test INIT -> COARSE_ACQ\n    all_healthy = Dict(:star_tracker=>true,:gyro=>true,:magnetometer=>true,:sun_sensor=>true)\n    ads_mode_update!(mgr, all_healthy, false, 0.0, 10.0)\n    @test mgr.current_mode == COARSE_ACQ\n    # Test COARSE_ACQ -> FINE_TRACK (error < 2 deg)\n    ads_mode_update!(mgr, all_healthy, false, 0.0, 1.0)\n    @test mgr.current_mode == FINE_TRACK\n    # Test FINE_TRACK -> ECLIPSE\n    ads_mode_update!(mgr, all_healthy, true, 0.0, 0.05)\n    @test mgr.current_mode == ECLIPSE\n    # Test -> SAFE on gyro failure\n    no_gyro = Dict(:star_tracker=>true,:gyro=>false,:magnetometer=>true,:sun_sensor=>true)\n    ads_mode_update!(mgr, no_gyro, false, 0.0, 0.05)\n    @test mgr.current_mode == SAFE\n  end\n\nend\n\nAfter running tests, report results via complete_run with test_results summary.\nIf tests fail, diagnose and fix the implementation files, re-run until passing.",
+  "taskPriority": "high",
+  "taskSourceChange": null,
+  "allowedComponents": [
+    "test-gnc"
+  ],
+  "allowedFiles": [
+    "test/gnc/aerobraking/e_edg_strategy_parity_tests.jl",
+    "test/gnc/aerobraking/t_edg_strategy_parity_tests.jl",
+    "test/gnc/ads_tests.jl"
+  ],
+  "allowedInterfaceChanges": false,
+  "frozenSignatures": {},
+  "linkedRequirements": [],
+  "vnvEntries": [],
+  "requiredVerifiers": [
+    "interface-diff",
+    "model-consistency"
+  ],
+  "missionBrief": "SpaceAGORA.Jl\nMission: Align SpaceAGORA.Jl with the repository implementation and keep the model current.\nCompile intent: Align the implementation with the current system model and close repository-to-model gaps.",
+  "operationalRefs": [],
+  "physicalRefs": [],
+  "allowedSheetIds": [
+    "auto-logical-component-benchmarks",
+    "auto-software-data-repository-alignment",
+    "auto-logical-component-data",
+    "auto-logical-component-docs",
+    "auto-logical-component-examples",
+    "auto-logical-component-experimental",
+    "auto-logical-component-ext",
+    "auto-logical-repository-alignment",
+    "auto-logical-component-readme",
+    "auto-logical-component-scripts",
+    "auto-logical-component-spaceagoracalibration-jl",
+    "auto-logical-component-src-analysis",
+    "auto-logical-component-src-cli",
+    "auto-logical-component-src-core",
+    "auto-logical-component-src-dynamics",
+    "auto-logical-component-src-environment",
+    "auto-logical-component-src-gnc",
+    "auto-logical-component-src-io",
+    "auto-logical-component-src-mission",
+    "auto-logical-component-src-parallel",
+    "auto-logical-component-src-precompile-workload",
+    "auto-logical-component-src-simulation",
+    "auto-logical-component-src-spaceagora",
+    "auto-logical-component-src-vehicle",
+    "auto-logical-component-startup",
+    "auto-logical-component-templates",
+    "auto-logical-component-test"
+  ]
+}

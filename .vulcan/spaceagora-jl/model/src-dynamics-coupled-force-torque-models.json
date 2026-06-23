@@ -1,0 +1,187 @@
+{
+  "id": "src-dynamics-coupled-force-torque-models",
+  "title": "AerodynamicEffectors",
+  "componentKey": "src/dynamics/coupled/force_torque_models",
+  "description": "5 files, 17 exports, 4 connections",
+  "interfaces": [
+    {
+      "name": "AerodynamicCoefficientConstant",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerodynamicCoefficientfM",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerodynamicCoefficientNoBallisticFlight",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ConstantGravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "InverseSquaredGravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "InverseSquaredJ2GravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "aerobraking_gravity_force_ii",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "j2_secular_rates",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerobrakingCampaignPropulsiveManeuverGuidanceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NBodyGravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "GravitationalHarmonicsModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SolarRadiationPressureModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "srp",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "srp_cannonball_accel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "planetary_albedo_accel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "planetary_ir_accel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "BaseThrusterModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [
+    {
+      "targetId": "src-core-interfaces",
+      "targetTitle": "Interfaces",
+      "edgeKind": "imports",
+      "interfaceName": "reference_system",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-dynamics-coupled",
+      "targetTitle": "DynamicEffectors",
+      "edgeKind": "imports",
+      "interfaceName": "aerodynamic_wrench_models",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-dynamics-coupled",
+      "targetTitle": "DynamicEffectors",
+      "edgeKind": "imports",
+      "interfaceName": "perturbations",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-environment-gravity",
+      "targetTitle": "GravityEffectors",
+      "edgeKind": "imports",
+      "interfaceName": "gravity_models",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/dynamics/coupled/force_torque_models/aerodynamic_effectors.jl",
+    "src/dynamics/coupled/force_torque_models/gravity_effectors.jl",
+    "src/dynamics/coupled/force_torque_models/guidance_models.jl",
+    "src/dynamics/coupled/force_torque_models/perturbation_effectors.jl",
+    "src/dynamics/coupled/force_torque_models/thruster_models.jl"
+  ],
+  "exports": [
+    "AerodynamicCoefficientConstant",
+    "AerodynamicCoefficientfM",
+    "AerodynamicCoefficientNoBallisticFlight",
+    "ConstantGravityModel",
+    "InverseSquaredGravityModel",
+    "InverseSquaredJ2GravityModel",
+    "aerobraking_gravity_force_ii",
+    "j2_secular_rates",
+    "AerobrakingCampaignPropulsiveManeuverGuidanceModel",
+    "NBodyGravityModel",
+    "GravitationalHarmonicsModel",
+    "SolarRadiationPressureModel",
+    "srp",
+    "srp_cannonball_accel",
+    "planetary_albedo_accel",
+    "planetary_ir_accel",
+    "BaseThrusterModel"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

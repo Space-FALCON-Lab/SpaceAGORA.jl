@@ -1,0 +1,5 @@
+{
+  "passed": false,
+  "output": "ERROR: LoadError: ParseError:\n# Error @ C:\\Users\\Robbie\\falcon\\SpaceAGORA.jl\\src\\gnc\\navigation\\ads_mekf.jl:96:28\n    S = H * state.P * H' + R\n    K = state.P * H' * (S \\\\ Matrix{Float64}(I, size(S)...))\n#                          ╙ ── not a unary operator\nStacktrace:\n [1] top-level scope\n   @ C:\\Users\\Robbie\\falcon\\SpaceAGORA.jl\\src\\gnc\\navigation\\ads_mekf.jl:96\n [2] include(fname::String)\n   @ Base.MainInclude .\\client.jl:489\n [3] top-level scope\n   @ C:\\Users\\Robbie\\falcon\\SpaceAGORA.jl\\test\\gnc\\ads_tests.jl:10\nin expression starting at C:\\Users\\Robbie\\falcon\\SpaceAGORA.jl\\src\\gnc\\navigation\\ads_mekf.jl:96\nin expression starting at C:\\Users\\Robbie\\falcon\\SpaceAGORA.jl\\test\\gnc\\ads_tests.jl:10\n",
+  "durationMs": 2862
+}

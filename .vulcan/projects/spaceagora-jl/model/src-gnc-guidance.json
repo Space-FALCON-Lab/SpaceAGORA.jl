@@ -1,0 +1,219 @@
+{
+  "id": "src-gnc-guidance",
+  "title": "GuidanceHooks",
+  "componentKey": "src/gnc/guidance",
+  "description": "16 files, 10 exports, 15 connections",
+  "interfaces": [
+    {
+      "name": "calcGuidanceEffect!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractAerobrakingStrategy",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "EEdgStrategy",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "TEdgStrategy",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerobrakingGuidanceInput",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerobrakingGuidanceOutput",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerobrakingControlCommand",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "compute_aerobraking_guidance",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "dispatch_aerobraking_guidance",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerobrakingCampaignPropulsiveManeuverGuidanceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [
+    {
+      "targetId": "src-gnc-guidance-aerobraking-common",
+      "targetTitle": "Common",
+      "edgeKind": "imports",
+      "interfaceName": "closed_form_solution",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-guidance-aerobraking-common",
+      "targetTitle": "Common",
+      "edgeKind": "imports",
+      "interfaceName": "heat_rate_models",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-guidance-aerobraking",
+      "targetTitle": "Aerobraking",
+      "edgeKind": "imports",
+      "interfaceName": "dispatcher",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-guidance-aerobraking",
+      "targetTitle": "Aerobraking",
+      "edgeKind": "imports",
+      "interfaceName": "interfaces",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-guidance-aerobraking-e-edg",
+      "targetTitle": "E Edg",
+      "edgeKind": "imports",
+      "interfaceName": "e_edg_strategy",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-guidance-aerobraking-e-edg",
+      "targetTitle": "E Edg",
+      "edgeKind": "imports",
+      "interfaceName": "energy_profile_solver",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-guidance-aerobraking-e-edg",
+      "targetTitle": "E Edg",
+      "edgeKind": "imports",
+      "interfaceName": "second_switch_solver",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-guidance-aerobraking-e-edg",
+      "targetTitle": "E Edg",
+      "edgeKind": "imports",
+      "interfaceName": "switch_window_solver",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-guidance-aerobraking-t-edg",
+      "targetTitle": "T Edg",
+      "edgeKind": "imports",
+      "interfaceName": "eom_predictor",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-guidance-aerobraking-t-edg",
+      "targetTitle": "T Edg",
+      "edgeKind": "imports",
+      "interfaceName": "t_edg_strategy",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-guidance-aerobraking-t-edg",
+      "targetTitle": "T Edg",
+      "edgeKind": "imports",
+      "interfaceName": "targeting_solver",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-guidance-aerobraking-t-edg",
+      "targetTitle": "T Edg",
+      "edgeKind": "imports",
+      "interfaceName": "trajectory_predictor",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-guidance-thruster-guidance",
+      "targetTitle": "Thruster Guidance",
+      "edgeKind": "imports",
+      "interfaceName": "thruster_guidance_functions",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-guidance-thruster-guidance",
+      "targetTitle": "Thruster Guidance",
+      "edgeKind": "imports",
+      "interfaceName": "thruster_guidance_models",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-gnc-internal",
+      "targetTitle": "Internal",
+      "edgeKind": "imports",
+      "interfaceName": "bridge_helpers",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/gnc/guidance/aerobraking/common/closed_form_solution.jl",
+    "src/gnc/guidance/aerobraking/common/heat_rate_models.jl",
+    "src/gnc/guidance/aerobraking/dispatcher.jl",
+    "src/gnc/guidance/aerobraking/e_edg/energy_profile_solver.jl",
+    "src/gnc/guidance/aerobraking/e_edg/e_edg_strategy.jl",
+    "src/gnc/guidance/aerobraking/e_edg/second_switch_solver.jl",
+    "src/gnc/guidance/aerobraking/e_edg/switch_window_solver.jl",
+    "src/gnc/guidance/aerobraking/interfaces.jl",
+    "src/gnc/guidance/aerobraking/t_edg/eom_predictor.jl",
+    "src/gnc/guidance/aerobraking/t_edg/targeting_solver.jl",
+    "src/gnc/guidance/aerobraking/t_edg/trajectory_predictor.jl",
+    "src/gnc/guidance/aerobraking/t_edg/t_edg_strategy.jl",
+    "src/gnc/guidance/guidance_hooks.jl",
+    "src/gnc/guidance/guidance_models.jl",
+    "src/gnc/guidance/thruster_guidance/thruster_guidance_functions.jl",
+    "src/gnc/guidance/thruster_guidance/thruster_guidance_models.jl"
+  ],
+  "exports": [
+    "calcGuidanceEffect!",
+    "AbstractAerobrakingStrategy",
+    "EEdgStrategy",
+    "TEdgStrategy",
+    "AerobrakingGuidanceInput",
+    "AerobrakingGuidanceOutput",
+    "AerobrakingControlCommand",
+    "compute_aerobraking_guidance",
+    "dispatch_aerobraking_guidance",
+    "AerobrakingCampaignPropulsiveManeuverGuidanceModel"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

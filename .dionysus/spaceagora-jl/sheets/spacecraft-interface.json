@@ -1,0 +1,34 @@
+{
+  "id": "sheet-01e0bb74",
+  "filePath": "sheets/spacecraft-interface.json",
+  "parentId": "auto-logical-component-experimental",
+  "title": "Spacecraft INterface",
+  "layer": "logical",
+  "abstractionLevel": 2,
+  "summary": "",
+  "verificationIntent": "",
+  "nodes": [
+    {
+      "id": "node-17f9c126",
+      "title": "Structure",
+      "role": "component",
+      "description": "4 files grouped under src/vehicle/structure.",
+      "x": 80,
+      "y": 96,
+      "width": 220,
+      "height": 110,
+      "tags": [
+        "component",
+        "hierarchy",
+        "depth:1"
+      ],
+      "sourceArtifactId": "repository:spaceagora-jl:component:src/vehicle/structure",
+      "workspaceDirectory": "src/vehicle/structure",
+      "aiModificationPolicy": "default",
+      "ports": [],
+      "designNotes": []
+    }
+  ],
+  "edges": [],
+  "viewKind": "internal-block"
+}

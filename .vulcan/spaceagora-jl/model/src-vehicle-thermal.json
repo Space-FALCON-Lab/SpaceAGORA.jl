@@ -1,0 +1,35 @@
+{
+  "id": "src-vehicle-thermal",
+  "title": "VehicleThermalModels",
+  "componentKey": "src/vehicle/thermal",
+  "description": "2 files, 2 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "MaxwellianHeat",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "getHeatRate",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/vehicle/thermal/thermal_models.jl",
+    "src/vehicle/thermal/thermal_models_module.jl"
+  ],
+  "exports": [
+    "MaxwellianHeat",
+    "getHeatRate"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

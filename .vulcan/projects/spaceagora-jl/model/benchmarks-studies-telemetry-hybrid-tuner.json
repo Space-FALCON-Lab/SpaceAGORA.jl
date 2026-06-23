@@ -1,0 +1,19 @@
+{
+  "id": "benchmarks-studies-telemetry-hybrid-tuner",
+  "title": "Telemetry Hybrid Tuner",
+  "componentKey": "benchmarks/studies/telemetry_hybrid_tuner",
+  "description": "4 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "benchmarks/studies/telemetry_hybrid_tuner/cli_and_specs.jl",
+    "benchmarks/studies/telemetry_hybrid_tuner/manifest_and_evaluator.jl",
+    "benchmarks/studies/telemetry_hybrid_tuner/reporting.jl",
+    "benchmarks/studies/telemetry_hybrid_tuner/search_strategy.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

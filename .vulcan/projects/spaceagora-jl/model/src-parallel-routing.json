@@ -1,0 +1,175 @@
+{
+  "id": "src-parallel-routing",
+  "title": "ParallelProfiles",
+  "componentKey": "src/parallel/routing",
+  "description": "6 files, 19 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "ParallelProfile",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ParallelProfileConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "parse_parallel_profile",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "parallel_profile_name",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "profile_config",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "profile_env_pairs",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "with_parallel_profile",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "OuterRouteFeatures",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "OuterRouteTuning",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "OuterRouteState",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "reset_outer_route_state!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "outer_route_signature",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "outer_route_stats_snapshot",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "default_outer_route",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "outer_route_candidates",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "select_outer_route!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "record_outer_route_feedback!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "load_outer_route_state!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "save_outer_route_state",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/parallel/routing/env_mapping.jl",
+    "src/parallel/routing/outer_route_metrics.jl",
+    "src/parallel/routing/outer_route_selection.jl",
+    "src/parallel/routing/outer_route_state.jl",
+    "src/parallel/routing/parallel_profiles.jl",
+    "src/parallel/routing/profile_definitions.jl"
+  ],
+  "exports": [
+    "ParallelProfile",
+    "ParallelProfileConfig",
+    "parse_parallel_profile",
+    "parallel_profile_name",
+    "profile_config",
+    "profile_env_pairs",
+    "with_parallel_profile",
+    "OuterRouteFeatures",
+    "OuterRouteTuning",
+    "OuterRouteState",
+    "reset_outer_route_state!",
+    "outer_route_signature",
+    "outer_route_stats_snapshot",
+    "default_outer_route",
+    "outer_route_candidates",
+    "select_outer_route!",
+    "record_outer_route_feedback!",
+    "load_outer_route_state!",
+    "save_outer_route_state"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

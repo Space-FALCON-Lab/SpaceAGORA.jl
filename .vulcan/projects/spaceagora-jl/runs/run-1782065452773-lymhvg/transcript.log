@@ -1,0 +1,4 @@
+[2026-06-21T18:10:53.112Z] verifier:interface-diff → PASS
+[2026-06-21T18:10:53.239Z] verifier:model-consistency → PASS
+[2026-06-21T18:10:53.268Z] complete_run: success
+[2026-06-21T18:10:53.294Z] applied patch: src/gnc/navigation/ads_mekf.jl

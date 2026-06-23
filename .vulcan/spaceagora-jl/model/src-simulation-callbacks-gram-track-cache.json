@@ -1,0 +1,19 @@
+{
+  "id": "src-simulation-callbacks-gram-track-cache",
+  "title": "Gram Track Cache",
+  "componentKey": "src/simulation/callbacks/gram_track_cache",
+  "description": "4 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/simulation/callbacks/gram_track_cache/config.jl",
+    "src/simulation/callbacks/gram_track_cache/interpolation.jl",
+    "src/simulation/callbacks/gram_track_cache/refresh.jl",
+    "src/simulation/callbacks/gram_track_cache/targeting.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

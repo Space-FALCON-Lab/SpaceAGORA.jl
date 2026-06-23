@@ -1,0 +1,26 @@
+{
+  "id": "experimental-vehicle-resources-solar-array",
+  "title": "SolarArrayModel",
+  "componentKey": "experimental/vehicle/resources/solar_array",
+  "description": "1 files, 1 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "SolarArrayResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "experimental/vehicle/resources/solar_array/solar_array_model.jl"
+  ],
+  "exports": [
+    "SolarArrayResourceModel"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

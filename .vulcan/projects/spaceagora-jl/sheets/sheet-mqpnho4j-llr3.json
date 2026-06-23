@@ -1,0 +1,218 @@
+{
+  "id": "sheet-mqpnho4j-llr3",
+  "filePath": "sheets/sheet-mqpnho4j-llr3.json",
+  "parentId": "sheet-mqpnhis5-puej",
+  "ownerNodeId": "node-mqpnhj5n-rjyu",
+  "title": "SensorSuite — Internal Block Diagram",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "Four sensor measurement models producing body-frame measurements + validity from truth attitude and environment.",
+  "verificationIntent": "Blocks map to ads_sensor_models.jl; noise statistics verified against spec distributions.",
+  "nodes": [
+    {
+      "id": "node-mqpnho85-pv7e",
+      "title": "StarTracker",
+      "role": "component",
+      "description": "5″ small-angle rotation noise, 15° FOV, sun-exclusion mask",
+      "x": 360,
+      "y": 80,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "ss-StarTracker-out",
+          "name": "q_meas",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "q_meas:Quaternion + valid"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhobk-wjut",
+      "title": "Gyro",
+      "role": "component",
+      "description": "ω̃=ω+b+n; ARW 0.1°/√hr; bias random walk 1°/hr",
+      "x": 360,
+      "y": 200,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "ss-Gyro-out",
+          "name": "omega_meas",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "omega_meas:Vector3"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhofa-rbal",
+      "title": "Magnetometer",
+      "role": "component",
+      "description": "B_body=R(q)B_I+N(0,(50nT)²), normalized",
+      "x": 360,
+      "y": 320,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "ss-Magnetometer-out",
+          "name": "b_meas",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "b_meas:UnitVector3 + valid"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhoiw-35b3",
+      "title": "SunSensor",
+      "role": "component",
+      "description": "ŝ_body=R(q)ŝ_I+N(0,(1°)²); 70° FOV; eclipse-gated",
+      "x": 360,
+      "y": 440,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "ss-SunSensor-out",
+          "name": "s_meas",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "s_meas:UnitVector3 + valid"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhom4-84x9",
+      "title": "Truth+Env",
+      "role": "data-type",
+      "description": "q_true, ω_true from rigid_body_dynamics; sun_I, B_I, eclipse from environment.",
+      "x": 80,
+      "y": 260,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "ss-truth",
+          "name": "inputs",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "TruthEnv"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhopd-b3mu",
+      "title": "SensorMeasurements",
+      "role": "data-type",
+      "description": "Aggregated measurement struct consumed by the MEKF.",
+      "x": 680,
+      "y": 260,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "ss-meas",
+          "name": "measurements",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "SensorMeasurements"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-mqpnhosn-48cn",
+      "sourceNodeId": "node-mqpnhom4-84x9",
+      "targetNodeId": "node-mqpnho85-pv7e",
+      "sourcePortId": "ss-truth",
+      "kind": "data-flow",
+      "label": "q,ω,env"
+    },
+    {
+      "id": "edge-mqpnhow3-zfar",
+      "sourceNodeId": "node-mqpnho85-pv7e",
+      "targetNodeId": "node-mqpnhopd-b3mu",
+      "targetPortId": "ss-meas",
+      "kind": "data-flow",
+      "label": "meas"
+    },
+    {
+      "id": "edge-mqpnhozj-o4w9",
+      "sourceNodeId": "node-mqpnhom4-84x9",
+      "targetNodeId": "node-mqpnhobk-wjut",
+      "sourcePortId": "ss-truth",
+      "kind": "data-flow",
+      "label": "q,ω,env"
+    },
+    {
+      "id": "edge-mqpnhp2v-2nmb",
+      "sourceNodeId": "node-mqpnhobk-wjut",
+      "targetNodeId": "node-mqpnhopd-b3mu",
+      "targetPortId": "ss-meas",
+      "kind": "data-flow",
+      "label": "meas"
+    },
+    {
+      "id": "edge-mqpnhp6r-45cg",
+      "sourceNodeId": "node-mqpnhom4-84x9",
+      "targetNodeId": "node-mqpnhofa-rbal",
+      "sourcePortId": "ss-truth",
+      "kind": "data-flow",
+      "label": "q,ω,env"
+    },
+    {
+      "id": "edge-mqpnhpa8-zs0l",
+      "sourceNodeId": "node-mqpnhofa-rbal",
+      "targetNodeId": "node-mqpnhopd-b3mu",
+      "targetPortId": "ss-meas",
+      "kind": "data-flow",
+      "label": "meas"
+    },
+    {
+      "id": "edge-mqpnhpdk-uekp",
+      "sourceNodeId": "node-mqpnhom4-84x9",
+      "targetNodeId": "node-mqpnhoiw-35b3",
+      "sourcePortId": "ss-truth",
+      "kind": "data-flow",
+      "label": "q,ω,env"
+    },
+    {
+      "id": "edge-mqpnhph7-yt0c",
+      "sourceNodeId": "node-mqpnhoiw-35b3",
+      "targetNodeId": "node-mqpnhopd-b3mu",
+      "targetPortId": "ss-meas",
+      "kind": "data-flow",
+      "label": "meas"
+    }
+  ],
+  "viewKind": "internal-block"
+}

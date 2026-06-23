@@ -1,0 +1,263 @@
+{
+  "id": "auto-logical-component-scripts",
+  "filePath": "model-interfaces/repository/scripts.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-14",
+  "title": "Scripts",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "Scripts: 7 implementation files, 2 sub-components.",
+  "verificationIntent": "Verify that Scripts's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-14-root",
+      "title": "Scripts",
+      "role": "subsystem",
+      "description": "7 implementation files, 0 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 620,
+      "height": 300,
+      "tags": [
+        "scripts",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-14",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-14",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-14-child-1",
+      "title": "Assets",
+      "role": "component",
+      "description": "3 files, 0 exports, 3 imports.",
+      "x": 20,
+      "y": 60,
+      "width": 215,
+      "height": 355,
+      "tags": [
+        "scripts/assets",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-14-1",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-14-1",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-14-file-1-1",
+      "title": "check_assets.jl",
+      "role": "function",
+      "description": "scripts/assets/check_assets.jl (6 lines · 1 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "scripts/assets",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-14-file-1-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-14-file-1-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-14-file-1-2",
+      "title": "show_asset_manifest.jl",
+      "role": "function",
+      "description": "scripts/assets/show_asset_manifest.jl (6 lines · 1 imports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "scripts/assets",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-14-file-1-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-14-file-1-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-14-file-1-3",
+      "title": "setup_open_assets.jl",
+      "role": "function",
+      "description": "scripts/assets/setup_open_assets.jl (5 lines · 1 imports).",
+      "x": 12,
+      "y": 198,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "scripts/assets",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-14-file-1-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-14-file-1-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-14-child-2",
+      "title": "Plotting",
+      "role": "component",
+      "description": "2 files, 0 exports, 12 imports.",
+      "x": 255,
+      "y": 60,
+      "width": 215,
+      "height": 270,
+      "tags": [
+        "scripts/plotting",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-14-2",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-14-2",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-14-file-2-1",
+      "title": "plot_data.jl",
+      "role": "function",
+      "description": "scripts/plotting/plot_data.jl (748 lines · 5 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "scripts/plotting",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-14-file-2-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-14-file-2-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-14-file-2-2",
+      "title": "telemetry_orbit_accuracy_plots.jl",
+      "role": "function",
+      "description": "scripts/plotting/telemetry_orbit_accuracy_plots.jl (247 lines · 7 imports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "scripts/plotting",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-14-file-2-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-14-file-2-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [],
+  "viewKind": "internal-block"
+}

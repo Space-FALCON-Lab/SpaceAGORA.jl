@@ -1,0 +1,18 @@
+{
+  "id": "src-gnc-control-aerobraking",
+  "title": "Aerobraking",
+  "componentKey": "src/gnc/control/aerobraking",
+  "description": "3 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/gnc/control/aerobraking/constraint_tracking.jl",
+    "src/gnc/control/aerobraking/control_commands.jl",
+    "src/gnc/control/aerobraking/tracking_executor.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

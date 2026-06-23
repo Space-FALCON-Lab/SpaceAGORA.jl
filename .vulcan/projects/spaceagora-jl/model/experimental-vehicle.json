@@ -1,0 +1,127 @@
+{
+  "id": "experimental-vehicle",
+  "title": "Vehicle",
+  "componentKey": "experimental/vehicle",
+  "description": "6 files, 17 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "LaserTerminalActuator",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LaserTerminalCommand",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "apply_laser_terminal_command!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "BatteryResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LoadResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "PowerBusResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ResourceState",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ResourceInputs",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ResourceOutputs",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "initialize_resource_state",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "step_resource!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SolarArrayResourceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "experimental/vehicle/laser_terminal/laser_terminal.jl",
+    "experimental/vehicle/resources/battery/battery_model.jl",
+    "experimental/vehicle/resources/loads/load_model.jl",
+    "experimental/vehicle/resources/power_bus/power_bus_model.jl",
+    "experimental/vehicle/resources/resources.jl",
+    "experimental/vehicle/resources/solar_array/solar_array_model.jl"
+  ],
+  "exports": [
+    "LaserTerminalActuator",
+    "LaserTerminalCommand",
+    "apply_laser_terminal_command!",
+    "BatteryResourceModel",
+    "LoadResourceModel",
+    "PowerBusResourceModel",
+    "AbstractResourceModel",
+    "ResourceState",
+    "ResourceInputs",
+    "ResourceOutputs",
+    "initialize_resource_state",
+    "step_resource!",
+    "SolarArrayResourceModel"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

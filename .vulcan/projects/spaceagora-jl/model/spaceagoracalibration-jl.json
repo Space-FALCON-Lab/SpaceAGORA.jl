@@ -1,0 +1,587 @@
+{
+  "id": "spaceagoracalibration-jl",
+  "title": "SpaceAGORACalibration.Jl",
+  "componentKey": "SpaceAGORACalibration.jl",
+  "description": "«subsystem» | 19 files, 84 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "RuntimeDecision",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "RuntimeController",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "full_auto_enabled",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "init_runtime_controller",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "choose_runtime_decision!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "record_runtime_feedback!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "save_runtime_controller!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractBackend",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "CommandBackend",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "InProcessBackend",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "MockBackend",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "BackendEvaluation",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "CandidateRuntimePolicy",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "backend_parallel_profile",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "backend_full_auto_requested",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "evaluate_candidate",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "apply_candidate_to_manifest!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "CalibrationResult",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_calibration",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "GlobalSearchResult",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "global_target_count",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "plan_initial_design",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "propose_bo_candidate",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_global_search",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LocalRefineResult",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "plan_local_candidates",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_local_refine",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "primary_score",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "robust_statistics",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "robust_score",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "sort_indices_by_score",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Candidate",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "sample_random_candidate",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "sample_lhs_population",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "sample_initial_population",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "perturb_candidate",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "candidate_signature",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "write_report!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "RobustnessRecord",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "RobustnessResult",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "plan_robustness_candidates",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "summarize_robustness",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_robustness",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "CalibrationSpec",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "BudgetSpec",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ParameterSpec",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ParameterKind",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "load_spec",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "default_spec",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "validate_spec",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "spec_to_dict",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "primary_manifest_path",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "RunStore",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "LedgerEntry",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "RunState",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "init_store",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "append_evaluation!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "load_ledger_entries",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "load_stage_entries",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "save_state!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "load_state",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "stage_is_completed!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "spec_path",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "evaluations_path",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "state_path",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "best_manifest_path",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "report_path",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "STAGE_SEQUENCE",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [
+    {
+      "path": "SpaceAGORACalibration.jl/test/ci_coverage_quality_gate.jl",
+      "name": "ci_coverage_quality_gate.jl"
+    },
+    {
+      "path": "SpaceAGORACalibration.jl/test/runtests.jl",
+      "name": "runtests.jl"
+    }
+  ],
+  "requirements": [],
+  "implementationFiles": [
+    "SpaceAGORACalibration.jl/bin/run_calibration.jl",
+    "SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl",
+    "SpaceAGORACalibration.jl/bin/run_telemetry_tuner.jl",
+    "SpaceAGORACalibration.jl/README.md",
+    "SpaceAGORACalibration.jl/src/AdaptiveRuntime.jl",
+    "SpaceAGORACalibration.jl/src/Backend.jl",
+    "SpaceAGORACalibration.jl/src/Engine.jl",
+    "SpaceAGORACalibration.jl/src/GlobalSearch.jl",
+    "SpaceAGORACalibration.jl/src/LocalRefine.jl",
+    "SpaceAGORACalibration.jl/src/Objective.jl",
+    "SpaceAGORACalibration.jl/src/ParamSpace.jl",
+    "SpaceAGORACalibration.jl/src/Report.jl",
+    "SpaceAGORACalibration.jl/src/Robustness.jl",
+    "SpaceAGORACalibration.jl/src/SpaceAGORACalibration.jl",
+    "SpaceAGORACalibration.jl/src/Spec.jl",
+    "SpaceAGORACalibration.jl/src/Store.jl",
+    "SpaceAGORACalibration.jl/studies/earth_offline/README.md"
+  ],
+  "exports": [
+    "RuntimeDecision",
+    "RuntimeController",
+    "full_auto_enabled",
+    "init_runtime_controller",
+    "choose_runtime_decision!",
+    "record_runtime_feedback!",
+    "save_runtime_controller!",
+    "AbstractBackend",
+    "CommandBackend",
+    "InProcessBackend",
+    "MockBackend",
+    "BackendEvaluation",
+    "CandidateRuntimePolicy",
+    "backend_parallel_profile",
+    "backend_full_auto_requested",
+    "evaluate_candidate",
+    "apply_candidate_to_manifest!",
+    "CalibrationResult",
+    "run_calibration",
+    "GlobalSearchResult",
+    "global_target_count",
+    "plan_initial_design",
+    "propose_bo_candidate",
+    "run_global_search",
+    "LocalRefineResult",
+    "plan_local_candidates",
+    "run_local_refine",
+    "primary_score",
+    "robust_statistics",
+    "robust_score",
+    "sort_indices_by_score",
+    "Candidate",
+    "sample_random_candidate",
+    "sample_lhs_population",
+    "sample_initial_population",
+    "perturb_candidate",
+    "candidate_signature",
+    "write_report!",
+    "RobustnessRecord",
+    "RobustnessResult",
+    "plan_robustness_candidates",
+    "summarize_robustness",
+    "run_robustness",
+    "CalibrationSpec",
+    "BudgetSpec",
+    "ParameterSpec",
+    "ParameterKind",
+    "load_spec",
+    "default_spec",
+    "validate_spec",
+    "spec_to_dict",
+    "primary_manifest_path",
+    "RunStore",
+    "LedgerEntry",
+    "RunState",
+    "init_store",
+    "append_evaluation!",
+    "load_ledger_entries",
+    "load_stage_entries",
+    "save_state!",
+    "load_state",
+    "stage_is_completed!",
+    "spec_path",
+    "evaluations_path",
+    "state_path",
+    "best_manifest_path",
+    "report_path",
+    "STAGE_SEQUENCE"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

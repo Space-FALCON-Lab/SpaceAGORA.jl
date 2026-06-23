@@ -1,0 +1,279 @@
+{
+  "id": "sheet-mqpnhl8r-8opy",
+  "filePath": "sheets/sheet-mqpnhl8r-8opy.json",
+  "parentId": "sheet-mqpnhis5-puej",
+  "ownerNodeId": "node-mqpnhjk1-36nr",
+  "title": "ADSNavigationEffector — Internal Block Diagram",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "Internals of calcNavigationEffect!: per-cycle orchestration of sensors, reference vectors, mode manager and MEKF, producing NavigationEffectorOutput.",
+  "verificationIntent": "Each internal block maps to a function in ads_navigation_effector.jl; data flows match the typed ports.",
+  "nodes": [
+    {
+      "id": "node-mqpnhlcz-f27q",
+      "title": "calcNavigationEffect!",
+      "role": "function",
+      "description": "Effector hook (model,u,p,t,sat_idx). Computes dt, reads truth + references, dispatches the pipeline, writes output.",
+      "x": 120,
+      "y": 220,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "e-hook-in",
+          "name": "sim_state",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "SimState",
+          "subPorts": [
+            {
+              "id": "e-hook-in-u",
+              "name": "u",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "StateVector"
+            },
+            {
+              "id": "e-hook-in-t",
+              "name": "t",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Float64"
+            },
+            {
+              "id": "e-hook-in-i",
+              "name": "sat_idx",
+              "kind": "data",
+              "direction": "bidirectional",
+              "dataType": "Int"
+            }
+          ]
+        },
+        {
+          "id": "e-hook-out",
+          "name": "nav_output",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "NavigationEffectorOutput"
+        }
+      ],
+      "designNotes": [
+        {
+          "id": "note-1782159059168-qbis",
+          "text": "Per cycle: dt = t − t_last (or 1/rate); read q_true,ω_true from rigid_body_dynamics; sun_I from ephemerides, B_I from perturbations, eclipse flag; simulate sensors; ModeManager.update!; MEKF predict+update over active sensors; write output; validity = (mode≠SAFE ∧ gyro_ok).",
+          "format": "markdown",
+          "color": "blue",
+          "x": 20,
+          "y": -60,
+          "createdAt": "2026-06-22T20:10:59.168Z",
+          "updatedAt": "2026-06-22T20:10:59.168Z"
+        }
+      ]
+    },
+    {
+      "id": "node-mqpnhlgw-rblv",
+      "title": "SensorSuite.measure",
+      "role": "component",
+      "description": "Calls each sensor model to produce body-frame measurements + validity.",
+      "x": 420,
+      "y": 80,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "e-sen-out",
+          "name": "measurements",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "SensorMeasurements"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhll0-gviq",
+      "title": "ReferenceVectorProvider",
+      "role": "component",
+      "description": "Sun + geomagnetic inertial reference vectors from ephemerides/perturbations.",
+      "x": 420,
+      "y": 220,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "e-ref-out",
+          "name": "ref_inertial",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "ReferenceVectors"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhlop-hdfo",
+      "title": "ModeManager.update!",
+      "role": "component",
+      "description": "Advances the mode state machine; selects active sensors.",
+      "x": 420,
+      "y": 360,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "e-mode-out",
+          "name": "mode",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "ADSMode"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhlt0-03ja",
+      "title": "MEKF.estimate!",
+      "role": "component",
+      "description": "Predict + multiplicative update; outputs attitude estimate + covariance.",
+      "x": 720,
+      "y": 200,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "e-mekf-in1",
+          "name": "measurements",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "SensorMeasurements"
+        },
+        {
+          "id": "e-mekf-in2",
+          "name": "ref_inertial",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "ReferenceVectors"
+        },
+        {
+          "id": "e-mekf-in3",
+          "name": "active",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "Set{Symbol}"
+        },
+        {
+          "id": "e-mekf-out",
+          "name": "estimate",
+          "kind": "data",
+          "direction": "out",
+          "dataType": "AttitudeEstimate"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "node-mqpnhly2-1oil",
+      "title": "NavigationEffectorOutput",
+      "role": "data-type",
+      "description": "Output struct written each cycle: q_BI, omega_BI, gyro_bias, covariance, valid, mode.",
+      "x": 1000,
+      "y": 200,
+      "width": 200,
+      "height": 80,
+      "tags": [],
+      "workspaceDirectory": "src/gnc/navigation",
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "e-out-in",
+          "name": "estimate",
+          "kind": "data",
+          "direction": "in",
+          "dataType": "AttitudeEstimate"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-mqpnhm28-wtze",
+      "sourceNodeId": "node-mqpnhlcz-f27q",
+      "targetNodeId": "node-mqpnhlgw-rblv",
+      "sourcePortId": "e-hook-in",
+      "targetPortId": "e-sen-out",
+      "kind": "data-flow",
+      "label": "truth,env"
+    },
+    {
+      "id": "edge-mqpnhm6a-h9m6",
+      "sourceNodeId": "node-mqpnhlcz-f27q",
+      "targetNodeId": "node-mqpnhll0-gviq",
+      "sourcePortId": "e-hook-in",
+      "targetPortId": "e-ref-out",
+      "kind": "data-flow",
+      "label": "env"
+    },
+    {
+      "id": "edge-mqpnhma3-uwcx",
+      "sourceNodeId": "node-mqpnhlgw-rblv",
+      "targetNodeId": "node-mqpnhlt0-03ja",
+      "sourcePortId": "e-sen-out",
+      "targetPortId": "e-mekf-in1",
+      "kind": "data-flow",
+      "label": "measurements"
+    },
+    {
+      "id": "edge-mqpnhmem-384o",
+      "sourceNodeId": "node-mqpnhll0-gviq",
+      "targetNodeId": "node-mqpnhlt0-03ja",
+      "sourcePortId": "e-ref-out",
+      "targetPortId": "e-mekf-in2",
+      "kind": "data-flow",
+      "label": "r_sun_I,r_B_I"
+    },
+    {
+      "id": "edge-mqpnhmio-f2nd",
+      "sourceNodeId": "node-mqpnhlop-hdfo",
+      "targetNodeId": "node-mqpnhlt0-03ja",
+      "sourcePortId": "e-mode-out",
+      "targetPortId": "e-mekf-in3",
+      "kind": "control",
+      "label": "active sensors"
+    },
+    {
+      "id": "edge-mqpnhmmf-e7y8",
+      "sourceNodeId": "node-mqpnhlt0-03ja",
+      "targetNodeId": "node-mqpnhly2-1oil",
+      "sourcePortId": "e-mekf-out",
+      "targetPortId": "e-out-in",
+      "kind": "data-flow",
+      "label": "q_est,P"
+    },
+    {
+      "id": "edge-mqpnhmqc-12qg",
+      "sourceNodeId": "node-mqpnhly2-1oil",
+      "targetNodeId": "node-mqpnhlcz-f27q",
+      "sourcePortId": "e-out-in",
+      "targetPortId": "e-hook-out",
+      "kind": "data-flow",
+      "label": "publish"
+    }
+  ],
+  "viewKind": "internal-block"
+}

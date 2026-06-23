@@ -1,0 +1,4 @@
+[2026-06-21T18:10:52.481Z] verifier:interface-diff → PASS
+[2026-06-21T18:10:52.588Z] verifier:model-consistency → PASS
+[2026-06-21T18:10:52.617Z] complete_run: success
+[2026-06-21T18:10:52.643Z] applied patch: src/gnc/navigation/ads_sensor_models.jl

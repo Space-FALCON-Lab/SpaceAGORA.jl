@@ -1,0 +1,18 @@
+{
+  "id": "benchmarks-studies-telemetry-odyssey-tuner",
+  "title": "Telemetry Odyssey Tuner",
+  "componentKey": "benchmarks/studies/telemetry_odyssey_tuner",
+  "description": "3 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "benchmarks/studies/telemetry_odyssey_tuner/candidates_and_evaluator.jl",
+    "benchmarks/studies/telemetry_odyssey_tuner/cli_and_plots.jl",
+    "benchmarks/studies/telemetry_odyssey_tuner/reporting.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

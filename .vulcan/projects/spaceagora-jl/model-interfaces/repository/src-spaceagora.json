@@ -1,0 +1,77 @@
+{
+  "id": "auto-logical-component-src-spaceagora",
+  "filePath": "model-interfaces/repository/src-spaceagora.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-24",
+  "title": "SpaceAGORA",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "SpaceAGORA: 1 implementation files.",
+  "verificationIntent": "Verify that SpaceAGORA's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-24-root",
+      "title": "SpaceAGORA",
+      "role": "module",
+      "description": "1 implementation files, 73 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 560,
+      "height": 300,
+      "tags": [
+        "src/SpaceAGORA",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-24",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-24",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-24-direct-1",
+      "title": "SpaceAGORA.jl",
+      "role": "function",
+      "description": "src/SpaceAGORA.jl (403 lines · 73 exports · 14 imports).",
+      "x": 18,
+      "y": 60,
+      "width": 200,
+      "height": 62,
+      "tags": [
+        "src/SpaceAGORA",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-direct-in-subsheet-24-direct-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-direct-out-subsheet-24-direct-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [],
+  "viewKind": "internal-block"
+}

@@ -1,0 +1,380 @@
+{
+  "id": "auto-logical-component-src-io",
+  "filePath": "sheets/repository/src-io.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-16",
+  "title": "Io",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "Io: 5 implementation files, 4 sub-components.",
+  "verificationIntent": "Verify that Io's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-16-root",
+      "title": "Io",
+      "role": "subsystem",
+      "description": "5 implementation files, 18 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 740,
+      "height": 430,
+      "tags": [
+        "src/io",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-16",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-16",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-16-child-1",
+      "title": "IOOutputs",
+      "role": "module",
+      "description": "2 files, 5 exports, 11 imports.",
+      "x": 20,
+      "y": 60,
+      "width": 215,
+      "height": 270,
+      "tags": [
+        "src/io/outputs",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-16-1",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-16-1",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-16-file-1-1",
+      "title": "io_outputs.jl",
+      "role": "function",
+      "description": "src/io/outputs/io_outputs.jl (178 lines · 5 exports · 7 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/io/outputs",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-16-file-1-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-16-file-1-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-16-file-1-2",
+      "title": "save_csv.jl",
+      "role": "function",
+      "description": "src/io/outputs/save_csv.jl (172 lines · 4 imports).",
+      "x": 12,
+      "y": 120,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/io/outputs",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-16-file-1-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-16-file-1-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-16-child-2",
+      "title": "IOConfig",
+      "role": "module",
+      "description": "1 files, 5 exports, 2 imports.",
+      "x": 255,
+      "y": 60,
+      "width": 215,
+      "height": 185,
+      "tags": [
+        "src/io/config",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-16-2",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-16-2",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-16-file-2-1",
+      "title": "io_config.jl",
+      "role": "function",
+      "description": "src/io/config/io_config.jl (42 lines · 5 exports · 2 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/io/config",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-16-file-2-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-16-file-2-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-16-child-3",
+      "title": "IOLogging",
+      "role": "module",
+      "description": "1 files, 3 exports, 0 imports.",
+      "x": 20,
+      "y": 185,
+      "width": 215,
+      "height": 185,
+      "tags": [
+        "src/io/logging",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-16-3",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-16-3",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-16-file-3-1",
+      "title": "io_logging.jl",
+      "role": "function",
+      "description": "src/io/logging/io_logging.jl (27 lines · 3 exports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/io/logging",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-16-file-3-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-16-file-3-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-16-child-4",
+      "title": "IOSerialization",
+      "role": "module",
+      "description": "1 files, 5 exports, 5 imports.",
+      "x": 255,
+      "y": 185,
+      "width": 215,
+      "height": 185,
+      "tags": [
+        "src/io/serialization",
+        "repository",
+        "component"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-child-in-16-4",
+          "name": "In",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-child-out-16-4",
+          "name": "Out",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-16-file-4-1",
+      "title": "io_serialization.jl",
+      "role": "function",
+      "description": "src/io/serialization/io_serialization.jl (97 lines · 5 exports · 5 imports).",
+      "x": 12,
+      "y": 42,
+      "width": 188,
+      "height": 62,
+      "tags": [
+        "src/io/serialization",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-file-in-subsheet-16-file-4-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-file-out-subsheet-16-file-4-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "subsheet-16-edge-1",
+      "sourceNodeId": "subsheet-16-file-1-1",
+      "targetNodeId": "subsheet-16-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-16-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-16-file-2-1",
+      "kind": "call",
+      "label": "_collision_results_csv_path"
+    },
+    {
+      "id": "subsheet-16-edge-2",
+      "sourceNodeId": "subsheet-16-file-1-1",
+      "targetNodeId": "subsheet-16-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-16-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-16-file-2-1",
+      "kind": "call",
+      "label": "_results_bundle_prefix"
+    },
+    {
+      "id": "subsheet-16-edge-3",
+      "sourceNodeId": "subsheet-16-file-1-1",
+      "targetNodeId": "subsheet-16-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-16-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-16-file-2-1",
+      "kind": "call",
+      "label": "_results_csv_path"
+    },
+    {
+      "id": "subsheet-16-edge-4",
+      "sourceNodeId": "subsheet-16-file-1-1",
+      "targetNodeId": "subsheet-16-file-4-1",
+      "sourcePortId": "sub-file-out-subsheet-16-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-16-file-4-1",
+      "kind": "call",
+      "label": "_atomic_write_file"
+    },
+    {
+      "id": "subsheet-16-edge-5",
+      "sourceNodeId": "subsheet-16-file-1-1",
+      "targetNodeId": "subsheet-16-file-4-1",
+      "sourcePortId": "sub-file-out-subsheet-16-file-1-1",
+      "targetPortId": "sub-file-in-subsheet-16-file-4-1",
+      "kind": "call",
+      "label": "_sha256_hex"
+    },
+    {
+      "id": "subsheet-16-edge-6",
+      "sourceNodeId": "subsheet-16-file-4-1",
+      "targetNodeId": "subsheet-16-file-2-1",
+      "sourcePortId": "sub-file-out-subsheet-16-file-4-1",
+      "targetPortId": "sub-file-in-subsheet-16-file-2-1",
+      "kind": "call",
+      "label": "_checkpoint_paths"
+    }
+  ],
+  "viewKind": "internal-block"
+}

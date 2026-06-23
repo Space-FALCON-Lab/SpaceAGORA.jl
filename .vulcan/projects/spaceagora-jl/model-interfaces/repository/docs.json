@@ -1,0 +1,153 @@
+{
+  "id": "auto-logical-component-docs",
+  "filePath": "model-interfaces/repository/docs.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-20",
+  "title": "PublicAPISymbols",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "PublicAPISymbols: 2 implementation files.",
+  "verificationIntent": "Verify that PublicAPISymbols's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-20-root",
+      "title": "PublicAPISymbols",
+      "role": "module",
+      "description": "2 implementation files, 4 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 560,
+      "height": 300,
+      "tags": [
+        "docs",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-20",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-20",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-20-direct-1",
+      "title": "public_api_symbols.jl",
+      "role": "function",
+      "description": "docs/public_api_symbols.jl (186 lines · 4 exports · 1 imports).",
+      "x": 18,
+      "y": 60,
+      "width": 200,
+      "height": 62,
+      "tags": [
+        "docs",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-direct-in-subsheet-20-direct-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-direct-out-subsheet-20-direct-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-20-direct-2",
+      "title": "make.jl",
+      "role": "function",
+      "description": "docs/make.jl (186 lines · 6 imports).",
+      "x": 248,
+      "y": 60,
+      "width": 200,
+      "height": 62,
+      "tags": [
+        "docs",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-direct-in-subsheet-20-direct-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-direct-out-subsheet-20-direct-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "subsheet-20-edge-1",
+      "sourceNodeId": "subsheet-20-direct-2",
+      "targetNodeId": "subsheet-20-direct-1",
+      "sourcePortId": "sub-file-out-subsheet-20-direct-2",
+      "targetPortId": "sub-file-in-subsheet-20-direct-1",
+      "kind": "call",
+      "label": "render_public_api_markdown"
+    },
+    {
+      "id": "subsheet-20-edge-2",
+      "sourceNodeId": "subsheet-20-direct-2",
+      "targetNodeId": "subsheet-20-direct-1",
+      "sourcePortId": "sub-file-out-subsheet-20-direct-2",
+      "targetPortId": "sub-file-in-subsheet-20-direct-1",
+      "kind": "call",
+      "label": "undocumented_public_api_specs"
+    },
+    {
+      "id": "subsheet-20-edge-3",
+      "sourceNodeId": "subsheet-20-direct-2",
+      "targetNodeId": "subsheet-20-direct-1",
+      "sourcePortId": "sub-file-out-subsheet-20-direct-2",
+      "targetPortId": "sub-file-in-subsheet-20-direct-1",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "docs/make.jl",
+        "docs/public_api_symbols.jl"
+      ]
+    },
+    {
+      "id": "subsheet-20-edge-4",
+      "sourceNodeId": "subsheet-20-direct-2",
+      "targetNodeId": "subsheet-20-direct-1",
+      "sourcePortId": "sub-file-out-subsheet-20-direct-2",
+      "targetPortId": "sub-file-in-subsheet-20-direct-1",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "docs/make.jl",
+        "docs/public_api_symbols.jl"
+      ]
+    }
+  ],
+  "viewKind": "internal-block"
+}

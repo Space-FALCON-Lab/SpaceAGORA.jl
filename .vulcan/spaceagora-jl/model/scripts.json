@@ -1,0 +1,22 @@
+{
+  "id": "scripts",
+  "title": "Scripts",
+  "componentKey": "scripts",
+  "description": "7 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "scripts/assets/check_assets.jl",
+    "scripts/assets/setup_open_assets.jl",
+    "scripts/assets/show_asset_manifest.jl",
+    "scripts/ensure_gram_native.jl",
+    "scripts/plotting/plot_data.jl",
+    "scripts/plotting/telemetry_orbit_accuracy_plots.jl",
+    "scripts/regenerate_ignored_outputs.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

@@ -1,0 +1,20 @@
+{
+  "id": "src-simulation-engine-config",
+  "title": "Config",
+  "componentKey": "src/simulation/engine/config",
+  "description": "5 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/simulation/engine/config/artifact_config.jl",
+    "src/simulation/engine/config/parallel_config.jl",
+    "src/simulation/engine/config/runtime_policy_config.jl",
+    "src/simulation/engine/config/simulation_engine_config.jl",
+    "src/simulation/engine/config/solver_config.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

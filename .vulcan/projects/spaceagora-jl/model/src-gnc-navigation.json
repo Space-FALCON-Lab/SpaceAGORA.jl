@@ -1,0 +1,30 @@
+{
+  "id": "src-gnc-navigation",
+  "title": "NavigationHooks",
+  "componentKey": "src/gnc/navigation",
+  "description": "1 files, 1 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "calcNavigationEffect!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/gnc/navigation/navigation_hooks.jl",
+    "src/gnc/navigation/ads_sensor_models.jl",
+    "src/gnc/navigation/ads_mekf.jl",
+    "src/gnc/navigation/ads_mode_manager.jl",
+    "src/gnc/navigation/ads_navigation_effector.jl"
+  ],
+  "exports": [
+    "calcNavigationEffect!"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": "2026-06-21T18:04:56.241Z"
+}

@@ -1,0 +1,5 @@
+[2026-06-21T18:10:54.936Z] verifier:interface-diff → PASS
+[2026-06-21T18:10:55.028Z] verifier:model-consistency → PASS
+[2026-06-21T18:10:56.214Z] verifier:unit-tests → FAIL
+[2026-06-21T18:10:56.244Z] complete_run: partial
+[2026-06-21T18:10:56.269Z] applied patch: test/gnc/ads_tests.jl

@@ -1,0 +1,170 @@
+{
+  "id": "src-gnc",
+  "title": "CommandTypes",
+  "componentKey": "src/gnc",
+  "description": "25 files, 17 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "PropulsiveManeuverCommand",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "PropulsiveBurnPlan",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerobrakingControlCommand",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "calcControlForceTorque",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "calcControlEffect!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "calcControlMassFlowRate",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "calcGuidanceEffect!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractAerobrakingStrategy",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "EEdgStrategy",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "TEdgStrategy",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerobrakingGuidanceInput",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerobrakingGuidanceOutput",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "compute_aerobraking_guidance",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "dispatch_aerobraking_guidance",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AerobrakingCampaignPropulsiveManeuverGuidanceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "calcNavigationEffect!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/gnc/command_types.jl",
+    "src/gnc/control/aerobraking/constraint_tracking.jl",
+    "src/gnc/control/aerobraking/control_commands.jl",
+    "src/gnc/control/aerobraking/tracking_executor.jl",
+    "src/gnc/control/attitude_control_models.jl",
+    "src/gnc/control/control_hooks.jl",
+    "src/gnc/control/propulsive_maneuvers.jl",
+    "src/gnc/guidance/aerobraking/common/closed_form_solution.jl",
+    "src/gnc/guidance/aerobraking/common/heat_rate_models.jl",
+    "src/gnc/guidance/aerobraking/dispatcher.jl",
+    "src/gnc/guidance/aerobraking/e_edg/energy_profile_solver.jl",
+    "src/gnc/guidance/aerobraking/e_edg/e_edg_strategy.jl",
+    "src/gnc/guidance/aerobraking/e_edg/second_switch_solver.jl",
+    "src/gnc/guidance/aerobraking/e_edg/switch_window_solver.jl",
+    "src/gnc/guidance/aerobraking/interfaces.jl",
+    "src/gnc/guidance/aerobraking/t_edg/eom_predictor.jl",
+    "src/gnc/guidance/aerobraking/t_edg/targeting_solver.jl",
+    "src/gnc/guidance/aerobraking/t_edg/trajectory_predictor.jl",
+    "src/gnc/guidance/aerobraking/t_edg/t_edg_strategy.jl",
+    "src/gnc/guidance/guidance_hooks.jl",
+    "src/gnc/guidance/guidance_models.jl",
+    "src/gnc/guidance/thruster_guidance/thruster_guidance_functions.jl",
+    "src/gnc/guidance/thruster_guidance/thruster_guidance_models.jl",
+    "src/gnc/internal/bridge_helpers.jl",
+    "src/gnc/navigation/navigation_hooks.jl"
+  ],
+  "exports": [
+    "PropulsiveManeuverCommand",
+    "PropulsiveBurnPlan",
+    "AerobrakingControlCommand",
+    "calcControlForceTorque",
+    "calcControlEffect!",
+    "calcControlMassFlowRate",
+    "calcGuidanceEffect!",
+    "AbstractAerobrakingStrategy",
+    "EEdgStrategy",
+    "TEdgStrategy",
+    "AerobrakingGuidanceInput",
+    "AerobrakingGuidanceOutput",
+    "compute_aerobraking_guidance",
+    "dispatch_aerobraking_guidance",
+    "AerobrakingCampaignPropulsiveManeuverGuidanceModel",
+    "calcNavigationEffect!"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

@@ -1,0 +1,139 @@
+{
+  "id": "auto-logical-component-templates",
+  "filePath": "model-interfaces/repository/templates.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-19",
+  "title": "ExampleControlHookTemplate",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "ExampleControlHookTemplate: 3 implementation files.",
+  "verificationIntent": "Verify that ExampleControlHookTemplate's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-19-root",
+      "title": "ExampleControlHookTemplate",
+      "role": "module",
+      "description": "3 implementation files, 0 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 560,
+      "height": 430,
+      "tags": [
+        "templates",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-19",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-19",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-19-direct-1",
+      "title": "control_hook_template.jl",
+      "role": "function",
+      "description": "templates/control_hook_template.jl (44 lines · 3 imports).",
+      "x": 18,
+      "y": 60,
+      "width": 200,
+      "height": 62,
+      "tags": [
+        "templates",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-direct-in-subsheet-19-direct-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-direct-out-subsheet-19-direct-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-19-direct-2",
+      "title": "density_model_template.jl",
+      "role": "function",
+      "description": "templates/density_model_template.jl (38 lines · 2 imports).",
+      "x": 248,
+      "y": 60,
+      "width": 200,
+      "height": 62,
+      "tags": [
+        "templates",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-direct-in-subsheet-19-direct-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-direct-out-subsheet-19-direct-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-19-direct-3",
+      "title": "force_torque_model_template.jl",
+      "role": "function",
+      "description": "templates/force_torque_model_template.jl (21 lines · 2 imports).",
+      "x": 18,
+      "y": 138,
+      "width": 200,
+      "height": 62,
+      "tags": [
+        "templates",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-direct-in-subsheet-19-direct-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-direct-out-subsheet-19-direct-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [],
+  "viewKind": "internal-block"
+}

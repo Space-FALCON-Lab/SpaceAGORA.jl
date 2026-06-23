@@ -1,0 +1,77 @@
+{
+  "id": "auto-logical-component-readme",
+  "filePath": "model-interfaces/repository/readme.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-22",
+  "title": "README",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "README: 1 implementation files.",
+  "verificationIntent": "Verify that README's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-22-root",
+      "title": "README",
+      "role": "component",
+      "description": "1 implementation files, 0 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 560,
+      "height": 300,
+      "tags": [
+        "README",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-22",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-22",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-22-direct-1",
+      "title": "README.md",
+      "role": "function",
+      "description": "README.md (197 lines · 1 imports).",
+      "x": 18,
+      "y": 60,
+      "width": 200,
+      "height": 62,
+      "tags": [
+        "README",
+        "file",
+        "md"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-direct-in-subsheet-22-direct-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-direct-out-subsheet-22-direct-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [],
+  "viewKind": "internal-block"
+}

@@ -1,0 +1,60 @@
+{
+  "id": "src-cli",
+  "title": "SpaceAGORACLI",
+  "componentKey": "src/cli",
+  "description": "3 files, 5 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "AssetCheckItem",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AssetCheckReport",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "check_assets",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "render_asset_report",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_cli",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/cli/assets.jl",
+    "src/cli/main.jl",
+    "src/cli/spaceagora_cli.jl"
+  ],
+  "exports": [
+    "AssetCheckItem",
+    "AssetCheckReport",
+    "check_assets",
+    "render_asset_report",
+    "run_cli"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

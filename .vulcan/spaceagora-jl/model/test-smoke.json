@@ -1,0 +1,48 @@
+{
+  "id": "test-smoke",
+  "title": "Smoke",
+  "componentKey": "test/smoke",
+  "description": "1 files, 0 exports, 4 connections",
+  "interfaces": [],
+  "connections": [
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_clean_depot_smoke",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_examples_suite_smoke",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_no_gram_smoke",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "test",
+      "targetTitle": "EngineSandbox",
+      "edgeKind": "imports",
+      "interfaceName": "ci_threaded_smoke",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [
+    {
+      "path": "test/smoke/runtests.jl",
+      "name": "runtests.jl"
+    }
+  ],
+  "requirements": [],
+  "implementationFiles": [],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

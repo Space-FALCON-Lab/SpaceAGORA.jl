@@ -1,0 +1,19 @@
+{
+  "id": "data",
+  "title": "Data",
+  "componentKey": "data",
+  "description": "«subsystem» | 4 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "data/telemetry/convert_to_feather.py",
+    "data/telemetry/gmat_cygnss_comp.py",
+    "data/telemetry/gmat_matrix_parity_locked.py",
+    "data/Topography_harmonics_data/venus_topo_comparison.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

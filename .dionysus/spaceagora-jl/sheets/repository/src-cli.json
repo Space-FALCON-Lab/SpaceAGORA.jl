@@ -1,0 +1,220 @@
+{
+  "id": "auto-logical-component-src-cli",
+  "filePath": "sheets/repository/src-cli.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-18",
+  "title": "SpaceAGORACLI",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "SpaceAGORACLI: 3 implementation files.",
+  "verificationIntent": "Verify that SpaceAGORACLI's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-18-root",
+      "title": "SpaceAGORACLI",
+      "role": "module",
+      "description": "3 implementation files, 5 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 560,
+      "height": 430,
+      "tags": [
+        "src/cli",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-18",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-18",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-18-direct-1",
+      "title": "spaceagora_cli.jl",
+      "role": "function",
+      "description": "src/cli/spaceagora_cli.jl (208 lines · 5 exports · 1 imports).",
+      "x": 18,
+      "y": 60,
+      "width": 200,
+      "height": 62,
+      "tags": [
+        "src/cli",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-direct-in-subsheet-18-direct-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-direct-out-subsheet-18-direct-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-18-direct-2",
+      "title": "assets.jl",
+      "role": "function",
+      "description": "src/cli/assets.jl (159 lines · 1 imports).",
+      "x": 248,
+      "y": 60,
+      "width": 200,
+      "height": 62,
+      "tags": [
+        "src/cli",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-direct-in-subsheet-18-direct-2",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-direct-out-subsheet-18-direct-2",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-18-direct-3",
+      "title": "main.jl",
+      "role": "function",
+      "description": "src/cli/main.jl (5 lines · 1 imports).",
+      "x": 18,
+      "y": 138,
+      "width": 200,
+      "height": 62,
+      "tags": [
+        "src/cli",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-direct-in-subsheet-18-direct-3",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-direct-out-subsheet-18-direct-3",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "subsheet-18-edge-1",
+      "sourceNodeId": "subsheet-18-direct-3",
+      "targetNodeId": "subsheet-18-direct-1",
+      "sourcePortId": "sub-file-out-subsheet-18-direct-3",
+      "targetPortId": "sub-file-in-subsheet-18-direct-1",
+      "kind": "call",
+      "label": "run_cli"
+    },
+    {
+      "id": "subsheet-18-edge-2",
+      "sourceNodeId": "subsheet-18-direct-1",
+      "targetNodeId": "subsheet-18-direct-2",
+      "sourcePortId": "sub-file-out-subsheet-18-direct-1",
+      "targetPortId": "sub-file-in-subsheet-18-direct-2",
+      "kind": "call",
+      "label": "check_assets"
+    },
+    {
+      "id": "subsheet-18-edge-3",
+      "sourceNodeId": "subsheet-18-direct-1",
+      "targetNodeId": "subsheet-18-direct-2",
+      "sourcePortId": "sub-file-out-subsheet-18-direct-1",
+      "targetPortId": "sub-file-in-subsheet-18-direct-2",
+      "kind": "call",
+      "label": "load_asset_manifest"
+    },
+    {
+      "id": "subsheet-18-edge-4",
+      "sourceNodeId": "subsheet-18-direct-1",
+      "targetNodeId": "subsheet-18-direct-2",
+      "sourcePortId": "sub-file-out-subsheet-18-direct-1",
+      "targetPortId": "sub-file-in-subsheet-18-direct-2",
+      "kind": "call",
+      "label": "render_asset_manifest"
+    },
+    {
+      "id": "subsheet-18-edge-5",
+      "sourceNodeId": "subsheet-18-direct-1",
+      "targetNodeId": "subsheet-18-direct-2",
+      "sourcePortId": "sub-file-out-subsheet-18-direct-1",
+      "targetPortId": "sub-file-in-subsheet-18-direct-2",
+      "kind": "call",
+      "label": "render_asset_report"
+    },
+    {
+      "id": "subsheet-18-edge-6",
+      "sourceNodeId": "subsheet-18-direct-1",
+      "targetNodeId": "subsheet-18-direct-2",
+      "sourcePortId": "sub-file-out-subsheet-18-direct-1",
+      "targetPortId": "sub-file-in-subsheet-18-direct-2",
+      "kind": "call",
+      "label": "setup_open_assets"
+    },
+    {
+      "id": "subsheet-18-edge-7",
+      "sourceNodeId": "subsheet-18-direct-1",
+      "targetNodeId": "subsheet-18-direct-2",
+      "sourcePortId": "sub-file-out-subsheet-18-direct-1",
+      "targetPortId": "sub-file-in-subsheet-18-direct-2",
+      "kind": "data-flow",
+      "label": "possible data contract",
+      "evidence": [
+        "src/cli/spaceagora_cli.jl",
+        "src/cli/assets.jl"
+      ]
+    },
+    {
+      "id": "subsheet-18-edge-8",
+      "sourceNodeId": "subsheet-18-direct-1",
+      "targetNodeId": "subsheet-18-direct-2",
+      "sourcePortId": "sub-file-out-subsheet-18-direct-1",
+      "targetPortId": "sub-file-in-subsheet-18-direct-2",
+      "kind": "import",
+      "label": "imports",
+      "evidence": [
+        "src/cli/spaceagora_cli.jl",
+        "src/cli/assets.jl"
+      ]
+    }
+  ],
+  "viewKind": "internal-block"
+}

@@ -1,0 +1,19 @@
+{
+  "id": "src-gnc-guidance-aerobraking-e-edg",
+  "title": "E Edg",
+  "componentKey": "src/gnc/guidance/aerobraking/e_edg",
+  "description": "4 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/gnc/guidance/aerobraking/e_edg/energy_profile_solver.jl",
+    "src/gnc/guidance/aerobraking/e_edg/e_edg_strategy.jl",
+    "src/gnc/guidance/aerobraking/e_edg/second_switch_solver.jl",
+    "src/gnc/guidance/aerobraking/e_edg/switch_window_solver.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

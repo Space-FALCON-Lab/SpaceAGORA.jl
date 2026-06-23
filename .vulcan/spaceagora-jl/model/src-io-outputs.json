@@ -1,0 +1,59 @@
+{
+  "id": "src-io-outputs",
+  "title": "IOOutputs",
+  "componentKey": "src/io/outputs",
+  "description": "2 files, 5 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "_append_saved_segment!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_append_series_columns!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_build_results_dataframe",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_write_results_csv!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "_write_results_bundle!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/io/outputs/io_outputs.jl",
+    "src/io/outputs/save_csv.jl"
+  ],
+  "exports": [
+    "_append_saved_segment!",
+    "_append_series_columns!",
+    "_build_results_dataframe",
+    "_write_results_csv!",
+    "_write_results_bundle!"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

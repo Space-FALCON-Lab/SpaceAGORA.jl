@@ -1,0 +1,77 @@
+{
+  "id": "auto-logical-component-src-precompile-workload",
+  "filePath": "sheets/repository/src-precompile-workload.json",
+  "parentId": "auto-logical-repository-alignment",
+  "ownerNodeId": "repo-logical-root-23",
+  "title": "Precompile Workload",
+  "layer": "logical",
+  "abstractionLevel": 1,
+  "summary": "Precompile Workload: 1 implementation files.",
+  "verificationIntent": "Verify that Precompile Workload's internal structure and dependencies match the implementation.",
+  "nodes": [
+    {
+      "id": "subsheet-23-root",
+      "title": "Precompile Workload",
+      "role": "component",
+      "description": "1 implementation files, 0 exports.",
+      "x": 30,
+      "y": 30,
+      "width": 560,
+      "height": 300,
+      "tags": [
+        "src/precompile_workload",
+        "repository",
+        "hierarchy"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-in-23",
+          "name": "Consumes",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-out-23",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    },
+    {
+      "id": "subsheet-23-direct-1",
+      "title": "precompile_workload.jl",
+      "role": "function",
+      "description": "src/precompile_workload.jl (55 lines).",
+      "x": 18,
+      "y": 60,
+      "width": 200,
+      "height": 62,
+      "tags": [
+        "src/precompile_workload",
+        "file",
+        "jl"
+      ],
+      "aiModificationPolicy": "default",
+      "ports": [
+        {
+          "id": "sub-direct-in-subsheet-23-direct-1",
+          "name": "Uses",
+          "kind": "data",
+          "direction": "in"
+        },
+        {
+          "id": "sub-direct-out-subsheet-23-direct-1",
+          "name": "Provides",
+          "kind": "data",
+          "direction": "out"
+        }
+      ],
+      "designNotes": []
+    }
+  ],
+  "edges": [],
+  "viewKind": "internal-block"
+}

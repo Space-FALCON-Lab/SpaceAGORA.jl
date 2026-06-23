@@ -1,0 +1,16 @@
+{
+  "id": "readme",
+  "title": "README",
+  "componentKey": "README",
+  "description": "«subsystem» | 1 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "README.md"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

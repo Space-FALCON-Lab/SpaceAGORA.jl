@@ -1,0 +1,33 @@
+{
+  "id": "spaceagoracalibration-jl-bin",
+  "title": "Bin",
+  "componentKey": "SpaceAGORACalibration.jl/bin",
+  "description": "3 files, 0 exports, 2 connections",
+  "interfaces": [],
+  "connections": [
+    {
+      "targetId": "spaceagoracalibration-jl-src",
+      "targetTitle": "AdaptiveRuntime",
+      "edgeKind": "imports",
+      "interfaceName": "SpaceAGORACalibration",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-spaceagora",
+      "targetTitle": "SpaceAGORA",
+      "edgeKind": "imports",
+      "interfaceName": "SpaceAGORA",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "SpaceAGORACalibration.jl/bin/run_calibration.jl",
+    "SpaceAGORACalibration.jl/bin/run_earth_offline_study.jl",
+    "SpaceAGORACalibration.jl/bin/run_telemetry_tuner.jl"
+  ],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

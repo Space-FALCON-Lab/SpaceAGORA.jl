@@ -1,0 +1,652 @@
+{
+  "id": "src-spaceagora",
+  "title": "SpaceAGORA",
+  "componentKey": "src/SpaceAGORA",
+  "description": "1 files, 73 exports, 7 connections",
+  "interfaces": [
+    {
+      "name": "ParallelProfile",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ParallelProfileConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "parse_parallel_profile",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "parallel_profile_name",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "profile_config",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "profile_env_pairs",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "with_parallel_profile",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "OuterRouteFeatures",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "OuterRouteTuning",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "OuterRouteState",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "reset_outer_route_state!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "outer_route_signature",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "outer_route_stats_snapshot",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "default_outer_route",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "outer_route_candidates",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "select_outer_route!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "record_outer_route_feedback!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ParallelConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SolverConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "RuntimePolicyConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ArtifactConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SimulationEngineConfig",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "simulation_engine_config_from_env",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "prewarm_nbody_ephemeris_cache",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "load_nbody_ephemeris_cache!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractForceTorqueModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractPlanet",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractDensityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractControlEffectorModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractEphemeridesModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractThermalModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractThrusterModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractGuidanceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "StateSample",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "PlanetFrameSample",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AtmosphereSample",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SolarEphemerisSample",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ThirdBodyEphemerisSample",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "EnvironmentSample",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "EffectorEnvironmentRequirements",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NoAtmosphereModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ExponentialAtmosphereModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "PiecewiseExponentialAtmosphereModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NRLMSISE00AtmosphereModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "init_nrlmsise_space_indices!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SimpleEphemeridesModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "make_no_gram_planet",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "make_no_gram_density_model",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "make_no_gram_environment",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "calcForceTorque",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "wrench",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "environment_requirements",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "solver_partition",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "gravity_backbone_structure",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "gravity_backbone_acceleration_ii",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "gravity_backbone_kick_structure",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "gravity_backbone_kick_acceleration_ii",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "getDensity",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "getDensityBatch!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "calcControlEffect!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "calcControlForceTorque",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "calcControlMassFlowRate",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "VerificationRequest",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "VerificationResult",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_verification",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_verification_cli",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_study",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_simulation",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AssetCheckItem",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AssetCheckReport",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "check_assets",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "render_asset_report",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "run_cli",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [
+    {
+      "targetId": "src-analysis-verification",
+      "targetTitle": "TelemetryVerification",
+      "edgeKind": "imports",
+      "interfaceName": "telemetry_verification",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-cli",
+      "targetTitle": "SpaceAGORACLI",
+      "edgeKind": "imports",
+      "interfaceName": "spaceagora_cli",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-core",
+      "targetTitle": "SimulationModel",
+      "edgeKind": "imports",
+      "interfaceName": "simulation_model",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-parallel-routing",
+      "targetTitle": "ParallelProfiles",
+      "edgeKind": "imports",
+      "interfaceName": "parallel_profiles",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-precompile-workload",
+      "targetTitle": "Precompile Workload",
+      "edgeKind": "imports",
+      "interfaceName": "precompile_workload",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-engine",
+      "targetTitle": "SimulationEngine",
+      "edgeKind": "imports",
+      "interfaceName": "simulation_engine",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation",
+      "targetTitle": "RuntimeServices",
+      "edgeKind": "imports",
+      "interfaceName": "runtime_services",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/SpaceAGORA.jl"
+  ],
+  "exports": [
+    "ParallelProfile",
+    "ParallelProfileConfig",
+    "parse_parallel_profile",
+    "parallel_profile_name",
+    "profile_config",
+    "profile_env_pairs",
+    "with_parallel_profile",
+    "OuterRouteFeatures",
+    "OuterRouteTuning",
+    "OuterRouteState",
+    "reset_outer_route_state!",
+    "outer_route_signature",
+    "outer_route_stats_snapshot",
+    "default_outer_route",
+    "outer_route_candidates",
+    "select_outer_route!",
+    "record_outer_route_feedback!",
+    "ParallelConfig",
+    "SolverConfig",
+    "RuntimePolicyConfig",
+    "ArtifactConfig",
+    "SimulationEngineConfig",
+    "simulation_engine_config_from_env",
+    "prewarm_nbody_ephemeris_cache",
+    "load_nbody_ephemeris_cache!",
+    "AbstractForceTorqueModel",
+    "AbstractPlanet",
+    "AbstractDensityModel",
+    "AbstractControlEffectorModel",
+    "AbstractEphemeridesModel",
+    "AbstractThermalModel",
+    "AbstractThrusterModel",
+    "AbstractGuidanceModel",
+    "StateSample",
+    "PlanetFrameSample",
+    "AtmosphereSample",
+    "SolarEphemerisSample",
+    "ThirdBodyEphemerisSample",
+    "EnvironmentSample",
+    "EffectorEnvironmentRequirements",
+    "NoAtmosphereModel",
+    "ExponentialAtmosphereModel",
+    "PiecewiseExponentialAtmosphereModel",
+    "NRLMSISE00AtmosphereModel",
+    "init_nrlmsise_space_indices!",
+    "SimpleEphemeridesModel",
+    "make_no_gram_planet",
+    "make_no_gram_density_model",
+    "make_no_gram_environment",
+    "calcForceTorque",
+    "wrench",
+    "environment_requirements",
+    "solver_partition",
+    "gravity_backbone_structure",
+    "gravity_backbone_acceleration_ii",
+    "gravity_backbone_kick_structure",
+    "gravity_backbone_kick_acceleration_ii",
+    "getDensity",
+    "getDensityBatch!",
+    "calcControlEffect!",
+    "calcControlForceTorque",
+    "calcControlMassFlowRate",
+    "VerificationRequest",
+    "VerificationResult",
+    "run_verification",
+    "run_verification_cli",
+    "run_study",
+    "run_simulation",
+    "AssetCheckItem",
+    "AssetCheckReport",
+    "check_assets",
+    "render_asset_report",
+    "run_cli"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

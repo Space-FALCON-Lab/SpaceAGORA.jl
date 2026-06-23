@@ -1,0 +1,59 @@
+{
+  "id": "src-environment-gravity",
+  "title": "GravityEffectors",
+  "componentKey": "src/environment/gravity",
+  "description": "2 files, 5 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "ConstantGravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "InverseSquaredGravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "InverseSquaredJ2GravityModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "aerobraking_gravity_force_ii",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "j2_secular_rates",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/environment/gravity/gravity_effectors.jl",
+    "src/environment/gravity/gravity_models.jl"
+  ],
+  "exports": [
+    "ConstantGravityModel",
+    "InverseSquaredGravityModel",
+    "InverseSquaredJ2GravityModel",
+    "aerobraking_gravity_force_ii",
+    "j2_secular_rates"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

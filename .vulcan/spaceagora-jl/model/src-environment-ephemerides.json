@@ -1,0 +1,110 @@
+{
+  "id": "src-environment-ephemerides",
+  "title": "EphemeridesModels",
+  "componentKey": "src/environment/ephemerides",
+  "description": "5 files, 11 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "SpiceEphemeridesModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SimpleEphemeridesModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ephemerides_time_seconds",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "planet_frame_lpi",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ephemerides_requires_spice",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ephemerides_cache_key",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Earth",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Mars",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Venus",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Moon",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Titan",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/environment/ephemerides/ephemerides_models.jl",
+    "src/environment/ephemerides/planets.jl",
+    "src/environment/ephemerides/planet_data.jl",
+    "src/environment/ephemerides/planet_shapes.jl",
+    "src/environment/ephemerides/simple_ephemerides.jl"
+  ],
+  "exports": [
+    "SpiceEphemeridesModel",
+    "SimpleEphemeridesModel",
+    "ephemerides_time_seconds",
+    "planet_frame_lpi",
+    "ephemerides_requires_spice",
+    "ephemerides_cache_key",
+    "Earth",
+    "Mars",
+    "Venus",
+    "Moon",
+    "Titan"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

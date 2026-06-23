@@ -1,0 +1,130 @@
+{
+  "id": "src-simulation-callbacks",
+  "title": "SimulationCallbacks",
+  "componentKey": "src/simulation/callbacks",
+  "description": "18 files, 3 exports, 10 connections",
+  "interfaces": [
+    {
+      "name": "SaveField",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "default_save_fields",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "get_callbacks",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [
+    {
+      "targetId": "src-simulation-callbacks-density-callbacks",
+      "targetTitle": "Density Callbacks",
+      "edgeKind": "imports",
+      "interfaceName": "assembly",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-callbacks-density-callbacks",
+      "targetTitle": "Density Callbacks",
+      "edgeKind": "imports",
+      "interfaceName": "config",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-callbacks-density-callbacks",
+      "targetTitle": "Density Callbacks",
+      "edgeKind": "imports",
+      "interfaceName": "model_selection",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-callbacks-density-callbacks",
+      "targetTitle": "Density Callbacks",
+      "edgeKind": "imports",
+      "interfaceName": "planet_frame",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-callbacks-density-callbacks",
+      "targetTitle": "Density Callbacks",
+      "edgeKind": "imports",
+      "interfaceName": "runtime",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-callbacks-gram-track-cache",
+      "targetTitle": "Gram Track Cache",
+      "edgeKind": "imports",
+      "interfaceName": "config",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-callbacks-gram-track-cache",
+      "targetTitle": "Gram Track Cache",
+      "edgeKind": "imports",
+      "interfaceName": "interpolation",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-callbacks-gram-track-cache",
+      "targetTitle": "Gram Track Cache",
+      "edgeKind": "imports",
+      "interfaceName": "refresh",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-simulation-callbacks-gram-track-cache",
+      "targetTitle": "Gram Track Cache",
+      "edgeKind": "imports",
+      "interfaceName": "targeting",
+      "dataDescription": ""
+    },
+    {
+      "targetId": "src-core-interfaces",
+      "targetTitle": "Interfaces",
+      "edgeKind": "imports",
+      "interfaceName": "reference_system",
+      "dataDescription": ""
+    }
+  ],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/simulation/callbacks/callbacks.jl",
+    "src/simulation/callbacks/control_callbacks.jl",
+    "src/simulation/callbacks/density_callbacks/assembly.jl",
+    "src/simulation/callbacks/density_callbacks/config.jl",
+    "src/simulation/callbacks/density_callbacks/model_selection.jl",
+    "src/simulation/callbacks/density_callbacks/planet_frame.jl",
+    "src/simulation/callbacks/density_callbacks/runtime.jl",
+    "src/simulation/callbacks/density_callbacks.jl",
+    "src/simulation/callbacks/event_callbacks.jl",
+    "src/simulation/callbacks/gram_track_cache/config.jl",
+    "src/simulation/callbacks/gram_track_cache/interpolation.jl",
+    "src/simulation/callbacks/gram_track_cache/refresh.jl",
+    "src/simulation/callbacks/gram_track_cache/targeting.jl",
+    "src/simulation/callbacks/gram_track_cache.jl",
+    "src/simulation/callbacks/navigation_guidance_callbacks.jl",
+    "src/simulation/callbacks/registry.jl",
+    "src/simulation/callbacks/save_fields.jl",
+    "src/simulation/callbacks/thermal_callbacks.jl"
+  ],
+  "exports": [
+    "SaveField",
+    "default_save_fields",
+    "get_callbacks"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

@@ -1,0 +1,295 @@
+{
+  "id": "src-vehicle",
+  "title": "Vehicle",
+  "componentKey": "src/vehicle",
+  "description": "14 files, 33 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "apply_actuator_hook!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "apply_actuator_hooks!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "update_thrusters!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "thrust_calculation_schmitt_trigger!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "schmitt_trigger",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "integrate_impulse!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "BaseThrusterModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "rotate_to_inertial",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "rotate_to_body",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "rotate_link",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "add_body!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "add_joint!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "add_facet!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "add_magnet!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "add_thruster!",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Facet",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Thruster",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Magnet",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ReactionWheelAssembly",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "create_facet_list",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Link",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "Joint",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SpacecraftModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "DynamicsModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "InitialCondition",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "CartesianInitialCondition",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "AbstractInitialCondition",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "GuidanceModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "NavigationModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "ControlModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "traverse_bodies",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "MaxwellianHeat",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "getHeatRate",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/vehicle/actuators/actuator_hooks.jl",
+    "src/vehicle/actuators/thruster/thruster_hooks.jl",
+    "src/vehicle/actuators/thruster/thruster_models.jl",
+    "src/vehicle/actuators/thruster/thruster_models_module.jl",
+    "src/vehicle/kinematics/kinematics.jl",
+    "src/vehicle/spacecraft/assembly.jl",
+    "src/vehicle/spacecraft/components.jl",
+    "src/vehicle/spacecraft/model.jl",
+    "src/vehicle/structure/assembly_graph.jl",
+    "src/vehicle/structure/geometry_properties.jl",
+    "src/vehicle/structure/mass_properties.jl",
+    "src/vehicle/structure/structure_models.jl",
+    "src/vehicle/thermal/thermal_models.jl",
+    "src/vehicle/thermal/thermal_models_module.jl"
+  ],
+  "exports": [
+    "apply_actuator_hook!",
+    "apply_actuator_hooks!",
+    "update_thrusters!",
+    "thrust_calculation_schmitt_trigger!",
+    "schmitt_trigger",
+    "integrate_impulse!",
+    "BaseThrusterModel",
+    "rotate_to_inertial",
+    "rotate_to_body",
+    "rotate_link",
+    "add_body!",
+    "add_joint!",
+    "add_facet!",
+    "add_magnet!",
+    "add_thruster!",
+    "Facet",
+    "Thruster",
+    "Magnet",
+    "ReactionWheelAssembly",
+    "create_facet_list",
+    "Link",
+    "Joint",
+    "SpacecraftModel",
+    "DynamicsModel",
+    "InitialCondition",
+    "CartesianInitialCondition",
+    "AbstractInitialCondition",
+    "GuidanceModel",
+    "NavigationModel",
+    "ControlModel",
+    "traverse_bodies",
+    "MaxwellianHeat",
+    "getHeatRate"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

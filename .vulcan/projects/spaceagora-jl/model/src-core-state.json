@@ -1,0 +1,172 @@
+{
+  "id": "src-core-state",
+  "title": "NoGramPresets",
+  "componentKey": "src/core/state",
+  "description": "3 files, 19 exports, 0 connections",
+  "interfaces": [
+    {
+      "name": "make_no_gram_planet",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "make_no_gram_density_model",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "make_no_gram_environment",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "OE",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "cartesian",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "R_RA_DEC",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "H_LAN_LON",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "uDuNuE",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "clock",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SimulationConfiguration",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "InitialTime",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "IntegrationTolerances",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "FilePaths",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "SimulationSettings",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "MissionConfiguration",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "EnvironmentModel",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "MissionType",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "MissionTime",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    },
+    {
+      "name": "MissionOrbits",
+      "kind": "export",
+      "direction": "out",
+      "dataTypes": [],
+      "description": ""
+    }
+  ],
+  "connections": [],
+  "tests": [],
+  "requirements": [],
+  "implementationFiles": [
+    "src/core/state/no_gram_presets.jl",
+    "src/core/state/reference_system_config.jl",
+    "src/core/state/simulation_configuration.jl"
+  ],
+  "exports": [
+    "make_no_gram_planet",
+    "make_no_gram_density_model",
+    "make_no_gram_environment",
+    "OE",
+    "cartesian",
+    "R_RA_DEC",
+    "H_LAN_LON",
+    "uDuNuE",
+    "clock",
+    "SimulationConfiguration",
+    "InitialTime",
+    "IntegrationTolerances",
+    "FilePaths",
+    "SimulationSettings",
+    "MissionConfiguration",
+    "EnvironmentModel",
+    "MissionType",
+    "MissionTime",
+    "MissionOrbits"
+  ],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

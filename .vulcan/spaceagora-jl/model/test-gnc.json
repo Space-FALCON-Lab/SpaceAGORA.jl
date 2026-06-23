@@ -1,0 +1,23 @@
+{
+  "id": "test-gnc",
+  "title": "Gnc",
+  "componentKey": "test/gnc",
+  "description": "2 files, 0 exports, 0 connections",
+  "interfaces": [],
+  "connections": [],
+  "tests": [
+    {
+      "path": "test/gnc/aerobraking/e_edg_strategy_parity_tests.jl",
+      "name": "e_edg_strategy_parity_tests.jl"
+    },
+    {
+      "path": "test/gnc/aerobraking/t_edg_strategy_parity_tests.jl",
+      "name": "t_edg_strategy_parity_tests.jl"
+    }
+  ],
+  "requirements": [],
+  "implementationFiles": [],
+  "exports": [],
+  "generatedAt": "2026-05-24T05:05:03.298Z",
+  "editedAt": null
+}

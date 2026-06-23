@@ -4,6 +4,7 @@ using ..ConstellationUtils
 using ..ConstellationSlots
 using ..ConstellationPlotting
 using ..Stage0Seeding
+using ..Stage1Controllable
 using JuMP
 using Ipopt
 using Clarabel
@@ -228,25 +229,31 @@ function run_constellation_design(config_dict::AbstractDict)
     try
         constellation_log("stage1", "Starting Stage 1 constellation design")
         
+        opt_params = config_dict["optimizer_params"]
+        stage1_mode = String(get(opt_params, "stage1_certificate_mode", "constructive_zonotope"))
+        
         # Run Stage 0 if seeds not already generated
-        if !haskey(config_dict, "stage0_seeds")
+        if !haskey(config_dict, "stage0_h_fwd_exact_coeffs")
             constellation_log("stage1", "Running Stage 0 seeding first")
-            Stage0Seeding.run_stage0_seeding(config_dict)
+            stage0_method = String(get(opt_params, "stage0_mode", "fhsg"))
+            Stage0Seeding.run_stage0_seeding(config_dict; method=stage0_method)
         end
         
-        # Compute access matrix
-        f = compute_access_matrix(config_dict)
-        
-        # Compute support sets
-        support_sets = compute_support_set(config_dict, f)
-        
-        # Solve optimization
-        opt_result = solve_constellation_optimization(config_dict, f)
+        # Run Stage 1 optimization
+        if stage1_mode == "constructive_zonotope" || stage1_mode == "controllable"
+            constellation_log("stage1", "Running Stage 1 controllable optimization")
+            opt_result = run_stage1_controllable_optimization(config_dict)
+        else
+            constellation_log("stage1", "Running Stage 1 default optimization")
+            f = compute_access_matrix(config_dict)
+            support_sets = compute_support_set(config_dict, f)
+            opt_result = solve_constellation_optimization(config_dict, f)
+            config_dict["access_matrix"] = f
+            config_dict["support_sets"] = support_sets
+        end
         
         # Store results in config_dict for downstream stages
         config_dict["stage1_results"] = opt_result
-        config_dict["access_matrix"] = f
-        config_dict["support_sets"] = support_sets
         
         constellation_log("stage1", "Stage 1 completed successfully")
         

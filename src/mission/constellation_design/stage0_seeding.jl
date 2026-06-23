@@ -2,6 +2,8 @@ module Stage0Seeding
 
 using ..ConstellationUtils
 using ..ConstellationSlots
+using ..CapoIntegration
+using ..Stage0FHSG
 using Random
 using DataFrames, CSV
 using Arrow
@@ -156,27 +158,46 @@ end
 """
     run_stage0_seeding(config_dict::AbstractDict) -> Dict{String,Any}
 
-Stage 0 stochastic seeding entry point. Runs stochastic seed generation
-for constellation design using the provided configuration dictionary.
+Stage 0 seeding entry point. Runs seeding for constellation design using the
+provided configuration dictionary. Supports stochastic, RL-based, and FHSG methods.
 
 # Arguments
 - `config_dict::AbstractDict`: Configuration dictionary
+- `method::String`: Seeding method ("stochastic", "rl", "fhsg", or "stochastic_greedy", default: "stochastic")
 
 # Returns
 - Dictionary containing seed configuration and metadata
 """
-function run_stage0_seeding(config_dict::AbstractDict)
+function run_stage0_seeding(config_dict::AbstractDict; method::String="stochastic")
     constellation_log_init!(config_dict; context="stage0_seeding")
     
     try
-        constellation_log("stage0", "Starting Stage 0 stochastic seeding")
-        
-        # Generate stochastic seeds
-        seed_result = generate_stochastic_seeds(config_dict)
+        if method == "rl"
+            constellation_log("stage0", "Starting Stage 0 RL-based seeding")
+            seed_result = run_rl_stage0_seeding(config_dict)
+        elseif method == "fhsg" || method == "stochastic_greedy"
+            constellation_log("stage0", "Starting Stage 0 FHSG (finite horizon stochastic greedy) seeding")
+            seed_result = run_fhsg_stage0(config_dict)
+        else
+            constellation_log("stage0", "Starting Stage 0 stochastic seeding")
+            seed_result = generate_stochastic_seeds(config_dict)
+        end
         
         # Store results in config_dict for downstream stages
-        config_dict["stage0_seeds"] = seed_result["seeds"]
-        config_dict["stage0_num_seeds"] = seed_result["num_seeds"]
+        if haskey(seed_result, "constellation_orbitals")
+            config_dict["stage0_constellation"] = seed_result["constellation_orbitals"]
+            config_dict["stage0_n_sats"] = seed_result["n_sats"]
+        elseif haskey(seed_result, "seeds")
+            config_dict["stage0_seeds"] = seed_result["seeds"]
+            config_dict["stage0_num_seeds"] = seed_result["num_seeds"]
+        elseif haskey(seed_result, "seed_indices")
+            config_dict["stage0_seed_indices"] = seed_result["seed_indices"]
+            config_dict["stage0_candidate_bank"] = seed_result["candidate_bank"]
+            config_dict["stage0_h_fwd_exact_coeffs"] = seed_result["h_fwd_exact_coeffs"]
+            config_dict["stage0_h_Wcorr_coeffs"] = seed_result["h_Wcorr_coeffs"]
+            config_dict["stage0_support_lift_coeffs"] = seed_result["support_lift_coeffs"]
+            config_dict["stage0_backward_lift_coeffs"] = seed_result["backward_lift_coeffs"]
+        end
         
         constellation_log("stage0", "Stage 0 completed successfully")
         

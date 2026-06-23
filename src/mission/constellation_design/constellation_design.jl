@@ -3,9 +3,33 @@ module ConstellationDesign
 include("constellation_utils.jl")
 include("constellation_slots.jl")
 include("constellation_plotting.jl")
+include("constellation_config.jl")
 include("stage0_seeding.jl")
+include("stage0_fhsg.jl")
 include("stage1_design.jl")
+include("stage1_controllable.jl")
 include("stage2_verification.jl")
+include("stage2_ocp_verification.jl")
+include("math/support_functions.jl")
+include("math/two_body_linearization.jl")
+include("math/access_matrix.jl")
+include("physics/dynamics_adapter.jl")
+include("data/debris_catalog.jl")
+include("visualization/plotly_plots.jl")
+include("visualization/plot_config.jl")
+include("test/stage0_cache_loader.jl")
+include("test/parity_test_harness.jl")
+include("rl/SatelliteSeedingEnv.jl")
+include("rl/DeepSetPolicy.jl")
+include("rl/PPOTrainer.jl")
+include("rl/CostFunction.jl")
+include("rl/Scenarios.jl")
+include("rl/capo_integration.jl")
+include("rl/src/ROEBoundsCalculator.jl")
+include("rl/src/ClusterCombinations.jl")
+include("rl/src/TrainingScenarioBuilder.jl")
+include("rl/src/TrainingOrchestrator.jl")
+include("rl/src/ComparisonHarness.jl")
 
 # debris_controllable_sim functions are defined directly in this module
 
@@ -56,9 +80,10 @@ function run_debris_controllable_sim(config_dict::AbstractDict)
         
         results = Dict{String,Any}()
         
-        if mode in ("full", "stochastic_greedy", "stage0")
-            constellation_log("pipeline", "Running Stage 0: Stochastic Seeding")
-            results["stage0"] = run_stage0_seeding(config_dict)
+        if mode in ("full", "stochastic_greedy", "stage0", "rl")
+            stage0_method = get(opt_params, "stage0_method", "stochastic")
+            constellation_log("pipeline", "Running Stage 0: Seeding (method=$stage0_method)")
+            results["stage0"] = run_stage0_seeding(config_dict; method=stage0_method)
         end
         
         if mode in ("full", "heuristic", "stage1")
@@ -97,12 +122,51 @@ end
 export run_stage0_seeding, run_constellation_design, run_stage2_verification, run_capo_pipeline
 export run_debris_controllable_sim, parse_debris_args
 
+# RL exports
+export SatelliteSeedingEnv, RLSatelliteSeedingObservation
+export DualDeepSetPolicy, check_gpu_availability
+export PPOConfig, train_ppo, setup_tensorboard_logging
+export compute_stage0_cost
+export load_training_scenarios, load_cluster_from_csv, load_superset_csv
+export run_rl_stage0_seeding, run_policy_inference, load_trained_policy, run_stochastic_greedy_seeding
+export compute_orbital_bounds_from_cluster, roe_to_orbital_elements, orbital_elements_to_roe, compute_reference_orbit, compute_shell_bounds_from_roe
+export load_labeled_debris_csv, filter_cluster, generate_cluster_combinations, generate_specific_combinations
+export convert_to_orbital_elements, write_client_csv, build_cluster_scenario, build_all_scenarios
+export TrainingScenario, build_training_scenarios, generate_parameter_combinations
+export compute_difficulty, save_training_scenarios, load_training_scenarios
+export TrainingResult, train_scenario, train_campaign, generate_campaign_summary
+export ComparisonResult, run_comparison, run_comparison_batch, generate_comparison_report, build_comparison_config
+
 # Utility exports
 using .ConstellationUtils
 using .ConstellationSlots
 using .ConstellationPlotting
+using .ConstellationConfig
 using .Stage0Seeding
+using .Stage0FHSG
 using .Stage1Design
+using .Stage1Controllable
 using .Stage2Verification
+using .Stage2OCPVerification
+using .SupportFunctions
+using .TwoBodyLinearization
+using .AccessMatrix
+using .PhysicsAdapter
+using .DebrisCatalog
+using .PlotlyPlots
+using .PlotConfig
+using .Stage0CacheLoader
+using .ParityTestHarness
+using .SatelliteSeedingEnv
+using .DeepSetPolicy
+using .PPOTrainer
+using .CostFunction
+using .Scenarios
+using .CapoIntegration
+using .ROEBoundsCalculator
+using .ClusterCombinations
+using .TrainingScenarioBuilder
+using .TrainingOrchestrator
+using .ComparisonHarness
 
 end # module ConstellationDesign

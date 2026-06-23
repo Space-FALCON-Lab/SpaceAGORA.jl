@@ -1,0 +1,64 @@
+# Simple LADS configuration for constellation design
+mission:
+  type: "lads_debris_steering"
+  drm: "lads_publication"
+  n_horizons: 5
+  planning_horizon_hours: 48.0
+  mission_duration_hours: 240.0
+
+physical_constants:
+  mu: 3.986004418e14  # Earth gravitational parameter [m^3/s^2]
+  J2: 1.08263e-3      # J2 perturbation coefficient
+  radius: 6371.0e3    # Earth radius [m]
+
+debris_params:
+  data_source: "synthetic"  # "sample", "synthetic", or "file"
+  file_path: null
+  n_clients: 10
+  synthetic_seed: 42
+  altitude_range_km: [400, 800]
+  inclination_range_deg: [0, 90]
+
+constellation_params:
+  max_sats: 100
+  a_min: 7.0e6
+  a_max: 8.0e6
+  e_max: 0.1
+  i_min: 0.0
+  i_max: 1.5707963267948966  # 90 degrees in radians
+  raan_min: 0.0
+  raan_max: 6.283185307179586  # 2π
+
+effector_params:
+  range: 600e3        # Laser range [m]
+  max_thrust: 0.1    # Max thrust [N]
+  sc_mass: 100.0     # Spacecraft mass [kg]
+
+optimizer_params:
+  mode: "full"  # "full", "stage0", "stage1", "stage2"
+  stage0_mode: "fhsg"  # "fhsg" or "rl" or "stochastic_greedy"
+  stage1_lp_warm_start_enabled: true
+  num_sats_weight: 100.0
+  l1_reg_weight: 10.0
+  tube_size_weight: 1.0e-5
+  beta_threshold: 0.1
+  solver: "clarabel"  # "clarabel", "ipopt", "glpk", "highs"
+  controllable_set_dirs: 72
+  certificate_mode: "support_function"
+  fidelity_mode: "keplerian"  # "keplerian", "j2", "full"
+  use_cached_stage0: false
+  cached_stage0_data: null
+
+sim_params:
+  dt: 10.0           # Time step [s]
+  N: 1000            # Number of steps
+  rng_seed: 67
+
+plotting:
+  save: true
+  display: false
+  base_outdir: "plots/constellation"
+  plot_stage1_lp_warm_start_beta_histogram: true
+  plot_tube_3d: true
+  plot_access_matrix: true
+  plot_stage2_trajectories: true

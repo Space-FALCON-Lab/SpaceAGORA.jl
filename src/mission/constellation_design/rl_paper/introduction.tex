@@ -1,0 +1,25 @@
+\section{Introduction}
+
+Space debris removal missions require careful constellation design to ensure comprehensive coverage of target debris objects while respecting orbital mechanics constraints. The constellation design process in SpaceAGORA consists of three stages: Stage 0 (seeding), Stage 1 (constellation design), and Stage 2 (control verification). Stage 0 seeding generates initial candidate satellite orbital elements that serve as the foundation for subsequent optimization stages.
+
+Traditional Stage 0 seeding methods, such as Finite Horizon Stochastic Greedy (FHSG), rely on heuristic candidate selection and can be computationally expensive for large debris clusters. These methods typically require evaluating hundreds of candidate satellites per placement, with each evaluation involving complex orbital propagation and access calculations. As debris clusters grow in size and complexity, the computational burden becomes prohibitive.
+
+Reinforcement learning (RL) offers an alternative approach by learning a policy that directly maps from the current constellation state to the next satellite placement. This approach has several advantages:
+\begin{itemize}
+    \item \textbf{Computational efficiency:} Once trained, the RL policy can place satellites in milliseconds without expensive candidate evaluation.
+    \item \textbf{Generalization:} The policy can generalize to new debris clusters and parameter settings without retraining.
+    \item \textbf{Scalability:} The computational cost scales linearly with the number of satellites, not with the size of the debris cluster.
+\end{itemize}
+
+In this paper, we present an RL-based Stage 0 seeding method that uses a DeepSet architecture to handle variable-sized sets of satellites and debris clients. The policy learns to place satellites sequentially to minimize coverage deficit while respecting orbital constraints. We integrate this method into the SpaceAGORA constellation design framework and demonstrate its effectiveness on realistic debris scenarios.
+
+The key contributions of this work are:
+\begin{enumerate}
+    \item A DeepSet-based RL policy for Stage 0 constellation seeding that handles variable-sized sets via permutation-invariant embeddings.
+    \item Integration with the existing SpaceAGORA framework, including checkpoint/resume compatibility and TensorBoard logging.
+    \item A training infrastructure that supports curriculum learning across cluster combinations and parameter sweeps.
+    \item Native implementation of ROE-based orbital bounds calculation for compatibility with CAPOConstellation without external dependencies.
+    \item Empirical evaluation showing that the RL approach achieves comparable or better constellation quality than stochastic greedy baselines.
+\end{enumerate}
+
+The remainder of this paper is organized as follows. Section~\ref{sec:background} provides background on constellation design and RL. Section~\ref{sec:methodology} describes the RL seeding methodology. Section~\ref{sec:embeddings} details the embedding architecture. Section~\ref{sec:results} presents experimental results. Section~\ref{sec:conclusion} concludes with future work.

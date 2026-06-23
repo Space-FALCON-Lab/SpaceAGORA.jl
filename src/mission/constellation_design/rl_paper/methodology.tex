@@ -1,0 +1,84 @@
+\section{Methodology}
+\label{sec:methodology}
+
+\subsection{Problem Formulation}
+
+We formulate Stage 0 constellation seeding as a sequential decision-making problem. At each step $t$, the agent observes the current constellation state and selects orbital elements for the next satellite. The episode terminates when the constellation achieves feasibility or reaches the maximum number of satellites.
+
+\textbf{State Space:} The state consists of:
+\begin{itemize}
+    \item Placed satellites: $\mathcal{S}_t = \{s_1, \dots, s_{n_t}\}$ where each $s_i \in \mathbb{R}^6$ represents orbital elements $[a, e, i, \Omega, \omega, \nu]$.
+    \item Debris clients: $\mathcal{C} = \{c_1, \dots, c_m\}$ where each $c_j \in \mathbb{R}^6$ represents client orbital elements.
+    \item Orbital bounds: $B \in \mathbb{R}^{6 \times 2}$ defining feasible ranges for each orbital element.
+    \item Remaining budget: $b_t = N_{\max} - n_t$ satellites remaining to place.
+    \item Cost state: Current deficit, unsafe cost, safe cost, and feasibility status.
+\end{itemize}
+
+\textbf{Action Space:} The action is a 6-dimensional vector representing the orbital elements of the next satellite: $a_t \in \mathbb{R}^6$. Actions are normalized to $[-1, 1]$ and denormalized to orbital bounds during execution.
+
+\textbf{Reward Function:} The reward at step $t$ is:
+\begin{equation}
+    r_t = \Delta C_t - \lambda_u C_u - \lambda_s C_s - \lambda_p C_p + \mathbb{I}_{\text{feasible}} \cdot R_{\text{bonus}}
+\end{equation}
+where $\Delta C_t$ is the cost improvement, $C_u, C_s, C_p$ are unsafe, safe, and prediction costs, $\lambda_u, \lambda_s, \lambda_p$ are penalty weights, and $R_{\text{bonus}}$ is a bonus for achieving feasibility.
+
+\subsection{Environment Design}
+
+The \texttt{SatelliteSeedingEnv} implements the RL environment following the OpenAI Gym interface. Key features include:
+
+\begin{itemize}
+    \item \textbf{Reset:} Initialize with empty constellation and load client data.
+    \item \textbf{Step:} Place satellite, compute cost, update state, check termination.
+    \item \textbf{Cost Function:} Supports both simplified orbital distance proxy and full CAPO audit.
+\end{itemize}
+
+The environment uses the existing \texttt{compute\_stage0\_cost} function from the SpaceAGORA framework, ensuring consistency with the baseline methods.
+
+\subsection{Policy Architecture}
+
+We use a dual DeepSet architecture (Figure~\ref{fig:architecture}) with the following components:
+
+\begin{enumerate}
+    \item \textbf{Satellite Encoder:} $\phi_s: \mathbb{R}^6 \rightarrow \mathbb{R}^{d_{\text{embed}}}$ encodes each satellite.
+    \item \textbf{Client Encoder:} $\phi_c: \mathbb{R}^6 \rightarrow \mathbb{R}^{d_{\text{embed}}}$ encodes each debris client.
+    \item \textbf{Aggregation:} Sum embeddings for each set: $h_s = \sum_{s \in \mathcal{S}} \phi_s(s)$, $h_c = \sum_{c \in \mathcal{C}} \phi_c(c)$.
+    \item \textbf{Cross-Attention:} $h = \text{Attention}(h_s, h_c)$ captures interactions.
+    \item \textbf{Policy Head:} $\pi: \mathbb{R}^{d_{\text{hidden}}} \rightarrow \mathbb{R}^6$ outputs normalized orbital elements.
+\end{enumerate}
+
+The policy is trained using PPO with the following hyperparameters:
+\begin{itemize}
+    \item Learning rate: $3 \times 10^{-4}$
+    \item Hidden size: 32
+    \item Embedding size: 16
+    \item PPO clip: 0.2
+    \item GAE $\lambda$: 0.95
+    \item Discount $\gamma$: 0.99
+\end{itemize}
+
+\subsection{Training Infrastructure}
+
+We implement a comprehensive training campaign infrastructure that supports:
+
+\begin{itemize}
+    \item \textbf{Cluster Combinations:} Individual clusters (1a, 2a, 3a...), pairs (1a+2a, 2a+3a...), and supersets (1a+2a+3a...).
+    \item \textbf{Parameter Sweeps:} Full-factorial sampling over laser range, laser power, and planning horizons.
+    \item \textbf{Curriculum Learning:} Sort scenarios by difficulty (easy → hard) for progressive training.
+    \item \textbf{Checkpoint/Resume:} Compatible with existing PPOTrainer checkpoint system using JLD2 format.
+    \item \textbf{TensorBoard Integration:} Log training metrics, embeddings, and cost components for visualization.
+\end{itemize}
+
+The training entry point \texttt{run\_rl\_training\_campaign.jl} parses a YAML configuration, generates scenarios, and executes training in parallel or sequential mode.
+
+\subsection{ROE-Based Orbital Bounds}
+
+To maintain compatibility with CAPOConstellation without external dependencies, we port the ROE math natively to SpaceAGORA. The \texttt{ROEBoundsCalculator} module provides:
+
+\begin{itemize}
+    \item \texttt{compute\_orbital\_bounds\_from\_cluster:} Statistical bounds from debris cluster orbital elements.
+    \item \texttt{roe\_to\_orbital\_elements:} Convert ROE to absolute orbital elements.
+    \item \texttt{orbital\_elements\_to\_roe:} Convert absolute orbital elements to ROE.
+    \item \texttt{compute\_reference\_orbit:} Compute reference orbit from cluster mean.
+\end{itemize}
+
+This ensures that the RL search space bounds match those used by stochastic greedy seeding for fair comparison.

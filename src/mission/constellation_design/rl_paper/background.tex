@@ -1,0 +1,57 @@
+\section{Background}
+\label{sec:background}
+
+\subsection{Constellation Design in SpaceAGORA}
+
+The SpaceAGORA framework provides a comprehensive pipeline for designing satellite constellations for debris removal missions. The pipeline consists of three stages:
+
+\begin{enumerate}
+    \item \textbf{Stage 0 (Seeding):} Generate initial candidate satellite orbital elements.
+    \item \textbf{Stage 1 (Constellation Design):} Optimize satellite assignments and trajectories.
+    \item \textbf{Stage 2 (Control Verification):} Verify controllability and safety constraints.
+\end{enumerate}
+
+Stage 0 seeding is particularly critical as it determines the initial constellation configuration that serves as the foundation for subsequent optimization. The current implementation supports two seeding methods:
+\begin{itemize}
+    \item \textbf{Stochastic Greedy:} Randomly samples candidate satellites and selects those that maximize cost improvement.
+    \item \textbf{Finite Horizon Stochastic Greedy (FHSG):} Uses CAPO certificate audit for accurate cost evaluation with multi-horizon planning.
+\end{itemize}
+
+Both methods require evaluating multiple candidate satellites per placement, with each evaluation involving orbital propagation and access calculations. This becomes computationally expensive for large debris clusters.
+
+\subsection{Reinforcement Learning for Sequential Decision Making}
+
+Reinforcement learning is well-suited for sequential decision-making problems where an agent learns to maximize cumulative reward through interaction with an environment. The key components are:
+
+\begin{itemize}
+    \item \textbf{State:} The current constellation configuration (placed satellites, debris clients, orbital bounds).
+    \item \textbf{Action:} The orbital elements of the next satellite to place.
+    \item \textbf{Reward:} Improvement in constellation quality (negative cost) plus penalties for constraint violations.
+    \item \textbf{Policy:} A function that maps states to actions.
+\end{itemize}
+
+We use Proximal Policy Optimization (PPO)~\cite{schulman2017proximal}, a state-of-the-art policy gradient algorithm that balances sample efficiency with stability. PPO uses a clipped objective to prevent large policy updates, making it robust to hyperparameter choices.
+
+\subsection{DeepSet Architecture}
+
+The constellation seeding problem involves variable-sized sets: the number of placed satellites grows during the episode, and the number of debris clients varies across scenarios. Standard neural networks cannot handle variable-sized inputs directly.
+
+DeepSets~\cite{zaheer2017deep} provide a permutation-invariant architecture for sets. The key insight is that any permutation-invariant function on sets can be approximated by:
+\begin{equation}
+    f(\mathcal{X}) = \rho\left(\sum_{x \in \mathcal{X}} \phi(x)\right)
+\end{equation}
+where $\phi$ is an element-wise embedding function and $\rho$ aggregates the embeddings.
+
+We use a dual DeepSet architecture with separate encoders for satellites and debris clients, followed by cross-attention to capture interactions between the two sets.
+
+\subsection{Relative Orbital Elements (ROE)}
+
+Relative Orbital Elements (ROE) provide a convenient parameterization for relative motion between satellites. ROE are defined with respect to a reference orbit and consist of six elements:
+\begin{itemize}
+    \item $\delta a$: Semi-major axis difference
+    \item $\delta e_x, \delta e_y$: Eccentricity vector components
+    \item $\delta i_x, \delta i_y$: Inclination vector components
+    \item $\delta \lambda$: Mean longitude difference
+\end{itemize}
+
+ROE are used in CAPOConstellation to compute orbital bounds for candidate satellites. We port this ROE math natively to SpaceAGORA to maintain compatibility without external dependencies.

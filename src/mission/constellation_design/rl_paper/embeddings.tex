@@ -1,0 +1,84 @@
+\section{Embedding Architecture}
+\label{sec:embeddings}
+
+\subsection{Satellite Embeddings}
+
+The satellite encoder $\phi_s$ maps each satellite's orbital elements to a fixed-dimensional embedding. Given a satellite with orbital elements $s = [a, e, i, \Omega, \omega, \nu]$, the embedding is computed as:
+
+\begin{equation}
+    \phi_s(s) = \text{MLP}_s\left(\text{normalize}(s)\right)
+\end{equation}
+
+where $\text{normalize}(s)$ scales each orbital element to a standard range:
+\begin{itemize}
+    \item Semi-major axis: normalized by reference orbit $a_{\text{ref}}$
+    \item Eccentricity: already in $[0, 1)$
+    \item Inclination, RAAN, argument of perigee, true anomaly: normalized to $[0, 2\pi]$
+\end{itemize}
+
+The MLP consists of two hidden layers with ReLU activations:
+\begin{equation}
+    \text{MLP}_s(x) = W_2 \sigma(W_1 x + b_1) + b_2
+\end{equation}
+
+where $W_1 \in \mathbb{R}^{d_{\text{hidden}} \times 6}$, $W_2 \in \mathbb{R}^{d_{\text{embed}} \times d_{\text{hidden}}}$, and $\sigma$ is the ReLU activation.
+
+\subsection{Client Embeddings}
+
+The client encoder $\phi_c$ has the same architecture as the satellite encoder but is trained separately to capture the different semantics of debris clients:
+
+\begin{equation}
+    \phi_c(c) = \text{MLP}_c\left(\text{normalize}(c)\right)
+\end{equation}
+
+Separate encoders allow the policy to learn different representations for satellites (which we control) and debris clients (which are fixed targets).
+
+\subsection{Aggregation and Cross-Attention}
+
+After encoding individual elements, we aggregate each set using summation:
+
+\begin{equation}
+    h_s = \sum_{s \in \mathcal{S}} \phi_s(s), \quad h_c = \sum_{c \in \mathcal{C}} \phi_c(c)
+\end{equation}
+
+Summation is permutation-invariant and preserves all information in the sum of embeddings.
+
+We then apply cross-attention to capture interactions between satellites and clients:
+
+\begin{equation}
+    h = \text{CrossAttention}(h_s, h_c)
+\end{equation}
+
+The cross-attention mechanism computes:
+\begin{equation}
+    \text{CrossAttention}(q, k) = \text{softmax}\left(\frac{q W_Q (k W_K)^T}{\sqrt{d}}\right) (k W_V)
+\end{equation}
+
+where $W_Q, W_K, W_V \in \mathbb{R}^{d_{\text{embed}} \times d_{\text{embed}}}$ are learnable weight matrices.
+
+\subsection{Policy Head}
+
+The final policy head maps the aggregated representation to a 6-dimensional action:
+
+\begin{equation}
+    \pi(h) = \tanh\left(W_{\pi} h + b_{\pi}\right)
+\end{equation}
+
+The tanh activation ensures the output is in $[-1, 1]$, which is then denormalized to orbital bounds during execution.
+
+\subsection{Permutation Invariance}
+
+The entire architecture is permutation-invariant with respect to both satellites and clients. This is crucial because:
+\begin{itemize}
+    \item The order in which satellites are placed should not affect the policy's decision.
+    \item The order of debris clients should not affect the constellation quality.
+\end{itemize}
+
+Permutation invariance is achieved through:
+\begin{itemize}
+    \item Element-wise encoding (each element processed independently)
+    \item Summation aggregation (commutative operation)
+    \item Cross-attention on aggregated representations (order-independent)
+\end{itemize}
+
+This property allows the policy to generalize to different numbers of satellites and clients without retraining.

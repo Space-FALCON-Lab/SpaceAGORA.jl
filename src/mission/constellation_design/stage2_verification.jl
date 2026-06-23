@@ -5,6 +5,7 @@ using ..ConstellationSlots
 using ..ConstellationPlotting
 using ..Stage0Seeding
 using ..Stage1Design
+using ..Stage2OCPVerification
 using LazySets
 using Polyhedra
 using LinearAlgebra
@@ -189,7 +190,7 @@ end
 """
     run_stage2_verification(config_dict::AbstractDict) -> Dict{String,Any}
 
-Stage 2 control verification entry point. Runs control verification
+Stage 2 control verification entry point. Runs OCP verification
 and plotting using the provided configuration dictionary.
 
 # Arguments
@@ -204,14 +205,23 @@ function run_stage2_verification(config_dict::AbstractDict)
     try
         constellation_log("stage2", "Starting Stage 2 control verification")
         
+        opt_params = config_dict["optimizer_params"]
+        stage2_mode = String(get(opt_params, "stage2_mode", "optimal_control"))
+        
         # Ensure Stage 1 has been run
         if !haskey(config_dict, "stage1_results")
             constellation_log_warn("stage2", "Stage 1 results not found, running Stage 1 first")
             Stage1Design.run_constellation_design(config_dict)
         end
         
-        # Verify controllability
-        verification_results = verify_controllability(config_dict)
+        # Run Stage 2 verification
+        if stage2_mode == "optimal_control"
+            constellation_log("stage2", "Running Stage 2 OCP verification")
+            verification_results = run_stage2_ocp_verification(config_dict)
+        else
+            constellation_log("stage2", "Running Stage 2 default verification")
+            verification_results = verify_controllability(config_dict)
+        end
         
         # Generate plots
         plot_paths = generate_verification_plots(config_dict)

@@ -1,0 +1,138 @@
+# RL Training Campaign Configuration
+# This file defines the training campaign for RL-based constellation seeding
+# Supports cluster combinations, parameter sweeps, and curriculum learning
+
+campaign:
+  id: "rl_training_cluster_sweep"
+  # Path to labeled debris CSV from CAPOConstellation
+  labeled_debris_csv: "analysis_tools/cluster_output/labeled_debris.csv"
+  
+  # Cluster combinations to train on
+  cluster_combinations:
+    # Individual clusters
+    individual: ["1a", "2a", "3a", "4a", "5a"]
+    # Cluster pairs
+    pairs:
+      - ["1a", "2a"]
+      - ["1a", "3a"]
+      - ["2a", "3a"]
+      - ["2a", "4a"]
+      - ["3a", "4a"]
+    # Cluster supersets
+    supersets:
+      - ["1a", "2a", "3a"]
+      - ["1a", "2a", "3a", "4a"]
+      - ["1a", "2a", "3a", "4a", "5a"]
+  
+  # Output directory for training results
+  output_dir: "data/rl_campaigns/$(campaign_id)"
+  
+  # Campaign mode
+  mode: "full_factorial"
+  max_walltime_days: 30
+
+# Parameter sweep variables
+variables:
+  # Laser range (meters)
+  laser_range_m:
+    levels: [250000.0, 300000.0, 600000.0]
+  
+  # Laser power or thrust (Newtons)
+  laser_power_or_thrust_n:
+    levels: [0.01, 0.1, 0.5, 1.0]
+  
+  # Number of planning horizons
+  n_horizons:
+    levels: [5, 10]
+  
+  # Maximum number of episodes per training run
+  max_episodes:
+    levels: [5000, 10000]
+  
+  # Learning rate
+  learning_rate:
+    levels: [1e-4, 3e-4, 1e-3]
+
+# Training configuration
+training:
+  # Use ROE-based orbital bounds from native SpaceAGORA implementation
+  use_roe_bounds: true
+  roe_bounds_source: "native"  # "native" or "capoconstellation"
+  
+  # Curriculum learning settings
+  curriculum_learning: true
+  difficulty_order: "easy_to_hard"  # "easy_to_hard" or "hard_to_easy"
+  
+  # Validation split
+  validation_split: 0.2
+  
+  # Early stopping
+  early_stopping_patience: 500
+  early_stopping_min_delta: 1e-4
+  
+  # PPO hyperparameters
+  max_steps_per_episode: 100
+  hidden_size: 32
+  embed_size: 16
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_epsilon: 0.2
+  value_loss_coef: 0.5
+  entropy_coef: 0.01
+  max_grad_norm: 0.5
+  ppo_epochs: 10
+  batch_size: 64
+  
+  # Cost function configuration
+  use_capo_audit: false  # Set to true for full CAPO audit (slower)
+  unsafe_weight: 100.0
+  safe_weight: 10.0
+  pred_weight: 5.0
+  feasibility_threshold: 1e-6
+  
+  # RL-specific configuration
+  max_sats: 64
+  greedy_variant: "pure"  # "pure", "stochastic", "epsilon"
+  greedy_top_k: 5
+  greedy_epsilon: 0.1
+  greedy_restarts: 1
+
+# Execution configuration
+execution:
+  # Parallel training settings
+  max_parallel_trainings: 4
+  threads_per_training: 8
+  gpu_per_training: 1
+  
+  # Checkpoint settings
+  checkpoint_frequency: 100
+  checkpoint_dir: "checkpoints"
+  
+  # TensorBoard logging
+  tensorboard_log_dir: "tensorboard"
+  tensorboard_update_freq: 10
+  
+  # Logging
+  log_level: "info"  # "debug", "info", "warn", "error"
+  log_to_file: true
+  log_file: "training.log"
+  
+  # Resume settings
+  auto_resume: false
+  resume_on_failure: false
+  max_retries: 3
+
+# Paths configuration
+paths:
+  # Base directory for all outputs
+  base_dir: "data/rl_campaigns"
+  
+  # Subdirectories
+  models_dir: "models"
+  logs_dir: "logs"
+  artifacts_dir: "artifacts"
+  cache_dir: "cache"
+  
+  # Model paths
+  latest_model_path: "data/rl_models/latest_model.jld2"
+  best_model_path: "data/rl_models/best_model.jld2"

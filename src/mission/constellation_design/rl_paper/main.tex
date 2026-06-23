@@ -1,0 +1,53 @@
+\documentclass{AIAA}
+
+% AIAA paper template for RL-based constellation seeding
+
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows,positioning}
+
+% Paper metadata
+\title{Reinforcement Learning for Satellite Constellation Seeding in Debris Removal Missions}
+\author{Author Name}
+\affiliation{SpaceAGORA Research Group}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This paper presents a reinforcement learning (RL) approach for Stage 0 constellation seeding in space debris removal missions. Traditional stochastic greedy seeding methods rely on heuristic candidate selection and can be computationally expensive for large debris clusters. We propose a DeepSet-based RL policy that learns to place satellites sequentially to minimize coverage deficit while respecting orbital constraints. The policy uses permutation-invariant embeddings for both satellites and debris clients, enabling generalization across variable-sized debris clusters. We integrate the RL seeding method into the SpaceAGORA constellation design framework and demonstrate its effectiveness on realistic debris scenarios. The training infrastructure supports curriculum learning across cluster combinations and parameter sweeps, with checkpoint/resume compatibility and TensorBoard integration for experiment tracking. Results show that the RL approach achieves comparable or better constellation quality than stochastic greedy baselines with significantly reduced computational overhead.
+\end{abstract}
+
+\section{Introduction}
+\input{introduction.tex}
+
+\section{Background}
+\input{background.tex}
+
+\section{Methodology}
+\input{methodology.tex}
+
+\section{Embedding Architecture}
+\input{embeddings.tex}
+
+\section{Results}
+\input{results.tex}
+
+\section{Conclusion}
+\input{conclusion.tex}
+
+\section*{Acknowledgments}
+\input{acknowledgments.tex}
+
+\bibliographystyle{aiaa}
+\bibliography{references}
+
+\end{document}

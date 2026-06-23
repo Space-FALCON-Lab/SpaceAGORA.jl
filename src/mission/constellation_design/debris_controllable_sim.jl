@@ -57,6 +57,9 @@ end
 
 Run the full debris controllable simulation pipeline with all three stages.
 
+This is the main pipeline integration point for the CAPOConstellation port.
+Supports FHSG Stage 0, horizon-indexed tube Stage 1, and sequential OCP Stage 2.
+
 # Arguments
 - `config_dict::AbstractDict`: Configuration dictionary
 
@@ -75,21 +78,22 @@ function run_debris_controllable_sim(config_dict::AbstractDict)
         
         results = Dict{String,Any}()
         
-        # Stage 0: Stochastic Seeding
-        if mode in ("full", "stochastic_greedy", "stage0")
-            constellation_log("pipeline", "Running Stage 0: Stochastic Seeding")
-            results["stage0"] = run_stage0_seeding(config_dict)
+        # Stage 0: FHSG Seeding (default) or alternative
+        if mode in ("full", "stochastic_greedy", "fhsg", "stage0")
+            stage0_method = String(get(opt_params, "stage0_mode", "fhsg"))
+            constellation_log("pipeline", "Running Stage 0: Seeding (method=$stage0_method)")
+            results["stage0"] = run_stage0_seeding(config_dict; method=stage0_method)
         end
         
-        # Stage 1: Constellation Design
-        if mode in ("full", "heuristic", "stage1")
-            constellation_log("pipeline", "Running Stage 1: Constellation Design")
+        # Stage 1: Controllable Tube Certificate (default) or alternative
+        if mode in ("full", "controllable", "stage1")
+            constellation_log("pipeline", "Running Stage 1: Horizon-indexed Tube Certificate")
             results["stage1"] = run_constellation_design(config_dict)
         end
         
-        # Stage 2: Control Verification
+        # Stage 2: Sequential OCP Verification (default) or alternative
         if mode in ("full", "stage2")
-            constellation_log("pipeline", "Running Stage 2: Control Verification")
+            constellation_log("pipeline", "Running Stage 2: Sequential OCP Verification")
             results["stage2"] = run_stage2_verification(config_dict)
         end
         

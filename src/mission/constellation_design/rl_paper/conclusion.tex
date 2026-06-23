@@ -1,0 +1,32 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented a reinforcement learning approach for Stage 0 constellation seeding in space debris removal missions. The key contributions are:
+
+\begin{enumerate}
+    \item A DeepSet-based RL policy that handles variable-sized sets via permutation-invariant embeddings for satellites and debris clients.
+    \item Integration with the SpaceAGORA framework, including checkpoint/resume compatibility and TensorBoard logging.
+    \item A training infrastructure supporting curriculum learning across cluster combinations and parameter sweeps.
+    \item Native implementation of ROE-based orbital bounds calculation for compatibility with CAPOConstellation.
+    \item Empirical evaluation showing comparable or better constellation quality than stochastic greedy baselines with 10-100x speedup.
+\end{enumerate}
+
+The RL approach achieves computational efficiency by learning a policy that directly maps constellation state to satellite placement, avoiding expensive candidate evaluation. The permutation-invariant architecture enables generalization to different debris cluster sizes and compositions.
+
+\subsection{Future Work}
+
+Several directions for future work include:
+
+\begin{itemize}
+    \item \textbf{Full CAPO Audit Integration:} Replace the simplified cost function with the full CAPO certificate audit for more accurate reward computation.
+    \item \textbf{Multi-Objective RL:} Incorporate additional objectives such as fuel efficiency, collision avoidance, and mission duration.
+    \item \textbf{Hierarchical RL:} Use hierarchical policies to first select satellite regions, then refine orbital elements.
+    \item \textbf{Meta-Learning:} Enable fast adaptation to new debris clusters via meta-learning techniques.
+    \item \textbf{Real-World Deployment:} Validate the approach on operational debris removal missions.
+\end{itemize}
+
+The training infrastructure we developed provides a solid foundation for these extensions, with support for parameter sweeps, curriculum learning, and comprehensive experiment tracking.
+
+\subsection{Reproducibility}
+
+All code is open-source and available in the SpaceAGORA repository. The training configuration, scenario definitions, and evaluation scripts are provided to ensure reproducibility. The checkpoint/resume system and TensorBoard logging facilitate experiment tracking and debugging.

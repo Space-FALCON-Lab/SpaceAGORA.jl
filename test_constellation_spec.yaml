@@ -1,0 +1,149 @@
+# Test constellation_spec for CAPOConstellation port validation
+# This is a minimal configuration for testing the three-stage pipeline
+
+mission:
+  type: lads_debris_steering
+  drm: lads_publication
+  n_horizons: 2
+  planning_horizon_hours: 48.0
+  mission_duration_hours: 240.0
+
+physical_constants:
+  mu: 3.986004418e14
+  J2: 1.08263e-3
+  radius: 6371.0e3
+
+debris_params:
+  data_source: sample
+  n_clients: 2
+  synthetic_seed: 42
+  altitude_range_km: [400, 800]
+  inclination_range_deg: [0, 90]
+
+constellation_params:
+  max_sats: 10
+  a_min: 7.0e6
+  a_max: 8.0e6
+  e_max: 0.1
+  i_min: 0.0
+  i_max: 1.5707963267948966
+  raan_min: 0.0
+  raan_max: 6.283185307179586
+
+effector_params:
+  range: 600000.0
+  max_thrust: 0.1
+  sc_mass: 100.0
+
+optimizer_params:
+  mode: full
+  stage0_mode: fhsg
+  stage1_certificate_mode: constructive_zonotope
+  stage2_mode: optimal_control
+  
+  finite_horizon_stochastic_greedy_seeding:
+    run_count: 1
+    max_greedy_steps: 10
+    stage_a_max_steps: 10
+    stage_b_max_steps: 10
+    batch_size: 100
+    group_add_count: 2
+    top_k: 4
+    stage0_cost_mode: minimum_required_invariant_tube
+    two_stage_mode: true
+    unsafe_weight: 1.0
+    safe_weight: 1.0
+    reach_weight: 1.0
+    pred_weight: 1.0
+    safe_margin_epsilon: 5000.0
+    pred_margin_epsilon: 5000.0
+    certificate_support_margin_m: 0.0
+    min_standoff_distance_m: 5000.0
+    active_unsafe_tol: 1.0e-8
+    active_safe_tol: 1.0e-8
+    active_reach_tol: 1.0e-8
+    active_pred_tol: 1.0e-8
+    directional_prefilter_eta: 0.0
+    safe_prefilter_eta: 0.0
+    sample_relaxation_gamma: 1.0
+    safe_direction_count: 12
+    correction_direction_count: 12
+    reuse_existing_library: true
+    write_selected_ic_arrow: true
+    selected_ic_arrow_path: ""
+    nc_support_sharing: 10
+    strict_determinism: true
+    parallel_candidate_sampling: false
+    parallel_candidate_scoring: true
+    parallel_runs: true
+    stage1_probe_enabled: false
+    stage1_probe_skip_stage2: true
+    stage1_probe_require_solved: true
+    merge_shells_across_runs: true
+    thread_batch_chunk: 32
+    show_progress_bars: true
+    log_progress_csv: true
+    progress_log_every_step: true
+    fail_if_infeasible: true
+    sampling_max_tries: 4096
+    use_pred_repair: false
+    repair_interval: 10
+  
+  controllable_set_dirs: 12
+  controllable_keepout_dirs: 12
+  stage1_keepout_margin: 0.0
+  stage1_min_safe_support_margin: 0.0
+  stage1_beta_ladder_enabled: true
+  stage1_beta_ladder_start: 0.01
+  stage1_beta_ladder_step: 0.01
+  stage1_beta_ladder_stop: 1.0
+  constructive_multistart_count: 11
+  constructive_predecessor_contraction_min: 0.5
+  
+  skip_stage2: false
+  witness_alpha_reward: 1.0
+  witness_predecessor_reward: 0.25
+  witness_productivity_prune_enabled: false
+  witness_productivity_topk: 1
+  witness_productivity_metric_basis: constructive_dictionary
+  
+  num_sats_weight: 100.0
+  l1_reg_weight: 10.0
+  tube_size_weight: 1.0e-5
+  beta_threshold: 0.1
+  beta_budget: 1.0
+  
+  solver: clarabel
+  tolerance: 1.0e-4
+  max_iter: 200
+  capo_log_solver_trace: false
+  
+  relative_dynamics_mode: cw_eci
+  certificate_mode: support_function
+  controllable_set_mode: polyhedral
+  
+  repeated_horizon_enabled: true
+  repeated_horizon_client_cache_enabled: true
+  compact_phase_access_single_horizon: false
+  
+  stage1_lp_warm_start_enabled: true
+  fidelity_mode: keplerian
+  use_cached_stage0: false
+  cached_stage0_data: null
+
+sim_params:
+  dt: 10.0
+  N: 100
+  rng_seed: 67
+
+plotting:
+  save: true
+  display: false
+  base_outdir: plots/constellation
+  plot_stage1_lp_warm_start_beta_histogram: true
+  plot_tube_3d: true
+  plot_access_matrix: true
+  plot_stage2_trajectories: true
+
+client_bounds:
+  n_clients: 2

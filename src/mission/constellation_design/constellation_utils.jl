@@ -215,9 +215,93 @@ function get_sat_positions(sat_positions, sc_id, timestep, axis=-1)
     end
 end
 
+# ============================================================================
+# Cache Utilities (from utils/cache_utils.jl)
+# ============================================================================
+
+"""
+    compute_cache_signature(config_dict::AbstractDict, context::AbstractDict) -> String
+
+Compute a unique signature for cache validation based on configuration and context.
+"""
+function compute_cache_signature(config_dict::AbstractDict, context::AbstractDict)
+    payload = Dict{String,Any}(
+        "config" => config_dict,
+        "context" => context,
+    )
+    hash_bytes = sha256(JSON.json(payload))
+    return bytes2hex(hash_bytes)
+end
+
+"""
+    load_cached_stage0(cache_path::AbstractString, signature::AbstractString) -> Union{Nothing, Dict{String,Any}}
+
+Load cached Stage 0 data if signature matches.
+"""
+function load_cached_stage0(cache_path::AbstractString, signature::AbstractString)
+    if !isfile(cache_path)
+        return nothing
+    end
+    
+    try
+        data = JLD2.load(cache_path)
+        if haskey(data, "signature") && data["signature"] == signature
+            constellation_log("cache", "Stage 0 cache hit"; path=cache_path)
+            return data["payload"]
+        else
+            constellation_log("cache", "Stage 0 cache signature mismatch"; path=cache_path)
+            return nothing
+        end
+    catch err
+        constellation_log_warn("cache", "Failed to load Stage 0 cache"; error=sprint(showerror, err))
+        return nothing
+    end
+end
+
+"""
+    save_cached_stage0(cache_path::AbstractString, signature::AbstractString, payload::AbstractDict)
+
+Save Stage 0 data to cache with signature.
+"""
+function save_cached_stage0(cache_path::AbstractString, signature::AbstractString, payload::AbstractDict)
+    mkpath(dirname(cache_path))
+    data = Dict{String,Any}(
+        "signature" => signature,
+        "payload" => payload,
+        "timestamp" => now(),
+    )
+    try
+        JLD2.save(cache_path, data)
+        constellation_log("cache", "Stage 0 cache saved"; path=cache_path)
+    catch err
+        constellation_log_warn("cache", "Failed to save Stage 0 cache"; error=sprint(showerror, err))
+    end
+end
+
+"""
+    make_stage0_cache_path(config_dict::AbstractDict) -> String
+
+Generate a cache file path for Stage 0 data.
+"""
+function make_stage0_cache_path(config_dict::AbstractDict)
+    opt_params = get(config_dict, "optimizer_params", Dict{String,Any}())
+    cache_dir = String(get(opt_params, "stage0_cache_dir", "cache/stage0"))
+    mkpath(cache_dir)
+    
+    # Create a unique filename based on key parameters
+    mission = get(config_dict, "mission", Dict{String,Any}())
+    n_horizons = Int(get(mission, "n_horizons", 5))
+    debris = get(config_dict, "debris_params", Dict{String,Any}())
+    n_clients = Int(get(debris, "n_clients", 10))
+    
+    filename = "stage0_h$(n_horizons)_c$(n_clients).jld2"
+    return joinpath(cache_dir, filename)
+end
+
 export ingest_yaml, constellation_log, constellation_log_warn, constellation_log_error
 export constellation_log_exception, make_constellation_log_path
 export constellation_log_init!, constellation_log_close!
 export summarize_index_vector, hash_bin, get_sat_positions
+export compute_cache_signature, load_cached_stage0, save_cached_stage0, make_stage0_cache_path
 
 end # module ConstellationUtils

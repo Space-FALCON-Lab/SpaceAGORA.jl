@@ -41,13 +41,17 @@ include("tasks/aerobraking/evaluation/reports.jl")
 
 include("tasks/aerobraking/AerobrakingMDP.jl")
 
+include("algorithms/training_device.jl")
 include("algorithms/ddqn/replay_buffer.jl")
 include("algorithms/ddqn/network.jl")
 include("algorithms/ddqn/epsilon_schedule.jl")
 include("algorithms/ddqn/target_network.jl")
 include("algorithms/ddqn/learner.jl")
+include("algorithms/a2c/rollout_buffer.jl")
+include("algorithms/a2c/learner.jl")
 include("algorithms/ddqn/checkpoints.jl")
 include("algorithms/ddqn/policy.jl")
+include("algorithms/a2c/policy.jl")
 
 include("runtime/config_loading.jl")
 include("runtime/run_manifest.jl")
@@ -84,7 +88,10 @@ export ReplayBuffer, ReplayBatch, sample_batch
 export QNetwork, init_q_network, predict_q, copy_network!
 export EpsilonSchedule, epsilon_value
 export DDQNConfig, DDQNLearner, select_action, observe!, maybe_train!, compute_ddqn_targets
+export A2CConfig, A2CLearner, A2CRolloutBatch, compute_discounted_returns
 export save_checkpoint, load_checkpoint, GreedyDDQNPolicy, load_trained_ddqn_policy
+export GreedyA2CPolicy, load_trained_a2c_policy
+export CPUTrainingDevice, CUDATrainingDevice, resolve_training_device, training_device_name
 
 export ResolvedConfig, load_config, resolve_config, default_config_path
 export RunManifest, write_manifest, TrainingSession, build_training_session

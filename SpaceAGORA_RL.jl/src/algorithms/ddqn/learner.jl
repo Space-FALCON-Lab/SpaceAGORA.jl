@@ -26,7 +26,7 @@ mutable struct AdamState
     learning_rate::Float32
 end
 
-function AdamState(net::QNetwork, config::DDQNConfig)
+function AdamState(net::QNetwork, config)
     return AdamState(zero_network_like(net), zero_network_like(net), 0,
                      Float32(config.adam_beta1), Float32(config.adam_beta2),
                      Float32(config.adam_epsilon), Float32(config.learning_rate))
@@ -42,16 +42,19 @@ mutable struct DDQNLearner
     global_step::Int
     train_steps::Int
     last_loss::Float64
+    device::AbstractTrainingDevice
 end
 
 function DDQNLearner(rng::AbstractRNG, config::DDQNConfig=DDQNConfig();
-                     schedule::EpsilonSchedule=EpsilonSchedule(decay_start_step=config.train_start))
-    online = init_q_network(rng; input_dim=config.obs_dim, hidden_dim=config.hidden_dim,
-                            output_dim=config.action_dim)
+                     schedule::EpsilonSchedule=EpsilonSchedule(decay_start_step=config.train_start),
+                     device::AbstractTrainingDevice=CPUTrainingDevice())
+    online = network_to_device(device, init_q_network(rng; input_dim=config.obs_dim,
+                                                      hidden_dim=config.hidden_dim,
+                                                      output_dim=config.action_dim))
     target = copy(online)
     replay = ReplayBuffer(config.obs_dim, config.replay_size)
     optimizer = AdamState(online, config)
-    return DDQNLearner(online, target, replay, schedule, config, optimizer, 0, 0, NaN)
+    return DDQNLearner(online, target, replay, schedule, config, optimizer, 0, 0, NaN, device)
 end
 
 function selected_q_targets(online_q_next::AbstractMatrix{<:Real},
@@ -114,12 +117,16 @@ end
 
 function train_step!(learner::DDQNLearner, rng::AbstractRNG)
     batch = sample_batch(learner.replay, learner.config.batch_size, rng)
-    online_next = predict_q(learner.online, batch.next_observations)
-    target_next = predict_q(learner.target, batch.next_observations)
-    targets = compute_ddqn_targets(online_next, target_next, batch.rewards, batch.terminated,
-                                   batch.truncated, learner.config.discount;
+    observations = to_device_array(learner.device, batch.observations)
+    next_observations = to_device_array(learner.device, batch.next_observations)
+    online_next = predict_q(learner.online, next_observations)
+    target_next = predict_q(learner.target, next_observations)
+    targets = compute_ddqn_targets(to_cpu_array(online_next), to_cpu_array(target_next),
+                                   batch.rewards, batch.terminated, batch.truncated,
+                                   learner.config.discount;
                                    bootstrap_truncated=learner.config.bootstrap_truncated)
-    loss, grads = network_loss_and_gradients(learner.online, batch.observations, batch.actions, targets)
+    loss, grads = network_loss_and_gradients(learner.online, observations, batch.actions, targets;
+                                             device=learner.device)
     norm = gradient_norm(grads)
     if isfinite(norm) && norm > learner.config.gradient_clip_norm
         scale_gradients!(grads, learner.config.gradient_clip_norm / norm)

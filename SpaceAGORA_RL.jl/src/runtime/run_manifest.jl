@@ -6,10 +6,13 @@ struct RunManifest
     config_path::Union{Nothing,String}
     config_sha256::Union{Nothing,String}
     backend_mode::Symbol
+    algorithm::Symbol
+    device::Symbol
     action_table::Vector{Float64}
     normalization_names::Vector{Symbol}
     reward_config::RewardConfig
     ddqn_config::DDQNConfig
+    a2c_config::A2CConfig
 end
 
 function config_sha256(path::Union{Nothing,String})
@@ -28,10 +31,13 @@ function RunManifest(config::ResolvedConfig; run_id::Union{Nothing,String}=nothi
         config.source_path,
         config_sha256(config.source_path),
         config.scenario.backend_mode,
+        config.training.algorithm,
+        config.training.device,
         copy(PAPER_ACTIONS_MPS),
         config.scenario.normalization_bounds.names,
         config.scenario.reward_config,
         config.ddqn,
+        config.a2c,
     )
 end
 
@@ -44,6 +50,8 @@ function manifest_dict(manifest::RunManifest)
         "config_path" => manifest.config_path === nothing ? "" : manifest.config_path,
         "config_sha256" => manifest.config_sha256 === nothing ? "" : manifest.config_sha256,
         "backend_mode" => string(manifest.backend_mode),
+        "algorithm" => string(manifest.algorithm),
+        "device" => string(manifest.device),
         "action_table_mps" => manifest.action_table,
         "normalization_names" => string.(manifest.normalization_names),
         "reward" => Dict(
@@ -60,6 +68,15 @@ function manifest_dict(manifest::RunManifest)
             "train_start" => manifest.ddqn_config.train_start,
             "target_update" => manifest.ddqn_config.target_update,
             "hidden_dim" => manifest.ddqn_config.hidden_dim,
+        ),
+        "a2c" => Dict(
+            "learning_rate" => manifest.a2c_config.learning_rate,
+            "discount" => manifest.a2c_config.discount,
+            "segment_length" => manifest.a2c_config.segment_length,
+            "train_start" => manifest.a2c_config.train_start,
+            "entropy_coef" => manifest.a2c_config.entropy_coef,
+            "value_coef" => manifest.a2c_config.value_coef,
+            "hidden_dim" => manifest.a2c_config.hidden_dim,
         ),
     )
 end

@@ -35,6 +35,17 @@ gradient_clip_norm = 10.0
 adam_epsilon = 1.0e-6
 hidden_dim = 1024
 
+[a2c]
+learning_rate = 1.0e-4
+discount = 0.95
+segment_length = 10
+train_start = 0
+entropy_coef = 0.1
+value_coef = 0.5
+gradient_clip_norm = 0.5
+adam_epsilon = 1.0e-6
+hidden_dim = 1024
+
 [epsilon]
 start = 1.0
 stop = 0.01
@@ -43,11 +54,13 @@ decay_start_step = 10000
 
 [training]
 seed = 42
+algorithm = "ddqn"
+device = "cpu"
 # Training stops by global DDQN environment steps when this is positive.
 global_steps = 1100000
 # Kept for evaluation scripts and explicit episode-capped training calls.
 episodes = 25000
-max_steps = 1000
+max_passes_per_campaign = 1000
 n_workers = 16
 checkpoint_frequency = 5000
 progress_frequency = 10000

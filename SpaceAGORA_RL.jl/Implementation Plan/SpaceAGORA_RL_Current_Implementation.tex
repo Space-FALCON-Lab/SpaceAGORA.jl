@@ -1,0 +1,584 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{xurl}
+
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue}
+\urlstyle{same}
+\setlist{nosep,leftmargin=*}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+
+\title{Current SpaceAGORA\_RL Implementation}
+\author{SpaceAGORA Contributors}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document summarizes the current Julia implementation of
+\path{SpaceAGORA_RL.jl}.  The implementation provides a paper-compatible
+aerobraking Markov decision process (MDP), a Julia-native Double Deep
+Q-Network (DDQN) learner, baseline policies, evaluation utilities, and
+threaded rollout orchestration.  At present, the default and only supported
+simulation backend mode is the deterministic \path{:paper_surrogate} backend;
+the full SpaceAGORA propagation adapter is represented by an interface hook
+but is not yet implemented.
+\end{abstract}
+
+\section{Scope and Source Layout}
+
+The RL package lives under \path{SpaceAGORA_RL.jl}.  Its top-level module
+includes five implementation areas:
+
+\begin{center}
+\begin{tabular}{>{\raggedright\arraybackslash}p{0.32\linewidth}
+                >{\raggedright\arraybackslash}p{0.58\linewidth}}
+\toprule
+Area & Responsibility \\
+\midrule
+\path{src/core} &
+Abstract interfaces for MDPs, simulation backends, policies, transitions, and
+episode summaries. \\
+\path{src/tasks/aerobraking} &
+The Mars Odyssey aerobraking task: observations, normalization, actions,
+reward, termination, randomization, backend dynamics, baselines, and
+evaluation. \\
+\path{src/algorithms/ddqn} &
+Replay buffer, Q-network, epsilon schedule, target-network update logic,
+DDQN learner, checkpoints, and greedy checkpoint policies. \\
+\path{src/runtime} &
+Configuration loading, run manifests, and training-session construction. \\
+\path{src/parallel} &
+Threaded rollout protocol and central learner ingestion.  A small
+\path{Distributed} helper exists, but the active training path is
+thread-based. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Reference Python material remains under \path{Reference Code/}, but it is not
+included on the Julia runtime path.  Generated run artifacts are written under
+\path{outputs/}.
+
+\section{Core Interfaces}
+
+The package uses small function-based contracts rather than a large framework.
+The core abstractions are:
+
+\begin{itemize}
+\item \path{AbstractMDP}: task-level marker type.
+\item \path{AbstractRLBackend}: reset and step interface for environment
+execution.
+\item \path{AbstractPolicy}: policy interface returning a 1-based discrete
+action index.
+\item \path{Transition}: learner-facing tuple containing normalized
+observation, action index, reward, next normalized observation, termination
+flags, and an info index.
+\item \path{EpisodeSummary}: evaluation-facing aggregate containing pass count,
+reward, success and failure flags, target error, mission duration, total
+delta-V, maneuver count, solver failures, and per-pass traces.
+\end{itemize}
+
+The important generic functions are:
+
+\begin{itemize}
+\item \path{reset_scenario(config, rng)} returns the initial decision state.
+\item \path{step_scenario(config, state, action, rng)} returns an
+\path{AerobrakingStepResult}.
+\item \path{observe_state(config, state)} returns a \path{PaperObservation}.
+\item \path{normalize_observation(obs, bounds)} returns a 9-vector of
+learner-facing features.
+\item \path{policy_action_index(policy, config, state, observation, rng)}
+returns an action index in $\{1,\ldots,13\}$.
+\end{itemize}
+
+\section{Aerobraking Task}
+
+\subsection{Scenario Configuration}
+
+The implemented task is a Mars Odyssey aerobraking MDP.  The scenario
+configuration stores the phase constants, Mars constants, thermal model
+constants, backend mode, reward and termination settings, randomization
+settings, normalization bounds, and a training-mode flag.
+
+The helper \path{mars_odyssey_phase_constants} currently supports the
+following phases:
+
+\begin{center}
+\begin{tabular}{lrrrr}
+\toprule
+Phase & Target $r_a$ (km) & Norm. $r_a$ (km) & Initial $r_a$ (km) &
+Nominal $h_p$ (km) \\
+\midrule
+Walkout & 3900 & 5000 & 4906 & 86.0 \\
+Endgame & 4906 & 10100 & 6000 & 86.0 \\
+Main & 3900 & 10100 & 10038 & 92.0 \\
+Campaign & 3900 & 30000 & 28533 & 87.5 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The default configuration is created by
+\path{default_aerobraking_config}.  Its default phase is \path{Main}, its
+default maximum pass count is 80, and its default backend mode is
+\path{:paper_surrogate}.
+
+\subsection{Observation Space}
+
+The paper-compatible observation type \path{PaperObservation} contains nine
+features:
+
+\begin{center}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.33\linewidth}
+                  >{\raggedright\arraybackslash}p{0.18\linewidth}
+                  >{\raggedright\arraybackslash}p{0.30\linewidth}}
+\toprule
+Feature & Units & Normalization range \\
+\midrule
+\endhead
+\path{drag_passage_time_s} & s & $400$ to $1200$ \\
+\path{apoapsis_radius_m} & m & Mars radius to phase-dependent
+\path{r_norm_m} \\
+\path{periapsis_altitude_m} & m & $85\,000$ to $145\,000$ \\
+\path{argument_of_periapsis_rad} & rad & $0$ to $\pi$ \\
+\path{raan_rad} & rad & $1.57$ to $3.14$ \\
+\path{inclination_rad} & rad & $1.39$ to $1.75$ \\
+\path{date_ordinal} & days & $730486$ to $731216$ \\
+\path{max_density_kg_m3} & kg/m$^3$ & $0$ to $1.5\times 10^{-7}$ \\
+\path{max_heat_rate_w_cm2} & W/cm$^2$ & $0$ to $0.5$ \\
+\bottomrule
+\end{longtable}
+\end{center}
+
+Normalization is affine:
+\[
+\hat{x}_i = \frac{x_i - \ell_i}{u_i - \ell_i}.
+\]
+The code does not clamp normalized observations; values outside the configured
+bounds can therefore produce normalized values outside $[0,1]$.
+
+\subsection{Action Space}
+
+The action table is the 13-action paper DDQN table, in meters per second:
+\[
+[-1.0,\ -0.5,\ -0.3,\ -0.2,\ -0.1,\ -0.05,\ 0.0,\ 0.05,\ 0.1,\ 0.2,\ 0.3,\ 0.5,\ 1.0].
+\]
+
+Actions are represented by \path{AerobrakingAction}.  Negative actions lower
+periapsis and are assigned $\phi=0^\circ$; positive actions raise periapsis and
+are assigned $\phi=180^\circ$.  The zero action is index 7 in Julia's 1-based
+indexing.  It has zero magnitude and is treated as no maneuver.
+
+\subsection{Episode Reset and Randomization}
+
+\path{reset_scenario} creates an \path{AerobrakingDecisionState}.  In nominal
+mode, apoapsis, periapsis altitude, inclination, RAAN, and argument of
+periapsis receive small uniform jitters around the phase constants.  In
+non-nominal mode, inclination and angular elements are sampled over broader
+ranges and the epoch may be shifted by up to 27 days plus an hour offset.
+
+The randomization struct also contains process-noise fields.  When enabled,
+process noise multiplicatively perturbs the surrogate apoapsis drop during
+each pass.
+
+\subsection{Current Backend Dynamics}
+
+The active backend is \path{:paper_surrogate}.  The adapter
+\path{SpaceAGORACoreAdapter} currently throws an error for any other mode.
+Consequently, \path{:spaceagora_core} is not a working propagation path yet.
+
+For each action, the surrogate transition performs the following steps:
+
+\begin{enumerate}
+\item Build a lightweight simulation-configuration named tuple containing
+backend mode, phase, pass index, current apoapsis and periapsis, action
+delta-V, and action angle.
+\item Apply the apoapsis maneuver with a two-body energy update.  The maneuver
+changes apoapsis velocity by the action magnitude and derives the resulting
+periapsis altitude from orbital energy.
+\item Clamp the post-maneuver periapsis altitude to $50$--$180$ km.
+\item Estimate periapsis velocity, exponential Mars density, heat rate, and
+drag-passage duration.
+\item Compute an apoapsis drop from a base decay plus a heat-dependent decay
+gain.
+\item Advance the epoch by the larger of orbital period and drag-passage time.
+\item Update RAAN and argument of periapsis with a J2 secular-rate
+approximation.
+\item Return the next decision state, observation, normalized observation,
+reward, termination flags, pass metrics, and the simulation-configuration
+record.
+\end{enumerate}
+
+The density model is
+\[
+\rho(h) = \rho_\mathrm{ref}
+\exp\left(-\frac{h-h_\mathrm{ref}}{H}\right),
+\]
+with defaults stored in \path{AerobrakingScenarioConfig}.  The heat-rate model
+scales a nominal heat rate by density and velocity:
+\[
+\dot{q}
+= \dot{q}_\mathrm{nom}
+\sqrt{\frac{\rho(h)}{\rho(h_\mathrm{nom})}}
+\left(\frac{v_p}{v_\mathrm{nom}}\right)^3.
+\]
+
+\section{Reward and Termination}
+
+\subsection{Termination}
+
+\path{classify_termination} returns success, target undershoot, impact,
+out-of-drag-passage, thermal-violation, termination, and truncation flags.
+The default thresholds are:
+
+\begin{itemize}
+\item success: $|r_a-r_\mathrm{target}|\leq 10$ km;
+\item target undershoot: $r_a-r_\mathrm{target}<-10$ km;
+\item impact: $h_p < 85$ km;
+\item out of drag passage: $h_p > 145$ km;
+\item truncation: pass count at or above \path{max_passes};
+\item thermal terminal: enabled in training mode when thermal status is not
+nominal.
+\end{itemize}
+
+\subsection{Thermal Status}
+
+The default heat-rate thresholds are:
+\[
+\dot{q}_\mathrm{low}=0.05,\quad
+\dot{q}_\mathrm{high}=0.25,\quad
+\dot{q}_\mathrm{medium}=0.30,\quad
+\dot{q}_\mathrm{hard}=0.45
+\quad \mathrm{W/cm^2}.
+\]
+
+Below the low threshold is considered a thermal violation only when the
+spacecraft is still farther than the near-target band, which defaults to
+100 km.  Above the high threshold is always classified as high, medium, or
+hard depending on the threshold crossed.
+
+\subsection{Reward}
+
+The reward first applies terminal terms:
+
+\begin{itemize}
+\item impact: $-6$;
+\item out of drag passage: $-6$;
+\item target undershoot: $-4$;
+\item success:
+\[
+10 - \left\lfloor \frac{|r_a-r_\mathrm{target}|}{1000}\right\rfloor
+\frac{2}{5}.
+\]
+\end{itemize}
+
+Thermal violations add a penalty:
+\[
+r_\mathrm{thermal} =
+\begin{cases}
+-6, & \mathrm{hard},\\
+-5, & \mathrm{medium},\\
+-4, & \mathrm{low\ or\ high}.
+\end{cases}
+\]
+
+When the thermal status is nominal and the spacecraft has not undershot the
+target, the running reward is
+\[
+r_\mathrm{run}
+= (1-d^{0.4})
+\frac{0.025}{\sigma\sqrt{2\pi}}
+\exp\left[-\frac{1}{2}
+\left(\frac{c_q-0.5}{\sigma}\right)^2\right]
+-0.1 - 0.1\,c_{\Delta v},
+\]
+where $\sigma=0.1$,
+\[
+d = \frac{r_a-r_\mathrm{target}}
+         {r_\mathrm{norm}-r_\mathrm{target}},
+\qquad
+c_q = \frac{\dot{q}-0.05}{0.25-0.05}.
+\]
+The action cost is normally $c_{\Delta v}=|\Delta v|$.  If the heat-rate cap
+is below zero, the implementation sets $c_q=0$ and uses
+$c_{\Delta v}=||\Delta v|-1.5|$, encouraging stronger lowering maneuvers in
+very low heat-rate conditions.
+
+\section{Baseline Policies}
+
+Four baseline or non-learning policies are implemented:
+
+\begin{itemize}
+\item \path{NoManeuverPolicy}: always returns the zero-action index.
+\item \path{RandomActionPolicy}: uniformly samples one of the 13 actions.
+\item \path{FixedCorridorPolicy}: uses a fixed lowering action for low heat,
+a fixed raising action for high heat, and zero action inside the nominal
+corridor.
+\item \path{AADSHeuristicPolicy}: predicts the next heat rate for candidate
+actions and chooses the action whose prediction is closest to the target heat
+rate, defaulting to $0.15$ W/cm$^2$.
+\end{itemize}
+
+\section{DDQN Implementation}
+
+\subsection{Network}
+
+The Q-network is implemented directly as Julia arrays rather than through an
+automatic differentiation library.  The default architecture is:
+\[
+9 \rightarrow 1024 \rightarrow 1024 \rightarrow 13,
+\]
+with ReLU activations after the first two affine layers.  Weights are
+orthogonally initialized and biases are initialized to zero.
+
+The forward pass computes:
+\[
+\begin{aligned}
+z_1 &= W_1 x + b_1, & a_1 &= \max(z_1,0),\\
+z_2 &= W_2 a_1 + b_2, & a_2 &= \max(z_2,0),\\
+Q(x,\cdot) &= W_3 a_2 + b_3.
+\end{aligned}
+\]
+
+The loss is mean squared TD error over the selected actions:
+\[
+L = \frac{1}{B}\sum_{i=1}^{B}
+\left(Q_\theta(s_i,a_i)-y_i\right)^2.
+\]
+Gradients are hand-coded through the two ReLU layers.  Gradients are clipped
+by global norm before the Adam update.
+
+\subsection{Replay Buffer}
+
+\path{ReplayBuffer} stores fixed-capacity column-major matrices for current
+and next observations plus vectors for actions, rewards, termination flags,
+truncation flags, and info indices.  Insertion is circular.  Sampling is
+uniform with replacement from the filled portion of the buffer.
+
+\subsection{Target Calculation}
+
+The learner uses Double DQN target selection.  For each sampled transition,
+the online network selects the next action and the target network evaluates
+that action:
+\[
+a^\star_i = \arg\max_a Q_\theta(s'_i,a),
+\]
+\[
+y_i = r_i + \gamma\,\mathbb{1}_{\mathrm{bootstrap}}
+Q_{\bar{\theta}}(s'_i,a^\star_i).
+\]
+
+The default discount is $\gamma=0.95$.  Terminated transitions do not
+bootstrap.  Truncated transitions bootstrap by default because
+\path{bootstrap_truncated} defaults to true.
+
+\subsection{Exploration and Optimization}
+
+\path{EpsilonSchedule} is linear after a start delay:
+\[
+\epsilon(t) =
+\begin{cases}
+\epsilon_\mathrm{start}, & t \leq t_\mathrm{start},\\
+\max\left(\epsilon_\mathrm{stop},
+\epsilon_\mathrm{start}
++(\epsilon_\mathrm{stop}-\epsilon_\mathrm{start})\alpha\right),
+& t > t_\mathrm{start},
+\end{cases}
+\]
+where
+\[
+\alpha=\min\left(1,\frac{t-t_\mathrm{start}}{t_\mathrm{decay}}\right).
+\]
+
+The default DDQN hyperparameters are:
+
+\begin{center}
+\begin{tabular}{lr}
+\toprule
+Parameter & Default \\
+\midrule
+learning rate & $10^{-4}$ \\
+discount & $0.95$ \\
+batch size & $256$ \\
+train frequency & every 5 global steps \\
+train start & 10000 global steps \\
+target update & every 10000 train steps \\
+gradient clip norm & $10$ \\
+Adam $\epsilon$ & $10^{-6}$ \\
+hidden dimension & $1024$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Training Runtime}
+
+\subsection{Configuration}
+
+Configuration is loaded from TOML and resolved into:
+\path{AerobrakingScenarioConfig}, \path{DDQNConfig}, \path{EpsilonSchedule},
+\path{TrainingConfig}, and \path{ReportConfig}.  The default config path is
+\path{configs/aerobraking/paper_replication.toml}.
+
+Two included configurations are notable:
+
+\begin{itemize}
+\item \path{paper_replication.toml}: a short smoke-oriented run using
+\path{global_steps = 20}.
+\item \path{ddqn_full.toml}: a longer paper-style run using
+\path{global_steps = 1100000}, \path{episodes = 25000}, and
+\path{n_workers = 16}.
+\end{itemize}
+
+The package treats positive \path{global_steps} as the primary training
+budget.  One global step corresponds to one environment transition/action
+step, not one full aerobraking campaign.  If \path{global_steps} is zero or
+negative, training falls back to the episode budget.
+
+\subsection{Training Session}
+
+\path{build_training_session} constructs:
+
+\begin{itemize}
+\item a seeded \path{MersenneTwister};
+\item a \path{SpaceAGORAAerobrakingBackend};
+\item a \path{DDQNLearner};
+\item a \path{RunManifest};
+\item a run output directory.
+\end{itemize}
+
+The manifest records the run ID, UTC creation time, phase, seed, config path
+and SHA-256, backend mode, action table, normalization names, reward
+configuration, and DDQN configuration.
+
+\subsection{Threaded Rollouts}
+
+\path{train_parallel!} is the active trainer.  It uses the smaller of
+\path{n_workers} and \path{Threads.nthreads()} as the active worker count.  At
+the start of each worker batch, the master copies the
+online Q-network as a policy snapshot.  Each worker runs one episode with that
+snapshot and returns a summary plus a list of transitions.  The master then
+ingests transitions centrally:
+
+\begin{enumerate}
+\item increment global step;
+\item push the transition into replay;
+\item call \path{maybe_train!};
+\item write periodic checkpoints if configured;
+\item print progress at the configured step or episode interval.
+\end{enumerate}
+
+This design keeps learner mutation centralized while allowing rollout
+generation to run concurrently.  If the global-step budget is reached in the
+middle of an episode, only the remaining budgeted transitions are ingested;
+the incomplete episode summary is not added to the completed-summary list.
+
+The final checkpoint is always written to
+\path{checkpoint_final.jls}.  Intermediate checkpoints are named by global
+step, such as \path{checkpoint_5000.jls}.
+
+\section{Evaluation and Artifacts}
+
+\path{evaluate_policy} runs complete episodes for any \path{AbstractPolicy}.
+\path{evaluate_baselines} evaluates the four built-in baseline policies.  The
+evaluation layer computes:
+
+\begin{itemize}
+\item per-episode metrics: pass count, reward, success/failure flags, thermal
+violations, target error, mission duration, total delta-V, maneuver count,
+peak heat rate, minimum periapsis altitude, and solver failures;
+\item aggregate metrics: success rate, mean target error, mean delta-V, mean
+pass count, mean thermal violations, and total solver failures;
+\item pass logs: heat rate, action, apoapsis, periapsis, angular elements,
+and reward at each pass.
+\end{itemize}
+
+\path{write_evaluation_artifacts} writes three CSV files:
+\path{episode_metrics.csv}, \path{summary_metrics.csv}, and
+\path{pass_logs.csv}.  The example script additionally creates PNG plots and a
+standalone HTML orbit visualization from pass logs.
+
+The generalization-suite helper currently returns two suites:
+\path{nominal}, which reuses the provided config, and
+\path{iid_randomized}, which switches to non-nominal randomized initial
+conditions.
+
+\section{Entrypoints}
+
+The main scripts are:
+
+\begin{itemize}
+\item \path{scripts/train.jl}: load a config, build a session, and run
+\path{train_parallel!}.
+\item \path{scripts/run_baselines.jl}: evaluate built-in baselines and write
+CSV artifacts.
+\item \path{scripts/evaluate_policy.jl}: evaluate the AADS heuristic and
+print aggregate metrics.
+\item \path{scripts/run_generalization_suite.jl}: evaluate baselines over
+the nominal and randomized suites.
+\item \path{examples/aerobraking/example_SpaceAGORA_RL_MarsOdyssey.jl}:
+produce example evaluation plots and orbit visualization artifacts.
+\end{itemize}
+
+\section{Current Verification Coverage}
+
+The RL test suite currently checks:
+
+\begin{itemize}
+\item action-table size, zero-action index, and action direction metadata;
+\item normalization lower and upper bounds;
+\item thermal status classification and key reward cases;
+\item replay-buffer wraparound and batch shape;
+\item Double DQN target calculation;
+\item deterministic backend rollouts for a fixed seed and fixed action
+sequence.
+\end{itemize}
+
+These tests validate the core mechanics of the current surrogate-backed
+implementation.  They do not yet constitute validation against full
+SpaceAGORA propagation or historical mission telemetry.
+
+\section{Current Limitations and Open Integration Points}
+
+\begin{itemize}
+\item \textbf{Backend integration:} only \path{:paper_surrogate} is supported.
+Any other backend mode currently throws an unsupported-mode error.
+\item \textbf{Simulation configuration:} the configuration builder returns a
+lightweight named tuple.  It is useful for tracing and future integration, but
+it is not yet a full SpaceAGORA simulation object.
+\item \textbf{Parallelism:} training rollouts are threaded.  The
+\path{Distributed} helper can add Julia workers, but the main trainer does
+not currently dispatch rollouts through distributed processes.
+\item \textbf{Learning stack:} the Q-network, gradients, and Adam optimizer
+are implemented manually.  This keeps dependencies small, but it also means
+there is no automatic differentiation, GPU support, or optimizer ecosystem
+integration in the current code.
+\item \textbf{Checkpoint format:} checkpoints use Julia serialization.  This
+is convenient for local runs but is not a long-term stable interchange format
+across incompatible struct changes.
+\item \textbf{Validation scope:} the current tests cover unit-level and
+deterministic-surrogate behavior.  They do not prove mission-grade physical
+fidelity.
+\end{itemize}
+
+\section{Summary}
+
+The current RL implementation is a self-contained Julia package for
+paper-compatible Mars Odyssey aerobraking experiments.  It has a clear MDP
+schema, a deterministic surrogate backend, baseline policies, a manual DDQN
+learner, threaded rollout orchestration, manifests, checkpoints, and CSV
+evaluation artifacts.  The main engineering gap is not the RL control flow;
+it is the remaining connection from the backend adapter to full SpaceAGORA
+propagation and validation.
+
+\end{document}

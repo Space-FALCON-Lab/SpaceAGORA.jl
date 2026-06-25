@@ -23,7 +23,7 @@ function run_worker_episode!(session::TrainingSession, episode_index::Int, worke
     summary = empty_episode_summary(episode_index=episode_index, worker_id=worker_id, seed=seed)
     transitions = Transition[]
 
-    while length(transitions) < session.config.training.max_steps
+    while length(transitions) < session.config.training.max_passes_per_campaign
         action_index = learner_policy_action!(session.learner, norm_obs, rng; test=!train)
         result = step_scenario(session.backend, state, action_index, rng)
         transition = transition_from_step(norm_obs, action_index, result, length(transitions) + 1)
@@ -51,7 +51,7 @@ function run_threaded_worker_episode(config::AerobrakingScenarioConfig,
                                      episode_index::Int,
                                      worker_id::Int,
                                      seed::Int,
-                                     max_steps::Int,
+                                     max_passes_per_campaign::Int,
                                      global_step_start::Int;
                                      train::Bool=true)
     rng = MersenneTwister(seed)
@@ -61,7 +61,7 @@ function run_threaded_worker_episode(config::AerobrakingScenarioConfig,
     summary = empty_episode_summary(episode_index=episode_index, worker_id=worker_id, seed=seed)
     transitions = Transition[]
 
-    while length(transitions) < max_steps
+    while length(transitions) < max_passes_per_campaign
         step = global_step_start + length(transitions) + 1
         action_index = snapshot_policy_action(policy_snapshot, schedule, ddqn_config, norm_obs, step, rng; test=!train)
         result = step_scenario(config, state, action_index, rng)

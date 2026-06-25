@@ -77,6 +77,48 @@ end
     @test targets ≈ Float32[16, 2]
 end
 
+@testset "ddqn learner updates on replay batch" begin
+    rng = MersenneTwister(5)
+    config = DDQNConfig(hidden_dim=8, obs_dim=3, action_dim=4, batch_size=2,
+                        replay_size=8, train_start=0, train_frequency=1)
+    learner = DDQNLearner(rng, config)
+    push!(learner.replay, Transition(Float32[0.1, 0.2, 0.3], 1, 0.5f0,
+                                     Float32[0.2, 0.3, 0.4], false, false, 1))
+    push!(learner.replay, Transition(Float32[0.3, 0.2, 0.1], 3, -0.2f0,
+                                     Float32[0.4, 0.3, 0.2], true, false, 2))
+    before = copy(learner.online.W1)
+    loss = SpaceAGORA_RL.train_step!(learner, rng)
+    @test isfinite(loss)
+    @test learner.train_steps == 1
+    @test learner.online.W1 != before
+end
+
+@testset "a2c discounted returns respect campaign boundaries" begin
+    rewards = Float32[1 1 1; 2 2 2]
+    done = Bool[false true false; false false false]
+    valid = trues(2, 3)
+    bootstraps = Float32[10, 5]
+    returns = compute_discounted_returns(rewards, done, valid, bootstraps, 0.5)
+    @test returns[1, :] ≈ Float32[1.5, 1.0, 6.0]
+    @test returns[2, :] ≈ Float32[4.125, 4.25, 4.5]
+end
+
+@testset "a2c learner updates on rollout batch" begin
+    rng = MersenneTwister(7)
+    config = A2CConfig(hidden_dim=8, obs_dim=3, action_dim=4, segment_length=2)
+    learner = A2CLearner(rng, config)
+    batch = A2CRolloutBatch(
+        Float32[0.1 0.2 0.3; 0.0 0.2 0.4; 1.0 0.5 0.0],
+        [1, 3, 4],
+        Float32[0.5, -0.2, 0.1],
+    )
+    before = copy(learner.actor.W1)
+    loss = SpaceAGORA_RL.train_step!(learner, batch)
+    @test isfinite(loss)
+    @test learner.train_steps == 1
+    @test learner.actor.W1 != before
+end
+
 @testset "backend determinism" begin
     config = default_aerobraking_config(phase="Main", training=false, max_passes=10)
     actions = [7, 5, 9, 7]

@@ -1,8 +1,10 @@
 Base.@kwdef struct TrainingConfig
     seed::Int = 42
+    algorithm::Symbol = :ddqn
+    device::Symbol = :cpu
     global_steps::Int = 0
     episodes::Int = 4
-    max_steps::Int = 1_000
+    max_passes_per_campaign::Int = 1_000
     n_workers::Int = 1
     checkpoint_frequency::Int = 500
     progress_frequency::Int = 50
@@ -20,6 +22,7 @@ struct ResolvedConfig
     raw::Dict{String,Any}
     scenario::AerobrakingScenarioConfig
     ddqn::DDQNConfig
+    a2c::A2CConfig
     epsilon::EpsilonSchedule
     training::TrainingConfig
     reports::ReportConfig
@@ -55,6 +58,7 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
     term_table = _table(raw, "termination")
     random_table = _table(raw, "randomization")
     ddqn_table = _table(raw, "ddqn")
+    a2c_table = _table(raw, "a2c")
     eps_table = _table(raw, "epsilon")
     train_table = _table(raw, "training")
     report_table = _table(raw, "reports")
@@ -98,6 +102,17 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
         adam_epsilon = Float64(_get(ddqn_table, "adam_epsilon", 1e-6)),
         hidden_dim = Int(_get(ddqn_table, "hidden_dim", 1024)),
     )
+    a2c = A2CConfig(
+        learning_rate = Float64(_get(a2c_table, "learning_rate", 1e-4)),
+        discount = Float64(_get(a2c_table, "discount", 0.95)),
+        segment_length = Int(_get(a2c_table, "segment_length", 10)),
+        train_start = Int(_get(a2c_table, "train_start", 0)),
+        entropy_coef = Float64(_get(a2c_table, "entropy_coef", 0.1)),
+        value_coef = Float64(_get(a2c_table, "value_coef", 0.5)),
+        gradient_clip_norm = Float64(_get(a2c_table, "gradient_clip_norm", 0.5)),
+        adam_epsilon = Float64(_get(a2c_table, "adam_epsilon", 1e-6)),
+        hidden_dim = Int(_get(a2c_table, "hidden_dim", 1024)),
+    )
     epsilon = EpsilonSchedule(
         start = Float64(_get(eps_table, "start", 1.0)),
         stop = Float64(_get(eps_table, "stop", 0.01)),
@@ -106,9 +121,12 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
     )
     training = TrainingConfig(
         seed = Int(_get(train_table, "seed", 42)),
+        algorithm = Symbol(lowercase(String(_get(train_table, "algorithm", "ddqn")))),
+        device = Symbol(lowercase(String(_get(train_table, "device", "cpu")))),
         global_steps = Int(_get(train_table, "global_steps", 0)),
         episodes = Int(_get(train_table, "episodes", 4)),
-        max_steps = Int(_get(train_table, "max_steps", 1_000)),
+        max_passes_per_campaign = Int(_get(train_table, "max_passes_per_campaign",
+                                           _get(train_table, "max_steps", 1_000))),
         n_workers = Int(_get(train_table, "n_workers", 1)),
         checkpoint_frequency = Int(_get(train_table, "checkpoint_frequency", 500)),
         progress_frequency = Int(_get(train_table, "progress_frequency", 50)),
@@ -119,7 +137,9 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
         write_csv = Bool(_get(report_table, "write_csv", true)),
         write_plots = Bool(_get(report_table, "write_plots", true)),
     )
-    return ResolvedConfig(source_path, raw, scenario, ddqn, epsilon, training, reports)
+    training.algorithm in (:ddqn, :a2c) ||
+        throw(ArgumentError("training.algorithm must be \"ddqn\" or \"a2c\""))
+    return ResolvedConfig(source_path, raw, scenario, ddqn, a2c, epsilon, training, reports)
 end
 
 function resolve_config(path::AbstractString=default_config_path())

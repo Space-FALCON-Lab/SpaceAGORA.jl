@@ -48,6 +48,30 @@ optimizer_params:
   fidelity_mode: "keplerian"  # "keplerian", "j2", "full"
   use_cached_stage0: false
   cached_stage0_data: null
+  
+  # High-fidelity generator propagation (Stage 0.5)
+  use_high_fidelity_generators: false  # Set to true to enable
+  
+  # Option 1: Use preset fidelity level (recommended)
+  high_fidelity_preset: 0  # 0=pure_keplerian, 1=keplerian_j2, 2=keplerian_j2_simple_drag, 3=keplerian_j2_nrlmsise00, 4=keplerian_j2_nrlmsise00_srp, 5=keplerian_j2_nrlmsise00_srp_third_body, 6=all_disturbances
+  
+  # Option 2: Override individual disturbances (if preset not set or to override)
+  disturbance_enable_j2: false
+  disturbance_enable_harmonics: false
+  disturbance_harmonics_degree: 4
+  disturbance_harmonics_order: 4
+  disturbance_enable_atmosphere: false
+  disturbance_atmosphere_model: "nrlmsise00"  # Options: "none", "exponential", "nrlmsise00", "gram"
+  disturbance_enable_srp: false
+  disturbance_enable_albedo: false
+  disturbance_enable_ir: false
+  disturbance_enable_third_body: false
+  disturbance_third_body_bodies: ["sun", "moon"]  # Options: "sun", "moon", "mercury", "venus", "mars", "jupiter", "saturn"
+  
+  # Propagation settings
+  high_fidelity_num_threads: 8
+  high_fidelity_cache_enabled: true
+  high_fidelity_cache_dir: "cache/high_fidelity_generators"
 
 sim_params:
   dt: 10.0           # Time step [s]

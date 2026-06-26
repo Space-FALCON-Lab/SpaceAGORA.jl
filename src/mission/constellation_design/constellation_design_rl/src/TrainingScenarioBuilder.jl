@@ -46,7 +46,7 @@ function build_training_scenarios(campaign_config::Dict{String,Any})
     end
     
     # Get output directory
-    output_dir = get(campaign, "output_dir", "data/rl_training_scenarios")
+    output_dir = get(campaign, "output_dir", "data/constellation_rl_training_scenarios")
     mkpath(output_dir)
     
     # Build cluster scenarios

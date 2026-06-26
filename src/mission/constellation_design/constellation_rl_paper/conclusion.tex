@@ -4,14 +4,14 @@
 We presented a reinforcement learning approach for Stage 0 constellation seeding in space debris removal missions. The key contributions are:
 
 \begin{enumerate}
-    \item A DeepSet-based RL policy that handles variable-sized sets via permutation-invariant embeddings for satellites and debris clients.
+    \item A DeepSet-based constellation RL policy that handles variable-sized sets via permutation-invariant embeddings for satellites and debris clients.
     \item Integration with the SpaceAGORA framework, including checkpoint/resume compatibility and TensorBoard logging.
     \item A training infrastructure supporting curriculum learning across cluster combinations and parameter sweeps.
     \item Native implementation of ROE-based orbital bounds calculation for compatibility with CAPOConstellation.
     \item Empirical evaluation showing comparable or better constellation quality than stochastic greedy baselines with 10-100x speedup.
 \end{enumerate}
 
-The RL approach achieves computational efficiency by learning a policy that directly maps constellation state to satellite placement, avoiding expensive candidate evaluation. The permutation-invariant architecture enables generalization to different debris cluster sizes and compositions.
+The constellation RL approach achieves computational efficiency by learning a policy that directly maps constellation state to satellite placement, avoiding expensive candidate evaluation. The permutation-invariant architecture enables generalization to different debris cluster sizes and compositions.
 
 \subsection{Future Work}
 

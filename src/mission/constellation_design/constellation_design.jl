@@ -6,6 +6,7 @@ include("constellation_plotting.jl")
 include("constellation_config.jl")
 include("stage0_seeding.jl")
 include("stage0_fhsg.jl")
+include("stage0p5_generator_propagation.jl")
 include("stage1_design.jl")
 include("stage1_controllable.jl")
 include("stage2_verification.jl")
@@ -19,17 +20,17 @@ include("visualization/plotly_plots.jl")
 include("visualization/plot_config.jl")
 include("test/stage0_cache_loader.jl")
 include("test/parity_test_harness.jl")
-include("rl/SatelliteSeedingEnv.jl")
-include("rl/DeepSetPolicy.jl")
-include("rl/PPOTrainer.jl")
-include("rl/CostFunction.jl")
-include("rl/Scenarios.jl")
-include("rl/capo_integration.jl")
-include("rl/src/ROEBoundsCalculator.jl")
-include("rl/src/ClusterCombinations.jl")
-include("rl/src/TrainingScenarioBuilder.jl")
-include("rl/src/TrainingOrchestrator.jl")
-include("rl/src/ComparisonHarness.jl")
+include("constellation_design_rl/SatelliteSeedingEnv.jl")
+include("constellation_design_rl/DeepSetPolicy.jl")
+include("constellation_design_rl/PPOTrainer.jl")
+include("constellation_design_rl/CostFunction.jl")
+include("constellation_design_rl/Scenarios.jl")
+include("constellation_design_rl/capo_integration.jl")
+include("constellation_design_rl/src/ROEBoundsCalculator.jl")
+include("constellation_design_rl/src/ClusterCombinations.jl")
+include("constellation_design_rl/src/TrainingScenarioBuilder.jl")
+include("constellation_design_rl/src/TrainingOrchestrator.jl")
+include("constellation_design_rl/src/ComparisonHarness.jl")
 
 # debris_controllable_sim functions are defined directly in this module
 
@@ -86,6 +87,21 @@ function run_debris_controllable_sim(config_dict::AbstractDict)
             results["stage0"] = run_stage0_seeding(config_dict; method=stage0_method)
         end
         
+        # Stage 0.5: High-Fidelity Generator Propagation (optional)
+        use_hf_generators = Bool(get(opt_params, "use_high_fidelity_generators", false))
+        if use_hf_generators && mode in ("full", "stage0p5")
+            constellation_log("pipeline", "Running Stage 0.5: High-Fidelity Generator Propagation")
+            results["stage0p5"] = run_high_fidelity_generator_propagation(config_dict)
+            
+            # Update config_dict with time-varying generators
+            config_dict["h_fwd_exact_coeffs"] = results["stage0p5"]["h_fwd_time_varying"]
+            config_dict["h_Wcorr_coeffs"] = results["stage0p5"]["h_Wcorr_time_varying"]
+            config_dict["generator_mode"] = "time_varying"
+        else
+            # Use static FHSG coefficients
+            config_dict["generator_mode"] = "static"
+        end
+        
         if mode in ("full", "heuristic", "stage1")
             constellation_log("pipeline", "Running Stage 1: Constellation Design")
             results["stage1"] = run_constellation_design(config_dict)
@@ -123,12 +139,12 @@ export run_stage0_seeding, run_constellation_design, run_stage2_verification, ru
 export run_debris_controllable_sim, parse_debris_args
 
 # RL exports
-export SatelliteSeedingEnv, RLSatelliteSeedingObservation
+export SatelliteSeedingEnv, ConstellationRLSatelliteSeedingObservation
 export DualDeepSetPolicy, check_gpu_availability
 export PPOConfig, train_ppo, setup_tensorboard_logging
 export compute_stage0_cost
 export load_training_scenarios, load_cluster_from_csv, load_superset_csv
-export run_rl_stage0_seeding, run_policy_inference, load_trained_policy, run_stochastic_greedy_seeding
+export run_constellation_rl_stage0_seeding, run_policy_inference, load_trained_policy, run_stochastic_greedy_seeding
 export compute_orbital_bounds_from_cluster, roe_to_orbital_elements, orbital_elements_to_roe, compute_reference_orbit, compute_shell_bounds_from_roe
 export load_labeled_debris_csv, filter_cluster, generate_cluster_combinations, generate_specific_combinations
 export convert_to_orbital_elements, write_client_csv, build_cluster_scenario, build_all_scenarios
@@ -144,6 +160,7 @@ using .ConstellationPlotting
 using .ConstellationConfig
 using .Stage0Seeding
 using .Stage0FHSG
+using .Stage0p5GeneratorPropagation
 using .Stage1Design
 using .Stage1Controllable
 using .Stage2Verification

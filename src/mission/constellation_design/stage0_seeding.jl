@@ -173,8 +173,8 @@ function run_stage0_seeding(config_dict::AbstractDict; method::String="stochasti
     
     try
         if method == "rl"
-            constellation_log("stage0", "Starting Stage 0 RL-based seeding")
-            seed_result = run_rl_stage0_seeding(config_dict)
+            constellation_log("stage0", "Starting Stage 0 constellation RL-based seeding")
+            seed_result = run_constellation_rl_stage0_seeding(config_dict)
         elseif method == "fhsg" || method == "stochastic_greedy"
             constellation_log("stage0", "Starting Stage 0 FHSG (finite horizon stochastic greedy) seeding")
             seed_result = run_fhsg_stage0(config_dict)

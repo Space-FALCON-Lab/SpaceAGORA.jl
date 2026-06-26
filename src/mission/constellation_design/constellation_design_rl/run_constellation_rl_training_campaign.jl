@@ -25,7 +25,7 @@ function parse_commandline()
         "--output-dir", "-o"
             help = "Output directory for training results"
             arg_type = String
-            default = "data/rl_campaigns"
+            default = "data/constellation_rl_campaigns"
         "--resume"
             help = "Resume from checkpoint (scenario_id or 'all')"
             arg_type = String

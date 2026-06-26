@@ -57,8 +57,8 @@ function run_comparison(config_dict::Dict{String,Any}, rl_model_path::String)
     
     # Run RL seeding
     rl_start = time()
-    config_dict["optimizer_params"]["rl_config"]["rl_model_path"] = rl_model_path
-    rl_result = run_rl_stage0_seeding(config_dict)
+    config_dict["optimizer_params"]["constellation_rl_config"]["constellation_rl_model_path"] = rl_model_path
+    rl_result = run_constellation_rl_stage0_seeding(config_dict)
     rl_time = time() - rl_start
     
     # Evaluate RL
@@ -212,7 +212,7 @@ function build_comparison_config(labeled_csv_path::String, cluster_sets::Vector{
             "client_orbitals" => cluster_scenario["client_orbitals"],
             "orbital_bounds" => cluster_scenario["orbital_bounds"],
             "optimizer_params" => Dict{String,Any}(
-                "rl_config" => Dict{String,Any}(
+                "constellation_rl_config" => Dict{String,Any}(
                     "max_sats" => 64,
                     "greedy_variant" => "pure",
                     "greedy_top_k" => 5,

@@ -3,7 +3,7 @@
 
 \subsection{Experimental Setup}
 
-We evaluate the RL seeding method on debris clusters from the CAPOConstellation catalog. The experiments use:
+We evaluate the constellation RL seeding method on debris clusters from the CAPOConstellation catalog. The experiments use:
 
 \begin{itemize}
     \item \textbf{Debris Clusters:} 1a, 2a, 3a, 4a, 5a (individual), pairs (1a+2a, 1a+3a, 2a+3a), and supersets (1a+2a+3a, 1a+2a+3a+4a).
@@ -15,7 +15,7 @@ We evaluate the RL seeding method on debris clusters from the CAPOConstellation 
 
 \subsection{Constellation Quality}
 
-Table~\ref{tab:quality} compares the RL seeding method with stochastic greedy baselines on individual clusters.
+Table~\ref{tab:quality} compares the constellation RL seeding method with stochastic greedy baselines on individual clusters.
 
 \begin{table}[h]
 \centering
@@ -25,22 +25,22 @@ Table~\ref{tab:quality} compares the RL seeding method with stochastic greedy ba
 \toprule
 Cluster & Method & Final Cost & N Satellites & Feasible \\
 \midrule
-1a & RL & 0.023 & 8 & Yes \\
+1a & Constellation RL & 0.023 & 8 & Yes \\
 1a & Stochastic Greedy & 0.031 & 10 & Yes \\
 1a & FHSG & 0.019 & 7 & Yes \\
 \midrule
-2a & RL & 0.045 & 12 & Yes \\
+2a & Constellation RL & 0.045 & 12 & Yes \\
 2a & Stochastic Greedy & 0.058 & 15 & Yes \\
 2a & FHSG & 0.041 & 11 & Yes \\
 \midrule
-3a & RL & 0.067 & 18 & Yes \\
+3a & Constellation RL & 0.067 & 18 & Yes \\
 3a & Stochastic Greedy & 0.089 & 22 & Yes \\
 3a & FHSG & 0.062 & 16 & Yes \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The RL method achieves comparable or better constellation quality than stochastic greedy with fewer satellites. FHSG achieves the best quality but requires significantly more computation.
+The constellation RL method achieves comparable or better constellation quality than stochastic greedy with fewer satellites. FHSG achieves the best quality but requires significantly more computation.
 
 \subsection{Computational Efficiency}
 
@@ -53,7 +53,7 @@ Figure~\ref{fig:time} shows the computational time for each method as a function
 \label{fig:time}
 \end{figure}
 
-The RL method is 10-100x faster than stochastic greedy and 100-1000x faster than FHSG after training. The training cost is amortized across all subsequent seeding runs.
+The constellation RL method is 10-100x faster than stochastic greedy and 100-1000x faster than FHSG after training. The training cost is amortized across all subsequent seeding runs.
 
 \subsection{Generalization}
 

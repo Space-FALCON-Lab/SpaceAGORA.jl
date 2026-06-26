@@ -25,8 +25,8 @@ Dictionary with cost components:
 function compute_stage0_cost(config_dict::Dict, satellite_orbitals::Matrix{Float64})
     # Check which cost function to use
     opt_params = get(config_dict, "optimizer_params", Dict{String,Any}())
-    rl_config = get(opt_params, "rl_config", Dict{String,Any}())
-    use_capo_audit = Bool(get(rl_config, "use_capo_audit", false))
+    constellation_rl_config = get(opt_params, "constellation_rl_config", Dict{String,Any}())
+    use_capo_audit = Bool(get(constellation_rl_config, "constellation_rl_use_capo_audit", false))
     
     if use_capo_audit
         return compute_stage0_cost_capo_audit(config_dict, satellite_orbitals)
@@ -72,11 +72,11 @@ function compute_stage0_cost_simplified(config_dict::Dict, satellite_orbitals::M
     
     # Get cost weights from config
     opt_params = get(config_dict, "optimizer_params", Dict{String,Any}())
-    rl_config = get(opt_params, "rl_config", Dict{String,Any}())
+    constellation_rl_config = get(opt_params, "constellation_rl_config", Dict{String,Any}())
     
-    unsafe_weight = Float64(get(rl_config, "unsafe_weight", 100.0))
-    safe_weight = Float64(get(rl_config, "safe_weight", 10.0))
-    pred_weight = Float64(get(rl_config, "pred_weight", 5.0))
+    unsafe_weight = Float64(get(constellation_rl_config, "constellation_rl_unsafe_weight", 100.0))
+    safe_weight = Float64(get(constellation_rl_config, "constellation_rl_safe_weight", 10.0))
+    pred_weight = Float64(get(constellation_rl_config, "constellation_rl_pred_weight", 5.0))
     
     # Compute access coverage (simplified - in full implementation would use propagation)
     # For now, use orbital element distance as proxy for access
@@ -96,7 +96,7 @@ function compute_stage0_cost_simplified(config_dict::Dict, satellite_orbitals::M
     total_cost = unsafe_cost + safe_cost + pred_cost
     
     # Feasibility check
-    feasible_threshold = Float64(get(rl_config, "feasibility_threshold", 1e-6))
+    feasible_threshold = Float64(get(constellation_rl_config, "constellation_rl_feasibility_threshold", 1e-6))
     feasible = total_deficit < feasible_threshold && n_sats > 0
     
     return Dict{String,Any}(
@@ -234,11 +234,11 @@ function compute_stage0_cost_capo_audit(config_dict::Dict, satellite_orbitals::M
     
     # Get cost weights from config
     opt_params = get(config_dict, "optimizer_params", Dict{String,Any}())
-    rl_config = get(opt_params, "rl_config", Dict{String,Any}())
+    constellation_rl_config = get(opt_params, "constellation_rl_config", Dict{String,Any}())
     
-    unsafe_weight = Float64(get(rl_config, "unsafe_weight", 100.0))
-    safe_weight = Float64(get(rl_config, "safe_weight", 10.0))
-    pred_weight = Float64(get(rl_config, "pred_weight", 5.0))
+    unsafe_weight = Float64(get(constellation_rl_config, "constellation_rl_unsafe_weight", 100.0))
+    safe_weight = Float64(get(constellation_rl_config, "constellation_rl_safe_weight", 10.0))
+    pred_weight = Float64(get(constellation_rl_config, "constellation_rl_pred_weight", 5.0))
     
     # TODO: Integrate with FHSG's _fhsg_safe_build_audit and _fhsg_fixed_target_pred_audit
     # For now, use the simplified version as a placeholder
@@ -261,7 +261,7 @@ function compute_stage0_cost_capo_audit(config_dict::Dict, satellite_orbitals::M
     total_cost = unsafe_cost + safe_cost + pred_cost
     
     # Feasibility check
-    feasible_threshold = Float64(get(rl_config, "feasibility_threshold", 1e-6))
+    feasible_threshold = Float64(get(constellation_rl_config, "constellation_rl_feasibility_threshold", 1e-6))
     feasible = total_deficit < feasible_threshold && n_sats > 0
     
     return Dict{String,Any}(

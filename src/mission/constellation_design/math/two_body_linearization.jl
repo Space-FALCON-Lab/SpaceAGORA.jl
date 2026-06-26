@@ -230,6 +230,7 @@ function cw_coefficients(a::Real, μ::Real)
 end
 
 export two_body_f, two_body_fd_rk4, discrete_taylor_linearize_fd,
-       van_loan_discretize, two_body_Ac, two_body_AdBd, cw_coefficients
+       van_loan_discretize, two_body_Ac, two_body_AdBd, cw_coefficients,
+       cw_eci_state_transition_matrix, compute_horizon_phi_matrices
 
 end # module TwoBodyLinearization

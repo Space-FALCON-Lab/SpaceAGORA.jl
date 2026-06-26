@@ -6,9 +6,10 @@ using LinearAlgebra
     _build_polyhedral_dirs(n::Int) -> Matrix{Float64}
 
 Build a bank of n direction vectors for 6D state-space polyhedral support function evaluation.
+Matches CAPOConstellation LADS tube implementation with 6D directions (position + velocity).
 
 The direction bank consists of:
-- 12 axis directions (±e_i for i=1..6)
+- 12 axis directions (±e_i for i=1..6 in 6D state space)
 - Pairwise sum and difference diagonals (up to 72 directions total)
 
 For n=72 (standard controllable set bank), this gives 12 + 60 = 72 directions.
@@ -34,8 +35,7 @@ function _build_polyhedral_dirs(n::Int)
     if n == 12
         return hcat(base...)
     end
-    # Pairwise sum and difference diagonals — matches _build_fixed_dense_recursive_polytope_dirs.
-    # Sum diagonals alone only reach 42; including difference diagonals reaches the full 72.
+    # Pairwise sum and difference diagonals — matches CAPO LADS tube formulation
     extra = Vector{Vector{Float64}}()
     for i in 1:6
         for j in (i+1):6

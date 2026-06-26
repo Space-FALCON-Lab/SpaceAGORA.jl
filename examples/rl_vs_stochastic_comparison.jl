@@ -22,11 +22,11 @@ function parse_commandline()
         "--rl-model"
             help = "Path to trained RL model"
             arg_type = String
-            default = "data/rl_models/latest_model.jld2"
+            default = "data/constellation_rl_models/latest_model.jld2"
         "--output-dir"
             help = "Output directory for comparison results"
             arg_type = String
-            default = "data/rl_comparison"
+            default = "data/constellation_rl_comparison"
         "--clusters"
             help = "Cluster IDs to test (comma-separated)"
             arg_type = String
@@ -55,9 +55,9 @@ function main()
         global_logger(logger)
     end
     
-    @info "Starting RL vs Stochastic Greedy comparison"
+    @info "Starting constellation RL vs Stochastic Greedy comparison"
     @info "Labeled CSV: $(args["labeled-csv"])"
-    @info "RL Model: $(args["rl-model"])"
+    @info "Constellation RL Model: $(args["rl-model"])"
     @info "Output directory: $(args["output-dir"])"
     
     # Parse cluster IDs

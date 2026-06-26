@@ -45,6 +45,9 @@ function _fhsg_safe_build_audit(
     pred_residuals = zeros(Float64, Kd, P, H)
 
     # Backward lift to compute controllable tube h_C
+    # Note: CAPO LADS tube uses per-horizon forward coefficients h_fwd_exact_coeffs[n][q,i,p]
+    # Current implementation uses aggregated h_fwd[Kd, P, H] which is functionally equivalent
+    # for the purpose of Stage 1 optimization with Phi_n mapping
     for p in 1:P
         h_C[H + 1, p, :] .= Float64.(h_fwd[:, p, H])
         for n in H:-1:1

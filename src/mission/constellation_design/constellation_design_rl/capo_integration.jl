@@ -10,15 +10,15 @@ using Random
 using Distributions
 
 """
-    run_rl_stage0_seeding(config_dict::Dict{String,Any}) -> Dict{String,Any}
+    run_constellation_rl_stage0_seeding(config_dict::Dict{String,Any}) -> Dict{String,Any}
 
-Run RL-based stage 0 seeding using a trained policy.
+Run constellation RL-based stage 0 seeding using a trained policy.
 """
-function run_rl_stage0_seeding(config_dict::Dict{String,Any})
+function run_constellation_rl_stage0_seeding(config_dict::Dict{String,Any})
     # Get model path from config
     opt_params = get(config_dict, "optimizer_params", Dict{String,Any}())
-    rl_config = get(opt_params, "rl_config", Dict{String,Any}())
-    model_path = get(rl_config, "rl_model_path", "data/rl_models/latest_model.jld2")
+    constellation_rl_config = get(opt_params, "constellation_rl_config", Dict{String,Any}())
+    model_path = get(constellation_rl_config, "constellation_rl_model_path", "data/constellation_rl_models/latest_model.jld2")
     
     # Load trained policy
     policy, loaded_config, episode = load_checkpoint(model_path)
@@ -90,12 +90,12 @@ Iteratively adds satellites that maximize cost improvement.
 function run_stochastic_greedy_seeding(config_dict::Dict{String,Any})
     # Get parameters
     opt_params = get(config_dict, "optimizer_params", Dict{String,Any}())
-    rl_config = get(opt_params, "rl_config", Dict{String,Any}())
-    max_sats = Int(get(rl_config, "max_sats", 64))
-    greedy_variant = get(rl_config, "greedy_variant", "pure")  # "pure", "stochastic", "epsilon"
-    top_k = Int(get(rl_config, "greedy_top_k", 5))
-    epsilon = Float64(get(rl_config, "greedy_epsilon", 0.1))
-    n_restarts = Int(get(rl_config, "greedy_restarts", 1))
+    constellation_rl_config = get(opt_params, "constellation_rl_config", Dict{String,Any}())
+    max_sats = Int(get(constellation_rl_config, "constellation_rl_max_sats", 64))
+    greedy_variant = get(constellation_rl_config, "constellation_rl_greedy_variant", "pure")  # "pure", "stochastic", "epsilon"
+    top_k = Int(get(constellation_rl_config, "constellation_rl_greedy_top_k", 5))
+    epsilon = Float64(get(constellation_rl_config, "constellation_rl_greedy_epsilon", 0.1))
+    n_restarts = Int(get(constellation_rl_config, "constellation_rl_greedy_restarts", 1))
     
     # Get orbital bounds
     orbital_bounds = get(config_dict, "orbital_bounds", zeros(6, 2))
@@ -260,6 +260,6 @@ function _get_top_candidates(
     return top_candidates
 end
 
-export run_rl_stage0_seeding, run_policy_inference, load_trained_policy, run_stochastic_greedy_seeding
+export run_constellation_rl_stage0_seeding, run_policy_inference, load_trained_policy, run_stochastic_greedy_seeding
 
 end # module CapoIntegration

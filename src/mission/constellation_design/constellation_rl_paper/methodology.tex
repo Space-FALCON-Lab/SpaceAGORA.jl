@@ -24,7 +24,7 @@ where $\Delta C_t$ is the cost improvement, $C_u, C_s, C_p$ are unsafe, safe, an
 
 \subsection{Environment Design}
 
-The \texttt{SatelliteSeedingEnv} implements the RL environment following the OpenAI Gym interface. Key features include:
+The \texttt{SatelliteSeedingEnv} implements the constellation RL environment following the OpenAI Gym interface. Key features include:
 
 \begin{itemize}
     \item \textbf{Reset:} Initialize with empty constellation and load client data.
@@ -68,7 +68,7 @@ We implement a comprehensive training campaign infrastructure that supports:
     \item \textbf{TensorBoard Integration:} Log training metrics, embeddings, and cost components for visualization.
 \end{itemize}
 
-The training entry point \texttt{run\_rl\_training\_campaign.jl} parses a YAML configuration, generates scenarios, and executes training in parallel or sequential mode.
+The training entry point \texttt{run\_constellation\_rl\_training\_campaign.jl} parses a YAML configuration, generates scenarios, and executes training in parallel or sequential mode.
 
 \subsection{ROE-Based Orbital Bounds}
 
@@ -81,4 +81,4 @@ To maintain compatibility with CAPOConstellation without external dependencies, 
     \item \texttt{compute\_reference\_orbit:} Compute reference orbit from cluster mean.
 \end{itemize}
 
-This ensures that the RL search space bounds match those used by stochastic greedy seeding for fair comparison.
+This ensures that the constellation RL search space bounds match those used by stochastic greedy seeding for fair comparison.

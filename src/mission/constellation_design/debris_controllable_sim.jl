@@ -58,7 +58,7 @@ end
 Run the full debris controllable simulation pipeline with all three stages.
 
 This is the main pipeline integration point for the CAPOConstellation port.
-Supports FHSG Stage 0, horizon-indexed tube Stage 1, and sequential OCP Stage 2.
+Enforces Stage 0 → Stage 1 → Stage 2 ordering with LADS tube formulation.
 
 # Arguments
 - `config_dict::AbstractDict`: Configuration dictionary
@@ -72,30 +72,21 @@ function run_debris_controllable_sim(config_dict::AbstractDict)
     try
         constellation_log("pipeline", "Starting debris_controllable_sim pipeline")
         
-        # Determine which stages to run
-        opt_params = get(config_dict, "optimizer_params", Dict{String,Any}())
-        mode = lowercase(String(get(opt_params, "mode", "full")))
-        
         results = Dict{String,Any}()
         
-        # Stage 0: FHSG Seeding (default) or alternative
-        if mode in ("full", "stochastic_greedy", "fhsg", "stage0")
-            stage0_method = String(get(opt_params, "stage0_mode", "fhsg"))
-            constellation_log("pipeline", "Running Stage 0: Seeding (method=$stage0_method)")
-            results["stage0"] = run_stage0_seeding(config_dict; method=stage0_method)
-        end
+        # Stage 0: FHSG Seeding (always runs unless cached)
+        opt_params = get(config_dict, "optimizer_params", Dict{String,Any}())
+        stage0_method = String(get(opt_params, "stage0_mode", "fhsg"))
+        constellation_log("pipeline", "Running Stage 0: Seeding (method=$stage0_method)")
+        results["stage0"] = run_stage0_seeding(config_dict; method=stage0_method)
         
-        # Stage 1: Controllable Tube Certificate (default) or alternative
-        if mode in ("full", "controllable", "stage1")
-            constellation_log("pipeline", "Running Stage 1: Horizon-indexed Tube Certificate")
-            results["stage1"] = run_constellation_design(config_dict)
-        end
+        # Stage 1: LADS Tube Certificate (always runs after Stage 0)
+        constellation_log("pipeline", "Running Stage 1: LADS Tube Certificate")
+        results["stage1"] = run_constellation_design(config_dict)
         
-        # Stage 2: Sequential OCP Verification (default) or alternative
-        if mode in ("full", "stage2")
-            constellation_log("pipeline", "Running Stage 2: Sequential OCP Verification")
-            results["stage2"] = run_stage2_verification(config_dict)
-        end
+        # Stage 2: Sequential OCP Verification (always runs after Stage 1)
+        constellation_log("pipeline", "Running Stage 2: Sequential OCP Verification")
+        results["stage2"] = run_stage2_verification(config_dict)
         
         constellation_log("pipeline", "Pipeline completed successfully")
         
@@ -137,9 +128,6 @@ function main(args::Vector{String}=ARGS)
     println("Results: $(keys(results))")
     
     return results
-end
-
-# Run main if this file is executed directly
-if abspath(PROGRAM_FILE) == abspath(@__FILE__)
+endbspath(PROGRAM_FILE) == abspath(@__FILE__)
     main()
 end

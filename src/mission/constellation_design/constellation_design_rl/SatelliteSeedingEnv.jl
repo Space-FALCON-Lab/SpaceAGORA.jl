@@ -7,11 +7,11 @@ using LinearAlgebra
 using Statistics
 
 """
-    RLSatelliteSeedingObservation
+    ConstellationRLSatelliteSeedingObservation
 
-Observation structure for the satellite seeding RL environment.
+Observation structure for the satellite seeding constellation RL environment.
 """
-struct RLSatelliteSeedingObservation
+struct ConstellationRLSatelliteSeedingObservation
     # Variable-sized sets (DeepSet inputs)
     satellite_orbitals::Matrix{Float64}     # (n_sats, 6) [a, e, inc, raan, arg_p, ta]
     client_trajectories::Matrix{Float64}     # (n_clients, 6) [a, e, inc, raan, arg_p, ta]
@@ -55,9 +55,9 @@ Construct a SatelliteSeedingEnv from configuration dictionary.
 function SatelliteSeedingEnv(config_dict::Dict{String,Any})
     # Extract parameters
     opt_params = get(config_dict, "optimizer_params", Dict{String,Any}())
-    rl_config = get(opt_params, "rl_config", Dict{String,Any}())
+    constellation_rl_config = get(opt_params, "constellation_rl_config", Dict{String,Any}())
     
-    max_sats = Int(get(rl_config, "max_sats", 64))
+    max_sats = Int(get(constellation_rl_config, "constellation_rl_max_sats", 64))
     
     # Get client data
     client_orbitals = get(config_dict, "client_orbitals", Matrix{Float64}(undef, 0, 6))
@@ -186,11 +186,11 @@ Compute reward based on cost improvement and penalties.
 function _compute_reward(env::SatelliteSeedingEnv, cost::Dict)
     # Get penalty weights
     opt_params = get(env.config_dict, "optimizer_params", Dict{String,Any}())
-    rl_config = get(opt_params, "rl_config", Dict{String,Any}())
+    constellation_rl_config = get(opt_params, "constellation_rl_config", Dict{String,Any}())
     
-    unsafe_weight = Float64(get(rl_config, "unsafe_weight", 100.0))
-    safe_weight = Float64(get(rl_config, "safe_weight", 10.0))
-    pred_weight = Float64(get(rl_config, "pred_weight", 5.0))
+    unsafe_weight = Float64(get(constellation_rl_config, "constellation_rl_unsafe_weight", 100.0))
+    safe_weight = Float64(get(constellation_rl_config, "constellation_rl_safe_weight", 10.0))
+    pred_weight = Float64(get(constellation_rl_config, "constellation_rl_pred_weight", 5.0))
     
     # Immediate reward: cost improvement
     if isfinite(env.previous_cost)
@@ -218,12 +218,12 @@ function _compute_reward(env::SatelliteSeedingEnv, cost::Dict)
 end
 
 """
-    _build_observation(env::SatelliteSeedingEnv, cost::Dict) -> RLSatelliteSeedingObservation
+    _build_observation(env::SatelliteSeedingEnv, cost::Dict) -> ConstellationRLSatelliteSeedingObservation
 
 Build observation from current environment state.
 """
 function _build_observation(env::SatelliteSeedingEnv, cost::Dict)
-    return RLSatelliteSeedingObservation(
+    return ConstellationRLSatelliteSeedingObservation(
         satellite_orbitals = copy(env.current_sats),
         client_trajectories = copy(env.client_orbitals),
         orbital_bounds = copy(env.orbital_bounds),
@@ -238,6 +238,6 @@ function _build_observation(env::SatelliteSeedingEnv, cost::Dict)
     )
 end
 
-export SatelliteSeedingEnv, RLSatelliteSeedingObservation
+export SatelliteSeedingEnv, ConstellationRLSatelliteSeedingObservation
 
 end # module SatelliteSeedingEnv

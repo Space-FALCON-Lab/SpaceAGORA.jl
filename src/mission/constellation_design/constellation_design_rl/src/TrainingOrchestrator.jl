@@ -126,7 +126,7 @@ function build_config_from_scenario(scenario::TrainingScenario, output_dir::Stri
         "client_orbitals" => scenario.client_orbitals,
         "orbital_bounds" => scenario.orbital_bounds,
         "optimizer_params" => Dict{String,Any}(
-            "rl_config" => scenario.training_config,
+            "constellation_rl_config" => scenario.training_config,
         ),
     )
     

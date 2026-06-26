@@ -298,10 +298,83 @@ function make_stage0_cache_path(config_dict::AbstractDict)
     return joinpath(cache_dir, filename)
 end
 
+"""
+    make_high_fidelity_generator_cache_path(config_dict::AbstractDict) -> String
+
+Generate cache file path for high-fidelity generator data.
+"""
+function make_high_fidelity_generator_cache_path(config_dict::AbstractDict)
+    opt_params = get(config_dict, "optimizer_params", Dict{String,Any}())
+    cache_dir = String(get(opt_params, "high_fidelity_cache_dir", "cache/high_fidelity_generators"))
+    mkpath(cache_dir)
+    
+    mission = get(config_dict, "mission", Dict{String,Any}())
+    n_horizons = Int(get(mission, "n_horizons", 5))
+    debris = get(config_dict, "debris_params", Dict{String,Any}())
+    n_clients = Int(get(debris, "n_clients", 10))
+    
+    # Include seed indices in cache signature
+    seed_indices = get(config_dict, "stage0_seed_indices", [])
+    seed_tag = join(sort(seed_indices), "_")
+    
+    # Include disturbance configuration in cache signature
+    preset = get(opt_params, "high_fidelity_preset", -1)
+    disturbance_tag = "p$(preset)"
+    
+    filename = "hf_generators_h$(n_horizons)_c$(n_clients)_s$(seed_tag)_d$(disturbance_tag).jld2"
+    return joinpath(cache_dir, filename)
+end
+
+"""
+    load_cached_high_fidelity_generators(cache_path::AbstractString, signature::AbstractString) -> Union{Nothing, Dict{String,Any}}
+
+Load cached high-fidelity generator data if signature matches.
+"""
+function load_cached_high_fidelity_generators(cache_path::AbstractString, signature::AbstractString)
+    if !isfile(cache_path)
+        return nothing
+    end
+    
+    try
+        data = JLD2.load(cache_path)
+        if haskey(data, "signature") && data["signature"] == signature
+            constellation_log("cache", "High-fidelity generator cache hit"; path=cache_path)
+            return data["payload"]
+        else
+            constellation_log("cache", "High-fidelity generator cache signature mismatch"; path=cache_path)
+            return nothing
+        end
+    catch err
+        constellation_log_warn("cache", "Failed to load high-fidelity generator cache"; error=sprint(showerror, err))
+        return nothing
+    end
+end
+
+"""
+    save_cached_high_fidelity_generators(cache_path::AbstractString, signature::AbstractString, payload::AbstractDict)
+
+Save high-fidelity generator data to cache with signature.
+"""
+function save_cached_high_fidelity_generators(cache_path::AbstractString, signature::AbstractString, payload::AbstractDict)
+    mkpath(dirname(cache_path))
+    data = Dict{String,Any}(
+        "signature" => signature,
+        "payload" => payload,
+        "timestamp" => now(),
+    )
+    try
+        JLD2.save(cache_path, data)
+        constellation_log("cache", "High-fidelity generator cache saved"; path=cache_path)
+    catch err
+        constellation_log_warn("cache", "Failed to save high-fidelity generator cache"; error=sprint(showerror, err))
+    end
+end
+
 export ingest_yaml, constellation_log, constellation_log_warn, constellation_log_error
 export constellation_log_exception, make_constellation_log_path
 export constellation_log_init!, constellation_log_close!
 export summarize_index_vector, hash_bin, get_sat_positions
 export compute_cache_signature, load_cached_stage0, save_cached_stage0, make_stage0_cache_path
+export make_high_fidelity_generator_cache_path, load_cached_high_fidelity_generators, save_cached_high_fidelity_generators
 
 end # module ConstellationUtils

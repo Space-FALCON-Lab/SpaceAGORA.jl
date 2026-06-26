@@ -96,7 +96,7 @@ function validate_constellation_config(config_dict::AbstractDict)
     opt = config["optimizer_params"]
     get!(opt, "mode", "full")
     get!(opt, "stage0_mode", "fhsg")
-    get!(opt, "stage1_certificate_mode", "constructive_zonotope")
+    get!(opt, "stage1_certificate_mode", "lads_tube")
     get!(opt, "stage2_mode", "optimal_control")
     
     # Stage 0: Finite Horizon Stochastic Greedy parameters
@@ -160,6 +160,7 @@ function validate_constellation_config(config_dict::AbstractDict)
     get!(opt, "stage1_beta_ladder_start", 0.01)
     get!(opt, "stage1_beta_ladder_step", 0.01)
     get!(opt, "stage1_beta_ladder_stop", 1.0)
+    get!(opt, "stage1_beta_ladder_max_attempts", 101)
     get!(opt, "constructive_multistart_count", 101)
     get!(opt, "constructive_predecessor_contraction_min", 0.5)
     get!(opt, "certificate_mode", "support_function")
@@ -188,6 +189,15 @@ function validate_constellation_config(config_dict::AbstractDict)
     # Relative dynamics (CW-ECI only for LADS benchmark)
     get!(opt, "relative_dynamics_mode", "cw_eci")
     
+    # Stage 1 LP warm-start (CAPO LADS tube)
+    get!(opt, "stage1_lp_warm_start_enabled", true)
+    get!(opt, "stage1_lp_warm_start_coeff_rel_drop", 1e-12)
+    get!(opt, "stage1_lp_warm_start_verbose", false)
+    get!(opt, "stage1_lp_warm_start_plot_only", false)
+    
+    # Stage 1 nonconvex objective (β(1-β) fractionality penalty)
+    get!(opt, "stage1_nonconvex_fractionality_penalty_enabled", false)  # Per LADS invariants, default to convex
+    
     # Certificate mode
     get!(opt, "certificate_mode", "support_function")
     
@@ -204,6 +214,30 @@ function validate_constellation_config(config_dict::AbstractDict)
     
     # Fidelity
     get!(opt, "fidelity_mode", "keplerian")
+    
+    # High-fidelity generator propagation (Stage 0.5)
+    get!(opt, "use_high_fidelity_generators", false)
+    
+    # Fidelity level preset (0-6), overrides individual toggles if set
+    get!(opt, "high_fidelity_preset", 0)  # 0=pure_keplerian, 1=keplerian_j2, 2=keplerian_j2_simple_drag, 3=keplerian_j2_nrlmsise00, 4=keplerian_j2_nrlmsise00_srp, 5=keplerian_j2_nrlmsise00_srp_third_body, 6=all_disturbances
+    
+    # Individual disturbance toggles (if preset not set)
+    get!(opt, "disturbance_enable_j2", false)
+    get!(opt, "disturbance_enable_harmonics", false)
+    get!(opt, "disturbance_harmonics_degree", 4)
+    get!(opt, "disturbance_harmonics_order", 4)
+    get!(opt, "disturbance_enable_atmosphere", false)
+    get!(opt, "disturbance_atmosphere_model", "nrlmsise00")  # Options: "none", "exponential", "nrlmsise00", "gram"
+    get!(opt, "disturbance_enable_srp", false)
+    get!(opt, "disturbance_enable_albedo", false)
+    get!(opt, "disturbance_enable_ir", false)
+    get!(opt, "disturbance_enable_third_body", false)
+    get!(opt, "disturbance_third_body_bodies", ["sun", "moon"])  # Options: "sun", "moon", "mercury", "venus", "mars", "jupiter", "saturn"
+    
+    # Propagation settings
+    get!(opt, "high_fidelity_num_threads", Threads.nthreads())
+    get!(opt, "high_fidelity_cache_enabled", true)
+    get!(opt, "high_fidelity_cache_dir", "cache/high_fidelity_generators")
     
     # Stage 0 caching
     get!(opt, "use_cached_stage0", false)

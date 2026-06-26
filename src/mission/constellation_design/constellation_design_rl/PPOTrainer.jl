@@ -32,7 +32,7 @@ Base.@kwdef struct PPOConfig
     
     # Training parameters
     max_episodes::Int = 10000
-    max_steps_per_episode::Int = 100
+    max_steps_per_episode::Int = 5000
     update_frequency::Int = 2048
     
     # Parallel training
@@ -40,7 +40,7 @@ Base.@kwdef struct PPOConfig
     num_envs_per_worker::Int = 4
     
     # Logging
-    tensorboard_log_dir::String = "data/rl_models/tensorboard"
+    tensorboard_log_dir::String = "data/constellation_rl_models/tensorboard"
     log_frequency::Int = 10  # Log every N episodes
     
     # Reward weights
@@ -192,7 +192,7 @@ end
 Save policy checkpoint to disk.
 """
 function save_checkpoint(policy::DualDeepSetPolicy, config::PPOConfig, episode::Int)
-    model_dir = "data/rl_models"
+    model_dir = "data/constellation_rl_models"
     mkpath(model_dir)
     
     filename = "policy_checkpoint_episode_$episode.jld2"

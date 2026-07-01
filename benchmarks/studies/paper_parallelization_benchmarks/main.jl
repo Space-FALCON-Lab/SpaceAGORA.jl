@@ -1,7 +1,9 @@
 function _ppb_active_phases(ppb::PPBConfig)::Vector{PPBPhase}
-    isempty(ppb.phases) && return PAPER_BENCHMARK_PHASES
-    ids = Set(ppb.phases)
-    return [p for p in PAPER_BENCHMARK_PHASES if p.id in ids]
+    ids = isempty(ppb.phases) ? Set(p.id for p in PAPER_BENCHMARK_PHASES) : Set(ppb.phases)
+    ppb.preview && setdiff!(ids, PPB_PREVIEW_SKIP_PHASES)
+    phases = [p for p in PAPER_BENCHMARK_PHASES if p.id in ids]
+    ppb.preview && (phases = _ppb_preview_phase.(phases))
+    return phases
 end
 
 function _ppb_thread_ladder(phase::PPBPhase, ppb::PPBConfig)::Vector{Int}
@@ -17,6 +19,7 @@ function _ppb_build_ppc_config(
     outdir::String;
     process_workers::Int = ppb.process_workers,
 )::PPCConfig
+    effective_workers = ppb.preview ? min(process_workers, PPB_PREVIEW_MAX_WORKERS) : process_workers
     return PPCConfig(
         profile         = "full",
         outdir          = outdir,
@@ -28,7 +31,7 @@ function _ppb_build_ppc_config(
         warmup          = phase.warmup,
         seed            = ppb.seed,
         solver_mode     = ppb.solver_mode,
-        process_workers = process_workers,
+        process_workers = effective_workers,
         mc_samples      = phase.mc_samples,
         parity_samples  = 512,
     )
@@ -135,9 +138,10 @@ function main_paper_benchmarks()
     println("[paper-benchmarks] outdir          = $(root)")
     println("[paper-benchmarks] phases           = $(join([p.id for p in active], ", "))")
     println("[paper-benchmarks] thread_ladder    = $(isempty(ppb.threads) ? "auto ($(Sys.CPU_THREADS) CPU threads)" : join(ppb.threads, ","))")
-    println("[paper-benchmarks] process_workers  = $(ppb.process_workers)")
+    println("[paper-benchmarks] process_workers  = $(ppb.preview ? "≤$(PPB_PREVIEW_MAX_WORKERS) (preview)" : string(ppb.process_workers))")
     println("[paper-benchmarks] solver_mode      = $(ppb.solver_mode)")
     println("[paper-benchmarks] seed             = $(ppb.seed)")
+    println("[paper-benchmarks] preview          = $(ppb.preview)")
     println("[paper-benchmarks] dry_run          = $(ppb.dry_run)")
     println()
 

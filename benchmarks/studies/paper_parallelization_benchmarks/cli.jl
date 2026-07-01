@@ -36,6 +36,39 @@ Base.@kwdef struct PPBConfig
     seed::Int               = 20260615
     solver_mode::String     = "auto_stiff"
     dry_run::Bool           = false
+    preview::Bool           = false
+end
+
+# Preview mode: caps N_sat at 64, MC samples at 16, workers at 4, repeats at 2.
+# B6 (cross-machine) is excluded — it requires a second machine to be meaningful.
+const PPB_PREVIEW_MAX_N_SAT   = 64
+const PPB_PREVIEW_MAX_SAMPLES = 16
+const PPB_PREVIEW_MAX_WORKERS = 4
+const PPB_PREVIEW_REPEATS     = 2
+const PPB_PREVIEW_WARMUP      = 1
+const PPB_PREVIEW_SKIP_PHASES = Set(["B6"])
+
+function _ppb_preview_phase(phase::PPBPhase)::PPBPhase
+    cases = filter(c -> _ppb_n_sat(c) <= PPB_PREVIEW_MAX_N_SAT, phase.cases)
+    isempty(cases) && (cases = phase.cases[1:min(2, end)])
+    parity = filter(c -> _ppb_n_sat(c) <= PPB_PREVIEW_MAX_N_SAT, phase.parity_cases)
+    isempty(parity) && (parity = phase.parity_cases[1:min(1, end)])
+    samples = filter(s -> s <= PPB_PREVIEW_MAX_SAMPLES, phase.mc_samples)
+    isempty(samples) && (samples = [1])
+    workers = filter(w -> w <= PPB_PREVIEW_MAX_WORKERS, phase.worker_ladder)
+    isempty(workers) && !isempty(phase.worker_ladder) && (workers = [1, 2])
+    return PPBPhase(
+        id            = phase.id,
+        label         = phase.label * " [preview]",
+        cases         = cases,
+        parity_cases  = parity,
+        modes         = phase.modes,
+        mc_samples    = samples,
+        repeats       = PPB_PREVIEW_REPEATS,
+        warmup        = PPB_PREVIEW_WARMUP,
+        thread_mode   = phase.thread_mode,
+        worker_ladder = workers,
+    )
 end
 
 # ── Phase catalog ─────────────────────────────────────────────────────────────
@@ -184,6 +217,7 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
     seed            = parse(Int, get(ENV, "SPACEAGORA_PPB_SEED", "20260615"))
     solver_mode     = lowercase(strip(get(ENV, "SPACEAGORA_PPB_SOLVER_MODE", "auto_stiff")))
     dry_run         = _ppc_bool(get(ENV, "SPACEAGORA_PPB_DRY_RUN", "0"))
+    preview         = _ppc_bool(get(ENV, "SPACEAGORA_PPB_PREVIEW", "0"))
 
     valid_phases = Set(p.id for p in PAPER_BENCHMARK_PHASES)
     for arg in args
@@ -203,6 +237,8 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
             solver_mode = lowercase(strip(_ppc_arg_value(arg)))
         elseif arg == "--dry-run"
             dry_run = true
+        elseif arg == "--preview"
+            preview = true
         else
             throw(ArgumentError("Unknown argument '$arg'. Valid phases: $(join(sort(collect(valid_phases)), ", "))."))
         end
@@ -220,5 +256,6 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
         seed            = seed,
         solver_mode     = solver_mode,
         dry_run         = dry_run,
+        preview         = preview,
     )
 end

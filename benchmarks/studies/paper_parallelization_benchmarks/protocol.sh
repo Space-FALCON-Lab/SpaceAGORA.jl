@@ -16,14 +16,25 @@
 #                                     default: 20260615
 #   SPACEAGORA_PPB_DRY_RUN          — set to 1 to print planned runs without executing
 #                                     default: 0
+#   SPACEAGORA_PPB_PREVIEW          — set to 1 for a local-PC preview run:
+#                                     caps N_sat at 64, MC samples at 16, process
+#                                     workers at 4, repeats at 2, and skips B6.
+#                                     Thread ladder still auto-scales to local CPU count.
+#                                     default: 0
 #
 # Additional arguments are forwarded to the Julia script.
 #
-# Example — run all phases with 16 process workers:
+# Example — full run with 16 process workers:
 #   SPACEAGORA_PPB_PROCESS_WORKERS=16 bash benchmarks/studies/paper_parallelization_benchmarks/protocol.sh
 #
-# Example — run only B1 and B5, dry run:
-#   SPACEAGORA_PPB_PHASES=B1,B5 SPACEAGORA_PPB_DRY_RUN=1 bash benchmarks/studies/paper_parallelization_benchmarks/protocol.sh
+# Example — local PC preview run:
+#   SPACEAGORA_PPB_PREVIEW=1 bash benchmarks/studies/paper_parallelization_benchmarks/protocol.sh
+#
+# Example — dry run to inspect what preview would execute:
+#   SPACEAGORA_PPB_PREVIEW=1 SPACEAGORA_PPB_DRY_RUN=1 bash benchmarks/studies/paper_parallelization_benchmarks/protocol.sh
+#
+# Example — run only B1 and B5:
+#   SPACEAGORA_PPB_PHASES=B1,B5 bash benchmarks/studies/paper_parallelization_benchmarks/protocol.sh
 
 set -euo pipefail
 
@@ -58,6 +69,10 @@ fi
 
 if [ "${SPACEAGORA_PPB_DRY_RUN:-0}" = "1" ]; then
     ARGS+=("--dry-run")
+fi
+
+if [ "${SPACEAGORA_PPB_PREVIEW:-0}" = "1" ]; then
+    ARGS+=("--preview")
 fi
 
 julia --project=. "${SCRIPT}" "${ARGS[@]}" "$@"

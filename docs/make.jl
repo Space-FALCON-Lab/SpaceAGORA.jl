@@ -121,7 +121,7 @@ makedocs(
     format = Documenter.HTML(
         prettyurls = get(ENV, "CI", "false") == "true",
         canonical = "https://space-falcon-lab.github.io/SpaceAGORA.jl",
-        assets = String[],
+        assets = ["assets/favicon.ico"],
     ),
     pages = [
         "Overview" => "index.md",
@@ -140,6 +140,7 @@ makedocs(
         "Reference" => Any[
             "CLI" => "cli.md",
             "Public API" => "generated/public_api.md",
+            "Publications" => "publications.md",
             "Distributed and HPC" => "distributed_hpc.md",
             "Extensibility" => "extensibility.md",
         ],

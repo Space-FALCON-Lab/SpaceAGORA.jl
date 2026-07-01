@@ -57,6 +57,7 @@ exact command surface, extension hooks, or generated API details.
 
 - [CLI](cli.md)
 - [Public API](generated/public_api.md)
+- [Publications](publications.md)
 - [Extensibility](extensibility.md)
 
 ### Maintainer Guide

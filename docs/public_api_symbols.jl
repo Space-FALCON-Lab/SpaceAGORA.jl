@@ -81,6 +81,14 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Robotics and Planning",
+        items = [
+            (owner = :SpaceAGORA, symbol = :ClothArmBasePose, rendered = "SpaceAGORA.ClothArmBasePose"),
+            (owner = :SpaceAGORA, symbol = :ClothArmModel, rendered = "SpaceAGORA.ClothArmModel"),
+            (owner = :SpaceAGORA, symbol = :RobotArmPlan, rendered = "SpaceAGORA.RobotArmPlan")
+        ]
+    ),
+    (
         title = "Parallel Profiles and Routing",
         items = [
             (owner = :ParallelProfiles, symbol = :ParallelProfile, rendered = "SpaceAGORA.ParallelProfile"),

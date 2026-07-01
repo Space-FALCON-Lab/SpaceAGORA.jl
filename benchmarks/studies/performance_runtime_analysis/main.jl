@@ -38,11 +38,44 @@ end
 
 include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
 using .SimulationModel
+const MissionType = SimulationModel.SimConfig.MissionType
+const MissionTime = SimulationModel.SimConfig.MissionTime
+const MissionOrbits = SimulationModel.SimConfig.MissionOrbits
+const SimulationConfiguration = SimulationModel.SimConfig.SimulationConfiguration
+const InitialTime = SimulationModel.SimConfig.InitialTime
+const IntegrationTolerances = SimulationModel.SimConfig.IntegrationTolerances
+const SimulationSettings = SimulationModel.SimConfig.SimulationSettings
+const MissionConfiguration = SimulationModel.SimConfig.MissionConfiguration
+const EnvironmentModel = SimulationModel.SimConfig.EnvironmentModel
+const Earth = SimulationModel.Planets.Earth
+const Mars = SimulationModel.Planets.Mars
+const Link = SimulationModel.SpacecraftModels.Link
+const Joint = SimulationModel.SpacecraftModels.Joint
+const SpacecraftModel = SimulationModel.SpacecraftModels.SpacecraftModel
+const DynamicsModel = SimulationModel.SpacecraftModels.DynamicsModel
+const InitialCondition = SimulationModel.SpacecraftModels.InitialCondition
+const GuidanceModel = SimulationModel.SpacecraftModels.GuidanceModel
+const NavigationModel = SimulationModel.SpacecraftModels.NavigationModel
+const ControlModel = SimulationModel.SpacecraftModels.ControlModel
+const AbstractPlanet = SimulationModel.AbstractTypes.AbstractPlanet
+const NoAtmosphereModel = SimulationModel.EnvironmentModels.NoAtmosphereModel
+const GRAMAtmosphereModel = SimulationModel.EnvironmentModels.GRAMAtmosphereModel
+const GRAMAtmosphereModelSurrogate = SimulationModel.EnvironmentModels.GRAMAtmosphereModelSurrogate
+const MaxwellianHeat = SimulationModel.VehicleThermalModels.MaxwellianHeat
+const InverseSquaredGravityModel = SimulationModel.DynamicEffectors.InverseSquaredGravityModel
+const InverseSquaredJ2GravityModel = SimulationModel.DynamicEffectors.InverseSquaredJ2GravityModel
+const GravitationalHarmonicsModel = SimulationModel.DynamicEffectors.GravitationalHarmonicsModel
+const NBodyGravityModel = SimulationModel.DynamicEffectors.NBodyGravityModel
+const SolarRadiationPressureModel = SimulationModel.DynamicEffectors.SolarRadiationPressureModel
+const AerodynamicCoefficientfM = SimulationModel.DynamicEffectors.AerodynamicCoefficientfM
+const BaseThrusterModel = SimulationModel.DynamicEffectors.BaseThrusterModel
+const AerobrakingCampaignPropulsiveManeuverGuidanceModel =
+    SimulationModel.GuidanceModels.AerobrakingCampaignPropulsiveManeuverGuidanceModel
 
 function _ensure_perf_gramsuite_loaded!()
     vendored_gramsuite = joinpath(REPO_ROOT, "data", "GRAMSuite.jl")
     if Base.find_package("GRAMSuite") === nothing && isdir(vendored_gramsuite)
-        pushfirst!(LOAD_PATH, vendored_gramsuite)
+        push!(LOAD_PATH, vendored_gramsuite)
     end
     @eval import GRAMSuite
     return nothing

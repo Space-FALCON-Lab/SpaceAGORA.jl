@@ -619,7 +619,7 @@ function _write_smart_ladder_report(
         cross_outdir = joinpath(dirname(config.outdir), "smart_parallel_ladder_cross_machine")
         println(
             io,
-            "julia --project=.AGORA benchmarks/studies/performance_smart_parallel_ladder_cross_machine.jl " *
+            "julia --project=. benchmarks/studies/performance_smart_parallel_ladder_cross_machine.jl " *
             "--profile=$(config.profile.name) --outdir=$(cross_outdir) " *
             "--input=machine_a:/path/to/machine_a/ladder_outdir --input=machine_b:/path/to/machine_b/ladder_outdir"
         )

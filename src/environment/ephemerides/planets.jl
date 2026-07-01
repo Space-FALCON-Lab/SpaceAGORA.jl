@@ -302,39 +302,43 @@ module Planets
 
     # Constructors
     function Earth(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        _furnsh_required(spice_path, "pck/pck00011.tpc")
-        _furnsh_required(spice_path, "lsk/naif0012.tls")
-        _furnsh_planetary_kernel(spice_path)
-        _gravity_constants_kernel_if_available(spice_path)
-        # The starter-pack SPICE bundle shipped in-repo may omit the high-precision
-        # Earth orientation kernels. When they are absent, runtime frame transforms
-        # fall back to the generic IAU_EARTH frame from pck00011.tpc.
-        _furnsh_first_existing_if_available(
-            spice_path,
-            ("pck/earth_latest_high_prec.bpc", "pck/earth_200101_990628_predict.bpc")
-        )
-        _furnsh_first_existing_if_available(
-            spice_path,
-            (
-                "tf/earth_assoc_itrf93.tf",
-                # "fk/planets/earth_assoc_itrf93.tf",
-                # "fk/planets/earth_fixed.tf"
+        return lock(SPICE_LOCK) do
+            _furnsh_required(spice_path, "pck/pck00011.tpc")
+            _furnsh_required(spice_path, "lsk/naif0012.tls")
+            _furnsh_planetary_kernel(spice_path)
+            _gravity_constants_kernel_if_available(spice_path)
+            # The starter-pack SPICE bundle shipped in-repo may omit the high-precision
+            # Earth orientation kernels. When they are absent, runtime frame transforms
+            # fall back to the generic IAU_EARTH frame from pck00011.tpc.
+            _furnsh_first_existing_if_available(
+                spice_path,
+                ("pck/earth_latest_high_prec.bpc", "pck/earth_200101_990628_predict.bpc")
             )
-        )
-        earth = Earth()
-        # TopographyHarmonicsWorkspace!(topo_harmonics_file, earth)
-        return earth
+            _furnsh_first_existing_if_available(
+                spice_path,
+                (
+                    "tf/earth_assoc_itrf93.tf",
+                    # "fk/planets/earth_assoc_itrf93.tf",
+                    # "fk/planets/earth_fixed.tf"
+                )
+            )
+            earth = Earth()
+            # TopographyHarmonicsWorkspace!(topo_harmonics_file, earth)
+            return earth
+        end
     end
 
     function Mars(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        _furnsh_mars_pck(spice_path)
-        _furnsh_required(spice_path, "lsk/naif0012.tls")
-        _furnsh_planetary_kernel(spice_path)
-        _furnsh_mars_system_kernel(spice_path)
-        _gravity_constants_kernel_if_available(spice_path)
-        mars = Mars(; _spice_backed_planet_kwargs("Mars")...)
-        # TopographyHarmonicsWorkspace!(topo_harmonics_file, mars)
-        return mars
+        return lock(SPICE_LOCK) do
+            _furnsh_mars_pck(spice_path)
+            _furnsh_required(spice_path, "lsk/naif0012.tls")
+            _furnsh_planetary_kernel(spice_path)
+            _furnsh_mars_system_kernel(spice_path)
+            _gravity_constants_kernel_if_available(spice_path)
+            mars = Mars(; _spice_backed_planet_kwargs("Mars")...)
+            # TopographyHarmonicsWorkspace!(topo_harmonics_file, mars)
+            return mars
+        end
     end
 
     function Venus(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")

@@ -262,25 +262,12 @@ mutable struct SolverIntegratorCache
 end
 
 @inline function _solver_save_everystep()::Bool
-    name = "SPACEAGORA_SOLVER_SAVE_EVERYSTEP"
-    active_overrides = _engine_active_overrides_ref[]
-    raw_value = if active_overrides !== nothing && haskey(active_overrides, name)
-        get(active_overrides, name, "true")
-    else
-        get(ENV, name, "true")
-    end
-    raw = lowercase(strip(String(raw_value)))
+    raw = lowercase(strip(_engine_env_get("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", "true")))
     return raw in ("1", "true", "yes", "on")
 end
 
 @inline function _solver_bool_env(name::String, default::Bool)::Bool
-    active_overrides = _engine_active_overrides_ref[]
-    raw_value = if active_overrides !== nothing && haskey(active_overrides, name)
-        get(active_overrides, name, default ? "true" : "false")
-    else
-        get(ENV, name, default ? "true" : "false")
-    end
-    raw = lowercase(strip(String(raw_value)))
+    raw = lowercase(strip(_engine_env_get(name, default ? "true" : "false")))
     return raw in ("1", "true", "yes", "on")
 end
 

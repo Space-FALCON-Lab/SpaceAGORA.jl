@@ -9,6 +9,7 @@ const THIN_ENTRY_PATHS = [
     joinpath("src", "dynamics", "coupled", "force_torque_models.jl"),
     joinpath("benchmarks", "studies", "performance_runtime_analysis.jl"),
     joinpath("benchmarks", "studies", "performance_smart_parallel_ladder.jl"),
+    joinpath("benchmarks", "studies", "parallelization_performance.jl"),
     joinpath("benchmarks", "studies", "telemetry_hybrid_tuner.jl"),
     joinpath("benchmarks", "studies", "telemetry_odyssey_tuner.jl"),
 ]

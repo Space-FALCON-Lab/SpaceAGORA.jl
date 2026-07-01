@@ -689,20 +689,32 @@ const _perf_worker_mars_cache = Ref{Any}(nothing)
 const _perf_harmonics20_cache = Ref{Any}(nothing)
 const _perf_harmonics50_cache = Ref{Any}(nothing)
 const _perf_mars_gram_point_density_cache = Ref{Any}(nothing)
-
 function ensure_perf_workers!()
     _perf_workers_initialized[] && return nothing
     target_workers = perf_process_workers_target()
     missing_workers = target_workers - nworkers()
+    worker_project = _resolve_perf_worker_project_path()
     if missing_workers > 0
-        worker_project = _resolve_perf_worker_project_path()
         addprocs(
             missing_workers;
             exeflags=`--startup-file=no --project=$(worker_project)`
         )
     end
+    for w in workers()
+        remotecall_wait(w, worker_project) do project
+            Core.eval(Main, quote
+                import Pkg
+                Pkg.activate($project; io=devnull)
+                Pkg.instantiate(; io=devnull)
+            end)
+        end
+    end
     script_path = abspath(joinpath(dirname(@__DIR__), "..", "performance_runtime_analysis.jl"))
-    @everywhere workers() include($script_path)
+    for w in workers()
+        remotecall_wait(w, script_path) do path
+            Core.eval(Main, Expr(:call, :include, path))
+        end
+    end
     init_tasks = map(workers()) do w
         @async begin
             remotecall_wait(perf_worker_planet, w)

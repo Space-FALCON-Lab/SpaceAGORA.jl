@@ -51,7 +51,7 @@ end
 
 function _run_subprocess(script::String, script_args::Vector{String}; env_pairs::Vector{Pair{String,String}}=Pair{String,String}[], print_only::Bool=false, io::IO=stdout, errio::IO=stderr)::Int
     cmd = Base.julia_cmd()
-    full = `$cmd --project=$DOT_AGORA_PROJECT $script $(script_args...)`
+    full = `$cmd --project=$DOT_AGORA_PROJECT $script $script_args`
     if print_only
         println(io, "project=$(DOT_AGORA_PROJECT)")
         println(io, "script=$(script)")
@@ -106,10 +106,13 @@ function _run_telemetry(args::Vector{String}; io::IO=stdout, errio::IO=stderr)::
     generate_plots = false
     print_only = false
     for arg in args
-        if arg in ("quick", "full", "smoke")
+        if arg in ("quick", "full")
             profile = arg
+        elseif arg == "smoke"
+            profile = "quick"
         elseif _starts_with(arg, "--profile=")
             profile = lowercase(strip(_value_after_equals(arg, "--profile=")))
+            profile == "smoke" && (profile = "quick")
         elseif _starts_with(arg, "--output-dir=")
             output_dir = abspath(_value_after_equals(arg, "--output-dir="))
         elseif _starts_with(arg, "--enforce=")

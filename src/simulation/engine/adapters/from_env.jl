@@ -54,53 +54,43 @@ Build a typed `SolverConfig` from `SPACEAGORA_SOLVER_*` environment variables.
 `env_get(name, default)` defaults to `_engine_env_get`, which respects any active
 `SimulationEngineConfig` overrides.
 """
-function _parse_float_opt(raw::String)::Union{Nothing, Float64}
+function _parse_positive_float_opt(raw::String, env_name::String)::Union{Nothing, Float64}
     s = strip(raw)
     isempty(s) && return nothing
     v = tryparse(Float64, s)
-    (v !== nothing && v > 0.0) ? v : nothing
+    v !== nothing || throw(ArgumentError("$(env_name) must be a positive number, got '$raw'."))
+    v > 0.0 || throw(ArgumentError("$(env_name) must be > 0.0, got $v."))
+    return v
 end
 
 function _solver_config_from_env(env_get=_engine_env_get)::SolverConfig
-    solver_mode = try
-        _parse_solver_mode_sym(env_get("SPACEAGORA_SOLVER_MODE", "tsit5"))
-    catch
-        :tsit5
-    end
+    solver_mode = _parse_solver_mode_sym(env_get("SPACEAGORA_SOLVER_MODE", "tsit5"))
 
     raw_maxiters = strip(env_get("SPACEAGORA_SOLVER_MAXITERS", ""))
     maxiters = if isempty(raw_maxiters)
         nothing
     else
         v = tryparse(Int, raw_maxiters)
-        (v !== nothing && v > 0) ? v : nothing
+        v !== nothing || throw(ArgumentError("SPACEAGORA_SOLVER_MAXITERS must be a positive integer, got '$raw_maxiters'."))
+        v > 0 || throw(ArgumentError("SPACEAGORA_SOLVER_MAXITERS must be > 0, got $v."))
+        v
     end
 
-    symplectic_dt_s = _parse_float_opt(env_get("SPACEAGORA_SYMPLECTIC_DT_S", ""))
-    gravity_backbone_dt_s = _parse_float_opt(env_get("SPACEAGORA_GRAVITY_BACKBONE_DT_S", ""))
+    symplectic_dt_s = _parse_positive_float_opt(env_get("SPACEAGORA_SYMPLECTIC_DT_S", ""), "SPACEAGORA_SYMPLECTIC_DT_S")
+    gravity_backbone_dt_s = _parse_positive_float_opt(env_get("SPACEAGORA_GRAVITY_BACKBONE_DT_S", ""), "SPACEAGORA_GRAVITY_BACKBONE_DT_S")
 
-    split_imex_solver = try
-        _parse_split_imex_solver_sym(env_get("SPACEAGORA_SPLIT_IMEX_SOLVER", "kencarp4"))
-    catch
-        :kencarp4
-    end
+    split_imex_solver = _parse_split_imex_solver_sym(env_get("SPACEAGORA_SPLIT_IMEX_SOLVER", "kencarp4"))
 
-    multirate_slow_dt_s = _parse_float_opt(env_get("SPACEAGORA_MULTIRATE_SLOW_DT_S", ""))
+    multirate_slow_dt_s = _parse_positive_float_opt(env_get("SPACEAGORA_MULTIRATE_SLOW_DT_S", ""), "SPACEAGORA_MULTIRATE_SLOW_DT_S")
 
     multirate_fast_substeps = let v = tryparse(Int, env_get("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS", "8"))
-        (v !== nothing && v > 0) ? v : 8
+        v !== nothing || throw(ArgumentError("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS must be a positive integer."))
+        v > 0 || throw(ArgumentError("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS must be > 0, got $v."))
+        v
     end
 
-    multirate_slow_solver = try
-        _parse_multirate_solver_sym(env_get("SPACEAGORA_MULTIRATE_SLOW_SOLVER", "tsit5"), "SPACEAGORA_MULTIRATE_SLOW_SOLVER")
-    catch
-        :tsit5
-    end
-    multirate_fast_solver = try
-        _parse_multirate_solver_sym(env_get("SPACEAGORA_MULTIRATE_FAST_SOLVER", "auto_stiff"), "SPACEAGORA_MULTIRATE_FAST_SOLVER")
-    catch
-        :auto_stiff
-    end
+    multirate_slow_solver = _parse_multirate_solver_sym(env_get("SPACEAGORA_MULTIRATE_SLOW_SOLVER", "tsit5"), "SPACEAGORA_MULTIRATE_SLOW_SOLVER")
+    multirate_fast_solver = _parse_multirate_solver_sym(env_get("SPACEAGORA_MULTIRATE_FAST_SOLVER", "auto_stiff"), "SPACEAGORA_MULTIRATE_FAST_SOLVER")
 
     auto_stiff_gravity_tsit5 = SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5", true)
     auto_stiff_switch_max = SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_AUTO_STIFF_SWITCH_MAX", 50)

@@ -16,7 +16,6 @@ struct ClothArmBasePose
     quaternion::SVector{4, Float64}
 end
 
-"""Base pose for a cloth-arm kinematic chain in world coordinates."""
 ClothArmBasePose(position::Union{AbstractVector{<:Real}, NTuple{3, <:Real}}) =
     ClothArmBasePose(SVector{3, Float64}(position), _Q_IDENTITY)
 
@@ -232,7 +231,6 @@ end
 cloth_end_effector_pose(state::ClothArmState) =
     state.pose.end_effector_position, state.pose.end_effector_quaternion
 
-"""Return the end-effector position and orientation from a cloth-arm pose or state."""
 cloth_end_effector_pose(pose::ClothArmPose) =
     pose.end_effector_position, pose.end_effector_quaternion
 

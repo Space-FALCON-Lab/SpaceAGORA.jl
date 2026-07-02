@@ -1046,6 +1046,8 @@ module GuidanceSandbox
 using ..SimulationModel
 using ..SimulationModel.AbstractTypes: AbstractGuidanceModel
 using ComponentArrays
+using LinearAlgebra
+using StaticArrays
 end
 const GUIDANCE_SANDBOX = GuidanceSandbox
 

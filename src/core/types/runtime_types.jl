@@ -633,9 +633,10 @@ export GramTrackCache, VacuumPredictedGRAMCache, AeroScratchWorkspace, NBodyScra
         rhs_solar_prefilled::Base.RefValue{Bool} = Ref(false)
         rhs_harmonics_batch_pool::Base.RefValue{Any} = Ref{Any}(nothing)
         # Per-satellite atmosphere presence flag, maintained by get_drag_state_callback.
-        # Initialised false (above atmosphere); spacecraft_dynamics_implicit_atmosphere!
-        # short-circuits to du=0 when false, eliminating GRAM calls during coast arcs.
+        # The timestamp is NaN until the callback has staged a value for a known
+        # integrator time, so RHS code can distinguish current state from defaults.
         in_atmosphere::Vector{Bool} = fill(false, N_sats)
+        in_atmosphere_sample_t::Vector{Float64} = fill(NaN, N_sats)
         # Pre-solve calibration override: when non-nothing, _rhs_execution_plan returns
         # this plan directly, bypassing all heuristic routing logic.  Set by the
         # auto-calibration sweep in rhs_calibration.jl and cleared after the solve.

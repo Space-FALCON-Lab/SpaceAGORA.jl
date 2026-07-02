@@ -59,6 +59,11 @@ end
     return ODEProblem(spacecraft_dynamics!, u0, tspan, p, callback=callbacks)
 end
 
+@inline function _build_typed_solver_problem(u0, tspan, p, callbacks,
+    jac_prototype::Union{Nothing, SparseMatrixCSC{Float64, Int}}=nothing)
+    return _build_typed_solver_problem(u0, tspan, p, callbacks, _solver_policy_mode(_active_solver_config()), jac_prototype)
+end
+
 @inline function _append_backbone_saved_segment!(
     times_acc::Vector{Float64},
     data_acc::Vector{SimulationModel.SaveData},

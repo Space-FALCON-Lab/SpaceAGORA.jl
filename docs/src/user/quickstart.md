@@ -21,6 +21,7 @@ What to read next:
 
 - [Assets & Modes](../assets.md)
 - [First Simulation](first_simulation.md)
+- [Simulation Outputs](outputs.md)
 - [Recipes](recipes.md)
 
 ## What this run gives you
@@ -46,4 +47,5 @@ Move on as soon as one of these becomes true:
 
 - you need higher-fidelity assets or licensed data
 - you want to run a fuller scenario than the baseline no-GRAM example
+- you want to inspect the files written under `output/`
 - you want the verification study rather than a first smoke run

@@ -87,6 +87,7 @@ end
     active_config = _engine_active_config_ref[]
     active_config === nothing ? simulation_engine_config_from_env().solver : active_config.solver
 end
+@inline _solver_maxiters()::Union{Nothing, Int} = _solver_maxiters(_active_solver_config())
 
 @inline function _symplectic_fixed_dt_s(cfg::SolverConfig, args)::Float64
     dt = isnothing(cfg.symplectic_dt_s) ? args.integration_tolerances.dt_max_orbit : cfg.symplectic_dt_s
@@ -100,6 +101,7 @@ end
     dt > 0.0 || throw(ArgumentError("SolverConfig.gravity_backbone_dt_s must be > 0.0, got $dt."))
     return dt
 end
+@inline _gravity_backbone_fixed_dt_s(args)::Float64 = _gravity_backbone_fixed_dt_s(_active_solver_config(), args)
 
 @inline function _symplectic_conservative_eligible(args)::Bool
     args.mission_configuration.orientation_sim && return false
@@ -228,6 +230,7 @@ end
 @inline _split_imex_solver_spec() = _split_imex_solver_spec(_active_solver_config())
 
 @inline _multirate_fast_substeps(cfg::SolverConfig)::Int = cfg.multirate_fast_substeps
+@inline _multirate_fast_substeps()::Int = _multirate_fast_substeps(_active_solver_config())
 
 @inline function _multirate_slow_dt_s(cfg::SolverConfig, args)::Float64
     default_dt = min(args.integration_tolerances.dt_max_orbit, 2.0)
@@ -235,6 +238,7 @@ end
     dt > 0.0 || throw(ArgumentError("SolverConfig.multirate_slow_dt_s must be > 0.0, got $dt."))
     return min(dt, args.integration_tolerances.dt_max_orbit)
 end
+@inline _multirate_slow_dt_s(args)::Float64 = _multirate_slow_dt_s(_active_solver_config(), args)
 
 @inline function _multirate_solver_spec_from_sym(mode::Symbol, field_name::String)
     mode === :tsit5     && return (alg=Tsit5(), label="Tsit5", auto_switch_capable=false)
@@ -697,5 +701,17 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
         initial_solver="Tsit5",
         fallback_used=false,
         trigger_retcode=missing
+    )
+end
+
+function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol;
+    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing)
+    return _solve_with_solver_policy(
+        prob,
+        _active_solver_config(),
+        args,
+        reltol_tol,
+        abstol_tol;
+        solver_cache=solver_cache,
     )
 end

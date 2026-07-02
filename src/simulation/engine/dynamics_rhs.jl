@@ -1245,7 +1245,8 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
     totals = p.shared_buffers.rhs_flat_effector_totals[]
 
     SimulationModel.ParallelPolicy.threaded_foreach(length(sc_state), plan.allotment) do i
-        @inbounds if !p.is_active[i]
+        @inbounds if !p.is_active[i] ||
+                     (rhs_kind == :implicit && _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t))
             sc_du[i] .= 0.0
             return
         end
@@ -1784,6 +1785,31 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
     end
 end # function spacecraft_dynamics_slow!
 
+@inline function _drag_state_buffer_current(p, sat_idx::Int, t::Float64)::Bool
+    times = p.shared_buffers.in_atmosphere_sample_t
+    return sat_idx <= length(times) && times[sat_idx] == t
+end
+
+@inline function _spacecraft_outside_atmosphere_for_current_state(sc, p, sat_idx::Int, t::Float64)::Bool
+    if _drag_state_buffer_current(p, sat_idx, t)
+        return !p.shared_buffers.in_atmosphere[sat_idx]
+    end
+
+    planet_frame = p.shared_buffers.rhs_planet_frame_prefilled[] ?
+        sample_buffered_planet_frame(p, sat_idx) :
+        sample_planet_frame(sc, p, sat_idx, t)
+    isfinite(planet_frame.alt_m) || return false
+    return planet_frame.alt_m > p.args.environment_model.EI * 1e3
+end
+
+@inline function _all_active_spacecraft_outside_atmosphere(sc_state, p, t::Float64)::Bool
+    @inbounds for i in eachindex(sc_state)
+        p.is_active[i] || continue
+        _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t) || return false
+    end
+    return true
+end
+
 function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     sc_state = u.sc
     sc_du = du.sc
@@ -1791,17 +1817,12 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
     dynamic_effectors = dynamics_model.dynamic_effectors
     spacecraft = dynamics_model.spacecraft
     p.shared_buffers.current_time[] = t
-    # Fast path: if no active satellite is in the atmosphere, all implicit drag
-    # terms are zero.  This eliminates GRAM calls and Newton Jacobian perturbations
-    # during coast arcs (the vast majority of an aerobraking mission).
-    any_in_atm = false
-    @inbounds for i in eachindex(p.is_active)
-        if p.is_active[i] && p.shared_buffers.in_atmosphere[i]
-            any_in_atm = true
-            break
-        end
-    end
-    if !any_in_atm
+    # Fast path: if the current state proves that no active spacecraft is inside
+    # the atmosphere, all implicit drag terms are zero.  We only trust the staged
+    # drag-state flag when it was stamped for this RHS time; otherwise we derive
+    # the decision from the current altitude to avoid skipping first-step or
+    # direct RHS evaluations that start inside the entry interface.
+    if _all_active_spacecraft_outside_atmosphere(sc_state, p, t)
         du .= 0.0
         return nothing
     end
@@ -1825,7 +1846,7 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(sc_state)
-            if !p.is_active[i] || !p.shared_buffers.in_atmosphere[i]
+            if !p.is_active[i] || _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t)
                 sc_du[i] .= 0.0
                 continue
             end
@@ -1859,7 +1880,7 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
         end
     else
         @inbounds for i in eachindex(sc_state)
-            if !p.is_active[i] || !p.shared_buffers.in_atmosphere[i]
+            if !p.is_active[i] || _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t)
                 sc_du[i] .= 0.0
                 continue
             end

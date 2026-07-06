@@ -639,15 +639,23 @@ end
 # reading shared-environment data (ephemeris, sun position) that was prefilled
 # once by _prefill_shared_body_samples!.  The pre-pass writes directly into the
 # totals matrix, and those effectors are skipped in the per-(sat,effector) flat
-# queue.  This eliminates per-item channel/worker dispatch overhead for NBody and
-# SRP, which are the dominant cost for high-thread-count constellations once the
-# ephemeris cache is warm.
+# queue.  This eliminates per-item channel/worker dispatch overhead for NBody,
+# SRP, and inverse-square gravity, which is the dominant cost for high-thread-count
+# constellations once the ephemeris cache is warm (NBody/SRP) or the whole point
+# for a kernel too cheap to ever amortise per-item dispatch (inverse-square gravity).
 #
 # GRAM/aero are NOT batchable: density is altitude/location-dependent per
 # satellite and mutable model state prevents safe cross-satellite sharing.
+#
+# Inverse-square gravity is only batchable when it produces no torque: the batch
+# kernel writes force only, so a model configured with `gravity_gradient=true`
+# (which needs the per-satellite quaternion) must keep going through the
+# per-satellite wrench path instead.
 @inline _batchable_effector(::Any)::Bool = false
 @inline _batchable_effector(::SimulationModel.NBodyGravityModel)::Bool = true
 @inline _batchable_effector(::SimulationModel.SolarRadiationPressureModel)::Bool = true
+@inline _batchable_effector(effector::SimulationModel.InverseSquaredGravityModel)::Bool = !effector.gravity_gradient
+@inline _batchable_effector(effector::SimulationModel.InverseSquaredJ2GravityModel)::Bool = !effector.gravity_gradient
 
 @inline function _has_any_batchable_effector(effectors::Tuple)::Bool
     @inbounds for e in effectors
@@ -795,6 +803,70 @@ function _accumulate_srp_flat_batch!(
     return nothing
 end
 
+# Inverse-square gravity batch pre-pass: no shared ephemeris lookup to hoist (the
+# primary is at the frame origin), so the win here is purely eliminating
+# per-satellite Polyester/flat-queue dispatch for a kernel whose body is a few
+# FLOPs — too cheap to ever amortise task-spawn overhead. Delegates to the same
+# `_inverse_squared_gravity_accel` helper used by `calcForceTorque`/`wrench`, so
+# results are bit-identical to the per-satellite path.
+function _accumulate_invsq_flat_batch!(
+    totals::Matrix{Float64},
+    effector::SimulationModel.InverseSquaredGravityModel,
+    pos_buffers::Vector{SVector{3, Float64}},
+    mass_buffers::Vector{Float64},
+    active_flags,
+    p,
+    t::Float64,
+    num_sats::Int,
+)::Nothing
+    planet = p.args.environment_model.planet
+    grav = SimulationModel.DynamicEffectors.GravityEffectors
+    @inbounds for sat_idx in 1:num_sats
+        active_flags[sat_idx] || continue
+        pos_ii = pos_buffers[sat_idx]
+        mass   = mass_buffers[sat_idx]
+        accel  = grav._inverse_squared_gravity_accel(pos_ii, planet)
+        totals[1, sat_idx] += mass * accel[1]
+        totals[2, sat_idx] += mass * accel[2]
+        totals[3, sat_idx] += mass * accel[3]
+        # torques[4..6] stay zero (only reached when !effector.gravity_gradient)
+    end
+    return nothing
+end
+
+# Inverse-square + J2 gravity batch pre-pass: J2 needs the position in the
+# planet-fixed frame, so l_pi (inertial->planet rotation) is computed once per
+# RHS call — analogous to the harmonics pre-pass computing lpi once instead of
+# per satellite — then the per-satellite loop is a tight, allocation-free scalar
+# sweep with no further shared lookups.
+function _accumulate_invsq_j2_flat_batch!(
+    totals::Matrix{Float64},
+    effector::SimulationModel.InverseSquaredJ2GravityModel,
+    pos_buffers::Vector{SVector{3, Float64}},
+    mass_buffers::Vector{Float64},
+    active_flags,
+    p,
+    t::Float64,
+    num_sats::Int,
+)::Nothing
+    planet = p.args.environment_model.planet
+    l_pi = _planet_lpi_at_engine(p, t)
+    grav = SimulationModel.DynamicEffectors.GravityEffectors
+    @inbounds for sat_idx in 1:num_sats
+        active_flags[sat_idx] || continue
+        pos_ii = pos_buffers[sat_idx]
+        mass   = mass_buffers[sat_idx]
+        pos_pp = SVector{3, Float64}(l_pi * pos_ii)
+        accel_pp = grav._inverse_squared_j2_gravity_accel(pos_pp, planet)
+        accel_ii = l_pi' * accel_pp
+        totals[1, sat_idx] += mass * accel_ii[1]
+        totals[2, sat_idx] += mass * accel_ii[2]
+        totals[3, sat_idx] += mass * accel_ii[3]
+        # torques[4..6] stay zero (only reached when !effector.gravity_gradient)
+    end
+    return nothing
+end
+
 # Dispatch to the appropriate batch kernel for a single batchable effector.
 @inline function _accumulate_batchable_effector_flat!(
     totals::Matrix{Float64},
@@ -810,6 +882,10 @@ end
         return _accumulate_nbody_flat_batch!(totals, effector, pos_buffers, mass_buffers, active_flags, p, t, num_sats)
     elseif effector isa SimulationModel.SolarRadiationPressureModel
         return _accumulate_srp_flat_batch!(totals, effector, pos_buffers, mass_buffers, active_flags, p, t, num_sats)
+    elseif effector isa SimulationModel.InverseSquaredGravityModel
+        return _accumulate_invsq_flat_batch!(totals, effector, pos_buffers, mass_buffers, active_flags, p, t, num_sats)
+    elseif effector isa SimulationModel.InverseSquaredJ2GravityModel
+        return _accumulate_invsq_j2_flat_batch!(totals, effector, pos_buffers, mass_buffers, active_flags, p, t, num_sats)
     end
     return nothing
 end

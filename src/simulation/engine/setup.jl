@@ -716,9 +716,10 @@ end
 
 @inline function _rhs_flat_supported(dynamic_effectors::Tuple)::Bool
     if length(dynamic_effectors) == 1
-        return dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
-            _dynamic_effector_threadsafe(dynamic_effectors[1]) &&
-            _rhs_harmonics_batch_enabled()
+        return (dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
+                _dynamic_effector_threadsafe(dynamic_effectors[1]) &&
+                _rhs_harmonics_batch_enabled()) ||
+            _rhs_single_invsq_flat_supported(dynamic_effectors)
     end
     return length(dynamic_effectors) > 1 && _dynamic_effectors_parallel_supported(dynamic_effectors)
 end
@@ -728,6 +729,26 @@ end
         dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
         _dynamic_effector_threadsafe(dynamic_effectors[1]) &&
         _rhs_harmonics_batch_enabled()
+end
+
+# Single-effector fast path for plain (J2-)inverse-square gravity, mirroring
+# _rhs_single_harmonics_flat_supported. Unlike harmonics, there is no coefficient
+# table to batch over — the payoff is routing around per-satellite Polyester
+# dispatch entirely in favor of the serial batchable-effector pre-pass
+# (_accumulate_invsq_flat_batch!/_accumulate_invsq_j2_flat_batch!), whose per-item
+# cost is too small to ever amortise task-spawn overhead. Excluded when
+# `gravity_gradient=true` since the batch kernel writes force only.
+@inline function _rhs_single_invsq_flat_supported(dynamic_effectors::Tuple)::Bool
+    length(dynamic_effectors) == 1 || return false
+    effector = dynamic_effectors[1]
+    return (effector isa SimulationModel.InverseSquaredGravityModel ||
+            effector isa SimulationModel.InverseSquaredJ2GravityModel) &&
+        !effector.gravity_gradient &&
+        _dynamic_effector_threadsafe(effector)
+end
+
+@inline function _rhs_invsq_flat_min_sats()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_INVSQ_FLAT_MIN_SATS", 8)
 end
 
 @inline function _rhs_effectors_have_heavy_or_heterogeneous_cost(dynamic_effectors::Tuple)::Bool
@@ -852,6 +873,25 @@ end
                 effector_decision=_with_serial_effector_decision(effector_decision),
             )
         end
+    end
+
+    # Single inverse-square (J2-)gravity fast path: the effector body is a few
+    # FLOPs, far too cheap to ever amortise Polyester per-satellite task-spawn
+    # overhead (unlike harmonics, there's no per-worker SIMD batch to size —
+    # the win is entirely from replacing satellite_batch's per-task effector
+    # dispatch with a single serial pre-pass). Threading is reserved for the
+    # subsequent per-satellite RHS-assembly pass, which every route (including
+    # satellite_batch) already parallelizes.
+    single_invsq_flat = _rhs_single_invsq_flat_supported(dynamic_effectors)
+    if single_invsq_flat && active_sats >= _rhs_invsq_flat_min_sats() && active_sats > 1
+        return (
+            mode=:flat_constellation_effector_queue,
+            allotment=min(max(1, budget), active_sats),
+            scheduler=:dynamic,
+            dominant_axis=:flat_effector,
+            policy_applied=true,
+            effector_decision=_with_serial_effector_decision(effector_decision),
+        )
     end
 
     # Safety: not enough satellites, threads, or thread-safe effectors for any

@@ -186,8 +186,15 @@ Compared to propagating the constellation as one coupled state vector, this
 dispatches each satellite to a worker once for its entire propagation (instead
 of paying per-timestep thread dispatch across satellites) and lets each
 satellite keep its own adaptive step size (instead of forcing every satellite
-to the global minimum step). For light per-satellite dynamics this is the
-difference between near-linear outer scaling and no speedup at all.
+to the global minimum step).
+
+Current limitation: with in-process worker threads, per-step
+environment-variable configuration reads in the RHS and callback plumbing
+serialize concurrent members (Julia `ENV` access is process-global), which can
+erase the outer-parallel gain for light dynamics. Until those reads are hoisted
+to run setup, prefer process-based outer parallelism for large campaigns — the
+per-satellite split applies the same way with one satellite per worker process
+(see [Distributed and HPC](../distributed_hpc.md)).
 
 The runner refuses configurations with guidance, navigation, or control
 effectors, because effectors that coordinate satellites cannot act across

@@ -138,10 +138,17 @@ SpaceAGORA wrapper around a GRAMSuite atmosphere model that preserves
 `AbstractDensityModel` dispatch compatibility. The `core` field holds the
 underlying GRAMSuite model object; constructors are provided by the
 `SpaceAGORAGRAMSuiteExt` package extension when GRAMSuite is loaded.
+
+`instance_lock` serializes native GRAM calls against this wrapper instance when
+`SPACEAGORA_GRAM_LOCK_SCOPE=model` is active (see [`_gram_lock_scope`](@ref));
+each construction (including `deepcopy`) gets a fresh lock.
 """
 struct GRAMAtmosphereModel <: AbstractDensityModel
     core
+    instance_lock::ReentrantLock
 end
+
+GRAMAtmosphereModel(core) = GRAMAtmosphereModel(core, ReentrantLock())
 
 @kwdef struct ConstantDensityModel <: AbstractDensityModel
     density_kg_m3::Float64
@@ -354,15 +361,15 @@ function NRLMSISE00AtmosphereModel(;
 end
 
 @inline function Base.getproperty(model::GRAMAtmosphereModel, name::Symbol)
-    if name === :core
-        return getfield(model, :core)
+    if name === :core || name === :instance_lock
+        return getfield(model, name)
     end
     return getproperty(getfield(model, :core), name)
 end
 
 @inline function Base.propertynames(model::GRAMAtmosphereModel, private::Bool=false)
     wrapped = propertynames(getfield(model, :core), private)
-    return (:core, wrapped...)
+    return (:core, :instance_lock, wrapped...)
 end
 
 @inline function Base.getproperty(model::GRAMAtmosphereModelSurrogate, name::Symbol)
@@ -375,6 +382,31 @@ end
 @inline function Base.propertynames(model::GRAMAtmosphereModelSurrogate, private::Bool=false)
     wrapped = propertynames(getfield(model, :base_model), private)
     return (:base_model, :surrogate_file, :point_fallback_below_m, wrapped...)
+end
+
+"""
+    _gram_lock_scope() -> Symbol
+
+Which lock serializes native GRAM density calls: `:global` (default) contends on
+the single `RuntimeServices.GRAM_LOCK` process-wide, `:model`
+(`SPACEAGORA_GRAM_LOCK_SCOPE=model`) contends only on the wrapper's own
+`instance_lock`, so distinct [`GRAMAtmosphereModel`](@ref) instances evaluate
+concurrently. `:model` relies on the same safety premise as the isolated-pool
+batch path (`SPACEAGORA_GRAM_ISOLATED_POOL`): independent GRAM model instances
+may be called concurrently as long as each single instance is serialized.
+Threaded Monte Carlo campaigns whose samples build their own GRAM models need
+`:model` to scale; with `:global` all samples serialize on one lock.
+"""
+@inline function _gram_lock_scope()::Symbol
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_GRAM_LOCK_SCOPE", "global")))
+    if raw == "" || raw == "global"
+        return :global
+    elseif raw == "model" || raw == "per_model" || raw == "per-model" || raw == "instance"
+        return :model
+    end
+    throw(ArgumentError(
+        "Unsupported SPACEAGORA_GRAM_LOCK_SCOPE='$raw'. Use one of: global, model."
+    ))
 end
 
 # These Refs are set by SpaceAGORAGRAMSuiteExt when GRAMSuite is loaded.

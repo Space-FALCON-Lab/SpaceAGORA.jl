@@ -265,37 +265,37 @@ mutable struct SolverIntegratorCache
     SolverIntegratorCache() = new(nothing)
 end
 
+# Solver save knobs go through the _engine_env_get adapter (overrides → ENV →
+# default), keeping ENV access out of this file per the architecture contract.
 @inline function _solver_save_everystep()::Bool
-    name = "SPACEAGORA_SOLVER_SAVE_EVERYSTEP"
-    active_overrides = _engine_active_overrides_ref[]
-    raw_value = if active_overrides !== nothing && haskey(active_overrides, name)
-        get(active_overrides, name, "true")
-    else
-        get(ENV, name, "true")
-    end
-    raw = lowercase(strip(String(raw_value)))
+    raw = lowercase(strip(_engine_env_get_with_env_fallback("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", "true")))
     return raw in ("1", "true", "yes", "on")
 end
 
 @inline function _solver_bool_env(name::String, default::Bool)::Bool
-    active_overrides = _engine_active_overrides_ref[]
-    raw_value = if active_overrides !== nothing && haskey(active_overrides, name)
-        get(active_overrides, name, default ? "true" : "false")
-    else
-        get(ENV, name, default ? "true" : "false")
-    end
-    raw = lowercase(strip(String(raw_value)))
+    raw = lowercase(strip(_engine_env_get_with_env_fallback(name, default ? "true" : "false")))
     return raw in ("1", "true", "yes", "on")
 end
 
 @inline function _solve_with_explicit_solver(prob, cfg::SolverConfig, args, alg, reltol_tol, abstol_tol;
     dtmax_override::Union{Nothing, Float64}=nothing,
-    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing)
+    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
+    needs_full_solution::Bool=true)
     maxiters = _solver_maxiters(cfg)
     dtmax_use = isnothing(dtmax_override) ? args.integration_tolerances.dt_max_orbit : dtmax_override
     dtmax_use > 0.0 || throw(ArgumentError("Solver dtmax must be > 0.0, got $dtmax_use."))
-    save_everystep = _solver_save_everystep()
-    save_on = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_ON", true)
+    # When nothing reads the trajectory (return_solution=false, results=false, no
+    # solver metadata), skip per-step solution/dense storage — it is the dominant
+    # solver-side allocation in campaign runs.  save_on must be gated too: the
+    # per-step DiscreteCallbacks save before/after states via save_positions
+    # regardless of save_everystep.  save_start/save_end stay on so endpoints
+    # and retcode remain available.  Explicitly set SPACEAGORA_SOLVER_SAVE_*
+    # env vars still win (documented env semantics); DiffEq derives dense
+    # output from save_everystep, so no dense kwarg is needed.
+    save_everystep = _engine_env_haskey_with_env_fallback("SPACEAGORA_SOLVER_SAVE_EVERYSTEP") ?
+        _solver_save_everystep() : needs_full_solution
+    save_on = _engine_env_haskey_with_env_fallback("SPACEAGORA_SOLVER_SAVE_ON") ?
+        _solver_bool_env("SPACEAGORA_SOLVER_SAVE_ON", true) : needs_full_solution
     save_start = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_START", true)
     save_end = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_END", true)
 
@@ -328,7 +328,8 @@ end
 
 @inline function _solve_with_explicit_solver(prob, args, alg, reltol_tol, abstol_tol;
     dtmax_override::Union{Nothing, Float64}=nothing,
-    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing)
+    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
+    needs_full_solution::Bool=true)
     return _solve_with_explicit_solver(
         prob,
         _active_solver_config(),
@@ -338,13 +339,17 @@ end
         abstol_tol;
         dtmax_override=dtmax_override,
         solver_cache=solver_cache,
+        needs_full_solution=needs_full_solution,
     )
 end
 
-@inline function _solve_with_fixed_step_solver(prob, cfg::SolverConfig, alg, dt_s::Float64)
+@inline function _solve_with_fixed_step_solver(prob, cfg::SolverConfig, alg, dt_s::Float64;
+    needs_full_solution::Bool=true)
     maxiters = _solver_maxiters(cfg)
-    save_everystep = _solver_save_everystep()
-    save_on = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_ON", true)
+    save_everystep = _engine_env_haskey_with_env_fallback("SPACEAGORA_SOLVER_SAVE_EVERYSTEP") ?
+        _solver_save_everystep() : needs_full_solution
+    save_on = _engine_env_haskey_with_env_fallback("SPACEAGORA_SOLVER_SAVE_ON") ?
+        _solver_bool_env("SPACEAGORA_SOLVER_SAVE_ON", true) : needs_full_solution
     save_start = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_START", true)
     save_end = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_END", true)
     if maxiters === nothing
@@ -589,7 +594,8 @@ function _solve_with_gravity_backbone_solver(prob, cfg::SolverConfig, args)
 end
 
 function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, abstol_tol;
-    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing)
+    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
+    needs_full_solution::Bool=true)
     mode = _solver_policy_mode(cfg)
     if mode == :symplectic
         _symplectic_conservative_eligible(args) || throw(ArgumentError(
@@ -598,7 +604,7 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
         _is_partitioned_second_order_problem(prob) || throw(ArgumentError(
             "SolverConfig.solver_mode=:symplectic requires a partitioned SecondOrderODEProblem. The typed run_simulation path still builds a first-order ODEProblem, so use :tsit5/:auto_stiff there until a partitioned runtime path is added."
         ))
-        sol = _solve_with_fixed_step_solver(prob, cfg, KahanLi8(), _symplectic_fixed_dt_s(cfg, args))
+        sol = _solve_with_fixed_step_solver(prob, cfg, KahanLi8(), _symplectic_fixed_dt_s(cfg, args); needs_full_solution=needs_full_solution)
         return sol, (
             solver="KahanLi8(Symplectic)",
             initial_solver="KahanLi8",
@@ -630,7 +636,7 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
         Rodas5P(autodiff=AutoFiniteDiff())
 
     if mode == :rodas5p
-        sol = _solve_with_explicit_solver(prob, cfg, args, _rodas5p_alg(), reltol_tol, abstol_tol; solver_cache=solver_cache)
+        sol = _solve_with_explicit_solver(prob, cfg, args, _rodas5p_alg(), reltol_tol, abstol_tol; solver_cache=solver_cache, needs_full_solution=needs_full_solution)
         return sol, (
             solver="Rodas5P",
             initial_solver="Rodas5P",
@@ -641,7 +647,7 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
 
     if mode == :auto_stiff
         if _auto_stiff_smooth_gravity_eligible(cfg, args)
-            sol = _solve_with_explicit_solver(prob, cfg, args, Tsit5(), reltol_tol, abstol_tol; solver_cache=solver_cache)
+            sol = _solve_with_explicit_solver(prob, cfg, args, Tsit5(), reltol_tol, abstol_tol; solver_cache=solver_cache, needs_full_solution=needs_full_solution)
             return sol, (
                 solver="Tsit5",
                 initial_solver="Tsit5",
@@ -653,6 +659,8 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
         # True stiffness-aware autoswitching handled internally by OrdinaryDiffEq.
         # This replaces the manual "retry with Rodas5P on Tsit5 failure" policy.
         autoswitch_alg = AutoTsit5(_rodas5p_alg(); switch_max=_auto_stiff_switch_max(cfg))
+        # Keep per-step storage here regardless of needs_full_solution:
+        # _auto_stiff_switched inspects sol.alg_choice across saved steps.
         sol = _solve_with_explicit_solver(prob, cfg, args, autoswitch_alg, reltol_tol, abstol_tol; solver_cache=solver_cache)
         switched = _auto_stiff_switched(sol)
         return sol, (
@@ -665,7 +673,7 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
 
     if mode == :split_imex
         split_solver = _split_imex_solver_spec(cfg)
-        sol = _solve_with_explicit_solver(prob, cfg, args, split_solver.alg, reltol_tol, abstol_tol; solver_cache=solver_cache)
+        sol = _solve_with_explicit_solver(prob, cfg, args, split_solver.alg, reltol_tol, abstol_tol; solver_cache=solver_cache, needs_full_solution=needs_full_solution)
         return sol, (
             solver="$(split_solver.label)(IMEX)",
             initial_solver=split_solver.label,
@@ -686,7 +694,7 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
     end
 
     if mode == :dp8
-        sol = _solve_with_explicit_solver(prob, cfg, args, DP8(), reltol_tol, abstol_tol; solver_cache=solver_cache)
+        sol = _solve_with_explicit_solver(prob, cfg, args, DP8(), reltol_tol, abstol_tol; solver_cache=solver_cache, needs_full_solution=needs_full_solution)
         return sol, (
             solver="DP8",
             initial_solver="DP8",
@@ -695,7 +703,7 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
         )
     end
 
-    tsit_sol = _solve_with_explicit_solver(prob, cfg, args, Tsit5(), reltol_tol, abstol_tol; solver_cache=solver_cache)
+    tsit_sol = _solve_with_explicit_solver(prob, cfg, args, Tsit5(), reltol_tol, abstol_tol; solver_cache=solver_cache, needs_full_solution=needs_full_solution)
     return tsit_sol, (
         solver="Tsit5",
         initial_solver="Tsit5",
@@ -705,7 +713,8 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
 end
 
 function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol;
-    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing)
+    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
+    needs_full_solution::Bool=true)
     return _solve_with_solver_policy(
         prob,
         _active_solver_config(),
@@ -713,5 +722,6 @@ function _solve_with_solver_policy(prob, args, reltol_tol, abstol_tol;
         reltol_tol,
         abstol_tol;
         solver_cache=solver_cache,
+        needs_full_solution=needs_full_solution,
     )
 end

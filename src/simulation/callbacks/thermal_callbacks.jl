@@ -68,7 +68,7 @@ function get_thermal_callback(num_sats::Int, args::SimulationConfiguration)
     function affect!(integrator)
         p = integrator.p
         u = integrator.u
-        decision = _thermal_callback_thread_decision(num_sats)
+        decision = _thermal_callback_thread_decision(p, num_sats)
         use_threads = decision.use_threads
         started_ns = time_ns()
         if use_threads

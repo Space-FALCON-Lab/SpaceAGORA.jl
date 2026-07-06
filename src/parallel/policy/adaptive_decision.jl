@@ -6,11 +6,13 @@
     heavy_only::Bool=false,
     outer_active::Bool=false,
     allow_with_outer::Bool=true,
-    source::Symbol=:other
+    source::Symbol=:other,
+    env::Union{Nothing, PolicyDecisionEnvConfig}=nothing
 )
-    budget = effective_inner_thread_budget()
-    auto_budget_allowed = mode != :auto || budget >= auto_thread_min_budget(source)
-    adaptive_enabled = (mode == :auto) && adaptive_policy_enabled()
+    budget = env === nothing ? effective_inner_thread_budget() : env.inner_thread_budget
+    min_auto_budget = env === nothing ? auto_thread_min_budget(source) : _snapshot_auto_min_budget(env, source)
+    auto_budget_allowed = mode != :auto || budget >= min_auto_budget
+    adaptive_enabled = (mode == :auto) && (env === nothing ? adaptive_policy_enabled() : env.adaptive_enabled)
     measured_reward = adaptive_enabled && persistent_hints_enabled() && adaptive_measured_reward_enabled()
     bootstrap_threads = adaptive_enabled && adaptive_bootstrap_threads()
     control_tail_guard = adaptive_enabled && adaptive_control_tail_guard()

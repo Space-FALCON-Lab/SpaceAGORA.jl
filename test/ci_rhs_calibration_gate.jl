@@ -84,8 +84,11 @@ occursin("count(identity, p.is_active) < 2 && return", calib_src) ||
 
 occursin("rhs_plan_override", types_src) ||
     error("rhs_plan_override field is missing from SharedBuffers in runtime_types.jl")
-occursin("Base.RefValue{Any}", types_src) ||
-    error("rhs_plan_override is not typed as Base.RefValue{Any} in runtime_types.jl")
+# Concretely typed Ref: a Ref{Any} here made the plan infer as Any in the RHS,
+# boxing every plan access and re-boxing ODEParams per dynamics call (see
+# RhsExecutionPlan in runtime_types.jl).
+occursin("rhs_plan_override::Base.RefValue{Union{Nothing, RhsExecutionPlan}}", types_src) ||
+    error("rhs_plan_override is not typed as Base.RefValue{Union{Nothing, RhsExecutionPlan}} in runtime_types.jl")
 
 # ── §7: Override check present at top of _rhs_execution_plan (setup.jl) ──────
 

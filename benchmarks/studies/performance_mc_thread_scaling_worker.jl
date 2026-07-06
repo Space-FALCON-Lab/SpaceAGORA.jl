@@ -32,11 +32,12 @@ const _MCTSW_RA_ALT_M = 2_000e3
 const _MCTSW_CASE_ID  = "mars_twobody_rp125km_ra2000km"
 
 # Returns an Expr that, when eval'd on a worker that has already loaded common.jl,
-# defines _mctsw_worker_run(n_orbits) -> elapsed_seconds. Each worker builds its own
-# config locally (no serialisation of SPICE-dependent structs across processes).
+# defines _mctsw_worker_run(n_orbits) -> (elapsed_seconds, gc_seconds). Each worker
+# builds its own config locally (no serialisation of SPICE-dependent structs across
+# processes).
 function _mctsw_worker_fn_expr(rp_alt_m::Float64, ra_alt_m::Float64)::Expr
     return quote
-        function _mctsw_worker_run(n_orbits::Int)::Float64
+        function _mctsw_worker_run(n_orbits::Int)::Tuple{Float64, Float64}
             planet = Mars("", SPICE_PATH)
             spacecraft = make_three_body_spacecraft(
                 bus_dims=(2.2, 2.6, 1.7),
@@ -72,7 +73,8 @@ function _mctsw_worker_fn_expr(rp_alt_m::Float64, ra_alt_m::Float64)::Expr
                 results=false,
                 results_directory="",
             )
-            return @elapsed run_simulation(cfg; return_solution=false, isolate_state=false)
+            stats = @timed run_simulation(cfg; return_solution=false, isolate_state=false)
+            return (stats.time, stats.gctime)
         end
         nothing
     end
@@ -82,13 +84,16 @@ function main()
     n_workers = parse(Int, get(ENV, "SPACEAGORA_MC_DIST_NWORKERS",
                                string(Threads.nthreads())))
     n_orbits  = parse(Int, get(ENV, "SPACEAGORA_MC_THREAD_NORBITS", "30"))
+    n_batches = parse(Int, get(ENV, "SPACEAGORA_MC_THREAD_BATCHES", "1"))
+    n_batches >= 1 || error("SPACEAGORA_MC_THREAD_BATCHES must be >= 1, got $(n_batches)")
     outdir    = strip(get(ENV, "SPACEAGORA_MC_THREAD_OUTDIR", "."))
     sysimage  = strip(get(ENV, "SPACEAGORA_MC_THREAD_SYSIMAGE", ""))
     project   = _MCTSW_REPO_ROOT
     common_jl = joinpath(project, "examples", "common.jl")
+    n_cases   = n_workers * n_batches
 
-    @printf("[mc-ts-worker n=%d] norbits=%d  starting %d distributed worker(s)...\n",
-            n_workers, n_orbits, n_workers)
+    @printf("[mc-ts-worker n=%d] norbits=%d  batches/worker=%d  starting %d distributed worker(s)...\n",
+            n_workers, n_orbits, n_batches, n_workers)
     flush(stdout)
 
     # Mirror the exeflags pattern from aerobraking_perturbation_mc/main.jl.
@@ -143,11 +148,12 @@ function main()
     @printf("[mc-ts-worker n=%d] warmup done\n", n_workers)
     flush(stdout)
 
-    @printf("[mc-ts-worker n=%d] launching %d concurrent case(s) on distributed workers...\n",
-            n_workers, n_workers)
+    @printf("[mc-ts-worker n=%d] launching %d case(s) on %d distributed workers...\n",
+            n_workers, n_cases, n_workers)
     flush(stdout)
 
-    case_times_s = Vector{Float64}(undef, n_workers)
+    case_times_s = Vector{Float64}(undef, n_cases)
+    case_gc_s    = Vector{Float64}(undef, n_cases)
     next_case    = Threads.Atomic{Int}(1)
 
     # Work-stealing dispatch loop: mirrors _run_samples_distributed in study.jl.
@@ -157,10 +163,12 @@ function main()
             task = @async begin
                 while true
                     idx = Threads.atomic_add!(next_case, 1)
-                    idx > n_workers && break
-                    case_times_s[idx] = remotecall_fetch(
+                    idx > n_cases && break
+                    t_i, gc_i = remotecall_fetch(
                         Core.eval, w, Main, :(_mctsw_worker_run($n_orbits)),
                     )
+                    case_times_s[idx] = t_i
+                    case_gc_s[idx]    = gc_i
                 end
             end
             push!(worker_tasks, task)
@@ -168,8 +176,9 @@ function main()
         foreach(wait, worker_tasks)
     end
 
-    time_per_case_s = wall_s / n_workers
-    throughput      = n_workers / wall_s
+    time_per_case_s = wall_s / n_cases
+    throughput      = n_cases / wall_s
+    mean_gc_pct     = 100.0 * sum(case_gc_s) / max(sum(case_times_s), eps())
 
     @printf(
         "[mc-ts-worker n=%d] done  wall=%.3f s  time_per_case=%.3f s  throughput=%.3f cases/s\n",
@@ -180,6 +189,8 @@ function main()
     row = (
         julia_threads       = n_workers,
         n_concurrent        = n_workers,
+        n_cases             = n_cases,
+        batches_per_worker  = n_batches,
         wall_time_s         = wall_s,
         time_per_case_s     = time_per_case_s,
         throughput_cases_s  = throughput,
@@ -187,6 +198,7 @@ function main()
         min_case_s          = minimum(case_times_s),
         max_case_s          = maximum(case_times_s),
         imbalance_pct       = 100.0 * (maximum(case_times_s) - minimum(case_times_s)) / mean(case_times_s),
+        mean_gc_pct         = mean_gc_pct,
         n_orbits            = n_orbits,
         case_id             = _MCTSW_CASE_ID,
     )

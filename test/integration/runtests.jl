@@ -1058,7 +1058,7 @@ const GUIDANCE_SANDBOX = GuidanceSandbox
 # immediately: Test.jl only raises once the outermost testset below finishes,
 # so every suite always runs to completion and CI surfaces every failure from
 # a single run instead of stopping at the first one.
-@testset "SpaceAGORA Suite Files" begin
+@testset verbose=true "SpaceAGORA Suite Files" begin
     @testset "01 Contract and API Tests" begin
         include(joinpath(REPO_ROOT, "test", "suites", "01_contract_and_api_tests.jl"))
     end

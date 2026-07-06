@@ -7,6 +7,28 @@ module Planets
     export Earth, Mars, Venus, Moon, Titan
     const SPICE_LOCK = parentmodule(parentmodule(@__MODULE__)).RuntimeServices.SPICE_LOCK
     const MARS_MU_M3S2 = 0.4282837285418775e5 * 1e9
+
+    # Planet constructors (Earth(), Mars(), ...) are called once per case setup, but
+    # some callers (e.g. Monte Carlo sample loops that build a fresh mission config
+    # per trial) call them many times per process. `furnsh` has no cheap "already
+    # loaded" check of its own and CSPICE's kernel table is a fixed-size global
+    # resource with no automatic eviction, so reloading the same kernel path
+    # thousands of times in one process without ever unloading eventually exhausts
+    # it ("Insufficient dynamic kernel table space" / "too many kernels loaded").
+    # Track furnished paths here so repeat construction is a cheap no-op instead of
+    # a repeat furnsh call.
+    const _FURNISHED_KERNELS = Set{String}()
+
+    @inline function _furnsh_once(kernel_path::String)
+        resolved = abspath(kernel_path)
+        lock(SPICE_LOCK) do
+            resolved in _FURNISHED_KERNELS && return nothing
+            furnsh(resolved)
+            push!(_FURNISHED_KERNELS, resolved)
+            return nothing
+        end
+        return nothing
+    end
     δ(i, j) = ==(i, j)
 
     @kwdef mutable struct TopographyHarmonicsWorkspace
@@ -163,7 +185,7 @@ module Planets
     @inline function _furnsh_required(spice_path::String, relpath::String)
         kernel_path = joinpath(spice_path, relpath)
         isfile(kernel_path) || throw(ArgumentError("Required SPICE kernel not found: $kernel_path"))
-        furnsh(kernel_path)
+        _furnsh_once(kernel_path)
         return kernel_path
     end
 
@@ -171,7 +193,7 @@ module Planets
         for relpath in relpaths
             kernel_path = joinpath(spice_path, relpath)
             if isfile(kernel_path)
-                furnsh(kernel_path)
+                _furnsh_once(kernel_path)
                 return kernel_path
             end
         end
@@ -182,7 +204,7 @@ module Planets
         for relpath in relpaths
             kernel_path = joinpath(spice_path, relpath)
             if isfile(kernel_path)
-                furnsh(kernel_path)
+                _furnsh_once(kernel_path)
                 return kernel_path
             end
         end
@@ -218,7 +240,7 @@ module Planets
         )
             kernel_path = joinpath(spice_path, relpath)
             if isfile(kernel_path)
-                furnsh(kernel_path)
+                _furnsh_once(kernel_path)
                 return kernel_path
             end
         end
@@ -282,7 +304,7 @@ module Planets
         for relpath in ("pck/pck00011.tpc", "pck/pck00010.tpc")
             kernel_path = joinpath(spice_path, relpath)
             if isfile(kernel_path)
-                furnsh(kernel_path)
+                _furnsh_once(kernel_path)
                 return kernel_path
             end
         end

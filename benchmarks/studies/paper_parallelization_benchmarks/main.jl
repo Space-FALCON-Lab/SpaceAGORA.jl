@@ -59,7 +59,10 @@ function _ppb_dry_print(phase::PPBPhase, ppb::PPBConfig, outdir::String; process
     println("[dry-run]   repeats         = $(phase.repeats), warmup = $(phase.warmup)")
 end
 
-function _ppb_run_phase(phase::PPBPhase, ppb::PPBConfig, phase_dir::String)::NamedTuple
+function _ppb_run_phase(
+    phase::PPBPhase, ppb::PPBConfig, phase_dir::String;
+    on_run_complete::Union{Nothing, Function}=nothing,
+)::NamedTuple
     started  = time()
     errors   = String[]
 
@@ -71,7 +74,7 @@ function _ppb_run_phase(phase::PPBPhase, ppb::PPBConfig, phase_dir::String)::Nam
         else
             try
                 mkpath(phase_dir)
-                ppc_run_controller(_ppb_build_ppc_config(phase, ppb, phase_dir))
+                ppc_run_controller(_ppb_build_ppc_config(phase, ppb, phase_dir); on_run_complete)
             catch err
                 push!(errors, sprint(showerror, err))
             end
@@ -89,7 +92,7 @@ function _ppb_run_phase(phase::PPBPhase, ppb::PPBConfig, phase_dir::String)::Nam
                 try
                     mkpath(sub_dir)
                     cfg = _ppb_build_ppc_config(phase, ppb, sub_dir; process_workers=w)
-                    ppc_run_controller(cfg)
+                    ppc_run_controller(cfg; on_run_complete)
                 catch err
                     push!(errors, "workers=$(w): $(sprint(showerror, err))")
                 end
@@ -100,6 +103,34 @@ function _ppb_run_phase(phase::PPBPhase, ppb::PPBConfig, phase_dir::String)::Nam
     elapsed = time() - started
     status  = isempty(errors) ? "ok" : "error"
     return (; id=phase.id, label=phase.label, status, runs, elapsed, errors)
+end
+
+# Rebuilds the combined raw/aggregated CSVs from whatever is on disk right
+# now (finished per-phase CSVs plus in-progress worker_rows for anything
+# still running) and overwrites the canonical CSV files with that snapshot.
+# Called after every individual worker run completes, so a hang or crash
+# partway through a multi-hour/multi-day phase still leaves up-to-date CSVs
+# for everything that finished so far — not just whatever was captured the
+# last time the whole suite completed. Deliberately CSV-only: plots/report
+# regeneration is comparatively expensive (Plots.jl rendering) and only
+# happens once, at the end of the full run (see main_paper_benchmarks).
+#
+# Wrapped in a top-level try/catch because this runs unattended, potentially
+# thousands of times over a multi-day run; a transient hiccup here (e.g.
+# reading a file mid-write) must never take down the benchmark run itself.
+function _ppb_snapshot_csvs!(root::String, stamp::String)
+    try
+        collected = _ppb_collect_partial(root)
+        nrow(collected.raw) == 0 && return nothing
+        agg = _ppb_aggregate(collected.raw)
+        nrow(agg) == 0 && return nothing
+
+        CSV.write(joinpath(root, "paper_benchmarks_raw_$(stamp).csv"), collected.raw)
+        CSV.write(joinpath(root, "paper_benchmarks_aggregated_$(stamp).csv"), agg)
+    catch err
+        @warn "Incremental CSV snapshot failed; will retry after the next run" exception=(err, catch_backtrace())
+    end
+    return nothing
 end
 
 function _ppb_print_summary(results::Vector{NamedTuple})
@@ -148,10 +179,12 @@ function main_paper_benchmarks()
     println()
 
     results = NamedTuple[]
+    on_run_complete = ppb.dry_run ? nothing : () -> _ppb_snapshot_csvs!(root, stamp)
+
     for phase in active
         phase_dir = joinpath(root, phase.id)
         println("[phase $(phase.id)] $(phase.label)")
-        result = _ppb_run_phase(phase, ppb, phase_dir)
+        result = _ppb_run_phase(phase, ppb, phase_dir; on_run_complete)
         push!(results, result)
         println("[phase $(phase.id)] done — status=$(result.status)  elapsed=$(_ppb_fmt_elapsed(result.elapsed))")
         println()
@@ -160,13 +193,13 @@ function main_paper_benchmarks()
     _ppb_print_summary(results)
 
     if !ppb.dry_run
-        println("[paper-benchmarks] Collecting results from $(root) ...")
-        raw = _ppb_collect_raw_csvs(root)
-        if nrow(raw) > 0
-            agg      = _ppb_aggregate(raw)
+        println("[paper-benchmarks] Collecting final results from $(root) ...")
+        collected = _ppb_collect_partial(root)
+        if nrow(collected.raw) > 0
+            agg      = _ppb_aggregate(collected.raw)
             raw_path = joinpath(root, "paper_benchmarks_raw_$(stamp).csv")
             agg_path = joinpath(root, "paper_benchmarks_aggregated_$(stamp).csv")
-            CSV.write(raw_path, raw)
+            CSV.write(raw_path, collected.raw)
             CSV.write(agg_path, agg)
             println("[paper-benchmarks] raw CSV        = $(raw_path)")
             println("[paper-benchmarks] aggregated CSV = $(agg_path)")

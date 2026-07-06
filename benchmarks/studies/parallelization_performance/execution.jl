@@ -348,7 +348,7 @@ function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int
     return Cmd(_ppc_apply_cpu_pinning(argv, cfg.cpu_pinning, threads))
 end
 
-function ppc_run_controller(cfg::PPCConfig)
+function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Function}=nothing)
     stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
     outdir = cfg.outdir == PPC_DEFAULT_OUTDIR ? joinpath(PPC_DEFAULT_OUTDIR, stamp) : cfg.outdir
     mkpath(outdir)
@@ -387,6 +387,7 @@ function ppc_run_controller(cfg::PPCConfig)
             println("[run] $(case) mode=$(mode) threads=$(thread_count) repeat=$(repeat) mc=$(mc_count)")
             run(cmd)
             push!(perf_paths, outfile)
+            on_run_complete === nothing || on_run_complete()
         end
     end
 

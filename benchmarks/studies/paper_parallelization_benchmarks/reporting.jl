@@ -19,24 +19,82 @@ end
 
 # ── Data collection ───────────────────────────────────────────────────────────
 
-function _ppb_collect_raw_csvs(root_dir::String)::DataFrame
-    isdir(root_dir) || return DataFrame()
+# `ppc_run_controller` only writes its combined `parallelization_performance_raw_*.csv`
+# once every worker subprocess for that controller call (a phase, or for B4/B6-style
+# worker-ladder sweeps, a single workers_NN sub-run) has finished. Each worker still
+# writes its own row to <phase_dir>/worker_rows/perf_*.csv the moment it completes, so
+# collection here reassembles a snapshot from whatever is on disk right now: finished
+# per-phase raw CSVs where available, and raw worker_rows/*.csv files for any
+# phase/sub-run that hasn't finished yet. This makes it safe to call repeatedly while
+# the benchmark is still executing, not just once at the very end.
+
+function _ppb_read_csv_safe(path::String)::DataFrame
+    try
+        return ppc_read_optional(path)
+    catch err
+        @warn "Could not read $(path) (likely still being written); skipping for now" exception=err
+        return DataFrame()
+    end
+end
+
+function _ppb_partial_worker_csvs(worker_rows_dir::String)::DataFrame
     frames = DataFrame[]
-    for (dirpath, _, files) in walkdir(root_dir)
-        for file in files
-            startswith(file, "parallelization_performance_raw_") || continue
-            endswith(file, ".csv") || continue
-            try
-                df = CSV.read(joinpath(dirpath, file), DataFrame)
-                df[!, :phase_id] .= _ppb_phase_from_path(dirpath, root_dir)
-                push!(frames, df)
-            catch err
-                @warn "Could not read $(joinpath(dirpath, file))" exception=err
-            end
-        end
+    for file in readdir(worker_rows_dir)
+        (startswith(file, "perf_") && endswith(file, ".csv")) || continue
+        df = _ppb_read_csv_safe(joinpath(worker_rows_dir, file))
+        nrow(df) > 0 && push!(frames, df)
     end
     isempty(frames) && return DataFrame()
     return vcat(frames...; cols=:union)
+end
+
+"""
+    _ppb_collect_partial(root_dir) -> (raw, complete_dirs, partial_dirs)
+
+Walk `root_dir` and assemble a raw results DataFrame from whatever is on
+disk: a finished `parallelization_performance_raw_*.csv` where a phase (or
+worker-ladder sub-run) has completed, otherwise whatever individual
+`worker_rows/perf_*.csv` files that sub-run has produced so far.
+"""
+function _ppb_collect_partial(root_dir::String)::NamedTuple
+    isdir(root_dir) || return (raw=DataFrame(), complete_dirs=String[], partial_dirs=String[])
+
+    frames = DataFrame[]
+    complete_dirs = String[]
+    partial_dirs = String[]
+    claimed = Set{String}()
+
+    for (dirpath, _, files) in walkdir(root_dir)
+        finished = [f for f in files if startswith(f, "parallelization_performance_raw_") && endswith(f, ".csv")]
+        isempty(finished) && continue
+        for file in finished
+            df = _ppb_read_csv_safe(joinpath(dirpath, file))
+            nrow(df) == 0 && continue
+            df[!, :phase_id] .= _ppb_phase_from_path(dirpath, root_dir)
+            df[!, :run_status] .= "complete"
+            push!(frames, df)
+        end
+        push!(complete_dirs, dirpath)
+        push!(claimed, dirpath)
+    end
+
+    for (dirpath, dirs, _) in walkdir(root_dir)
+        dirpath in claimed && continue
+        "worker_rows" in dirs || continue
+        df = _ppb_partial_worker_csvs(joinpath(dirpath, "worker_rows"))
+        nrow(df) == 0 && continue
+        df[!, :phase_id] .= _ppb_phase_from_path(dirpath, root_dir)
+        df[!, :run_status] .= "partial"
+        push!(frames, df)
+        push!(partial_dirs, dirpath)
+    end
+
+    raw = isempty(frames) ? DataFrame() : vcat(frames...; cols=:union)
+    # CSV.read infers compact InlineStrings types (e.g. String31), but
+    # _ppb_n_sat and friends are typed on plain String; normalize here so
+    # _ppb_aggregate doesn't choke on a partial snapshot's column types.
+    "case" in names(raw) && (raw[!, :case] = String.(raw.case))
+    return (raw=raw, complete_dirs=complete_dirs, partial_dirs=partial_dirs)
 end
 
 # ── Aggregation ───────────────────────────────────────────────────────────────

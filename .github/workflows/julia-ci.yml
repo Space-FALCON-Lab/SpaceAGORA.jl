@@ -2,6 +2,7 @@ name: Julia CI
 
 on:
   push:
+    branches: ["main", "master"]
   pull_request:
 
 jobs:
@@ -19,6 +20,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+
+      # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
+      # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Update GRAMSuite test submodule to dev main
         env:
@@ -81,6 +89,13 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
+      # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
@@ -113,6 +128,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+
+      # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
+      # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Update GRAMSuite test submodule to dev main
         env:
@@ -150,6 +172,13 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
+      # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
@@ -182,6 +211,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+
+      # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
+      # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Update GRAMSuite test submodule to dev main
         env:
@@ -222,6 +258,13 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
+      # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
@@ -260,6 +303,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+
+      # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
+      # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Update GRAMSuite test submodule to dev main
         env:
@@ -313,6 +363,13 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
+      # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
@@ -358,6 +415,13 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
+      # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
@@ -377,6 +441,9 @@ jobs:
       - name: GRAMSuite load smoke
         run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using GRAMSuite; println("gramsuite_load_ok")'
 
+      - name: Instantiate
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+
       - name: Run SpaceAGORACalibration tests with coverage
         run: julia --startup-file=no --project=. --code-coverage=user SpaceAGORACalibration.jl/test/runtests.jl
 
@@ -392,6 +459,13 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
+      # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - name: Update GRAMSuite test submodule to dev main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
@@ -401,6 +475,9 @@ jobs:
         uses: julia-actions/setup-julia@v2
         with:
           version: "1.12"
+
+      - name: Instantiate
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Contract suite
         run: julia --startup-file=no --project=. test/contracts/pr_runtests.jl
@@ -447,6 +524,13 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
           fetch-depth: 0
+
+      # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
+      # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Update GRAMSuite test submodule to dev main
         env:

@@ -186,7 +186,10 @@ While the adaptive route runs threaded workers, the runner sets
 `SPACEAGORA_OUTER_PARALLEL_ACTIVE=1` and — unless you exported one yourself —
 an `SPACEAGORA_INNER_THREAD_BUDGET` of `nthreads() ÷ workers`, so per-sample
 inner threading and the outer campaign split the thread pool instead of
-oversubscribing it.
+oversubscribing it. Nested adaptive campaigns (an `:auto` campaign running
+inside another campaign's worker, where `SPACEAGORA_OUTER_PARALLEL_ACTIVE` is
+already set) yield to the enclosing split: they execute serially and record no
+feedback, so contended timings never poison the shared route statistics.
 
 ### GRAM atmosphere models in threaded campaigns
 

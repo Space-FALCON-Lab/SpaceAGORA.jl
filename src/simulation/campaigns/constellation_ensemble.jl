@@ -110,7 +110,10 @@ isolated [`OuterRouteState`](@ref) is passed as `route_state`; `route_tuning` ov
 the [`OuterRouteTuning`](@ref). When the adaptive route is threaded, the runner also sets
 `SPACEAGORA_INNER_THREAD_BUDGET` (unless already set) so inner and outer parallelism
 split the thread pool instead of oversubscribing it. Adaptive members are isolated the
-same way as the fixed-thread parallel path, whichever route the bandit selects.
+same way as the fixed-thread parallel path, whichever route the bandit selects. If
+`SPACEAGORA_OUTER_PARALLEL_ACTIVE` is already set — the ensemble runs nested inside
+another campaign's worker — the adaptive path yields to the enclosing split: it executes
+serially and records no feedback.
 
 The configuration must be uncoupled: guidance, navigation, and control effector tuples
 must be empty, because effectors that coordinate several satellites cannot act across

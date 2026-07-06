@@ -1827,6 +1827,48 @@ end
         @test sum(info.samples for info in values(snap_fail)) == 4
         @test any(info.success_rate == 0.75 for info in values(snap_fail))
 
+        # Nested adaptive campaigns yield to an enclosing outer split: serial
+        # execution, no route feedback (contended timings must not poison the
+        # shared statistics).
+        nested_state = ParallelProfiles.OuterRouteState()
+        res_nested = withenv("SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1") do
+            SimulationCampaigns.run_monte_carlo(x -> x, 1:n_seeds; threads=:auto, route_state=nested_state)
+        end
+        @test res_nested.threads == 1
+        @test length(res_nested.successful) == n_seeds
+        @test isempty(nested_state.history)
+
+        # Caller-provided features with a non-montecarlo category are normalized
+        # before routing and recording: other categories' default-route rules can
+        # answer :process for shapes whose candidates are [:none, :threads],
+        # which the selector would clamp to a serial default on larger machines.
+        if Threads.nthreads() > 1
+            cat_state = ParallelProfiles.OuterRouteState()
+            odd_features = ParallelProfiles.OuterRouteFeatures(
+                category="scaling",
+                n_sats=2,
+                mission_time_s=3600.0,
+                has_control=true,
+                montecarlo_samples=0
+            )
+            res_cat = SimulationCampaigns.run_monte_carlo(
+                x -> x, 1:n_seeds;
+                threads=:auto, route_features=odd_features, route_state=cat_state
+            )
+            @test res_cat.threads == expected_workers
+            normalized_sig = ParallelProfiles.outer_route_signature(
+                ParallelProfiles.OuterRouteFeatures(
+                    category="montecarlo",
+                    n_sats=2,
+                    mission_time_s=3600.0,
+                    has_control=true,
+                    montecarlo_samples=n_seeds
+                )
+            )
+            snap_cat = ParallelProfiles.outer_route_stats_snapshot(cat_state, normalized_sig)
+            @test sum(info.samples for info in values(snap_cat)) == n_seeds
+        end
+
         # ── threads=:auto constellation ensemble ──────────────────────────────
         ens_state = ParallelProfiles.OuterRouteState()
         res_ens = SimulationCampaigns.run_constellation_ensemble(

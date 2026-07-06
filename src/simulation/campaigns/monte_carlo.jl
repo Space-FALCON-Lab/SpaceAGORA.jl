@@ -193,7 +193,11 @@ the [`OuterRouteTuning`](@ref).
 While adaptive threaded workers are active the runner sets
 `SPACEAGORA_OUTER_PARALLEL_ACTIVE=1` and, unless one is already set, an
 `SPACEAGORA_INNER_THREAD_BUDGET` of `nthreads() ÷ workers` so inner and outer
-parallelism split the thread pool instead of oversubscribing it.
+parallelism split the thread pool instead of oversubscribing it. Conversely,
+when `SPACEAGORA_OUTER_PARALLEL_ACTIVE` is already set — a nested adaptive
+campaign inside another campaign's worker — the runner yields to the enclosing
+split: it executes serially and records no feedback, so contended timings never
+poison the shared route statistics.
 """
 function run_monte_carlo(f, spec::MonteCarloSpec)
     seeds = collect(spec.seeds)

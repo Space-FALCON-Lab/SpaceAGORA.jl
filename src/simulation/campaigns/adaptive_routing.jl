@@ -1,6 +1,6 @@
 # ParallelProfiles names arrive from the SimulationCampaigns module header so
 # that monte_carlo.jl (included first) can annotate its adaptive keywords.
-using ..SimulationModel: SimulationConfiguration, EnvironmentModels
+using ..SimulationModel: SimulationConfiguration, EnvironmentModels, ParallelPolicy
 
 const _CAMPAIGN_OUTER_ROUTE_STATE = OuterRouteState()
 
@@ -39,10 +39,9 @@ end
 
 """
     campaign_route_features(; samples, n_sats=1, density_family="unknown",
-                            mission_time_s=0.0, category="montecarlo") -> OuterRouteFeatures
+                            mission_time_s=0.0) -> OuterRouteFeatures
     campaign_route_features(args::SimulationConfiguration; samples,
-                            n_sats=length(args.dynamics_model.spacecraft),
-                            category="montecarlo") -> OuterRouteFeatures
+                            n_sats=length(args.dynamics_model.spacecraft)) -> OuterRouteFeatures
 
 Build the [`OuterRouteFeatures`](@ref) describing a campaign workload for
 adaptive outer-route selection (`threads=:auto` in [`run_monte_carlo`](@ref)
@@ -55,18 +54,23 @@ orientation flag, and effector counts from `args`. Feedback recorded via
 [`record_outer_route_feedback!`](@ref) is bucketed by
 [`outer_route_signature`](@ref), so campaigns with the same shape share
 empirical runtime statistics.
+
+Campaign features always carry the `"montecarlo"` routing category: the other
+categories' default-route rules answer for a single coupled simulation (inner
+versus outer split), not for a sample fan-out, and can leave the adaptive
+runner without a feasible default. The adaptive path also normalizes any
+caller-provided `route_features` to this category before routing and recording.
 """
 function campaign_route_features(;
     samples::Integer,
     n_sats::Integer=1,
     density_family::AbstractString="unknown",
-    mission_time_s::Real=0.0,
-    category::AbstractString="montecarlo"
+    mission_time_s::Real=0.0
 )::OuterRouteFeatures
     samples >= 0 || throw(ArgumentError("campaign_route_features samples must be >= 0; got $(samples)."))
     n_sats >= 1 || throw(ArgumentError("campaign_route_features n_sats must be >= 1; got $(n_sats)."))
     return OuterRouteFeatures(
-        category=String(category),
+        category="montecarlo",
         n_sats=Int(n_sats),
         mission_time_s=Float64(mission_time_s),
         density_family=String(density_family),
@@ -77,8 +81,7 @@ end
 function campaign_route_features(
     args::SimulationConfiguration;
     samples::Integer,
-    n_sats::Integer=length(args.dynamics_model.spacecraft),
-    category::AbstractString="montecarlo"
+    n_sats::Integer=length(args.dynamics_model.spacecraft)
 )::OuterRouteFeatures
     samples >= 0 || throw(ArgumentError("campaign_route_features samples must be >= 0; got $(samples)."))
     n_sats >= 1 || throw(ArgumentError("campaign_route_features n_sats must be >= 1; got $(n_sats)."))
@@ -94,7 +97,7 @@ function campaign_route_features(
     control_effector_count = length(args.control_model.control_effectors)
     density_family = _campaign_density_family(args.environment_model.density_model)
     return OuterRouteFeatures(
-        category=String(category),
+        category="montecarlo",
         n_sats=Int(n_sats),
         n_links=n_links,
         max_links_per_sat=per_sat_links,
@@ -121,12 +124,18 @@ function _campaign_route_tuning()::OuterRouteTuning
     )
 end
 
-function _with_montecarlo_samples(f::OuterRouteFeatures, samples::Int)::OuterRouteFeatures
-    f.montecarlo_samples == samples && return f
+function _campaign_features_for_routing(f::OuterRouteFeatures, samples::Int)::OuterRouteFeatures
+    if f.montecarlo_samples == samples && f.category == "montecarlo"
+        return f
+    end
     fields = NamedTuple{fieldnames(OuterRouteFeatures)}(
         ntuple(i -> getfield(f, i), fieldcount(OuterRouteFeatures))
     )
-    return OuterRouteFeatures(; fields..., montecarlo_samples=samples)
+    # Force the montecarlo routing category: other categories' default-route
+    # rules describe a single coupled simulation and can answer :process for a
+    # shape whose candidate set is [:none, :threads], which select_outer_route!
+    # then clamps to a serial default on medium/large machines.
+    return OuterRouteFeatures(; fields..., category="montecarlo", montecarlo_samples=samples)
 end
 
 function _campaign_route_plan(
@@ -135,6 +144,13 @@ function _campaign_route_plan(
     state::OuterRouteState,
     tuning::OuterRouteTuning
 )
+    if ParallelPolicy.outer_parallel_active()
+        # A higher-level campaign (or benchmark harness) already owns the outer
+        # split; running nested workers would oversubscribe the pool, and the
+        # contended timings would poison the shared route statistics — run
+        # serially and skip both selection and feedback.
+        return (route=:none, threads=1, inner_thread_budget=1, record=false)
+    end
     threads_available = Base.Threads.nthreads() > 1
     chosen = select_outer_route!(
         state,
@@ -151,7 +167,7 @@ function _campaign_route_plan(
     workers = route === :threads ? min(n_samples, Base.Threads.nthreads()) : 1
     workers = max(1, workers)
     inner_thread_budget = max(1, fld(Base.Threads.nthreads(), workers))
-    return (route=route, threads=workers, inner_thread_budget=inner_thread_budget)
+    return (route=route, threads=workers, inner_thread_budget=inner_thread_budget, record=true)
 end
 
 function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
@@ -207,11 +223,13 @@ function _run_campaign_adaptive(
 )::MonteCarloResult
     seed_values = collect(seeds)
     isempty(seed_values) && return MonteCarloResult(MonteCarloSampleResult[], 0.0, 0)
-    routed_features = _with_montecarlo_samples(features, length(seed_values))
+    routed_features = _campaign_features_for_routing(features, length(seed_values))
     plan = _campaign_route_plan(routed_features, length(seed_values); state=state, tuning=tuning)
     spec = MonteCarloSpec(seeds=seed_values, threads=plan.threads, fail_fast=fail_fast)
     result = _run_campaign_with_route_env(f, spec, plan)
-    _record_campaign_route_feedback!(state, routed_features, plan.route, result; tuning=tuning)
+    if plan.record
+        _record_campaign_route_feedback!(state, routed_features, plan.route, result; tuning=tuning)
+    end
     return result
 end
 

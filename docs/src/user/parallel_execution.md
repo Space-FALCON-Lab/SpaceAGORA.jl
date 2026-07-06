@@ -150,6 +150,47 @@ By default, failed samples are captured in `result.failed` and do not stop the
 rest of the campaign. Set `fail_fast=true` when you want the runner to rethrow
 on the first failed sample instead.
 
+### Adaptive campaign routing (`threads=:auto`)
+
+Instead of hardcoding a worker count, both campaign runners accept
+`threads=:auto` and delegate the serial-versus-threaded decision to the
+outer-route bandit (`select_outer_route!`), which keeps empirical runtime
+statistics per workload signature:
+
+```julia
+result = run_monte_carlo(1:100; threads=:auto,
+                         route_features=campaign_route_features(
+                             samples=100, n_sats=1,
+                             density_family="exponential",
+                             mission_time_s=5400.0
+                         )) do seed
+    run_simulation(make_config_for_seed(seed); return_solution=true)
+end
+
+# Constellation ensembles derive their features from the configuration itself:
+result = run_constellation_ensemble(args; threads=:auto, return_solution=true)
+```
+
+`campaign_route_features` describes the campaign shape (sample count,
+per-sample satellite count, density-model family, mission length); the
+`SimulationConfiguration` method derives those fields for you. After every
+campaign the runner records per-sample success and amortized wall-clock
+feedback via `record_outer_route_feedback!`, so repeated campaigns with the
+same shape first explore the feasible allocations and then converge to the
+fastest one. History accumulates in the process-global
+`campaign_outer_route_state()`; inspect it with `outer_route_stats_snapshot`,
+reset it with `reset_outer_route_state!`, or pass an isolated `OuterRouteState`
+via `route_state` (useful for tests and one-off studies).
+
+While the adaptive route runs threaded workers, the runner sets
+`SPACEAGORA_OUTER_PARALLEL_ACTIVE=1` and — unless you exported one yourself —
+an `SPACEAGORA_INNER_THREAD_BUDGET` of `nthreads() ÷ workers`, so per-sample
+inner threading and the outer campaign split the thread pool instead of
+oversubscribing it. Nested adaptive campaigns (an `:auto` campaign running
+inside another campaign's worker, where `SPACEAGORA_OUTER_PARALLEL_ACTIVE` is
+already set) yield to the enclosing split: they execute serially and record no
+feedback, so contended timings never poison the shared route statistics.
+
 ### GRAM atmosphere models in threaded campaigns
 
 Native GRAM calls are serialized through a single process-wide lock by default,

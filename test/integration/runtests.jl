@@ -44,6 +44,10 @@ end
 if !isdefined(@__MODULE__, :TelemetryVerification)
     include(joinpath(REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
 end
+if !isdefined(@__MODULE__, :ParallelProfiles)
+    # SimulationCampaigns consumes the outer-route bandit via `..ParallelProfiles`.
+    include(joinpath(REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
+end
 if !isdefined(@__MODULE__, :SimulationCampaigns)
     include(joinpath(REPO_ROOT, "src", "simulation", "campaigns", "simulation_campaigns.jl"))
 end

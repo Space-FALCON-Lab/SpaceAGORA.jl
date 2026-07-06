@@ -153,7 +153,9 @@ function _run_monte_carlo_threaded(f, seeds::Vector, spec::MonteCarloSpec, worke
 end
 
 """
-    run_monte_carlo(f, seeds; threads=1, fail_fast=false) -> MonteCarloResult
+    run_monte_carlo(f, seeds; threads=1, fail_fast=false,
+                    route_features=nothing, route_state=nothing,
+                    route_tuning=nothing) -> MonteCarloResult
     run_monte_carlo(f, spec::MonteCarloSpec) -> MonteCarloResult
 
 Run `f(seed)` for each Monte Carlo seed and return ordered sample results.
@@ -172,6 +174,30 @@ end
 The runner records per-sample exceptions instead of throwing by default, so a
 long campaign can finish and report all failures. Set `fail_fast=true` to throw
 on the first failed sample.
+
+# Adaptive mode
+
+Pass `threads=:auto` to let the outer-route bandit pick serial or threaded
+execution from empirical runtime history instead of a fixed worker count. The
+runner builds [`OuterRouteFeatures`](@ref) from the campaign shape (pass
+`route_features` from [`campaign_route_features`](@ref) to describe per-sample
+satellite count, density-model family, and mission length; the sample count is
+always filled in from `seeds`), consults [`select_outer_route!`](@ref), and
+after the campaign records per-sample success and amortized wall-clock feedback
+via [`record_outer_route_feedback!`](@ref), so repeated campaigns with the same
+shape converge to the fastest allocation. History lives in
+[`campaign_outer_route_state`](@ref) unless an isolated
+[`OuterRouteState`](@ref) is passed as `route_state`; `route_tuning` overrides
+the [`OuterRouteTuning`](@ref).
+
+While adaptive threaded workers are active the runner sets
+`SPACEAGORA_OUTER_PARALLEL_ACTIVE=1` and, unless one is already set, an
+`SPACEAGORA_INNER_THREAD_BUDGET` of `nthreads() ÷ workers` so inner and outer
+parallelism split the thread pool instead of oversubscribing it. Conversely,
+when `SPACEAGORA_OUTER_PARALLEL_ACTIVE` is already set — a nested adaptive
+campaign inside another campaign's worker — the runner yields to the enclosing
+split: it executes serially and records no feedback, so contended timings never
+poison the shared route statistics.
 """
 function run_monte_carlo(f, spec::MonteCarloSpec)
     seeds = collect(spec.seeds)
@@ -190,6 +216,32 @@ function run_monte_carlo(f, spec::MonteCarloSpec)
     return MonteCarloResult(samples, elapsed_s, worker_count)
 end
 
-function run_monte_carlo(f, seeds; threads::Integer=1, fail_fast::Bool=false)
+function run_monte_carlo(
+    f,
+    seeds;
+    threads::Union{Integer, Symbol}=1,
+    fail_fast::Bool=false,
+    route_features::Union{Nothing, OuterRouteFeatures}=nothing,
+    route_state::Union{Nothing, OuterRouteState}=nothing,
+    route_tuning::Union{Nothing, OuterRouteTuning}=nothing
+)
+    if threads isa Symbol
+        threads === :auto || throw(ArgumentError(
+            "run_monte_carlo threads must be a positive integer or :auto; got :$(threads)."
+        ))
+        return _run_monte_carlo_adaptive(
+            f,
+            seeds;
+            fail_fast=fail_fast,
+            route_features=route_features,
+            route_state=route_state,
+            route_tuning=route_tuning
+        )
+    end
+    if !(route_features === nothing && route_state === nothing && route_tuning === nothing)
+        throw(ArgumentError(
+            "run_monte_carlo route_features/route_state/route_tuning are only consulted with threads=:auto."
+        ))
+    end
     return run_monte_carlo(f, MonteCarloSpec(seeds=seeds, threads=threads, fail_fast=fail_fast))
 end

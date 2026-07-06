@@ -150,6 +150,58 @@ By default, failed samples are captured in `result.failed` and do not stop the
 rest of the campaign. Set `fail_fast=true` when you want the runner to rethrow
 on the first failed sample instead.
 
+### GRAM atmosphere models in threaded campaigns
+
+Native GRAM calls are serialized through a single process-wide lock by default,
+so threaded Monte Carlo samples that all query GRAM contend on one lock no
+matter how many threads are available. When every sample builds its own
+`GRAMAtmosphereModel` (or receives its own `deepcopy`), set:
+
+```bash
+export SPACEAGORA_GRAM_LOCK_SCOPE=model
+```
+
+so each model instance serializes only against itself and samples evaluate
+concurrently. This relies on the same instance-isolation premise as the
+isolated-pool batch path (`SPACEAGORA_GRAM_ISOLATED_POOL`): distinct GRAM model
+instances may run concurrently as long as any single instance is serialized. Do
+not enable it if several threads share one model instance and you have not
+measured the workload — the default `global` scope is always safe. Process-based
+campaigns (separate workers via `addprocs`) do not need this: each process has
+its own lock already.
+
+## Constellation ensembles
+
+For multi-satellite configurations whose members do not interact (no
+inter-satellite links, no coordinated GNC), `run_constellation_ensemble` splits
+the constellation into independent single-satellite propagations and applies
+Monte Carlo-style outer parallelism across satellites:
+
+```julia
+result = run_constellation_ensemble(args; threads=8, return_solution=true)
+solutions = [s.value for s in result.successful]
+```
+
+Compared to propagating the constellation as one coupled state vector, this
+dispatches each satellite to a worker once for its entire propagation (instead
+of paying per-timestep thread dispatch across satellites) and lets each
+satellite keep its own adaptive step size (instead of forcing every satellite
+to the global minimum step).
+
+Current limitation: with in-process worker threads, per-step
+environment-variable configuration reads in the RHS and callback plumbing
+serialize concurrent members (Julia `ENV` access is process-global), which can
+erase the outer-parallel gain for light dynamics. Until those reads are hoisted
+to run setup, prefer process-based outer parallelism for large campaigns — the
+per-satellite split applies the same way with one satellite per worker process
+(see [Distributed and HPC](../distributed_hpc.md)).
+
+The runner refuses configurations with guidance, navigation, or control
+effectors, because effectors that coordinate satellites cannot act across
+ensemble members. If every configured effector acts on a single satellite only,
+opt in with `allow_gnc_effectors=true`. Keep the monolithic `run_simulation`
+path for genuinely coupled constellations (RPO, formation control).
+
 ## Auditing Active Controls
 
 For reproducible studies, record the `SPACEAGORA_*` controls that define the

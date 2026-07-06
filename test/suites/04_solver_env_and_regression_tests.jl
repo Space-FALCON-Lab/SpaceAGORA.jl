@@ -380,19 +380,19 @@
     )
 
     withenv("SPACEAGORA_SOLVER_MODE" => "tsit5", "SPACEAGORA_SOLVER_MAXITERS" => nothing) do
-        sol, meta = _solve_with_solver_policy(prob_simple, solver_args, 1e-8, 1e-8)
+        sol, meta = _solve_with_solver_policy(prob_simple, _active_solver_config(), solver_args, 1e-8, 1e-8)
         @test string(sol.retcode) == "Success"
         @test meta.solver == "Tsit5"
         @test meta.fallback_used == false
     end
     withenv("SPACEAGORA_SOLVER_MODE" => "rodas5p", "SPACEAGORA_SOLVER_MAXITERS" => nothing) do
-        sol, meta = _solve_with_solver_policy(prob_simple, solver_args, 1e-8, 1e-8)
+        sol, meta = _solve_with_solver_policy(prob_simple, _active_solver_config(), solver_args, 1e-8, 1e-8)
         @test string(sol.retcode) == "Success"
         @test meta.solver == "Rodas5P"
         @test meta.fallback_used == false
     end
     withenv("SPACEAGORA_SOLVER_MODE" => "auto_stiff", "SPACEAGORA_SOLVER_MAXITERS" => nothing) do
-        sol, meta = _solve_with_solver_policy(prob_simple, solver_args, 1e-8, 1e-8)
+        sol, meta = _solve_with_solver_policy(prob_simple, _active_solver_config(), solver_args, 1e-8, 1e-8)
         @test string(sol.retcode) == "Success"
         @test meta.solver == "Tsit5"
         @test meta.initial_solver == "Tsit5"
@@ -403,7 +403,7 @@
         "SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5" => "0",
         "SPACEAGORA_SOLVER_MAXITERS" => nothing
     ) do
-        sol, meta = _solve_with_solver_policy(prob_simple, solver_args, 1e-8, 1e-8)
+        sol, meta = _solve_with_solver_policy(prob_simple, _active_solver_config(), solver_args, 1e-8, 1e-8)
         @test string(sol.retcode) == "Success"
         @test meta.solver == "AutoTsit5(Rodas5P)"
         @test meta.initial_solver == "AutoTsit5"
@@ -413,7 +413,7 @@
         "SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5" => "1",
         "SPACEAGORA_SOLVER_MAXITERS" => nothing
     ) do
-        sol, meta = _solve_with_solver_policy(prob_simple, solver_args_atmo, 1e-8, 1e-8)
+        sol, meta = _solve_with_solver_policy(prob_simple, _active_solver_config(), solver_args_atmo, 1e-8, 1e-8)
         @test string(sol.retcode) == "Success"
         @test meta.solver == "AutoTsit5(Rodas5P)"
         @test meta.initial_solver == "AutoTsit5"
@@ -444,7 +444,7 @@
         (0.0, 1.0)
     )
     withenv("SPACEAGORA_SOLVER_MODE" => "split_imex", "SPACEAGORA_SOLVER_MAXITERS" => nothing) do
-        sol, meta = _solve_with_solver_policy(split_prob_simple, solver_args, 1e-8, 1e-8)
+        sol, meta = _solve_with_solver_policy(split_prob_simple, _active_solver_config(), solver_args, 1e-8, 1e-8)
         @test string(sol.retcode) == "Success"
         @test meta.solver == "KenCarp4(IMEX)"
         @test meta.initial_solver == "KenCarp4"
@@ -454,7 +454,7 @@
         "SPACEAGORA_SPLIT_IMEX_SOLVER" => "kencarp47",
         "SPACEAGORA_SOLVER_MAXITERS" => nothing
     ) do
-        sol, meta = _solve_with_solver_policy(split_prob_simple, solver_args, 1e-8, 1e-8)
+        sol, meta = _solve_with_solver_policy(split_prob_simple, _active_solver_config(), solver_args, 1e-8, 1e-8)
         @test string(sol.retcode) == "Success"
         @test meta.solver == "KenCarp47(IMEX)"
         @test meta.initial_solver == "KenCarp47"
@@ -474,7 +474,7 @@
     _initialize_heat_rate_buffers!(p_split_gravity)
 
     withenv("SPACEAGORA_SOLVER_MODE" => "split_imex") do
-        prob_split = _build_typed_solver_problem(u0_split_gravity, (0.0, 1.0), p_split_gravity, CallbackSet())
+        prob_split = _build_typed_solver_problem(u0_split_gravity, (0.0, 1.0), p_split_gravity, CallbackSet(), _solver_policy_mode())
         @test hasproperty(prob_split.f, :f1)
         @test hasproperty(prob_split.f, :f2)
         du_implicit = copy(u0_split_gravity)
@@ -496,7 +496,7 @@
     end
 
     withenv("SPACEAGORA_SOLVER_MODE" => "multirate") do
-        prob_multirate = _build_typed_solver_problem(u0_split_gravity, (0.0, 1.0), p_split_gravity, CallbackSet())
+        prob_multirate = _build_typed_solver_problem(u0_split_gravity, (0.0, 1.0), p_split_gravity, CallbackSet(), _solver_policy_mode())
         @test hasproperty(prob_multirate.f, :f1)
         @test hasproperty(prob_multirate.f, :f2)
         du_slow = copy(u0_split_gravity)
@@ -594,14 +594,14 @@
         "SPACEAGORA_SYMPLECTIC_DT_S" => "2.0",
         "SPACEAGORA_SOLVER_MAXITERS" => nothing
     ) do
-        sol, meta = _solve_with_solver_policy(prob_symplectic, args_symplectic, 1e-8, 1e-8)
+        sol, meta = _solve_with_solver_policy(prob_symplectic, _active_solver_config(), args_symplectic, 1e-8, 1e-8)
         @test string(sol.retcode) == "Success"
         @test meta.solver == "KahanLi8(Symplectic)"
         @test meta.initial_solver == "KahanLi8"
         @test meta.fallback_used == false
     end
     withenv("SPACEAGORA_SOLVER_MODE" => "symplectic", "SPACEAGORA_SOLVER_MAXITERS" => nothing) do
-        @test_throws ArgumentError _solve_with_solver_policy(prob_simple, args_symplectic, 1e-8, 1e-8)
+        @test_throws ArgumentError _solve_with_solver_policy(prob_simple, _active_solver_config(), args_symplectic, 1e-8, 1e-8)
     end
 
     args_backbone = build_config(
@@ -754,7 +754,7 @@
     _initialize_heat_rate_buffers!(p_backbone)
     callbacks_backbone = CallbackSet()
     withenv("SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split") do
-        prob_backbone = _build_typed_solver_problem(u0_backbone, (0.0, 30.0), p_backbone, callbacks_backbone)
+        prob_backbone = _build_typed_solver_problem(u0_backbone, (0.0, 30.0), p_backbone, callbacks_backbone, _solver_policy_mode())
         @test getproperty(prob_backbone, :problem_type) isa SecondOrderODEProblem
         q0_backbone, dq0_backbone = _gravity_backbone_initial_states(u0_backbone, args_backbone)
         ddu_backbone = copy(dq0_backbone)
@@ -768,8 +768,8 @@
         "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "2.0",
         "SPACEAGORA_SOLVER_MAXITERS" => nothing
     ) do
-        prob_backbone = _build_typed_solver_problem(u0_backbone, (0.0, 30.0), p_backbone, callbacks_backbone)
-        sol_backbone, meta_backbone = _solve_with_solver_policy(prob_backbone, args_backbone, 1e-8, 1e-8)
+        prob_backbone = _build_typed_solver_problem(u0_backbone, (0.0, 30.0), p_backbone, callbacks_backbone, _solver_policy_mode())
+        sol_backbone, meta_backbone = _solve_with_solver_policy(prob_backbone, _active_solver_config(), args_backbone, 1e-8, 1e-8)
         @test string(sol_backbone.retcode) == "Success"
         @test meta_backbone.solver == "KahanLi8(GravityBackbone)"
         @test _is_gravity_backbone_state(sol_backbone.u[end])
@@ -811,8 +811,8 @@
         "SPACEAGORA_SOLVER_MAXITERS" => nothing
     ) do
         callbacks_backbone_kicks = CallbackSet()
-        prob_backbone_kicks = _build_typed_solver_problem(u0_backbone_kicks, (0.0, 2.0), p_backbone_kicks, callbacks_backbone_kicks)
-        sol_backbone_kicks, meta_backbone_kicks = _solve_with_solver_policy(prob_backbone_kicks, args_backbone_kicks, 1e-8, 1e-8)
+        prob_backbone_kicks = _build_typed_solver_problem(u0_backbone_kicks, (0.0, 2.0), p_backbone_kicks, callbacks_backbone_kicks, _solver_policy_mode())
+        sol_backbone_kicks, meta_backbone_kicks = _solve_with_solver_policy(prob_backbone_kicks, _active_solver_config(), args_backbone_kicks, 1e-8, 1e-8)
         @test string(sol_backbone_kicks.retcode) == "Success"
         @test meta_backbone_kicks.solver == "KahanLi8(GravityBackbone+Kicks)"
         @test length(sol_backbone_kicks.t) == 2
@@ -910,7 +910,7 @@
         "SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => "4",
         "SPACEAGORA_MULTIRATE_SLOW_DT_S" => "0.2"
     ) do
-        sol, meta = _solve_with_solver_policy(split_prob_simple, solver_args, 1e-8, 1e-8)
+        sol, meta = _solve_with_solver_policy(split_prob_simple, _active_solver_config(), solver_args, 1e-8, 1e-8)
         @test string(sol.retcode) == "Success"
         @test occursin("Multirate(Strang;", meta.solver)
         @test meta.initial_solver == "Tsit5"
@@ -2035,6 +2035,7 @@ end
     du_sum .= 0.0
     p_split = ODEParams{1}(args=args_split)
     _initialize_heat_rate_buffers!(p_split)
+    p_split.shared_buffers.in_atmosphere[1] = true
 
     spacecraft_dynamics!(du_full, u0_split, p_split, 0.0)
     spacecraft_dynamics_implicit_atmosphere!(du_implicit, u0_split, p_split, 0.0)
@@ -2100,10 +2101,10 @@ end
     p_zero_implicit = ODEParams{1}(args=args_zero_implicit)
     _initialize_heat_rate_buffers!(p_zero_implicit)
     split_prob_zero_implicit = withenv("SPACEAGORA_SOLVER_MODE" => "split_imex") do
-        _build_typed_solver_problem(u0_zero_implicit, (0.0, 30.0), p_zero_implicit, CallbackSet())
+        _build_typed_solver_problem(u0_zero_implicit, (0.0, 30.0), p_zero_implicit, CallbackSet(), _solver_policy_mode())
     end
     withenv("SPACEAGORA_SOLVER_MODE" => "split_imex", "SPACEAGORA_SOLVER_MAXITERS" => nothing) do
-        sol_zero_implicit, meta_zero_implicit = _solve_with_solver_policy(split_prob_zero_implicit, args_zero_implicit, 1e-8, 1e-8)
+        sol_zero_implicit, meta_zero_implicit = _solve_with_solver_policy(split_prob_zero_implicit, _active_solver_config(), args_zero_implicit, 1e-8, 1e-8)
         @test string(sol_zero_implicit.retcode) == "Success"
         @test meta_zero_implicit.solver == "KenCarp4(IMEX)"
     end

@@ -145,7 +145,7 @@ function _ppb_plot_thread_scaling(agg::DataFrame, outdir::String)::String
     mode_sel = "outer_threads"
 
     df = agg[
-        coalesce.(agg.phase_id, "") .∈ Ref(phases) .&
+        (coalesce.(agg.phase_id, "") .∈ Ref(phases)) .&
         (agg.mode .== mode_sel) .&
         (agg.n_sat .∈ Ref(target_n)),
         :
@@ -225,7 +225,7 @@ function _ppb_plot_atmosphere_runtime(agg::DataFrame, outdir::String)::String
 end
 
 function _ppb_plot_mc_throughput(agg::DataFrame, outdir::String)::String
-    df = agg[coalesce.(agg.phase_id, "") .== "B4" .& (agg.mode .== "outer_process"), :]
+    df = agg[(coalesce.(agg.phase_id, "") .== "B4") .& (agg.mode .== "outer_process"), :]
     nrow(df) == 0 && return ""
 
     p = Plots.plot(
@@ -302,34 +302,66 @@ end
 
 # ── Top-level plot dispatcher ─────────────────────────────────────────────────
 
-function _ppb_write_plots(outdir::String, agg::DataFrame)::Vector{String}
-    paths = String[]
+# Runs a single plot-producing closure, isolating its failure so one broken
+# plot (bad filter, missing column, empty group, ...) can't prevent the
+# others from being generated.
+function _ppb_safe_plot(f::Function, label::String)::String
     try
-        ENV["GKSwstype"] = get(ENV, "GKSwstype", "100")
-
-        push!(paths, _ppb_plot_constellation_scaling(
-            agg, "B1",
-            "B1 — Constellation Scaling (Gravity Only)",
-            "constellation_scaling_gravity.png", outdir))
-
-        push!(paths, _ppb_plot_constellation_scaling(
-            agg, "B2",
-            "B2 — Constellation Scaling (L20 Harmonics)",
-            "constellation_scaling_harmonics.png", outdir))
-
-        push!(paths, _ppb_plot_thread_scaling(agg, outdir))
-        push!(paths, _ppb_plot_atmosphere_runtime(agg, outdir))
-        push!(paths, _ppb_plot_mc_throughput(agg, outdir))
-        push!(paths, _ppb_plot_profile_comparison(agg, outdir))
-
-        filter!(!isempty, paths)
+        return f()
     catch err
-        @warn "Plot generation failed" exception=(err, catch_backtrace())
+        @warn "Plot generation failed: $(label)" exception=(err, catch_backtrace())
+        return ""
     end
+end
+
+function _ppb_write_plots(outdir::String, agg::DataFrame)::Vector{String}
+    ENV["GKSwstype"] = get(ENV, "GKSwstype", "100")
+
+    paths = String[
+        _ppb_safe_plot("constellation_scaling_gravity") do
+            _ppb_plot_constellation_scaling(
+                agg, "B1",
+                "B1 — Constellation Scaling (Gravity Only)",
+                "constellation_scaling_gravity.png", outdir)
+        end,
+        _ppb_safe_plot("constellation_scaling_harmonics") do
+            _ppb_plot_constellation_scaling(
+                agg, "B2",
+                "B2 — Constellation Scaling (L20 Harmonics)",
+                "constellation_scaling_harmonics.png", outdir)
+        end,
+        _ppb_safe_plot("thread_scaling_outer_threads") do
+            _ppb_plot_thread_scaling(agg, outdir)
+        end,
+        _ppb_safe_plot("atmosphere_runtime_comparison") do
+            _ppb_plot_atmosphere_runtime(agg, outdir)
+        end,
+        _ppb_safe_plot("mc_throughput_scaling") do
+            _ppb_plot_mc_throughput(agg, outdir)
+        end,
+        _ppb_safe_plot("profile_comparison") do
+            _ppb_plot_profile_comparison(agg, outdir)
+        end,
+    ]
+
+    filter!(!isempty, paths)
     return paths
 end
 
 # ── Report ────────────────────────────────────────────────────────────────────
+
+# Runs a single report section, isolating its failure so a bug in one table
+# (bad filter, missing column, ...) can't truncate everything written after
+# it — the report file always closes with the sections that did succeed.
+function _ppb_safe_section(f::Function, io::IO, label::String)
+    try
+        f()
+    catch err
+        @warn "Report section failed: $(label)" exception=(err, catch_backtrace())
+        println(io, "_Error generating this section ($(label)); see log for details._")
+        println(io)
+    end
+end
 
 function _ppb_write_report(
     outdir::String,
@@ -360,49 +392,53 @@ function _ppb_write_report(
         println(io)
 
         if nrow(agg) > 0
-            println(io, "## Top Speedups by Case")
-            println(io)
-            println(io, "Best speedup achieved across all modes and thread counts for each case,")
-            println(io, "excluding the serial baseline.")
-            println(io)
-            println(io, "| Phase | Case | N sat | Best mode | Threads | Process workers | Speedup |")
-            println(io, "|-------|------|------:|-----------|--------:|----------------:|--------:|")
+            _ppb_safe_section(io, "Top Speedups by Case") do
+                println(io, "## Top Speedups by Case")
+                println(io)
+                println(io, "Best speedup achieved across all modes and thread counts for each case,")
+                println(io, "excluding the serial baseline.")
+                println(io)
+                println(io, "| Phase | Case | N sat | Best mode | Threads | Process workers | Speedup |")
+                println(io, "|-------|------|------:|-----------|--------:|----------------:|--------:|")
 
-            parallel = agg[agg.mode .!= "serial", :]
-            has_pw   = "process_workers" in names(parallel)
-            for phase_id in sort(unique(coalesce.(parallel.phase_id, "")))
-                sub = parallel[coalesce.(parallel.phase_id, "") .== phase_id, :]
-                nrow(sub) == 0 && continue
-                for case in sort(unique(sub.case))
-                    rows = sub[sub.case .== case, :]
-                    nrow(rows) == 0 && continue
-                    best_idx = argmax(coalesce.(rows.speedup, -Inf))
-                    r = rows[best_idx, :]
-                    pw_str   = has_pw ? string(coalesce(r.process_workers, "—")) : "—"
-                    sp_str   = ismissing(r.speedup) ? "—" : "$(round(r.speedup; digits=1))×"
-                    println(io, "| $(phase_id) | $(r.case) | $(r.n_sat) | $(r.mode) | $(r.thread_count) | $(pw_str) | $(sp_str) |")
+                parallel = agg[agg.mode .!= "serial", :]
+                has_pw   = "process_workers" in names(parallel)
+                for phase_id in sort(unique(coalesce.(parallel.phase_id, "")))
+                    sub = parallel[coalesce.(parallel.phase_id, "") .== phase_id, :]
+                    nrow(sub) == 0 && continue
+                    for case in sort(unique(sub.case))
+                        rows = sub[sub.case .== case, :]
+                        nrow(rows) == 0 && continue
+                        best_idx = argmax(coalesce.(rows.speedup, -Inf))
+                        r = rows[best_idx, :]
+                        pw_str   = has_pw ? string(coalesce(r.process_workers, "—")) : "—"
+                        sp_str   = ismissing(r.speedup) ? "—" : "$(round(r.speedup; digits=1))×"
+                        println(io, "| $(phase_id) | $(r.case) | $(r.n_sat) | $(r.mode) | $(r.thread_count) | $(pw_str) | $(sp_str) |")
+                    end
                 end
+                println(io)
             end
-            println(io)
 
-            println(io, "## Monte Carlo Scaling (B4)")
-            println(io)
-            mc = agg[coalesce.(agg.phase_id, "") .== "B4" .& (agg.mode .== "outer_process"), :]
-            if nrow(mc) > 0
-                println(io, "| Case | MC samples | Process workers | Speedup | Process efficiency |")
-                println(io, "|------|:----------:|----------------:|--------:|-------------------:|")
-                mc_sorted = sort(mc, [:case, :mc_samples, :process_workers])
-                for r in eachrow(mc_sorted)
-                    pw  = coalesce(r.process_workers, "—")
-                    sp  = ismissing(r.speedup) ? "—" : "$(round(r.speedup; digits=1))×"
-                    eff = "process_efficiency" in names(mc) && !ismissing(r.process_efficiency) ?
-                          "$(round(100 * r.process_efficiency; digits=0))%" : "—"
-                    println(io, "| $(r.case) | $(r.mc_samples) | $(pw) | $(sp) | $(eff) |")
+            _ppb_safe_section(io, "Monte Carlo Scaling (B4)") do
+                println(io, "## Monte Carlo Scaling (B4)")
+                println(io)
+                mc = agg[(coalesce.(agg.phase_id, "") .== "B4") .& (agg.mode .== "outer_process"), :]
+                if nrow(mc) > 0
+                    println(io, "| Case | MC samples | Process workers | Speedup | Process efficiency |")
+                    println(io, "|------|:----------:|----------------:|--------:|-------------------:|")
+                    mc_sorted = sort(mc, [:case, :mc_samples, :process_workers])
+                    for r in eachrow(mc_sorted)
+                        pw  = coalesce(r.process_workers, "—")
+                        sp  = ismissing(r.speedup) ? "—" : "$(round(r.speedup; digits=1))×"
+                        eff = "process_efficiency" in names(mc) && !ismissing(r.process_efficiency) ?
+                              "$(round(100 * r.process_efficiency; digits=0))%" : "—"
+                        println(io, "| $(r.case) | $(r.mc_samples) | $(pw) | $(sp) | $(eff) |")
+                    end
+                else
+                    println(io, "_No B4 outer_process data._")
                 end
-            else
-                println(io, "_No B4 outer_process data._")
+                println(io)
             end
-            println(io)
         end
 
         println(io, "## Output Files")

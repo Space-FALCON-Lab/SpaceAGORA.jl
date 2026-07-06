@@ -4,13 +4,13 @@ const PPB_DEFAULT_OUTDIR = joinpath(PPC_REPO_ROOT, "output", "performance", "pap
 # ── Phase definition ─────────────────────────────────────────────────────────
 
 # thread_mode controls how the thread ladder is applied for each phase:
-#   :full_ladder  — use the full machine-scaled ladder (B1, B2, B3, B6)
+#   :full_ladder  — use the full machine-scaled ladder (B1, B2, B3)
 #   :max_only     — fix at the machine maximum for a fair profile comparison (B5)
 #   :single       — force 1 thread per Julia instance; parallelism comes from
 #                   process count only (B4 outer_process runs)
 #
 # worker_ladder: when non-empty, the phase is run once per entry, each time
-# varying process_workers to that value.  This is used for B4 and B6 to
+# varying process_workers to that value.  This is used for B4 to
 # produce throughput-vs-workers curves.  Serial and full_smart modes run
 # identically regardless of worker count, so their rows will be duplicated
 # in the output CSV; the analysis layer should filter on mode when plotting.
@@ -35,18 +35,18 @@ Base.@kwdef struct PPBConfig
     process_workers::Int    = 32
     seed::Int               = 20260615
     solver_mode::String     = "auto_stiff"
+    cpu_pinning::Vector{Int} = Int[]
     dry_run::Bool           = false
     preview::Bool           = false
 end
 
 # Preview mode: caps N_sat at 64, MC samples at 16, workers at 4, repeats at 2.
-# B6 (cross-machine) is excluded — it requires a second machine to be meaningful.
 const PPB_PREVIEW_MAX_N_SAT   = 64
 const PPB_PREVIEW_MAX_SAMPLES = 16
 const PPB_PREVIEW_MAX_WORKERS = 4
 const PPB_PREVIEW_REPEATS     = 2
 const PPB_PREVIEW_WARMUP      = 1
-const PPB_PREVIEW_SKIP_PHASES = Set(["B6"])
+const PPB_PREVIEW_SKIP_PHASES = Set{String}()
 
 function _ppb_preview_phase(phase::PPBPhase)::PPBPhase
     cases = filter(c -> _ppb_n_sat(c) <= PPB_PREVIEW_MAX_N_SAT, phase.cases)
@@ -186,25 +186,6 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         thread_mode = :max_only,
     ),
 
-    PPBPhase(
-        id    = "B6",
-        label = "Cross-Machine Validation",
-        cases = [
-            "single_inverse_square_vacuum",
-            "gravity_16sat_l20_vacuum",
-            "montecarlo_mars_aerobraking",
-        ],
-        parity_cases = [
-            "gravity_16sat_l20_vacuum",
-            "montecarlo_mars_aerobraking",
-        ],
-        modes      = ["serial", "outer_threads", "outer_process", "full_smart"],
-        mc_samples = [1, 16, 64],
-        repeats    = 5,
-        warmup     = 2,
-        thread_mode   = :full_ladder,
-        worker_ladder = [1, 2, 4, 8, 16, 32],
-    ),
 ]
 
 # ── CLI parsing ───────────────────────────────────────────────────────────────
@@ -216,6 +197,7 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
     process_workers = parse(Int, get(ENV, "SPACEAGORA_PPB_PROCESS_WORKERS", "32"))
     seed            = parse(Int, get(ENV, "SPACEAGORA_PPB_SEED", "20260615"))
     solver_mode     = lowercase(strip(get(ENV, "SPACEAGORA_PPB_SOLVER_MODE", "auto_stiff")))
+    cpu_pinning     = _ppc_parse_cpu_list(get(ENV, "SPACEAGORA_PPB_CPU_LIST", ""))
     dry_run         = _ppc_bool(get(ENV, "SPACEAGORA_PPB_DRY_RUN", "0"))
     preview         = _ppc_bool(get(ENV, "SPACEAGORA_PPB_PREVIEW", "0"))
 
@@ -235,6 +217,8 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
             seed = parse(Int, _ppc_arg_value(arg))
         elseif startswith(arg, "--solver-mode=")
             solver_mode = lowercase(strip(_ppc_arg_value(arg)))
+        elseif startswith(arg, "--cpu-list=")
+            cpu_pinning = _ppc_parse_cpu_list(_ppc_arg_value(arg))
         elseif arg == "--dry-run"
             dry_run = true
         elseif arg == "--preview"
@@ -255,6 +239,7 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
         process_workers = max(1, process_workers),
         seed            = seed,
         solver_mode     = solver_mode,
+        cpu_pinning     = cpu_pinning,
         dry_run         = dry_run,
         preview         = preview,
     )

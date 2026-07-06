@@ -302,9 +302,31 @@ function ppc_run_worker_parity(cfg::PPCConfig)
     return nothing
 end
 
+# Prefixes a worker's argv with `taskset -c <cpus>` when a CPU pool was
+# reserved via --cpu-list/SPACEAGORA_PPC_CPU_LIST, pinning that worker to the
+# first `threads` cores of the pool. Linux-only (taskset); pinning is skipped
+# with a warning on other platforms or if taskset isn't on PATH.
+function _ppc_apply_cpu_pinning(argv::Vector{String}, cpu_pinning::Vector{Int}, threads::Int)::Vector{String}
+    isempty(cpu_pinning) && return argv
+    if !Sys.islinux()
+        @warn "CPU pinning requested but taskset is only available on Linux; running unpinned."
+        return argv
+    end
+    if Sys.which("taskset") === nothing
+        @warn "CPU pinning requested but taskset was not found on PATH; running unpinned."
+        return argv
+    end
+    threads <= length(cpu_pinning) || throw(ArgumentError(
+        "CPU pinning pool has $(length(cpu_pinning)) core(s) but this run needs $(threads) thread(s); " *
+        "pass a larger --cpu-list, or drop it to disable pinning."
+    ))
+    cpu_list = join(cpu_pinning[1:threads], ",")
+    return vcat(["taskset", "-c", cpu_list], argv)
+end
+
 function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int, repeat::Int, seed::Int, mc_samples::Int, outfile::String, parity::Bool)
     julia_bin = Base.julia_cmd().exec[1]
-    return Cmd(String[
+    argv = String[
         julia_bin,
         "--threads=$(threads)",
         "--project=$(PPC_REPO_ROOT)",
@@ -322,7 +344,8 @@ function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int
         "--parity-samples=$(cfg.parity_samples)",
         "--outfile=$(outfile)",
         "--parity=$(parity ? 1 : 0)"
-    ])
+    ]
+    return Cmd(_ppc_apply_cpu_pinning(argv, cfg.cpu_pinning, threads))
 end
 
 function ppc_run_controller(cfg::PPCConfig)

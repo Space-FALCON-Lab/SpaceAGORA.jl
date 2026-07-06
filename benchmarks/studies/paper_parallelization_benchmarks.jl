@@ -9,5 +9,11 @@ include(joinpath(@__DIR__, "paper_parallelization_benchmarks", "reporting.jl"))
 include(joinpath(@__DIR__, "paper_parallelization_benchmarks", "main.jl"))
 
 if abspath(PROGRAM_FILE) == abspath(@__FILE__)
-    main_paper_benchmarks()
+    try
+        main_paper_benchmarks()
+    catch err
+        err isa ArgumentError || rethrow()
+        println(stderr, "Error: ", err.msg)
+        exit(1)
+    end
 end

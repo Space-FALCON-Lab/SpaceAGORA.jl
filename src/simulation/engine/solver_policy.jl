@@ -50,13 +50,7 @@ function _build_solver_tolerances(u_state::ComponentVector, args)
 end
 
 @inline _solver_policy_mode(cfg::SolverConfig)::Symbol = cfg.solver_mode
-@inline function _solver_policy_mode()::Symbol
-    active_config = _engine_active_config_ref[]
-    if active_config !== nothing
-        return _solver_policy_mode(active_config.solver)
-    end
-    return _solver_policy_mode(simulation_engine_config_from_env().solver)
-end
+@inline _solver_policy_mode()::Symbol = _solver_policy_mode(_active_solver_config())
 
 @inline function _retcode_is_stiff_symptom(retcode)::Bool
     # Convert once to Symbol (zero-allocation for Symbol/ReturnCode inputs,
@@ -85,8 +79,9 @@ end
 @inline _solver_maxiters(cfg::SolverConfig)::Union{Nothing, Int} = cfg.maxiters
 @inline _active_solver_config()::SolverConfig = begin
     active_config = _engine_active_config_ref[]
-    active_config === nothing ? simulation_engine_config_from_env().solver : active_config.solver
+    active_config === nothing ? simulation_engine_config_from_env(; solver_strict=true).solver : active_config.solver
 end
+@inline _solver_maxiters()::Union{Nothing, Int} = _solver_maxiters(_active_solver_config())
 
 @inline function _symplectic_fixed_dt_s(cfg::SolverConfig, args)::Float64
     dt = isnothing(cfg.symplectic_dt_s) ? args.integration_tolerances.dt_max_orbit : cfg.symplectic_dt_s
@@ -100,6 +95,7 @@ end
     dt > 0.0 || throw(ArgumentError("SolverConfig.gravity_backbone_dt_s must be > 0.0, got $dt."))
     return dt
 end
+@inline _gravity_backbone_fixed_dt_s(args)::Float64 = _gravity_backbone_fixed_dt_s(_active_solver_config(), args)
 
 @inline function _symplectic_conservative_eligible(args)::Bool
     args.mission_configuration.orientation_sim && return false
@@ -228,6 +224,7 @@ end
 @inline _split_imex_solver_spec() = _split_imex_solver_spec(_active_solver_config())
 
 @inline _multirate_fast_substeps(cfg::SolverConfig)::Int = cfg.multirate_fast_substeps
+@inline _multirate_fast_substeps()::Int = _multirate_fast_substeps(_active_solver_config())
 
 @inline function _multirate_slow_dt_s(cfg::SolverConfig, args)::Float64
     default_dt = min(args.integration_tolerances.dt_max_orbit, 2.0)
@@ -235,6 +232,7 @@ end
     dt > 0.0 || throw(ArgumentError("SolverConfig.multirate_slow_dt_s must be > 0.0, got $dt."))
     return min(dt, args.integration_tolerances.dt_max_orbit)
 end
+@inline _multirate_slow_dt_s(args)::Float64 = _multirate_slow_dt_s(_active_solver_config(), args)
 
 @inline function _multirate_solver_spec_from_sym(mode::Symbol, field_name::String)
     mode === :tsit5     && return (alg=Tsit5(), label="Tsit5", auto_switch_capable=false)

@@ -28,6 +28,7 @@ Base.@kwdef struct PPCConfig
     process_workers::Int = 2
     mc_samples::Vector{Int} = Int[]
     parity_samples::Int = 128
+    cpu_pinning::Vector{Int} = Int[]
     worker::Bool = false
     worker_case::String = ""
     worker_mode::String = ""
@@ -75,6 +76,29 @@ end
 @inline function _ppc_arg_value(arg::String)::String
     occursin("=", arg) || throw(ArgumentError("Expected --key=value argument, got '$arg'."))
     return split(arg, "=", limit=2)[2]
+end
+
+# Parses a taskset-style CPU list, e.g. "0-7,16,20-23", into a flat, ordered
+# list of unique CPU ids. Used to reserve a fixed pool of physical cores that
+# worker subprocesses get pinned to via `taskset` (see ppc_worker_cmd).
+function _ppc_parse_cpu_list(raw::AbstractString)::Vector{Int}
+    token = strip(String(raw))
+    isempty(token) && return Int[]
+    cpus = Int[]
+    for part in split(token, ",")
+        piece = strip(part)
+        isempty(piece) && continue
+        if occursin("-", piece)
+            bounds = split(piece, "-")
+            length(bounds) == 2 || throw(ArgumentError("Invalid CPU range '$piece'."))
+            lo, hi = parse(Int, bounds[1]), parse(Int, bounds[2])
+            lo <= hi || throw(ArgumentError("Invalid CPU range '$piece': start must be <= end."))
+            append!(cpus, lo:hi)
+        else
+            push!(cpus, parse(Int, piece))
+        end
+    end
+    return unique(cpus)
 end
 
 function _ppc_full_thread_ladder(cpu_threads::Int=Sys.CPU_THREADS)::Vector{Int}
@@ -182,6 +206,7 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
     process_workers = parse(Int, get(ENV, "SPACEAGORA_PPC_PROCESS_WORKERS", "2"))
     mc_samples = _ppc_int_csv(get(ENV, "SPACEAGORA_PPC_MC_SAMPLES", ""))
     parity_samples = parse(Int, get(ENV, "SPACEAGORA_PPC_PARITY_SAMPLES", "0"))
+    cpu_pinning = _ppc_parse_cpu_list(get(ENV, "SPACEAGORA_PPC_CPU_LIST", ""))
     worker = false
     worker_case = ""
     worker_mode = ""
@@ -223,6 +248,8 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
             mc_samples = _ppc_int_csv(_ppc_arg_value(arg))
         elseif startswith(arg, "--parity-samples=")
             parity_samples = parse(Int, _ppc_arg_value(arg))
+        elseif startswith(arg, "--cpu-list=")
+            cpu_pinning = _ppc_parse_cpu_list(_ppc_arg_value(arg))
         elseif startswith(arg, "--case=")
             worker_case = _ppc_arg_value(arg)
         elseif startswith(arg, "--mode=")
@@ -269,6 +296,7 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
         process_workers=process_workers,
         mc_samples=mc_samples,
         parity_samples=parity_samples,
+        cpu_pinning=cpu_pinning,
         worker=worker,
         worker_case=worker_case,
         worker_mode=worker_mode,

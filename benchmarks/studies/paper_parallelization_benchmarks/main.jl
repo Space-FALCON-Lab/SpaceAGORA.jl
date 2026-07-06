@@ -34,6 +34,7 @@ function _ppb_build_ppc_config(
         process_workers = effective_workers,
         mc_samples      = phase.mc_samples,
         parity_samples  = 512,
+        cpu_pinning     = ppb.cpu_pinning,
     )
 end
 
@@ -140,6 +141,7 @@ function main_paper_benchmarks()
     println("[paper-benchmarks] thread_ladder    = $(isempty(ppb.threads) ? "auto ($(Sys.CPU_THREADS) CPU threads)" : join(ppb.threads, ","))")
     println("[paper-benchmarks] process_workers  = $(ppb.preview ? "≤$(PPB_PREVIEW_MAX_WORKERS) (preview)" : string(ppb.process_workers))")
     println("[paper-benchmarks] solver_mode      = $(ppb.solver_mode)")
+    println("[paper-benchmarks] cpu_pinning      = $(isempty(ppb.cpu_pinning) ? "off" : join(ppb.cpu_pinning, ","))")
     println("[paper-benchmarks] seed             = $(ppb.seed)")
     println("[paper-benchmarks] preview          = $(ppb.preview)")
     println("[paper-benchmarks] dry_run          = $(ppb.dry_run)")
@@ -173,8 +175,12 @@ function main_paper_benchmarks()
             for p in plot_paths
                 println("  $(p)")
             end
-            report_path = _ppb_write_report(root, agg, active, results, stamp)
-            println("[paper-benchmarks] report         = $(report_path)")
+            try
+                report_path = _ppb_write_report(root, agg, active, results, stamp)
+                println("[paper-benchmarks] report         = $(report_path)")
+            catch err
+                @warn "Report generation failed; raw/aggregated CSVs are still on disk" exception=(err, catch_backtrace())
+            end
         else
             println("[paper-benchmarks] No raw CSV data found; skipping aggregation and plots.")
         end

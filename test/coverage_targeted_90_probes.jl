@@ -774,6 +774,7 @@ end
     p_ephem.shared_buffers.densities[1] = 9.0
     p_ephem.shared_buffers.temperatures[1] = 250.0
     p_ephem.shared_buffers.winds[1] = SVector{3, Float64}(1.0, 2.0, 3.0)
+    p_ephem.shared_buffers.density_sample_t[1] = 0.0
     buffered = SimulationEngine.sample_buffered_atmosphere(sample_ephem, p_ephem, 1, 0.0)
     @test buffered.rho_kg_m3 == 9.0
     @test buffered.temperature_k == 250.0
@@ -822,6 +823,7 @@ end
     p_density.shared_buffers.densities[1] = 1.5
     p_density.shared_buffers.temperatures[1] = 222.0
     p_density.shared_buffers.winds[1] = SVector{3, Float64}(4.0, 5.0, 6.0)
+    p_density.shared_buffers.density_sample_t[1] = 0.0
     buffered_state = _TARGET_CALLBACKS._buffered_stage_environment_state(u_density.sc[1], p_density, 1, 0.0)
     @test buffered_state.rho == 1.5
     @test buffered_state.T == 222.0

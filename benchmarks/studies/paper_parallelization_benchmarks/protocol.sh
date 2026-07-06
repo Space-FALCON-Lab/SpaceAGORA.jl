@@ -5,20 +5,26 @@
 #   SPACEAGORA_PPB_OUTDIR           — output root directory
 #                                     default: <repo>/output/performance/paper_benchmarks
 #   SPACEAGORA_PPB_PHASES           — comma-separated phase subset, e.g. B1,B2
-#                                     default: all phases (B1–B6)
+#                                     default: all phases (B1–B5)
 #   SPACEAGORA_PPB_THREADS          — comma-separated thread ladder override
 #                                     default: auto-scaled to Sys.CPU_THREADS
-#   SPACEAGORA_PPB_PROCESS_WORKERS  — max process workers for MC phases (B4, B6)
+#   SPACEAGORA_PPB_PROCESS_WORKERS  — max process workers for MC phases (B4)
 #                                     default: 32
 #   SPACEAGORA_PPB_SOLVER_MODE      — ODE solver mode
 #                                     default: auto_stiff
 #   SPACEAGORA_PPB_SEED             — RNG seed
 #                                     default: 20260615
+#   SPACEAGORA_PPB_CPU_LIST         — taskset-style CPU pool to pin worker
+#                                     subprocesses to, e.g. "0-15" or "0-7,16-23".
+#                                     Each worker is pinned to the first N cores
+#                                     of this pool, where N is that worker's
+#                                     thread count. Linux only; unset disables
+#                                     pinning (default).
 #   SPACEAGORA_PPB_DRY_RUN          — set to 1 to print planned runs without executing
 #                                     default: 0
 #   SPACEAGORA_PPB_PREVIEW          — set to 1 for a local-PC preview run:
 #                                     caps N_sat at 64, MC samples at 16, process
-#                                     workers at 4, repeats at 2, and skips B6.
+#                                     workers at 4, and repeats at 2.
 #                                     Thread ladder still auto-scales to local CPU count.
 #                                     default: 0
 #
@@ -35,6 +41,14 @@
 #
 # Example — run only B1 and B5:
 #   SPACEAGORA_PPB_PHASES=B1,B5 bash benchmarks/studies/paper_parallelization_benchmarks/protocol.sh
+#
+# Example — run a single phase (B1, B2, B3, B4, or B5) by passing its id as a
+# bare positional argument; this is forwarded straight to the Julia script
+# and is equivalent to SPACEAGORA_PPB_PHASES=B4:
+#   bash benchmarks/studies/paper_parallelization_benchmarks/protocol.sh B4
+#
+# Note: B6 ("Cross-Machine Validation") was removed from the phase catalog
+# and is no longer a valid phase id.
 
 set -euo pipefail
 
@@ -65,6 +79,10 @@ fi
 
 if [ -n "${SPACEAGORA_PPB_SEED:-}" ]; then
     ARGS+=("--seed=${SPACEAGORA_PPB_SEED}")
+fi
+
+if [ -n "${SPACEAGORA_PPB_CPU_LIST:-}" ]; then
+    ARGS+=("--cpu-list=${SPACEAGORA_PPB_CPU_LIST}")
 fi
 
 if [ "${SPACEAGORA_PPB_DRY_RUN:-0}" = "1" ]; then

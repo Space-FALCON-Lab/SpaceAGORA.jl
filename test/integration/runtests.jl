@@ -236,6 +236,7 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const _solver_policy_mode = SimulationEngine._solver_policy_mode
     const _gram_per_sat_instances_enabled = SimulationEngine._gram_per_sat_instances_enabled
     const _solver_maxiters = SimulationEngine._solver_maxiters
+    const _active_solver_config = SimulationEngine._active_solver_config
     const _effector_parallel_mode = SimulationEngine._effector_parallel_mode
     const _effector_thread_threshold = SimulationEngine._effector_thread_threshold
     const _effector_max_threads = SimulationEngine._effector_max_threads
@@ -1046,6 +1047,8 @@ module GuidanceSandbox
 using ..SimulationModel
 using ..SimulationModel.AbstractTypes: AbstractGuidanceModel
 using ComponentArrays
+using StaticArrays
+using LinearAlgebra
 end
 const GUIDANCE_SANDBOX = GuidanceSandbox
 

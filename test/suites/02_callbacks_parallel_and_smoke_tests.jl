@@ -361,7 +361,8 @@
     end
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
-        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1"
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET" => "1"
     ) do
         @test density_use_threads(args_control, 8) == has_worker_threads
     end
@@ -374,6 +375,7 @@
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET" => "1",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "0"
     ) do
@@ -382,6 +384,7 @@
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET" => "1",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
     ) do
@@ -1512,7 +1515,12 @@ end
         withenv(
             "SPACEAGORA_RHS_CALIBRATE" => "force",
             "SPACEAGORA_RHS_CALIBRATE_N_WARMUP" => "1",
-            "SPACEAGORA_RHS_CALIBRATE_N_TIMED" => "2"
+            "SPACEAGORA_RHS_CALIBRATE_N_TIMED" => "2",
+            # p_calib only has 4 active satellites; the default SIMD floor of 4
+            # sats/worker leaves viable_workers == 1, so no flat-plan candidate
+            # is generated to compare against satellite_batch. Loosen the floor
+            # so the sweep has more than one candidate to choose from.
+            "SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER" => "1"
         ) do
             p_calib.shared_buffers.rhs_plan_override[] = nothing
             SimulationEngine._calibrate_rhs_plan_if_needed!(p_calib, u_calib, args_calib)

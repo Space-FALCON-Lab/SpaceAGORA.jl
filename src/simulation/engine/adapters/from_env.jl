@@ -54,52 +54,72 @@ Build a typed `SolverConfig` from `SPACEAGORA_SOLVER_*` environment variables.
 `env_get(name, default)` defaults to `_engine_env_get`, which respects any active
 `SimulationEngineConfig` overrides.
 """
-function _parse_float_opt(raw::String)::Union{Nothing, Float64}
+function _parse_float_opt(raw::String, env_name::String)::Union{Nothing, Float64}
     s = strip(raw)
     isempty(s) && return nothing
     v = tryparse(Float64, s)
-    (v !== nothing && v > 0.0) ? v : nothing
+    v === nothing && throw(ArgumentError("$(env_name) must be a positive number, got '$s'."))
+    v > 0.0 || throw(ArgumentError("$(env_name) must be a positive number, got '$s'."))
+    return v
 end
 
-function _solver_config_from_env(env_get=_engine_env_get)::SolverConfig
-    solver_mode = try
+# `strict=true` (used by `_active_solver_config`, the basis for the `_solver_*`
+# unit-test-facing accessors) propagates malformed `SPACEAGORA_SOLVER_*` values as
+# ArgumentError, matching this repo's other env parsers. `strict=false` (used by
+# `simulation_engine_config_from_env`'s general/introspection contract) instead
+# swallows a malformed individual knob and falls back to its default, so a typo'd
+# solver knob can't crash construction of the whole SimulationEngineConfig.
+_parse_or_default(f::Function, strict::Bool, default) = strict ? f() : (try
+    f()
+catch e
+    e isa ArgumentError ? default : rethrow()
+end)
+
+function _solver_config_from_env(env_get=_engine_env_get; strict::Bool=true)::SolverConfig
+    solver_mode = _parse_or_default(strict, :tsit5) do
         _parse_solver_mode_sym(env_get("SPACEAGORA_SOLVER_MODE", "tsit5"))
-    catch
-        :tsit5
     end
 
-    raw_maxiters = strip(env_get("SPACEAGORA_SOLVER_MAXITERS", ""))
-    maxiters = if isempty(raw_maxiters)
-        nothing
-    else
-        v = tryparse(Int, raw_maxiters)
-        (v !== nothing && v > 0) ? v : nothing
+    maxiters = _parse_or_default(strict, nothing) do
+        raw_maxiters = strip(env_get("SPACEAGORA_SOLVER_MAXITERS", ""))
+        if isempty(raw_maxiters)
+            nothing
+        else
+            v = tryparse(Int, raw_maxiters)
+            v === nothing && throw(ArgumentError("SPACEAGORA_SOLVER_MAXITERS must be a positive integer, got '$raw_maxiters'."))
+            v > 0 || throw(ArgumentError("SPACEAGORA_SOLVER_MAXITERS must be a positive integer, got '$raw_maxiters'."))
+            v
+        end
     end
 
-    symplectic_dt_s = _parse_float_opt(env_get("SPACEAGORA_SYMPLECTIC_DT_S", ""))
-    gravity_backbone_dt_s = _parse_float_opt(env_get("SPACEAGORA_GRAVITY_BACKBONE_DT_S", ""))
+    symplectic_dt_s = _parse_or_default(strict, nothing) do
+        _parse_float_opt(env_get("SPACEAGORA_SYMPLECTIC_DT_S", ""), "SPACEAGORA_SYMPLECTIC_DT_S")
+    end
+    gravity_backbone_dt_s = _parse_or_default(strict, nothing) do
+        _parse_float_opt(env_get("SPACEAGORA_GRAVITY_BACKBONE_DT_S", ""), "SPACEAGORA_GRAVITY_BACKBONE_DT_S")
+    end
 
-    split_imex_solver = try
+    split_imex_solver = _parse_or_default(strict, :kencarp4) do
         _parse_split_imex_solver_sym(env_get("SPACEAGORA_SPLIT_IMEX_SOLVER", "kencarp4"))
-    catch
-        :kencarp4
     end
 
-    multirate_slow_dt_s = _parse_float_opt(env_get("SPACEAGORA_MULTIRATE_SLOW_DT_S", ""))
-
-    multirate_fast_substeps = let v = tryparse(Int, env_get("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS", "8"))
-        (v !== nothing && v > 0) ? v : 8
+    multirate_slow_dt_s = _parse_or_default(strict, nothing) do
+        _parse_float_opt(env_get("SPACEAGORA_MULTIRATE_SLOW_DT_S", ""), "SPACEAGORA_MULTIRATE_SLOW_DT_S")
     end
 
-    multirate_slow_solver = try
+    multirate_fast_substeps = _parse_or_default(strict, 8) do
+        raw_fast_substeps = strip(env_get("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS", "8"))
+        v = tryparse(Int, raw_fast_substeps)
+        v === nothing && throw(ArgumentError("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS must be a positive integer, got '$raw_fast_substeps'."))
+        v > 0 || throw(ArgumentError("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS must be a positive integer, got '$raw_fast_substeps'."))
+        v
+    end
+
+    multirate_slow_solver = _parse_or_default(strict, :tsit5) do
         _parse_multirate_solver_sym(env_get("SPACEAGORA_MULTIRATE_SLOW_SOLVER", "tsit5"), "SPACEAGORA_MULTIRATE_SLOW_SOLVER")
-    catch
-        :tsit5
     end
-    multirate_fast_solver = try
+    multirate_fast_solver = _parse_or_default(strict, :auto_stiff) do
         _parse_multirate_solver_sym(env_get("SPACEAGORA_MULTIRATE_FAST_SOLVER", "auto_stiff"), "SPACEAGORA_MULTIRATE_FAST_SOLVER")
-    catch
-        :auto_stiff
     end
 
     auto_stiff_gravity_tsit5 = SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5", true)
@@ -138,7 +158,7 @@ julia> (config.parallel.profile, config.artifacts.save_bundle)
 ("R2", false)
 ```
 """
-function simulation_engine_config_from_env(env::AbstractDict{<:Any, <:Any}=ENV)::SimulationEngineConfig
+function simulation_engine_config_from_env(env::AbstractDict{<:Any, <:Any}=ENV; solver_strict::Bool=false)::SimulationEngineConfig
     parallel = ParallelConfig(
         profile=String(get(env, "SPACEAGORA_PARALLEL_PROFILE", "")),
         outer_parallel_active=_parse_bool(get(env, "SPACEAGORA_OUTER_PARALLEL_ACTIVE", nothing), false),
@@ -151,7 +171,7 @@ function simulation_engine_config_from_env(env::AbstractDict{<:Any, <:Any}=ENV):
     )
 
     env_get = (name, default) -> String(get(env, name, default))
-    solver = _solver_config_from_env(env_get)
+    solver = _solver_config_from_env(env_get; strict=solver_strict)
 
     runtime_policy = RuntimePolicyConfig(
         warn_normalize=_parse_bool(get(env, "SPACEAGORA_WARN_NORMALIZE", nothing), true),

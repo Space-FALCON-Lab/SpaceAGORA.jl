@@ -68,9 +68,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      JULIA_DEPOT_PATH: ${{ runner.temp }}/julia-clean-depot
       JULIA_NUM_THREADS: "4"
     steps:
+      # The runner context is not available in job-level env, and GitHub
+      # rejects the whole workflow file when it is used there. Export the
+      # clean depot path from a step instead.
+      - name: Use a clean Julia depot
+        run: echo "JULIA_DEPOT_PATH=${RUNNER_TEMP}/julia-clean-depot" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:

@@ -1516,11 +1516,15 @@ end
         # Pin the SIMD batch floor so the 4-sat fixture yields >= 2 viable
         # workers and the sweep produces an override regardless of the
         # default SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER (4).
+        # Point the calibration path at a throwaway file so the force-mode
+        # save cannot persist this suite's synthetic signatures into the
+        # machine-default calibration state (which poisons later suite runs).
         withenv(
             "SPACEAGORA_RHS_CALIBRATE" => "force",
             "SPACEAGORA_RHS_CALIBRATE_N_WARMUP" => "1",
             "SPACEAGORA_RHS_CALIBRATE_N_TIMED" => "2",
-            "SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER" => "1"
+            "SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER" => "1",
+            "SPACEAGORA_RHS_CALIBRATION_PATH" => joinpath(mktempdir(), "calib_force_gate.toml")
         ) do
             p_calib.shared_buffers.rhs_plan_override[] = nothing
             SimulationEngine._calibrate_rhs_plan_if_needed!(p_calib, u_calib, args_calib)
@@ -1619,6 +1623,45 @@ end
         planet=planet_ng
     )
     @test_throws ArgumentError SimulationCampaigns.run_constellation_ensemble(cfg_empty)
+
+    # Member splits alias the parent environment (cheap split); parallel isolation
+    # therefore relies on the per-worker deepcopy, which must sever mutable model
+    # state such as the planet object.
+    member_split = SimulationCampaigns._ensemble_member_configuration(cfg, sats[1], "alias_probe")
+    @test member_split.environment_model === cfg.environment_model
+    member_isolated = deepcopy(member_split)
+    @test member_isolated.environment_model !== cfg.environment_model
+    @test member_isolated.environment_model.planet !== cfg.environment_model.planet
+
+    # An explicit isolate_state=false must not break the parallel path: the runner
+    # overrides it with its own per-worker copy.
+    res_noiso = SimulationCampaigns.run_constellation_ensemble(
+        cfg; threads=ensemble_threads, return_solution=true, isolate_state=false
+    )
+    @test isempty(res_noiso.failed)
+    u_noiso = collect(res_noiso.samples[3].value.u[end])
+    @test maximum(abs.(u_direct .- u_noiso)) <= 1e-9
+
+    # Checkpoint path splitting: any checkpoint interaction gets a per-member path.
+    settings_ck_default = SimulationSettings(
+        results=false, verbose=false, generate_plots=false, normalize=false,
+        results_directory="outdir", checkpoint_enabled=true
+    )
+    split_ck_default = SimulationCampaigns._ensemble_member_settings(settings_ck_default, "sat_1_id_11")
+    @test split_ck_default.results_directory == joinpath("outdir", "sat_1_id_11")
+
+    settings_resume_explicit = SimulationSettings(
+        results=false, verbose=false, generate_plots=false, normalize=false,
+        results_directory="outdir", checkpoint_directory="ckdir", resume_from_checkpoint=true
+    )
+    split_resume = SimulationCampaigns._ensemble_member_settings(settings_resume_explicit, "sat_2_id_22")
+    @test split_resume.checkpoint_directory == joinpath("ckdir", "sat_2_id_22")
+    @test split_resume.results_directory == "outdir"
+
+    settings_plain = SimulationSettings(
+        results=false, verbose=false, generate_plots=false, normalize=false
+    )
+    @test SimulationCampaigns._ensemble_member_settings(settings_plain, "sat_3_id_33") === settings_plain
 end
 
 @testset "GRAM Lock Scope" begin

@@ -2,8 +2,13 @@ using ..SimulationModel: SimulationConfiguration, SimulationSettings, DynamicsMo
 import ..SimulationEngine
 
 function _ensemble_member_settings(settings::SimulationSettings, member_tag::String)::SimulationSettings
-    needs_results_split = settings.results
-    needs_checkpoint_split = settings.checkpoint_enabled && !isempty(strip(settings.checkpoint_directory))
+    # Checkpoints can be read or written whenever checkpointing OR resume is on,
+    # and an empty checkpoint_directory falls back to results_directory/checkpoints —
+    # so that fallback case must split results_directory even when results=false.
+    checkpoint_active = settings.checkpoint_enabled || settings.resume_from_checkpoint
+    explicit_checkpoint_dir = !isempty(strip(settings.checkpoint_directory))
+    needs_results_split = settings.results || (checkpoint_active && !explicit_checkpoint_dir)
+    needs_checkpoint_split = checkpoint_active && explicit_checkpoint_dir
     if !needs_results_split && !needs_checkpoint_split
         return settings
     end
@@ -77,12 +82,21 @@ keeps its own adaptive step size.
 
 Sample `i` of the returned [`MonteCarloResult`](@ref) holds the `run_simulation` return
 value for spacecraft `i` (in `args.dynamics_model.spacecraft` order) in `value`. When
-result saving is enabled, each member writes under
-`results_directory/sat_<index>_id_<spacecraft id>` so members do not clobber each other.
+result saving, checkpointing, or checkpoint resume is enabled, each member uses
+per-satellite `sat_<index>_id_<spacecraft id>` subdirectories so members do not read or
+clobber each other's files.
 
 `threads` caps worker tasks exactly as in [`run_monte_carlo`](@ref); Julia must be started
 with at least that many threads. While more than one worker is active the runner sets
 `SPACEAGORA_OUTER_PARALLEL_ACTIVE=1` so inner thread policies yield to the outer split.
+
+Isolation: when more than one worker is active, each member solves a `deepcopy` of its
+configuration taken inside its worker task, because model state such as
+`environment_model.planet.L_PI` is mutated during a solve and must never be shared
+between concurrent members. The copy replaces (not adds to) `run_simulation`'s own
+`isolate_state` copy, so the total cost matches a plain isolated run; an explicit
+`isolate_state=false` is ignored under parallel execution. With `threads=1` the
+keyword is forwarded to [`run_simulation`](@ref) unchanged.
 
 The configuration must be uncoupled: guidance, navigation, and control effector tuples
 must be empty, because effectors that coordinate several satellites cannot act across
@@ -113,14 +127,24 @@ function run_constellation_ensemble(
         for (idx, sc) in enumerate(spacecraft)
     ]
 
-    run_member = idx -> SimulationEngine.run_simulation(member_configs[idx]; run_kwargs...)
     spec = MonteCarloSpec(seeds=1:length(member_configs), threads=threads, fail_fast=fail_fast)
-
     worker_count = min(spec.threads, length(member_configs))
+
     if worker_count > 1
+        # Member splits alias the parent's environment/GNC models, and solves mutate
+        # model state (for example planet.L_PI in the planet-frame callback). Copy per
+        # member inside the worker so concurrent members share nothing, and disable
+        # run_simulation's own isolate_state copy so isolation is paid exactly once.
+        parallel_kwargs = Dict{Symbol, Any}(pairs(run_kwargs))
+        parallel_kwargs[:isolate_state] = false
+        run_member = idx -> SimulationEngine.run_simulation(
+            deepcopy(member_configs[idx]); parallel_kwargs...
+        )
         return withenv("SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1") do
             run_monte_carlo(run_member, spec)
         end
     end
+
+    run_member = idx -> SimulationEngine.run_simulation(member_configs[idx]; run_kwargs...)
     return run_monte_carlo(run_member, spec)
 end

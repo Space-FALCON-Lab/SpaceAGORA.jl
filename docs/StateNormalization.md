@@ -1,5 +1,12 @@
 # State Normalization in SpaceAGORA.jl
 
+> **Historical document.** The standalone state-normalization module described
+> below predates the typed engine, which is SI-native and applies quaternion
+> unit-norm projection through the callback system
+> (`src/simulation/callbacks/callbacks.jl`) using the utilities in
+> `src/core/numerics/quaternion_utils.jl`. The type and function names below
+> are retained for reference to the legacy design.
+
 ## Overview
 
 The state normalization system in SpaceAGORA.jl provides robust handling of integration state constraints, particularly for quaternion-based attitude representation. This module ensures that rotational states maintain their geometric constraints (e.g., quaternion unit-norm) throughout numerical integration.
@@ -8,7 +15,7 @@ The state normalization system in SpaceAGORA.jl provides robust handling of inte
 
 ### 1. State Normalization Module
 
-**Location:** `src/utils/state_normalization.jl`
+**Location:** legacy module (retired); quaternion projection now lives in the callback system
 
 The module provides a comprehensive framework for state normalization with the following key types and functions:
 
@@ -48,7 +55,7 @@ Create a `DiscreteCallback` for use with DifferentialEquations.jl solvers.
 
 ### 2. Integration with Simulation Framework
 
-The state normalization callbacks are automatically integrated into the simulation framework via [src/simulation_model/callbacks.jl](src/simulation_model/callbacks.jl):
+The state normalization callbacks are automatically integrated into the simulation framework via [src/simulation/callbacks/callbacks.jl](../src/simulation/callbacks/callbacks.jl):
 
 - **`get_state_normalization_callback()`** - Creates the normalization callback
 - **Automatic integration** - Callbacks are added to `CallbackSet` in `get_callbacks()`
@@ -90,7 +97,7 @@ $$\dot{\mathbf{q}} = \frac{1}{2}\boldsymbol{\Xi}(\boldsymbol{\omega}) \mathbf{q}
 
 where $\boldsymbol{\Xi}$ is the kinematic matrix relating angular velocity $\boldsymbol{\omega}$ to quaternion rates.
 
-See [src/utils/quaternion_utils.jl](src/utils/quaternion_utils.jl) for the mathematical details.
+See [src/core/numerics/quaternion_utils.jl](../src/core/numerics/quaternion_utils.jl) for the mathematical details.
 
 ## Configuration & Usage
 
@@ -307,11 +314,11 @@ To add angle/angular velocity constraints, extend `StateNormalizationConfig` wit
 
 ## References
 
-- Quaternion utilities: [src/utils/quaternion_utils.jl](src/utils/quaternion_utils.jl)
-- Callback system: [src/simulation_model/callbacks.jl](src/simulation_model/callbacks.jl)
+- Quaternion utilities: [src/core/numerics/quaternion_utils.jl](../src/core/numerics/quaternion_utils.jl)
+- Callback system: [src/simulation/callbacks/callbacks.jl](../src/simulation/callbacks/callbacks.jl)
 - Simulation setup: [src/simulation/run_simulation.jl](src/simulation/run_simulation.jl)
 - State initialization: [src/simulation/SimulationElements.jl](src/simulation/SimulationElements.jl)
-- Configuration: [src/simulation_model/simulation_configuration.jl](src/simulation_model/simulation_configuration.jl)
+- Configuration: [src/core/state/simulation_configuration.jl](../src/core/state/simulation_configuration.jl)
 
 ## Troubleshooting
 

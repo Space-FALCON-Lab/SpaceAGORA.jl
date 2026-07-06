@@ -436,27 +436,38 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
     end
     if isfinite(start_time) && isfinite(stop_time) && stop_time > start_time
         in_burn_window = t >= start_time - 1e-9 && t <= stop_time + 1e-9
-        was_in_burn_window = get(_MANEUVER_TRACE_BURN_ACTIVE, trace_key, false)
-        if in_burn_window && !was_in_burn_window
-            _MANEUVER_TRACE_BURN_ACTIVE[trace_key] = true
-            _trace_maneuver_event!("burn_start", controlModel, p, i, t; start_burn_s=start_time, stop_burn_s=stop_time)
-        elseif !in_burn_window && was_in_burn_window && t > stop_time + 1e-9
-            _MANEUVER_TRACE_BURN_ACTIVE[trace_key] = false
-            _trace_maneuver_event!("burn_end", controlModel, p, i, t; start_burn_s=start_time, stop_burn_s=stop_time)
+        # `calcControlEffect!` runs concurrently across spacecraft under
+        # control-callback parallelism (see threaded_foreach_persistent(:control_callback, ...)
+        # in control_callbacks.jl), so these process-global Dicts need the same lock
+        # guarding them everywhere they're touched — Dict mutation from multiple
+        # threads is unsafe even across disjoint keys (internal resize/rehash is
+        # shared state).
+        in_burn_window, just_started, just_ended, schedule_cleared = lock(_MANEUVER_TRACE_LOCK) do
+            was_in_burn_window = get(_MANEUVER_TRACE_BURN_ACTIVE, trace_key, false)
+            started = in_burn_window && !was_in_burn_window
+            ended = !in_burn_window && was_in_burn_window && t > stop_time + 1e-9
+            started && (_MANEUVER_TRACE_BURN_ACTIVE[trace_key] = true)
+            ended && (_MANEUVER_TRACE_BURN_ACTIVE[trace_key] = false)
+            cleared = !in_burn_window && t > stop_time + 1e-9
+            if cleared
+                _MANEUVER_TRACE_BURN_ACTIVE[trace_key] = false
+                pop!(_MANEUVER_TRACE_LAST_WINDOW, trace_key, nothing)
+            end
+            (in_burn_window, started, ended, cleared)
         end
+        just_started && _trace_maneuver_event!("burn_start", controlModel, p, i, t; start_burn_s=start_time, stop_burn_s=stop_time)
+        just_ended && _trace_maneuver_event!("burn_end", controlModel, p, i, t; start_burn_s=start_time, stop_burn_s=stop_time)
 
         # Lock the schedule only after ignition begins and until burn stop.
         if in_burn_window
             return
         end
         # Burn completed: clear the schedule so future campaign maneuvers can be planned.
-        if t > stop_time + 1e-9
+        if schedule_cleared
             _trace_maneuver_event!("schedule_clear", controlModel, p, i, t; start_burn_s=start_time, stop_burn_s=stop_time)
             controlModel.start_burn_time[i] = -1.0
             controlModel.stop_burn_time[i] = -1.0
             _clear_burn_plan!(p, i)
-            _MANEUVER_TRACE_BURN_ACTIVE[trace_key] = false
-            pop!(_MANEUVER_TRACE_LAST_WINDOW, trace_key, nothing)
         end
     end
     pos = SVector{3, Float64}(u.sc[i].pos)

@@ -25,6 +25,7 @@
         lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
             kclear()
         end
+        SimulationModel.Planets._reset_furnished_kernels!()
 
         earth_sc = make_spacecraft(ra_alt_m=500e3, rp_alt_m=400e3, ν_deg=175.0)
         earth_args = make_example_config(
@@ -73,6 +74,7 @@
         lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
             kclear()
         end
+        SimulationModel.Planets._reset_furnished_kernels!()
 
         spice_path = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
         earth = @test_nowarn Earth("", spice_path)

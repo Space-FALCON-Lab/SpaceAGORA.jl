@@ -15,6 +15,7 @@ import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_sp
 lock(RuntimeServices.SPICE_LOCK) do
     kclear()
 end
+SimulationModel.Planets._reset_furnished_kernels!()
 
 spacecraft = make_three_body_spacecraft(
     bus_dims=(1.2, 1.1, 0.9),

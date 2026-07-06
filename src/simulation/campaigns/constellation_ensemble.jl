@@ -70,7 +70,7 @@ end
                                allow_gnc_effectors=false, route_state=nothing,
                                route_tuning=nothing, run_kwargs...) -> MonteCarloResult
 
-Propagate each spacecraft of a multi-satellite [`SimulationConfiguration`](@ref) as an
+Propagate each spacecraft of a multi-satellite `SimulationConfiguration` as an
 independent single-satellite simulation, parallelised across satellites with the
 [`run_monte_carlo`](@ref) worker-task runner.
 

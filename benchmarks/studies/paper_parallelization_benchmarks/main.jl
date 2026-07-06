@@ -13,6 +13,16 @@ function _ppb_thread_ladder(phase::PPBPhase, ppb::PPBConfig)::Vector{Int}
     return base
 end
 
+# Caps a phase's MC sample ladder at ppb.mc_samples_max (e.g. B4's default
+# [1, 4, 16, 64, 256, 1024]), keeping at least the smallest value if the cap
+# would otherwise remove everything. No-op when mc_samples_max is unset.
+function _ppb_capped_mc_samples(phase::PPBPhase, ppb::PPBConfig)::Vector{Int}
+    ppb.mc_samples_max === nothing && return phase.mc_samples
+    samples = filter(s -> s <= ppb.mc_samples_max, phase.mc_samples)
+    isempty(samples) && (samples = [minimum(phase.mc_samples)])
+    return samples
+end
+
 function _ppb_build_ppc_config(
     phase::PPBPhase,
     ppb::PPBConfig,
@@ -32,7 +42,7 @@ function _ppb_build_ppc_config(
         seed            = ppb.seed,
         solver_mode     = ppb.solver_mode,
         process_workers = effective_workers,
-        mc_samples      = phase.mc_samples,
+        mc_samples      = _ppb_capped_mc_samples(phase, ppb),
         parity_samples  = 512,
         cpu_pinning     = ppb.cpu_pinning,
     )
@@ -54,7 +64,7 @@ function _ppb_dry_print(phase::PPBPhase, ppb::PPBConfig, outdir::String; process
     println("[dry-run]   parity_cases    = $(join(phase.parity_cases, ", "))")
     println("[dry-run]   modes           = $(join(phase.modes, ", "))")
     println("[dry-run]   threads         = $(_ppb_thread_ladder(phase, ppb))")
-    println("[dry-run]   mc_samples      = $(phase.mc_samples)")
+    println("[dry-run]   mc_samples      = $(_ppb_capped_mc_samples(phase, ppb))")
     println("[dry-run]   process_workers = $(process_workers)")
     println("[dry-run]   repeats         = $(phase.repeats), warmup = $(phase.warmup)")
 end
@@ -171,6 +181,7 @@ function main_paper_benchmarks()
     println("[paper-benchmarks] phases           = $(join([p.id for p in active], ", "))")
     println("[paper-benchmarks] thread_ladder    = $(isempty(ppb.threads) ? "auto ($(Sys.CPU_THREADS) CPU threads)" : join(ppb.threads, ","))")
     println("[paper-benchmarks] process_workers  = $(ppb.preview ? "≤$(PPB_PREVIEW_MAX_WORKERS) (preview)" : string(ppb.process_workers))")
+    println("[paper-benchmarks] mc_samples_max   = $(ppb.mc_samples_max === nothing ? "unset" : (ppb.preview ? "$(min(ppb.mc_samples_max, PPB_PREVIEW_MAX_SAMPLES)) (preview-capped)" : string(ppb.mc_samples_max)))")
     println("[paper-benchmarks] solver_mode      = $(ppb.solver_mode)")
     println("[paper-benchmarks] cpu_pinning      = $(isempty(ppb.cpu_pinning) ? "off" : join(ppb.cpu_pinning, ","))")
     println("[paper-benchmarks] seed             = $(ppb.seed)")

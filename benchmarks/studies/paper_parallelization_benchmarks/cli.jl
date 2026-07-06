@@ -33,6 +33,7 @@ Base.@kwdef struct PPBConfig
     outdir::String          = PPB_DEFAULT_OUTDIR
     threads::Vector{Int}    = Int[]
     process_workers::Int    = 32
+    mc_samples_max::Union{Nothing, Int} = nothing
     seed::Int               = 20260615
     solver_mode::String     = "auto_stiff"
     cpu_pinning::Vector{Int} = Int[]
@@ -195,6 +196,9 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
     outdir          = get(ENV, "SPACEAGORA_PPB_OUTDIR", PPB_DEFAULT_OUTDIR)
     threads         = _ppc_int_csv(get(ENV, "SPACEAGORA_PPB_THREADS", ""))
     process_workers = parse(Int, get(ENV, "SPACEAGORA_PPB_PROCESS_WORKERS", "32"))
+    mc_samples_max  = let raw = strip(get(ENV, "SPACEAGORA_PPB_MC_SAMPLES_MAX", ""))
+        isempty(raw) ? nothing : parse(Int, raw)
+    end
     seed            = parse(Int, get(ENV, "SPACEAGORA_PPB_SEED", "20260615"))
     solver_mode     = lowercase(strip(get(ENV, "SPACEAGORA_PPB_SOLVER_MODE", "auto_stiff")))
     cpu_pinning     = _ppc_parse_cpu_list(get(ENV, "SPACEAGORA_PPB_CPU_LIST", ""))
@@ -213,6 +217,8 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
             threads = _ppc_int_csv(_ppc_arg_value(arg))
         elseif startswith(arg, "--process-workers=")
             process_workers = parse(Int, _ppc_arg_value(arg))
+        elseif startswith(arg, "--mc-samples-max=")
+            mc_samples_max = parse(Int, _ppc_arg_value(arg))
         elseif startswith(arg, "--seed=")
             seed = parse(Int, _ppc_arg_value(arg))
         elseif startswith(arg, "--solver-mode=")
@@ -231,12 +237,15 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
     unique!(phases)
     unknown = [p for p in phases if p ∉ valid_phases]
     isempty(unknown) || throw(ArgumentError("Unknown phase(s): $(join(unknown, ", "))."))
+    (mc_samples_max === nothing || mc_samples_max >= 1) ||
+        throw(ArgumentError("--mc-samples-max must be >= 1, got $(mc_samples_max)."))
 
     return PPBConfig(
         phases          = phases,
         outdir          = abspath(outdir),
         threads         = threads,
         process_workers = max(1, process_workers),
+        mc_samples_max  = mc_samples_max,
         seed            = seed,
         solver_mode     = solver_mode,
         cpu_pinning     = cpu_pinning,

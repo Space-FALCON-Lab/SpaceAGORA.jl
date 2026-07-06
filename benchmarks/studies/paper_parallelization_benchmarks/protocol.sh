@@ -10,6 +10,14 @@
 #                                     default: auto-scaled to Sys.CPU_THREADS
 #   SPACEAGORA_PPB_PROCESS_WORKERS  — max process workers for MC phases (B4)
 #                                     default: 32
+#   SPACEAGORA_PPB_MC_SAMPLES_MAX   — caps each phase's Monte Carlo sample
+#                                     ladder (e.g. B4's default
+#                                     1,4,16,64,256,1024) at this value; at
+#                                     least the smallest sample count always
+#                                     runs. Unlike --preview, this only
+#                                     affects MC samples — N_sat, workers,
+#                                     and repeats are untouched.
+#                                     default: unset (full ladder)
 #   SPACEAGORA_PPB_SOLVER_MODE      — ODE solver mode
 #                                     default: auto_stiff
 #   SPACEAGORA_PPB_SEED             — RNG seed
@@ -49,6 +57,10 @@
 #
 # Note: B6 ("Cross-Machine Validation") was removed from the phase catalog
 # and is no longer a valid phase id.
+#
+# Example — cap B4's MC samples at 64 (runs 1,4,16,64 instead of up to 1024),
+# leaving everything else (N_sat, workers, repeats) at full scale:
+#   SPACEAGORA_PPB_MC_SAMPLES_MAX=64 bash benchmarks/studies/paper_parallelization_benchmarks/protocol.sh B4
 
 set -euo pipefail
 
@@ -71,6 +83,10 @@ fi
 
 if [ -n "${SPACEAGORA_PPB_PHASES:-}" ]; then
     ARGS+=("--phases=${SPACEAGORA_PPB_PHASES}")
+fi
+
+if [ -n "${SPACEAGORA_PPB_MC_SAMPLES_MAX:-}" ]; then
+    ARGS+=("--mc-samples-max=${SPACEAGORA_PPB_MC_SAMPLES_MAX}")
 fi
 
 if [ -n "${SPACEAGORA_PPB_SOLVER_MODE:-}" ]; then

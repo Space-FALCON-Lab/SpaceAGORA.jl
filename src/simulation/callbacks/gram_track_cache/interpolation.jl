@@ -48,13 +48,13 @@ end
 
 @inline function _gram_track_cache_segment(
     cache::GramTrackCache,
-    t::Float64
+    t::Float64,
+    ignore_time_window::Bool=_gram_track_cache_ignore_time_window()
 )::Union{Nothing, Tuple{Int, Float64}}
     n = length(cache.times)
     if !cache.valid || n < 2
         return nothing
     end
-    ignore_time_window = _gram_track_cache_ignore_time_window()
     if !ignore_time_window && (t < cache.t0 || t > cache.t1)
         return nothing
     end
@@ -96,9 +96,10 @@ end
     lat::Float64,
     lon::Float64,
     alt_tol_m::Float64,
-    ang_tol_rad::Float64
+    ang_tol_rad::Float64,
+    ignore_time_window::Bool=_gram_track_cache_ignore_time_window()
 )::Union{Nothing, Tuple{Int, Float64}}
-    seg = _gram_track_cache_segment(cache, t)
+    seg = _gram_track_cache_segment(cache, t, ignore_time_window)
     seg === nothing && return nothing
     idx, x = seg
     alt_interp = _lerp(cache.alts[idx], cache.alts[idx + 1], x)

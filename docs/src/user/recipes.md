@@ -15,7 +15,10 @@ What to read next:
 
 - [Quickstart](quickstart.md)
 - [CLI](../cli.md)
+- [Examples Catalog](examples_catalog.md)
+- [Studies and Benchmarks](studies_benchmarks.md)
 - [Verification Study](verification_study.md)
+- [Simulation Outputs](outputs.md)
 
 ## Run the first no-GRAM example
 
@@ -27,6 +30,12 @@ julia --project=. examples/AGORA_Basic_Quickstart.jl
 
 ```text
 julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
+```
+
+## Run an aerobraking example in smoke mode
+
+```text
+julia --project=. src/cli/main.jl run --example=AGORA_Earth_Aerobraking.jl --smoke --output-dir=output/aerobraking_smoke
 ```
 
 ## Run a Monte Carlo example script with threads
@@ -46,6 +55,18 @@ result = run_monte_carlo(1:100; threads=8) do seed
 end
 ```
 
+## Run an RPO planner-comparison smoke case
+
+```text
+SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=. examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1
+```
+
+## Run the robot-arm and Cloth dynamics smoke batch
+
+```text
+SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=. examples/Robot_Arm_Planner_Cloth_Demo.jl
+```
+
 ## Inspect local assets
 
 ```text
@@ -63,6 +84,19 @@ julia --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --e
 
 ```text
 julia --project=. src/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
+```
+
+## Run benchmark smoke launchers
+
+```text
+julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke
+julia --project=. src/cli/main.jl benchmark smart-parallel-ladder smoke --output-dir=output/smart_ladder_smoke
+```
+
+## Inspect a benchmark command before running it
+
+```text
+julia --project=. src/cli/main.jl benchmark runtime-analysis quick --output-dir=output/perf_quick --print-only
 ```
 
 ## Build the docs locally

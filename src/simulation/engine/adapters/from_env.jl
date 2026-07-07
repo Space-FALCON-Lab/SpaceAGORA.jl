@@ -212,6 +212,27 @@ end
     return haskey(ENV, name)
 end
 
+# Adapter variants for knobs that are not part of the canonical override set
+# (e.g. the solver SAVE_* switches): consult the active override dict first,
+# then fall back to the process environment.  This preserves the historical
+# behavior where plain ENV settings for such knobs are honored even inside an
+# active SimulationEngineConfig override scope.
+@inline function _engine_env_get_with_env_fallback(name::String, default::String)::String
+    active_overrides = _engine_active_overrides_ref[]
+    if active_overrides !== nothing && haskey(active_overrides, name)
+        return String(active_overrides[name])
+    end
+    return String(get(ENV, name, default))
+end
+
+@inline function _engine_env_haskey_with_env_fallback(name::String)::Bool
+    active_overrides = _engine_active_overrides_ref[]
+    if active_overrides !== nothing && haskey(active_overrides, name)
+        return true
+    end
+    return haskey(ENV, name)
+end
+
 function _engine_env_overrides(config::SimulationEngineConfig)::Dict{String, String}
     overrides = Dict{String, String}(
         "SPACEAGORA_WARN_NORMALIZE" => _env_bool(config.runtime_policy.warn_normalize),

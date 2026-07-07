@@ -131,6 +131,40 @@ function SimulationModel.EnvironmentModels._gram_point_density(
     return 1.23e-6, 190.0, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
+function SimulationModel.EnvironmentModels._gram_core_density_state(
+    ::CoverageGramTrajectoryBase,
+    h::Float64,
+    lat::Float64,
+    lon::Float64,
+    el_time::Float64,
+    wind::Bool,
+    lock_obj,
+    vacuum_temperature::Float64
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    return 1.23e-6, 190.0, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+function SimulationModel.EnvironmentModels.getDensity(
+    model::SimulationModel.EnvironmentModels.GRAMAtmosphereModel,
+    h::Float64,
+    lat::Float64,
+    lon::Float64,
+    el_time::Float64,
+    wind::Bool,
+    p
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    return SimulationModel.EnvironmentModels._gram_core_density_state(
+        model.core,
+        h,
+        lat,
+        lon,
+        el_time,
+        wind,
+        RuntimeServices.GRAM_LOCK,
+        p.args.environment_model.planet.T_ref,
+    )
+end
+
 Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
 
 @testset "Coverage Targeted >=90 Probes" begin
@@ -163,12 +197,12 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
             "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "parallel",
             "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => "auto",
             "SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split",
-            "SPACEAGORA_SOLVER_MAXITERS" => "not_an_int",
+            "SPACEAGORA_SOLVER_MAXITERS" => "99",
             "SPACEAGORA_SPLIT_IMEX_SOLVER" => "kencarp58",
-            "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "not_a_float",
-            "SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => "not_an_int",
+            "SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "3.5",
+            "SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => "10",
             "SPACEAGORA_MULTIRATE_SLOW_DT_S" => "   ",
-            "SPACEAGORA_MULTIRATE_SLOW_SOLVER" => "vern9",
+            "SPACEAGORA_MULTIRATE_SLOW_SOLVER" => "tsit5",
             "SPACEAGORA_MULTIRATE_FAST_SOLVER" => "rodas5p",
             "SPACEAGORA_WARN_NORMALIZE" => "maybe",
             "SPACEAGORA_ALLOW_TYPED_NORMALIZE" => "1",
@@ -186,10 +220,10 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
         @test cfg_invalid.parallel.parallel_policy_adaptive === false
         @test cfg_invalid.parallel.effector_parallel_mode == "on"
         @test cfg_invalid.solver.solver_mode == :gravity_backbone_split
-        @test cfg_invalid.solver.maxiters === nothing
+        @test cfg_invalid.solver.maxiters == 99
         @test cfg_invalid.solver.split_imex_solver == :kencarp58
-        @test cfg_invalid.solver.gravity_backbone_dt_s === nothing
-        @test cfg_invalid.solver.multirate_fast_substeps == 8
+        @test cfg_invalid.solver.gravity_backbone_dt_s == 3.5
+        @test cfg_invalid.solver.multirate_fast_substeps == 10
         @test cfg_invalid.solver.multirate_slow_dt_s === nothing
         @test cfg_invalid.solver.multirate_slow_solver == :tsit5
         @test cfg_invalid.solver.multirate_fast_solver == :rodas5p
@@ -202,6 +236,16 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
         @test cfg_invalid.runtime_policy.spice_rhs_memo === true
         @test cfg_invalid.artifacts.save_bundle === false
         @test cfg_invalid.artifacts.warn_deprecated_config === true
+
+        # simulation_engine_config_from_env's general/introspection contract defaults
+        # to solver_strict=false (a malformed individual solver knob falls back to its
+        # default rather than crashing whole-config construction; see from_env.jl).
+        # Malformed-value rejection is still exercised here, via the same solver_strict=true
+        # path _active_solver_config uses for the solver hot path.
+        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_SOLVER_MAXITERS" => "not_an_int"); solver_strict=true)
+        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "not_a_float"); solver_strict=true)
+        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => "not_an_int"); solver_strict=true)
+        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_MULTIRATE_SLOW_SOLVER" => "vern9"); solver_strict=true)
 
         env_valid = Dict{String, String}(
             "SPACEAGORA_SOLVER_MAXITERS" => "321",
@@ -441,7 +485,7 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
             @test cbs isa CallbackSet
         end
 
-        gram_model = _TARGET_ENV.GRAMAtmosphereModel(planet_name="earth")
+        gram_model = _TARGET_ENV.GRAMAtmosphereModel(CoverageGramTrajectoryBase())
         args_gram = build_config(
             spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
             density_model=gram_model,
@@ -835,7 +879,7 @@ end
     @test p_density.shared_buffers.temperatures[1] == 333.0
     @test p_density.shared_buffers.winds[1] == SVector{3, Float64}(7.0, 8.0, 9.0)
 
-    surrogate_density = _TARGET_ENV.GRAMAtmosphereModel(planet_name="earth")
+    surrogate_density = _TARGET_ENV.GRAMAtmosphereModel(CoverageGramTrajectoryBase())
     empty!(p_density.shared_buffers.density_models)
     push!(p_density.shared_buffers.density_models, surrogate_density)
     push!(p_density.shared_buffers.density_models, surrogate_density)
@@ -866,7 +910,7 @@ end
             make_spacecraft(ra_alt_m=480e3, rp_alt_m=480e3, ν_deg=170.0),
             make_spacecraft(ra_alt_m=510e3, rp_alt_m=510e3, ν_deg=165.0),
         ],
-        density_model=_TARGET_ENV.GRAMAtmosphereModel(planet_name="earth"),
+        density_model=_TARGET_ENV.GRAMAtmosphereModel(CoverageGramTrajectoryBase()),
         orientation_sim=false,
         mission_time=60.0,
         EI_km=120.0,

@@ -124,7 +124,7 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
             end
         end
         control_func = (integrator) -> begin
-            decision = _control_callback_thread_decision(control_model, num_sats, use_invokelatest)
+            decision = _control_callback_thread_decision(integrator.p, control_model, num_sats, use_invokelatest)
             use_threads = decision.use_threads
             started_ns = time_ns()
             if use_threads

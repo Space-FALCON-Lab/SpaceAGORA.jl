@@ -4,7 +4,6 @@ struct RobotArmSphereObstacle
     radius_m::Float64
 end
 
-"""Spherical workspace obstacle used by robot-arm HYPR clearance checks."""
 RobotArmSphereObstacle(center, radius_m::Real) =
     RobotArmSphereObstacle(SVector{3, Float64}(center), Float64(radius_m))
 

@@ -59,6 +59,11 @@ end
     return ODEProblem(spacecraft_dynamics!, u0, tspan, p, callback=callbacks)
 end
 
+@inline function _build_typed_solver_problem(u0, tspan, p, callbacks,
+    jac_prototype::Union{Nothing, SparseMatrixCSC{Float64, Int}}=nothing)
+    return _build_typed_solver_problem(u0, tspan, p, callbacks, _solver_policy_mode(_active_solver_config()), jac_prototype)
+end
+
 @inline function _append_backbone_saved_segment!(
     times_acc::Vector{Float64},
     data_acc::Vector{SimulationModel.SaveData},
@@ -177,9 +182,12 @@ function run_simulation(
     # Define the ODE parameters and callbacks
     p = SimulationModel.ODEParams{length(args.dynamics_model.spacecraft)}(args=args) # Define the parameters for the ODE problem, including the shared buffers for the callbacks
     _initialize_in_atmosphere_flags!(p, initial_conditions)
+    # Snapshot env-derived runtime config (policy/RHS-plan/callback knobs) once,
+    # inside the active SimulationEngineConfig override scope, so hot paths read
+    # typed struct fields instead of re-parsing process-global ENV per RHS call.
+    _initialize_runtime_env_config!(p)
     _initialize_heat_rate_buffers!(p)
     _initialize_save_cache_buffers!(p)
-    _initialize_density_static_config!(p)
     _initialize_density_model_instances!(p)
     _initialize_density_cache_buffers!(p)
     _initialize_gram_isolated_pool_buffers!(p)
@@ -303,6 +311,14 @@ function run_simulation(
     # or a cached result already exists for this machine + scenario signature.
     _calibrate_rhs_plan_if_needed!(p, u_start, args)
 
+    # Skip per-step solution/dense storage when nothing reads the trajectory.
+    # gravity_backbone_split backfills save data from interior solution points,
+    # and _auto_stiff_switched/solver metadata read per-step solver state, so
+    # those cases keep full storage.  Explicit SPACEAGORA_SOLVER_SAVE_* env
+    # settings still override inside the solve helpers.
+    needs_full_solution = return_solution || return_solver_metadata ||
+        args.simulation_settings.results || solver_mode == :gravity_backbone_split
+
     last_sol = nothing
     solver_trace = NamedTuple[]
     checkpoint_saved_times = Float64[]
@@ -322,7 +338,7 @@ function run_simulation(
             p.shared_buffers.solve_segment_end_time[] = t_next
             prob = _build_typed_solver_problem(u_cursor, (t_cursor, t_next), p, callbacks, solver_mode, jac_prototype)
             seg_sol, solve_meta = try
-                _solve_with_solver_policy(prob, solver_cfg, args, reltol_tol, abstol_tol)
+                _solve_with_solver_policy(prob, solver_cfg, args, reltol_tol, abstol_tol; needs_full_solution=needs_full_solution)
             catch err
                 _try_save_simulation_results_if_enabled!(
                     args,
@@ -377,7 +393,7 @@ function run_simulation(
         p.shared_buffers.solve_segment_end_time[] = mission_end
         prob = _build_typed_solver_problem(u_start, (t_start, mission_end), p, callbacks, solver_mode, jac_prototype)
         sol, solve_meta = try
-            _solve_with_solver_policy(prob, solver_cfg, args, reltol_tol, abstol_tol; solver_cache=solver_cache)
+            _solve_with_solver_policy(prob, solver_cfg, args, reltol_tol, abstol_tol; solver_cache=solver_cache, needs_full_solution=needs_full_solution)
         catch err
             _try_save_simulation_results_if_enabled!(
                 args,

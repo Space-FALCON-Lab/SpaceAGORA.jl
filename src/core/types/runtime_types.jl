@@ -28,6 +28,8 @@ export Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams
 export SaveCache, SaveData
 export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, SpiceRuntimeCounters, SpiceRhsMemo
 export GramTrackCache, VacuumPredictedGRAMCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
+export PolicyDecisionEnvConfig, GramTrackCacheConfig, CallbackEnvConfig, RhsPlanEnvConfig
+export RhsEffectorDecision, RhsExecutionPlan
     @kwdef struct Mission
         e::Int64 = 0
         d::Int64 = 0
@@ -557,6 +559,120 @@ export GramTrackCache, VacuumPredictedGRAMCache, AeroScratchWorkspace, NBodyScra
         I::Vector{Float64}
     end
 
+    # ── Run-scoped env-config snapshots ─────────────────────────────────────────
+    # Typed snapshots of SPACEAGORA_* environment configuration, resolved once at
+    # run_simulation setup (inside any active SimulationEngineConfig override
+    # scope) and stored on SharedBuffers so RHS/callback hot paths read plain
+    # struct fields instead of re-parsing ENV per evaluation.  ENV access is
+    # process-global in Julia, so per-call parsing serializes concurrent
+    # in-process ensemble members.  Env-override semantics: values are captured
+    # at run start; changing ENV mid-run has no effect on an active run.
+    # The structs are pure data; the builders live with the env parsers
+    # (ParallelPolicy, SimulationCallbacks, SimulationEngine).
+
+    # Feeds ParallelPolicy.thread_policy_decision and budget-dependent routing.
+    struct PolicyDecisionEnvConfig
+        inner_thread_budget::Int
+        outer_parallel_active::Bool
+        auto_min_budget_default::Int
+        auto_min_budget_density::Int
+        auto_min_budget_thermal::Int
+        adaptive_enabled::Bool
+    end
+
+    # GRAM along-track density cache tolerances (built by
+    # SimulationCallbacks._gram_track_cache_config from SPACEAGORA_GRAM_* vars).
+    struct GramTrackCacheConfig
+        mode::Symbol
+        entry_horizon_s::Float64
+        entry_alt_tol_m::Float64
+        entry_ang_tol_rad::Float64
+        entry_points::Int
+        orbit_horizon_s::Float64
+        orbit_alt_tol_m::Float64
+        orbit_ang_tol_rad::Float64
+        orbit_points::Int
+        transition_band_m::Float64
+    end
+
+    # Per-invocation knobs consulted by density/control/thermal callbacks and
+    # RHS-side atmosphere sampling.
+    struct CallbackEnvConfig
+        gram_track_cache::GramTrackCacheConfig
+        gram_runtime_stats_enabled::Bool
+        gram_track_cache_ignore_time_window::Bool
+        gram_track_cache_target_use_j2::Bool
+        vacuum_gram_cache_enabled::Bool
+        vacuum_gram_cache_npoints::Int
+        vacuum_gram_cache_horizon_s::Float64
+        vacuum_gram_cache_deviation_m::Float64
+        density_parallel_mode::Symbol
+        density_thread_threshold::Int
+        density_allow_with_outer::Bool
+        density_assume_threadsafe::Bool
+        density_batch_mode::Symbol
+        density_batch_threshold::Int
+        gram_isolated_pool_mode::Symbol
+        gram_isolated_pool_threshold::Int
+        gram_isolated_pool_max_workers::Int
+        control_parallel_mode::Symbol
+        control_thread_threshold::Int
+        control_allow_with_outer::Bool
+        control_assume_threadsafe::Bool
+        thermal_parallel_mode::Symbol
+        thermal_thread_threshold::Int
+        thermal_allow_with_outer::Bool
+    end
+
+    # Knobs consulted by the per-RHS-call execution-plan routing chain in
+    # SimulationEngine (setup.jl / dynamics_rhs.jl).
+    struct RhsPlanEnvConfig
+        execution_mode::Symbol
+        profile_forces_serial::Bool
+        batch_parallel_mode::Symbol
+        batch_thread_threshold::Int
+        effector_parallel_mode::Symbol
+        effector_thread_threshold::Int
+        effector_max_threads::Int
+        effector_allow_with_outer::Bool
+        effector_heavy_only::Bool
+        effector_cost_ns_per_item_default::Float64
+        effector_cost_min_samples::Int
+        effector_cost_ema_alpha::Float64
+        effector_work_ns_per_worker_threshold::Float64
+        effector_outer_work_scale::Float64
+        flat_min_sats::Int
+        flat_min_effectors::Int
+        flat_work_ns_threshold::Float64
+        flat_work_per_worker_ns_threshold::Float64
+        flat_cost_heterogeneity_threshold::Float64
+        flat_min_thread_budget::Int
+        harmonics_batch_enabled::Bool
+        harmonics_batch_min_sats_per_worker::Int
+        harmonics_batch_spin_barrier::Bool
+        rhs_effector_cost_min_samples::Int
+        flat_packet_target_min_ns::Float64
+        flat_packet_scheduler_mode::Symbol
+        flat_packet_min_items::Int
+        flat_packet_work_ns_threshold::Float64
+        flat_packet_heterogeneity_threshold::Float64
+        flat_packet_overhead_disable_ratio::Float64
+        flat_packet_overhead_min_samples::Int
+    end
+
+    # Concrete shape of the per-RHS-call execution plan returned by
+    # SimulationEngine._rhs_execution_plan and stored in rhs_plan_override by the
+    # calibration sweep.  isbits, so plans are stack-allocated in the RHS.
+    const RhsEffectorDecision = @NamedTuple{use_threads::Bool, allotment::Int64, mode::Symbol, policy_applied::Bool}
+    const RhsExecutionPlan = @NamedTuple{
+        mode::Symbol,
+        allotment::Int64,
+        scheduler::Symbol,
+        dominant_axis::Symbol,
+        policy_applied::Bool,
+        effector_decision::RhsEffectorDecision,
+    }
+
     const _PerSatDensityModel = Union{GRAMAtmosphereModel, GRAMAtmosphereModelSurrogate}
     const _HarmonicsWorkspaceMap = Dict{UInt, HarmonicsScratchWorkspace}
 
@@ -633,20 +749,25 @@ export GramTrackCache, VacuumPredictedGRAMCache, AeroScratchWorkspace, NBodyScra
         rhs_solar_prefilled::Base.RefValue{Bool} = Ref(false)
         rhs_harmonics_batch_pool::Base.RefValue{Any} = Ref{Any}(nothing)
         # Per-satellite atmosphere presence flag, maintained by get_drag_state_callback.
-        # Initialised false (above atmosphere); spacecraft_dynamics_implicit_atmosphere!
-        # short-circuits to du=0 when false, eliminating GRAM calls during coast arcs.
+        # The timestamp is NaN until the callback has staged a value for a known
+        # integrator time, so RHS code can distinguish current state from defaults.
         in_atmosphere::Vector{Bool} = fill(false, N_sats)
+        in_atmosphere_sample_t::Vector{Float64} = fill(NaN, N_sats)
         # Pre-solve calibration override: when non-nothing, _rhs_execution_plan returns
         # this plan directly, bypassing all heuristic routing logic.  Set by the
         # auto-calibration sweep in rhs_calibration.jl and cleared after the solve.
-        rhs_plan_override::Base.RefValue{Any} = Ref{Any}(nothing)
-        # Env-var-derived density/GRAM settings (track-cache config, vacuum-cache
-        # config, J2-target flag, stats-enabled flag) are constant for the whole solve
-        # but were being re-parsed from ENV on every per-satellite density sample
-        # (_sample_atmosphere_from_planet_frame / _density_state_from_kinematics!,
-        # called once per satellite per RHS call). Computed once during setup and
-        # cached here instead; see _initialize_density_static_config! in setup.jl.
-        density_static_config::Base.RefValue{Any} = Ref{Any}(nothing)
+        # Concretely typed (RhsExecutionPlan): a Ref{Any} here made the plan infer
+        # as Any in the RHS, boxing every plan access and re-boxing ODEParams
+        # (~1.6 KB inline) on each dynamics call — ~2/3 of solve-path allocations.
+        rhs_plan_override::Base.RefValue{Union{Nothing, RhsExecutionPlan}} = Ref{Union{Nothing, RhsExecutionPlan}}(nothing)
+        # Run-scoped env-config snapshots (see struct docs above).  `nothing`
+        # until _initialize_runtime_env_config! runs at run_simulation setup;
+        # hot-path accessors fall back to live ENV parsing when unset so
+        # hand-constructed ODEParams (unit tests, withenv probes) keep the
+        # read-ENV-at-use behavior.
+        policy_env_config::Base.RefValue{Union{Nothing, PolicyDecisionEnvConfig}} = Ref{Union{Nothing, PolicyDecisionEnvConfig}}(nothing)
+        rhs_env_config::Base.RefValue{Union{Nothing, RhsPlanEnvConfig}} = Ref{Union{Nothing, RhsPlanEnvConfig}}(nothing)
+        callback_env_config::Base.RefValue{Union{Nothing, CallbackEnvConfig}} = Ref{Union{Nothing, CallbackEnvConfig}}(nothing)
     end
 
     # SaveData is an output/persistence boundary and intentionally remains heterogeneous.

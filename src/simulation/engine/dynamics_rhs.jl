@@ -518,7 +518,7 @@ function _prepare_rhs_flat_work_packets!(
     @inbounds for idx in 1:count_items
         total_cost_ns += _rhs_flat_item_estimated_cost_ns(shared_buffers, dynamic_effectors, work_items[idx])
     end
-    target_ns = max(_rhs_flat_packet_target_min_ns(), total_cost_ns / max(1, workers * 4))
+    target_ns = max(_rhs_env_config_from_buffers(shared_buffers).flat_packet_target_min_ns, total_cost_ns / max(1, workers * 4))
 
     packet_count = 0
     idx = 1
@@ -571,7 +571,8 @@ function _rhs_flat_use_packet_scheduler(
     work_items::Vector{Int},
     count_items::Int,
 )::Bool
-    mode = _rhs_flat_packet_scheduler_mode()
+    env = _rhs_env_config_from_buffers(shared_buffers)
+    mode = env.flat_packet_scheduler_mode
     mode == :off && return false
     if mode == :on
         return count_items > 1
@@ -579,10 +580,10 @@ function _rhs_flat_use_packet_scheduler(
     if hasproperty(shared_buffers, :rhs_flat_packet_disabled) && shared_buffers.rhs_flat_packet_disabled[]
         return false
     end
-    count_items >= _rhs_flat_packet_min_items() || return false
+    count_items >= env.flat_packet_min_items || return false
     total_cost_ns, heterogeneity = _rhs_flat_packet_work_stats(shared_buffers, dynamic_effectors, work_items, count_items)
-    total_cost_ns >= _rhs_flat_packet_work_ns_threshold() || return false
-    heterogeneity >= _rhs_flat_packet_heterogeneity_threshold() || return false
+    total_cost_ns >= env.flat_packet_work_ns_threshold || return false
+    heterogeneity >= env.flat_packet_heterogeneity_threshold || return false
     return true
 end
 
@@ -598,8 +599,9 @@ function _update_rhs_flat_packet_overhead_model!(
          hasproperty(shared_buffers, :rhs_flat_packet_disabled))
         return nothing
     end
+    env = _rhs_env_config_from_buffers(shared_buffers)
     ratio = min(1.0, Float64(packet_overhead_ns) / Float64(flat_elapsed_ns))
-    α = _effector_cost_ema_alpha()
+    α = env.effector_cost_ema_alpha
     previous = shared_buffers.rhs_flat_packet_overhead_ema[]
     shared_buffers.rhs_flat_packet_overhead_ema[] = if isfinite(previous) && previous >= 0.0
         (1.0 - α) * previous + α * ratio
@@ -608,8 +610,8 @@ function _update_rhs_flat_packet_overhead_model!(
     end
     shared_buffers.rhs_flat_packet_overhead_samples[] =
         min(typemax(Int64), shared_buffers.rhs_flat_packet_overhead_samples[] + Int64(1))
-    if shared_buffers.rhs_flat_packet_overhead_samples[] >= _rhs_flat_packet_overhead_min_samples() &&
-       shared_buffers.rhs_flat_packet_overhead_ema[] >= _rhs_flat_packet_overhead_disable_ratio()
+    if shared_buffers.rhs_flat_packet_overhead_samples[] >= env.flat_packet_overhead_min_samples &&
+       shared_buffers.rhs_flat_packet_overhead_ema[] >= env.flat_packet_overhead_disable_ratio
         shared_buffers.rhs_flat_packet_disabled[] = true
     end
     return nothing
@@ -909,8 +911,9 @@ function _accumulate_harmonics_flat_batch!(
     num_sats = length(sc_state)
     active_sats = count(identity, p.is_active)
     active_sats <= 0 && return nothing
-    min_sats = SimulationModel.ParallelPolicy.harmonics_batch_spin_barrier_enabled() ?
-        1 : _rhs_harmonics_batch_min_sats_per_worker()
+    rhs_env = _rhs_env_config(p)
+    min_sats = rhs_env.harmonics_batch_spin_barrier ?
+        1 : rhs_env.harmonics_batch_min_sats_per_worker
     capped_allotment = max(1, min(plan.allotment, fld(active_sats, max(1, min_sats))))
     workers = SimulationModel.ParallelPolicy.thread_worker_count(active_sats, capped_allotment)
     if init_scratch
@@ -949,7 +952,7 @@ function _accumulate_harmonics_flat_batch!(
             totals, model, sc_state, work_items, 1, count_items, lpi, pool[1]
         )
     else
-        dispatch_fn = SimulationModel.ParallelPolicy.harmonics_batch_spin_barrier_enabled() ?
+        dispatch_fn = rhs_env.harmonics_batch_spin_barrier ?
             SimulationModel.ParallelPolicy.threaded_foreach_worker_spin :
             SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent
         dispatch_fn(
@@ -1329,7 +1332,8 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
     totals = p.shared_buffers.rhs_flat_effector_totals[]
 
     SimulationModel.ParallelPolicy.threaded_foreach(length(sc_state), plan.allotment) do i
-        @inbounds if !p.is_active[i]
+        @inbounds if !p.is_active[i] ||
+                     (rhs_kind == :implicit && _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t))
             sc_du[i] .= 0.0
             return
         end
@@ -1508,7 +1512,7 @@ function _gravity_backbone_half_kick!(u_state, p, t::Float64, half_dt::Float64)
     dynamic_effectors = p.args.dynamics_model.dynamic_effectors
     vel_state = _gravity_backbone_velocity_state(u_state)
     p.shared_buffers.current_time[] = t
-    use_rhs_batch = _rhs_batch_parallel_enabled(length(vel_state.sc))
+    use_rhs_batch = _rhs_batch_parallel_enabled(p, length(vel_state.sc))
 
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(vel_state.sc) / Polyester.num_cores())))
@@ -1539,7 +1543,7 @@ function spacecraft_dynamics_gravity_backbone!(ddu, dq, q, p, t::Float64)
     ddu_state = ddu.sc
     dynamic_effectors = p.args.dynamics_model.dynamic_effectors
     p.shared_buffers.current_time[] = t
-    use_rhs_batch = _rhs_batch_parallel_enabled(length(q_state))
+    use_rhs_batch = _rhs_batch_parallel_enabled(p, length(q_state))
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(q_state) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(q_state)
@@ -1668,7 +1672,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
         return _spacecraft_dynamics_flat_constellation_effector_queue!(du, u, p, t, plan; rhs_kind=:full)
     end
     effector_decision = plan.effector_decision
-    use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(length(spacecraft))
+    use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(p, length(spacecraft))
     if use_rhs_batch
         _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
     end
@@ -1776,7 +1780,7 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
         return _spacecraft_dynamics_flat_constellation_effector_queue!(du, u, p, t, plan; rhs_kind=:slow)
     end
     effector_decision = plan.effector_decision
-    use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(length(spacecraft))
+    use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(p, length(spacecraft))
     if use_rhs_batch
         _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
     end
@@ -1868,6 +1872,31 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
     end
 end # function spacecraft_dynamics_slow!
 
+@inline function _drag_state_buffer_current(p, sat_idx::Int, t::Float64)::Bool
+    times = p.shared_buffers.in_atmosphere_sample_t
+    return sat_idx <= length(times) && times[sat_idx] == t
+end
+
+@inline function _spacecraft_outside_atmosphere_for_current_state(sc, p, sat_idx::Int, t::Float64)::Bool
+    if _drag_state_buffer_current(p, sat_idx, t)
+        return !p.shared_buffers.in_atmosphere[sat_idx]
+    end
+
+    planet_frame = p.shared_buffers.rhs_planet_frame_prefilled[] ?
+        sample_buffered_planet_frame(p, sat_idx) :
+        sample_planet_frame(sc, p, sat_idx, t)
+    isfinite(planet_frame.alt_m) || return false
+    return planet_frame.alt_m > p.args.environment_model.EI * 1e3
+end
+
+@inline function _all_active_spacecraft_outside_atmosphere(sc_state, p, t::Float64)::Bool
+    @inbounds for i in eachindex(sc_state)
+        p.is_active[i] || continue
+        _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t) || return false
+    end
+    return true
+end
+
 function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     sc_state = u.sc
     sc_du = du.sc
@@ -1875,17 +1904,12 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
     dynamic_effectors = dynamics_model.dynamic_effectors
     spacecraft = dynamics_model.spacecraft
     p.shared_buffers.current_time[] = t
-    # Fast path: if no active satellite is in the atmosphere, all implicit drag
-    # terms are zero.  This eliminates GRAM calls and Newton Jacobian perturbations
-    # during coast arcs (the vast majority of an aerobraking mission).
-    any_in_atm = false
-    @inbounds for i in eachindex(p.is_active)
-        if p.is_active[i] && p.shared_buffers.in_atmosphere[i]
-            any_in_atm = true
-            break
-        end
-    end
-    if !any_in_atm
+    # Fast path: if the current state proves that no active spacecraft is inside
+    # the atmosphere, all implicit drag terms are zero.  We only trust the staged
+    # drag-state flag when it was stamped for this RHS time; otherwise we derive
+    # the decision from the current altitude to avoid skipping first-step or
+    # direct RHS evaluations that start inside the entry interface.
+    if _all_active_spacecraft_outside_atmosphere(sc_state, p, t)
         du .= 0.0
         return nothing
     end
@@ -1902,14 +1926,14 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
         )
     end
     effector_decision = plan.effector_decision
-    use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(length(spacecraft))
+    use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(p, length(spacecraft))
     if use_rhs_batch
         _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
     end
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(sc_state)
-            if !p.is_active[i] || !p.shared_buffers.in_atmosphere[i]
+            if !p.is_active[i] || _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t)
                 sc_du[i] .= 0.0
                 continue
             end
@@ -1943,7 +1967,7 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
         end
     else
         @inbounds for i in eachindex(sc_state)
-            if !p.is_active[i] || !p.shared_buffers.in_atmosphere[i]
+            if !p.is_active[i] || _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t)
                 sc_du[i] .= 0.0
                 continue
             end
@@ -1999,7 +2023,7 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
         )
     end
     effector_decision = plan.effector_decision
-    use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(length(spacecraft))
+    use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(p, length(spacecraft))
     if use_rhs_batch
         _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
     end
@@ -2101,7 +2125,7 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
     spacecraft = p.args.dynamics_model.spacecraft
     debug_control = p.shared_buffers.debug_control[]
     p.shared_buffers.current_time[] = t
-    use_rhs_batch = _rhs_batch_parallel_enabled(length(spacecraft))
+    use_rhs_batch = _rhs_batch_parallel_enabled(p, length(spacecraft))
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(sc_state)

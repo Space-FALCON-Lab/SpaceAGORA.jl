@@ -104,6 +104,21 @@ julia --project=. examples/AGORA_Basic_Quickstart.jl
 The same environment variables can be scoped in Julia with `withenv` when you
 want one process to run several scenarios with different settings.
 
+Runtime parallelism and cache knobs are resolved once at `run_simulation`
+start into a typed, run-scoped snapshot (together with any active
+`SimulationEngineConfig` overrides), so the RHS and callback hot paths never
+touch process-global `ENV` during integration. Wrap the whole
+`run_simulation` call in `withenv` — changing a variable while a run is in
+flight does not affect that run.
+
+When nothing reads the trajectory (`return_solution=false`,
+`results=false`, no solver metadata requested), the solver skips per-step
+solution storage entirely (`save_on=false`, endpoints kept). This is the
+dominant allocation in campaign runs — skipping it is what lets
+`run_constellation_ensemble` scale near-linearly with threads. Explicitly
+set `SPACEAGORA_SOLVER_SAVE_EVERYSTEP` / `SPACEAGORA_SOLVER_SAVE_ON`
+values override this default in either direction.
+
 ## Monte Carlo campaigns
 
 Use `run_monte_carlo` when you want to run many independent simulations from
@@ -149,6 +164,99 @@ end
 By default, failed samples are captured in `result.failed` and do not stop the
 rest of the campaign. Set `fail_fast=true` when you want the runner to rethrow
 on the first failed sample instead.
+
+### Adaptive campaign routing (`threads=:auto`)
+
+Instead of hardcoding a worker count, both campaign runners accept
+`threads=:auto` and delegate the serial-versus-threaded decision to the
+outer-route bandit (`select_outer_route!`), which keeps empirical runtime
+statistics per workload signature:
+
+```julia
+result = run_monte_carlo(1:100; threads=:auto,
+                         route_features=campaign_route_features(
+                             samples=100, n_sats=1,
+                             density_family="exponential",
+                             mission_time_s=5400.0
+                         )) do seed
+    run_simulation(make_config_for_seed(seed); return_solution=true)
+end
+
+# Constellation ensembles derive their features from the configuration itself:
+result = run_constellation_ensemble(args; threads=:auto, return_solution=true)
+```
+
+`campaign_route_features` describes the campaign shape (sample count,
+per-sample satellite count, density-model family, mission length); the
+`SimulationConfiguration` method derives those fields for you. After every
+campaign the runner records per-sample success and amortized wall-clock
+feedback via `record_outer_route_feedback!`, so repeated campaigns with the
+same shape first explore the feasible allocations and then converge to the
+fastest one. History accumulates in the process-global
+`campaign_outer_route_state()`; inspect it with `outer_route_stats_snapshot`,
+reset it with `reset_outer_route_state!`, or pass an isolated `OuterRouteState`
+via `route_state` (useful for tests and one-off studies).
+
+While the adaptive route runs threaded workers, the runner sets
+`SPACEAGORA_OUTER_PARALLEL_ACTIVE=1` and — unless you exported one yourself —
+an `SPACEAGORA_INNER_THREAD_BUDGET` of `nthreads() ÷ workers`, so per-sample
+inner threading and the outer campaign split the thread pool instead of
+oversubscribing it. Nested adaptive campaigns (an `:auto` campaign running
+inside another campaign's worker, where `SPACEAGORA_OUTER_PARALLEL_ACTIVE` is
+already set) yield to the enclosing split: they execute serially and record no
+feedback, so contended timings never poison the shared route statistics.
+
+### GRAM atmosphere models in threaded campaigns
+
+Native GRAM calls are serialized through a single process-wide lock by default,
+so threaded Monte Carlo samples that all query GRAM contend on one lock no
+matter how many threads are available. When every sample builds its own
+`GRAMAtmosphereModel` (or receives its own `deepcopy`), set:
+
+```bash
+export SPACEAGORA_GRAM_LOCK_SCOPE=model
+```
+
+so each model instance serializes only against itself and samples evaluate
+concurrently. This relies on the same instance-isolation premise as the
+isolated-pool batch path (`SPACEAGORA_GRAM_ISOLATED_POOL`): distinct GRAM model
+instances may run concurrently as long as any single instance is serialized. Do
+not enable it if several threads share one model instance and you have not
+measured the workload — the default `global` scope is always safe. Process-based
+campaigns (separate workers via `addprocs`) do not need this: each process has
+its own lock already.
+
+## Constellation ensembles
+
+For multi-satellite configurations whose members do not interact (no
+inter-satellite links, no coordinated GNC), `run_constellation_ensemble` splits
+the constellation into independent single-satellite propagations and applies
+Monte Carlo-style outer parallelism across satellites:
+
+```julia
+result = run_constellation_ensemble(args; threads=8, return_solution=true)
+solutions = [s.value for s in result.successful]
+```
+
+Compared to propagating the constellation as one coupled state vector, this
+dispatches each satellite to a worker once for its entire propagation (instead
+of paying per-timestep thread dispatch across satellites) and lets each
+satellite keep its own adaptive step size (instead of forcing every satellite
+to the global minimum step).
+
+Current limitation: with in-process worker threads, per-step
+environment-variable configuration reads in the RHS and callback plumbing
+serialize concurrent members (Julia `ENV` access is process-global), which can
+erase the outer-parallel gain for light dynamics. Until those reads are hoisted
+to run setup, prefer process-based outer parallelism for large campaigns — the
+per-satellite split applies the same way with one satellite per worker process
+(see [Distributed and HPC](../distributed_hpc.md)).
+
+The runner refuses configurations with guidance, navigation, or control
+effectors, because effectors that coordinate satellites cannot act across
+ensemble members. If every configured effector acts on a single satellite only,
+opt in with `allow_gnc_effectors=true`. Keep the monolithic `run_simulation`
+path for genuinely coupled constellations (RPO, formation control).
 
 ## Auditing Active Controls
 

@@ -207,7 +207,6 @@ end
 thin_panel_inertia(mass_kg::Real, width_m::Real, height_m::Real; thickness_m::Real=1.0e-3) =
     rectangular_prism_inertia(mass_kg, (width_m, height_m, thickness_m))
 
-"""Node specification used to build compliant multibody topologies."""
 function CompliantTopologyNode(
     name::Symbol;
     mass_kg::Real,
@@ -230,7 +229,6 @@ function CompliantTopologyNode(
     )
 end
 
-"""Edge specification used to connect compliant topology nodes."""
 function CompliantTopologyEdge(
     name::Symbol,
     parent::Integer,
@@ -257,7 +255,6 @@ function CompliantTopologyEdge(
     )
 end
 
-"""Commanded joint actuator torque applied in the compliant multibody model."""
 function CompliantJointActuator(
     name::Symbol,
     joint::Integer;

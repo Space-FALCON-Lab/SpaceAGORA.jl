@@ -164,6 +164,34 @@ end
     return :other
 end
 
+"""
+    snapshot_policy_decision_env() -> PolicyDecisionEnvConfig
+
+Resolve the env-derived knobs consulted on every `thread_policy_decision` call
+into a typed snapshot.  Built once at run_simulation setup so hot paths avoid
+process-global ENV access; values reflect ENV (and any active engine
+overrides) at snapshot time.
+"""
+function snapshot_policy_decision_env()::PolicyDecisionEnvConfig
+    return PolicyDecisionEnvConfig(
+        effective_inner_thread_budget(),
+        outer_parallel_active(),
+        auto_thread_min_budget(),
+        auto_thread_min_budget(:density_callback),
+        auto_thread_min_budget(:thermal_callback),
+        adaptive_policy_enabled(),
+    )
+end
+
+@inline function _snapshot_auto_min_budget(env::PolicyDecisionEnvConfig, source::Symbol)::Int
+    if source == :density_callback
+        return env.auto_min_budget_density
+    elseif source == :thermal_callback
+        return env.auto_min_budget_thermal
+    end
+    return env.auto_min_budget_default
+end
+
 @inline adaptive_policy_enabled()::Bool = parse_bool_env("SPACEAGORA_PARALLEL_POLICY_ADAPTIVE", false)
 @inline adaptive_window_size()::Int = parse_thread_threshold_env("SPACEAGORA_PARALLEL_POLICY_WINDOW", 8)
 @inline adaptive_trim_quanta_budget()::Int = parse_nonnegative_int_env("SPACEAGORA_PARALLEL_POLICY_TRIM_QUANTA", 0)

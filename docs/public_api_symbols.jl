@@ -14,7 +14,10 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SimulationCampaigns, symbol = :MonteCarloSpec, rendered = "SpaceAGORA.MonteCarloSpec"),
             (owner = :SimulationCampaigns, symbol = :MonteCarloSampleResult, rendered = "SpaceAGORA.MonteCarloSampleResult"),
             (owner = :SimulationCampaigns, symbol = :MonteCarloResult, rendered = "SpaceAGORA.MonteCarloResult"),
-            (owner = :SimulationCampaigns, symbol = :run_monte_carlo, rendered = "SpaceAGORA.run_monte_carlo")
+            (owner = :SimulationCampaigns, symbol = :run_monte_carlo, rendered = "SpaceAGORA.run_monte_carlo"),
+            (owner = :SimulationCampaigns, symbol = :run_constellation_ensemble, rendered = "SpaceAGORA.run_constellation_ensemble"),
+            (owner = :SimulationCampaigns, symbol = :campaign_route_features, rendered = "SpaceAGORA.campaign_route_features"),
+            (owner = :SimulationCampaigns, symbol = :campaign_outer_route_state, rendered = "SpaceAGORA.campaign_outer_route_state")
         ]
     ),
     (
@@ -78,6 +81,94 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :calcControlEffect!, rendered = "SpaceAGORA.calcControlEffect!"),
             (owner = :SpaceAGORA, symbol = :calcControlForceTorque, rendered = "SpaceAGORA.calcControlForceTorque"),
             (owner = :SpaceAGORA, symbol = :calcControlMassFlowRate, rendered = "SpaceAGORA.calcControlMassFlowRate")
+        ]
+    ),
+    (
+        title = "Robotics and Planning",
+        items = [
+            (owner = :SpaceAGORA, symbol = :ClothArmBasePose, rendered = "SpaceAGORA.ClothArmBasePose"),
+            (owner = :SpaceAGORA, symbol = :ClothArmLink, rendered = "SpaceAGORA.ClothArmLink"),
+            (owner = :SpaceAGORA, symbol = :ClothArmJoint, rendered = "SpaceAGORA.ClothArmJoint"),
+            (owner = :SpaceAGORA, symbol = :ClothArmModel, rendered = "SpaceAGORA.ClothArmModel"),
+            (owner = :SpaceAGORA, symbol = :ClothArmPose, rendered = "SpaceAGORA.ClothArmPose"),
+            (owner = :SpaceAGORA, symbol = :ClothArmState, rendered = "SpaceAGORA.ClothArmState"),
+            (owner = :SpaceAGORA, symbol = :default_cloth_arm_model, rendered = "SpaceAGORA.default_cloth_arm_model"),
+            (owner = :SpaceAGORA, symbol = :cloth_fk, rendered = "SpaceAGORA.cloth_fk"),
+            (owner = :SpaceAGORA, symbol = :cloth_fk_state, rendered = "SpaceAGORA.cloth_fk_state"),
+            (owner = :SpaceAGORA, symbol = :cloth_end_effector_pose, rendered = "SpaceAGORA.cloth_end_effector_pose"),
+            (owner = :SpaceAGORA, symbol = :cloth_ik, rendered = "SpaceAGORA.cloth_ik"),
+            (owner = :SpaceAGORA, symbol = :cloth_total_reach, rendered = "SpaceAGORA.cloth_total_reach"),
+            (owner = :SpaceAGORA, symbol = :closest_surface_target, rendered = "SpaceAGORA.closest_surface_target"),
+            (owner = :SpaceAGORA, symbol = :RobotArmPlannerConfig, rendered = "SpaceAGORA.RobotArmPlannerConfig"),
+            (owner = :SpaceAGORA, symbol = :RobotArmPlan, rendered = "SpaceAGORA.RobotArmPlan"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_plan_sample, rendered = "SpaceAGORA.robot_arm_plan_sample"),
+            (owner = :SpaceAGORA, symbol = :RobotArmSphereObstacle, rendered = "SpaceAGORA.RobotArmSphereObstacle"),
+            (owner = :SpaceAGORA, symbol = :RobotArmHYPRConfig, rendered = "SpaceAGORA.RobotArmHYPRConfig"),
+            (owner = :SpaceAGORA, symbol = :RobotArmHYPRResult, rendered = "SpaceAGORA.RobotArmHYPRResult"),
+            (owner = :SpaceAGORA, symbol = :plan_robot_arm_motion, rendered = "SpaceAGORA.plan_robot_arm_motion"),
+            (owner = :SpaceAGORA, symbol = :plan_robot_arm_motion_hypr, rendered = "SpaceAGORA.plan_robot_arm_motion_hypr"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_sample_hypr_path, rendered = "SpaceAGORA.robot_arm_sample_hypr_path"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_clearance_stats_from_samples, rendered = "SpaceAGORA.robot_arm_clearance_stats_from_samples"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_hypr_path_cost_components, rendered = "SpaceAGORA.robot_arm_hypr_path_cost_components")
+        ]
+    ),
+    (
+        title = "Compliant Multibody and Cloth Coupling",
+        items = [
+            (owner = :SpaceAGORA, symbol = :CompliantBody, rendered = "SpaceAGORA.CompliantBody"),
+            (owner = :SpaceAGORA, symbol = :CompliantJoint, rendered = "SpaceAGORA.CompliantJoint"),
+            (owner = :SpaceAGORA, symbol = :CompliantMultibodyModel, rendered = "SpaceAGORA.CompliantMultibodyModel"),
+            (owner = :SpaceAGORA, symbol = :CompliantMultibodyTrajectory, rendered = "SpaceAGORA.CompliantMultibodyTrajectory"),
+            (owner = :SpaceAGORA, symbol = :CompliantTopologyNode, rendered = "SpaceAGORA.CompliantTopologyNode"),
+            (owner = :SpaceAGORA, symbol = :CompliantTopologyEdge, rendered = "SpaceAGORA.CompliantTopologyEdge"),
+            (owner = :SpaceAGORA, symbol = :CompliantTopologyBuild, rendered = "SpaceAGORA.CompliantTopologyBuild"),
+            (owner = :SpaceAGORA, symbol = :CompliantJointActuator, rendered = "SpaceAGORA.CompliantJointActuator"),
+            (owner = :SpaceAGORA, symbol = :CompliantJointLoad, rendered = "SpaceAGORA.CompliantJointLoad"),
+            (owner = :SpaceAGORA, symbol = :rectangular_prism_inertia, rendered = "SpaceAGORA.rectangular_prism_inertia"),
+            (owner = :SpaceAGORA, symbol = :thin_panel_inertia, rendered = "SpaceAGORA.thin_panel_inertia"),
+            (owner = :SpaceAGORA, symbol = :build_compliant_topology, rendered = "SpaceAGORA.build_compliant_topology"),
+            (owner = :SpaceAGORA, symbol = :build_rectangular_compliant_grid, rendered = "SpaceAGORA.build_rectangular_compliant_grid"),
+            (owner = :SpaceAGORA, symbol = :compliant_state_vector, rendered = "SpaceAGORA.compliant_state_vector"),
+            (owner = :SpaceAGORA, symbol = :compliant_state_parts, rendered = "SpaceAGORA.compliant_state_parts"),
+            (owner = :SpaceAGORA, symbol = :compliant_multibody_dynamics, rendered = "SpaceAGORA.compliant_multibody_dynamics"),
+            (owner = :SpaceAGORA, symbol = :compliant_joint_loads, rendered = "SpaceAGORA.compliant_joint_loads"),
+            (owner = :SpaceAGORA, symbol = :step_compliant_multibody_rk4, rendered = "SpaceAGORA.step_compliant_multibody_rk4"),
+            (owner = :SpaceAGORA, symbol = :step_compliant_multibody_implicit_midpoint, rendered = "SpaceAGORA.step_compliant_multibody_implicit_midpoint"),
+            (owner = :SpaceAGORA, symbol = :simulate_compliant_multibody, rendered = "SpaceAGORA.simulate_compliant_multibody"),
+            (owner = :SpaceAGORA, symbol = :ClothRobotArmSimulation, rendered = "SpaceAGORA.ClothRobotArmSimulation"),
+            (owner = :SpaceAGORA, symbol = :cloth_robot_arm_multibody, rendered = "SpaceAGORA.cloth_robot_arm_multibody"),
+            (owner = :SpaceAGORA, symbol = :cloth_robot_arm_initial_state, rendered = "SpaceAGORA.cloth_robot_arm_initial_state"),
+            (owner = :SpaceAGORA, symbol = :cloth_robot_arm_rest_quaternions, rendered = "SpaceAGORA.cloth_robot_arm_rest_quaternions"),
+            (owner = :SpaceAGORA, symbol = :cloth_robot_arm_end_effector, rendered = "SpaceAGORA.cloth_robot_arm_end_effector"),
+            (owner = :SpaceAGORA, symbol = :simulate_cloth_robot_arm_plan, rendered = "SpaceAGORA.simulate_cloth_robot_arm_plan"),
+            (owner = :SpaceAGORA, symbol = :cloth_robot_arm_actuators, rendered = "SpaceAGORA.cloth_robot_arm_actuators"),
+            (owner = :SpaceAGORA, symbol = :coupled_cloth_robot_arm_state_shape, rendered = "SpaceAGORA.coupled_cloth_robot_arm_state_shape"),
+            (owner = :SpaceAGORA, symbol = :initialize_coupled_cloth_robot_arm_state!, rendered = "SpaceAGORA.initialize_coupled_cloth_robot_arm_state!"),
+            (owner = :SpaceAGORA, symbol = :assign_coupled_cloth_robot_arm_rhs!, rendered = "SpaceAGORA.assign_coupled_cloth_robot_arm_rhs!")
+        ]
+    ),
+    (
+        title = "Robot Arm Control",
+        items = [
+            (owner = :SpaceAGORA, symbol = :RobotArmHeldActuation, rendered = "SpaceAGORA.RobotArmHeldActuation"),
+            (owner = :SpaceAGORA, symbol = :RobotArmJointMPCController, rendered = "SpaceAGORA.RobotArmJointMPCController"),
+            (owner = :SpaceAGORA, symbol = :RobotArmControlEffector, rendered = "SpaceAGORA.RobotArmControlEffector"),
+            (owner = :SpaceAGORA, symbol = :RobotArmReactionEffector, rendered = "SpaceAGORA.RobotArmReactionEffector"),
+            (owner = :SpaceAGORA, symbol = :init_robot_arm_joint_mpc, rendered = "SpaceAGORA.init_robot_arm_joint_mpc"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_joint_mpc_reference_preview, rendered = "SpaceAGORA.robot_arm_joint_mpc_reference_preview"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_joint_mpc_control, rendered = "SpaceAGORA.robot_arm_joint_mpc_control"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_measured_joint_state, rendered = "SpaceAGORA.robot_arm_measured_joint_state")
+        ]
+    ),
+    (
+        title = "Guidance and RPO Assets",
+        items = [
+            (owner = :SpaceAGORA, symbol = :ApoapsisTargetPeriapsisRaiseGuidanceModel, rendered = "SpaceAGORA.ApoapsisTargetPeriapsisRaiseGuidanceModel"),
+            (owner = :SpaceAGORA, symbol = :station_geometry_path, rendered = "SpaceAGORA.station_geometry_path"),
+            (owner = :SpaceAGORA, symbol = :station_cad_path, rendered = "SpaceAGORA.station_cad_path"),
+            (owner = :SpaceAGORA, symbol = :load_rpo_station_pointcloud, rendered = "SpaceAGORA.load_rpo_station_pointcloud"),
+            (owner = :SpaceAGORA, symbol = :load_rpo_station_cad_triangles, rendered = "SpaceAGORA.load_rpo_station_cad_triangles"),
+            (owner = :SpaceAGORA, symbol = :load_rpo_station_cad_pointcloud, rendered = "SpaceAGORA.load_rpo_station_cad_pointcloud")
         ]
     ),
     (

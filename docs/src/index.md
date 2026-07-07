@@ -48,7 +48,10 @@ find a concrete next step.
 
 - [Start Here](getting_started.md)
 - [Quickstart](user/quickstart.md)
+- [Examples Catalog](user/examples_catalog.md)
+- [Studies and Benchmarks](user/studies_benchmarks.md)
 - [Recipes](user/recipes.md)
+- [Troubleshooting](user/troubleshooting.md)
 
 ### Reference
 
@@ -57,6 +60,7 @@ exact command surface, extension hooks, or generated API details.
 
 - [CLI](cli.md)
 - [Public API](generated/public_api.md)
+- [Publications](publications.md)
 - [Extensibility](extensibility.md)
 
 ### Maintainer Guide

@@ -90,7 +90,20 @@ end
 function main()
     pr_number = parse_pr_number()
     artifact_path = joinpath(REPO_ROOT, "test", "ai_reviews", "PR_$(pr_number).md")
-    isfile(artifact_path) || error("Missing AI review artifact: $(relpath(artifact_path, REPO_ROOT))")
+
+    # PRs that touch no src/**/*.jl files (workflow, docs, or test-only changes)
+    # do not require a review artifact: the artifact's purpose is per-file
+    # coverage of src changes, and the artifact filename depends on the PR
+    # number, which cannot exist before the PR is opened.
+    if !isfile(artifact_path)
+        base_ref = get(ENV, "SPACEAGORA_BASE_REF", get(ENV, "GITHUB_BASE_REF", nothing))
+        changed_src_files = git_changed_files(base_ref)
+        if isempty(changed_src_files)
+            println("ai_review_artifact_gate_skipped pr=$(pr_number) changed_src_files=0 (no src changes; artifact not required)")
+            return
+        end
+        error("Missing AI review artifact: $(relpath(artifact_path, REPO_ROOT))")
+    end
 
     artifact_text = read(artifact_path, String)
     sections = parse_sections(artifact_text)

@@ -66,10 +66,20 @@ end
     write_buffers::Bool=true,
 )::AtmosphereSample
     callbacks = SimulationModel.SimulationCallbacks
-    cache_cfg = callbacks._gram_track_cache_config()
-    stats_enabled = callbacks._gram_runtime_stats_enabled()
-    target_include_j2 = callbacks._gram_track_cache_target_use_j2() &&
-        callbacks._uses_j2_gravity_effector(p.args.dynamics_model.dynamic_effectors)
+    static_cfg = p.shared_buffers.density_static_config[]
+    cache_cfg, stats_enabled, target_include_j2 = if static_cfg === nothing
+        # Fallback for callers that construct ODEParams without the standard
+        # execution.jl init sequence (e.g. some test harnesses): correct but
+        # re-parses ENV every call, same as before this cache was added.
+        (
+            callbacks._gram_track_cache_config(),
+            callbacks._gram_runtime_stats_enabled(),
+            callbacks._gram_track_cache_target_use_j2() &&
+                callbacks._uses_j2_gravity_effector(p.args.dynamics_model.dynamic_effectors),
+        )
+    else
+        (static_cfg.cache_cfg, static_cfg.stats_enabled, static_cfg.target_include_j2)
+    end
     density_model = callbacks._density_model_for_sat(p, sat_idx)
     caches = p.shared_buffers.gram_density_cache
     pos_ii, vel_ii = _extract_sample_pos_vel(x)

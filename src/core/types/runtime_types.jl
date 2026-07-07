@@ -640,6 +640,13 @@ export GramTrackCache, VacuumPredictedGRAMCache, AeroScratchWorkspace, NBodyScra
         # this plan directly, bypassing all heuristic routing logic.  Set by the
         # auto-calibration sweep in rhs_calibration.jl and cleared after the solve.
         rhs_plan_override::Base.RefValue{Any} = Ref{Any}(nothing)
+        # Env-var-derived density/GRAM settings (track-cache config, vacuum-cache
+        # config, J2-target flag, stats-enabled flag) are constant for the whole solve
+        # but were being re-parsed from ENV on every per-satellite density sample
+        # (_sample_atmosphere_from_planet_frame / _density_state_from_kinematics!,
+        # called once per satellite per RHS call). Computed once during setup and
+        # cached here instead; see _initialize_density_static_config! in setup.jl.
+        density_static_config::Base.RefValue{Any} = Ref{Any}(nothing)
     end
 
     # SaveData is an output/persistence boundary and intentionally remains heterogeneous.

@@ -429,7 +429,15 @@ function _prepare_rhs_flat_work_items!(
             work_items[count_items] = _constellation_node_work_item(sat_idx, eff_idx, n_effectors)
         end
     end
-    if count_items > 1
+    # Cost only varies by eff_idx, not sat_idx, and the pre-pass filter above already
+    # strips out batchable/harmonics effectors -- so once at most one effector type
+    # remains in the flat queue (the common case once a constellation's gravity model
+    # is pre-passed away, leaving e.g. just aero), every item shares the same cost key
+    # and sorting is a guaranteed no-op that still pays full O(n log n) comparison cost,
+    # each comparison re-deriving the same handful of per-effector cost lookups. Skip
+    # it entirely in that case; only heterogeneous multi-effector residual queues
+    # benefit from (and need) the sort.
+    if count_items > 1 && _count_flat_queue_only_effectors(dynamic_effectors) > 1
         sort!(
             @view(work_items[1:count_items]);
             by=item -> -_rhs_flat_item_estimated_cost_ns(p.shared_buffers, dynamic_effectors, item),

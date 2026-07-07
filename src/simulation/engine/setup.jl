@@ -636,6 +636,37 @@ end
     return active_sats >= budget && budget > 1
 end
 
+# Effectors whose flat-mode routing benefit satellite_batch cannot replicate at any
+# thread count: harmonics gets the cache-friendly SIMD batch kernel across the whole
+# satellite batch (satellite_batch's Polyester loop instead calls the ordinary
+# per-satellite Pines recursion once per satellite), and (J2-)inverse-square gravity
+# gets a batched pre-pass specifically to avoid per-satellite Polyester dispatch
+# overhead for a kernel too cheap to pay for it (_accumulate_invsq_flat_batch! /
+# _accumulate_invsq_j2_flat_batch! in dynamics_rhs.jl). NBody/SRP are deliberately not
+# included: satellite_batch already hoists their expensive shared ephemeris lookups
+# via _prefill_shared_body_samples!, so it doesn't lose anything structural for those.
+#
+# This matters because n_effectors >= _rhs_flat_min_effectors() (default 3) below is
+# gating flat-queue eligibility on "enough effector *types* to justify the queue",
+# which has nothing to do with whether one of those effectors has an algorithmic
+# benefit independent of effector count. A 2-effector harmonics+drag constellation
+# (a common shape) would otherwise never reach the flat queue and would fall through
+# to _satellite_batch_saturates_pool once active_sats >= budget, silently discarding
+# the harmonics batch kernel's win even though it has nothing to do with effector count.
+@inline function _rhs_flat_batch_privileged_effector(effector)::Bool
+    effector isa SimulationModel.GravitationalHarmonicsModel && return true
+    effector isa SimulationModel.InverseSquaredGravityModel && return !effector.gravity_gradient
+    effector isa SimulationModel.InverseSquaredJ2GravityModel && return !effector.gravity_gradient
+    return false
+end
+
+@inline function _rhs_flat_has_batch_privileged_effector(dynamic_effectors::Tuple)::Bool
+    @inbounds for effector in dynamic_effectors
+        _rhs_flat_batch_privileged_effector(effector) && return true
+    end
+    return false
+end
+
 # Forces an effector decision to serial, preserving the mode/policy fields for
 # telemetry while making it structurally impossible to enable nested effector
 # threads under satellite_batch.
@@ -935,7 +966,7 @@ end
         estimated_work_per_worker >= _rhs_flat_work_per_worker_ns_threshold()
 
     if active_sats >= _rhs_flat_min_sats() &&
-       n_effectors >= _rhs_flat_min_effectors() &&
+       (n_effectors >= _rhs_flat_min_effectors() || _rhs_flat_has_batch_privileged_effector(dynamic_effectors)) &&
        many_heavy_effectors
         return (
             mode=:flat_constellation_effector_queue,
@@ -971,6 +1002,54 @@ end
     )
 end
 
+# drag_cache/lift_cache/cross_cache in SaveCache all start as empty Vectors and grow
+# lazily via _store_vector_cache!'s `resize!` (aerodynamic_wrench_models.jl). That's
+# only safe called sequentially: AerodynamicCoefficientfM's wrench is dispatched
+# across persistent worker threads by the flat-constellation-effector-queue route,
+# so two satellites landing on different workers can both see the cache too short
+# and both call `resize!` on the same shared Vector concurrently. Julia 1.12 catches
+# this and throws ConcurrencyViolationError at small satellite counts; at larger
+# counts (tighter timing races) it has corrupted memory badly enough to segfault
+# instead. Pre-sizing to num_sats here, before any threaded dispatch can begin,
+# means every per-satellite write lands on an already-appropriately-sized Vector at
+# a distinct index, so the racy resize path is never reached.
+function _initialize_save_cache_buffers!(p)::Nothing
+    n_sats = length(p.args.dynamics_model.spacecraft)
+    zero_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
+    for cache in (p.save_cache.drag_cache, p.save_cache.lift_cache, p.save_cache.cross_cache)
+        if length(cache) != n_sats
+            resize!(cache, n_sats)
+        end
+        fill!(cache, zero_vec)
+    end
+    return nothing
+end
+
+# cache_cfg/stats_enabled/target_include_j2/vacuum-cache settings are all pure
+# ENV-var (or dynamic_effectors, which don't change mid-solve) derived values,
+# constant for the whole solve. _sample_atmosphere_from_planet_frame previously
+# recomputed all of these (cache_cfg alone parses ~10 env vars) on every call --
+# once per satellite per RHS call, i.e. millions of times over a large multi-
+# satellite mission. Computed once here instead and read from
+# shared_buffers.density_static_config thereafter.
+function _initialize_density_static_config!(p)::Nothing
+    callbacks = SimulationModel.SimulationCallbacks
+    cache_cfg = callbacks._gram_track_cache_config()
+    stats_enabled = callbacks._gram_runtime_stats_enabled()
+    target_include_j2 = callbacks._gram_track_cache_target_use_j2() &&
+        callbacks._uses_j2_gravity_effector(p.args.dynamics_model.dynamic_effectors)
+    p.shared_buffers.density_static_config[] = (
+        cache_cfg=cache_cfg,
+        stats_enabled=stats_enabled,
+        target_include_j2=target_include_j2,
+        vacuum_enabled=callbacks._vacuum_gram_cache_enabled(),
+        vacuum_npoints=callbacks._vacuum_gram_cache_npoints(),
+        vacuum_horizon_s=callbacks._vacuum_gram_cache_horizon_s(),
+        vacuum_deviation_m=callbacks._vacuum_gram_cache_deviation_m(),
+    )
+    return nothing
+end
+
 function _initialize_density_model_instances!(p)
     instances = p.shared_buffers.density_models
     empty!(instances)
@@ -988,6 +1067,28 @@ function _initialize_density_model_instances!(p)
     @inbounds for _ in 1:n_sats
         # One GRAM handle per satellite avoids sharing mutable native model state.
         push!(instances, deepcopy(density_model))
+    end
+    return nothing
+end
+
+# in_atmosphere[] otherwise defaults to false for every satellite (runtime_types.jl)
+# and is only ever flipped by the up/down-crossing event callback in
+# event_callbacks.jl. A satellite whose initial orbit never crosses EI --
+# because it starts (and stays) below it, e.g. a circular low-altitude orbit --
+# would then incorrectly read as "not in atmosphere" for the entire mission,
+# silently skipping the vacuum-predicted GRAM cache and the finer
+# dt_max_atmosphere step size. Set the flag from the actual starting altitude
+# instead of leaving every satellite to default to the "above the atmosphere"
+# state regardless of where it actually starts.
+function _initialize_in_atmosphere_flags!(p, initial_conditions)::Nothing
+    sc_state = initial_conditions.sc
+    n = length(sc_state)
+    length(p.shared_buffers.in_atmosphere) == n || resize!(p.shared_buffers.in_atmosphere, n)
+    planet = p.args.environment_model.planet
+    ei_m = p.args.environment_model.EI * 1e3
+    @inbounds for i in 1:n
+        alt = norm(_state_position_ii(initial_conditions, i)) - planet.Rp_e
+        p.shared_buffers.in_atmosphere[i] = alt <= ei_m
     end
     return nothing
 end

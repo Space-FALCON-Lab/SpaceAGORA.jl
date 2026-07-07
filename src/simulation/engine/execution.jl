@@ -176,7 +176,10 @@ function run_simulation(
 
     # Define the ODE parameters and callbacks
     p = SimulationModel.ODEParams{length(args.dynamics_model.spacecraft)}(args=args) # Define the parameters for the ODE problem, including the shared buffers for the callbacks
+    _initialize_in_atmosphere_flags!(p, initial_conditions)
     _initialize_heat_rate_buffers!(p)
+    _initialize_save_cache_buffers!(p)
+    _initialize_density_static_config!(p)
     _initialize_density_model_instances!(p)
     _initialize_density_cache_buffers!(p)
     _initialize_gram_isolated_pool_buffers!(p)

@@ -97,16 +97,26 @@ function _density_state_from_kinematics!(
     # Vacuum-predicted GRAM density cache: interpolate from a pre-built spline on
     # log(ρ) along the drag-free trajectory.  Only active inside the atmosphere
     # (in_atmosphere flag) to avoid wasteful builds during coast arcs.
-    if _vacuum_gram_cache_enabled()
+    #
+    # Settings are ENV-derived and constant for the whole solve; read from the
+    # cache populated once by _initialize_density_static_config! instead of
+    # re-parsing ENV on every call (this function runs once per satellite per RHS
+    # call). Falls back to the raw accessors if the cache wasn't populated (e.g. a
+    # test harness that builds ODEParams without the standard init sequence).
+    static_cfg = p.shared_buffers.density_static_config[]
+    vacuum_enabled, vacuum_npoints, vacuum_horizon_s, vacuum_deviation_m = static_cfg === nothing ?
+        (_vacuum_gram_cache_enabled(), _vacuum_gram_cache_npoints(), _vacuum_gram_cache_horizon_s(), _vacuum_gram_cache_deviation_m()) :
+        (static_cfg.vacuum_enabled, static_cfg.vacuum_npoints, static_cfg.vacuum_horizon_s, static_cfg.vacuum_deviation_m)
+    if vacuum_enabled
         in_atm = sat_idx <= length(p.shared_buffers.in_atmosphere) &&
                  p.shared_buffers.in_atmosphere[sat_idx]
         if in_atm
             vacuum_cache = _vacuum_gram_cache_for_sat!(p.shared_buffers.vacuum_gram_caches, sat_idx)
             return _query_vacuum_gram_cache!(
                 vacuum_cache, density_model, p, pos_ii, vel_ii, alt, t,
-                _vacuum_gram_cache_npoints(),
-                _vacuum_gram_cache_horizon_s(),
-                _vacuum_gram_cache_deviation_m()
+                vacuum_npoints,
+                vacuum_horizon_s,
+                vacuum_deviation_m
             )
         end
     end

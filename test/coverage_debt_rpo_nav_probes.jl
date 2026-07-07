@@ -231,11 +231,16 @@ end
         @test clear_stats.violation_fraction == 0.0
         @test clear_stats.min_clearance ≈ 8.0 - 2.0 - 0.15
 
-        # NOTE: safe_distance_m is accepted but never used by rpo_path_clearance_stats;
-        # violations are counted against clearance < 0 regardless of the margin.
+        # BUG (tracked upstream): safe_distance_m is accepted but never used by
+        # rpo_path_clearance_stats — violations are counted against clearance < 0
+        # regardless of the margin.  The closest sample here has ~0.35 m clearance,
+        # inside the requested 1.0 m margin, so a margin-aware check must count it
+        # as a violation.  @test_broken asserts the CORRECT expectation: it records
+        # Broken while the bug exists and flips to an unexpected-pass failure once
+        # the source fix lands, so CI never rejects the fix.
         margin_stats = SM.rpo_path_clearance_stats([2.5 9.0; 0.0 0.0; 0.0 0.0], geom; safe_distance_m=1.0)
         @test margin_stats.min_clearance ≈ 2.5 - 2.0 - 0.15
-        @test margin_stats.violation_count == 0  # documents current (margin-ignoring) behavior
+        @test_broken margin_stats.violation_count == 1
 
         @test_throws ArgumentError SM.rpo_path_clearance_stats(zeros(4, 3), geom)
     end

@@ -104,6 +104,21 @@ julia --project=. examples/AGORA_Basic_Quickstart.jl
 The same environment variables can be scoped in Julia with `withenv` when you
 want one process to run several scenarios with different settings.
 
+Runtime parallelism and cache knobs are resolved once at `run_simulation`
+start into a typed, run-scoped snapshot (together with any active
+`SimulationEngineConfig` overrides), so the RHS and callback hot paths never
+touch process-global `ENV` during integration. Wrap the whole
+`run_simulation` call in `withenv` — changing a variable while a run is in
+flight does not affect that run.
+
+When nothing reads the trajectory (`return_solution=false`,
+`results=false`, no solver metadata requested), the solver skips per-step
+solution storage entirely (`save_on=false`, endpoints kept). This is the
+dominant allocation in campaign runs — skipping it is what lets
+`run_constellation_ensemble` scale near-linearly with threads. Explicitly
+set `SPACEAGORA_SOLVER_SAVE_EVERYSTEP` / `SPACEAGORA_SOLVER_SAVE_ON`
+values override this default in either direction.
+
 ## Monte Carlo campaigns
 
 Use `run_monte_carlo` when you want to run many independent simulations from

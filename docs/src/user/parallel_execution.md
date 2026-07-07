@@ -226,6 +226,35 @@ measured the workload — the default `global` scope is always safe. Process-bas
 campaigns (separate workers via `addprocs`) do not need this: each process has
 its own lock already.
 
+### Real GRAM without the vacuum-predicted cache
+
+`SPACEAGORA_VACUUM_GRAM_CACHE` (the drag-free trajectory spline described
+above) is the supported way to query real, per-satellite GRAM density at
+constellation scale. If it is disabled — direct, uncached GRAM queries at
+every RHS evaluation — also set:
+
+```bash
+export SPACEAGORA_DENSITY_FREEZE_PER_STEP=1
+```
+
+Real GRAM's perturbation/turbulence model adds small-scale noise on top of the
+smooth mean density profile. An adaptive ODE solver's step-size controller
+reacts to that per-call noise as if it were stiffness and collapses `dt`:
+measured on a 2-satellite, 1-second mission, disabling the vacuum cache
+without this flag produced 12+ million GRAM calls, 2.4 million solver steps,
+and a 604 s wall time; with the flag, the same scenario took 35.7 s (14 calls,
+37 steps) — matching the vacuum-cache path's own timing. `run_simulation`
+already fires a `DiscreteCallback` once per accepted solver step that samples
+density into `shared_buffers`; this flag makes the RHS-side atmosphere read
+trust that once-per-step sample for every stage evaluation within the step
+instead of demanding an exact-time match (which almost never holds for a
+multi-stage adaptive method). This is a standard, small approximation for a
+LEO trajectory: altitude — the dominant driver of the smooth mean density —
+changes negligibly over one integration step, so freezing density for the
+step's duration costs little accuracy while removing the noise that the
+solver was reacting to. It has no effect on the vacuum-predicted-cache path,
+which is already smooth by construction.
+
 ## Constellation ensembles
 
 For multi-satellite configurations whose members do not interact (no

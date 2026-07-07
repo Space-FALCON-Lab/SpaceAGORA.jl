@@ -16,6 +16,11 @@ end
     return _parse_bool_env("SPACEAGORA_GRAM_TRACK_CACHE_TARGET_USE_J2", true)
 end
 
+# See CallbackEnvConfig.density_freeze_per_step docstring for the rationale.
+@inline function _density_freeze_per_step_enabled()::Bool
+    return _parse_bool_env("SPACEAGORA_DENSITY_FREEZE_PER_STEP", false)
+end
+
 """
     _reset_cached_env_flags!()
 
@@ -180,6 +185,7 @@ function _snapshot_callback_env_config()::CallbackEnvConfig
         _gram_runtime_stats_enabled(),
         _gram_track_cache_ignore_time_window(),
         _gram_track_cache_target_use_j2(),
+        _density_freeze_per_step_enabled(),
         _vacuum_gram_cache_enabled(),
         _vacuum_gram_cache_npoints(),
         _vacuum_gram_cache_horizon_s(),

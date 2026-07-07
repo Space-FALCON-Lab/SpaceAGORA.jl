@@ -602,6 +602,19 @@ export RhsEffectorDecision, RhsExecutionPlan
         gram_runtime_stats_enabled::Bool
         gram_track_cache_ignore_time_window::Bool
         gram_track_cache_target_use_j2::Bool
+        # When true, sample_buffered_atmosphere reuses the density/temperature/wind
+        # sampled once per accepted step (by the density DiscreteCallback) for every
+        # RHS stage evaluation within that step, instead of requiring an exact time
+        # match. Real (non-cached) GRAM density includes small-scale perturbation
+        # noise that is not smooth in time; resampling it at every RK stage makes an
+        # adaptive solver's step-size controller see that noise as stiffness and
+        # collapse dt (measured: 2 sats / 1s mission -> 2.4M steps, 604s wall time).
+        # Freezing density for the whole step removes that noise from the local
+        # truncation-error estimate; altitude (the dominant driver of the smooth mean
+        # density) changes negligibly over one integration step for a LEO orbit, so
+        # this is a small, standard approximation -- the same idea the vacuum-predicted
+        # cache already uses at a coarser (look-ahead-window) grain.
+        density_freeze_per_step::Bool
         vacuum_gram_cache_enabled::Bool
         vacuum_gram_cache_npoints::Int
         vacuum_gram_cache_horizon_s::Float64

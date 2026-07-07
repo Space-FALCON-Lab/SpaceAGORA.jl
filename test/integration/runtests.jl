@@ -1067,3 +1067,4 @@ include(joinpath(REPO_ROOT, "test", "suites", "05_thruster_control_and_quality_t
 include(joinpath(REPO_ROOT, "test", "suites", "06_monolith_split_runtime_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "suites", "07_no_gram_onboarding_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "suites", "08_cli_and_assets_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "suites", "09_coverage_debt_probe_drivers.jl"))

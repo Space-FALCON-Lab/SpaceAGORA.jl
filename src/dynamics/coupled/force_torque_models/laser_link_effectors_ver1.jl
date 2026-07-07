@@ -308,7 +308,7 @@ function laser_link_pair_force(
     target_pos::SVector{3, Float64},
     helper_pos::SVector{3, Float64},
 )::SVector{3, Float64}
-    rel = target_pos - helper_pos
+    rel = helper_pos - target_pos
     rho = norm(rel)
     (rho > 0.0 && rho <= model.range_m) || return SVector{3, Float64}(0.0, 0.0, 0.0)
     return laser_link_force_magnitude(model) * rel / rho

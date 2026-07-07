@@ -19,12 +19,11 @@ const _HAS_GLMAKIE = "--animate" in ARGS && (try; @eval using GLMakie; true; cat
 _HAS_GLMAKIE && include(joinpath(@__DIR__, "10_Animation_ver2.jl"))
 
 # 4. define output path
-const DEFAULT_OUTPUT_DIR = joinpath(REPO_ROOT, "output")
+const DEFAULT_OUTPUT_DIR = joinpath(REPO_ROOT, "output", "oracle_case2_laser_links")
 
 # 5. define paper grid parameters (overridden by --paper-grid flag)
-const PAPER_HELPER_ALTITUDES_KM       = (1150.0, 1050.0, 1000.0, 950.0, 850.0)
+const PAPER_HELPER_ALTITUDES_KM = (1150.0, 1050.0, 1000.0, 950.0, 850.0)
 const PAPER_HELPER_INCLINATION_DELTAS_DEG = (0.0, 0.5, 1.0)
-const PAPER_HELPER_COUNTS             = (200, 250, 300) #(50, 100) #(150, 200, 250, 300) #(1, 2, 3)
 
 # 6. settings container & default values
 Base.@kwdef struct OracleCase2Options
@@ -43,7 +42,7 @@ Base.@kwdef struct OracleCase2Options
     mass_kg::Float64 = 227.0
     dt_max_s::Float64 = 10.0
     paper_grid::Bool = false
-    feather_only::Bool = false  # skip CSV, summary.csv, and plots — write feather+manifest only
+    native_output::Bool = false  # use SpaceAGORA's native output pipeline (Option B)
     output_dir::String = DEFAULT_OUTPUT_DIR
     timeseries_points::Int = 1001
     animate::Bool = false
@@ -84,7 +83,7 @@ function _usage()
       --mass-kg KG
       --dt-max-s SEC
       --paper-grid
-      --feather-only           Skip CSV, summary.csv, and plots; write feather+manifest only (faster I/O, less disk)
+      --native-output          Use SpaceAGORA's native output pipeline (feather+csv+manifest per scenario)
       --output-dir PATH        Directory for per-scenario output files (default: output/oracle_case2_laser_links/)
       --timeseries-points N
       --animate             Show 3D animation after the simulation (requires GLMakie)
@@ -92,7 +91,7 @@ function _usage()
 end
 
 # 7. group the command-line option names by types
-const _FLAG_OPTS   = (:paper_grid, :feather_only, :animate)
+const _FLAG_OPTS   = (:paper_grid, :native_output, :animate)
 const _INT_OPTS    = (:helpers, :timeseries_points)
 const _SYMBOL_OPTS = (:schedule,)
 const _PATH_OPTS   = (:output_dir,)
@@ -156,35 +155,36 @@ function main(argv=ARGS)
 
     if opts.paper_grid
         # --- Paper-grid mode: sweep over all (helper_altitude, inclination_delta) combinations ---
-        # Flatten the 3×5×3 = 45 independent cases into a single vector so that
-        # Threads.@threads can distribute them across available threads.
-        # :dynamic scheduling is used because cases with more helpers take longer,
-        # so static/even splitting would leave threads idle at the end.
-        cases = [
-            (n_helpers, helper_alt, helper_inclination_delta)
-            for n_helpers              in PAPER_HELPER_COUNTS
-            for helper_alt             in PAPER_HELPER_ALTITUDES_KM
-            for helper_inclination_delta in PAPER_HELPER_INCLINATION_DELTAS_DEG
-        ]
-        print_lock = ReentrantLock()
-        Threads.@threads :dynamic for (n_helpers, helper_alt, helper_inclination_delta) in cases
-            case_opts = _with(opts;
-                helpers=n_helpers,
-                helper_altitude_km=helper_alt,
-                helper_inclination_deg=opts.target_inclination_deg + helper_inclination_delta,
-                output_dir=joinpath(opts.output_dir, "paper_plot_mode"),
-                animate=false,
-            )
-            elapsed = @elapsed begin
-                result = run_open_cavity_case_native(case_opts)
-            end
-            s = result.summary
-            lock(print_lock) do
-                println("  → $(result.results_dir)")
+
+        for helper_alt in PAPER_HELPER_ALTITUDES_KM               # outer loop: 5 altitudes
+            for helper_inclination_delta in PAPER_HELPER_INCLINATION_DELTAS_DEG  # inner loop: 3 inclination deltas
+                case_opts = _with(opts;
+                    helper_altitude_km=helper_alt,
+                    helper_inclination_deg=opts.target_inclination_deg + helper_inclination_delta,
+                    animate=false,
+                )
+
+                if opts.native_output
+                    # Native pipeline: SpaceAGORA writes feather+csv+manifest to a per-scenario subfolder
+                    result = run_open_cavity_case_native(case_opts)
+                    s = result.summary
+                    println("  → $(result.results_dir)")
+                else
+                    # Custom pipeline: ORACLE writes its own CSV and Feather files
+                    result = run_open_cavity_case(case_opts)
+                    s = result.summary
+                    stem = _scenario_stem(s, case_opts)
+                    _write_csv!(joinpath(opts.output_dir, "summary_$(stem).csv"),      [s])
+                    _write_feather!(joinpath(opts.output_dir, "summary_$(stem).feather"),  [s])
+                    _write_csv!(joinpath(opts.output_dir, "timeseries_$(stem).csv"),   result.timeseries)
+                    _write_feather!(joinpath(opts.output_dir, "timeseries_$(stem).feather"), result.timeseries)
+                    println("  → $(stem)")
+                end
+
                 @printf(
-                    "helpers=%d helper_alt_km=%.1f helper_inc_deg=%.1f dv_R=%.6e dv_T=%.6e dv_N=%.6e activations=%d  [%.1f s]\n",
+                    "helpers=%d helper_alt_km=%.1f helper_inc_deg=%.1f dv_R=%.6e dv_T=%.6e dv_N=%.6e activations=%d\n",
                     s.helpers, s.helper_altitude_km, s.helper_inclination_deg,
-                    s.dv_r_mps, s.dv_t_mps, s.dv_n_mps, s.activations, elapsed
+                    s.dv_r_mps, s.dv_t_mps, s.dv_n_mps, s.activations
                 )
             end
         end
@@ -192,17 +192,32 @@ function main(argv=ARGS)
 
     else
         # --- Single-run mode ---
-        elapsed = @elapsed begin
-            result = run_open_cavity_case_native(_with(opts; output_dir=joinpath(opts.output_dir, "single_case_mode")))
+        if opts.native_output
+            # Native pipeline: SpaceAGORA writes feather+csv+manifest to a per-scenario subfolder
+            result = run_open_cavity_case_native(opts)
+            s = result.summary
+            _print_summary(s)
+            println("Output directory: $(result.results_dir)")
+            img_dir = joinpath(result.results_dir, "images")
+        else
+            # Custom pipeline: ORACLE writes its own CSV and Feather files
+            result = run_open_cavity_case(opts)
+            s = result.summary
+            _print_summary(s)
+            stem    = _scenario_stem(s, opts)
+            sum_csv = _write_csv!(joinpath(opts.output_dir, "summary_$(stem).csv"),      [s])
+            sum_fth = _write_feather!(joinpath(opts.output_dir, "summary_$(stem).feather"),  [s])
+            ts_csv  = _write_csv!(joinpath(opts.output_dir, "timeseries_$(stem).csv"),   result.timeseries)
+            ts_fth  = _write_feather!(joinpath(opts.output_dir, "timeseries_$(stem).feather"), result.timeseries)
+            isempty(sum_csv) || println("Summary CSV:        $sum_csv")
+            isempty(sum_fth) || println("Summary Feather:    $sum_fth")
+            isempty(ts_csv)  || println("Time-series CSV:    $ts_csv")
+            isempty(ts_fth)  || println("Time-series Feather: $ts_fth")
+            img_dir = joinpath(opts.output_dir, "images")
         end
-        s = result.summary
-        _print_summary(s)
-        @printf("  run time: %.1f s\n", elapsed)
-        println("Output directory: $(result.results_dir)")
-        img_dir = joinpath(result.results_dir, "images")
 
-        # --- Diagnostic plots (skipped when --feather-only) ---
-        opts.feather_only || plot_open_cavity_results(result, opts; IMG_DIR=img_dir, target_only=false)
+        # --- Diagnostic plots ---
+        plot_open_cavity_results(result, opts; IMG_DIR=img_dir, target_only=false)
 
         # --- Optional 3D animation (only if --animate was passed and GLMakie loaded) ---
         if opts.animate

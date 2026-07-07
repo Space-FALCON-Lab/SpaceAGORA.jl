@@ -332,8 +332,8 @@ function run_simulation(
             checkpoint_active ? checkpoint_saved_data : saved_values.saveval
         end
         results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
-        # Write CSV only when save_csv=true (honours the SimulationSettings flag).
-        csv_path = args.simulation_settings.save_csv ? _write_results_csv!(results_df, args) : ""
+        # Keep backwards-compatible CSV contract used by existing scripts/tests.
+        csv_path = _write_results_csv!(results_df, args)
         if _typed_save_bundle_enabled()
             _write_results_bundle!(results_df, results_times, args; csv_path=csv_path)
         end

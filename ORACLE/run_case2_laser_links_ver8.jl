@@ -156,36 +156,28 @@ function main(argv=ARGS)
 
     if opts.paper_grid
         # --- Paper-grid mode: sweep over all (helper_altitude, inclination_delta) combinations ---
-        # Flatten the 3×5×3 = 45 independent cases into a single vector so that
-        # Threads.@threads can distribute them across available threads.
-        # :dynamic scheduling is used because cases with more helpers take longer,
-        # so static/even splitting would leave threads idle at the end.
-        cases = [
-            (n_helpers, helper_alt, helper_inclination_delta)
-            for n_helpers              in PAPER_HELPER_COUNTS
-            for helper_alt             in PAPER_HELPER_ALTITUDES_KM
-            for helper_inclination_delta in PAPER_HELPER_INCLINATION_DELTAS_DEG
-        ]
-        print_lock = ReentrantLock()
-        Threads.@threads :dynamic for (n_helpers, helper_alt, helper_inclination_delta) in cases
-            case_opts = _with(opts;
-                helpers=n_helpers,
-                helper_altitude_km=helper_alt,
-                helper_inclination_deg=opts.target_inclination_deg + helper_inclination_delta,
-                output_dir=joinpath(opts.output_dir, "paper_plot_mode"),
-                animate=false,
-            )
-            elapsed = @elapsed begin
-                result = run_open_cavity_case_native(case_opts)
-            end
-            s = result.summary
-            lock(print_lock) do
-                println("  → $(result.results_dir)")
-                @printf(
-                    "helpers=%d helper_alt_km=%.1f helper_inc_deg=%.1f dv_R=%.6e dv_T=%.6e dv_N=%.6e activations=%d  [%.1f s]\n",
-                    s.helpers, s.helper_altitude_km, s.helper_inclination_deg,
-                    s.dv_r_mps, s.dv_t_mps, s.dv_n_mps, s.activations, elapsed
-                )
+
+        for n_helpers in PAPER_HELPER_COUNTS                        # outermost loop: helper counts
+            for helper_alt in PAPER_HELPER_ALTITUDES_KM               # middle loop: 5 altitudes
+                for helper_inclination_delta in PAPER_HELPER_INCLINATION_DELTAS_DEG  # inner loop: 3 inclination deltas
+                    case_opts = _with(opts;
+                        helpers=n_helpers,
+                        helper_altitude_km=helper_alt,
+                        helper_inclination_deg=opts.target_inclination_deg + helper_inclination_delta,
+                        output_dir=joinpath(opts.output_dir, "paper_plot_mode"),
+                        animate=false,
+                    )
+                    elapsed = @elapsed begin
+                        result = run_open_cavity_case_native(case_opts)
+                    end
+                    s = result.summary
+                    println("  → $(result.results_dir)")
+                    @printf(
+                        "helpers=%d helper_alt_km=%.1f helper_inc_deg=%.1f dv_R=%.6e dv_T=%.6e dv_N=%.6e activations=%d  [%.1f s]\n",
+                        s.helpers, s.helper_altitude_km, s.helper_inclination_deg,
+                        s.dv_r_mps, s.dv_t_mps, s.dv_n_mps, s.activations, elapsed
+                    )
+                end
             end
         end
         println("Output directory: $(opts.output_dir)")

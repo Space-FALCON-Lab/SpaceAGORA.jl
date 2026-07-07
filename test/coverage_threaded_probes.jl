@@ -36,6 +36,12 @@ const HAS_GRAMSUITE = let
             pushfirst!(LOAD_PATH, vendored_gramsuite)
         end
         @eval import GRAMSuite
+        # Importing the package is not enough: the GRAM-backed probes construct
+        # real models, which needs the native GRAM Suite root (Build/ + Julia/).
+        # Dev machines often have the Julia wrapper but no native build; skip
+        # cleanly there instead of erroring mid-testset. CI builds the root, so
+        # this changes nothing in CI.
+        @eval GRAMSuite._resolve_gram_root("", "")
         true
     catch err
         @info "Skipping GRAMSuite-backed threaded coverage probes" exception=(err, catch_backtrace())

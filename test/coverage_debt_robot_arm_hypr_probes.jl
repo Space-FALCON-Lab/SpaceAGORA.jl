@@ -319,7 +319,8 @@ end
         @test static_result.components.refinement_improved === false
         @test isfinite(static_result.cost)
 
-        @test_throws ArgumentError SM.plan_robot_arm_motion_hypr(
+        # The q_start length check must fire before IK runs, with the planner's own message.
+        @test_throws ArgumentError("q_start does not match the arm model.") SM.plan_robot_arm_motion_hypr(
             model, base, [0.0, 0.0], target;
             planner_config=planner_cfg,
             hypr_config=cfg_static,

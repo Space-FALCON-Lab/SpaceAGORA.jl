@@ -15,13 +15,14 @@ end
 function rpo_path_clearance_stats(path_body, geometry::RPOReferenceGeometry; safe_distance_m::Real=0.0)
     path = Matrix{Float64}(path_body)
     size(path, 1) == 3 || throw(ArgumentError("RPO path must be a 3 x N matrix."))
+    margin = Float64(safe_distance_m)
     min_clearance = Inf
     violation_count = 0
     @inbounds for j in 1:size(path, 2)
         p = SVector{3, Float64}(path[1, j], path[2, j], path[3, j])
         clearance = rpo_clearance_distance_to_station(p, geometry)
         min_clearance = min(min_clearance, clearance)
-        violation_count += clearance < 0.0 ? 1 : 0
+        violation_count += clearance < margin ? 1 : 0
     end
     return (
         min_clearance=min_clearance,

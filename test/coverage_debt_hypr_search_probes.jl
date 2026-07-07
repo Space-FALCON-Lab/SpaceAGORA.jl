@@ -679,6 +679,12 @@ const _SV3 = SVector{3, Float64}
         mask = GH.rpo_pso_protected_particle_mask([3.0, 1.0, 2.0], 0.34)
         @test mask == [false, true, true]
 
+        # Failed stagnation-learning attempts keep the particle eligible for another
+        # attempt next iteration; only an accepted attempt clears the counter.
+        @test GH.rpo_pso_stagnation_count_after_learning(3, false) == 3
+        @test GH.rpo_pso_stagnation_count_after_learning(3, true) == 0
+        @test GH.rpo_pso_stagnation_count_after_learning(0, false) == 0
+
         cfg_imp = _hypr_cfg()
         @test GH.rpo_pso_material_improvement(0.5, 1.0, cfg_imp)
         @test !GH.rpo_pso_material_improvement(1.0, 1.0, cfg_imp)
@@ -724,12 +730,13 @@ const _SV3 = SVector{3, Float64}
         @test length(res_es.cost_history) == 2
         @test !res_es.iteration_timed_out
 
-        # Iteration runtime budget of ~zero times out in the first phase checkpoint.
+        # Iteration runtime budget of ~zero times out in the first phase checkpoint;
+        # with reexploration disabled the phase reports the iteration start, not :reexplore.
         cfg_to = _hypr_cfg(; n_iters=3, iteration_runtime_limit_s=1.0e-9)
         res_to = GH.rpo_pso_plan_path(start, goal, far, cfg_to; safe_distance_m=0.0, rng=MersenneTwister(3))
         @test res_to.iteration_timed_out
         @test res_to.iteration_timeout_iter == 1
-        @test res_to.iteration_timeout_phase == :reexplore
+        @test res_to.iteration_timeout_phase == :iteration_start
         @test length(res_to.iteration_timeout_events) == 1
         @test res_to.iteration_timeout_events[1].iter == 1
         @test res_to.iteration_timeout_events[1].elapsed_s >= 0.0

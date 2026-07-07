@@ -175,6 +175,11 @@ function rpo_pso_early_stopping_feasible(components, cfg::RPOPSOConfig)::Bool
     return getproperty(components, :violation_count) == 0
 end
 
+"""Return the post-attempt stagnation count; only an accepted learning attempt clears it."""
+@inline function rpo_pso_stagnation_count_after_learning(count::Integer, accepted::Bool)
+    return accepted ? 0 : Int(count)
+end
+
 """Run the RPO HYPR PSO planner and return the best path, cost, and diagnostics."""
 function rpo_pso_plan_path(start_rtn, goal_rtn, geometry, base_cfg::RPOPSOConfig; safe_distance_m=nothing, rng=Random.default_rng(), iteration_callback=nothing)
     adaptive_safe_distance = safe_distance_m === nothing ||
@@ -479,14 +484,13 @@ function rpo_pso_plan_path(start_rtn, goal_rtn, geometry, base_cfg::RPOPSOConfig
                         gbest_cost = comps.total
                         gbest_components = comps
                     end
-                    stagnation_count[pidx] = 0
                     accepted = true
                     break
                 end
                 n_trials += 1
                 n_trials >= max_blocks && break
             end
-            accepted || (stagnation_count[pidx] = 0)
+            stagnation_count[pidx] = rpo_pso_stagnation_count_after_learning(stagnation_count[pidx], accepted)
         end
         return nothing
     end
@@ -528,7 +532,7 @@ function rpo_pso_plan_path(start_rtn, goal_rtn, geometry, base_cfg::RPOPSOConfig
         end
         if iteration_timed_out(iter_start_ns)
             record_iteration!(iter)
-            record_iteration_timeout!(iter, :reexplore, iter_start_ns)
+            record_iteration_timeout!(iter, cfg.reexplore_enable ? :reexplore : :iteration_start, iter_start_ns)
             break
         end
 

@@ -183,6 +183,8 @@ function plan_robot_arm_motion_hypr(
 )
     cfg = _validate_robot_arm_hypr_config(hypr_config)
     q0 = Float64.(collect(q_start))
+    n = length(q0)
+    length(model.joints) == n || throw(ArgumentError("q_start does not match the arm model."))
     q_goal = cloth_ik(
         model,
         base_pose,
@@ -192,8 +194,6 @@ function plan_robot_arm_motion_hypr(
         position_tol_m=planner_config.ik_tol_m,
         damping=planner_config.ik_damping,
     )
-    n = length(q0)
-    length(model.joints) == n || throw(ArgumentError("q_start does not match the arm model."))
     warmstart = _robot_arm_empty_rrt_warmstart_diagnostics(cfg)
     if cfg.n_waypoints == 0
         points = hcat(q0, q_goal)

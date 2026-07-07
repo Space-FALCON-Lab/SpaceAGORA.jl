@@ -231,11 +231,11 @@ end
         @test clear_stats.violation_fraction == 0.0
         @test clear_stats.min_clearance ≈ 8.0 - 2.0 - 0.15
 
-        # NOTE: safe_distance_m is accepted but never used by rpo_path_clearance_stats;
-        # violations are counted against clearance < 0 regardless of the margin.
+        # Violations are counted against the safe-distance margin, not just clearance < 0.
         margin_stats = SM.rpo_path_clearance_stats([2.5 9.0; 0.0 0.0; 0.0 0.0], geom; safe_distance_m=1.0)
         @test margin_stats.min_clearance ≈ 2.5 - 2.0 - 0.15
-        @test margin_stats.violation_count == 0  # documents current (margin-ignoring) behavior
+        @test margin_stats.violation_count == 1  # clearance 0.35 sits inside the 1.0 m margin
+        @test margin_stats.violation_fraction ≈ 0.5
 
         @test_throws ArgumentError SM.rpo_path_clearance_stats(zeros(4, 3), geom)
     end

@@ -558,10 +558,8 @@ end
         @test retimed.valid
         @test retimed.cost == plan.cost
         @test retimed.diagnostics.replanning_action == :retime
-        # NOTE: current behavior keeps the stale planned_at_s from the old plan because
-        # rpo_plan_from_path merges caller diagnostics over (planned_at_s=t,). Likely a bug;
-        # reported upstream rather than fixed here.
-        @test retimed.diagnostics.planned_at_s == 7.0
+        # Retiming refreshes planned_at_s; inherited diagnostics cannot override it.
+        @test retimed.diagnostics.planned_at_s == 9.0
         @test retimed.r_ref_rtn[:, 1] ≈ collect(current) atol = 1.0e-9
         @test retimed.r_ref_rtn[:, end] ≈ path[:, 2] atol = 1.0e-9
     end

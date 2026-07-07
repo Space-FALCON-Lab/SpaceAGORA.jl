@@ -493,7 +493,10 @@ jobs:
     timeout-minutes: 60
     env:
       JULIA_NUM_THREADS: "4"
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # No GITHUB_TOKEN here: this job is a build/strictness gate only.
+      # Without credentials Documenter's deploydocs skips deployment, which
+      # belongs to the Documentation workflow (docs.yml); with the read-only
+      # token it attempts the gh-pages push on main and fails with 403.
     steps:
       - name: Checkout
         uses: actions/checkout@v4

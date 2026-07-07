@@ -103,7 +103,7 @@ const _FLOAT_OPTS  = (
     :mass_kg, :dt_max_s,
 )
 
-# 8. Reads what the user typed on the command line and turns it into an OracleCase2Options struct.
+# 8. Reads what the user typed on the command line and turns it into an OracleCase2Options struct
 function _parse_options(argv)::OracleCase2Options
     opts = Dict{Symbol, Any}()
     i = 1

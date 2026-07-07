@@ -52,11 +52,13 @@ occursin("function _rhs_flat_work_per_worker_ns_threshold()", setup_src) ||
     error("_rhs_flat_work_per_worker_ns_threshold is missing from setup.jl")
 occursin("SPACEAGORA_RHS_FLAT_WORK_PER_WORKER_NS_THRESHOLD", setup_src) ||
     error("SPACEAGORA_RHS_FLAT_WORK_PER_WORKER_NS_THRESHOLD env var is not wired up in setup.jl")
-occursin("estimated_work_per_worker >= _rhs_flat_work_per_worker_ns_threshold()", setup_src) ||
+# The thresholds are read from the run-scoped env snapshot (RhsPlanEnvConfig)
+# rather than re-parsed from ENV per RHS call.
+occursin("estimated_work_per_worker >= env.flat_work_per_worker_ns_threshold", setup_src) ||
     error("Per-worker work threshold gate is not used in flat route selection in setup.jl")
 # The per-worker gate must be part of the compound condition that selects the flat route,
 # not a standalone guard — verify both total and per-worker gates appear together.
-occursin("estimated_total_work_ns   >= _rhs_flat_work_ns_threshold() &&\n        estimated_work_per_worker >= _rhs_flat_work_per_worker_ns_threshold()", setup_src) ||
+occursin("estimated_total_work_ns   >= env.flat_work_ns_threshold &&\n        estimated_work_per_worker >= env.flat_work_per_worker_ns_threshold", setup_src) ||
     error("Total and per-worker work threshold gates are not paired correctly in setup.jl")
 
 # ── §3: Staged density callback split ───────────────────────────────────────

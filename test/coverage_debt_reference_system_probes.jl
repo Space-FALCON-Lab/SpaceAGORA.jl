@@ -256,15 +256,64 @@ end
     r_lat = latlongtor([0.7, 1.1, 5000.0], EARTH, 0.2, 10.0, 0.0)
     @test all(isfinite, r_lat)
     @test EARTH.Rp_p < norm(r_lat) < 1.02 * EARTH.Rp_e
+    # Geodetic construction must match the explicit prime-vertical formulas
+    # (the same ones latlongtoOE uses): N = a/sqrt(1 - e2 sin^2 ϕ) and a z
+    # component of ((1 - e2) N + h) sin ϕ.
+    ϕ_g, λ_g, h_g = 0.7, 1.1, 5000.0
+    e2_g = 1 - (EARTH.Rp_p / EARTH.Rp_e)^2
+    N_g = EARTH.Rp_e / sqrt(1 - e2_g * sin(ϕ_g)^2)
+    r_geo = latlongtor([ϕ_g, λ_g, h_g], EARTH, 0.0, 0.0, 0.0)
+    @test r_geo ≈ [
+        (N_g + h_g) * cos(ϕ_g) * cos(λ_g),
+        (N_g + h_g) * cos(ϕ_g) * sin(λ_g),
+        ((1 - e2_g) * N_g + h_g) * sin(ϕ_g)
+    ] rtol = 1e-12
+    # Bowring roundtrip recovers the geodetic lat/lon (PCI == PCPF at t = t0,
+    # α_g0 = 0).
+    lla_rt = rtolatlong(SVector{3, Float64}(r_geo), EARTH)
+    @test lla_rt[2] ≈ ϕ_g atol = 1e-9
+    @test lla_rt[3] ≈ λ_g atol = 1e-12
+    # The ALTITUDE must round-trip too: the closed form previously used
+    # e²·N·sin³φ instead of e²·N·sin²φ, costing ~6 km at mid-latitudes.
+    @test lla_rt[1] ≈ h_g atol = 1e-3
+    for (ϕ_chk, h_chk) in ((deg2rad(45.0), 125e3), (deg2rad(-60.0), 250e3), (deg2rad(20.0), 90e3))
+        r_chk = latlongtor([ϕ_chk, 0.9, h_chk], EARTH, 0.0, 0.0, 0.0)
+        lla_chk = rtolatlong(SVector{3, Float64}(r_chk), EARTH)
+        @test lla_chk[1] ≈ h_chk atol = 1e-3
+        @test lla_chk[2] ≈ ϕ_chk atol = 1e-9
+    end
 
     # latlongtoOE (prints diagnostics; silence them). L_PI was set to a rotation
-    # above, so the legacy PCPF->J2000 conversion is well-defined. Source bug:
-    # the final call is rvtoorbitalelement(r_i, v, 0, planet) with an Int mass,
-    # but the only mass-accepting method requires ::Float64, so the function
-    # always raises MethodError after computing the geometry.
-    @test_throws MethodError redirect_stdout(devnull) do
-        latlongtoOE([0.3, 0.5, 400e3], EARTH, 0.0, pi / 2, 7.7e3)
+    # above, so the legacy PCPF->J2000 conversion is well-defined.
+    ϕ_oe, λ_oe, h_oe, v_mag = 0.3, 0.5, 400e3, 7.7e3
+    OE_geo = redirect_stdout(devnull) do
+        latlongtoOE([ϕ_oe, λ_oe, h_oe], EARTH, 0.0, pi / 2, v_mag)
     end
+    @test length(OE_geo) == 6
+    @test all(isfinite, OE_geo)
+    # Geodetic radius of the launch point (same construction as latlongtor).
+    N_oe = EARTH.Rp_e / sqrt(1 - e2_g * sin(ϕ_oe)^2)
+    r_geo_oe = norm([
+        (N_oe + h_oe) * cos(ϕ_oe) * cos(λ_oe),
+        (N_oe + h_oe) * cos(ϕ_oe) * sin(λ_oe),
+        ((1 - e2_g) * N_oe + h_oe) * sin(ϕ_oe)
+    ])
+    # Vis-viva: semi-major axis from the point radius and speed.
+    @test OE_geo[1] ≈ -EARTH.μ / (2 * (v_mag^2 / 2 - EARTH.μ / r_geo_oe)) rtol = 1e-9
+    # γ = 0 with α = π/2 gives dot(r, v) = 0, so the state sits at an apsis
+    # and e = |v^2 r / μ - 1|; v exceeds circular speed, so it is periapsis.
+    @test OE_geo[2] ≈ abs(v_mag^2 * r_geo_oe / EARTH.μ - 1.0) rtol = 1e-9
+    @test min(OE_geo[6], 2pi - OE_geo[6]) ≈ 0.0 atol = 1e-6
+    # Roundtrip: the elements reproduce a Cartesian state with the original
+    # radius/speed, and rvtoorbitalelement/orbitalelemtorv self-agree on it.
+    R_geo_oe, V_geo_oe = orbitalelemtorv(SVector{7, Float64}(vcat(OE_geo, 0.0)), EARTH)
+    @test norm(R_geo_oe) ≈ r_geo_oe rtol = 1e-9
+    @test norm(V_geo_oe) ≈ v_mag rtol = 1e-9
+    @test abs(dot(R_geo_oe, V_geo_oe)) < 1e-3 * r_geo_oe
+    oe_back = rvtoorbitalelement(SVector{3, Float64}(R_geo_oe), SVector{3, Float64}(V_geo_oe), EARTH)
+    R_back, V_back = orbitalelemtorv(SVector{7, Float64}(vcat(oe_back, 0.0)), EARTH)
+    @test R_back ≈ R_geo_oe rtol = 1e-9
+    @test V_back ≈ V_geo_oe rtol = 1e-9
 
     # rtolatlong: equator and pole, plus default-argument method.
     lla_eq = rtolatlong(SVector{3, Float64}(EARTH.Rp_e, 0.0, 0.0), EARTH)
@@ -281,21 +330,23 @@ end
     lla_fwd = rtolatlong(SVector{3, Float64}(EARTH.Rp_e, 0.0, 0.0), EARTH, simple_model)
     @test lla_fwd == lla_eq
 
-    # Topography branch: references an undefined variable `args` (source bug),
-    # so it must raise UndefVarError before ever calling the topography function.
-    topo_planet = (
-        Rp_e = EARTH.Rp_e,
-        Rp_p = EARTH.Rp_p,
-        topography_function = (a...) -> 0.0,
-        Clm_topo = zeros(2, 2),
-        Slm_topo = zeros(2, 2),
-        A_topo = 1.0
+    # Topography branch: legacy duck-typed contract (mirrors the suite-03
+    # sandbox test) — a planet exposing a 6-arg topography_function plus
+    # Clm_topo/Slm_topo/A_topo gets altitude = |r| − elevation. Real Planet
+    # structs lack those fields, so the branch throws a field error for them
+    # instead of the pre-fix UndefVarError on the includer `args` global.
+    planet_topo_probe = (
+        Rp_e=10.0,
+        Rp_p=9.0,
+        topography_function=(a, Clm, Slm, lat, lon, A) -> 9.5,
+        Clm_topo=zeros(1, 1),
+        Slm_topo=zeros(1, 1),
+        A_topo=0.0
     )
-    @test_throws UndefVarError rtolatlong(
-        SVector{3, Float64}(EARTH.Rp_e, 0.0, 0.0),
-        topo_planet,
-        true
-    )
+    rp_topo_probe = SVector{3, Float64}(0.1, 0.5, -8.944723618090451)
+    lla_topo_probe = rtolatlong(rp_topo_probe, planet_topo_probe, true)
+    @test isapprox(lla_topo_probe[1], norm(rp_topo_probe) - 9.5; atol=1e-12, rtol=0.0)
+    @test_throws Exception rtolatlong(SVector{3, Float64}(EARTH.Rp_e, 0.0, 0.0), EARTH, true)
 
     # rtolatlongrad: planetocentric radius/lat/lon.
     rll = rtolatlongrad(SVector{3, Float64}(EARTH.Rp_e, 0.0, 0.0), EARTH)

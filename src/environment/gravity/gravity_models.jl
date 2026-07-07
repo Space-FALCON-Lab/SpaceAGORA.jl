@@ -45,7 +45,9 @@ end
     r = norm(pos_ii)
     μ = Float64(planet.μ)
     J2 = Float64(planet.J2)
-    Rp_m = Float64(planet.Rp_m)
+    # J2 is normalized to the equatorial radius (matching j2_secular_rates
+    # and the spherical-harmonics path), not the mean radius.
+    Rp_m = Float64(planet.Rp_e)
     x, y, z = pos_ii
     r_squared = r^2
     gravity_ii_mag_spherical = -μ / r_squared

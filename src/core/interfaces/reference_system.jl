@@ -276,11 +276,11 @@ function latlongtor(LATLONGH, planet, α_g0, t, t0)
     b = planet.Rp_p
     e = sqrt(1 - b^2/a^2)
     α = λ + α_g0 + planet.ω[3]*(t - t0)
-    cnst = a / (1 - e^2 * sin(ϕ)^2) + h
+    N = a / sqrt(1 - e^2 * sin(ϕ)^2)
 
-    x = cnst * cos(ϕ) * cos(α)
-    y = cnst * cos(ϕ) * sin(α)
-    z = cnst * sin(ϕ)
+    x = (N + h) * cos(ϕ) * cos(α)
+    y = (N + h) * cos(ϕ) * sin(α)
+    z = ((1 - e^2) * N + h) * sin(ϕ)
 
     return [x, y, z]
 end
@@ -346,7 +346,7 @@ function latlongtoOE(LATLONGH, planet, γ, α, v)
     # v_vec = SVector{3, Float64}([v*cos(γ)*cos(α), v*cos(γ)*sin(α), v*sin(γ)])
 
     # rvtoorbitalelement now works directly in J2000.
-    OE = rvtoorbitalelement(r_i, v_eci_j2000, 0, planet)[1:6]
+    OE = rvtoorbitalelement(r_i, v_eci_j2000, 0.0, planet)[1:6]
     return OE
 end
 
@@ -369,14 +369,20 @@ function rtolatlong(r_p::SVector{3, Float64}, planet, spherical_harmonic_topogra
     # Calculate Altitude
     if !spherical_harmonic_topography
         N = planet.Rp_e / sqrt(1 - e2*sin(lat)^2)
-        alt = p_xy*cos(lat) + (z_p + e2*N*sin(lat)^2)*sin(lat) - N
+        # Bowring closed form: h = p·cosφ + (z + e²·N·sinφ)·sinφ − N.
+        alt = p_xy*cos(lat) + (z_p + e2*N*sin(lat))*sin(lat) - N
     else
-        alt = norm(r_p) - planet.topography_function(args, 
-                                                    planet.Clm_topo, 
-                                                    planet.Slm_topo, 
-                                                    lat, 
-                                                    lon,
-                                                    planet.A_topo)
+        # Legacy duck-typed topography contract (see the sandbox test in suite
+        # 03): the 6-arg planet.topography_function receives the includer
+        # module's `args` global when one exists; previously an includer
+        # without that global got an UndefVarError here.
+        topo_args = isdefined(@__MODULE__, :args) ? getfield(@__MODULE__, :args) : nothing
+        alt = norm(r_p) - planet.topography_function(topo_args,
+                                                     planet.Clm_topo,
+                                                     planet.Slm_topo,
+                                                     lat,
+                                                     lon,
+                                                     planet.A_topo)
     end
     
     return SVector{3, Float64}([alt, lat, lon])

@@ -213,16 +213,11 @@ end
         # Geodetic altitude from radius: exact along equator and pole.
         @test GH._oblate_altitude_from_radius(EARTH.Rp_e + 250e3, SVector(1.0, 0.0, 0.0), EARTH) ≈ 250e3 atol=1e-3
         @test GH._oblate_altitude_from_radius(EARTH.Rp_p + 250e3, SVector(0.0, 0.0, 1.0), EARTH) ≈ 250e3 atol=1e-3
-        # KNOWN SOURCE BUG (documented, not fixed here): the closed-form
-        # altitude in _oblate_altitude_from_radius uses
-        # (z + e2*N*sin(lat)^2)*sin(lat); the Bowring closed form is
-        # (z + e2*N*sin(lat))*sin(lat). The extra sin factor makes a point ON
-        # the ellipsoid at 45 deg latitude report ~-6.25 km of geodetic
-        # altitude (error term ~ e2*N*sin^2(lat)*(sin(lat)-1); zero at the
-        # equator and pole, which is why the axis-aligned checks above are
-        # exact). Pin the current (buggy) magnitude so a fix will surface here.
+        # Bowring closed form: a point ON the ellipsoid at 45 deg latitude
+        # must report ~0 m of geodetic altitude, not just at the equator and
+        # pole where the e2*N*sin(lat) term vanishes.
         surf45_alt = GH._oblate_altitude_from_radius(r45, u45, EARTH)
-        @test abs(surf45_alt) < 7.0e3
+        @test abs(surf45_alt) < 1.0
 
         # Radius-for-altitude inversion round-trips through the altitude model.
         @test isnan(GH._radius_for_oblate_altitude(-1.0, SVector(1.0, 0.0, 0.0), EARTH))
@@ -240,7 +235,7 @@ end
         # a NamedTuple stands in for the planet.
         squashed = (Rp_e=10.0, Rp_p=1.0)
         u_low_lat = SVector(cosd(10.0), 0.0, sind(10.0))
-        target_alt = 5.0
+        target_alt = 10.0
         lo0 = GH._oblate_surface_radius(u_low_lat, squashed)
         hi0 = lo0 + target_alt + abs(squashed.Rp_e - squashed.Rp_p) + 1.0
         @test GH._oblate_altitude_from_radius(hi0, u_low_lat, squashed) < target_alt

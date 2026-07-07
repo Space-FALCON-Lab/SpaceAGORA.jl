@@ -64,7 +64,8 @@ end
     r = norm(pos)
     μ  = Float64(planet.μ)
     J2 = Float64(planet.J2)
-    Re = Float64(planet.Rp_m)
+    # J2 reference radius is equatorial, consistent with the gravity effector.
+    Re = Float64(planet.Rp_e)
     x, y, z = pos
     r2 = r * r
     a_sph = (-μ / r2) * normalize(pos)

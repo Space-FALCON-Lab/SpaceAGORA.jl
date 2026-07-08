@@ -28,18 +28,17 @@ end
 function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet::T)::Tuple{SVector{3, Float64}, SVector{3, Float64}} where T
     # Legacy fallback when the caller does not have an explicit ephemeris time.
     # From J2000 inertial to PCPF (planet centered/planet fixed).
-    # The internal inertial frame is J2000, so the planetary spin vector is used directly.
-    ω_j2000 = planet.ω
+    # planet.ω is the spin vector in planet-fixed axes (pole = +z), so the
+    # transport term is applied after rotating into that frame.
     r_p = SVector{3, Float64}(planet.L_PI * r_i)
-    v_p = SVector{3, Float64}(planet.L_PI * (v_i - cross(ω_j2000, r_i)))
+    v_p = SVector{3, Float64}(planet.L_PI * v_i - cross(planet.ω, r_p))
     return r_p, v_p
 end
 
 function r_pintor_i(r_p::SVector{3, Float64}, v_p::SVector{3, Float64}, planet::T)::Tuple{SVector{3, Float64}, SVector{3, Float64}} where T
     # From PCPF (planet centered/planet fixed) to J2000 inertial.
-    ω_j2000 = planet.ω
     r_j2000 = SVector{3, Float64}(planet.L_PI' * r_p)
-    v_j2000 = SVector{3, Float64}(planet.L_PI' * v_p + cross(ω_j2000, r_j2000))
+    v_j2000 = SVector{3, Float64}(planet.L_PI' * (v_p + cross(planet.ω, r_p)))
     return r_j2000, v_j2000
 end
 
@@ -109,9 +108,10 @@ function r_intor_p!(
     end
 
     l_pi = planet_frame_lpi(planet, et, ephemerides_model)
-    ω_j2000 = planet.ω
     r_p = SVector{3, Float64}(l_pi * r_i)
-    v_p = SVector{3, Float64}(l_pi * (v_i - cross(ω_j2000, r_i)))
+    # planet.ω is the spin vector in planet-fixed axes; apply the transport term
+    # after rotating (identical for the z-spin simple-ephemerides frame).
+    v_p = SVector{3, Float64}(l_pi * v_i - cross(planet.ω, r_p))
     return r_p, v_p
 end
 

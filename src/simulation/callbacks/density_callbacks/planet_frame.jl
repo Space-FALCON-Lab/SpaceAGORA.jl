@@ -58,7 +58,11 @@ end
     l_pi::SMatrix{3, 3, Float64}
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     pos_pp = SVector{3, Float64}(l_pi * pos_ii)
-    vel_pp = SVector{3, Float64}(l_pi * (vel_ii - cross(planet.ω, pos_ii)))
+    # planet.ω is the spin vector in the planet-fixed frame (pole = +z there), so
+    # the transport term must be evaluated AFTER rotating into that frame; taking
+    # the cross product in J2000 axes points the co-rotation velocity along the
+    # J2000 pole instead of the body pole (~250 m/s misdirected at Mars periapsis).
+    vel_pp = SVector{3, Float64}(l_pi * vel_ii - cross(planet.ω, pos_pp))
     return pos_pp, vel_pp
 end
 

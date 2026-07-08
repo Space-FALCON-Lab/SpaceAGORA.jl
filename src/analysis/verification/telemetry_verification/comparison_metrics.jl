@@ -26,6 +26,70 @@ end
     return collect(range(0.0, 1.0, length=n))
 end
 
+# Placeholder decay-rate fields so every summary row shares one schema; the
+# orbit-events apoapsis rows overwrite them via _apo_decay_diagnostic.
+const _DECAY_DIAGNOSTIC_EMPTY = (
+    drag_decay_ratio_median=NaN,
+    drag_decay_ratio_total=NaN,
+    drag_decay_n=0
+)
+
+# Non-compounding drag-fidelity diagnostic: per-orbit apoapsis decay rates for
+# telemetry and simulation, compared at telemetry interval midpoints. Absolute
+# apsis errors accumulate any per-pass density bias over the whole campaign
+# (and inherit orbit-index misalignment once the period drifts); the ratio of
+# decay RATES measures per-pass drag directly. Intervals bracketing a maneuver
+# orbit are excluded because the impulse, not drag, dominates them. Ratios are
+# only formed where the telemetry rate is resolvable; the median is robust to
+# the telemetry altitude quantization, and the total is the aggregate
+# sim-to-truth decay over the overlapping span.
+function _apo_decay_diagnostic(
+    tele_orbit::Vector{Float64},
+    tele_alt::Vector{Float64},
+    sim_axis::Vector{Float64},
+    sim_alt::Vector{Float64},
+    maneuver_orbits::Vector{Float64}
+)
+    (length(tele_orbit) >= 3 && length(sim_axis) >= 3) || return _DECAY_DIAGNOSTIC_EMPTY
+
+    _rates(axis, val) = (
+        (val[2:end] .- val[1:(end - 1)]) ./ (axis[2:end] .- axis[1:(end - 1)]),
+        (axis[2:end] .+ axis[1:(end - 1)]) ./ 2.0
+    )
+    d_tele, mid_tele = _rates(tele_orbit, tele_alt)
+    d_sim, mid_sim = _rates(sim_axis, sim_alt)
+
+    keep = trues(length(mid_tele))
+    @inbounds for k in eachindex(mid_tele)
+        if mid_tele[k] < mid_sim[1] || mid_tele[k] > mid_sim[end]
+            keep[k] = false
+            continue
+        end
+        for m in maneuver_orbits
+            if tele_orbit[k] <= m <= tele_orbit[k + 1]
+                keep[k] = false
+                break
+            end
+        end
+    end
+    any(keep) || return _DECAY_DIAGNOSTIC_EMPTY
+
+    d_sim_interp = _interp_linear(mid_sim, d_sim, mid_tele[keep])
+    d_tele_kept = d_tele[keep]
+
+    ratios = Float64[]
+    @inbounds for i in eachindex(d_tele_kept)
+        abs(d_tele_kept[i]) > 1e-9 && push!(ratios, d_sim_interp[i] / d_tele_kept[i])
+    end
+    tele_total = sum(d_tele_kept)
+    ratio_total = abs(tele_total) > 1e-9 ? sum(d_sim_interp) / tele_total : NaN
+    return (
+        drag_decay_ratio_median=isempty(ratios) ? NaN : median(ratios),
+        drag_decay_ratio_total=ratio_total,
+        drag_decay_n=length(ratios)
+    )
+end
+
 function _compare_orbit_curve(
     scenario::String,
     event::String,
@@ -52,6 +116,7 @@ function _compare_orbit_curve(
             bias_km=Inf,
             nmae=Inf,
             nrmse=Inf,
+            _DECAY_DIAGNOSTIC_EMPTY...,
             telemetry_axis_start=telemetry_axis[1],
             telemetry_axis_end=telemetry_axis[end]
         ), DataFrame(
@@ -93,6 +158,7 @@ function _compare_orbit_curve(
         bias_km=mean(err),
         nmae=mean(abs_err) / tel_range,
         nrmse=sqrt(mean(err .^ 2)) / tel_range,
+        _DECAY_DIAGNOSTIC_EMPTY...,
         telemetry_axis_start=telemetry_axis[1],
         telemetry_axis_end=telemetry_axis[end]
     ), DataFrame(
@@ -132,6 +198,7 @@ function _compare_time_series(
             bias_km=Inf,
             nmae=Inf,
             nrmse=Inf,
+            _DECAY_DIAGNOSTIC_EMPTY...,
             telemetry_axis_start=telemetry_time[1],
             telemetry_axis_end=telemetry_time[end]
         ), DataFrame(
@@ -163,6 +230,7 @@ function _compare_time_series(
         bias_km=mean(err),
         nmae=mean(abs_err) / tel_range,
         nrmse=sqrt(mean(err .^ 2)) / tel_range,
+        _DECAY_DIAGNOSTIC_EMPTY...,
         telemetry_axis_start=telemetry_time[1],
         telemetry_axis_end=telemetry_time[end]
     ), DataFrame(

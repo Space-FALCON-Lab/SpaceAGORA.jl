@@ -967,6 +967,68 @@ end
     end
 end
 
+@testset "Planet-frame transport term uses the body pole" begin
+    # planet.ω is the spin vector in planet-fixed axes; the co-rotation term must
+    # be applied after rotating into that frame. A point at rest in the rotating
+    # frame of a TILTED-pole planet must have zero planet-frame velocity.
+    θ = deg2rad(30.0)
+    L_PI = SMatrix{3, 3, Float64}(
+        1.0, 0.0, 0.0,
+        0.0, cos(θ), sin(θ),
+        0.0, -sin(θ), cos(θ)
+    )
+    ω_pf = SVector(0.0, 0.0, 7.0e-5)
+    planet_tilted = (L_PI=L_PI, ω=ω_pf)
+
+    r_i = SVector(7.0e6, 1.0e6, 2.0e6)
+    Ω_j2000 = L_PI' * ω_pf            # spin vector expressed in J2000
+    v_i = cross(Ω_j2000, r_i)         # inertial velocity of a frame-fixed point
+
+    r_p, v_p = SimulationEngine.r_intor_p!(r_i, v_i, planet_tilted)
+    @test isapprox(r_p, L_PI * r_i; atol=1e-9)
+    @test norm(v_p) < 1e-9 * norm(v_i)
+
+    # Round trip restores the inertial state.
+    r_back, v_back = SimulationEngine.r_pintor_i(r_p, v_p, planet_tilted)
+    @test isapprox(r_back, r_i; atol=1e-6)
+    @test isapprox(v_back, v_i; atol=1e-9)
+
+    # z-aligned pole reproduces the legacy behavior exactly.
+    planet_z = (L_PI=SMatrix{3, 3, Float64}(1.0I), ω=ω_pf)
+    r_pz, v_pz = SimulationEngine.r_intor_p!(r_i, v_i, planet_z)
+    @test isapprox(v_pz, v_i - cross(ω_pf, r_i); atol=1e-9)
+end
+
+@testset "Apoapsis decay-rate diagnostic" begin
+    # Sim decaying exactly twice as fast as telemetry: ratios must be 2.
+    orbits = collect(0.0:1.0:10.0)
+    tele = 1000.0 .- 10.0 .* orbits
+    sim = 1000.0 .- 20.0 .* orbits
+    d = TV._apo_decay_diagnostic(orbits, tele, orbits, sim, Float64[])
+    @test isapprox(d.drag_decay_ratio_median, 2.0; atol=1e-12)
+    @test isapprox(d.drag_decay_ratio_total, 2.0; atol=1e-12)
+    @test d.drag_decay_n == 10
+
+    # A maneuver inside an interval drops exactly that interval.
+    d_man = TV._apo_decay_diagnostic(orbits, tele, orbits, sim, [4.5])
+    @test d_man.drag_decay_n == 9
+    @test isapprox(d_man.drag_decay_ratio_median, 2.0; atol=1e-12)
+
+    # Truncated sim axis restricts the comparison to the overlap.
+    d_trunc = TV._apo_decay_diagnostic(orbits, tele, orbits[1:6], sim[1:6], Float64[])
+    @test d_trunc.drag_decay_n == 5
+
+    # Flat telemetry (below the rate floor) produces no ratios but a NaN-safe result.
+    flat = fill(1000.0, length(orbits))
+    d_flat = TV._apo_decay_diagnostic(orbits, flat, orbits, sim, Float64[])
+    @test isnan(d_flat.drag_decay_ratio_median)
+    @test d_flat.drag_decay_n == 0
+
+    # Too-short series return the schema placeholder.
+    d_short = TV._apo_decay_diagnostic([0.0, 1.0], [1.0, 2.0], orbits, sim, Float64[])
+    @test d_short.drag_decay_n == 0
+end
+
 @testset "Airspeed sign contract" begin
     # Drag/heat models must use v_spacecraft MINUS v_atmosphere. The flipped
     # form (`vel_pp + wind_pp`) was copy-pasted across six files; pin all of them.

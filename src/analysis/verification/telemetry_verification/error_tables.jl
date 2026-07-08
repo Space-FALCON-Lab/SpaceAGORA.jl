@@ -30,6 +30,15 @@ function _orbit_rows_errors(
         extrema.apo.altitude .+ apo_bias;
         sim_axis=apo_sim_axis
     )
+    if length(extrema.apo.altitude) >= 3
+        apo_summary = merge(apo_summary, _apo_decay_diagnostic(
+            tele_apo.orbit,
+            tele_apo.altitude,
+            apo_sim_axis,
+            extrema.apo.altitude .+ apo_bias,
+            Float64.(cfg.maneuver_orbit_numbers)
+        ))
+    end
     return [peri_summary, apo_summary], [peri_errors, apo_errors]
 end
 

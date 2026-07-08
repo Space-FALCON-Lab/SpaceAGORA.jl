@@ -1,4 +1,4 @@
-# Re-profile of the 2048-satellite LEO GRAM constellation scenario (see
+# Re-profile of the 1024-satellite LEO GRAM constellation scenario (see
 # LEO_GRAM_CONSTELLATION_HANDOFF.md) AFTER the routing/sort/hot-path fixes landed.
 # The pre-fix profile (in the handoff doc) showed 51% utilization, ~90% of samples
 # waiting on the persistent-worker dispatch channel -- caused by the 2-effector
@@ -28,7 +28,7 @@ const GRAMAtmosphereModel = SimulationModel.GRAMAtmosphereModel
 using LinearAlgebra
 using Profile
 
-const N_SATS = 2048
+const N_SATS = 1024
 const ALT_M = 150e3
 const MISSION_TIME_S = 3600.0
 

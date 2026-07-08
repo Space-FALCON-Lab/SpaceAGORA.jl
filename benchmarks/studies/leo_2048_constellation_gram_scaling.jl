@@ -80,9 +80,14 @@ using Statistics
 
 include(joinpath(@__DIR__, "parallelization_performance", "trajectory_parity.jl"))
 
-const N_SATS = 2048
+# Overridable via LEO_SCALING_N_SATS so leo_constellation_size_scaling.jl can sweep
+# constellation size across subprocess invocations of this same script (guaranteeing
+# identical orbit parameters/config at every size).
+const N_SATS = parse(Int, get(ENV, "LEO_SCALING_N_SATS", "1024"))
 const ALT_M = 150e3
-const MISSION_TIME_S = 600.0 # ~1/9 of one orbital period at 150 km altitude (~10 min)
+# ~1/9 of one orbital period at 150 km altitude (~10 min) by default; also overridable
+# so ad-hoc process-pool-vs-thread comparisons can hold this fixed at a short duration.
+const MISSION_TIME_S = parse(Float64, get(ENV, "LEO_SCALING_MISSION_TIME_S", "600.0"))
 const N_REPEATS = 1
 
 function build_constellation_config()

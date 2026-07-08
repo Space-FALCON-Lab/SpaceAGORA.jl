@@ -1,13 +1,15 @@
-# Thread-scaling sweep for the LEO 2048-satellite GRAM constellation benchmark
-# (leo_2048_constellation_gram_scaling.jl). Julia's thread count is fixed at process
-# startup, so each point on the curve is a separate `julia --threads=N` subprocess
-# running that script's "parallel" mode (warmup + 3 timed repeats each).
+# Thread-scaling sweep for the LEO 1024-satellite GRAM constellation benchmark
+# (leo_2048_constellation_gram_scaling.jl -- N_SATS defaults to 1024 there, overridable
+# via LEO_SCALING_N_SATS). Julia's thread count is fixed at process startup, so each
+# point on the curve is a separate `julia --threads=N` subprocess running that script's
+# "parallel" mode (warmup + 3 timed repeats each).
 #
 # NOT run automatically as part of any other task -- each thread count costs 4 full
-# solves of a 2048-satellite, 1-hour-mission constellation with real GRAM (~490-570s
-# each based on the 1-thread/8-thread reference points already measured this session),
-# so the full default ladder is on the order of hours. Run explicitly when you have
-# the time budget:
+# solves of a 1024-satellite, 10-minute-mission constellation with real GRAM (~25s/solve
+# measured at 1 thread; the older ~490-570s/solve figure recorded elsewhere in this repo
+# was for a 2048-satellite, 1-hour mission, a different scenario, not a like-for-like
+# comparison), so the full default ladder still adds up across 7 thread counts x 4
+# solves. Run explicitly when you have the time budget:
 #
 #   julia --project=. benchmarks/studies/leo_2048_constellation_gram_thread_scaling.jl
 #
@@ -48,7 +50,10 @@ function run_worker(threads::Int)::ThreadScalingResult
     io = IOBuffer()
     run(pipeline(cmd; stdout=io, stderr=io); wait=true)
     output = String(take!(io))
-    m = match(r"median wall time \([^,]+,\s*\d+\s*threads\):\s*([\d.]+)\s*s", output)
+    # Worker prints e.g. "median wall time (parallel, lookahead GRAM, 8 threads): 361.7 s"
+    # -- two comma-separated fields before "N threads", not one, so `.*?` (not `[^,]+`)
+    # is required to span both.
+    m = match(r"median wall time \(.*?,\s*\d+\s*threads\):\s*([\d.]+)\s*s", output)
     median_s = m === nothing ? nothing : parse(Float64, m.captures[1])
     return ThreadScalingResult(threads, median_s, output)
 end
@@ -57,7 +62,7 @@ function main()
     ladder = parse_thread_ladder(ARGS)
     println("Thread-scaling sweep for leo_2048_constellation_gram_scaling.jl (mode=parallel)")
     println("Thread ladder: $(ladder)")
-    println("Estimated total wall time: several hours (4 solves per thread count, ~490-570s/solve at this scenario's scale).")
+    println("Estimated total wall time: tens of minutes or more (4 solves per thread count, ~25s/solve measured at 1 thread; parallel-mode scaling on this workload has historically been poor -- see project memory on the GRAM global lock -- so don't expect solves to get much cheaper at higher thread counts).")
     println()
 
     results = ThreadScalingResult[]
@@ -75,7 +80,7 @@ function main()
 
     baseline = isempty(results) ? nothing : results[1].median_s
     println()
-    println("Summary (mode=parallel, N_SATS=2048, mission=3600s, baseline=threads=$(ladder[1])):")
+    println("Summary (mode=parallel, N_SATS=1024, mission=600s, baseline=threads=$(ladder[1])):")
     println(rpad("threads", 10), rpad("median_s", 12), rpad("speedup", 10), "efficiency")
     for r in results
         speedup = (baseline === nothing || r.median_s === nothing) ? NaN : baseline / r.median_s

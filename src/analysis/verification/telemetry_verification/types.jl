@@ -75,6 +75,7 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     aop_deg::Float64
     raan_deg::Float64
     ta_deg::Float64
+    element_frame::Symbol = :j2000
     spacecraft::SpacecraftConfig
     gravity_model::Symbol
     gravity_harmonics_degree::Int = 0

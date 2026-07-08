@@ -13,11 +13,17 @@ compare_points_quick = 8
 compare_points_full = 273
 min_eval_points = 6
 ra_m = 2.8559615e7
-rp_altitude_m = 87000.0
+# Periapsis altitude from the m01_ab_v2.bsp NAV solution at the scenario epoch
+# (osculating pass altitudes 93.7-95.0 km above Rp_e; the telemetry truth curve
+# itself never goes below 95.2 km, so the previous 87 km was inconsistent).
+rp_altitude_m = 95000.0
 i_deg = 93.522
 aop_deg = 109.7454
 raan_deg = 28.1517
 ta_deg = 175.0
+# NAV-solution osculating elements are referenced to the Mars mean equator
+# (areocentric), not J2000: matched against m01_ab_v2.bsp to <=0.05 deg.
+element_frame = "body_equator_inertial"
 gravity_model = "inverse_squared"
 gravity_harmonics_degree = 20
 gravity_harmonics_order = 20
@@ -125,6 +131,10 @@ i_deg = 89.876
 aop_deg = 75.505
 raan_deg = 104.115
 ta_deg = 178.0
+# ESA flight-dynamics elements (Damiani et al., ISSFD 2015) are referenced to
+# the Venus mean equator, not J2000: matched against the ORVV_T19 kernels to
+# <=0.006 deg only in that frame.
+element_frame = "body_equator_inertial"
 gravity_model = "inverse_squared"
 gravity_harmonics_degree = 20
 gravity_harmonics_order = 20

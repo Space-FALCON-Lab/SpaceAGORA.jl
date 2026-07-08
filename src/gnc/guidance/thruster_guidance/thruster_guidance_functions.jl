@@ -56,7 +56,7 @@ end
     θ = atan(z * planet.Rp_e, p_xy * planet.Rp_p)
     lat = atan(z + ep2 * planet.Rp_p * sin(θ)^3, p_xy - e2 * planet.Rp_e * cos(θ)^3)
     N = planet.Rp_e / sqrt(1.0 - e2 * sin(lat)^2)
-    return p_xy * cos(lat) + (z + e2 * N * sin(lat)^2) * sin(lat) - N
+    return p_xy * cos(lat) + (z + e2 * N * sin(lat)) * sin(lat) - N
 end
 
 @inline function _oblate_surface_radius(u_pp::SVector{3, Float64}, planet)::Float64

@@ -342,6 +342,26 @@ end
                     :spin_probe, 4, 2,
                     (w, i) -> (w == 2 && error("spin_coordinator_probe"); nothing)
                 )
+                # Both worker slots fail: exactly one error propagates and the
+                # pool-worker error (lowest worker index) wins over the
+                # coordinator's, per the per-worker error-slot ordering.
+                both_err = try
+                    policy.threaded_foreach_worker_spin(
+                        :spin_probe, 4, 2,
+                        (w, i) -> error("spin_both_probe_w$(w)")
+                    )
+                    nothing
+                catch err
+                    err
+                end
+                @test both_err isa ErrorException
+                @test both_err.msg == "spin_both_probe_w1"
+                # A prior round's error is not resurrected by a clean round.
+                acc3 = Base.Threads.Atomic{Int}(0)
+                policy.threaded_foreach_worker_spin(
+                    :spin_probe, 4, 2, (w, i) -> Base.Threads.atomic_add!(acc3, i)
+                )
+                @test acc3[] == sum(1:4)
 
                 # Dynamic scheduler dispatch through the spin barrier. A
                 # rendezvous on each worker's first chunk guarantees both the
@@ -380,12 +400,18 @@ end
             end
         end
 
-        # Direct construction clamps workers to at least one; explicit shutdown.
+        # Direct construction clamps workers to [1, nthreads-1]: spin workers
+        # never yield, so oversubscribing past nthreads-1 would deadlock the
+        # coordinator. Explicit shutdown afterwards.
         spool = policy._create_spin_barrier_pool(0)
         @test spool.workers == 1
         policy._shutdown_spin_barrier_pool!(spool)
         @test spool.stop[] == true
-        sleep(0.1)  # allow the spinning worker to observe stop and exit
+        spool_big = policy._create_spin_barrier_pool(Base.Threads.nthreads() + 7)
+        @test spool_big.workers == max(1, Base.Threads.nthreads() - 1)
+        policy._shutdown_spin_barrier_pool!(spool_big)
+        @test spool_big.stop[] == true
+        sleep(0.1)  # allow the spinning workers to observe stop and exit
     end
 
     @testset "scope teardown covers every pool dictionary" begin

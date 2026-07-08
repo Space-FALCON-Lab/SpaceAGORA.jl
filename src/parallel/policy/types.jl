@@ -134,6 +134,9 @@ mutable struct _SpinBarrierPool
     stop::Threads.Atomic{Bool}
     # Shared request payload written by coordinator before bumping generations.
     request::Base.RefValue{Any}
+    # Per-worker error slot: each worker writes only its own index before
+    # incrementing done_count; the coordinator reads after the barrier.
+    errors::Vector{Union{Nothing, Base.CapturedException}}
     run_lock::ReentrantLock
 end
 
@@ -144,6 +147,7 @@ function _SpinBarrierPool(workers::Int)
         Threads.Atomic{Int}(0),
         Threads.Atomic{Bool}(false),
         Ref{Any}(nothing),
+        Union{Nothing, Base.CapturedException}[nothing for _ in 1:workers],
         ReentrantLock(),
     )
 end

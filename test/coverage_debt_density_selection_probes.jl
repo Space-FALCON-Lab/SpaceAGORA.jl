@@ -86,10 +86,14 @@ function EM.getDensityBatch!(
     error("batch_throw_probe")
 end
 
-# GRAM-typed surrogate whose property table exposes a fake trajectory driver,
-# so the generate_trajectory branch of the track-cache refresh is reachable
-# without the native GRAM library.
-struct FakeTrajBase <: SimulationModel.AbstractDensityModel end
+# Core shaped like GRAMSuite.GRAMAtmosphereModel: exposes `gram` (a trajectory
+# driver) and `gram_atmosphere`, so the generate_trajectory branch of the
+# track-cache refresh is reached through the wrappers' real property
+# forwarding, without the native GRAM library.
+struct FakeTrajCore{G, GA}
+    gram::G
+    gram_atmosphere::GA
+end
 
 const FAKE_TRAJ_KWARGS = Ref{Any}(nothing)
 
@@ -120,17 +124,14 @@ function fake_generate_trajectory(gram_atmosphere; kwargs...)
     return pts
 end
 
-function Base.getproperty(m::EM.GRAMAtmosphereModelSurrogate{FakeTrajBase}, s::Symbol)
-    if s === :gram
-        return (generate_trajectory = fake_generate_trajectory,)
-    elseif s === :gram_atmosphere
-        return nothing
-    end
-    return getfield(m, s)
-end
+# Module driver, mirroring the native GRAM Julia wrapper: GRAMSuite stores the
+# included GRAM module in the core's `gram` field. `generate_trajectory` is
+# deliberately not exported — the support check must probe modules with
+# `isdefined`, not `hasproperty` (which only sees exported module names).
+module FakeTrajDriver end
+Base.eval(FakeTrajDriver, :(const generate_trajectory = $fake_generate_trajectory))
 
-Base.propertynames(::EM.GRAMAtmosphereModelSurrogate{FakeTrajBase}) =
-    (:base_model, :surrogate_file, :point_fallback_below_m, :gram, :gram_atmosphere)
+make_traj_gram() = EM.GRAMAtmosphereModel(FakeTrajCore(FakeTrajDriver, nothing))
 
 # ── Config / state builders ──────────────────────────────────────────────────
 
@@ -544,7 +545,8 @@ end
         pos = SVector{3, Float64}(r, 0.0, 0.0)
         acc = CB._vacuum_j2_accel(pos, EARTH)
         # Manual evaluation of the same expression (equatorial: z = 0).
-        j2_scale = 1.5 * EARTH.J2 * EARTH.μ * EARTH.Rp_m^2 / r^4
+        # J2 is normalized to the equatorial radius, matching the source.
+        j2_scale = 1.5 * EARTH.J2 * EARTH.μ * EARTH.Rp_e^2 / r^4
         expected_x = -EARTH.μ / r^2 + j2_scale * (-1.0)
         @test acc[1] ≈ expected_x rtol=1e-12
         @test abs(acc[2]) < 1e-15 && abs(acc[3]) < 1e-15
@@ -958,8 +960,21 @@ end
     end
 
     @testset "refresh: GRAM trajectory driver branch" begin
-        surrogate = EM.GRAMAtmosphereModelSurrogate(FakeTrajBase(), "", nothing)
+        # Production shape: EM wrapper -> core with :gram/:gram_atmosphere
+        # fields -> module driver, reached via the real property forwarding.
+        base = make_traj_gram()
+        @test CB._gram_track_trajectory_supported(base) == true
+        # Surrogate forwards through two wrapper levels to the same core.
+        surrogate = EM.GRAMAtmosphereModelSurrogate(base, "", nothing)
         @test CB._gram_track_trajectory_supported(surrogate) == true
+        # Non-module drivers are probed with hasproperty.
+        nt_driver = EM.GRAMAtmosphereModel(
+            FakeTrajCore((generate_trajectory = fake_generate_trajectory,), nothing)
+        )
+        @test CB._gram_track_trajectory_supported(nt_driver) == true
+        # Drivers without generate_trajectory are unsupported.
+        no_gen = EM.GRAMAtmosphereModel(FakeTrajCore((initialize! = identity,), nothing))
+        @test CB._gram_track_trajectory_supported(no_gen) == false
         @test CB._gram_track_trajectory_supported(fallback_probe) == false
         @test CB._gram_track_trajectory_supported(make_fake_gram()) == false  # no :gram property
 

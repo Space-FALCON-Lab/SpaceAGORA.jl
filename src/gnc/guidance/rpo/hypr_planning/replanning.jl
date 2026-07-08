@@ -255,7 +255,7 @@ function rpo_plan_from_path(path_rtn, geometry, cfg::RPOPSOConfig, safe_distance
         v_ref_rtn=v_ref,
         path_rtn=Matrix{Float64}(path_rtn),
         cost=Float64(cost),
-        diagnostics=merge((planned_at_s=Float64(t),), diagnostics),
+        diagnostics=merge(diagnostics, (planned_at_s=Float64(t),)),
     )
 end
 

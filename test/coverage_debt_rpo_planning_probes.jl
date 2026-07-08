@@ -558,13 +558,8 @@ end
         @test retimed.valid
         @test retimed.cost == plan.cost
         @test retimed.diagnostics.replanning_action == :retime
-        # BUG (tracked upstream): rpo_plan_from_path merges caller diagnostics over
-        # (planned_at_s=t,), so the retimed plan keeps the stale planned_at_s=7.0
-        # instead of the retime request time 9.0 — affects freshness checks and
-        # replanning telemetry.  @test_broken asserts the CORRECT timestamp: it
-        # records Broken while the bug exists and flips to an unexpected-pass
-        # failure once the source fix lands, so CI never rejects the fix.
-        @test_broken retimed.diagnostics.planned_at_s == 9.0
+        # Retiming refreshes planned_at_s; inherited diagnostics cannot override it.
+        @test retimed.diagnostics.planned_at_s == 9.0
         @test retimed.r_ref_rtn[:, 1] ≈ collect(current) atol = 1.0e-9
         @test retimed.r_ref_rtn[:, end] ≈ path[:, 2] atol = 1.0e-9
     end

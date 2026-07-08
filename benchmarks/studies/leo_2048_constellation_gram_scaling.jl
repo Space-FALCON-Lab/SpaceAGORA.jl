@@ -29,6 +29,16 @@
 # then reports position/velocity/attitude parity via
 # parallelization_performance/trajectory_parity.jl's ppc_compare_trajectories.
 #
+# A fourth mode propagates the (uncoupled) constellation via
+# run_constellation_ensemble instead of one coupled state vector -- each
+# satellite becomes an independent single-satellite run_simulation call,
+# dispatched to a worker once for its entire propagation instead of paying
+# per-timestep thread dispatch across satellites, and each keeps its own
+# adaptive step size instead of the whole constellation sharing the global
+# minimum:
+#
+#   julia --project=. --threads=8 benchmarks/studies/leo_2048_constellation_gram_scaling.jl ensemble
+#
 # KNOWN BUG (worked around below, not fixed) in the vendored GRAMSuite native
 # atmosphere model -- see [[project_gram_multisat_rebuild_bug]] in memory: it
 # hangs when 2+ satellites need a vacuum-predicted-cache *rebuild* (mission
@@ -52,11 +62,12 @@
 # fix is in place.
 
 mode = length(ARGS) >= 1 ? ARGS[1] : ""
-mode in ("serial", "parallel", "accuracy") || error(
-    "Usage: julia --project=. --threads=<N> $(basename(@__FILE__)) <serial|parallel|accuracy>\n" *
+mode in ("serial", "parallel", "accuracy", "ensemble") || error(
+    "Usage: julia --project=. --threads=<N> $(basename(@__FILE__)) <serial|parallel|accuracy|ensemble>\n" *
     "  serial   : standard/direct GRAM, run with --threads=1\n" *
     "  parallel : GRAM trajectory look-ahead cache, run with --threads=8\n" *
-    "  accuracy : compare standard vs. look-ahead trajectories in one process"
+    "  accuracy : compare standard vs. look-ahead trajectories in one process\n" *
+    "  ensemble : run_constellation_ensemble (one worker per satellite), run with --threads=8"
 )
 
 include(joinpath(@__DIR__, "..", "..", "examples", "common.jl"))
@@ -226,6 +237,37 @@ end
 println("mode=$(mode)  julia_threads=$(Threads.nthreads())  n_sat=$(N_SATS)  alt_km=$(ALT_M/1e3)  mission_s=$(MISSION_TIME_S)")
 flush(stdout)
 
+function timed_ensemble_run(label::String, pairs)
+    ensemble_once = () -> SpaceAGORA.run_constellation_ensemble(
+        args; threads=Threads.nthreads(), return_solution=true, return_solver_metadata=true
+    )
+
+    warmup = withenv(pairs...) do
+        ensemble_once()
+    end
+    n_ok = length(warmup.successful)
+    println("$(label) warmup: $(n_ok)/$(N_SATS) members succeeded")
+    flush(stdout)
+    n_ok == N_SATS || @warn "$(label) warmup: $(length(warmup.failed)) member(s) failed -- results below may not reflect a full propagation."
+
+    GC.gc()
+    times = Float64[]
+    local last_result
+    for r in 1:N_REPEATS
+        GC.gc()
+        t = @elapsed begin
+            last_result = withenv(pairs...) do
+                ensemble_once()
+            end
+        end
+        push!(times, t)
+        println("$(label) repeat $(r): $(round(t; digits=3)) s  $(length(last_result.successful))/$(N_SATS) succeeded")
+        flush(stdout)
+    end
+    median_t = sort(times)[cld(length(times), 2)]
+    return (result=last_result, median_s=median_t)
+end
+
 if mode in ("serial", "parallel")
     rhs_mode = mode == "serial" ? "serial" : "flat"
     gram_method = mode == "serial" ? "standard" : "lookahead"
@@ -234,6 +276,13 @@ if mode in ("serial", "parallel")
     flush(stdout)
     result = timed_run(mode, pairs)
     println("median wall time ($(mode), $(gram_method) GRAM, $(Threads.nthreads()) threads): $(round(result.median_s; digits=3)) s")
+elseif mode == "ensemble"
+    # Each ensemble member is a single satellite, so there is no multi-satellite
+    # batching to gain from rhs_mode="flat" -- "serial" is the natural per-member
+    # routing. Freeze-per-step still applies (real, uncached GRAM per member).
+    pairs = env_pairs_for(rhs_mode="serial", gram_method="standard")
+    result = timed_ensemble_run("ensemble", pairs)
+    println("median wall time (ensemble, standard GRAM, $(Threads.nthreads()) outer workers): $(round(result.median_s; digits=3)) s")
 else # mode == "accuracy"
     # Routing is held fixed (flat/threaded) between the two runs so any resulting
     # state difference is attributable only to the GRAM-calling method, not to a

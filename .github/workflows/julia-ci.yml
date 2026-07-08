@@ -8,7 +8,9 @@ on:
 jobs:
   tests-matrix:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 60 killed a fully-passing 1.12 leg at 1h00m20s (PR #35); runner-speed
+    # variance across runs is ~1.6x, so give the full suite real headroom.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -251,7 +253,9 @@ jobs:
 
   example-suite-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Peak 71 min observed on a slow runner (PR #35 run) — 19 min of margin
+    # is inside normal runner variance.
+    timeout-minutes: 120
     env:
       JULIA_NUM_THREADS: "4"
     steps:
@@ -309,7 +313,9 @@ jobs:
 
   example-regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Observed 12 -> 36 min swing between runs; another slow runner would
+    # brush the 60-minute line.
+    timeout-minutes: 90
     env:
       JULIA_NUM_THREADS: "4"
     steps:

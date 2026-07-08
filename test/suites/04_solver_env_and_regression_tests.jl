@@ -2694,3 +2694,50 @@ end
     eps = specific_energy(df, EARTH.μ)
     @test last(eps) < first(eps) - 1e5
 end
+
+@testset "Solver Cache Re-Initializes When Save Options Change" begin
+    # Regression (Codex review on PR #31): DiffEq bakes save_everystep/save_on
+    # into the integrator at init, so a SolverIntegratorCache first used by a
+    # no-output run (return_solution=false, results=false → save_on=false) must
+    # NOT serve its endpoints-only integrator to a later return_solution=true
+    # run.  The cache records its init-time save options and re-initializes
+    # when a call resolves different ones.
+    args_cache = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=600.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredJ2GravityModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        ephemerides_model=SimpleEphemeridesModel()
+    )
+    cache = SimulationEngine.SolverIntegratorCache()
+
+    # No-output run initializes the cache with storage disabled.
+    @test run_simulation(args_cache; return_solution=false, solver_cache=cache) === nothing
+    @test cache.integrator !== nothing
+    @test cache.save_on == false
+    @test cache.save_everystep == false
+    integ_no_output = cache.integrator
+
+    # Reusing the same cache for a full-solution run must re-init and return
+    # the whole trajectory, not the cached endpoints-only integrator.
+    sol_full = run_simulation(args_cache; return_solution=true, solver_cache=cache)
+    @test length(sol_full.t) > 2
+    @test cache.integrator !== integ_no_output
+    @test cache.save_on == true
+
+    # Matching options keep reusing the cached integrator (no churn).
+    integ_full = cache.integrator
+    sol_again = run_simulation(args_cache; return_solution=true, solver_cache=cache)
+    @test length(sol_again.t) > 2
+    @test cache.integrator === integ_full
+
+    # Downgrading back to a no-output run re-initializes again so campaign
+    # runs do not silently pay full-trajectory storage.
+    @test run_simulation(args_cache; return_solution=false, solver_cache=cache) === nothing
+    @test cache.integrator !== integ_full
+    @test cache.save_on == false
+end

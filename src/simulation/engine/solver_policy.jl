@@ -262,7 +262,45 @@ end
 
 mutable struct SolverIntegratorCache
     integrator::Any
-    SolverIntegratorCache() = new(nothing)
+    # Save options the cached integrator was init'ed with.  DiffEq bakes these
+    # into the integrator, so reuse is only valid when the requesting call
+    # resolves the same options; otherwise the cache is re-initialized (a cache
+    # first used on a no-output run must not serve an endpoints-only integrator
+    # to a later return_solution=true run).
+    save_everystep::Bool
+    save_on::Bool
+    save_start::Bool
+    save_end::Bool
+    SolverIntegratorCache() = new(nothing, true, true, true, true)
+end
+
+@inline function _solver_cache_options_match(
+    solver_cache::SolverIntegratorCache,
+    save_everystep::Bool,
+    save_on::Bool,
+    save_start::Bool,
+    save_end::Bool,
+)::Bool
+    return solver_cache.save_everystep == save_everystep &&
+           solver_cache.save_on == save_on &&
+           solver_cache.save_start == save_start &&
+           solver_cache.save_end == save_end
+end
+
+@inline function _cache_integrator!(
+    solver_cache::SolverIntegratorCache,
+    integ,
+    save_everystep::Bool,
+    save_on::Bool,
+    save_start::Bool,
+    save_end::Bool,
+)
+    solver_cache.integrator = integ
+    solver_cache.save_everystep = save_everystep
+    solver_cache.save_on = save_on
+    solver_cache.save_start = save_start
+    solver_cache.save_end = save_end
+    return integ
 end
 
 # Solver save knobs go through the _engine_env_get adapter (overrides → ENV →
@@ -299,7 +337,10 @@ end
     save_start = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_START", true)
     save_end = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_END", true)
 
-    if solver_cache !== nothing && solver_cache.integrator !== nothing
+    # Reuse the cached integrator only when it was init'ed with the same save
+    # options this call resolved; otherwise fall through and re-init the cache.
+    if solver_cache !== nothing && solver_cache.integrator !== nothing &&
+       _solver_cache_options_match(solver_cache, save_everystep, save_on, save_start, save_end)
         integ = solver_cache.integrator
         integ.p = prob.p
         SciMLBase.reinit!(integ, prob.u0;
@@ -313,14 +354,14 @@ end
     if maxiters === nothing
         if solver_cache !== nothing
             integ = DiffEqBase.init(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
-            solver_cache.integrator = integ
+            _cache_integrator!(solver_cache, integ, save_everystep, save_on, save_start, save_end)
             return DiffEqBase.solve!(integ)
         end
         return solve(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
     end
     if solver_cache !== nothing
         integ = DiffEqBase.init(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, maxiters=maxiters, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
-        solver_cache.integrator = integ
+        _cache_integrator!(solver_cache, integ, save_everystep, save_on, save_start, save_end)
         return DiffEqBase.solve!(integ)
     end
     return solve(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, maxiters=maxiters, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)

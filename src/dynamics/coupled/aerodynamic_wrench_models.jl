@@ -233,9 +233,6 @@ function _aero_pure_wrench(
 
     sound_velocity = sqrt(planet.γ * planet.R * T)
     vel_pp = planet_frame.vel_pp
-    vel_pp_mag = norm(vel_pp)
-    mach = vel_pp_mag / sound_velocity
-    S = sqrt(planet.γ * 0.5) * mach
     h_pp = cross(planet_frame.pos_pp, vel_pp)
     h_pp_mag = norm(h_pp)
     if !isfinite(h_pp_mag) || h_pp_mag <= eps(Float64)
@@ -252,6 +249,10 @@ function _aero_pure_wrench(
     if vel_pp_rw_mag <= eps(Float64)
         return _AERO_ZERO5
     end
+    # Free-molecular coefficients use the same wind-relative flow as the force
+    # direction and dynamic pressure (the legacy calcForceTorque path already does).
+    mach = vel_pp_rw_mag / sound_velocity
+    S = sqrt(planet.γ * 0.5) * mach
 
     vel_pp_rw_hat = vel_pp_rw / vel_pp_rw_mag
     h_pp_hat = h_pp / h_pp_mag

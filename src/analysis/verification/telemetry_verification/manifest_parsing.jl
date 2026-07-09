@@ -151,6 +151,18 @@ end
     ))
 end
 
+@inline function _parse_element_frame(raw::String, context::String)::Symbol
+    key = lowercase(strip(raw))
+    if key in ("j2000", "eme2000")
+        return :j2000
+    elseif key in ("body_equator_inertial", "body_equator", "planet_equator")
+        return :body_equator_inertial
+    end
+    throw(ArgumentError(
+        "Unsupported element_frame='$raw' in $context; use j2000|body_equator_inertial."
+    ))
+end
+
 @inline function _parse_time_aligned_comparison_mode(raw::String, context::String)::Symbol
     key = lowercase(strip(raw))
     if key in ("time_aligned_state", "time_aligned", "state")
@@ -436,6 +448,7 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 aop_deg=_require_float(tbl, "aop_deg", context),
                 raan_deg=_require_float(tbl, "raan_deg", context),
                 ta_deg=_require_float(tbl, "ta_deg", context),
+                element_frame=_parse_element_frame(_optional_str(tbl, "element_frame", "j2000"), context),
                 spacecraft=spacecraft,
                 gravity_model=gravity_model,
                 gravity_harmonics_degree=gravity_harmonics_degree,

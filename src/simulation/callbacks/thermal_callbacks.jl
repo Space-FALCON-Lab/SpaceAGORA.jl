@@ -37,7 +37,7 @@ function _compute_stage_heat_rates!(
     uD, uN, uE = latlongtoNED((planet_frame.alt_m, planet_frame.lat_rad, planet_frame.lon_rad))
     wE, wN, wU = wind
     wind_pp = wN * uN + wE * uE - wU * uD
-    vel_pp_rw = planet_frame.vel_pp + wind_pp
+    vel_pp_rw = planet_frame.vel_pp - wind_pp
     v = norm(vel_pp_rw)
     sound_velocity = sqrt(planet.γ * planet.R * T)
     if !isfinite(v) || !isfinite(sound_velocity) || v <= 0.0 || sound_velocity <= 0.0

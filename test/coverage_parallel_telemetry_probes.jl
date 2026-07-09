@@ -1027,6 +1027,15 @@ end
     # Too-short series return the schema placeholder.
     d_short = TV._apo_decay_diagnostic([0.0, 1.0], [1.0, 2.0], orbits, sim, Float64[])
     @test d_short.drag_decay_n == 0
+
+    # Uneven telemetry spacing: the total weights each interval by its span
+    # (sums altitude deltas), so a 3-orbit gap counts three times a 1-orbit one.
+    gap_orbit = [0.0, 1.0, 4.0]
+    gap_tele = [1000.0, 990.0, 960.0]        # rates -10, -10
+    gap_sim = [1000.0, 970.0, 940.0]         # rates -30, -10
+    d_gap = TV._apo_decay_diagnostic(gap_orbit, gap_tele, gap_orbit, gap_sim, Float64[])
+    @test isapprox(d_gap.drag_decay_ratio_total, 1.5; atol=1e-12)   # (-30-30)/(-10-30)
+    @test isapprox(d_gap.drag_decay_ratio_median, 2.0; atol=1e-12)  # median(3, 1)
 end
 
 @testset "Airspeed sign contract" begin

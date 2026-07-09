@@ -76,13 +76,17 @@ function _apo_decay_diagnostic(
 
     d_sim_interp = _interp_linear(mid_sim, d_sim, mid_tele[keep])
     d_tele_kept = d_tele[keep]
+    spans_kept = (tele_orbit[2:end] .- tele_orbit[1:(end - 1)])[keep]
 
     ratios = Float64[]
     @inbounds for i in eachindex(d_tele_kept)
         abs(d_tele_kept[i]) > 1e-9 && push!(ratios, d_sim_interp[i] / d_tele_kept[i])
     end
-    tele_total = sum(d_tele_kept)
-    ratio_total = abs(tele_total) > 1e-9 ? sum(d_sim_interp) / tele_total : NaN
+    # Rates are km/orbit; the aggregate must weight each interval by its orbit
+    # span (equivalently, sum the altitude deltas), or gaps in the telemetry
+    # sampling would count the same as single-orbit intervals.
+    tele_total = sum(d_tele_kept .* spans_kept)
+    ratio_total = abs(tele_total) > 1e-9 ? sum(d_sim_interp .* spans_kept) / tele_total : NaN
     return (
         drag_decay_ratio_median=isempty(ratios) ? NaN : median(ratios),
         drag_decay_ratio_total=ratio_total,

@@ -9,13 +9,30 @@ end
     return collect(range(min_v, max_v, length=steps))
 end
 
+# The bias exists to absorb a constant datum/measurement offset, so it is
+# estimated robustly from the earliest compared orbits, where accumulated
+# model drift is smallest. A bias at or beyond the configured cap is a
+# model-mismatch signal (see the drag_decay_ratio diagnostic), not a datum
+# offset — applying it would silently shift accurate apsides — so it is
+# reported and NOT applied.
+const _BIAS_ESTIMATE_POINTS = 10
+
 function _estimate_event_biases(error_tables::Vector{DataFrame}, bias_abs_max_km::Float64)::Dict{String, Float64}
     out = Dict{String, Float64}()
     for df in error_tables
         nrow(df) == 0 && continue
         event = String(df.event[1])
-        bias = -mean(_to_float_vector(df.error_km, "error_km:$event"))
-        out[event] = clamp(bias, -bias_abs_max_km, bias_abs_max_km)
+        errs = _to_float_vector(df.error_km, "error_km:$event")
+        k = min(_BIAS_ESTIMATE_POINTS, length(errs))
+        bias = -median(errs[1:k])
+        if abs(bias) >= bias_abs_max_km
+            println(
+                "calibration_bias_saturated event=$event bias_km=$(round(bias, digits=3)) " *
+                "cap_km=$bias_abs_max_km -- bias NOT applied (model-mismatch signal)"
+            )
+            bias = 0.0
+        end
+        out[event] = bias
     end
     return out
 end

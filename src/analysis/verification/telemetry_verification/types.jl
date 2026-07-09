@@ -76,6 +76,11 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     raan_deg::Float64
     ta_deg::Float64
     element_frame::Symbol = :j2000
+    # Campaign orbit number of the scenario epoch (the truth product's numbering
+    # origin may predate the epoch, e.g. counting from orbit insertion). When
+    # set, sim apsis events are placed at epoch_orbit_offset + k with unit step
+    # (one apsis per orbit) and scoring is masked to the simulated span.
+    epoch_orbit_offset::Union{Nothing, Float64} = nothing
     spacecraft::SpacecraftConfig
     gravity_model::Symbol
     gravity_harmonics_degree::Int = 0

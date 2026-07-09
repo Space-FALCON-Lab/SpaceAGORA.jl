@@ -206,6 +206,24 @@ function _parse_maneuver_config(tbl, context::String)
         "maneuvers.delta_v_mps length ($(length(delta_v_mps))) must match maneuvers.orbit_numbers length ($(length(orbit_numbers))) in $context"
     ))
     any(v -> v <= 0, orbit_numbers) && throw(ArgumentError("maneuvers.orbit_numbers must be positive integers in $context"))
+
+    # Flight maneuver histories are often numbered from the campaign origin
+    # (e.g. orbit insertion), while the replay fires at the Nth apoapsis after
+    # the scenario epoch. orbit_number_offset converts campaign numbers to
+    # epoch-relative ones; burns that executed before the epoch (shifted
+    # number < 1) are already represented by the initial condition and are
+    # dropped here rather than replayed a second time.
+    offset = _optional_int(mtbl, "orbit_number_offset", 0)
+    offset >= 0 || throw(ArgumentError("maneuvers.orbit_number_offset must be >= 0 in $context"))
+    if offset > 0
+        keep = findall(o -> o - offset >= 1, orbit_numbers)
+        n_dropped = length(orbit_numbers) - length(keep)
+        n_dropped > 0 && println(
+            "maneuver_offset context=$context offset=$offset dropped_pre_epoch_burns=$n_dropped"
+        )
+        orbit_numbers = Int64[orbit_numbers[i] - offset for i in keep]
+        delta_v_mps = delta_v_mps[keep]
+    end
     return (
         orbit_numbers=orbit_numbers,
         delta_v_mps=delta_v_mps,
@@ -449,6 +467,8 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 raan_deg=_require_float(tbl, "raan_deg", context),
                 ta_deg=_require_float(tbl, "ta_deg", context),
                 element_frame=_parse_element_frame(_optional_str(tbl, "element_frame", "j2000"), context),
+                epoch_orbit_offset=haskey(tbl, "epoch_orbit_offset") ?
+                    _require_float(tbl, "epoch_orbit_offset", context) : nothing,
                 spacecraft=spacecraft,
                 gravity_model=gravity_model,
                 gravity_harmonics_degree=gravity_harmonics_degree,

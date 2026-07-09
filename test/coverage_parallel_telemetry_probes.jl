@@ -1038,6 +1038,67 @@ end
     @test isapprox(d_gap.drag_decay_ratio_median, 2.0; atol=1e-12)  # median(3, 1)
 end
 
+@testset "Maneuver orbit-number offset" begin
+    base = Dict("maneuvers" => Dict(
+        "orbit_numbers" => [7, 10, 25, 146],
+        "delta_v_mps" => [-0.5, -0.5, 0.1, 1.0],
+        "orbit_number_offset" => 19
+    ))
+    m = TV._parse_maneuver_config(base, "ctx")
+    @test m.orbit_numbers == Int64[6, 127]
+    @test m.delta_v_mps == [0.1, 1.0]
+
+    no_offset = Dict("maneuvers" => Dict(
+        "orbit_numbers" => [7, 10],
+        "delta_v_mps" => [-0.5, -0.5]
+    ))
+    m0 = TV._parse_maneuver_config(no_offset, "ctx")
+    @test m0.orbit_numbers == Int64[7, 10]
+
+    @test_throws ArgumentError TV._parse_maneuver_config(Dict("maneuvers" => Dict(
+        "orbit_numbers" => [7], "delta_v_mps" => [1.0], "orbit_number_offset" => -1
+    )), "ctx")
+end
+
+@testset "Robust calibration bias" begin
+    # Early-orbit datum offset is recovered; late-mission drift is ignored.
+    early = fill(-3.0, 10)
+    drift = collect(range(-3.0, -4000.0, length=90))
+    df = DataFrame(event=fill("apo", 100), error_km=vcat(early, drift))
+    biases = TV._estimate_event_biases([df], 500.0)
+    @test isapprox(biases["apo"], 3.0; atol=1e-12)
+
+    # A bias at/beyond the cap signals model mismatch and is NOT applied.
+    df_sat = DataFrame(event=fill("apo", 20), error_km=fill(-800.0, 20))
+    biases_sat = TV._estimate_event_biases([df_sat], 500.0)
+    @test biases_sat["apo"] == 0.0
+end
+
+@testset "Comparison masking and raw values" begin
+    tele_axis = collect(1.0:10.0)
+    tele = collect(100.0:-1.0:91.0)
+    sim = collect(100.5:-1.0:96.5)   # five events, sim axis 1..5
+
+    masked, mdf = TV._compare_orbit_curve(
+        "s", "apo", tele_axis, tele, sim;
+        sim_axis=collect(1.0:5.0), bias=2.0, mask_to_sim_span=true
+    )
+    @test masked.n_telemetry == 10
+    @test masked.n_sim == 5
+    @test isapprox(masked.coverage, 0.5; atol=1e-12)
+    @test nrow(mdf) == 5
+    @test all(mdf.sim_interp_value_km .== mdf.sim_raw_interp_value_km .+ 2.0)
+    @test isapprox(masked.max_abs_km, 2.5; atol=1e-9)  # constant 0.5 raw offset + 2.0 bias
+
+    # Legacy behavior (no masking) still clamp-scores the full series.
+    legacy, ldf = TV._compare_orbit_curve(
+        "s", "apo", tele_axis, tele, sim;
+        sim_axis=collect(1.0:5.0)
+    )
+    @test nrow(ldf) == 10
+    @test legacy.max_abs_km > masked.max_abs_km  # clamped tail dominates
+end
+
 @testset "Airspeed sign contract" begin
     # Drag/heat models must use v_spacecraft MINUS v_atmosphere. The flipped
     # form (`vel_pp + wind_pp`) was copy-pasted across six files; pin all of them.

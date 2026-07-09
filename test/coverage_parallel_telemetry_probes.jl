@@ -1047,6 +1047,8 @@ end
     m = TV._parse_maneuver_config(base, "ctx")
     @test m.orbit_numbers == Int64[6, 127]
     @test m.delta_v_mps == [0.1, 1.0]
+    # The full campaign-numbered list survives for diagnostics on campaign axes.
+    @test m.orbit_numbers_campaign == Int64[7, 10, 25, 146]
 
     no_offset = Dict("maneuvers" => Dict(
         "orbit_numbers" => [7, 10],
@@ -1087,6 +1089,17 @@ end
     @test masked.n_sim == 5
     @test isapprox(masked.coverage, 0.5; atol=1e-12)
     @test nrow(mdf) == 5
+
+    # The mask bounds BOTH sides: telemetry preceding the simulated span is not
+    # scored against the clamped first sim value.
+    pre, pdf = TV._compare_orbit_curve(
+        "s", "apo", tele_axis, tele, sim;
+        sim_axis=collect(3.0:7.0), mask_to_sim_span=true
+    )
+    @test pdf.telemetry_axis[1] >= 2.5
+    @test pdf.telemetry_axis[end] <= 7.5
+    @test nrow(pdf) == 5
+    @test isapprox(pre.coverage, 0.5; atol=1e-12)
     @test all(mdf.sim_interp_value_km .== mdf.sim_raw_interp_value_km .+ 2.0)
     @test isapprox(masked.max_abs_km, 2.5; atol=1e-9)  # constant 0.5 raw offset + 2.0 bias
 

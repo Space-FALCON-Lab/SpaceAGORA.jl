@@ -45,12 +45,14 @@ function _orbit_rows_errors(
         mask_to_sim_span=mask_to_sim
     )
     if length(extrema.apo.altitude) >= 3
+        burn_orbits = isempty(cfg.maneuver_orbit_numbers_campaign) ?
+            cfg.maneuver_orbit_numbers : cfg.maneuver_orbit_numbers_campaign
         apo_summary = merge(apo_summary, _apo_decay_diagnostic(
             tele_apo.orbit,
             tele_apo.altitude,
             apo_sim_axis,
             extrema.apo.altitude .+ apo_bias,
-            Float64.(cfg.maneuver_orbit_numbers)
+            Float64.(burn_orbits)
         ))
     end
     return [peri_summary, apo_summary], [peri_errors, apo_errors]

@@ -116,7 +116,7 @@ function _compare_orbit_curve(
     tel_axis_used = telemetry_axis
     tel_values_used = telemetry_values
     if mask_to_sim_span && sim_axis !== nothing && n_sim > 0
-        sel = telemetry_axis .<= (sim_axis[end] + 0.5)
+        sel = (telemetry_axis .>= (sim_axis[1] - 0.5)) .& (telemetry_axis .<= (sim_axis[end] + 0.5))
         tel_axis_used = telemetry_axis[sel]
         tel_values_used = telemetry_values[sel]
     end

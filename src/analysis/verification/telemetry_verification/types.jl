@@ -94,6 +94,7 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     include_wind::Bool = false
     orbit_altitude_mode::Symbol = :vacuum
     maneuver_orbit_numbers::Vector{Int64} = Int64[]
+    maneuver_orbit_numbers_campaign::Vector{Int64} = Int64[]
     maneuver_delta_v_mps::Vector{Float64} = Float64[]
     maneuver_thrust_n::Float64 = 0.0
     maneuver_isp_s::Float64 = 0.0

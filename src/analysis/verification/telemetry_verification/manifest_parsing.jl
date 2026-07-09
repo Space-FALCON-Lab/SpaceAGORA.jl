@@ -191,6 +191,7 @@ function _parse_maneuver_config(tbl, context::String)
     if !haskey(tbl, "maneuvers")
         return (
             orbit_numbers=Int64[],
+            orbit_numbers_campaign=Int64[],
             delta_v_mps=Float64[],
             thrust_n=0.0,
             isp_s=0.0,
@@ -215,6 +216,10 @@ function _parse_maneuver_config(tbl, context::String)
     # dropped here rather than replayed a second time.
     offset = _optional_int(mtbl, "orbit_number_offset", 0)
     offset >= 0 || throw(ArgumentError("maneuvers.orbit_number_offset must be >= 0 in $context"))
+    # The campaign-numbered list (including pre-epoch burns) is kept for
+    # diagnostics that operate on campaign orbit axes — the truth curve carries
+    # jumps at every campaign burn regardless of what the replay fires.
+    orbit_numbers_campaign = copy(orbit_numbers)
     if offset > 0
         keep = findall(o -> o - offset >= 1, orbit_numbers)
         n_dropped = length(orbit_numbers) - length(keep)
@@ -226,6 +231,7 @@ function _parse_maneuver_config(tbl, context::String)
     end
     return (
         orbit_numbers=orbit_numbers,
+        orbit_numbers_campaign=orbit_numbers_campaign,
         delta_v_mps=delta_v_mps,
         thrust_n=_optional_float(mtbl, "thrust_n", 4.0),
         isp_s=_optional_float(mtbl, "isp_s", 220.0),
@@ -482,6 +488,7 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 include_wind=include_wind,
                 orbit_altitude_mode=orbit_altitude_mode,
                 maneuver_orbit_numbers=maneuver.orbit_numbers,
+                maneuver_orbit_numbers_campaign=maneuver.orbit_numbers_campaign,
                 maneuver_delta_v_mps=maneuver.delta_v_mps,
                 maneuver_thrust_n=maneuver.thrust_n,
                 maneuver_isp_s=maneuver.isp_s,

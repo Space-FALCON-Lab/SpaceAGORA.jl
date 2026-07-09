@@ -3,7 +3,8 @@ using LinearAlgebra
 using StaticArrays
 using LoopVectorization
 using ComponentArrays
-using DifferentialEquations
+using OrdinaryDiffEq
+using DiffEqCallbacks
 using CSV
 using DataFrames
 using Polyester

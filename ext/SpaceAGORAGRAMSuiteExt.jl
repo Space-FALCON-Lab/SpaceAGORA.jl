@@ -3,6 +3,7 @@ module SpaceAGORAGRAMSuiteExt
 using SpaceAGORA
 using GRAMSuite
 using StaticArrays
+using SPICE
 
 const EM = SpaceAGORA.SimulationModel.EnvironmentModels
 const GRAM_LOCK = SpaceAGORA.RuntimeServices.GRAM_LOCK
@@ -21,6 +22,89 @@ function __init__()
     EM._GRAM_DEFAULT_SURROGATE_FILE_FN[] = planet -> GRAMSuite.gram_default_surrogate_file(planet)
     EM._CLEAR_GRAM_STATIC_GRID_CACHE_FN[] = () -> GRAMSuite.clear_gram_static_grid_cache!()
     EM._CLEAR_GRAM_OFFLINE_SURROGATE_CACHE_FN[] = () -> GRAMSuite.clear_gram_offline_surrogate_cache!()
+    GRAMSuite._GRAM_EPHEMERIS_STATE_FN[] = _gram_spice_ephemeris_state
+end
+
+# ---------------------------------------------------------------------------
+# GRAM ephemeris-state bypass (see the long comment above
+# GRAMSuite._gram_apply_user_ephemeris_state! for why this exists: GRAM's
+# vendored native library has its own private, isolated CSPICE instance whose
+# default kernels don't work for non-Earth bodies). Reimplements GRAM's own
+# common/source/Ephemeris.cpp formulas using SpaceAGORA's working SPICE.jl
+# bindings. Units/conventions matched to EphemerisStateC's fields: solarTime
+# in hours, longitudeSun/subsolarLatitude/subsolarLongitude/solarZenithAngle
+# in degrees, orbitalRadius in AU, oneWayLightTime in minutes, secondsPerSol
+# in seconds.
+# ---------------------------------------------------------------------------
+
+const _GRAM_AU_KM = 149_597_870.7
+const _GRAM_EARTH_NAIF_ID = 399
+
+# From NSSDCA Planetary Fact Sheet -- literal constants copied from
+# Ephemeris::updateSecondsPerSol() in the vendored C++ (they are treated as
+# fixed per-body values there too, not recomputed from ephemeris).
+const _GRAM_SECONDS_PER_SOL = Dict(
+    "VENUS" => 1.00872e7,
+    "EARTH" => 86400.00,
+    "MARS" => 88774.92,
+    "JUPITER" => 35733.24,
+    "URANUS" => 62064.0,
+    "NEPTUNE" => 57996.0,
+    "SATURN" => 38361.6,
+    "TITAN" => 1377648.0,
+)
+
+function _gram_utc_string(initial_time)::String
+    return string(
+        Int(initial_time.year), "-", Int(initial_time.month), "-", Int(initial_time.day), " ",
+        Int(initial_time.hour), ":", Int(initial_time.minute), ":", Float64(initial_time.second),
+        " UTC"
+    )
+end
+
+function _gram_spice_ephemeris_state(
+    planet_name::String,
+    initial_time,
+    el_time::Float64,
+    lat_deg::Float64,
+    lon_deg::Float64,
+)
+    naif_name = uppercase(planet_name)
+    haskey(_GRAM_SECONDS_PER_SOL, naif_name) || return nothing
+
+    et = SPICE.utc2et(_gram_utc_string(initial_time)) + el_time
+    frame = "IAU_" * naif_name
+
+    pos_sun, _ = SPICE.spkpos(naif_name, et, "J2000", "NONE", "SUN")
+    orbital_radius_au = sqrt(sum(abs2, pos_sun)) / _GRAM_AU_KM
+
+    longitude_sun_deg = mod(rad2deg(SPICE.lspcn(naif_name, et, "NONE")), 360.0)
+
+    _, howlng = SPICE.ltime(et, SPICE.bodn2c(naif_name), "->", _GRAM_EARTH_NAIF_ID)
+    one_way_light_time_min = howlng / 60.0
+
+    spoint, _, _ = SPICE.subslr("NEAR POINT/ELLIPSOID", naif_name, et, frame, "NONE", naif_name)
+    _, subsolar_lon, subsolar_lat = SPICE.reclat(spoint)
+    subsolar_lon_deg = mod(rad2deg(subsolar_lon), 360.0)
+    subsolar_lat_deg = rad2deg(subsolar_lat)
+
+    # Local solar time & solar zenith angle from the subsolar point vs. the
+    # query lat/lon (standard spherical-geometry relations; matches GRAM's
+    # own updateLocalSolarTime()/updateSolarZenithAngle()).
+    hour_angle_deg = mod(lon_deg - subsolar_lon_deg + 180.0, 360.0) - 180.0
+    solar_time_hr = mod(12.0 + hour_angle_deg / 15.0, 24.0)
+
+    lat_r, sublat_r = deg2rad(lat_deg), deg2rad(subsolar_lat_deg)
+    dlon_r = deg2rad(lon_deg - subsolar_lon_deg)
+    cos_zenith = sin(lat_r) * sin(sublat_r) + cos(lat_r) * cos(sublat_r) * cos(dlon_r)
+    solar_zenith_deg = rad2deg(acos(clamp(cos_zenith, -1.0, 1.0)))
+
+    seconds_per_sol = _GRAM_SECONDS_PER_SOL[naif_name]
+
+    return (
+        solar_time_hr, longitude_sun_deg, subsolar_lat_deg, subsolar_lon_deg,
+        orbital_radius_au, one_way_light_time_min, solar_zenith_deg, seconds_per_sol
+    )
 end
 
 # ---------------------------------------------------------------------------

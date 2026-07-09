@@ -21,7 +21,13 @@ using PackageCompiler
 
 # All packages from the root Project.toml that should be baked into the
 # full local sysimage. PackageCompiler needs them listed by symbol.
+# :SpaceAGORA itself is included so the package's own ~40+ src/ files get
+# compiled into the image too -- without it, PackageCompiler only bakes in
+# the dependencies, and `using SpaceAGORA` still recompiles the package's own
+# code from scratch on every fresh process (measured: ~45-50s) even with the
+# sysimage loaded.
 const FULL_PACKAGES = [
+    :SpaceAGORA,
     :Arrow,
     :AssociatedLegendrePolynomials,
     :AstroTime,
@@ -31,15 +37,12 @@ const FULL_PACKAGES = [
     :DataFrames,
     :DiffEqBase,
     :DiffEqCallbacks,
-    :DifferentialEquations,
     :Interpolations,
-    :LaTeXStrings,
     :LoopVectorization,
     :MatrixEquations,
     :NLsolve,
     :OrdinaryDiffEq,
     :PlotlyJS,
-    :Plots,
     :Polyester,
     :PreallocationTools,
     :Quaternions,
@@ -60,6 +63,7 @@ const FULL_PACKAGES = [
 # every optional plotting package into the image. Keep the runtime-heavy core
 # stack and omit the largest optional frontends.
 const CI_PACKAGES = [
+    :SpaceAGORA,
     :Arrow,
     :AssociatedLegendrePolynomials,
     :AstroTime,
@@ -69,9 +73,7 @@ const CI_PACKAGES = [
     :DataFrames,
     :DiffEqBase,
     :DiffEqCallbacks,
-    :DifferentialEquations,
     :Interpolations,
-    :LaTeXStrings,
     :MatrixEquations,
     :NLsolve,
     :OrdinaryDiffEq,
@@ -102,7 +104,11 @@ const SYSIMAGE_PATH = joinpath(PROJECT_ROOT, "SpaceAGORA.so")
 # methods are actually called and include their native code.
 const PRECOMPILE_SCRIPT = let
     override = get(ENV, "SPACEAGORA_SYSIMAGE_PRECOMPILE_FILE", "")
-    default_script = joinpath(PROJECT_ROOT, "src", "examples", "Earth.jl")
+    # src/examples/Earth.jl never existed in this layout; examples live under
+    # examples/ at the repo root. AGORA_Basic_GRAMEarth.jl is the smallest
+    # real, GRAM-backed path (SPICE + GRAM atmosphere + a short solve), so it
+    # exercises the packages most worth specializing ahead of time.
+    default_script = joinpath(PROJECT_ROOT, "examples", "AGORA_Basic_GRAMEarth.jl")
 
     if !isempty(override)
         override
@@ -125,9 +131,24 @@ else
     println("Precompile execution trace: $(abspath(PRECOMPILE_SCRIPT))")
 end
 
+# --cpu-target=native (PackageCompiler's default) crashes on this machine
+# with "LLVM ERROR: Cannot select: ... i64 = vscale" from HostCPUFeatures.jl's
+# aarch64 SVE-detection code (Polyester/VectorizationBase, both real
+# dependencies -- SpaceAGORA's own setup.jl uses Polyester directly, so this
+# isn't avoidable by trimming packages). Reproduced identically at both
+# ~15 MiB and ~141 MiB free memory, so it isn't OOM -- it's an AOT-codegen
+# incompatibility with scalable-vector intrinsics on this LLVM/Apple Silicon
+# combination. `cpu_target="generic"` sidesteps the SVE-feature-detection
+# codegen path entirely; the sysimage's baked-in code is less
+# CPU-tuned as a result, but Julia still JIT-specializes hot loops normally
+# at runtime, so this only costs a bit of the "already precompiled" benefit
+# for SIMD-heavy kernels, not correctness.
+const CPU_TARGET = get(ENV, "SPACEAGORA_SYSIMAGE_CPU_TARGET", "generic")
+
 kwargs = Dict{Symbol,Any}(
     :sysimage_path => SYSIMAGE_PATH,
     :project => PROJECT_ROOT,
+    :cpu_target => CPU_TARGET,
 )
 
 if PRECOMPILE_SCRIPT !== nothing

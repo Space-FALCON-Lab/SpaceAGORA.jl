@@ -13,10 +13,11 @@ compare_points_quick = 8
 compare_points_full = 273
 min_eval_points = 6
 ra_m = 2.8559615e7
-# Periapsis altitude from the m01_ab_v2.bsp NAV solution at the scenario epoch
-# (osculating pass altitudes 93.7-95.0 km above Rp_e; the telemetry truth curve
-# itself never goes below 95.2 km, so the previous 87 km was inconsistent).
-rp_altitude_m = 95000.0
+# Replay corridor value, in radius altitude above Rp_e. The raw NAV sequence
+# sits around 91-93 km over the first propagated passes; 95 km made the first
+# compared oblate periapsis ~4 km too high (114.33 vs 110.17 km). A 91 km
+# replay IC gives the first compared periapsis at 110.34 km.
+rp_altitude_m = 91000.0
 i_deg = 93.522
 aop_deg = 109.7454
 raan_deg = 28.1517
@@ -57,13 +58,25 @@ guidance_rate_s = 30.0
 control_rate_s = 10.0
 
 [scenarios.atmosphere_truth]
-assumption_id = "odyssey_mars_gram_deterministic_v1"
+assumption_id = "odyssey_mars_gram_deterministic_2001storm_v2"
 atmosphere_model = "GRAM"
-atmosphere_dataset = "MarsGRAM climatology"
+atmosphere_dataset = "MarsGRAM climatology + decaying 2001 global dust storm"
 space_weather_model = "MarsGRAM deterministic (seeded, perturbations off)"
 solar_flux_model = "MarsGRAM epoch-fixed defaults"
 gram_seed = 1001
 gram_perturbation_scales = [0.0, 0.0, 0.0, 0.0]
+# The aerobraking campaign flew through the decaying tail of the 2001
+# planet-encircling dust storm. Restart-from-truth segment validation against
+# the NAV kernel inverts to a dust optical depth decaying from ~0.4 at the
+# campaign start (Ls ~267) toward the ~0.2 background by Ls ~307; MarsGRAM's
+# trapezoidal global storm over a lowered background reproduces that profile:
+# total tau = 0.40 plateau through Ls ~283, linear decay to 0.20 by Ls ~307.
+# Storm tuple: (longitude_sun, duration_Ls_deg, intensity, max_radius_km
+# [0 = global], latitude, longitude). Residuals after this setting are
+# per-orbit weather scatter (perturbations are intentionally off) and a
+# dust-insensitive model over-thickness at 105-112 km late in the campaign.
+mars_mgcm_dust_levels = [0.2, 0.2, 0.2]
+mars_dust_storm = [259.0, 48.0, 0.20, 0.0, 0.0, 0.0]
 gram_offline_surrogate = "off"
 gram_static_grid = false
 gram_track_cache = false

@@ -473,6 +473,7 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 raan_deg=_require_float(tbl, "raan_deg", context),
                 ta_deg=_require_float(tbl, "ta_deg", context),
                 element_frame=_parse_element_frame(_optional_str(tbl, "element_frame", "j2000"), context),
+                initial_state_j2000_m=_optional_float_tuple(tbl, "initial_state_j2000_m", 6, context),
                 epoch_orbit_offset=haskey(tbl, "epoch_orbit_offset") ?
                     _require_float(tbl, "epoch_orbit_offset", context) : nothing,
                 spacecraft=spacecraft,

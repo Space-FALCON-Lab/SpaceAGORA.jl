@@ -76,6 +76,11 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     raan_deg::Float64
     ta_deg::Float64
     element_frame::Symbol = :j2000
+    # Optional exact J2000 Cartesian state (x, y, z in m; vx, vy, vz in m/s)
+    # relative to the central body at initial_time, e.g. taken directly from the
+    # mission NAV kernel. When present it overrides the element-based initial
+    # condition above (the elements stay in the manifest as documentation).
+    initial_state_j2000_m::Union{Nothing, NTuple{6, Float64}} = nothing
     # Campaign orbit number of the scenario epoch (the truth product's numbering
     # origin may predate the epoch, e.g. counting from orbit insertion). When
     # set, sim apsis events are placed at epoch_orbit_offset + k with unit step

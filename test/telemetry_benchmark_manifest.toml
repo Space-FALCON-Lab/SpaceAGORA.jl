@@ -12,6 +12,15 @@ target_orbits_full = 340
 compare_points_quick = 8
 compare_points_full = 273
 min_eval_points = 6
+# Exact NAV-solution Cartesian state at the scenario epoch (2001-11-06T19:00:32
+# UTC): Odyssey (-53) relative to MARS in J2000 axes, m and m/s, read from the
+# mission kernel m01_ab_v2.bsp (spkezr, no aberration correction). This
+# overrides the element-based initial condition; the osculating elements below
+# are retained for reference only. At the epoch the kernel osculating state is
+# r_apo = 28657.502 km, r_peri = 3492.178 km (95.99 km radius altitude),
+# TA = 61.16 deg, so the element IC carried a -97.9 km apoapsis-radius and a
+# ~114 deg anomaly (epoch-phase) day-one bias into the 340-orbit campaign.
+initial_state_j2000_m = [-1055155.262605, -4333732.239384, -728177.837002, -2371.221148294, -764.635541703, -3175.141365850]
 ra_m = 2.8559615e7
 # Replay corridor value, in radius altitude above Rp_e. The raw NAV sequence
 # sits around 91-93 km over the first propagated passes; 95 km made the first

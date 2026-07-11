@@ -967,6 +967,99 @@ end
     end
 end
 
+@testset "Kernel Cartesian initial-state override" begin
+    # Optional orbit-events key initial_state_j2000_m = [x, y, z, vx, vy, vz] (SI):
+    # when present the builder must use the exact Cartesian state and bypass the
+    # element-based initial condition; when absent the element path is preserved.
+    oe_scenario = Dict{String, Any}(
+        "name" => "ic_case",
+        "kind" => "orbit_events",
+        "planet" => "earth",
+        "events" => ["peri", "apo"],
+        "telemetry_peri" => "data/telemetry/fake_peri.feather",
+        "telemetry_apo" => "data/telemetry/fake_apo.feather",
+        "target_orbits_quick" => 2,
+        "target_orbits_full" => 3,
+        "compare_points_quick" => 2,
+        "compare_points_full" => 3,
+        "min_eval_points" => 1,
+        "ra_m" => 7.1e6,
+        "rp_altitude_m" => 120000.0,
+        "i_deg" => 30.0,
+        "aop_deg" => 20.0,
+        "raan_deg" => 10.0,
+        "ta_deg" => 170.0,
+        "gravity_model" => "inverse_squared",
+        "EI_km" => 120.0,
+        "initial_time" => Dict(
+            "year" => 2020, "month" => 1, "day" => 1,
+            "hour" => 0, "minute" => 0, "second" => 0.0
+        ),
+        "spacecraft" => Dict(
+            "bus_dims_m" => [1.0, 1.0, 1.0],
+            "panel_dims_m" => [0.1, 0.2, 0.3],
+            "bus_mass_kg" => 100.0,
+            "panel_mass_each_kg" => 5.0,
+            "panel_offset_y_m" => 0.5,
+            "prop_mass_kg" => 10.0,
+            "id" => 1
+        ),
+        "units" => Dict("x" => "orbit", "peri" => "km", "apo" => "km"),
+        "tolerances_quick" => Dict(
+            "peri" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0),
+            "apo" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0)
+        ),
+        "tolerances_full" => Dict(
+            "peri" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9),
+            "apo" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9)
+        )
+    )
+    state = (-1.0e6, -4.3e6, -7.3e5, -2371.2, -764.6, -3175.1)
+
+    mktempdir() do tmp
+        manifest_path = joinpath(tmp, "manifest.toml")
+        write_manifest = scenario -> open(manifest_path, "w") do io
+            TOML.print(io, Dict("version" => 1, "scenarios" => Any[scenario]))
+        end
+
+        # Absent key: parser leaves the override empty and the builder follows
+        # the element path (j2000 elements pass through unchanged).
+        write_manifest(oe_scenario)
+        cfg_elements = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg_elements isa TV.OrbitEventsScenarioConfig
+        @test cfg_elements.initial_state_j2000_m === nothing
+        planet = TV._planet_from_name("earth")
+        ic_el = TV._scenario_initial_condition(cfg_elements, planet)
+        @test ic_el isa SimulationModel.InitialCondition
+        rp_expected = planet.Rp_e + 120000.0
+        @test isapprox(ic_el.a, (7.1e6 + rp_expected) / 2.0; rtol=1e-12)
+        @test isapprox(ic_el.e, (7.1e6 - rp_expected) / (7.1e6 + rp_expected); rtol=1e-12)
+        @test isapprox(ic_el.ν, deg2rad(170.0); rtol=1e-12)
+
+        # Key present: parser returns the 6-tuple and the builder produces a
+        # CartesianInitialCondition carrying exactly the manifest values.
+        oe_scenario["initial_state_j2000_m"] = collect(state)
+        write_manifest(oe_scenario)
+        cfg_state = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg_state.initial_state_j2000_m == state
+        ic_cart = TV._scenario_initial_condition(cfg_state, planet)
+        @test ic_cart isa SimulationModel.CartesianInitialCondition
+        @test ic_cart.pos == SVector{3, Float64}(state[1], state[2], state[3])
+        @test ic_cart.vel == SVector{3, Float64}(state[4], state[5], state[6])
+
+        # Malformed key: wrong arity is rejected at parse time.
+        oe_scenario["initial_state_j2000_m"] = [1.0, 2.0, 3.0]
+        write_manifest(oe_scenario)
+        @test_throws ArgumentError TV._load_scenarios_from_manifest(manifest_path)
+    end
+
+    # The shipped manifest carries the NAV-kernel state for the odyssey campaign.
+    shipped = TV._load_scenarios_from_manifest(TV.DEFAULT_MANIFEST_PATH)
+    ody = only(filter(s -> s.name == "odyssey", shipped))
+    @test ody.initial_state_j2000_m !== nothing
+    @test length(ody.initial_state_j2000_m) == 6
+end
+
 @testset "Planet-frame transport term uses the body pole" begin
     # planet.ω is the spin vector in planet-fixed axes; the co-rotation term must
     # be applied after rotating into that frame. A point at rest in the rotating

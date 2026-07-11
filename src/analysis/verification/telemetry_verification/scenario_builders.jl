@@ -400,13 +400,22 @@ function _initial_condition_in_j2000(
     )
 end
 
-function _make_orbit_args(
+# Initial condition for an orbit-events scenario. The exact NAV-kernel Cartesian
+# state (initial_state_j2000_m) takes precedence when the manifest provides it;
+# the published osculating elements are then documentation only. Otherwise the
+# elements are used, converted to J2000 axes if flagged body_equator_inertial.
+function _scenario_initial_condition(
     cfg::OrbitEventsScenarioConfig,
-    target_orbits::Int;
-    cd_scale::Float64=1.0,
-    cr_override::Union{Nothing, Float64}=nothing
-)::SimulationConfiguration
-    planet = _planet_from_name(cfg.planet_name)
+    planet
+)::SimulationModel.AbstractInitialCondition
+    state = cfg.initial_state_j2000_m
+    if state !== nothing
+        println("initial_state_j2000: kernel Cartesian override active context=$(cfg.name)")
+        return CartesianInitialCondition(
+            SVector{3, Float64}(state[1], state[2], state[3]),
+            SVector{3, Float64}(state[4], state[5], state[6])
+        )
+    end
     rp_m = planet.Rp_e + cfg.rp_altitude_m
     ic_elements = InitialCondition(
         ra=cfg.ra_m,
@@ -416,7 +425,18 @@ function _make_orbit_args(
         Ω=cfg.raan_deg,
         ν=cfg.ta_deg
     )
-    ic = _initial_condition_in_j2000(ic_elements, planet, cfg.initial_time, cfg.element_frame)
+    return _initial_condition_in_j2000(ic_elements, planet, cfg.initial_time, cfg.element_frame)
+end
+
+function _make_orbit_args(
+    cfg::OrbitEventsScenarioConfig,
+    target_orbits::Int;
+    cd_scale::Float64=1.0,
+    cr_override::Union{Nothing, Float64}=nothing
+)::SimulationConfiguration
+    planet = _planet_from_name(cfg.planet_name)
+    rp_m = planet.Rp_e + cfg.rp_altitude_m
+    ic = _scenario_initial_condition(cfg, planet)
 
     spacecraft = _make_spacecraft(cfg.spacecraft, ic)
     dynamic_effectors = _scenario_dynamic_effectors(

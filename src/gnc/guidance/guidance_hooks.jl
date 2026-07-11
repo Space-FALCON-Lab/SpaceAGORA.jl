@@ -32,9 +32,12 @@ module GuidanceHooks
     export AbstractAerobrakingStrategy, EEdgStrategy, TEdgStrategy
     export AerobrakingGuidanceInput, AerobrakingGuidanceOutput, AerobrakingControlCommand
     export compute_aerobraking_guidance, dispatch_aerobraking_guidance
+    export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
+    export AerobrakingEnergyDepletionGuidanceModel
 
     include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
     include(joinpath(@__DIR__, "aerobraking", "interfaces.jl"))
+    include(joinpath(@__DIR__, "target_energy_bracketing.jl"))
     include(joinpath(@__DIR__, "aerobraking", "common", "closed_form_solution.jl"))
     include(joinpath(@__DIR__, "aerobraking", "common", "heat_rate_models.jl"))
     include(joinpath(@__DIR__, "aerobraking", "t_edg", "trajectory_predictor.jl"))

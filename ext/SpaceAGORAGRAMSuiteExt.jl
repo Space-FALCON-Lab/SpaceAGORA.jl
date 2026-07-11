@@ -23,6 +23,13 @@ function __init__()
     EM._CLEAR_GRAM_STATIC_GRID_CACHE_FN[] = () -> GRAMSuite.clear_gram_static_grid_cache!()
     EM._CLEAR_GRAM_OFFLINE_SURROGATE_CACHE_FN[] = () -> GRAMSuite.clear_gram_offline_surrogate_cache!()
     GRAMSuite._GRAM_EPHEMERIS_STATE_FN[] = _gram_spice_ephemeris_state
+    # See the comment on RuntimeServices.GRAM_LOCK/SPICE_LOCK: libGRAM.dylib's
+    # statically-linked CSPICE globally exports the same internal symbol names
+    # as SpaceAGORA's own SPICE.jl bindings, so GRAM model construction (the
+    # only unlocked-by-default native-call path inside GRAMSuite.jl) must
+    # serialize against the same process-wide lock as every other CSPICE-
+    # touching call, not just against other GRAM construction calls.
+    GRAMSuite._GRAM_DEFAULT_LOCK_HOOK[] = GRAM_LOCK
 end
 
 # ---------------------------------------------------------------------------
